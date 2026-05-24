@@ -55,8 +55,14 @@ type Config struct {
 	AgentID string
 	// SystemPrompt is the agent's static system instruction.
 	SystemPrompt string
-	// UserPrompt is the initial user message that starts the run.
+	// UserPrompt is the initial user message that starts the run. For a
+	// resumed run it may be empty (the run continues from InitialTranscript
+	// with no new user input).
 	UserPrompt string
+	// InitialTranscript, when non-empty, seeds the conversation — used to
+	// resume a crashed session from its replayed event log
+	// (see harness.Resume). UserPrompt, if also set, is appended after it.
+	InitialTranscript []models.Message
 	// Logger is used for structured logging. Nil → slog.Default().
 	Logger *slog.Logger
 	// MaxTokens caps model response size (0 = provider default).
@@ -97,13 +103,16 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		StartedAt: startedAt,
 	})
 
-	// Emit UserPromptSubmit.
-	cfg.Bus.Dispatch(hooks.EventUserPromptSubmit, &hooks.UserPromptSubmitPayload{
-		Version:     "1",
-		SessionID:   cfg.SessionID,
-		Prompt:      cfg.UserPrompt,
-		SubmittedAt: startedAt,
-	})
+	// Emit UserPromptSubmit only when there is new user input. A resumed run
+	// that continues without a new prompt must not record a phantom prompt.
+	if cfg.UserPrompt != "" {
+		cfg.Bus.Dispatch(hooks.EventUserPromptSubmit, &hooks.UserPromptSubmitPayload{
+			Version:     "1",
+			SessionID:   cfg.SessionID,
+			Prompt:      cfg.UserPrompt,
+			SubmittedAt: startedAt,
+		})
+	}
 
 	result := &Result{}
 
@@ -120,9 +129,12 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	// Build the tool path for permission resolution.
 	tp := hooks.NewToolPath(cfg.Bus, nil /* no deny-rules in MVP trusted sandbox */)
 
-	// Initialise the transcript with the user's prompt.
-	transcript := []models.Message{
-		{Role: "user", Content: cfg.UserPrompt},
+	// Initialise the transcript: seed from a resumed transcript if provided,
+	// then append the new user prompt (if any).
+	var transcript []models.Message
+	transcript = append(transcript, cfg.InitialTranscript...)
+	if cfg.UserPrompt != "" {
+		transcript = append(transcript, models.Message{Role: "user", Content: cfg.UserPrompt})
 	}
 
 	maxTokens := cfg.MaxTokens
@@ -303,7 +315,7 @@ func executeToolCall(
 	}
 
 	// Phase 1+2: permission via hook bus.
-	phase := tp.Resolve(cfg.SessionID, tc.Name, rawInput)
+	phase := tp.Resolve(cfg.SessionID, models.ToolCall{ID: tc.ID, Name: tc.Name, Input: rawInput})
 	if !phase.Allowed {
 		logger.Warn("loop: tool denied",
 			"tool", tc.Name,

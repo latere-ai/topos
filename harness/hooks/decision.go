@@ -1,6 +1,10 @@
 package hooks
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"latere.ai/x/agents/internal/models"
+)
 
 // Verdict is the outcome of a hook decision.
 type Verdict string
@@ -96,15 +100,20 @@ type PhaseResult struct {
 // The caller is responsible for:
 //   - Phase 3 execution (tool invoke) if Allowed.
 //   - Dispatching EventPostToolUse / EventPostToolUseFailure after execution.
-func (tp *ToolPath) Resolve(sessionID string, toolName string, rawInput json.RawMessage) PhaseResult {
-	normalised := rawInput
+func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult {
+	normalised := call.Input
 	if normalised == nil {
 		normalised = json.RawMessage("{}")
 	}
 
+	// Carry the full call identity (ID + name + normalised input) on the
+	// PreToolUse event so the durable event log can pair a tool-use with its
+	// result on replay — including detecting an orphan whose result never
+	// arrived (harness crash mid-execution).
 	payload := &PreToolUsePayload{
 		Version:         "1",
 		SessionID:       sessionID,
+		ToolCall:        models.ToolCall{ID: call.ID, Name: call.Name, Input: normalised},
 		NormalisedInput: normalised,
 	}
 
@@ -126,7 +135,7 @@ func (tp *ToolPath) Resolve(sessionID string, toolName string, rawInput json.Raw
 
 	// Phase 2: policy deny-rules.  Independent of hook outcomes.
 	for _, rule := range tp.denyRules {
-		if rule.Predicate(toolName, normalised) {
+		if rule.Predicate(call.Name, normalised) {
 			return PhaseResult{
 				Allowed:  false,
 				DeniedBy: "rule:" + rule.Name,

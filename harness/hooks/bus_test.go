@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"latere.ai/x/agents/internal/harness/hooks"
+	"latere.ai/x/agents/internal/models"
 )
 
 // TestBusDispatchOrdering asserts consumers are called in registration order.
@@ -137,7 +138,7 @@ func TestToolPathHookAllowAndDenyRuleNetDeny(t *testing.T) {
 	}
 
 	tp := hooks.NewToolPath(bus, denyRules)
-	result := tp.Resolve("sess-1", "rm", json.RawMessage(`{}`))
+	result := tp.Resolve("sess-1", models.ToolCall{ID: "c1", Name: "rm", Input: json.RawMessage(`{}`)})
 
 	if result.Allowed {
 		t.Fatal("expected net deny, got allowed")
@@ -156,7 +157,7 @@ func TestToolPathHookDenyOverridesAllow(t *testing.T) {
 	})
 
 	tp := hooks.NewToolPath(bus, nil)
-	result := tp.Resolve("sess-1", "bash", json.RawMessage(`{}`))
+	result := tp.Resolve("sess-1", models.ToolCall{ID: "c1", Name: "bash", Input: json.RawMessage(`{}`)})
 
 	if result.Allowed {
 		t.Fatal("expected deny, got allowed")
@@ -172,7 +173,7 @@ func TestToolPathAllowedWithNoDenyRules(t *testing.T) {
 	bus := hooks.New()
 	tp := hooks.NewToolPath(bus, nil)
 
-	result := tp.Resolve("sess-1", "bash", json.RawMessage(`{"command":"echo hi"}`))
+	result := tp.Resolve("sess-1", models.ToolCall{ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"echo hi"}`)})
 	if !result.Allowed {
 		t.Fatalf("expected allow, got deny (%s: %s)", result.DeniedBy, result.Reason)
 	}
