@@ -76,11 +76,6 @@ type Result struct {
 	TotalUsage models.Usage
 	// ToolCallCount is the total number of tool calls executed.
 	ToolCallCount int
-	// ChatOnly is true when the loop detected that the model does not support
-	// tool calls (models.ErrToolsUnsupported) and fell back to a plain-text
-	// chat mode for the remainder of the session. Tool calls are never executed
-	// when ChatOnly is true.
-	ChatOnly bool
 }
 
 // Run executes the agentic loop with the given config and returns a Result.
@@ -165,7 +160,6 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			// tools, disable tools for this session and retry once without them.
 			if errors.Is(err, models.ErrToolsUnsupported) && len(req.Tools) > 0 {
 				toolsDisabled = true
-				result.ChatOnly = true
 				logger.Warn("loop: model does not support tools; continuing in chat-only mode",
 					"agent_id", cfg.AgentID,
 					"session_id", cfg.SessionID,

@@ -125,11 +125,6 @@ func TestLoopRunsBashToolAndTerminates(t *testing.T) {
 	if result.TotalUsage.InputTokens == 0 {
 		t.Fatal("expected non-zero input token usage")
 	}
-	// Tool-capable path must not set the chat-only flag.
-	if result.ChatOnly {
-		t.Fatal("ChatOnly = true, want false for a tool-capable model")
-	}
-
 	// Assert the transcript includes a tool result message.
 	hasToolResult := false
 	for _, msg := range result.Transcript {
@@ -246,7 +241,7 @@ func (m *chatOnlyModel) Stream(_ context.Context, req models.Request) (models.St
 
 // TestLoopChatOnlyFallback verifies that when the model returns
 // ErrToolsUnsupported the loop retries without tools, completes successfully,
-// and sets ChatOnly=true with ToolCallCount==0.
+// and falls back to chat-only (no tools, ToolCallCount==0).
 func TestLoopChatOnlyFallback(t *testing.T) {
 	p := local.New()
 	ctx := context.Background()
@@ -277,9 +272,6 @@ func TestLoopChatOnlyFallback(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if !result.ChatOnly {
-		t.Fatal("ChatOnly = false, want true after ErrToolsUnsupported fallback")
-	}
 	if result.ToolCallCount != 0 {
 		t.Fatalf("ToolCallCount = %d, want 0 in chat-only mode", result.ToolCallCount)
 	}
