@@ -128,8 +128,20 @@ type wireRequest struct {
 }
 
 type wireMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string                  `json:"role"`
+	Content   string                  `json:"content"`
+	ToolCalls []wireAssistantToolCall `json:"tool_calls,omitempty"`
+}
+
+// wireAssistantToolCall encodes a prior tool call on an assistant history
+// message, so the model can correlate tool results in multi-turn flows.
+type wireAssistantToolCall struct {
+	Function wireAssistantToolCallFunction `json:"function"`
+}
+
+type wireAssistantToolCallFunction struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
 }
 
 type wireTool struct {
@@ -219,8 +231,9 @@ func (a *Adapter) buildRequest(req models.Request) ([]byte, error) {
 // Key mapping:
 //
 //   - "user" → role "user", content as plain string
-//   - "assistant" → role "assistant"; content as plain string (tool call info
-//     is conveyed in the stream, not in history replay for Ollama)
+//   - "assistant" → role "assistant"; content as plain string, with any
+//     ToolCalls serialized into the Ollama tool_calls array so the model
+//     can correlate tool results in multi-turn flows.
 //   - "tool" → one "tool"-role message per ToolResult
 func messageToWire(m models.Message) ([]wireMessage, error) {
 	switch m.Role {
@@ -228,7 +241,20 @@ func messageToWire(m models.Message) ([]wireMessage, error) {
 		return []wireMessage{{Role: "user", Content: m.Content}}, nil
 
 	case "assistant":
-		return []wireMessage{{Role: "assistant", Content: m.Content}}, nil
+		wm := wireMessage{Role: "assistant", Content: m.Content}
+		for _, tc := range m.ToolCalls {
+			input := tc.Input
+			if len(input) == 0 {
+				input = json.RawMessage(`{}`)
+			}
+			wm.ToolCalls = append(wm.ToolCalls, wireAssistantToolCall{
+				Function: wireAssistantToolCallFunction{
+					Name:      tc.Name,
+					Arguments: input,
+				},
+			})
+		}
+		return []wireMessage{wm}, nil
 
 	case "tool":
 		if len(m.ToolResults) == 0 {

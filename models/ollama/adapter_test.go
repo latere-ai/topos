@@ -559,3 +559,74 @@ func TestToolMessageDownConversion(t *testing.T) {
 		t.Error("no tool-role message found in wire request")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// AC 10: assistant tool-call history preserved in multi-turn replay
+// ---------------------------------------------------------------------------
+
+func TestAssistantToolCallsInHistory(t *testing.T) {
+	ts, getReq := fakeServer(t, cannedTextOnlyNDJSON("stop"))
+	a := ollama.New(ts.URL, "llama3.1")
+
+	stream, err := a.Stream(context.Background(), models.Request{
+		Messages: []models.Message{
+			{Role: "user", Content: "What is the weather?"},
+			{
+				Role: "assistant",
+				ToolCalls: []models.ToolCall{
+					{ID: "call_1", Name: "get_weather", Input: json.RawMessage(`{"city":"Paris"}`)},
+				},
+			},
+			{Role: "tool", ToolResults: []models.ToolResult{
+				{CallID: "call_1", Content: "Sunny, 25°C"},
+			}},
+		},
+		MaxTokens: 64,
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	drainStream(t, stream)
+
+	captured := getReq()
+	if captured == nil {
+		t.Fatal("no request captured")
+	}
+
+	var wireReq struct {
+		Messages []struct {
+			Role      string `json:"role"`
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Function struct {
+					Name      string          `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(captured.body, &wireReq); err != nil {
+		t.Fatalf("decode wire request: %v", err)
+	}
+
+	var foundAssistantToolCall bool
+	for _, m := range wireReq.Messages {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			foundAssistantToolCall = true
+			fn := m.ToolCalls[0].Function
+			if fn.Name != "get_weather" {
+				t.Errorf("assistant tool_call name = %q, want get_weather", fn.Name)
+			}
+			var args map[string]any
+			if err := json.Unmarshal(fn.Arguments, &args); err != nil {
+				t.Fatalf("tool_call arguments not valid JSON: %v", err)
+			}
+			if args["city"] != "Paris" {
+				t.Errorf("tool_call arguments[city] = %v, want Paris", args["city"])
+			}
+		}
+	}
+	if !foundAssistantToolCall {
+		t.Error("assistant message with tool_calls not found in wire request (multi-turn tool history dropped)")
+	}
+}
