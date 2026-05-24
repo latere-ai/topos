@@ -3,6 +3,7 @@ package ollama_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -563,6 +564,71 @@ func TestToolMessageDownConversion(t *testing.T) {
 // ---------------------------------------------------------------------------
 // AC 10: assistant tool-call history preserved in multi-turn replay
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// AC 11: ErrToolsUnsupported sentinel — 400 "does not support tools" with tools
+// ---------------------------------------------------------------------------
+
+// TestToolsUnsupportedSentinel verifies that a 400 response whose body contains
+// the Ollama "does not support tools" phrase, issued for a request that included
+// tools, surfaces as an error wrapping models.ErrToolsUnsupported.
+func TestToolsUnsupportedSentinel(t *testing.T) {
+	const ollamaBody = `{"error":"registry.ollama.ai/library/gemma3:4b does not support tools"}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, ollamaBody, http.StatusBadRequest)
+	}))
+	defer ts.Close()
+
+	a := ollama.New(ts.URL, "gemma3:4b")
+	_, err := a.Stream(context.Background(), models.Request{
+		Messages:  []models.Message{{Role: "user", Content: "hi"}},
+		MaxTokens: 64,
+		Tools: []models.ToolDef{
+			{Name: "bash", Description: "run bash", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, models.ErrToolsUnsupported) {
+		t.Errorf("expected errors.Is(err, models.ErrToolsUnsupported) to be true; got %T: %v", err, err)
+	}
+	// Must NOT be an *APIError.
+	if _, ok := err.(*ollama.APIError); ok {
+		t.Errorf("error must not be *ollama.APIError when ErrToolsUnsupported wraps it")
+	}
+}
+
+// TestToolsUnsupported400OtherMessageIsAPIError verifies that a 400 response
+// whose body does NOT contain "does not support tools" is still returned as a
+// plain *APIError and does NOT wrap ErrToolsUnsupported.
+func TestToolsUnsupported400OtherMessageIsAPIError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	}))
+	defer ts.Close()
+
+	a := ollama.New(ts.URL, "llama3.1")
+	_, err := a.Stream(context.Background(), models.Request{
+		Messages:  []models.Message{{Role: "user", Content: "hi"}},
+		MaxTokens: 64,
+		Tools: []models.ToolDef{
+			{Name: "bash", Description: "run bash", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, models.ErrToolsUnsupported) {
+		t.Errorf("expected error NOT to wrap ErrToolsUnsupported; got: %v", err)
+	}
+	apiErr, ok := err.(*ollama.APIError)
+	if !ok {
+		t.Errorf("expected *ollama.APIError, got %T: %v", err, err)
+	} else if apiErr.Status != http.StatusBadRequest {
+		t.Errorf("APIError.Status = %d, want %d", apiErr.Status, http.StatusBadRequest)
+	}
+}
 
 func TestAssistantToolCallsInHistory(t *testing.T) {
 	ts, getReq := fakeServer(t, cannedTextOnlyNDJSON("stop"))

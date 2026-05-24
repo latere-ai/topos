@@ -17,6 +17,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -75,6 +76,11 @@ type Result struct {
 	TotalUsage models.Usage
 	// ToolCallCount is the total number of tool calls executed.
 	ToolCallCount int
+	// ChatOnly is true when the loop detected that the model does not support
+	// tool calls (models.ErrToolsUnsupported) and fell back to a plain-text
+	// chat mode for the remainder of the session. Tool calls are never executed
+	// when ChatOnly is true.
+	ChatOnly bool
 }
 
 // Run executes the agentic loop with the given config and returns a Result.
@@ -131,21 +137,45 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 	var finalStopReason models.StopReason
 
+	// toolsDisabled is set to true for the remainder of this session once we
+	// detect that the model does not support tool calling. All subsequent turns
+	// are issued without tools (chat-only fallback).
+	var toolsDisabled bool
+
 	for iter := range MaxIterations {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 
+		var toolDefs []models.ToolDef
+		if !toolsDisabled {
+			toolDefs = cfg.Tools.Defs()
+		}
+
 		req := models.Request{
 			System:    cfg.SystemPrompt,
 			Messages:  transcript,
-			Tools:     cfg.Tools.Defs(),
+			Tools:     toolDefs,
 			MaxTokens: maxTokens,
 		}
 
 		stream, err := cfg.Model.Stream(ctx, req)
 		if err != nil {
-			return nil, fmt.Errorf("loop: model stream (iter %d): %w", iter, err)
+			// If the model rejected the request because it does not support
+			// tools, disable tools for this session and retry once without them.
+			if errors.Is(err, models.ErrToolsUnsupported) && len(req.Tools) > 0 {
+				toolsDisabled = true
+				result.ChatOnly = true
+				logger.Warn("loop: model does not support tools; continuing in chat-only mode",
+					"agent_id", cfg.AgentID,
+					"session_id", cfg.SessionID,
+				)
+				req.Tools = nil
+				stream, err = cfg.Model.Stream(ctx, req)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("loop: model stream (iter %d): %w", iter, err)
+			}
 		}
 
 		// Drain the stream.

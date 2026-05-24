@@ -22,7 +22,15 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+// ErrToolsUnsupported is returned (wrapped) by a [Model.Stream] implementation
+// when the request carried tools but the provider rejected tool use (e.g. some
+// Ollama models that return HTTP 400 "does not support tools"). Callers may
+// detect it with [errors.Is] and retry the request without tools to obtain a
+// plain-text response.
+var ErrToolsUnsupported = errors.New("models: model does not support tool calls")
 
 // Model is the single abstraction boundary between the agentic loop and any
 // model backend. Implementations MUST be safe for concurrent use.

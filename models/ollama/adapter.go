@@ -46,6 +46,12 @@ import (
 	"latere.ai/x/agents/internal/models"
 )
 
+// toolsUnsupportedMarker is the substring (lower-cased) that Ollama embeds in
+// the error body when a model rejects tool-calling requests. Example body:
+//
+//	{"error":"registry.ollama.ai/library/gemma3:4b does not support tools"}
+const toolsUnsupportedMarker = "does not support tools"
+
 const (
 	defaultHost  = "http://localhost:11434"
 	defaultModel = "llama3.1"
@@ -99,7 +105,16 @@ func (a *Adapter) Stream(ctx context.Context, req models.Request) (models.Stream
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, &APIError{Status: resp.StatusCode, Body: string(errBody)}
+		bodyStr := string(errBody)
+		// When the request included tools and the server responds with HTTP 400
+		// containing the Ollama "does not support tools" marker, wrap the error
+		// with models.ErrToolsUnsupported so callers can retry without tools.
+		if resp.StatusCode == http.StatusBadRequest &&
+			len(req.Tools) > 0 &&
+			strings.Contains(strings.ToLower(bodyStr), toolsUnsupportedMarker) {
+			return nil, fmt.Errorf("ollama: %s: %w", bodyStr, models.ErrToolsUnsupported)
+		}
+		return nil, &APIError{Status: resp.StatusCode, Body: bodyStr}
 	}
 
 	return newStream(resp.Body), nil

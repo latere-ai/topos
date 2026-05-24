@@ -3,6 +3,7 @@ package loop_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -124,6 +125,10 @@ func TestLoopRunsBashToolAndTerminates(t *testing.T) {
 	if result.TotalUsage.InputTokens == 0 {
 		t.Fatal("expected non-zero input token usage")
 	}
+	// Tool-capable path must not set the chat-only flag.
+	if result.ChatOnly {
+		t.Fatal("ChatOnly = true, want false for a tool-capable model")
+	}
 
 	// Assert the transcript includes a tool result message.
 	hasToolResult := false
@@ -221,6 +226,73 @@ func TestLoopHookDenyToolCall(t *testing.T) {
 	}
 	if !hasErrorResult {
 		t.Fatal("expected a denied tool result in transcript")
+	}
+}
+
+// chatOnlyModel returns ErrToolsUnsupported when the request contains tools;
+// otherwise it returns a simple text stream that terminates with end_turn.
+// This exercises the loop's chat-only fallback path.
+type chatOnlyModel struct {
+	streamCalls atomic.Int32 // total Stream invocations (including the retry)
+}
+
+func (m *chatOnlyModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+	m.streamCalls.Add(1)
+	if len(req.Tools) > 0 {
+		return nil, fmt.Errorf("chatOnlyModel: %w", models.ErrToolsUnsupported)
+	}
+	return &cannedStream{events: endTurnEvents()}, nil
+}
+
+// TestLoopChatOnlyFallback verifies that when the model returns
+// ErrToolsUnsupported the loop retries without tools, completes successfully,
+// and sets ChatOnly=true with ToolCallCount==0.
+func TestLoopChatOnlyFallback(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+
+	sb, err := p.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+
+	bus := hooks.New()
+	model := &chatOnlyModel{}
+
+	cfg := loop.Config{
+		Model:        model,
+		Sandbox:      p,
+		SandboxID:    sb.ID,
+		Tools:        tools.Builtins(),
+		Bus:          bus,
+		SessionID:    "chat-only-test",
+		AgentID:      "test-agent",
+		SystemPrompt: "You are a helpful assistant.",
+		UserPrompt:   "hello",
+	}
+
+	result, err := loop.Run(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if !result.ChatOnly {
+		t.Fatal("ChatOnly = false, want true after ErrToolsUnsupported fallback")
+	}
+	if result.ToolCallCount != 0 {
+		t.Fatalf("ToolCallCount = %d, want 0 in chat-only mode", result.ToolCallCount)
+	}
+	if result.StopReason != models.StopEndTurn {
+		t.Fatalf("StopReason = %q, want end_turn", result.StopReason)
+	}
+	if result.FinalText != "done" {
+		t.Fatalf("FinalText = %q, want %q", result.FinalText, "done")
+	}
+	// Stream must have been called twice: once with tools (rejected) and once
+	// without tools (succeeded).
+	if got := model.streamCalls.Load(); got != 2 {
+		t.Fatalf("streamCalls = %d, want 2 (initial + retry)", got)
 	}
 }
 
