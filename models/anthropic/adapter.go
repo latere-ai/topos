@@ -29,8 +29,10 @@
 // # Credentials
 //
 // The adapter receives an API key and a base URL; it mints no credentials and
-// owns no egress policy. The trust-plane sidecar brokers the scoped endpoint
-// and bearer token (spec: credentials/trust-plane-sidecar-lux.md).
+// owns no egress policy. Under the M2 topology the brain runs as a Cella
+// sandbox and reaches Lux with its sandbox token (base URL → lux.latere.ai),
+// so the endpoint and bearer come from the sandbox runtime, not a sidecar
+// (spec: runtime/brain-cella-sandbox.md).
 package anthropic
 
 import (
