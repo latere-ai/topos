@@ -518,6 +518,68 @@ func TestOAuthTokenHeaders(t *testing.T) {
 	}
 }
 
+// TestBearerSourcePerCallNoBeta verifies WithBearerSource sends the token as a
+// Bearer (not x-api-key), calls the source once per request so a rotated token
+// is picked up, and — unlike WithOAuthToken — adds NO anthropic-beta header
+// (the token terminates at Lux, not Anthropic).
+func TestBearerSourcePerCallNoBeta(t *testing.T) {
+	ts, getReq := fakeServer(t, cannedSSE("end_turn"))
+
+	tokens := []string{"tok-1", "tok-2"}
+	var calls int
+	a := anthropic.New("", ts.URL, anthropic.WithBearerSource(func(context.Context) (string, error) {
+		tok := tokens[calls]
+		calls++
+		return tok, nil
+	}))
+
+	for i, want := range []string{"Bearer tok-1", "Bearer tok-2"} {
+		stream, err := a.Stream(context.Background(), models.Request{
+			Messages:  []models.Message{{Role: "user", Content: "hi"}},
+			MaxTokens: 64,
+		})
+		if err != nil {
+			t.Fatalf("Stream %d: %v", i, err)
+		}
+		drainStream(t, stream)
+
+		captured := getReq()
+		if captured == nil {
+			t.Fatalf("request %d: none captured", i)
+		}
+		if got := captured.req.Header.Get("Authorization"); got != want {
+			t.Errorf("request %d: Authorization = %q, want %q (rotated per call)", i, got, want)
+		}
+		if got := captured.req.Header.Get("x-api-key"); got != "" {
+			t.Errorf("request %d: x-api-key = %q, want empty", i, got)
+		}
+		if got := captured.req.Header.Get("anthropic-beta"); strings.Contains(got, "oauth") {
+			t.Errorf("request %d: anthropic-beta = %q, must NOT carry the oauth beta", i, got)
+		}
+	}
+	if calls != 2 {
+		t.Errorf("bearer source called %d times, want 2 (once per request)", calls)
+	}
+}
+
+// TestBearerSourceErrorAborts verifies a bearer-source error surfaces as a
+// Stream error rather than sending a request with no/garbage credential.
+func TestBearerSourceErrorAborts(t *testing.T) {
+	ts, _ := fakeServer(t, cannedSSE("end_turn"))
+	a := anthropic.New("", ts.URL, anthropic.WithBearerSource(func(context.Context) (string, error) {
+		return "", errBearer
+	}))
+	_, err := a.Stream(context.Background(), models.Request{
+		Messages:  []models.Message{{Role: "user", Content: "hi"}},
+		MaxTokens: 64,
+	})
+	if err == nil {
+		t.Fatal("expected Stream to fail when the bearer source errors")
+	}
+}
+
+var errBearer = fmt.Errorf("token unavailable")
+
 // TestOAuthTokenBetasMergeWithThinking verifies the OAuth beta and the
 // per-request thinking beta are both present (comma-joined) when a thinking
 // budget is requested, and that the adapter's stored betas are not mutated

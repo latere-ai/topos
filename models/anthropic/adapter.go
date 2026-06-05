@@ -90,6 +90,22 @@ func WithOAuthToken() Option {
 	}
 }
 
+// WithBearerSource configures the adapter to authenticate with a per-request
+// bearer token returned by fn ("Authorization: Bearer <token>"). fn is called
+// once per Stream, so a rotated token (e.g. a refreshed Cella sandbox token
+// re-read from its projected file) is picked up without a restart.
+//
+// Unlike [WithOAuthToken] it adds NO anthropic-beta header: this path is for a
+// token that terminates at Lux (which validates it and injects its own upstream
+// provider credential), not a real Anthropic OAuth token, so the oauth beta
+// must not be forwarded upstream.
+func WithBearerSource(fn func(context.Context) (string, error)) Option {
+	return func(a *Adapter) {
+		a.useBearer = true
+		a.bearerFunc = fn
+	}
+}
+
 // Adapter implements [models.Model] against the Anthropic Messages API.
 // Create with [New]; the zero value is not usable.
 type Adapter struct {
@@ -98,8 +114,11 @@ type Adapter struct {
 	model      string
 	httpClient *http.Client
 	// useBearer sends the credential as "Authorization: Bearer" instead of
-	// "x-api-key" (set by [WithOAuthToken]).
+	// "x-api-key" (set by [WithOAuthToken] or [WithBearerSource]).
 	useBearer bool
+	// bearerFunc, when set, supplies the bearer token per request (set by
+	// [WithBearerSource]); otherwise the static apiKey is used.
+	bearerFunc func(context.Context) (string, error)
 	// betas are always-on anthropic-beta values (e.g. OAuth); per-request betas
 	// such as thinking are merged in at request time.
 	betas []string
@@ -144,7 +163,15 @@ func (a *Adapter) Stream(ctx context.Context, req models.Request) (models.Stream
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if a.useBearer {
-		httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
+		token := a.apiKey
+		if a.bearerFunc != nil {
+			t, terr := a.bearerFunc(ctx)
+			if terr != nil {
+				return nil, fmt.Errorf("anthropic: bearer source: %w", terr)
+			}
+			token = t
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+token)
 	} else {
 		httpReq.Header.Set("x-api-key", a.apiKey)
 	}
