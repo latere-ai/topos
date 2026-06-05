@@ -4,15 +4,22 @@
 // the sandbox.SandboxProvider interface and shared types in the parent package.
 package cella
 
-import "context"
+import (
+	"context"
+	"errors"
+
+	"latere.ai/x/agents/internal/sandbox"
+)
 
 // TokenSource yields a bearer token for each outbound Cella request.
 // Implementations MUST be safe for concurrent use.
 //
-// This is the trust-plane swap-point: Phase 1 wires a static service token
-// from config or environment; a later phase replaces it with an Auth-minted
-// short-TTL Cella token via the trust-plane sidecar — no interface change,
-// no upstream-caller change required.
+// This is the trust-plane swap-point. Two implementations ship:
+//   - StaticTokenSource: a single fixed service credential (local dev).
+//   - ContextTokenSource: reads a per-request, per-user bearer from the
+//     context (production), so each agent run acts as its session user.
+//
+// No interface change and no upstream-caller change is required to swap them.
 type TokenSource interface {
 	// Token returns a valid bearer token for the current point in time.
 	// It may refresh or re-derive the token on each call. Callers MUST
@@ -36,4 +43,40 @@ func NewStaticTokenSource(token string) *StaticTokenSource {
 // Token implements TokenSource.
 func (s *StaticTokenSource) Token(_ context.Context) (string, error) {
 	return s.token, nil
+}
+
+// errNoContextBearer is returned by ContextTokenSource when the context
+// carries no bearer and no fallback is configured. It fails closed: a
+// production provider must never silently downgrade to a service identity.
+var errNoContextBearer = errors.New("cella: no per-request bearer in context and no fallback token source")
+
+// ContextTokenSource yields the per-request bearer carried by the context
+// (see sandbox.WithBearer), so each outbound Cella request is authenticated as
+// the run's session user. When the context carries no bearer it consults an
+// optional fallback; with no fallback it returns an error (fail closed).
+//
+// Production wiring uses ContextTokenSource{fallback: nil} so an absent user
+// bearer is an error, never a silent downgrade to a static service credential.
+// Local dev uses StaticTokenSource directly instead.
+type ContextTokenSource struct {
+	fallback TokenSource
+}
+
+// NewContextTokenSource returns a ContextTokenSource. Pass a nil fallback for
+// production (absent bearer → error); pass a StaticTokenSource fallback only
+// where a service-identity downgrade is acceptable.
+func NewContextTokenSource(fallback TokenSource) *ContextTokenSource {
+	return &ContextTokenSource{fallback: fallback}
+}
+
+// Token implements TokenSource. It returns the context bearer when present,
+// otherwise the fallback's token, otherwise errNoContextBearer.
+func (s *ContextTokenSource) Token(ctx context.Context) (string, error) {
+	if tok, ok := sandbox.BearerFromContext(ctx); ok && tok != "" {
+		return tok, nil
+	}
+	if s.fallback != nil {
+		return s.fallback.Token(ctx)
+	}
+	return "", errNoContextBearer
 }
