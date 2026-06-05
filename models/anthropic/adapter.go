@@ -124,6 +124,10 @@ func New(apiKey, baseURL string, opts ...Option) *Adapter {
 	return a
 }
 
+// Model returns the model id the adapter will request (the default or the
+// [WithModel] override). Exposed for wiring/observability.
+func (a *Adapter) Model() string { return a.model }
+
 // Stream implements [models.Model].
 func (a *Adapter) Stream(ctx context.Context, req models.Request) (models.Stream, error) {
 	body, err := a.buildRequest(req)
