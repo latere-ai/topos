@@ -486,6 +486,91 @@ func TestRequestHeaders(t *testing.T) {
 	}
 }
 
+// TestOAuthTokenHeaders verifies that WithOAuthToken sends the credential as a
+// Bearer token (not x-api-key) and enables the oauth-2025-04-20 beta, which the
+// Anthropic API requires for OAuth access tokens (sk-ant-oat...).
+func TestOAuthTokenHeaders(t *testing.T) {
+	ts, getReq := fakeServer(t, cannedSSE("end_turn"))
+	a := anthropic.New("sk-ant-oat01-secret", ts.URL, anthropic.WithOAuthToken())
+
+	stream, err := a.Stream(context.Background(), models.Request{
+		Messages:  []models.Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 64,
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	drainStream(t, stream)
+
+	captured := getReq()
+	if captured == nil {
+		t.Fatal("no request captured")
+	}
+
+	if got := captured.req.Header.Get("Authorization"); got != "Bearer sk-ant-oat01-secret" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer sk-ant-oat01-secret")
+	}
+	if got := captured.req.Header.Get("x-api-key"); got != "" {
+		t.Errorf("x-api-key = %q, want empty (OAuth uses Bearer)", got)
+	}
+	if got := captured.req.Header.Get("anthropic-beta"); !strings.Contains(got, "oauth-2025-04-20") {
+		t.Errorf("anthropic-beta = %q, want it to contain oauth-2025-04-20", got)
+	}
+}
+
+// TestOAuthTokenBetasMergeWithThinking verifies the OAuth beta and the
+// per-request thinking beta are both present (comma-joined) when a thinking
+// budget is requested, and that the adapter's stored betas are not mutated
+// across requests.
+func TestOAuthTokenBetasMergeWithThinking(t *testing.T) {
+	ts, getReq := fakeServer(t, cannedSSE("end_turn"))
+	a := anthropic.New("sk-ant-oat01-secret", ts.URL, anthropic.WithOAuthToken())
+
+	stream, err := a.Stream(context.Background(), models.Request{
+		Messages:       []models.Message{{Role: "user", Content: "hello"}},
+		MaxTokens:      64,
+		ThinkingBudget: 1024,
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	drainStream(t, stream)
+
+	captured := getReq()
+	if captured == nil {
+		t.Fatal("no request captured")
+	}
+	got := captured.req.Header.Get("anthropic-beta")
+	if !strings.Contains(got, "oauth-2025-04-20") || !strings.Contains(got, "interleaved-thinking-2025-05-14") {
+		t.Errorf("anthropic-beta = %q, want both oauth and thinking betas", got)
+	}
+
+	// A second request without a thinking budget must carry only the OAuth beta,
+	// proving the thinking beta was not appended to the adapter's stored slice.
+	ts2, getReq2 := fakeServer(t, cannedSSE("end_turn"))
+	a2 := anthropic.New("sk-ant-oat01-secret", ts2.URL, anthropic.WithOAuthToken())
+	// Warm-up request with thinking, then a plain one on the same adapter.
+	s1, err := a2.Stream(context.Background(), models.Request{
+		Messages: []models.Message{{Role: "user", Content: "hi"}}, MaxTokens: 64, ThinkingBudget: 1024,
+	})
+	if err != nil {
+		t.Fatalf("Stream warm-up: %v", err)
+	}
+	drainStream(t, s1)
+	_ = getReq2()
+	s2, err := a2.Stream(context.Background(), models.Request{
+		Messages: []models.Message{{Role: "user", Content: "hi again"}}, MaxTokens: 64,
+	})
+	if err != nil {
+		t.Fatalf("Stream plain: %v", err)
+	}
+	drainStream(t, s2)
+	got2 := getReq2().req.Header.Get("anthropic-beta")
+	if strings.Contains(got2, "interleaved-thinking") {
+		t.Errorf("second request anthropic-beta = %q, thinking beta leaked across requests", got2)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // AC 6: Prompt caching — cache_control on system block
 // ---------------------------------------------------------------------------

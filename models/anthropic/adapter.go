@@ -55,6 +55,11 @@ const (
 	// anthropicBetaThinking is the beta header required to enable extended
 	// thinking (interleaved thinking). It is set only when ThinkingBudget > 0.
 	anthropicBetaThinking = "interleaved-thinking-2025-05-14"
+
+	// anthropicBetaOAuth is the beta header the Anthropic API requires when
+	// authenticating with an OAuth access token (Authorization: Bearer) rather
+	// than an API key. Enabled by [WithOAuthToken].
+	anthropicBetaOAuth = "oauth-2025-04-20"
 )
 
 // Option configures an [Adapter].
@@ -70,6 +75,19 @@ func WithHTTPClient(c *http.Client) Option {
 	return func(a *Adapter) { a.httpClient = c }
 }
 
+// WithOAuthToken configures the adapter to authenticate with an OAuth access
+// token (e.g. CLAUDE_CODE_OAUTH_TOKEN, prefix "sk-ant-oat") instead of an API
+// key. The credential passed to [New] is then sent as the
+// "Authorization: Bearer <token>" header and the "oauth-2025-04-20" beta is
+// enabled, both of which the Anthropic API requires for OAuth tokens — they are
+// rejected on the x-api-key header. API keys (the default) ignore this.
+func WithOAuthToken() Option {
+	return func(a *Adapter) {
+		a.useBearer = true
+		a.betas = append(a.betas, anthropicBetaOAuth)
+	}
+}
+
 // Adapter implements [models.Model] against the Anthropic Messages API.
 // Create with [New]; the zero value is not usable.
 type Adapter struct {
@@ -77,6 +95,12 @@ type Adapter struct {
 	baseURL    string
 	model      string
 	httpClient *http.Client
+	// useBearer sends the credential as "Authorization: Bearer" instead of
+	// "x-api-key" (set by [WithOAuthToken]).
+	useBearer bool
+	// betas are always-on anthropic-beta values (e.g. OAuth); per-request betas
+	// such as thinking are merged in at request time.
+	betas []string
 }
 
 // New returns an Adapter ready to call the Anthropic Messages API.
@@ -113,12 +137,22 @@ func (a *Adapter) Stream(ctx context.Context, req models.Request) (models.Stream
 		return nil, fmt.Errorf("anthropic: new request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", a.apiKey)
+	if a.useBearer {
+		httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
+	} else {
+		httpReq.Header.Set("x-api-key", a.apiKey)
+	}
 	httpReq.Header.Set("anthropic-version", anthropicVersion)
 	httpReq.Header.Set("Accept", "text/event-stream")
-	// Enable interleaved thinking only when a budget is requested.
+	// Merge always-on betas (e.g. OAuth) with the per-request thinking beta,
+	// which is enabled only when a budget is requested. Copy before appending so
+	// a.betas is never mutated.
+	betas := a.betas
 	if req.ThinkingBudget > 0 {
-		httpReq.Header.Set("anthropic-beta", anthropicBetaThinking)
+		betas = append(append([]string(nil), betas...), anthropicBetaThinking)
+	}
+	if len(betas) > 0 {
+		httpReq.Header.Set("anthropic-beta", strings.Join(betas, ","))
 	}
 
 	resp, err := a.httpClient.Do(httpReq)
