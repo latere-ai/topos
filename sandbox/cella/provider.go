@@ -54,6 +54,7 @@ type cellaCreateSandboxReq struct {
 	Env    map[string]string `json:"env,omitempty"`
 	Labels map[string]string `json:"labels,omitempty"`
 	Tier   string            `json:"tier,omitempty"`
+	Policy string            `json:"policy,omitempty"`
 }
 
 // cellaCreateCommandReq is the POST /v1/sandboxes/{id}/commands request body.
@@ -143,6 +144,7 @@ func (p *CellaSandboxProvider) Create(ctx context.Context, opts sandbox.CreateOp
 		Env:    opts.Env,
 		Labels: labels,
 		Tier:   opts.Tier,
+		Policy: opts.Policy,
 	}
 	var cs cellaSandbox
 	if err := p.do(ctx, http.MethodPost, "/v1/sandboxes", req, &cs); err != nil {

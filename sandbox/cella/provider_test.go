@@ -862,3 +862,40 @@ func TestParseListFiles(t *testing.T) {
 		})
 	}
 }
+
+// TestCreateSendsPolicy verifies that CreateOptions.Policy is serialized as the
+// "policy" field on the POST /v1/sandboxes request body, so the brain runner
+// can pin the locked-down brain policy (M2 leg 2).
+func TestCreateSendsPolicy(t *testing.T) {
+	var gotPolicy, gotImage string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			var body struct {
+				Policy string `json:"policy"`
+				Image  string `json:"image"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			gotPolicy = body.Policy
+			gotImage = body.Image
+			writeJSON(w, http.StatusOK, map[string]any{"id": testSandboxID, "state": "running"})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	p := newTestProvider(srv)
+	_, err := p.Create(context.Background(), sandbox.CreateOptions{
+		Policy: "brain",
+		Image:  "ghcr.io/latere-ai/sandbox-brain:v0.0.1",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if gotPolicy != "brain" {
+		t.Errorf("policy on wire = %q, want %q", gotPolicy, "brain")
+	}
+	if gotImage != "ghcr.io/latere-ai/sandbox-brain:v0.0.1" {
+		t.Errorf("image on wire = %q", gotImage)
+	}
+}
