@@ -195,11 +195,12 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 				exitCode = 127
 			}
 		}
+		// Set only the terminal fields; do not replace the whole struct, which
+		// would discard the Stdout that Recv accumulated (Result must return the
+		// full combined output, matching the cella provider's semantics).
 		s.mu.Lock()
-		s.result = sandbox.ExecResult{
-			ExitCode: exitCode,
-			Phase:    phase,
-		}
+		s.result.ExitCode = exitCode
+		s.result.Phase = phase
 		s.done = true
 		s.mu.Unlock()
 	}()

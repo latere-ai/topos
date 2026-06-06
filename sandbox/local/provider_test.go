@@ -197,6 +197,11 @@ func TestStreamExec(t *testing.T) {
 	if res.ExitCode != 0 {
 		t.Fatalf("stream exit code = %d, want 0", res.ExitCode)
 	}
+	// Result().Stdout must carry the full combined output that Recv accumulated;
+	// the Wait goroutine must not clobber it when recording the terminal fields.
+	if !strings.Contains(string(res.Stdout), "streaming") {
+		t.Fatalf("Result().Stdout = %q, want it to contain the streamed output", res.Stdout)
+	}
 }
 
 func TestConcurrentCreate(t *testing.T) {
