@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -330,7 +331,9 @@ func TestFetchLogs_SetBearerError(t *testing.T) {
 }
 
 // TestStreamExec_PumpTransportError verifies that when the logs endpoint
-// returns a transport error during streaming, the stream closes cleanly.
+// returns a transport error during streaming, Recv surfaces a non-EOF error so
+// the failure is distinguishable from a clean empty result (the ExecStream
+// contract: only io.EOF means clean termination).
 func TestStreamExec_PumpTransportError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -352,13 +355,18 @@ func TestStreamExec_PumpTransportError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamExec: %v", err)
 	}
-	// Drain stream; it should close without hanging.
+	// Drain stream; the terminal Recv must report the transport failure, not the
+	// bare io.EOF sentinel (which signals clean termination). The transport error
+	// may itself wrap EOF, so distinguish by identity rather than errors.Is.
+	var recvErr error
 	for {
-		_, recvErr := stream.Recv()
+		_, recvErr = stream.Recv()
 		if recvErr != nil {
-			// EOF or error — both are acceptable on transport failure.
 			break
 		}
+	}
+	if recvErr == io.EOF { //nolint:errorlint // identity check is intentional: clean EOF vs a wrapping transport error
+		t.Fatal("Recv after transport failure returned bare io.EOF, want the transport error")
 	}
 	_ = stream.Close()
 }

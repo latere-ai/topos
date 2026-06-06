@@ -531,6 +531,7 @@ type execStream struct {
 	mu     sync.Mutex
 	result sandbox.ExecResult
 	done   bool
+	err    error // transport/cancellation error, surfaced by Recv after the channel closes
 }
 
 // pump runs in a goroutine, polling Cella and sending chunks to ch until
@@ -542,7 +543,13 @@ func (s *execStream) pump(ctx context.Context, p *CellaSandboxProvider, sandboxI
 	for {
 		lr, err := p.fetchLogs(ctx, sandboxID, commandID, cursor)
 		if err != nil {
-			// Transport / context errors: store as a zero-result and stop.
+			// Transport / context errors: record the error so Recv can surface it
+			// (per the ExecStream contract a non-EOF error signals a transport
+			// failure) instead of being indistinguishable from a clean empty result.
+			s.mu.Lock()
+			s.err = err
+			s.done = true
+			s.mu.Unlock()
 			return
 		}
 		if lr.Bytes != "" {
@@ -574,11 +581,18 @@ func (s *execStream) pump(ctx context.Context, p *CellaSandboxProvider, sandboxI
 	}
 }
 
-// Recv returns the next chunk from the stream. Returns (nil, io.EOF)
-// when the command has terminated.
+// Recv returns the next chunk from the stream. Once the channel is drained it
+// returns the recorded transport/cancellation error if one occurred, otherwise
+// io.EOF to signal clean termination (per the ExecStream contract).
 func (s *execStream) Recv() ([]byte, error) {
 	chunk, ok := <-s.ch
 	if !ok {
+		s.mu.Lock()
+		err := s.err
+		s.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
 		return nil, io.EOF
 	}
 	return chunk, nil
