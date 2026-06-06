@@ -190,10 +190,15 @@ func (p *CellaSandboxProvider) StreamExec(ctx context.Context, id string, opts s
 	if err != nil {
 		return nil, err
 	}
+	// Derive a cancellable context so Close can unwind the pump promptly even if
+	// the caller stops draining (otherwise pump blocks on the buffered channel
+	// until the parent ctx ends, leaking the goroutine and its poll requests).
+	streamCtx, cancel := context.WithCancel(ctx)
 	s := &execStream{
-		ch: make(chan []byte, 16),
+		ch:     make(chan []byte, 16),
+		cancel: cancel,
 	}
-	go s.pump(ctx, p, id, cid)
+	go s.pump(streamCtx, p, id, cid)
 	return s, nil
 }
 
@@ -527,11 +532,13 @@ func parseListFiles(output string) ([]sandbox.FileInfo, error) {
 
 // execStream implements sandbox.ExecStream using cursor-poll delivery.
 type execStream struct {
-	ch     chan []byte
-	mu     sync.Mutex
-	result sandbox.ExecResult
-	done   bool
-	err    error // transport/cancellation error, surfaced by Recv after the channel closes
+	ch        chan []byte
+	cancel    context.CancelFunc // cancels pump's context; invoked by Close
+	closeOnce sync.Once
+	mu        sync.Mutex
+	result    sandbox.ExecResult
+	done      bool
+	err       error // transport/cancellation error, surfaced by Recv after the channel closes
 }
 
 // pump runs in a goroutine, polling Cella and sending chunks to ch until
@@ -606,6 +613,10 @@ func (s *execStream) Result() sandbox.ExecResult {
 	return s.result
 }
 
-// Close is a no-op for this implementation; the stream closes automatically
-// when the pump goroutine finishes. Safe to call multiple times.
-func (s *execStream) Close() error { return nil }
+// Close cancels the pump goroutine's context so it unwinds promptly, releasing
+// the in-flight poll regardless of drain state (per the ExecStream contract).
+// Safe to call multiple times.
+func (s *execStream) Close() error {
+	s.closeOnce.Do(s.cancel)
+	return nil
+}

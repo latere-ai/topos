@@ -648,6 +648,46 @@ func TestStreamExecDeliversChunksAndEOF(t *testing.T) {
 	_ = stream.Close()
 }
 
+// TestStreamExecCloseStopsPump verifies Close unwinds the pump goroutine even
+// when the caller stops draining. The command never terminates on its own, so
+// without Close cancelling the pump's context it would poll/produce forever.
+func TestStreamExecCloseStopsPump(t *testing.T) {
+	fs := &fakeServer{
+		tracker: &headerTracker{},
+		commandLogs: func(cursor int64) map[string]any {
+			return logsBody("data\n", "running", 0, cursor+5)
+		},
+	}
+	srv := newFakeServer(t, fs)
+	p := newTestProvider(srv)
+
+	stream, err := p.StreamExec(context.Background(), testSandboxID, sandbox.ExecOptions{Argv: []string{"yes"}})
+	if err != nil {
+		t.Fatalf("StreamExec: %v", err)
+	}
+
+	// Do not drain: let the 16-slot buffer fill so pump blocks on the channel send.
+	time.Sleep(50 * time.Millisecond)
+
+	// Close must unwind the pump. Drain to completion in the background and assert
+	// it finishes promptly — a no-op Close would leave pump blocked forever.
+	_ = stream.Close()
+	done := make(chan struct{})
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				break
+			}
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pump did not exit after Close; goroutine leaked")
+	}
+}
+
 // ── ReadFile / WriteFile round-trip ──────────────────────────────────────────
 
 func TestWriteFileEmbedsBase64InArgv(t *testing.T) {
