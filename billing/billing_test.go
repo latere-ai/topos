@@ -3,6 +3,7 @@ package billing_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -59,6 +60,46 @@ func TestEnforcerPausesAndNotifiesOnce(t *testing.T) {
 	_, _, _ = e.OnUsage(ctx, billing.Usage{USD: 15})
 	if notifier.count.Load() != 1 {
 		t.Fatalf("notify count = %d, want exactly 1", notifier.count.Load())
+	}
+}
+
+// flakyNotifier fails the first n deliveries, then succeeds.
+type flakyNotifier struct {
+	count   atomic.Int32
+	failFor int32
+	failErr error
+}
+
+func (n *flakyNotifier) NotifyBudgetBreach(_ context.Context, _, _, _ string, _ billing.Breach) error {
+	c := n.count.Add(1)
+	if c <= n.failFor {
+		return n.failErr
+	}
+	return nil
+}
+
+// TestEnforcerRetriesNotifyAfterTransientFailure confirms a failed breach
+// notification is retried on the next OnUsage rather than permanently swallowed.
+func TestEnforcerRetriesNotifyAfterTransientFailure(t *testing.T) {
+	notifier := &flakyNotifier{failFor: 1, failErr: errors.New("inbox unreachable")}
+	e := billing.NewEnforcer(billing.Budget{LimitUSD: 10}, "sess_1", "a1", "alice", notifier)
+	ctx := context.Background()
+
+	// First breach: notify fails, so OnUsage surfaces the error but stays paused.
+	paused, _, err := e.OnUsage(ctx, billing.Usage{USD: 12})
+	if !paused || err == nil {
+		t.Fatalf("first breach: paused=%v err=%v, want paused with error", paused, err)
+	}
+	// Next OnUsage must retry the notification (it was never marked delivered).
+	if _, _, err := e.OnUsage(ctx, billing.Usage{USD: 13}); err != nil {
+		t.Fatalf("retry should succeed, got %v", err)
+	}
+	// Now delivered: further breaches must not re-notify.
+	if _, _, err := e.OnUsage(ctx, billing.Usage{USD: 14}); err != nil {
+		t.Fatalf("after delivery: %v", err)
+	}
+	if got := notifier.count.Load(); got != 2 {
+		t.Fatalf("notify count = %d, want 2 (one failed attempt + one successful retry)", got)
 	}
 }
 

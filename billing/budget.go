@@ -78,12 +78,15 @@ func (e *Enforcer) OnUsage(ctx context.Context, u Usage) (paused bool, br Breach
 		return false, Breach{}, nil
 	}
 	if !e.notified {
-		e.notified = true
+		// Mark notified only after a successful delivery, so a transient notify
+		// failure is retried on the next OnUsage rather than permanently
+		// swallowing the breach notification while the session stays paused.
 		if e.notify != nil {
 			if nerr := e.notify.NotifyBudgetBreach(ctx, e.sessionID, e.agentID, e.ownerSub, b); nerr != nil {
 				return true, b, nerr
 			}
 		}
+		e.notified = true
 	}
 	return true, b, nil
 }
