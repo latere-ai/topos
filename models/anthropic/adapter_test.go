@@ -105,6 +105,66 @@ data: {"type":"message_stop"}
 
 `
 
+// cannedUsageSSE has a message_start carrying a non-zero initial output_tokens
+// (3) and a message_delta carrying the cumulative final output_tokens (17), as
+// a live Anthropic response does. Consumers accumulate KindUsage events, so the
+// correct total is the cumulative delta value (17), not the sum (20).
+const cannedUsageSSE = `event: message_start
+data: {"type":"message_start","message":{"id":"msg_u","type":"message","role":"assistant","content":[],"model":"claude-opus-4-7","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":42,"output_tokens":3,"cache_read_input_tokens":10,"cache_creation_input_tokens":5}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":17,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+
+// TestUsageDoesNotDoubleCountOutputTokens confirms message_start's initial
+// output_tokens is not summed with message_delta's cumulative output_tokens.
+func TestUsageDoesNotDoubleCountOutputTokens(t *testing.T) {
+	ts, _ := fakeServer(t, cannedUsageSSE)
+	a := anthropic.New("test-key", ts.URL)
+	stream, err := a.Stream(context.Background(), models.Request{
+		Messages:  []models.Message{{Role: "user", Content: "hi"}},
+		MaxTokens: 64,
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	var totalIn, totalOut, totalCacheR, totalCacheW int
+	for _, ev := range drainStream(t, stream) {
+		if ev.Kind == models.KindUsage {
+			totalIn += ev.Usage.InputTokens
+			totalOut += ev.Usage.OutputTokens
+			totalCacheR += ev.Usage.CacheReadTokens
+			totalCacheW += ev.Usage.CacheWriteTokens
+		}
+	}
+	// Accumulated output must equal the cumulative message_delta value (17), not
+	// message_start(3) + message_delta(17) = 20.
+	if totalOut != 17 {
+		t.Errorf("accumulated OutputTokens = %d, want 17 (cumulative delta, not double-counted)", totalOut)
+	}
+	// Input/cache come authoritatively from message_start and must be unaffected.
+	if totalIn != 42 {
+		t.Errorf("accumulated InputTokens = %d, want 42", totalIn)
+	}
+	if totalCacheR != 10 || totalCacheW != 5 {
+		t.Errorf("accumulated cache tokens = (%d,%d), want (10,5)", totalCacheR, totalCacheW)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helper: start a fake Anthropic SSE server
 // ---------------------------------------------------------------------------

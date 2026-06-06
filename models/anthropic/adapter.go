@@ -568,11 +568,15 @@ func (s *stream) mapEvent(eventType string, data []byte) (ev models.Event, skip 
 		if err := json.Unmarshal(data, &ms); err != nil {
 			return models.Event{}, false, fmt.Errorf("anthropic: parse message_start: %w", err)
 		}
+		// Emit only the input-side fields here. Consumers accumulate KindUsage
+		// events (loop.go sums them), and message_delta later carries the
+		// *cumulative* output_tokens; emitting message_start's small initial
+		// output_tokens too would double-count it into the billed total. Leave
+		// OutputTokens at 0 so the two usage signals stay non-overlapping.
 		return models.Event{
 			Kind: models.KindUsage,
 			Usage: &models.Usage{
 				InputTokens:      ms.Message.Usage.InputTokens,
-				OutputTokens:     ms.Message.Usage.OutputTokens,
 				CacheReadTokens:  ms.Message.Usage.CacheReadInputTokens,
 				CacheWriteTokens: ms.Message.Usage.CacheCreationInputTokens,
 			},
@@ -706,13 +710,15 @@ func (s *stream) mapEvent(eventType string, data []byte) (ev models.Event, skip 
 		// To avoid two Recv calls for one logical "done", we emit the usage
 		// event immediately and stash the stop reason for the message_stop.
 		s.pendingStopReason = mapStopReason(md.Delta.StopReason)
+		// Emit only OutputTokens here. message_start already reported the
+		// authoritative input/cache figures; message_delta's usage is cumulative,
+		// so re-adding its input/cache (non-zero only in server-tool edge cases)
+		// would double-count them. Keeping the two signals disjoint preserves the
+		// accumulate contract: start(input) + delta(output) = the true totals.
 		return models.Event{
 			Kind: models.KindUsage,
 			Usage: &models.Usage{
-				InputTokens:      md.Usage.InputTokens,
-				OutputTokens:     md.Usage.OutputTokens,
-				CacheReadTokens:  md.Usage.CacheReadInputTokens,
-				CacheWriteTokens: md.Usage.CacheCreationInputTokens,
+				OutputTokens: md.Usage.OutputTokens,
 			},
 		}, false, nil
 
