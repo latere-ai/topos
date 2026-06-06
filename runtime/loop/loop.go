@@ -200,7 +200,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 			ev, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr == io.EOF {
+				if errors.Is(recvErr, io.EOF) {
 					break
 				}
 				stream.Close()
@@ -350,9 +350,9 @@ func executeToolCall(
 		}, nil
 	}
 
-	// Execute.
+	// Execute. The caller stamps tr.CallID = tc.ID on every return path, so it
+	// is not set here.
 	tr, invokeErr := tool.Invoke(ctx, phase.ModifiedInput, cfg.Sandbox, cfg.SandboxID)
-	tr.CallID = tc.ID
 
 	if invokeErr != nil || tr.IsError {
 		errStr := ""
