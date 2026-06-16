@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"latere.ai/x/agents/internal/sandbox"
 	"latere.ai/x/agents/internal/sandbox/local"
@@ -95,6 +96,31 @@ func TestExecNonzeroExit(t *testing.T) {
 	}
 	if res.ExitCode != 42 {
 		t.Fatalf("exit code = %d, want 42", res.ExitCode)
+	}
+}
+
+// TestExecCancelledReportsKilled verifies that a command terminated by context
+// cancellation is reported with Phase=="killed", not a normal "exited". Plain
+// exec.CommandContext SIGKILLs the child, which surfaces as an *exec.ExitError,
+// so ctx.Err() must be consulted before the ExitError classification.
+func TestExecCancelledReportsKilled(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+
+	sb, _ := p.Create(ctx, sandbox.CreateOptions{})
+	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+
+	runCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+
+	res, err := p.Exec(runCtx, sb.ID, sandbox.ExecOptions{
+		Argv: []string{"sleep", "5"},
+	})
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if res.Phase != "killed" {
+		t.Fatalf("phase = %q, want killed (cancelled command)", res.Phase)
 	}
 }
 

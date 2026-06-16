@@ -122,10 +122,13 @@ func (p *Provider) Exec(ctx context.Context, id string, opts sandbox.ExecOptions
 	exitCode := 0
 	if runErr != nil {
 		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		} else if ctx.Err() != nil {
+		// Check ctx first: a cancelled/timed-out command is SIGKILLed by
+		// CommandContext and surfaces as an *exec.ExitError, so the ExitError
+		// branch would otherwise mask the cancellation as a normal exit.
+		if ctx.Err() != nil {
 			phase = "killed"
+		} else if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
 		} else {
 			// command not found or similar
 			exitCode = 127
@@ -187,10 +190,13 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 		phase := "exited"
 		if waitErr != nil {
 			var exitErr *exec.ExitError
-			if errors.As(waitErr, &exitErr) {
-				exitCode = exitErr.ExitCode()
-			} else if ctx.Err() != nil {
+			// Check ctx first: a cancelled/timed-out command is SIGKILLed by
+			// CommandContext and surfaces as an *exec.ExitError, which would
+			// otherwise mask the cancellation as a normal exit.
+			if ctx.Err() != nil {
 				phase = "killed"
+			} else if errors.As(waitErr, &exitErr) {
+				exitCode = exitErr.ExitCode()
 			} else {
 				exitCode = 127
 			}
