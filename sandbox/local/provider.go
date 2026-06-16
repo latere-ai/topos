@@ -207,7 +207,6 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 		s.mu.Lock()
 		s.result.ExitCode = exitCode
 		s.result.Phase = phase
-		s.done = true
 		s.mu.Unlock()
 	}()
 
@@ -334,7 +333,6 @@ type localStream struct {
 
 	mu     sync.Mutex
 	result sandbox.ExecResult
-	done   bool
 }
 
 // Recv reads the next chunk of output from the command. Returns io.EOF when
