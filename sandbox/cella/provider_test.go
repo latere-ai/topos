@@ -688,6 +688,47 @@ func TestStreamExecCloseStopsPump(t *testing.T) {
 	}
 }
 
+// TestStreamExecSurfacesContextCancellation verifies that a streaming exec
+// cancelled/timed-out while waiting on the poll sleep surfaces the context
+// error from Recv rather than a misleading io.EOF (which the ExecStream
+// contract reserves for clean termination). The command never terminates on
+// its own (always "running") and emits no bytes, so pump unwinds via the
+// ctx.Done() branch of the poll sleep.
+func TestStreamExecSurfacesContextCancellation(t *testing.T) {
+	fs := &fakeServer{
+		tracker: &headerTracker{},
+		commandLogs: func(cursor int64) map[string]any {
+			// No bytes, never terminal: pump loops through the poll sleep.
+			return logsBody("", "running", 0, cursor)
+		},
+	}
+	srv := newFakeServer(t, fs)
+	p := newTestProvider(srv)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+
+	stream, err := p.StreamExec(ctx, testSandboxID, sandbox.ExecOptions{Argv: []string{"sleep"}})
+	if err != nil {
+		t.Fatalf("StreamExec: %v", err)
+	}
+
+	var recvErr error
+	for {
+		_, recvErr = stream.Recv()
+		if recvErr != nil {
+			break
+		}
+	}
+	if errors.Is(recvErr, io.EOF) {
+		t.Fatalf("Recv returned io.EOF on cancellation; want context error")
+	}
+	if !errors.Is(recvErr, context.DeadlineExceeded) && !errors.Is(recvErr, context.Canceled) {
+		t.Fatalf("Recv error = %v, want context.DeadlineExceeded/Canceled", recvErr)
+	}
+	_ = stream.Close()
+}
+
 // ── ReadFile / WriteFile round-trip ──────────────────────────────────────────
 
 func TestWriteFileEmbedsBase64InArgv(t *testing.T) {

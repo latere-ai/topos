@@ -565,6 +565,9 @@ func (s *execStream) pump(ctx context.Context, p *CellaSandboxProvider, sandboxI
 			select {
 			case s.ch <- chunk:
 			case <-ctx.Done():
+				s.mu.Lock()
+				s.err = ctx.Err()
+				s.mu.Unlock()
 				return
 			}
 		}
@@ -582,6 +585,9 @@ func (s *execStream) pump(ctx context.Context, p *CellaSandboxProvider, sandboxI
 		}
 		select {
 		case <-ctx.Done():
+			s.mu.Lock()
+			s.err = ctx.Err()
+			s.mu.Unlock()
 			return
 		case <-time.After(pollInterval):
 		}
