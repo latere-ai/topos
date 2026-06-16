@@ -537,7 +537,6 @@ type execStream struct {
 	closeOnce sync.Once
 	mu        sync.Mutex
 	result    sandbox.ExecResult
-	done      bool
 	err       error // transport/cancellation error, surfaced by Recv after the channel closes
 }
 
@@ -555,7 +554,6 @@ func (s *execStream) pump(ctx context.Context, p *CellaSandboxProvider, sandboxI
 			// failure) instead of being indistinguishable from a clean empty result.
 			s.mu.Lock()
 			s.err = err
-			s.done = true
 			s.mu.Unlock()
 			return
 		}
@@ -579,7 +577,6 @@ func (s *execStream) pump(ctx context.Context, p *CellaSandboxProvider, sandboxI
 				ExitCode: lr.ExitCode,
 				Phase:    lr.Phase,
 			}
-			s.done = true
 			s.mu.Unlock()
 			return
 		}
