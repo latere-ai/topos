@@ -17,7 +17,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/models"
 )
 
 // EventName is a fixed, versioned hook lifecycle event identifier.

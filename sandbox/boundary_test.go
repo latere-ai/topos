@@ -27,7 +27,7 @@ import (
 	"testing"
 )
 
-const cellaPkg = "github.com/latere-ai/topos/sandbox/cella"
+const cellaPkg = "latere.ai/x/topos/sandbox/cella"
 
 // TestSandboxPackageDoesNotImportCella parses every non-test .go file in
 // the internal/sandbox/ directory (excluding subdirectories) and asserts

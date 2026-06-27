@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/topos/billing"
-	"github.com/latere-ai/topos/harness"
-	"github.com/latere-ai/topos/harness/hooks"
+	"latere.ai/x/topos/billing"
+	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/hooks"
 )
 
 func parentCtx() harness.ParentContext {

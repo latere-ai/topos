@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/topos/models"
-	fakemodelimpl "github.com/latere-ai/topos/models/fake"
+	"latere.ai/x/topos/models"
+	fakemodelimpl "latere.ai/x/topos/models/fake"
 )
 
 // TestFakeModel_Turn1_ToolCall verifies the fake model emits a bash tool call

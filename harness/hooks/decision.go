@@ -7,7 +7,7 @@ package hooks
 import (
 	"encoding/json"
 
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/models"
 )
 
 // Verdict is the outcome of a hook decision.

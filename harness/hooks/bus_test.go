@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/latere-ai/topos/harness/hooks"
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/harness/hooks"
+	"latere.ai/x/topos/models"
 )
 
 // TestBusDispatchOrdering asserts consumers are called in registration order.

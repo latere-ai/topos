@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/topos/harness/tools"
-	"github.com/latere-ai/topos/sandbox"
-	"github.com/latere-ai/topos/sandbox/local"
+	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/sandbox"
+	"latere.ai/x/topos/sandbox/local"
 )
 
 func TestBashToolSuccessful(t *testing.T) {

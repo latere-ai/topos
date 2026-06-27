@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/latere-ai/topos/billing"
-	"github.com/latere-ai/topos/harness/hooks"
+	"latere.ai/x/topos/billing"
+	"latere.ai/x/topos/harness/hooks"
 )
 
 // Permissions is an agent's delegated authority: the scopes it holds, the tool

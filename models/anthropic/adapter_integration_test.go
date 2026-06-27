@@ -12,8 +12,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/models/anthropic"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/models/anthropic"
 )
 
 // TestIntegrationStream hits the real Anthropic API. It is gated on the

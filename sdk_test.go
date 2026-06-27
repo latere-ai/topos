@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/topos/harness/hooks"
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/harness/hooks"
+	"latere.ai/x/topos/models"
 )
 
 // --- deterministic, content-based test brain (stateless, so it composes under

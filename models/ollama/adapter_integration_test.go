@@ -12,8 +12,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/models/ollama"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/models/ollama"
 )
 
 // TestIntegrationRealOllama performs a live round-trip against a running Ollama

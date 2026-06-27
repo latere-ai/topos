@@ -1,4 +1,4 @@
-module github.com/latere-ai/topos
+module latere.ai/x/topos
 
 go 1.26
 

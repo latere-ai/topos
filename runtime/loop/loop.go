@@ -28,10 +28,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/topos/harness/hooks"
-	"github.com/latere-ai/topos/harness/tools"
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/sandbox"
+	"latere.ai/x/topos/harness/hooks"
+	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/sandbox"
 )
 
 const (

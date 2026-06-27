@@ -16,8 +16,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/sandbox"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/sandbox"
 )
 
 // Tool is the interface every agentic tool must implement.

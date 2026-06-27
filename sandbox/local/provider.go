@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/latere-ai/topos/sandbox"
+	"latere.ai/x/topos/sandbox"
 )
 
 // Provider implements [sandbox.SandboxProvider] using the local filesystem and

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/topos/sandbox"
-	"github.com/latere-ai/topos/sandbox/local"
+	"latere.ai/x/topos/sandbox"
+	"latere.ai/x/topos/sandbox/local"
 )
 
 // assertInterface ensures Provider implements SandboxProvider at compile time.

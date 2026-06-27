@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/sandbox"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/sandbox"
 )
 
 // BashTool implements the builtin "bash" tool: runs a shell command inside the

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/topos/billing"
+	"latere.ai/x/topos/billing"
 )
 
 func TestBudgetCheckAxes(t *testing.T) {

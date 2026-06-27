@@ -47,7 +47,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/models"
 )
 
 // toolsUnsupportedMarker is the substring (lower-cased) that Ollama embeds in

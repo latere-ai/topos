@@ -26,14 +26,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/latere-ai/topos/billing"
-	"github.com/latere-ai/topos/harness"
-	"github.com/latere-ai/topos/harness/hooks"
-	"github.com/latere-ai/topos/harness/tools"
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/runtime/loop"
-	"github.com/latere-ai/topos/sandbox"
-	"github.com/latere-ai/topos/sandbox/local"
+	"latere.ai/x/topos/billing"
+	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/hooks"
+	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/runtime/loop"
+	"latere.ai/x/topos/sandbox"
+	"latere.ai/x/topos/sandbox/local"
 )
 
 // Autonomy declares how a region decides its handoffs.

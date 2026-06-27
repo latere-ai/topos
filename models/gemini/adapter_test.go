@@ -8,8 +8,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/models/gemini"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/models/gemini"
 )
 
 // TestNotImplemented verifies that the Gemini stub compiles and returns the

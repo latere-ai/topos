@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/models/anthropic"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/models/anthropic"
 )
 
 // ---------------------------------------------------------------------------

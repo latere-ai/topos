@@ -50,7 +50,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/models"
 )
 
 const (

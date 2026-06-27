@@ -12,7 +12,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/models"
 )
 
 // Adapter is a placeholder for the OpenAI chat-completion adapter.

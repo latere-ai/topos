@@ -8,8 +8,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/latere-ai/topos/models"
-	"github.com/latere-ai/topos/models/openai"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/models/openai"
 )
 
 // TestNotImplemented verifies that the OpenAI stub compiles and returns the

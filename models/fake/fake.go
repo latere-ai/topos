@@ -21,7 +21,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/latere-ai/topos/models"
+	"latere.ai/x/topos/models"
 )
 
 // Model is the deterministic fake model.
