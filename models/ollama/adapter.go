@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package ollama implements the [models.Model] interface against the Ollama
 // local inference server using the /api/chat streaming endpoint.
 //
@@ -43,7 +47,7 @@ import (
 	"strings"
 	"sync"
 
-	"latere.ai/x/agents/internal/models"
+	"github.com/latere-ai/topos/models"
 )
 
 // toolsUnsupportedMarker is the substring (lower-cased) that Ollama embeds in

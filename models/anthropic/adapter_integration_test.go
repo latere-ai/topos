@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 //go:build integration
 
 package anthropic_test
@@ -8,8 +12,8 @@ import (
 	"os"
 	"testing"
 
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/models/anthropic"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/models/anthropic"
 )
 
 // TestIntegrationStream hits the real Anthropic API. It is gated on the

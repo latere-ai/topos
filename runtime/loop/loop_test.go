@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package loop_test
 
 import (
@@ -9,12 +13,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"latere.ai/x/agents/internal/harness/hooks"
-	"latere.ai/x/agents/internal/harness/tools"
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/runtime/loop"
-	"latere.ai/x/agents/internal/sandbox"
-	"latere.ai/x/agents/internal/sandbox/local"
+	"github.com/latere-ai/topos/harness/hooks"
+	"github.com/latere-ai/topos/harness/tools"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/runtime/loop"
+	"github.com/latere-ai/topos/sandbox"
+	"github.com/latere-ai/topos/sandbox/local"
 )
 
 // fakeModel produces a canned two-turn response:

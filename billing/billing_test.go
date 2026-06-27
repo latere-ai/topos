@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package billing_test
 
 import (
@@ -10,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/agents/internal/billing"
+	"github.com/latere-ai/topos/billing"
 )
 
 func TestBudgetCheckAxes(t *testing.T) {

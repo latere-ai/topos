@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package tools defines the Tool interface and registry for the Topos agentic
 // loop's governed tool surface.
 //
@@ -12,8 +16,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/sandbox"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/sandbox"
 )
 
 // Tool is the interface every agentic tool must implement.

@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package local implements [sandbox.SandboxProvider] using stdlib os/exec and
 // temp directories. It is the zero-dependency fallback for local development
 // and tests — no Cella required.
@@ -24,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"latere.ai/x/agents/internal/sandbox"
+	"github.com/latere-ai/topos/sandbox"
 )
 
 // Provider implements [sandbox.SandboxProvider] using the local filesystem and

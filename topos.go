@@ -1,4 +1,8 @@
-// Package sdk is the public, embeddable surface of the Topos agent runtime.
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
+// Package topos is the public, embeddable surface of the Topos agent runtime.
 //
 // A foreign Go module (the first consumer is latere.ai/x/wallfacer, running
 // agents locally and in-process) imports this package to define agents, compose
@@ -14,7 +18,7 @@
 // `delegate` tool registered into the loop whose Invoke performs a real attenuated
 // Spawner spawn, runs the chosen peer as a nested loop, and returns its result into
 // the parent transcript. See specs/architecture/agent-sdk-mesh-foundation.md.
-package sdk
+package topos
 
 import (
 	"context"
@@ -22,14 +26,14 @@ import (
 	"fmt"
 	"strings"
 
-	"latere.ai/x/agents/internal/billing"
-	"latere.ai/x/agents/internal/harness"
-	"latere.ai/x/agents/internal/harness/hooks"
-	"latere.ai/x/agents/internal/harness/tools"
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/runtime/loop"
-	"latere.ai/x/agents/internal/sandbox"
-	"latere.ai/x/agents/internal/sandbox/local"
+	"github.com/latere-ai/topos/billing"
+	"github.com/latere-ai/topos/harness"
+	"github.com/latere-ai/topos/harness/hooks"
+	"github.com/latere-ai/topos/harness/tools"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/runtime/loop"
+	"github.com/latere-ai/topos/sandbox"
+	"github.com/latere-ai/topos/sandbox/local"
 )
 
 // Autonomy declares how a region decides its handoffs.
@@ -149,7 +153,7 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 	p := local.New()
 	sb, err := p.Create(ctx, sandbox.CreateOptions{})
 	if err != nil {
-		return RunResult{}, fmt.Errorf("sdk: create sandbox: %w", err)
+		return RunResult{}, fmt.Errorf("topos: create sandbox: %w", err)
 	}
 	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
 
@@ -159,7 +163,7 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 	case Pinned:
 		return r.runPinned(ctx, p, sb.ID, region, task)
 	default:
-		return RunResult{}, fmt.Errorf("sdk: unknown autonomy %q", region.Autonomy)
+		return RunResult{}, fmt.Errorf("topos: unknown autonomy %q", region.Autonomy)
 	}
 }
 

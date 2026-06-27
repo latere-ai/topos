@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package tools
 
 import (
@@ -6,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/sandbox"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/sandbox"
 )
 
 // BashTool implements the builtin "bash" tool: runs a shell command inside the

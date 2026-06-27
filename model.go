@@ -1,12 +1,16 @@
-package sdk
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
+package topos
 
 import (
 	"context"
 	"fmt"
 
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/models/anthropic"
-	"latere.ai/x/agents/internal/models/fake"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/models/anthropic"
+	"github.com/latere-ai/topos/models/fake"
 )
 
 // ModelKind selects how the SDK reaches a model. The model itself is always the
@@ -47,7 +51,7 @@ func buildModel(opts ModelOptions) (models.Model, error) {
 		return fake.New(), nil
 	case ModelLux, ModelDirect:
 		if opts.Provider != "" && opts.Provider != "anthropic" {
-			return nil, fmt.Errorf("sdk: model provider %q not yet supported (M1: anthropic-wire only)", opts.Provider)
+			return nil, fmt.Errorf("topos: model provider %q not yet supported (M1: anthropic-wire only)", opts.Provider)
 		}
 		var aopts []anthropic.Option
 		if opts.Model != "" {
@@ -60,6 +64,6 @@ func buildModel(opts ModelOptions) (models.Model, error) {
 		// when a BearerSource supplies a rotating token).
 		return anthropic.New(opts.APIKey, opts.BaseURL, aopts...), nil
 	default:
-		return nil, fmt.Errorf("sdk: unknown model kind %q", opts.Kind)
+		return nil, fmt.Errorf("topos: unknown model kind %q", opts.Kind)
 	}
 }

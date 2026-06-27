@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package tools_test
 
 import (
@@ -6,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"latere.ai/x/agents/internal/harness/tools"
-	"latere.ai/x/agents/internal/sandbox"
-	"latere.ai/x/agents/internal/sandbox/local"
+	"github.com/latere-ai/topos/harness/tools"
+	"github.com/latere-ai/topos/sandbox"
+	"github.com/latere-ai/topos/sandbox/local"
 )
 
 func TestBashToolSuccessful(t *testing.T) {

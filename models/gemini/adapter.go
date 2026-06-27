@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package gemini will implement the [models.Model] interface against the
 // Google Gemini GenerateContent API. The adapter body is a follow-up spec;
 // this package exists to make the interface set visible and to ensure the
@@ -8,7 +12,7 @@ import (
 	"context"
 	"errors"
 
-	"latere.ai/x/agents/internal/models"
+	"github.com/latere-ai/topos/models"
 )
 
 // Adapter is a placeholder for the Gemini chat-completion adapter.

@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package harness_test
 
 import (
@@ -5,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/agents/internal/billing"
-	"latere.ai/x/agents/internal/harness"
-	"latere.ai/x/agents/internal/harness/hooks"
+	"github.com/latere-ai/topos/billing"
+	"github.com/latere-ai/topos/harness"
+	"github.com/latere-ai/topos/harness/hooks"
 )
 
 func parentCtx() harness.ParentContext {

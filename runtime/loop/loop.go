@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package loop implements the Topos native agentic turn driver.
 //
 // The loop takes a model, a sandbox, a tool registry, a hook bus, and an
@@ -24,10 +28,10 @@ import (
 	"strings"
 	"time"
 
-	"latere.ai/x/agents/internal/harness/hooks"
-	"latere.ai/x/agents/internal/harness/tools"
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/sandbox"
+	"github.com/latere-ai/topos/harness/hooks"
+	"github.com/latere-ai/topos/harness/tools"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/sandbox"
 )
 
 const (

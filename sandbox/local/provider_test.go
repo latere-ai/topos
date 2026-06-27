@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package local_test
 
 import (
@@ -6,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/agents/internal/sandbox"
-	"latere.ai/x/agents/internal/sandbox/local"
+	"github.com/latere-ai/topos/sandbox"
+	"github.com/latere-ai/topos/sandbox/local"
 )
 
 // assertInterface ensures Provider implements SandboxProvider at compile time.

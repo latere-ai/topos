@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package fake provides a deterministic models.Model implementation for local
 // development and tests. It requires no external services.
 //
@@ -17,7 +21,7 @@ import (
 	"io"
 	"sync"
 
-	"latere.ai/x/agents/internal/models"
+	"github.com/latere-ai/topos/models"
 )
 
 // Model is the deterministic fake model.

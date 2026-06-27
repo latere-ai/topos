@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package billing implements budget enforcement and the per-session cost join.
 // Budgets are independent of permissions — permission says *can*, budget says
 // *how much*. The model-spend ceiling is not re-implemented here: it is the

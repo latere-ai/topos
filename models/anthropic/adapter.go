@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package anthropic implements the [models.Model] interface against the
 // Anthropic Messages API using streaming SSE and tool use.
 //
@@ -46,7 +50,7 @@ import (
 	"strings"
 	"sync"
 
-	"latere.ai/x/agents/internal/models"
+	"github.com/latere-ai/topos/models"
 )
 
 const (

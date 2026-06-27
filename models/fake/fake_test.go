@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package fake_test
 
 import (
@@ -6,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"latere.ai/x/agents/internal/models"
-	fakemodelimpl "latere.ai/x/agents/internal/models/fake"
+	"github.com/latere-ai/topos/models"
+	fakemodelimpl "github.com/latere-ai/topos/models/fake"
 )
 
 // TestFakeModel_Turn1_ToolCall verifies the fake model emits a bash tool call

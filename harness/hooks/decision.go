@@ -1,9 +1,13 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package hooks
 
 import (
 	"encoding/json"
 
-	"latere.ai/x/agents/internal/models"
+	"github.com/latere-ai/topos/models"
 )
 
 // Verdict is the outcome of a hook decision.

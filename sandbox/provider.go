@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package sandbox defines the SandboxProvider interface — the single
 // abstraction boundary between all upstream Topos code (control plane,
 // harness, tools) and any sandbox execution backend.

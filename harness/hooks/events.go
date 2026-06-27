@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 // Package hooks defines the Topos hook bus — a typed, ordered, registerable
 // event bus that implements the Claude Code hook lifecycle as the extensibility
 // contract for the Topos agentic loop.
@@ -13,7 +17,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"latere.ai/x/agents/internal/models"
+	"github.com/latere-ai/topos/models"
 )
 
 // EventName is a fixed, versioned hook lifecycle event identifier.

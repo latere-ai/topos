@@ -1,4 +1,8 @@
-package sdk
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
+package topos
 
 import (
 	"context"
@@ -7,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"latere.ai/x/agents/internal/harness/hooks"
-	"latere.ai/x/agents/internal/models"
+	"github.com/latere-ai/topos/harness/hooks"
+	"github.com/latere-ai/topos/models"
 )
 
 // --- deterministic, content-based test brain (stateless, so it composes under

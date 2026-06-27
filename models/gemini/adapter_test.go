@@ -1,11 +1,15 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package gemini_test
 
 import (
 	"context"
 	"testing"
 
-	"latere.ai/x/agents/internal/models"
-	"latere.ai/x/agents/internal/models/gemini"
+	"github.com/latere-ai/topos/models"
+	"github.com/latere-ai/topos/models/gemini"
 )
 
 // TestNotImplemented verifies that the Gemini stub compiles and returns the

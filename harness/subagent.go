@@ -1,3 +1,7 @@
+// Copyright 2026 The Latere Authors. All rights reserved.
+// Use of this source code is governed by an Apache-2.0
+// license that can be found in the LICENSE file.
+
 package harness
 
 import (
@@ -5,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"latere.ai/x/agents/internal/billing"
-	"latere.ai/x/agents/internal/harness/hooks"
+	"github.com/latere-ai/topos/billing"
+	"github.com/latere-ai/topos/harness/hooks"
 )
 
 // Permissions is an agent's delegated authority: the scopes it holds, the tool
