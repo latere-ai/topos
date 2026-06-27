@@ -7,11 +7,7 @@ import "strings"
 // dynamic agent sees; whom it may actually message stays capability-gated by the
 // delegate tool (a peer not in this set is refused).
 func (r Region) Directory() []PeerCard {
-	cards := make([]PeerCard, 0, len(r.Peers))
-	for _, p := range r.Peers {
-		cards = append(cards, PeerCard{Name: p.Name, Role: p.Role, Description: p.Description})
-	}
-	return cards
+	return toCards(r.Peers)
 }
 
 // renderDirectory formats a region's directory for injection into a dynamic

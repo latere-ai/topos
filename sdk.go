@@ -63,10 +63,24 @@ type PeerCard struct {
 	Description string
 }
 
+// Topology decides whom a dynamic agent may delegate to.
+type Topology string
+
+const (
+	// OrchestratorWorker (default) — only the entry agent delegates to peers; a
+	// delegated peer runs without a delegate tool. The safe default the
+	// architecture memo argues for.
+	OrchestratorWorker Topology = "orchestrator-worker"
+	// Mesh — any agent may delegate to a peer (recursive), bounded by
+	// Options.MaxHandoffDepth. Opt-in.
+	Mesh Topology = "mesh"
+)
+
 // Region is one part of a run with a single autonomy mode. One graph mixes pinned
 // and dynamic regions; M1 runs a single region.
 type Region struct {
 	Autonomy Autonomy
+	Topology Topology    // dynamic only; default OrchestratorWorker
 	Entry    AgentSpec   // the agent that starts the region
 	Peers    []AgentSpec // discoverable peers (dynamic) or the ordered chain (pinned)
 }
@@ -104,9 +118,10 @@ type RunResult struct {
 
 // Options configure a Runner.
 type Options struct {
-	SessionID string       // stable run id; deterministic child ids derive from it
-	Model     ModelOptions // the brain connection (Lux / direct / fake)
-	BudgetUSD float64      // region spend cap, sub-allocated to delegates
+	SessionID       string       // stable run id; deterministic child ids derive from it
+	Model           ModelOptions // the brain connection (Lux / direct / fake)
+	BudgetUSD       float64      // region spend cap, sub-allocated to delegates
+	MaxHandoffDepth int          // max delegation depth in a Mesh region (default 3); bounds recursion
 }
 
 // Runner executes regions in-process through the real agentic loop, against the
@@ -155,8 +170,24 @@ func (r *Runner) session() string {
 	return r.opts.SessionID
 }
 
-// runDynamic runs the entry agent through the loop with a `delegate` tool over the
-// region's peer directory. The model drives delegation; the tool does the spawn.
+// dynRun bundles the inputs for running one dynamic agent (the entry or a delegated
+// peer) so the recursive runAgent / delegate path stays readable.
+type dynRun struct {
+	sb          sandbox.SandboxProvider
+	sandboxID   string
+	agent       AgentSpec
+	parent      harness.ParentContext // context used to spawn THIS agent's children
+	dir         []AgentSpec
+	topology    Topology
+	depth       int
+	task        string
+	lin         *Lineage
+	nodeID      string // this agent's lineage node id
+	loopSession string // loop.Config.SessionID for this agent
+	path        string // delegation label path ("" for the entry), keeps child ids unique
+}
+
+// runDynamic runs the entry agent, then recurses through delegations.
 func (r *Runner) runDynamic(ctx context.Context, sb sandbox.SandboxProvider, sandboxID string, region Region, task string) (RunResult, error) {
 	sess := r.session()
 	entryID := sess + "/" + region.Entry.Name
@@ -164,41 +195,55 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.SandboxProvider, san
 		ID: entryID, Name: region.Entry.Name, Role: region.Entry.Role,
 		Status: "running", Grants: region.Entry.Tools, Sandbox: sandboxID,
 	}}}
-
 	parent := harness.ParentContext{
 		SessionID: sess,
 		AgentID:   region.Entry.Name,
-		Perms:     harness.Permissions{Scopes: region.Entry.Scopes, Tools: region.Entry.Tools},
+		Perms:     harness.Permissions{Scopes: region.Entry.Scopes, Tools: region.Entry.Tools, AllowRecurse: region.Topology == Mesh},
 		Budget:    billing.Budget{LimitUSD: r.opts.BudgetUSD},
 	}
-
-	reg := tools.Builtins()
-	reg.Register(&delegateTool{
-		model: r.model, dir: region.Peers, spawner: r.spawner,
-		parent: parent, entryID: entryID, lineage: lin,
-	})
-
-	// Inject the peer directory into the entry agent's system prompt so the model
-	// discovers peers from their descriptions (mesh discovery, M2).
-	sysPrompt := composeSystem(region.Entry.SystemPrompt, renderDirectory(region.Directory()))
-
-	res, err := loop.Run(ctx, loop.Config{
-		Model:        r.model,
-		Sandbox:      sb,
-		SandboxID:    sandboxID,
-		Tools:        reg,
-		Bus:          r.bus,
-		SessionID:    sess,
-		AgentID:      region.Entry.Name,
-		SystemPrompt: sysPrompt,
-		UserPrompt:   task,
+	final, err := r.runAgent(ctx, dynRun{
+		sb: sb, sandboxID: sandboxID, agent: region.Entry, parent: parent,
+		dir: region.Peers, topology: region.Topology, depth: 0,
+		task: task, lin: lin, nodeID: entryID, loopSession: sess, path: "",
 	})
 	if err != nil {
 		setStatus(lin, entryID, "failed")
 		return RunResult{Lineage: *lin}, err
 	}
 	setStatus(lin, entryID, "done")
-	return RunResult{Lineage: *lin, Final: res.FinalText}, nil
+	return RunResult{Lineage: *lin, Final: final}, nil
+}
+
+// runAgent runs one dynamic agent through the loop. It offers the `delegate` tool
+// only when the agent may delegate: the entry always may (orchestrator+worker); a
+// peer may only under Mesh topology; and never at or past MaxHandoffDepth. That
+// depth gate is what bounds recursion and prevents runaway fan-out.
+func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
+	reg := tools.Builtins()
+	sysPrompt := rc.agent.SystemPrompt
+	canDelegate := len(rc.dir) > 0 && rc.depth < r.maxDepth() && (rc.depth == 0 || rc.topology == Mesh)
+	if canDelegate {
+		reg.Register(&delegateTool{
+			runner: r, dir: rc.dir, parent: rc.parent, topology: rc.topology,
+			depth: rc.depth, entryID: rc.nodeID, lineage: rc.lin, path: rc.path,
+		})
+		sysPrompt = composeSystem(sysPrompt, renderDirectory(toCards(rc.dir)))
+	}
+	res, err := loop.Run(ctx, loop.Config{
+		Model:        r.model,
+		Sandbox:      rc.sb,
+		SandboxID:    rc.sandboxID,
+		Tools:        reg,
+		Bus:          r.bus,
+		SessionID:    rc.loopSession,
+		AgentID:      rc.agent.Name,
+		SystemPrompt: sysPrompt,
+		UserPrompt:   rc.task,
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.FinalText, nil
 }
 
 // runPinned runs a deterministic chain: entry then each peer in order, each as its
@@ -240,16 +285,18 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.SandboxProvider, sand
 }
 
 // delegateTool is the agents-as-tools handoff primitive: it looks up a peer in the
-// directory, spawns it with attenuated authority, runs the peer as a nested loop,
-// records the lineage, and returns the peer's output as the tool result. A peer
-// runs without a delegate tool (single-level handoff in M1; recursion is later).
+// directory, spawns it with attenuated authority (granting recursion only under
+// Mesh with depth budget left), runs the peer via runAgent in its own sandbox,
+// records the lineage, and returns the peer's output as the tool result.
 type delegateTool struct {
-	model   models.Model
-	dir     []AgentSpec
-	spawner *harness.Spawner
-	parent  harness.ParentContext
-	entryID string
-	lineage *Lineage
+	runner   *Runner
+	dir      []AgentSpec
+	parent   harness.ParentContext
+	topology Topology
+	depth    int
+	entryID  string
+	lineage  *Lineage
+	path     string // the delegating agent's label path; child labels extend it
 }
 
 func (d *delegateTool) Name() string { return "delegate" }
@@ -280,46 +327,52 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 		return models.ToolResult{IsError: true, Content: "unknown peer: " + args.Peer}, nil
 	}
 
-	child, err := d.spawner.Spawn(ctx, d.parent, harness.SpawnRequest{
-		Label: peer.Name, Scopes: peer.Scopes, Tools: peer.Tools, Budget: d.parent.Budget,
+	// A path-prefixed label keeps child ids unique across the run: the harness's
+	// deterministic id is <rootSession>/sub/<label> (flat, via AsParent), so a peer
+	// reused at different depths would collide without the path.
+	childLabel := peer.Name
+	if d.path != "" {
+		childLabel = d.path + "." + peer.Name
+	}
+
+	// Grant the child recursion only under Mesh with depth budget left to delegate
+	// again; the Spawner enforces the grant, and runAgent withholds the delegate
+	// tool past the bound.
+	allowRecurse := d.topology == Mesh && d.depth+1 < d.runner.maxDepth()
+	child, err := d.runner.spawner.Spawn(ctx, d.parent, harness.SpawnRequest{
+		Label: childLabel, Scopes: peer.Scopes, Tools: peer.Tools,
+		Budget: d.parent.Budget, AllowRecurse: allowRecurse,
 	})
 	if err != nil {
 		return models.ToolResult{IsError: true, Content: "spawn failed: " + err.Error()}, nil
 	}
 
-	// Per-child sandbox (M3): the peer runs in its own sandbox, isolated from the
-	// parent's, from the same provider. A failure to provision is the child's, not
-	// the parent's.
+	// Per-child sandbox (M3): the peer runs in its own sandbox. A provisioning
+	// failure is the child's, not the parent's.
 	box, err := sb.Create(ctx, sandbox.CreateOptions{})
 	if err != nil {
 		d.appendChild(child, peer, "failed", "")
-		d.spawner.Stop(ctx, child)
+		d.runner.spawner.Stop(ctx, child)
 		return models.ToolResult{IsError: true, Content: "sandbox create failed: " + err.Error()}, nil
 	}
 	defer sb.Destroy(ctx, box.ID) //nolint:errcheck
 	d.appendChild(child, peer, "running", box.ID)
 
-	// Run the peer as a real nested loop (its session id = the deterministic child id).
-	peerRes, err := loop.Run(ctx, loop.Config{
-		Model:        d.model,
-		Sandbox:      sb,
-		SandboxID:    box.ID,
-		Tools:        tools.Builtins(),
-		Bus:          hooks.New(),
-		SessionID:    child.ID,
-		AgentID:      peer.Name,
-		SystemPrompt: peer.SystemPrompt,
-		UserPrompt:   args.Task,
+	// Run the peer recursively: under Mesh it may itself delegate, until the bound.
+	peerFinal, err := d.runner.runAgent(ctx, dynRun{
+		sb: sb, sandboxID: box.ID, agent: peer, parent: child.AsParent(),
+		dir: d.dir, topology: d.topology, depth: d.depth + 1,
+		task: args.Task, lin: d.lineage, nodeID: child.ID, loopSession: child.ID, path: childLabel,
 	})
 	if err != nil {
 		setStatus(d.lineage, child.ID, "failed")
-		d.spawner.Stop(ctx, child)
-		return models.ToolResult{IsError: true, Content: "peer loop failed: " + err.Error()}, nil
+		d.runner.spawner.Stop(ctx, child)
+		return models.ToolResult{IsError: true, Content: "peer run failed: " + err.Error()}, nil
 	}
 	setStatus(d.lineage, child.ID, "done")
-	d.spawner.Stop(ctx, child)
+	d.runner.spawner.Stop(ctx, child)
 	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: child.ID, To: d.entryID, Kind: "deliver"})
-	return models.ToolResult{Content: peerRes.FinalText}, nil
+	return models.ToolResult{Content: peerFinal}, nil
 }
 
 // appendChild records a delegated peer as a lineage node (with the sandbox it ran
@@ -348,4 +401,20 @@ func setStatus(lin *Lineage, id, status string) {
 			return
 		}
 	}
+}
+
+// maxDepth is the recursion bound for Mesh delegation (default 3).
+func (r *Runner) maxDepth() int {
+	if r.opts.MaxHandoffDepth > 0 {
+		return r.opts.MaxHandoffDepth
+	}
+	return 3
+}
+
+func toCards(in []AgentSpec) []PeerCard {
+	cards := make([]PeerCard, 0, len(in))
+	for _, a := range in {
+		cards = append(cards, PeerCard{Name: a.Name, Role: a.Role, Description: a.Description})
+	}
+	return cards
 }

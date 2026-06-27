@@ -234,6 +234,96 @@ func TestPinnedChainRunsInOrder(t *testing.T) {
 	}
 }
 
+// greedyBrain always delegates to a fixed peer whenever it holds a delegate tool;
+// otherwise it finishes. It drives recursion as hard as possible, so termination
+// depends entirely on the depth bound / topology gate.
+type greedyBrain struct{ peer string }
+
+func (b greedyBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+	for _, m := range req.Messages {
+		if m.Role == "tool" {
+			return &cannedStream{events: endTurn("done")}, nil
+		}
+	}
+	for _, td := range req.Tools {
+		if td.Name == "delegate" {
+			return &cannedStream{events: delegateTurn(b.peer, "sub")}, nil
+		}
+	}
+	return &cannedStream{events: endTurn("leaf")}, nil
+}
+
+func meshRegion(topo Topology) Region {
+	return Region{
+		Autonomy: Dynamic,
+		Topology: topo,
+		Entry:    AgentSpec{Name: "lead", Role: "lead", Tools: []string{"x"}, Scopes: []string{"s"}},
+		Peers:    []AgentSpec{{Name: "worker", Role: "worker", Description: "does work", Tools: []string{"x"}, Scopes: []string{"s"}}},
+	}
+}
+
+func greedyRunner(t *testing.T, maxDepth int) *Runner {
+	t.Helper()
+	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}, BudgetUSD: 5, MaxHandoffDepth: maxDepth})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	r.model = greedyBrain{peer: "worker"}
+	return r
+}
+
+func TestOrchestratorWorkerStopsAfterOneLevel(t *testing.T) {
+	// Even a brain that always delegates only gets one level: peers hold no delegate
+	// tool under orchestrator+worker.
+	r := greedyRunner(t, 5)
+	res, err := r.Run(context.Background(), meshRegion(OrchestratorWorker), "go")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Lineage.Nodes) != 2 {
+		t.Fatalf("orchestrator+worker should delegate exactly one level; got %d nodes: %+v", len(res.Lineage.Nodes), res.Lineage.Nodes)
+	}
+}
+
+func TestMeshRecursionBoundedByMaxDepth(t *testing.T) {
+	// Mesh + a greedy brain would recurse forever; the depth bound stops it. With
+	// maxDepth=2: lead(0) -> worker(1) -> worker(2, no tool, stops) = 3 nodes.
+	r := greedyRunner(t, 2)
+	res, err := r.Run(context.Background(), meshRegion(Mesh), "go")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Lineage.Nodes) != 3 {
+		t.Fatalf("mesh maxDepth=2 should produce 3 nodes, got %d: %+v", len(res.Lineage.Nodes), res.Lineage.Nodes)
+	}
+	// Path-prefixed labels keep ids unique despite the repeated agent name.
+	seen := map[string]bool{}
+	for _, n := range res.Lineage.Nodes {
+		if seen[n.ID] {
+			t.Errorf("duplicate node id %q — path-prefixing failed", n.ID)
+		}
+		seen[n.ID] = true
+	}
+	want := map[string]bool{"run-1/lead": true, "run-1/sub/worker": true, "run-1/sub/worker.worker": true}
+	for _, n := range res.Lineage.Nodes {
+		if !want[n.ID] {
+			t.Errorf("unexpected node id %q", n.ID)
+		}
+	}
+}
+
+func TestMeshDepthScalesWithBound(t *testing.T) {
+	// maxDepth=3 reaches one level deeper than maxDepth=2.
+	r := greedyRunner(t, 3)
+	res, err := r.Run(context.Background(), meshRegion(Mesh), "go")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Lineage.Nodes) != 4 {
+		t.Fatalf("mesh maxDepth=3 should produce 4 nodes, got %d: %+v", len(res.Lineage.Nodes), res.Lineage.Nodes)
+	}
+}
+
 func TestBuildModelKinds(t *testing.T) {
 	// Fake builds without network.
 	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelFake}}); err != nil {
