@@ -198,7 +198,7 @@ func (a *Adapter) Stream(ctx context.Context, req models.Request) (models.Stream
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, &APIError{Status: resp.StatusCode, Body: string(body)}
 	}
 

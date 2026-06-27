@@ -45,7 +45,7 @@ type Config struct {
 	// Model is the chat-completion backend.
 	Model models.Model
 	// Sandbox is the execution backend.
-	Sandbox sandbox.SandboxProvider
+	Sandbox sandbox.Provider
 	// SandboxID is the pre-provisioned sandbox instance.
 	SandboxID string
 	// Tools is the tool registry. Tools.Defs() are injected into each
@@ -198,7 +198,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 		for {
 			if ctx.Err() != nil {
-				stream.Close()
+				_ = stream.Close()
 				return nil, ctx.Err()
 			}
 
@@ -207,7 +207,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 				if errors.Is(recvErr, io.EOF) {
 					break
 				}
-				stream.Close()
+				_ = stream.Close()
 				return nil, fmt.Errorf("loop: stream recv (iter %d): %w", iter, recvErr)
 			}
 
@@ -230,7 +230,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 				stopReason = ev.StopReason
 			}
 		}
-		stream.Close()
+		_ = stream.Close()
 
 		// Accumulate usage.
 		result.TotalUsage.InputTokens += turnUsage.InputTokens

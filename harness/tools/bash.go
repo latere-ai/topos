@@ -50,7 +50,7 @@ func (b *BashTool) Def() models.ToolDef {
 
 // Invoke executes the bash command in the sandbox.
 // A non-zero exit code is returned as a ToolResult with IsError=true.
-func (b *BashTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox.SandboxProvider, sandboxID string) (models.ToolResult, error) {
+func (b *BashTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox.Provider, sandboxID string) (models.ToolResult, error) {
 	var inp bashInput
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return models.ToolResult{

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -171,5 +172,75 @@ func TestJoinNilLegsContributeZero(t *testing.T) {
 	}
 	if v.TotalUSD != 2 {
 		t.Fatalf("total with nil legs = %v, want 2", v.TotalUSD)
+	}
+}
+
+// errLeg is a LegReader that always fails — used to verify per-leg error wrapping.
+type errLeg struct{ err error }
+
+func (e errLeg) LegCost(context.Context, string) (billing.Usage, error) {
+	return billing.Usage{}, e.err
+}
+
+func TestJoinPropagatesLegErrors(t *testing.T) {
+	boom := errors.New("upstream down")
+	ok := fakeLeg{billing.Usage{USD: 1}}
+	cases := []struct {
+		name string
+		j    *billing.Joiner
+		want string // substring identifying which leg failed
+	}{
+		{"pod-time", billing.NewJoiner(errLeg{boom}, ok, ok), "pod-time leg"},
+		{"sandbox", billing.NewJoiner(ok, errLeg{boom}, ok), "sandbox leg"},
+		{"model", billing.NewJoiner(ok, ok, errLeg{boom}), "model leg"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v, err := c.j.Session(context.Background(), "sess_1")
+			if err == nil {
+				t.Fatalf("expected error from %s leg, got view %+v", c.name, v)
+			}
+			if !errors.Is(err, boom) {
+				t.Fatalf("error %v does not wrap the underlying leg error", err)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %q must identify the %q leg", err.Error(), c.want)
+			}
+			if v != (billing.CostView{}) {
+				t.Fatalf("on error, view must be zero, got %+v", v)
+			}
+		})
+	}
+}
+
+func TestEmitPodSecondsBuildRequestError(t *testing.T) {
+	// A control character in the base URL makes request construction fail.
+	r := billing.NewPodTimeReporter("http://\x7f", "", nil)
+	if err := r.EmitPodSeconds(context.Background(), "sess_1", 30, "k"); err == nil {
+		t.Fatal("expected build-request error from malformed URL")
+	}
+}
+
+func TestEmitPodSecondsTransportError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close() // listener closed → the next request's transport fails.
+
+	r := billing.NewPodTimeReporter(url, "", nil)
+	if err := r.EmitPodSeconds(context.Background(), "sess_1", 30, "k"); err == nil {
+		t.Fatal("expected transport error against a closed server")
+	}
+}
+
+func TestEmitPodSecondsNon2xxStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r := billing.NewPodTimeReporter(srv.URL, "tok", nil)
+	err := r.EmitPodSeconds(context.Background(), "sess_1", 30, "k")
+	if err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("err = %v, want a non-2xx (500) error", err)
 	}
 }

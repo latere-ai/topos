@@ -120,12 +120,12 @@ func TestDynamicDelegateBuildsLineage(t *testing.T) {
 	if len(res.Lineage.Nodes) != 2 {
 		t.Fatalf("nodes = %+v, want 2", res.Lineage.Nodes)
 	}
-	if res.Lineage.Nodes[1].ID != "run-1/sub/reviewer" || res.Lineage.Nodes[1].Status != "done" {
+	if res.Lineage.Nodes[1].ID != "run-1/sub/reviewer" || res.Lineage.Nodes[1].Status != StatusDone {
 		t.Errorf("child node = %+v", res.Lineage.Nodes[1])
 	}
 	wantEdges := []LineageEdge{
-		{From: "run-1/lead", To: "run-1/sub/reviewer", Kind: "delegate"},
-		{From: "run-1/sub/reviewer", To: "run-1/lead", Kind: "deliver"},
+		{From: "run-1/lead", To: "run-1/sub/reviewer", Kind: EdgeDelegate},
+		{From: "run-1/sub/reviewer", To: "run-1/lead", Kind: EdgeDeliver},
 	}
 	if !reflect.DeepEqual(res.Lineage.Edges, wantEdges) {
 		t.Errorf("edges = %+v, want %+v", res.Lineage.Edges, wantEdges)
@@ -225,13 +225,13 @@ func TestPinnedChainRunsInOrder(t *testing.T) {
 	}
 	wantIDs := []string{"run-1/impl", "run-1/test", "run-1/commit"}
 	for i, n := range res.Lineage.Nodes {
-		if n.ID != wantIDs[i] || n.Status != "done" {
+		if n.ID != wantIDs[i] || n.Status != StatusDone {
 			t.Errorf("node %d = %+v, want id %s done", i, n, wantIDs[i])
 		}
 	}
 	wantEdges := []LineageEdge{
-		{From: "run-1/impl", To: "run-1/test", Kind: "next"},
-		{From: "run-1/test", To: "run-1/commit", Kind: "next"},
+		{From: "run-1/impl", To: "run-1/test", Kind: EdgeNext},
+		{From: "run-1/test", To: "run-1/commit", Kind: EdgeNext},
 	}
 	if !reflect.DeepEqual(res.Lineage.Edges, wantEdges) {
 		t.Errorf("edges = %+v, want %+v", res.Lineage.Edges, wantEdges)
@@ -370,10 +370,10 @@ func TestDynamicRunFinalIsDeterministic(t *testing.T) {
 func summarize(l Lineage) string {
 	var b strings.Builder
 	for _, n := range l.Nodes {
-		b.WriteString(n.ID + ":" + n.Status + ";")
+		b.WriteString(n.ID + ":" + string(n.Status) + ";")
 	}
 	for _, e := range l.Edges {
-		b.WriteString(e.From + "->" + e.To + ":" + e.Kind + ";")
+		b.WriteString(e.From + "->" + e.To + ":" + string(e.Kind) + ";")
 	}
 	return b.String()
 }

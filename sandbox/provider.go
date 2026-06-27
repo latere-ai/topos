@@ -2,7 +2,7 @@
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
 
-// Package sandbox defines the SandboxProvider interface — the single
+// Package sandbox defines the Provider interface — the single
 // abstraction boundary between all upstream Topos code (control plane,
 // harness, tools) and any sandbox execution backend.
 //
@@ -45,16 +45,17 @@ func (e *APIError) Error() string {
 		e.Status, e.Code, e.Message, e.RequestID)
 }
 
-// SandboxState mirrors the Cella sandbox state enum but is defined here
+// State mirrors the Cella sandbox state enum but is defined here
 // so interface consumers don't need to know about Cella.
-type SandboxState string
+type State string
 
+// Sandbox lifecycle states reported by the backend.
 const (
-	StateCreating SandboxState = "creating"
-	StateRunning  SandboxState = "running"
-	StateStopped  SandboxState = "stopped"
-	StateDeleting SandboxState = "deleting"
-	StateError    SandboxState = "error"
+	StateCreating State = "creating"
+	StateRunning  State = "running"
+	StateStopped  State = "stopped"
+	StateDeleting State = "deleting"
+	StateError    State = "error"
 )
 
 // Sandbox is a lightweight handle to a sandbox instance. It carries the
@@ -68,7 +69,7 @@ type Sandbox struct {
 	// not assign one yet, or if the caller did not request one).
 	Name string
 	// State is the last-known lifecycle state of the sandbox.
-	State SandboxState
+	State State
 	// Tier is "ephemeral" or "persistent".
 	Tier string
 	// CreatedAt is the RFC3339 creation timestamp from the backend.
@@ -165,7 +166,7 @@ type ExecStream interface {
 	Close() error
 }
 
-// SandboxProvider is the interface all Topos code uses to create and
+// Provider is the interface all Topos code uses to create and
 // operate sandbox environments. Implementations MUST be safe for
 // concurrent use.
 //
@@ -174,7 +175,7 @@ type ExecStream interface {
 //   - ErrConflict for name/id collisions (HTTP 409 from Cella).
 //   - *APIError for all other backend errors (including 5xx).
 //   - Standard library errors for local failures (ctx cancelled, etc.).
-type SandboxProvider interface {
+type Provider interface {
 	// Create provisions a new sandbox and returns a handle to it. The
 	// returned Sandbox may still be in the "creating" state; callers
 	// that need "running" state should poll HealthCheck.

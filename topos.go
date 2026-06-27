@@ -88,21 +88,41 @@ type Region struct {
 	Peers    []AgentSpec // discoverable peers (dynamic) or the ordered chain (pinned)
 }
 
+// NodeStatus is the lifecycle state of a lineage node.
+type NodeStatus string
+
+// Lifecycle states a lineage node moves through during a run.
+const (
+	StatusRunning NodeStatus = "running"
+	StatusDone    NodeStatus = "done"
+	StatusFailed  NodeStatus = "failed"
+)
+
 // LineageNode is one agent in the run graph.
 type LineageNode struct {
 	ID      string
 	Name    string
 	Role    string
-	Status  string   // "running" | "done" | "failed"
+	Status  NodeStatus
 	Grants  []string // tool families actually granted after attenuation (audit-visible)
 	Sandbox string   // the sandbox this agent ran in (a delegated peer gets its own)
 }
+
+// EdgeKind is the relationship a lineage edge represents.
+type EdgeKind string
+
+// Relationships a lineage edge can represent between two nodes.
+const (
+	EdgeDelegate EdgeKind = "delegate"
+	EdgeDeliver  EdgeKind = "deliver"
+	EdgeNext     EdgeKind = "next"
+)
 
 // LineageEdge records a relationship between two nodes.
 type LineageEdge struct {
 	From string
 	To   string
-	Kind string // "delegate" | "deliver" | "next"
+	Kind EdgeKind
 }
 
 // Lineage is the renderable run graph (who delegated/handed off to whom). Ids are
@@ -176,7 +196,7 @@ func (r *Runner) session() string {
 // dynRun bundles the inputs for running one dynamic agent (the entry or a delegated
 // peer) so the recursive runAgent / delegate path stays readable.
 type dynRun struct {
-	sb          sandbox.SandboxProvider
+	sb          sandbox.Provider
 	sandboxID   string
 	agent       AgentSpec
 	parent      harness.ParentContext // context used to spawn THIS agent's children
@@ -191,12 +211,12 @@ type dynRun struct {
 }
 
 // runDynamic runs the entry agent, then recurses through delegations.
-func (r *Runner) runDynamic(ctx context.Context, sb sandbox.SandboxProvider, sandboxID string, region Region, task string) (RunResult, error) {
+func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID string, region Region, task string) (RunResult, error) {
 	sess := r.session()
 	entryID := sess + "/" + region.Entry.Name
 	lin := &Lineage{Nodes: []LineageNode{{
 		ID: entryID, Name: region.Entry.Name, Role: region.Entry.Role,
-		Status: "running", Grants: region.Entry.Tools, Sandbox: sandboxID,
+		Status: StatusRunning, Grants: region.Entry.Tools, Sandbox: sandboxID,
 	}}}
 	parent := harness.ParentContext{
 		SessionID: sess,
@@ -210,10 +230,10 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.SandboxProvider, san
 		task: task, lin: lin, nodeID: entryID, loopSession: sess, path: "",
 	})
 	if err != nil {
-		setStatus(lin, entryID, "failed")
+		setStatus(lin, entryID, StatusFailed)
 		return RunResult{Lineage: *lin}, err
 	}
-	setStatus(lin, entryID, "done")
+	setStatus(lin, entryID, StatusDone)
 	return RunResult{Lineage: *lin, Final: final}, nil
 }
 
@@ -251,7 +271,7 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 
 // runPinned runs a deterministic chain: entry then each peer in order, each as its
 // own loop. This is the shape a static flow compiles to.
-func (r *Runner) runPinned(ctx context.Context, sb sandbox.SandboxProvider, sandboxID string, region Region, task string) (RunResult, error) {
+func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID string, region Region, task string) (RunResult, error) {
 	sess := r.session()
 	chain := append([]AgentSpec{region.Entry}, region.Peers...)
 	lin := &Lineage{}
@@ -260,10 +280,10 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.SandboxProvider, sand
 	for _, step := range chain {
 		id := sess + "/" + step.Name
 		lin.Nodes = append(lin.Nodes, LineageNode{
-			ID: id, Name: step.Name, Role: step.Role, Status: "running", Grants: step.Tools, Sandbox: sandboxID,
+			ID: id, Name: step.Name, Role: step.Role, Status: StatusRunning, Grants: step.Tools, Sandbox: sandboxID,
 		})
 		if prevID != "" {
-			lin.Edges = append(lin.Edges, LineageEdge{From: prevID, To: id, Kind: "next"})
+			lin.Edges = append(lin.Edges, LineageEdge{From: prevID, To: id, Kind: EdgeNext})
 		}
 		res, err := loop.Run(ctx, loop.Config{
 			Model:        r.model,
@@ -277,7 +297,7 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.SandboxProvider, sand
 			UserPrompt:   task,
 		})
 		if err != nil {
-			setStatus(lin, id, "failed")
+			setStatus(lin, id, StatusFailed)
 			return RunResult{Lineage: *lin}, err
 		}
 		final = res.FinalText
@@ -317,7 +337,7 @@ func (d *delegateTool) Def() models.ToolDef {
 	}
 }
 
-func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox.SandboxProvider, sandboxID string) (models.ToolResult, error) {
+func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox.Provider, sandboxID string) (models.ToolResult, error) {
 	var args struct {
 		Peer string `json:"peer"`
 		Task string `json:"task"`
@@ -354,12 +374,12 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	// failure is the child's, not the parent's.
 	box, err := sb.Create(ctx, sandbox.CreateOptions{})
 	if err != nil {
-		d.appendChild(child, peer, "failed", "")
+		d.appendChild(child, peer, StatusFailed, "")
 		d.runner.spawner.Stop(ctx, child)
 		return models.ToolResult{IsError: true, Content: "sandbox create failed: " + err.Error()}, nil
 	}
 	defer sb.Destroy(ctx, box.ID) //nolint:errcheck
-	d.appendChild(child, peer, "running", box.ID)
+	d.appendChild(child, peer, StatusRunning, box.ID)
 
 	// Run the peer recursively: under Mesh it may itself delegate, until the bound.
 	peerFinal, err := d.runner.runAgent(ctx, dynRun{
@@ -368,24 +388,24 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 		task: args.Task, lin: d.lineage, nodeID: child.ID, loopSession: child.ID, path: childLabel,
 	})
 	if err != nil {
-		setStatus(d.lineage, child.ID, "failed")
+		setStatus(d.lineage, child.ID, StatusFailed)
 		d.runner.spawner.Stop(ctx, child)
 		return models.ToolResult{IsError: true, Content: "peer run failed: " + err.Error()}, nil
 	}
-	setStatus(d.lineage, child.ID, "done")
+	setStatus(d.lineage, child.ID, StatusDone)
 	d.runner.spawner.Stop(ctx, child)
-	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: child.ID, To: d.entryID, Kind: "deliver"})
+	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: child.ID, To: d.entryID, Kind: EdgeDeliver})
 	return models.ToolResult{Content: peerFinal}, nil
 }
 
 // appendChild records a delegated peer as a lineage node (with the sandbox it ran
 // in) plus the delegate edge from the entry.
-func (d *delegateTool) appendChild(child *harness.SubAgent, peer AgentSpec, status, box string) {
+func (d *delegateTool) appendChild(child *harness.SubAgent, peer AgentSpec, status NodeStatus, box string) {
 	d.lineage.Nodes = append(d.lineage.Nodes, LineageNode{
 		ID: child.ID, Name: peer.Name, Role: peer.Role, Status: status,
 		Grants: child.Perms.Tools, Sandbox: box,
 	})
-	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: d.entryID, To: child.ID, Kind: "delegate"})
+	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: d.entryID, To: child.ID, Kind: EdgeDelegate})
 }
 
 func findAgent(in []AgentSpec, name string) (AgentSpec, bool) {
@@ -397,7 +417,7 @@ func findAgent(in []AgentSpec, name string) (AgentSpec, bool) {
 	return AgentSpec{}, false
 }
 
-func setStatus(lin *Lineage, id, status string) {
+func setStatus(lin *Lineage, id string, status NodeStatus) {
 	for i := range lin.Nodes {
 		if lin.Nodes[i].ID == id {
 			lin.Nodes[i].Status = status

@@ -2,7 +2,7 @@
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
 
-// Package local implements [sandbox.SandboxProvider] using stdlib os/exec and
+// Package local implements [sandbox.Provider] using stdlib os/exec and
 // temp directories. It is the zero-dependency fallback for local development
 // and tests — no Cella required.
 //
@@ -31,7 +31,7 @@ import (
 	"latere.ai/x/topos/sandbox"
 )
 
-// Provider implements [sandbox.SandboxProvider] using the local filesystem and
+// Provider implements [sandbox.Provider] using the local filesystem and
 // os/exec. Suitable for tests and local-dev fallback; no external services
 // required.
 type Provider struct {
@@ -129,11 +129,12 @@ func (p *Provider) Exec(ctx context.Context, id string, opts sandbox.ExecOptions
 		// Check ctx first: a cancelled/timed-out command is SIGKILLed by
 		// CommandContext and surfaces as an *exec.ExitError, so the ExitError
 		// branch would otherwise mask the cancellation as a normal exit.
-		if ctx.Err() != nil {
+		switch {
+		case ctx.Err() != nil:
 			phase = "killed"
-		} else if errors.As(runErr, &exitErr) {
+		case errors.As(runErr, &exitErr):
 			exitCode = exitErr.ExitCode()
-		} else {
+		default:
 			// command not found or similar
 			exitCode = 127
 		}
@@ -176,8 +177,8 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 	cmd.Stderr = pw
 
 	if err := cmd.Start(); err != nil {
-		pr.Close()
-		pw.Close()
+		_ = pr.Close()
+		_ = pw.Close()
 		return nil, fmt.Errorf("local sandbox: stream exec: start: %w", err)
 	}
 
@@ -189,7 +190,6 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 
 	go func() {
 		waitErr := cmd.Wait()
-		pw.Close() // signal EOF to the reader
 		exitCode := 0
 		phase := "exited"
 		if waitErr != nil {
@@ -197,11 +197,12 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 			// Check ctx first: a cancelled/timed-out command is SIGKILLed by
 			// CommandContext and surfaces as an *exec.ExitError, which would
 			// otherwise mask the cancellation as a normal exit.
-			if ctx.Err() != nil {
+			switch {
+			case ctx.Err() != nil:
 				phase = "killed"
-			} else if errors.As(waitErr, &exitErr) {
+			case errors.As(waitErr, &exitErr):
 				exitCode = exitErr.ExitCode()
-			} else {
+			default:
 				exitCode = 127
 			}
 		}
@@ -212,6 +213,10 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 		s.result.ExitCode = exitCode
 		s.result.Phase = phase
 		s.mu.Unlock()
+		// Close the write end only after the terminal fields are recorded, so a
+		// caller that observes io.EOF from Recv is guaranteed to see the final
+		// ExitCode/Phase via Result (the EOF happens-after this close).
+		_ = pw.Close()
 	}()
 
 	return s, nil

@@ -7,6 +7,7 @@ package anthropic_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -211,11 +212,11 @@ func fakeServer(t *testing.T, body string) (*httptest.Server, func() *capturedRe
 // drainStream reads all events from a stream and returns them.
 func drainStream(t *testing.T, s models.Stream) []models.Event {
 	t.Helper()
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	var events []models.Event
 	for {
 		ev, err := s.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -429,8 +430,8 @@ func TestToolRoundTrip(t *testing.T) {
 	}
 	// InputSchema must be passed through verbatim (modulo JSON encoding).
 	var wantSchema, gotSchema any
-	json.Unmarshal(inputSchema, &wantSchema)
-	json.Unmarshal(wireReq.Tools[0].InputSchema, &gotSchema)
+	_ = json.Unmarshal(inputSchema, &wantSchema)
+	_ = json.Unmarshal(wireReq.Tools[0].InputSchema, &gotSchema)
 	wantJSON, _ := json.Marshal(wantSchema)
 	gotJSON, _ := json.Marshal(gotSchema)
 	if string(wantJSON) != string(gotJSON) {
@@ -883,12 +884,12 @@ func TestRecvAfterDoneReturnsEOF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	defer stream.Close()
+	defer stream.Close() //nolint:errcheck
 
 	var sawDone bool
 	for {
 		ev, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			if !sawDone {
 				t.Error("got io.EOF without ever seeing KindDone")
 			}
@@ -898,10 +899,9 @@ func TestRecvAfterDoneReturnsEOF(t *testing.T) {
 			t.Fatalf("Recv: %v", err)
 		}
 		if ev.Kind == models.KindDone {
-			sawDone = true
 			// Next call must be io.EOF.
 			_, nextErr := stream.Recv()
-			if nextErr != io.EOF {
+			if !errors.Is(nextErr, io.EOF) {
 				t.Errorf("after KindDone, Recv returned %v, want io.EOF", nextErr)
 			}
 			break
@@ -914,7 +914,7 @@ func TestRecvAfterDoneReturnsEOF(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHTTPErrorResponse(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"error":{"type":"authentication_error","message":"invalid api key"}}`, http.StatusUnauthorized)
 	}))
 	defer ts.Close()
@@ -937,11 +937,7 @@ func TestHTTPErrorResponse(t *testing.T) {
 
 // isAPIError checks if err is (or wraps) an *anthropic.APIError.
 func isAPIError(err error, target **anthropic.APIError) bool {
-	if e, ok := err.(*anthropic.APIError); ok {
-		*target = e
-		return true
-	}
-	return false
+	return errors.As(err, target)
 }
 
 // ---------------------------------------------------------------------------

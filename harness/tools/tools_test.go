@@ -94,3 +94,53 @@ func TestRegistryGetMissing(t *testing.T) {
 		t.Fatal("expected nil for unknown tool")
 	}
 }
+
+func TestRegistryRegisterDuplicatePanics(t *testing.T) {
+	r := tools.NewRegistry()
+	r.Register(&tools.BashTool{})
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			t.Fatal("expected panic on duplicate tool name")
+		}
+		if msg, ok := rec.(string); !ok || !strings.Contains(msg, "bash") {
+			t.Fatalf("panic = %v, want message naming the duplicate tool 'bash'", rec)
+		}
+	}()
+	r.Register(&tools.BashTool{}) // same Name() → must panic.
+}
+
+func TestBashToolEmptyCommand(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+	sb, err := p.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+
+	bt := &tools.BashTool{}
+	// Whitespace-only command is rejected before any sandbox exec.
+	res, err := bt.Invoke(ctx, json.RawMessage(`{"command":"   "}`), p, sb.ID)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if !res.IsError || !strings.Contains(res.Content, "empty") {
+		t.Fatalf("res = %+v, want IsError with 'empty' message", res)
+	}
+}
+
+func TestBashToolSandboxExecError(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+	bt := &tools.BashTool{}
+	// Exec against a sandbox that was never created → provider returns an error,
+	// which Invoke surfaces as an error ToolResult (not a Go error).
+	res, err := bt.Invoke(ctx, json.RawMessage(`{"command":"echo hi"}`), p, "no-such-sandbox")
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if !res.IsError || !strings.Contains(res.Content, "exec error") {
+		t.Fatalf("res = %+v, want IsError with 'exec error' message", res)
+	}
+}

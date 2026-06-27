@@ -108,7 +108,7 @@ func (a *Adapter) Stream(ctx context.Context, req models.Request) (models.Stream
 	}
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		bodyStr := string(errBody)
 		// When the request included tools and the server responds with HTTP 400
 		// containing the Ollama "does not support tools" marker, wrap the error

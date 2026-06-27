@@ -6,6 +6,7 @@ package harness_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -82,6 +83,38 @@ func TestSpawnSubAllocatesBudget(t *testing.T) {
 	}
 }
 
+func TestSpawnBudgetUnderParentCapHonoured(t *testing.T) {
+	sp := harness.NewSpawner(nil)
+	parent := parentCtx() // USD 10, tokens 100000, wall 1h
+
+	// Every requested axis is strictly under the parent's cap → honoured as-is.
+	child, _ := sp.Spawn(context.Background(), parent, harness.SpawnRequest{
+		Label:  "w",
+		Budget: billing.Budget{LimitUSD: 3, LimitTokens: 1000, LimitWallTime: 30 * time.Minute},
+	})
+	if child.Budget.LimitUSD != 3 {
+		t.Fatalf("child usd = %v, want 3 (under parent cap, honoured)", child.Budget.LimitUSD)
+	}
+	if child.Budget.LimitTokens != 1000 {
+		t.Fatalf("child tokens = %d, want 1000", child.Budget.LimitTokens)
+	}
+	if child.Budget.LimitWallTime != 30*time.Minute {
+		t.Fatalf("child wall = %v, want 30m", child.Budget.LimitWallTime)
+	}
+}
+
+func TestSpawnUnlimitedParentPassesRequestThrough(t *testing.T) {
+	sp := harness.NewSpawner(nil)
+	parent := parentCtx()
+	parent.Budget = billing.Budget{} // zero = unlimited parent
+
+	req := billing.Budget{LimitUSD: 7, LimitTokens: 2000, LimitWallTime: time.Hour}
+	child, _ := sp.Spawn(context.Background(), parent, harness.SpawnRequest{Label: "w", Budget: req})
+	if child.Budget != req {
+		t.Fatalf("child budget = %+v, want request passed through %+v", child.Budget, req)
+	}
+}
+
 func TestSpawnDeterministicIdentity(t *testing.T) {
 	sp := harness.NewSpawner(nil)
 	parent := parentCtx()
@@ -113,7 +146,7 @@ func TestSubAgentCannotRecurseByDefault(t *testing.T) {
 		t.Fatal("child gained recursion despite parent not granting it")
 	}
 	// The child trying to spawn is refused.
-	if _, err := sp.Spawn(context.Background(), child.AsParent(), harness.SpawnRequest{Label: "gw"}); err != harness.ErrRecursionDenied {
+	if _, err := sp.Spawn(context.Background(), child.AsParent(), harness.SpawnRequest{Label: "gw"}); !errors.Is(err, harness.ErrRecursionDenied) {
 		t.Fatalf("sub-agent spawn = %v, want ErrRecursionDenied", err)
 	}
 }
@@ -183,7 +216,7 @@ func TestMailboxGatedSendReceive(t *testing.T) {
 		t.Fatalf("child→parent send: %v", err)
 	}
 	// Sibling send is refused.
-	if err := mb.Send("child", "other", []byte("x")); err != harness.ErrNotPermitted {
+	if err := mb.Send("child", "other", []byte("x")); !errors.Is(err, harness.ErrNotPermitted) {
 		t.Fatalf("disallowed send = %v, want ErrNotPermitted", err)
 	}
 

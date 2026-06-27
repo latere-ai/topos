@@ -19,10 +19,10 @@ import (
 // Stream always returns an error; the full implementation is a follow-up spec.
 type Adapter struct{}
 
-// New returns a placeholder Adapter. The apiKey and baseURL parameters mirror
-// the Anthropic adapter constructor for interface symmetry; they are unused
-// until the body is implemented.
-func New(apiKey, baseURL string) *Adapter {
+// New returns a placeholder Adapter. The two string parameters mirror the
+// Anthropic adapter constructor (api key, base URL) for interface symmetry;
+// they are unused until the body is implemented.
+func New(_, _ string) *Adapter {
 	return &Adapter{}
 }
 

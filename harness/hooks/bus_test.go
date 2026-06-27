@@ -5,7 +5,10 @@
 package hooks_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"latere.ai/x/topos/harness/hooks"
@@ -118,6 +121,139 @@ func TestBusEveryDispatchRecorded(t *testing.T) {
 	}
 	if log[2].EventName != hooks.EventSessionEnd {
 		t.Fatalf("log[2].EventName = %q", log[2].EventName)
+	}
+}
+
+// TestBusModifyChainsToNextConsumer asserts a VerdictModify replaces the
+// payload seen by subsequent consumers, and the net verdict is Modify carrying
+// the latest modified payload (last-modifier-wins).
+func TestBusModifyChainsToNextConsumer(t *testing.T) {
+	bus := hooks.New()
+	var sawSecond any
+
+	bus.Register("rewriter", nil, func(_ hooks.EventName, _ any) hooks.Decision {
+		return hooks.Modify("rewritten")
+	})
+	bus.Register("observer", nil, func(_ hooks.EventName, payload any) hooks.Decision {
+		sawSecond = payload
+		return hooks.Allow()
+	})
+
+	d := bus.Dispatch(hooks.EventPreToolUse, "original")
+
+	if sawSecond != "rewritten" {
+		t.Fatalf("second consumer saw %v, want the rewritten payload", sawSecond)
+	}
+	if d.Verdict != hooks.VerdictModify {
+		t.Fatalf("net verdict = %q, want modify", d.Verdict)
+	}
+	if d.ModifiedPayload != "rewritten" {
+		t.Fatalf("modified payload = %v, want rewritten", d.ModifiedPayload)
+	}
+}
+
+// TestBusModifyNotDowngradedByLaterAllow asserts a trailing Allow consumer does
+// not reset a verdict already set to Modify by an earlier consumer.
+func TestBusModifyNotDowngradedByLaterAllow(t *testing.T) {
+	bus := hooks.New()
+	bus.Register("rewriter", nil, func(_ hooks.EventName, _ any) hooks.Decision {
+		return hooks.Modify("x")
+	})
+	bus.Register("allower", nil, func(_ hooks.EventName, _ any) hooks.Decision {
+		return hooks.Allow()
+	})
+
+	d := bus.Dispatch(hooks.EventPreToolUse, "in")
+	if d.Verdict != hooks.VerdictModify {
+		t.Fatalf("verdict = %q, want modify (allow must not downgrade)", d.Verdict)
+	}
+}
+
+// TestBusModifyWithNilPayloadIsNoOp asserts a Modify carrying no payload neither
+// rewrites the payload nor flips the verdict away from allow.
+func TestBusModifyWithNilPayloadIsNoOp(t *testing.T) {
+	bus := hooks.New()
+	var seen any
+	bus.Register("noop-modify", nil, func(_ hooks.EventName, _ any) hooks.Decision {
+		return hooks.Modify(nil)
+	})
+	bus.Register("observer", nil, func(_ hooks.EventName, payload any) hooks.Decision {
+		seen = payload
+		return hooks.Allow()
+	})
+
+	d := bus.Dispatch(hooks.EventPreToolUse, "unchanged")
+	if seen != "unchanged" {
+		t.Fatalf("payload mutated to %v despite nil modification", seen)
+	}
+	if d.Verdict != hooks.VerdictAllow {
+		t.Fatalf("verdict = %q, want allow (nil modify is a no-op)", d.Verdict)
+	}
+}
+
+// TestLogWithAnnotatesEventCount asserts LogWith tags the logger with the
+// current event-log size.
+func TestLogWithAnnotatesEventCount(t *testing.T) {
+	bus := hooks.New()
+	bus.Dispatch(hooks.EventSessionStart, nil)
+	bus.Dispatch(hooks.EventPreToolUse, nil)
+
+	var buf bytes.Buffer
+	base := slog.New(slog.NewTextHandler(&buf, nil))
+	bus.LogWith(base).Info("checkpoint")
+
+	if !strings.Contains(buf.String(), "hook_events_logged=2") {
+		t.Fatalf("log line = %q, want hook_events_logged=2", buf.String())
+	}
+}
+
+// TestModifyDecisionConstructor asserts the Modify helper builds a modify verdict
+// carrying the payload.
+func TestModifyDecisionConstructor(t *testing.T) {
+	d := hooks.Modify("payload")
+	if d.Verdict != hooks.VerdictModify {
+		t.Fatalf("verdict = %q, want modify", d.Verdict)
+	}
+	if d.ModifiedPayload != "payload" {
+		t.Fatalf("payload = %v, want payload", d.ModifiedPayload)
+	}
+}
+
+// TestToolPathAppliesHookModifiedInput asserts a hook consumer that rewrites the
+// normalised input via Modify is reflected in the net ModifiedInput.
+func TestToolPathAppliesHookModifiedInput(t *testing.T) {
+	bus := hooks.New()
+	bus.Register("rewrite-input", []hooks.EventName{hooks.EventPreToolUse}, func(_ hooks.EventName, payload any) hooks.Decision {
+		p, ok := payload.(*hooks.PreToolUsePayload)
+		if !ok {
+			t.Fatalf("payload type = %T, want *PreToolUsePayload", payload)
+		}
+		rewritten := *p
+		rewritten.NormalisedInput = json.RawMessage(`{"command":"safe"}`)
+		return hooks.Modify(&rewritten)
+	})
+
+	tp := hooks.NewToolPath(bus, nil)
+	result := tp.Resolve("sess-1", models.ToolCall{ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"danger"}`)})
+
+	if !result.Allowed {
+		t.Fatalf("expected allow, got deny (%s: %s)", result.DeniedBy, result.Reason)
+	}
+	if string(result.ModifiedInput) != `{"command":"safe"}` {
+		t.Fatalf("modified input = %q, want the hook-rewritten input", result.ModifiedInput)
+	}
+}
+
+// TestToolPathNormalisesNilInput asserts a nil tool input is backfilled to {}.
+func TestToolPathNormalisesNilInput(t *testing.T) {
+	bus := hooks.New()
+	tp := hooks.NewToolPath(bus, nil)
+	result := tp.Resolve("sess-1", models.ToolCall{ID: "c1", Name: "bash", Input: nil})
+	if !result.Allowed {
+		t.Fatalf("expected allow, got deny")
+	}
+	if string(result.ModifiedInput) != `{}` {
+		t.Fatalf("modified input = %q, want {}", result.ModifiedInput)
 	}
 }
 

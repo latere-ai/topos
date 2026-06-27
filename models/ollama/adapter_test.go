@@ -89,11 +89,11 @@ func fakeServer(t *testing.T, body string) (*httptest.Server, func() *capturedRe
 // drainStream reads all events from a stream and returns them.
 func drainStream(t *testing.T, s models.Stream) []models.Event {
 	t.Helper()
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	var events []models.Event
 	for {
 		ev, err := s.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -318,8 +318,8 @@ func TestToolRoundTrip(t *testing.T) {
 	}
 	// Parameters must match the input schema.
 	var wantSchema, gotSchema any
-	json.Unmarshal(inputSchema, &wantSchema)
-	json.Unmarshal(fn.Parameters, &gotSchema)
+	_ = json.Unmarshal(inputSchema, &wantSchema)
+	_ = json.Unmarshal(fn.Parameters, &gotSchema)
 	wantJSON, _ := json.Marshal(wantSchema)
 	gotJSON, _ := json.Marshal(gotSchema)
 	if string(wantJSON) != string(gotJSON) {
@@ -452,7 +452,7 @@ func TestSystemPromptInjected(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHTTPErrorResponse(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"error":"model not found"}`, http.StatusNotFound)
 	}))
 	defer ts.Close()
@@ -465,8 +465,8 @@ func TestHTTPErrorResponse(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 404 response, got nil")
 	}
-	apiErr, ok := err.(*ollama.APIError)
-	if !ok {
+	var apiErr *ollama.APIError
+	if !errors.As(err, &apiErr) {
 		t.Errorf("expected *ollama.APIError, got %T: %v", err, err)
 	} else if apiErr.Status != http.StatusNotFound {
 		t.Errorf("APIError.Status = %d, want %d", apiErr.Status, http.StatusNotFound)
@@ -488,12 +488,12 @@ func TestRecvAfterDoneReturnsEOF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	defer stream.Close()
+	defer stream.Close() //nolint:errcheck
 
 	var sawDone bool
 	for {
 		ev, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			if !sawDone {
 				t.Error("got io.EOF without ever seeing KindDone")
 			}
@@ -503,10 +503,9 @@ func TestRecvAfterDoneReturnsEOF(t *testing.T) {
 			t.Fatalf("Recv: %v", err)
 		}
 		if ev.Kind == models.KindDone {
-			sawDone = true
 			// Next call must be io.EOF.
 			_, nextErr := stream.Recv()
-			if nextErr != io.EOF {
+			if !errors.Is(nextErr, io.EOF) {
 				t.Errorf("after KindDone, Recv returned %v, want io.EOF", nextErr)
 			}
 			break
@@ -578,7 +577,7 @@ func TestToolMessageDownConversion(t *testing.T) {
 // tools, surfaces as an error wrapping models.ErrToolsUnsupported.
 func TestToolsUnsupportedSentinel(t *testing.T) {
 	const ollamaBody = `{"error":"registry.ollama.ai/library/gemma3:4b does not support tools"}`
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, ollamaBody, http.StatusBadRequest)
 	}))
 	defer ts.Close()
@@ -598,7 +597,8 @@ func TestToolsUnsupportedSentinel(t *testing.T) {
 		t.Errorf("expected errors.Is(err, models.ErrToolsUnsupported) to be true; got %T: %v", err, err)
 	}
 	// Must NOT be an *APIError.
-	if _, ok := err.(*ollama.APIError); ok {
+	var apiErr *ollama.APIError
+	if errors.As(err, &apiErr) {
 		t.Errorf("error must not be *ollama.APIError when ErrToolsUnsupported wraps it")
 	}
 }
@@ -607,7 +607,7 @@ func TestToolsUnsupportedSentinel(t *testing.T) {
 // whose body does NOT contain "does not support tools" is still returned as a
 // plain *APIError and does NOT wrap ErrToolsUnsupported.
 func TestToolsUnsupported400OtherMessageIsAPIError(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 	}))
 	defer ts.Close()
@@ -626,8 +626,8 @@ func TestToolsUnsupported400OtherMessageIsAPIError(t *testing.T) {
 	if errors.Is(err, models.ErrToolsUnsupported) {
 		t.Errorf("expected error NOT to wrap ErrToolsUnsupported; got: %v", err)
 	}
-	apiErr, ok := err.(*ollama.APIError)
-	if !ok {
+	var apiErr *ollama.APIError
+	if !errors.As(err, &apiErr) {
 		t.Errorf("expected *ollama.APIError, got %T: %v", err, err)
 	} else if apiErr.Status != http.StatusBadRequest {
 		t.Errorf("APIError.Status = %d, want %d", apiErr.Status, http.StatusBadRequest)

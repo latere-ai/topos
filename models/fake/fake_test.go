@@ -6,6 +6,7 @@ package fake_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -27,13 +28,13 @@ func TestFakeModel_Turn1_ToolCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	defer stream.Close()
+	defer stream.Close() //nolint:errcheck
 
 	var gotToolCall bool
 	var stopReason models.StopReason
 	for {
 		ev, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -71,13 +72,13 @@ func TestFakeModel_Turn2_EndTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	defer stream.Close()
+	defer stream.Close() //nolint:errcheck
 
 	var text strings.Builder
 	var stopReason models.StopReason
 	for {
 		ev, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
