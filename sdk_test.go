@@ -14,9 +14,15 @@ import (
 // --- deterministic, content-based test brain (stateless, so it composes under
 // the nested peer loop a delegation triggers) ---
 
-type testBrain struct{ delegateTo string }
+type testBrain struct {
+	delegateTo string
+	systems    *[]string // when set, captures each call's system prompt
+}
 
 func (b testBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+	if b.systems != nil {
+		*b.systems = append(*b.systems, req.System)
+	}
 	// A prior tool result means the delegate already returned — finish.
 	for _, m := range req.Messages {
 		if m.Role == "tool" {
@@ -122,6 +128,41 @@ func TestDynamicDelegateBuildsLineage(t *testing.T) {
 	}
 	if !containsEvent(events, hooks.EventSubagentStart) || !containsEvent(events, hooks.EventSubagentStop) {
 		t.Errorf("missing Subagent events, got %v", events)
+	}
+}
+
+func TestDynamicInjectsDirectoryIntoSystemPrompt(t *testing.T) {
+	var systems []string
+	r := newTestRunner(t, testBrain{delegateTo: "reviewer", systems: &systems})
+	region := dynamicRegion()
+	region.Entry.SystemPrompt = "You are the lead."
+	if _, err := r.Run(context.Background(), region, "go"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(systems) == 0 {
+		t.Fatal("model received no system prompt")
+	}
+	entrySys := systems[0]
+	for _, want := range []string{"You are the lead.", "reviewer", "reviews diffs", "delegate"} {
+		if !strings.Contains(entrySys, want) {
+			t.Errorf("entry system prompt missing %q:\n%s", want, entrySys)
+		}
+	}
+}
+
+func TestDelegateRejectsPeerNotInDirectory(t *testing.T) {
+	// The model tries to delegate to a peer that isn't in the directory; the
+	// capability gate refuses it, so no node is created and the entry recovers.
+	r := newTestRunner(t, testBrain{delegateTo: "ghost"})
+	res, err := r.Run(context.Background(), dynamicRegion(), "go")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Lineage.Nodes) != 1 {
+		t.Errorf("gate failed: a node was created for an out-of-directory peer: %+v", res.Lineage.Nodes)
+	}
+	if res.Final != "done" {
+		t.Errorf("entry did not recover after a refused delegate: final = %q", res.Final)
 	}
 }
 

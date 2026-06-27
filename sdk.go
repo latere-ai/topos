@@ -177,6 +177,10 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.SandboxProvider, san
 		parent: parent, entryID: entryID, lineage: lin,
 	})
 
+	// Inject the peer directory into the entry agent's system prompt so the model
+	// discovers peers from their descriptions (mesh discovery, M2).
+	sysPrompt := composeSystem(region.Entry.SystemPrompt, renderDirectory(region.Directory()))
+
 	res, err := loop.Run(ctx, loop.Config{
 		Model:        r.model,
 		Sandbox:      sb,
@@ -185,7 +189,7 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.SandboxProvider, san
 		Bus:          r.bus,
 		SessionID:    sess,
 		AgentID:      region.Entry.Name,
-		SystemPrompt: region.Entry.SystemPrompt,
+		SystemPrompt: sysPrompt,
 		UserPrompt:   task,
 	})
 	if err != nil {
