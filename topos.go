@@ -4,10 +4,9 @@
 
 // Package topos is the public, embeddable surface of the Topos agent runtime.
 //
-// A foreign Go module (the first consumer is latere.ai/x/wallfacer, running
-// agents locally and in-process) imports this package to define agents, compose
-// them into a region, and run the region — without importing anything under
-// internal/. Everything exported here uses only sdk-defined or standard-library
+// A host application imports this package to define agents, compose them into a
+// region, and run the region locally and in-process — without importing anything
+// under internal/. Everything exported here uses only topos-defined or standard-library
 // types, so the boundary holds across the module edge (Go forbids cross-module
 // internal/ imports; this package is the curated public API on the inside of
 // that edge).
@@ -41,7 +40,7 @@ type Autonomy string
 
 const (
 	// Pinned is a deterministic chain: the entry agent then each peer in order.
-	// This is what a wallfacer flow (implement = impl → test → commit) compiles to.
+	// This is what a static flow (implement = impl → test → commit) compiles to.
 	Pinned Autonomy = "pinned"
 	// Dynamic gives the entry agent a `delegate` tool over a directory of peers and
 	// lets the model decide whom to hand off to. Discovery is workspace-wide; whom it
@@ -108,7 +107,7 @@ type LineageEdge struct {
 
 // Lineage is the renderable run graph (who delegated/handed off to whom). Ids are
 // deterministic (<session>/<name>, child <session>/sub/<label>), so a consumer
-// (wallfacer's GraphCanvas) can diff runs and resume reconnects to stable ids.
+// (e.g. a live graph view) can diff runs and resume reconnects to stable ids.
 type Lineage struct {
 	Nodes []LineageNode
 	Edges []LineageEdge
@@ -251,7 +250,7 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 }
 
 // runPinned runs a deterministic chain: entry then each peer in order, each as its
-// own loop. This is the shape a wallfacer flow compiles to.
+// own loop. This is the shape a static flow compiles to.
 func (r *Runner) runPinned(ctx context.Context, sb sandbox.SandboxProvider, sandboxID string, region Region, task string) (RunResult, error) {
 	sess := r.session()
 	chain := append([]AgentSpec{region.Entry}, region.Peers...)

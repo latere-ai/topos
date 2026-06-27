@@ -3,7 +3,7 @@
 **Latere Topos** is an embeddable Go agent runtime: define agents, compose them
 into a region, and run them in-process — with attenuated sub-agent spawning, mesh
 peer discovery, and a deterministic lineage graph. It is the open runtime that
-powers both [Wallfacer](https://github.com/latere-ai) locally and the Topos cloud
+runs the same agents in-process for a host application and in the Topos cloud
 service.
 
 ```go
