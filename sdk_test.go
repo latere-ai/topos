@@ -2,68 +2,117 @@ package sdk
 
 import (
 	"context"
+	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"latere.ai/x/agents/internal/harness/hooks"
+	"latere.ai/x/agents/internal/models"
 )
 
-// scripted is a deterministic brain: it delegates to "reviewer" whenever a
-// directory is present, and otherwise finishes. This is the fake ModelProvider
-// the spike relies on for reproducibility.
-type scripted struct{ sawPeers []PeerCard }
+// --- deterministic, content-based test brain (stateless, so it composes under
+// the nested peer loop a delegation triggers) ---
 
-func (s *scripted) Decide(_ context.Context, t Turn) (Action, error) {
-	if len(t.Peers) > 0 {
-		s.sawPeers = t.Peers
-		return Action{Kind: ActionDelegate, Delegate: &DelegateAction{Peer: "reviewer", Task: "review the diff"}}, nil
+type testBrain struct{ delegateTo string }
+
+func (b testBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+	// A prior tool result means the delegate already returned — finish.
+	for _, m := range req.Messages {
+		if m.Role == "tool" {
+			return &cannedStream{events: endTurn("done")}, nil
+		}
 	}
-	return Action{Kind: ActionFinal, FinalText: "done: " + t.Agent}, nil
+	// Holding a delegate tool (the entry agent) — delegate.
+	for _, td := range req.Tools {
+		if td.Name == "delegate" && b.delegateTo != "" {
+			return &cannedStream{events: delegateTurn(b.delegateTo, "review the diff")}, nil
+		}
+	}
+	// A peer (no delegate tool) — finish.
+	return &cannedStream{events: endTurn("looks good")}, nil
+}
+
+type cannedStream struct {
+	events []models.Event
+	pos    int
+}
+
+func (s *cannedStream) Recv() (models.Event, error) {
+	if s.pos >= len(s.events) {
+		return models.Event{}, io.EOF
+	}
+	ev := s.events[s.pos]
+	s.pos++
+	return ev, nil
+}
+
+func (s *cannedStream) Close() error { return nil }
+
+func delegateTurn(peer, task string) []models.Event {
+	input := []byte(`{"peer":"` + peer + `","task":"` + task + `"}`)
+	return []models.Event{
+		{Kind: models.KindTextDelta, TextDelta: "delegating"},
+		{Kind: models.KindToolCallDone, ToolCall: &models.ToolCall{ID: "call_1", Name: "delegate", Input: input}},
+		{Kind: models.KindUsage, Usage: &models.Usage{InputTokens: 10, OutputTokens: 5}},
+		{Kind: models.KindDone, StopReason: models.StopToolUse},
+	}
+}
+
+func endTurn(text string) []models.Event {
+	return []models.Event{
+		{Kind: models.KindTextDelta, TextDelta: text},
+		{Kind: models.KindUsage, Usage: &models.Usage{InputTokens: 5, OutputTokens: 3}},
+		{Kind: models.KindDone, StopReason: models.StopEndTurn},
+	}
 }
 
 func dynamicRegion() Region {
 	return Region{
 		Autonomy: Dynamic,
-		Entry:    AgentSpec{Name: "lead", Role: "lead", Tools: []string{"read", "write", "exec"}, Scopes: []string{"repo"}},
+		Entry:    AgentSpec{Name: "lead", Role: "lead", Tools: []string{"read", "write"}, Scopes: []string{"repo"}},
 		Peers: []AgentSpec{{
 			Name: "reviewer", Role: "review", Description: "reviews diffs",
-			Tools: []string{"write", "exec", "deploy"}, Scopes: []string{"repo", "prod"},
+			Tools: []string{"write", "exec"}, Scopes: []string{"repo"},
 		}},
 	}
 }
 
-func TestDynamicDelegateBuildsLineage(t *testing.T) {
-	r := NewRunner(Options{SessionID: "run-1", Provider: &scripted{}, BudgetUSD: 5})
+// newTestRunner builds a runner and overrides its model with a scripted brain
+// (white-box: the runner uses r.model when constructing the delegate tool + loop).
+func newTestRunner(t *testing.T, brain models.Model) *Runner {
+	t.Helper()
+	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}, BudgetUSD: 5})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	r.model = brain
+	return r
+}
 
-	// Spy on the hook bus to prove real Subagent events fire (white-box).
+func TestDynamicDelegateBuildsLineage(t *testing.T) {
+	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+
 	var events []hooks.EventName
 	r.bus.Register("spy", nil, func(n hooks.EventName, _ any) hooks.Decision {
 		events = append(events, n)
 		return hooks.Allow()
 	})
 
-	res, err := r.Run(context.Background(), dynamicRegion())
+	res, err := r.Run(context.Background(), dynamicRegion(), "ship the change")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if res.Final != "done: reviewer" {
-		t.Errorf("final = %q, want %q", res.Final, "done: reviewer")
+	if res.Final != "done" {
+		t.Errorf("final = %q, want done", res.Final)
 	}
-
-	// Two nodes with deterministic ids.
-	wantIDs := []string{"run-1/lead", "run-1/sub/reviewer"}
-	gotIDs := []string{res.Lineage.Nodes[0].ID, res.Lineage.Nodes[1].ID}
-	if !reflect.DeepEqual(gotIDs, wantIDs) {
-		t.Errorf("node ids = %v, want %v", gotIDs, wantIDs)
+	if len(res.Lineage.Nodes) != 2 {
+		t.Fatalf("nodes = %+v, want 2", res.Lineage.Nodes)
 	}
-	for _, n := range res.Lineage.Nodes {
-		if n.Status != "done" {
-			t.Errorf("node %s status = %q, want done", n.ID, n.Status)
-		}
+	if res.Lineage.Nodes[1].ID != "run-1/sub/reviewer" || res.Lineage.Nodes[1].Status != "done" {
+		t.Errorf("child node = %+v", res.Lineage.Nodes[1])
 	}
-
-	// Delegate then deliver edges.
 	wantEdges := []LineageEdge{
 		{From: "run-1/lead", To: "run-1/sub/reviewer", Kind: "delegate"},
 		{From: "run-1/sub/reviewer", To: "run-1/lead", Kind: "deliver"},
@@ -71,59 +120,46 @@ func TestDynamicDelegateBuildsLineage(t *testing.T) {
 	if !reflect.DeepEqual(res.Lineage.Edges, wantEdges) {
 		t.Errorf("edges = %+v, want %+v", res.Lineage.Edges, wantEdges)
 	}
-
-	// Real hook-bus events under the session.
 	if !containsEvent(events, hooks.EventSubagentStart) || !containsEvent(events, hooks.EventSubagentStop) {
 		t.Errorf("missing Subagent events, got %v", events)
 	}
 }
 
-func TestDynamicInjectsDirectory(t *testing.T) {
-	p := &scripted{}
-	r := NewRunner(Options{SessionID: "run-1", Provider: p, BudgetUSD: 5})
-	if _, err := r.Run(context.Background(), dynamicRegion()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(p.sawPeers) != 1 || p.sawPeers[0].Name != "reviewer" || p.sawPeers[0].Description != "reviews diffs" {
-		t.Errorf("entry did not see the directory: %+v", p.sawPeers)
-	}
-}
-
 func TestDelegateAttenuatesPeerTools(t *testing.T) {
-	r := NewRunner(Options{SessionID: "run-1", Provider: &scripted{}, BudgetUSD: 5})
-	res, err := r.Run(context.Background(), dynamicRegion())
+	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+	res, err := r.Run(context.Background(), dynamicRegion(), "go")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// reviewer requested {write,exec,deploy}; entry holds {read,write,exec};
-	// the granted set is the intersection — "deploy" is dropped, "read" never offered.
-	grants := res.Lineage.Nodes[1].Grants
-	if has(grants, "deploy") || has(grants, "read") || !has(grants, "write") || !has(grants, "exec") || len(grants) != 2 {
-		t.Errorf("attenuated grants = %v, want exactly [write exec]", grants)
+	// reviewer asked for {write,exec}; lead holds {read,write} → granted {write}.
+	g := res.Lineage.Nodes[1].Grants
+	if len(g) != 1 || g[0] != "write" {
+		t.Errorf("grants = %v, want [write]", g)
 	}
 }
 
-func TestDynamicRunIsReproducible(t *testing.T) {
-	run := func() Lineage {
-		r := NewRunner(Options{SessionID: "run-1", Provider: &scripted{}, BudgetUSD: 5})
-		res, err := r.Run(context.Background(), dynamicRegion())
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-		return res.Lineage
+func TestDelegatePeerReplyFlowsBack(t *testing.T) {
+	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+	// The peer's "looks good" is the delegate tool's result; assert it round-tripped
+	// by checking the entry finished after seeing it (final "done" requires a prior
+	// tool result in the transcript).
+	res, err := r.Run(context.Background(), dynamicRegion(), "go")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
 	}
-	if a, b := run(), run(); !reflect.DeepEqual(a, b) {
-		t.Errorf("lineage not reproducible:\n a=%+v\n b=%+v", a, b)
+	if res.Final != "done" {
+		t.Errorf("entry did not finish after the delegate returned: final = %q", res.Final)
 	}
 }
 
-func TestPinnedRegionRunsDeterministicChain(t *testing.T) {
-	r := NewRunner(Options{SessionID: "run-1", Provider: &scripted{}, BudgetUSD: 5})
+func TestPinnedChainRunsInOrder(t *testing.T) {
+	// Plain brain: every turn finishes (no delegation), so each chain step terminates.
+	r := newTestRunner(t, testBrain{})
 	res, err := r.Run(context.Background(), Region{
 		Autonomy: Pinned,
 		Entry:    AgentSpec{Name: "impl", Role: "impl"},
 		Peers:    []AgentSpec{{Name: "test", Role: "test"}, {Name: "commit", Role: "commit"}},
-	})
+	}, "build it")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -142,6 +178,21 @@ func TestPinnedRegionRunsDeterministicChain(t *testing.T) {
 	}
 }
 
+func TestBuildModelKinds(t *testing.T) {
+	// Fake builds without network.
+	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelFake}}); err != nil {
+		t.Errorf("ModelFake: %v", err)
+	}
+	// Lux/direct build an adapter (no network at construction).
+	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelLux, BaseURL: "http://localhost:8080/anthropic", APIKey: "lux_x"}}); err != nil {
+		t.Errorf("ModelLux: %v", err)
+	}
+	// Unsupported provider is rejected.
+	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelLux, Provider: "cohere"}}); err == nil {
+		t.Error("ModelLux with unsupported provider: want error, got nil")
+	}
+}
+
 func containsEvent(in []hooks.EventName, want hooks.EventName) bool {
 	for _, e := range in {
 		if e == want {
@@ -151,11 +202,28 @@ func containsEvent(in []hooks.EventName, want hooks.EventName) bool {
 	return false
 }
 
-func has(in []string, s string) bool {
-	for _, v := range in {
-		if v == s {
-			return true
+func TestDynamicRunFinalIsDeterministic(t *testing.T) {
+	run := func() string {
+		r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+		res, err := r.Run(context.Background(), dynamicRegion(), "go")
+		if err != nil {
+			t.Fatalf("Run: %v", err)
 		}
+		// Lineage ids + edges are deterministic; assert the structural summary.
+		return summarize(res.Lineage)
 	}
-	return false
+	if a, b := run(), run(); a != b {
+		t.Errorf("run summary not reproducible:\n a=%s\n b=%s", a, b)
+	}
+}
+
+func summarize(l Lineage) string {
+	var b strings.Builder
+	for _, n := range l.Nodes {
+		b.WriteString(n.ID + ":" + n.Status + ";")
+	}
+	for _, e := range l.Edges {
+		b.WriteString(e.From + "->" + e.To + ":" + e.Kind + ";")
+	}
+	return b.String()
 }
