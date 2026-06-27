@@ -73,11 +73,12 @@ type Region struct {
 
 // LineageNode is one agent in the run graph.
 type LineageNode struct {
-	ID     string
-	Name   string
-	Role   string
-	Status string   // "running" | "done" | "failed"
-	Grants []string // tool families actually granted after attenuation (audit-visible)
+	ID      string
+	Name    string
+	Role    string
+	Status  string   // "running" | "done" | "failed"
+	Grants  []string // tool families actually granted after attenuation (audit-visible)
+	Sandbox string   // the sandbox this agent ran in (a delegated peer gets its own)
 }
 
 // LineageEdge records a relationship between two nodes.
@@ -161,7 +162,7 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.SandboxProvider, san
 	entryID := sess + "/" + region.Entry.Name
 	lin := &Lineage{Nodes: []LineageNode{{
 		ID: entryID, Name: region.Entry.Name, Role: region.Entry.Role,
-		Status: "running", Grants: region.Entry.Tools,
+		Status: "running", Grants: region.Entry.Tools, Sandbox: sandboxID,
 	}}}
 
 	parent := harness.ParentContext{
@@ -211,7 +212,7 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.SandboxProvider, sand
 	for _, step := range chain {
 		id := sess + "/" + step.Name
 		lin.Nodes = append(lin.Nodes, LineageNode{
-			ID: id, Name: step.Name, Role: step.Role, Status: "running", Grants: step.Tools,
+			ID: id, Name: step.Name, Role: step.Role, Status: "running", Grants: step.Tools, Sandbox: sandboxID,
 		})
 		if prevID != "" {
 			lin.Edges = append(lin.Edges, LineageEdge{From: prevID, To: id, Kind: "next"})
@@ -285,17 +286,24 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	if err != nil {
 		return models.ToolResult{IsError: true, Content: "spawn failed: " + err.Error()}, nil
 	}
-	d.lineage.Nodes = append(d.lineage.Nodes, LineageNode{
-		ID: child.ID, Name: peer.Name, Role: peer.Role, Status: "running", Grants: child.Perms.Tools,
-	})
-	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: d.entryID, To: child.ID, Kind: "delegate"})
 
-	// Run the peer as a real nested loop (its session id = the deterministic child
-	// id). It reuses the parent sandbox here; per-child sandboxes are a later milestone.
+	// Per-child sandbox (M3): the peer runs in its own sandbox, isolated from the
+	// parent's, from the same provider. A failure to provision is the child's, not
+	// the parent's.
+	box, err := sb.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		d.appendChild(child, peer, "failed", "")
+		d.spawner.Stop(ctx, child)
+		return models.ToolResult{IsError: true, Content: "sandbox create failed: " + err.Error()}, nil
+	}
+	defer sb.Destroy(ctx, box.ID) //nolint:errcheck
+	d.appendChild(child, peer, "running", box.ID)
+
+	// Run the peer as a real nested loop (its session id = the deterministic child id).
 	peerRes, err := loop.Run(ctx, loop.Config{
 		Model:        d.model,
 		Sandbox:      sb,
-		SandboxID:    sandboxID,
+		SandboxID:    box.ID,
 		Tools:        tools.Builtins(),
 		Bus:          hooks.New(),
 		SessionID:    child.ID,
@@ -312,6 +320,16 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	d.spawner.Stop(ctx, child)
 	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: child.ID, To: d.entryID, Kind: "deliver"})
 	return models.ToolResult{Content: peerRes.FinalText}, nil
+}
+
+// appendChild records a delegated peer as a lineage node (with the sandbox it ran
+// in) plus the delegate edge from the entry.
+func (d *delegateTool) appendChild(child *harness.SubAgent, peer AgentSpec, status, box string) {
+	d.lineage.Nodes = append(d.lineage.Nodes, LineageNode{
+		ID: child.ID, Name: peer.Name, Role: peer.Role, Status: status,
+		Grants: child.Perms.Tools, Sandbox: box,
+	})
+	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: d.entryID, To: child.ID, Kind: "delegate"})
 }
 
 func findAgent(in []AgentSpec, name string) (AgentSpec, bool) {

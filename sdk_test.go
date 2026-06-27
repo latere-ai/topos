@@ -166,6 +166,21 @@ func TestDelegateRejectsPeerNotInDirectory(t *testing.T) {
 	}
 }
 
+func TestDelegatePeerRunsInOwnSandbox(t *testing.T) {
+	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+	res, err := r.Run(context.Background(), dynamicRegion(), "go")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	entry, peer := res.Lineage.Nodes[0], res.Lineage.Nodes[1]
+	if entry.Sandbox == "" || peer.Sandbox == "" {
+		t.Fatalf("missing sandbox ids: entry=%q peer=%q", entry.Sandbox, peer.Sandbox)
+	}
+	if entry.Sandbox == peer.Sandbox {
+		t.Errorf("peer shares the parent's sandbox %q; want its own", peer.Sandbox)
+	}
+}
+
 func TestDelegateAttenuatesPeerTools(t *testing.T) {
 	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
 	res, err := r.Run(context.Background(), dynamicRegion(), "go")
