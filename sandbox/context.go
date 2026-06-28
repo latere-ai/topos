@@ -16,7 +16,7 @@ type bearerCtxKey struct{}
 // that honours the context (see cella.ContextTokenSource) reads it back via
 // BearerFromContext.
 //
-// This is how the Topos control plane scopes an entire agent run to the
+// This is how an embedding host scopes an entire agent run to the
 // session user's identity: it bridges the inbound user JWT to a user-subject
 // Cella bearer once at run start, stores it here, and threads the resulting
 // context through every sandbox call (create, exec, destroy).

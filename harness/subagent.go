@@ -2,6 +2,9 @@
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
 
+// Package harness provides the embeddable SDK harness primitives that wrap
+// the agent loop: sub-agent spawning with permission attenuation (Spawner)
+// and inter-agent message routing over a topology (Mailbox).
 package harness
 
 import (

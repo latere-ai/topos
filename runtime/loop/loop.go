@@ -64,8 +64,8 @@ type Config struct {
 	// with no new user input).
 	UserPrompt string
 	// InitialTranscript, when non-empty, seeds the conversation — used to
-	// resume a crashed session from its replayed event log
-	// (see harness.Resume). UserPrompt, if also set, is appended after it.
+	// resume a crashed session from its replayed event log. UserPrompt, if
+	// also set, is appended after it.
 	InitialTranscript []models.Message
 	// Logger is used for structured logging. Nil → slog.Default().
 	Logger *slog.Logger

@@ -3,8 +3,8 @@
 // license that can be found in the LICENSE file.
 
 // Package sandbox defines the Provider interface — the single
-// abstraction boundary between all upstream Topos code (control plane,
-// harness, tools) and any sandbox execution backend.
+// abstraction boundary between all upstream Topos code (the embedding
+// host, harness, tools) and any sandbox execution backend.
 //
 // No upstream code may import the cella package or any other backend
 // package directly; all upstream dependencies are on this interface and
