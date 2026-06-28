@@ -7,8 +7,10 @@ package topos_test
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"latere.ai/x/topos"
+	"latere.ai/x/topos/models"
 )
 
 // Example shows the minimal Topos Runtime loop: build a Runner, hand it a
@@ -54,3 +56,78 @@ func ExampleRunner_Run_lineage() {
 	}
 	// Output: demo/solo done
 }
+
+// ExampleRunner_Run_delegation shows a dynamic region where the entry agent
+// delegates to a peer. A scripted model is supplied via Options.Brain so the
+// run is deterministic; a host would pass real ModelOptions instead. The
+// resulting lineage records the delegate and deliver edges.
+func ExampleRunner_Run_delegation() {
+	r, _ := topos.NewRunner(topos.Options{
+		SessionID: "demo",
+		Brain:     delegateOnceBrain{peer: "reviewer"},
+	})
+
+	res, _ := r.Run(context.Background(), topos.Region{
+		Autonomy: topos.Dynamic,
+		Topology: topos.OrchestratorWorker,
+		Entry:    topos.AgentSpec{Name: "lead", Role: "lead", Tools: []string{"read", "write"}, Scopes: []string{"repo"}},
+		Peers: []topos.AgentSpec{{
+			Name: "reviewer", Role: "review", Description: "reviews diffs",
+			Tools: []string{"read"}, Scopes: []string{"repo"},
+		}},
+	}, "ship the change")
+
+	fmt.Println(res.Final)
+	for _, e := range res.Lineage.Edges {
+		fmt.Printf("%s -> %s (%s)\n", e.From, e.To, e.Kind)
+	}
+	// Output:
+	// done
+	// demo/lead -> demo/sub/reviewer (delegate)
+	// demo/sub/reviewer -> demo/lead (deliver)
+}
+
+// delegateOnceBrain is a deterministic models.Model: the entry agent delegates
+// to the peer once, then everyone finishes.
+type delegateOnceBrain struct{ peer string }
+
+func (b delegateOnceBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+	for _, m := range req.Messages {
+		if m.Role == "tool" { // the delegate returned; finish
+			return &events{ev: end("done")}, nil
+		}
+	}
+	for _, td := range req.Tools {
+		if td.Name == "delegate" { // entry holds the delegate tool: hand off
+			in := fmt.Appendf(nil, `{"peer":%q,"task":"review"}`, b.peer)
+			return &events{ev: []models.Event{
+				{Kind: models.KindToolCallDone, ToolCall: &models.ToolCall{ID: "c1", Name: "delegate", Input: in}},
+				{Kind: models.KindDone, StopReason: models.StopToolUse},
+			}}, nil
+		}
+	}
+	return &events{ev: end("reviewed")}, nil // the peer finishes
+}
+
+func end(s string) []models.Event {
+	return []models.Event{
+		{Kind: models.KindTextDelta, TextDelta: s},
+		{Kind: models.KindDone, StopReason: models.StopEndTurn},
+	}
+}
+
+type events struct {
+	ev  []models.Event
+	pos int
+}
+
+func (s *events) Recv() (models.Event, error) {
+	if s.pos >= len(s.ev) {
+		return models.Event{}, io.EOF
+	}
+	e := s.ev[s.pos]
+	s.pos++
+	return e, nil
+}
+
+func (s *events) Close() error { return nil }
