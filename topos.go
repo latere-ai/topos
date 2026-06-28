@@ -22,8 +22,10 @@ package topos
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"latere.ai/x/topos/billing"
 	"latere.ai/x/topos/harness"
@@ -183,6 +185,9 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 		return RunResult{}, fmt.Errorf("topos: create sandbox: %w", err)
 	}
 	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+	if err := waitRunning(ctx, p, sb.ID); err != nil {
+		return RunResult{}, fmt.Errorf("topos: sandbox not ready: %w", err)
+	}
 
 	switch region.Autonomy {
 	case Dynamic:
@@ -191,6 +196,38 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 		return r.runPinned(ctx, p, sb.ID, region, task)
 	default:
 		return RunResult{}, fmt.Errorf("topos: unknown autonomy %q", region.Autonomy)
+	}
+}
+
+// readyTimeout and readyInterval bound how long Run waits for a freshly created
+// sandbox to reach the running state before giving up. They are vars (not
+// consts) so tests can shrink them; production code does not change them.
+var (
+	readyTimeout  = 30 * time.Second
+	readyInterval = 200 * time.Millisecond
+)
+
+// waitRunning polls HealthCheck until the sandbox is running, the context ends,
+// or readyTimeout elapses. A backend whose Create already returns a running
+// sandbox (e.g. sandbox/local) passes on the first check, so this is a no-op
+// there; an async backend (e.g. Cella, which may return "creating") is given
+// time to warm up. A vanished sandbox (ErrNotFound) fails immediately.
+func waitRunning(ctx context.Context, p sandbox.Provider, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
+	defer cancel()
+	for {
+		err := p.HealthCheck(ctx, id)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, sandbox.ErrNotFound) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("sandbox %s not running: %w (last: %s)", id, ctx.Err(), err.Error())
+		case <-time.After(readyInterval):
+		}
 	}
 }
 
@@ -396,6 +433,11 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 		return models.ToolResult{IsError: true, Content: "sandbox create failed: " + err.Error()}, nil
 	}
 	defer sb.Destroy(ctx, box.ID) //nolint:errcheck
+	if err := waitRunning(ctx, sb, box.ID); err != nil {
+		d.appendChild(child, peer, StatusFailed, "")
+		d.runner.spawner.Stop(ctx, child)
+		return models.ToolResult{IsError: true, Content: "sandbox not ready: " + err.Error()}, nil
+	}
 	d.appendChild(child, peer, StatusRunning, box.ID)
 
 	// Run the peer recursively: under Mesh it may itself delegate, until the bound.

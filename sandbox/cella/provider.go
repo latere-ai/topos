@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 
 	"latere.ai/x/topos/sandbox"
@@ -90,7 +91,7 @@ func (p *Provider) Create(ctx context.Context, opts sandbox.CreateOptions) (sand
 		Kind:       "Sandbox",
 		Metadata: manifestMetadata{
 			Name:   opts.Name,
-			Labels: opts.Labels,
+			Labels: withAgentLabel(opts.Labels),
 		},
 		Spec: manifestSpec{
 			Image:     image,
@@ -106,6 +107,19 @@ func (p *Provider) Create(ctx context.Context, opts sandbox.CreateOptions) (sand
 		return sandbox.Sandbox{}, err
 	}
 	return resp.toSandbox(), nil
+}
+
+// withAgentLabel returns a copy of labels with "kind=agent" stamped in, the
+// label the Cella backend tags every Topos-created sandbox with (per the
+// sandbox.CreateOptions.Labels contract). It never mutates the caller's map and
+// does not override a caller-supplied "kind".
+func withAgentLabel(labels map[string]string) map[string]string {
+	out := make(map[string]string, len(labels)+1)
+	maps.Copy(out, labels)
+	if _, ok := out["kind"]; !ok {
+		out["kind"] = "agent"
+	}
+	return out
 }
 
 // Destroy deletes the sandbox. It is idempotent: a 404 (the sandbox is already

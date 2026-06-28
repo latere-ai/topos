@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/models"
@@ -31,6 +33,63 @@ type failCreateProvider struct{ sandbox.Provider }
 
 func (failCreateProvider) Create(context.Context, sandbox.CreateOptions) (sandbox.Sandbox, error) {
 	return sandbox.Sandbox{}, errors.New("no capacity")
+}
+
+// readyAfterProvider wraps the local provider but reports "not running" for the
+// first notReady HealthCheck calls, modelling a backend (like Cella) whose
+// Create returns a sandbox still in the "creating" state.
+type readyAfterProvider struct {
+	*local.Provider
+	mu       sync.Mutex
+	notReady int
+}
+
+func (p *readyAfterProvider) HealthCheck(ctx context.Context, id string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.notReady > 0 {
+		p.notReady--
+		return errors.New("creating")
+	}
+	return p.Provider.HealthCheck(ctx, id)
+}
+
+func TestRunWaitsForSandboxToBecomeReady(t *testing.T) {
+	withFastReadyPolling(t)
+	p := &readyAfterProvider{Provider: local.New(), notReady: 3}
+	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}, Sandbox: p})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	r.model = testBrain{}
+	// The run proceeds only after the sandbox reports running; a successful run
+	// proves Run polled rather than using the still-"creating" box immediately.
+	if _, err := r.Run(context.Background(), Region{Autonomy: Pinned, Entry: AgentSpec{Name: "solo", Role: "solo"}}, "go"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRunFailsWhenSandboxNeverReady(t *testing.T) {
+	withFastReadyPolling(t)
+	p := &readyAfterProvider{Provider: local.New(), notReady: 1 << 30} // never ready
+	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}, Sandbox: p})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	r.model = testBrain{}
+	_, err = r.Run(context.Background(), dynamicRegion(), "go")
+	if err == nil || !strings.Contains(err.Error(), "not ready") {
+		t.Fatalf("err = %v, want a sandbox-not-ready timeout", err)
+	}
+}
+
+// withFastReadyPolling shrinks the readiness bounds for the duration of a test
+// so the poll loop runs in milliseconds, and restores them afterward.
+func withFastReadyPolling(t *testing.T) {
+	t.Helper()
+	origT, origI := readyTimeout, readyInterval
+	readyTimeout, readyInterval = 50*time.Millisecond, time.Millisecond
+	t.Cleanup(func() { readyTimeout, readyInterval = origT, origI })
 }
 
 func TestRunUsesInjectedSandboxProvider(t *testing.T) {

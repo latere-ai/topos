@@ -50,13 +50,22 @@ func TestCreateSendsManifestAndParsesResponse(t *testing.T) {
 		})
 	}))
 
+	callerLabels := map[string]string{"team": "x"}
 	sb, err := p.Create(context.Background(), sandbox.CreateOptions{
 		Name:   "dev",
 		Env:    map[string]string{"FOO": "bar"},
-		Labels: map[string]string{"kind": "agent"},
+		Labels: callerLabels,
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	// The backend tags every agent sandbox with kind=agent; caller labels are
+	// preserved and the caller's map is not mutated.
+	if gotBody.Metadata.Labels["kind"] != "agent" || gotBody.Metadata.Labels["team"] != "x" {
+		t.Errorf("labels = %v, want kind=agent + team=x", gotBody.Metadata.Labels)
+	}
+	if _, mutated := callerLabels["kind"]; mutated {
+		t.Error("Create mutated the caller's Labels map")
 	}
 
 	if gotMethod != "POST" || gotPath != "/v1/sandboxes" {

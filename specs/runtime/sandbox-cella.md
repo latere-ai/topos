@@ -126,7 +126,7 @@ Kubernetes-style `SandboxManifest` envelope (`apiVersion: cella.latere.ai/v1`,
 | `CreateOptions` | Manifest path |
 |---|---|
 | `Name` | `metadata.name` (empty → server generates a slug) |
-| `Labels` | `metadata.labels` (reserved `sandbox.latere.ai/` prefix is server-rejected) |
+| `Labels` | `metadata.labels` — the provider stamps `kind=agent` into a copy (the backend tags every agent sandbox; per the `CreateOptions.Labels` contract), never mutating the caller's map and not overriding a caller-supplied `kind`. Reserved `sandbox.latere.ai/` prefix is server-rejected. |
 | `Image` | `spec.image` (empty → platform base image) |
 | `Env` | `spec.env` |
 | `Tier` | `spec.tier` (default `ephemeral`) |
@@ -191,6 +191,16 @@ ctx = sandbox.WithBearer(ctx, userBearer)
 res, _ := r.Run(ctx, region, task)
 ```
 
+### Readiness wait (cold start)
+
+Cella's `Create` may return a sandbox still in `creating` (the interface
+documents that callers needing `running` must poll `HealthCheck`). `Run` and the
+delegate path therefore call a bounded `waitRunning` helper after each `Create`,
+polling `HealthCheck` until running (30s budget, 200ms cadence). This is a no-op
+for `sandbox/local`, whose `Create` already returns `running` and whose
+`HealthCheck` passes on the first call, so the local path is unchanged; an async
+backend is given time to warm up before the first `Exec`.
+
 ## Lifecycle and cost
 
 Unlike `local`'s temp directories, orphaned Cella sandboxes consume real
@@ -240,6 +250,11 @@ Sliced into small, independently testable commits (tests first):
   (`/workspace`) and pass workspace-relative paths in the tar, so no workdir is
   hardcoded. If Cella ever varies the workdir per sandbox, this assumption (and
   only this assumption) revisits.
+- Missing-file `ReadFile`: a path the sandbox lacks is treated as ErrNotFound by
+  finding no matching entry in the export tar. The server runs
+  `tar -C /workspace -cf - <path>`, which exits non-zero *after* a 200 has begun
+  streaming; against a live server this may instead surface as a tar-parse error.
+  To be confirmed with a real sandbox; if so, ReadFile maps that to ErrNotFound.
 - Killing on cancel: a cancelled `Exec` stops polling and reports `killed`, but
   does not yet `DELETE .../commands/{cid}` to stop the server-side process. The
   `autoStop` backstop bounds the cost; an explicit kill can be added later.
@@ -260,6 +275,12 @@ Implemented in package `sandbox/cella`:
 - `files.go` — tar-based `ReadFile`/`ListFiles`/`WriteFile`.
 
 The injection point is `topos.Options.Sandbox` (`topos.go`); it defaults to
-`sandbox/local` when nil. The boundary test (`sandbox/boundary_test.go`) and a
-root-package test that the injected provider is actually used both pass. Tested
-against an `httptest` fake (no live cluster); total repo coverage 94.9%.
+`sandbox/local` when nil. `Run` and the delegate path call `waitRunning` after
+each `Create` so an async backend's `creating` sandbox is given time to reach
+`running` before first use. The boundary test (`sandbox/boundary_test.go`) and
+root-package tests (injected provider is used; readiness wait succeeds and times
+out) all pass. Tested against an `httptest` fake (no live cluster); total repo
+coverage ~95%.
+
+Caveats that only a live Cella can settle are tracked under Open questions
+(missing-file ReadFile, server-side kill on cancel, default image catalog ref).
