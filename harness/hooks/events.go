@@ -56,6 +56,13 @@ const (
 	// only (the loop emits it as it completes each turn) so embedders can render
 	// a live transcript; it bears no Decision.
 	EventAssistantMessage EventName = "AssistantMessage"
+	// EventTextDelta carries a single incremental fragment of assistant text as
+	// the model streams it, so an embedder can render token-by-token. It is
+	// dispatched ephemerally (see Bus.DispatchEphemeral) — delivered to consumers
+	// but never recorded in the session event log, because its durable
+	// counterpart is the assembled EventAssistantMessage emitted once the turn
+	// completes. It is observational only and bears no Decision.
+	EventTextDelta EventName = "TextDelta"
 
 	// Environment-reactive.
 	EventWorktreeCreate EventName = "WorktreeCreate"
@@ -118,6 +125,19 @@ type PostToolUseFailurePayload struct {
 // AssistantMessagePayload is the versioned payload for EventAssistantMessage:
 // one completed turn's assistant text, emitted as the loop finishes the turn.
 type AssistantMessagePayload struct {
+	Version   string `json:"version"`
+	SessionID string `json:"session_id"`
+	AgentID   string `json:"agent_id"`
+	Text      string `json:"text"`
+	Turn      int    `json:"turn"`
+}
+
+// TextDeltaPayload is the versioned payload for EventTextDelta: one streamed
+// fragment of assistant text within a turn. SessionID and AgentID let a consumer
+// route the fragment to the right transcript and lineage node; Turn is the
+// 1-based turn index the fragment belongs to, so a consumer can group fragments
+// into the turn whose assembled AssistantMessage follows.
+type TextDeltaPayload struct {
 	Version   string `json:"version"`
 	SessionID string `json:"session_id"`
 	AgentID   string `json:"agent_id"`

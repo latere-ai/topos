@@ -6,6 +6,7 @@ package hooks
 
 import (
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 )
@@ -68,12 +69,36 @@ func (b *Bus) Register(name string, events []EventName, c Consumer) {
 //
 // Every dispatch is logged regardless of whether any consumer processed it.
 func (b *Bus) Dispatch(name EventName, payload any) Decision {
+	return b.dispatch(name, payload, true)
+}
+
+// DispatchEphemeral delivers an event to consumers exactly like Dispatch but
+// does NOT record it in the session event log. It is for high-frequency,
+// observational-only events — chiefly per-token text deltas (EventTextDelta) —
+// whose durable counterpart is recorded separately (the assembled
+// EventAssistantMessage). Logging every token fragment would bloat the
+// audit-grade log without adding information the assembled message lacks, so
+// those events are delivered live and then forgotten.
+//
+// Ephemeral events are still subject to the same consumer fan-out and Decision
+// merge, but callers use them only for observational events and ignore the
+// returned Decision.
+func (b *Bus) DispatchEphemeral(name EventName, payload any) Decision {
+	return b.dispatch(name, payload, false)
+}
+
+// dispatch is the shared engine for Dispatch and DispatchEphemeral. record
+// controls whether the event is appended to the session event log; delivery to
+// consumers is identical either way.
+func (b *Bus) dispatch(name EventName, payload any, record bool) Decision {
 	b.mu.Lock()
-	b.log = append(b.log, LogEntry{
-		At:        time.Now().UTC(),
-		EventName: name,
-		Payload:   payload,
-	})
+	if record {
+		b.log = append(b.log, LogEntry{
+			At:        time.Now().UTC(),
+			EventName: name,
+			Payload:   payload,
+		})
+	}
 	consumers := make([]registeredConsumer, len(b.consumers))
 	copy(consumers, b.consumers)
 	b.mu.Unlock()
@@ -131,10 +156,5 @@ func (rc *registeredConsumer) matches(name EventName) bool {
 	if len(rc.events) == 0 {
 		return true
 	}
-	for _, e := range rc.events {
-		if e == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(rc.events, name)
 }

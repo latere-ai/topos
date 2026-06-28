@@ -124,6 +124,35 @@ func TestBusEveryDispatchRecorded(t *testing.T) {
 	}
 }
 
+// TestBusDispatchEphemeralDeliversButDoesNotLog asserts an ephemeral dispatch
+// reaches consumers exactly like Dispatch but leaves the session event log
+// untouched — the property that keeps per-token deltas out of the audit log.
+func TestBusDispatchEphemeralDeliversButDoesNotLog(t *testing.T) {
+	bus := hooks.New()
+	delivered := 0
+	bus.Register("delta-observer", []hooks.EventName{hooks.EventTextDelta}, func(_ hooks.EventName, _ any) hooks.Decision {
+		delivered++
+		return hooks.Allow()
+	})
+
+	// A normal dispatch is logged; an ephemeral one is not.
+	bus.Dispatch(hooks.EventSessionStart, nil)
+	for range 3 {
+		bus.DispatchEphemeral(hooks.EventTextDelta, &hooks.TextDeltaPayload{Version: "1", Text: "x"})
+	}
+
+	if delivered != 3 {
+		t.Fatalf("delta consumer delivered %d times, want 3", delivered)
+	}
+	log := bus.EventLog()
+	if len(log) != 1 {
+		t.Fatalf("event log len = %d, want 1 (only the non-ephemeral SessionStart)", len(log))
+	}
+	if log[0].EventName != hooks.EventSessionStart {
+		t.Fatalf("log[0] = %q, want SessionStart", log[0].EventName)
+	}
+}
+
 // TestBusModifyChainsToNextConsumer asserts a VerdictModify replaces the
 // payload seen by subsequent consumers, and the net verdict is Modify carrying
 // the latest modified payload (last-modifier-wins).
