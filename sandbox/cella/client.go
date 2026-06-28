@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"latere.ai/x/topos/sandbox"
 )
@@ -50,6 +51,10 @@ type Provider struct {
 	baseURL string
 	token   TokenSource
 	http    *http.Client
+
+	// pollInterval overrides the log-poll cadence; 0 uses defaultPollInterval.
+	// Set in tests to keep streaming exec fast; not part of the public API.
+	pollInterval time.Duration
 }
 
 // New returns a Provider configured by opts. It panics if BaseURL or Token is
