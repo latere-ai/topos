@@ -25,7 +25,7 @@ import (
 // drop-in execution space for that mental model.
 type EventName string
 
-// Full fixed event-name set (spec: harness-hook-bus.md §Acceptance Criteria).
+// Full fixed event-name set.
 const (
 	// Lifecycle — synchronous / decision-bearing.
 	EventSetup               EventName = "Setup"

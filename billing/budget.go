@@ -2,12 +2,11 @@
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
 
-// Package billing implements budget enforcement and the per-session cost join.
+// Package billing implements per-session budget enforcement for the SDK.
 // Budgets are independent of permissions — permission says *can*, budget says
 // *how much*. The model-spend ceiling is not re-implemented here: it is the
-// per-session Lux virtual key's spend_cap (trust-plane), enforced by Lux and
-// observed in the cost join. Topos emits its pod-time leg to Auth's metered
-// usage contract; Auth owns Stripe — Topos never touches payment.
+// per-session Lux virtual key's spend_cap, enforced by Lux and observed by the
+// host's cost accounting.
 package billing
 
 import (

@@ -318,7 +318,7 @@ func executeToolCall(
 		rawInput = json.RawMessage("{}")
 	}
 
-	// Phase 1+2: permission via hook bus.
+	// Step 1+2: permission via hook bus.
 	phase := tp.Resolve(cfg.SessionID, models.ToolCall{ID: tc.ID, Name: tc.Name, Input: rawInput})
 	if !phase.Allowed {
 		logger.Warn("loop: tool denied",
@@ -338,7 +338,7 @@ func executeToolCall(
 		}, nil
 	}
 
-	// Phase 3: look up tool in registry.
+	// Step 3: look up tool in registry.
 	tool := cfg.Tools.Get(tc.Name)
 	if tool == nil {
 		errMsg := fmt.Sprintf("tool %q not found in registry", tc.Name)

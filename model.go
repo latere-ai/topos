@@ -19,7 +19,7 @@ type ModelKind string
 
 const (
 	// ModelFake is the deterministic, network-free model for tests and the embed
-	// check. It is the basis of the record/replay reproducibility story (M5).
+	// check. It is the basis of the record/replay reproducibility story.
 	ModelFake ModelKind = "fake"
 	// ModelLux reaches a provider through Lux (latere.ai/x/lux), the model gateway:
 	// cloud (lux.latere.ai, metered, owner-billed) or a local stateless luxd
@@ -36,7 +36,7 @@ const (
 // or a BearerSource (a per-call token, e.g. a rotating sandbox/JWT token).
 type ModelOptions struct {
 	Kind     ModelKind
-	Provider string // "anthropic" (M1 supports anthropic-wire; others later)
+	Provider string // "anthropic" (anthropic-wire supported; others later)
 	Model    string // model id, e.g. "claude-sonnet-4-6"
 	BaseURL  string // e.g. "https://lux.latere.ai/anthropic" or "http://localhost:8080/anthropic"
 
@@ -51,7 +51,7 @@ func buildModel(opts ModelOptions) (models.Model, error) {
 		return fake.New(), nil
 	case ModelLux, ModelDirect:
 		if opts.Provider != "" && opts.Provider != "anthropic" {
-			return nil, fmt.Errorf("topos: model provider %q not yet supported (M1: anthropic-wire only)", opts.Provider)
+			return nil, fmt.Errorf("topos: model provider %q not yet supported (anthropic-wire only)", opts.Provider)
 		}
 		var aopts []anthropic.Option
 		if opts.Model != "" {

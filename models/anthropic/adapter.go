@@ -33,10 +33,9 @@
 // # Credentials
 //
 // The adapter receives an API key and a base URL; it mints no credentials and
-// owns no egress policy. Under the M2 topology the brain runs as a Cella
-// sandbox and reaches Lux with its sandbox token (base URL → lux.latere.ai),
-// so the endpoint and bearer come from the sandbox runtime, not a sidecar
-// (spec: runtime/brain-cella-sandbox.md).
+// owns no egress policy. The endpoint and bearer are supplied by the host's
+// runtime configuration (for example a base URL pointing at lux.latere.ai with
+// a per-call token), so credentials come from the caller, not from the adapter.
 package anthropic
 
 import (

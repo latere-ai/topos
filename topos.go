@@ -16,7 +16,7 @@
 // the deterministic fake), and a handoff is an agents-as-tools delegation — a
 // `delegate` tool registered into the loop whose Invoke performs a real attenuated
 // Spawner spawn, runs the chosen peer as a nested loop, and returns its result into
-// the parent transcript. See specs/architecture/agent-sdk-mesh-foundation.md.
+// the parent transcript.
 package topos
 
 import (
@@ -82,7 +82,7 @@ const (
 )
 
 // Region is one part of a run with a single autonomy mode. One graph mixes pinned
-// and dynamic regions; M1 runs a single region.
+// and dynamic regions; the runner currently runs a single region.
 type Region struct {
 	Autonomy Autonomy
 	Topology Topology    // dynamic only; default OrchestratorWorker
@@ -434,7 +434,7 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 		return models.ToolResult{IsError: true, Content: "spawn failed: " + err.Error()}, nil
 	}
 
-	// Per-child sandbox (M3): the peer runs in its own sandbox. A provisioning
+	// Per-child sandbox: the peer runs in its own sandbox. A provisioning
 	// failure is the child's, not the parent's.
 	box, err := sb.Create(ctx, sandbox.CreateOptions{})
 	if err != nil {

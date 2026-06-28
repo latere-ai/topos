@@ -92,10 +92,10 @@ type CreateOptions struct {
 	Labels map[string]string
 	// Tier selects "ephemeral" (default) or "persistent".
 	Tier string
-	// Policy names the sandbox policy to request (e.g. "brain"). If empty
-	// the backend resolves the caller's default policy. The brain runner
-	// sets "brain" so the loop pod is compute-only and locked down,
-	// overriding the user's default (which is open for personal accounts).
+	// Policy names the sandbox policy to request: a backend-specific policy
+	// name (e.g. a locked-down, compute-only profile) that overrides the
+	// caller's default. If empty the backend resolves the caller's default
+	// policy.
 	Policy string
 	// SecretMounts names secret entries the backend mounts read-only into the
 	// sandbox filesystem at start, so the workload reads each value as a file

@@ -48,7 +48,7 @@ func Modify(payload any) Decision { return Decision{Verdict: VerdictModify, Modi
 // when its predicate matches. Unlike hook consumers, deny-rules are checked
 // independently and CANNOT be overridden by a hook allow.
 //
-// Invariant (spec: harness-hook-bus.md):
+// Invariant:
 //
 //	net_allow = hook_allow AND NOT deny_rule_matched
 //
@@ -98,11 +98,11 @@ type PhaseResult struct {
 // Resolve runs the two-phase permission check (hook consumers + deny-rules)
 // for a tool call and returns the net PhaseResult.
 //
-// Phase 1: hook consumers via bus.Dispatch(EventPreToolUse, ...).
-// Phase 2: deny-rules (independent; cannot be overridden by hook allow).
+// Step 1: hook consumers via bus.Dispatch(EventPreToolUse, ...).
+// Step 2: deny-rules (independent; cannot be overridden by hook allow).
 //
 // The caller is responsible for:
-//   - Phase 3 execution (tool invoke) if Allowed.
+//   - Step 3 execution (tool invoke) if Allowed.
 //   - Dispatching EventPostToolUse / EventPostToolUseFailure after execution.
 func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult {
 	normalised := call.Input
@@ -121,7 +121,7 @@ func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult 
 		NormalisedInput: normalised,
 	}
 
-	// Phase 1: hook consumers.
+	// Step 1: hook consumers.
 	d := tp.bus.Dispatch(EventPreToolUse, payload)
 	if d.Verdict == VerdictDeny {
 		return PhaseResult{
@@ -137,7 +137,7 @@ func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult 
 		}
 	}
 
-	// Phase 2: policy deny-rules.  Independent of hook outcomes.
+	// Step 2: policy deny-rules.  Independent of hook outcomes.
 	for _, rule := range tp.denyRules {
 		if rule.Predicate(call.Name, normalised) {
 			return PhaseResult{
