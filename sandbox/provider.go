@@ -97,6 +97,14 @@ type CreateOptions struct {
 	// sets "brain" so the loop pod is compute-only and locked down,
 	// overriding the user's default (which is open for personal accounts).
 	Policy string
+	// SecretMounts names secret entries the backend mounts read-only into the
+	// sandbox filesystem at start, so the workload reads each value as a file
+	// (the Cella backend mounts them at /run/cella/secrets/<NAME>). The secret
+	// values never travel in this request — only their names. A nil slice
+	// requests the backend's default mount set; a non-nil slice (including an
+	// empty one) requests exactly those names, so an empty slice means "mount
+	// none". The local provider ignores this field.
+	SecretMounts []string
 }
 
 // ExecOptions controls command execution parameters.
@@ -109,6 +117,13 @@ type ExecOptions struct {
 	// Cwd is the working directory for the command. Defaults to the
 	// sandbox's workdir when empty.
 	Cwd string
+	// SecretEnv maps environment-variable names to backend secret-entry names.
+	// The backend resolves each value server-side and injects it for this
+	// command only, without exposing the value on argv (the Cella backend
+	// resolves it into a tmpfs file, so it does not leak via /proc/<pid>/cmdline).
+	// Only the entry names travel in this request, never the values. The local
+	// provider ignores this field.
+	SecretEnv map[string]string
 }
 
 // ExecResult holds the result of a completed command execution.

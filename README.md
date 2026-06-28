@@ -89,6 +89,28 @@ The host owns minting the Cella bearer (exchanging the user's token); the
 provider only presents it. The root `topos` package never imports a concrete
 backend — a host wires one in as the interface.
 
+### Secrets
+
+Secrets the agent's workload needs (provider keys, tokens) are never passed as
+plaintext. The host stores them in Cella's vault out of band and references them
+by name. Mount them as read-only files at sandbox start with
+`CreateOptions.SecretMounts`, or inject one into a single command with
+`ExecOptions.SecretEnv` (resolved server-side, never on argv):
+
+```go
+opts := sandbox.CreateOptions{SecretMounts: []string{"OPENAI_API_KEY"}}
+// ... or per command:
+exec := sandbox.ExecOptions{
+    Argv:      []string{"deploy"},
+    SecretEnv: map[string]string{"OPENAI_API_KEY": "openai_key"}, // env var -> vault entry
+}
+```
+
+A nil `SecretMounts` mounts the caller's default set; an empty slice mounts
+none. The local provider has no vault and ignores both fields. (Separately, the
+lift/drop deny-list keeps laptop secrets like `.env` and `*.pem` from ever
+entering a sandbox.) Plain `Env` remains the channel for non-secret config.
+
 ## Status
 
 Early. The root `topos` package is the supported surface and is what most callers

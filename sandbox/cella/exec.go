@@ -25,9 +25,10 @@ const defaultPollInterval = 250 * time.Millisecond
 
 // createCommandReq is the POST /v1/sandboxes/{id}/commands body.
 type createCommandReq struct {
-	Argv []string          `json:"argv"`
-	Env  map[string]string `json:"env,omitempty"`
-	Cwd  string            `json:"cwd,omitempty"`
+	Argv         []string          `json:"argv"`
+	Env          map[string]string `json:"env,omitempty"`
+	Cwd          string            `json:"cwd,omitempty"`
+	EnvFromVault map[string]string `json:"env_from_vault,omitempty"`
 }
 
 // commandResp is the Command response from starting a command.
@@ -77,7 +78,7 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 
 	var started commandResp
 	if err := p.doJSON(ctx, "POST", "/v1/sandboxes/"+url.PathEscape(id)+"/commands",
-		createCommandReq{Argv: opts.Argv, Env: opts.Env, Cwd: opts.Cwd}, &started); err != nil {
+		createCommandReq{Argv: opts.Argv, Env: opts.Env, Cwd: opts.Cwd, EnvFromVault: opts.SecretEnv}, &started); err != nil {
 		return nil, err
 	}
 

@@ -121,6 +121,50 @@ func TestCreateConflict(t *testing.T) {
 	}
 }
 
+// captureCreate runs Create against a fake that records the manifest body and
+// returns it.
+func captureCreate(t *testing.T, opts sandbox.CreateOptions) manifestBody {
+	t.Helper()
+	var got manifestBody
+	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		writeJSON(t, w, http.StatusOK, map[string]string{"id": "sb_1", "state": "creating", "backend": "k8s", "created_at": "t"})
+	}))
+	if _, err := p.Create(context.Background(), opts); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	return got
+}
+
+func TestCreateSecretMountsSemantics(t *testing.T) {
+	t.Run("nil omits secrets (server applies default_mount)", func(t *testing.T) {
+		got := captureCreate(t, sandbox.CreateOptions{SecretMounts: nil})
+		if got.Spec.Secrets != nil {
+			t.Errorf("secrets = %+v, want omitted for nil SecretMounts", got.Spec.Secrets)
+		}
+	})
+
+	t.Run("empty slice mounts none (serialises as [])", func(t *testing.T) {
+		got := captureCreate(t, sandbox.CreateOptions{SecretMounts: []string{}})
+		if got.Spec.Secrets == nil {
+			t.Fatal("secrets omitted; an empty SecretMounts must send mount: []")
+		}
+		if len(got.Spec.Secrets.Mount) != 0 {
+			t.Errorf("mount = %v, want empty", got.Spec.Secrets.Mount)
+		}
+	})
+
+	t.Run("list mounts exactly those names", func(t *testing.T) {
+		got := captureCreate(t, sandbox.CreateOptions{SecretMounts: []string{"OPENAI_KEY", "GITHUB_TOKEN"}})
+		if got.Spec.Secrets == nil || len(got.Spec.Secrets.Mount) != 2 ||
+			got.Spec.Secrets.Mount[0] != "OPENAI_KEY" || got.Spec.Secrets.Mount[1] != "GITHUB_TOKEN" {
+			t.Errorf("mount = %+v, want [OPENAI_KEY GITHUB_TOKEN]", got.Spec.Secrets)
+		}
+	})
+}
+
 func TestDestroyDeletesAndIsIdempotent(t *testing.T) {
 	var calls int
 	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -220,5 +264,8 @@ type manifestBody struct {
 		Lifecycle *struct {
 			AutoStop string `json:"autoStop"`
 		} `json:"lifecycle"`
+		Secrets *struct {
+			Mount []string `json:"mount"`
+		} `json:"secrets"`
 	} `json:"spec"`
 }

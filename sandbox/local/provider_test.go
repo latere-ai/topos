@@ -20,6 +20,31 @@ import (
 // assertInterface ensures Provider implements Provider at compile time.
 var _ sandbox.Provider = (*local.Provider)(nil)
 
+// TestLocalIgnoresVaultCredentials asserts the local provider treats the
+// vault-credential fields as a no-op (it has no vault): SecretMounts on Create
+// and SecretEnv on Exec neither error nor change behaviour.
+func TestLocalIgnoresVaultCredentials(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+
+	sb, err := p.Create(ctx, sandbox.CreateOptions{SecretMounts: []string{"OPENAI_KEY"}})
+	if err != nil {
+		t.Fatalf("Create with SecretMounts: %v", err)
+	}
+	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+
+	res, err := p.Exec(ctx, sb.ID, sandbox.ExecOptions{
+		Argv:      []string{"sh", "-c", "echo ok"},
+		SecretEnv: map[string]string{"OPENAI_API_KEY": "openai_key"},
+	})
+	if err != nil {
+		t.Fatalf("Exec with SecretEnv: %v", err)
+	}
+	if res.ExitCode != 0 || !strings.Contains(string(res.Stdout), "ok") {
+		t.Fatalf("exec result = %+v, want clean run ignoring SecretEnv", res)
+	}
+}
+
 func TestCreateAndDestroy(t *testing.T) {
 	p := local.New()
 	ctx := context.Background()

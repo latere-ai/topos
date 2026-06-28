@@ -48,10 +48,18 @@ type manifestSpec struct {
 	Policy    string             `json:"policy,omitempty"`
 	Env       map[string]string  `json:"env,omitempty"`
 	Lifecycle *manifestLifecycle `json:"lifecycle,omitempty"`
+	Secrets   *manifestSecrets   `json:"secrets,omitempty"`
 }
 
 type manifestLifecycle struct {
 	AutoStop string `json:"autoStop,omitempty"`
+}
+
+// manifestSecrets carries the vault entries to mount. Mount intentionally has
+// no omitempty: an explicit empty slice must serialise as [] ("mount none"),
+// which the server distinguishes from an absent secrets block ("default_mount").
+type manifestSecrets struct {
+	Mount []string `json:"mount"`
 }
 
 // sandboxResp is the subset of Cella's Sandbox response Topos consumes.
@@ -100,6 +108,11 @@ func (p *Provider) Create(ctx context.Context, opts sandbox.CreateOptions) (sand
 			Env:       opts.Env,
 			Lifecycle: &manifestLifecycle{AutoStop: defaultAutoStop},
 		},
+	}
+	// nil SecretMounts => omit secrets => server applies default_mount. A
+	// non-nil slice (even empty) => mount exactly those (empty = none).
+	if opts.SecretMounts != nil {
+		m.Spec.Secrets = &manifestSecrets{Mount: opts.SecretMounts}
 	}
 
 	var resp sandboxResp

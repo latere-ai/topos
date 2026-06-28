@@ -155,6 +155,38 @@ func TestStreamExecEmptyArgv(t *testing.T) {
 	}
 }
 
+func TestExecSendsSecretEnvAsVaultRef(t *testing.T) {
+	var gotReq createCommandReq
+	code := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/commands") {
+			_ = json.NewDecoder(r.Body).Decode(&gotReq)
+			_ = json.NewEncoder(w).Encode(commandResp{CommandID: "cmd_1", Phase: "exited", ExitCode: &code})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(logEnvelope{Phase: "exited", ExitCode: &code})
+	}))
+	t.Cleanup(srv.Close)
+	p := New(Options{BaseURL: srv.URL, Token: StaticTokenSource("t"), HTTPClient: srv.Client()})
+	p.pollInterval = time.Millisecond
+
+	_, err := p.Exec(context.Background(), "sb_1", sandbox.ExecOptions{
+		Argv:      []string{"deploy"},
+		SecretEnv: map[string]string{"OPENAI_API_KEY": "openai_key"},
+	})
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	// The vault entry name travels under env_from_vault; the value never does.
+	if gotReq.EnvFromVault["OPENAI_API_KEY"] != "openai_key" {
+		t.Errorf("env_from_vault = %v, want OPENAI_API_KEY=openai_key", gotReq.EnvFromVault)
+	}
+	if len(gotReq.Env) != 0 {
+		t.Errorf("plaintext env = %v, want none (secret rode env_from_vault)", gotReq.Env)
+	}
+}
+
 func TestExecContextCancelledIsKilled(t *testing.T) {
 	// The command never finishes; cancelling the context terminates the stream
 	// as "killed" with no error, matching the local provider.

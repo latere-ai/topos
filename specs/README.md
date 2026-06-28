@@ -59,6 +59,8 @@ delegation and topology mechanics, then the supporting engine specs.
   seam, and sandbox interface.
 - [Cella Sandbox Provider](runtime/sandbox-cella.md): backing the sandbox
   interface with hosted Cella compute.
+- [Sandbox Credential Delivery](runtime/sandbox-credentials.md): delivering
+  vault secrets into a sandbox without plaintext.
 
 ## Dependency view
 
