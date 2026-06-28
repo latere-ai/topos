@@ -237,21 +237,25 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			stopReason    models.StopReason
 		)
 
+		// captureInterrupted ends the run on a mid-turn cancellation, returning
+		// the partial assistant turn (text streamed and tool calls completed
+		// before the cut) so the transcript reflects the progress made.
+		captureInterrupted := func(cause error) (*Result, error) {
+			if assistantText.Len() > 0 || len(toolCalls) > 0 {
+				transcript = append(transcript, buildAssistantMessage(assistantText.String(), toolCalls))
+				if assistantText.Len() > 0 {
+					result.FinalText = assistantText.String()
+				}
+			}
+			result.TotalUsage.Add(turnUsage)
+			result.Transcript = transcript
+			return result, interrupted(cause)
+		}
+
 		for {
 			if ctx.Err() != nil {
 				_ = stream.Close()
-				// Interrupted mid-turn: capture the partial assistant turn
-				// (text streamed and tool calls completed before the cut) so the
-				// returned transcript reflects the progress made.
-				if assistantText.Len() > 0 || len(toolCalls) > 0 {
-					transcript = append(transcript, buildAssistantMessage(assistantText.String(), toolCalls))
-					if assistantText.Len() > 0 {
-						result.FinalText = assistantText.String()
-					}
-				}
-				result.TotalUsage.Add(turnUsage)
-				result.Transcript = transcript
-				return result, interrupted(ctx.Err())
+				return captureInterrupted(ctx.Err())
 			}
 
 			ev, recvErr := stream.Recv()
@@ -260,6 +264,12 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 					break
 				}
 				_ = stream.Close()
+				// A model that surfaces cancellation as a recv error (returning
+				// context.Canceled when the caller cancels mid-stream) is an
+				// interrupt, not a transport failure: keep the partial transcript.
+				if ctx.Err() != nil || errors.Is(recvErr, context.Canceled) || errors.Is(recvErr, context.DeadlineExceeded) {
+					return captureInterrupted(recvErr)
+				}
 				return nil, fmt.Errorf("loop: stream recv (iter %d): %w", iter, recvErr)
 			}
 
