@@ -162,11 +162,15 @@ const (
 	EventSessionStart     = "SessionStart"
 	EventUserPromptSubmit = "UserPromptSubmit"
 	EventAssistantMessage = "AssistantMessage"
-	EventPostToolUse      = "PostToolUse"
-	EventSubagentStart    = "SubagentStart"
-	EventSubagentStop     = "SubagentStop"
-	EventStop             = "Stop"
-	EventSessionEnd       = "SessionEnd"
+	// EventTextDelta carries one streamed fragment of assistant text (a token or
+	// few). An observer receives many of these per turn for token-by-token
+	// rendering, followed by the assembled EventAssistantMessage for the turn.
+	EventTextDelta     = "TextDelta"
+	EventPostToolUse   = "PostToolUse"
+	EventSubagentStart = "SubagentStart"
+	EventSubagentStop  = "SubagentStop"
+	EventStop          = "Stop"
+	EventSessionEnd    = "SessionEnd"
 )
 
 // Options configure a Runner.
@@ -282,6 +286,118 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 	default:
 		return RunResult{}, fmt.Errorf("topos: unknown autonomy %q", region.Autonomy)
 	}
+}
+
+// TurnInput configures a single interactive turn run by [Runner.Turn]. Unlike a
+// Region run, a turn is one agent against a caller-owned sandbox, seeded from a
+// prior transcript — the building block of a multi-turn, resumable session.
+type TurnInput struct {
+	// Sandbox is the execution backend the turn's tools run against. Turn does
+	// NOT create or destroy it: the caller owns this sandbox across the whole
+	// session, so a persistent workspace survives between turns. Required.
+	Sandbox sandbox.Provider
+	// SandboxID is the caller-owned sandbox instance to run tools in. Required.
+	SandboxID string
+	// AgentID labels the agent for event payloads and lineage joins.
+	AgentID string
+	// SystemPrompt is the agent's static system instruction.
+	SystemPrompt string
+	// Tools is the tool registry offered to the model this turn. When nil, the
+	// built-in tool set (tools.Builtins) is used. A host injects its own
+	// registry here to add MCP, skills, or governed tools.
+	Tools *tools.Registry
+	// InitialTranscript seeds the conversation with the prior turns. For the
+	// first turn it is empty; for every later turn it is the transcript returned
+	// by the previous Turn, so the model sees the full history.
+	InitialTranscript []models.Message
+	// UserPrompt is the new user message for this turn. It is appended after
+	// InitialTranscript. Empty means "continue without new input" (e.g. resuming
+	// an interrupted turn).
+	UserPrompt string
+	// MaxTokens caps the model response size (0 = provider default).
+	MaxTokens int
+}
+
+// TurnResult is the outcome of a single [Runner.Turn].
+type TurnResult struct {
+	// Transcript is the full conversation after this turn (the seed plus the new
+	// user, assistant, and tool messages). It is the canonical state to persist
+	// and to feed as the next turn's InitialTranscript. On an interrupted turn
+	// it holds the conversation up to the cut, including the partial assistant
+	// turn in progress.
+	Transcript []models.Message
+	// Final is the last assistant text of the turn (may be empty if the turn
+	// ended on a tool call or was interrupted before any text).
+	Final string
+	// StopReason is the model's terminal signal for the turn.
+	StopReason models.StopReason
+	// Usage is the token accounting for this turn.
+	Usage models.Usage
+	// ToolCalls is the number of tool calls executed this turn.
+	ToolCalls int
+	// Interrupted is true when the turn was cut short by context cancellation
+	// (the caller cancelled to interrupt). It is the sentinel that distinguishes
+	// a user interrupt — a normal control action whose partial Transcript is
+	// kept — from a genuine failure (which Turn reports as a non-nil error). On
+	// an interrupted turn the error is nil and Interrupted is true.
+	Interrupted bool
+}
+
+// Turn runs a single interactive turn of one agent and returns the updated
+// transcript. It is the stable entry point a host (such as the Topos control
+// plane) uses to drive a multi-turn, resumable session: thread TurnResult.
+// Transcript back in as the next TurnInput.InitialTranscript, turn after turn.
+//
+// Unlike [Runner.Run], Turn neither creates nor destroys the sandbox (the caller
+// owns a persistent workspace for the session's lifetime) and runs exactly one
+// agent (no delegation). Cancelling ctx interrupts the turn: Turn then returns
+// the partial transcript with Interrupted set and a nil error, because an
+// interrupt is an expected user action, not a failure. A genuine infrastructure
+// failure is returned as a non-nil error (with whatever partial transcript was
+// captured).
+//
+// Observability flows through Options.Observer exactly as for Run: the host sees
+// token deltas (EventTextDelta), assistant messages, tool use, and lifecycle
+// events. Because the runner's bus is shared across a session's turns, a single
+// Observer registered at NewRunner sees every turn.
+func (r *Runner) Turn(ctx context.Context, in TurnInput) (TurnResult, error) {
+	reg := in.Tools
+	if reg == nil {
+		reg = tools.Builtins()
+	}
+	res, err := loop.Run(ctx, loop.Config{
+		Model:             r.model,
+		Sandbox:           in.Sandbox,
+		SandboxID:         in.SandboxID,
+		Tools:             reg,
+		Bus:               r.bus,
+		SessionID:         r.session(),
+		AgentID:           in.AgentID,
+		SystemPrompt:      in.SystemPrompt,
+		UserPrompt:        in.UserPrompt,
+		InitialTranscript: in.InitialTranscript,
+		MaxTokens:         in.MaxTokens,
+	})
+	// loop.Run returns a non-nil partial result on interrupt, and a nil result
+	// only on an unrecoverable infrastructure failure.
+	if res == nil {
+		return TurnResult{}, err
+	}
+	out := TurnResult{
+		Transcript: res.Transcript,
+		Final:      res.FinalText,
+		StopReason: res.StopReason,
+		Usage:      res.TotalUsage,
+		ToolCalls:  res.ToolCallCount,
+	}
+	if errors.Is(err, loop.ErrInterrupted) {
+		// An interrupt is a normal control action: surface it via the flag and a
+		// nil error so the host keeps the partial transcript without treating it
+		// as a failure.
+		out.Interrupted = true
+		return out, nil
+	}
+	return out, err
 }
 
 // readyTimeout and readyInterval bound how long Run waits for a freshly created

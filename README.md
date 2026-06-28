@@ -60,6 +60,48 @@ backend: `ModelLux` for the gateway, `ModelDirect` for a provider endpoint, or
 `ModelFake` for a deterministic model suitable for tests. For local development,
 `ModelLux` can point at a stateless `luxd` running with local provider keys.
 
+## Interactive, resumable turns
+
+`Runner.Run` runs a region start to finish. For a back-and-forth session — a chat
+assistant, a coding agent you steer turn by turn — use `Runner.Turn` instead. A
+turn is one agent against a sandbox **you** own, seeded from the conversation so
+far:
+
+```go
+r, _ := topos.NewRunner(topos.Options{
+    SessionID: "sess-42",
+    Model:     topos.ModelOptions{Kind: topos.ModelLux},
+    Observer:  func(e topos.Event) { /* render e.Name == topos.EventTextDelta live */ },
+})
+
+// You create and keep the sandbox for the whole session, so the workspace
+// (files, installed deps) survives between turns.
+var transcript []models.Message
+for _, prompt := range []string{"add a test for parse()", "now make it pass"} {
+    res, _ := r.Turn(ctx, topos.TurnInput{
+        Sandbox: sb, SandboxID: sbID,
+        InitialTranscript: transcript, // the history threads forward
+        UserPrompt:        prompt,
+    })
+    transcript = res.Transcript // persist this; it is the canonical state
+    fmt.Println(res.Final)
+}
+```
+
+Three properties make a turn safe to drive from a server:
+
+- **The transcript is the state.** `TurnResult.Transcript` is the full
+  conversation; feed it back as the next turn's `InitialTranscript`. Persist it
+  and you can resume the session later, even on another machine.
+- **Interrupt keeps the work.** Cancel the context to interrupt a long turn
+  (a user hitting Esc). `Turn` returns the *partial* transcript with
+  `Interrupted == true` and a nil error — an interrupt is a control action, not a
+  failure.
+- **Tokens stream.** The `Observer` receives `EventTextDelta` for each fragment
+  as the model writes, then the assembled `EventAssistantMessage` for the turn.
+  The observer is synchronous, so a host should hand off to a buffered channel
+  and return rather than block on I/O.
+
 ## Sandboxes
 
 Every run executes in a sandbox, and each delegated peer gets its own. The
