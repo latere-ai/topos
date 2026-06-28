@@ -1,0 +1,232 @@
+---
+title: Cella Sandbox Provider
+status: drafted
+depends_on:
+  - specs/runtime/embeddable-sdk.md
+  - specs/runtime/delegation.md
+affects:
+  - sandbox/cella/provider.go
+  - sandbox/cella/client.go
+  - sandbox/cella/token.go
+  - topos.go
+  - README.md
+effort: medium
+created: 2026-06-28
+updated: 2026-06-28
+author: changkun
+dispatched_task_id: null
+---
+
+# Cella Sandbox Provider
+
+## Goal
+
+Let a host run Topos agents on real, isolated compute by backing the
+`sandbox.Provider` interface with [Latere Cella](https://cella.latere.ai), the
+hosted Kubernetes sandbox platform, instead of the local temp-directory
+fallback. A host that wants ephemeral cloud sandboxes constructs a Cella
+provider and injects it into the runner; everything else — delegation,
+per-child sandboxes, lift/drop — keeps working unchanged because it already
+depends only on the interface.
+
+This is the first non-local `sandbox.Provider` implementation. Its shape is the
+template every future backend follows.
+
+## Constraints inherited from the existing design
+
+The runtime was built anticipating this backend, so most decisions are already
+fixed in code and must be honored, not revisited:
+
+- **Single interface boundary.** All upstream code (`topos`, `harness`,
+  `runtime/loop`, `harness/tools`) depends only on `sandbox.Provider` and the
+  shared types in `sandbox/provider.go`. The new backend lives in a leaf package
+  `sandbox/cella` and is the *only* package allowed to know Cella exists.
+- **Boundary rule, already tested.** `sandbox/boundary_test.go` asserts that no
+  file in `sandbox/` imports `sandbox/cella`. The root `topos` package must not
+  import it either: the host constructs the provider and passes it in as the
+  interface type.
+- **Types mirror Cella on purpose.** `sandbox.State`, `ExecResult.Phase`
+  (`exited`/`killed`/`lost`), and the `*APIError` / `ErrNotFound` / `ErrConflict`
+  error contract were written to match Cella's API. The `Command.phase` enum in
+  Cella's OpenAPI (`running`/`exited`/`killed`/`lost`) maps 1:1 to
+  `ExecResult.Phase`; no translation table is needed.
+- **Combined output stream.** Cella merges stdout and stderr in arrival order.
+  `ExecResult.Stdout` carries the combined stream; `ExecResult.Stderr` stays nil.
+  The interface comment already documents this for the Cella backend.
+- **Per-request bearer via context.** `sandbox/context.go` already provides
+  `WithBearer` / `BearerFromContext`, and its doc comment names the type this
+  spec adds: `cella.ContextTokenSource`.
+
+## Why a hand-rolled HTTP client, not the Cella Go module
+
+Cella is module `latere.ai/x/sandbox` — a full control plane (sandboxd,
+podman, vault, DOKS deploy) with a large dependency tree. Topos is an
+*embeddable* runtime: `go.mod` has a single dependency (`google/uuid`).
+Importing the Cella module would drag a Kubernetes stack into every host binary.
+
+The contract between the two systems is the versioned HTTP surface in
+`api/openapi.yaml` (the `/v1/*` paths), not Go types. So `sandbox/cella` hand-
+rolls a thin `net/http` client against that surface. No code generation, no
+shared module, no transitive dependencies beyond the standard library.
+
+## Design
+
+### Package layout
+
+```
+sandbox/cella/
+  client.go    // low-level HTTP: base URL, do(), error decoding, JSON/tar helpers
+  token.go     // TokenSource, ContextTokenSource, StaticTokenSource
+  provider.go  // Provider: implements sandbox.Provider over client + token
+  *_test.go    // httptest-backed tests (no live cluster)
+```
+
+`cella.New(opts Options) *Provider` takes a base URL, an `http.Client`, and a
+`TokenSource`. A compile-time `var _ sandbox.Provider = (*Provider)(nil)` pins
+the contract.
+
+### Authentication and token ownership
+
+Cella is bearer-token authenticated. There are two issuers (the legacy auth
+service and Cella's own signing key), and `POST /v1/tokens/exchange` mints a
+Cella bearer from an upstream actor token. The ownership split:
+
+- **The host owns the exchange.** At run start it bridges the inbound user JWT
+  to a user-subject Cella bearer (once), then stores it on the context with
+  `sandbox.WithBearer(ctx, bearer)`. This scopes the entire run — entry agent
+  plus every delegated peer's create/exec/destroy — to the session user's
+  identity.
+- **`ContextTokenSource` just reads it back** via `BearerFromContext` and sets
+  `Authorization: Bearer <token>` on each request. A `StaticTokenSource` is also
+  provided for service-account and local-dev use where one fixed token suffices.
+
+The provider does **not** call `/v1/tokens/exchange` itself; minting and refresh
+are the host's concern, kept out of the runtime.
+
+### Method mapping
+
+| `sandbox.Provider` | Cella endpoint | Notes |
+|---|---|---|
+| `Create` | `POST /v1/sandboxes` (SandboxManifest body) | See manifest mapping below. |
+| `Destroy` | `DELETE /v1/sandboxes/{id}` | Idempotent server-side; 404 → success. |
+| `HealthCheck` | `GET /v1/sandboxes/{id}` | nil iff `state==running`; 404 → `ErrNotFound`. |
+| `StreamExec` | `POST .../commands` then `GET .../commands/{cid}/logs?follow=true` (SSE) | Commands are async; `detach` defaults true. |
+| `Exec` | built on `StreamExec` | Stream to EOF, then fetch the command record for the exit code. |
+| `ExecStream.Result` | `GET .../commands/{cid}` | `phase` + `exit_code` map 1:1 to `ExecResult`. |
+| `ReadFile` | `POST .../files/export` `{src_dir: dir(path), paths: [base(path)]}` | Read the single entry from the returned tar. |
+| `ListFiles` | `POST .../files/export` `{src_dir: path, paths: ["."]}` | Parse tar headers → `FileInfo`; keep only immediate children (tar recurses). |
+| `WriteFile` | `POST .../files/import` (multipart `tarball`, `dest: dir(path)`) | Wrap `data` in a one-entry in-memory tar. |
+
+### Create: SandboxManifest mapping
+
+The flat `CreateSandbox` body is deprecated; the provider sends the
+Kubernetes-style `SandboxManifest` envelope (`apiVersion: cella.latere.ai/v1`,
+`kind: Sandbox`). `sandbox.CreateOptions` maps as:
+
+| `CreateOptions` | Manifest path |
+|---|---|
+| `Name` | `metadata.name` (empty → server generates a slug) |
+| `Labels` | `metadata.labels` (reserved `sandbox.latere.ai/` prefix is server-rejected) |
+| `Image` | `spec.image` (empty → platform base image) |
+| `Env` | `spec.env` |
+| `Tier` | `spec.tier` (default `ephemeral`) |
+| `Policy` | `spec.policy` (empty → caller default; the brain runner sets `brain`) |
+
+The provider always sets `spec.lifecycle.autoStop` to a bounded default (e.g.
+`15m`) so an orphaned sandbox stops on its own — see Lifecycle below.
+
+### Exec lifecycle (async → sync)
+
+Cella commands run detached. `Exec` is therefore implemented *on top of*
+`StreamExec` so the start → stream → fetch-result lifecycle lives in one place:
+
+1. `POST .../commands` with `{argv, env, cwd}` → a `command_id`.
+2. `GET .../commands/{cid}/logs?follow=true` returns SSE frames; `Recv` yields
+   each frame's bytes and returns `io.EOF` when the stream ends.
+3. After EOF, `Result` does `GET .../commands/{cid}` and fills `ExecResult` from
+   `phase` and `exit_code`. `lost` carries no exit code, matching the interface.
+
+`Exec` runs that sequence and drains the stream into `ExecResult.Stdout`.
+
+### Error mapping
+
+The interface error contract is already specified; the client's response decoder
+implements it: `404 → ErrNotFound`, `409 → ErrConflict`, every other non-2xx →
+`*APIError{Status, Code, Message, RequestID}` populated from Cella's error
+envelope. Local failures (context cancelled, transport) surface as stdlib errors.
+
+### Injection into the runner
+
+`Run` currently hardcodes `local.New()` (`topos.go`). Add one field to `Options`:
+
+```go
+// Sandbox is the execution backend for the run. When nil, the runner uses
+// the local temp-directory provider (sandbox/local), so the zero-config path
+// needs no external services.
+Sandbox sandbox.Provider
+```
+
+`Run` uses `r.opts.Sandbox` when set, else `local.New()`. Because the delegate
+tool already creates per-child sandboxes through the injected `Provider`
+(`delegateTool.Invoke`), delegated peers automatically get their own Cella
+sandboxes with no further change. The root `topos` package still imports only
+`sandbox` and `sandbox/local`, never `sandbox/cella` — the host wires Cella in:
+
+```go
+prov := cella.New(cella.Options{BaseURL: "https://cella.latere.ai", Token: src})
+r, _ := topos.NewRunner(topos.Options{Sandbox: prov, Model: ...})
+ctx = sandbox.WithBearer(ctx, userBearer)
+res, _ := r.Run(ctx, region, task)
+```
+
+## Lifecycle and cost
+
+Unlike `local`'s temp directories, orphaned Cella sandboxes consume real
+resources and bill. Two safeguards:
+
+- **Server-side backstop.** Every sandbox is created `ephemeral` with
+  `spec.lifecycle.autoStop`, so a sandbox the host forgets to destroy stops
+  itself. `Run`'s `defer Destroy(...)` is best-effort and will not fire if the
+  process is killed; the autoStop deadline is the guarantee.
+- **Destroy reliability.** `Destroy` treats 404 as success and is the explicit
+  teardown path. Transient failures are logged; the autoStop backstop covers the
+  case where teardown never lands.
+
+## Testing
+
+The CI gate requires ≥90% coverage and the suite must not depend on a live
+cluster. Tests run against an `httptest.Server` that serves the OpenAPI shapes:
+
+- Error mapping: 404/409/5xx → `ErrNotFound`/`ErrConflict`/`*APIError`.
+- Exec lifecycle: command start, SSE log streaming to EOF, terminal `phase` and
+  `exit_code` retrieval, and the `killed`/`lost` phases.
+- Tar round-trip: `WriteFile` produces a tar the fake unpacks; `ReadFile` and
+  `ListFiles` parse a tar the fake serves, including immediate-child filtering.
+- Token sources: `ContextTokenSource` reads `BearerFromContext`; missing bearer
+  is surfaced clearly.
+- A `var _ sandbox.Provider = (*cella.Provider)(nil)` compile assertion.
+
+## Implementation plan
+
+Sliced into small, independently testable commits (tests first):
+
+1. `sandbox/cella` skeleton — `client.go` (`do`, error decoder), `token.go`
+   (`TokenSource`, `ContextTokenSource`, `StaticTokenSource`).
+2. `Create` / `Destroy` / `HealthCheck` with SandboxManifest mapping.
+3. `StreamExec` + `Exec`-on-top, phase/exit-code mapping.
+4. Tar-based `ReadFile` / `WriteFile` / `ListFiles`; verified against
+   `harness/lift.go` and `harness/drop.go`.
+5. `Options.Sandbox` injection in `topos.go` + README/usage docs.
+
+## Open questions
+
+- Image catalog: should the provider expose a typed enum of known base images,
+  or leave `Image` free-form and let the server validate against its catalog?
+  (Leaning free-form: the catalog is a server concern and changes independently.)
+- Log streaming under reconnect: Cella supports cursor-based polling as an
+  alternative to SSE (`stream=false` + `cursor`). v1 uses SSE follow; a
+  cursor-resume mode can be added if dropped connections prove common.
+
+## Outcome
+
+_Not yet implemented._

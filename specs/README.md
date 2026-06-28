@@ -6,8 +6,9 @@ Topos is an embeddable Go agent runtime: a host application imports the root
 region locally and in-process. The specs here document the public capabilities
 the runtime ships, so a developer can see the whole shape before reading code.
 
-All specs are `status: complete` and end with an Outcome section pointing at the
-packages that implement them.
+Most specs are `status: complete` and end with an Outcome section pointing at the
+packages that implement them. Forward-looking specs for not-yet-built work are
+marked `drafted` and say so in the list below.
 
 ## Big picture
 
@@ -57,6 +58,8 @@ delegation and topology mechanics, then the supporting engine specs.
   gateway.
 - [Agentic Loop](runtime/agentic-loop.md): the turn driver, tool registry, model
   seam, and sandbox interface.
+- [Cella Sandbox Provider](runtime/sandbox-cella.md): backing the sandbox
+  interface with hosted Cella compute (drafted; not yet implemented).
 
 ## Dependency view
 
