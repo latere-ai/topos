@@ -56,6 +56,39 @@ backend: `ModelLux` for the gateway, `ModelDirect` for a provider endpoint, or
 `ModelFake` for a deterministic model suitable for tests. For local development,
 `ModelLux` can point at a stateless `luxd` running with local provider keys.
 
+## Sandboxes
+
+Every run executes in a sandbox, and each delegated peer gets its own. The
+backend is pluggable through the `sandbox.Provider` interface. By default the
+runner uses `sandbox/local`, a temp-directory implementation that needs no
+external services — the zero-config path for development and tests.
+
+For hosted compute, inject a backend via `Options.Sandbox`. The `sandbox/cella`
+provider backs runs with [Latere Cella](https://cella.latere.ai), the hosted
+Kubernetes sandbox platform:
+
+```go
+import (
+    "latere.ai/x/topos"
+    "latere.ai/x/topos/sandbox"
+    "latere.ai/x/topos/sandbox/cella"
+)
+
+prov := cella.New(cella.Options{
+    BaseURL: "https://cella.latere.ai",
+    Token:   cella.ContextTokenSource{}, // reads the bearer set by sandbox.WithBearer
+})
+r, _ := topos.NewRunner(topos.Options{Sandbox: prov, Model: /* ... */})
+
+// Scope the whole run to the session user's Cella identity.
+ctx = sandbox.WithBearer(ctx, userBearer)
+res, _ := r.Run(ctx, region, task)
+```
+
+The host owns minting the Cella bearer (exchanging the user's token); the
+provider only presents it. The root `topos` package never imports a concrete
+backend — a host wires one in as the interface.
+
 ## Status
 
 Early. The root `topos` package is the supported surface and is what most callers

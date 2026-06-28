@@ -145,6 +145,13 @@ type Options struct {
 	Model           ModelOptions // the brain connection (Lux / direct / fake)
 	BudgetUSD       float64      // region spend cap, sub-allocated to delegates
 	MaxHandoffDepth int          // max delegation depth in a Mesh region (default 3); bounds recursion
+
+	// Sandbox is the execution backend for the run and every delegated peer.
+	// When nil, the runner uses the local temp-directory provider
+	// (sandbox/local), so the zero-config path needs no external services. A
+	// host wanting hosted compute injects a backend here (e.g. cella.New(...))
+	// as the interface; the root package never imports a concrete backend.
+	Sandbox sandbox.Provider
 }
 
 // Runner executes regions in-process through the real agentic loop, against the
@@ -166,10 +173,11 @@ func NewRunner(opts Options) (*Runner, error) {
 	return &Runner{opts: opts, model: m, bus: bus, spawner: harness.NewSpawner(bus)}, nil
 }
 
-// Run executes a region in-process (a local sandbox is created for the run) and
-// returns its lineage graph. task is the user request handed to the entry agent.
+// Run executes a region in-process (a sandbox is created for the run via the
+// configured provider, or sandbox/local when none is set) and returns its
+// lineage graph. task is the user request handed to the entry agent.
 func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult, error) {
-	p := local.New()
+	p := r.provider()
 	sb, err := p.Create(ctx, sandbox.CreateOptions{})
 	if err != nil {
 		return RunResult{}, fmt.Errorf("topos: create sandbox: %w", err)
@@ -184,6 +192,15 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 	default:
 		return RunResult{}, fmt.Errorf("topos: unknown autonomy %q", region.Autonomy)
 	}
+}
+
+// provider returns the configured sandbox backend, defaulting to the local
+// temp-directory provider when the host did not inject one.
+func (r *Runner) provider() sandbox.Provider {
+	if r.opts.Sandbox != nil {
+		return r.opts.Sandbox
+	}
+	return local.New()
 }
 
 func (r *Runner) session() string {

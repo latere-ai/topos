@@ -1,6 +1,6 @@
 ---
 title: Cella Sandbox Provider
-status: drafted
+status: complete
 depends_on:
   - specs/runtime/embeddable-sdk.md
   - specs/runtime/delegation.md
@@ -137,16 +137,28 @@ The provider always sets `spec.lifecycle.autoStop` to a bounded default (e.g.
 
 ### Exec lifecycle (async → sync)
 
-Cella commands run detached. `Exec` is therefore implemented *on top of*
-`StreamExec` so the start → stream → fetch-result lifecycle lives in one place:
+Cella commands run detached. `Exec` is implemented *on top of* `StreamExec` so
+the start → stream → terminal lifecycle lives in one place:
 
 1. `POST .../commands` with `{argv, env, cwd}` → a `command_id`.
-2. `GET .../commands/{cid}/logs?follow=true` returns SSE frames; `Recv` yields
-   each frame's bytes and returns `io.EOF` when the stream ends.
-3. After EOF, `Result` does `GET .../commands/{cid}` and fills `ExecResult` from
-   `phase` and `exit_code`. `lost` carries no exit code, matching the interface.
+2. A background goroutine pulls output with **cursor-based polling**
+   (`GET .../commands/{cid}/logs?stream=false&cursor=N`) and writes each chunk
+   into an `io.Pipe`. `Recv` reads the pipe, so a slow consumer backpressures
+   the poller.
+3. The cursor envelope (`{bytes, next_cursor, phase, exit_code}`) carries the
+   terminal `phase` and `exit_code` **inline**, so when the phase leaves
+   `running` the goroutine records them and closes the pipe — no extra
+   `GET .../commands/{cid}` is needed. `lost` carries no exit code.
 
-`Exec` runs that sequence and drains the stream into `ExecResult.Stdout`.
+`Exec` drains the stream to EOF and returns `Result`. A context cancellation is
+a terminal `killed` phase with a clean EOF (not a transport error), matching the
+local provider.
+
+Cursor polling was chosen over SSE follow because the cursor envelope is fully
+specified (including terminal phase/exit code) and trivially testable against an
+`httptest` fake, whereas SSE would still require a second request to recover the
+exit code. The `bytes` field is raw combined stdout+stderr text (confirmed
+against the server's own cursor-mode handler), not base64.
 
 ### Error mapping
 
@@ -220,13 +232,34 @@ Sliced into small, independently testable commits (tests first):
 
 ## Open questions
 
-- Image catalog: should the provider expose a typed enum of known base images,
-  or leave `Image` free-form and let the server validate against its catalog?
-  (Leaning free-form: the catalog is a server concern and changes independently.)
-- Log streaming under reconnect: Cella supports cursor-based polling as an
-  alternative to SSE (`stream=false` + `cursor`). v1 uses SSE follow; a
-  cursor-resume mode can be added if dropped connections prove common.
+- Image catalog: the provider leaves `Image` free-form and supplies a default
+  base image (`defaultImage`) when empty, letting the server validate against
+  its catalog. A typed enum was rejected: the catalog is a server concern that
+  changes independently.
+- Workspace root: file ops keep `src_dir`/`dest` at the server default
+  (`/workspace`) and pass workspace-relative paths in the tar, so no workdir is
+  hardcoded. If Cella ever varies the workdir per sandbox, this assumption (and
+  only this assumption) revisits.
+- Killing on cancel: a cancelled `Exec` stops polling and reports `killed`, but
+  does not yet `DELETE .../commands/{cid}` to stop the server-side process. The
+  `autoStop` backstop bounds the cost; an explicit kill can be added later.
 
 ## Outcome
 
-_Not yet implemented._
+Implemented in package `sandbox/cella`:
+
+- `client.go` — HTTP client (`New`, `send`, `doJSON`), the `{code,message,
+  request_id}` error decoder mapping 404→`ErrNotFound`, 409→`ErrConflict`, else
+  `*sandbox.APIError`.
+- `token.go` — `TokenSource`, `ContextTokenSource` (reads `sandbox.WithBearer`),
+  `StaticTokenSource`.
+- `provider.go` — `Create` (SandboxManifest body, default image + `autoStop`
+  backstop), `Destroy` (idempotent on 404), `HealthCheck`, and the
+  `var _ sandbox.Provider` assertion.
+- `exec.go` — `StreamExec` via cursor polling into an `io.Pipe`, `Exec` on top.
+- `files.go` — tar-based `ReadFile`/`ListFiles`/`WriteFile`.
+
+The injection point is `topos.Options.Sandbox` (`topos.go`); it defaults to
+`sandbox/local` when nil. The boundary test (`sandbox/boundary_test.go`) and a
+root-package test that the injected provider is actually used both pass. Tested
+against an `httptest` fake (no live cluster); total repo coverage 94.9%.

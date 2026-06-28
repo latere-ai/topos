@@ -33,6 +33,37 @@ func (failCreateProvider) Create(context.Context, sandbox.CreateOptions) (sandbo
 	return sandbox.Sandbox{}, errors.New("no capacity")
 }
 
+func TestRunUsesInjectedSandboxProvider(t *testing.T) {
+	// A provider injected via Options.Sandbox is used for the run's sandbox: a
+	// failing Create surfaces as the run's create error, proving the runner did
+	// not silently fall back to sandbox/local.
+	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}, Sandbox: failCreateProvider{}})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	r.model = testBrain{}
+	_, err = r.Run(context.Background(), dynamicRegion(), "go")
+	if err == nil || !strings.Contains(err.Error(), "create sandbox") {
+		t.Fatalf("err = %v, want a create sandbox error from the injected provider", err)
+	}
+}
+
+func TestRunDefaultsToLocalProvider(t *testing.T) {
+	// With no Sandbox set, Run succeeds against the local temp-dir fallback.
+	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	r.model = testBrain{}
+	res, err := r.Run(context.Background(), Region{Autonomy: Pinned, Entry: AgentSpec{Name: "solo", Role: "solo"}}, "go")
+	if err != nil {
+		t.Fatalf("Run with default provider: %v", err)
+	}
+	if res.Lineage.Nodes[0].Sandbox == "" {
+		t.Error("expected the default local provider to assign a sandbox id")
+	}
+}
+
 func TestRegionDirectoryReturnsPeerCards(t *testing.T) {
 	region := dynamicRegion()
 	cards := region.Directory()
