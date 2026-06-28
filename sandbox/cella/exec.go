@@ -98,14 +98,20 @@ func (p *Provider) pollLogs(ctx context.Context, sandboxID, commandID string, s 
 	var cursor int64
 	for {
 		if ctx.Err() != nil {
-			s.finish("killed", nil)
-			_ = s.pw.CloseWithError(ctx.Err())
+			p.killed(s)
 			return
 		}
 
 		var env logEnvelope
 		q := logPath + "?stream=false&cursor=" + strconv.FormatInt(cursor, 10)
 		if err := p.doJSON(ctx, "GET", q, nil, &env); err != nil {
+			// A cancelled context is a terminal "killed" phase, not a transport
+			// error — matching the local provider, Exec returns the result with
+			// no error. Any other failure propagates through the pipe.
+			if ctx.Err() != nil {
+				p.killed(s)
+				return
+			}
 			_ = s.pw.CloseWithError(err)
 			return
 		}
@@ -129,6 +135,13 @@ func (p *Provider) pollLogs(ctx context.Context, sandboxID, commandID string, s 
 		case <-time.After(p.pollIntervalOrDefault()):
 		}
 	}
+}
+
+// killed records the killed phase and closes the stream cleanly (EOF), so a
+// consumer sees the terminal phase rather than a transport error.
+func (p *Provider) killed(s *execStream) {
+	s.finish("killed", nil)
+	_ = s.pw.Close()
 }
 
 // phaseRunning is the only non-terminal command phase.

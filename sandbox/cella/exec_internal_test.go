@@ -155,6 +155,54 @@ func TestStreamExecEmptyArgv(t *testing.T) {
 	}
 }
 
+func TestExecContextCancelledIsKilled(t *testing.T) {
+	// The command never finishes; cancelling the context terminates the stream
+	// as "killed" with no error, matching the local provider.
+	p := fastProvider(t, execHandler(t, []logEnvelope{
+		{Bytes: "", NextCursor: 0, Phase: "running"},
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := p.StreamExec(ctx, "sb_1", sandbox.ExecOptions{Argv: []string{"sleep", "999"}})
+	if err != nil {
+		t.Fatalf("StreamExec: %v", err)
+	}
+	defer stream.Close() //nolint:errcheck
+	cancel()
+
+	for {
+		_, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Recv after cancel returned a transport error: %v", err)
+		}
+	}
+	if stream.Result().Phase != "killed" {
+		t.Fatalf("phase = %q, want killed", stream.Result().Phase)
+	}
+}
+
+func TestPollIntervalDefault(t *testing.T) {
+	p := New(Options{BaseURL: "http://x", Token: StaticTokenSource("t")})
+	if got := p.pollIntervalOrDefault(); got != defaultPollInterval {
+		t.Fatalf("default poll interval = %v, want %v", got, defaultPollInterval)
+	}
+}
+
+func TestSendTransportError(t *testing.T) {
+	// Point the provider at a server that is immediately closed, so the
+	// underlying http.Do fails — exercising send's transport error branch.
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close()
+	p := New(Options{BaseURL: url, Token: StaticTokenSource("t")})
+	_, err := p.Create(context.Background(), sandbox.CreateOptions{})
+	if err == nil {
+		t.Fatal("want transport error against a closed server, got nil")
+	}
+}
+
 func TestExecPropagatesStartError(t *testing.T) {
 	p := fastProvider(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

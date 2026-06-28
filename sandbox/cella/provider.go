@@ -13,6 +13,9 @@ import (
 	"latere.ai/x/topos/sandbox"
 )
 
+// Provider satisfies the sandbox.Provider interface.
+var _ sandbox.Provider = (*Provider)(nil)
+
 // defaultImage is the platform base image used when [sandbox.CreateOptions.Image]
 // is empty. The SandboxManifest schema requires spec.image, so — unlike the
 // deprecated flat create body — the provider must supply one rather than relying
