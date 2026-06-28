@@ -92,6 +92,27 @@ func withFastReadyPolling(t *testing.T) {
 	t.Cleanup(func() { readyTimeout, readyInterval = origT, origI })
 }
 
+func TestOptionsBrainOverridesModel(t *testing.T) {
+	// A custom models.Model passed via Options.Brain is used instead of the
+	// built-in Model kind. ModelFake would not delegate (one node); the scripted
+	// delegating brain produces a two-node lineage, proving Brain won.
+	r, err := NewRunner(Options{
+		SessionID: "run-1",
+		Model:     ModelOptions{Kind: ModelFake},
+		Brain:     testBrain{delegateTo: "reviewer"},
+	})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	res, err := r.Run(context.Background(), dynamicRegion(), "go")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Lineage.Nodes) != 2 {
+		t.Fatalf("nodes = %d, want 2 (Options.Brain not used?)", len(res.Lineage.Nodes))
+	}
+}
+
 func TestRunUsesInjectedSandboxProvider(t *testing.T) {
 	// A provider injected via Options.Sandbox is used for the run's sandbox: a
 	// failing Create surfaces as the run's create error, proving the runner did

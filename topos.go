@@ -154,6 +154,12 @@ type Options struct {
 	// host wanting hosted compute injects a backend here (e.g. cella.New(...))
 	// as the interface; the root package never imports a concrete backend.
 	Sandbox sandbox.Provider
+
+	// Brain, when non-nil, is the model the runner uses directly, ignoring
+	// Model. It lets a host plug in its own models.Model (a custom provider
+	// adapter, or a scripted model for tests and examples) instead of the
+	// built-in Lux, Direct, or Fake kinds.
+	Brain models.Model
 }
 
 // Runner executes regions in-process through the real agentic loop, against the
@@ -165,11 +171,15 @@ type Runner struct {
 	spawner *harness.Spawner
 }
 
-// NewRunner builds a Runner, constructing the model from Options.Model.
+// NewRunner builds a Runner. It uses Options.Brain when set, otherwise it
+// constructs the model from Options.Model.
 func NewRunner(opts Options) (*Runner, error) {
-	m, err := buildModel(opts.Model)
-	if err != nil {
-		return nil, err
+	m := opts.Brain
+	if m == nil {
+		var err error
+		if m, err = buildModel(opts.Model); err != nil {
+			return nil, err
+		}
 	}
 	bus := hooks.New()
 	return &Runner{opts: opts, model: m, bus: bus, spawner: harness.NewSpawner(bus)}, nil
