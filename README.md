@@ -89,6 +89,33 @@ The host owns minting the Cella bearer (exchanging the user's token); the
 provider only presents it. The root `topos` package never imports a concrete
 backend — a host wires one in as the interface.
 
+### Authenticating to Cella
+
+The host owns the token; the provider asks the configured `TokenSource` for it on
+every request and sends it as `Authorization: Bearer …`. The provider stores no
+token, so a rotated credential flows through automatically. Choose the source
+that matches the host's ownership model:
+
+| Source | Use when | Refresh behaviour |
+|---|---|---|
+| `StaticTokenSource("tok")` | one fixed token for the process (CLI, service account, dev) | none — fixed at construction |
+| `TokenFunc(func(ctx) (string, error))` | the host holds the token and rotates it out of band | **picks up refreshes** — called per request, returns the current token |
+| `ContextTokenSource{}` | multi-tenant: a different user's token per request, set with `sandbox.WithBearer(ctx, tok)` | per-request, but fixed for the context passed (a long run will not see a mid-run refresh) |
+
+```go
+// Host-held token that may be refreshed elsewhere — the recommended shape when
+// the host owns the credential and rotation should flow through with no re-wiring:
+prov := cella.New(cella.Options{
+    BaseURL: "https://cella.latere.ai",
+    Token: cella.TokenFunc(func(ctx context.Context) (string, error) {
+        return auth.CurrentToken(), nil // the host's cached, out-of-band-refreshed token
+    }),
+})
+```
+
+Cella issues the token (dashboard/CLI, or `POST /v1/tokens/exchange`); obtaining
+and refreshing it is the host's job, not the provider's.
+
 ### Secrets
 
 Secrets the agent's workload needs (provider keys, tokens) are never passed as

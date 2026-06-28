@@ -36,6 +36,20 @@ func (s StaticTokenSource) Token(context.Context) (string, error) {
 	return string(s), nil
 }
 
+// TokenFunc adapts a plain function to a [TokenSource], so a caller can supply
+// the current bearer without defining a type. The SDK calls it on every request,
+// so returning the owner's latest token makes credential rotation flow through
+// automatically: when the owner refreshes the token out of band, the next
+// request (including those deep inside a long-running Run) picks up the new
+// value with no further plumbing.
+//
+// Keep the function cheap — return a cached current token; do the actual refresh
+// out of band rather than blocking here.
+type TokenFunc func(ctx context.Context) (string, error)
+
+// Token calls the wrapped function.
+func (f TokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
+
 // ContextTokenSource reads a per-request bearer from the context, as set by
 // [sandbox.WithBearer]. This is how a host scopes an entire agent run — the
 // entry agent plus every delegated peer's create/exec/destroy — to the session

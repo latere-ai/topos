@@ -121,6 +121,48 @@ func TestCreateConflict(t *testing.T) {
 	}
 }
 
+func TestTokenFuncPullsCurrentTokenEachRequest(t *testing.T) {
+	// The owner rotates the token out of band; TokenFunc returns the current
+	// value, so each request carries the latest bearer with no re-wiring.
+	var authHeaders []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+		writeJSON(t, w, http.StatusOK, map[string]string{"id": "sb_1", "state": "creating", "backend": "k8s", "created_at": "t"})
+	}))
+	t.Cleanup(srv.Close)
+
+	current := "tok-v1"
+	p := cella.New(cella.Options{
+		BaseURL:    srv.URL,
+		HTTPClient: srv.Client(),
+		Token:      cella.TokenFunc(func(context.Context) (string, error) { return current, nil }),
+	})
+
+	if _, err := p.Create(context.Background(), sandbox.CreateOptions{}); err != nil {
+		t.Fatalf("Create 1: %v", err)
+	}
+	current = "tok-v2" // owner refreshes
+	if _, err := p.Create(context.Background(), sandbox.CreateOptions{}); err != nil {
+		t.Fatalf("Create 2: %v", err)
+	}
+
+	want := []string{"Bearer tok-v1", "Bearer tok-v2"}
+	if !equalStrings(authHeaders, want) {
+		t.Fatalf("auth headers = %v, want %v (refresh did not flow through)", authHeaders, want)
+	}
+}
+
+func TestTokenFuncErrorPropagates(t *testing.T) {
+	p := cella.New(cella.Options{
+		BaseURL: "http://unused",
+		Token:   cella.TokenFunc(func(context.Context) (string, error) { return "", errors.New("token unavailable") }),
+	})
+	// The error surfaces before any HTTP request is attempted.
+	if _, err := p.Create(context.Background(), sandbox.CreateOptions{}); err == nil {
+		t.Fatal("want token error, got nil")
+	}
+}
+
 // captureCreate runs Create against a fake that records the manifest body and
 // returns it.
 func captureCreate(t *testing.T, opts sandbox.CreateOptions) manifestBody {

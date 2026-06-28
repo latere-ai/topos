@@ -76,7 +76,7 @@ shared module, no transitive dependencies beyond the standard library.
 ```
 sandbox/cella/
   client.go    // low-level HTTP: base URL, do(), error decoding, JSON/tar helpers
-  token.go     // TokenSource, ContextTokenSource, StaticTokenSource
+  token.go     // TokenSource, StaticTokenSource, TokenFunc, ContextTokenSource
   provider.go  // Provider: implements sandbox.Provider over client + token
   *_test.go    // httptest-backed tests (no live cluster)
 ```
@@ -96,12 +96,25 @@ Cella bearer from an upstream actor token. The ownership split:
   `sandbox.WithBearer(ctx, bearer)`. This scopes the entire run — entry agent
   plus every delegated peer's create/exec/destroy — to the session user's
   identity.
-- **`ContextTokenSource` just reads it back** via `BearerFromContext` and sets
-  `Authorization: Bearer <token>` on each request. A `StaticTokenSource` is also
-  provided for service-account and local-dev use where one fixed token suffices.
+
+The provider stores no token: `send` asks the configured `TokenSource` on every
+request and sets `Authorization: Bearer <token>`. Three sources cover the
+ownership models a caller might have:
+
+- **`StaticTokenSource`** — one fixed token for the process (service account,
+  dev). No refresh.
+- **`TokenFunc`** — a caller-supplied function the SDK calls per request. This is
+  the recommended shape when the caller *owns* the token and rotates it out of
+  band: returning the current value makes a refresh flow through automatically,
+  including for requests deep inside a long-running `Run`.
+- **`ContextTokenSource`** — reads a per-request bearer from `BearerFromContext`
+  (set by `sandbox.WithBearer`). Best for multi-tenant hosts (a different user
+  per request), but the token is fixed for whatever context is passed, so it does
+  not pick up a refresh mid-run.
 
 The provider does **not** call `/v1/tokens/exchange` itself; minting and refresh
-are the host's concern, kept out of the runtime.
+are the caller's concern, kept out of the runtime. A long run that may outlive a
+token's TTL should use `TokenFunc` so rotation propagates.
 
 ### Method mapping
 
