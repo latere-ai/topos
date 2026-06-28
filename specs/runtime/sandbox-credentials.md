@@ -20,8 +20,8 @@ dispatched_task_id: null
 
 ## Goal
 
-Let a host deliver secrets *into* a sandbox — provider API keys, third-party
-tokens, the kind of value you would otherwise paste into a `.env` — without ever
+Let a host deliver secrets *into* a sandbox (provider API keys, third-party
+tokens, the kind of value one would otherwise paste into a `.env`) without ever
 putting the secret value on the wire in plaintext or on a command's argv. This
 extends the `sandbox.Provider` interface with backend-neutral credential fields
 and maps them onto Cella's vault, while the local provider treats them as a
@@ -31,14 +31,14 @@ no-op.
 
 This spec covers only the third surface below; the first two already exist.
 
-1. **API auth** — the bearer Topos presents to the backend. Owned by
+1. **API auth**: the bearer Topos presents to the backend. Owned by
    `TokenSource` / `ContextTokenSource`; the host mints, the provider presents.
    See [Cella Sandbox Provider](sandbox-cella.md).
-2. **Lift/drop secret deny-list** — `harness/lift.go` and `drop.go` refuse to
+2. **Lift/drop secret deny-list**: `harness/lift.go` and `drop.go` refuse to
    copy laptop secrets (`.env`, `*.pem`, `.ssh/`, `.aws/credentials`) into the
    sandbox or materialise sandbox-born secrets back. Provider-agnostic; works
    through the interface already.
-3. **In-sandbox credential delivery** — getting a vault-held secret to the
+3. **In-sandbox credential delivery**: getting a vault-held secret to the
    workload running inside the sandbox. This is the gap this spec closes.
 
 ## The problem with `Env`
@@ -48,7 +48,7 @@ as plaintext JSON in the request body, and command env can leak via
 `/proc/<pid>/cmdline` on some paths. They are the right channel for non-secret
 configuration and the wrong one for secrets. Cella solves this with a vault:
 the host stores `(scope, NAME) → value` entries out of band, and the sandbox
-references them by name only — the value is resolved server-side.
+references them by name only; the value is resolved server-side.
 
 Cella delivers vault entries two ways:
 
@@ -97,7 +97,7 @@ distinguishes.
 
 ### Local mapping
 
-The local provider ignores both fields — it has no vault, and per the decision
+The local provider ignores both fields; it has no vault, and per the decision
 recorded here a secret-dependent agent simply runs without those secrets in
 local development. No code change is needed (local already reads only
 Argv/Env/Cwd/Name); tests assert the no-op (no error) explicitly.
@@ -124,15 +124,15 @@ Argv/Env/Cwd/Name); tests assert the no-op (no error) explicitly.
 
 Implemented:
 
-- `sandbox/provider.go` — added `CreateOptions.SecretMounts []string` and
+- `sandbox/provider.go`: added `CreateOptions.SecretMounts []string` and
   `ExecOptions.SecretEnv map[string]string` with the documented nil/empty
   semantics.
-- `sandbox/cella/provider.go` — `Create` adds a pointer `spec.secrets` block
+- `sandbox/cella/provider.go`: `Create` adds a pointer `spec.secrets` block
   (`mount` without `omitempty`) set only when `SecretMounts != nil`, so nil
   omits the block (default_mount), `[]` serialises as mount-none, and a list
-  mounts exactly those. `sandbox/cella/exec.go` — `Exec` maps `SecretEnv` to the
+  mounts exactly those. `sandbox/cella/exec.go`: `Exec` maps `SecretEnv` to the
   command body's `env_from_vault`.
-- `sandbox/local/provider.go` — unchanged; it already reads only
+- `sandbox/local/provider.go`: unchanged; it already reads only
   Argv/Env/Cwd/Name, so the new fields are ignored. A test
   (`TestLocalIgnoresVaultCredentials`) pins the no-op.
 - Cella tests cover the three `SecretMounts` cases and the `env_from_vault`

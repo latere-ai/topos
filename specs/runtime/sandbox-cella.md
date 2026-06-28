@@ -25,8 +25,8 @@ Let a host run Topos agents on real, isolated compute by backing the
 `sandbox.Provider` interface with [Latere Cella](https://cella.latere.ai), the
 hosted Kubernetes sandbox platform, instead of the local temp-directory
 fallback. A host that wants ephemeral cloud sandboxes constructs a Cella
-provider and injects it into the runner; everything else — delegation,
-per-child sandboxes, lift/drop — keeps working unchanged because it already
+provider and injects it into the runner; everything else (delegation,
+per-child sandboxes, lift/drop) keeps working unchanged because it already
 depends only on the interface.
 
 This is the first non-local `sandbox.Provider` implementation. Its shape is the
@@ -59,7 +59,7 @@ fixed in code and must be honored, not revisited:
 
 ## Why a hand-rolled HTTP client, not the Cella Go module
 
-Cella is module `latere.ai/x/sandbox` — a full control plane (sandboxd,
+Cella is module `latere.ai/x/sandbox`, a full control plane (sandboxd,
 podman, vault, DOKS deploy) with a large dependency tree. Topos is an
 *embeddable* runtime: `go.mod` has a single dependency (`google/uuid`).
 Importing the Cella module would drag a Kubernetes stack into every host binary.
@@ -93,21 +93,21 @@ Cella bearer from an upstream actor token. The ownership split:
 
 - **The host owns the exchange.** At run start it bridges the inbound user JWT
   to a user-subject Cella bearer (once), then stores it on the context with
-  `sandbox.WithBearer(ctx, bearer)`. This scopes the entire run — entry agent
-  plus every delegated peer's create/exec/destroy — to the session user's
+  `sandbox.WithBearer(ctx, bearer)`. This scopes the entire run (entry agent
+  plus every delegated peer's create/exec/destroy) to the session user's
   identity.
 
 The provider stores no token: `send` asks the configured `TokenSource` on every
 request and sets `Authorization: Bearer <token>`. Three sources cover the
 ownership models a caller might have:
 
-- **`StaticTokenSource`** — one fixed token for the process (service account,
+- **`StaticTokenSource`**: one fixed token for the process (service account,
   dev). No refresh.
-- **`TokenFunc`** — a caller-supplied function the SDK calls per request. This is
+- **`TokenFunc`**: a caller-supplied function the SDK calls per request. This is
   the recommended shape when the caller *owns* the token and rotates it out of
   band: returning the current value makes a refresh flow through automatically,
   including for requests deep inside a long-running `Run`.
-- **`ContextTokenSource`** — reads a per-request bearer from `BearerFromContext`
+- **`ContextTokenSource`**: reads a per-request bearer from `BearerFromContext`
   (set by `sandbox.WithBearer`). Best for multi-tenant hosts (a different user
   per request), but the token is fixed for whatever context is passed, so it does
   not pick up a refresh mid-run.
@@ -139,14 +139,14 @@ Kubernetes-style `SandboxManifest` envelope (`apiVersion: cella.latere.ai/v1`,
 | `CreateOptions` | Manifest path |
 |---|---|
 | `Name` | `metadata.name` (empty → server generates a slug) |
-| `Labels` | `metadata.labels` — the provider stamps `kind=agent` into a copy (the backend tags every agent sandbox; per the `CreateOptions.Labels` contract), never mutating the caller's map and not overriding a caller-supplied `kind`. Reserved `sandbox.latere.ai/` prefix is server-rejected. |
+| `Labels` | `metadata.labels`: the provider stamps `kind=agent` into a copy (the backend tags every agent sandbox; per the `CreateOptions.Labels` contract), never mutating the caller's map and not overriding a caller-supplied `kind`. Reserved `sandbox.latere.ai/` prefix is server-rejected. |
 | `Image` | `spec.image` (empty → platform base image) |
 | `Env` | `spec.env` |
 | `Tier` | `spec.tier` (default `ephemeral`) |
 | `Policy` | `spec.policy` (empty → caller default; the brain runner sets `brain`) |
 
 The provider always sets `spec.lifecycle.autoStop` to a bounded default (e.g.
-`15m`) so an orphaned sandbox stops on its own — see Lifecycle below.
+`15m`) so an orphaned sandbox stops on its own; see Lifecycle below.
 
 ### Exec lifecycle (async → sync)
 
@@ -160,7 +160,7 @@ the start → stream → terminal lifecycle lives in one place:
    the poller.
 3. The cursor envelope (`{bytes, next_cursor, phase, exit_code}`) carries the
    terminal `phase` and `exit_code` **inline**, so when the phase leaves
-   `running` the goroutine records them and closes the pipe — no extra
+   `running` the goroutine records them and closes the pipe; no extra
    `GET .../commands/{cid}` is needed. `lost` carries no exit code.
 
 `Exec` drains the stream to EOF and returns `Result`. A context cancellation is
@@ -195,7 +195,7 @@ Sandbox sandbox.Provider
 tool already creates per-child sandboxes through the injected `Provider`
 (`delegateTool.Invoke`), delegated peers automatically get their own Cella
 sandboxes with no further change. The root `topos` package still imports only
-`sandbox` and `sandbox/local`, never `sandbox/cella` — the host wires Cella in:
+`sandbox` and `sandbox/local`, never `sandbox/cella`; the host wires Cella in:
 
 ```go
 prov := cella.New(cella.Options{BaseURL: "https://cella.latere.ai", Token: src})
@@ -245,7 +245,7 @@ cluster. Tests run against an `httptest.Server` that serves the OpenAPI shapes:
 
 Sliced into small, independently testable commits (tests first):
 
-1. `sandbox/cella` skeleton — `client.go` (`do`, error decoder), `token.go`
+1. `sandbox/cella` skeleton: `client.go` (`do`, error decoder), `token.go`
    (`TokenSource`, `ContextTokenSource`, `StaticTokenSource`).
 2. `Create` / `Destroy` / `HealthCheck` with SandboxManifest mapping.
 3. `StreamExec` + `Exec`-on-top, phase/exit-code mapping.
@@ -276,16 +276,16 @@ Sliced into small, independently testable commits (tests first):
 
 Implemented in package `sandbox/cella`:
 
-- `client.go` — HTTP client (`New`, `send`, `doJSON`), the `{code,message,
+- `client.go`: HTTP client (`New`, `send`, `doJSON`), the `{code,message,
   request_id}` error decoder mapping 404→`ErrNotFound`, 409→`ErrConflict`, else
   `*sandbox.APIError`.
-- `token.go` — `TokenSource`, `ContextTokenSource` (reads `sandbox.WithBearer`),
+- `token.go`: `TokenSource`, `ContextTokenSource` (reads `sandbox.WithBearer`),
   `StaticTokenSource`.
-- `provider.go` — `Create` (SandboxManifest body, default image + `autoStop`
+- `provider.go`: `Create` (SandboxManifest body, default image + `autoStop`
   backstop), `Destroy` (idempotent on 404), `HealthCheck`, and the
   `var _ sandbox.Provider` assertion.
-- `exec.go` — `StreamExec` via cursor polling into an `io.Pipe`, `Exec` on top.
-- `files.go` — tar-based `ReadFile`/`ListFiles`/`WriteFile`.
+- `exec.go`: `StreamExec` via cursor polling into an `io.Pipe`, `Exec` on top.
+- `files.go`: tar-based `ReadFile`/`ListFiles`/`WriteFile`.
 
 The injection point is `topos.Options.Sandbox` (`topos.go`); it defaults to
 `sandbox/local` when nil. `Run` and the delegate path call `waitRunning` after

@@ -1,9 +1,13 @@
-# Topos
+# Topos Runtime
 
-**Latere Topos** is an embeddable Go agent runtime. A host application defines
-agents, composes them into a region, and runs them in-process. The runtime provides
-sub-agent spawning with attenuated permissions, peer discovery for multi-agent work,
-and a deterministic lineage graph of everything that ran.
+**Topos Runtime** is the embeddable Go agent runtime at the core of
+[Topos](https://topos.latere.ai), the Latere agent platform. A host application
+defines agents, composes them into a region, and runs them in-process. The runtime
+provides sub-agent spawning with attenuated permissions, peer discovery for
+multi-agent work, and a deterministic lineage graph of everything that ran.
+
+The Topos platform is one host built on this runtime; any Go application can be
+another.
 
 ```go
 import "latere.ai/x/topos"
@@ -61,7 +65,7 @@ backend: `ModelLux` for the gateway, `ModelDirect` for a provider endpoint, or
 Every run executes in a sandbox, and each delegated peer gets its own. The
 backend is pluggable through the `sandbox.Provider` interface. By default the
 runner uses `sandbox/local`, a temp-directory implementation that needs no
-external services — the zero-config path for development and tests.
+external services. It is the zero-config path for development and tests.
 
 For hosted compute, inject a backend via `Options.Sandbox`. The `sandbox/cella`
 provider backs runs with [Latere Cella](https://cella.latere.ai), the hosted
@@ -87,7 +91,7 @@ res, _ := r.Run(ctx, region, task)
 
 The host owns minting the Cella bearer (exchanging the user's token); the
 provider only presents it. The root `topos` package never imports a concrete
-backend — a host wires one in as the interface.
+backend; a host wires one in as the interface.
 
 ### Authenticating to Cella
 
@@ -98,12 +102,12 @@ that matches the host's ownership model:
 
 | Source | Use when | Refresh behaviour |
 |---|---|---|
-| `StaticTokenSource("tok")` | one fixed token for the process (CLI, service account, dev) | none — fixed at construction |
-| `TokenFunc(func(ctx) (string, error))` | the host holds the token and rotates it out of band | **picks up refreshes** — called per request, returns the current token |
+| `StaticTokenSource("tok")` | one fixed token for the process (CLI, service account, dev) | none; fixed at construction |
+| `TokenFunc(func(ctx) (string, error))` | the host holds the token and rotates it out of band | **picks up refreshes**; called per request, returns the current token |
 | `ContextTokenSource{}` | multi-tenant: a different user's token per request, set with `sandbox.WithBearer(ctx, tok)` | per-request, but fixed for the context passed (a long run will not see a mid-run refresh) |
 
 ```go
-// Host-held token that may be refreshed elsewhere — the recommended shape when
+// Host-held token that may be refreshed elsewhere. The recommended shape when
 // the host owns the credential and rotation should flow through with no re-wiring:
 prov := cella.New(cella.Options{
     BaseURL: "https://cella.latere.ai",
