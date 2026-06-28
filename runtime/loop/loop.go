@@ -88,9 +88,47 @@ type Result struct {
 	ToolCallCount int
 }
 
+// ErrInterrupted marks a run cut short by context cancellation. It wraps the
+// underlying context error, so both errors.Is(err, context.Canceled) (or
+// context.DeadlineExceeded) and errors.Is(err, ErrInterrupted) report true on
+// an interrupted run.
+//
+// An interrupted run is a normal control action, not a failure: Run still
+// returns a non-nil *Result whose Transcript holds the conversation up to the
+// cut — including the partial assistant turn in progress — so a host can persist
+// it and resume from it later. This is what lets a user interrupt a long turn
+// (Esc, many tool calls deep) without losing the work already done.
+var ErrInterrupted = errors.New("loop: run interrupted")
+
+// interrupted wraps a context error as an ErrInterrupted, preserving both
+// sentinels for errors.Is.
+func interrupted(cause error) error {
+	return fmt.Errorf("%w: %w", ErrInterrupted, cause)
+}
+
+// buildAssistantMessage assembles one assistant-turn message from the text and
+// tool calls accumulated while draining a model stream. It is used both on the
+// normal turn-completion path and when capturing the partial turn on interrupt,
+// so the transcript shape is identical either way.
+func buildAssistantMessage(text string, toolCalls []*models.ToolCall) models.Message {
+	m := models.Message{
+		Role:      "assistant",
+		Content:   text,
+		ToolCalls: make([]models.ToolCall, 0, len(toolCalls)),
+	}
+	for _, tc := range toolCalls {
+		m.ToolCalls = append(m.ToolCalls, *tc)
+	}
+	return m
+}
+
 // Run executes the agentic loop with the given config and returns a Result.
-// It returns an error only for unrecoverable infrastructure failures (model
-// stream error, context cancellation); tool errors are captured in ToolResult.
+//
+// On success it returns the Result and a nil error. On context cancellation it
+// returns the partial Result (Transcript populated up to the cut) and an error
+// satisfying errors.Is(err, ErrInterrupted); see ErrInterrupted. It returns a
+// nil Result only for unrecoverable infrastructure failures (a model stream
+// error); tool errors are captured in ToolResult, not returned here.
 func Run(ctx context.Context, cfg Config) (*Result, error) {
 	logger := cfg.Logger
 	if logger == nil {
@@ -155,7 +193,10 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 	for iter := range MaxIterations {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			// Interrupted between turns: the transcript is whole (every prior
+			// turn completed), so hand it back as-is.
+			result.Transcript = transcript
+			return result, interrupted(ctx.Err())
 		}
 
 		var toolDefs []models.ToolDef
@@ -199,7 +240,18 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		for {
 			if ctx.Err() != nil {
 				_ = stream.Close()
-				return nil, ctx.Err()
+				// Interrupted mid-turn: capture the partial assistant turn
+				// (text streamed and tool calls completed before the cut) so the
+				// returned transcript reflects the progress made.
+				if assistantText.Len() > 0 || len(toolCalls) > 0 {
+					transcript = append(transcript, buildAssistantMessage(assistantText.String(), toolCalls))
+					if assistantText.Len() > 0 {
+						result.FinalText = assistantText.String()
+					}
+				}
+				result.TotalUsage.Add(turnUsage)
+				result.Transcript = transcript
+				return result, interrupted(ctx.Err())
 			}
 
 			ev, recvErr := stream.Recv()
@@ -214,6 +266,17 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			switch ev.Kind {
 			case models.KindTextDelta:
 				assistantText.WriteString(ev.TextDelta)
+				// Stream the fragment to observers token-by-token. Ephemeral:
+				// the durable record is the assembled AssistantMessage emitted
+				// once the turn completes, so token fragments never enter the
+				// session event log.
+				cfg.Bus.DispatchEphemeral(hooks.EventTextDelta, &hooks.TextDeltaPayload{
+					Version:   "1",
+					SessionID: cfg.SessionID,
+					AgentID:   cfg.AgentID,
+					Text:      ev.TextDelta,
+					Turn:      iter + 1,
+				})
 			case models.KindToolCallDone:
 				if ev.ToolCall != nil {
 					tc := *ev.ToolCall
@@ -233,23 +296,12 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		_ = stream.Close()
 
 		// Accumulate usage.
-		result.TotalUsage.InputTokens += turnUsage.InputTokens
-		result.TotalUsage.OutputTokens += turnUsage.OutputTokens
-		result.TotalUsage.CacheReadTokens += turnUsage.CacheReadTokens
-		result.TotalUsage.CacheWriteTokens += turnUsage.CacheWriteTokens
+		result.TotalUsage.Add(turnUsage)
 
 		finalStopReason = stopReason
 
 		// Build the assistant message for the transcript.
-		assistMsg := models.Message{
-			Role:      "assistant",
-			Content:   assistantText.String(),
-			ToolCalls: make([]models.ToolCall, 0, len(toolCalls)),
-		}
-		for _, tc := range toolCalls {
-			assistMsg.ToolCalls = append(assistMsg.ToolCalls, *tc)
-		}
-		transcript = append(transcript, assistMsg)
+		transcript = append(transcript, buildAssistantMessage(assistantText.String(), toolCalls))
 
 		if assistantText.Len() > 0 {
 			result.FinalText = assistantText.String()

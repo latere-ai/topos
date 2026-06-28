@@ -212,6 +212,16 @@ type Usage struct {
 	CacheWriteTokens int
 }
 
+// Add accumulates another Usage into u, field by field. It is the canonical way
+// to fold per-turn usage into a running total (the agentic loop totals each
+// turn this way, and cost/budget consumers fold session usage the same way).
+func (u *Usage) Add(o Usage) {
+	u.InputTokens += o.InputTokens
+	u.OutputTokens += o.OutputTokens
+	u.CacheReadTokens += o.CacheReadTokens
+	u.CacheWriteTokens += o.CacheWriteTokens
+}
+
 // StopReason is the normalized terminal signal from the model.
 type StopReason string
 

@@ -604,6 +604,164 @@ func TestLoopMaxIterationsCap(t *testing.T) {
 	}
 }
 
+// lastByRole returns the last message with the given role, or false.
+func lastByRole(transcript []models.Message, role string) (models.Message, bool) {
+	for i := len(transcript) - 1; i >= 0; i-- {
+		if transcript[i].Role == role {
+			return transcript[i], true
+		}
+	}
+	return models.Message{}, false
+}
+
+// TestLoopInterruptDuringDrainReturnsPartialTranscript asserts that cancelling
+// mid-turn yields a non-nil Result whose transcript captures the partial
+// assistant turn, with an error that satisfies both ErrInterrupted and the
+// underlying context error.
+func TestLoopInterruptDuringDrainReturnsPartialTranscript(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg := baseCfg(&cancelModel{cancel: cancel}, tools.Builtins())
+
+	result, err := loop.Run(ctx, cfg)
+
+	if !errors.Is(err, loop.ErrInterrupted) {
+		t.Fatalf("err = %v, want it to wrap loop.ErrInterrupted", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want it to also wrap context.Canceled", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil; an interrupted run must return its partial result")
+	}
+	// The user prompt and the partial assistant turn ("partial") must both be in
+	// the transcript so a host can persist and resume.
+	if _, ok := lastByRole(result.Transcript, "user"); !ok {
+		t.Fatal("transcript missing the user message")
+	}
+	assist, ok := lastByRole(result.Transcript, "assistant")
+	if !ok {
+		t.Fatal("transcript missing the partial assistant turn")
+	}
+	if assist.Content != "partial" {
+		t.Fatalf("partial assistant content = %q, want %q", assist.Content, "partial")
+	}
+	if result.FinalText != "partial" {
+		t.Fatalf("FinalText = %q, want %q", result.FinalText, "partial")
+	}
+}
+
+// TestLoopInterruptBeforeIterationReturnsSeededTranscript asserts that a run
+// cancelled before its first turn still returns the seeded transcript (prior
+// conversation) rather than discarding it.
+func TestLoopInterruptBeforeIterationReturnsSeededTranscript(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before Run starts
+
+	seed := []models.Message{
+		{Role: "user", Content: "earlier question"},
+		{Role: "assistant", Content: "earlier answer"},
+	}
+	cfg := baseCfg(&fakeModel{}, tools.Builtins())
+	cfg.UserPrompt = "" // resume with no new prompt
+	cfg.InitialTranscript = seed
+
+	result, err := loop.Run(ctx, cfg)
+	if !errors.Is(err, loop.ErrInterrupted) {
+		t.Fatalf("err = %v, want loop.ErrInterrupted", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil; want the seeded transcript back")
+	}
+	if len(result.Transcript) != 2 || result.Transcript[0].Content != "earlier question" {
+		t.Fatalf("transcript = %+v, want the seeded conversation preserved", result.Transcript)
+	}
+}
+
+// TestLoopSeedFromInitialTranscriptContinues asserts a turn seeded from a prior
+// transcript continues that conversation: the returned transcript begins with
+// the seed and grows.
+func TestLoopSeedFromInitialTranscriptContinues(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+	sb, _ := p.Create(ctx, sandbox.CreateOptions{})
+	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+
+	seed := []models.Message{
+		{Role: "user", Content: "turn one"},
+		{Role: "assistant", Content: "ack one"},
+	}
+	// A model that returns end_turn immediately so the transcript = seed + new
+	// user turn + one assistant turn.
+	cfg := loop.Config{
+		Model:             &toolCallModel{}, // turn 1 has no calls configured → emits "working" text then would StopToolUse with zero calls
+		Sandbox:           p,
+		SandboxID:         sb.ID,
+		Tools:             tools.Builtins(),
+		Bus:               hooks.New(),
+		SessionID:         "seed-test",
+		InitialTranscript: seed,
+		UserPrompt:        "turn two",
+	}
+	result, err := loop.Run(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Transcript) < 3 {
+		t.Fatalf("transcript len = %d, want >= 3 (seed + new user + assistant)", len(result.Transcript))
+	}
+	if result.Transcript[0].Content != "turn one" || result.Transcript[1].Content != "ack one" {
+		t.Fatalf("transcript did not begin with the seed: %+v", result.Transcript[:2])
+	}
+	if result.Transcript[2].Role != "user" || result.Transcript[2].Content != "turn two" {
+		t.Fatalf("transcript[2] = %+v, want the new user turn", result.Transcript[2])
+	}
+}
+
+// TestLoopEmitsTokenDeltasEphemerally asserts the loop dispatches an
+// EventTextDelta for each streamed fragment, and that those deltas are delivered
+// to observers but never recorded in the session event log (their durable
+// counterpart is the assembled AssistantMessage).
+func TestLoopEmitsTokenDeltasEphemerally(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+	sb, _ := p.Create(ctx, sandbox.CreateOptions{})
+	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+
+	bus := hooks.New()
+	var deltas []string
+	bus.Register("delta-sink", []hooks.EventName{hooks.EventTextDelta}, func(_ hooks.EventName, payload any) hooks.Decision {
+		if p, ok := payload.(*hooks.TextDeltaPayload); ok {
+			deltas = append(deltas, p.Text)
+		}
+		return hooks.Allow()
+	})
+
+	cfg := loop.Config{
+		Model:      &fakeModel{prompt: "hi"},
+		Sandbox:    p,
+		SandboxID:  sb.ID,
+		Tools:      tools.Builtins(),
+		Bus:        bus,
+		SessionID:  "delta-test",
+		AgentID:    "agent",
+		UserPrompt: "hi",
+	}
+	if _, err := loop.Run(ctx, cfg); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// fakeModel emits a "running" delta on turn 1 and a "done" delta on turn 2.
+	if len(deltas) != 2 || deltas[0] != "running" || deltas[1] != "done" {
+		t.Fatalf("deltas = %v, want [running done]", deltas)
+	}
+	// Deltas must not appear in the durable event log.
+	for _, e := range bus.EventLog() {
+		if e.EventName == hooks.EventTextDelta {
+			t.Fatal("EventTextDelta leaked into the durable event log; it must be ephemeral")
+		}
+	}
+}
+
 // hasErrorResultContaining reports whether the transcript holds a tool-role
 // message with an error result whose content contains sub.
 func hasErrorResultContaining(transcript []models.Message, sub string) bool {
