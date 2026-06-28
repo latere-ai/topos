@@ -165,7 +165,9 @@ const (
 	// EventTextDelta carries one streamed fragment of assistant text (a token or
 	// few). An observer receives many of these per turn for token-by-token
 	// rendering, followed by the assembled EventAssistantMessage for the turn.
-	EventTextDelta     = "TextDelta"
+	EventTextDelta = "TextDelta"
+	// EventUsage carries running token usage after each turn (for a cost/usage HUD).
+	EventUsage         = "Usage"
 	EventPostToolUse   = "PostToolUse"
 	EventSubagentStart = "SubagentStart"
 	EventSubagentStop  = "SubagentStop"

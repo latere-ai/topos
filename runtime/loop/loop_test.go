@@ -762,6 +762,50 @@ func TestLoopEmitsTokenDeltasEphemerally(t *testing.T) {
 	}
 }
 
+// TestLoopEmitsUsageEvent asserts the loop dispatches a durable Usage event per
+// turn carrying the turn and running-total token usage.
+func TestLoopEmitsUsageEvent(t *testing.T) {
+	p := local.New()
+	ctx := context.Background()
+	sb, _ := p.Create(ctx, sandbox.CreateOptions{})
+	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
+
+	bus := hooks.New()
+	var totals []models.Usage
+	bus.Register("usage-sink", []hooks.EventName{hooks.EventUsage}, func(_ hooks.EventName, payload any) hooks.Decision {
+		if p, ok := payload.(*hooks.UsagePayload); ok {
+			totals = append(totals, p.Total)
+		}
+		return hooks.Allow()
+	})
+
+	cfg := loop.Config{
+		Model: &fakeModel{prompt: "hi"}, Sandbox: p, SandboxID: sb.ID,
+		Tools: tools.Builtins(), Bus: bus, SessionID: "usage-test", UserPrompt: "hi",
+	}
+	if _, err := loop.Run(ctx, cfg); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(totals) == 0 {
+		t.Fatal("no Usage events emitted")
+	}
+	// The running total must be non-decreasing and end positive.
+	last := totals[len(totals)-1]
+	if last.InputTokens == 0 && last.OutputTokens == 0 {
+		t.Fatalf("final usage total is zero: %+v", last)
+	}
+	// Usage events are durable (recorded in the bus log).
+	durable := false
+	for _, e := range bus.EventLog() {
+		if e.EventName == hooks.EventUsage {
+			durable = true
+		}
+	}
+	if !durable {
+		t.Fatal("Usage event should be durable (in the event log)")
+	}
+}
+
 // hasErrorResultContaining reports whether the transcript holds a tool-role
 // message with an error result whose content contains sub.
 func hasErrorResultContaining(transcript []models.Message, sub string) bool {

@@ -132,6 +132,21 @@ type AssistantMessagePayload struct {
 	Turn      int    `json:"turn"`
 }
 
+// EventUsage carries the running token usage after a turn completes, so an
+// embedder can render a live cost/usage HUD. Durable (one per turn).
+const EventUsage EventName = "Usage"
+
+// UsagePayload is the versioned payload for EventUsage: the just-completed
+// turn's usage and the session's running total.
+type UsagePayload struct {
+	Version   string       `json:"version"`
+	SessionID string       `json:"session_id"`
+	AgentID   string       `json:"agent_id"`
+	Turn      int          `json:"turn"`
+	TurnUsage models.Usage `json:"turn_usage"`
+	Total     models.Usage `json:"total"`
+}
+
 // TextDeltaPayload is the versioned payload for EventTextDelta: one streamed
 // fragment of assistant text within a turn. SessionID and AgentID let a consumer
 // route the fragment to the right transcript and lineage node; Turn is the

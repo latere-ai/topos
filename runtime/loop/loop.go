@@ -305,8 +305,19 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		}
 		_ = stream.Close()
 
-		// Accumulate usage.
+		// Accumulate usage and emit it so embedders can render a live cost/usage
+		// HUD (durable: one per turn, present on reattach).
 		result.TotalUsage.Add(turnUsage)
+		if turnUsage != (models.Usage{}) {
+			cfg.Bus.Dispatch(hooks.EventUsage, &hooks.UsagePayload{
+				Version:   "1",
+				SessionID: cfg.SessionID,
+				AgentID:   cfg.AgentID,
+				Turn:      iter + 1,
+				TurnUsage: turnUsage,
+				Total:     result.TotalUsage,
+			})
+		}
 
 		finalStopReason = stopReason
 
