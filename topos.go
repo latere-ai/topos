@@ -141,12 +141,50 @@ type RunResult struct {
 	Final   string
 }
 
+// Event is a single observation emitted during a run. It mirrors one internal
+// hook dispatch in a subpackage-free shape so embedders can subscribe without
+// importing internal types. SessionID is the emitting agent's loop session id,
+// which equals the corresponding Lineage node id for agentic runs — so a live
+// consumer can join events to graph nodes. AgentID is the agent name when the
+// underlying payload carries one (else ""). PayloadJSON is the full typed payload
+// marshalled to JSON (audit/replay grade).
+type Event struct {
+	Name        string          // event name; compare against the Event* constants
+	SessionID   string          // emitting agent's loop session id == Lineage node id
+	AgentID     string          // agent name when available, else ""
+	At          time.Time       // dispatch time (UTC)
+	PayloadJSON json.RawMessage // full payload, JSON-marshalled
+}
+
+// Event name constants an embedder is likely to switch on. They mirror the
+// internal hook names as plain strings so observers need no subpackage import.
+const (
+	EventSessionStart     = "SessionStart"
+	EventUserPromptSubmit = "UserPromptSubmit"
+	EventAssistantMessage = "AssistantMessage"
+	EventPostToolUse      = "PostToolUse"
+	EventSubagentStart    = "SubagentStart"
+	EventSubagentStop     = "SubagentStop"
+	EventStop             = "Stop"
+	EventSessionEnd       = "SessionEnd"
+)
+
 // Options configure a Runner.
 type Options struct {
 	SessionID       string       // stable run id; deterministic child ids derive from it
 	Model           ModelOptions // the brain connection (Lux / direct / fake)
 	BudgetUSD       float64      // region spend cap, sub-allocated to delegates
 	MaxHandoffDepth int          // max delegation depth in a Mesh region (default 3); bounds recursion
+
+	// Observer, when non-nil, receives every event the run emits (lifecycle,
+	// tool use, delegation, per-turn assistant text), in dispatch order. It is
+	// purely observational — the return value cannot alter control flow — so a
+	// host can render a live trace. It is called synchronously on the run's
+	// goroutine(s): a slow observer backpressures the run, so a host should push
+	// to a buffered channel and return. A panic in Observer is recovered and
+	// logged; it never crashes the run. Mesh peers may run and emit such that
+	// events from different agents interleave; demultiplex on SessionID.
+	Observer func(Event)
 
 	// Sandbox is the execution backend for the run and every delegated peer.
 	// When nil, the runner uses the local temp-directory provider
@@ -182,7 +220,44 @@ func NewRunner(opts Options) (*Runner, error) {
 		}
 	}
 	bus := hooks.New()
+	if opts.Observer != nil {
+		registerObserver(bus, opts.Observer)
+	}
 	return &Runner{opts: opts, model: m, bus: bus, spawner: harness.NewSpawner(bus)}, nil
+}
+
+// registerObserver bridges the internal hook bus to a host's Observer. It adapts
+// every dispatched event into a subpackage-free topos.Event and never influences
+// control flow (always returns Allow). The host callback is wrapped in a recover
+// so a buggy observer cannot panic the run.
+func registerObserver(bus *hooks.Bus, observer func(Event)) {
+	bus.Register("topos.observer", nil, func(name hooks.EventName, payload any) hooks.Decision {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			raw = nil
+		}
+		// SessionID / AgentID live in the typed payloads under stable json tags;
+		// pull them generically so this adapter is payload-type-agnostic.
+		var meta struct {
+			SessionID string `json:"session_id"`
+			AgentID   string `json:"agent_id"`
+		}
+		if len(raw) > 0 {
+			_ = json.Unmarshal(raw, &meta)
+		}
+		ev := Event{
+			Name:        string(name),
+			SessionID:   meta.SessionID,
+			AgentID:     meta.AgentID,
+			At:          time.Now().UTC(),
+			PayloadJSON: raw,
+		}
+		func() {
+			defer func() { _ = recover() }()
+			observer(ev)
+		}()
+		return hooks.Decision{Verdict: hooks.VerdictAllow}
+	})
 }
 
 // Run executes a region in-process (a sandbox is created for the run via the
@@ -291,7 +366,11 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID 
 	final, err := r.runAgent(ctx, dynRun{
 		sb: sb, sandboxID: sandboxID, agent: region.Entry, parent: parent,
 		dir: region.Peers, topology: region.Topology, depth: 0,
-		task: task, lin: lin, nodeID: entryID, loopSession: sess, path: "",
+		// loopSession matches the lineage node id (entryID), consistent with
+		// delegated peers (child.ID) and pinned steps (id). This makes an event's
+		// SessionID a reliable join key to its Lineage node. Child id derivation
+		// uses parent.SessionID (sess), so it is unaffected.
+		task: task, lin: lin, nodeID: entryID, loopSession: entryID, path: "",
 	})
 	if err != nil {
 		setStatus(lin, entryID, StatusFailed)

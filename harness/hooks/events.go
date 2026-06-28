@@ -52,6 +52,10 @@ const (
 	EventNotification       EventName = "Notification"
 	EventConfigChange       EventName = "ConfigChange"
 	EventInstructionsLoaded EventName = "InstructionsLoaded"
+	// EventAssistantMessage carries one turn's assistant text. Observational
+	// only (the loop emits it as it completes each turn) so embedders can render
+	// a live transcript; it bears no Decision.
+	EventAssistantMessage EventName = "AssistantMessage"
 
 	// Environment-reactive.
 	EventWorktreeCreate EventName = "WorktreeCreate"
@@ -109,6 +113,16 @@ type PostToolUseFailurePayload struct {
 	SessionID string          `json:"session_id"`
 	ToolCall  models.ToolCall `json:"tool_call"`
 	Error     string          `json:"error"`
+}
+
+// AssistantMessagePayload is the versioned payload for EventAssistantMessage:
+// one completed turn's assistant text, emitted as the loop finishes the turn.
+type AssistantMessagePayload struct {
+	Version   string `json:"version"`
+	SessionID string `json:"session_id"`
+	AgentID   string `json:"agent_id"`
+	Text      string `json:"text"`
+	Turn      int    `json:"turn"`
 }
 
 // StopPayload is the versioned payload for EventStop.

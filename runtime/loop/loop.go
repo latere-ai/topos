@@ -253,6 +253,15 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 		if assistantText.Len() > 0 {
 			result.FinalText = assistantText.String()
+			// Emit the turn's assistant text so embedders can render a live
+			// transcript. Observational only; bears no Decision.
+			cfg.Bus.Dispatch(hooks.EventAssistantMessage, &hooks.AssistantMessagePayload{
+				Version:   "1",
+				SessionID: cfg.SessionID,
+				AgentID:   cfg.AgentID,
+				Text:      assistantText.String(),
+				Turn:      iter + 1,
+			})
 		}
 
 		// Stop if no tool calls requested.
