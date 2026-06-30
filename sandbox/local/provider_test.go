@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -86,6 +87,57 @@ func TestDestroyIdempotent(t *testing.T) {
 	// Second destroy must be a no-op.
 	if err := p.Destroy(ctx, sb.ID); err != nil {
 		t.Fatalf("Destroy 2 (idempotent): %v", err)
+	}
+}
+
+// TestNewAt_RootsExecAndFiles verifies rooted mode: Create does not mint a temp
+// dir, Exec and the file methods operate against the caller-owned root, and
+// Destroy leaves that root intact.
+func TestNewAt_RootsExecAndFiles(t *testing.T) {
+	root := t.TempDir()
+	p := local.NewAt(root)
+	ctx := context.Background()
+
+	sb, err := p.Create(ctx, sandbox.CreateOptions{Name: "wt"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A relative-path write inside the command lands in the root.
+	if _, err := p.Exec(ctx, sb.ID, sandbox.ExecOptions{Argv: []string{"sh", "-c", "echo hi > marker.txt"}}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	got, err := p.ReadFile(ctx, sb.ID, "marker.txt")
+	if err != nil || !strings.Contains(string(got), "hi") {
+		t.Fatalf("ReadFile(marker.txt) = %q, %v; want it written under root", got, err)
+	}
+
+	// Destroy must NOT remove the caller-owned root.
+	if err := p.Destroy(ctx, sb.ID); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "marker.txt")); err != nil {
+		t.Errorf("root was removed by Destroy (caller-owned): %v", err)
+	}
+}
+
+// TestNewAt_DistinctIdsShareRoot verifies concurrent peers get distinct ids that
+// all map to the shared root, and destroying one does not break another.
+func TestNewAt_DistinctIdsShareRoot(t *testing.T) {
+	p := local.NewAt(t.TempDir())
+	ctx := context.Background()
+
+	a, _ := p.Create(ctx, sandbox.CreateOptions{})
+	b, _ := p.Create(ctx, sandbox.CreateOptions{})
+	if a.ID == b.ID {
+		t.Fatalf("ids must be distinct, both = %q", a.ID)
+	}
+	if err := p.Destroy(ctx, a.ID); err != nil {
+		t.Fatalf("Destroy a: %v", err)
+	}
+	// b is still healthy (its own registration, shared root intact).
+	if err := p.HealthCheck(ctx, b.ID); err != nil {
+		t.Errorf("HealthCheck b after destroying a: %v", err)
 	}
 }
 

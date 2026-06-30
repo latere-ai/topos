@@ -199,6 +199,15 @@ type Options struct {
 	// as the interface; the root package never imports a concrete backend.
 	Sandbox sandbox.Provider
 
+	// Workdir, when non-empty and Sandbox is nil, roots the default local
+	// provider at this existing host directory (typically a git worktree)
+	// instead of a temp dir, so the run's tools read and write that directory
+	// directly. It is the zero-import seam for an embedding host that wants
+	// in-process execution against a real checkout without depending on the
+	// sandbox subpackage. Ignored when Sandbox is set (the injected backend
+	// owns execution location).
+	Workdir string
+
 	// Brain, when non-nil, is the model the runner uses directly, ignoring
 	// Model. It lets a host plug in its own models.Model (a custom provider
 	// adapter, or a scripted model for tests and examples) instead of the
@@ -439,6 +448,9 @@ func waitRunning(ctx context.Context, p sandbox.Provider, id string) error {
 func (r *Runner) provider() sandbox.Provider {
 	if r.opts.Sandbox != nil {
 		return r.opts.Sandbox
+	}
+	if r.opts.Workdir != "" {
+		return local.NewAt(r.opts.Workdir)
 	}
 	return local.New()
 }

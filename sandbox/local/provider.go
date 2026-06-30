@@ -34,33 +34,61 @@ import (
 // Provider implements [sandbox.Provider] using the local filesystem and
 // os/exec. Suitable for tests and local-dev fallback; no external services
 // required.
+//
+// In the default mode (New) each sandbox is a fresh temp directory that Destroy
+// removes. In rooted mode (NewAt) every sandbox shares a single caller-owned
+// directory — typically a git worktree — which Destroy never deletes, so an
+// embedding host can run tools directly against an existing checkout.
 type Provider struct {
 	mu   sync.Mutex
-	dirs map[string]string // sandboxID → tempDir
+	dirs map[string]string // sandboxID → dir
+	root string            // when non-empty, every sandbox uses this dir (rooted mode)
+	seq  int               // monotonic counter for unique rooted-mode ids
 }
 
-// New returns a ready-to-use local Provider.
+// New returns a ready-to-use local Provider in temp-directory mode.
 func New() *Provider {
 	return &Provider{dirs: make(map[string]string)}
 }
 
-// Create provisions a new sandbox: a temp directory with a random ID.
+// NewAt returns a local Provider that roots every sandbox at the given existing
+// directory instead of minting a per-sandbox temp dir. Create registers the root
+// (it does not create or clear it); Destroy deregisters the id but never removes
+// the caller-owned root. Use this to run tools directly in a host directory such
+// as a git worktree. Multiple Create calls return distinct ids that all map to
+// the shared root, so delegated peers operate on the same checkout.
+func NewAt(root string) *Provider {
+	return &Provider{dirs: make(map[string]string), root: root}
+}
+
+// Create provisions a new sandbox. In temp-directory mode it is a fresh temp dir
+// with an id derived from its name; in rooted mode it is the shared root with a
+// distinct sequence id (so concurrent peers do not collide in the id→dir map).
 func (p *Provider) Create(_ context.Context, opts sandbox.CreateOptions) (sandbox.Sandbox, error) {
-	prefix := "topos-sandbox-"
-	if opts.Name != "" {
-		prefix = "topos-sandbox-" + opts.Name + "-"
+	var dir, id string
+	if p.root != "" {
+		dir = p.root
+		p.mu.Lock()
+		p.seq++
+		id = fmt.Sprintf("root-%d", p.seq)
+		p.dirs[id] = dir
+		p.mu.Unlock()
+	} else {
+		prefix := "topos-sandbox-"
+		if opts.Name != "" {
+			prefix = "topos-sandbox-" + opts.Name + "-"
+		}
+		var err error
+		dir, err = os.MkdirTemp("", prefix)
+		if err != nil {
+			return sandbox.Sandbox{}, fmt.Errorf("local sandbox: create temp dir: %w", err)
+		}
+		// Generate a stable ID from the directory path (just use the base name).
+		id = filepath.Base(dir)
+		p.mu.Lock()
+		p.dirs[id] = dir
+		p.mu.Unlock()
 	}
-	dir, err := os.MkdirTemp("", prefix)
-	if err != nil {
-		return sandbox.Sandbox{}, fmt.Errorf("local sandbox: create temp dir: %w", err)
-	}
-
-	// Generate a stable ID from the directory path (just use the base name).
-	id := filepath.Base(dir)
-
-	p.mu.Lock()
-	p.dirs[id] = dir
-	p.mu.Unlock()
 
 	return sandbox.Sandbox{
 		ID:        id,
@@ -71,18 +99,23 @@ func (p *Provider) Create(_ context.Context, opts sandbox.CreateOptions) (sandbo
 	}, nil
 }
 
-// Destroy removes the sandbox's temp directory and deregisters its ID.
-// Idempotent: if the sandbox does not exist, returns nil.
+// Destroy deregisters the sandbox id and, in temp-directory mode, removes its
+// directory. In rooted mode the caller-owned root is left intact. Idempotent: an
+// unknown id returns nil.
 func (p *Provider) Destroy(_ context.Context, id string) error {
 	p.mu.Lock()
 	dir, ok := p.dirs[id]
 	if ok {
 		delete(p.dirs, id)
 	}
+	rooted := p.root != ""
 	p.mu.Unlock()
 
 	if !ok {
 		return nil // idempotent
+	}
+	if rooted {
+		return nil // never remove a caller-owned root
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("local sandbox: destroy %q: %w", id, err)
