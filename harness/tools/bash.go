@@ -96,5 +96,7 @@ func Builtins() *Registry {
 	r.Register(&ReadFileTool{})
 	r.Register(&WriteFileTool{})
 	r.Register(&EditFileTool{})
+	r.Register(&GrepTool{})
+	r.Register(&GlobTool{})
 	return r
 }
