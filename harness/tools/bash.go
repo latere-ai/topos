@@ -85,9 +85,16 @@ func (b *BashTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox
 	return models.ToolResult{Content: content}, nil
 }
 
-// Builtins returns a Registry pre-loaded with all built-in tools.
+// Builtins returns a Registry pre-loaded with all built-in tools: the shell
+// (bash) plus the first-class file tools (read_file, write_file, edit_file) that
+// let the model edit reliably instead of through bash heredocs and sed. bash is
+// registered first so it remains the canonical default. Every consumer that
+// passes a nil registry to the runtime gets this set.
 func Builtins() *Registry {
 	r := NewRegistry()
 	r.Register(&BashTool{})
+	r.Register(&ReadFileTool{})
+	r.Register(&WriteFileTool{})
+	r.Register(&EditFileTool{})
 	return r
 }
