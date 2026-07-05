@@ -10,11 +10,13 @@ deterministic, network-free model) and the local temp-directory sandbox.
 |---|---|---|
 | [`minimal`](minimal) | the smallest loop: build a Runner, run one agent, read the result and lineage | yes |
 | [`delegation`](delegation) | a dynamic region where the entry agent delegates to a peer, plus the lineage graph, driven by a scripted model via `Options.Brain` | yes |
+| [`graph`](graph) | composing several regions into one run with `RunGraph`: a dynamic region feeding a pinned chain, wired by a data-flow edge | yes |
 | [`sandbox`](sandbox) | selecting the execution backend (local by default, hosted Cella via `TOPOS_CELLA_URL`) | yes (local) |
 
 ```sh
 go run ./examples/minimal
 go run ./examples/delegation
+go run ./examples/graph
 go run ./examples/sandbox
 ```
 

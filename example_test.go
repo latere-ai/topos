@@ -87,6 +87,44 @@ func ExampleRunner_Run_delegation() {
 	// demo/sub/reviewer -> demo/lead (deliver)
 }
 
+// ExampleRunner_RunGraph composes two regions into one run: a dynamic planning
+// region feeds a pinned shipping chain through a data-flow edge. Region ids
+// namespace the node ids, and a region-to-region next edge records the flow. The
+// deterministic fake model keeps the run reproducible with no services.
+func ExampleRunner_RunGraph() {
+	r, _ := topos.NewRunner(topos.Options{
+		SessionID: "demo",
+		Model:     topos.ModelOptions{Kind: topos.ModelFake},
+	})
+
+	g := topos.Graph{
+		Regions: []topos.GraphRegion{
+			{ID: "plan", Region: topos.Region{
+				Autonomy: topos.Dynamic,
+				Entry:    topos.AgentSpec{Name: "lead", Role: "lead"},
+			}},
+			{ID: "ship", Region: topos.Region{
+				Autonomy: topos.Pinned,
+				Entry:    topos.AgentSpec{Name: "impl", Role: "impl"},
+			}},
+		},
+		Edges: []topos.GraphEdge{{From: "plan", To: "ship"}}, // plan's Final seeds ship's task
+	}
+
+	res, _ := r.RunGraph(context.Background(), g, "design the feature")
+
+	for _, n := range res.Lineage.Nodes {
+		fmt.Printf("%s %s\n", n.ID, n.Status)
+	}
+	for _, e := range res.Lineage.Edges {
+		fmt.Printf("%s -> %s (%s)\n", e.From, e.To, e.Kind)
+	}
+	// Output:
+	// demo/plan/lead done
+	// demo/ship/impl done
+	// demo/plan/lead -> demo/ship/impl (next)
+}
+
 // delegateOnceBrain is a deterministic models.Model: the entry agent delegates
 // to the peer once, then everyone finishes.
 type delegateOnceBrain struct{ peer string }
