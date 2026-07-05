@@ -2,9 +2,10 @@
 
 These are retrospective design specs for the Topos runtime as it exists today.
 Topos is an embeddable Go agent runtime: a host application imports the root
-`topos` package, defines agents, composes them into a region, and runs that
-region locally and in-process. The specs here document the public capabilities
-the runtime ships, so a developer can see the whole shape before reading code.
+`topos` package, defines agents, composes them into regions, and runs a single
+region or a graph of regions locally and in-process. The specs here document the
+public capabilities the runtime ships, so a developer can see the whole shape
+before reading code.
 
 All specs are `status: complete` and end with an Outcome section pointing at the
 packages that implement them.
@@ -14,7 +15,8 @@ packages that implement them.
 The supported surface is the root `topos` package. A host builds a `Runner` from
 `Options`, hands it a `Region` (an entry agent plus peers) and a task string, and
 gets back a `RunResult`: the agent's final text and a deterministic lineage graph
-of everything that ran.
+of everything that ran. To compose several regions into one run, a host hands
+`Runner.RunGraph` a `Graph` of regions wired by data-flow edges instead.
 
 Underneath the root package sits an engine made of public but advanced subpackages:
 
@@ -45,6 +47,8 @@ delegation and topology mechanics, then the supporting engine specs.
   host depends on.
 - [Agents and Regions](runtime/agents-and-regions.md): `AgentSpec`, `Region`, and
   the `Pinned` vs `Dynamic` autonomy modes.
+- [Region Graph](runtime/region-graph.md): composing several regions into one run
+  with `Graph` and `Runner.RunGraph`.
 - [Topology](runtime/topology.md): `OrchestratorWorker` vs `Mesh`.
 - [Delegation as Agents-as-Tools](runtime/delegation.md): the `delegate` tool and
   attenuated authority.
@@ -70,6 +74,7 @@ graph TD
   model[Model Connection]
   sdk[Embeddable SDK Boundary]
   ar[Agents and Regions]
+  rgraph[Region Graph]
   topo[Topology]
   del[Delegation]
   rec[Bounded Recursion]
@@ -88,4 +93,6 @@ graph TD
   disc --> topo
   disc --> del
   lin --> del
+  rgraph --> ar
+  rgraph --> lin
 ```
