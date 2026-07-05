@@ -82,12 +82,43 @@ const (
 )
 
 // Region is one part of a run with a single autonomy mode. One graph mixes pinned
-// and dynamic regions; the runner currently runs a single region.
+// and dynamic regions; [Runner.Run] runs a single region, [Runner.RunGraph] a graph.
 type Region struct {
 	Autonomy Autonomy
 	Topology Topology    // dynamic only; default OrchestratorWorker
 	Entry    AgentSpec   // the agent that starts the region
 	Peers    []AgentSpec // discoverable peers (dynamic) or the ordered chain (pinned)
+}
+
+// GraphRegion is a named region within a [Graph]. ID is unique across the graph
+// and namespaces the region's node ids, so agents that share a Name in different
+// regions still get distinct lineage ids.
+type GraphRegion struct {
+	ID     string
+	Region Region
+}
+
+// GraphEdge composes two regions by data flow: the source region's Final seeds the
+// target region's task. This is deliberately different from a pinned region's
+// internal chain, where every step receives the original task and outputs are not
+// piped — regions compose by threading text, steps within a region do not.
+type GraphEdge struct {
+	From string // source region ID; its Final becomes To's input task
+	To   string // target region ID
+}
+
+// Graph composes several regions — pinned or dynamic, in any mix — into one run.
+// Regions execute in topological order; an edge From->To seeds To's task with
+// From's Final, and a region with no incoming edge receives the graph's input
+// task. Composition is text-only (a region's observable output is its Final; the
+// contract carries no sandbox handle), so each region runs in its own isolated
+// sandbox. Execution is sequential, which keeps lineage mutation single-threaded
+// (OQ-4). Fan-in (a region with more than one incoming edge) is rejected: merging
+// several upstream Finals into one task is an unspecified product decision, so
+// v1 allows linear chains and fan-out (a forest) only.
+type Graph struct {
+	Regions []GraphRegion
+	Edges   []GraphEdge
 }
 
 // NodeStatus is the lifecycle state of a lineage node.
@@ -279,7 +310,15 @@ func registerObserver(bus *hooks.Bus, observer func(Event)) {
 // configured provider, or sandbox/local when none is set) and returns its
 // lineage graph. task is the user request handed to the entry agent.
 func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult, error) {
-	p := r.provider()
+	return r.runRegion(ctx, r.provider(), r.session(), region, task)
+}
+
+// runRegion provisions an isolated sandbox for one region, dispatches to the
+// autonomy-specific runner, and tears the sandbox down. regionSession namespaces
+// the region's node and child ids (r.session() for a single-region Run; a
+// per-region namespace for a graph). It is the shared unit both Run and RunGraph
+// execute so region isolation and lifecycle stay identical across the two paths.
+func (r *Runner) runRegion(ctx context.Context, p sandbox.Provider, regionSession string, region Region, task string) (RunResult, error) {
 	sb, err := p.Create(ctx, sandbox.CreateOptions{})
 	if err != nil {
 		return RunResult{}, fmt.Errorf("topos: create sandbox: %w", err)
@@ -291,12 +330,128 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 
 	switch region.Autonomy {
 	case Dynamic:
-		return r.runDynamic(ctx, p, sb.ID, r.session(), region, task)
+		return r.runDynamic(ctx, p, sb.ID, regionSession, region, task)
 	case Pinned:
-		return r.runPinned(ctx, p, sb.ID, r.session(), region, task)
+		return r.runPinned(ctx, p, sb.ID, regionSession, region, task)
 	default:
 		return RunResult{}, fmt.Errorf("topos: unknown autonomy %q", region.Autonomy)
 	}
+}
+
+// RunGraph executes a multi-region graph as one run and returns the merged
+// lineage and the final region's output. Regions run in topological order, each in
+// its own sandbox; a region's input is the graph task, or — when an edge points at
+// it — the source region's Final. The returned Lineage concatenates every region's
+// nodes and edges, plus an EdgeNext from each source region's entry node to its
+// target region's entry node so a consumer can see the region-level flow. Region
+// ids namespace node ids (<session>/<regionID>/<agent>), so agents sharing a name
+// across regions do not collide. Final is the output of the last region in
+// topological order. A cycle, an unknown edge endpoint, a duplicate/empty region
+// id, or a fan-in (more than one incoming edge) is a configuration error returned
+// before any region runs.
+func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult, error) {
+	order, err := planGraph(g)
+	if err != nil {
+		return RunResult{}, err
+	}
+	source := map[string]string{} // region ID -> its single upstream region ID
+	for _, e := range g.Edges {
+		source[e.To] = e.From
+	}
+
+	p := r.provider()
+	sess := r.session()
+	merged := Lineage{}
+	finals := map[string]string{}   // region ID -> Final
+	entryIDs := map[string]string{} // region ID -> entry node id (first node)
+	var last string
+	for _, gr := range order {
+		in := task
+		if src, ok := source[gr.ID]; ok {
+			in = finals[src]
+		}
+		res, err := r.runRegion(ctx, p, sess+"/"+gr.ID, gr.Region, in)
+		merged.Nodes = append(merged.Nodes, res.Lineage.Nodes...)
+		merged.Edges = append(merged.Edges, res.Lineage.Edges...)
+		if len(res.Lineage.Nodes) > 0 {
+			entryIDs[gr.ID] = res.Lineage.Nodes[0].ID
+		}
+		if src, ok := source[gr.ID]; ok {
+			if from, fromOK := entryIDs[src]; fromOK {
+				if to, toOK := entryIDs[gr.ID]; toOK {
+					merged.Edges = append(merged.Edges, LineageEdge{From: from, To: to, Kind: EdgeNext})
+				}
+			}
+		}
+		if err != nil {
+			return RunResult{Lineage: merged}, fmt.Errorf("topos: region %q: %w", gr.ID, err)
+		}
+		finals[gr.ID] = res.Final
+		last = res.Final
+	}
+	return RunResult{Lineage: merged, Final: last}, nil
+}
+
+// planGraph validates a graph and returns its regions in a deterministic
+// topological order (Kahn's algorithm, seeded and expanded in declared order). It
+// rejects empty/duplicate region ids, edges referencing unknown regions, self
+// edges, fan-in (an unsupported product decision in v1), and cycles.
+func planGraph(g Graph) ([]GraphRegion, error) {
+	if len(g.Regions) == 0 {
+		return nil, fmt.Errorf("topos: graph has no regions")
+	}
+	byID := make(map[string]GraphRegion, len(g.Regions))
+	for _, gr := range g.Regions {
+		if gr.ID == "" {
+			return nil, fmt.Errorf("topos: graph region has an empty id")
+		}
+		if _, dup := byID[gr.ID]; dup {
+			return nil, fmt.Errorf("topos: duplicate region id %q", gr.ID)
+		}
+		byID[gr.ID] = gr
+	}
+	indeg := make(map[string]int, len(g.Regions))
+	adj := make(map[string][]string, len(g.Edges))
+	for _, e := range g.Edges {
+		if _, ok := byID[e.From]; !ok {
+			return nil, fmt.Errorf("topos: edge from unknown region %q", e.From)
+		}
+		if _, ok := byID[e.To]; !ok {
+			return nil, fmt.Errorf("topos: edge to unknown region %q", e.To)
+		}
+		if e.From == e.To {
+			return nil, fmt.Errorf("topos: self edge on region %q", e.From)
+		}
+		indeg[e.To]++
+		adj[e.From] = append(adj[e.From], e.To)
+	}
+	for _, gr := range g.Regions {
+		if indeg[gr.ID] > 1 {
+			return nil, fmt.Errorf("topos: region %q has %d incoming edges; fan-in is not yet supported", gr.ID, indeg[gr.ID])
+		}
+	}
+	order := make([]GraphRegion, 0, len(g.Regions))
+	queue := make([]string, 0, len(g.Regions))
+	for _, gr := range g.Regions {
+		if indeg[gr.ID] == 0 {
+			queue = append(queue, gr.ID)
+		}
+	}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		order = append(order, byID[id])
+		for _, nb := range adj[id] {
+			indeg[nb]--
+			if indeg[nb] == 0 {
+				queue = append(queue, nb)
+			}
+		}
+	}
+	if len(order) != len(g.Regions) {
+		return nil, fmt.Errorf("topos: graph has a cycle")
+	}
+	return order, nil
 }
 
 // TurnInput configures a single interactive turn run by [Runner.Turn]. Unlike a
