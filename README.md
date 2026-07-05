@@ -2,9 +2,10 @@
 
 **Topos Runtime** is the embeddable Go agent runtime at the core of
 [Topos](https://topos.latere.ai), the Latere agent platform. A host application
-defines agents, composes them into a region, and runs them in-process. The runtime
-provides sub-agent spawning with attenuated permissions, peer discovery for
-multi-agent work, and a deterministic lineage graph of everything that ran.
+defines agents, composes them into regions, and runs a single region or a graph of
+regions in-process. The runtime provides sub-agent spawning with attenuated
+permissions, peer discovery for multi-agent work, and a deterministic lineage graph
+of everything that ran.
 
 The Topos platform is one host built on this runtime; any Go application can be
 another.
@@ -39,6 +40,14 @@ use, and a model.
 chain of agents, like a fixed pipeline) or `Dynamic` (the model decides who to hand
 off to at runtime). Its `Topology` is either `OrchestratorWorker`, the default,
 where only the entry agent delegates, or `Mesh`, where peers can delegate too.
+
+**Graph.** Several regions compose into one run. `Graph` holds the regions and the
+edges between them; an edge `From -> To` seeds the target region's task with the
+source region's final output, so a dynamic planning region can feed a pinned
+shipping chain. Regions run in topological order, each in its own isolated sandbox,
+and their lineages merge into one graph. Region ids namespace agent ids, so agents
+sharing a name across regions stay distinct. Composition across regions is
+text-only (a region's output is its final text, not a shared filesystem).
 
 **Delegation.** Handing work to a peer is a tool call. The `delegate` tool spawns
 the chosen peer with attenuated authority, meaning a strict subset of the parent's
@@ -101,6 +110,44 @@ Three properties make a turn safe to drive from a server:
   as the model writes, then the assembled `EventAssistantMessage` for the turn.
   The observer is synchronous, so a host should hand off to a buffered channel
   and return rather than block on I/O.
+
+## Composing regions into a graph
+
+`Runner.Run` runs one region. `Runner.RunGraph` runs several, wired by data flow.
+A `Graph` names each region and connects them with edges; an edge threads the
+source region's final output into the target region's task. Regions with no
+incoming edge start from the graph task. A dynamic region and a pinned region mix
+freely in one graph:
+
+```go
+g := topos.Graph{
+    Regions: []topos.GraphRegion{
+        {ID: "plan", Region: topos.Region{
+            Autonomy: topos.Dynamic,
+            Entry:    topos.AgentSpec{Name: "lead", Role: "lead"},
+        }},
+        {ID: "ship", Region: topos.Region{
+            Autonomy: topos.Pinned,
+            Entry:    topos.AgentSpec{Name: "impl", Role: "impl"},
+            Peers:    []topos.AgentSpec{{Name: "commit", Role: "commit"}},
+        }},
+    },
+    Edges: []topos.GraphEdge{{From: "plan", To: "ship"}}, // plan's output seeds ship's task
+}
+
+res, _ := r.RunGraph(ctx, g, "design the feature")
+fmt.Println(res.Final)             // the last region's output
+for _, e := range res.Lineage.Edges {
+    fmt.Println(e.From, "->", e.To, e.Kind) // region flow plus each region's internal lineage
+}
+```
+
+Regions execute in topological order, each in its own isolated sandbox, and their
+lineages merge into one graph. Linear chains and fan-out (one region feeding
+several) are supported; fan-in — a region with more than one incoming edge — is
+rejected, along with cycles and unknown edges, before any region runs. A runnable
+version is in [`examples/graph`](examples/graph); [`examples/delegation`](examples/delegation)
+shows a single dynamic region delegating to a peer.
 
 ## Sandboxes
 

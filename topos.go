@@ -4,9 +4,10 @@
 
 // Package topos is the public, embeddable surface of the Topos agent runtime.
 //
-// A host application imports this package to define agents, compose them into a
-// region, and run the region locally and in-process — without importing anything
-// under internal/. Everything exported here uses only topos-defined or standard-library
+// A host application imports this package to define agents, compose them into
+// regions, and run a single region ([Runner.Run]) or a graph of regions
+// ([Runner.RunGraph]) locally and in-process — without importing anything under
+// internal/. Everything exported here uses only topos-defined or standard-library
 // types, so the boundary holds across the module edge (Go forbids cross-module
 // internal/ imports; this package is the curated public API on the inside of
 // that edge).
