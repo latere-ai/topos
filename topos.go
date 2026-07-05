@@ -291,9 +291,9 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 
 	switch region.Autonomy {
 	case Dynamic:
-		return r.runDynamic(ctx, p, sb.ID, region, task)
+		return r.runDynamic(ctx, p, sb.ID, r.session(), region, task)
 	case Pinned:
-		return r.runPinned(ctx, p, sb.ID, region, task)
+		return r.runPinned(ctx, p, sb.ID, r.session(), region, task)
 	default:
 		return RunResult{}, fmt.Errorf("topos: unknown autonomy %q", region.Autonomy)
 	}
@@ -480,8 +480,13 @@ type dynRun struct {
 }
 
 // runDynamic runs the entry agent, then recurses through delegations.
-func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID string, region Region, task string) (RunResult, error) {
-	sess := r.session()
+// regionSession is the id namespace for this region's nodes and child ids. For a
+// single-region Run it is r.session(); for a multi-region RunGraph the graph
+// namespaces each region (<session>/<regionID>) so agents sharing a name across
+// regions get distinct ids. It seeds both the lineage node id (loopSession) and
+// the Spawner child id contract (<regionSession>/sub/<label>).
+func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string) (RunResult, error) {
+	sess := regionSession
 	entryID := sess + "/" + region.Entry.Name
 	lin := &Lineage{Nodes: []LineageNode{{
 		ID: entryID, Name: region.Entry.Name, Role: region.Entry.Role,
@@ -544,8 +549,8 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 
 // runPinned runs a deterministic chain: entry then each peer in order, each as its
 // own loop. This is the shape a static flow compiles to.
-func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID string, region Region, task string) (RunResult, error) {
-	sess := r.session()
+func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string) (RunResult, error) {
+	sess := regionSession
 	chain := append([]AgentSpec{region.Entry}, region.Peers...)
 	lin := &Lineage{}
 	var final string
