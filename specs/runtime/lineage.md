@@ -30,14 +30,20 @@ enough to render live and to diff across runs.
   and the `Sandbox` it ran in (a delegated peer gets its own).
 - A `LineageEdge` per relationship, tagged by `Kind`: `next` for one step of a
   pinned chain, `delegate` from a caller to the peer it spawned, and `deliver` from
-  a peer back to its caller when it returns a result.
+  a peer back to its caller when it returns a result. A `next` edge carries two
+  meanings that `Kind` alone does not distinguish: a step-to-step link inside a
+  pinned region, and a region-to-region link in a graph (source entry to target
+  entry); a consumer that needs to tell them apart reads the node ids.
 
-Ids are deterministic and derive from the run's session id. The entry node is
-`<session>/<name>`; a delegated child is `<session>/sub/<label>`, where the label is
-path-prefixed so the same peer reused at different points in the tree gets a unique
-id. Because ids are reconstructable from session and label rather than a registry,
-a consumer can diff two runs node by node, and a live view can keep stable ids
-across reconnects.
+Ids are deterministic and derive from the run's session id. In a single-region run
+the entry node is `<session>/<name>` and a delegated child is
+`<session>/sub/<label>`, where the label is path-prefixed so the same peer reused at
+different points in the tree gets a unique id. In a graph run the region id
+namespaces every node — `<session>/<region>/<name>` for an entry and
+`<session>/<region>/sub/<label>` for a child — so agents sharing a name across
+regions never collide. Because ids are reconstructable from session, region, and
+label rather than a registry, a consumer can diff two runs node by node, and a live
+view can keep stable ids across reconnects.
 
 Status is updated as the run proceeds: a node starts `running`, flips to `done` on
 success or `failed` on error. On failure, `Run` still returns the partial lineage,
@@ -45,7 +51,8 @@ so a caller sees exactly how far the run got and which node failed.
 
 In a pinned region the graph is a straight line of `next` edges. In a dynamic
 region it is a tree rooted at the entry, with `delegate` and `deliver` edges to and
-from each spawned peer.
+from each spawned peer. In a graph run (`RunGraph`), each region's lineage merges
+into one graph, joined by region-to-region `next` edges.
 
 ## Diagram
 
@@ -63,5 +70,6 @@ graph TD
 Shipped in `topos.go`: `Lineage`, `LineageNode`, `LineageEdge`, and `RunResult`.
 `runDynamic` builds the entry node and the tree, `delegateTool.appendChild` records
 each peer node plus its `delegate` and `deliver` edges, `runPinned` records the
-`next` chain, and `setStatus` advances node status. Child ids come from the
+`next` chain, and `setStatus` advances node status. `RunGraph` merges each region's
+lineage and adds the region-to-region `next` edges. Child ids come from the
 deterministic `subAgentID` scheme in `harness/subagent.go`.

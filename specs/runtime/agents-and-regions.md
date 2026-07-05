@@ -43,7 +43,8 @@ the autonomy mode:
 
 `Region.Topology` applies only to dynamic regions and decides who may delegate
 (see the topology spec); it defaults to orchestrator-worker. A region runs one
-autonomy mode at a time.
+autonomy mode at a time. Several regions — pinned and dynamic, mixed — compose into
+one run through a graph wired by data-flow edges (see the region-graph spec).
 
 The host reads back the discoverable peers with `Region.Directory()`, which
 returns peer cards (name, role, description) and never an agent's permissions.
@@ -63,5 +64,6 @@ graph TD
 ## Outcome
 
 Shipped in `topos.go`: `AgentSpec`, `PeerCard`, `Region`, the `Autonomy` type with
-`Pinned` and `Dynamic`, and the `runPinned` / `runDynamic` dispatch in `Run`. The
-directory read-back is `Region.Directory()` in `directory.go`.
+`Pinned` and `Dynamic`, and the `runPinned` / `runDynamic` dispatch in `runRegion`
+(the per-region unit shared by `Run` and `RunGraph`). The directory read-back is
+`Region.Directory()` in `directory.go`.

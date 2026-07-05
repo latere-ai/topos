@@ -40,10 +40,13 @@ The lifecycle is three calls:
    the model backend from `ModelOptions` once, up front.
 2. `Run(ctx, Region, task)` executes a region. It creates a local sandbox for the
    run, dispatches on the region's autonomy mode, and tears the sandbox down when
-   done. `task` is the user request handed to the entry agent.
-3. The call returns a `RunResult`: `Final` (the entry agent's last text) and
-   `Lineage` (the deterministic run graph). Even on error, a partial `Lineage` is
-   returned so a caller can see how far the run got.
+   done. `task` is the user request handed to the entry agent. `RunGraph(ctx,
+   Graph, task)` is the sibling call for a run that composes several regions; it
+   runs each region through the same per-region unit and merges their lineages
+   (see the region-graph spec).
+3. The call returns a `RunResult`: `Final` (the entry agent's last text — for a
+   graph, the last region's) and `Lineage` (the deterministic run graph). Even on
+   error, a partial `Lineage` is returned so a caller can see how far the run got.
 
 Because the runner constructs its own sandbox and model, a host can get a complete
 autonomous run with no external services by selecting the deterministic fake model.
@@ -55,13 +58,16 @@ graph LR
   host[Host application] -->|import topos| sdk[topos package]
   sdk --> runner[NewRunner Options]
   runner --> run[Run ctx Region task]
+  runner --> rungraph[RunGraph ctx Graph task]
   run --> result[RunResult: Final + Lineage]
+  rungraph --> result
 ```
 
 ## Outcome
 
-Shipped in `topos.go`: `Options`, `Runner`, `NewRunner`, `Run`, and `RunResult`,
-along with the agent, region, and lineage types the rest of the specs cover. The
+Shipped in `topos.go`: `Options`, `Runner`, `NewRunner`, `Run`, `RunGraph`, and
+`RunResult`, along with the agent, region, graph, and lineage types the rest of the
+specs cover. The
 package doc comment states the boundary rule (only `topos`-defined and
 standard-library types cross the edge). The model is built in `model.go`; the
 per-run sandbox uses `sandbox/local`.
