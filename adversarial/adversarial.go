@@ -86,7 +86,7 @@ type Summary struct {
 	Forks       []ForkOutcome
 	Unresolved  int    // attacks not conceded or rebutted at run end
 	Headline    string // claim text of highest-contention unresolved attack
-	SessionDir  string // absolute path to the .agon/sessions/<id>/ folder
+	SessionDir  string // absolute path to the sessions/<id>/ folder
 	USD         float64
 	WallSeconds int
 }
@@ -114,7 +114,7 @@ type VerifyInput struct {
 	SessionID     string // implementation-agent session ID (proposer path)
 	DiffPatch     string // pre-computed git diff
 	Cwd           string // working directory
-	StateDir      string // where .agon/sessions/ is written
+	StateDir      string // where sessions/<id>/ is written
 	ForkCount     int    // number of critic forks
 	MaxRounds     int    // debate rounds per fork
 	CostCapTokens int    // soft token budget

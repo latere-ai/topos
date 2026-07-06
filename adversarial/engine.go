@@ -17,7 +17,7 @@ import (
 // supplies Proposer and NewCritic; all orchestration, state persistence,
 // and ledger bookkeeping are handled internally.
 //
-// StateDir is the directory where .agon/sessions/<id>/ will be created.
+// StateDir is the directory where sessions/<id>/ will be created.
 // Set it to the worktree root or any writable path; the directory is
 // created if it does not exist.
 type Engine struct {
