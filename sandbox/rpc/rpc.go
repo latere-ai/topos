@@ -79,6 +79,8 @@ func toEnvelope(err error) *errEnvelope {
 		return &errEnvelope{Kind: "conflict", Msg: err.Error()}
 	case errors.Is(err, sandbox.ErrConfined):
 		return &errEnvelope{Kind: "confined", Msg: err.Error()}
+	case errors.Is(err, sandbox.ErrConsentDenied):
+		return &errEnvelope{Kind: "consent", Msg: err.Error()}
 	}
 	var apiErr *sandbox.APIError
 	if errors.As(err, &apiErr) {
@@ -100,6 +102,8 @@ func (e *errEnvelope) toError() error {
 		return fmt.Errorf("%w: %s", sandbox.ErrConflict, e.Msg)
 	case "confined":
 		return fmt.Errorf("%w: %s", sandbox.ErrConfined, e.Msg)
+	case "consent":
+		return fmt.Errorf("%w: %s", sandbox.ErrConsentDenied, e.Msg)
 	case "api":
 		if e.API != nil {
 			return e.API

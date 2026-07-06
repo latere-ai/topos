@@ -132,6 +132,26 @@ func TestRPCConfinedRefusedServerSide(t *testing.T) {
 	}
 }
 
+// TestRPCConsentDeniedRoundTrips proves the full mode-2 laptop composition over
+// the wire: Serve(Consent(Confine(local))) refuses a denied exec server-side and
+// the ErrConsentDenied sentinel reconstructs on the client.
+func TestRPCConsentDeniedRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	deny := func(context.Context, string, sandbox.ExecOptions) error { return errors.New("user declined") }
+	backend := sandbox.Consent(sandbox.Confine(local.New(), "."), deny)
+	cli, stop := pipeClient(t, backend)
+	defer stop()
+
+	sb, _ := cli.Create(ctx, sandbox.CreateOptions{})
+	if _, err := cli.Exec(ctx, sb.ID, sandbox.ExecOptions{Argv: []string{"ls"}}); !errors.Is(err, sandbox.ErrConsentDenied) {
+		t.Fatalf("Exec over wire = %v, want ErrConsentDenied", err)
+	}
+	// A confined path is still refused too (the layers compose).
+	if _, err := cli.ReadFile(ctx, sb.ID, ".ssh/id_rsa"); !errors.Is(err, sandbox.ErrConfined) {
+		t.Fatalf("ReadFile secret over wire = %v, want ErrConfined", err)
+	}
+}
+
 // errProvider returns a fixed error from every method, to prove error kinds
 // round-trip across the wire.
 type errProvider struct{ err error }
