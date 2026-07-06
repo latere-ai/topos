@@ -96,3 +96,15 @@ graph TD
   rgraph --> ar
   rgraph --> lin
 ```
+
+## Adversarial Review (proposed)
+
+Unlike the runtime specs above, which are retrospective and `status: complete`,
+this track is forward-looking (`status: proposed`). It plans absorbing the
+standalone `agon` adversarial-review module into Topos as a first-class
+capability, then retiring `agon` from the Latere landscape entirely. Start at the
+overview; the child specs are tightly scoped and land one by one.
+
+- [Adversarial Review Overview](adversarial/00-overview.md): why the capability
+  moves into Topos, the target `adversarial/` layout, the total-scrub naming
+  decision, the migration DAG, and the verifiable teardown that defines done.
