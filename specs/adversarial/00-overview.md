@@ -67,7 +67,7 @@ no user-facing surface, on-disk path, or internal identifier keeps the word.
 | Import path                   | `latere.ai/x/agon/pkg/...`     | `latere.ai/x/topos/adversarial/...`    |
 | CLI command                   | `latere agon`                  | `latere review`                        |
 | Agents capability page        | `agon.latere.ai`               | "Adversarial Review" page in agents    |
-| On-disk session artifacts     | `.agon/sessions/<id>/`         | `.topos/review/sessions/<id>/`         |
+| On-disk session artifacts     | `.agon/sessions/<id>/` (in repo) | engine writes `sessions/<id>/` under a caller `StateDir`; latere-cli defaults to `$XDG_STATE_HOME/latere/reviews/<repo>/`, wallfacer to its server data dir |
 | wallfacer runtime gate        | `AgonEnabled` / `SetAgon`      | `ReviewEnabled` / `SetReview`          |
 | wallfacer verifier ctor       | `NewAgonVerifier`              | `NewReviewVerifier`                    |
 | wallfacer config key          | `"agon"`                       | `"review"`                             |
@@ -78,9 +78,12 @@ keys, on-disk paths, exported symbols, and comments.
 
 Two of these renames touch a wire or on-disk contract and need a compatibility
 call inside their spec, not here: the wallfacer `"agon"` config key
-([04](04-migrate-wallfacer.md)) and the `.agon/sessions/` directory a running
-deployment may already hold ([04](04-migrate-wallfacer.md),
-[05](05-migrate-latere-cli.md)).
+([04](04-migrate-wallfacer.md)) and the on-disk artifact location. The engine
+itself stays brand-neutral and invents no default path (see
+[03](03-capability-surface.md)); each consumer owns its location, latere-cli under
+an XDG state dir ([05](05-migrate-latere-cli.md)) and wallfacer under a stable
+server data dir ([04](04-migrate-wallfacer.md)), retiring the in-repo `.agon/`
+directory entirely.
 
 ## Target layout
 

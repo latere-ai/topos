@@ -51,16 +51,28 @@ the wallfacer repo against the Topos tag from [03](03-capability-surface.md).
 | `agonInFlight` / `agonMu`  | `reviewInFlight` / `reviewMu` |
 | `maxConcurrentAgon`        | `maxConcurrentReview`        |
 | `agonCriticHarnessIDs`     | `reviewCriticHarnessIDs`     |
+| `agonStateDir` / `newestAgonSession` | `reviewStateDir` / `newestReviewSession` |
+| `agonTuning`               | `reviewTuning`               |
 | config key `"agon"`        | `"review"`                   |
 | breaker `"auto-agon"`      | `"auto-review"`              |
 | file `internal/adversarial/agon.go` | `internal/adversarial/review.go` |
+| file `internal/handler/agon_transcript.go` | `internal/handler/review_transcript.go` |
 
 The package `internal/adversarial` keeps its name (it contains no `agon` string).
 Sweep comments and log prefixes (`[agon]`) too.
 
-**On-disk path.** Where wallfacer configures the engine's `StateDir` / session
-output, adopt `.topos/review/sessions/` (the [03](03-capability-surface.md)
-default). See the compatibility note below.
+**On-disk path.** wallfacer today derives the engine's `StateDir` from the task
+worktree (`agonStateDir(primaryWorktree(task.WorktreePaths))`, and the per-critic
+`.agon-critic-<id>` dir in `worktree.go`). Because [03](03-capability-surface.md)
+makes the engine brand-neutral with no default of its own, wallfacer now passes an
+explicit `StateDir` rooted at a **stable server-side data directory it owns**, not
+in the ephemeral worktree and not in a human `$HOME` (`~/.latere` is a
+developer-machine notion; the daemon runs as a service user). Rooting review output
+outside the worktree also means artifacts survive worktree teardown, which the
+daemon needs since it serves them to the frontend. Rename the per-critic dir off
+the `agon` name (`.agon-critic-<id>` -> `.review-critic-<id>`) and place it under
+the daemon's data dir rather than beside the source worktree. See the compatibility
+note below.
 
 ## Compatibility decisions
 
@@ -72,10 +84,13 @@ default). See the compatibility note below.
   `"review"`) and note a removal date; otherwise break outright. Decide from the
   actual persistence: if config is ephemeral per-process, break; if persisted,
   alias.
-- **On-disk `.agon/` directories.** A running deployment may hold
-  `.agon/sessions/` from prior runs. New runs write `.topos/review/sessions/`. Do
-  not migrate old artifacts; they are transient review outputs. Confirm nothing in
-  wallfacer reads a fixed `.agon/` path at startup.
+- **On-disk `.agon/` and `.agon-critic-*` directories.** A running deployment may
+  hold `.agon/sessions/` and `.agon-critic-<id>` dirs beside worktrees from prior
+  runs. New runs write under the daemon's stable data dir with the `review` naming.
+  Do not migrate old artifacts; they are transient review outputs. Confirm nothing
+  in wallfacer reads a fixed `.agon`-prefixed path at startup, and that
+  `newestAgonSession`/`agonStateDir` (renamed to `review`) resolve against the new
+  data dir, not the worktree.
 
 ## Steps
 

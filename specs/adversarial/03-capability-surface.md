@@ -39,7 +39,7 @@ not a new engine.
 func Review(ctx context.Context, opts ReviewOptions) (*Summary, error)
 
 type ReviewOptions struct {
-    StateDir    string
+    StateDir    string // required; caller-chosen root, engine writes sessions/<id>/ under it
     Cwd         string
     Forks       int
     Proposer    Proposer
@@ -57,12 +57,17 @@ name the capability in one call. Add a package `doc.go` that describes adversari
 review in Topos terms (proposer plus critics debating a diff, per-fork lineage) and
 points at both `Review` and `Engine`.
 
-This spec is where the on-disk artifact path is settled as a package default:
-`Review` (and `Engine` when `StateDir` names a repo root) writes under
-`.topos/review/sessions/<id>/`, replacing `.agon/sessions/`. Consumers that pass
-an explicit `StateDir` inherit this default; the rename's consumer-facing handling
-(existing directories in a running deployment) is covered in
-[04](04-migrate-wallfacer.md) and [05](05-migrate-latere-cli.md).
+The engine stays brand-neutral about where it writes. `Review` and `Engine`
+write `sessions/<id>/` under the caller-provided `StateDir` and invent no default
+of their own. topos is embeddable by any host (not only Latere), so it must not
+bake in a Latere path like `~/.latere/` or a `.topos/` working-tree directory. The
+`StateDir` field is required; if a caller leaves it empty, the engine errors rather
+than guessing a location. Choosing a good default is a consumer decision:
+latere-cli defaults to an XDG state dir under the user's home
+([05](05-migrate-latere-cli.md)), and wallfacer uses a stable server-side data dir
+outside the ephemeral worktree ([04](04-migrate-wallfacer.md)). This also retires
+the old `.agon/sessions/` working-tree location entirely; nothing writes into the
+reviewed repo anymore.
 
 ## Documentation
 
@@ -83,8 +88,9 @@ the consumer specs pin an exact version.
 
 - `adversarial.Review` exists, is covered by a test that runs a fake proposer and
   critic end to end, and returns a `Summary` equivalent to the `Engine` path.
-- The session artifact default is `.topos/review/sessions/<id>/`; a test asserts
-  the path.
+- The engine writes `sessions/<id>/` under the caller's `StateDir` and invents no
+  path of its own; a test asserts the layout under a temp `StateDir` and that an
+  empty `StateDir` is a caller error.
 - Topos README and package doc describe the capability with no `agon` reference.
 - A Topos tag is cut and named in the Outcome.
 
