@@ -1,9 +1,3 @@
-// Package adversarial is the public engine API for the topos adversarial
-// debate protocol. External callers implement [Proposer] and [Critic],
-// wire them into an [Engine], call [Engine.Run], and inspect [Summary].
-//
-// All types in this package are free of internal/ dependencies so that
-// modules outside latere.ai/x/topos can import and satisfy the interfaces.
 package adversarial
 
 import (

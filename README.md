@@ -231,6 +231,45 @@ none. The local provider has no vault and ignores both fields. (Separately, the
 lift/drop deny-list keeps laptop secrets like `.env` and `*.pem` from ever
 entering a sandbox.) Plain `Env` remains the channel for non-secret config.
 
+## Adversarial Review
+
+Adversarial review is a topos capability built on the runtime: a proposer agent
+and one or more critic agents cross-examine a diff over bounded rounds, with
+per-fork lineage. It lives under `latere.ai/x/topos/adversarial`, deliberately
+separate from the provider-agnostic core.
+
+The debate runs as N independent forks. In each fork a critic attacks the diff
+aspect by aspect, the proposer concedes or rebuts each attack, and the round loop
+runs until the fork reaches steady state, exhausts its round budget, or trips the
+shared cost cap. An attack ledger tracks every claim so the returned `Summary`
+reports what stayed unresolved.
+
+Reach for `adversarial.Review` for the common single call; drop to
+`adversarial.Engine` when you need per-fork control:
+
+```go
+import "latere.ai/x/topos/adversarial"
+
+sum, err := adversarial.Review(ctx, adversarial.ReviewOptions{
+    StateDir:    stateDir, // required; the engine writes sessions/<id>/ under it
+    Cwd:         worktree,
+    Forks:       3,
+    Proposer:    proposer,  // your Proposer, or adversarial/claude.NewProposer
+    NewCritic:   newCritic, // your CriticFactory, or adversarial/critic.NewCriticFactory
+    MaxRounds:   6,
+    CostCap:     1_000_000,
+    TaskContext: "add user login",
+    DiffPatch:   diff,
+})
+```
+
+`StateDir` is required and brand-neutral: topos writes session artifacts under it
+and invents no default of its own, so any host stays in control of where reviews
+land. Leaving it empty is a caller error. Ready-made backends ship in subpackages:
+a Claude-CLI proposer and critic in `adversarial/claude`, a topos-native critic in
+`adversarial/critic`, and working-tree diff plus transcript helpers in
+`adversarial/input`.
+
 ## Status
 
 Early. The root `topos` package is the supported surface and is what most callers

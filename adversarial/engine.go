@@ -2,6 +2,7 @@ package adversarial
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"latere.ai/x/topos/adversarial/internal/agent"
@@ -35,6 +36,13 @@ type Engine struct {
 // The session directory is created under StateDir at the start of Run
 // and its path is included in the returned Summary.
 func (e *Engine) Run(ctx context.Context) (*Summary, error) {
+	// StateDir is required and brand-neutral: the engine writes
+	// sessions/<id>/ under it and invents no default of its own. An empty
+	// StateDir is a caller error rather than a guess at a location, so topos
+	// stays embeddable by any host without baking in a path.
+	if e.StateDir == "" {
+		return nil, errors.New("adversarial: StateDir is required")
+	}
 	forkCount := e.ForkCount
 	if forkCount < 1 {
 		forkCount = 1

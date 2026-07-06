@@ -18,6 +18,10 @@
 // `delegate` tool registered into the loop whose Invoke performs a real attenuated
 // Spawner spawn, runs the chosen peer as a nested loop, and returns its result into
 // the parent transcript.
+//
+// Built on the runtime, the adversarial subpackage
+// ([latere.ai/x/topos/adversarial]) adds a review capability: a proposer and one
+// or more critics cross-examine a diff over bounded rounds with per-fork lineage.
 package topos
 
 import (
