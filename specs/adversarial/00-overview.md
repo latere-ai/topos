@@ -97,7 +97,7 @@ topos/adversarial/
   assemble.go           prompt assembly
   review.go             thin capability entrypoint (adversarial.Review)   [03]
   internal/             debate internals, importable only within adversarial/
-    agent/ critic/ ledger/ round/ state/ summary/
+    agent/ critic/ ledger/ round/ state/ summary/ ansi/
   claude/               Claude-CLI proposer + critic backend (subprocess fork)
   critic/               Topos-native critic (was pkg/adversarial/topos)
   input/                Claude transcript locator + working-tree diff
@@ -105,7 +105,11 @@ topos/adversarial/
 
 The `internal/` packages move under `adversarial/internal/`, which Go visibility
 restricts to importers under `adversarial/`. That keeps the debate internals
-private to the capability exactly as they are private to `agon` today.
+private to the capability exactly as they are private to `agon` today. `ansi` is
+included because the round loop and summary render through it; it is a transitive
+engine dependency, not CLI-side (see [01](01-engine-core.md)). Only
+`internal/web`, the `agon-web` site, does not move; it is retired in
+[07](07-retire-agon.md).
 
 Naming note: the native critic backend is `latere.ai/x/agon/pkg/adversarial/topos`
 today. Inside the Topos module that path would read `topos/adversarial/topos`,

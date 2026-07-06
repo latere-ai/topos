@@ -19,11 +19,12 @@ dispatched_task_id: null
 
 ## Goal
 
-Move the product story from the standalone `agon.latere.ai` site onto the agents
-platform as an "Adversarial Review" capability page, so the capability borrows the
-platform's narrative instead of carrying its own. This replaces the standalone
-site's reason to exist and is a prerequisite for retiring it in
-[07](07-retire-agon.md).
+Migrate the `agon.latere.ai` website landing page onto the agents platform as an
+"Adversarial Review" capability page, so the capability borrows the platform's
+narrative instead of carrying its own. The landing page does not disappear; its
+content moves into agents. This replaces the standalone site's reason to exist, so
+that [07](07-retire-agon.md) only tears down the emptied site shell and infra, not
+the story. Migrating the page here is a prerequisite for that teardown.
 
 Planned here for coordination; implemented in the agents repo.
 

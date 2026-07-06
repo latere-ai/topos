@@ -38,12 +38,16 @@ Move, verbatim except for import paths, these files into `topos/adversarial/`:
 
 Move the engine's internal dependencies into `topos/adversarial/internal/`:
 
-- `agent/`, `critic/`, `ledger/`, `round/`, `state/`, `summary/`.
+- `agent/`, `critic/`, `ledger/`, `round/`, `state/`, `summary/`, `ansi/`.
 
-These are exactly the internals `engine.go` imports today
-(`latere.ai/x/agon/internal/{agent,critic,ledger,round,state,summary}`). Under
-`adversarial/internal/` Go visibility restricts them to importers within
-`adversarial/`, preserving today's privacy.
+The first six are the internals `engine.go` imports directly
+(`latere.ai/x/agon/internal/{agent,critic,ledger,round,state,summary}`); `ansi` is
+a transitive engine dependency, imported by `internal/round/loop.go` and
+`internal/summary/print.go` for the escape codes the round loop and summary render.
+It is part of the engine, not CLI-side, so it moves with the core; without it
+`topos/adversarial` will not compile. Under `adversarial/internal/` Go visibility
+restricts all of these to importers within `adversarial/`, preserving today's
+privacy.
 
 Rewrite every moved import from `latere.ai/x/agon/internal/...` to
 `latere.ai/x/topos/adversarial/internal/...`, and the package self-reference from
@@ -56,9 +60,9 @@ Port the engine tests alongside (`adversarial_test.go`: `TestAssemblePrompt`,
 
 - No backends. `claude/`, `critic/` (native), and `input/` move in
   [02](02-backends-and-input.md).
-- No `internal/ansi` or `internal/web`. `ansi` is CLI-side rendering and travels
-  with its consumer; `web` is the `agon-web` site and is retired in
-  [07](07-retire-agon.md), not moved.
+- No `internal/web`. That is the `agon-web` site and is retired in
+  [07](07-retire-agon.md), not moved. (Note: `internal/ansi` is not excluded; it is
+  a transitive engine dependency and moves in Scope above.)
 - No API changes, renames, or signature changes. The package name stays
   `adversarial`; exported identifiers are unchanged. The on-disk `.agon/sessions/`
   path stays as-is at this step (the engine still writes it); the directory rename
