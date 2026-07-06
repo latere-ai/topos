@@ -7,6 +7,7 @@ package rpc_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -217,13 +218,138 @@ func TestRPCTransportError(t *testing.T) {
 	if err := cli.HealthCheck(ctx, "sb"); err == nil {
 		t.Fatal("HealthCheck on a closed conn should error")
 	}
+	if _, err := cli.StreamExec(ctx, "sb", sandbox.ExecOptions{}); err == nil {
+		t.Fatal("StreamExec on a closed conn should error")
+	}
 }
 
-// TestRPCStreamExecUnsupported: streaming exec is a named follow-on leaf.
-func TestRPCStreamExecUnsupported(t *testing.T) {
+// scriptedStream emits fixed chunks, then err (io.EOF for clean end, or another
+// error for a mid-stream failure).
+type scriptedStream struct {
+	chunks [][]byte
+	i      int
+	err    error
+	res    sandbox.ExecResult
+}
+
+func (s *scriptedStream) Recv() ([]byte, error) {
+	if s.i < len(s.chunks) {
+		c := s.chunks[s.i]
+		s.i++
+		return c, nil
+	}
+	if s.err != nil {
+		return nil, s.err
+	}
+	return nil, io.EOF
+}
+func (s *scriptedStream) Result() sandbox.ExecResult { return s.res }
+func (s *scriptedStream) Close() error               { return nil }
+
+// streamProvider serves a scripted stream from StreamExec; Create is delegated to
+// a real local provider so the client can obtain a sandbox id.
+type streamProvider struct {
+	*local.Provider
+	stream *scriptedStream
+}
+
+func (p *streamProvider) StreamExec(context.Context, string, sandbox.ExecOptions) (sandbox.ExecStream, error) {
+	return p.stream, nil
+}
+
+// TestRPCStreamExecMidStreamError: a stream that yields a chunk and then fails
+// (not EOF) delivers the chunk, then surfaces the error on the next Recv.
+func TestRPCStreamExecMidStreamError(t *testing.T) {
+	ctx := context.Background()
+	backend := &streamProvider{
+		Provider: local.New(),
+		stream:   &scriptedStream{chunks: [][]byte{[]byte("partial")}, err: sandbox.ErrNotFound},
+	}
+	cli, stop := pipeClient(t, backend)
+	defer stop()
+
+	sb, _ := cli.Create(ctx, sandbox.CreateOptions{})
+	stream, err := cli.StreamExec(ctx, sb.ID, sandbox.ExecOptions{})
+	if err != nil {
+		t.Fatalf("StreamExec: %v", err)
+	}
+	chunk, err := stream.Recv()
+	if err != nil || string(chunk) != "partial" {
+		t.Fatalf("first Recv = (%q, %v), want the partial chunk", chunk, err)
+	}
+	if _, err := stream.Recv(); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("second Recv = %v, want the mid-stream ErrNotFound", err)
+	}
+	_ = stream.Close()
+}
+
+// TestRPCStreamExecRoundTrip streams a command's output over the wire and
+// asserts the concatenated chunks + final result match, then a subsequent unary
+// call on the same connection still works (the stream left the conn in sync).
+func TestRPCStreamExecRoundTrip(t *testing.T) {
+	ctx := context.Background()
 	cli, stop := pipeClient(t, local.New())
 	defer stop()
-	if _, err := cli.StreamExec(context.Background(), "sb", sandbox.ExecOptions{}); !errors.Is(err, rpc.ErrStreamUnsupported) {
-		t.Fatalf("StreamExec = %v, want ErrStreamUnsupported", err)
+
+	sb, err := cli.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	stream, err := cli.StreamExec(ctx, sb.ID, sandbox.ExecOptions{Argv: []string{"sh", "-c", "printf 'a\\nb\\nc\\n'"}})
+	if err != nil {
+		t.Fatalf("StreamExec: %v", err)
+	}
+	var out []byte
+	for {
+		chunk, rerr := stream.Recv()
+		out = append(out, chunk...)
+		if errors.Is(rerr, io.EOF) {
+			break
+		}
+		if rerr != nil {
+			t.Fatalf("Recv: %v", rerr)
+		}
+	}
+	if res := stream.Result(); res.ExitCode != 0 {
+		t.Fatalf("stream result exit = %d, want 0", res.ExitCode)
+	}
+	_ = stream.Close()
+	if !strings.Contains(string(out), "a") || !strings.Contains(string(out), "c") {
+		t.Fatalf("streamed output = %q, want a..c", out)
+	}
+
+	// The connection is back in sync: a unary call still works after the stream.
+	if err := cli.HealthCheck(ctx, sb.ID); err != nil {
+		t.Fatalf("unary call after stream failed (conn desynced): %v", err)
+	}
+}
+
+// TestRPCStreamExecStartError surfaces a StreamExec that fails to start (unknown
+// sandbox) as an error from StreamExec itself, not on first Recv.
+func TestRPCStreamExecStartError(t *testing.T) {
+	cli, stop := pipeClient(t, errProvider{err: sandbox.ErrNotFound})
+	defer stop()
+	if _, err := cli.StreamExec(context.Background(), "ghost", sandbox.ExecOptions{}); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("StreamExec start = %v, want ErrNotFound", err)
+	}
+}
+
+// TestRPCStreamExecCloseWithoutDrain: closing a stream before draining still
+// leaves the connection usable for the next call.
+func TestRPCStreamExecCloseWithoutDrain(t *testing.T) {
+	ctx := context.Background()
+	cli, stop := pipeClient(t, local.New())
+	defer stop()
+	sb, _ := cli.Create(ctx, sandbox.CreateOptions{})
+
+	stream, err := cli.StreamExec(ctx, sb.ID, sandbox.ExecOptions{Argv: []string{"sh", "-c", "printf 'x\\ny\\n'"}})
+	if err != nil {
+		t.Fatalf("StreamExec: %v", err)
+	}
+	_ = stream.Close() // close without draining every chunk
+
+	if err := cli.HealthCheck(ctx, sb.ID); err != nil {
+		t.Fatalf("unary call after early Close failed (conn desynced): %v", err)
 	}
 }

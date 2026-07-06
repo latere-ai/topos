@@ -8,12 +8,13 @@
 // over any io.ReadWriteCloser (an in-memory net.Pipe in tests, a tunnel stream in
 // production).
 //
-// Scope (walking skeleton): the unary Provider methods — Create, Destroy, Exec,
-// ReadFile, WriteFile, ListFiles, HealthCheck. StreamExec (streaming output),
-// per-call exec consent, and tunnel wiring are named follow-on leaves in
-// session-laptop-sandbox-rpc; the client's StreamExec returns ErrStreamUnsupported
-// here. One request is in flight at a time per connection (the loop dispatches
-// tools sequentially); stream multiplexing belongs to the transport (yamux) below.
+// Scope: all Provider methods — the unary set (Create, Destroy, Exec, ReadFile,
+// WriteFile, ListFiles, HealthCheck) plus StreamExec (streaming output as a
+// sequence of frames terminated by the final ExecResult). Per-call exec consent
+// and tunnel wiring are named follow-on leaves in session-laptop-sandbox-rpc. One
+// request is in flight at a time per connection (the loop dispatches tools
+// sequentially, and a StreamExec holds the connection until its stream is closed);
+// stream multiplexing belongs to the transport (yamux) below.
 package rpc
 
 import (
@@ -27,9 +28,16 @@ import (
 	"latere.ai/x/topos/sandbox"
 )
 
-// ErrStreamUnsupported is returned by the client's StreamExec: streaming exec over
-// the wire is a named follow-on leaf, out of the skeleton's scope.
-var ErrStreamUnsupported = errors.New("sandbox/rpc: StreamExec not supported over this transport yet")
+// streamFrame is one message in a StreamExec response: an output chunk, or the
+// terminal frame (EOF) carrying the final ExecResult, or an error. The server
+// emits a sequence of {Chunk} frames followed by exactly one {EOF, Result} (or a
+// single {Err}); the client reads them in order.
+type streamFrame struct {
+	Chunk  []byte              `json:"chunk,omitempty"`
+	EOF    bool                `json:"eof,omitempty"`
+	Result *sandbox.ExecResult `json:"result,omitempty"`
+	Err    *errEnvelope        `json:"err,omitempty"`
+}
 
 // request is the wire request envelope. Only the fields relevant to Method are
 // populated; the rest stay zero.
@@ -114,9 +122,46 @@ func Serve(ctx context.Context, conn io.ReadWriteCloser, provider sandbox.Provid
 			}
 			return fmt.Errorf("sandbox/rpc: decode request: %w", err)
 		}
+		if req.Method == "StreamExec" {
+			if err := serveStream(ctx, enc, provider, &req); err != nil {
+				return err
+			}
+			continue
+		}
 		resp := dispatch(ctx, provider, &req)
 		if err := enc.Encode(&resp); err != nil {
 			return fmt.Errorf("sandbox/rpc: encode response: %w", err)
+		}
+	}
+}
+
+// serveStream runs a StreamExec on the provider and forwards its output as a
+// sequence of chunk frames terminated by an EOF frame carrying the final result
+// (or a single error frame). It writes exactly one terminal frame so the client's
+// stream always ends.
+func serveStream(ctx context.Context, enc *json.Encoder, p sandbox.Provider, req *request) error {
+	opts := sandbox.ExecOptions{}
+	if req.Exec != nil {
+		opts = *req.Exec
+	}
+	stream, err := p.StreamExec(ctx, req.ID, opts)
+	if err != nil {
+		return enc.Encode(&streamFrame{Err: toEnvelope(err)})
+	}
+	defer func() { _ = stream.Close() }()
+	for {
+		chunk, rerr := stream.Recv()
+		if len(chunk) > 0 {
+			if err := enc.Encode(&streamFrame{Chunk: chunk}); err != nil {
+				return fmt.Errorf("sandbox/rpc: encode stream chunk: %w", err)
+			}
+		}
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				res := stream.Result()
+				return enc.Encode(&streamFrame{EOF: true, Result: &res})
+			}
+			return enc.Encode(&streamFrame{Err: toEnvelope(rerr)})
 		}
 	}
 }
@@ -236,9 +281,103 @@ func (c *client) Exec(_ context.Context, id string, opts sandbox.ExecOptions) (s
 	return *resp.Exec, nil
 }
 
-// StreamExec is not supported over this transport yet (named follow-on leaf).
-func (c *client) StreamExec(_ context.Context, _ string, _ sandbox.ExecOptions) (sandbox.ExecStream, error) {
-	return nil, ErrStreamUnsupported
+// StreamExec starts a streaming command on the peer. It holds the connection's
+// write/read lock for the stream's whole lifetime (one in-flight call per
+// connection), so the caller MUST Close the returned stream to release it. The
+// first frame is read eagerly so an immediate StreamExec error surfaces here.
+func (c *client) StreamExec(_ context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecStream, error) {
+	c.mu.Lock()
+	if err := c.enc.Encode(&request{Method: "StreamExec", ID: id, Exec: &opts}); err != nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("sandbox/rpc: send StreamExec: %w", err)
+	}
+	s := &clientStream{c: c}
+	// Peek the first frame: a StreamExec that fails to start returns its error
+	// here rather than on the first Recv.
+	var fr streamFrame
+	if err := c.dec.Decode(&fr); err != nil {
+		s.release()
+		return nil, fmt.Errorf("sandbox/rpc: recv StreamExec: %w", err)
+	}
+	if fr.Err != nil {
+		s.release()
+		return nil, fr.Err.toError()
+	}
+	s.pending = &fr
+	return s, nil
+}
+
+// clientStream is a sandbox.ExecStream reading streamFrames off the connection.
+type clientStream struct {
+	c        *client
+	pending  *streamFrame // the eagerly-read (or last-decoded) frame not yet consumed
+	result   sandbox.ExecResult
+	done     bool
+	released bool
+}
+
+// release drops the connection lock exactly once.
+func (s *clientStream) release() {
+	if !s.released {
+		s.released = true
+		s.c.mu.Unlock()
+	}
+}
+
+func (s *clientStream) next() (*streamFrame, error) {
+	if s.pending != nil {
+		fr := s.pending
+		s.pending = nil
+		return fr, nil
+	}
+	var fr streamFrame
+	if err := s.c.dec.Decode(&fr); err != nil {
+		return nil, fmt.Errorf("sandbox/rpc: recv stream frame: %w", err)
+	}
+	return &fr, nil
+}
+
+func (s *clientStream) Recv() ([]byte, error) {
+	if s.done {
+		return nil, io.EOF
+	}
+	for {
+		fr, err := s.next()
+		if err != nil {
+			s.done = true
+			return nil, err
+		}
+		if fr.Err != nil {
+			s.done = true
+			return nil, fr.Err.toError()
+		}
+		if fr.EOF {
+			s.done = true
+			if fr.Result != nil {
+				s.result = *fr.Result
+			}
+			return nil, io.EOF
+		}
+		if len(fr.Chunk) > 0 {
+			return fr.Chunk, nil
+		}
+		// An empty non-terminal frame: skip and read the next.
+	}
+}
+
+func (s *clientStream) Result() sandbox.ExecResult { return s.result }
+
+// Close drains any remaining frames to keep the connection in sync, then releases
+// the connection lock. Safe to call multiple times.
+func (s *clientStream) Close() error {
+	// Drain to the terminal frame so the next call on this connection reads a
+	// fresh response, not our leftovers. Recv sets s.done on EOF or any error, so
+	// the loop always terminates; the drained values are intentionally discarded.
+	for !s.done {
+		_, _ = s.Recv()
+	}
+	s.release()
+	return nil
 }
 
 func (c *client) ReadFile(_ context.Context, id, path string) ([]byte, error) {
