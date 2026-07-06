@@ -50,6 +50,16 @@ repo, and the cluster.
   `frontend-cdn-decoupling` rollout trackers. Remove agon rows rather than marking
   them migrated; the service is gone, not moved.
 
+**Shared footer link (latere-ui).** The shared `latere-ui` `SiteFooter` renders an
+`Agon` product link to `https://agon.latere.ai/` on every page across the Latere
+sites (landing, agents, and others that depend on `latere-ui`), driven by a
+`footer.products.agon` i18n key and hardcoded in the `latere-ui` package. Removing
+the site without removing this link leaves a dead product link everywhere. Scrub it
+as part of retirement: remove the `agon` entry from the `latere-ui` `SiteFooter`
+component and delete the `footer.products.agon` key from every consuming app's
+i18n (`agents/frontend/src/i18n/{en,zh}.ts` and any sibling). This needs a
+`latere-ui` release plus a dependency bump in the consumers.
+
 **Site and build (agon repo, pre-archive).**
 
 - The site machinery is deleted with the repo archive, but record what it was so
