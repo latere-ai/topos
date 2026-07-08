@@ -11,9 +11,9 @@ import (
 	"context"
 	"time"
 
+	adversarial "latere.ai/x/topos/adversarial"
 	"latere.ai/x/topos/adversarial/internal/agent"
 	"latere.ai/x/topos/adversarial/internal/critic"
-	adversarial "latere.ai/x/topos/adversarial"
 )
 
 // ProposerOption configures a proposer created by [NewProposer].

@@ -85,7 +85,7 @@ func TestEmptyHeaderError(t *testing.T) {
 	}
 }
 
-// TestParseRenamesReusedPriorIDOnIntroduce reproduces the bug a agon
+// TestParseRenamesReusedPriorIDOnIntroduce reproduces the bug a adversarial
 // session in agents-byzantine-tolerance hit: the R3 critic emitted a
 // completely new claim under "## c1-1 [...]" (the R1 id), no
 // "(re-attack)" marker, no acknowledgement of R2's defense. The parser

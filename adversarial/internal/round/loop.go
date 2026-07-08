@@ -78,7 +78,7 @@ func (e *Engine) decorate(line string) string {
 	if !e.Styled {
 		return line
 	}
-	line = strings.Replace(line, "[agon]", ansi.Bold+ansi.Cyan+"[agon]"+ansi.Reset, 1)
+	line = strings.Replace(line, "[adversarial]", ansi.Bold+ansi.Cyan+"[adversarial]"+ansi.Reset, 1)
 	line = colorRoleWord(line, " critic ", roleCriticColor)
 	line = colorRoleWord(line, " proposer ", roleProposerCol)
 	line = strings.Replace(line, "still running", ansi.Dim+"still running"+ansi.Reset, 1)
@@ -217,10 +217,10 @@ type Usage struct {
 
 // Typed errors ([20]).
 var (
-	ErrInterrupted    = errors.New("agon interrupted")
-	ErrCostCap        = errors.New("agon cost cap reached")
-	ErrMalformedTwice = errors.New("agon malformed output twice")
-	ErrAgentFatal     = errors.New("agon agent fatal error")
+	ErrInterrupted    = errors.New("adversarial interrupted")
+	ErrCostCap        = errors.New("adversarial cost cap reached")
+	ErrMalformedTwice = errors.New("adversarial malformed output twice")
+	ErrAgentFatal     = errors.New("adversarial agent fatal error")
 )
 
 var defenseLineRE = regexp.MustCompile(`(?m)^\s*(concede|rebut|push-back)\s+(c\d+-\d+)\b`)
@@ -289,7 +289,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 		priorIDs []string
 	)
 
-	e.progf("[agon] fork %d/%d: starting (topic to be declared in R1)", forkIdx, e.ForkCount)
+	e.progf("[adversarial] fork %d/%d: starting (topic to be declared in R1)", forkIdx, e.ForkCount)
 
 	for round := 1; round <= e.MaxRounds; round++ {
 		if ctx.Err() != nil {
@@ -304,7 +304,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 		roundStart := time.Now()
 		if round%2 == 1 {
 			// Critic round.
-			prefix := fmt.Sprintf("[agon] fork %d/%d %s: T%d critic", forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round))
+			prefix := fmt.Sprintf("[adversarial] fork %d/%d %s: T%d critic", forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round))
 			e.progf("%s running...", prefix)
 			stop := e.startHeartbeat(roundStart, prefix)
 			res, stats, err := e.criticRound(ctx, cri, a, forkIdx, round, priorIDs)
@@ -339,7 +339,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 				Round: round, Role: "critic", Usage: res.usage, USD: res.usd,
 				MS: int(time.Since(roundStart).Milliseconds()),
 			})
-			e.progf("[agon] fork %d/%d %s: T%d critic done in %s (new=%d, re-attack=%d, withdraw=%d, dropped=%d) %s",
+			e.progf("[adversarial] fork %d/%d %s: T%d critic done in %s (new=%d, re-attack=%d, withdraw=%d, dropped=%d) %s",
 				forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round), fmtDur(time.Since(roundStart)),
 				stats.KeptIntroduce, stats.KeptReAttack, stats.KeptWithdraw,
 				stats.DroppedNoReproduce+stats.DroppedStyle+stats.DroppedCrossAspect,
@@ -356,12 +356,12 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 			}
 			if det.SteadyState(hist) {
 				out.Termination = TermSteadyState
-				e.progf("[agon] fork %d/%d %s: steady state reached at T%d", forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round))
+				e.progf("[adversarial] fork %d/%d %s: steady state reached at T%d", forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round))
 				break
 			}
 		} else {
 			// Proposer round.
-			prefix := fmt.Sprintf("[agon] fork %d/%d %s: T%d proposer", forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round))
+			prefix := fmt.Sprintf("[adversarial] fork %d/%d %s: T%d proposer", forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round))
 			e.progf("%s running...", prefix)
 			pointer := fmt.Sprintf("Some comments at @forks/critic-%d/rounds/r%d-critic.md. Please resolve or respond. If you disagree, please raise it.",
 				forkIdx, round-1)
@@ -373,7 +373,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 			// tests) yields an error we degrade to an empty baseline.
 			before, beforeErr := state.ChangedFilesAfter(ctx, e.Cwd, nil)
 			if beforeErr != nil {
-				e.progf("[agon] fork %d/%d: changed-files snapshot failed: %v", forkIdx, e.ForkCount, beforeErr)
+				e.progf("[adversarial] fork %d/%d: changed-files snapshot failed: %v", forkIdx, e.ForkCount, beforeErr)
 				before = nil
 			}
 			stop := e.startHeartbeat(roundStart, prefix)
@@ -403,7 +403,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 			// proposer never reports this itself, so without this the
 			// ledger ConcessionFiles and the round markdown stay empty.
 			if changed, cerr := state.ChangedFilesAfter(ctx, e.Cwd, before); cerr != nil {
-				e.progf("[agon] fork %d/%d: changed-files diff failed: %v", forkIdx, e.ForkCount, cerr)
+				e.progf("[adversarial] fork %d/%d: changed-files diff failed: %v", forkIdx, e.ForkCount, cerr)
 			} else {
 				pr.ChangedFiles = changed
 			}
@@ -429,7 +429,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 				MS:   int(pr.Duration.Milliseconds()),
 			})
 			conceded, rebutted := updateLedgerFromDefense(e.Sess, pr.Response, pr.ChangedFiles, round)
-			e.progf("[agon] fork %d/%d %s: T%d proposer done in %s (conceded=%d, rebutted=%d, files=%d) %s",
+			e.progf("[adversarial] fork %d/%d %s: T%d proposer done in %s (conceded=%d, rebutted=%d, files=%d) %s",
 				forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round), fmtDur(time.Since(roundStart)),
 				conceded, rebutted, len(pr.ChangedFiles), fmtUsage(pr.Usage, pr.USD))
 		}
@@ -448,13 +448,13 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 		return out, "", err
 	}
 	u := out.Usage.Total
-	e.progf("[agon] fork %d/%d %s: terminated %s after R%d (in=%d out=%d cache_create=%d cache_read=%d total=%d cost=$%.4f)",
+	e.progf("[adversarial] fork %d/%d %s: terminated %s after R%d (in=%d out=%d cache_create=%d cache_read=%d total=%d cost=$%.4f)",
 		forkIdx, e.ForkCount, forkLabel(out.Topic), ifEmpty(string(runStop), string(out.Termination)),
 		out.Rounds, u.Input, u.Output, u.CacheCreate, u.CacheRead, u.Total(), out.Usage.TotalUSD)
 	return out, runStop, nil
 }
 
-const schemaForkStats = "agon.fork-stats.v0"
+const schemaForkStats = "adversarial.fork-stats.v0"
 
 type forkStatsFile struct {
 	Schema      string    `json:"schema"`

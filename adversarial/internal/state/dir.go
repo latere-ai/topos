@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Session is one agon run's on-disk handle.
+// Session is one adversarial run's on-disk handle.
 type Session struct {
 	Root        string
 	ID          string

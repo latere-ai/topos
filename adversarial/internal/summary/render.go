@@ -20,7 +20,7 @@ func (r *Render) Bytes(s *round.Summary, agg map[string]ledger.Record) ([]byte, 
 		panic("json format not implemented in v0")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Agon review - terminated: %s\n\n", s.Termination)
+	fmt.Fprintf(&b, "# Adversarial review - terminated: %s\n\n", s.Termination)
 
 	hl := PickHeadline(values(agg))
 	if hl != nil {
@@ -52,7 +52,7 @@ func (r *Render) Bytes(s *round.Summary, agg map[string]ledger.Record) ([]byte, 
 	tokens := s.TokensUsed
 	fmt.Fprintf(&b, "## Stats\n")
 	fmt.Fprintf(&b, "critic-found-bug rate: %d/%d attacks led to a fix\n", conceded, total)
-	fmt.Fprintf(&b, "agon cost: %d tokens, %d rounds, %d critics\n", tokens, totalRounds(s), len(s.Forks))
+	fmt.Fprintf(&b, "adversarial cost: %d tokens, %d rounds, %d critics\n", tokens, totalRounds(s), len(s.Forks))
 	u := s.Usage
 	if u.Total() > 0 {
 		fmt.Fprintf(&b, "token usage (run): in=%d out=%d cache_create=%d cache_read=%d total=%d cost=$%.4f\n",
@@ -90,24 +90,24 @@ func Decide(s *round.Summary) SurfacingDecision {
 	case round.TermSteadyState:
 		if s.Unresolved == 0 {
 			return SurfacingDecision{
-				StdoutLine: "[agon] clean run; see .agon/log.jsonl",
+				StdoutLine: "[adversarial] clean run; see .adversarial/log.jsonl",
 			}
 		}
 		return SurfacingDecision{
 			Surface:    true,
-			StdoutLine: fmt.Sprintf("[agon] %d unresolved; see %s", s.Unresolved, summaryPath),
+			StdoutLine: fmt.Sprintf("[adversarial] %d unresolved; see %s", s.Unresolved, summaryPath),
 			ExitCode:   1,
 		}
 	case round.TermInterrupted:
 		return SurfacingDecision{
 			Surface:    true,
-			StdoutLine: fmt.Sprintf("[agon] interrupted (%d known unresolved); partial review at %s", s.Unresolved, summaryPath),
+			StdoutLine: fmt.Sprintf("[adversarial] interrupted (%d known unresolved); partial review at %s", s.Unresolved, summaryPath),
 			ExitCode:   130,
 		}
 	default: // max-turn, cost-cap, malformed-output
 		return SurfacingDecision{
 			Surface:    true,
-			StdoutLine: fmt.Sprintf("[agon] terminated %s (%d unresolved); see %s", s.Termination, s.Unresolved, summaryPath),
+			StdoutLine: fmt.Sprintf("[adversarial] terminated %s (%d unresolved); see %s", s.Termination, s.Unresolved, summaryPath),
 			ExitCode:   1,
 		}
 	}

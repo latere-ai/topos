@@ -41,7 +41,7 @@ type RoundThreadID struct {
 
 // SchemaProposerState is the on-disk schema version for
 // proposer-state.json.
-const SchemaProposerState = "agon.proposer-state.v0"
+const SchemaProposerState = "adversarial.proposer-state.v0"
 
 // ErrRoleParity is returned when round parity disagrees with role.
 var ErrRoleParity = errors.New("round/role parity mismatch")

@@ -20,8 +20,8 @@ type StartFile struct {
 	Config      ConfigSnap  `json:"config"`
 	RootSession RootSession `json:"root_session"`
 
-	AgonVersion string `json:"agon_version"`
-	GoVersion   string `json:"go_version"`
+	AdversarialVersion string `json:"adversarial_version"`
+	GoVersion          string `json:"go_version"`
 }
 
 // AgentRef is the embedded agent identity.
@@ -125,9 +125,9 @@ type LogRecord struct {
 // On-disk schema versions.
 const (
 	// SchemaStart identifies the start.json schema.
-	SchemaStart = "agon.start.v0"
+	SchemaStart = "adversarial.start.v0"
 	// SchemaEnd identifies the end.json schema.
-	SchemaEnd = "agon.end.v0"
+	SchemaEnd = "adversarial.end.v0"
 )
 
 // WriteStart writes <session>/start.json. Idempotent within a fresh

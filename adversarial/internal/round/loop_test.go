@@ -254,7 +254,7 @@ func TestEnginePerForkUsageStats(t *testing.T) {
 	if err := json.Unmarshal(statsBytes, &on); err != nil {
 		t.Fatalf("stats.json invalid JSON: %v", err)
 	}
-	if on["schema"] != "agon.fork-stats.v0" {
+	if on["schema"] != "adversarial.fork-stats.v0" {
 		t.Errorf("stats.json schema: %v", on["schema"])
 	}
 	if on["topic"] != "security" {
@@ -305,7 +305,7 @@ func (s *usageCritic) Round(_ context.Context, _ agent.CriticInput) (*agent.Crit
 }
 
 // TestEngineStyledProgressEmitsANSI asserts that with Styled=true,
-// progress lines carry ANSI escapes around the [agon] prefix and
+// progress lines carry ANSI escapes around the [adversarial] prefix and
 // role words, while plain mode (Styled=false) leaves them alone.
 // The test pins this at the engine layer because callers gate Styled
 // on stderr-TTY: a regression that ships ANSI to a piped log would
@@ -352,7 +352,7 @@ func TestEngineStyledProgressEmitsANSI(t *testing.T) {
 			if tc.styled {
 				// Specific decorations we want to see.
 				for _, want := range []string{
-					ansi.Bold + ansi.Cyan + "[agon]" + ansi.Reset,
+					ansi.Bold + ansi.Cyan + "[adversarial]" + ansi.Reset,
 					roleCriticColor + "critic" + ansi.Reset,
 					roleProposerCol + "proposer" + ansi.Reset,
 				} {
@@ -535,14 +535,14 @@ func (w *overlapWriter) Write(p []byte) (int, error) {
 func TestHeartbeatStopWaitsForGoroutine(t *testing.T) {
 	w := &overlapWriter{}
 	e := &Engine{Progress: w, HeartbeatInterval: 10 * time.Millisecond}
-	stop := e.startHeartbeat(time.Now(), "[agon] test")
+	stop := e.startHeartbeat(time.Now(), "[adversarial] test")
 	// Let the heartbeat fire and enter an in-flight Write (started at the
 	// 10ms tick, held active until 60ms).
 	time.Sleep(40 * time.Millisecond)
 	stop()
 	// stop() must have waited for the in-flight write to finish; writing
 	// now must not overlap the heartbeat goroutine.
-	e.progf("[agon] test: done")
+	e.progf("[adversarial] test: done")
 	if atomic.LoadInt32(&w.raced) != 0 {
 		t.Error("main-loop write overlapped an in-flight heartbeat write; stop() did not wait")
 	}

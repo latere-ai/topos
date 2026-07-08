@@ -33,7 +33,7 @@ const (
 )
 
 // SchemaAttack identifies the on-disk schema version.
-const SchemaAttack = "agon.attack.v0"
+const SchemaAttack = "adversarial.attack.v0"
 
 // SpillThreshold is the inline-vs-spill cutoff per record (bytes).
 const SpillThreshold = 64 * 1024

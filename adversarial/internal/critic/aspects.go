@@ -281,7 +281,7 @@ func Locked(criticIndex, forkCount int, topic string) Aspect {
 
 // Assemble produces the full system prompt for one critic round. From
 // round 3 onward the disposition contract is appended: this is the
-// piece that turns a fresh-attack round into a agon response, by
+// piece that turns a fresh-attack round into a adversarial response, by
 // making the critic react to the proposer's R(n-1) defense before
 // emitting any new attacks.
 func Assemble(a Aspect, criticIndex, round int, priorRoundsNote string) string {
@@ -334,7 +334,7 @@ const roundReplyContract = `Round 3+ responsibilities (you are NOT writing a fre
    id starting at c<i>-<next>, where <next> is one greater than the
    highest sequence number ever used in this fork. Do NOT reuse a
    prior id for a new claim - the mediator will rename it and the
-   agon ledger will lose the connection.
+   adversarial ledger will lose the connection.
 
 3. If you have no re-attacks, no withdrawals, and no new attacks,
    emit the standard empty document (top header + aspect line,

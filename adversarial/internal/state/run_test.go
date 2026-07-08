@@ -26,9 +26,9 @@ func TestStartEndRoundTrip(t *testing.T) {
 			MaxTurn: 6, SideCount: 2,
 			CostCap: 50000, ChangedLinesMin: 10, Format: "markdown",
 		},
-		RootSession: RootSession{Cwd: "/tmp"},
-		AgonVersion: "v0.0.1",
-		GoVersion:   "go1.23",
+		RootSession:        RootSession{Cwd: "/tmp"},
+		AdversarialVersion: "v0.0.1",
+		GoVersion:          "go1.23",
 	}
 	if err := WriteStart(sess, in); err != nil {
 		t.Fatal(err)

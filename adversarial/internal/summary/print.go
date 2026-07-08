@@ -12,7 +12,7 @@ import (
 
 // IsTerminal reports whether f is attached to an interactive TTY.
 // Used to gate ANSI styling on the rendered summary printout: piped
-// or redirected output stays plain so `agon ... | tee` still
+// or redirected output stays plain so `adversarial ... | tee` still
 // produces a usable file.
 func IsTerminal(f *os.File) bool {
 	info, err := f.Stat()

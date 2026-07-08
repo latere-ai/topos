@@ -68,7 +68,7 @@ func (c *critic) Round(ctx context.Context, in adversarial.CriticInput) (*advers
 		defer cancel()
 	}
 	runner, err := xtopos.NewRunner(xtopos.Options{
-		SessionID: fmt.Sprintf("agon-critic-%d-r%d", c.forkIdx, in.Round),
+		SessionID: fmt.Sprintf("adversarial-critic-%d-r%d", c.forkIdx, in.Round),
 		Model:     c.cfg.Model,
 		Sandbox:   c.cfg.Sandbox,
 		Brain:     c.cfg.Brain,
