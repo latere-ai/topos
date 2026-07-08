@@ -97,14 +97,16 @@ graph TD
   rgraph --> lin
 ```
 
-## Adversarial Review (proposed)
+## Adversarial Review
 
-Unlike the runtime specs above, which are retrospective and `status: complete`,
-this track is forward-looking (`status: proposed`). It plans absorbing the
-standalone `agon` adversarial-review module into Topos as a first-class
-capability, then retiring `agon` from the Latere landscape entirely. Start at the
-overview; the child specs are tightly scoped and land one by one.
+Adversarial Review is a Topos capability: an adversarial-review engine and
+protocol that forks a coding agent's session, runs independent critics against the
+diff over bounded rounds, and surfaces only the disputes that survive. It lives
+under `adversarial/`, kept deliberately separate from the core runtime packages so
+the provider-agnostic core stays clean. Its own spec set documents the engine,
+protocol, backends, and on-disk format.
 
-- [Adversarial Review Overview](adversarial/00-overview.md): why the capability
-  moves into Topos, the target `adversarial/` layout, the total-scrub naming
-  decision, the migration DAG, and the verifiable teardown that defines done.
+- [Adversarial Review specs](adversarial/README.md): the capability index, the
+  engine and protocol contracts, and the roadmap.
+- [Architecture](adversarial/architecture.md): the fork/debate model, the
+  component map, and its consumers.
