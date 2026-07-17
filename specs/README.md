@@ -7,8 +7,11 @@ region or a graph of regions locally and in-process. The specs here document the
 public capabilities the runtime ships, so a developer can see the whole shape
 before reading code.
 
-All specs are `status: complete` and end with an Outcome section pointing at the
-packages that implement them.
+The runtime specs under `runtime/` are all `status: complete` and end with an
+Outcome section pointing at the packages that implement them. The Adversarial Review
+specs under `adversarial/` follow their own lifecycle (`current` for shipped
+behavior, `proposed`/`exploratory` for the roadmap); see
+[`adversarial/README.md`](adversarial/README.md).
 
 ## Big picture
 
