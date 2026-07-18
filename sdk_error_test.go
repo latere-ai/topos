@@ -200,9 +200,12 @@ func TestBuildModelDirectAndUnknown(t *testing.T) {
 	if m == nil {
 		t.Fatal("ModelDirect returned a nil model")
 	}
-	// ModelDirect with a non-anthropic provider is rejected.
-	if _, err := buildModel(ModelOptions{Kind: ModelDirect, Provider: "openai"}); err == nil {
-		t.Error("ModelDirect with unsupported provider: want error, got nil")
+	// ModelDirect reaches any luxsdk provider now; only unknown names fail.
+	if _, err := buildModel(ModelOptions{Kind: ModelDirect, Provider: "openai"}); err != nil {
+		t.Errorf("ModelDirect openai: %v", err)
+	}
+	if _, err := buildModel(ModelOptions{Kind: ModelDirect, Provider: "cohere"}); err == nil {
+		t.Error("ModelDirect cohere: want error, got nil")
 	}
 	// An unknown kind is rejected.
 	if _, err := buildModel(ModelOptions{Kind: "satellite"}); err == nil {

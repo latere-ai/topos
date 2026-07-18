@@ -9,11 +9,17 @@ import (
 	"fmt"
 	"strings"
 
+	"latere.ai/x/pkg/luxsdk"
+
 	"latere.ai/x/topos/models"
-	"latere.ai/x/topos/models/anthropic"
 	"latere.ai/x/topos/models/fake"
 	"latere.ai/x/topos/models/lux"
 )
+
+// tokenFunc adapts a BearerSource to luxsdk.TokenSource.
+type tokenFunc func(ctx context.Context) (string, error)
+
+func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
 
 // ModelKind selects how the SDK reaches a model. The model itself is always the
 // internal models.Model seam; ModelKind only chooses which backing to build.
@@ -38,7 +44,7 @@ const (
 // or a BearerSource (a per-call token, e.g. a rotating sandbox/JWT token).
 type ModelOptions struct {
 	Kind     ModelKind
-	Provider string // ModelDirect only: "anthropic" (anthropic-wire; others later). Ignored for ModelLux — the gateway routes any provider.
+	Provider string // ModelDirect only: a luxsdk.Provider name (anthropic, openai, gemini, openrouter, ollama); defaults to anthropic. Ignored for ModelLux — the gateway routes any provider.
 	Model    string // model id, e.g. "claude-sonnet-4-6"
 	BaseURL  string // ModelLux: the gateway root, e.g. "https://lux.latere.ai". ModelDirect: the provider endpoint.
 
@@ -68,17 +74,27 @@ func buildModel(opts ModelOptions) (models.Model, error) {
 		base := strings.TrimSuffix(strings.TrimRight(opts.BaseURL, "/"), "/anthropic")
 		return lux.New(opts.APIKey, base, lopts...), nil
 	case ModelDirect:
-		if opts.Provider != "" && opts.Provider != "anthropic" {
-			return nil, fmt.Errorf("topos: model provider %q not yet supported for direct access (anthropic-wire only)", opts.Provider)
+		// Direct access speaks the lux format too: the request is
+		// down-converted client-side through the same llmdialect
+		// backends the gateway uses, so any supported provider works
+		// with a BYO endpoint and secret. Topos owns no wire mapping.
+		provider := luxsdk.Provider(opts.Provider)
+		if provider == "" {
+			provider = luxsdk.ProviderAnthropic
 		}
-		var aopts []anthropic.Option
-		if opts.Model != "" {
-			aopts = append(aopts, anthropic.WithModel(opts.Model))
-		}
+		var sdkOpts []luxsdk.Option
 		if opts.BearerSource != nil {
-			aopts = append(aopts, anthropic.WithBearerSource(opts.BearerSource))
+			sdkOpts = append(sdkOpts, luxsdk.WithTokenSource(tokenFunc(opts.BearerSource)))
 		}
-		return anthropic.New(opts.APIKey, opts.BaseURL, aopts...), nil
+		d, err := luxsdk.NewDirect(provider, opts.APIKey, opts.BaseURL, sdkOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("topos: %w", err)
+		}
+		var lopts []lux.Option
+		if opts.Model != "" {
+			lopts = append(lopts, lux.WithModel(opts.Model))
+		}
+		return lux.NewFromCaller(d, lopts...), nil
 	default:
 		return nil, fmt.Errorf("topos: unknown model kind %q", opts.Kind)
 	}

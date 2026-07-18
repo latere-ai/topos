@@ -41,9 +41,10 @@ const (
 	defaultModel = "claude-opus-4-8"
 )
 
-// Adapter implements [models.Model] against a Lux deployment.
+// Adapter implements [models.Model] over any [luxsdk.Caller]: the
+// gateway client (default) or a provider-direct caller.
 type Adapter struct {
-	client *luxsdk.Client
+	client luxsdk.Caller
 	model  string
 }
 
@@ -84,6 +85,18 @@ func New(apiKey, baseURL string, opts ...Option) *Adapter {
 		o(a, &sdkOpts)
 	}
 	a.client = luxsdk.New(baseURL, sdkOpts...)
+	return a
+}
+
+// NewFromCaller wraps an already-built [luxsdk.Caller] — e.g. a
+// [luxsdk.Direct] for BYO-key provider access. SDK-level options
+// passed here are ignored; configure them on the caller.
+func NewFromCaller(c luxsdk.Caller, opts ...Option) *Adapter {
+	a := &Adapter{model: defaultModel, client: c}
+	var discard []luxsdk.Option
+	for _, o := range opts {
+		o(a, &discard)
+	}
 	return a
 }
 
