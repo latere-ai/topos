@@ -397,6 +397,18 @@ func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult,
 	return RunResult{Lineage: merged, Final: last}, nil
 }
 
+// ValidateGraph reports whether a graph is structurally runnable, applying the
+// exact checks RunGraph enforces before it executes: at least one region, no
+// empty or duplicate region ids, edges only between known regions, no self edge,
+// no fan-in (more than one incoming edge, an unsupported product decision in v1),
+// and no cycle. It shares planGraph with RunGraph, so an authored graph that
+// passes ValidateGraph runs without a configuration error, and an authoring layer
+// (see latere.ai/x/topos/graph) can surface the same failures before a run.
+func ValidateGraph(g Graph) error {
+	_, err := planGraph(g)
+	return err
+}
+
 // planGraph validates a graph and returns its regions in a deterministic
 // topological order (Kahn's algorithm, seeded and expanded in declared order). It
 // rejects empty/duplicate region ids, edges referencing unknown regions, self

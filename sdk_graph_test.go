@@ -208,6 +208,50 @@ func TestRunGraphReportsFailingRegion(t *testing.T) {
 	}
 }
 
+// ValidateGraph applies the exact structural checks RunGraph enforces, so an
+// authoring layer can reject a bad graph before a run: a valid forest passes, a
+// fan-in and a cycle fail with the same errors RunGraph would return.
+func TestValidateGraph(t *testing.T) {
+	forest := Graph{
+		Regions: []GraphRegion{
+			{ID: "root", Region: pinnedRegion("root")},
+			{ID: "left", Region: pinnedRegion("left")},
+			{ID: "right", Region: pinnedRegion("right")},
+		},
+		Edges: []GraphEdge{{From: "root", To: "left"}, {From: "root", To: "right"}},
+	}
+	if err := ValidateGraph(forest); err != nil {
+		t.Errorf("ValidateGraph(forest) = %v, want nil", err)
+	}
+
+	fanIn := Graph{
+		Regions: []GraphRegion{
+			{ID: "a", Region: pinnedRegion("a")},
+			{ID: "b", Region: pinnedRegion("b")},
+			{ID: "c", Region: pinnedRegion("c")},
+		},
+		Edges: []GraphEdge{{From: "a", To: "c"}, {From: "b", To: "c"}},
+	}
+	if err := ValidateGraph(fanIn); err == nil || !strings.Contains(err.Error(), "fan-in") {
+		t.Errorf("ValidateGraph(fan-in) = %v, want a fan-in error", err)
+	}
+
+	cycle := Graph{
+		Regions: []GraphRegion{
+			{ID: "a", Region: pinnedRegion("a")},
+			{ID: "b", Region: pinnedRegion("b")},
+		},
+		Edges: []GraphEdge{{From: "a", To: "b"}, {From: "b", To: "a"}},
+	}
+	if err := ValidateGraph(cycle); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("ValidateGraph(cycle) = %v, want a cycle error", err)
+	}
+
+	if err := ValidateGraph(Graph{}); err == nil {
+		t.Errorf("ValidateGraph(empty) = nil, want an error")
+	}
+}
+
 func hasEdge(edges []LineageEdge, want LineageEdge) bool {
 	return slices.Contains(edges, want)
 }
