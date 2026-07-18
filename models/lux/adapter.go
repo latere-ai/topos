@@ -38,7 +38,7 @@ const (
 
 	// defaultModel matches the anthropic adapter's default so swapping
 	// ModelKind alone keeps behavior.
-	defaultModel = "claude-opus-4-7"
+	defaultModel = "claude-opus-4-8"
 )
 
 // Adapter implements [models.Model] against a Lux deployment.
@@ -152,10 +152,10 @@ func (a *Adapter) buildRequest(req models.Request) (*luxsdk.Request, error) {
 // model).
 func messageToWire(m models.Message) (luxsdk.Message, error) {
 	switch m.Role {
-	case "user":
+	case models.RoleUser:
 		return luxsdk.UserText(m.Content), nil
 
-	case "assistant":
+	case models.RoleAssistant:
 		var blocks []luxsdk.Block
 		if m.Content != "" {
 			blocks = append(blocks, luxsdk.Block{Type: luxsdk.BlockText, Text: m.Content})
@@ -175,7 +175,7 @@ func messageToWire(m models.Message) (luxsdk.Message, error) {
 		}
 		return luxsdk.Message{Role: luxsdk.RoleAssistant, Blocks: blocks}, nil
 
-	case "tool":
+	case models.RoleTool:
 		var blocks []luxsdk.Block
 		for _, tr := range m.ToolResults {
 			blocks = append(blocks, luxsdk.Block{

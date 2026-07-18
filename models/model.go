@@ -73,10 +73,27 @@ type Request struct {
 	ProviderOptions map[string]any
 }
 
+// Role is the author of one conversation turn. It is a closed
+// vocabulary: adapters reject unknown roles instead of guessing.
+type Role string
+
+const (
+	// RoleUser is the caller's turn.
+	RoleUser Role = "user"
+
+	// RoleAssistant is the model's turn, possibly carrying ToolCalls.
+	RoleAssistant Role = "assistant"
+
+	// RoleTool is the caller's reply to ToolCalls, carrying ToolResults.
+	// Providers without a native tool role encode it per their wire
+	// format (Anthropic and the lux dialect fold it into a user turn).
+	RoleTool Role = "tool"
+)
+
 // Message is one turn in the conversation history.
 type Message struct {
-	// Role is "user", "assistant", or "tool".
-	Role string
+	// Role is the turn author: RoleUser, RoleAssistant, or RoleTool.
+	Role Role
 
 	// Content is the text content of the message. For tool-role messages
 	// this is the result text; structured data is in ToolResults.

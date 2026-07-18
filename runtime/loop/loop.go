@@ -118,7 +118,7 @@ func interrupted(cause error) error {
 // so the transcript shape is identical either way.
 func buildAssistantMessage(text string, toolCalls []*models.ToolCall) models.Message {
 	m := models.Message{
-		Role:      "assistant",
+		Role:      models.RoleAssistant,
 		Content:   text,
 		ToolCalls: make([]models.ToolCall, 0, len(toolCalls)),
 	}
@@ -182,7 +182,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	var transcript []models.Message
 	transcript = append(transcript, cfg.InitialTranscript...)
 	if cfg.UserPrompt != "" {
-		transcript = append(transcript, models.Message{Role: "user", Content: cfg.UserPrompt})
+		transcript = append(transcript, models.Message{Role: models.RoleUser, Content: cfg.UserPrompt})
 	}
 
 	maxTokens := cfg.MaxTokens
@@ -370,7 +370,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 		// Append results as a single tool-role message.
 		transcript = append(transcript, models.Message{
-			Role:        "tool",
+			Role:        models.RoleTool,
 			ToolResults: toolResults,
 		})
 	}

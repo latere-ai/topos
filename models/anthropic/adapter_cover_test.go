@@ -38,8 +38,8 @@ func drainUntilErr(s models.Stream) (events []models.Event, err error) {
 // TestModelOverride verifies WithModel overrides both the reported model id and
 // the model field sent on the wire, while the default New uses the baked-in id.
 func TestModelOverride(t *testing.T) {
-	if got := anthropic.New("k", "").Model(); got != "claude-opus-4-7" {
-		t.Errorf("default Model() = %q, want claude-opus-4-7", got)
+	if got := anthropic.New("k", "").Model(); got != "claude-opus-4-8" {
+		t.Errorf("default Model() = %q, want claude-opus-4-8", got)
 	}
 
 	ts, getReq := fakeServer(t, cannedSSE("end_turn"))

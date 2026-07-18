@@ -256,10 +256,10 @@ func (a *Adapter) buildRequest(req models.Request) ([]byte, error) {
 //   - "tool" → one "tool"-role message per ToolResult
 func messageToWire(m models.Message) ([]wireMessage, error) {
 	switch m.Role {
-	case "user":
+	case models.RoleUser:
 		return []wireMessage{{Role: "user", Content: m.Content}}, nil
 
-	case "assistant":
+	case models.RoleAssistant:
 		wm := wireMessage{Role: "assistant", Content: m.Content}
 		for _, tc := range m.ToolCalls {
 			input := tc.Input
@@ -275,7 +275,7 @@ func messageToWire(m models.Message) ([]wireMessage, error) {
 		}
 		return []wireMessage{wm}, nil
 
-	case "tool":
+	case models.RoleTool:
 		if len(m.ToolResults) == 0 {
 			return nil, fmt.Errorf("ollama: tool message has no ToolResults")
 		}

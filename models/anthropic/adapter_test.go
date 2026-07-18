@@ -44,7 +44,7 @@ func cannedSSE(stopReason string) string {
 		stopReason = "tool_use"
 	}
 	return fmt.Sprintf(`event: message_start
-data: {"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","content":[],"model":"claude-opus-4-7","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":42,"output_tokens":0,"cache_read_input_tokens":10,"cache_creation_input_tokens":5}}}
+data: {"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","content":[],"model":"claude-opus-4-8","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":42,"output_tokens":0,"cache_read_input_tokens":10,"cache_creation_input_tokens":5}}}
 
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -82,7 +82,7 @@ data: {"type":"message_stop"}
 // cannedThinkingSSE returns an SSE body with a thinking block to test
 // ProviderEvent passthrough.
 const cannedThinkingSSE = `event: message_start
-data: {"type":"message_start","message":{"id":"msg_think","type":"message","role":"assistant","content":[],"model":"claude-opus-4-7","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+data: {"type":"message_start","message":{"id":"msg_think","type":"message","role":"assistant","content":[],"model":"claude-opus-4-8","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
 
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","text":""}}
@@ -115,7 +115,7 @@ data: {"type":"message_stop"}
 // a live Anthropic response does. Consumers accumulate KindUsage events, so the
 // correct total is the cumulative delta value (17), not the sum (20).
 const cannedUsageSSE = `event: message_start
-data: {"type":"message_start","message":{"id":"msg_u","type":"message","role":"assistant","content":[],"model":"claude-opus-4-7","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":42,"output_tokens":3,"cache_read_input_tokens":10,"cache_creation_input_tokens":5}}}
+data: {"type":"message_start","message":{"id":"msg_u","type":"message","role":"assistant","content":[],"model":"claude-opus-4-8","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":42,"output_tokens":3,"cache_read_input_tokens":10,"cache_creation_input_tokens":5}}}
 
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -831,7 +831,7 @@ func TestCloseMidStream(t *testing.T) {
 		if !ok {
 			return
 		}
-		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"x\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-opus-4-7\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n\n")
+		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"x\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-opus-4-8\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n\n")
 		flusher.Flush()
 		// Block until request context is cancelled.
 		<-r.Context().Done()

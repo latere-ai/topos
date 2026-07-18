@@ -54,7 +54,7 @@ import (
 
 const (
 	defaultBaseURL   = "https://api.anthropic.com"
-	defaultModel     = "claude-opus-4-7"
+	defaultModel     = "claude-opus-4-8"
 	anthropicVersion = "2023-06-01"
 
 	// anthropicBetaThinking is the beta header required to enable extended
@@ -341,13 +341,13 @@ func (a *Adapter) buildRequest(req models.Request) ([]byte, error) {
 //     not have a "tool" role; results are wrapped in user messages)
 func messageToWire(m models.Message) (wireMessage, error) {
 	switch m.Role {
-	case "user":
+	case models.RoleUser:
 		return wireMessage{
 			Role:    "user",
 			Content: []wireContent{{Type: "text", Text: m.Content}},
 		}, nil
 
-	case "assistant":
+	case models.RoleAssistant:
 		var contents []wireContent
 		if m.Content != "" {
 			contents = append(contents, wireContent{Type: "text", Text: m.Content})
@@ -369,7 +369,7 @@ func messageToWire(m models.Message) (wireMessage, error) {
 		}
 		return wireMessage{Role: "assistant", Content: contents}, nil
 
-	case "tool":
+	case models.RoleTool:
 		// Anthropic encodes tool results as a "user" message with
 		// "tool_result" content blocks, one per ToolResult.
 		var contents []wireContent

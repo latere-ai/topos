@@ -36,7 +36,7 @@ func (m *Model) Stream(_ context.Context, req models.Request) (models.Stream, er
 	// Find the first user message to echo.
 	userMsg := ""
 	for _, msg := range req.Messages {
-		if msg.Role == "user" {
+		if msg.Role == models.RoleUser {
 			userMsg = msg.Content
 			break
 		}
@@ -45,7 +45,7 @@ func (m *Model) Stream(_ context.Context, req models.Request) (models.Stream, er
 	// Check if this is a follow-up turn (transcript includes a tool result).
 	hasPriorTool := false
 	for _, msg := range req.Messages {
-		if msg.Role == "tool" {
+		if msg.Role == models.RoleTool {
 			hasPriorTool = true
 			break
 		}
