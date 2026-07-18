@@ -6,7 +6,7 @@ depends_on:
 affects:
   - model.go
   - models/
-  - models/anthropic/
+  - models/lux/
   - models/fake/
 effort: medium
 created: 2026-06-28
@@ -46,10 +46,13 @@ from these options once, when the runner is created.
   development with a self-supplied provider key.
 
 The model itself is always the same internal seam (see the agentic loop spec), so
-the loop is unaware of which backing it got. The supported provider wire today is
-Anthropic-style: `ModelLux` and `ModelDirect` build the Anthropic-wire adapter,
-and a non-Anthropic provider value is rejected with a clear error. Adapter code for
-other providers exists in `models/` but is not yet selectable through this surface.
+the loop is unaware of which backing it got. Both real kinds speak the Lux
+dialect via `latere.ai/x/pkg/luxsdk` (lux spec 33): `ModelLux` against the
+gateway's `POST /lux/v1/generate` (any provider Lux routes), `ModelDirect`
+against one provider endpoint with the dialect translated client-side
+(Anthropic incl. OAuth tokens, OpenAI, Gemini, OpenRouter, Ollama). Topos owns
+no wire mapping of its own; an unknown provider name is rejected with a clear
+error.
 
 ## Diagram
 
@@ -57,8 +60,8 @@ other providers exists in `models/` but is not yet selectable through this surfa
 graph TD
   opts[ModelOptions: Kind, creds, BaseURL] --> build{buildModel}
   build -->|ModelFake| fake[deterministic fake model]
-  build -->|ModelLux| lux[Anthropic-wire adapter via Lux gateway]
-  build -->|ModelDirect| direct[Anthropic-wire adapter, direct endpoint]
+  build -->|ModelLux| lux[luxsdk client via Lux gateway, lux dialect]
+  build -->|ModelDirect| direct[luxsdk.NewDirect, client-side translation]
   fake --> seam[internal Model seam]
   lux --> seam
   direct --> seam
@@ -69,5 +72,10 @@ graph TD
 
 Shipped in `model.go`: `ModelOptions`, `ModelKind` (`ModelFake`, `ModelLux`,
 `ModelDirect`), and `buildModel`, which builds the fake model from `models/fake`
-or the Anthropic-wire adapter from `models/anthropic`, and rejects unsupported
-providers. The provider-agnostic seam is `models.Model` in `models/`.
+or the luxsdk-backed adapter from `models/lux`, and rejects unknown providers.
+The provider-agnostic seam is `models.Model` in `models/`.
+
+Updated 2026-07-18 (lux spec 33): the original Anthropic-wire adapters
+(`models/anthropic`, `models/ollama`, and the openai/gemini stubs) were deleted;
+both real kinds now ride `luxsdk`, so provider normalization lives in
+`latere.ai/x/pkg/llmdialect`, not in topos.

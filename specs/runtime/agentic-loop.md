@@ -77,7 +77,7 @@ graph TD
 
 Shipped in `runtime/loop` (`Run`, `Config`, `Result`, the turn cap, and the
 tools-unsupported fallback). The seams are `models` (the `Model` interface, adapter
-in `models/anthropic`, deterministic `models/fake`), `harness/tools` (the `Tool`
+in `models/lux` over luxsdk, deterministic `models/fake`), `harness/tools` (the `Tool`
 interface, `Registry`, and the `bash` built-in), `sandbox` (the `SandboxProvider`
 interface) with the temp-directory `sandbox/local` implementation, and the
 three-phase tool path in `harness/hooks`.
