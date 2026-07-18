@@ -333,13 +333,19 @@ func TestBuildModelKinds(t *testing.T) {
 	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelFake}}); err != nil {
 		t.Errorf("ModelFake: %v", err)
 	}
-	// Lux/direct build an adapter (no network at construction).
+	// Lux/direct build an adapter (no network at construction). A legacy
+	// /anthropic-suffixed BaseURL still builds (the suffix is stripped for
+	// the native surface).
 	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelLux, BaseURL: "http://localhost:8080/anthropic", APIKey: "lux_x"}}); err != nil {
 		t.Errorf("ModelLux: %v", err)
 	}
-	// Unsupported provider is rejected.
-	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelLux, Provider: "cohere"}}); err == nil {
-		t.Error("ModelLux with unsupported provider: want error, got nil")
+	// ModelLux ignores Provider: the gateway routes any provider (lux spec 33).
+	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelLux, Provider: "cohere"}}); err != nil {
+		t.Errorf("ModelLux with provider hint: %v", err)
+	}
+	// Direct access is still anthropic-wire only.
+	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelDirect, Provider: "cohere"}}); err == nil {
+		t.Error("ModelDirect with unsupported provider: want error, got nil")
 	}
 }
 

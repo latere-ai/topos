@@ -7,10 +7,12 @@ package topos
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/anthropic"
 	"latere.ai/x/topos/models/fake"
+	"latere.ai/x/topos/models/lux"
 )
 
 // ModelKind selects how the SDK reaches a model. The model itself is always the
@@ -36,9 +38,9 @@ const (
 // or a BearerSource (a per-call token, e.g. a rotating sandbox/JWT token).
 type ModelOptions struct {
 	Kind     ModelKind
-	Provider string // "anthropic" (anthropic-wire supported; others later)
+	Provider string // ModelDirect only: "anthropic" (anthropic-wire; others later). Ignored for ModelLux — the gateway routes any provider.
 	Model    string // model id, e.g. "claude-sonnet-4-6"
-	BaseURL  string // e.g. "https://lux.latere.ai/anthropic" or "http://localhost:8080/anthropic"
+	BaseURL  string // ModelLux: the gateway root, e.g. "https://lux.latere.ai". ModelDirect: the provider endpoint.
 
 	APIKey       string
 	BearerSource func(ctx context.Context) (string, error)
@@ -49,9 +51,25 @@ func buildModel(opts ModelOptions) (models.Model, error) {
 	switch opts.Kind {
 	case ModelFake, "":
 		return fake.New(), nil
-	case ModelLux, ModelDirect:
+	case ModelLux:
+		// The lux-native dialect (lux spec 33): one adapter over luxsdk,
+		// every provider the gateway routes. Provider secrets stay in
+		// Lux; APIKey here is a Lux virtual key (or empty when a
+		// BearerSource supplies a rotating token).
+		var lopts []lux.Option
+		if opts.Model != "" {
+			lopts = append(lopts, lux.WithModel(opts.Model))
+		}
+		if opts.BearerSource != nil {
+			lopts = append(lopts, lux.WithBearerSource(opts.BearerSource))
+		}
+		// Pre-migration configs pointed BaseURL at the /anthropic
+		// passthrough prefix; the native surface lives at the root.
+		base := strings.TrimSuffix(strings.TrimRight(opts.BaseURL, "/"), "/anthropic")
+		return lux.New(opts.APIKey, base, lopts...), nil
+	case ModelDirect:
 		if opts.Provider != "" && opts.Provider != "anthropic" {
-			return nil, fmt.Errorf("topos: model provider %q not yet supported (anthropic-wire only)", opts.Provider)
+			return nil, fmt.Errorf("topos: model provider %q not yet supported for direct access (anthropic-wire only)", opts.Provider)
 		}
 		var aopts []anthropic.Option
 		if opts.Model != "" {
@@ -60,8 +78,6 @@ func buildModel(opts ModelOptions) (models.Model, error) {
 		if opts.BearerSource != nil {
 			aopts = append(aopts, anthropic.WithBearerSource(opts.BearerSource))
 		}
-		// Lux holds the provider secret; APIKey here is a Lux virtual key (or empty
-		// when a BearerSource supplies a rotating token).
 		return anthropic.New(opts.APIKey, opts.BaseURL, aopts...), nil
 	default:
 		return nil, fmt.Errorf("topos: unknown model kind %q", opts.Kind)
