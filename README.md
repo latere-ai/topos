@@ -63,11 +63,18 @@ in. The ids are stable, so runs can be diffed or rendered live.
 
 ## Models through Lux
 
-The model connection goes through [Lux](https://lux.latere.ai), a model gateway, so
-provider keys never live in the host application. `ModelOptions.Kind` chooses the
-backend: `ModelLux` for the gateway, `ModelDirect` for a provider endpoint, or
-`ModelFake` for a deterministic model suitable for tests. For local development,
-`ModelLux` can point at a stateless `luxd` running with local provider keys.
+The model connection speaks the Lux dialect — the provider-agnostic native API of
+[Lux](https://lux.latere.ai), the Latere model gateway — via `latere.ai/x/pkg/luxsdk`.
+Swapping the model behind a run changes a model name, not host code, and provider
+keys never live in the host application. `ModelOptions.Kind` chooses the backend:
+
+- `ModelLux` reaches any model the gateway routes, authenticated with a Lux
+  virtual key or a per-call bearer. For local development it can point at a
+  stateless `luxd` running with local provider keys.
+- `ModelDirect` talks to one provider endpoint with your own credential —
+  Anthropic (API key or OAuth token), OpenAI, Gemini, OpenRouter, or a local
+  Ollama — with the same dialect translated client-side, no gateway in the path.
+- `ModelFake` is the deterministic, network-free model for tests.
 
 ## Interactive, resumable turns
 
