@@ -18,6 +18,13 @@
 // rename in the SDK must not break a persisted graph, so [Graph.ToRuntime] is the
 // single mapping seam that lowers an authored graph to a runnable
 // [latere.ai/x/topos.Graph] and encodes coordination back into autonomy+topology.
+//
+// An [Agent] is either inline (its spec fields carry the full definition) or a
+// reference (a registry slug in [Agent.Ref] naming a shared definition). This
+// package stays registry-free: it defines the reference shape and the
+// [Graph.Resolve] hook a consumer calls to swap refs for inline agents, but it
+// never reads a registry itself, and [Graph.ToRuntime] rejects a graph that still
+// holds a ref.
 package graph
 
 import (
