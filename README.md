@@ -14,7 +14,7 @@ another.
 import "latere.ai/x/topos"
 
 r, _ := topos.NewRunner(topos.Options{
-    Model: topos.ModelOptions{Kind: topos.ModelLux, BaseURL: "http://localhost:8080/anthropic"},
+    Model: topos.ModelOptions{Kind: topos.ModelLux, BaseURL: "http://localhost:8080"},
 })
 res, _ := r.Run(ctx, topos.Region{
     Autonomy: topos.Dynamic,
