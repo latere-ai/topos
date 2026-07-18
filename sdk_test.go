@@ -333,10 +333,9 @@ func TestBuildModelKinds(t *testing.T) {
 	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelFake}}); err != nil {
 		t.Errorf("ModelFake: %v", err)
 	}
-	// Lux/direct build an adapter (no network at construction). A legacy
-	// /anthropic-suffixed BaseURL still builds (the suffix is stripped for
-	// the native surface).
-	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelLux, BaseURL: "http://localhost:8080/anthropic", APIKey: "lux_x"}}); err != nil {
+	// Lux/direct build an adapter (no network at construction). BaseURL is
+	// the gateway origin; the native surface lives at /lux/v1 under it.
+	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelLux, BaseURL: "http://localhost:8080", APIKey: "lux_x"}}); err != nil {
 		t.Errorf("ModelLux: %v", err)
 	}
 	// ModelLux ignores Provider: the gateway routes any provider (lux spec 33).

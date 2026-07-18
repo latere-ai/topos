@@ -7,7 +7,6 @@ package topos
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"latere.ai/x/pkg/luxsdk"
 
@@ -69,10 +68,7 @@ func buildModel(opts ModelOptions) (models.Model, error) {
 		if opts.BearerSource != nil {
 			lopts = append(lopts, lux.WithBearerSource(opts.BearerSource))
 		}
-		// Pre-migration configs pointed BaseURL at the /anthropic
-		// passthrough prefix; the native surface lives at the root.
-		base := strings.TrimSuffix(strings.TrimRight(opts.BaseURL, "/"), "/anthropic")
-		return lux.New(opts.APIKey, base, lopts...), nil
+		return lux.New(opts.APIKey, opts.BaseURL, lopts...), nil
 	case ModelDirect:
 		// Direct access speaks the lux format too: the request is
 		// down-converted client-side through the same llmdialect
