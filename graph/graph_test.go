@@ -6,6 +6,7 @@ package graph_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -89,11 +90,169 @@ func TestGraphJSONShape(t *testing.T) {
 			t.Errorf("JSON %s missing %s", got, want)
 		}
 	}
-	// omitempty fields with no value must not appear.
-	for _, absent := range []string{"peers", "edges", "max_handoff_depth", "role", "tools", "scopes", "description"} {
+	// omitempty fields with no value must not appear. An inline agent carries no
+	// ref, so "ref" must be absent too.
+	for _, absent := range []string{"peers", "edges", "max_handoff_depth", "role", "tools", "scopes", "description", "ref"} {
 		if strings.Contains(got, `"`+absent+`"`) {
 			t.Errorf("JSON %s should omit empty %q", got, absent)
 		}
+	}
+}
+
+// An agent-by-reference round-trips through JSON: the "ref" slug is the wire form
+// of a shared agent definition, and an author may pin a graph-local "name" on the
+// ref for lineage. A ref carries no spec fields on the wire.
+func TestAgentRefJSONRoundTrip(t *testing.T) {
+	g := graph.Graph{Regions: []graph.Region{{
+		ID:           "r",
+		Coordination: graph.Lead,
+		Entry:        graph.Agent{Ref: "shared-lead", Name: "lead"},
+		Peers:        []graph.Agent{{Ref: "shared-reviewer"}},
+	}}}
+	data, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	got := string(data)
+	for _, want := range []string{`"ref":"shared-lead"`, `"name":"lead"`, `"ref":"shared-reviewer"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("JSON %s missing %s", got, want)
+		}
+	}
+	// A ref-only peer has no name, so "name" must not be forced onto it: the peer
+	// object holds only "ref".
+	if strings.Contains(got, `{"name":"","ref":"shared-reviewer"}`) {
+		t.Errorf("JSON %s should omit empty name on a ref-only agent", got)
+	}
+	var back graph.Graph
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !back.Regions[0].Entry.IsRef() || back.Regions[0].Entry.Ref != "shared-lead" {
+		t.Errorf("entry ref not preserved: %+v", back.Regions[0].Entry)
+	}
+	reMarshalled, err := json.Marshal(back)
+	if err != nil {
+		t.Fatalf("re-Marshal: %v", err)
+	}
+	if string(data) != string(reMarshalled) {
+		t.Errorf("round-trip changed the JSON:\n first: %s\nsecond: %s", data, reMarshalled)
+	}
+}
+
+// Resolve replaces every ref with the inline agent a supplied resolver returns,
+// preserving an authored Name as the graph-local identity while taking the
+// resolved spec fields wholesale. The lowered graph then runs.
+func TestResolveReplacesRefs(t *testing.T) {
+	registry := map[string]graph.Agent{
+		"shared-lead":     {Name: "canonical-lead", Role: "lead", SystemPrompt: "you are the lead", Tools: []string{"read"}},
+		"shared-reviewer": {Name: "reviewer", Role: "review", Description: "reviews diffs"},
+	}
+	g := graph.Graph{Regions: []graph.Region{{
+		ID:           "plan",
+		Coordination: graph.Lead,
+		Entry:        graph.Agent{Ref: "shared-lead", Name: "lead"}, // authored name overrides
+		Peers:        []graph.Agent{{Ref: "shared-reviewer"}},       // no name: adopt resolved
+	}}}
+	resolved, err := g.Resolve(func(ref string) (graph.Agent, error) {
+		a, ok := registry[ref]
+		if !ok {
+			return graph.Agent{}, fmt.Errorf("unknown agent %q", ref)
+		}
+		return a, nil
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	entry := resolved.Regions[0].Entry
+	if entry.IsRef() {
+		t.Errorf("entry still a ref: %+v", entry)
+	}
+	if entry.Name != "lead" { // authored override wins
+		t.Errorf("entry Name = %q, want %q (authored override)", entry.Name, "lead")
+	}
+	if entry.Role != "lead" || entry.SystemPrompt != "you are the lead" || len(entry.Tools) != 1 {
+		t.Errorf("entry spec not taken wholesale: %+v", entry)
+	}
+	peer := resolved.Regions[0].Peers[0]
+	if peer.IsRef() || peer.Name != "reviewer" { // no authored name: adopt resolved
+		t.Errorf("peer = %+v, want inline reviewer", peer)
+	}
+	// The original graph is not mutated.
+	if !g.Regions[0].Entry.IsRef() {
+		t.Errorf("Resolve mutated the original graph: %+v", g.Regions[0].Entry)
+	}
+	// A resolved graph lowers and runs cleanly.
+	if _, err := resolved.ToRuntime(); err != nil {
+		t.Fatalf("resolved graph ToRuntime: %v", err)
+	}
+}
+
+// Resolve fails when the resolver cannot supply an agent, and when it returns an
+// agent that is itself a ref (which would leave the graph unresolved).
+func TestResolveErrors(t *testing.T) {
+	entryRef := graph.Graph{Regions: []graph.Region{{
+		ID: "r", Coordination: graph.Lead, Entry: graph.Agent{Ref: "missing"},
+	}}}
+	if _, err := entryRef.Resolve(func(string) (graph.Agent, error) {
+		return graph.Agent{}, fmt.Errorf("not found")
+	}); err == nil || !strings.Contains(err.Error(), "resolve ref \"missing\"") {
+		t.Errorf("Resolve error = %v, want resolver failure for entry", err)
+	}
+
+	peerRef := graph.Graph{Regions: []graph.Region{{
+		ID: "r", Coordination: graph.Lead, Entry: graph.Agent{Name: "a"},
+		Peers: []graph.Agent{{Ref: "loops"}},
+	}}}
+	if _, err := peerRef.Resolve(func(string) (graph.Agent, error) {
+		return graph.Agent{Ref: "still-a-ref"}, nil
+	}); err == nil || !strings.Contains(err.Error(), "resolved to another ref") {
+		t.Errorf("Resolve error = %v, want still-a-ref failure for peer", err)
+	}
+}
+
+// Resolve is a no-op on a fully-inline graph: no ref means no resolver call, and
+// the graph lowers exactly as before. This pins the backward-compatibility claim.
+func TestResolveInlineIsNoOp(t *testing.T) {
+	g := graph.Graph{Regions: []graph.Region{{
+		ID: "r", Coordination: graph.Sequence, Entry: graph.Agent{Name: "impl", Role: "impl"},
+		Peers: []graph.Agent{{Name: "commit"}},
+	}}}
+	resolved, err := g.Resolve(func(ref string) (graph.Agent, error) {
+		t.Fatalf("resolver called for inline graph, ref %q", ref)
+		return graph.Agent{}, nil
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	before, err := g.ToRuntime()
+	if err != nil {
+		t.Fatalf("original ToRuntime: %v", err)
+	}
+	after, err := resolved.ToRuntime()
+	if err != nil {
+		t.Fatalf("resolved ToRuntime: %v", err)
+	}
+	if len(before.Regions) != len(after.Regions) || after.Regions[0].Region.Entry.Name != "impl" {
+		t.Errorf("Resolve changed an inline graph: %+v", after)
+	}
+}
+
+// ToRuntime rejects a graph that still holds a ref, in the entry or in a peer,
+// because topos.AgentSpec is inline-only: a ref must be resolved before running.
+func TestToRuntimeRejectsUnresolvedRef(t *testing.T) {
+	entryRef := graph.Graph{Regions: []graph.Region{{
+		ID: "r", Coordination: graph.Lead, Entry: graph.Agent{Ref: "shared"},
+	}}}
+	if _, err := entryRef.ToRuntime(); err == nil || !strings.Contains(err.Error(), "unresolved ref") {
+		t.Errorf("ToRuntime entry-ref error = %v, want unresolved ref", err)
+	}
+	peerRef := graph.Graph{Regions: []graph.Region{{
+		ID: "r", Coordination: graph.Lead, Entry: graph.Agent{Name: "a"},
+		Peers: []graph.Agent{{Ref: "shared"}},
+	}}}
+	if _, err := peerRef.ToRuntime(); err == nil || !strings.Contains(err.Error(), "unresolved ref") {
+		t.Errorf("ToRuntime peer-ref error = %v, want unresolved ref", err)
 	}
 }
 

@@ -44,17 +44,36 @@ const (
 	Mesh Coordination = "mesh"
 )
 
-// Agent is a declarative agent within a region. The JSON field names are the
-// stable persistence contract, decoupled from [latere.ai/x/topos.AgentSpec]'s Go
-// field names so an SDK rename cannot break a stored graph.
+// Agent is a declarative agent within a region. It is EITHER inline (the spec
+// fields carry the full definition) OR a reference (Ref names a registry-defined
+// agent whose spec a consumer supplies via [Graph.Resolve]). The JSON field names
+// are the stable persistence contract, decoupled from [latere.ai/x/topos.AgentSpec]'s
+// Go field names so an SDK rename cannot break a stored graph.
+//
+// When Ref is set the agent is a reference: the spec fields (Role, Description,
+// SystemPrompt, Tools, Scopes) are ignored until [Graph.Resolve] replaces the ref
+// with its resolved inline agent. Name is the exception: it is the in-graph
+// identity and spawn label, so an author may set it on a ref to give the
+// referenced agent a graph-local name (lineage labels stay stable). Resolve
+// preserves an authored Name and otherwise adopts the resolved agent's Name; it
+// takes the resolved agent's spec fields wholesale and merges no inline fields the
+// ref itself carried. topos-lib never reads a registry: resolving a ref to an
+// inline spec is the consumer's job, and [Graph.ToRuntime] rejects any graph that
+// still holds a ref.
 type Agent struct {
-	Name         string   `json:"name"`
+	Name         string   `json:"name,omitempty"`
+	Ref          string   `json:"ref,omitempty"` // registry slug; set means this agent is a reference, resolved by a consumer before running
 	Role         string   `json:"role,omitempty"`
 	Description  string   `json:"description,omitempty"` // when-to-use; shown to a dynamic lead for discovery
 	SystemPrompt string   `json:"system_prompt,omitempty"`
 	Tools        []string `json:"tools,omitempty"`  // tool families this agent may use
 	Scopes       []string `json:"scopes,omitempty"` // permission scopes this agent holds
 }
+
+// IsRef reports whether the agent is a reference to a registry-defined agent
+// (Ref set) rather than an inline definition. A reference must be resolved to its
+// inline form via [Graph.Resolve] before [Graph.ToRuntime] will lower the graph.
+func (a Agent) IsRef() bool { return a.Ref != "" }
 
 // Region is one named part of a graph: an entry agent, the way its agents
 // coordinate, and its peers (the ordered chain for sequence, the delegable
@@ -109,6 +128,9 @@ func (g Graph) ToRuntime() (topos.Graph, error) {
 		if r.ID == "" {
 			return topos.Graph{}, fmt.Errorf("region has no id")
 		}
+		if r.Entry.IsRef() {
+			return topos.Graph{}, fmt.Errorf("region %q entry is an unresolved ref %q: resolve refs before running", r.ID, r.Entry.Ref)
+		}
 		if r.Entry.Name == "" {
 			return topos.Graph{}, fmt.Errorf("region %q has no entry agent", r.ID)
 		}
@@ -122,6 +144,9 @@ func (g Graph) ToRuntime() (topos.Graph, error) {
 			Entry:    r.Entry.toRuntime(),
 		}
 		for _, p := range r.Peers {
+			if p.IsRef() {
+				return topos.Graph{}, fmt.Errorf("region %q peer is an unresolved ref %q: resolve refs before running", r.ID, p.Ref)
+			}
 			region.Peers = append(region.Peers, p.toRuntime())
 		}
 		out.Regions = append(out.Regions, topos.GraphRegion{ID: r.ID, Region: region})
@@ -136,6 +161,63 @@ func (g Graph) ToRuntime() (topos.Graph, error) {
 		return topos.Graph{}, err
 	}
 	return out, nil
+}
+
+// Resolve returns a copy of the graph with every referenced agent (one whose Ref
+// is set) replaced by its inline definition, obtained by calling resolve with the
+// ref slug. It is the seam by which a consumer supplies inline specs from its own
+// registry: topos-lib never reads a registry itself, so the resolver is the only
+// place a ref becomes an inline agent. Inline agents pass through untouched, so a
+// fully-inline graph is returned unchanged (a no-op resolve).
+//
+// An authored Name on a ref is preserved as the in-graph identity and spawn label;
+// otherwise the resolved agent's Name is adopted. The resolved agent's spec fields
+// are taken wholesale, and the resolver must return an inline agent: if it returns
+// one that is itself a ref, Resolve fails rather than lower an unresolved graph.
+// The original graph is not mutated.
+func (g Graph) Resolve(resolve func(ref string) (Agent, error)) (Graph, error) {
+	out := g
+	out.Regions = make([]Region, len(g.Regions))
+	for i, r := range g.Regions {
+		entry, err := r.Entry.resolve(resolve)
+		if err != nil {
+			return Graph{}, fmt.Errorf("region %q entry: %w", r.ID, err)
+		}
+		r.Entry = entry
+		if r.Peers != nil {
+			peers := make([]Agent, len(r.Peers))
+			for j, p := range r.Peers {
+				resolved, err := p.resolve(resolve)
+				if err != nil {
+					return Graph{}, fmt.Errorf("region %q peer %d: %w", r.ID, j, err)
+				}
+				peers[j] = resolved
+			}
+			r.Peers = peers
+		}
+		out.Regions[i] = r
+	}
+	return out, nil
+}
+
+// resolve replaces a referenced agent with its inline definition; an inline agent
+// is returned unchanged. An authored Name overrides the resolved agent's Name so a
+// graph-local identity survives resolution.
+func (a Agent) resolve(resolve func(ref string) (Agent, error)) (Agent, error) {
+	if !a.IsRef() {
+		return a, nil
+	}
+	inline, err := resolve(a.Ref)
+	if err != nil {
+		return Agent{}, fmt.Errorf("resolve ref %q: %w", a.Ref, err)
+	}
+	if inline.IsRef() {
+		return Agent{}, fmt.Errorf("ref %q resolved to another ref %q", a.Ref, inline.Ref)
+	}
+	if a.Name != "" {
+		inline.Name = a.Name
+	}
+	return inline, nil
 }
 
 // lower maps a coordination mode to the runtime's autonomy and topology. A
