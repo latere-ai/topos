@@ -151,10 +151,37 @@ for _, e := range res.Lineage.Edges {
 
 Regions execute in topological order, each in its own isolated sandbox, and their
 lineages merge into one graph. Linear chains and fan-out (one region feeding
-several) are supported; fan-in — a region with more than one incoming edge — is
+several) are supported; fan-in, a region with more than one incoming edge, is
 rejected, along with cycles and unknown edges, before any region runs. A runnable
 version is in [`examples/graph`](examples/graph); [`examples/delegation`](examples/delegation)
 shows a single dynamic region delegating to a peer.
+
+## Authoring and persisting a graph
+
+`topos.Graph` is the in-memory shape the runner executes; it carries no JSON tags
+and names its concepts for execution. To persist a graph a person authored, or to
+serialize one over the wire, use `latere.ai/x/topos/graph`. Its `graph.Graph` is
+the JSON-tagged, round-trippable form, and a region declares its behavior with one
+`Coordination` field instead of the runtime's autonomy+topology pair: `sequence`
+(a fixed chain), `lead` (only the entry agent delegates), or `mesh` (any peer
+delegates). `ToRuntime` validates the authored graph and lowers it to a runnable
+`topos.Graph`:
+
+```go
+var authored graph.Graph
+_ = json.Unmarshal(stored, &authored) // {"regions":[{"id":"plan","coordination":"lead", ...}], "edges":[...]}
+
+g, err := authored.ToRuntime() // maps coordination -> autonomy+topology, validates structure
+if err != nil {
+    // authored-field or structural error (missing id/entry, bad coordination, fan-in, cycle)
+}
+res, _ := r.RunGraph(ctx, g, "design the feature")
+```
+
+`ToRuntime` runs the same structural checks as `topos.ValidateGraph` (the gate
+`RunGraph` applies), so an authored graph that lowers cleanly runs without a
+configuration error. A runnable version is in
+[`examples/authoredgraph`](examples/authoredgraph).
 
 ## Sandboxes
 
