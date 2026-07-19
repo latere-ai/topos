@@ -321,7 +321,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 					runStop = TermInterrupted
 					break
 				}
-				return out, "", fmt.Errorf("%w: critic %d round %d: %v", ErrAgentFatal, forkIdx, round, err)
+				return out, "", fmt.Errorf("%w: critic %d round %d: %w", ErrAgentFatal, forkIdx, round, err)
 			}
 			// Capture the declared topic the first time we see one and
 			// lock subsequent rounds to it. Without this R3+ would still
@@ -396,7 +396,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 					runStop = TermInterrupted
 					break
 				}
-				return out, "", fmt.Errorf("%w: proposer fork %d round %d: %v", ErrAgentFatal, forkIdx, round, err)
+				return out, "", fmt.Errorf("%w: proposer fork %d round %d: %w", ErrAgentFatal, forkIdx, round, err)
 			}
 			// Attribute the files this round changed: everything modified
 			// in cwd that was not already modified before the call. The

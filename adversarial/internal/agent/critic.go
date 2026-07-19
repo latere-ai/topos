@@ -147,7 +147,7 @@ func (c *CodexCritic) Round(ctx context.Context, in CriticInput) (*CriticResult,
 		stderr := string(res.Stderr)
 		switch {
 		case res.Killed:
-			return nil, fmt.Errorf("%w: %v", ErrTimeout, err)
+			return nil, fmt.Errorf("%w: %w", ErrTimeout, err)
 		case strings.Contains(stderr, "rate limit"):
 			return nil, fmt.Errorf("%w: %s", ErrRateLimit, stderr)
 		case strings.Contains(stderr, "stdin is not a terminal"):
@@ -195,80 +195,82 @@ func (c *CodexCritic) Round(ctx context.Context, in CriticInput) (*CriticResult,
 				CacheCreationTokens   int `json:"cache_creation_input_tokens"`
 			} `json:"usage"`
 		}
-		if err := json.Unmarshal(raw, &ev); err != nil {
-			return nil
-		}
-		appendIfNonEmpty := func(s string) {
-			if s == "" {
-				return
-			}
-			if out.Len() > 0 {
-				out.WriteString("\n")
-			}
-			out.WriteString(s)
-		}
-		switch ev.Type {
-		case "thread.started", "task_started":
-			if ev.ThreadID != "" {
-				threadID = ev.ThreadID
-			}
-		case "turn.completed", "token_count":
-			// Codex billing: input_tokens is the FULL prompt (including
-			// the cached portion), so the fresh-input bucket equals
-			// input_tokens - cached_input_tokens. reasoning_output is
-			// model-generated tokens, fold into Output. CacheCreate is
-			// not a concept openai surfaces here; cache_read maps to
-			// our CacheRead. Some future codex revisions emit anthropic-
-			// shaped fields - tolerate both.
-			fresh := ev.Usage.InputTokens - ev.Usage.CachedInputTokens
-			if fresh < 0 {
-				fresh = ev.Usage.InputTokens
-			}
-			usage.Input += fresh
-			usage.Output += ev.Usage.OutputTokens + ev.Usage.ReasoningOutputTokens
-			usage.CacheRead += ev.Usage.CachedInputTokens + ev.Usage.CacheReadInputTokens
-			usage.CacheCreate += ev.Usage.CacheCreationTokens
-		case "item.completed":
-			switch ev.Item.Type {
-			case "agent_message", "agent_text":
-				// Different codex releases use either content or text;
-				// prefer the populated one.
-				if ev.Item.Content != "" {
-					appendIfNonEmpty(ev.Item.Content)
-				} else {
-					appendIfNonEmpty(ev.Item.Text)
+		// A line that is not a JSON event (evolving codex output shapes,
+		// non-JSON noise) is skipped rather than aborting the whole stream.
+		// Matches the tolerant json.Unmarshal checks below.
+		if json.Unmarshal(raw, &ev) == nil {
+			appendIfNonEmpty := func(s string) {
+				if s == "" {
+					return
 				}
+				if out.Len() > 0 {
+					out.WriteString("\n")
+				}
+				out.WriteString(s)
 			}
-		case "agent_message":
-			appendIfNonEmpty(ev.Content)
-		case "agent_text":
-			appendIfNonEmpty(ev.Text)
-		case "task_complete":
-			appendIfNonEmpty(ev.Result)
-		case "message":
-			// {"message":{"content":[{"type":"text","text":"..."}, ...]}}
-			var parts []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			}
-			if json.Unmarshal(ev.Message.Content, &parts) == nil {
-				for _, p := range parts {
-					if p.Type == "text" {
-						appendIfNonEmpty(p.Text)
+			switch ev.Type {
+			case "thread.started", "task_started":
+				if ev.ThreadID != "" {
+					threadID = ev.ThreadID
+				}
+			case "turn.completed", "token_count":
+				// Codex billing: input_tokens is the FULL prompt (including
+				// the cached portion), so the fresh-input bucket equals
+				// input_tokens - cached_input_tokens. reasoning_output is
+				// model-generated tokens, fold into Output. CacheCreate is
+				// not a concept openai surfaces here; cache_read maps to
+				// our CacheRead. Some future codex revisions emit anthropic-
+				// shaped fields - tolerate both.
+				fresh := ev.Usage.InputTokens - ev.Usage.CachedInputTokens
+				if fresh < 0 {
+					fresh = ev.Usage.InputTokens
+				}
+				usage.Input += fresh
+				usage.Output += ev.Usage.OutputTokens + ev.Usage.ReasoningOutputTokens
+				usage.CacheRead += ev.Usage.CachedInputTokens + ev.Usage.CacheReadInputTokens
+				usage.CacheCreate += ev.Usage.CacheCreationTokens
+			case "item.completed":
+				switch ev.Item.Type {
+				case "agent_message", "agent_text":
+					// Different codex releases use either content or text;
+					// prefer the populated one.
+					if ev.Item.Content != "" {
+						appendIfNonEmpty(ev.Item.Content)
+					} else {
+						appendIfNonEmpty(ev.Item.Text)
 					}
 				}
-			} else {
-				// Plain string content shape.
-				var s string
-				if json.Unmarshal(ev.Message.Content, &s) == nil {
-					appendIfNonEmpty(s)
+			case "agent_message":
+				appendIfNonEmpty(ev.Content)
+			case "agent_text":
+				appendIfNonEmpty(ev.Text)
+			case "task_complete":
+				appendIfNonEmpty(ev.Result)
+			case "message":
+				// {"message":{"content":[{"type":"text","text":"..."}, ...]}}
+				var parts []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}
+				if json.Unmarshal(ev.Message.Content, &parts) == nil {
+					for _, p := range parts {
+						if p.Type == "text" {
+							appendIfNonEmpty(p.Text)
+						}
+					}
+				} else {
+					// Plain string content shape.
+					var s string
+					if json.Unmarshal(ev.Message.Content, &s) == nil {
+						appendIfNonEmpty(s)
+					}
 				}
 			}
 		}
 		return nil
 	}
 	if err := StreamJSON(strings.NewReader(string(res.Stdout)), visit); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrJSON, err)
+		return nil, fmt.Errorf("%w: %w", ErrJSON, err)
 	}
 	// Last-resort fallback: if no event-shape produced content but stdout
 	// is non-empty and looks like markdown (no `{` at the start), treat
@@ -340,7 +342,7 @@ func (c *ClaudeCritic) Round(ctx context.Context, in CriticInput) (*CriticResult
 	res, err := Exec(ctx, run)
 	if err != nil {
 		if res.Killed {
-			return nil, fmt.Errorf("%w: %v", ErrTimeout, err)
+			return nil, fmt.Errorf("%w: %w", ErrTimeout, err)
 		}
 		return nil, fmt.Errorf("claude exec: %w (stderr=%q)", err, string(res.Stderr))
 	}
@@ -351,7 +353,7 @@ func (c *ClaudeCritic) Round(ctx context.Context, in CriticInput) (*CriticResult
 		err = DecodeJSONLine(res.Stdout, &parsed)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrJSON, err)
+		return nil, fmt.Errorf("%w: %w", ErrJSON, err)
 	}
 	if parsed.IsError {
 		return nil, fmt.Errorf("%w: subtype=%q", ErrAgentError, parsed.Subtype)

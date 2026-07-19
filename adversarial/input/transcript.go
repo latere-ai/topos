@@ -95,7 +95,7 @@ func FindSession(home, sessionID string) (path, encodedSegment string, err error
 	projects := filepath.Join(home, ".claude", "projects")
 	entries, err := os.ReadDir(projects)
 	if err != nil {
-		return "", "", fmt.Errorf("%w: %v", ErrTranscriptNotFound, err)
+		return "", "", fmt.Errorf("%w: %w", ErrTranscriptNotFound, err)
 	}
 	for _, e := range entries {
 		if !e.IsDir() {

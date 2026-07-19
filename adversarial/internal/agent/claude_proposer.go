@@ -205,7 +205,7 @@ func (p *ClaudeProposer) run(ctx context.Context, args []string, expectFork stri
 	res, err := Exec(ctx, run)
 	if err != nil {
 		if res.Killed {
-			return nil, fmt.Errorf("%w: %v", ErrTimeout, err)
+			return nil, fmt.Errorf("%w: %w", ErrTimeout, err)
 		}
 		stderr := string(res.Stderr)
 		if strings.Contains(stderr, "No conversation found with session ID") {
@@ -224,7 +224,7 @@ func (p *ClaudeProposer) run(ctx context.Context, args []string, expectFork stri
 		err = DecodeJSONLine(res.Stdout, &parsed)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrJSON, err)
+		return nil, fmt.Errorf("%w: %w", ErrJSON, err)
 	}
 	if parsed.IsError {
 		return nil, fmt.Errorf("%w: subtype=%q result=%q", ErrAgentError, parsed.Subtype, parsed.Result)
