@@ -23,9 +23,13 @@ cover:
 	go tool cover -func=coverage.out | tail -1
 
 # cover-check fails when total statement coverage is below COVER_MIN.
+# The examples/ packages are runnable demonstrations with no tests;
+# `cover` still compiles and runs them, but they are filtered out of the
+# gate measurement so demo code does not dilute the production total.
 cover-check: cover
-	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($$3, 1, length($$3)-1)}'); \
-	echo "total coverage: $$total% (min $(COVER_MIN)%)"; \
+	@grep -v '/examples/' coverage.out > coverage.gate.out; \
+	total=$$(go tool cover -func=coverage.gate.out | awk '/^total:/ {print substr($$3, 1, length($$3)-1)}'); \
+	echo "total coverage (excluding examples): $$total% (min $(COVER_MIN)%)"; \
 	awk "BEGIN { exit !($$total >= $(COVER_MIN)) }" || { echo "coverage below $(COVER_MIN)%"; exit 1; }
 
 # vuln runs the Go vulnerability scanner.

@@ -32,8 +32,12 @@ jobs:
 
       - name: coverage gate (>= 90%)
         run: |
-          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')
-          echo "total coverage: ${total}%"
+          # examples/ are runnable demos with no tests; they compile and
+          # run under `go test ./...` above but are filtered out of the
+          # gate so demo code does not dilute the production total.
+          grep -v '/examples/' coverage.out > coverage.gate.out
+          total=$(go tool cover -func=coverage.gate.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')
+          echo "total coverage (excluding examples): ${total}%"
           awk "BEGIN { exit !(${total} >= 90) }" || { echo "coverage ${total}% is below 90%"; exit 1; }
 
   vuln:
