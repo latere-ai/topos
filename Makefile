@@ -1,7 +1,7 @@
 GOLANGCI_LINT ?= golangci-lint
 COVER_MIN ?= 90
 
-.PHONY: all lint vet test cover cover-check vuln tidy
+.PHONY: all lint vet test cover cover-check vuln tidy fmt fmt-check hooks
 
 all: lint vet test cover-check
 
@@ -38,3 +38,16 @@ vuln:
 
 tidy:
 	go mod tidy
+
+# fmt formats all Go sources in place.
+fmt:
+	gofmt -w .
+
+# fmt-check fails if any Go source is not gofmt-formatted.
+fmt-check:
+	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt: unformatted files:"; echo "$$out"; exit 1; fi
+
+# hooks installs the repository git hooks (pre-commit gofmt guard).
+hooks:
+	git config core.hooksPath .githooks
+	@echo "installed git hooks (core.hooksPath=.githooks)"
