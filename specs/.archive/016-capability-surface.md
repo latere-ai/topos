@@ -2,7 +2,7 @@
 title: Expose Adversarial Review as a Topos Capability
 status: proposed
 depends_on:
-  - specs/adversarial/02-backends-and-input.md
+  - specs/.archive/015-backends-and-input.md
 affects:
   - adversarial/review.go
   - adversarial/doc.go
@@ -22,8 +22,8 @@ dispatched_task_id: null
 Give Topos a small, named entrypoint for adversarial review so it reads as a
 first-class capability rather than a loose subpackage, document it, and cut the
 Topos release tag that carries the whole capability. This tag is the gate that
-unblocks the three consumer migrations ([04](04-migrate-wallfacer.md),
-[05](05-migrate-latere-cli.md), [06](06-agents-capability-page.md)).
+unblocks the three consumer migrations ([04](017-migrate-wallfacer.md),
+[05](018-migrate-latere-cli.md), [06](019-agents-capability-page.md)).
 
 ## Design
 
@@ -64,8 +64,8 @@ bake in a Latere path like `~/.latere/` or a `.topos/` working-tree directory. T
 `StateDir` field is required; if a caller leaves it empty, the engine errors rather
 than guessing a location. Choosing a good default is a consumer decision:
 latere-cli defaults to an XDG state dir under the user's home
-([05](05-migrate-latere-cli.md)), and wallfacer uses a stable server-side data dir
-outside the ephemeral worktree ([04](04-migrate-wallfacer.md)). This also retires
+([05](018-migrate-latere-cli.md)), and wallfacer uses a stable server-side data dir
+outside the ephemeral worktree ([04](017-migrate-wallfacer.md)). This also retires
 the old `.agon/sessions/` working-tree location entirely; nothing writes into the
 reviewed repo anymore.
 
@@ -73,7 +73,7 @@ reviewed repo anymore.
 
 - Add an "Adversarial Review" section to the Topos `README.md` and the root
   package doc, framed as a capability of the runtime.
-- Flip the [overview](00-overview.md) and this track's entry in
+- Flip the [overview](013-overview.md) and this track's entry in
   `specs/README.md` context as needed once the capability is real.
 - The capability keeps no `agon` string in any doc, symbol, or example.
 
@@ -98,7 +98,7 @@ the consumer specs pin an exact version.
 
 - No region-preset rewrite. `Review` wraps `Engine`; it does not re-express the
   debate as a Topos `Region`/`Graph`. That remains explicitly out of scope for
-  this program (see [overview](00-overview.md)).
+  this program (see [overview](013-overview.md)).
 - No consumer changes; those follow the tag.
 
 ## Outcome

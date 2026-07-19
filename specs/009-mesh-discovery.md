@@ -1,9 +1,10 @@
 ---
 title: Mesh Discovery
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/topology.md
-  - specs/runtime/delegation.md
+  - specs/005-topology.md
+  - specs/006-delegation.md
 affects:
   - directory.go
   - topos.go

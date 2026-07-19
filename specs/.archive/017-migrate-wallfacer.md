@@ -2,7 +2,7 @@
 title: Migrate wallfacer to the Topos Adversarial Capability
 status: proposed
 depends_on:
-  - specs/adversarial/03-capability-surface.md
+  - specs/.archive/016-capability-surface.md
 affects:
   - wallfacer/go.mod
   - wallfacer/internal/adversarial/
@@ -25,7 +25,7 @@ runtime) is unchanged; only the source of the engine and the names change.
 
 This spec touches wallfacer, which lives outside the Topos module. It is planned
 here because Topos is the program's coordination point; implementation happens in
-the wallfacer repo against the Topos tag from [03](03-capability-surface.md).
+the wallfacer repo against the Topos tag from [03](016-capability-surface.md).
 
 ## Scope
 
@@ -38,7 +38,7 @@ the wallfacer repo against the Topos tag from [03](03-capability-surface.md).
   in `internal/adversarial/session_proposer.go`.
 
 **Module.** In `wallfacer/go.mod`, remove `latere.ai/x/agon` and bump
-`latere.ai/x/topos` to the tag from [03](03-capability-surface.md). Run
+`latere.ai/x/topos` to the tag from [03](016-capability-surface.md). Run
 `go mod tidy`.
 
 **Identifier scrub.** Rename, following wallfacer's existing style:
@@ -63,7 +63,7 @@ Sweep comments and log prefixes (`[agon]`) too.
 
 **On-disk path.** wallfacer today derives the engine's `StateDir` from the task
 worktree (`agonStateDir(primaryWorktree(task.WorktreePaths))`, and the per-critic
-`.agon-critic-<id>` dir in `worktree.go`). Because [03](03-capability-surface.md)
+`.agon-critic-<id>` dir in `worktree.go`). Because [03](016-capability-surface.md)
 makes the engine brand-neutral with no default of its own, wallfacer now passes an
 explicit `StateDir` rooted at a **stable server-side data directory it owns**, not
 in the ephemeral worktree and not in a human `$HOME` (`~/.latere` is a

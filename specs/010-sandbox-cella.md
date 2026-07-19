@@ -1,9 +1,10 @@
 ---
 title: Cella Sandbox Provider
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/embeddable-sdk.md
-  - specs/runtime/delegation.md
+  - specs/003-embeddable-sdk.md
+  - specs/006-delegation.md
 affects:
   - sandbox/cella/provider.go
   - sandbox/cella/client.go

@@ -1,6 +1,7 @@
 ---
 title: Debate protocol
 status: current
+track: adversarial
 updated: 2026-07-08
 author: changkun
 ---
@@ -125,4 +126,4 @@ headline is the highest-**contention** unresolved attack, scored purely as
 `rounds_survived + (1 if re_attacked)` - no model judges this layer. `summary.md`
 renders that headline plus the remaining open leaves and the resolved set. The
 score and render live in `adversarial/internal/summary`; the on-disk artifacts are
-[Session format](session-format.md).
+[Session format](027-session-format.md).

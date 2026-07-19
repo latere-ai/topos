@@ -2,7 +2,7 @@
 title: Port the Adversarial Engine Core into Topos
 status: proposed
 depends_on:
-  - specs/adversarial/00-overview.md
+  - specs/.archive/013-overview.md
 affects:
   - adversarial/adversarial.go
   - adversarial/engine.go
@@ -59,17 +59,17 @@ Port the engine tests alongside (`adversarial_test.go`: `TestAssemblePrompt`,
 ## Non-goals
 
 - No backends. `claude/`, `critic/` (native), and `input/` move in
-  [02](02-backends-and-input.md).
+  [02](015-backends-and-input.md).
 - No `internal/web`. That is the `agon-web` site and is retired in
-  [07](07-retire-agon.md), not moved. (Note: `internal/ansi` is not excluded; it is
+  [07](020-retire-agon.md), not moved. (Note: `internal/ansi` is not excluded; it is
   a transitive engine dependency and moves in Scope above.)
 - No API changes, renames, or signature changes. The package name stays
   `adversarial`; exported identifiers are unchanged. The on-disk `.agon/sessions/`
   path stays as-is at this step (the engine still writes it); the directory rename
   happens in the consumer specs that own the write path.
 - No consumer changes. wallfacer and latere-cli still import `x/agon` after this
-  step; they repoint in [04](04-migrate-wallfacer.md) and
-  [05](05-migrate-latere-cli.md) after the tag in [03](03-capability-surface.md).
+  step; they repoint in [04](017-migrate-wallfacer.md) and
+  [05](018-migrate-latere-cli.md) after the tag in [03](016-capability-surface.md).
 
 ## Steps
 
@@ -93,7 +93,7 @@ Port the engine tests alongside (`adversarial_test.go`: `TestAssemblePrompt`,
 - **Test fixtures.** `TestEngineRun_WritesEndJSON` and the steady-state test may
   rely on fake proposer/critic implementations that live in the test file or a
   testdata dir; move those with the tests. If any test reaches into a backend, it
-  belongs in [02](02-backends-and-input.md); note and defer it rather than pulling
+  belongs in [02](015-backends-and-input.md); note and defer it rather than pulling
   a backend in early.
 - **Module graph.** Topos gains no new external dependency from the core (it is
   backend-agnostic). Verify `go mod tidy` adds nothing surprising; if it does, a

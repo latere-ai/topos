@@ -2,7 +2,7 @@
 title: Port the Backends and Input into Topos
 status: proposed
 depends_on:
-  - specs/adversarial/01-engine-core.md
+  - specs/.archive/014-engine-core.md
 affects:
   - adversarial/claude/
   - adversarial/critic/
@@ -22,7 +22,7 @@ Complete the code move by bringing the three remaining pieces into Topos: the
 Claude-CLI backend, the Topos-native critic, and the input package. After this
 step the entire `agon` engine surface exists under `topos/adversarial/`, and the
 only thing keeping `agon` alive is that consumers still import it (fixed in
-[04](04-migrate-wallfacer.md) and [05](05-migrate-latere-cli.md)).
+[04](017-migrate-wallfacer.md) and [05](018-migrate-latere-cli.md)).
 
 ## Scope
 
@@ -57,7 +57,7 @@ Rewrite all import paths from `latere.ai/x/agon/...` to
   tempting cleanup but out of scope for a migration; keep the package intact and
   revisit later if a non-Claude consumer ever needs the diff alone.
 - No new backend abstractions or capability entrypoint. The thin `Review` surface
-  is [03](03-capability-surface.md).
+  is [03](016-capability-surface.md).
 - No `agon` renames in symbols yet beyond the forced `topos` -> `critic` package
   rename. The word `agon` does not appear in these packages' identifiers today
   (they are named `claude`, `topos`, `input`); the on-disk `.agon/` path is owned

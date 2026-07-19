@@ -2,7 +2,7 @@
 title: Migrate latere-cli to the Topos Adversarial Capability
 status: proposed
 depends_on:
-  - specs/adversarial/03-capability-surface.md
+  - specs/.archive/016-capability-surface.md
 affects:
   - latere-cli/go.mod
   - latere-cli/internal/commands/
@@ -26,7 +26,7 @@ debate over the working-tree diff of the most recent Claude Code session, critic
 routed through Lux) is unchanged.
 
 Planned here for coordination; implemented in the latere-cli repo against the Topos
-tag from [03](03-capability-surface.md).
+tag from [03](016-capability-surface.md).
 
 ## Scope
 
@@ -54,7 +54,7 @@ tag from [03](03-capability-surface.md).
 | `--state-dir` default `cwd`         | XDG state home (see below)             |
 
 **Module.** Remove `latere.ai/x/agon` from `latere-cli/go.mod`; bump
-`latere.ai/x/topos` to the [03](03-capability-surface.md) tag; `go mod tidy`.
+`latere.ai/x/topos` to the [03](016-capability-surface.md) tag; `go mod tidy`.
 
 **Docs and local spec.** Rename `docs/agon.md` -> `docs/review.md` and
 `specs/agon-local-subcommand.md` -> `specs/review-local-subcommand.md`; rewrite

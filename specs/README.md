@@ -7,11 +7,11 @@ region or a graph of regions locally and in-process. The specs here document the
 public capabilities the runtime ships, so a developer can see the whole shape
 before reading code.
 
-The runtime specs under `runtime/` are all `status: complete` and end with an
+The runtime specs (track `runtime`, `001`–`012`) are all `status: complete` and end with an
 Outcome section pointing at the packages that implement them. The Adversarial Review
-specs under `adversarial/` follow their own lifecycle (`current` for shipped
+specs (track `adversarial`) follow their own lifecycle (`current` for shipped
 behavior, `proposed`/`exploratory` for the roadmap); see
-[`adversarial/README.md`](adversarial/README.md).
+[`adversarial-README.md`](adversarial-README.md).
 
 ## Big picture
 
@@ -46,27 +46,27 @@ delegates) and `Mesh` (any agent may delegate again, bounded by `MaxHandoffDepth
 Start with the embeddable SDK boundary, then the agent and region model, then the
 delegation and topology mechanics, then the supporting engine specs.
 
-- [Embeddable SDK Boundary](runtime/embeddable-sdk.md): the root package surface a
+- [Embeddable SDK Boundary](003-embeddable-sdk.md): the root package surface a
   host depends on.
-- [Agents and Regions](runtime/agents-and-regions.md): `AgentSpec`, `Region`, and
+- [Agents and Regions](004-agents-and-regions.md): `AgentSpec`, `Region`, and
   the `Pinned` vs `Dynamic` autonomy modes.
-- [Region Graph](runtime/region-graph.md): composing several regions into one run
+- [Region Graph](012-region-graph.md): composing several regions into one run
   with `Graph` and `Runner.RunGraph`.
-- [Topology](runtime/topology.md): `OrchestratorWorker` vs `Mesh`.
-- [Delegation as Agents-as-Tools](runtime/delegation.md): the `delegate` tool and
+- [Topology](005-topology.md): `OrchestratorWorker` vs `Mesh`.
+- [Delegation as Agents-as-Tools](006-delegation.md): the `delegate` tool and
   attenuated authority.
-- [Bounded Recursion](runtime/bounded-recursion.md): `MaxHandoffDepth` and the
+- [Bounded Recursion](007-bounded-recursion.md): `MaxHandoffDepth` and the
   recursion gate.
-- [Mesh Discovery](runtime/mesh-discovery.md): the peer directory injected into a
+- [Mesh Discovery](009-mesh-discovery.md): the peer directory injected into a
   dynamic agent's prompt.
-- [Deterministic Lineage](runtime/lineage.md): the renderable run graph.
-- [Model Connection](runtime/model-connection.md): `ModelOptions` and the model
+- [Deterministic Lineage](008-lineage.md): the renderable run graph.
+- [Model Connection](002-model-connection.md): `ModelOptions` and the model
   gateway.
-- [Agentic Loop](runtime/agentic-loop.md): the turn driver, tool registry, model
+- [Agentic Loop](001-agentic-loop.md): the turn driver, tool registry, model
   seam, and sandbox interface.
-- [Cella Sandbox Provider](runtime/sandbox-cella.md): backing the sandbox
+- [Cella Sandbox Provider](010-sandbox-cella.md): backing the sandbox
   interface with hosted Cella compute.
-- [Sandbox Credential Delivery](runtime/sandbox-credentials.md): delivering
+- [Sandbox Credential Delivery](011-sandbox-credentials.md): delivering
   vault secrets into a sandbox without plaintext.
 
 ## Dependency view
@@ -109,7 +109,7 @@ under `adversarial/`, kept deliberately separate from the core runtime packages 
 the provider-agnostic core stays clean. Its own spec set documents the engine,
 protocol, backends, and on-disk format.
 
-- [Adversarial Review specs](adversarial/README.md): the capability index, the
+- [Adversarial Review specs](adversarial-README.md): the capability index, the
   engine and protocol contracts, and the roadmap.
-- [Architecture](adversarial/architecture.md): the fork/debate model, the
+- [Architecture](022-architecture.md): the fork/debate model, the
   component map, and its consumers.

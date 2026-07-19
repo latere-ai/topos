@@ -1,8 +1,9 @@
 ---
 title: Agents and Regions
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/embeddable-sdk.md
+  - specs/003-embeddable-sdk.md
 affects:
   - topos.go
 effort: medium

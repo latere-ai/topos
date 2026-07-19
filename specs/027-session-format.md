@@ -1,6 +1,7 @@
 ---
 title: Session format
 status: current
+track: adversarial
 updated: 2026-07-08
 author: changkun
 ---
@@ -47,7 +48,7 @@ under `sessions/<id>/` where the id is `<YYYYMMDDTHHMMSSZ>-<rand6>`.
 - **`summary.md`** - the human-facing output: the highest-contention unresolved
   attack, the remaining open leaves, and the resolved set with dispositions.
 - **`attacks.jsonl`** - the ledger (schema `adversarial.attack.v0`), one append per
-  attack transition; see [Debate protocol](protocol.md). Bodies over 64 KiB spill
+  attack transition; see [Debate protocol](026-protocol.md). Bodies over 64 KiB spill
   to files and the record keeps a path reference.
 - **`forks/critic-<n>/`** - per-fork detail: the reviewed diff, `stats.json`
   (`adversarial.fork-stats.v0`: topic, rounds, termination, per-role token usage),

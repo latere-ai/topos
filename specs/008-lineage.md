@@ -1,8 +1,9 @@
 ---
 title: Deterministic Lineage
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/delegation.md
+  - specs/006-delegation.md
 affects:
   - topos.go
 effort: medium

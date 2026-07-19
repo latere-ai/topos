@@ -1,6 +1,7 @@
 ---
 title: Backends
 status: current
+track: adversarial
 updated: 2026-07-08
 author: changkun
 ---
@@ -8,8 +9,8 @@ author: changkun
 # Backends
 
 A backend produces the proposer's or critic's text. Adversarial Review ships
-three, behind the [Engine API](engine-api.md) interfaces, so an embedder chooses
-the runtime without changing the [protocol](protocol.md). The subprocess drivers
+three, behind the [Engine API](024-engine-api.md) interfaces, so an embedder chooses
+the runtime without changing the [protocol](026-protocol.md). The subprocess drivers
 live in `adversarial/internal/agent`; the public wrappers in
 `adversarial/{claude,critic}`.
 
@@ -61,7 +62,7 @@ over `AssemblePrompt(in)` and returns the agent's final text as
 
 The Topos-native critic reports zero token usage today, because the runtime's
 public `RunResult` exposes none; that excludes it from cost-cap accounting until
-the runtime surfaces usage (see the [roadmap](README.md#roadmap)).
+the runtime surfaces usage (see the [roadmap](adversarial-README.md#roadmap)).
 
 ## The boundary
 

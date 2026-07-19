@@ -1,9 +1,10 @@
 ---
 title: Region Graph
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/agents-and-regions.md
-  - specs/runtime/lineage.md
+  - specs/004-agents-and-regions.md
+  - specs/008-lineage.md
 affects:
   - topos.go
 effort: medium

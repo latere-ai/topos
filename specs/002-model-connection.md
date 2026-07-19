@@ -1,8 +1,9 @@
 ---
 title: Model Connection
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/agentic-loop.md
+  - specs/001-agentic-loop.md
 affects:
   - model.go
   - models/

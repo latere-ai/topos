@@ -1,6 +1,7 @@
 ---
 title: Architecture
 status: current
+track: adversarial
 updated: 2026-07-08
 author: changkun
 ---
@@ -48,19 +49,19 @@ debate whose only human-facing output is the set of unresolved disputes.
 - Attacks carry stable IDs and are tracked in an append-only ledger. The surfaced
   headline is chosen by a pure contention score, with no model judging that layer.
 
-The protocol itself is [Debate protocol](protocol.md).
+The protocol itself is [Debate protocol](026-protocol.md).
 
 ## Component map
 
 | Layer | Package | Role |
 |---|---|---|
-| Public API | `adversarial` | The embedder contract: `Engine`, `Proposer`, `Critic`, `Verifier`, result types. See [engine-api.md](engine-api.md). |
-| Backends | `adversarial/{claude,critic}` | Ready-made proposer/critic implementations over the claude CLI and the Topos-native runtime. See [backends.md](backends.md). |
-| Inputs | `adversarial/input` | Locate the Claude transcript, compute the working-tree diff. See [inputs.md](inputs.md). |
+| Public API | `adversarial` | The embedder contract: `Engine`, `Proposer`, `Critic`, `Verifier`, result types. See [engine-api.md](024-engine-api.md). |
+| Backends | `adversarial/{claude,critic}` | Ready-made proposer/critic implementations over the claude CLI and the Topos-native runtime. See [backends.md](023-backends.md). |
+| Inputs | `adversarial/input` | Locate the Claude transcript, compute the working-tree diff. See [inputs.md](025-inputs.md). |
 | Orchestration | `adversarial/internal/round` | The real round loop, termination detection, signal handling. |
 | Protocol | `adversarial/internal/critic`, `adversarial/internal/ledger` | Aspect prompts, attack format + parser, the attack ledger. |
 | Agents | `adversarial/internal/agent` | Subprocess drivers for the `claude` and `codex` CLIs. |
-| Persistence | `adversarial/internal/state` | Atomic on-disk session layout. See [session-format.md](session-format.md). |
+| Persistence | `adversarial/internal/state` | Atomic on-disk session layout. See [session-format.md](027-session-format.md). |
 | Output | `adversarial/internal/summary`, `adversarial/internal/ansi` | Contention scoring, `summary.md` render, progress styling. |
 
 `adversarial` re-exports the engine over the `adversarial/internal/*` packages; its
@@ -80,7 +81,7 @@ Adversarial Review is embedded, not run directly:
   world, running critics through the governed runtime (model routing via Lux, Cella
   sandboxes, lineage).
 
-The canonical embedding pattern is in [Engine API](engine-api.md).
+The canonical embedding pattern is in [Engine API](024-engine-api.md).
 
 ## Non-goals
 
@@ -89,6 +90,6 @@ The canonical embedding pattern is in [Engine API](engine-api.md).
   `latere review`; this tree ships no installable of its own.
 - **The proposer is not pluggable onto arbitrary runtimes.** It depends on
   `claude --resume <id> --fork-session` to reconstitute the real coding session;
-  see [Backends](backends.md) for why. Critics are the pluggable layer.
+  see [Backends](023-backends.md) for why. Critics are the pluggable layer.
 - **No model judging of the surfacing layer.** Headline selection is a pure
   contention score. Models argue; they do not rank the output.

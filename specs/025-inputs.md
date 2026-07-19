@@ -1,6 +1,7 @@
 ---
 title: Inputs
 status: current
+track: adversarial
 updated: 2026-07-08
 author: changkun
 ---

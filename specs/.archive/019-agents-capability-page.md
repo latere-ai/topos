@@ -2,7 +2,7 @@
 title: Adversarial Review Capability Page in the Agents Platform
 status: proposed
 depends_on:
-  - specs/adversarial/03-capability-surface.md
+  - specs/.archive/016-capability-surface.md
 affects:
   - agents/frontend/src/views/
   - agents/frontend/src/router.ts
@@ -23,7 +23,7 @@ Migrate the `agon.latere.ai` website landing page onto the agents platform as an
 "Adversarial Review" capability page, so the capability borrows the platform's
 narrative instead of carrying its own. The landing page does not disappear; its
 content moves into agents. This replaces the standalone site's reason to exist, so
-that [07](07-retire-agon.md) only tears down the emptied site shell and infra, not
+that [07](020-retire-agon.md) only tears down the emptied site shell and infra, not
 the story. Migrating the page here is a prerequisite for that teardown.
 
 Planned here for coordination; implemented in the agents repo.

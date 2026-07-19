@@ -1,8 +1,9 @@
 ---
 title: Sandbox Credential Delivery
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/sandbox-cella.md
+  - specs/010-sandbox-cella.md
 affects:
   - sandbox/provider.go
   - sandbox/cella/provider.go
@@ -33,7 +34,7 @@ This spec covers only the third surface below; the first two already exist.
 
 1. **API auth**: the bearer Topos presents to the backend. Owned by
    `TokenSource` / `ContextTokenSource`; the host mints, the provider presents.
-   See [Cella Sandbox Provider](sandbox-cella.md).
+   See [Cella Sandbox Provider](010-sandbox-cella.md).
 2. **Lift/drop secret deny-list**: `harness/lift.go` and `drop.go` refuse to
    copy laptop secrets (`.env`, `*.pem`, `.ssh/`, `.aws/credentials`) into the
    sandbox or materialise sandbox-born secrets back. Provider-agnostic; works

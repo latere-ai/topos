@@ -15,12 +15,12 @@ describes what comes next.
 
 ## Contracts
 
-- [Architecture](architecture.md) - what the capability is, the fork/debate model, the component map, and its consumers.
-- [Debate protocol](protocol.md) - the wire contract: roles, rounds, the critic attack format, dispositions, the attack ledger, termination, and headline surfacing.
-- [Engine API](engine-api.md) - the public Go embedder contract (`adversarial`): `Engine`, `Proposer`, `Critic`, `Verifier`, and the result types.
-- [Backends](backends.md) - proposer and critic backends: the claude and codex CLIs, and the Topos-native governed runtime.
-- [Inputs](inputs.md) - `adversarial/input`: locating the Claude transcript and computing the working-tree diff.
-- [Session format](session-format.md) - the on-disk `<StateDir>/sessions/<id>/` layout, artifacts, and schema versions.
+- [Architecture](022-architecture.md) - what the capability is, the fork/debate model, the component map, and its consumers.
+- [Debate protocol](026-protocol.md) - the wire contract: roles, rounds, the critic attack format, dispositions, the attack ledger, termination, and headline surfacing.
+- [Engine API](024-engine-api.md) - the public Go embedder contract (`adversarial`): `Engine`, `Proposer`, `Critic`, `Verifier`, and the result types.
+- [Backends](023-backends.md) - proposer and critic backends: the claude and codex CLIs, and the Topos-native governed runtime.
+- [Inputs](025-inputs.md) - `adversarial/input`: locating the Claude transcript and computing the working-tree diff.
+- [Session format](027-session-format.md) - the on-disk `<StateDir>/sessions/<id>/` layout, artifacts, and schema versions.
 
 The [`.archive/`](.archive/) directory holds the migration specs that folded this
 capability into Topos and the retired standalone-site spec, kept as historical
@@ -99,7 +99,7 @@ Lighter changes, if the result goes a particular way:
   only doubly-efficient channel.
 - **Structured critic leaves (PCP).** Tighten the critic's reproduction field from
   freeform prose toward a structured tuple (`{file, line_range, expected_pattern}`)
-  where soundness needs it. A schema change to the [protocol](protocol.md).
+  where soundness needs it. A schema change to the [protocol](026-protocol.md).
 
 Heavier, architecture-class changes:
 
@@ -129,6 +129,6 @@ Beyond the proposer-versus-critic asymmetry, two protocol shapes are candidates
 
 ### Deployment futures
 
-- **Hosted Verifier service.** The [`Verifier` interface](engine-api.md) is the
+- **Hosted Verifier service.** The [`Verifier` interface](024-engine-api.md) is the
   seam for a hosted adversarial-review service beyond the local CLI track. Named,
   not built; the local track (`latere review`) is done.

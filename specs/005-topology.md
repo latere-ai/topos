@@ -1,8 +1,9 @@
 ---
 title: Topology
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/agents-and-regions.md
+  - specs/004-agents-and-regions.md
 affects:
   - topos.go
 effort: small

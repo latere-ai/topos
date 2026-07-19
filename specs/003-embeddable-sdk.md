@@ -1,9 +1,10 @@
 ---
 title: Embeddable SDK Boundary
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/agentic-loop.md
-  - specs/runtime/model-connection.md
+  - specs/001-agentic-loop.md
+  - specs/002-model-connection.md
 affects:
   - topos.go
 effort: medium

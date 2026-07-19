@@ -1,9 +1,10 @@
 ---
 title: Delegation as Agents-as-Tools
 status: complete
+track: runtime
 depends_on:
-  - specs/runtime/agents-and-regions.md
-  - specs/runtime/topology.md
+  - specs/004-agents-and-regions.md
+  - specs/005-topology.md
 affects:
   - topos.go
   - harness/subagent.go

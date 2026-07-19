@@ -2,9 +2,9 @@
 title: Retire agon from the Latere Landscape
 status: proposed
 depends_on:
-  - specs/adversarial/04-migrate-wallfacer.md
-  - specs/adversarial/05-migrate-latere-cli.md
-  - specs/adversarial/06-agents-capability-page.md
+  - specs/.archive/017-migrate-wallfacer.md
+  - specs/.archive/018-migrate-latere-cli.md
+  - specs/.archive/019-agents-capability-page.md
 affects:
   - terraform/dns.tf
   - terraform/specs/
@@ -22,8 +22,8 @@ dispatched_task_id: null
 Remove `agon` from the Latere landscape entirely: tear down the site and its
 infrastructure, archive the repository, and prove nothing named `agon` remains.
 This is the terminal step and the barrier of the program. It may only run after
-[04](04-migrate-wallfacer.md), [05](05-migrate-latere-cli.md), and
-[06](06-agents-capability-page.md) have landed, because it archives the repository
+[04](017-migrate-wallfacer.md), [05](018-migrate-latere-cli.md), and
+[06](019-agents-capability-page.md) have landed, because it archives the repository
 those steps migrate away from.
 
 Planned here for coordination; implementation spans the terraform repo, the agon
@@ -32,7 +32,7 @@ repo, and the cluster.
 ## Preconditions
 
 - No consumer imports `x/agon`: `grep -rl "latere.ai/x/agon" ../*/go.mod` is empty.
-- The agents Adversarial Review capability page is live ([06](06-agents-capability-page.md)),
+- The agents Adversarial Review capability page is live ([06](019-agents-capability-page.md)),
   so `agon.latere.ai` has no story left to serve.
 
 ## Scope
@@ -75,7 +75,7 @@ i18n (`agents/frontend/src/i18n/{en,zh}.ts` and any sibling). This needs a
 
 ## Definition of done
 
-These are the program's acceptance checks from the [overview](00-overview.md),
+These are the program's acceptance checks from the [overview](013-overview.md),
 made executable:
 
 - `grep -rl "latere.ai/x/agon" ../*/go.mod` returns nothing across every Latere
@@ -109,5 +109,5 @@ made executable:
 ## Outcome
 
 To be written when this spec is implemented. On completion, update the
-[overview](00-overview.md) Outcome to mark the program done and record the final
+[overview](013-overview.md) Outcome to mark the program done and record the final
 verification run.

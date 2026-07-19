@@ -1,6 +1,7 @@
 ---
 title: Agentic Loop
 status: complete
+track: runtime
 depends_on: []
 affects:
   - runtime/loop/

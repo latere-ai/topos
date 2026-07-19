@@ -1,6 +1,7 @@
 ---
 title: Engine API
 status: current
+track: adversarial
 updated: 2026-07-08
 author: changkun
 ---
@@ -31,8 +32,8 @@ sum, err := (&adversarial.Engine{
 }).Run(ctx)
 ```
 
-Ready-made `Proposer`/`Critic` implementations are in [Backends](backends.md);
-transcript and diff helpers are in [Inputs](inputs.md).
+Ready-made `Proposer`/`Critic` implementations are in [Backends](023-backends.md);
+transcript and diff helpers are in [Inputs](025-inputs.md).
 
 ## The interfaces you implement
 
@@ -66,7 +67,7 @@ of runtime.
 
 `Engine.Run` creates the session directory, runs the forks, and persists the
 terminal artifacts (`summary.md`, `end.json`) under `StateDir/sessions/<id>/`
-before returning; see [Session format](session-format.md). The library path
+before returning; see [Session format](027-session-format.md). The library path
 is silent by default. An embedder that wants progress lines wraps its
 `Proposer`/`Critic`.
 
@@ -90,5 +91,5 @@ implementation.
 
 The `adversarial` package is pre-1.0 and semver-exempt: the surface can change
 while the protocol and embedders stabilize. Stabilizing it is a roadmap item. The
-protocol in [Debate protocol](protocol.md) is more stable than the Go surface,
+protocol in [Debate protocol](026-protocol.md) is more stable than the Go surface,
 since it is what crosses the model boundary.
