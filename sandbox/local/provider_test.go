@@ -366,27 +366,30 @@ func TestExecEmptyArgv(t *testing.T) {
 	}
 }
 
-// TestExecCwdOverride verifies that ExecOptions.Cwd overrides the sandbox's
-// default working directory for the command.
+// TestExecCwdOverride verifies that ExecOptions.Cwd, interpreted relative to
+// the sandbox directory, overrides the command's default working directory.
 func TestExecCwdOverride(t *testing.T) {
-	p := local.New()
 	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+	p := local.NewAt(root)
 
 	sb, _ := p.Create(ctx, sandbox.CreateOptions{})
 	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
 
-	tmp := t.TempDir()
 	res, err := p.Exec(ctx, sb.ID, sandbox.ExecOptions{
 		Argv: []string{"sh", "-c", "pwd"},
-		Cwd:  tmp,
+		Cwd:  "sub",
 	})
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
 	// macOS /var/folders dirs are symlinked under /private; compare base names
 	// to avoid symlink-resolution mismatches.
-	if got := strings.TrimSpace(string(res.Stdout)); !strings.HasSuffix(got, filepath.Base(tmp)) {
-		t.Fatalf("pwd = %q, want it to end with %q", got, filepath.Base(tmp))
+	if got := strings.TrimSpace(string(res.Stdout)); !strings.HasSuffix(got, "sub") {
+		t.Fatalf("pwd = %q, want it to end with %q", got, "sub")
 	}
 }
 
@@ -461,18 +464,22 @@ func TestStreamExecNotFound(t *testing.T) {
 	}
 }
 
-// TestStreamExecCwdOverride verifies ExecOptions.Cwd is honored by StreamExec.
+// TestStreamExecCwdOverride verifies a sandbox-relative ExecOptions.Cwd is
+// honored by StreamExec.
 func TestStreamExecCwdOverride(t *testing.T) {
-	p := local.New()
 	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+	p := local.NewAt(root)
 
 	sb, _ := p.Create(ctx, sandbox.CreateOptions{})
 	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
 
-	tmp := t.TempDir()
 	stream, err := p.StreamExec(ctx, sb.ID, sandbox.ExecOptions{
 		Argv: []string{"sh", "-c", "pwd"},
-		Cwd:  tmp,
+		Cwd:  "sub",
 	})
 	if err != nil {
 		t.Fatalf("StreamExec: %v", err)
@@ -480,8 +487,8 @@ func TestStreamExecCwdOverride(t *testing.T) {
 	defer stream.Close() //nolint:errcheck
 
 	out := drain(t, stream)
-	if got := strings.TrimSpace(out); !strings.HasSuffix(got, filepath.Base(tmp)) {
-		t.Fatalf("pwd = %q, want it to end with %q", got, filepath.Base(tmp))
+	if got := strings.TrimSpace(out); !strings.HasSuffix(got, "sub") {
+		t.Fatalf("pwd = %q, want it to end with %q", got, "sub")
 	}
 }
 
@@ -803,4 +810,85 @@ func isNotFound(err error) bool {
 		return false
 	}
 	return errors.Is(err, sandbox.ErrNotFound) || strings.Contains(err.Error(), "not found")
+}
+
+// rootedFixture returns a provider rooted at outer/work plus the outer
+// directory holding a secret file the sandbox must never reach.
+func rootedFixture(t *testing.T) (*local.Provider, string, string) {
+	t.Helper()
+	outer := t.TempDir()
+	work := filepath.Join(outer, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatalf("mkdir work: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outer, "secret.txt"), []byte("top-secret"), 0o600); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+	p := local.NewAt(work)
+	sb, err := p.Create(context.Background(), sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	return p, sb.ID, outer
+}
+
+// TestReadFileRejectsParentTraversal asserts a "../" path cannot read a file
+// above the sandbox root.
+func TestReadFileRejectsParentTraversal(t *testing.T) {
+	p, id, _ := rootedFixture(t)
+	data, err := p.ReadFile(context.Background(), id, "../secret.txt")
+	if err == nil {
+		t.Fatalf("ReadFile(../secret.txt) = %q, nil; want an error", data)
+	}
+	if strings.Contains(string(data), "top-secret") {
+		t.Fatalf("ReadFile leaked host file contents: %q", data)
+	}
+}
+
+// TestWriteFileRejectsParentTraversal asserts a "../" path cannot write above
+// the sandbox root.
+func TestWriteFileRejectsParentTraversal(t *testing.T) {
+	p, id, outer := rootedFixture(t)
+	if err := p.WriteFile(context.Background(), id, "../planted.txt", []byte("x")); err == nil {
+		t.Fatal("WriteFile(../planted.txt) = nil; want an error")
+	}
+	if _, err := os.Stat(filepath.Join(outer, "planted.txt")); err == nil {
+		t.Fatal("WriteFile created a file above the sandbox root")
+	}
+}
+
+// TestListFilesRejectsParentTraversal asserts a "../" path cannot list a
+// directory above the sandbox root.
+func TestListFilesRejectsParentTraversal(t *testing.T) {
+	p, id, _ := rootedFixture(t)
+	entries, err := p.ListFiles(context.Background(), id, "..")
+	if err == nil {
+		t.Fatalf("ListFiles(..) = %+v, nil; want an error", entries)
+	}
+}
+
+// TestExecCwdRejectsParentTraversal asserts a "../" Cwd cannot move the command
+// above the sandbox root.
+func TestExecCwdRejectsParentTraversal(t *testing.T) {
+	p, id, _ := rootedFixture(t)
+	if _, err := p.Exec(context.Background(), id, sandbox.ExecOptions{
+		Argv: []string{"sh", "-c", "pwd"},
+		Cwd:  "..",
+	}); err == nil {
+		t.Fatal("Exec with Cwd=.. = nil; want an error")
+	}
+}
+
+// TestStreamExecCwdRejectsParentTraversal asserts StreamExec confines Cwd the
+// same way Exec does.
+func TestStreamExecCwdRejectsParentTraversal(t *testing.T) {
+	p, id, _ := rootedFixture(t)
+	stream, err := p.StreamExec(context.Background(), id, sandbox.ExecOptions{
+		Argv: []string{"sh", "-c", "pwd"},
+		Cwd:  "..",
+	})
+	if err == nil {
+		_ = stream.Close()
+		t.Fatal("StreamExec with Cwd=.. = nil; want an error")
+	}
 }

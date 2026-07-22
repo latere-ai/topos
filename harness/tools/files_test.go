@@ -7,6 +7,8 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -127,5 +129,36 @@ func TestFileToolDefsValid(t *testing.T) {
 		if err := json.Unmarshal(def.InputSchema, &schema); err != nil {
 			t.Errorf("%s: invalid InputSchema JSON: %v", tl.Name(), err)
 		}
+	}
+}
+
+// TestReadFileToolDeniesTraversal asserts the tool the model actually calls
+// cannot read a file above the sandbox root via a "../" path.
+func TestReadFileToolDeniesTraversal(t *testing.T) {
+	outer := t.TempDir()
+	work := filepath.Join(outer, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatalf("mkdir work: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outer, "secret.txt"), []byte("top-secret"), 0o600); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+	p := local.NewAt(work)
+	sb, err := p.Create(context.Background(), sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Destroy(context.Background(), sb.ID) })
+
+	res, err := (&tools.ReadFileTool{}).Invoke(context.Background(),
+		json.RawMessage(`{"path":"../secret.txt"}`), p, sb.ID)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("read_file(../secret.txt) succeeded; content=%q", res.Content)
+	}
+	if strings.Contains(res.Content, "top-secret") {
+		t.Fatalf("read_file leaked host file contents: %q", res.Content)
 	}
 }

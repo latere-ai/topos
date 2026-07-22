@@ -8,8 +8,10 @@
 //
 // Each sandbox maps to a per-call temp directory (os.MkdirTemp). Exec runs
 // commands with exec.CommandContext against that directory. Destroy removes the
-// directory. ReadFile/WriteFile/ListFiles operate directly on the filesystem.
-// HealthCheck returns nil iff the directory still exists.
+// directory. ReadFile/WriteFile/ListFiles operate directly on the filesystem,
+// confined to that directory: every path argument, and Exec/StreamExec's Cwd,
+// is resolved against it and rejected with [ErrPathEscape] when it would land
+// outside. HealthCheck returns nil iff the directory still exists.
 //
 // Concurrency: the id→dir map is protected by a sync.Mutex; all methods are
 // safe for concurrent use.
@@ -25,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +48,13 @@ type Provider struct {
 	root string            // when non-empty, every sandbox uses this dir (rooted mode)
 	seq  int               // monotonic counter for unique rooted-mode ids
 }
+
+// ErrPathEscape is returned when a path argument resolves outside the
+// sandbox's directory. It is the sentinel a caller errors.Is to tell a
+// containment refusal from a filesystem failure. Every path a sandbox method
+// accepts is interpreted relative to that directory, including one that looks
+// absolute, so no argument can reach the host filesystem around it.
+var ErrPathEscape = errors.New("local sandbox: path escapes sandbox directory")
 
 // New returns a ready-to-use local Provider in temp-directory mode.
 func New() *Provider {
@@ -127,18 +137,13 @@ func (p *Provider) Destroy(_ context.Context, id string) error {
 // Stdout and Stderr are captured and merged into ExecResult.Stdout to match
 // the Cella backend's combined-stream contract.
 func (p *Provider) Exec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecResult, error) {
-	dir, err := p.sandboxDir(id)
+	cwd, err := p.resolve(id, opts.Cwd)
 	if err != nil {
 		return sandbox.ExecResult{}, err
 	}
 
 	if len(opts.Argv) == 0 {
 		return sandbox.ExecResult{}, errors.New("local sandbox: exec: argv is empty")
-	}
-
-	cwd := dir
-	if opts.Cwd != "" {
-		cwd = opts.Cwd
 	}
 
 	//nolint:gosec // argv is caller-controlled; local sandbox is trusted
@@ -183,18 +188,13 @@ func (p *Provider) Exec(ctx context.Context, id string, opts sandbox.ExecOptions
 // StreamExec starts the command and streams its output chunk-by-chunk.
 // It uses a pipe so output is delivered incrementally.
 func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecStream, error) {
-	dir, err := p.sandboxDir(id)
+	cwd, err := p.resolve(id, opts.Cwd)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(opts.Argv) == 0 {
 		return nil, errors.New("local sandbox: stream exec: argv is empty")
-	}
-
-	cwd := dir
-	if opts.Cwd != "" {
-		cwd = opts.Cwd
 	}
 
 	//nolint:gosec // argv is caller-controlled; local sandbox is trusted
@@ -257,11 +257,10 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 
 // ReadFile reads a file from the sandbox's temp directory.
 func (p *Provider) ReadFile(_ context.Context, id, path string) ([]byte, error) {
-	dir, err := p.sandboxDir(id)
+	full, err := p.resolve(id, path)
 	if err != nil {
 		return nil, err
 	}
-	full := filepath.Join(dir, path)
 	data, err := os.ReadFile(full)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -275,11 +274,10 @@ func (p *Provider) ReadFile(_ context.Context, id, path string) ([]byte, error) 
 // WriteFile writes a file into the sandbox's temp directory, creating parent
 // directories as needed.
 func (p *Provider) WriteFile(_ context.Context, id, path string, data []byte) error {
-	dir, err := p.sandboxDir(id)
+	full, err := p.resolve(id, path)
 	if err != nil {
 		return err
 	}
-	full := filepath.Join(dir, path)
 	if mkdirErr := os.MkdirAll(filepath.Dir(full), 0o755); mkdirErr != nil {
 		return fmt.Errorf("local sandbox: write file mkdir %q: %w", path, mkdirErr)
 	}
@@ -291,11 +289,10 @@ func (p *Provider) WriteFile(_ context.Context, id, path string, data []byte) er
 
 // ListFiles lists the immediate children of a directory in the sandbox.
 func (p *Provider) ListFiles(_ context.Context, id, path string) ([]sandbox.FileInfo, error) {
-	dir, err := p.sandboxDir(id)
+	full, err := p.resolve(id, path)
 	if err != nil {
 		return nil, err
 	}
-	full := filepath.Join(dir, path)
 	entries, err := os.ReadDir(full)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -345,6 +342,31 @@ func (p *Provider) sandboxDir(id string) (string, error) {
 		return "", sandbox.ErrNotFound
 	}
 	return dir, nil
+}
+
+// resolve maps a caller-supplied path to an absolute path inside the sandbox's
+// directory. The path is always joined onto that directory, so an absolute
+// argument is re-rooted rather than honoured against the host, and the joined
+// result is verified to stay at or below the directory. Escapes return
+// [ErrPathEscape]; an empty path resolves to the directory itself. This is the
+// containment check that makes the package doc's per-sandbox-directory
+// invariant true for ReadFile, WriteFile, ListFiles, and Exec/StreamExec Cwd.
+func (p *Provider) resolve(id, path string) (string, error) {
+	dir, err := p.sandboxDir(id)
+	if err != nil {
+		return "", err
+	}
+	full := filepath.Join(dir, path)
+	rel, err := filepath.Rel(dir, full)
+	if err != nil || escapes(rel) {
+		return "", fmt.Errorf("%w: %q", ErrPathEscape, path)
+	}
+	return full, nil
+}
+
+// escapes reports whether a cleaned relative path steps above its root.
+func escapes(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // buildEnv converts a map to a slice of "KEY=VALUE" entries suitable for
