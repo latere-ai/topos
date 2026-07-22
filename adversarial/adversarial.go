@@ -116,8 +116,8 @@ type VerifyInput struct {
 	Cwd           string // working directory
 	StateDir      string // where sessions/<id>/ is written
 	ForkCount     int    // number of critic forks
-	MaxRounds     int    // debate rounds per fork
-	CostCapTokens int    // soft token budget
+	MaxRounds     int    // debate rounds per fork; zero uses DefaultMaxRounds
+	CostCapTokens int    // soft token budget; zero means unbounded
 }
 
 // VerifyResult is returned by a successful [Verifier.Verify] call.

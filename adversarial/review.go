@@ -14,8 +14,8 @@ type ReviewOptions struct {
 	Forks       int           // number of independent critic forks to run
 	Proposer    Proposer      // drives the implementation agent
 	NewCritic   CriticFactory // creates a critic for each fork
-	MaxRounds   int           // per-fork internal-round cap (1 turn = 2 rounds)
-	CostCap     int           // soft token budget across all forks
+	MaxRounds   int           // per-fork internal-round cap (1 turn = 2 rounds); zero uses DefaultMaxRounds
+	CostCap     int           // soft token budget across all forks; zero means unbounded
 	TaskContext string        // verbatim task description
 	DiffPatch   string        // unified diff to review
 }

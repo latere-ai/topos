@@ -30,7 +30,9 @@ type ForkHistory struct {
 	MalformedFlag bool
 }
 
-// Detector is a value-typed bundle of detection rules.
+// Detector is a value-typed bundle of detection rules. The round and cost caps
+// themselves are enforced by the loop and by CostMeter; these fields carry the
+// configured values for inspection.
 type Detector struct {
 	MaxRounds int
 	CostCap   int
@@ -64,7 +66,9 @@ type CostMeter struct {
 	perCall []int
 }
 
-// NewCostMeter returns a meter capped at capTokens.
+// NewCostMeter returns a meter capped at capTokens. A cap of zero or less
+// means unbounded: the meter still accumulates usage but never reports the cap
+// exceeded.
 func NewCostMeter(capTokens int) *CostMeter {
 	return &CostMeter{cap: capTokens}
 }
@@ -78,8 +82,11 @@ func (c *CostMeter) Add(tokens int) {
 // Used returns the total tokens consumed.
 func (c *CostMeter) Used() int { return c.used }
 
-// ExceedsCap returns true iff used >= cap.
-func (c *CostMeter) ExceedsCap() bool { return c.used >= c.cap }
+// ExceedsCap returns true iff a positive cap is configured and used >= cap.
+// The cap > 0 guard makes a zero cap mean unbounded, matching billing.Budget,
+// where every axis is disabled by a zero limit. Without it a zero cap fired on
+// zero usage and terminated a run before its first round.
+func (c *CostMeter) ExceedsCap() bool { return c.cap > 0 && c.used >= c.cap }
 
 // EstimateTokens is the 4-chars/token fallback when the agent doesn't
 // report usage.

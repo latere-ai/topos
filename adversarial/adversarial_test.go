@@ -153,3 +153,61 @@ func TestEngineRun_WritesEndJSON(t *testing.T) {
 		}
 	}
 }
+
+// TestEngineCostCapZeroMeansUnbounded asserts a zero CostCap is treated as no
+// token budget rather than an instantly-exhausted one. Before the guard, the
+// meter reported used(0) >= cap(0) and the loop terminated on cost-cap before
+// running a single round.
+func TestEngineCostCapZeroMeansUnbounded(t *testing.T) {
+	critic := &stubCritic{rounds: []string{"# Critic 1 - round 1 attacks\n\naspect: security\n"}}
+	eng := &adversarial.Engine{
+		StateDir:    t.TempDir(),
+		Cwd:         t.TempDir(),
+		ForkCount:   1,
+		Proposer:    &stubProposer{forkID: "fork-abc", reply: "ack"},
+		NewCritic:   func(_ int) adversarial.Critic { return critic },
+		MaxRounds:   6,
+		CostCap:     0,
+		TaskContext: "add user login",
+		DiffPatch:   "+x := 1",
+	}
+	sum, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Engine.Run: %v", err)
+	}
+	if sum.Termination == "cost-cap" || len(sum.Forks) == 0 || sum.Forks[0].Rounds < 1 {
+		rounds := -1
+		if len(sum.Forks) > 0 {
+			rounds = sum.Forks[0].Rounds
+		}
+		t.Fatalf("CostCap: 0 fired cost-cap before any work; termination=%s, fork rounds=%d",
+			sum.Termination, rounds)
+	}
+}
+
+// TestEngineMaxRoundsZeroDefaults asserts an unset MaxRounds runs the default
+// round budget instead of zero rounds.
+func TestEngineMaxRoundsZeroDefaults(t *testing.T) {
+	critic := &stubCritic{rounds: []string{"# Critic 1 - round 1 attacks\n\naspect: security\n"}}
+	eng := &adversarial.Engine{
+		StateDir:    t.TempDir(),
+		Cwd:         t.TempDir(),
+		ForkCount:   1,
+		Proposer:    &stubProposer{forkID: "fork-abc", reply: "ack"},
+		NewCritic:   func(_ int) adversarial.Critic { return critic },
+		CostCap:     1_000_000,
+		TaskContext: "add user login",
+		DiffPatch:   "+x := 1",
+	}
+	sum, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Engine.Run: %v", err)
+	}
+	if len(sum.Forks) == 0 || sum.Forks[0].Rounds < 1 {
+		rounds := -1
+		if len(sum.Forks) > 0 {
+			rounds = sum.Forks[0].Rounds
+		}
+		t.Fatalf("MaxRounds: 0 ran no rounds; termination=%s, fork rounds=%d", sum.Termination, rounds)
+	}
+}

@@ -46,3 +46,16 @@ func TestEstimateTokens(t *testing.T) {
 		t.Errorf("got %d, want 2 (5/4 rounded up)", got)
 	}
 }
+
+// TestCostMeterZeroCapNeverExceeds asserts a zero cap means unbounded, matching
+// billing.Budget's convention that a zero limit disables that axis.
+func TestCostMeterZeroCapNeverExceeds(t *testing.T) {
+	m := NewCostMeter(0)
+	if m.ExceedsCap() {
+		t.Fatal("ExceedsCap() = true for a fresh zero-cap meter; want false (zero means unbounded)")
+	}
+	m.Add(1_000_000)
+	if m.ExceedsCap() {
+		t.Fatalf("ExceedsCap() = true after %d tokens against a zero cap; want false", m.Used())
+	}
+}

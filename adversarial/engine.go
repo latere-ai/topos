@@ -26,11 +26,16 @@ type Engine struct {
 	ForkCount   int           // number of independent critic forks to run
 	Proposer    Proposer      // drives the implementation agent
 	NewCritic   CriticFactory // creates a critic for each fork
-	MaxRounds   int           // per-fork internal-round cap (1 turn = 2 rounds)
-	CostCap     int           // soft token budget across all forks
+	MaxRounds   int           // per-fork internal-round cap (1 turn = 2 rounds); zero uses DefaultMaxRounds
+	CostCap     int           // soft token budget across all forks; zero means unbounded
 	TaskContext string        // verbatim task description
 	DiffPatch   string        // unified diff to review
 }
+
+// DefaultMaxRounds is the per-fork internal-round cap applied when a caller
+// leaves MaxRounds unset. Six internal rounds are three user-facing turns,
+// since a turn is one critic round plus one proposer round.
+const DefaultMaxRounds = 6
 
 // Run executes all forks serially and returns a [Summary].
 // The session directory is created under StateDir at the start of Run
@@ -47,6 +52,13 @@ func (e *Engine) Run(ctx context.Context) (*Summary, error) {
 	if forkCount < 1 {
 		forkCount = 1
 	}
+	// An unset MaxRounds would otherwise make the per-fork loop run zero
+	// rounds and report a debate that never happened. CostCap gets no such
+	// default: zero there means unbounded.
+	maxRounds := e.MaxRounds
+	if maxRounds < 1 {
+		maxRounds = DefaultMaxRounds
+	}
 	sess, err := state.NewSession(e.StateDir, forkCount, time.Now())
 	if err != nil {
 		return nil, err
@@ -60,7 +72,7 @@ func (e *Engine) Run(ctx context.Context) (*Summary, error) {
 		NewCritic: func(forkIdx int) agent.Critic {
 			return &criticBridge{c: e.NewCritic(forkIdx)}
 		},
-		MaxRounds:   e.MaxRounds,
+		MaxRounds:   maxRounds,
 		CostCap:     e.CostCap,
 		TaskContext: e.TaskContext,
 		DiffPatch:   e.DiffPatch,
