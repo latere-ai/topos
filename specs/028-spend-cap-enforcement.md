@@ -111,12 +111,37 @@ Honest limitation: config-time validation covers models declared in `Options` an
 starts, so the turn-boundary check remains as a backstop and errors on the first
 unpriceable turn. Both paths fail closed; only the timing differs.
 
+### Unit of enforcement
+
+The cap is region-wide. One meter is built per region and shared by the entry
+agent, every pinned step, and every delegated peer, so `BudgetUSD` bounds the
+sum of what a region spends rather than being granted afresh to each agent. A
+region of *n* agents cannot spend *n* times the cap.
+
+The meter therefore takes a turn's usage and holds the total itself, rather than
+being handed a run's accumulated total. A caller cannot reset the accumulation
+by passing only its own run's figure, and several callers add up.
+
+Which agent trips the cap is not part of the contract: whichever folds the
+crossing turn first does, and under any other interleaving of agents it would be
+a different one. That nondeterminism is inherent to a shared bound and is
+acceptable — the guarantee is on the region's total, not on any particular
+agent.
+
+A graph is metered per region, not per graph. `BudgetUSD` is defined as a region
+cap and a graph is a composition of regions, so `RunGraph` meters each region
+against the full budget independently: a two-region graph under a $10 cap may
+spend $20. The alternative — one budget for a whole graph — would make the
+meaning of the option depend on which entry point a host called.
+
 ### Composition with child budgets
 
-`BudgetUSD` keeps its existing sub-allocation role on the spawn path. Enforcement
-composes: a parent's remaining budget bounds what it can grant a child, and a
-child's own enforcement is what stops the child. This spec does not change
-`DeriveChildBudget`.
+`BudgetUSD` keeps its existing sub-allocation role on the spawn path. The two
+are separate axes: sub-allocation bounds what authority a parent may *grant* a
+spawned child, while a meter bounds what a region may *spend* before the runtime
+stops it. A child can hold a grant it never uses because the region's meter
+tripped first, and the meter is unaware of how the grant was divided. This spec
+does not change `DeriveChildBudget`.
 
 ## Legs
 
@@ -144,6 +169,12 @@ always nil and the rate card carries every run.
 
 - A run with `BudgetUSD` set stops when accumulated cost reaches the limit, with a
   budget-specific stop reason, and does not stop before it.
+- A region of *n* agents that each stay under the cap alone but exceed it
+  together stops. The cap is not multiplied by the number of agents.
+- A budget stop is reported as an error matching `billing.ErrBudgetExceeded`
+  from `Run`, `RunGraph`, and `Turn`, and the partial result is returned with it.
+- The lineage node of a budget-stopped agent is not `done`.
+- A `Meter` shared by several goroutines loses no usage (race-detector test).
 - A gateway-reported cost is preferred over the rate card when present.
 - A budget set against an unpriceable model fails `topos.New` with an error naming
   the model. No turn executes.
@@ -164,6 +195,18 @@ defect is precisely a cap that never fires.
   added but unenforced, the loop runs to `MaxIterations`.
 - `runtime/loop`: no breach means no early stop, so the cap is not merely
   always-on.
+- root: a pinned region of three agents, each spending $1 under a $2 cap, stops
+  after two. Pre-change it ran all three, because each agent was metered against
+  the full cap on its own.
+- root: the same for a delegated peer, whose spend must count against the entry
+  agent's region budget.
+- `billing`: one meter, several goroutines, under `-race`. The accumulated total
+  must equal every fold, since a lost update under-counts a region's spend.
+- root: `Run`, `RunGraph`, and `Turn` return an error matching
+  `billing.ErrBudgetExceeded` on a breach. Pre-change they returned nil.
+- root: the budget-stopped agent's lineage node is not `done`. Pre-change it was.
+- root: an unmetered region and an under-budget region are unaffected on every
+  path — every agent runs, the error is nil, and every node is `done`.
 - `models`: nil `CostUSDMicro` and zero `CostUSDMicro` take different paths.
 - `billing`: rate card prices cache reads and writes at their own multiples.
 - root: `topos.New` errors when a budget is set for an unpriceable model.
@@ -208,15 +251,15 @@ zero `Usage` stays the additive identity, including for cost. `models/fake`
 reports a real zero, which keeps the zero-config path priceable under a cap
 without needing a rate-card entry for a model that has no rate.
 
-**`runtime/loop`** enforces at the usage fold. `Run` takes the meter as a
-parameter; `Result` carries `BudgetBreach`. A turn that cannot be priced ends
-the run with an error and a partial result.
+**`runtime/loop`** enforces at the usage fold, and again before each turn's
+model call so an already-capped region spends nothing further. `Run` takes the
+meter as a parameter; `Result` carries `BudgetBreach`. A turn that cannot be
+priced ends the run with an error and a partial result, as does a breach.
 
 **`topos`** resolves the `CostSource` (`Options.CostSource`, defaulting to
 `billing.DefaultCostSource`), refuses a budget whose declared model cannot be
-priced, and builds one meter per `loop.Run` call — the enforcer latches on
-breach, so concurrent peers must not share one. `DeriveChildBudget` is
-unchanged.
+priced, and builds one meter per region in `runRegion` that every agent of that
+region shares.
 
 The rate card prices claude-fable-5, claude-opus-4-8, claude-opus-4-7,
 claude-opus-4-6, claude-sonnet-4-6, and claude-haiku-4-5. Models whose published
@@ -230,15 +273,53 @@ fail closed; only the timing differs.
 
 ### Scope of enforcement
 
-The unit of enforcement is one agent, not one region. Every `loop.Run` — the
-entry agent, each pinned step, each delegated peer — is metered independently
-against the full `BudgetUSD`, so a region of *n* agents can spend up to *n*
-times the cap. Region-wide accumulation across a delegation tree is not
-implemented here: `DeriveChildBudget` still sub-allocates on the spawn path, but
-its output governs what a parent may grant a child, not what the child's meter
-enforces.
+The unit of enforcement is one region. `runRegion` builds one meter and hands it
+to the entry agent, every pinned step, and every delegated peer, so `BudgetUSD`
+bounds their combined spend. `billing.Meter` accumulates the turns it is given
+and prices the total, which is what makes several agents add up rather than each
+being measured alone.
 
-A budget stop surfaces on `Runner.Turn`, as `StopReason:
-models.StopBudgetExceeded`. `Runner.Run` and `Runner.RunGraph` return the
-agent's text and mark the lineage node done, so a capped run reads as a short
-answer rather than an explicit stop. Both are follow-on work.
+`Meter` is safe for concurrent use. One mutex covers the fold, the pricing, the
+budget check, and the breach latch, because the state is a multi-field usage
+total plus the `Enforcer`'s notification latch and only a single critical
+section makes that sequence indivisible; per-word atomics would still let two
+agents each observe an under-cap total and both proceed. The lock is taken once
+per turn boundary. The dispatcher runs a region's agents one at a time today,
+and the cap deliberately does not rest on that.
+
+Which agent trips the cap is not part of the contract, and with a shared meter
+it cannot be: whichever folds the crossing turn first reports the breach. The
+guarantee is on the region's total.
+
+An agent also asks the meter before its first model call of each turn, so an
+agent joining a region whose cap is already reached spends nothing rather than
+one further turn.
+
+`RunGraph` meters each region separately against the full budget: `BudgetUSD` is
+a region cap and a graph is a composition of regions, so a two-region graph
+under a $10 cap may spend $20. `Runner.Turn` likewise meters each turn on its
+own; a session's budget is per turn, not per conversation.
+
+`DeriveChildBudget` is unchanged. Sub-allocation bounds what a parent may grant
+a child; a meter bounds what a region may spend. A child can hold a grant it
+never uses because the region's meter tripped first.
+
+### Surfacing a stop
+
+A budget stop is an error everywhere. `loop.Run` returns
+`billing.ErrBudgetExceeded` (matchable with `errors.Is` through the context each
+layer wraps around it) together with the partial result, and `Runner.Run`,
+`Runner.RunGraph`, and `Runner.Turn` propagate both. A caller that only checks
+errors gets a loud signal; a caller that wants the truncated output still has
+it, including through `RunGraph`, which returns the merged lineage and the
+capped region's `Final`.
+
+The lineage node of a budget-stopped agent is `StatusStopped`, a fourth terminal
+state beside `running`, `done`, and `failed`. `done` would claim a completion
+that did not happen and `failed` would claim a fault that did not occur: the
+runtime enforced a limit on an agent that was working correctly.
+
+A delegated peer that trips the cap cannot end its parent from a tool result, so
+it records the stop in its tool result and its lineage node, and the parent —
+sharing the same meter — finds the cap breached at the top of its next turn,
+before spending again.

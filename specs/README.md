@@ -69,7 +69,7 @@ delegation and topology mechanics, then the supporting engine specs.
 - [Sandbox Credential Delivery](011-sandbox-credentials.md): delivering
   vault secrets into a sandbox without plaintext.
 - [Spend Cap Enforcement](028-spend-cap-enforcement.md): pricing a turn's usage
-  and stopping a run that reaches `Options.BudgetUSD`.
+  and stopping a region whose combined spend reaches `Options.BudgetUSD`.
 
 ## Dependency view
 
