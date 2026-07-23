@@ -6,7 +6,9 @@ package loop_test
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"latere.ai/x/topos/billing"
@@ -19,10 +21,15 @@ import (
 
 // meteredModel emits usage and a tool call on every turn, so a run that is not
 // stopped by something else exhausts loop.MaxIterations. It is the shape that
-// separates a cap that fires from a cap that only claims to.
-type meteredModel struct{ usage models.Usage }
+// separates a cap that fires from a cap that only claims to. It counts its
+// calls so a test can assert a run that must not spend at all did not.
+type meteredModel struct {
+	usage models.Usage
+	calls atomic.Int32
+}
 
 func (m *meteredModel) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
+	m.calls.Add(1)
 	u := m.usage
 	return &cannedStream{events: []models.Event{
 		{Kind: models.KindTextDelta, TextDelta: "working"},
@@ -77,15 +84,22 @@ func meter(t *testing.T, limitUSD float64, cost billing.CostSource) *billing.Met
 
 // TestLoopStopsOnBudgetBreach asserts the spend cap actually stops the run. The
 // model would otherwise loop to MaxIterations, so the assertion is that the run
-// ends early, on a budget-specific stop reason, carrying the breach.
+// ends early, on a budget-specific stop reason, carrying the breach — and that
+// the stop is reported as an error rather than passed off as a completed run.
 func TestLoopStopsOnBudgetBreach(t *testing.T) {
 	// One USD per turn against a three USD cap: turns 1 and 2 are under, turn 3
 	// reaches it.
 	cfg := budgetCfg(t, &meteredModel{usage: models.Usage{InputTokens: 1, OutputTokens: 1}})
 
 	res, err := loop.Run(context.Background(), cfg, meter(t, 3, flatRate{}))
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	if !errors.Is(err, billing.ErrBudgetExceeded) {
+		t.Fatalf("Run error = %v, want billing.ErrBudgetExceeded", err)
+	}
+	if res == nil {
+		t.Fatal("Run = nil result, want the partial transcript alongside the error")
+	}
+	if res.FinalText == "" || len(res.Transcript) == 0 {
+		t.Fatalf("partial result discarded: final=%q transcript=%d", res.FinalText, len(res.Transcript))
 	}
 	if res.StopReason != models.StopBudgetExceeded {
 		t.Fatalf("stop reason = %q, want %q (ran %d turns of %d)",
@@ -133,6 +147,29 @@ func TestLoopUnmeteredRunIsUnaffected(t *testing.T) {
 	}
 	if res.StopReason != models.StopEndTurn || res.BudgetBreach != nil {
 		t.Fatalf("unmetered run: stop=%q breach=%v", res.StopReason, res.BudgetBreach)
+	}
+}
+
+// TestLoopStopsBeforeSpendingOnABreachedMeter asserts a run that joins a region
+// whose shared cap is already reached does not take a turn at all. Without the
+// pre-turn check every remaining agent in the region would spend one more turn
+// past the cap before its own usage fold noticed.
+func TestLoopStopsBeforeSpendingOnABreachedMeter(t *testing.T) {
+	m := meter(t, 1, flatRate{})
+	if _, _, err := m.OnUsage(context.Background(), models.Usage{InputTokens: 1}); err != nil {
+		t.Fatalf("pre-breach the meter: %v", err)
+	}
+
+	model := &meteredModel{usage: models.Usage{InputTokens: 1}}
+	res, err := loop.Run(context.Background(), budgetCfg(t, model), m)
+	if !errors.Is(err, billing.ErrBudgetExceeded) {
+		t.Fatalf("Run error = %v, want billing.ErrBudgetExceeded", err)
+	}
+	if got := model.calls.Load(); got != 0 {
+		t.Fatalf("model called %d times on an already-capped region, want 0", got)
+	}
+	if res.StopReason != models.StopBudgetExceeded || res.BudgetBreach == nil {
+		t.Fatalf("stop=%q breach=%v, want a budget stop carrying the breach", res.StopReason, res.BudgetBreach)
 	}
 }
 

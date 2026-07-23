@@ -136,17 +136,23 @@ func buildAssistantMessage(text string, toolCalls []*models.ToolCall) models.Mes
 
 // Run executes the agentic loop with the given config and returns a Result.
 //
-// meter enforces the run's spend cap: it prices each turn's accumulated usage
-// and stops the run when the cap is reached. A nil meter is the unmetered case,
-// which is what a run with no configured budget passes. The meter is a
-// parameter rather than a [Config] field on purpose — a struct field
-// zero-values silently, which would reproduce an unenforced budget in a new
-// place, whereas a signature change makes every call site state what it does
-// about the cap or fail to compile.
+// meter enforces the spend cap: it accumulates each turn's usage, prices the
+// total, and stops the run when the cap is reached. A nil meter is the
+// unmetered case, which is what a run with no configured budget passes. One
+// meter is shared by every agent of a region, so the cap bounds the region's
+// total spend; this run stops on the turn that crosses it, whether that turn
+// was its own or an earlier one from a peer sharing the meter. The meter is a
+// parameter rather than a [Config] field on purpose — a struct field zero-values
+// silently, which would reproduce an unenforced budget in a new place, whereas
+// a signature change makes every call site state what it does about the cap or
+// fail to compile.
 //
 // On success it returns the Result and a nil error. On context cancellation it
 // returns the partial Result (Transcript populated up to the cut) and an error
-// satisfying errors.Is(err, ErrInterrupted); see ErrInterrupted. A turn that
+// satisfying errors.Is(err, ErrInterrupted); see ErrInterrupted. A budget stop
+// likewise returns the partial Result with an error satisfying
+// errors.Is(err, [billing.ErrBudgetExceeded]), because a capped run that
+// reported success would be indistinguishable from a completed one. A turn that
 // cannot be priced also returns a partial Result with an error: the cap is
 // unenforceable, so the run stops rather than spend on unmetered. It returns a
 // nil Result only for unrecoverable infrastructure failures (a model stream
@@ -219,6 +225,21 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 			// turn completed), so hand it back as-is.
 			result.Transcript = transcript
 			return result, interrupted(ctx.Err())
+		}
+
+		// Stop before the model call when the region's shared cap is already
+		// reached. The meter is region-wide, so another agent may have tripped
+		// it while this one was starting; without this check every remaining
+		// agent would spend one further turn before its own usage fold noticed.
+		if breached, br := meter.Breached(); breached {
+			logger.Info("loop: region spend cap already reached; not starting the turn",
+				"iter", iter,
+				"limit_usd", br.Limit,
+				"actual_usd", br.Actual,
+			)
+			finalStopReason = models.StopBudgetExceeded
+			result.BudgetBreach = &br
+			break
 		}
 
 		var toolDefs []models.ToolDef
@@ -331,9 +352,11 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 		// HUD (durable: one per turn, present on reattach).
 		result.TotalUsage.Add(turnUsage)
 
-		// Enforce the spend cap at the one point where the run's total usage is
-		// known. This single site covers the entry, peer, and pinned loops.
-		budgetBreached, budgetBreach, budgetErr := meter.OnUsage(ctx, result.TotalUsage)
+		// Enforce the spend cap at the one point where the turn's usage is
+		// known. This single site covers the entry, peer, and pinned loops. The
+		// turn is what is handed over: the meter holds the region's total, so
+		// every agent sharing it adds to one accumulation.
+		budgetBreached, budgetBreach, budgetErr := meter.OnUsage(ctx, turnUsage)
 		if budgetErr != nil {
 			// The turn cannot be priced, so the cap cannot be enforced. Fail
 			// closed: hand back what ran and stop, rather than keep spending
@@ -379,7 +402,7 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 		// (usage event, assistant message) is complete and the returned
 		// transcript reflects everything that was actually paid for.
 		if budgetBreached {
-			logger.Info("loop: spend cap reached; stopping run",
+			logger.Info("loop: region spend cap reached; stopping run",
 				"iter", iter,
 				"limit_usd", budgetBreach.Limit,
 				"actual_usd", budgetBreach.Actual,
@@ -432,6 +455,14 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 		ToolCallCount: result.ToolCallCount,
 	})
 
+	if result.BudgetBreach != nil {
+		// A capped run is not a completed run. Report it as an error so a caller
+		// that only checks errors cannot read the truncated answer as the whole
+		// one, and return the partial result alongside it so a caller that wants
+		// what was paid for still has it.
+		return result, fmt.Errorf("loop: stopped at $%g of a $%g region spend cap: %w",
+			result.BudgetBreach.Actual, result.BudgetBreach.Limit, billing.ErrBudgetExceeded)
+	}
 	return result, nil
 }
 

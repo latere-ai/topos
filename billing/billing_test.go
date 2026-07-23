@@ -9,6 +9,7 @@ import (
 	"errors"
 	"math"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -239,7 +240,7 @@ func TestGatewayFirstTreatsUnknownCostAsUnreported(t *testing.T) {
 }
 
 // TestMeterBreachesOnPricedUsage asserts the Meter turns token usage into USD
-// and reports a breach only once the cap is reached.
+// and reports a breach only once the accumulated cap is reached.
 func TestMeterBreachesOnPricedUsage(t *testing.T) {
 	m := billing.NewMeter(
 		"claude-opus-4-8",
@@ -256,8 +257,8 @@ func TestMeterBreachesOnPricedUsage(t *testing.T) {
 		t.Fatal("paused at $0.50 against a $1 cap")
 	}
 
-	// 200k input tokens = $1.00, at the cap.
-	paused, br, err := m.OnUsage(context.Background(), models.Usage{InputTokens: 200_000})
+	// A second turn of 100k input tokens brings the total to $1.00, at the cap.
+	paused, br, err := m.OnUsage(context.Background(), models.Usage{InputTokens: 100_000})
 	if err != nil {
 		t.Fatalf("OnUsage: %v", err)
 	}
@@ -266,6 +267,112 @@ func TestMeterBreachesOnPricedUsage(t *testing.T) {
 	}
 	if br.Leg != "usd" {
 		t.Fatalf("breach leg = %q, want usd", br.Leg)
+	}
+}
+
+// dollarPerInputToken prices one input token at one USD, so a meter test states
+// its arithmetic in turns rather than in a rate card.
+type dollarPerInputToken struct{}
+
+func (dollarPerInputToken) CostUSD(_ string, u models.Usage) (float64, error) {
+	return float64(u.InputTokens), nil
+}
+
+// TestMeterAccumulatesAcrossAgents asserts one Meter bounds the sum of what
+// several agents spend rather than each agent's own spend. Three turns of $1,
+// which each stay under a $3 cap on their own, reach it together.
+func TestMeterAccumulatesAcrossAgents(t *testing.T) {
+	m := billing.NewMeter(
+		"house-model",
+		dollarPerInputToken{},
+		billing.NewEnforcer(billing.Budget{LimitUSD: 3}, "s", "a", "o", nil),
+	)
+
+	for i, want := range []bool{false, false, true} {
+		paused, _, err := m.OnUsage(context.Background(), models.Usage{InputTokens: 1})
+		if err != nil {
+			t.Fatalf("OnUsage %d: %v", i+1, err)
+		}
+		if paused != want {
+			t.Fatalf("turn %d of $1 under a $3 cap: paused = %v, want %v", i+1, paused, want)
+		}
+	}
+}
+
+// TestMeterBreachedLatches asserts the cheap query a caller uses to avoid
+// spending on an already-capped region: false until the cap is reached, true
+// afterwards, and false forever on the unmetered nil Meter.
+func TestMeterBreachedLatches(t *testing.T) {
+	m := billing.NewMeter(
+		"house-model",
+		dollarPerInputToken{},
+		billing.NewEnforcer(billing.Budget{LimitUSD: 2}, "s", "a", "o", nil),
+	)
+	if breached, _ := m.Breached(); breached {
+		t.Fatal("a fresh meter reports a breach")
+	}
+	if _, _, err := m.OnUsage(context.Background(), models.Usage{InputTokens: 2}); err != nil {
+		t.Fatalf("OnUsage: %v", err)
+	}
+	breached, br := m.Breached()
+	if !breached || br.Leg != "usd" || br.Actual != 2 {
+		t.Fatalf("after a $2 spend under a $2 cap: breached=%v breach=%+v", breached, br)
+	}
+
+	var nilMeter *billing.Meter
+	if breached, _ := nilMeter.Breached(); breached {
+		t.Fatal("the unmetered nil meter reports a breach")
+	}
+}
+
+// TestMeterIsSafeForConcurrentPeers asserts one Meter shared by concurrently
+// delegated peers accounts every turn exactly once. It is a race-detector test:
+// a shared meter is written from several goroutines, and a lost update would
+// under-count the region's spend and let the cap be overrun.
+func TestMeterIsSafeForConcurrentPeers(t *testing.T) {
+	const (
+		peers = 8
+		turns = 25
+		total = peers * turns
+	)
+	m := billing.NewMeter(
+		"house-model",
+		dollarPerInputToken{},
+		billing.NewEnforcer(billing.Budget{LimitUSD: total}, "s", "a", "o", nil),
+	)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, peers)
+	for range peers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range turns {
+				if _, _, err := m.OnUsage(context.Background(), models.Usage{InputTokens: 1}); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent OnUsage: %v", err)
+	}
+
+	// Probing with the zero usage adds nothing and re-prices the accumulated
+	// total, so the reported figure is the region's whole spend. Anything below
+	// the full total means a concurrent fold was lost.
+	paused, br, err := m.OnUsage(context.Background(), models.Usage{})
+	if err != nil {
+		t.Fatalf("OnUsage probe: %v", err)
+	}
+	if !paused {
+		t.Fatalf("%d concurrent turns of $1 against a $%d cap did not breach", total, total)
+	}
+	if br.Actual != total {
+		t.Fatalf("accumulated $%g, want $%d: a shared meter must not drop a peer's spend", br.Actual, total)
 	}
 }
 

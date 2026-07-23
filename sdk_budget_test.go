@@ -6,11 +6,13 @@ package topos
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"latere.ai/x/topos/billing"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/sandbox"
 	"latere.ai/x/topos/sandbox/local"
@@ -117,7 +119,9 @@ func TestRuntimeResolvedModelStopsFirstTurn(t *testing.T) {
 
 // TestTurnStopsOnSpendCap asserts the end-to-end cap: a priced turn that
 // reaches BudgetUSD ends the run on the budget stop reason, distinguishable
-// from the model's own end_turn.
+// from the model's own end_turn, and reports the stop as an error so a caller
+// that only checks errors cannot mistake it for a completed turn. The partial
+// transcript comes back alongside it.
 func TestTurnStopsOnSpendCap(t *testing.T) {
 	// 1M input tokens on claude-opus-4-8 cards at $5, over a $1 cap.
 	brain := &costlyBrain{usage: models.Usage{InputTokens: 1_000_000}}
@@ -132,11 +136,14 @@ func TestTurnStopsOnSpendCap(t *testing.T) {
 	}
 
 	out, err := r.Turn(context.Background(), turnInput(t))
-	if err != nil {
-		t.Fatalf("Turn: %v", err)
+	if !errors.Is(err, billing.ErrBudgetExceeded) {
+		t.Fatalf("Turn error = %v, want billing.ErrBudgetExceeded", err)
 	}
 	if out.StopReason != models.StopBudgetExceeded {
 		t.Fatalf("stop reason = %q, want %q", out.StopReason, models.StopBudgetExceeded)
+	}
+	if out.Final != "spending" || len(out.Transcript) == 0 {
+		t.Fatalf("final = %q, transcript = %d messages; want the partial turn alongside the error", out.Final, len(out.Transcript))
 	}
 }
 
@@ -181,8 +188,8 @@ func TestHostCostSourceOverridesRateCard(t *testing.T) {
 	}
 
 	out, err := r.Turn(context.Background(), turnInput(t))
-	if err != nil {
-		t.Fatalf("Turn: %v", err)
+	if !errors.Is(err, billing.ErrBudgetExceeded) {
+		t.Fatalf("Turn error = %v, want billing.ErrBudgetExceeded", err)
 	}
 	if out.StopReason != models.StopBudgetExceeded {
 		t.Fatalf("stop reason = %q, want %q (host price should breach the $1 cap)",
