@@ -215,8 +215,21 @@ const (
 type Options struct {
 	SessionID       string       // stable run id; deterministic child ids derive from it
 	Model           ModelOptions // the brain connection (Lux / direct / fake)
-	BudgetUSD       float64      // region spend cap, sub-allocated to delegates
+	BudgetUSD       float64      // region spend cap: stops a run whose accumulated cost reaches it, and sub-allocated to delegates
 	MaxHandoffDepth int          // max delegation depth in a Mesh region (default 3); bounds recursion
+
+	// CostSource prices each turn's usage so BudgetUSD can be enforced against
+	// a USD figure rather than a token count. When nil the runner uses
+	// [billing.DefaultCostSource]: the gateway-reported cost when the model
+	// returns one, and a pinned rate card otherwise. A host with its own price
+	// authority — a negotiated rate, a model the pinned card does not cover —
+	// injects it here.
+	//
+	// A budget the resolved source cannot price is a configuration error:
+	// [NewRunner] refuses a declared model it cannot price, and the loop stops
+	// a run at the first turn it cannot price. Both fail closed; only the
+	// timing differs.
+	CostSource billing.CostSource
 
 	// Observer, when non-nil, receives every event the run emits (lifecycle,
 	// tool use, delegation, per-turn assistant text), in dispatch order. It is
@@ -256,12 +269,20 @@ type Options struct {
 type Runner struct {
 	opts    Options
 	model   models.Model
+	cost    billing.CostSource
 	bus     *hooks.Bus
 	spawner *harness.Spawner
 }
 
 // NewRunner builds a Runner. It uses Options.Brain when set, otherwise it
 // constructs the model from Options.Model.
+//
+// When a budget is set, it refuses a configured model the resolved
+// [billing.CostSource] cannot price: an unpriceable model leaves BudgetUSD
+// unenforceable, so the run is rejected before anything is spent. Only a model
+// declared in Options can be checked here — one the host resolves later, or
+// supplies through Options.Brain, is caught instead by the loop's turn-boundary
+// check, which stops the run on its first unpriceable turn.
 func NewRunner(opts Options) (*Runner, error) {
 	m := opts.Brain
 	if m == nil {
@@ -270,11 +291,34 @@ func NewRunner(opts Options) (*Runner, error) {
 			return nil, err
 		}
 	}
+	cost := opts.CostSource
+	if cost == nil {
+		cost = billing.DefaultCostSource()
+	}
+	if opts.BudgetUSD > 0 && opts.Model.Model != "" {
+		if _, err := cost.CostUSD(opts.Model.Model, models.Usage{}); err != nil {
+			return nil, fmt.Errorf("topos: BudgetUSD is set but model %q cannot be priced: %w", opts.Model.Model, err)
+		}
+	}
 	bus := hooks.New()
 	if opts.Observer != nil {
 		registerObserver(bus, opts.Observer)
 	}
-	return &Runner{opts: opts, model: m, bus: bus, spawner: harness.NewSpawner(bus)}, nil
+	return &Runner{opts: opts, model: m, cost: cost, bus: bus, spawner: harness.NewSpawner(bus)}, nil
+}
+
+// meter builds the spend-cap enforcer for one loop run, or nil when no budget
+// is configured. One meter per run: the enforcer latches on breach, so peers
+// running concurrently in a Mesh region must not share one.
+func (r *Runner) meter(sessionID, agentID string) *billing.Meter {
+	if r.opts.BudgetUSD <= 0 {
+		return nil
+	}
+	return billing.NewMeter(
+		r.opts.Model.Model,
+		r.cost,
+		billing.NewEnforcer(billing.Budget{LimitUSD: r.opts.BudgetUSD}, sessionID, agentID, "", nil),
+	)
 }
 
 // registerObserver bridges the internal hook bus to a host's Observer. It adapts
@@ -560,7 +604,7 @@ func (r *Runner) Turn(ctx context.Context, in TurnInput) (TurnResult, error) {
 		UserPrompt:        in.UserPrompt,
 		InitialTranscript: in.InitialTranscript,
 		MaxTokens:         in.MaxTokens,
-	})
+	}, r.meter(r.session(), in.AgentID))
 	// loop.Run returns a non-nil partial result on interrupt, and a nil result
 	// only on an unrecoverable infrastructure failure.
 	if res == nil {
@@ -712,7 +756,7 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 		AgentID:      rc.agent.Name,
 		SystemPrompt: sysPrompt,
 		UserPrompt:   rc.task,
-	})
+	}, r.meter(rc.loopSession, rc.agent.Name))
 	if err != nil {
 		return "", err
 	}
@@ -745,7 +789,7 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, 
 			AgentID:      step.Name,
 			SystemPrompt: step.SystemPrompt,
 			UserPrompt:   task,
-		})
+		}, r.meter(id, step.Name))
 		if err != nil {
 			setStatus(lin, id, StatusFailed)
 			return RunResult{Lineage: *lin}, err

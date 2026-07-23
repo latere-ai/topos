@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/topos/billing"
 	"latere.ai/x/topos/harness/hooks"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/models"
@@ -92,6 +93,11 @@ type Result struct {
 	TotalUsage models.Usage
 	// ToolCallCount is the total number of tool calls executed.
 	ToolCallCount int
+	// BudgetBreach is non-nil when the run stopped because its accumulated cost
+	// reached the configured spend cap. StopReason is
+	// [models.StopBudgetExceeded] in that case, which is what separates a
+	// budget stop from a steady-state stop or an exhausted turn cap.
+	BudgetBreach *billing.Breach
 }
 
 // ErrInterrupted marks a run cut short by context cancellation. It wraps the
@@ -130,12 +136,22 @@ func buildAssistantMessage(text string, toolCalls []*models.ToolCall) models.Mes
 
 // Run executes the agentic loop with the given config and returns a Result.
 //
+// meter enforces the run's spend cap: it prices each turn's accumulated usage
+// and stops the run when the cap is reached. A nil meter is the unmetered case,
+// which is what a run with no configured budget passes. The meter is a
+// parameter rather than a [Config] field on purpose — a struct field
+// zero-values silently, which would reproduce an unenforced budget in a new
+// place, whereas a signature change makes every call site state what it does
+// about the cap or fail to compile.
+//
 // On success it returns the Result and a nil error. On context cancellation it
 // returns the partial Result (Transcript populated up to the cut) and an error
-// satisfying errors.Is(err, ErrInterrupted); see ErrInterrupted. It returns a
+// satisfying errors.Is(err, ErrInterrupted); see ErrInterrupted. A turn that
+// cannot be priced also returns a partial Result with an error: the cap is
+// unenforceable, so the run stops rather than spend on unmetered. It returns a
 // nil Result only for unrecoverable infrastructure failures (a model stream
 // error); tool errors are captured in ToolResult, not returned here.
-func Run(ctx context.Context, cfg Config) (*Result, error) {
+func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error) {
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -300,10 +316,10 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 				}
 			case models.KindUsage:
 				if ev.Usage != nil {
-					turnUsage.InputTokens += ev.Usage.InputTokens
-					turnUsage.OutputTokens += ev.Usage.OutputTokens
-					turnUsage.CacheReadTokens += ev.Usage.CacheReadTokens
-					turnUsage.CacheWriteTokens += ev.Usage.CacheWriteTokens
+					// Fold through Add so every accounting field the type
+					// carries accumulates, including the gateway-reported cost
+					// a hand-written field list would silently drop.
+					turnUsage.Add(*ev.Usage)
 				}
 			case models.KindDone:
 				stopReason = ev.StopReason
@@ -314,6 +330,21 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		// Accumulate usage and emit it so embedders can render a live cost/usage
 		// HUD (durable: one per turn, present on reattach).
 		result.TotalUsage.Add(turnUsage)
+
+		// Enforce the spend cap at the one point where the run's total usage is
+		// known. This single site covers the entry, peer, and pinned loops.
+		budgetBreached, budgetBreach, budgetErr := meter.OnUsage(ctx, result.TotalUsage)
+		if budgetErr != nil {
+			// The turn cannot be priced, so the cap cannot be enforced. Fail
+			// closed: hand back what ran and stop, rather than keep spending
+			// against a limit that can no longer fire. This is the backstop for
+			// a model resolved too late for construction to check.
+			transcript = append(transcript, buildAssistantMessage(assistantText.String(), toolCalls))
+			result.Transcript = transcript
+			result.StopReason = stopReason
+			return result, fmt.Errorf("loop: enforce budget (iter %d): %w", iter, budgetErr)
+		}
+
 		if turnUsage != (models.Usage{}) {
 			cfg.Bus.Dispatch(hooks.EventUsage, &hooks.UsagePayload{
 				Version:   "1",
@@ -341,6 +372,21 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 				Text:      assistantText.String(),
 				Turn:      iter + 1,
 			})
+		}
+
+		// Stop on a breached spend cap. The check ran above, on the turn's own
+		// usage fold; the stop happens here so the breaching turn's bookkeeping
+		// (usage event, assistant message) is complete and the returned
+		// transcript reflects everything that was actually paid for.
+		if budgetBreached {
+			logger.Info("loop: spend cap reached; stopping run",
+				"iter", iter,
+				"limit_usd", budgetBreach.Limit,
+				"actual_usd", budgetBreach.Actual,
+			)
+			finalStopReason = models.StopBudgetExceeded
+			result.BudgetBreach = &budgetBreach
+			break
 		}
 
 		// Stop if no tool calls requested.

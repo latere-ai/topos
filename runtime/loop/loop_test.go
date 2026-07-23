@@ -112,7 +112,7 @@ func TestLoopRunsBashToolAndTerminates(t *testing.T) {
 		UserPrompt:   "hello",
 	}
 
-	result, err := loop.Run(ctx, cfg)
+	result, err := loop.Run(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestLoopSessionEndFiresExactlyOnce(t *testing.T) {
 		UserPrompt: "hi",
 	}
 
-	if _, err := loop.Run(ctx, cfg); err != nil {
+	if _, err := loop.Run(ctx, cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -203,7 +203,7 @@ func TestLoopHookDenyToolCall(t *testing.T) {
 		UserPrompt: "hi",
 	}
 
-	result, err := loop.Run(ctx, cfg)
+	result, err := loop.Run(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestLoopChatOnlyFallback(t *testing.T) {
 		UserPrompt:   "hello",
 	}
 
-	result, err := loop.Run(ctx, cfg)
+	result, err := loop.Run(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestLoopAllEventsRecorded(t *testing.T) {
 		UserPrompt: "hi",
 	}
 
-	if _, err := loop.Run(ctx, cfg); err != nil {
+	if _, err := loop.Run(ctx, cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -499,7 +499,7 @@ func TestLoopDispatchesToolsToHandSandbox(t *testing.T) {
 		AgentID:       "agent",
 		UserPrompt:    "go",
 	}
-	if _, err := loop.Run(ctx, cfg); err != nil {
+	if _, err := loop.Run(ctx, cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got != hand.ID {
@@ -528,7 +528,7 @@ func TestLoopWithoutHandRunsToolsInRunSandbox(t *testing.T) {
 		SessionID:  "no-hand",
 		UserPrompt: "go",
 	}
-	if _, err := loop.Run(ctx, cfg); err != nil {
+	if _, err := loop.Run(ctx, cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got != sb.ID {
@@ -559,7 +559,7 @@ func TestLoopContextCancelledBeforeIteration(t *testing.T) {
 	cancel() // already cancelled before Run starts
 
 	cfg := baseCfg(&fakeModel{}, tools.Builtins())
-	_, err := loop.Run(ctx, cfg)
+	_, err := loop.Run(ctx, cfg, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -568,7 +568,7 @@ func TestLoopContextCancelledBeforeIteration(t *testing.T) {
 func TestLoopModelStreamErrorIsUnrecoverable(t *testing.T) {
 	sentinel := errors.New("boom: model offline")
 	cfg := baseCfg(&errStreamModel{err: sentinel}, tools.Builtins())
-	_, err := loop.Run(context.Background(), cfg)
+	_, err := loop.Run(context.Background(), cfg, nil)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want it to wrap %v", err, sentinel)
 	}
@@ -577,7 +577,7 @@ func TestLoopModelStreamErrorIsUnrecoverable(t *testing.T) {
 func TestLoopToolsUnsupportedRetryAlsoFails(t *testing.T) {
 	retryErr := errors.New("retry also broke")
 	cfg := baseCfg(&retryFailModel{retryErr: retryErr}, tools.Builtins())
-	_, err := loop.Run(context.Background(), cfg)
+	_, err := loop.Run(context.Background(), cfg, nil)
 	if !errors.Is(err, retryErr) {
 		t.Fatalf("err = %v, want it to wrap the retry error", err)
 	}
@@ -586,7 +586,7 @@ func TestLoopToolsUnsupportedRetryAlsoFails(t *testing.T) {
 func TestLoopStreamRecvError(t *testing.T) {
 	recvErr := errors.New("transport reset")
 	cfg := baseCfg(&recvErrModel{err: recvErr}, tools.Builtins())
-	_, err := loop.Run(context.Background(), cfg)
+	_, err := loop.Run(context.Background(), cfg, nil)
 	if !errors.Is(err, recvErr) {
 		t.Fatalf("err = %v, want it to wrap the recv error", err)
 	}
@@ -595,7 +595,7 @@ func TestLoopStreamRecvError(t *testing.T) {
 func TestLoopContextCancelledDuringDrain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := baseCfg(&cancelModel{cancel: cancel}, tools.Builtins())
-	_, err := loop.Run(ctx, cfg)
+	_, err := loop.Run(ctx, cfg, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -608,7 +608,7 @@ func TestLoopToolNotFoundInRegistry(t *testing.T) {
 		{ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"echo hi"}`)},
 	}}
 	cfg := baseCfg(model, tools.NewRegistry())
-	result, err := loop.Run(context.Background(), cfg)
+	result, err := loop.Run(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -632,7 +632,7 @@ func TestLoopToolInvokeError(t *testing.T) {
 	cfg.Bus.Register("count-fail", []hooks.EventName{hooks.EventPostToolUseFailure},
 		func(_ hooks.EventName, _ any) hooks.Decision { failures++; return hooks.Allow() })
 
-	result, err := loop.Run(context.Background(), cfg)
+	result, err := loop.Run(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -652,7 +652,7 @@ func TestLoopToolReportsErrorResultWithoutGoError(t *testing.T) {
 		{ID: "c1", Name: "soft", Input: json.RawMessage(`{}`)},
 	}}
 	cfg := baseCfg(model, registryWith(soft))
-	result, err := loop.Run(context.Background(), cfg)
+	result, err := loop.Run(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -669,7 +669,7 @@ func TestLoopNullToolInputNormalised(t *testing.T) {
 		{ID: "c1", Name: "noop", Input: nil},
 	}}
 	cfg := baseCfg(model, registryWith(noop))
-	if _, err := loop.Run(context.Background(), cfg); err != nil {
+	if _, err := loop.Run(context.Background(), cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got != "{}" {
@@ -682,7 +682,7 @@ func TestLoopMaxIterationsCap(t *testing.T) {
 	noop := &stubTool{name: "noop", res: models.ToolResult{Content: "again"}}
 	model := &loopingToolModel{call: models.ToolCall{ID: "c", Name: "noop", Input: json.RawMessage(`{}`)}}
 	cfg := baseCfg(model, registryWith(noop))
-	result, err := loop.Run(context.Background(), cfg)
+	result, err := loop.Run(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -712,7 +712,7 @@ func TestLoopInterruptDuringDrainReturnsPartialTranscript(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := baseCfg(&cancelModel{cancel: cancel}, tools.Builtins())
 
-	result, err := loop.Run(ctx, cfg)
+	result, err := loop.Run(ctx, cfg, nil)
 
 	if !errors.Is(err, loop.ErrInterrupted) {
 		t.Fatalf("err = %v, want it to wrap loop.ErrInterrupted", err)
@@ -755,7 +755,7 @@ func TestLoopInterruptBeforeIterationReturnsSeededTranscript(t *testing.T) {
 	cfg.UserPrompt = "" // resume with no new prompt
 	cfg.InitialTranscript = seed
 
-	result, err := loop.Run(ctx, cfg)
+	result, err := loop.Run(ctx, cfg, nil)
 	if !errors.Is(err, loop.ErrInterrupted) {
 		t.Fatalf("err = %v, want loop.ErrInterrupted", err)
 	}
@@ -792,7 +792,7 @@ func TestLoopSeedFromInitialTranscriptContinues(t *testing.T) {
 		InitialTranscript: seed,
 		UserPrompt:        "turn two",
 	}
-	result, err := loop.Run(ctx, cfg)
+	result, err := loop.Run(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -836,7 +836,7 @@ func TestLoopEmitsTokenDeltasEphemerally(t *testing.T) {
 		AgentID:    "agent",
 		UserPrompt: "hi",
 	}
-	if _, err := loop.Run(ctx, cfg); err != nil {
+	if _, err := loop.Run(ctx, cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -873,7 +873,7 @@ func TestLoopEmitsUsageEvent(t *testing.T) {
 		Model: &fakeModel{prompt: "hi"}, Sandbox: p, SandboxID: sb.ID,
 		Tools: tools.Builtins(), Bus: bus, SessionID: "usage-test", UserPrompt: "hi",
 	}
-	if _, err := loop.Run(ctx, cfg); err != nil {
+	if _, err := loop.Run(ctx, cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(totals) == 0 {

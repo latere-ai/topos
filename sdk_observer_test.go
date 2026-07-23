@@ -21,7 +21,7 @@ func runWithObserver(t *testing.T, brain models.Model, obs func(Event)) RunResul
 	t.Helper()
 	r, err := NewRunner(Options{
 		SessionID: "run-1",
-		Model:     ModelOptions{Kind: ModelFake},
+		Model:     ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
 		BudgetUSD: 5,
 		Observer:  obs,
 	})

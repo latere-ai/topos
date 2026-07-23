@@ -92,7 +92,14 @@ func dynamicRegion() Region {
 // (white-box: the runner uses r.model when constructing the delegate tool + loop).
 func newTestRunner(t *testing.T, brain models.Model) *Runner {
 	t.Helper()
-	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}, BudgetUSD: 5})
+	// The declared model id is what the budget is priced against: the scripted
+	// brain swapped in below reports no cost of its own, so the run falls back
+	// to the pinned rate card, which needs a model it covers.
+	r, err := NewRunner(Options{
+		SessionID: "run-1",
+		Model:     ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
+		BudgetUSD: 5,
+	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
@@ -268,7 +275,12 @@ func meshRegion(topo Topology) Region {
 
 func greedyRunner(t *testing.T, maxDepth int) *Runner {
 	t.Helper()
-	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Kind: ModelFake}, BudgetUSD: 5, MaxHandoffDepth: maxDepth})
+	r, err := NewRunner(Options{
+		SessionID:       "run-1",
+		Model:           ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
+		BudgetUSD:       5,
+		MaxHandoffDepth: maxDepth,
+	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
