@@ -1,6 +1,6 @@
 ---
 title: Spend Cap Enforcement
-status: proposed
+status: complete
 track: runtime
 depends_on:
   - specs/001-agentic-loop.md
@@ -183,3 +183,47 @@ defect is precisely a cap that never fires.
   `models` package owns model identity. Deciding this is part of leg 3.
 - Whether a host-supplied `CostSource` should be able to opt out of fail-closed
   behavior for a model it knowingly cannot price.
+
+## Outcome
+
+Leg 3 is implemented. Legs 1 and 2 are separate work in `pkg` and `lux`; until
+they land `CostUSDMicro` is always nil on the wire and the rate card carries
+every run.
+
+**`billing`** owns pricing and enforcement. `cost.go` holds `CostSource`, the
+per-model multi-rate `RateCard`, and `GatewayFirst`, which prefers a reported
+cost and falls back to the card. `budget.go` gains `Meter`, which prices a run's
+accumulated usage and evaluates the result against the existing `Enforcer`. The
+open question of where the rate card lives is settled here: `billing` takes
+`models.Usage`, so `billing` imports `models` and not the reverse.
+
+A reported cost has three states, not two. Nil means the gateway said nothing; a
+negative value is the gateway's cannot-price sentinel; only a non-negative value
+is a cost, and zero is a real one. Both unknown states fall through to the card.
+
+**`models`** carries `Usage.CostUSDMicro` and `StopBudgetExceeded`. `Usage.Add`
+is nil-dominant on cost: a total that folds in one unreported turn is itself
+unknown, so the caller prices the whole total rather than under-counting it. The
+zero `Usage` stays the additive identity, including for cost. `models/fake`
+reports a real zero, which keeps the zero-config path priceable under a cap
+without needing a rate-card entry for a model that has no rate.
+
+**`runtime/loop`** enforces at the usage fold. `Run` takes the meter as a
+parameter; `Result` carries `BudgetBreach`. A turn that cannot be priced ends
+the run with an error and a partial result.
+
+**`topos`** resolves the `CostSource` (`Options.CostSource`, defaulting to
+`billing.DefaultCostSource`), refuses a budget whose declared model cannot be
+priced, and builds one meter per `loop.Run` call — the enforcer latches on
+breach, so concurrent peers must not share one. `DeriveChildBudget` is
+unchanged.
+
+The rate card prices claude-fable-5, claude-opus-4-8, claude-opus-4-7,
+claude-opus-4-6, claude-sonnet-4-6, and claude-haiku-4-5. Models whose published
+price is promotional, access-restricted, or unverified are omitted rather than
+estimated, so a budget against them fails closed at construction. Adding a model
+is an edit to the table.
+
+The config-time check covers models declared in `Options`; the turn-boundary
+check covers everything else, including a host-supplied `Options.Brain`. Both
+fail closed; only the timing differs.

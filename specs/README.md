@@ -7,8 +7,8 @@ region or a graph of regions locally and in-process. The specs here document the
 public capabilities the runtime ships, so a developer can see the whole shape
 before reading code.
 
-The runtime specs (track `runtime`, `001`–`012`) are all `status: complete` and end with an
-Outcome section pointing at the packages that implement them. The Adversarial Review
+The runtime specs (track `runtime`, `001`–`012` and `028`) are all `status: complete` and end
+with an Outcome section pointing at the packages that implement them. The Adversarial Review
 specs (track `adversarial`) follow their own lifecycle (`current` for shipped
 behavior, `proposed`/`exploratory` for the roadmap); see
 [`adversarial-README.md`](adversarial-README.md).
@@ -68,6 +68,8 @@ delegation and topology mechanics, then the supporting engine specs.
   interface with hosted Cella compute.
 - [Sandbox Credential Delivery](011-sandbox-credentials.md): delivering
   vault secrets into a sandbox without plaintext.
+- [Spend Cap Enforcement](028-spend-cap-enforcement.md): pricing a turn's usage
+  and stopping a run that reaches `Options.BudgetUSD`.
 
 ## Dependency view
 
