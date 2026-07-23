@@ -11,7 +11,10 @@ package billing
 
 import (
 	"context"
+	"fmt"
 	"time"
+
+	"latere.ai/x/topos/models"
 )
 
 // Budget is a per-agent / per-session spend envelope. A zero field means "no
@@ -92,4 +95,50 @@ func (e *Enforcer) OnUsage(ctx context.Context, u Usage) (paused bool, br Breach
 		e.notified = true
 	}
 	return true, b, nil
+}
+
+// Meter joins pricing to enforcement: it prices a run's accumulated token usage
+// through a [CostSource] and evaluates the result against an [Enforcer]. It is
+// what the agentic loop consults at each turn boundary, and the only place a
+// token count becomes a USD figure the spend cap can be checked against.
+//
+// One Meter belongs to one run. The Enforcer it wraps latches on breach, so
+// agents running concurrently must not share one.
+type Meter struct {
+	model string
+	cost  CostSource
+	enf   *Enforcer
+}
+
+// NewMeter returns a Meter that prices usage as model through cost and enforces
+// enf's budget against the result. model is the id the run's turns are billed
+// under; cost and enf must both be non-nil.
+func NewMeter(model string, cost CostSource, enf *Enforcer) *Meter {
+	return &Meter{model: model, cost: cost, enf: enf}
+}
+
+// OnUsage prices the accumulated usage and reports whether it breaches the
+// budget. A nil Meter is the unmetered case and never breaches, which is what a
+// run with no configured spend cap passes.
+//
+// It prices the running total rather than the turn, so a gateway-reported cost
+// and a rate-card estimate compose the same way: pricing is linear in tokens,
+// and [models.Usage.Add] already folds reported costs into the total (or marks
+// it unknown when any turn went unreported).
+//
+// A pricing failure is returned, not swallowed. A model the source cannot price
+// leaves the cap unenforceable, and the caller stops the run rather than
+// continue spending against a limit that can no longer fire.
+func (m *Meter) OnUsage(ctx context.Context, total models.Usage) (paused bool, br Breach, err error) {
+	if m == nil {
+		return false, Breach{}, nil
+	}
+	usd, err := m.cost.CostUSD(m.model, total)
+	if err != nil {
+		return false, Breach{}, fmt.Errorf("billing: price usage for model %q: %w", m.model, err)
+	}
+	// Only the USD leg is metered here. The token and wall-time legs the Budget
+	// declares are wired separately; leaving them zero keeps Check from firing
+	// on an axis this Meter does not measure.
+	return m.enf.OnUsage(ctx, Usage{USD: usd})
 }

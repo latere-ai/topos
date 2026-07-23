@@ -30,3 +30,56 @@ func TestUsageAddZeroIsIdentity(t *testing.T) {
 		t.Fatalf("adding zero changed the value: %+v", u)
 	}
 }
+
+// TestUsageAddCostNilVersusZero asserts a nil CostUSDMicro and a reported zero
+// take different paths through Add: zero is a real cost that sums, nil is
+// unknown and poisons the total so the caller prices it from a rate card
+// instead of under-counting it.
+func TestUsageAddCostNilVersusZero(t *testing.T) {
+	zero, five := int64(0), int64(5)
+
+	reported := models.Usage{InputTokens: 1, CostUSDMicro: &five}
+	reported.Add(models.Usage{InputTokens: 1, CostUSDMicro: &zero})
+	if reported.CostUSDMicro == nil {
+		t.Fatal("reported + reported-zero = nil cost, want a summed cost")
+	}
+	if got := *reported.CostUSDMicro; got != 5 {
+		t.Fatalf("reported + reported-zero cost = %d, want 5", got)
+	}
+
+	unreported := models.Usage{InputTokens: 1, CostUSDMicro: &five}
+	unreported.Add(models.Usage{InputTokens: 1})
+	if unreported.CostUSDMicro != nil {
+		t.Fatalf("reported + unreported cost = %d, want nil (unknown)", *unreported.CostUSDMicro)
+	}
+
+	// The reverse order is equally unknown: a nil accumulator that is not the
+	// zero Usage cannot absorb a reported cost.
+	partial := models.Usage{InputTokens: 1}
+	partial.Add(models.Usage{InputTokens: 1, CostUSDMicro: &five})
+	if partial.CostUSDMicro != nil {
+		t.Fatalf("unreported + reported cost = %d, want nil (unknown)", *partial.CostUSDMicro)
+	}
+}
+
+// TestUsageAddCostFromZeroValue asserts the zero Usage is the additive identity
+// for cost too: the accumulator's starting state must not be read as a turn
+// whose cost went unreported, or a run's first reported cost would be lost.
+func TestUsageAddCostFromZeroValue(t *testing.T) {
+	seven := int64(7)
+	var total models.Usage
+	total.Add(models.Usage{InputTokens: 1, CostUSDMicro: &seven})
+	if total.CostUSDMicro == nil {
+		t.Fatal("zero-value accumulator dropped a reported cost")
+	}
+	if got := *total.CostUSDMicro; got != 7 {
+		t.Fatalf("cost = %d, want 7", got)
+	}
+
+	// The accumulator owns its own pointee, so mutating the source afterwards
+	// must not change the total.
+	seven = 99
+	if got := *total.CostUSDMicro; got != 7 {
+		t.Fatalf("cost aliased the source: %d, want 7", got)
+	}
+}

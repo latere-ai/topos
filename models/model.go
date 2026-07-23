@@ -227,16 +227,55 @@ type Usage struct {
 	// CacheWriteTokens is the number of tokens written to the prompt cache
 	// (Anthropic: cache_creation_input_tokens).
 	CacheWriteTokens int
+
+	// CostUSDMicro is the gateway-reported cost of the turn in millionths of a
+	// USD, or nil when the gateway reported none. Nil means unknown, never
+	// zero: a local or fully cached call can legitimately cost zero, so a value
+	// type could not tell "free" from "unreported", and spend-cap enforcement
+	// depends on that distinction — an unreported cost falls back to a priced
+	// estimate, a reported zero does not.
+	//
+	// The field carries the gateway's value verbatim, including its negative
+	// cannot-price sentinel (Lux records -1 for a model its own rate card does
+	// not cover). A negative value is a third state, distinct from both nil and
+	// a real cost; cost consumers treat it as unknown rather than as a
+	// one-millionth-of-a-cent turn.
+	CostUSDMicro *int64
 }
 
 // Add accumulates another Usage into u, field by field. It is the canonical way
 // to fold per-turn usage into a running total (the agentic loop totals each
 // turn this way, and cost/budget consumers fold session usage the same way).
+//
+// CostUSDMicro is nil-dominant: the total carries a cost only when every
+// contributing usage reported one. A nil cost means unknown, so a total that
+// folds in even one unreported turn is itself unknown and the caller prices the
+// whole total from its own rate card rather than under-counting it. The zero
+// Usage is the additive identity and contributes nothing — it is an
+// accumulator's starting state, not a turn whose cost went unreported.
 func (u *Usage) Add(o Usage) {
+	if o == (Usage{}) {
+		return
+	}
+	if *u == (Usage{}) {
+		*u = o
+		if o.CostUSDMicro != nil {
+			// Copy the pointee so the accumulator does not alias the caller's.
+			c := *o.CostUSDMicro
+			u.CostUSDMicro = &c
+		}
+		return
+	}
 	u.InputTokens += o.InputTokens
 	u.OutputTokens += o.OutputTokens
 	u.CacheReadTokens += o.CacheReadTokens
 	u.CacheWriteTokens += o.CacheWriteTokens
+	if u.CostUSDMicro == nil || o.CostUSDMicro == nil {
+		u.CostUSDMicro = nil
+		return
+	}
+	c := *u.CostUSDMicro + *o.CostUSDMicro
+	u.CostUSDMicro = &c
 }
 
 // StopReason is the normalized terminal signal from the model.
@@ -254,6 +293,12 @@ const (
 
 	// StopSequence indicates the model hit a stop sequence.
 	StopSequence StopReason = "stop_sequence"
+
+	// StopBudgetExceeded indicates the runtime stopped the run because its
+	// accumulated cost reached the configured spend cap. It is terminal and
+	// SDK-originated: no provider emits it, so it is distinguishable from a
+	// steady-state stop (end_turn) and from a run that merely ran out of turns.
+	StopBudgetExceeded StopReason = "budget_exceeded"
 )
 
 // ProviderEvent carries a raw provider-native event that has no normalized

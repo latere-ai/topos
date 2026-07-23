@@ -13,6 +13,11 @@
 // This produces a minimal but complete autonomous run: the agentic loop
 // dispatches the bash tool call, the sandbox echoes the prompt, and the model
 // terminates. Users can observe the round-trip without any API keys.
+//
+// Every turn reports a cost of zero. The fake reaches no provider and is billed
+// by no one, so zero is its real price, not an unknown one — reporting it keeps
+// the zero-config path priceable under a spend cap without needing a rate-card
+// entry for a model that has no rate.
 package fake
 
 import (
@@ -23,6 +28,10 @@ import (
 
 	"latere.ai/x/topos/models"
 )
+
+// freeCost is the cost every fake turn reports: a real zero, distinct from an
+// unreported cost, so a metered run prices the fake instead of failing closed.
+var freeCost int64
 
 // Model is the deterministic fake model.
 type Model struct{}
@@ -54,7 +63,7 @@ func (m *Model) Stream(_ context.Context, req models.Request) (models.Stream, er
 	if hasPriorTool {
 		return &cannedStream{events: []models.Event{
 			{Kind: models.KindTextDelta, TextDelta: "Task completed: echoed your prompt in the sandbox."},
-			{Kind: models.KindUsage, Usage: &models.Usage{InputTokens: 20, OutputTokens: 10}},
+			{Kind: models.KindUsage, Usage: &models.Usage{InputTokens: 20, OutputTokens: 10, CostUSDMicro: &freeCost}},
 			{Kind: models.KindDone, StopReason: models.StopEndTurn},
 		}}, nil
 	}
@@ -67,7 +76,7 @@ func (m *Model) Stream(_ context.Context, req models.Request) (models.Stream, er
 			Name:  "bash",
 			Input: input,
 		}},
-		{Kind: models.KindUsage, Usage: &models.Usage{InputTokens: 15, OutputTokens: 8}},
+		{Kind: models.KindUsage, Usage: &models.Usage{InputTokens: 15, OutputTokens: 8, CostUSDMicro: &freeCost}},
 		{Kind: models.KindDone, StopReason: models.StopToolUse},
 	}}, nil
 }
