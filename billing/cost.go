@@ -116,12 +116,12 @@ type GatewayFirst struct {
 // Fallback.
 //
 // A reported cost has three states, not two. Nil means the gateway said
-// nothing. A negative value is the gateway's cannot-price sentinel (Lux records
-// -1 for a model its own card does not cover), which is a claim of ignorance,
-// not a cost of one millionth of a cent — reading it as a number would
-// under-count by the full price of the turn and silently defeat the cap. Both
-// fall through to Fallback. Only a non-negative value is a cost, and zero is a
-// real one: a local or fully cached call bills nothing and says so.
+// nothing. A negative value is not a cost at all — a gateway that cannot price
+// a call is expected to omit the field rather than send one, so a negative
+// arrival means the reporter is not conforming, and reading it as a number
+// would under-count by the full price of the turn and silently defeat the cap.
+// Both fall through to Fallback. Only a non-negative value is a cost, and zero
+// is a real one: a local or fully cached call bills nothing and says so.
 func (g GatewayFirst) CostUSD(model string, u models.Usage) (float64, error) {
 	if u.CostUSDMicro != nil && *u.CostUSDMicro >= 0 {
 		return float64(*u.CostUSDMicro) / 1e6, nil

@@ -227,3 +227,18 @@ is an edit to the table.
 The config-time check covers models declared in `Options`; the turn-boundary
 check covers everything else, including a host-supplied `Options.Brain`. Both
 fail closed; only the timing differs.
+
+### Scope of enforcement
+
+The unit of enforcement is one agent, not one region. Every `loop.Run` — the
+entry agent, each pinned step, each delegated peer — is metered independently
+against the full `BudgetUSD`, so a region of *n* agents can spend up to *n*
+times the cap. Region-wide accumulation across a delegation tree is not
+implemented here: `DeriveChildBudget` still sub-allocates on the spawn path, but
+its output governs what a parent may grant a child, not what the child's meter
+enforces.
+
+A budget stop surfaces on `Runner.Turn`, as `StopReason:
+models.StopBudgetExceeded`. `Runner.Run` and `Runner.RunGraph` return the
+agent's text and mark the lineage node done, so a capped run reads as a short
+answer rather than an explicit stop. Both are follow-on work.

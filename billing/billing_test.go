@@ -206,9 +206,9 @@ func TestGatewayFirstPrefersReportedCost(t *testing.T) {
 }
 
 // TestGatewayFirstTreatsUnknownCostAsUnreported asserts both unknown states —
-// nil, and the gateway's negative cannot-price sentinel — fall through to the
-// rate card. Reading -1 as a cost would under-count by the whole turn and
-// silently defeat the cap.
+// nil, and a negative figure from a non-conforming reporter — fall through to
+// the rate card. Reading a negative as a cost would under-count by the whole
+// turn and silently defeat the cap.
 func TestGatewayFirstTreatsUnknownCostAsUnreported(t *testing.T) {
 	src := billing.DefaultCostSource()
 	usage := models.Usage{InputTokens: 1_000_000}
@@ -221,14 +221,15 @@ func TestGatewayFirstTreatsUnknownCostAsUnreported(t *testing.T) {
 		t.Fatalf("nil cost priced at %g, want the carded 5", carded)
 	}
 
-	sentinel := int64(-1)
-	usage.CostUSDMicro = &sentinel
-	got, err := src.CostUSD("claude-opus-4-8", usage)
-	if err != nil {
-		t.Fatalf("sentinel cost: %v", err)
-	}
-	if !nearly(got, 5) {
-		t.Fatalf("sentinel cost priced at %g, want the carded 5", got)
+	for _, negative := range []int64{-1, -1_000_000} {
+		usage.CostUSDMicro = &negative
+		got, err := src.CostUSD("claude-opus-4-8", usage)
+		if err != nil {
+			t.Fatalf("negative cost %d: %v", negative, err)
+		}
+		if !nearly(got, 5) {
+			t.Fatalf("negative cost %d priced at %g, want the carded 5", negative, got)
+		}
 	}
 
 	// With no card behind it, an unknown cost is an error, not a free turn.

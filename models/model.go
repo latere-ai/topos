@@ -235,11 +235,12 @@ type Usage struct {
 	// depends on that distinction — an unreported cost falls back to a priced
 	// estimate, a reported zero does not.
 	//
-	// The field carries the gateway's value verbatim, including its negative
-	// cannot-price sentinel (Lux records -1 for a model its own rate card does
-	// not cover). A negative value is a third state, distinct from both nil and
-	// a real cost; cost consumers treat it as unknown rather than as a
-	// one-millionth-of-a-cent turn.
+	// The field carries the gateway's value verbatim. A conforming gateway
+	// reports a cost only when it is authoritative and omits the field
+	// otherwise, so a negative value should never arrive; cost consumers still
+	// treat one as unknown rather than as a turn costing a millionth of a cent,
+	// because a negative cost is nonsense and reading it as a number would
+	// under-count by the full price of the turn.
 	CostUSDMicro *int64
 }
 
