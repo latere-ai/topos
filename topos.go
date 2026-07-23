@@ -134,6 +134,13 @@ const (
 	StatusRunning NodeStatus = "running"
 	StatusDone    NodeStatus = "done"
 	StatusFailed  NodeStatus = "failed"
+	// StatusStopped is a terminal state for an agent the runtime halted before
+	// it finished its work. It is neither done (the agent did not complete) nor
+	// failed (nothing went wrong; the runtime enforced a limit). Today the spend
+	// cap is what produces it: an agent stopped by [Options.BudgetUSD] carries
+	// this status, so a lineage consumer cannot read a capped run as a completed
+	// one.
+	StatusStopped NodeStatus = "stopped"
 )
 
 // LineageNode is one agent in the run graph.
@@ -213,10 +220,28 @@ const (
 
 // Options configure a Runner.
 type Options struct {
-	SessionID       string       // stable run id; deterministic child ids derive from it
-	Model           ModelOptions // the brain connection (Lux / direct / fake)
-	BudgetUSD       float64      // region spend cap: stops a run whose accumulated cost reaches it, and sub-allocated to delegates
-	MaxHandoffDepth int          // max delegation depth in a Mesh region (default 3); bounds recursion
+	SessionID string       // stable run id; deterministic child ids derive from it
+	Model     ModelOptions // the brain connection (Lux / direct / fake)
+
+	// BudgetUSD is the region spend cap. One region — its entry agent, every
+	// pinned step, and every delegated peer — shares it, so the cap bounds what
+	// the region spends in total, not what each agent spends. The run stops on
+	// the turn that reaches it, and [Runner.Run] and [Runner.RunGraph] report
+	// the stop as an error matching [billing.ErrBudgetExceeded] while still
+	// returning the partial output. Which agent trips the cap is not part of the
+	// contract: whichever one folds the crossing turn first does, and the
+	// guarantee is on the region's total rather than on any one agent.
+	//
+	// A graph is a composition of regions, and each region is metered against
+	// the full budget independently: a two-region graph under a $10 cap may
+	// spend $20. The cap is per region by definition, not per graph.
+	//
+	// Zero means no cap. The value is also sub-allocated to delegates on the
+	// spawn path, which is a separate axis: sub-allocation bounds what a parent
+	// may grant a child, the meter bounds what the region may spend.
+	BudgetUSD float64
+
+	MaxHandoffDepth int // max delegation depth in a Mesh region (default 3); bounds recursion
 
 	// CostSource prices each turn's usage so BudgetUSD can be enforced against
 	// a USD figure rather than a token count. When nil the runner uses
@@ -307,9 +332,11 @@ func NewRunner(opts Options) (*Runner, error) {
 	return &Runner{opts: opts, model: m, cost: cost, bus: bus, spawner: harness.NewSpawner(bus)}, nil
 }
 
-// meter builds the spend-cap enforcer for one loop run, or nil when no budget
-// is configured. One meter per run: the enforcer latches on breach, so peers
-// running concurrently in a Mesh region must not share one.
+// meter builds the spend-cap enforcer for one region, or nil when no budget is
+// configured. One meter per region, shared by the entry agent, every pinned
+// step, and every delegated peer, so BudgetUSD bounds what the region spends in
+// total rather than being granted afresh to each agent. [billing.Meter] is safe
+// for the concurrent access that sharing implies.
 func (r *Runner) meter(sessionID, agentID string) *billing.Meter {
 	if r.opts.BudgetUSD <= 0 {
 		return nil
@@ -358,6 +385,12 @@ func registerObserver(bus *hooks.Bus, observer func(Event)) {
 // Run executes a region in-process (a sandbox is created for the run via the
 // configured provider, or sandbox/local when none is set) and returns its
 // lineage graph. task is the user request handed to the entry agent.
+//
+// When [Options.BudgetUSD] is set, the whole region is metered against it. A
+// region stopped by the cap returns its partial result — the lineage of what
+// ran and the last agent's output — together with an error matching
+// [billing.ErrBudgetExceeded], and the stopped agent's lineage node carries
+// [StatusStopped] rather than [StatusDone].
 func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult, error) {
 	return r.runRegion(ctx, r.provider(), r.session(), region, task)
 }
@@ -367,6 +400,11 @@ func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult
 // the region's node and child ids (r.session() for a single-region Run; a
 // per-region namespace for a graph). It is the shared unit both Run and RunGraph
 // execute so region isolation and lifecycle stay identical across the two paths.
+//
+// It is also where the spend cap is scoped. One meter is built here and handed
+// to every agent the region runs, which makes BudgetUSD a region cap; a graph
+// calls runRegion once per region, so each region is metered against the full
+// budget independently.
 func (r *Runner) runRegion(ctx context.Context, p sandbox.Provider, regionSession string, region Region, task string) (RunResult, error) {
 	sb, err := p.Create(ctx, sandbox.CreateOptions{})
 	if err != nil {
@@ -377,11 +415,12 @@ func (r *Runner) runRegion(ctx context.Context, p sandbox.Provider, regionSessio
 		return RunResult{}, fmt.Errorf("topos: sandbox not ready: %w", err)
 	}
 
+	m := r.meter(regionSession, region.Entry.Name)
 	switch region.Autonomy {
 	case Dynamic:
-		return r.runDynamic(ctx, p, sb.ID, regionSession, region, task)
+		return r.runDynamic(ctx, p, sb.ID, regionSession, region, task, m)
 	case Pinned:
-		return r.runPinned(ctx, p, sb.ID, regionSession, region, task)
+		return r.runPinned(ctx, p, sb.ID, regionSession, region, task, m)
 	default:
 		return RunResult{}, fmt.Errorf("topos: unknown autonomy %q", region.Autonomy)
 	}
@@ -398,6 +437,11 @@ func (r *Runner) runRegion(ctx context.Context, p sandbox.Provider, regionSessio
 // topological order. A cycle, an unknown edge endpoint, a duplicate/empty region
 // id, or a fan-in (more than one incoming edge) is a configuration error returned
 // before any region runs.
+//
+// [Options.BudgetUSD] is enforced per region, not per graph: every region is
+// metered against the full cap on its own. A region stopped by the cap ends the
+// graph, and RunGraph returns the lineage merged so far plus that region's
+// partial output with an error matching [billing.ErrBudgetExceeded].
 func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult, error) {
 	order, err := planGraph(g)
 	if err != nil {
@@ -433,7 +477,10 @@ func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult,
 			}
 		}
 		if err != nil {
-			return RunResult{Lineage: merged}, fmt.Errorf("topos: region %q: %w", gr.ID, err)
+			// The failing region's partial output travels with the error, which
+			// keeps errors.Is matchable through the region context — a graph
+			// stopped by the spend cap still reports [billing.ErrBudgetExceeded].
+			return RunResult{Lineage: merged, Final: res.Final}, fmt.Errorf("topos: region %q: %w", gr.ID, err)
 		}
 		finals[gr.ID] = res.Final
 		last = res.Final
@@ -583,6 +630,13 @@ type TurnResult struct {
 // failure is returned as a non-nil error (with whatever partial transcript was
 // captured).
 //
+// A turn stopped by [Options.BudgetUSD] returns its partial transcript with
+// StopReason [models.StopBudgetExceeded] and an error matching
+// [billing.ErrBudgetExceeded]. Unlike an interrupt it is reported as an error:
+// the caller did not ask for the stop, so a nil error would let a truncated
+// answer read as a complete one. Each Turn is metered on its own, so a session's
+// budget applies per turn rather than across the conversation.
+//
 // Observability flows through Options.Observer exactly as for Run: the host sees
 // token deltas (EventTextDelta), assistant messages, tool use, and lifecycle
 // events. Because the runner's bus is shared across a session's turns, a single
@@ -693,6 +747,11 @@ type dynRun struct {
 	nodeID      string // this agent's lineage node id
 	loopSession string // loop.Config.SessionID for this agent
 	path        string // delegation label path ("" for the entry), keeps child ids unique
+	// meter is the region's spend cap, shared with every other agent in the
+	// region (nil when no budget is configured). It is threaded down the
+	// delegation path rather than rebuilt per agent, which is what makes the cap
+	// bound the region's total spend.
+	meter *billing.Meter
 }
 
 // runDynamic runs the entry agent, then recurses through delegations.
@@ -701,7 +760,7 @@ type dynRun struct {
 // namespaces each region (<session>/<regionID>) so agents sharing a name across
 // regions get distinct ids. It seeds both the lineage node id (loopSession) and
 // the Spawner child id contract (<regionSession>/sub/<label>).
-func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string) (RunResult, error) {
+func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string, m *billing.Meter) (RunResult, error) {
 	sess := regionSession
 	entryID := sess + "/" + region.Entry.Name
 	lin := &Lineage{Nodes: []LineageNode{{
@@ -722,13 +781,27 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID,
 		// SessionID a reliable join key to its Lineage node. Child id derivation
 		// uses parent.SessionID (sess), so it is unaffected.
 		task: task, lin: lin, nodeID: entryID, loopSession: entryID, path: "",
+		meter: m,
 	})
 	if err != nil {
-		setStatus(lin, entryID, StatusFailed)
-		return RunResult{Lineage: *lin}, err
+		setStatus(lin, entryID, terminalStatus(err))
+		// The partial output travels with the error: a run stopped by the spend
+		// cap still produced whatever it was billed for.
+		return RunResult{Lineage: *lin, Final: final}, err
 	}
 	setStatus(lin, entryID, StatusDone)
 	return RunResult{Lineage: *lin, Final: final}, nil
+}
+
+// terminalStatus is the lineage state an agent ends in when its run returned an
+// error. A spend-cap stop is not a failure — nothing went wrong, the runtime
+// enforced a limit — and it is emphatically not done, so it gets its own
+// truthful state and everything else stays a failure.
+func terminalStatus(err error) NodeStatus {
+	if errors.Is(err, billing.ErrBudgetExceeded) {
+		return StatusStopped
+	}
+	return StatusFailed
 }
 
 // runAgent runs one dynamic agent through the loop. It offers the `delegate` tool
@@ -743,6 +816,7 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 		reg.Register(&delegateTool{
 			runner: r, dir: rc.dir, parent: rc.parent, topology: rc.topology,
 			depth: rc.depth, entryID: rc.nodeID, lineage: rc.lin, path: rc.path,
+			meter: rc.meter,
 		})
 		sysPrompt = composeSystem(sysPrompt, renderDirectory(toCards(rc.dir)))
 	}
@@ -756,16 +830,19 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 		AgentID:      rc.agent.Name,
 		SystemPrompt: sysPrompt,
 		UserPrompt:   rc.task,
-	}, r.meter(rc.loopSession, rc.agent.Name))
-	if err != nil {
+	}, rc.meter)
+	// loop.Run returns a partial result alongside a budget stop or an interrupt,
+	// and a nil result only on an unrecoverable failure. Hand the text back with
+	// the error so no caller has to choose between the two.
+	if res == nil {
 		return "", err
 	}
-	return res.FinalText, nil
+	return res.FinalText, err
 }
 
 // runPinned runs a deterministic chain: entry then each peer in order, each as its
 // own loop. This is the shape a static flow compiles to.
-func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string) (RunResult, error) {
+func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string, m *billing.Meter) (RunResult, error) {
 	sess := regionSession
 	chain := append([]AgentSpec{region.Entry}, region.Peers...)
 	lin := &Lineage{}
@@ -789,13 +866,18 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, 
 			AgentID:      step.Name,
 			SystemPrompt: step.SystemPrompt,
 			UserPrompt:   task,
-		}, r.meter(id, step.Name))
+		}, m)
 		if err != nil {
-			setStatus(lin, id, StatusFailed)
-			return RunResult{Lineage: *lin}, err
+			if res != nil {
+				// A step stopped by the shared cap still produced text; the chain
+				// ends here, but what was billed for is returned.
+				final = res.FinalText
+			}
+			setStatus(lin, id, terminalStatus(err))
+			return RunResult{Lineage: *lin, Final: final}, err
 		}
 		final = res.FinalText
-		setStatus(lin, id, "done")
+		setStatus(lin, id, StatusDone)
 		prevID = id
 	}
 	return RunResult{Lineage: *lin, Final: final}, nil
@@ -813,7 +895,8 @@ type delegateTool struct {
 	depth    int
 	entryID  string
 	lineage  *Lineage
-	path     string // the delegating agent's label path; child labels extend it
+	path     string         // the delegating agent's label path; child labels extend it
+	meter    *billing.Meter // the region's shared spend cap; the peer folds into it too
 }
 
 func (d *delegateTool) Name() string { return "delegate" }
@@ -885,10 +968,22 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 		sb: sb, sandboxID: box.ID, agent: peer, parent: child.AsParent(),
 		dir: d.dir, topology: d.topology, depth: d.depth + 1,
 		task: args.Task, lin: d.lineage, nodeID: child.ID, loopSession: child.ID, path: childLabel,
+		meter: d.meter,
 	})
 	if err != nil {
-		setStatus(d.lineage, child.ID, StatusFailed)
+		setStatus(d.lineage, child.ID, terminalStatus(err))
 		d.runner.spawner.Stop(ctx, child)
+		if errors.Is(err, billing.ErrBudgetExceeded) {
+			// A tool result cannot end the delegating agent's run, so the stop
+			// is not propagated from here: the parent shares the peer's meter
+			// and finds it breached at the top of its next turn, before it
+			// spends again. Recording the peer's partial output keeps the
+			// transcript truthful about what was paid for.
+			return models.ToolResult{
+				IsError: true,
+				Content: "peer stopped on the region spend cap: " + peerFinal,
+			}, nil
+		}
 		return models.ToolResult{IsError: true, Content: "peer run failed: " + err.Error()}, nil
 	}
 	setStatus(d.lineage, child.ID, StatusDone)
