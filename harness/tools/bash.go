@@ -74,6 +74,9 @@ func (b *BashTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox
 			Content: fmt.Sprintf("bash: exec error: %v", err),
 		}, nil
 	}
+	if phaseErr, failed := validateExecPhase("bash", res); failed {
+		return phaseErr, nil
+	}
 
 	content := string(res.Stdout)
 	if res.ExitCode != 0 {

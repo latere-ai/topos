@@ -33,6 +33,15 @@ type Tool interface {
 	Invoke(ctx context.Context, input json.RawMessage, sb sandbox.Provider, sandboxID string) (models.ToolResult, error)
 }
 
+// validateExecPhase enforces ExecResult's contract before callers inspect an
+// exit code, which is meaningful only for normally exited commands.
+func validateExecPhase(tool string, result sandbox.ExecResult) (models.ToolResult, bool) {
+	if result.Phase == "exited" {
+		return models.ToolResult{}, false
+	}
+	return errResult("%s: command did not exit normally (phase %q)", tool, result.Phase), true
+}
+
 // Registry is an ordered, name-indexed collection of Tools.
 // Safe for concurrent use after construction (no mutation post-build).
 type Registry struct {

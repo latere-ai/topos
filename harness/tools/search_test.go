@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/sandbox"
 )
 
 func TestGrepFindsMatches(t *testing.T) {
@@ -48,6 +49,28 @@ func TestGrepEmptyPattern(t *testing.T) {
 	res, _ := (&tools.GrepTool{}).Invoke(context.Background(), json.RawMessage(`{"pattern":"  "}`), p, id)
 	if !res.IsError {
 		t.Fatalf("empty pattern should be an error: %+v", res)
+	}
+}
+
+func TestSearchToolsNonExitedCommandIsError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		tool  tools.Tool
+		input json.RawMessage
+	}{
+		{name: "grep", tool: &tools.GrepTool{}, input: json.RawMessage(`{"pattern":"needle"}`)},
+		{name: "glob", tool: &tools.GlobTool{}, input: json.RawMessage(`{"pattern":"*.go"}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := fixedExecProvider{result: sandbox.ExecResult{Phase: "killed", ExitCode: 0, Stdout: []byte("partial")}}
+			res, err := tc.tool.Invoke(context.Background(), tc.input, p, "sandbox")
+			if err != nil {
+				t.Fatalf("invoke: %v", err)
+			}
+			if !res.IsError || !strings.Contains(res.Content, "killed") {
+				t.Fatalf("result = %+v, want an error naming the killed phase", res)
+			}
+		})
 	}
 }
 

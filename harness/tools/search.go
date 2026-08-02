@@ -141,12 +141,20 @@ func (t *GlobTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox
 // grep/rg), not a failure; exit >=2 is a real error. Output is capped.
 func searchExec(ctx context.Context, sb sandbox.Provider, sandboxID, tool string, primary, fallback []string, emptyMsg string) (models.ToolResult, error) {
 	res, err := sb.Exec(ctx, sandboxID, sandbox.ExecOptions{Argv: primary})
+	if err == nil {
+		if phaseErr, failed := validateExecPhase(tool, res); failed {
+			return phaseErr, nil
+		}
+	}
 	if err != nil || res.ExitCode == 127 {
 		// ripgrep not installed in this sandbox: use the POSIX fallback.
 		res, err = sb.Exec(ctx, sandboxID, sandbox.ExecOptions{Argv: fallback})
 	}
 	if err != nil {
 		return errResult("%s: exec error: %v", tool, err), nil
+	}
+	if phaseErr, failed := validateExecPhase(tool, res); failed {
+		return phaseErr, nil
 	}
 	out := string(res.Stdout)
 	if res.ExitCode >= 2 {

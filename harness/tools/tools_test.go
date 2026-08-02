@@ -15,6 +15,16 @@ import (
 	"latere.ai/x/topos/sandbox/local"
 )
 
+type fixedExecProvider struct {
+	sandbox.Provider
+	result sandbox.ExecResult
+	err    error
+}
+
+func (p fixedExecProvider) Exec(context.Context, string, sandbox.ExecOptions) (sandbox.ExecResult, error) {
+	return p.result, p.err
+}
+
 func TestBashToolSuccessful(t *testing.T) {
 	p := local.New()
 	ctx := context.Background()
@@ -55,6 +65,21 @@ func TestBashToolNonzeroExit(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("expected IsError=true on non-zero exit")
+	}
+}
+
+func TestBashToolNonExitedCommandIsError(t *testing.T) {
+	for _, phase := range []string{"killed", "lost"} {
+		t.Run(phase, func(t *testing.T) {
+			p := fixedExecProvider{result: sandbox.ExecResult{Phase: phase, ExitCode: 0, Stdout: []byte("partial")}}
+			res, err := (&tools.BashTool{}).Invoke(context.Background(), json.RawMessage(`{"command":"go test ./..."}`), p, "sandbox")
+			if err != nil {
+				t.Fatalf("invoke: %v", err)
+			}
+			if !res.IsError || !strings.Contains(res.Content, phase) {
+				t.Fatalf("result = %+v, want an error naming phase %q", res, phase)
+			}
+		})
 	}
 }
 
