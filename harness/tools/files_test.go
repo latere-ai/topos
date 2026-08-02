@@ -203,6 +203,31 @@ func TestFileToolDefsValid(t *testing.T) {
 	}
 }
 
+func TestWriteAndEditFileRejectInvalidInputsBeforeSandboxAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		tool    tools.Tool
+		input   json.RawMessage
+		wantErr string
+	}{
+		{name: "write invalid JSON", tool: &tools.WriteFileTool{}, input: json.RawMessage(`{`), wantErr: "invalid input JSON"},
+		{name: "write empty path", tool: &tools.WriteFileTool{}, input: json.RawMessage(`{"path":" "}`), wantErr: "path is empty"},
+		{name: "edit invalid JSON", tool: &tools.EditFileTool{}, input: json.RawMessage(`{`), wantErr: "invalid input JSON"},
+		{name: "edit empty path", tool: &tools.EditFileTool{}, input: json.RawMessage(`{"path":" ","old_string":"a","new_string":"b"}`), wantErr: "path is empty"},
+		{name: "edit identical strings", tool: &tools.EditFileTool{}, input: json.RawMessage(`{"path":"x","old_string":"same","new_string":"same"}`), wantErr: "identical"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := tc.tool.Invoke(context.Background(), tc.input, nil, "")
+			if err != nil {
+				t.Fatalf("invoke: %v", err)
+			}
+			if !res.IsError || !strings.Contains(res.Content, tc.wantErr) {
+				t.Fatalf("result = %+v, want error containing %q", res, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestReadFileToolDeniesTraversal asserts the tool the model actually calls
 // cannot read a file above the sandbox root via a "../" path.
 func TestReadFileToolDeniesTraversal(t *testing.T) {
