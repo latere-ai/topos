@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/sandbox"
@@ -77,15 +76,7 @@ func (t *ReadFileTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	if err != nil {
 		return errResult("read_file: %v", err), nil
 	}
-	truncatedBytes := false
-	if len(data) > maxReadBytes {
-		end := maxReadBytes
-		for end > 0 && !utf8.RuneStart(data[end]) {
-			end--
-		}
-		data = data[:end]
-		truncatedBytes = true
-	}
+	data, truncatedBytes := truncateUTF8(data, maxReadBytes)
 
 	lines := strings.Split(string(data), "\n")
 	if len(data) > 0 && data[len(data)-1] == '\n' {

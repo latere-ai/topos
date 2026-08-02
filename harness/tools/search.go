@@ -165,8 +165,8 @@ func searchExec(ctx context.Context, sb sandbox.Provider, sandboxID, tool string
 	if strings.TrimSpace(out) == "" {
 		return models.ToolResult{Content: emptyMsg}, nil
 	}
-	if len(out) > maxSearchBytes {
-		out = out[:maxSearchBytes] + "\n... (results truncated)"
+	if truncated, ok := truncateUTF8([]byte(out), maxSearchBytes); ok {
+		out = string(truncated) + "\n... (results truncated)"
 	}
 	return models.ToolResult{Content: out}, nil
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/sandbox"
@@ -80,6 +81,29 @@ func TestSearchToolsNonExitedCommandIsError(t *testing.T) {
 				t.Fatalf("result = %+v, want an error naming the killed phase", res)
 			}
 		})
+	}
+}
+
+func TestSearchOutputTruncatesAtUTF8Boundary(t *testing.T) {
+	const searchLimit = 128 * 1024
+	p := fixedExecProvider{result: sandbox.ExecResult{
+		Phase:    "exited",
+		ExitCode: 0,
+		Stdout:   []byte(strings.Repeat("a", searchLimit-1) + "好" + "tail"),
+	}}
+
+	res, err := (&tools.GrepTool{}).Invoke(context.Background(), json.RawMessage(`{"pattern":"needle"}`), p, "sandbox")
+	if err != nil || res.IsError {
+		t.Fatalf("invoke: err=%v res=%+v", err, res)
+	}
+	if !utf8.ValidString(res.Content) {
+		t.Fatal("grep returned invalid UTF-8 after truncation")
+	}
+	if strings.ContainsRune(res.Content, utf8.RuneError) {
+		t.Fatal("grep returned a replacement rune after truncation")
+	}
+	if !strings.Contains(res.Content, "results truncated") {
+		t.Fatalf("missing truncation notice: %q", res.Content)
 	}
 }
 
