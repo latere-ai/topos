@@ -196,6 +196,9 @@ func (t *EditFileTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	if strings.TrimSpace(in.Path) == "" {
 		return errResult("edit_file: path is empty"), nil
 	}
+	if in.OldString == "" {
+		return errResult("edit_file: old_string is empty"), nil
+	}
 	if in.OldString == in.NewString {
 		return errResult("edit_file: old_string and new_string are identical"), nil
 	}

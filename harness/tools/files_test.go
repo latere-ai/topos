@@ -119,6 +119,29 @@ func TestEditFileNotFoundAndNonUnique(t *testing.T) {
 	}
 }
 
+func TestEditFileRejectsEmptyOldStringWithoutChangingFile(t *testing.T) {
+	p, id := fileToolsFixture(t)
+	ctx := context.Background()
+	if res, err := (&tools.WriteFileTool{}).Invoke(ctx, json.RawMessage(`{"path":"/tmp/e.txt","content":"abc"}`), p, id); err != nil || res.IsError {
+		t.Fatalf("seed file: err=%v res=%+v", err, res)
+	}
+
+	res, err := (&tools.EditFileTool{}).Invoke(ctx, json.RawMessage(`{"path":"/tmp/e.txt","old_string":"","new_string":"X","replace_all":true}`), p, id)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if !res.IsError || !strings.Contains(res.Content, "old_string is empty") {
+		t.Fatalf("empty old_string result = %+v, want an explicit error", res)
+	}
+	got, err := p.ReadFile(ctx, id, "/tmp/e.txt")
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(got) != "abc" {
+		t.Fatalf("file changed after rejected edit: got %q, want %q", got, "abc")
+	}
+}
+
 func TestFileToolDefsValid(t *testing.T) {
 	for _, tl := range []tools.Tool{&tools.ReadFileTool{}, &tools.WriteFileTool{}, &tools.EditFileTool{}} {
 		def := tl.Def()
