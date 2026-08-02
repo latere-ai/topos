@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/sandbox"
@@ -64,6 +65,53 @@ func TestReadFileOffsetLimit(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "more lines") {
 		t.Fatalf("expected a continuation hint:\n%s", res.Content)
+	}
+}
+
+func TestReadFileTruncatesAtUTF8Boundary(t *testing.T) {
+	p, id := fileToolsFixture(t)
+	ctx := context.Background()
+	const readLimit = 256 * 1024
+	content := strings.Repeat("a", readLimit-1) + "好" + "tail"
+	input, err := json.Marshal(map[string]string{"path": "/tmp/big.txt", "content": content})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	if res, err := (&tools.WriteFileTool{}).Invoke(ctx, input, p, id); err != nil || res.IsError {
+		t.Fatalf("write: err=%v res=%+v", err, res)
+	}
+
+	res, err := (&tools.ReadFileTool{}).Invoke(ctx, json.RawMessage(`{"path":"/tmp/big.txt","limit":10}`), p, id)
+	if err != nil || res.IsError {
+		t.Fatalf("read: err=%v res=%+v", err, res)
+	}
+	if !utf8.ValidString(res.Content) {
+		t.Fatal("read_file returned invalid UTF-8 after truncation")
+	}
+	if strings.ContainsRune(res.Content, utf8.RuneError) {
+		t.Fatal("read_file returned a replacement rune after truncation")
+	}
+	if !strings.Contains(res.Content, "file truncated at read limit") {
+		t.Fatalf("missing truncation notice: %q", res.Content)
+	}
+}
+
+func TestReadFileDoesNotNumberSyntheticLineAfterTrailingNewline(t *testing.T) {
+	p, id := fileToolsFixture(t)
+	ctx := context.Background()
+	if res, err := (&tools.WriteFileTool{}).Invoke(ctx, json.RawMessage(`{"path":"/tmp/lines.txt","content":"a\nb\n"}`), p, id); err != nil || res.IsError {
+		t.Fatalf("write: err=%v res=%+v", err, res)
+	}
+
+	res, err := (&tools.ReadFileTool{}).Invoke(ctx, json.RawMessage(`{"path":"/tmp/lines.txt"}`), p, id)
+	if err != nil || res.IsError {
+		t.Fatalf("read: err=%v res=%+v", err, res)
+	}
+	if strings.Contains(res.Content, "     3\t") {
+		t.Fatalf("read_file emitted a synthetic third line: %q", res.Content)
+	}
+	if !strings.Contains(res.Content, "     2\tb\n") {
+		t.Fatalf("read_file omitted the final real line: %q", res.Content)
 	}
 }
 
