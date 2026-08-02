@@ -597,8 +597,8 @@ type TurnResult struct {
 	// Transcript is the full conversation after this turn (the seed plus the new
 	// user, assistant, and tool messages). It is the canonical state to persist
 	// and to feed as the next turn's InitialTranscript. On an interrupted turn
-	// it holds the conversation up to the cut, including the partial assistant
-	// turn in progress.
+	// it holds the conversation up to the cut, including partial assistant text.
+	// Unexecuted tool calls are omitted so the transcript remains valid to resume.
 	Transcript []models.Message
 	// Final is the last assistant text of the turn (may be empty if the turn
 	// ended on a tool call or was interrupted before any text).

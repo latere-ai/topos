@@ -108,8 +108,10 @@ type Result struct {
 // An interrupted run is a normal control action, not a failure: Run still
 // returns a non-nil *Result whose Transcript holds the conversation up to the
 // cut — including the partial assistant turn in progress — so a host can persist
-// it and resume from it later. This is what lets a user interrupt a long turn
-// (Esc, many tool calls deep) without losing the work already done.
+// it and resume from it later. Completed but unexecuted tool calls are omitted:
+// persisting them without results would produce an invalid provider transcript.
+// This is what lets a user interrupt a long turn (Esc, many tool calls deep)
+// without losing the work already done.
 var ErrInterrupted = errors.New("loop: run interrupted")
 
 // interrupted wraps a context error as an ErrInterrupted, preserving both
@@ -120,8 +122,7 @@ func interrupted(cause error) error {
 
 // buildAssistantMessage assembles one assistant-turn message from the text and
 // tool calls accumulated while draining a model stream. It is used both on the
-// normal turn-completion path and when capturing the partial turn on interrupt,
-// so the transcript shape is identical either way.
+// normal turn-completion path and when capturing text from a partial turn.
 func buildAssistantMessage(text string, toolCalls []*models.ToolCall) models.Message {
 	m := models.Message{
 		Role:      models.RoleAssistant,
@@ -280,15 +281,14 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 			stopReason    models.StopReason
 		)
 
-		// captureInterrupted ends the run on a mid-turn cancellation, returning
-		// the partial assistant turn (text streamed and tool calls completed
-		// before the cut) so the transcript reflects the progress made.
+		// captureInterrupted ends the run on a mid-turn cancellation. Streamed
+		// text is durable progress, but tool calls are only durable after their
+		// matching results are appended; omit unexecuted calls so the returned
+		// transcript can be sent back to a provider unchanged on resume.
 		captureInterrupted := func(cause error) (*Result, error) {
-			if assistantText.Len() > 0 || len(toolCalls) > 0 {
-				transcript = append(transcript, buildAssistantMessage(assistantText.String(), toolCalls))
-				if assistantText.Len() > 0 {
-					result.FinalText = assistantText.String()
-				}
+			if assistantText.Len() > 0 {
+				transcript = append(transcript, buildAssistantMessage(assistantText.String(), nil))
+				result.FinalText = assistantText.String()
 			}
 			result.TotalUsage.Add(turnUsage)
 			result.Transcript = transcript

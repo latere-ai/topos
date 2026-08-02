@@ -426,6 +426,34 @@ func (m *cancelModel) Stream(_ context.Context, _ models.Request) (models.Stream
 	return &cancelStream{cancel: m.cancel}, nil
 }
 
+type toolCallThenCancelStream struct {
+	cancel context.CancelFunc
+	pos    int
+}
+
+func (s *toolCallThenCancelStream) Recv() (models.Event, error) {
+	s.pos++
+	switch s.pos {
+	case 1:
+		return models.Event{Kind: models.KindTextDelta, TextDelta: "working"}, nil
+	case 2:
+		return models.Event{Kind: models.KindToolCallDone, ToolCall: &models.ToolCall{
+			ID: "call_dangle", Name: "probe", Input: json.RawMessage(`{}`),
+		}}, nil
+	default:
+		s.cancel()
+		return models.Event{}, context.Canceled
+	}
+}
+
+func (s *toolCallThenCancelStream) Close() error { return nil }
+
+type toolCallThenCancelModel struct{ cancel context.CancelFunc }
+
+func (m *toolCallThenCancelModel) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
+	return &toolCallThenCancelStream{cancel: m.cancel}, nil
+}
+
 // stubTool is a registry tool with a fixed result/error and an optional record
 // of the (normalised) input it was invoked with.
 type stubTool struct {
@@ -737,6 +765,34 @@ func TestLoopInterruptDuringDrainReturnsPartialTranscript(t *testing.T) {
 	}
 	if result.FinalText != "partial" {
 		t.Fatalf("FinalText = %q, want %q", result.FinalText, "partial")
+	}
+}
+
+func TestLoopInterruptDropsUnexecutedToolCalls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg := baseCfg(&toolCallThenCancelModel{cancel: cancel}, registryWith(&stubTool{name: "probe"}))
+
+	result, err := loop.Run(ctx, cfg, nil)
+	if !errors.Is(err, loop.ErrInterrupted) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want interrupted context cancellation", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil; want resumable partial transcript")
+	}
+	if result.ToolCallCount != 0 {
+		t.Fatalf("ToolCallCount = %d, want 0 for an unexecuted call", result.ToolCallCount)
+	}
+	assist, ok := lastByRole(result.Transcript, models.RoleAssistant)
+	if !ok || assist.Content != "working" {
+		t.Fatalf("partial assistant turn = %+v, want preserved text", assist)
+	}
+	if len(assist.ToolCalls) != 0 {
+		t.Fatalf("partial assistant turn contains unexecuted calls: %+v", assist.ToolCalls)
+	}
+	for _, message := range result.Transcript {
+		if message.Role == models.RoleTool && len(message.ToolResults) > 0 {
+			t.Fatalf("transcript contains results for an unexecuted call: %+v", message.ToolResults)
+		}
 	}
 }
 
