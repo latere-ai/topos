@@ -247,6 +247,9 @@ func (e *Engine) Run(ctx context.Context) (*Summary, error) {
 			sum.Termination = runStop
 			break
 		}
+		if outcome.Termination == TermMaxTurn {
+			sum.Termination = TermMaxTurn
+		}
 	}
 
 	// Finalize unresolved.
@@ -276,7 +279,7 @@ func (e *Engine) Run(ctx context.Context) (*Summary, error) {
 }
 
 func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string, det *Detector, cost *CostMeter) (ForkOutcome, TerminationReason, error) {
-	out := ForkOutcome{Index: forkIdx, Termination: TermSteadyState}
+	out := ForkOutcome{Index: forkIdx}
 	cri := e.NewCritic(forkIdx)
 	// R1 starts in auto mode; the critic declares its topic in the
 	// reply, the orchestrator captures it after R1 and locks subsequent
@@ -434,7 +437,9 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 				conceded, rebutted, len(pr.ChangedFiles), fmtUsage(pr.Usage, pr.USD))
 		}
 	}
-	if out.Rounds >= e.MaxRounds && runStop == "" {
+	if runStop != "" {
+		out.Termination = runStop
+	} else if out.Termination == "" {
 		out.Termination = TermMaxTurn
 	}
 	if err := state.WriteForkStats(e.Sess, forkIdx, forkStatsFile{
@@ -442,14 +447,14 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 		ForkIndex:   forkIdx,
 		Topic:       out.Topic,
 		Rounds:      out.Rounds,
-		Termination: ifEmpty(string(runStop), string(out.Termination)),
+		Termination: string(out.Termination),
 		Usage:       out.Usage,
 	}); err != nil {
 		return out, "", err
 	}
 	u := out.Usage.Total
 	e.progf("[adversarial] fork %d/%d %s: terminated %s after R%d (in=%d out=%d cache_create=%d cache_read=%d total=%d cost=$%.4f)",
-		forkIdx, e.ForkCount, forkLabel(out.Topic), ifEmpty(string(runStop), string(out.Termination)),
+		forkIdx, e.ForkCount, forkLabel(out.Topic), out.Termination,
 		out.Rounds, u.Input, u.Output, u.CacheCreate, u.CacheRead, u.Total(), out.Usage.TotalUSD)
 	return out, runStop, nil
 }
