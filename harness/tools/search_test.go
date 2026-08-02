@@ -14,6 +14,15 @@ import (
 	"latere.ai/x/topos/sandbox"
 )
 
+type rgAbsentProvider struct{ sandbox.Provider }
+
+func (p rgAbsentProvider) Exec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecResult, error) {
+	if len(opts.Argv) > 0 && opts.Argv[0] == "rg" {
+		return sandbox.ExecResult{Phase: "exited", ExitCode: 127}, nil
+	}
+	return p.Provider.Exec(ctx, id, opts)
+}
+
 func TestGrepFindsMatches(t *testing.T) {
 	p, id := fileToolsFixture(t)
 	ctx := context.Background()
@@ -101,6 +110,22 @@ func TestGlobNoMatch(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "no files") {
 		t.Fatalf("expected a no-files message, got:\n%s", res.Content)
+	}
+}
+
+func TestGlobFindFallbackTreatsExitOneAsError(t *testing.T) {
+	base, id := fileToolsFixture(t)
+	p := rgAbsentProvider{Provider: base}
+
+	res, err := (&tools.GlobTool{}).Invoke(context.Background(), json.RawMessage(`{"pattern":"*.go","path":"does-not-exist-xyz"}`), p, id)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("find diagnostic was returned as a successful match: %q", res.Content)
+	}
+	if !strings.Contains(res.Content, "does-not-exist-xyz") {
+		t.Fatalf("error does not identify the invalid path: %q", res.Content)
 	}
 }
 

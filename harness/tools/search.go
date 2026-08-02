@@ -80,7 +80,7 @@ func (t *GrepTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox
 	}
 	grep = append(grep, "-e", in.Pattern, path)
 
-	return searchExec(ctx, sb, sandboxID, "grep", rg, grep, "no matches found")
+	return searchExec(ctx, sb, sandboxID, "grep", rg, grep, grepExitIsError, "no matches found")
 }
 
 // GlobTool lists files whose path matches a glob pattern.
@@ -133,22 +133,24 @@ func (t *GlobTool) Invoke(ctx context.Context, input json.RawMessage, sb sandbox
 		name = name[i+1:]
 	}
 	find := []string{"find", path, "-type", "f", "-name", name}
-	return searchExec(ctx, sb, sandboxID, "glob", rg, find, "no files matched")
+	return searchExec(ctx, sb, sandboxID, "glob", rg, find, commandExitIsError, "no files matched")
 }
 
 // searchExec runs primary (ripgrep) and, if that binary is unavailable, falls
-// back to the POSIX command. Exit code 1 means "no matches" (a normal result for
-// grep/rg), not a failure; exit >=2 is a real error. Output is capped.
-func searchExec(ctx context.Context, sb sandbox.Provider, sandboxID, tool string, primary, fallback []string, emptyMsg string) (models.ToolResult, error) {
+// back to the POSIX command. The fallback supplies its own exit-code contract:
+// grep treats 1 as no matches, while find treats every non-zero code as failure.
+func searchExec(ctx context.Context, sb sandbox.Provider, sandboxID, tool string, primary, fallback []string, fallbackExitIsError func(int) bool, emptyMsg string) (models.ToolResult, error) {
 	res, err := sb.Exec(ctx, sandboxID, sandbox.ExecOptions{Argv: primary})
 	if err == nil {
 		if phaseErr, failed := validateExecPhase(tool, res); failed {
 			return phaseErr, nil
 		}
 	}
+	exitIsError := grepExitIsError
 	if err != nil || res.ExitCode == 127 {
 		// ripgrep not installed in this sandbox: use the POSIX fallback.
 		res, err = sb.Exec(ctx, sandboxID, sandbox.ExecOptions{Argv: fallback})
+		exitIsError = fallbackExitIsError
 	}
 	if err != nil {
 		return errResult("%s: exec error: %v", tool, err), nil
@@ -157,7 +159,7 @@ func searchExec(ctx context.Context, sb sandbox.Provider, sandboxID, tool string
 		return phaseErr, nil
 	}
 	out := string(res.Stdout)
-	if res.ExitCode >= 2 {
+	if exitIsError(res.ExitCode) {
 		return errResult("%s: %s", tool, strings.TrimSpace(out+" "+string(res.Stderr))), nil
 	}
 	if strings.TrimSpace(out) == "" {
@@ -168,3 +170,6 @@ func searchExec(ctx context.Context, sb sandbox.Provider, sandboxID, tool string
 	}
 	return models.ToolResult{Content: out}, nil
 }
+
+func grepExitIsError(code int) bool    { return code >= 2 }
+func commandExitIsError(code int) bool { return code != 0 }
