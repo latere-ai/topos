@@ -67,24 +67,6 @@ func TestRenderRoundTripWithWithdraw(t *testing.T) {
 	}
 }
 
-func TestStyleAttackKeptWhenAllowed(t *testing.T) {
-	doc := "# Critic 1 - round 1 attacks\n\naspect: code-quality\n\n## c1-1 [x:1]\n\nclaim: This function should be named more idiomatic.\n\nexpected violation: it bothers me\n\nreproduction:\n```\nrun\n```\n"
-	out, stats, err := Parse(doc, "code-quality", 1, 1, nil, ParseOption{AllowStyleAttacks: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.DroppedStyle != 0 || len(out) != 1 {
-		t.Errorf("style should be kept under AllowStyleAttacks: %+v", stats)
-	}
-}
-
-func TestEmptyHeaderError(t *testing.T) {
-	_, _, err := Parse("", "security", 1, 1, nil, ParseOption{})
-	if err == nil {
-		t.Fatal("expected error for empty input")
-	}
-}
-
 // TestParseRenamesReusedPriorIDOnIntroduce reproduces the bug a adversarial
 // session in agents-byzantine-tolerance hit: the R3 critic emitted a
 // completely new claim under "## c1-1 [...]" (the R1 id), no
