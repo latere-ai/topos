@@ -23,9 +23,6 @@ const (
 // Attack is one parsed (and normalized) attack from a critic round.
 type Attack struct {
 	AttackID          string
-	CriticIndex       int
-	Aspect            string
-	Round             int
 	RoundIntroduced   int
 	Disposition       Disposition
 	Location          string
@@ -112,18 +109,6 @@ func Parse(raw string, expectedAspect string, criticIndex, round int, priorAttac
 	}
 	lines = lines[headerIdx:]
 
-	// Find aspect line.
-	gotAspect := ""
-	for _, line := range lines {
-		if m := aspectLineRE.FindStringSubmatch(line); m != nil {
-			gotAspect = strings.TrimSpace(m[1])
-			break
-		}
-	}
-	if gotAspect == "" {
-		gotAspect = expectedAspect
-	}
-
 	// Tokenize sections.
 	type section struct {
 		header string
@@ -180,11 +165,10 @@ func Parse(raw string, expectedAspect string, criticIndex, round int, priorAttac
 		originalID := id
 		bodyText := strings.Join(sec.body, "\n")
 
-		// Disposition.
+		// Disposition. sectionHeadRE constrains dispTag to "",
+		// "re-attack" or "withdraw"; an absent tag introduces.
 		var disp Disposition
 		switch dispTag {
-		case "":
-			disp = DispIntroduce
 		case "re-attack":
 			disp = DispReAttack
 		case "withdraw":
@@ -200,8 +184,7 @@ func Parse(raw string, expectedAspect string, criticIndex, round int, priorAttac
 				disp = DispIntroduce
 			} else {
 				out = append(out, Attack{
-					AttackID: id, CriticIndex: criticIndex, Aspect: gotAspect,
-					Round: round, Disposition: DispWithdraw, Location: location,
+					AttackID: id, Disposition: DispWithdraw, Location: location,
 					WithdrawReason: extractField(bodyText, "reason"),
 				})
 				stats.KeptWithdraw++
@@ -250,7 +233,7 @@ func Parse(raw string, expectedAspect string, criticIndex, round int, priorAttac
 			// collapse two unrelated claims into one entry. Without
 			// this, an R3 critic that emits "## c1-1 [...]" for a
 			// brand-new flaw silently overwrites R1's c1-1.
-			if seq == 0 || seenIDs[id] || idMatch == nil || priorSet[id] {
+			if seq == 0 || seenIDs[id] || priorSet[id] {
 				maxSeq++
 				seq = maxSeq
 				id = fmt.Sprintf("c%d-%d", criticIndex, seq)
@@ -267,8 +250,7 @@ func Parse(raw string, expectedAspect string, criticIndex, round int, priorAttac
 		seenIDs[id] = true
 
 		a := Attack{
-			AttackID: id, CriticIndex: criticIndex, Aspect: gotAspect,
-			Round: round, Disposition: disp, Location: location,
+			AttackID: id, Disposition: disp, Location: location,
 			Claim: claim, ExpectedViolation: exp, Reproduction: repro,
 		}
 		if disp == DispIntroduce {

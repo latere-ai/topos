@@ -49,11 +49,11 @@ func TestReAttackUnknownIdFallsBack(t *testing.T) {
 func TestRenderRoundTripWithWithdraw(t *testing.T) {
 	atks := []Attack{
 		{
-			AttackID: "c1-1", Aspect: "security", Round: 1, Disposition: DispIntroduce,
+			AttackID: "c1-1", Disposition: DispIntroduce,
 			Location: "x:1", Claim: "leak", ExpectedViolation: "panic", Reproduction: "go test",
 		},
 		{
-			AttackID: "c1-2", Aspect: "security", Round: 3, Disposition: DispWithdraw,
+			AttackID: "c1-2", Disposition: DispWithdraw,
 			Location: "y:1", WithdrawReason: "false positive",
 		},
 	}
