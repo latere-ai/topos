@@ -45,9 +45,10 @@ type ParseStats struct {
 	DroppedStyle       int
 	DroppedCrossAspect int
 	// DroppedMalformedHeader counts sections whose "## " header did not
-	// match the expected shape and were skipped. Surfacing it keeps the
-	// invariant Total = sum(Kept*) + sum(Dropped*) so an attack lost to a
-	// slightly malformed header is visible in operator diagnostics.
+	// match the expected shape and were skipped. It exists to keep the
+	// invariant Total = sum(Kept*) + sum(Dropped*); the round progress
+	// line reports only the content-level drops, so a header-level loss
+	// shows up as an unaccounted gap rather than a reported count.
 	DroppedMalformedHeader int
 	Renamed                int
 }
