@@ -34,7 +34,6 @@ type Run struct {
 	Bin          string
 	Args         []string
 	Cwd          string
-	Stdin        []byte
 	Env          []string
 	Deadline     time.Duration
 	OnStdoutLine func([]byte)
@@ -73,7 +72,8 @@ func Exec(ctx context.Context, r Run) (Result, error) {
 	cmd := exec.CommandContext(callCtx, bin, r.Args...)
 	cmd.Dir = r.Cwd
 	cmd.Env = r.Env
-	cmd.Stdin = bytes.NewReader(r.Stdin)
+	// Stdin is left nil: os/exec connects /dev/null, so an agent CLI that
+	// probes stdin sees immediate EOF and never a TTY.
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
