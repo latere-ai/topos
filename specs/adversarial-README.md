@@ -53,15 +53,18 @@ explored. Nothing here is a commitment; each item names what would move it forwa
 Finishing the Topos/Lux critic backend and hardening the embedder surface. Concrete
 items carried over from the native critic work (`adversarial/critic`):
 
-- **Token usage from the runtime** (blocked on Topos). The runtime's public
-  `RunResult` exposes no usage, so native critics report zero and fall outside the
-  engine's cost-cap accounting. Needs a runtime-side change to surface
-  `loop.Result.TotalUsage` (or a usage event summable via an observer). This is the
-  one gap that keeps native critics "sound for correctness but not for cost".
-- **Read-only file tools for native critics** (blocked on Topos). The runtime's
-  only builtin is `bash`, so a read-only native critic sees only the prompt-embedded
-  diff and cannot open untouched files, unlike the codex critic's read-only
-  sandbox. Needs runtime-side read-only file tools.
+- **Token usage from the runtime.** The runtime now emits `EventUsage` per turn
+  and `Runner.Turn` returns `TurnResult.Usage`, but `RunResult` still carries only
+  the lineage and the final text, so the native critic reports zero and falls
+  outside the engine's cost-cap accounting. Either sum `EventUsage` through an
+  observer or carry the total on `RunResult`. This is the one gap that keeps
+  native critics "sound for correctness but not for cost".
+- **An enforced read-only posture for native critics.** The runtime ships
+  `read_file`, `grep`, and `glob`, so the file-tool gap is closed. What remains is
+  enforcement: `AgentSpec.Tools` is recorded on the lineage node as `Grants` but
+  does not filter the registry handed to the model, which is always
+  `tools.Builtins()`. Until the registry is filtered by the grant, a native critic
+  holds `bash` and the write tools regardless of what its `Config.Tools` says.
 - **Cella workspace wiring.** How an embedder's worktree reaches a Cella sandbox
   cwd (mount versus copy). Moot for the local sandbox and wallfacer's existing
   worktree; needed when a Cella embedder arrives.

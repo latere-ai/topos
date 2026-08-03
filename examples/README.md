@@ -18,6 +18,7 @@ deterministic, network-free model) and the local temp-directory sandbox.
 go run ./examples/minimal
 go run ./examples/delegation
 go run ./examples/graph
+go run ./examples/authoredgraph
 go run ./examples/sandbox
 ```
 
