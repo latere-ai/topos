@@ -19,9 +19,9 @@ r, _ := topos.NewRunner(topos.Options{
 res, _ := r.Run(ctx, topos.Region{
     Autonomy: topos.Dynamic,
     Topology: topos.Mesh, // or topos.OrchestratorWorker (the default)
-    Entry:    topos.AgentSpec{Name: "lead", Role: "lead", Tools: []string{"read", "write"}},
+    Entry:    topos.AgentSpec{Name: "lead", Role: "lead", Tools: []string{"bash", "read_file", "write_file"}},
     Peers: []topos.AgentSpec{
-        {Name: "reviewer", Role: "review", Description: "reviews diffs", Tools: []string{"read"}},
+        {Name: "reviewer", Role: "review", Description: "reviews diffs", Tools: []string{"read_file"}},
     },
 }, "ship the change")
 
@@ -149,8 +149,7 @@ for _, e := range res.Lineage.Edges {
 }
 ```
 
-Regions execute in topological order, each in its own isolated sandbox, and their
-lineages merge into one graph. Linear chains and fan-out (one region feeding
+Linear chains and fan-out (one region feeding
 several) are supported; fan-in, a region with more than one incoming edge, is
 rejected, along with cycles and unknown edges, before any region runs. A runnable
 version is in [`examples/graph`](examples/graph); [`examples/delegation`](examples/delegation)
@@ -297,12 +296,11 @@ sum, err := adversarial.Review(ctx, adversarial.ReviewOptions{
 })
 ```
 
-`StateDir` is required and brand-neutral: topos writes session artifacts under it
-and invents no default of its own, so any host stays in control of where reviews
-land. Leaving it empty is a caller error. Ready-made backends ship in subpackages:
-a Claude-CLI proposer and critic in `adversarial/claude`, a topos-native critic in
-`adversarial/critic`, and working-tree diff plus transcript helpers in
-`adversarial/input`.
+`StateDir` is required: topos writes session artifacts under it and invents no
+default of its own, so any host stays in control of where reviews land. Ready-made
+proposer and critic backends ship in subpackages; the
+[package documentation](https://pkg.go.dev/latere.ai/x/topos/adversarial) covers
+the full surface.
 
 ## Status
 
