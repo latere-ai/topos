@@ -15,7 +15,7 @@ import (
 )
 
 // cannedR1 is a well-formed round-1 attack block (critic 1, aspect security,
-// one attack) shaped like the contract in spec 13/14, so critic.Parse accepts
+// one attack) shaped like the contract in specs/026-protocol.md, so critic.Parse accepts
 // it exactly as it would a claude or codex critic's output.
 const cannedR1 = "# Critic 1 - round 1 attacks\n\n" +
 	"aspect: security\n\n" +
@@ -150,13 +150,13 @@ func TestRoundWithoutDeadlineRunsToCompletion(t *testing.T) {
 	}
 }
 
-// TestRoundReportsNoUsage documents spec 39 OQ-3: topos's public RunResult
-// exposes no token usage, so the topos critic reports zero. This pins the
-// known limitation so a future topos-side fix flips this test deliberately.
+// TestRoundReportsNoUsage pins a known limitation: topos's public RunResult
+// exposes no token usage, so the topos critic reports zero. A future topos-side
+// fix flips this test deliberately.
 func TestRoundReportsNoUsage(t *testing.T) {
 	res := runOnce(t, nativecritic.Config{Brain: scriptedBrain{text: cannedR1}}, securityInput())
 	if res.Usage.Total() != 0 || res.Tokens != 0 || res.USD != 0 {
-		t.Errorf("expected zero usage (OQ-3), got usage=%+v tokens=%d usd=%v", res.Usage, res.Tokens, res.USD)
+		t.Errorf("expected zero usage, got usage=%+v tokens=%d usd=%v", res.Usage, res.Tokens, res.USD)
 	}
 }
 
@@ -166,7 +166,7 @@ func TestRoundReportsNoUsage(t *testing.T) {
 // grant does appear (control, so the nil assertion is not vacuous). The critic
 // builds its AgentSpec with Tools=Config.Tools (nil default; see critic.go); that
 // one-line wiring is not separately exercised here because CriticResult does not
-// surface lineage (spec 39 OQ-2), so this asserts the property the wiring leans
+// surface lineage, so this asserts the property the wiring leans
 // on, against the same public lineage Grants the critic would produce.
 func TestToposGrantsExactlyAgentSpecTools(t *testing.T) {
 	grants := func(tools []string) []string {
