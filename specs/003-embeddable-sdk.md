@@ -36,7 +36,7 @@ The lifecycle is three calls:
 
 1. `NewRunner(Options)` builds a `Runner`. `Options` carries a stable `SessionID`
    (deterministic child ids derive from it), the model connection (`ModelOptions`),
-   a resource cap that only narrows for delegates (`BudgetUSD`), and the recursion
+   the region-wide spend cap (`BudgetUSD`), and the recursion
    bound for mesh delegation (`MaxHandoffDepth`, default 3). `NewRunner` constructs
    the model backend from `ModelOptions` once, up front.
 2. `Run(ctx, Region, task)` executes a region. It creates a local sandbox for the

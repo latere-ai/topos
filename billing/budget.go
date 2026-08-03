@@ -2,11 +2,12 @@
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
 
-// Package billing implements per-session budget enforcement for the SDK.
+// Package billing implements region-wide budget enforcement for the SDK.
 // Budgets are independent of permissions — permission says *can*, budget says
-// *how much*. The model-spend ceiling is not re-implemented here: it is the
-// per-session Lux virtual key's spend_cap, enforced by Lux and observed by the
-// host's cost accounting.
+// *how much*. A [Meter] prices each turn's usage through a [CostSource] and
+// evaluates the running total against an [Enforcer], so the runtime can stop a
+// region that reaches its cap. When the model connection goes through Lux, the
+// per-session virtual key's spend_cap remains a second, gateway-side ceiling.
 package billing
 
 import (
@@ -135,9 +136,9 @@ func (e *Enforcer) OnUsage(ctx context.Context, u Usage) (paused bool, br Breach
 // atomics would still let two agents each observe an under-cap total and both
 // proceed. Contention is immaterial: the lock is taken once per turn boundary.
 //
-// A Meter is a different axis from [DeriveChildBudget]. Sub-allocation decides
-// what authority a parent may GRANT a spawned child, an attenuation of the
-// permission a child carries; a Meter decides how much may be SPENT in total
+// A Meter is a different axis from the authority attenuation in `harness`.
+// Attenuation decides what a parent may GRANT a spawned child, narrowing the
+// permission the child carries; a Meter decides how much may be SPENT in total
 // inside one region before the runtime stops it. A child can hold a grant it
 // never gets to use because the region's meter tripped first, and a region
 // meter is unaware of how the grant was divided.
