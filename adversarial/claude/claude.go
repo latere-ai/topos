@@ -96,13 +96,6 @@ func fromInternal(r *agent.ProposerResult) *adversarial.ProposerResult {
 // CriticOption configures a critic created by [NewCritic].
 type CriticOption func(*agent.ClaudeCritic)
 
-// WithCriticModel is currently a no-op: the critic model is selected per round
-// from CriticInput.Model, which the engine sets. Retained for API symmetry with
-// WithProposerModel.
-func WithCriticModel(_ string) CriticOption {
-	return func(_ *agent.ClaudeCritic) { /* stored per-round via CriticInput.Model */ }
-}
-
 // NewCritic returns an [adversarial.Critic] that invokes `claude -p`
 // (stateless, one-shot per round). It can serve as critic for any task
 // harness since it is independent of the implementation session.
