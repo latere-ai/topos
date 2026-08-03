@@ -124,11 +124,11 @@ token's TTL should use `TokenFunc` so rotation propagates.
 | `Create` | `POST /v1/sandboxes` (SandboxManifest body) | See manifest mapping below. |
 | `Destroy` | `DELETE /v1/sandboxes/{id}` | Idempotent server-side; 404 → success. |
 | `HealthCheck` | `GET /v1/sandboxes/{id}` | nil iff `state==running`; 404 → `ErrNotFound`. |
-| `StreamExec` | `POST .../commands` then `GET .../commands/{cid}/logs?follow=true` (SSE) | Commands are async; `detach` defaults true. |
-| `Exec` | built on `StreamExec` | Stream to EOF, then fetch the command record for the exit code. |
-| `ExecStream.Result` | `GET .../commands/{cid}` | `phase` + `exit_code` map 1:1 to `ExecResult`. |
-| `ReadFile` | `POST .../files/export` `{src_dir: dir(path), paths: [base(path)]}` | Read the single entry from the returned tar. |
-| `ListFiles` | `POST .../files/export` `{src_dir: path, paths: ["."]}` | Parse tar headers → `FileInfo`; keep only immediate children (tar recurses). |
+| `StreamExec` | `POST .../commands` then `GET .../commands/{cid}/logs` polled by cursor | Commands are async; the start response is read for the command id only. |
+| `Exec` | built on `StreamExec` | Stream to EOF, then read the terminal phase and exit code the poller recorded. |
+| `ExecStream.Result` | the last log envelope | `phase` + `exit_code` map 1:1 to `ExecResult`. |
+| `ReadFile` | `POST .../files/export` `{paths: [path]}` | Read the single entry from the returned tar; `src_dir` is omitted so the server defaults it to the workspace root. |
+| `ListFiles` | `POST .../files/export` `{paths: [dir]}` | Parse tar headers → `FileInfo`; keep only immediate children (tar recurses). |
 | `WriteFile` | `POST .../files/import` (multipart `tarball`, `dest: dir(path)`) | Wrap `data` in a one-entry in-memory tar. |
 
 ### Create: SandboxManifest mapping
@@ -144,7 +144,7 @@ Kubernetes-style `SandboxManifest` envelope (`apiVersion: cella.latere.ai/v1`,
 | `Image` | `spec.image` (empty → platform base image) |
 | `Env` | `spec.env` |
 | `Tier` | `spec.tier` (default `ephemeral`) |
-| `Policy` | `spec.policy` (empty → caller default; the brain runner sets `brain`) |
+| `Policy` | `spec.policy` (empty → caller default) |
 
 The provider always sets `spec.lifecycle.autoStop` to a bounded default (e.g.
 `15m`) so an orphaned sandbox stops on its own; see Lifecycle below.
@@ -246,12 +246,11 @@ cluster. Tests run against an `httptest.Server` that serves the OpenAPI shapes:
 
 Sliced into small, independently testable commits (tests first):
 
-1. `sandbox/cella` skeleton: `client.go` (`do`, error decoder), `token.go`
+1. `sandbox/cella` skeleton: `client.go` (`send`/`doJSON`, error decoder), `token.go`
    (`TokenSource`, `ContextTokenSource`, `StaticTokenSource`).
 2. `Create` / `Destroy` / `HealthCheck` with SandboxManifest mapping.
 3. `StreamExec` + `Exec`-on-top, phase/exit-code mapping.
-4. Tar-based `ReadFile` / `WriteFile` / `ListFiles`; verified against
-   `harness/lift.go` and `harness/drop.go`.
+4. Tar-based `ReadFile` / `WriteFile` / `ListFiles`.
 5. `Options.Sandbox` injection in `topos.go` + README/usage docs.
 
 ## Open questions

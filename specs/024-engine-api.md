@@ -9,10 +9,13 @@ author: changkun
 # Engine API
 
 The public embedder contract is the `adversarial` package (`adversarial.go`,
-`engine.go`, `assemble.go`). Its types carry no `internal/` dependency, so any
-module that imports Topos can implement the interfaces and drive a debate. An
-embedder supplies a `Proposer` and a `CriticFactory`, sets them on an `Engine`,
-calls `Run`, and reads the `Summary`.
+`engine.go`, `assemble.go`, `review.go`). Its types carry no `internal/`
+dependency, so any module that imports Topos can implement the interfaces and
+drive a debate. There are two entry points over the same machinery: `Review`
+(with `ReviewOptions`) is the single call that covers the common case, and it
+builds and runs the `Engine` underneath. An embedder that needs per-fork control
+supplies a `Proposer` and a `CriticFactory`, sets them on an `Engine`, calls
+`Run`, and reads the `Summary`.
 
 ## Canonical embedding pattern
 

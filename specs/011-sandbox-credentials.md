@@ -35,10 +35,10 @@ This spec covers only the third surface below; the first two already exist.
 1. **API auth**: the bearer Topos presents to the backend. Owned by
    `TokenSource` / `ContextTokenSource`; the host mints, the provider presents.
    See [Cella Sandbox Provider](010-sandbox-cella.md).
-2. **Lift/drop secret deny-list**: `harness/lift.go` and `drop.go` refuse to
-   copy laptop secrets (`.env`, `*.pem`, `.ssh/`, `.aws/credentials`) into the
-   sandbox or materialise sandbox-born secrets back. Provider-agnostic; works
-   through the interface already.
+2. **Secret deny-list**: `sandbox/confine.go` refuses to read, write, or list
+   laptop secrets (`.env`, `*.pem`, `id_rsa`, `.netrc`) through a confined
+   provider, so a session driving a real machine cannot exfiltrate credentials
+   in place. Provider-agnostic; works through the interface already.
 3. **In-sandbox credential delivery**: getting a vault-held secret to the
    workload running inside the sandbox. This is the gap this spec closes.
 

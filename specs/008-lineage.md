@@ -26,7 +26,7 @@ enough to render live and to diff across runs.
 `Run` returns a `Lineage` alongside the final text. The lineage is a small graph:
 
 - A `LineageNode` per agent: a stable `ID`, the agent's `Name` and `Role`, a
-  `Status` (`running`, `done`, or `failed`), the tool families actually `Grants`-ed
+  `Status` (`running`, `done`, `failed`, or `stopped`), the tool families actually `Grants`-ed
   after attenuation (so the graph shows real authority, not what was requested),
   and the `Sandbox` it ran in (a delegated peer gets its own).
 - A `LineageEdge` per relationship, tagged by `Kind`: `next` for one step of a
@@ -46,9 +46,11 @@ regions never collide. Because ids are reconstructable from session, region, and
 label rather than a registry, a consumer can diff two runs node by node, and a live
 view can keep stable ids across reconnects.
 
-Status is updated as the run proceeds: a node starts `running`, flips to `done` on
-success or `failed` on error. On failure, `Run` still returns the partial lineage,
-so a caller sees exactly how far the run got and which node failed.
+Status is updated as the run proceeds: a node starts `running`, then flips to
+`done` on success, `failed` on error, or `stopped` when the runtime halted the
+agent before it finished (a region spend cap reached, or an interrupt). On a
+non-`done` terminal status, `Run` still returns the partial lineage, so a caller
+sees exactly how far the run got and which node ended it.
 
 In a pinned region the graph is a straight line of `next` edges. In a dynamic
 region it is a tree rooted at the entry, with `delegate` and `deliver` edges to and
