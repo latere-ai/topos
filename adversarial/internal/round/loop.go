@@ -168,7 +168,6 @@ type Summary struct {
 	// not surface a total_cost_usd field (e.g. codex critic, mocks).
 	USD         float64
 	WallSeconds int
-	Headline    *ledger.Record
 	Unresolved  int
 }
 
@@ -214,13 +213,8 @@ type Usage struct {
 	MS    int              `json:"ms"`
 }
 
-// Typed errors ([20]).
-var (
-	ErrInterrupted    = errors.New("adversarial interrupted")
-	ErrCostCap        = errors.New("adversarial cost cap reached")
-	ErrMalformedTwice = errors.New("adversarial malformed output twice")
-	ErrAgentFatal     = errors.New("adversarial agent fatal error")
-)
+// ErrAgentFatal wraps a subprocess failure that ends a fork.
+var ErrAgentFatal = errors.New("adversarial agent fatal error")
 
 var defenseLineRE = regexp.MustCompile(`(?m)^\s*(concede|rebut|push-back)\s+(c\d+-\d+)\b`)
 
@@ -516,13 +510,6 @@ func fmtUsage(u agent.TokenUsage, usd float64) string {
 	}
 	return fmt.Sprintf("[in=%d out=%d cache_create=%d cache_read=%d]",
 		u.Input, u.Output, u.CacheCreate, u.CacheRead)
-}
-
-func ifEmpty(a, b string) string {
-	if a == "" {
-		return b
-	}
-	return a
 }
 
 type criticRoundResult struct {
