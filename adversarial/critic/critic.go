@@ -35,10 +35,13 @@ type Config struct {
 	// Brain, when non-nil, overrides Model with a caller-supplied model. Tests
 	// inject a scripted model here; production leaves it nil and sets Model.
 	Brain models.Model
-	// Tools is the agent's tool grant. nil (the default) grants no tools, which
-	// is the read-only posture: topos's only builtin is bash, so withholding it
-	// leaves the agent no way to execute or mutate the tree. The critic reasons
-	// over the diff embedded in the prompt.
+	// Tools is the agent's tool grant, recorded on the run's lineage node as
+	// Grants. nil (the default) records no grant. It is an audit record, not a
+	// sandbox: the runtime currently offers every agent tools.Builtins() (bash,
+	// the file tools, and the search tools) whatever the grant says, so a nil
+	// Tools does not by itself keep the critic from executing or mutating the
+	// tree. Confine the Sandbox provider when that matters. The critic reasons
+	// over the diff embedded in the prompt and needs no tool to do its job.
 	Tools []string
 }
 

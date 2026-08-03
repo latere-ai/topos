@@ -55,10 +55,12 @@ is centralized.
 
 `Config` carries `Model` (`xtopos.ModelOptions`: Lux, Direct, or Fake), `Sandbox`
 (nil uses the local sandbox), `Brain` (a scripted model for tests, overriding
-`Model`), and `Tools`. The read-only posture is the default: with `Tools` nil the
-agent gets no grant, and since the runtime's only builtin is `bash`, withholding
-it leaves the critic no way to execute or mutate. The critic reasons over the diff
-embedded in the assembled prompt. Each round runs one `Pinned` single-agent region
+`Model`), and `Tools`. `Tools` is recorded on the lineage node as `Grants` and is
+an audit record rather than a sandbox: the runtime offers every agent
+`tools.Builtins()` whatever the grant says, so a nil `Tools` does not by itself
+keep the critic from executing or mutating. A caller that needs a read-only critic
+confines the sandbox provider. The critic itself reasons over the diff embedded in
+the assembled prompt and calls no tool to do so. Each round runs one `Pinned` single-agent region
 over `AssemblePrompt(in)` and returns the agent's final text as
 `CriticResult.Markdown`.
 
