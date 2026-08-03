@@ -1,5 +1,3 @@
-// Package critic owns the critic-side protocol: aspect prompts,
-// markdown attack format, parser, normalizer.
 package critic
 
 import (

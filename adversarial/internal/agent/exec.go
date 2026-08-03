@@ -1,4 +1,3 @@
-// Package agent drives subprocess invocations of claude and codex.
 package agent
 
 import (

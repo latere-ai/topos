@@ -1,5 +1,3 @@
-// Package input reads the claude session transcript and computes the
-// working-tree diff. See specs/05-inputs.md for design.
 package input
 
 import (

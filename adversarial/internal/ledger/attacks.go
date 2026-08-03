@@ -1,5 +1,3 @@
-// Package ledger appends and aggregates attack-state transitions in
-// attacks.jsonl. See specs/02-protocol.md.
 package ledger
 
 import (
