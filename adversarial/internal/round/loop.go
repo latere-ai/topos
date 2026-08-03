@@ -64,8 +64,7 @@ type Engine struct {
 }
 
 // Role colors used to decorate progress lines when Styled is true.
-// The escape codes themselves live in internal/ansi so the summary
-// package shares the same literals.
+// The escape codes themselves live in internal/ansi.
 const (
 	roleCriticColor = ansi.Magenta
 	roleProposerCol = ansi.Green
