@@ -140,7 +140,7 @@ are separate axes: sub-allocation bounds what authority a parent may *grant* a
 spawned child, while a meter bounds what a region may *spend* before the runtime
 stops it. A child can hold a grant it never uses because the region's meter
 tripped first, and the meter is unaware of how the grant was divided. This spec
-does not change `DeriveChildBudget`.
+does not change authority attenuation.
 
 ## Legs
 
