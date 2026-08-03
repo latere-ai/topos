@@ -5,7 +5,6 @@
 package hooks
 
 import (
-	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -21,8 +20,8 @@ type Consumer func(name EventName, payload any) Decision
 type LogEntry struct {
 	At        time.Time `json:"at"`
 	EventName EventName `json:"event"`
-	// PayloadJSON is the JSON-marshalled payload (for audit/replay). May be
-	// nil if marshalling failed.
+	// Payload is the dispatched payload as handed to the bus, kept for
+	// audit/replay. It is marshalled only when the log itself is encoded.
 	Payload any `json:"payload,omitempty"`
 }
 
@@ -64,8 +63,9 @@ func (b *Bus) Register(name string, events []EventName, c Consumer) {
 // records the dispatch to the session event log.
 //
 // For decision-bearing events the Decision from each consumer is merged:
-// a single Deny from any consumer results in a net Deny; the first non-nil
-// modified payload wins (applied before the next consumer sees it).
+// a single Deny from any consumer short-circuits to a net Deny; each non-nil
+// modified payload replaces the current one before the next consumer sees it,
+// so the last modifier wins.
 //
 // Every dispatch is logged regardless of whether any consumer processed it.
 func (b *Bus) Dispatch(name EventName, payload any) Decision {
@@ -140,15 +140,6 @@ func (b *Bus) EventLog() []LogEntry {
 	out := make([]LogEntry, len(b.log))
 	copy(out, b.log)
 	return out
-}
-
-// LogWith returns a *slog.Logger annotated with the bus's event-log size for
-// structured observability. Callers may use this instead of slog.Default().
-func (b *Bus) LogWith(logger *slog.Logger) *slog.Logger {
-	b.mu.RLock()
-	n := len(b.log)
-	b.mu.RUnlock()
-	return logger.With("hook_events_logged", n)
 }
 
 // matches returns true when the consumer applies to the given event name.

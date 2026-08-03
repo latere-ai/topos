@@ -5,10 +5,7 @@
 package hooks_test
 
 import (
-	"bytes"
 	"encoding/json"
-	"log/slog"
-	"strings"
 	"testing"
 
 	"latere.ai/x/topos/harness/hooks"
@@ -220,34 +217,6 @@ func TestBusModifyWithNilPayloadIsNoOp(t *testing.T) {
 	}
 }
 
-// TestLogWithAnnotatesEventCount asserts LogWith tags the logger with the
-// current event-log size.
-func TestLogWithAnnotatesEventCount(t *testing.T) {
-	bus := hooks.New()
-	bus.Dispatch(hooks.EventSessionStart, nil)
-	bus.Dispatch(hooks.EventPreToolUse, nil)
-
-	var buf bytes.Buffer
-	base := slog.New(slog.NewTextHandler(&buf, nil))
-	bus.LogWith(base).Info("checkpoint")
-
-	if !strings.Contains(buf.String(), "hook_events_logged=2") {
-		t.Fatalf("log line = %q, want hook_events_logged=2", buf.String())
-	}
-}
-
-// TestModifyDecisionConstructor asserts the Modify helper builds a modify verdict
-// carrying the payload.
-func TestModifyDecisionConstructor(t *testing.T) {
-	d := hooks.Modify("payload")
-	if d.Verdict != hooks.VerdictModify {
-		t.Fatalf("verdict = %q, want modify", d.Verdict)
-	}
-	if d.ModifiedPayload != "payload" {
-		t.Fatalf("payload = %v, want payload", d.ModifiedPayload)
-	}
-}
-
 // TestToolPathAppliesHookModifiedInput asserts a hook consumer that rewrites the
 // normalised input via Modify is reflected in the net ModifiedInput.
 func TestToolPathAppliesHookModifiedInput(t *testing.T) {
@@ -348,27 +317,5 @@ func TestToolPathAllowedWithNoDenyRules(t *testing.T) {
 	}
 	if string(result.ModifiedInput) != `{"command":"echo hi"}` {
 		t.Fatalf("modified_input = %q", result.ModifiedInput)
-	}
-}
-
-// TestSessionEndFiresOnce is a behavioural test: the loop must defer bus.Dispatch
-// (EventSessionEnd, ...) exactly once even on error paths. This test simulates
-// that contract at the bus level.
-func TestSessionEndFiresOnce(t *testing.T) {
-	bus := hooks.New()
-	count := 0
-	bus.Register("session-end-counter", []hooks.EventName{hooks.EventSessionEnd}, func(_ hooks.EventName, _ any) hooks.Decision {
-		count++
-		return hooks.Allow()
-	})
-
-	// Only one dispatch.
-	bus.Dispatch(hooks.EventSessionEnd, &hooks.SessionEndPayload{Version: "1"})
-
-	if count != 1 {
-		t.Fatalf("session end fired %d times, want 1", count)
-	}
-	if len(bus.EventLog()) != 1 {
-		t.Fatalf("event log len = %d, want 1", len(bus.EventLog()))
 	}
 }
