@@ -1,3 +1,3 @@
-// Package summary scores contention and renders summary.md. Filled by
-// specs 22, 23.
+// Package summary scores contention and renders summary.md. See
+// specs/022-architecture.md.
 package summary

@@ -49,7 +49,7 @@ type CriticResult struct {
 	Duration time.Duration
 }
 
-// Typed errors per spec 18.
+// Typed errors the critic backends return. See specs/023-backends.md.
 var (
 	ErrRateLimit    = errors.New("agent reported rate limit")
 	ErrTTYRequired  = errors.New("agent requires a TTY")
@@ -301,7 +301,7 @@ func (c *CodexCritic) Round(ctx context.Context, in CriticInput) (*CriticResult,
 }
 
 // ClaudeCritic invokes a fresh `claude -p` per round (no --resume,
-// no --fork-session - see spec 18).
+// no --fork-session).
 //
 // Verbose toggles --output-format stream-json --verbose. When set,
 // each tool-use / thinking / text event is fed to EventOut as it

@@ -22,7 +22,7 @@ const (
 	RoleProposer
 )
 
-// ProposerState mirrors specs/06-session-format.md. Two shapes,
+// ProposerState mirrors specs/027-session-format.md. Two shapes,
 // discriminated by Agent.
 type ProposerState struct {
 	Schema         string          `json:"schema"`

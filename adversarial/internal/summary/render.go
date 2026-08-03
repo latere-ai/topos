@@ -80,7 +80,7 @@ type SurfacingDecision struct {
 	ExitCode   int
 }
 
-// Decide computes the surfacing decision per spec 23.
+// Decide computes the surfacing decision. See specs/022-architecture.md.
 func Decide(s *round.Summary) SurfacingDecision {
 	summaryPath := ""
 	if s.Sess != nil {

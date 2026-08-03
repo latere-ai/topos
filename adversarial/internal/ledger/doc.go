@@ -1,3 +1,3 @@
 // Package ledger appends and aggregates attack-state transitions in
-// attacks.jsonl. Filled by spec 12.
+// attacks.jsonl. See specs/026-protocol.md.
 package ledger

@@ -73,7 +73,7 @@ type ProposerResult struct {
 	Duration     time.Duration
 }
 
-// Typed errors per spec 17.
+// Typed errors the claude proposer returns. See specs/023-backends.md.
 var (
 	ErrCwdMismatch    = errors.New("claude --resume cwd mismatch")
 	ErrAuth           = errors.New("claude auth failure")

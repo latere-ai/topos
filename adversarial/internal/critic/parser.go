@@ -87,7 +87,7 @@ func ExtractDeclaredAspect(raw string) string {
 	return ""
 }
 
-// Parse is the canonical reader. See specs/02-protocol.md.
+// Parse is the canonical reader. See specs/026-protocol.md.
 func Parse(raw string, expectedAspect string, criticIndex, round int, priorAttackIDs []string, opt ParseOption) ([]Attack, ParseStats, error) {
 	priorSet := map[string]bool{}
 	for _, id := range priorAttackIDs {
