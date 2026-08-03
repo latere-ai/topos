@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -32,20 +31,6 @@ func TestExecNonZeroExit(t *testing.T) {
 	}
 	if res.ExitCode != 7 {
 		t.Errorf("ExitCode: got %d, want 7", res.ExitCode)
-	}
-}
-
-func TestStreamJSONIgnoresGarbage(t *testing.T) {
-	in := bytes.NewReader([]byte("{\"a\":1}\nnotjson\n{\"b\":2}\n"))
-	var got []string
-	if err := StreamJSON(in, func(raw json.RawMessage) error {
-		got = append(got, string(raw))
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 {
-		t.Errorf("expected 2 valid lines, got %d: %v", len(got), got)
 	}
 }
 

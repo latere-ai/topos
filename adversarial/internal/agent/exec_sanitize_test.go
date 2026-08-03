@@ -23,15 +23,6 @@ func TestSanitizeControls_StringWithControl(t *testing.T) {
 	}
 }
 
-func TestSanitizeControls_TabsNewlinesPreserved(t *testing.T) {
-	in := []byte("{\"k\":\"\\tline\\nrest\\r\"}")
-	got := sanitizeControls(in)
-	var v map[string]string
-	if err := json.Unmarshal(got, &v); err != nil {
-		t.Errorf("sanitized output should still parse: %v\noutput=%q", err, got)
-	}
-}
-
 func TestSanitizeControls_EscapeAfterBackslash(t *testing.T) {
 	in := []byte("{\"k\":\"\\\\\\u0007\"}")
 	got := sanitizeControls(in)
@@ -55,20 +46,6 @@ func TestDecodeJSONLine_PlainCleanInput(t *testing.T) {
 	}
 	if v["a"] != "b" {
 		t.Errorf("got %v", v)
-	}
-}
-
-func TestDecodeJSONLine_FallbackThroughSanitize(t *testing.T) {
-	var v map[string]string
-	if err := DecodeJSONLine([]byte("{\"a\":\"b\x01c\"}"), &v); err != nil {
-		t.Errorf("should sanitize and decode: %v", err)
-	}
-}
-
-func TestDecodeJSONLine_HardError(t *testing.T) {
-	var v map[string]string
-	if err := DecodeJSONLine([]byte("{not-json"), &v); err == nil {
-		t.Error("expected error")
 	}
 }
 

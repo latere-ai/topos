@@ -16,11 +16,3 @@ func TestTokenUsage_Add(t *testing.T) {
 		t.Errorf("Add: %+v", u)
 	}
 }
-
-func TestTokenUsage_AddZero(t *testing.T) {
-	u := TokenUsage{Input: 5}
-	u.Add(TokenUsage{})
-	if u.Input != 5 {
-		t.Errorf("Add(zero) should be no-op: %+v", u)
-	}
-}

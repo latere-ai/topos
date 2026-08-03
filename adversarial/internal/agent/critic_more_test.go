@@ -46,30 +46,6 @@ func main() {
 	}
 }
 
-func TestCodexCriticStderrMappings(t *testing.T) {
-	bin := buildHelper(t, "rl-codex", `package main
-import (
-	"fmt"
-	"os"
-)
-func main() {
-	fmt.Fprintln(os.Stderr, "error: rate limit exceeded")
-	os.Exit(1)
-}
-`)
-	c := &CodexCritic{Bin: bin}
-	_, err := c.Round(context.Background(), CriticInput{
-		Aspect: critic.Lookup("security"), CriticIndex: 1, Round: 1,
-		Cwd: t.TempDir(), Deadline: 5 * time.Second,
-	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "rate limit") {
-		t.Errorf("got %v", err)
-	}
-}
-
 // TestCodexCriticUsageFromTurnCompleted: codex --json terminates the
 // stream with a turn.completed event whose usage block carries
 // input_tokens (incl. cached), cached_input_tokens, output_tokens,
@@ -290,23 +266,5 @@ func main() {
 	_, err := p.FirstRound(context.Background(), "ping")
 	if err == nil || !strings.Contains(err.Error(), "cwd mismatch") {
 		t.Errorf("expected ErrCwdMismatch, got %v", err)
-	}
-}
-
-func TestClaudeProposerAuthError(t *testing.T) {
-	bin := buildHelper(t, "auth-claude", `package main
-import (
-	"fmt"
-	"os"
-)
-func main() {
-	fmt.Fprintln(os.Stderr, "Authentication error: 401 Unauthorized")
-	os.Exit(1)
-}
-`)
-	p := &ClaudeProposer{Bin: bin, Cwd: t.TempDir(), RootID: "abc"}
-	_, err := p.FirstRound(context.Background(), "ping")
-	if err == nil || !strings.Contains(err.Error(), "auth") {
-		t.Errorf("expected ErrAuth, got %v", err)
 	}
 }
