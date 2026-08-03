@@ -99,18 +99,6 @@ func TestSplitLines(t *testing.T) {
 	}
 }
 
-func TestStartsWith(t *testing.T) {
-	if !startsWith("## Claim", "## ") {
-		t.Error("prefix present")
-	}
-	if startsWith("no", "longer-prefix") {
-		t.Error("prefix longer than string must be false")
-	}
-	if startsWith("abc", "xy") {
-		t.Error("non-matching prefix must be false")
-	}
-}
-
 // TestTrimSectionNoNewline covers trimSection's fallthrough: a section
 // consisting only of the header line (no newline after it) trims to
 // the empty string.

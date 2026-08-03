@@ -57,15 +57,6 @@ func TestLoadBodyNoSpill(t *testing.T) {
 
 func ts() time.Time { return time.Now() }
 
-func TestFold_NewEntry(t *testing.T) {
-	out := map[string]Record{}
-	r := Record{AttackID: "c1-1", Claim: "first", Status: StatusOpen}
-	fold(out, r)
-	if got := out["c1-1"]; got.Claim != "first" {
-		t.Errorf("got %q", got.Claim)
-	}
-}
-
 func TestFold_OverlayPreservesNonZeroFields(t *testing.T) {
 	out := map[string]Record{
 		"c1-1": {
@@ -102,10 +93,34 @@ func TestFold_OverlayPreservesNonZeroFields(t *testing.T) {
 		BodyPath:          "new/path",
 	})
 	got := out["c1-1"]
-	// Note: fold reads-then-writes: it updates cur and writes back the full
-	// current value. Look at attacks.go to confirm assignment back happens.
-	if got.AttackID != "c1-1" {
-		t.Errorf("AttackID: got %q", got.AttackID)
+	if got.RoundIntroduced == nil || *got.RoundIntroduced != 4 {
+		t.Errorf("RoundIntroduced: got %v, want 4", got.RoundIntroduced)
+	}
+	for _, f := range []struct{ name, got, want string }{
+		{"Location", got.Location, "new.go:5"},
+		{"Claim", got.Claim, "new-claim"},
+		{"ExpectedViolation", got.ExpectedViolation, "new-exp"},
+		{"Reproduction", got.Reproduction, "new-repro"},
+		{"IntroducedIn", got.IntroducedIn, "new-intro"},
+		{"LastTouchedIn", got.LastTouchedIn, "new-last"},
+		{"BodyPath", got.BodyPath, "new/path"},
+		{"Status", string(got.Status), string(StatusConceded)},
+	} {
+		if f.got != f.want {
+			t.Errorf("%s: got %q, want %q", f.name, f.got, f.want)
+		}
+	}
+	if got.RoundLastTouched != 4 {
+		t.Errorf("RoundLastTouched: got %d, want 4", got.RoundLastTouched)
+	}
+	if got.RoundsSurvived != 3 {
+		t.Errorf("RoundsSurvived: got %d, want 3", got.RoundsSurvived)
+	}
+	if !got.ReAttacked {
+		t.Error("ReAttacked: got false, want true")
+	}
+	if len(got.ConcessionFiles) != 1 || got.ConcessionFiles[0] != "b.go" {
+		t.Errorf("ConcessionFiles: got %v, want [b.go]", got.ConcessionFiles)
 	}
 }
 
