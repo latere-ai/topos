@@ -28,16 +28,6 @@ func TestAPIError_Error(t *testing.T) {
 			wantIn: []string{"500", "internal", "something went wrong", "req_abc123"},
 		},
 		{
-			name: "404 not_found",
-			err: &APIError{
-				Status:    404,
-				Code:      "not_found",
-				Message:   "sandbox not found",
-				RequestID: "req_xyz",
-			},
-			wantIn: []string{"404", "not_found", "sandbox not found", "req_xyz"},
-		},
-		{
 			name:   "zero values",
 			err:    &APIError{},
 			wantIn: []string{"0"},

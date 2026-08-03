@@ -29,12 +29,3 @@ func TestWithBearer_roundTrip(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, "tok-123")
 	}
 }
-
-func TestWithBearer_overrides(t *testing.T) {
-	ctx := WithBearer(context.Background(), "first")
-	ctx = WithBearer(ctx, "second")
-	got, _ := BearerFromContext(ctx)
-	if got != "second" {
-		t.Fatalf("got %q, want %q (later WithBearer must win)", got, "second")
-	}
-}

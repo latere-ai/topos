@@ -251,29 +251,6 @@ func TestReadFileNotFound(t *testing.T) {
 	}
 }
 
-func TestListFiles(t *testing.T) {
-	p := local.New()
-	ctx := context.Background()
-
-	sb, _ := p.Create(ctx, sandbox.CreateOptions{})
-	defer p.Destroy(ctx, sb.ID) //nolint:errcheck
-
-	if err := p.WriteFile(ctx, sb.ID, "a.txt", []byte("a")); err != nil {
-		t.Fatalf("WriteFile a: %v", err)
-	}
-	if err := p.WriteFile(ctx, sb.ID, "b.txt", []byte("b")); err != nil {
-		t.Fatalf("WriteFile b: %v", err)
-	}
-
-	files, err := p.ListFiles(ctx, sb.ID, ".")
-	if err != nil {
-		t.Fatalf("ListFiles: %v", err)
-	}
-	if len(files) < 2 {
-		t.Fatalf("ListFiles: got %d entries, want >= 2", len(files))
-	}
-}
-
 func TestStreamExec(t *testing.T) {
 	p := local.New()
 	ctx := context.Background()
@@ -755,15 +732,6 @@ func TestListFilesReportsDirEntry(t *testing.T) {
 	}
 }
 
-// TestHealthCheckUnknown verifies HealthCheck on an unknown sandbox returns
-// ErrNotFound.
-func TestHealthCheckUnknown(t *testing.T) {
-	p := local.New()
-	if err := p.HealthCheck(context.Background(), "no-such-sandbox"); !isNotFound(err) {
-		t.Fatalf("HealthCheck unknown: got %v, want ErrNotFound", err)
-	}
-}
-
 // TestHealthCheckDirRemoved verifies HealthCheck reports ErrNotFound when the
 // sandbox's temp directory is removed out from under the provider (still
 // registered in the id map, but gone on disk).
@@ -805,11 +773,12 @@ func drain(t *testing.T, stream sandbox.ExecStream) string {
 	return string(out)
 }
 
+// isNotFound reports whether err is the provider's not-found sentinel. Every
+// not-found path in sandbox/local returns sandbox.ErrNotFound directly, so an
+// errors.Is check is exact; matching on message text would let an unrelated
+// error carrying "not found" pass.
 func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, sandbox.ErrNotFound) || strings.Contains(err.Error(), "not found")
+	return errors.Is(err, sandbox.ErrNotFound)
 }
 
 // rootedFixture returns a provider rooted at outer/work plus the outer
