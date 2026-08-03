@@ -60,7 +60,7 @@ type Record struct {
 
 // Append writes one transition record to <session>/attacks.jsonl.
 // When the inline body fields are too large, the bodies spill to a
-// sidecar markdown file under forks/critic-<i>/attacks/<id>.md and the
+// sidecar JSON file under forks/critic-<i>/attacks/<id>.json and the
 // inline fields are blanked out on the JSONL line.
 func Append(s *state.Session, r Record) error {
 	if r.Schema == "" {
