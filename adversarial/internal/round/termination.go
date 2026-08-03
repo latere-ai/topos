@@ -26,17 +26,12 @@ type ForkHistory struct {
 	NewAttacks    int
 	ReAttacks     int
 	Withdrawn     int
-	ParseErrors   int
 	MalformedFlag bool
 }
 
-// Detector is a value-typed bundle of detection rules. The round and cost caps
-// themselves are enforced by the loop and by CostMeter; these fields carry the
-// configured values for inspection.
-type Detector struct {
-	MaxRounds int
-	CostCap   int
-}
+// Detector bundles the detection rules. The round and cost caps themselves are
+// enforced by the loop and by CostMeter, so the detector holds no state.
+type Detector struct{}
 
 // SteadyState requires at least three critic rounds in history; returns
 // true iff the last two have zero new attacks and zero re-attacks.
@@ -61,9 +56,8 @@ func (d *Detector) MalformedTwice(history []ForkHistory) bool {
 
 // CostMeter accumulates token usage across all subprocess calls.
 type CostMeter struct {
-	cap     int
-	used    int
-	perCall []int
+	cap  int
+	used int
 }
 
 // NewCostMeter returns a meter capped at capTokens. A cap of zero or less
@@ -76,7 +70,6 @@ func NewCostMeter(capTokens int) *CostMeter {
 // Add records tokens for one call.
 func (c *CostMeter) Add(tokens int) {
 	c.used += tokens
-	c.perCall = append(c.perCall, tokens)
 }
 
 // Used returns the total tokens consumed.

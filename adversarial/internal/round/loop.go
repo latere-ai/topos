@@ -226,7 +226,7 @@ var defenseLineRE = regexp.MustCompile(`(?m)^\s*(concede|rebut|push-back)\s+(c\d
 
 // Run executes the orchestrator. Forks run serially.
 func (e *Engine) Run(ctx context.Context) (*Summary, error) {
-	det := &Detector{MaxRounds: e.MaxRounds, CostCap: e.CostCap}
+	det := &Detector{}
 	cost := NewCostMeter(e.CostCap)
 	start := time.Now()
 	sum := &Summary{Sess: e.Sess, Termination: TermSteadyState}

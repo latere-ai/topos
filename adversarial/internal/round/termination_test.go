@@ -3,7 +3,7 @@ package round
 import "testing"
 
 func TestSteadyStateRequiresThree(t *testing.T) {
-	d := &Detector{MaxRounds: 6, CostCap: 50000}
+	d := &Detector{}
 	if d.SteadyState([]ForkHistory{{NewAttacks: 0}, {NewAttacks: 0}}) {
 		t.Error("two rounds should not trigger steady state")
 	}
