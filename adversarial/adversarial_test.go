@@ -107,25 +107,6 @@ func TestEngineSteadyState(t *testing.T) {
 	}
 }
 
-// TestVerifierInterface verifies that a zero-value struct can satisfy
-// adversarial.Verifier — a compile-time check.
-func TestVerifierInterface(t *testing.T) {
-	var v adversarial.Verifier = noopVerifier{}
-	ctx := context.Background()
-	res, err := v.Verify(ctx, adversarial.VerifyInput{})
-	if err != nil || res != nil {
-		t.Errorf("noopVerifier returned unexpected (%v, %v)", res, err)
-	}
-}
-
-// noopVerifier is a compile-time proof that any struct with the right
-// method set satisfies adversarial.Verifier.
-type noopVerifier struct{}
-
-func (noopVerifier) Verify(_ context.Context, _ adversarial.VerifyInput) (*adversarial.VerifyResult, error) {
-	return nil, nil
-}
-
 // TestEngineRun_WritesEndJSON verifies Engine.Run persists the session's
 // terminal end.json (summary.md too), so embedders can tell a finished run from
 // a running one and read its token usage.

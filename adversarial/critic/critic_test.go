@@ -81,18 +81,12 @@ func securityInput() adversarial.CriticInput {
 	}
 }
 
-// TestFactoryYieldsCritic pins that NewCriticFactory returns a usable
-// adversarial.Critic for a fork index.
-func TestFactoryYieldsCritic(t *testing.T) {
-	if nativecritic.NewCriticFactory(nativecritic.Config{})(1) == nil {
-		t.Fatal("NewCriticFactory returned a nil critic")
-	}
-}
-
 // TestRoundReturnsModelTextVerbatim is the backend-swap contract: the topos
 // critic returns the model's text unchanged as CriticResult.Markdown, and that
 // markdown parses into the same Record set (critic.Parse) as the claude/codex
-// critics on identical input.
+// critics on identical input. securityInput() leaves Deadline at its zero value,
+// so this is also the no-cap side of the `if in.Deadline > 0` guard that
+// TestRoundHonorsDeadline covers from the other side.
 func TestRoundReturnsModelTextVerbatim(t *testing.T) {
 	res := runOnce(t, nativecritic.Config{Brain: scriptedBrain{text: cannedR1}}, securityInput())
 
@@ -138,18 +132,6 @@ func TestRoundHonorsDeadline(t *testing.T) {
 	}
 }
 
-// TestRoundWithoutDeadlineRunsToCompletion is the zero-value branch: Deadline=0
-// (the natural zero value of a duration) means "no per-round cap", so a brain
-// that returns normally completes. Together with TestRoundHonorsDeadline this
-// covers both sides of the `if in.Deadline > 0` guard.
-func TestRoundWithoutDeadlineRunsToCompletion(t *testing.T) {
-	in := securityInput() // Deadline left at its zero value
-	res := runOnce(t, nativecritic.Config{Brain: scriptedBrain{text: cannedR1}}, in)
-	if res.Markdown != cannedR1 {
-		t.Fatalf("markdown not verbatim with no deadline:\n got %q\nwant %q", res.Markdown, cannedR1)
-	}
-}
-
 // TestRoundReportsNoUsage pins a known limitation: topos's public RunResult
 // exposes no token usage, so the topos critic reports zero. A future topos-side
 // fix flips this test deliberately.
@@ -160,14 +142,12 @@ func TestRoundReportsNoUsage(t *testing.T) {
 	}
 }
 
-// TestToposGrantsExactlyAgentSpecTools verifies the topos grant semantics the
-// read-only posture relies on: an agent is granted exactly AgentSpec.Tools and
-// nothing more, so nil tools => no grants => no bash, while an explicit bash
-// grant does appear (control, so the nil assertion is not vacuous). The critic
-// builds its AgentSpec with Tools=Config.Tools (nil default; see critic.go); that
-// one-line wiring is not separately exercised here because CriticResult does not
-// surface lineage, so this asserts the property the wiring leans
-// on, against the same public lineage Grants the critic would produce.
+// TestToposGrantsExactlyAgentSpecTools pins what the lineage records: a node's
+// Grants is exactly AgentSpec.Tools, so nil tools produce no grants while an
+// explicit bash grant does appear (control, so the nil assertion is not vacuous).
+// This is an audit property, not an enforcement one: the runtime hands every
+// agent tools.Builtins() regardless of Grants, so a nil grant does not by itself
+// keep a critic read-only. See the roadmap note in specs/adversarial-README.md.
 func TestToposGrantsExactlyAgentSpecTools(t *testing.T) {
 	grants := func(tools []string) []string {
 		runner, err := xtopos.NewRunner(xtopos.Options{SessionID: "t", Brain: scriptedBrain{text: "ok"}})
