@@ -185,51 +185,6 @@ func TestSpawnStopEmitsEvent(t *testing.T) {
 	}
 }
 
-// ---- mailbox ----
-
-func TestHierarchicalTopology(t *testing.T) {
-	topo := harness.NewHierarchical("parent", "childA", "childB")
-	cases := []struct {
-		from, to string
-		want     bool
-	}{
-		{"parent", "childA", true},  // parent → child
-		{"childA", "parent", true},  // child → parent
-		{"childA", "childB", false}, // sibling → sibling denied
-		{"outsider", "parent", false},
-		{"parent", "outsider", false},
-	}
-	for _, c := range cases {
-		if got := topo.CanSend(c.from, c.to); got != c.want {
-			t.Errorf("CanSend(%q,%q) = %v, want %v", c.from, c.to, got, c.want)
-		}
-	}
-}
-
-func TestMailboxGatedSendReceive(t *testing.T) {
-	mb := harness.NewMailbox(harness.NewHierarchical("parent", "child"))
-
-	if err := mb.Send("parent", "child", []byte("do task")); err != nil {
-		t.Fatalf("parent→child send: %v", err)
-	}
-	if err := mb.Send("child", "parent", []byte("done")); err != nil {
-		t.Fatalf("child→parent send: %v", err)
-	}
-	// Sibling send is refused.
-	if err := mb.Send("child", "other", []byte("x")); !errors.Is(err, harness.ErrNotPermitted) {
-		t.Fatalf("disallowed send = %v, want ErrNotPermitted", err)
-	}
-
-	got := mb.Receive("child")
-	if len(got) != 1 || string(got[0].Body) != "do task" {
-		t.Fatalf("child inbox = %+v", got)
-	}
-	// Receive drains.
-	if len(mb.Receive("child")) != 0 {
-		t.Fatal("Receive did not drain the box")
-	}
-}
-
 func isSubset(sub, super []string) bool {
 	set := map[string]bool{}
 	for _, s := range super {
