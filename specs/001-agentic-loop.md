@@ -48,9 +48,9 @@ Four seams keep the loop provider-agnostic and composable:
   provider specifics. This is the seam `ModelOptions` selects a backing for.
 - Tool registry (`harness/tools`): a name-indexed set of tools. Each tool exposes
   a definition for the model and an `Invoke` that runs against the sandbox. The
-  one built-in is `bash`; the `delegate` tool is injected per agent when delegation
-  is allowed.
-- Sandbox (`sandbox`): a `SandboxProvider` interface for creating environments and
+  built-ins are `bash`, `read_file`, `write_file`, `edit_file`, `grep`, and `glob`;
+  the `delegate` tool is injected per agent when delegation is allowed.
+- Sandbox (`sandbox`): a `sandbox.Provider` interface for creating environments and
   running commands or file operations. The local implementation (`sandbox/local`)
   maps each sandbox to a temp directory and runs commands with the standard
   library, so a run needs no external services.
@@ -79,6 +79,6 @@ graph TD
 Shipped in `runtime/loop` (`Run`, `Config`, `Result`, the turn cap, and the
 tools-unsupported fallback). The seams are `models` (the `Model` interface, adapter
 in `models/lux` over luxsdk, deterministic `models/fake`), `harness/tools` (the `Tool`
-interface, `Registry`, and the `bash` built-in), `sandbox` (the `SandboxProvider`
+interface, `Registry`, and the built-in tool set), `sandbox` (the `sandbox.Provider`
 interface) with the temp-directory `sandbox/local` implementation, and the
 three-phase tool path in `harness/hooks`.

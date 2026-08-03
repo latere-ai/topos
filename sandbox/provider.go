@@ -129,7 +129,7 @@ type ExecOptions struct {
 // ExecResult holds the result of a completed command execution.
 //
 // Note: the Cella backend merges stdout and stderr into a single
-// combined stream in arrival order. As a result, for CellaSandboxProvider:
+// combined stream in arrival order. As a result, for the cella provider:
 //   - Stdout carries the COMBINED stdout+stderr output.
 //   - Stderr is nil/empty; Cella provides no per-stream separation.
 //

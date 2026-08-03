@@ -28,8 +28,10 @@ Underneath the root package sits an engine made of public but advanced subpackag
 - A provider-agnostic model seam (`models`) with adapters, selected by the host
   through `ModelOptions`. The model connection can go through Lux, the model
   gateway, so provider secrets stay out of the host application.
-- A tool registry (`harness/tools`) whose one built-in is `bash`. When an agent
-  is allowed to hand work off, a `delegate` tool is injected into its registry.
+- A tool registry (`harness/tools`) whose built-ins are `bash`, the file tools
+  (`read_file`, `write_file`, `edit_file`), and the search tools (`grep`, `glob`).
+  When an agent is allowed to hand work off, a `delegate` tool is injected into
+  its registry.
 - A spawner (`harness`) that derives a sub-agent with attenuated authority (a
   strict subset of its parent's tools and scopes) and enforces a recursion bound.
 - A sandbox abstraction (`sandbox`) with a local, temp-directory implementation
