@@ -10,24 +10,6 @@ import (
 	"latere.ai/x/topos/adversarial/internal/critic"
 )
 
-func TestNewCriticPanicsOnUnknown(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic")
-		}
-	}()
-	NewCritic("unknown")
-}
-
-func TestNewCriticReturnsCorrectImpl(t *testing.T) {
-	if _, ok := NewCritic("codex").(*CodexCritic); !ok {
-		t.Error("codex factory: wrong type")
-	}
-	if _, ok := NewCritic("claude").(*ClaudeCritic); !ok {
-		t.Error("claude factory: wrong type")
-	}
-}
-
 func TestAssemblePrompt(t *testing.T) {
 	a := critic.Lookup("security")
 	in := CriticInput{

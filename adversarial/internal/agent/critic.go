@@ -45,7 +45,6 @@ type CriticResult struct {
 	Tokens   int
 	Usage    TokenUsage
 	USD      float64
-	Stdout   []byte
 	Duration time.Duration
 }
 
@@ -55,18 +54,6 @@ var (
 	ErrTTYRequired  = errors.New("agent requires a TTY")
 	ErrEmptyContent = errors.New("agent returned empty content")
 )
-
-// NewCritic returns a Critic for the named family. Panics on unknown.
-func NewCritic(family string) Critic {
-	switch family {
-	case "codex":
-		return &CodexCritic{}
-	case "claude":
-		return &ClaudeCritic{}
-	default:
-		panic("unknown critic family: " + family)
-	}
-}
 
 // AssemblePrompt is the deterministic prompt a critic driver feeds to
 // the agent: aspect system prompt + task + diff + pointers to prior
@@ -295,7 +282,6 @@ func (c *CodexCritic) Round(ctx context.Context, in CriticInput) (*CriticResult,
 		ThreadID: threadID,
 		Tokens:   usage.Input + usage.Output,
 		Usage:    usage,
-		Stdout:   res.Stdout,
 		Duration: res.Duration,
 	}, nil
 }
@@ -368,7 +354,6 @@ func (c *ClaudeCritic) Round(ctx context.Context, in CriticInput) (*CriticResult
 		Tokens:   use.Input + use.Output,
 		Usage:    use,
 		USD:      parsed.TotalCostUSD,
-		Stdout:   res.Stdout,
 		Duration: res.Duration,
 	}, nil
 }

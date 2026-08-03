@@ -68,7 +68,6 @@ type ProposerResult struct {
 	Tokens       int
 	Usage        TokenUsage
 	USD          float64
-	Stdout       []byte
 	ChangedFiles []string
 	Duration     time.Duration
 }
@@ -242,7 +241,6 @@ func (p *ClaudeProposer) run(ctx context.Context, args []string, expectFork stri
 		Tokens:   use.Input + use.Output,
 		Usage:    use,
 		USD:      parsed.TotalCostUSD,
-		Stdout:   res.Stdout,
 		Duration: res.Duration,
 	}, nil
 }
