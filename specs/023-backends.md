@@ -39,8 +39,10 @@ Options:
   read-only --json`. Its read-only sandbox lets it open files the diff does not
   touch, which the prompt-only critics cannot.
 
-The subprocess drivers stream `stream-json` events so an embedder can surface
-tool and thinking activity live while a call runs.
+The subprocess drivers can stream `stream-json` events so tool and thinking
+activity is visible live while a call runs. The toggle is internal
+(`Verbose` plus `EventOut` on the driver structs); the public wrappers expose
+no option for it yet.
 
 ## Critic: the Topos-native runtime
 
