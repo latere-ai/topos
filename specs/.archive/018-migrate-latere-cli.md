@@ -1,6 +1,6 @@
 ---
 title: Migrate latere-cli to the Topos Adversarial Capability
-status: proposed
+status: archived
 depends_on:
   - specs/.archive/016-capability-surface.md
 affects:

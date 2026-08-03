@@ -1,6 +1,6 @@
 ---
 title: Retire agon from the Latere Landscape
-status: proposed
+status: archived
 depends_on:
   - specs/.archive/017-migrate-wallfacer.md
   - specs/.archive/018-migrate-latere-cli.md

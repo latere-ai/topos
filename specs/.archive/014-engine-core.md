@@ -1,6 +1,6 @@
 ---
 title: Port the Adversarial Engine Core into Topos
-status: proposed
+status: archived
 depends_on:
   - specs/.archive/013-overview.md
 affects:

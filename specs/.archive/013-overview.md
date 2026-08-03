@@ -1,6 +1,6 @@
 ---
 title: Adversarial Review as a Topos Capability
-status: proposed
+status: archived
 depends_on:
   - specs/003-embeddable-sdk.md
   - specs/004-agents-and-regions.md

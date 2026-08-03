@@ -1,6 +1,6 @@
 ---
 title: Landing site
-status: current
+status: archived
 updated: 2026-07-05
 author: changkun
 ---

@@ -1,6 +1,6 @@
 ---
 title: Expose Adversarial Review as a Topos Capability
-status: proposed
+status: archived
 depends_on:
   - specs/.archive/015-backends-and-input.md
 affects:

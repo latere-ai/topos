@@ -1,6 +1,6 @@
 ---
 title: Adversarial Review Capability Page in the Agents Platform
-status: proposed
+status: archived
 depends_on:
   - specs/.archive/016-capability-surface.md
 affects:
