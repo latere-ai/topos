@@ -4,19 +4,15 @@
 
 package sandbox_test
 
-// Package boundary: this test asserts that the internal/sandbox package
-// itself — the interface and shared types — does NOT import the Cella
-// backend package. Upstream code that imports internal/sandbox must
-// remain unaware that Cella exists.
+// Package boundary: this test asserts that the sandbox package itself — the
+// interface and shared types — does NOT import the Cella backend package.
+// Upstream code that imports sandbox must remain unaware that Cella exists, so
+// every dependency runs through the interface rather than the client.
 //
-// Boundary rule (from the spec):
-//   "No package OUTSIDE internal/sandbox/cella/ may import the Cella
-//    client; all upstream dependencies are on the interface only."
-//
-// This test checks the weaker but sufficient condition: internal/sandbox
-// (provider.go and boundary_test.go) must not import internal/sandbox/cella.
-// The forward direction — that cella DOES import sandbox — is validated
-// naturally by the compiler when cella/provider.go compiles.
+// It checks the weaker but sufficient condition: no non-test file directly in
+// sandbox/ may import sandbox/cella. The forward direction — that cella DOES
+// import sandbox — is validated naturally by the compiler when cella/provider.go
+// compiles.
 
 import (
 	"go/parser"
@@ -29,9 +25,9 @@ import (
 
 const cellaPkg = "latere.ai/x/topos/sandbox/cella"
 
-// TestSandboxPackageDoesNotImportCella parses every non-test .go file in
-// the internal/sandbox/ directory (excluding subdirectories) and asserts
-// that none of them import the cella package path.
+// TestSandboxPackageDoesNotImportCella parses every .go file directly in the
+// sandbox/ directory (excluding subdirectories) and asserts that none of them
+// import the cella package path.
 func TestSandboxPackageDoesNotImportCella(t *testing.T) {
 	// Resolve the directory containing this test file.
 	// os.Getwd() during testing is the package directory.
