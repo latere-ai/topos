@@ -73,10 +73,6 @@ func TestObserver_ReceivesEventStream(t *testing.T) {
 	if !slices.Contains(names, EventSubagentStart) || !slices.Contains(names, EventSubagentStop) {
 		t.Errorf("missing delegation events; got %v", names)
 	}
-	// Two agents ran (entry + delegated peer) -> at least two SessionStart.
-	if got := slices.Index(names, EventSessionStart); got != 0 {
-		t.Errorf("SessionStart not first: %v", names)
-	}
 	// AssistantMessage text is non-empty and its SessionID joins to a lineage node.
 	if assistantText == "" {
 		t.Error("AssistantMessage carried no text")

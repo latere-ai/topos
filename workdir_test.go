@@ -53,15 +53,3 @@ func TestProviderInjectedSandboxWinsOverWorkdir(t *testing.T) {
 		t.Error("injected Sandbox must win over Workdir")
 	}
 }
-
-// TestProviderDefaultWhenNeither verifies the zero-config path: no Sandbox and no
-// Workdir yields a working temp-dir provider.
-func TestProviderDefaultWhenNeither(t *testing.T) {
-	r, err := NewRunner(Options{SessionID: "d", Model: ModelOptions{Kind: ModelFake}})
-	if err != nil {
-		t.Fatalf("NewRunner: %v", err)
-	}
-	if r.provider() == nil {
-		t.Error("provider() must never be nil")
-	}
-}

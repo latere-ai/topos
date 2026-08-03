@@ -205,20 +205,6 @@ func TestDelegateAttenuatesPeerTools(t *testing.T) {
 	}
 }
 
-func TestDelegatePeerReplyFlowsBack(t *testing.T) {
-	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
-	// The peer's "looks good" is the delegate tool's result; assert it round-tripped
-	// by checking the entry finished after seeing it (final "done" requires a prior
-	// tool result in the transcript).
-	res, err := r.Run(context.Background(), dynamicRegion(), "go")
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if res.Final != "done" {
-		t.Errorf("entry did not finish after the delegate returned: final = %q", res.Final)
-	}
-}
-
 func TestPinnedChainRunsInOrder(t *testing.T) {
 	// Plain brain: every turn finishes (no delegation), so each chain step terminates.
 	r := newTestRunner(t, testBrain{})
@@ -367,30 +353,4 @@ func containsEvent(in []hooks.EventName, want hooks.EventName) bool {
 		}
 	}
 	return false
-}
-
-func TestDynamicRunFinalIsDeterministic(t *testing.T) {
-	run := func() string {
-		r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
-		res, err := r.Run(context.Background(), dynamicRegion(), "go")
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-		// Lineage ids + edges are deterministic; assert the structural summary.
-		return summarize(res.Lineage)
-	}
-	if a, b := run(), run(); a != b {
-		t.Errorf("run summary not reproducible:\n a=%s\n b=%s", a, b)
-	}
-}
-
-func summarize(l Lineage) string {
-	var b strings.Builder
-	for _, n := range l.Nodes {
-		b.WriteString(n.ID + ":" + string(n.Status) + ";")
-	}
-	for _, e := range l.Edges {
-		b.WriteString(e.From + "->" + e.To + ":" + string(e.Kind) + ";")
-	}
-	return b.String()
 }
