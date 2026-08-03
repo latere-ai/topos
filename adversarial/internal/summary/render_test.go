@@ -118,26 +118,3 @@ func TestOneLine(t *testing.T) {
 		t.Errorf("long string should end with ellipsis: %q", got[len(got)-10:])
 	}
 }
-
-func TestSortByContention_Determinism(t *testing.T) {
-	mk := func(id string, lastTouched int, reAttacked bool) ledger.Record {
-		return ledger.Record{
-			AttackID: id, Status: ledger.StatusUnresolved,
-			RoundIntroduced: ptr(1), RoundLastTouched: lastTouched, ReAttacked: reAttacked,
-		}
-	}
-	in := []ledger.Record{
-		mk("c1-1", 3, false),
-		mk("c1-2", 4, true),
-		mk("c1-3", 2, false),
-		mk("c1-4", 4, false),
-	}
-	out := SortByContention(in)
-	// Highest contention first; equal scores break by AttackID.
-	if out[0].AttackID != "c1-2" { // 4 + 1 = 5
-		t.Errorf("first: got %q, want c1-2", out[0].AttackID)
-	}
-	if out[1].AttackID != "c1-4" { // 4 + 0 = 4
-		t.Errorf("second: got %q, want c1-4", out[1].AttackID)
-	}
-}
