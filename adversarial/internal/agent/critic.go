@@ -62,7 +62,7 @@ func AssemblePrompt(in CriticInput) string {
 	var b strings.Builder
 	b.WriteString(in.SystemPrompt)
 	b.WriteString("\n\n")
-	b.WriteString(directives)
+	b.WriteString(Directives)
 	b.WriteString("\n\n# Task\n\n")
 	b.WriteString(in.TaskContext)
 	b.WriteString("\n\n# Diff\n\n```diff\n")
@@ -77,10 +77,11 @@ func AssemblePrompt(in CriticInput) string {
 	return b.String()
 }
 
-// directives is appended to every critic system prompt to keep the
+// Directives is appended to every critic system prompt to keep the
 // agent on-task: emit ONLY the markdown document, no preamble, no tool
-// calls, no thinking aloud.
-const directives = `Critical output rules:
+// calls, no thinking aloud. The public assembler in the adversarial
+// package appends the same block, so both prompt paths stay identical.
+const Directives = `Critical output rules:
 1. Your entire reply MUST be the markdown attack document and nothing
    else. No preamble like "I'll review this" or "Let me start by". No
    trailing summary. Just the document.

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"latere.ai/x/topos/adversarial/internal/agent"
-	"latere.ai/x/topos/adversarial/internal/critic"
 	"latere.ai/x/topos/adversarial/internal/ledger"
 	"latere.ai/x/topos/adversarial/internal/round"
 	"latere.ai/x/topos/adversarial/internal/state"
@@ -194,7 +193,3 @@ func toInternalTokenUsage(u TokenUsage) agent.TokenUsage {
 		CacheRead:   u.CacheRead,
 	}
 }
-
-// Aspect field access requires the internal critic package; the bridge
-// compiles because adversarial is inside the latere.ai/x/topos module.
-var _ = critic.Aspect{} // import guard — ensures critic is used
