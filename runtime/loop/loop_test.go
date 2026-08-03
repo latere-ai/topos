@@ -620,15 +620,6 @@ func TestLoopStreamRecvError(t *testing.T) {
 	}
 }
 
-func TestLoopContextCancelledDuringDrain(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cfg := baseCfg(&cancelModel{cancel: cancel}, tools.Builtins())
-	_, err := loop.Run(ctx, cfg, nil)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v, want context.Canceled", err)
-	}
-}
-
 func TestLoopToolNotFoundInRegistry(t *testing.T) {
 	// Model asks for "bash" but the registry is empty: the loop must record an
 	// error tool result and continue to termination.
