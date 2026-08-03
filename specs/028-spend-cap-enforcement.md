@@ -10,7 +10,6 @@ affects:
   - billing/budget.go
   - runtime/loop/loop.go
   - models/model.go
-  - models/lux/adapter.go
   - topos.go
 effort: medium
 created: 2026-07-23
@@ -96,14 +95,14 @@ One site covers the entry, peer, and pinned loops. On breach the loop stops and
 the result carries a terminal budget stop reason, distinguishable from a
 steady-state or max-rounds stop.
 
-`loop.Run` takes the enforcer as a parameter rather than a `Config` field. A struct
+`loop.Run` takes the meter as a parameter rather than a `Config` field. A struct
 field zero-values silently, which reproduces the current defect in a new place; a
 signature change makes an unenforced budget fail to compile. This touches three
 production call sites and roughly fourteen in `runtime/loop/loop_test.go`.
 
 ### Fail-closed construction
 
-`topos.New` returns an error when a budget is set and the configured model cannot
+`topos.NewRunner` returns an error when a budget is set and the configured model cannot
 be priced by the resolved `CostSource`. Nothing runs and nothing is spent.
 
 Honest limitation: config-time validation covers models declared in `Options` and
@@ -176,13 +175,13 @@ always nil and the rate card carries every run.
 - The lineage node of a budget-stopped agent is not `done`.
 - A `Meter` shared by several goroutines loses no usage (race-detector test).
 - A gateway-reported cost is preferred over the rate card when present.
-- A budget set against an unpriceable model fails `topos.New` with an error naming
+- A budget set against an unpriceable model fails `topos.NewRunner` with an error naming
   the model. No turn executes.
 - A model resolved after construction that cannot be priced stops the run at the
   first turn rather than running unenforced.
 - Cache-heavy usage prices differently from an equivalent token count of plain
   input, i.e. the rate card is not flat.
-- `loop.Run` cannot be called without an enforcer argument.
+- `loop.Run` cannot be called without a meter argument.
 - Zero cost from the gateway is distinguished from unreported cost.
 
 ## Test plan
@@ -209,7 +208,7 @@ defect is precisely a cap that never fires.
   path — every agent runs, the error is nil, and every node is `done`.
 - `models`: nil `CostUSDMicro` and zero `CostUSDMicro` take different paths.
 - `billing`: rate card prices cache reads and writes at their own multiples.
-- root: `topos.New` errors when a budget is set for an unpriceable model.
+- root: `topos.NewRunner` errors when a budget is set for an unpriceable model.
 - root: an unpriceable model resolved at runtime stops the first turn.
 
 ## Non-goals
