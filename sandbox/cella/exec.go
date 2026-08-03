@@ -31,11 +31,11 @@ type createCommandReq struct {
 	EnvFromVault map[string]string `json:"env_from_vault,omitempty"`
 }
 
-// commandResp is the Command response from starting a command.
+// commandResp is the Command response from starting a command. Only the id is
+// consumed: the terminal phase and exit code arrive later on the logs envelope,
+// which is the single place the stream reads them from.
 type commandResp struct {
 	CommandID string `json:"command_id"`
-	Phase     string `json:"phase"`
-	ExitCode  *int   `json:"exit_code"`
 }
 
 // logEnvelope is the cursor-mode logs response
@@ -125,7 +125,7 @@ func (p *Provider) pollLogs(ctx context.Context, sandboxID, commandID string, s 
 		}
 		cursor = env.NextCursor
 
-		if env.Phase != string(phaseRunning) {
+		if env.Phase != phaseRunning {
 			s.finish(env.Phase, env.ExitCode)
 			_ = s.pw.Close()
 			return

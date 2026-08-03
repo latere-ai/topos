@@ -27,9 +27,9 @@ import (
 // src_dir and import dest both default to the sandbox workdir, /workspace, so
 // the relative path goes in the tar/`paths` rather than being absolutised here).
 
-// exportReq is the POST /v1/sandboxes/{id}/files/export body. SrcDir is left
-// empty so the server defaults it to the workspace root; Paths are relative to
-// it (the arguments to `tar -C <root> -cf - <paths...>`).
+// exportReq is the POST /v1/sandboxes/{id}/files/export body. It carries no
+// src_dir, so the server defaults it to the workspace root; Paths are relative
+// to that root (the arguments to `tar -C <root> -cf - <paths...>`).
 type exportReq struct {
 	Paths []string `json:"paths"`
 }

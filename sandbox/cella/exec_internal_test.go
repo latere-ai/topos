@@ -45,7 +45,7 @@ func execHandler(t *testing.T, logs []logEnvelope) http.Handler {
 			if len(req.Argv) == 0 {
 				t.Error("command POST had empty argv")
 			}
-			_ = json.NewEncoder(w).Encode(commandResp{CommandID: "cmd_1", Phase: "running"})
+			_ = json.NewEncoder(w).Encode(commandResp{CommandID: "cmd_1"})
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/logs"):
 			i := int(poll.Add(1)) - 1
 			if i >= len(logs) {
@@ -162,7 +162,7 @@ func TestExecSendsSecretEnvAsVaultRef(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/commands") {
 			_ = json.NewDecoder(r.Body).Decode(&gotReq)
-			_ = json.NewEncoder(w).Encode(commandResp{CommandID: "cmd_1", Phase: "exited", ExitCode: &code})
+			_ = json.NewEncoder(w).Encode(commandResp{CommandID: "cmd_1"})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(logEnvelope{Phase: "exited", ExitCode: &code})
