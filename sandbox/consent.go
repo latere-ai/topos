@@ -17,9 +17,9 @@ var ErrConsentDenied = errors.New("sandbox: exec denied by consent policy")
 
 // ConsentFunc decides whether a command may run. It returns nil to allow, or a
 // non-nil error to deny (the reason is wrapped into ErrConsentDenied). It runs on
-// the machine that owns the sandbox — for mode 2 (interactive-session-modes trust
-// protection #3) that is the laptop, where it prompts the user locally before a
-// remote session executes anything on the real machine.
+// the machine that owns the sandbox — for a session driving a developer's own
+// machine that is the laptop, where it prompts the user locally before a remote
+// session executes anything on the real machine.
 type ConsentFunc func(ctx context.Context, id string, opts ExecOptions) error
 
 // consented wraps a Provider so every Exec and StreamExec first passes the consent

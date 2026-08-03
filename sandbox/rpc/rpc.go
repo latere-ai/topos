@@ -3,15 +3,14 @@
 // license that can be found in the LICENSE file.
 
 // Package rpc serves a sandbox.Provider over a byte stream, so the control plane
-// can drive a remote machine's filesystem and exec as its sandbox (mode 2,
-// interactive-session-modes). It is transport-agnostic: Serve and NewClient run
+// can drive a remote machine's filesystem and exec as its sandbox. It is
+// transport-agnostic: Serve and NewClient run
 // over any io.ReadWriteCloser (an in-memory net.Pipe in tests, a tunnel stream in
 // production).
 //
 // Scope: all Provider methods — the unary set (Create, Destroy, Exec, ReadFile,
 // WriteFile, ListFiles, HealthCheck) plus StreamExec (streaming output as a
-// sequence of frames terminated by the final ExecResult). Per-call exec consent
-// and tunnel wiring are named follow-on leaves in session-laptop-sandbox-rpc. One
+// sequence of frames terminated by the final ExecResult). One
 // request is in flight at a time per connection (the loop dispatches tools
 // sequentially, and a StreamExec holds the connection until its stream is closed);
 // stream multiplexing belongs to the transport (yamux) below.

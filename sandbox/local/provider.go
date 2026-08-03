@@ -6,9 +6,11 @@
 // temp directories. It is the zero-dependency fallback for local development
 // and tests — no Cella required.
 //
-// Each sandbox maps to a per-call temp directory (os.MkdirTemp). Exec runs
-// commands with exec.CommandContext against that directory. Destroy removes the
-// directory. ReadFile/WriteFile/ListFiles operate directly on the filesystem,
+// In the default temp-directory mode ([New]) each sandbox maps to its own
+// os.MkdirTemp directory and Destroy removes it. In rooted mode ([NewAt]) every
+// sandbox maps to a caller-owned directory that Destroy deregisters but never
+// removes. Exec runs commands with exec.CommandContext against that directory in
+// either mode. ReadFile/WriteFile/ListFiles operate directly on the filesystem,
 // confined to that directory: every path argument, and Exec/StreamExec's Cwd,
 // is resolved against it and rejected with [ErrPathEscape] when it would land
 // outside. HealthCheck returns nil iff the directory still exists.

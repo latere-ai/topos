@@ -20,8 +20,8 @@ import (
 var ErrConfined = errors.New("sandbox: path outside workspace root or denied by secret policy")
 
 // secretBasenameGlobs are filename patterns a confined Provider never reads,
-// writes, or lists, so a session driving a real machine (mode 2,
-// interactive-session-modes) cannot exfiltrate credentials in place. The list is
+// writes, or lists, so a session driving a real machine cannot exfiltrate
+// credentials in place. The list is
 // non-overridable: there is no option to disable it. It mirrors the lift/drop
 // deny-list so the same secrets stay unreadable whether copied or driven in place.
 var secretBasenameGlobs = []string{
@@ -58,8 +58,7 @@ func isSecretPath(relPath string) bool {
 }
 
 // confined wraps a Provider so every path argument is confined to a workspace
-// root and screened against the secret deny-list (interactive-session-modes trust
-// protections #1 and #2). It rewrites nothing — it validates and passes the
+// root and screened against the secret deny-list. It rewrites nothing — it validates and passes the
 // caller's original path through, since the inner Provider owns path
 // interpretation.
 type confined struct {
