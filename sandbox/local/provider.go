@@ -215,11 +215,7 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 		return nil, fmt.Errorf("local sandbox: stream exec: start: %w", err)
 	}
 
-	s := &localStream{
-		r:   pr,
-		pw:  pw,
-		cmd: cmd,
-	}
+	s := &localStream{r: pr}
 
 	go func() {
 		waitErr := cmd.Wait()
@@ -391,9 +387,7 @@ func buildEnv(env map[string]string) []string {
 
 // localStream implements [sandbox.ExecStream] over a local exec.Cmd.
 type localStream struct {
-	r   *os.File
-	pw  *os.File
-	cmd *exec.Cmd
+	r *os.File
 
 	mu     sync.Mutex
 	result sandbox.ExecResult
