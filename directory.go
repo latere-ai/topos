@@ -7,7 +7,7 @@ package topos
 import "strings"
 
 // Directory returns the discoverable peers of a region as cards — name, role, and
-// when-to-use description, never permissions. This is the workspace-wide view a
+// when-to-use description, never permissions. This is the region-scoped view a
 // dynamic agent sees; whom it may actually message stays capability-gated by the
 // delegate tool (a peer not in this set is refused).
 func (r Region) Directory() []PeerCard {

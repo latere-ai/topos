@@ -6,13 +6,13 @@
 //
 // A host application imports this package to define agents, compose them into
 // regions, and run a single region ([Runner.Run]) or a graph of regions
-// ([Runner.RunGraph]) locally and in-process — without importing anything under
-// internal/. Everything exported here uses only topos-defined or standard-library
-// types, so the boundary holds across the module edge (Go forbids cross-module
-// internal/ imports; this package is the curated public API on the inside of
-// that edge).
+// ([Runner.RunGraph]) locally and in-process. Everything exported here uses only
+// topos-defined or standard-library types, so a host depends on this package
+// alone. The engine subpackages beneath it (runtime/loop, harness, models,
+// sandbox) are public but advanced: reach for them only when the root surface
+// does not cover the case.
 //
-// The runner executes agents through the real agentic loop (internal/runtime/loop):
+// The runner executes agents through the real agentic loop (runtime/loop):
 // the model is the brain (configured via ModelOptions — Lux, a direct provider, or
 // the deterministic fake), and a handoff is an agents-as-tools delegation — a
 // `delegate` tool registered into the loop whose Invoke performs a real attenuated
@@ -50,8 +50,9 @@ const (
 	// This is what a static flow (implement = impl → test → commit) compiles to.
 	Pinned Autonomy = "pinned"
 	// Dynamic gives the entry agent a `delegate` tool over a directory of peers and
-	// lets the model decide whom to hand off to. Discovery is workspace-wide; whom it
-	// may message stays capability-gated (orchestrator+worker by default, mesh opt-in).
+	// lets the model decide whom to hand off to. Discovery spans the region's peers;
+	// whom it may message stays capability-gated (orchestrator+worker by default,
+	// mesh opt-in).
 	Dynamic Autonomy = "dynamic"
 )
 
