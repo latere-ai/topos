@@ -21,13 +21,12 @@ under `sessions/<id>/` where the id is `<YYYYMMDDTHHMMSSZ>-<rand6>`.
 
 ```
 <StateDir>/
-  log.jsonl                      # cross-session run log
   sessions/<id>/
     start.json                   # adversarial.start.v0: proposer/critic refs, task, diff snapshot, config, versions
     end.json                     # termination, stats, headline reference, exit code, summary path
     summary.md                   # contention-scored headline + open leaves + resolved set
     attacks.jsonl                # the attack ledger, one line per transition (adversarial.attack.v0)
-    log.jsonl                    # per-session log
+    transcript.jsonl             # one line per round: fork, round, role, path, ms
     forks/critic-<n>/
       diff                       # the diff this fork reviewed
       stats.json                 # adversarial.fork-stats.v0: topic, rounds, termination, per-role usage
@@ -59,7 +58,7 @@ under `sessions/<id>/` where the id is `<YYYYMMDDTHHMMSSZ>-<rand6>`.
 State files are written atomically: a temp file is written and fsynced, then
 renamed over the target and the parent directory is fsynced, so a crash never
 leaves a half-written `start.json`/`end.json`/round file. The append-only
-`attacks.jsonl` and `log.jsonl` are not fsynced per line, trading a small
+`attacks.jsonl` and `transcript.jsonl` are not fsynced per line, trading a small
 durability window for throughput on the hot path. Every record carries a `schema`
 field (`adversarial.<kind>.v0`) so the format can evolve without silently
 misinterpreting old sessions.

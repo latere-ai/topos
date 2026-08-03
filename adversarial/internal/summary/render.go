@@ -85,7 +85,7 @@ func Decide(s *round.Summary) SurfacingDecision {
 	case round.TermSteadyState:
 		if s.Unresolved == 0 {
 			return SurfacingDecision{
-				StdoutLine: "[adversarial] clean run; see .adversarial/log.jsonl",
+				StdoutLine: fmt.Sprintf("[adversarial] clean run; see %s", summaryPath),
 			}
 		}
 		return SurfacingDecision{
