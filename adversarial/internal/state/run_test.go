@@ -67,20 +67,6 @@ func TestAppendTranscript(t *testing.T) {
 	}
 }
 
-func TestAppendLog(t *testing.T) {
-	dir := t.TempDir()
-	if err := AppendLog(dir, &LogRecord{TS: time.Now(), Kind: "run", Session: "x", Termination: "steady-state"}); err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(dir + "/log.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(b), `"kind":"run"`) {
-		t.Errorf("missing run record: %q", b)
-	}
-}
-
 func TestWriteEnd(t *testing.T) {
 	dir := t.TempDir()
 	sess, err := NewSession(dir, 1, time.Now())

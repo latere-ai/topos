@@ -101,25 +101,6 @@ func (s *Session) AppendLine(rel string, data []byte) error {
 	return err
 }
 
-// AppendCrossSessionLog appends one line to <stateDirAbs>/log.jsonl.
-// The cross-session log lives outside any session folder.
-func AppendCrossSessionLog(stateDirAbs string, data []byte) error {
-	if err := os.MkdirAll(stateDirAbs, 0o755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(filepath.Join(stateDirAbs, "log.jsonl"),
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	if _, err := f.Write(data); err != nil {
-		return err
-	}
-	_, err = f.Write([]byte{'\n'})
-	return err
-}
-
 // newSessionID returns "<YYYYMMDDTHHMMSSZ>-<rand6>" in UTC.
 func newSessionID(now time.Time) string {
 	return now.UTC().Format("20060102T150405Z") + "-" + randSuffix()

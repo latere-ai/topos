@@ -106,22 +106,6 @@ type TranscriptRecord struct {
 	MS    int       `json:"ms"`
 }
 
-// LogRecord is one line of the cross-session <state-dir>/log.jsonl.
-// "kind" discriminates "run" vs "skipped".
-type LogRecord struct {
-	TS           time.Time `json:"ts"`
-	Kind         string    `json:"kind"`
-	Session      string    `json:"session,omitempty"`
-	Termination  string    `json:"termination,omitempty"`
-	Unresolved   int       `json:"unresolved,omitempty"`
-	Tokens       int       `json:"tokens,omitempty"`
-	WallSeconds  int       `json:"wall_s,omitempty"`
-	Summary      string    `json:"summary,omitempty"`
-	Reason       string    `json:"reason,omitempty"`
-	ChangedLines int       `json:"changed_lines,omitempty"`
-	Threshold    int       `json:"threshold,omitempty"`
-}
-
 // On-disk schema versions.
 const (
 	// SchemaStart identifies the start.json schema.
@@ -162,13 +146,4 @@ func AppendTranscript(s *Session, r *TranscriptRecord) error {
 		return err
 	}
 	return s.AppendLine("transcript.jsonl", b)
-}
-
-// AppendLog appends one record to <state-dir>/log.jsonl.
-func AppendLog(stateDirAbs string, r *LogRecord) error {
-	b, err := json.Marshal(r)
-	if err != nil {
-		return err
-	}
-	return AppendCrossSessionLog(stateDirAbs, b)
 }

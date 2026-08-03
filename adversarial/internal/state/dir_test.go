@@ -143,33 +143,6 @@ func TestAtomicWriteCreatesNestedDir(t *testing.T) {
 	}
 }
 
-func TestAppendCrossSessionLog(t *testing.T) {
-	dir := t.TempDir()
-	if err := AppendCrossSessionLog(dir, []byte(`{"a":1}`)); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendCrossSessionLog(dir, []byte(`{"a":2}`)); err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(filepath.Join(dir, "log.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != "{\"a\":1}\n{\"a\":2}\n" {
-		t.Errorf("got %q", b)
-	}
-}
-
-func TestAppendCrossSessionLogCreatesDir(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "nested", "sub")
-	if err := AppendCrossSessionLog(dir, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "log.jsonl")); err != nil {
-		t.Errorf("log.jsonl not created: %v", err)
-	}
-}
-
 func TestAtomicWrite_OpenError_DirIsAFile(t *testing.T) {
 	// Trigger MkdirAll's error path: pre-create a regular file at the
 	// dir we'd need to make. AtomicWrite then can't create a directory
@@ -202,17 +175,6 @@ func TestAppendLine_DirIsAFile(t *testing.T) {
 	}
 	if err := sess.AppendLine("c/sub/file", nil); err == nil {
 		t.Error("expected error")
-	}
-}
-
-func TestAppendCrossSessionLog_PathIsAFile(t *testing.T) {
-	dir := t.TempDir()
-	conflict := filepath.Join(dir, "blocker")
-	if err := os.WriteFile(conflict, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendCrossSessionLog(filepath.Join(conflict, "nested"), nil); err == nil {
-		t.Error("expected MkdirAll error")
 	}
 }
 
