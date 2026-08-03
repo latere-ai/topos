@@ -114,6 +114,4 @@ the provider-agnostic core stays clean. Its own spec set documents the engine,
 protocol, backends, and on-disk format.
 
 - [Adversarial Review specs](adversarial-README.md): the capability index, the
-  engine and protocol contracts, and the roadmap.
-- [Architecture](022-architecture.md): the fork/debate model, the
-  component map, and its consumers.
+  engine and protocol contracts, the on-disk session format, and the roadmap.

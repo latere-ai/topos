@@ -299,9 +299,9 @@ a region cap and a graph is a composition of regions, so a two-region graph
 under a $10 cap may spend $20. `Runner.Turn` likewise meters each turn on its
 own; a session's budget is per turn, not per conversation.
 
-`DeriveChildBudget` is unchanged. Sub-allocation bounds what a parent may grant
-a child; a meter bounds what a region may spend. A child can hold a grant it
-never uses because the region's meter tripped first.
+Authority attenuation is unchanged and is a separate axis. Attenuation bounds
+what a parent may grant a child; a meter bounds what a region may spend. A child
+can hold a grant it never uses because the region's meter tripped first.
 
 ### Surfacing a stop
 
