@@ -66,11 +66,6 @@ type Request struct {
 	// ThinkingBudget is the extended thinking token budget (Anthropic) or an
 	// analogous reasoning budget for other providers. Zero disables it.
 	ThinkingBudget int
-
-	// ProviderOptions carries provider-specific request parameters that do
-	// not have a normalised counterpart. Keys and values are
-	// provider-defined; callers must document which provider they target.
-	ProviderOptions map[string]any
 }
 
 // Role is the author of one conversation turn. It is a closed
@@ -210,8 +205,9 @@ type Event struct {
 	ProviderEvent *ProviderEvent
 }
 
-// Usage carries token accounting for a turn. The fields match the shape
-// consumed by ops/budget-cost-billing.
+// Usage carries token accounting for a turn. Cache reads and writes are
+// separate fields because they price differently from plain input, which is
+// what [latere.ai/x/topos/billing] meters a spend cap against.
 type Usage struct {
 	// InputTokens is the number of prompt tokens consumed (excluding cache
 	// reads, which are billed separately).

@@ -99,5 +99,5 @@ func TestFakeModel_Turn2_EndTurn(t *testing.T) {
 	}
 }
 
-// TestFakeModel_ImplementsInterface is a compile-time check.
+// Compile-time check that the fake satisfies the Model interface.
 var _ models.Model = (*fakemodelimpl.Model)(nil)

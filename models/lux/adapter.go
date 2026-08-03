@@ -36,7 +36,7 @@ import (
 const (
 	defaultBaseURL = "https://lux.latere.ai"
 
-	// defaultModel matches the anthropic adapter's default so swapping
+	// defaultModel is used when the caller names no model, so swapping
 	// ModelKind alone keeps behavior.
 	defaultModel = "claude-opus-4-8"
 )
@@ -120,7 +120,7 @@ func (a *Adapter) Stream(ctx context.Context, req models.Request) (models.Stream
 func (a *Adapter) buildRequest(req models.Request) (*luxsdk.Request, error) {
 	maxTokens := int64(req.MaxTokens)
 	if maxTokens == 0 {
-		maxTokens = 8192 // safe default, matching the anthropic adapter
+		maxTokens = 8192 // safe default when the caller sets no cap
 	}
 	wire := &luxsdk.Request{
 		Model:     a.model,
@@ -160,9 +160,8 @@ func (a *Adapter) buildRequest(req models.Request) (*luxsdk.Request, error) {
 }
 
 // messageToWire converts a canonical [models.Message] to the lux wire
-// shape. Same role mapping as the anthropic adapter: "tool" becomes a
-// user turn carrying tool_result blocks (the IR keeps the two-role
-// model).
+// shape. The role mapping sends "tool" as a user turn carrying tool_result
+// blocks (the IR keeps the two-role model).
 func messageToWire(m models.Message) (luxsdk.Message, error) {
 	switch m.Role {
 	case models.RoleUser:
