@@ -10,15 +10,10 @@ import (
 )
 
 // Render renders summary.md for one finished run.
-type Render struct {
-	Format string // "markdown" only in v0
-}
+type Render struct{}
 
 // Bytes produces the on-disk summary content.
 func (r *Render) Bytes(s *round.Summary, agg map[string]ledger.Record) ([]byte, error) {
-	if r.Format == "json" {
-		panic("json format not implemented in v0")
-	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Adversarial review - terminated: %s\n\n", s.Termination)
 
@@ -204,7 +199,7 @@ func totalRounds(s *round.Summary) int {
 
 // Persist writes summary.md and end.json for a finished run.
 func Persist(s *round.Summary, agg map[string]ledger.Record, exitCode int) error {
-	r := &Render{Format: "markdown"}
+	r := &Render{}
 	b, err := r.Bytes(s, agg)
 	if err != nil {
 		return err

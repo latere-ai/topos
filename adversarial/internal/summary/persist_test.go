@@ -75,13 +75,3 @@ func TestPersistWritesSummaryAndEnd(t *testing.T) {
 		t.Errorf("status counts: %+v", ef.Stats.ByStatus)
 	}
 }
-
-func TestRenderJSONFormatPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for json format")
-		}
-	}()
-	r := &Render{Format: "json"}
-	_, _ = r.Bytes(&round.Summary{Termination: round.TermSteadyState}, map[string]ledger.Record{})
-}

@@ -44,7 +44,7 @@ func TestDecideInterrupted(t *testing.T) {
 }
 
 func TestRenderHasHeadlineAndStats(t *testing.T) {
-	r := &Render{Format: "markdown"}
+	r := &Render{}
 	agg := map[string]ledger.Record{
 		"c1-1": {
 			AttackID: "c1-1", Aspect: "security", Location: "x.go:1",
@@ -70,7 +70,7 @@ func TestRenderHasHeadlineAndStats(t *testing.T) {
 }
 
 func TestWriteResolved_AllStatuses(t *testing.T) {
-	r := &Render{Format: "markdown"}
+	r := &Render{}
 	agg := map[string]ledger.Record{
 		"c1-1": {
 			AttackID: "c1-1", Aspect: "security",
