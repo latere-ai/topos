@@ -108,7 +108,7 @@ func decodeClaudeStreamResult(stdout []byte) (claudeJSON, error) {
 	var last claudeJSON
 	var found bool
 	sc := bufio.NewScanner(bytes.NewReader(stdout))
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	sc.Buffer(make([]byte, 0, 64*1024), maxScanLine)
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 {
