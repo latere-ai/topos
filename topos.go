@@ -2,7 +2,8 @@
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
 
-// Package topos is the public, embeddable surface of the Topos agent runtime.
+// Package topos is the public, embeddable surface of Topos Runtime, an
+// embeddable Go runtime for multi-agent systems.
 //
 // A host application imports this package to define agents, compose them into
 // regions, and run a single region ([Runner.Run]) or a graph of regions

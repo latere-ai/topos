@@ -5,15 +5,14 @@
 [![Release](https://img.shields.io/github/v/release/latere-ai/topos)](https://github.com/latere-ai/topos/releases/latest)
 [![License](https://img.shields.io/github/license/latere-ai/topos)](LICENSE)
 
-**Topos Runtime** is the embeddable Go agent runtime at the core of
-[Topos](https://topos.latere.ai), the Latere agent platform. A host application
-defines agents, composes them into regions, and runs a single region or a graph of
-regions in-process. The runtime provides sub-agent spawning with attenuated
-permissions, peer discovery for multi-agent work, and a deterministic lineage graph
-of everything that ran.
+**Topos Runtime** is an embeddable Go runtime for multi-agent systems. A host
+application defines agents, composes them into regions, and runs a single region
+or a graph of regions in-process, with sandboxed tools, sub-agent spawning under
+attenuated permissions, peer discovery for agent-to-agent work, and a
+deterministic lineage graph of everything that ran.
 
-The Topos platform is one host built on this runtime; any Go application can be
-another.
+[Topos](https://topos.latere.ai), the Latere agent platform, is one host built on
+this runtime; any Go application can be another.
 
 ## Install
 
