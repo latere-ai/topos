@@ -1,6 +1,6 @@
 ---
 title: Open Source Package Presentation
-status: proposed
+status: complete
 track: runtime
 depends_on:
   - specs/003-embeddable-sdk.md
@@ -67,3 +67,13 @@ commit.
 - `v0.3.0` is an annotated tag and a published GitHub release on the verified
   main-branch commit.
 
+## Outcome
+
+Implemented on 2026-08-04. The README now exposes CI, Go Reference, release, and
+license status plus a copyable install command and direct API/example paths.
+`CONTRIBUTING.md`, `SECURITY.md`, and structured issue forms establish the public
+contribution and disclosure workflows, guarded by `TestOpenSourceRepositoryContract`.
+
+The GitHub repository now carries Go/agent/LLM/sandbox topics and an integrator-
+focused description. Private vulnerability reporting is enabled. Release
+`v0.3.0` publishes the verified package state described by this spec.

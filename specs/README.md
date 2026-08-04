@@ -7,7 +7,7 @@ region or a graph of regions locally and in-process. The specs here document the
 public capabilities the runtime ships, so a developer can see the whole shape
 before reading code.
 
-The shipped runtime specs (track `runtime`, `001`–`012` and `028`) are
+The shipped runtime specs (track `runtime`, `001`–`012` and `028`–`029`) are
 `status: complete` and end with an Outcome section pointing at the packages that
 implement them. Proposed runtime work follows those numbered specs. The Adversarial Review
 specs (track `adversarial`) follow their own lifecycle (`current` for shipped
