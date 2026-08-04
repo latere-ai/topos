@@ -24,11 +24,11 @@ const cannedR1 = "# Critic 1 - round 1 attacks\n\n" +
 	"expected violation: An attacker can inject boolean logic via q=%' OR 1=1--.\n\n" +
 	"reproduction:\n```\ncurl 'http://localhost:8000/search?q=1'\n```\n"
 
-// scriptedBrain is a models.Model that emits a fixed text body then ends the
+// scriptedModel is a models.Model that emits a fixed text body then ends the
 // turn, so a critic round is deterministic and network-free.
-type scriptedBrain struct{ text string }
+type scriptedModel struct{ text string }
 
-func (b scriptedBrain) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
+func (b scriptedModel) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
 	return &scriptStream{events: []models.Event{
 		{Kind: models.KindTextDelta, TextDelta: b.text},
 		{Kind: models.KindDone, StopReason: models.StopEndTurn},
@@ -51,12 +51,12 @@ func (s *scriptStream) Recv() (models.Event, error) {
 
 func (s *scriptStream) Close() error { return nil }
 
-// blockingBrain never emits; it blocks until the request context is cancelled,
+// blockingModel never emits; it blocks until the request context is cancelled,
 // then surfaces ctx.Err(). It lets a test observe whether Round's per-round
 // deadline actually bounds the model call.
-type blockingBrain struct{}
+type blockingModel struct{}
 
-func (blockingBrain) Stream(ctx context.Context, _ models.Request) (models.Stream, error) {
+func (blockingModel) Stream(ctx context.Context, _ models.Request) (models.Stream, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
@@ -88,7 +88,7 @@ func securityInput() adversarial.CriticInput {
 // so this is also the no-cap side of the `if in.Deadline > 0` guard that
 // TestRoundHonorsDeadline covers from the other side.
 func TestRoundReturnsModelTextVerbatim(t *testing.T) {
-	res := runOnce(t, nativecritic.Config{Brain: scriptedBrain{text: cannedR1}}, securityInput())
+	res := runOnce(t, nativecritic.Config{ModelClient: scriptedModel{text: cannedR1}}, securityInput())
 
 	if res.Markdown != cannedR1 {
 		t.Fatalf("markdown not verbatim:\n got %q\nwant %q", res.Markdown, cannedR1)
@@ -117,7 +117,7 @@ func TestRoundHonorsDeadline(t *testing.T) {
 	in.Deadline = 20 * time.Millisecond
 
 	start := time.Now()
-	_, err := nativecritic.NewCriticFactory(nativecritic.Config{Brain: blockingBrain{}})(1).
+	_, err := nativecritic.NewCriticFactory(nativecritic.Config{ModelClient: blockingModel{}})(1).
 		Round(context.Background(), in)
 	elapsed := time.Since(start)
 
@@ -136,7 +136,7 @@ func TestRoundHonorsDeadline(t *testing.T) {
 // exposes no token usage, so the topos critic reports zero. A future topos-side
 // fix flips this test deliberately.
 func TestRoundReportsNoUsage(t *testing.T) {
-	res := runOnce(t, nativecritic.Config{Brain: scriptedBrain{text: cannedR1}}, securityInput())
+	res := runOnce(t, nativecritic.Config{ModelClient: scriptedModel{text: cannedR1}}, securityInput())
 	if res.Usage.Total() != 0 || res.Tokens != 0 || res.USD != 0 {
 		t.Errorf("expected zero usage, got usage=%+v tokens=%d usd=%v", res.Usage, res.Tokens, res.USD)
 	}
@@ -150,7 +150,7 @@ func TestRoundReportsNoUsage(t *testing.T) {
 // keep a critic read-only. See the roadmap note in specs/adversarial-README.md.
 func TestToposGrantsExactlyAgentSpecTools(t *testing.T) {
 	grants := func(tools []string) []string {
-		runner, err := xtopos.NewRunner(xtopos.Options{SessionID: "t", Brain: scriptedBrain{text: "ok"}})
+		runner, err := xtopos.NewRunner(xtopos.Options{SessionID: "t", ModelClient: scriptedModel{text: "ok"}})
 		if err != nil {
 			t.Fatalf("NewRunner: %v", err)
 		}

@@ -54,7 +54,7 @@ and every fork is a distinct lineage node. Secrets stay in the gateway and billi
 is centralized.
 
 `Config` carries `Model` (`xtopos.ModelOptions`: Lux, Direct, or Fake), `Sandbox`
-(nil uses the local sandbox), `Brain` (a scripted model for tests, overriding
+(nil uses the local sandbox), `ModelClient` (a scripted model for tests, overriding
 `Model`), and `Tools`. `Tools` is recorded on the lineage node as `Grants` and is
 an audit record rather than a sandbox: the runtime offers every agent
 `tools.Builtins()` whatever the grant says, so a nil `Tools` does not by itself

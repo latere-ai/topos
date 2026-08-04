@@ -58,13 +58,13 @@ func ExampleRunner_Run_lineage() {
 }
 
 // ExampleRunner_Run_delegation shows a dynamic region where the entry agent
-// delegates to a peer. A scripted model is supplied via Options.Brain so the
+// delegates to a peer. A scripted model is supplied via Options.ModelClient so the
 // run is deterministic; a host would pass real ModelOptions instead. The
 // resulting lineage records the delegate and deliver edges.
 func ExampleRunner_Run_delegation() {
 	r, _ := topos.NewRunner(topos.Options{
-		SessionID: "demo",
-		Brain:     delegateOnceBrain{peer: "reviewer"},
+		SessionID:   "demo",
+		ModelClient: delegateOnceModel{peer: "reviewer"},
 	})
 
 	res, _ := r.Run(context.Background(), topos.Region{
@@ -125,11 +125,11 @@ func ExampleRunner_RunGraph() {
 	// demo/plan/lead -> demo/ship/impl (next)
 }
 
-// delegateOnceBrain is a deterministic models.Model: the entry agent delegates
+// delegateOnceModel is a deterministic models.Model: the entry agent delegates
 // to the peer once, then everyone finishes.
-type delegateOnceBrain struct{ peer string }
+type delegateOnceModel struct{ peer string }
 
-func (b delegateOnceBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+func (b delegateOnceModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
 	for _, m := range req.Messages {
 		if m.Role == "tool" { // the delegate returned; finish
 			return &events{ev: end("done")}, nil

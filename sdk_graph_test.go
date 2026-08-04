@@ -13,13 +13,13 @@ import (
 	"latere.ai/x/topos/models"
 )
 
-// echoBrain finishes every turn (no delegation) and returns "seen:" prefixed to
+// echoModel finishes every turn (no delegation) and returns "seen:" prefixed to
 // the last user prompt it received. That makes a region's Final a function of its
 // input task, so a graph edge's data flow (source Final -> target task) is
 // observable in the target region's output.
-type echoBrain struct{}
+type echoModel struct{}
 
-func (echoBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+func (echoModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
 	prompt := ""
 	for _, m := range req.Messages {
 		if m.Role == "user" {
@@ -36,7 +36,7 @@ func pinnedRegion(name string) Region {
 // A graph edge threads the source region's Final into the target region's task, so
 // a two-region chain compounds the echo prefix once per region.
 func TestRunGraphThreadsFinalAlongEdges(t *testing.T) {
-	r := newTestRunner(t, echoBrain{})
+	r := newTestRunner(t, echoModel{})
 	g := Graph{
 		Regions: []GraphRegion{
 			{ID: "a", Region: pinnedRegion("impl")},
@@ -57,7 +57,7 @@ func TestRunGraphThreadsFinalAlongEdges(t *testing.T) {
 // Region ids namespace node ids, so agents sharing a Name across regions do not
 // collide, and a cross-region EdgeNext links the two region entries.
 func TestRunGraphNamespacesIdsAndLinksRegions(t *testing.T) {
-	r := newTestRunner(t, echoBrain{})
+	r := newTestRunner(t, echoModel{})
 	g := Graph{
 		Regions: []GraphRegion{
 			{ID: "a", Region: pinnedRegion("impl")},
@@ -91,7 +91,7 @@ func TestRunGraphNamespacesIdsAndLinksRegions(t *testing.T) {
 // A graph mixes a dynamic region into a pinned chain: both regions' nodes appear
 // in the merged lineage and Final is the last region's output.
 func TestRunGraphMixesDynamicAndPinned(t *testing.T) {
-	r := newTestRunner(t, echoBrain{}) // echoBrain never delegates, so dynamic entry just finishes
+	r := newTestRunner(t, echoModel{}) // echoModel never delegates, so dynamic entry just finishes
 	g := Graph{
 		Regions: []GraphRegion{
 			{ID: "plan", Region: Region{Autonomy: Dynamic, Entry: AgentSpec{Name: "lead", Role: "lead"}}},
@@ -116,7 +116,7 @@ func TestRunGraphMixesDynamicAndPinned(t *testing.T) {
 }
 
 func TestRunGraphRejectsBadTopology(t *testing.T) {
-	r := newTestRunner(t, echoBrain{})
+	r := newTestRunner(t, echoModel{})
 	cases := []struct {
 		name string
 		g    Graph
@@ -165,7 +165,7 @@ func TestRunGraphRejectsBadTopology(t *testing.T) {
 // Fan-out (one source, two independent targets) is a valid graph: both targets run
 // and receive the source Final.
 func TestRunGraphFanOut(t *testing.T) {
-	r := newTestRunner(t, echoBrain{})
+	r := newTestRunner(t, echoModel{})
 	g := Graph{
 		Regions: []GraphRegion{
 			{ID: "root", Region: pinnedRegion("root")},
@@ -195,7 +195,7 @@ func TestRunGraphFanOut(t *testing.T) {
 // and the partial lineage accumulated so far (the failed region's node marked
 // failed), so a consumer can render how far the run got.
 func TestRunGraphReportsFailingRegion(t *testing.T) {
-	r := newTestRunner(t, failBrain{})
+	r := newTestRunner(t, failModel{})
 	g := Graph{
 		Regions: []GraphRegion{{ID: "boom", Region: pinnedRegion("impl")}},
 	}

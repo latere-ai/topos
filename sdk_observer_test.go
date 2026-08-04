@@ -14,10 +14,10 @@ import (
 	"latere.ai/x/topos/models"
 )
 
-// runWithObserver builds a runner whose model is the scripted brain and whose
+// runWithObserver builds a runner whose model is the scripted model and whose
 // Options carry the given observer (registered on the bus by NewRunner), then
 // runs the dynamic region (which delegates entry -> reviewer).
-func runWithObserver(t *testing.T, brain models.Model, obs func(Event)) RunResult {
+func runWithObserver(t *testing.T, mdl models.Model, obs func(Event)) RunResult {
 	t.Helper()
 	r, err := NewRunner(Options{
 		SessionID: "run-1",
@@ -28,7 +28,7 @@ func runWithObserver(t *testing.T, brain models.Model, obs func(Event)) RunResul
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = brain
+	r.model = mdl
 	res, err := r.Run(context.Background(), dynamicRegion(), "go")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -44,7 +44,7 @@ func TestObserver_ReceivesEventStream(t *testing.T) {
 	var names []string
 	var assistantText, assistantSession string
 
-	res := runWithObserver(t, testBrain{delegateTo: "reviewer"}, func(e Event) {
+	res := runWithObserver(t, testModel{delegateTo: "reviewer"}, func(e Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		names = append(names, e.Name)
@@ -92,8 +92,8 @@ func TestObserver_ReceivesEventStream(t *testing.T) {
 // TestObserver_DoesNotAlterRun proves observation is side-effect-free: the final
 // text and lineage are identical with and without an observer.
 func TestObserver_DoesNotAlterRun(t *testing.T) {
-	base := runWithObserver(t, testBrain{delegateTo: "reviewer"}, nil)
-	withObs := runWithObserver(t, testBrain{delegateTo: "reviewer"}, func(Event) {})
+	base := runWithObserver(t, testModel{delegateTo: "reviewer"}, nil)
+	withObs := runWithObserver(t, testModel{delegateTo: "reviewer"}, func(Event) {})
 
 	if base.Final != withObs.Final {
 		t.Errorf("final text differs: %q vs %q", base.Final, withObs.Final)
@@ -105,7 +105,7 @@ func TestObserver_DoesNotAlterRun(t *testing.T) {
 
 // TestObserver_PanicIsRecovered proves a buggy observer cannot crash the run.
 func TestObserver_PanicIsRecovered(t *testing.T) {
-	res := runWithObserver(t, testBrain{delegateTo: "reviewer"}, func(Event) {
+	res := runWithObserver(t, testModel{delegateTo: "reviewer"}, func(Event) {
 		panic("observer blew up")
 	})
 	if res.Final == "" {

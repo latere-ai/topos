@@ -18,12 +18,12 @@ import (
 	"latere.ai/x/topos/sandbox/local"
 )
 
-// failBrain rejects every request, so loop.Run returns an error. It drives the
+// failModel rejects every request, so loop.Run returns an error. It drives the
 // failure paths (entry/step/peer marked StatusFailed and the error bubbling up).
-type failBrain struct{}
+type failModel struct{}
 
-func (failBrain) Stream(context.Context, models.Request) (models.Stream, error) {
-	return nil, errors.New("brain down")
+func (failModel) Stream(context.Context, models.Request) (models.Stream, error) {
+	return nil, errors.New("model down")
 }
 
 // failCreateProvider is a sandbox provider whose Create always fails; every other
@@ -61,7 +61,7 @@ func TestRunWaitsForSandboxToBecomeReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = testBrain{}
+	r.model = testModel{}
 	// The run proceeds only after the sandbox reports running; a successful run
 	// proves Run polled rather than using the still-"creating" box immediately.
 	if _, err := r.Run(context.Background(), Region{Autonomy: Pinned, Entry: AgentSpec{Name: "solo", Role: "solo"}}, "go"); err != nil {
@@ -76,7 +76,7 @@ func TestRunFailsWhenSandboxNeverReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = testBrain{}
+	r.model = testModel{}
 	_, err = r.Run(context.Background(), dynamicRegion(), "go")
 	if err == nil || !strings.Contains(err.Error(), "not ready") {
 		t.Fatalf("err = %v, want a sandbox-not-ready timeout", err)
@@ -92,14 +92,14 @@ func withFastReadyPolling(t *testing.T) {
 	t.Cleanup(func() { readyTimeout, readyInterval = origT, origI })
 }
 
-func TestOptionsBrainOverridesModel(t *testing.T) {
-	// A custom models.Model passed via Options.Brain is used instead of the
+func TestOptionsModelClientOverridesModel(t *testing.T) {
+	// A custom models.Model passed via Options.ModelClient is used instead of the
 	// built-in Model kind. ModelFake would not delegate (one node); the scripted
-	// delegating brain produces a two-node lineage, proving Brain won.
+	// delegating model produces a two-node lineage, proving ModelClient won.
 	r, err := NewRunner(Options{
-		SessionID: "run-1",
-		Model:     ModelOptions{Kind: ModelFake},
-		Brain:     testBrain{delegateTo: "reviewer"},
+		SessionID:   "run-1",
+		Model:       ModelOptions{Kind: ModelFake},
+		ModelClient: testModel{delegateTo: "reviewer"},
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -109,7 +109,7 @@ func TestOptionsBrainOverridesModel(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(res.Lineage.Nodes) != 2 {
-		t.Fatalf("nodes = %d, want 2 (Options.Brain not used?)", len(res.Lineage.Nodes))
+		t.Fatalf("nodes = %d, want 2 (Options.ModelClient not used?)", len(res.Lineage.Nodes))
 	}
 }
 
@@ -121,7 +121,7 @@ func TestRunUsesInjectedSandboxProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = testBrain{}
+	r.model = testModel{}
 	_, err = r.Run(context.Background(), dynamicRegion(), "go")
 	if err == nil || !strings.Contains(err.Error(), "create sandbox") {
 		t.Fatalf("err = %v, want a create sandbox error from the injected provider", err)
@@ -134,7 +134,7 @@ func TestRunDefaultsToLocalProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = testBrain{}
+	r.model = testModel{}
 	res, err := r.Run(context.Background(), Region{Autonomy: Pinned, Entry: AgentSpec{Name: "solo", Role: "solo"}}, "go")
 	if err != nil {
 		t.Fatalf("Run with default provider: %v", err)
@@ -214,7 +214,7 @@ func TestBuildModelDirectAndUnknown(t *testing.T) {
 }
 
 func TestRunUnknownAutonomy(t *testing.T) {
-	r := newTestRunner(t, testBrain{})
+	r := newTestRunner(t, testModel{})
 	_, err := r.Run(context.Background(), Region{Autonomy: "freeform", Entry: AgentSpec{Name: "x"}}, "go")
 	if err == nil {
 		t.Fatal("want error for unknown autonomy, got nil")
@@ -230,7 +230,7 @@ func TestSessionDefaultsWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = testBrain{}
+	r.model = testModel{}
 	res, err := r.Run(context.Background(), Region{
 		Autonomy: Pinned, Entry: AgentSpec{Name: "solo", Role: "solo"},
 	}, "go")
@@ -243,7 +243,7 @@ func TestSessionDefaultsWhenEmpty(t *testing.T) {
 }
 
 func TestRunDynamicEntryFailureMarksFailed(t *testing.T) {
-	r := newTestRunner(t, failBrain{})
+	r := newTestRunner(t, failModel{})
 	res, err := r.Run(context.Background(), dynamicRegion(), "go")
 	if err == nil {
 		t.Fatal("want error when the entry agent's loop fails, got nil")
@@ -254,7 +254,7 @@ func TestRunDynamicEntryFailureMarksFailed(t *testing.T) {
 }
 
 func TestRunPinnedStepFailureMarksFailed(t *testing.T) {
-	r := newTestRunner(t, failBrain{})
+	r := newTestRunner(t, failModel{})
 	res, err := r.Run(context.Background(), Region{
 		Autonomy: Pinned,
 		Entry:    AgentSpec{Name: "impl", Role: "impl"},
@@ -292,7 +292,7 @@ func entryParent() harness.ParentContext {
 }
 
 func TestDelegateBadInput(t *testing.T) {
-	r := newTestRunner(t, testBrain{})
+	r := newTestRunner(t, testModel{})
 	d, lin := newDelegate(r, entryParent(), OrchestratorWorker)
 	res, err := d.Invoke(context.Background(), []byte("{not json"), local.New(), "box-0")
 	if err != nil {
@@ -309,7 +309,7 @@ func TestDelegateBadInput(t *testing.T) {
 func TestDelegateSpawnDenied(t *testing.T) {
 	// A sub-agent parent without a recursion grant cannot spawn: the delegate
 	// surfaces the spawn refusal as a tool error and records no child node.
-	r := newTestRunner(t, testBrain{})
+	r := newTestRunner(t, testModel{})
 	parent := entryParent()
 	parent.IsSubAgent = true
 	parent.Perms.AllowRecurse = false
@@ -329,7 +329,7 @@ func TestDelegateSpawnDenied(t *testing.T) {
 func TestDelegateSandboxCreateFailure(t *testing.T) {
 	// Spawn succeeds, but the per-child sandbox fails to provision: the child is
 	// recorded StatusFailed and the delegate returns a tool error.
-	r := newTestRunner(t, testBrain{})
+	r := newTestRunner(t, testModel{})
 	d, lin := newDelegate(r, entryParent(), OrchestratorWorker)
 	res, err := d.Invoke(context.Background(), []byte(`{"peer":"reviewer","task":"go"}`), failCreateProvider{}, "box-0")
 	if err != nil {
@@ -353,7 +353,7 @@ func TestDelegateSandboxCreateFailure(t *testing.T) {
 func TestDelegatePeerRunFailure(t *testing.T) {
 	// Spawn and sandbox succeed, but the peer's loop fails: the delegate marks the
 	// child StatusFailed and reports the run failure.
-	r := newTestRunner(t, failBrain{})
+	r := newTestRunner(t, failModel{})
 	d, lin := newDelegate(r, entryParent(), OrchestratorWorker)
 	res, err := d.Invoke(context.Background(), []byte(`{"peer":"reviewer","task":"go"}`), local.New(), "box-0")
 	if err != nil {

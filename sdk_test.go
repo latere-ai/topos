@@ -15,15 +15,15 @@ import (
 	"latere.ai/x/topos/models"
 )
 
-// --- deterministic, content-based test brain (stateless, so it composes under
+// --- deterministic, content-based test model (stateless, so it composes under
 // the nested peer loop a delegation triggers) ---
 
-type testBrain struct {
+type testModel struct {
 	delegateTo string
 	systems    *[]string // when set, captures each call's system prompt
 }
 
-func (b testBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+func (b testModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
 	if b.systems != nil {
 		*b.systems = append(*b.systems, req.System)
 	}
@@ -88,12 +88,12 @@ func dynamicRegion() Region {
 	}
 }
 
-// newTestRunner builds a runner and overrides its model with a scripted brain
+// newTestRunner builds a runner and overrides its model with a scripted model
 // (white-box: the runner uses r.model when constructing the delegate tool + loop).
-func newTestRunner(t *testing.T, brain models.Model) *Runner {
+func newTestRunner(t *testing.T, mdl models.Model) *Runner {
 	t.Helper()
 	// The declared model id is what the budget is priced against: the scripted
-	// brain swapped in below reports no cost of its own, so the run falls back
+	// model swapped in below reports no cost of its own, so the run falls back
 	// to the pinned rate card, which needs a model it covers.
 	r, err := NewRunner(Options{
 		SessionID: "run-1",
@@ -103,12 +103,12 @@ func newTestRunner(t *testing.T, brain models.Model) *Runner {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = brain
+	r.model = mdl
 	return r
 }
 
 func TestDynamicDelegateBuildsLineage(t *testing.T) {
-	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+	r := newTestRunner(t, testModel{delegateTo: "reviewer"})
 
 	var events []hooks.EventName
 	r.bus.Register("spy", nil, func(n hooks.EventName, _ any) hooks.Decision {
@@ -144,7 +144,7 @@ func TestDynamicDelegateBuildsLineage(t *testing.T) {
 
 func TestDynamicInjectsDirectoryIntoSystemPrompt(t *testing.T) {
 	var systems []string
-	r := newTestRunner(t, testBrain{delegateTo: "reviewer", systems: &systems})
+	r := newTestRunner(t, testModel{delegateTo: "reviewer", systems: &systems})
 	region := dynamicRegion()
 	region.Entry.SystemPrompt = "You are the lead."
 	if _, err := r.Run(context.Background(), region, "go"); err != nil {
@@ -164,7 +164,7 @@ func TestDynamicInjectsDirectoryIntoSystemPrompt(t *testing.T) {
 func TestDelegateRejectsPeerNotInDirectory(t *testing.T) {
 	// The model tries to delegate to a peer that isn't in the directory; the
 	// capability gate refuses it, so no node is created and the entry recovers.
-	r := newTestRunner(t, testBrain{delegateTo: "ghost"})
+	r := newTestRunner(t, testModel{delegateTo: "ghost"})
 	res, err := r.Run(context.Background(), dynamicRegion(), "go")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -178,7 +178,7 @@ func TestDelegateRejectsPeerNotInDirectory(t *testing.T) {
 }
 
 func TestDelegatePeerRunsInOwnSandbox(t *testing.T) {
-	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+	r := newTestRunner(t, testModel{delegateTo: "reviewer"})
 	res, err := r.Run(context.Background(), dynamicRegion(), "go")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -193,7 +193,7 @@ func TestDelegatePeerRunsInOwnSandbox(t *testing.T) {
 }
 
 func TestDelegateAttenuatesPeerTools(t *testing.T) {
-	r := newTestRunner(t, testBrain{delegateTo: "reviewer"})
+	r := newTestRunner(t, testModel{delegateTo: "reviewer"})
 	res, err := r.Run(context.Background(), dynamicRegion(), "go")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -206,8 +206,8 @@ func TestDelegateAttenuatesPeerTools(t *testing.T) {
 }
 
 func TestPinnedChainRunsInOrder(t *testing.T) {
-	// Plain brain: every turn finishes (no delegation), so each chain step terminates.
-	r := newTestRunner(t, testBrain{})
+	// Plain model: every turn finishes (no delegation), so each chain step terminates.
+	r := newTestRunner(t, testModel{})
 	res, err := r.Run(context.Background(), Region{
 		Autonomy: Pinned,
 		Entry:    AgentSpec{Name: "impl", Role: "impl"},
@@ -231,12 +231,12 @@ func TestPinnedChainRunsInOrder(t *testing.T) {
 	}
 }
 
-// greedyBrain always delegates to a fixed peer whenever it holds a delegate tool;
+// greedyModel always delegates to a fixed peer whenever it holds a delegate tool;
 // otherwise it finishes. It drives recursion as hard as possible, so termination
 // depends entirely on the depth bound / topology gate.
-type greedyBrain struct{ peer string }
+type greedyModel struct{ peer string }
 
-func (b greedyBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+func (b greedyModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
 	for _, m := range req.Messages {
 		if m.Role == "tool" {
 			return &cannedStream{events: endTurn("done")}, nil
@@ -270,12 +270,12 @@ func greedyRunner(t *testing.T, maxDepth int) *Runner {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = greedyBrain{peer: "worker"}
+	r.model = greedyModel{peer: "worker"}
 	return r
 }
 
 func TestOrchestratorWorkerStopsAfterOneLevel(t *testing.T) {
-	// Even a brain that always delegates only gets one level: peers hold no delegate
+	// Even a model that always delegates only gets one level: peers hold no delegate
 	// tool under orchestrator+worker.
 	r := greedyRunner(t, 5)
 	res, err := r.Run(context.Background(), meshRegion(OrchestratorWorker), "go")
@@ -288,7 +288,7 @@ func TestOrchestratorWorkerStopsAfterOneLevel(t *testing.T) {
 }
 
 func TestMeshRecursionBoundedByMaxDepth(t *testing.T) {
-	// Mesh + a greedy brain would recurse forever; the depth bound stops it. With
+	// Mesh + a greedy model would recurse forever; the depth bound stops it. With
 	// maxDepth=2: lead(0) -> worker(1) -> worker(2, no tool, stops) = 3 nodes.
 	r := greedyRunner(t, 2)
 	res, err := r.Run(context.Background(), meshRegion(Mesh), "go")

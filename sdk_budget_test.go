@@ -18,15 +18,15 @@ import (
 	"latere.ai/x/topos/sandbox/local"
 )
 
-// costlyBrain emits a fixed usage per turn and reports no cost of its own, so
+// costlyModel emits a fixed usage per turn and reports no cost of its own, so
 // the run is priced by whatever CostSource the runner resolved. It counts its
 // turns so a test can assert how far a run got before the cap stopped it.
-type costlyBrain struct {
+type costlyModel struct {
 	usage models.Usage
 	turns atomic.Int32
 }
 
-func (b *costlyBrain) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
+func (b *costlyModel) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
 	b.turns.Add(1)
 	u := b.usage
 	return &budgetStream{events: []models.Event{
@@ -95,12 +95,12 @@ func TestNewRunnerAllowsUnpriceableModelWithoutBudget(t *testing.T) {
 }
 
 // TestRuntimeResolvedModelStopsFirstTurn asserts the backstop for what
-// construction cannot check. A host-supplied brain declares no model id, so
+// construction cannot check. A host-supplied model declares no model id, so
 // NewRunner has nothing to price and admits the run; the turn-boundary check
 // then stops it on its first turn rather than let it run unenforced.
 func TestRuntimeResolvedModelStopsFirstTurn(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1_000}}
-	r, err := NewRunner(Options{SessionID: "run-1", Brain: brain, BudgetUSD: 10})
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000}}
+	r, err := NewRunner(Options{SessionID: "run-1", ModelClient: mdl, BudgetUSD: 10})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestRuntimeResolvedModelStopsFirstTurn(t *testing.T) {
 	if !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("error does not identify the budget as the cause: %v", err)
 	}
-	if got := brain.turns.Load(); got != 1 {
+	if got := mdl.turns.Load(); got != 1 {
 		t.Fatalf("model ran %d turns, want to stop after the 1st", got)
 	}
 }
@@ -124,12 +124,12 @@ func TestRuntimeResolvedModelStopsFirstTurn(t *testing.T) {
 // transcript comes back alongside it.
 func TestTurnStopsOnSpendCap(t *testing.T) {
 	// 1M input tokens on claude-opus-4-8 cards at $5, over a $1 cap.
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1_000_000}}
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000_000}}
 	r, err := NewRunner(Options{
-		SessionID: "run-1",
-		Model:     ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
-		Brain:     brain,
-		BudgetUSD: 1,
+		SessionID:   "run-1",
+		Model:       ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
+		ModelClient: mdl,
+		BudgetUSD:   1,
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -150,12 +150,12 @@ func TestTurnStopsOnSpendCap(t *testing.T) {
 // TestTurnUnderSpendCapCompletesNormally asserts the cap does not fire early:
 // the same wiring, priced under the limit, ends on the model's own stop reason.
 func TestTurnUnderSpendCapCompletesNormally(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1_000}}
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000}}
 	r, err := NewRunner(Options{
-		SessionID: "run-1",
-		Model:     ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
-		Brain:     brain,
-		BudgetUSD: 1,
+		SessionID:   "run-1",
+		Model:       ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
+		ModelClient: mdl,
+		BudgetUSD:   1,
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -175,13 +175,13 @@ func TestTurnUnderSpendCapCompletesNormally(t *testing.T) {
 // price authority makes an otherwise uncardable model both admissible and
 // enforceable.
 func TestHostCostSourceOverridesRateCard(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1}}
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1}}
 	r, err := NewRunner(Options{
-		SessionID:  "run-1",
-		Model:      ModelOptions{Kind: ModelFake, Model: "house-model"},
-		Brain:      brain,
-		BudgetUSD:  1,
-		CostSource: houseRate{usdPerInputToken: 2},
+		SessionID:   "run-1",
+		Model:       ModelOptions{Kind: ModelFake, Model: "house-model"},
+		ModelClient: mdl,
+		BudgetUSD:   1,
+		CostSource:  houseRate{usdPerInputToken: 2},
 	})
 	if err != nil {
 		t.Fatalf("NewRunner with a host cost source: %v", err)

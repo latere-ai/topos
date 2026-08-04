@@ -16,11 +16,11 @@ import (
 	"latere.ai/x/topos/sandbox/local"
 )
 
-// countingBrain replies with the number of user messages it sees, so a test can
+// countingModel replies with the number of user messages it sees, so a test can
 // prove that a turn seeded from a prior transcript actually carries the history.
-type countingBrain struct{}
+type countingModel struct{}
 
-func (countingBrain) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+func (countingModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
 	n := 0
 	for _, m := range req.Messages {
 		if m.Role == "user" {
@@ -47,7 +47,7 @@ func newSandbox(t *testing.T) (sandbox.Provider, string) {
 // transcript returned by one Turn, fed as the next turn's InitialTranscript,
 // carries the full history to the model and grows.
 func TestTurnThreadsTranscriptAcrossTurns(t *testing.T) {
-	r := newTestRunner(t, countingBrain{})
+	r := newTestRunner(t, countingModel{})
 	p, sbID := newSandbox(t)
 
 	first, err := r.Turn(context.Background(), TurnInput{
@@ -82,7 +82,7 @@ func TestTurnThreadsTranscriptAcrossTurns(t *testing.T) {
 // the built-in tool set, so a turn can execute a bash tool call end-to-end
 // against the caller-owned sandbox.
 func TestTurnDefaultsToBuiltinTools(t *testing.T) {
-	r := newTestRunner(t, fake.New()) // fake brain: bash call, then done
+	r := newTestRunner(t, fake.New()) // fake model: bash call, then done
 	p, sbID := newSandbox(t)
 
 	res, err := r.Turn(context.Background(), TurnInput{
@@ -112,7 +112,7 @@ func TestTurnDefaultsToBuiltinTools(t *testing.T) {
 // via Interrupted (with a nil error) and keeps the partial transcript.
 func TestTurnInterruptReturnsPartialNoError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	r := newTestRunner(t, &turnCancelBrain{cancel: cancel})
+	r := newTestRunner(t, &turnCancelModel{cancel: cancel})
 	p, sbID := newSandbox(t)
 
 	res, err := r.Turn(ctx, TurnInput{
@@ -133,7 +133,7 @@ func TestTurnInterruptReturnsPartialNoError(t *testing.T) {
 // TestTurnStreamFailureIsError proves a genuine infrastructure failure (model
 // stream error) is returned as an error, not swallowed as an interrupt.
 func TestTurnStreamFailureIsError(t *testing.T) {
-	r := newTestRunner(t, &turnErrBrain{})
+	r := newTestRunner(t, &turnErrModel{})
 	p, sbID := newSandbox(t)
 
 	_, err := r.Turn(context.Background(), TurnInput{
@@ -162,7 +162,7 @@ func TestTurnObserverSeesTokenDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	r.model = countingBrain{}
+	r.model = countingModel{}
 	p, sbID := newSandbox(t)
 
 	if _, err := r.Turn(context.Background(), TurnInput{
@@ -191,11 +191,11 @@ func lastAssistant(transcript []models.Message) (models.Message, bool) {
 	return models.Message{}, false
 }
 
-// turnCancelBrain streams a "partial" fragment, then cancels the context, so the
+// turnCancelModel streams a "partial" fragment, then cancels the context, so the
 // loop observes cancellation mid-turn.
-type turnCancelBrain struct{ cancel context.CancelFunc }
+type turnCancelModel struct{ cancel context.CancelFunc }
 
-func (b *turnCancelBrain) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
+func (b *turnCancelModel) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
 	return &turnCancelStream{cancel: b.cancel}, nil
 }
 
@@ -214,9 +214,9 @@ func (s *turnCancelStream) Recv() (models.Event, error) {
 }
 func (s *turnCancelStream) Close() error { return nil }
 
-// turnErrBrain fails the model stream outright.
-type turnErrBrain struct{}
+// turnErrModel fails the model stream outright.
+type turnErrModel struct{}
 
-func (turnErrBrain) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
+func (turnErrModel) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
 	return nil, fmt.Errorf("model offline")
 }

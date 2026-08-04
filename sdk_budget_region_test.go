@@ -60,14 +60,14 @@ func (b *delegatingSpender) Stream(_ context.Context, req models.Request) (model
 
 // spendRunner builds a runner whose every input token costs one USD, so a
 // budget test states its arithmetic in turns rather than in a rate card.
-func spendRunner(t *testing.T, brain models.Model, budgetUSD float64) *Runner {
+func spendRunner(t *testing.T, mdl models.Model, budgetUSD float64) *Runner {
 	t.Helper()
 	r, err := NewRunner(Options{
-		SessionID:  "run-1",
-		Model:      ModelOptions{Kind: ModelFake, Model: "house-model"},
-		Brain:      brain,
-		BudgetUSD:  budgetUSD,
-		CostSource: houseRate{usdPerInputToken: 1},
+		SessionID:   "run-1",
+		Model:       ModelOptions{Kind: ModelFake, Model: "house-model"},
+		ModelClient: mdl,
+		BudgetUSD:   budgetUSD,
+		CostSource:  houseRate{usdPerInputToken: 1},
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -99,11 +99,11 @@ func statuses(lin Lineage) []NodeStatus {
 // exceed it together, and the region must stop. Metering each loop.Run
 // separately would let a region of n agents spend n times the cap.
 func TestPinnedRegionSharesOneBudgetAcrossSteps(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1}}
-	r := spendRunner(t, brain, 2)
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1}}
+	r := spendRunner(t, mdl, 2)
 
 	res, err := r.Run(context.Background(), chainRegion("a", "b", "c"), "go")
-	if got := brain.turns.Load(); got != 2 {
+	if got := mdl.turns.Load(); got != 2 {
 		t.Fatalf("region ran %d turns of $1 under a $2 cap, want 2: the agents share one region budget rather than each getting the full cap", got)
 	}
 	if !errors.Is(err, billing.ErrBudgetExceeded) {
@@ -121,8 +121,8 @@ func TestPinnedRegionSharesOneBudgetAcrossSteps(t *testing.T) {
 // reaches a delegated peer: the entry spends half the budget, the peer spends
 // the rest, and the entry does not get another turn.
 func TestDynamicRegionSharesOneBudgetWithDelegatedPeer(t *testing.T) {
-	brain := &delegatingSpender{usage: models.Usage{InputTokens: 1}, peer: "helper"}
-	r := spendRunner(t, brain, 2)
+	mdl := &delegatingSpender{usage: models.Usage{InputTokens: 1}, peer: "helper"}
+	r := spendRunner(t, mdl, 2)
 
 	region := Region{
 		Autonomy: Dynamic,
@@ -130,7 +130,7 @@ func TestDynamicRegionSharesOneBudgetWithDelegatedPeer(t *testing.T) {
 		Peers:    []AgentSpec{{Name: "helper", Role: "help", Description: "helps"}},
 	}
 	res, err := r.Run(context.Background(), region, "go")
-	if got := brain.turns.Load(); got != 2 {
+	if got := mdl.turns.Load(); got != 2 {
 		t.Fatalf("region ran %d turns of $1 under a $2 cap, want 2: the entry and its peer share one budget", got)
 	}
 	if !errors.Is(err, billing.ErrBudgetExceeded) {
@@ -147,8 +147,8 @@ func TestDynamicRegionSharesOneBudgetWithDelegatedPeer(t *testing.T) {
 // TestRunGraphSurfacesBudgetStop asserts the sentinel and the partial result
 // survive the graph path, which wraps every region error in its own context.
 func TestRunGraphSurfacesBudgetStop(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1}}
-	r := spendRunner(t, brain, 2)
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1}}
+	r := spendRunner(t, mdl, 2)
 
 	g := Graph{Regions: []GraphRegion{{ID: "one", Region: chainRegion("a", "b", "c")}}}
 	res, err := r.RunGraph(context.Background(), g, "go")
@@ -168,8 +168,8 @@ func TestRunGraphSurfacesBudgetStop(t *testing.T) {
 // against the full budget. Two regions that would together exceed one graph-wide
 // cap both complete.
 func TestGraphBudgetIsPerRegionNotPerGraph(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1}}
-	r := spendRunner(t, brain, 2)
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1}}
+	r := spendRunner(t, mdl, 2)
 
 	g := Graph{
 		Regions: []GraphRegion{
@@ -182,7 +182,7 @@ func TestGraphBudgetIsPerRegionNotPerGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunGraph: %v", err)
 	}
-	if got := brain.turns.Load(); got != 2 {
+	if got := mdl.turns.Load(); got != 2 {
 		t.Fatalf("graph ran %d turns, want 2: each region gets its own $2 budget", got)
 	}
 	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
@@ -193,11 +193,11 @@ func TestGraphBudgetIsPerRegionNotPerGraph(t *testing.T) {
 // TestUnmeteredRegionRunsEveryStep is the regression for the unbudgeted path: no
 // cap means no meter, and nothing about the run changes.
 func TestUnmeteredRegionRunsEveryStep(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1_000_000}}
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000_000}}
 	r, err := NewRunner(Options{
-		SessionID: "run-1",
-		Model:     ModelOptions{Kind: ModelFake, Model: "house-model"},
-		Brain:     brain,
+		SessionID:   "run-1",
+		Model:       ModelOptions{Kind: ModelFake, Model: "house-model"},
+		ModelClient: mdl,
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -207,7 +207,7 @@ func TestUnmeteredRegionRunsEveryStep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got := brain.turns.Load(); got != 3 {
+	if got := mdl.turns.Load(); got != 3 {
 		t.Fatalf("unmetered region ran %d turns, want all 3", got)
 	}
 	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
@@ -222,14 +222,14 @@ func TestUnmeteredRegionRunsEveryStep(t *testing.T) {
 // early: a region whose aggregate spend stays under the cap completes with a nil
 // error and a done node per agent.
 func TestRegionUnderBudgetCompletesEveryStep(t *testing.T) {
-	brain := &costlyBrain{usage: models.Usage{InputTokens: 1}}
-	r := spendRunner(t, brain, 100)
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1}}
+	r := spendRunner(t, mdl, 100)
 
 	res, err := r.Run(context.Background(), chainRegion("a", "b", "c"), "go")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got := brain.turns.Load(); got != 3 {
+	if got := mdl.turns.Load(); got != 3 {
 		t.Fatalf("under-budget region ran %d turns, want all 3", got)
 	}
 	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {

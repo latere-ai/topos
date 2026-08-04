@@ -13,7 +13,7 @@
 // does not cover the case.
 //
 // The runner executes agents through the real agentic loop (runtime/loop):
-// the model is the brain (configured via ModelOptions — Lux, a direct provider, or
+// the model is the model (configured via ModelOptions — Lux, a direct provider, or
 // the deterministic fake), and a handoff is an agents-as-tools delegation — a
 // `delegate` tool registered into the loop whose Invoke performs a real attenuated
 // Spawner spawn, runs the chosen peer as a nested loop, and returns its result into
@@ -222,7 +222,7 @@ const (
 // Options configure a Runner.
 type Options struct {
 	SessionID string       // stable run id; deterministic child ids derive from it
-	Model     ModelOptions // the brain connection (Lux / direct / fake)
+	Model     ModelOptions // the model connection (Lux / direct / fake)
 
 	// BudgetUSD is the region spend cap. One region — its entry agent, every
 	// pinned step, and every delegated peer — shares it, so the cap bounds what
@@ -283,11 +283,11 @@ type Options struct {
 	// owns execution location).
 	Workdir string
 
-	// Brain, when non-nil, is the model the runner uses directly, ignoring
+	// ModelClient, when non-nil, is the model the runner uses directly, ignoring
 	// Model. It lets a host plug in its own models.Model (a custom provider
 	// adapter, or a scripted model for tests and examples) instead of the
 	// built-in Lux, Direct, or Fake kinds.
-	Brain models.Model
+	ModelClient models.Model
 }
 
 // Runner executes regions in-process through the real agentic loop, against the
@@ -300,17 +300,17 @@ type Runner struct {
 	spawner *harness.Spawner
 }
 
-// NewRunner builds a Runner. It uses Options.Brain when set, otherwise it
+// NewRunner builds a Runner. It uses Options.ModelClient when set, otherwise it
 // constructs the model from Options.Model.
 //
 // When a budget is set, it refuses a configured model the resolved
 // [billing.CostSource] cannot price: an unpriceable model leaves BudgetUSD
 // unenforceable, so the run is rejected before anything is spent. Only a model
 // declared in Options can be checked here — one the host resolves later, or
-// supplies through Options.Brain, is caught instead by the loop's turn-boundary
+// supplies through Options.ModelClient, is caught instead by the loop's turn-boundary
 // check, which stops the run on its first unpriceable turn.
 func NewRunner(opts Options) (*Runner, error) {
-	m := opts.Brain
+	m := opts.ModelClient
 	if m == nil {
 		var err error
 		if m, err = buildModel(opts.Model); err != nil {
