@@ -13,8 +13,8 @@
 // does not cover the case.
 //
 // The runner executes agents through the real agentic loop (runtime/loop):
-// the model is the model (configured via ModelOptions — Lux, a direct provider, or
-// the deterministic fake), and a handoff is an agents-as-tools delegation — a
+// the model comes from ModelOptions (Lux, a direct provider, or the
+// deterministic fake), and a handoff is an agents-as-tools delegation — a
 // `delegate` tool registered into the loop whose Invoke performs a real attenuated
 // Spawner spawn, runs the chosen peer as a nested loop, and returns its result into
 // the parent transcript.
