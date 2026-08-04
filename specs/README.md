@@ -7,8 +7,9 @@ region or a graph of regions locally and in-process. The specs here document the
 public capabilities the runtime ships, so a developer can see the whole shape
 before reading code.
 
-The runtime specs (track `runtime`, `001`–`012` and `028`) are all `status: complete` and end
-with an Outcome section pointing at the packages that implement them. The Adversarial Review
+The shipped runtime specs (track `runtime`, `001`–`012` and `028`) are
+`status: complete` and end with an Outcome section pointing at the packages that
+implement them. Proposed runtime work follows those numbered specs. The Adversarial Review
 specs (track `adversarial`) follow their own lifecycle (`current` for shipped
 behavior, `proposed`/`exploratory` for the roadmap); see
 [`adversarial-README.md`](adversarial-README.md).
@@ -72,6 +73,8 @@ delegation and topology mechanics, then the supporting engine specs.
   vault secrets into a sandbox without plaintext.
 - [Spend Cap Enforcement](028-spend-cap-enforcement.md): pricing a turn's usage
   and stopping a region whose combined spend reaches `Options.BudgetUSD`.
+- [Open Source Package Presentation](029-open-source-package.md): the public
+  repository entry points, contributor paths, metadata, and release surface.
 
 ## Dependency view
 
