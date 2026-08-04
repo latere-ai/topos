@@ -267,8 +267,10 @@ estimated, so a budget against them fails closed at construction. Adding a model
 is an edit to the table.
 
 The config-time check covers models declared in `Options`; the turn-boundary
-check covers everything else, including a host-supplied `Options.ModelClient`. Both
-fail closed; only the timing differs.
+check covers everything else, including a `ModelOptions.Client` supplied without
+a declared model id. Setting `ModelOptions.Model` alongside a `Client` restores
+the config-time check, since pricing reads the declared id rather than the
+client. Both fail closed; only the timing differs.
 
 ### Scope of enforcement
 

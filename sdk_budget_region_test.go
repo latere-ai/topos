@@ -63,11 +63,10 @@ func (b *delegatingSpender) Stream(_ context.Context, req models.Request) (model
 func spendRunner(t *testing.T, mdl models.Model, budgetUSD float64) *Runner {
 	t.Helper()
 	r, err := NewRunner(Options{
-		SessionID:   "run-1",
-		Model:       ModelOptions{Kind: ModelFake, Model: "house-model"},
-		ModelClient: mdl,
-		BudgetUSD:   budgetUSD,
-		CostSource:  houseRate{usdPerInputToken: 1},
+		SessionID:  "run-1",
+		Model:      ModelOptions{Kind: ModelFake, Model: "house-model", Client: mdl},
+		BudgetUSD:  budgetUSD,
+		CostSource: houseRate{usdPerInputToken: 1},
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -195,9 +194,8 @@ func TestGraphBudgetIsPerRegionNotPerGraph(t *testing.T) {
 func TestUnmeteredRegionRunsEveryStep(t *testing.T) {
 	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000_000}}
 	r, err := NewRunner(Options{
-		SessionID:   "run-1",
-		Model:       ModelOptions{Kind: ModelFake, Model: "house-model"},
-		ModelClient: mdl,
+		SessionID: "run-1",
+		Model:     ModelOptions{Kind: ModelFake, Model: "house-model", Client: mdl},
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)

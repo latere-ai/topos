@@ -5,7 +5,7 @@
 // Command graph shows a multi-region run: one Graph that composes a dynamic
 // region (an agent that may delegate) with a pinned region (a deterministic
 // chain), wired by a data-flow edge so the first region's output seeds the
-// second region's task. It plugs a scripted model into Options.ModelClient so the run
+// second region's task. It plugs a scripted model into ModelOptions.Client so the run
 // is reproducible without API keys or services; a host wires its own
 // models.Model the same way.
 //
@@ -42,7 +42,7 @@ func (echoModel) Stream(_ context.Context, req models.Request) (models.Stream, e
 }
 
 func main() {
-	r, err := topos.NewRunner(topos.Options{SessionID: "graph", ModelClient: echoModel{}})
+	r, err := topos.NewRunner(topos.Options{SessionID: "graph", Model: topos.ModelOptions{Client: echoModel{}}})
 	if err != nil {
 		log.Fatalf("new runner: %v", err)
 	}

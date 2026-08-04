@@ -21,20 +21,16 @@ import (
 
 	xtopos "latere.ai/x/topos"
 	adversarial "latere.ai/x/topos/adversarial"
-	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/sandbox"
 )
 
 // Config wires a topos-backed critic to a model and sandbox.
 type Config struct {
-	// Model selects the model connection (Lux, Direct, or Fake). Ignored when
-	// ModelClient is set.
+	// Model selects the model connection (Lux, Direct, or Fake). Tests set its
+	// Client to a scripted model; production sets Kind and leaves Client nil.
 	Model xtopos.ModelOptions
 	// Sandbox is the execution backend; nil uses topos's local sandbox.
 	Sandbox sandbox.Provider
-	// ModelClient, when non-nil, overrides Model with a caller-supplied model. Tests
-	// inject a scripted model here; production leaves it nil and sets Model.
-	ModelClient models.Model
 	// Tools is the agent's tool grant, recorded on the run's lineage node as
 	// Grants. nil (the default) records no grant. It is an audit record, not a
 	// sandbox: the runtime currently offers every agent tools.Builtins() (bash,
@@ -71,10 +67,9 @@ func (c *critic) Round(ctx context.Context, in adversarial.CriticInput) (*advers
 		defer cancel()
 	}
 	runner, err := xtopos.NewRunner(xtopos.Options{
-		SessionID:   fmt.Sprintf("adversarial-critic-%d-r%d", c.forkIdx, in.Round),
-		Model:       c.cfg.Model,
-		Sandbox:     c.cfg.Sandbox,
-		ModelClient: c.cfg.ModelClient,
+		SessionID: fmt.Sprintf("adversarial-critic-%d-r%d", c.forkIdx, in.Round),
+		Model:     c.cfg.Model,
+		Sandbox:   c.cfg.Sandbox,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("topos critic: new runner: %w", err)

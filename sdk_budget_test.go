@@ -100,7 +100,7 @@ func TestNewRunnerAllowsUnpriceableModelWithoutBudget(t *testing.T) {
 // then stops it on its first turn rather than let it run unenforced.
 func TestRuntimeResolvedModelStopsFirstTurn(t *testing.T) {
 	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000}}
-	r, err := NewRunner(Options{SessionID: "run-1", ModelClient: mdl, BudgetUSD: 10})
+	r, err := NewRunner(Options{SessionID: "run-1", Model: ModelOptions{Client: mdl}, BudgetUSD: 10})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
@@ -117,6 +117,31 @@ func TestRuntimeResolvedModelStopsFirstTurn(t *testing.T) {
 	}
 }
 
+// TestClientWithDeclaredModelIsPricedAtConstruction pins the one field a
+// non-nil Client does not switch off. Kind and the connection fields go unread,
+// but Model stays live as the declared id that pricing reads, so a client
+// carrying an unpriceable id is refused at construction rather than deferred to
+// the turn-boundary check. Without the id (TestRuntimeResolvedModelStopsFirstTurn
+// above) the same run is admitted, which is what makes this the Model field's
+// doing and not the client's.
+func TestClientWithDeclaredModelIsPricedAtConstruction(t *testing.T) {
+	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000}}
+	_, err := NewRunner(Options{
+		SessionID: "run-1",
+		Model:     ModelOptions{Model: "no-such-model", Client: mdl},
+		BudgetUSD: 10,
+	})
+	if err == nil {
+		t.Fatal("NewRunner with an unpriceable declared id = nil error, want a refusal")
+	}
+	if !strings.Contains(err.Error(), "no-such-model") {
+		t.Fatalf("error does not name the unpriceable model: %v", err)
+	}
+	if got := mdl.turns.Load(); got != 0 {
+		t.Fatalf("model ran %d turns, want 0 (refused before spending)", got)
+	}
+}
+
 // TestTurnStopsOnSpendCap asserts the end-to-end cap: a priced turn that
 // reaches BudgetUSD ends the run on the budget stop reason, distinguishable
 // from the model's own end_turn, and reports the stop as an error so a caller
@@ -126,10 +151,9 @@ func TestTurnStopsOnSpendCap(t *testing.T) {
 	// 1M input tokens on claude-opus-4-8 cards at $5, over a $1 cap.
 	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000_000}}
 	r, err := NewRunner(Options{
-		SessionID:   "run-1",
-		Model:       ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
-		ModelClient: mdl,
-		BudgetUSD:   1,
+		SessionID: "run-1",
+		Model:     ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8", Client: mdl},
+		BudgetUSD: 1,
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -152,10 +176,9 @@ func TestTurnStopsOnSpendCap(t *testing.T) {
 func TestTurnUnderSpendCapCompletesNormally(t *testing.T) {
 	mdl := &costlyModel{usage: models.Usage{InputTokens: 1_000}}
 	r, err := NewRunner(Options{
-		SessionID:   "run-1",
-		Model:       ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8"},
-		ModelClient: mdl,
-		BudgetUSD:   1,
+		SessionID: "run-1",
+		Model:     ModelOptions{Kind: ModelFake, Model: "claude-opus-4-8", Client: mdl},
+		BudgetUSD: 1,
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -177,11 +200,10 @@ func TestTurnUnderSpendCapCompletesNormally(t *testing.T) {
 func TestHostCostSourceOverridesRateCard(t *testing.T) {
 	mdl := &costlyModel{usage: models.Usage{InputTokens: 1}}
 	r, err := NewRunner(Options{
-		SessionID:   "run-1",
-		Model:       ModelOptions{Kind: ModelFake, Model: "house-model"},
-		ModelClient: mdl,
-		BudgetUSD:   1,
-		CostSource:  houseRate{usdPerInputToken: 2},
+		SessionID:  "run-1",
+		Model:      ModelOptions{Kind: ModelFake, Model: "house-model", Client: mdl},
+		BudgetUSD:  1,
+		CostSource: houseRate{usdPerInputToken: 2},
 	})
 	if err != nil {
 		t.Fatalf("NewRunner with a host cost source: %v", err)

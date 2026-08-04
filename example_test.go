@@ -58,13 +58,13 @@ func ExampleRunner_Run_lineage() {
 }
 
 // ExampleRunner_Run_delegation shows a dynamic region where the entry agent
-// delegates to a peer. A scripted model is supplied via Options.ModelClient so the
+// delegates to a peer. A scripted model is supplied via ModelOptions.Client so the
 // run is deterministic; a host would pass real ModelOptions instead. The
 // resulting lineage records the delegate and deliver edges.
 func ExampleRunner_Run_delegation() {
 	r, _ := topos.NewRunner(topos.Options{
-		SessionID:   "demo",
-		ModelClient: delegateOnceModel{peer: "reviewer"},
+		SessionID: "demo",
+		Model:     topos.ModelOptions{Client: delegateOnceModel{peer: "reviewer"}},
 	})
 
 	res, _ := r.Run(context.Background(), topos.Region{

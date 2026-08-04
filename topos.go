@@ -282,12 +282,6 @@ type Options struct {
 	// sandbox subpackage. Ignored when Sandbox is set (the injected backend
 	// owns execution location).
 	Workdir string
-
-	// ModelClient, when non-nil, is the model the runner uses directly, ignoring
-	// Model. It lets a host plug in its own models.Model (a custom provider
-	// adapter, or a scripted model for tests and examples) instead of the
-	// built-in Lux, Direct, or Fake kinds.
-	ModelClient models.Model
 }
 
 // Runner executes regions in-process through the real agentic loop, against the
@@ -300,22 +294,19 @@ type Runner struct {
 	spawner *harness.Spawner
 }
 
-// NewRunner builds a Runner. It uses Options.ModelClient when set, otherwise it
-// constructs the model from Options.Model.
+// NewRunner builds a Runner. The model comes from Options.Model: its Client
+// when set, otherwise the adapter built from its Kind.
 //
 // When a budget is set, it refuses a configured model the resolved
 // [billing.CostSource] cannot price: an unpriceable model leaves BudgetUSD
 // unenforceable, so the run is rejected before anything is spent. Only a model
 // declared in Options can be checked here — one the host resolves later, or
-// supplies through Options.ModelClient, is caught instead by the loop's turn-boundary
-// check, which stops the run on its first unpriceable turn.
+// supplies through Options.Model.Client, is caught instead by the loop's
+// turn-boundary check, which stops the run on its first unpriceable turn.
 func NewRunner(opts Options) (*Runner, error) {
-	m := opts.ModelClient
-	if m == nil {
-		var err error
-		if m, err = buildModel(opts.Model); err != nil {
-			return nil, err
-		}
+	m, err := buildModel(opts.Model)
+	if err != nil {
+		return nil, err
 	}
 	cost := opts.CostSource
 	if cost == nil {

@@ -88,7 +88,7 @@ func securityInput() adversarial.CriticInput {
 // so this is also the no-cap side of the `if in.Deadline > 0` guard that
 // TestRoundHonorsDeadline covers from the other side.
 func TestRoundReturnsModelTextVerbatim(t *testing.T) {
-	res := runOnce(t, nativecritic.Config{ModelClient: scriptedModel{text: cannedR1}}, securityInput())
+	res := runOnce(t, nativecritic.Config{Model: xtopos.ModelOptions{Client: scriptedModel{text: cannedR1}}}, securityInput())
 
 	if res.Markdown != cannedR1 {
 		t.Fatalf("markdown not verbatim:\n got %q\nwant %q", res.Markdown, cannedR1)
@@ -117,7 +117,7 @@ func TestRoundHonorsDeadline(t *testing.T) {
 	in.Deadline = 20 * time.Millisecond
 
 	start := time.Now()
-	_, err := nativecritic.NewCriticFactory(nativecritic.Config{ModelClient: blockingModel{}})(1).
+	_, err := nativecritic.NewCriticFactory(nativecritic.Config{Model: xtopos.ModelOptions{Client: blockingModel{}}})(1).
 		Round(context.Background(), in)
 	elapsed := time.Since(start)
 
@@ -136,7 +136,7 @@ func TestRoundHonorsDeadline(t *testing.T) {
 // exposes no token usage, so the topos critic reports zero. A future topos-side
 // fix flips this test deliberately.
 func TestRoundReportsNoUsage(t *testing.T) {
-	res := runOnce(t, nativecritic.Config{ModelClient: scriptedModel{text: cannedR1}}, securityInput())
+	res := runOnce(t, nativecritic.Config{Model: xtopos.ModelOptions{Client: scriptedModel{text: cannedR1}}}, securityInput())
 	if res.Usage.Total() != 0 || res.Tokens != 0 || res.USD != 0 {
 		t.Errorf("expected zero usage, got usage=%+v tokens=%d usd=%v", res.Usage, res.Tokens, res.USD)
 	}
@@ -150,7 +150,7 @@ func TestRoundReportsNoUsage(t *testing.T) {
 // keep a critic read-only. See the roadmap note in specs/adversarial-README.md.
 func TestToposGrantsExactlyAgentSpecTools(t *testing.T) {
 	grants := func(tools []string) []string {
-		runner, err := xtopos.NewRunner(xtopos.Options{SessionID: "t", ModelClient: scriptedModel{text: "ok"}})
+		runner, err := xtopos.NewRunner(xtopos.Options{SessionID: "t", Model: xtopos.ModelOptions{Client: scriptedModel{text: "ok"}}})
 		if err != nil {
 			t.Fatalf("NewRunner: %v", err)
 		}

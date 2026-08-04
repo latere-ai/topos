@@ -41,6 +41,9 @@ const (
 // model types; the runner builds the right adapter from it. For ModelLux/ModelDirect
 // supply exactly one credential: a static APIKey (e.g. a Lux "lux_*" virtual key)
 // or a BearerSource (a per-call token, e.g. a rotating sandbox/JWT token).
+//
+// Client is the escape hatch: set it to supply a models.Model outright instead
+// of describing one to build.
 type ModelOptions struct {
 	Kind     ModelKind
 	Provider string // ModelDirect only: a luxsdk.Provider name (anthropic, openai, gemini, openrouter, ollama); defaults to anthropic. Ignored for ModelLux — the gateway routes any provider.
@@ -49,10 +52,30 @@ type ModelOptions struct {
 
 	APIKey       string
 	BearerSource func(ctx context.Context) (string, error)
+
+	// Client, when non-nil, is used as the model directly: nothing is built, and
+	// Kind and every connection field above (Provider, BaseURL, APIKey,
+	// BearerSource) go unread. It lets a host plug in its own models.Model — a
+	// custom provider adapter, or a scripted model for tests and examples —
+	// instead of the built-in kinds.
+	//
+	// Model is the exception: it stays live as the declared model id, because
+	// pricing reads it rather than the client. Leave it empty and a client
+	// escapes the config-time pricing check in [NewRunner], so an unpriceable
+	// model is caught later, by the loop's turn-boundary check that stops the
+	// run on its first unpriceable turn. Both fail closed; only the timing
+	// differs. Set it alongside Client to get the config-time check back — a
+	// scripted model priced against a declared id.
+	Client models.Model
 }
 
 // buildModel turns public ModelOptions into the internal models.Model seam.
 func buildModel(opts ModelOptions) (models.Model, error) {
+	// A supplied client wins outright: it is already a models.Model, so there
+	// is nothing to build and Kind is not consulted.
+	if opts.Client != nil {
+		return opts.Client, nil
+	}
 	switch opts.Kind {
 	case ModelFake, "":
 		return fake.New(), nil

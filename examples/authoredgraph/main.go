@@ -7,7 +7,7 @@
 // registry, lower it to a runnable latere.ai/x/topos.Graph with ToRuntime, and run
 // it. The authored form declares each region's coordination with one field
 // (sequence | lead | mesh) instead of the runtime's autonomy+topology pair;
-// ToRuntime encodes that mapping. A scripted model is plugged into Options.ModelClient so
+// ToRuntime encodes that mapping. A scripted model is plugged into ModelOptions.Client so
 // the run is reproducible without API keys.
 //
 // An agent may be inline (full spec) or a reference (a "ref" slug naming a
@@ -100,7 +100,7 @@ func main() {
 		log.Fatalf("lower to runtime: %v", err)
 	}
 
-	r, err := topos.NewRunner(topos.Options{SessionID: "authored", ModelClient: echoModel{}})
+	r, err := topos.NewRunner(topos.Options{SessionID: "authored", Model: topos.ModelOptions{Client: echoModel{}}})
 	if err != nil {
 		log.Fatalf("new runner: %v", err)
 	}

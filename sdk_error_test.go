@@ -92,14 +92,13 @@ func withFastReadyPolling(t *testing.T) {
 	t.Cleanup(func() { readyTimeout, readyInterval = origT, origI })
 }
 
-func TestOptionsModelClientOverridesModel(t *testing.T) {
-	// A custom models.Model passed via Options.ModelClient is used instead of the
-	// built-in Model kind. ModelFake would not delegate (one node); the scripted
-	// delegating model produces a two-node lineage, proving ModelClient won.
+func TestModelOptionsClientOverridesKind(t *testing.T) {
+	// A custom models.Model passed via ModelOptions.Client is used instead of
+	// the built-in Kind. ModelFake would not delegate (one node); the scripted
+	// delegating model produces a two-node lineage, proving Client won.
 	r, err := NewRunner(Options{
-		SessionID:   "run-1",
-		Model:       ModelOptions{Kind: ModelFake},
-		ModelClient: testModel{delegateTo: "reviewer"},
+		SessionID: "run-1",
+		Model:     ModelOptions{Kind: ModelFake, Client: testModel{delegateTo: "reviewer"}},
 	})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -109,7 +108,7 @@ func TestOptionsModelClientOverridesModel(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(res.Lineage.Nodes) != 2 {
-		t.Fatalf("nodes = %d, want 2 (Options.ModelClient not used?)", len(res.Lineage.Nodes))
+		t.Fatalf("nodes = %d, want 2 (ModelOptions.Client not used?)", len(res.Lineage.Nodes))
 	}
 }
 

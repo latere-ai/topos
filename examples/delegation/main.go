@@ -4,7 +4,7 @@
 
 // Command delegation shows a dynamic region where the entry agent hands a
 // subtask to a peer through the delegate tool, and the deterministic lineage
-// graph that results. It plugs a scripted model into Options.ModelClient so the run
+// graph that results. It plugs a scripted model into ModelOptions.Client so the run
 // is reproducible without API keys or services, which is also how a host wires
 // its own models.Model in place of the built-in Lux/Direct/Fake kinds.
 //
@@ -24,7 +24,7 @@ import (
 // scriptedModel is a minimal deterministic models.Model. The entry agent (which
 // holds the delegate tool) hands off to a peer once; the peer, and the entry
 // after the peer returns, simply finish. Any models.Model (Lux, a provider
-// adapter) plugs in the same way via Options.ModelClient.
+// adapter) plugs in the same way via ModelOptions.Client.
 type scriptedModel struct{ peer string }
 
 func (m scriptedModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
@@ -58,11 +58,11 @@ func text(s string, stop models.StopReason) []models.Event {
 }
 
 func main() {
-	// Options.ModelClient plugs the scripted model straight in. A host would instead
-	// pass real ModelOptions (ModelLux / ModelDirect) and leave ModelClient nil.
+	// ModelOptions.Client plugs the scripted model straight in. A host would
+	// instead set Kind (ModelLux / ModelDirect) and leave Client nil.
 	r, err := topos.NewRunner(topos.Options{
-		SessionID:   "deleg",
-		ModelClient: scriptedModel{peer: "reviewer"},
+		SessionID: "deleg",
+		Model:     topos.ModelOptions{Client: scriptedModel{peer: "reviewer"}},
 	})
 	if err != nil {
 		log.Fatalf("new runner: %v", err)
