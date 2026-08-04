@@ -497,47 +497,47 @@ func probeCall(name string) []models.ToolCall {
 	return []models.ToolCall{{ID: "call_1", Name: name, Input: json.RawMessage(`{}`)}}
 }
 
-// TestLoopDispatchesToolsToHandSandbox proves the brain↔hand split: when
-// ToolSandboxID is set, a tool call runs in the hand sandbox, not the brain's
-// (brain-hand-spawn AC-2).
-func TestLoopDispatchesToolsToHandSandbox(t *testing.T) {
+// TestLoopDispatchesToolsToToolSandbox proves reasoning/tool-execution
+// isolation: when ToolSandboxID is set, a tool call runs in the tool sandbox,
+// not the run's own.
+func TestLoopDispatchesToolsToToolSandbox(t *testing.T) {
 	p := local.New()
 	ctx := context.Background()
 
-	brain, err := p.Create(ctx, sandbox.CreateOptions{Name: "brain"})
+	run, err := p.Create(ctx, sandbox.CreateOptions{Name: "run"})
 	if err != nil {
-		t.Fatalf("create brain: %v", err)
+		t.Fatalf("create run sandbox: %v", err)
 	}
-	defer p.Destroy(ctx, brain.ID) //nolint:errcheck
-	hand, err := p.Create(ctx, sandbox.CreateOptions{Name: "hand"})
+	defer p.Destroy(ctx, run.ID) //nolint:errcheck
+	toolSB, err := p.Create(ctx, sandbox.CreateOptions{Name: "tool"})
 	if err != nil {
-		t.Fatalf("create hand: %v", err)
+		t.Fatalf("create tool sandbox: %v", err)
 	}
-	defer p.Destroy(ctx, hand.ID) //nolint:errcheck
+	defer p.Destroy(ctx, toolSB.ID) //nolint:errcheck
 
 	var got string
 	cfg := loop.Config{
 		Model:         &toolCallModel{calls: probeCall("probe")},
 		Sandbox:       p,
-		SandboxID:     brain.ID,
-		ToolSandboxID: hand.ID,
+		SandboxID:     run.ID,
+		ToolSandboxID: toolSB.ID,
 		Tools:         registryWith(&captureTool{name: "probe", gotSandbox: &got}),
 		Bus:           hooks.New(),
-		SessionID:     "hand-test",
+		SessionID:     "tool-sandbox-test",
 		AgentID:       "agent",
 		UserPrompt:    "go",
 	}
 	if _, err := loop.Run(ctx, cfg, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got != hand.ID {
-		t.Fatalf("tool ran in sandbox %q, want the hand %q (not the brain %q)", got, hand.ID, brain.ID)
+	if got != toolSB.ID {
+		t.Fatalf("tool ran in sandbox %q, want the tool sandbox %q (not the run's %q)", got, toolSB.ID, run.ID)
 	}
 }
 
-// TestLoopWithoutHandRunsToolsInRunSandbox is the default: with no ToolSandboxID,
-// tool calls run in the run's own sandbox.
-func TestLoopWithoutHandRunsToolsInRunSandbox(t *testing.T) {
+// TestLoopWithoutToolSandboxRunsToolsInRunSandbox is the default: with no
+// ToolSandboxID, tool calls run in the run's own sandbox.
+func TestLoopWithoutToolSandboxRunsToolsInRunSandbox(t *testing.T) {
 	p := local.New()
 	ctx := context.Background()
 	sb, err := p.Create(ctx, sandbox.CreateOptions{})
@@ -553,7 +553,7 @@ func TestLoopWithoutHandRunsToolsInRunSandbox(t *testing.T) {
 		SandboxID:  sb.ID,
 		Tools:      registryWith(&captureTool{name: "probe", gotSandbox: &got}),
 		Bus:        hooks.New(),
-		SessionID:  "no-hand",
+		SessionID:  "no-tool-sandbox",
 		UserPrompt: "go",
 	}
 	if _, err := loop.Run(ctx, cfg, nil); err != nil {

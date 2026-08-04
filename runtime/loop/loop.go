@@ -49,11 +49,11 @@ type Config struct {
 	Sandbox sandbox.Provider
 	// SandboxID is the pre-provisioned sandbox instance.
 	SandboxID string
-	// ToolSandboxID, when set, is the sandbox tool calls are dispatched to (the
-	// "hand"), leaving the run's own SandboxID (the "brain") compute-only. This is
-	// the loop-side half of brain↔hand isolation (brain-hand-spawn leg 4): the
-	// brain reasons; a separate hand sandbox, created under the user's policy,
-	// executes untrusted tool code. Empty means tools run in SandboxID.
+	// ToolSandboxID, when set, is the sandbox tool calls are dispatched to,
+	// leaving the run's own SandboxID compute-only. This is the loop-side half
+	// of reasoning/tool-execution isolation: the run's sandbox reasons; a
+	// separate tool sandbox, created under the user's policy, executes
+	// untrusted tool code. Empty means tools run in SandboxID.
 	ToolSandboxID string
 	// Tools is the tool registry. Tools.Defs() are injected into each
 	// model request; tool calls are routed to Tools.Get(name).Invoke.
@@ -519,9 +519,9 @@ func executeToolCall(
 		}, nil
 	}
 
-	// Execute. Route the call to the hand sandbox when one is configured, so the
-	// brain's own sandbox stays compute-only (brain↔hand isolation); otherwise the
-	// run's sandbox executes it. The caller stamps tr.CallID = tc.ID on every
+	// Execute. Route the call to the tool sandbox when one is configured, so the
+	// run's own sandbox stays compute-only (reasoning/tool-execution isolation);
+	// otherwise the run's sandbox executes it. The caller stamps tr.CallID = tc.ID on every
 	// return path, so it is not set here.
 	toolSandboxID := cfg.SandboxID
 	if cfg.ToolSandboxID != "" {
