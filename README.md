@@ -1,5 +1,10 @@
 # Topos Runtime
 
+[![CI](https://github.com/latere-ai/topos/actions/workflows/ci.yml/badge.svg)](https://github.com/latere-ai/topos/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/latere.ai/x/topos.svg)](https://pkg.go.dev/latere.ai/x/topos)
+[![Release](https://img.shields.io/github/v/release/latere-ai/topos)](https://github.com/latere-ai/topos/releases/latest)
+[![License](https://img.shields.io/github/license/latere-ai/topos)](LICENSE)
+
 **Topos Runtime** is the embeddable Go agent runtime at the core of
 [Topos](https://topos.latere.ai), the Latere agent platform. A host application
 defines agents, composes them into regions, and runs a single region or a graph of
@@ -9,6 +14,18 @@ of everything that ran.
 
 The Topos platform is one host built on this runtime; any Go application can be
 another.
+
+## Install
+
+Topos requires Go 1.26 or later.
+
+```sh
+go get latere.ai/x/topos@latest
+```
+
+Start with the runnable [`minimal`](examples/minimal) example, then browse the
+[examples](examples) and [Go package reference](https://pkg.go.dev/latere.ai/x/topos)
+for the complete API.
 
 ```go
 import "latere.ai/x/topos"
@@ -311,3 +328,7 @@ and others) are public for advanced and host use, but their APIs may still chang
 ## License
 
 [Apache-2.0](LICENSE).
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local
+development workflow and [SECURITY.md](SECURITY.md) for private vulnerability
+reporting.
