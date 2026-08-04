@@ -1,0 +1,67 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Topos
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Do not include credentials or undisclosed security issues. Use the private security advisory link for vulnerabilities.
+  - type: input
+    id: topos-version
+    attributes:
+      label: Topos version
+      description: The module version from go.mod or `go list -m latere.ai/x/topos`.
+      placeholder: v0.3.0
+    validations:
+      required: true
+  - type: input
+    id: go-version
+    attributes:
+      label: Go version
+      description: Output of `go version`.
+      placeholder: go version go1.26.0 linux/amd64
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package area
+      options:
+        - root topos package
+        - adversarial review
+        - graph authoring
+        - models
+        - runtime loop
+        - sandbox
+        - tools and harness
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest program or test that demonstrates the behavior.
+      render: go
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include relevant error output or logs after removing secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, architecture, model backend, and sandbox backend when relevant.
