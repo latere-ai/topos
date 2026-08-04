@@ -90,7 +90,7 @@ cache-heavy by construction.
 
 ### Enforcement point
 
-`runtime/loop/loop.go:316`, immediately after `result.TotalUsage.Add(turnUsage)`.
+`runtime/loop/loop.go:359`, immediately after `result.TotalUsage.Add(turnUsage)`.
 One site covers the entry, peer, and pinned loops. On breach the loop stops and
 the result carries a terminal budget stop reason, distinguishable from a
 steady-state or max-rounds stop.
