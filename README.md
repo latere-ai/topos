@@ -93,6 +93,11 @@ keys never live in the host application. `ModelOptions.Kind` chooses the backend
   Ollama — with the same dialect translated client-side, no gateway in the path.
 - `ModelFake` is the deterministic, network-free model for tests.
 
+For a model the built-in kinds do not cover, `ModelOptions.Client` takes a
+`models.Model` outright — a custom provider adapter, or a scripted model that
+makes a run reproducible without keys or services. A non-nil `Client` is used
+directly and `Kind` is not consulted.
+
 ## Interactive, resumable turns
 
 `Runner.Run` runs a region start to finish. For a back-and-forth session — a chat

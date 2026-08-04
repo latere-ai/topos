@@ -33,6 +33,20 @@ only a config change.
 never touches the internal model interface; the runner builds the right adapter
 from these options once, when the runner is created.
 
+One field opts out of that construction. `Client` supplies a `models.Model`
+outright instead of describing one to build, which is how a host plugs in its own
+provider adapter and how tests and examples inject a scripted model. A non-nil
+`Client` is used directly: nothing is built, and `Kind`, `Provider`, `BaseURL`,
+`APIKey`, and `BearerSource` go unread. It is the single model field rather than
+a second option beside `ModelOptions`, so the precedence rule lives next to what
+it overrides.
+
+`Model` is the exception that stays live, because pricing reads the declared id
+rather than the client. A `Client` with no `Model` set escapes the config-time
+pricing check and is caught later at the loop's turn boundary; setting `Model`
+alongside a `Client` restores the construction-time refusal. Both fail closed;
+only the timing differs (see the spend cap spec).
+
 `ModelKind` selects the backing:
 
 - `ModelFake`: a deterministic, network-free model. It needs no keys and no
