@@ -3,7 +3,7 @@ title: Rename Lineage to Trace
 status: complete
 track: runtime
 depends_on:
-  - specs/008-lineage.md
+  - specs/008-trace.md
 affects:
   - topos.go
   - graph/graph.go
@@ -50,12 +50,14 @@ pre-1.0 release.
   `TraceEdge`.
 - `RunResult.Lineage` and `GraphResult.Lineage` become `.Trace`.
 - Internal identifiers, doc comments, examples, and README prose follow.
-- Spec `008-lineage.md` keeps its number and filename, so existing `depends_on`
-  references stay valid, and its body adopts the new term.
+- Spec `008-lineage.md` keeps its number and becomes `008-trace.md`; the two
+  references to its path move with it.
 
 Out of scope: no serialization changes, because no JSON or YAML tag ever carried
 the word; no behavior change to how the graph is built or ordered; no changes to
-downstream repositories that consume the field.
+downstream repositories that consume the field. Retired specs under
+`specs/.archive/` keep their original wording, because they record what was
+decided at the time rather than what ships now.
 
 ## Verification
 
@@ -65,8 +67,8 @@ race, and the coverage threshold.
 
 ## Acceptance criteria
 
-- No identifier, comment, doc, or spec in the module uses the word lineage for
-  the run graph.
+- Outside `specs/.archive/`, no identifier, comment, doc, or spec in the module
+  uses the word lineage for the run graph.
 - `RunResult.Trace` and `GraphResult.Trace` carry what `.Lineage` carried, with
   identical node ids, edge kinds, and ordering.
 - `make all` passes.

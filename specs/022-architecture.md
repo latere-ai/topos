@@ -79,7 +79,7 @@ Adversarial Review is embedded, not run directly:
   identity.
 - **wallfacer** and the **agents platform** embed the engine inside the Topos
   world, running critics through the governed runtime (model routing via Lux, Cella
-  sandboxes, lineage).
+  sandboxes, trace).
 
 The canonical embedding pattern is in [Engine API](024-engine-api.md).
 

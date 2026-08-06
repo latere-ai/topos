@@ -48,7 +48,7 @@ When the model calls `delegate`, the tool:
    into the parent's transcript. From the parent's view, delegation is one tool
    call that produced an answer.
 
-The spawn also records lineage (see the lineage spec): a node for the peer with
+The spawn also records trace (see the trace spec): a node for the peer with
 the tools it was actually granted and the sandbox it ran in, plus a `delegate`
 edge from the caller and a `deliver` edge back when the peer finishes.
 

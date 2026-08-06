@@ -9,7 +9,7 @@
 application defines agents, composes them into regions, and runs a single region
 or a graph of regions in-process, with sandboxed tools, sub-agent spawning under
 attenuated permissions, peer discovery for agent-to-agent work, and a
-deterministic lineage graph of everything that ran.
+deterministic trace of everything that ran.
 
 [Topos](https://topos.latere.ai), the Latere agent platform, is one host built on
 this runtime; any Go application can be another.
@@ -42,7 +42,7 @@ res, _ := r.Run(ctx, topos.Region{
 }, "ship the change")
 
 fmt.Println(res.Final)
-for _, n := range res.Lineage.Nodes {
+for _, n := range res.Trace.Nodes {
     fmt.Println(n.ID, n.Status, n.Sandbox)
 }
 ```
@@ -61,7 +61,7 @@ where only the entry agent delegates, or `Mesh`, where peers can delegate too.
 edges between them; an edge `From -> To` seeds the target region's task with the
 source region's final output, so a dynamic planning region can feed a pinned
 shipping chain. Regions run in topological order, each in its own isolated sandbox,
-and their lineages merge into one graph. Region ids namespace agent ids, so agents
+and their traces merge into one graph. Region ids namespace agent ids, so agents
 sharing a name across regions stay distinct. Composition across regions is
 text-only (a region's output is its final text, not a shared filesystem).
 
@@ -73,7 +73,7 @@ parent's transcript.
 **Bounded recursion.** Under `Mesh`, a peer can delegate again. `Options.MaxHandoffDepth`
 (default 3) caps how deep that can go, so a run cannot fan out without limit.
 
-**Lineage.** Every run produces a deterministic graph: who delegated or handed off
+**Trace.** Every run produces a deterministic graph: who delegated or handed off
 to whom, with each node's status, the tools it was granted, and the sandbox it ran
 in. The ids are stable, so runs can be diffed or rendered live.
 
@@ -165,8 +165,8 @@ g := topos.Graph{
 
 res, _ := r.RunGraph(ctx, g, "design the feature")
 fmt.Println(res.Final)             // the last region's output
-for _, e := range res.Lineage.Edges {
-    fmt.Println(e.From, "->", e.To, e.Kind) // region flow plus each region's internal lineage
+for _, e := range res.Trace.Edges {
+    fmt.Println(e.From, "->", e.To, e.Kind) // region flow plus each region's internal trace
 }
 ```
 
@@ -287,9 +287,9 @@ entering a sandbox.) Plain `Env` remains the channel for non-secret config.
 
 ## Adversarial Review
 
-Adversarial review is a topos capability built on the runtime: a proposer agent
+Adversarial review is a Topos capability built on the runtime: a proposer agent
 and one or more critic agents cross-examine a diff over bounded rounds, with
-per-fork lineage. It lives under `latere.ai/x/topos/adversarial`, deliberately
+a per-fork trace. It lives under `latere.ai/x/topos/adversarial`, deliberately
 separate from the provider-agnostic core.
 
 The debate runs as N independent forks. In each fork a critic attacks the diff

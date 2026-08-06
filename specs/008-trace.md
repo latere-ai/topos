@@ -1,5 +1,5 @@
 ---
-title: Deterministic Lineage
+title: Deterministic Trace
 status: complete
 track: runtime
 depends_on:
@@ -13,7 +13,7 @@ author: changkun
 dispatched_task_id: null
 ---
 
-# Deterministic Lineage
+# Deterministic Trace
 
 ## Goal
 
@@ -23,13 +23,13 @@ enough to render live and to diff across runs.
 
 ## Design
 
-`Run` returns a `Lineage` alongside the final text. The lineage is a small graph:
+`Run` returns a `Trace` alongside the final text. The trace is a small graph:
 
-- A `LineageNode` per agent: a stable `ID`, the agent's `Name` and `Role`, a
+- A `TraceNode` per agent: a stable `ID`, the agent's `Name` and `Role`, a
   `Status` (`running`, `done`, `failed`, or `stopped`), the tool families actually `Grants`-ed
   after attenuation (so the graph shows real authority, not what was requested),
   and the `Sandbox` it ran in (a delegated peer gets its own).
-- A `LineageEdge` per relationship, tagged by `Kind`: `next` for one step of a
+- A `TraceEdge` per relationship, tagged by `Kind`: `next` for one step of a
   pinned chain, `delegate` from a caller to the peer it spawned, and `deliver` from
   a peer back to its caller when it returns a result. A `next` edge carries two
   meanings that `Kind` alone does not distinguish: a step-to-step link inside a
@@ -49,12 +49,12 @@ view can keep stable ids across reconnects.
 Status is updated as the run proceeds: a node starts `running`, then flips to
 `done` on success, `failed` on error, or `stopped` when the runtime halted the
 agent before it finished (a region spend cap reached, or an interrupt). On a
-non-`done` terminal status, `Run` still returns the partial lineage, so a caller
+non-`done` terminal status, `Run` still returns the partial trace, so a caller
 sees exactly how far the run got and which node ended it.
 
 In a pinned region the graph is a straight line of `next` edges. In a dynamic
 region it is a tree rooted at the entry, with `delegate` and `deliver` edges to and
-from each spawned peer. In a graph run (`RunGraph`), each region's lineage merges
+from each spawned peer. In a graph run (`RunGraph`), each region's trace merges
 into one graph, joined by region-to-region `next` edges.
 
 ## Diagram
@@ -70,9 +70,9 @@ graph TD
 
 ## Outcome
 
-Shipped in `topos.go`: `Lineage`, `LineageNode`, `LineageEdge`, and `RunResult`.
+Shipped in `topos.go`: `Trace`, `TraceNode`, `TraceEdge`, and `RunResult`.
 `runDynamic` builds the entry node and the tree, `delegateTool.appendChild` records
 each peer node plus its `delegate` and `deliver` edges, `runPinned` records the
 `next` chain, and `setStatus` advances node status. `RunGraph` merges each region's
-lineage and adds the region-to-region `next` edges. Child ids come from the
+trace and adds the region-to-region `next` edges. Child ids come from the
 deterministic `subAgentID` scheme in `harness/subagent.go`.

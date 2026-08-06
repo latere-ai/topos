@@ -1,13 +1,13 @@
 # Topos Design Specs
 
 These are retrospective design specs for the Topos runtime as it exists today.
-Topos is an embeddable Go agent runtime: a host application imports the root
-`topos` package, defines agents, composes them into regions, and runs a single
-region or a graph of regions locally and in-process. The specs here document the
-public capabilities the runtime ships, so a developer can see the whole shape
-before reading code.
+Topos Runtime is an embeddable Go runtime for multi-agent systems: a host
+application imports the root `topos` package, defines agents, composes them into
+regions, and runs a single region or a graph of regions locally and in-process.
+The specs here document the public capabilities the runtime
+ships, so a developer can see the whole shape before reading code.
 
-The shipped runtime specs (track `runtime`, `001`–`012` and `028`–`029`) are
+The shipped runtime specs (track `runtime`, `001`–`012` and `028`–`030`) are
 `status: complete` and end with an Outcome section pointing at the packages that
 implement them. Proposed runtime work follows those numbered specs. The Adversarial Review
 specs (track `adversarial`) follow their own lifecycle (`current` for shipped
@@ -18,8 +18,8 @@ behavior, `proposed`/`exploratory` for the roadmap); see
 
 The supported surface is the root `topos` package. A host builds a `Runner` from
 `Options`, hands it a `Region` (an entry agent plus peers) and a task string, and
-gets back a `RunResult`: the agent's final text and a deterministic lineage graph
-of everything that ran. To compose several regions into one run, a host hands
+gets back a `RunResult`: the agent's final text and a deterministic trace of
+everything that ran. To compose several regions into one run, a host hands
 `Runner.RunGraph` a `Graph` of regions wired by data-flow edges instead.
 
 Underneath the root package sits an engine made of public but advanced subpackages:
@@ -62,7 +62,7 @@ delegation and topology mechanics, then the supporting engine specs.
   recursion gate.
 - [Mesh Discovery](009-mesh-discovery.md): the peer directory injected into a
   dynamic agent's prompt.
-- [Deterministic Lineage](008-lineage.md): the renderable run graph.
+- [Deterministic Trace](008-trace.md): the renderable run graph.
 - [Model Connection](002-model-connection.md): `ModelOptions` and the model
   gateway.
 - [Agentic Loop](001-agentic-loop.md): the turn driver, tool registry, model
@@ -75,6 +75,8 @@ delegation and topology mechanics, then the supporting engine specs.
   and stopping a region whose combined spend reaches `Options.BudgetUSD`.
 - [Open Source Package Presentation](029-open-source-package.md): the public
   repository entry points, contributor paths, metadata, and release surface.
+- [Rename Lineage to Trace](030-trace-rename.md): why the run graph is named
+  `Trace`, and what the rename touched.
 
 ## Dependency view
 
@@ -89,7 +91,7 @@ graph TD
   del[Delegation]
   rec[Bounded Recursion]
   disc[Mesh Discovery]
-  lin[Lineage]
+  trace[Trace]
 
   model --> loop
   sdk --> loop
@@ -102,9 +104,9 @@ graph TD
   rec --> topo
   disc --> topo
   disc --> del
-  lin --> del
+  trace --> del
   rgraph --> ar
-  rgraph --> lin
+  rgraph --> trace
 ```
 
 ## Adversarial Review

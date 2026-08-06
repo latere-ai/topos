@@ -172,7 +172,7 @@ always nil and the rate card carries every run.
   together stops. The cap is not multiplied by the number of agents.
 - A budget stop is reported as an error matching `billing.ErrBudgetExceeded`
   from `Run`, `RunGraph`, and `Turn`, and the partial result is returned with it.
-- The lineage node of a budget-stopped agent is not `done`.
+- The trace node of a budget-stopped agent is not `done`.
 - A `Meter` shared by several goroutines loses no usage (race-detector test).
 - A gateway-reported cost is preferred over the rate card when present.
 - A budget set against an unpriceable model fails `topos.NewRunner` with an error naming
@@ -203,7 +203,7 @@ defect is precisely a cap that never fires.
   must equal every fold, since a lost update under-counts a region's spend.
 - root: `Run`, `RunGraph`, and `Turn` return an error matching
   `billing.ErrBudgetExceeded` on a breach. Pre-change they returned nil.
-- root: the budget-stopped agent's lineage node is not `done`. Pre-change it was.
+- root: the budget-stopped agent's trace node is not `done`. Pre-change it was.
 - root: an unmetered region and an under-budget region are unaffected on every
   path — every agent runs, the error is nil, and every node is `done`.
 - `models`: nil `CostUSDMicro` and zero `CostUSDMicro` take different paths.
@@ -312,15 +312,15 @@ A budget stop is an error everywhere. `loop.Run` returns
 layer wraps around it) together with the partial result, and `Runner.Run`,
 `Runner.RunGraph`, and `Runner.Turn` propagate both. A caller that only checks
 errors gets a loud signal; a caller that wants the truncated output still has
-it, including through `RunGraph`, which returns the merged lineage and the
+it, including through `RunGraph`, which returns the merged trace and the
 capped region's `Final`.
 
-The lineage node of a budget-stopped agent is `StatusStopped`, a fourth terminal
+The trace node of a budget-stopped agent is `StatusStopped`, a fourth terminal
 state beside `running`, `done`, and `failed`. `done` would claim a completion
 that did not happen and `failed` would claim a fault that did not occur: the
 runtime enforced a limit on an agent that was working correctly.
 
 A delegated peer that trips the cap cannot end its parent from a tool result, so
-it records the stop in its tool result and its lineage node, and the parent —
+it records the stop in its tool result and its trace node, and the parent —
 sharing the same meter — finds the cap breached at the top of its next turn,
 before spending again.

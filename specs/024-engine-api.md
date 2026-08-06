@@ -47,7 +47,7 @@ transcript and diff helpers are in [Inputs](025-inputs.md).
 - **`Critic`** - `Round(ctx, CriticInput) (*CriticResult, error)`. Stateless
   across calls; the engine calls it once per critic turn.
 - **`CriticFactory`** = `func(forkIdx int) Critic` - creates one `Critic` per
-  fork (1-based index), so backends can key sandboxes or lineage on the fork.
+  fork (1-based index), so backends can key sandboxes or trace on the fork.
 
 ## The result and input types
 

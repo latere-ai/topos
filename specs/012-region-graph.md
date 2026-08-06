@@ -4,7 +4,7 @@ status: complete
 track: runtime
 depends_on:
   - specs/004-agents-and-regions.md
-  - specs/008-lineage.md
+  - specs/008-trace.md
 affects:
   - topos.go
 effort: medium
@@ -30,7 +30,7 @@ A `Graph` holds named regions and the edges between them:
 
 - A `GraphRegion` is a `Region` plus an `ID` unique within the graph. The id
   namespaces the region's node ids, so agents that share a `Name` in different
-  regions still get distinct lineage ids.
+  regions still get distinct trace ids.
 - A `GraphEdge` composes two regions by data flow: an edge `From -> To` seeds the
   target region's task with the source region's `Final`. A region with no incoming
   edge starts from the graph task.
@@ -39,7 +39,7 @@ A `Graph` holds named regions and the edges between them:
 deterministic topological order (Kahn's algorithm, seeded and expanded in declared
 order), each in its own isolated sandbox through the same `runRegion` unit that
 `Run` uses — so region isolation and sandbox lifecycle are identical on both paths.
-Each region's lineage merges into one graph, and a cross-region `next` edge links
+Each region's trace merges into one graph, and a cross-region `next` edge links
 each source region's entry node to its target region's entry node.
 
 Composition is text-only: a region's observable output is its `Final` text, not a
@@ -47,7 +47,7 @@ shared filesystem. This is deliberately different from a pinned region's interna
 chain, where every step receives the original task and outputs are not piped —
 regions compose by threading text; steps within a region do not.
 
-Execution is sequential, which keeps lineage mutation single-threaded (no
+Execution is sequential, which keeps trace mutation single-threaded (no
 concurrent appends to the shared graph). Two shapes are supported: a linear chain
 and fan-out (one region feeding several). Fan-in — a region with more than one
 incoming edge — is rejected, because merging several upstream `Final`s into one
@@ -74,7 +74,7 @@ graph TD
 Shipped in `topos.go`: `Graph`, `GraphRegion`, `GraphEdge`, and `Runner.RunGraph`,
 with the shared `runRegion` helper extracted from `Run` and the `planGraph`
 validator (topological order, cycle/fan-in/unknown-edge rejection). Region ids
-namespace node ids (`<session>/<region>/<agent>`), so the lineage merge stays
+namespace node ids (`<session>/<region>/<agent>`), so the trace merge stays
 collision-free; a cross-region `next` edge records region-level flow.
 `RunGraph`, `planGraph`, and `runRegion` are covered at 100%; `examples/graph`
 demonstrates a dynamic-to-pinned composition.

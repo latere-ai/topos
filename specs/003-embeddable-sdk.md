@@ -43,11 +43,11 @@ The lifecycle is three calls:
    run, dispatches on the region's autonomy mode, and tears the sandbox down when
    done. `task` is the user request handed to the entry agent. `RunGraph(ctx,
    Graph, task)` is the sibling call for a run that composes several regions; it
-   runs each region through the same per-region unit and merges their lineages
+   runs each region through the same per-region unit and merges their traces
    (see the region-graph spec).
 3. The call returns a `RunResult`: `Final` (the entry agent's last text — for a
-   graph, the last region's) and `Lineage` (the deterministic run graph). Even on
-   error, a partial `Lineage` is returned so a caller can see how far the run got.
+   graph, the last region's) and `Trace` (the deterministic run graph). Even on
+   error, a partial `Trace` is returned so a caller can see how far the run got.
 
 Because the runner constructs its own sandbox and model, a host can get a complete
 autonomous run with no external services by selecting the deterministic fake model.
@@ -60,14 +60,14 @@ graph LR
   sdk --> runner[NewRunner Options]
   runner --> run[Run ctx Region task]
   runner --> rungraph[RunGraph ctx Graph task]
-  run --> result[RunResult: Final + Lineage]
+  run --> result[RunResult: Final + Trace]
   rungraph --> result
 ```
 
 ## Outcome
 
 Shipped in `topos.go`: `Options`, `Runner`, `NewRunner`, `Run`, `RunGraph`, and
-`RunResult`, along with the agent, region, graph, and lineage types the rest of the
+`RunResult`, along with the agent, region, graph, and trace types the rest of the
 specs cover. The
 package doc comment states the boundary rule (only `topos`-defined and
 standard-library types cross the edge). The model is built in `model.go`; the

@@ -50,12 +50,12 @@ no option for it yet.
 agent in the Topos runtime instead of a local subprocess. This is for embedders
 already inside the Topos world (wallfacer, the agents platform): model routing
 goes through Lux or Direct, execution runs in a Topos sandbox (local or Cella),
-and every fork is a distinct lineage node. Secrets stay in the gateway and billing
+and every fork is a distinct trace node. Secrets stay in the gateway and billing
 is centralized.
 
 `Config` carries `Model` (`xtopos.ModelOptions`: Lux, Direct, or Fake, or a
 `Client` the caller supplies outright — tests set a scripted model there),
-`Sandbox` (nil uses the local sandbox), and `Tools`. `Tools` is recorded on the lineage node as `Grants` and is
+`Sandbox` (nil uses the local sandbox), and `Tools`. `Tools` is recorded on the trace node as `Grants` and is
 an audit record rather than a sandbox: the runtime offers every agent
 `tools.Builtins()` whatever the grant says, so a nil `Tools` does not by itself
 keep the critic from executing or mutating. A caller that needs a read-only critic
