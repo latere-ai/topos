@@ -1,5 +1,5 @@
 // Package adversarial is a topos capability: a proposer agent and one or more
-// critic agents cross-examine a diff over bounded rounds, with a per-fork trace.
+// critic agents cross-examine a diff over bounded rounds, with per-fork traces.
 // It is a use of the topos runtime, not a peer of it — multi-agent spawning with
 // attenuated authority and a deterministic trace, which is exactly what
 // topos provides.

@@ -22,7 +22,7 @@
 //
 // Built on the runtime, the adversarial subpackage
 // ([latere.ai/x/topos/adversarial]) adds a review capability: a proposer and one
-// or more critics cross-examine a diff over bounded rounds with a per-fork trace.
+// or more critics cross-examine a diff over bounded rounds with per-fork traces.
 package topos
 
 import (

@@ -289,7 +289,7 @@ entering a sandbox.) Plain `Env` remains the channel for non-secret config.
 
 Adversarial review is a Topos capability built on the runtime: a proposer agent
 and one or more critic agents cross-examine a diff over bounded rounds, with
-a per-fork trace. It lives under `latere.ai/x/topos/adversarial`, deliberately
+per-fork traces. It lives under `latere.ai/x/topos/adversarial`, deliberately
 separate from the provider-agnostic core.
 
 The debate runs as N independent forks. In each fork a critic attacks the diff
