@@ -37,10 +37,10 @@ func Example() {
 	// Output: Task completed: echoed your prompt in the sandbox.
 }
 
-// ExampleRunner_Run_lineage shows that every run yields a deterministic lineage
+// ExampleRunner_Run_trace shows that every run yields a deterministic trace
 // graph: one node per agent that ran, each with a stable id, status, granted
 // tools, and the sandbox it ran in.
-func ExampleRunner_Run_lineage() {
+func ExampleRunner_Run_trace() {
 	r, _ := topos.NewRunner(topos.Options{
 		SessionID: "demo",
 		Model:     topos.ModelOptions{Kind: topos.ModelFake},
@@ -51,7 +51,7 @@ func ExampleRunner_Run_lineage() {
 		Entry:    topos.AgentSpec{Name: "solo", Role: "solo", Tools: []string{"bash"}},
 	}, "say hello")
 
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		fmt.Printf("%s %s\n", n.ID, n.Status)
 	}
 	// Output: demo/solo done
@@ -60,7 +60,7 @@ func ExampleRunner_Run_lineage() {
 // ExampleRunner_Run_delegation shows a dynamic region where the entry agent
 // delegates to a peer. A scripted model is supplied via ModelOptions.Client so the
 // run is deterministic; a host would pass real ModelOptions instead. The
-// resulting lineage records the delegate and deliver edges.
+// resulting trace records the delegate and deliver edges.
 func ExampleRunner_Run_delegation() {
 	r, _ := topos.NewRunner(topos.Options{
 		SessionID: "demo",
@@ -78,7 +78,7 @@ func ExampleRunner_Run_delegation() {
 	}, "ship the change")
 
 	fmt.Println(res.Final)
-	for _, e := range res.Lineage.Edges {
+	for _, e := range res.Trace.Edges {
 		fmt.Printf("%s -> %s (%s)\n", e.From, e.To, e.Kind)
 	}
 	// Output:
@@ -113,10 +113,10 @@ func ExampleRunner_RunGraph() {
 
 	res, _ := r.RunGraph(context.Background(), g, "design the feature")
 
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		fmt.Printf("%s %s\n", n.ID, n.Status)
 	}
-	for _, e := range res.Lineage.Edges {
+	for _, e := range res.Trace.Edges {
 		fmt.Printf("%s -> %s (%s)\n", e.From, e.To, e.Kind)
 	}
 	// Output:

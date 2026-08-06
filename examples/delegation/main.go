@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Command delegation shows a dynamic region where the entry agent hands a
-// subtask to a peer through the delegate tool, and the deterministic lineage
+// subtask to a peer through the delegate tool, and the deterministic trace
 // graph that results. It plugs a scripted model into ModelOptions.Client so the run
 // is reproducible without API keys or services, which is also how a host wires
 // its own models.Model in place of the built-in Lux/Direct/Fake kinds.
@@ -90,11 +90,11 @@ func main() {
 
 	fmt.Println("final:", res.Final)
 	fmt.Println("nodes:")
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		fmt.Printf("  %s  role=%s  grants=%v\n", n.ID, n.Role, n.Grants)
 	}
 	fmt.Println("edges:")
-	for _, e := range res.Lineage.Edges {
+	for _, e := range res.Trace.Edges {
 		fmt.Printf("  %s -> %s (%s)\n", e.From, e.To, e.Kind)
 	}
 }

@@ -84,8 +84,8 @@ func chainRegion(names ...string) Region {
 	return region
 }
 
-// statuses lists a lineage's node statuses in order, for whole-graph assertions.
-func statuses(lin Lineage) []NodeStatus {
+// statuses lists a trace's node statuses in order, for whole-graph assertions.
+func statuses(lin Trace) []NodeStatus {
 	out := make([]NodeStatus, 0, len(lin.Nodes))
 	for _, n := range lin.Nodes {
 		out = append(out, n.Status)
@@ -108,8 +108,8 @@ func TestPinnedRegionSharesOneBudgetAcrossSteps(t *testing.T) {
 	if !errors.Is(err, billing.ErrBudgetExceeded) {
 		t.Fatalf("Run error = %v, want billing.ErrBudgetExceeded", err)
 	}
-	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusStopped}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("lineage statuses = %v, want %v (the third step must not start)", got, want)
+	if got, want := statuses(res.Trace), []NodeStatus{StatusDone, StatusStopped}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trace statuses = %v, want %v (the third step must not start)", got, want)
 	}
 	if res.Final != "spending" {
 		t.Fatalf("Final = %q, want the partial output of the capped step alongside the error", res.Final)
@@ -135,8 +135,8 @@ func TestDynamicRegionSharesOneBudgetWithDelegatedPeer(t *testing.T) {
 	if !errors.Is(err, billing.ErrBudgetExceeded) {
 		t.Fatalf("Run error = %v, want billing.ErrBudgetExceeded", err)
 	}
-	if got, want := statuses(res.Lineage), []NodeStatus{StatusStopped, StatusStopped}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("lineage statuses = %v, want %v", got, want)
+	if got, want := statuses(res.Trace), []NodeStatus{StatusStopped, StatusStopped}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trace statuses = %v, want %v", got, want)
 	}
 	if res.Final != "delegating" {
 		t.Fatalf("Final = %q, want the entry's partial output alongside the error", res.Final)
@@ -154,8 +154,8 @@ func TestRunGraphSurfacesBudgetStop(t *testing.T) {
 	if !errors.Is(err, billing.ErrBudgetExceeded) {
 		t.Fatalf("RunGraph error = %v, want billing.ErrBudgetExceeded", err)
 	}
-	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusStopped}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("lineage statuses = %v, want %v", got, want)
+	if got, want := statuses(res.Trace), []NodeStatus{StatusDone, StatusStopped}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trace statuses = %v, want %v", got, want)
 	}
 	if res.Final != "spending" {
 		t.Fatalf("Final = %q, want the capped region's partial output alongside the error", res.Final)
@@ -184,8 +184,8 @@ func TestGraphBudgetIsPerRegionNotPerGraph(t *testing.T) {
 	if got := mdl.turns.Load(); got != 2 {
 		t.Fatalf("graph ran %d turns, want 2: each region gets its own $2 budget", got)
 	}
-	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("lineage statuses = %v, want %v", got, want)
+	if got, want := statuses(res.Trace), []NodeStatus{StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trace statuses = %v, want %v", got, want)
 	}
 }
 
@@ -208,8 +208,8 @@ func TestUnmeteredRegionRunsEveryStep(t *testing.T) {
 	if got := mdl.turns.Load(); got != 3 {
 		t.Fatalf("unmetered region ran %d turns, want all 3", got)
 	}
-	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("lineage statuses = %v, want %v", got, want)
+	if got, want := statuses(res.Trace), []NodeStatus{StatusDone, StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trace statuses = %v, want %v", got, want)
 	}
 	if res.Final != "spending" {
 		t.Fatalf("Final = %q, want the last step's output", res.Final)
@@ -230,7 +230,7 @@ func TestRegionUnderBudgetCompletesEveryStep(t *testing.T) {
 	if got := mdl.turns.Load(); got != 3 {
 		t.Fatalf("under-budget region ran %d turns, want all 3", got)
 	}
-	if got, want := statuses(res.Lineage), []NodeStatus{StatusDone, StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("lineage statuses = %v, want %v", got, want)
+	if got, want := statuses(res.Trace), []NodeStatus{StatusDone, StatusDone, StatusDone}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trace statuses = %v, want %v", got, want)
 	}
 }

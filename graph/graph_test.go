@@ -101,7 +101,7 @@ func TestGraphJSONShape(t *testing.T) {
 
 // An agent-by-reference round-trips through JSON: the "ref" slug is the wire form
 // of a shared agent definition, and an author may pin a graph-local "name" on the
-// ref for lineage. A ref carries no spec fields on the wire.
+// ref for trace. A ref carries no spec fields on the wire.
 func TestAgentRefJSONRoundTrip(t *testing.T) {
 	g := graph.Graph{Regions: []graph.Region{{
 		ID:           "r",

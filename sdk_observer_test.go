@@ -38,7 +38,7 @@ func runWithObserver(t *testing.T, mdl models.Model, obs func(Event)) RunResult 
 
 // TestObserver_ReceivesEventStream proves an embedder observer sees the run's
 // event stream: lifecycle bookends, the per-turn assistant text, and the
-// delegation (subagent) events, with SessionID joining to a lineage node.
+// delegation (subagent) events, with SessionID joining to a trace node.
 func TestObserver_ReceivesEventStream(t *testing.T) {
 	var mu sync.Mutex
 	var names []string
@@ -73,24 +73,24 @@ func TestObserver_ReceivesEventStream(t *testing.T) {
 	if !slices.Contains(names, EventSubagentStart) || !slices.Contains(names, EventSubagentStop) {
 		t.Errorf("missing delegation events; got %v", names)
 	}
-	// AssistantMessage text is non-empty and its SessionID joins to a lineage node.
+	// AssistantMessage text is non-empty and its SessionID joins to a trace node.
 	if assistantText == "" {
 		t.Error("AssistantMessage carried no text")
 	}
 	joined := false
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		if n.ID == assistantSession {
 			joined = true
 			break
 		}
 	}
 	if !joined {
-		t.Errorf("AssistantMessage SessionID %q does not match any lineage node id %v", assistantSession, nodeIDs(res.Lineage))
+		t.Errorf("AssistantMessage SessionID %q does not match any trace node id %v", assistantSession, nodeIDs(res.Trace))
 	}
 }
 
 // TestObserver_DoesNotAlterRun proves observation is side-effect-free: the final
-// text and lineage are identical with and without an observer.
+// text and trace are identical with and without an observer.
 func TestObserver_DoesNotAlterRun(t *testing.T) {
 	base := runWithObserver(t, testModel{delegateTo: "reviewer"}, nil)
 	withObs := runWithObserver(t, testModel{delegateTo: "reviewer"}, func(Event) {})
@@ -98,8 +98,8 @@ func TestObserver_DoesNotAlterRun(t *testing.T) {
 	if base.Final != withObs.Final {
 		t.Errorf("final text differs: %q vs %q", base.Final, withObs.Final)
 	}
-	if !slices.Equal(nodeIDs(base.Lineage), nodeIDs(withObs.Lineage)) {
-		t.Errorf("lineage nodes differ: %v vs %v", nodeIDs(base.Lineage), nodeIDs(withObs.Lineage))
+	if !slices.Equal(nodeIDs(base.Trace), nodeIDs(withObs.Trace)) {
+		t.Errorf("trace nodes differ: %v vs %v", nodeIDs(base.Trace), nodeIDs(withObs.Trace))
 	}
 }
 
@@ -113,7 +113,7 @@ func TestObserver_PanicIsRecovered(t *testing.T) {
 	}
 }
 
-func nodeIDs(l Lineage) []string {
+func nodeIDs(l Trace) []string {
 	ids := make([]string, 0, len(l.Nodes))
 	for _, n := range l.Nodes {
 		ids = append(ids, n.ID)

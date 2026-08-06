@@ -22,7 +22,7 @@
 //
 // Built on the runtime, the adversarial subpackage
 // ([latere.ai/x/topos/adversarial]) adds a review capability: a proposer and one
-// or more critics cross-examine a diff over bounded rounds with per-fork lineage.
+// or more critics cross-examine a diff over bounded rounds with a per-fork trace.
 package topos
 
 import (
@@ -99,7 +99,7 @@ type Region struct {
 
 // GraphRegion is a named region within a [Graph]. ID is unique across the graph
 // and namespaces the region's node ids, so agents that share a Name in different
-// regions still get distinct lineage ids.
+// regions still get distinct trace ids.
 type GraphRegion struct {
 	ID     string
 	Region Region
@@ -119,7 +119,7 @@ type GraphEdge struct {
 // From's Final, and a region with no incoming edge receives the graph's input
 // task. Composition is text-only (a region's observable output is its Final; the
 // contract carries no sandbox handle), so each region runs in its own isolated
-// sandbox. Execution is sequential, which keeps lineage mutation single-threaded
+// sandbox. Execution is sequential, which keeps trace mutation single-threaded
 // (OQ-4). Fan-in (a region with more than one incoming edge) is rejected: merging
 // several upstream Finals into one task is an unspecified product decision, so
 // v1 allows linear chains and fan-out (a forest) only.
@@ -128,10 +128,10 @@ type Graph struct {
 	Edges   []GraphEdge
 }
 
-// NodeStatus is the lifecycle state of a lineage node.
+// NodeStatus is the lifecycle state of a trace node.
 type NodeStatus string
 
-// Lifecycle states a lineage node moves through during a run.
+// Lifecycle states a trace node moves through during a run.
 const (
 	StatusRunning NodeStatus = "running"
 	StatusDone    NodeStatus = "done"
@@ -140,13 +140,13 @@ const (
 	// it finished its work. It is neither done (the agent did not complete) nor
 	// failed (nothing went wrong; the runtime enforced a limit). Today the spend
 	// cap is what produces it: an agent stopped by [Options.BudgetUSD] carries
-	// this status, so a lineage consumer cannot read a capped run as a completed
+	// this status, so a trace consumer cannot read a capped run as a completed
 	// one.
 	StatusStopped NodeStatus = "stopped"
 )
 
-// LineageNode is one agent in the run graph.
-type LineageNode struct {
+// TraceNode is one agent in the run graph.
+type TraceNode struct {
 	ID      string
 	Name    string
 	Role    string
@@ -155,47 +155,47 @@ type LineageNode struct {
 	Sandbox string   // the sandbox this agent ran in (a delegated peer gets its own)
 }
 
-// EdgeKind is the relationship a lineage edge represents.
+// EdgeKind is the relationship a trace edge represents.
 type EdgeKind string
 
-// Relationships a lineage edge can represent between two nodes.
+// Relationships a trace edge can represent between two nodes.
 const (
 	EdgeDelegate EdgeKind = "delegate"
 	EdgeDeliver  EdgeKind = "deliver"
 	EdgeNext     EdgeKind = "next"
 )
 
-// LineageEdge records a relationship between two nodes.
-type LineageEdge struct {
+// TraceEdge records a relationship between two nodes.
+type TraceEdge struct {
 	From string
 	To   string
 	Kind EdgeKind
 }
 
-// Lineage is the renderable run graph (who delegated/handed off to whom). Ids are
+// Trace is the renderable run graph (who delegated/handed off to whom). Ids are
 // deterministic (<session>/<name>, child <session>/sub/<label>), so a consumer
 // (e.g. a live graph view) can diff runs and resume reconnects to stable ids.
-type Lineage struct {
-	Nodes []LineageNode
-	Edges []LineageEdge
+type Trace struct {
+	Nodes []TraceNode
+	Edges []TraceEdge
 }
 
 // RunResult is the outcome of running a region.
 type RunResult struct {
-	Lineage Lineage
-	Final   string
+	Trace Trace
+	Final string
 }
 
 // Event is a single observation emitted during a run. It mirrors one internal
 // hook dispatch in a subpackage-free shape so embedders can subscribe without
 // importing internal types. SessionID is the emitting agent's loop session id,
-// which equals the corresponding Lineage node id for agentic runs — so a live
+// which equals the corresponding Trace node id for agentic runs — so a live
 // consumer can join events to graph nodes. AgentID is the agent name when the
 // underlying payload carries one (else ""). PayloadJSON is the full typed payload
 // marshalled to JSON (audit/replay grade).
 type Event struct {
 	Name        string          // event name; compare against the Event* constants
-	SessionID   string          // emitting agent's loop session id == Lineage node id
+	SessionID   string          // emitting agent's loop session id == Trace node id
 	AgentID     string          // agent name when available, else ""
 	At          time.Time       // dispatch time (UTC)
 	PayloadJSON json.RawMessage // full payload, JSON-marshalled
@@ -377,12 +377,12 @@ func registerObserver(bus *hooks.Bus, observer func(Event)) {
 
 // Run executes a region in-process (a sandbox is created for the run via the
 // configured provider, or sandbox/local when none is set) and returns its
-// lineage graph. task is the user request handed to the entry agent.
+// trace. task is the user request handed to the entry agent.
 //
 // When [Options.BudgetUSD] is set, the whole region is metered against it. A
-// region stopped by the cap returns its partial result — the lineage of what
+// region stopped by the cap returns its partial result — the trace of what
 // ran and the last agent's output — together with an error matching
-// [billing.ErrBudgetExceeded], and the stopped agent's lineage node carries
+// [billing.ErrBudgetExceeded], and the stopped agent's trace node carries
 // [StatusStopped] rather than [StatusDone].
 func (r *Runner) Run(ctx context.Context, region Region, task string) (RunResult, error) {
 	return r.runRegion(ctx, r.provider(), r.session(), region, task)
@@ -420,9 +420,9 @@ func (r *Runner) runRegion(ctx context.Context, p sandbox.Provider, regionSessio
 }
 
 // RunGraph executes a multi-region graph as one run and returns the merged
-// lineage and the final region's output. Regions run in topological order, each in
+// trace and the final region's output. Regions run in topological order, each in
 // its own sandbox; a region's input is the graph task, or — when an edge points at
-// it — the source region's Final. The returned Lineage concatenates every region's
+// it — the source region's Final. The returned Trace concatenates every region's
 // nodes and edges, plus an EdgeNext from each source region's entry node to its
 // target region's entry node so a consumer can see the region-level flow. Region
 // ids namespace node ids (<session>/<regionID>/<agent>), so agents sharing a name
@@ -433,7 +433,7 @@ func (r *Runner) runRegion(ctx context.Context, p sandbox.Provider, regionSessio
 //
 // [Options.BudgetUSD] is enforced per region, not per graph: every region is
 // metered against the full cap on its own. A region stopped by the cap ends the
-// graph, and RunGraph returns the lineage merged so far plus that region's
+// graph, and RunGraph returns the trace merged so far plus that region's
 // partial output with an error matching [billing.ErrBudgetExceeded].
 func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult, error) {
 	order, err := planGraph(g)
@@ -447,7 +447,7 @@ func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult,
 
 	p := r.provider()
 	sess := r.session()
-	merged := Lineage{}
+	merged := Trace{}
 	finals := map[string]string{}   // region ID -> Final
 	entryIDs := map[string]string{} // region ID -> entry node id (first node)
 	var last string
@@ -457,15 +457,15 @@ func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult,
 			in = finals[src]
 		}
 		res, err := r.runRegion(ctx, p, sess+"/"+gr.ID, gr.Region, in)
-		merged.Nodes = append(merged.Nodes, res.Lineage.Nodes...)
-		merged.Edges = append(merged.Edges, res.Lineage.Edges...)
-		if len(res.Lineage.Nodes) > 0 {
-			entryIDs[gr.ID] = res.Lineage.Nodes[0].ID
+		merged.Nodes = append(merged.Nodes, res.Trace.Nodes...)
+		merged.Edges = append(merged.Edges, res.Trace.Edges...)
+		if len(res.Trace.Nodes) > 0 {
+			entryIDs[gr.ID] = res.Trace.Nodes[0].ID
 		}
 		if src, ok := source[gr.ID]; ok {
 			if from, fromOK := entryIDs[src]; fromOK {
 				if to, toOK := entryIDs[gr.ID]; toOK {
-					merged.Edges = append(merged.Edges, LineageEdge{From: from, To: to, Kind: EdgeNext})
+					merged.Edges = append(merged.Edges, TraceEdge{From: from, To: to, Kind: EdgeNext})
 				}
 			}
 		}
@@ -473,12 +473,12 @@ func (r *Runner) RunGraph(ctx context.Context, g Graph, task string) (RunResult,
 			// The failing region's partial output travels with the error, which
 			// keeps errors.Is matchable through the region context — a graph
 			// stopped by the spend cap still reports [billing.ErrBudgetExceeded].
-			return RunResult{Lineage: merged, Final: res.Final}, fmt.Errorf("topos: region %q: %w", gr.ID, err)
+			return RunResult{Trace: merged, Final: res.Final}, fmt.Errorf("topos: region %q: %w", gr.ID, err)
 		}
 		finals[gr.ID] = res.Final
 		last = res.Final
 	}
-	return RunResult{Lineage: merged, Final: last}, nil
+	return RunResult{Trace: merged, Final: last}, nil
 }
 
 // ValidateGraph reports whether a graph is structurally runnable, applying the
@@ -565,7 +565,7 @@ type TurnInput struct {
 	Sandbox sandbox.Provider
 	// SandboxID is the caller-owned sandbox instance to run tools in. Required.
 	SandboxID string
-	// AgentID labels the agent for event payloads and lineage joins.
+	// AgentID labels the agent for event payloads and trace joins.
 	AgentID string
 	// SystemPrompt is the agent's static system instruction.
 	SystemPrompt string
@@ -736,8 +736,8 @@ type dynRun struct {
 	topology    Topology
 	depth       int
 	task        string
-	lin         *Lineage
-	nodeID      string // this agent's lineage node id
+	lin         *Trace
+	nodeID      string // this agent's trace node id
 	loopSession string // loop.Config.SessionID for this agent
 	path        string // delegation label path ("" for the entry), keeps child ids unique
 	// meter is the region's spend cap, shared with every other agent in the
@@ -751,12 +751,12 @@ type dynRun struct {
 // regionSession is the id namespace for this region's nodes and child ids. For a
 // single-region Run it is r.session(); for a multi-region RunGraph the graph
 // namespaces each region (<session>/<regionID>) so agents sharing a name across
-// regions get distinct ids. It seeds both the lineage node id (loopSession) and
+// regions get distinct ids. It seeds both the trace node id (loopSession) and
 // the Spawner child id contract (<regionSession>/sub/<label>).
 func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string, m *billing.Meter) (RunResult, error) {
 	sess := regionSession
 	entryID := sess + "/" + region.Entry.Name
-	lin := &Lineage{Nodes: []LineageNode{{
+	lin := &Trace{Nodes: []TraceNode{{
 		ID: entryID, Name: region.Entry.Name, Role: region.Entry.Role,
 		Status: StatusRunning, Grants: region.Entry.Tools, Sandbox: sandboxID,
 	}}}
@@ -769,9 +769,9 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID,
 	final, err := r.runAgent(ctx, dynRun{
 		sb: sb, sandboxID: sandboxID, agent: region.Entry, parent: parent,
 		dir: region.Peers, topology: region.Topology, depth: 0,
-		// loopSession matches the lineage node id (entryID), consistent with
+		// loopSession matches the trace node id (entryID), consistent with
 		// delegated peers (child.ID) and pinned steps (id). This makes an event's
-		// SessionID a reliable join key to its Lineage node. Child id derivation
+		// SessionID a reliable join key to its Trace node. Child id derivation
 		// uses parent.SessionID (sess), so it is unaffected.
 		task: task, lin: lin, nodeID: entryID, loopSession: entryID, path: "",
 		meter: m,
@@ -780,13 +780,13 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID,
 		setStatus(lin, entryID, terminalStatus(err))
 		// The partial output travels with the error: a run stopped by the spend
 		// cap still produced whatever it was billed for.
-		return RunResult{Lineage: *lin, Final: final}, err
+		return RunResult{Trace: *lin, Final: final}, err
 	}
 	setStatus(lin, entryID, StatusDone)
-	return RunResult{Lineage: *lin, Final: final}, nil
+	return RunResult{Trace: *lin, Final: final}, nil
 }
 
-// terminalStatus is the lineage state an agent ends in when its run returned an
+// terminalStatus is the trace state an agent ends in when its run returned an
 // error. A spend-cap stop is not a failure — nothing went wrong, the runtime
 // enforced a limit — and it is emphatically not done, so it gets its own
 // truthful state and everything else stays a failure.
@@ -808,7 +808,7 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 	if canDelegate {
 		reg.Register(&delegateTool{
 			runner: r, dir: rc.dir, parent: rc.parent, topology: rc.topology,
-			depth: rc.depth, entryID: rc.nodeID, lineage: rc.lin, path: rc.path,
+			depth: rc.depth, entryID: rc.nodeID, trace: rc.lin, path: rc.path,
 			meter: rc.meter,
 		})
 		sysPrompt = composeSystem(sysPrompt, renderDirectory(toCards(rc.dir)))
@@ -838,16 +838,16 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, regionSession string, region Region, task string, m *billing.Meter) (RunResult, error) {
 	sess := regionSession
 	chain := append([]AgentSpec{region.Entry}, region.Peers...)
-	lin := &Lineage{}
+	lin := &Trace{}
 	var final string
 	prevID := ""
 	for _, step := range chain {
 		id := sess + "/" + step.Name
-		lin.Nodes = append(lin.Nodes, LineageNode{
+		lin.Nodes = append(lin.Nodes, TraceNode{
 			ID: id, Name: step.Name, Role: step.Role, Status: StatusRunning, Grants: step.Tools, Sandbox: sandboxID,
 		})
 		if prevID != "" {
-			lin.Edges = append(lin.Edges, LineageEdge{From: prevID, To: id, Kind: EdgeNext})
+			lin.Edges = append(lin.Edges, TraceEdge{From: prevID, To: id, Kind: EdgeNext})
 		}
 		res, err := loop.Run(ctx, loop.Config{
 			Model:        r.model,
@@ -867,19 +867,19 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, 
 				final = res.FinalText
 			}
 			setStatus(lin, id, terminalStatus(err))
-			return RunResult{Lineage: *lin, Final: final}, err
+			return RunResult{Trace: *lin, Final: final}, err
 		}
 		final = res.FinalText
 		setStatus(lin, id, StatusDone)
 		prevID = id
 	}
-	return RunResult{Lineage: *lin, Final: final}, nil
+	return RunResult{Trace: *lin, Final: final}, nil
 }
 
 // delegateTool is the agents-as-tools handoff primitive: it looks up a peer in the
 // directory, spawns it with attenuated authority (granting recursion only under
 // Mesh with depth budget left), runs the peer via runAgent in its own sandbox,
-// records the lineage, and returns the peer's output as the tool result.
+// records the trace, and returns the peer's output as the tool result.
 type delegateTool struct {
 	runner   *Runner
 	dir      []AgentSpec
@@ -887,7 +887,7 @@ type delegateTool struct {
 	topology Topology
 	depth    int
 	entryID  string
-	lineage  *Lineage
+	trace    *Trace
 	path     string         // the delegating agent's label path; child labels extend it
 	meter    *billing.Meter // the region's shared spend cap; the peer folds into it too
 }
@@ -960,11 +960,11 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	peerFinal, err := d.runner.runAgent(ctx, dynRun{
 		sb: sb, sandboxID: box.ID, agent: peer, parent: child.AsParent(),
 		dir: d.dir, topology: d.topology, depth: d.depth + 1,
-		task: args.Task, lin: d.lineage, nodeID: child.ID, loopSession: child.ID, path: childLabel,
+		task: args.Task, lin: d.trace, nodeID: child.ID, loopSession: child.ID, path: childLabel,
 		meter: d.meter,
 	})
 	if err != nil {
-		setStatus(d.lineage, child.ID, terminalStatus(err))
+		setStatus(d.trace, child.ID, terminalStatus(err))
 		d.runner.spawner.Stop(ctx, child)
 		if errors.Is(err, billing.ErrBudgetExceeded) {
 			// A tool result cannot end the delegating agent's run, so the stop
@@ -979,20 +979,20 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 		}
 		return models.ToolResult{IsError: true, Content: "peer run failed: " + err.Error()}, nil
 	}
-	setStatus(d.lineage, child.ID, StatusDone)
+	setStatus(d.trace, child.ID, StatusDone)
 	d.runner.spawner.Stop(ctx, child)
-	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: child.ID, To: d.entryID, Kind: EdgeDeliver})
+	d.trace.Edges = append(d.trace.Edges, TraceEdge{From: child.ID, To: d.entryID, Kind: EdgeDeliver})
 	return models.ToolResult{Content: peerFinal}, nil
 }
 
-// appendChild records a delegated peer as a lineage node (with the sandbox it ran
+// appendChild records a delegated peer as a trace node (with the sandbox it ran
 // in) plus the delegate edge from the entry.
 func (d *delegateTool) appendChild(child *harness.SubAgent, peer AgentSpec, status NodeStatus, box string) {
-	d.lineage.Nodes = append(d.lineage.Nodes, LineageNode{
+	d.trace.Nodes = append(d.trace.Nodes, TraceNode{
 		ID: child.ID, Name: peer.Name, Role: peer.Role, Status: status,
 		Grants: child.Perms.Tools, Sandbox: box,
 	})
-	d.lineage.Edges = append(d.lineage.Edges, LineageEdge{From: d.entryID, To: child.ID, Kind: EdgeDelegate})
+	d.trace.Edges = append(d.trace.Edges, TraceEdge{From: d.entryID, To: child.ID, Kind: EdgeDelegate})
 }
 
 func findAgent(in []AgentSpec, name string) (AgentSpec, bool) {
@@ -1004,7 +1004,7 @@ func findAgent(in []AgentSpec, name string) (AgentSpec, bool) {
 	return AgentSpec{}, false
 }
 
-func setStatus(lin *Lineage, id string, status NodeStatus) {
+func setStatus(lin *Trace, id string, status NodeStatus) {
 	for i := range lin.Nodes {
 		if lin.Nodes[i].ID == id {
 			lin.Nodes[i].Status = status

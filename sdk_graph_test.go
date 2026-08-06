@@ -70,7 +70,7 @@ func TestRunGraphNamespacesIdsAndLinksRegions(t *testing.T) {
 		t.Fatalf("RunGraph: %v", err)
 	}
 	ids := map[string]bool{}
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		if ids[n.ID] {
 			t.Errorf("duplicate node id %q", n.ID)
 		}
@@ -82,14 +82,14 @@ func TestRunGraphNamespacesIdsAndLinksRegions(t *testing.T) {
 	if !ids["run-1/a/impl"] || !ids["run-1/b/impl"] {
 		t.Errorf("missing namespaced ids; got %v", ids)
 	}
-	want := LineageEdge{From: "run-1/a/impl", To: "run-1/b/impl", Kind: EdgeNext}
-	if !hasEdge(res.Lineage.Edges, want) {
-		t.Errorf("missing cross-region edge %+v in %+v", want, res.Lineage.Edges)
+	want := TraceEdge{From: "run-1/a/impl", To: "run-1/b/impl", Kind: EdgeNext}
+	if !hasEdge(res.Trace.Edges, want) {
+		t.Errorf("missing cross-region edge %+v in %+v", want, res.Trace.Edges)
 	}
 }
 
 // A graph mixes a dynamic region into a pinned chain: both regions' nodes appear
-// in the merged lineage and Final is the last region's output.
+// in the merged trace and Final is the last region's output.
 func TestRunGraphMixesDynamicAndPinned(t *testing.T) {
 	r := newTestRunner(t, echoModel{}) // echoModel never delegates, so dynamic entry just finishes
 	g := Graph{
@@ -104,7 +104,7 @@ func TestRunGraphMixesDynamicAndPinned(t *testing.T) {
 		t.Fatalf("RunGraph: %v", err)
 	}
 	var names []string
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		names = append(names, n.Name)
 	}
 	if strings.Join(names, ",") != "lead,commit" {
@@ -178,21 +178,21 @@ func TestRunGraphFanOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunGraph: %v", err)
 	}
-	if len(res.Lineage.Nodes) != 3 {
-		t.Fatalf("nodes = %d, want 3", len(res.Lineage.Nodes))
+	if len(res.Trace.Nodes) != 3 {
+		t.Fatalf("nodes = %d, want 3", len(res.Trace.Nodes))
 	}
-	for _, want := range []LineageEdge{
+	for _, want := range []TraceEdge{
 		{From: "run-1/root/root", To: "run-1/left/left", Kind: EdgeNext},
 		{From: "run-1/root/root", To: "run-1/right/right", Kind: EdgeNext},
 	} {
-		if !hasEdge(res.Lineage.Edges, want) {
+		if !hasEdge(res.Trace.Edges, want) {
 			t.Errorf("missing fan-out edge %+v", want)
 		}
 	}
 }
 
 // A failing region aborts the graph: RunGraph returns an error naming the region
-// and the partial lineage accumulated so far (the failed region's node marked
+// and the partial trace accumulated so far (the failed region's node marked
 // failed), so a consumer can render how far the run got.
 func TestRunGraphReportsFailingRegion(t *testing.T) {
 	r := newTestRunner(t, failModel{})
@@ -203,8 +203,8 @@ func TestRunGraphReportsFailingRegion(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `region "boom"`) {
 		t.Fatalf("err = %v, want naming region boom", err)
 	}
-	if len(res.Lineage.Nodes) != 1 || res.Lineage.Nodes[0].Status != StatusFailed {
-		t.Errorf("lineage = %+v, want one failed node", res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 1 || res.Trace.Nodes[0].Status != StatusFailed {
+		t.Errorf("trace = %+v, want one failed node", res.Trace.Nodes)
 	}
 }
 
@@ -252,6 +252,6 @@ func TestValidateGraph(t *testing.T) {
 	}
 }
 
-func hasEdge(edges []LineageEdge, want LineageEdge) bool {
+func hasEdge(edges []TraceEdge, want TraceEdge) bool {
 	return slices.Contains(edges, want)
 }

@@ -43,9 +43,9 @@ func main() {
 
 	fmt.Println("final:", res.Final)
 
-	// Every run yields a deterministic lineage graph of what ran.
-	fmt.Println("lineage:")
-	for _, n := range res.Lineage.Nodes {
+	// Every run yields a deterministic trace of what ran.
+	fmt.Println("trace:")
+	for _, n := range res.Trace.Nodes {
 		fmt.Printf("  %s  status=%s  sandbox=%s\n", n.ID, n.Status, n.Sandbox)
 	}
 }

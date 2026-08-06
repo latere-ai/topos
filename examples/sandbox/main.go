@@ -61,7 +61,7 @@ func main() {
 	}
 
 	fmt.Println("final:", res.Final)
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		fmt.Printf("ran %s in sandbox %s\n", n.ID, n.Sandbox)
 	}
 }

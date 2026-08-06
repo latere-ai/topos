@@ -95,7 +95,7 @@ func withFastReadyPolling(t *testing.T) {
 func TestModelOptionsClientOverridesKind(t *testing.T) {
 	// A custom models.Model passed via ModelOptions.Client is used instead of
 	// the built-in Kind. ModelFake would not delegate (one node); the scripted
-	// delegating model produces a two-node lineage, proving Client won.
+	// delegating model produces a two-node trace, proving Client won.
 	r, err := NewRunner(Options{
 		SessionID: "run-1",
 		Model:     ModelOptions{Kind: ModelFake, Client: testModel{delegateTo: "reviewer"}},
@@ -107,8 +107,8 @@ func TestModelOptionsClientOverridesKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(res.Lineage.Nodes) != 2 {
-		t.Fatalf("nodes = %d, want 2 (ModelOptions.Client not used?)", len(res.Lineage.Nodes))
+	if len(res.Trace.Nodes) != 2 {
+		t.Fatalf("nodes = %d, want 2 (ModelOptions.Client not used?)", len(res.Trace.Nodes))
 	}
 }
 
@@ -138,7 +138,7 @@ func TestRunDefaultsToLocalProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run with default provider: %v", err)
 	}
-	if res.Lineage.Nodes[0].Sandbox == "" {
+	if res.Trace.Nodes[0].Sandbox == "" {
 		t.Error("expected the default local provider to assign a sandbox id")
 	}
 }
@@ -236,8 +236,8 @@ func TestSessionDefaultsWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if res.Lineage.Nodes[0].ID != "session/solo" {
-		t.Errorf("node id = %q, want session/solo", res.Lineage.Nodes[0].ID)
+	if res.Trace.Nodes[0].ID != "session/solo" {
+		t.Errorf("node id = %q, want session/solo", res.Trace.Nodes[0].ID)
 	}
 }
 
@@ -247,8 +247,8 @@ func TestRunDynamicEntryFailureMarksFailed(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error when the entry agent's loop fails, got nil")
 	}
-	if len(res.Lineage.Nodes) != 1 || res.Lineage.Nodes[0].Status != StatusFailed {
-		t.Errorf("entry node = %+v, want a single StatusFailed node", res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 1 || res.Trace.Nodes[0].Status != StatusFailed {
+		t.Errorf("entry node = %+v, want a single StatusFailed node", res.Trace.Nodes)
 	}
 }
 
@@ -263,23 +263,23 @@ func TestRunPinnedStepFailureMarksFailed(t *testing.T) {
 		t.Fatal("want error when a pinned step fails, got nil")
 	}
 	// The chain stops at the first failing step: one node, marked failed, no edges.
-	if len(res.Lineage.Nodes) != 1 || res.Lineage.Nodes[0].Status != StatusFailed {
-		t.Errorf("nodes = %+v, want a single StatusFailed node", res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 1 || res.Trace.Nodes[0].Status != StatusFailed {
+		t.Errorf("nodes = %+v, want a single StatusFailed node", res.Trace.Nodes)
 	}
-	if len(res.Lineage.Edges) != 0 {
-		t.Errorf("edges = %+v, want none (chain stopped at step 1)", res.Lineage.Edges)
+	if len(res.Trace.Edges) != 0 {
+		t.Errorf("edges = %+v, want none (chain stopped at step 1)", res.Trace.Edges)
 	}
 }
 
-// newDelegate builds a delegate tool wired to a freshly constructed lineage whose
+// newDelegate builds a delegate tool wired to a freshly constructed trace whose
 // only node is the delegating entry, mirroring how runAgent registers it.
-func newDelegate(r *Runner, parent harness.ParentContext, topo Topology) (*delegateTool, *Lineage) {
+func newDelegate(r *Runner, parent harness.ParentContext, topo Topology) (*delegateTool, *Trace) {
 	entryID := "run-1/lead"
-	lin := &Lineage{Nodes: []LineageNode{{ID: entryID, Name: "lead", Role: "lead", Status: StatusRunning}}}
+	lin := &Trace{Nodes: []TraceNode{{ID: entryID, Name: "lead", Role: "lead", Status: StatusRunning}}}
 	dir := []AgentSpec{{Name: "reviewer", Role: "review", Tools: []string{"x"}, Scopes: []string{"s"}}}
 	return &delegateTool{
 		runner: r, dir: dir, parent: parent, topology: topo,
-		depth: 0, entryID: entryID, lineage: lin, path: "",
+		depth: 0, entryID: entryID, trace: lin, path: "",
 	}, lin
 }
 
@@ -301,7 +301,7 @@ func TestDelegateBadInput(t *testing.T) {
 		t.Errorf("result = %+v, want IsError with bad delegate input", res)
 	}
 	if len(lin.Nodes) != 1 {
-		t.Errorf("malformed input created lineage nodes: %+v", lin.Nodes)
+		t.Errorf("malformed input created trace nodes: %+v", lin.Nodes)
 	}
 }
 

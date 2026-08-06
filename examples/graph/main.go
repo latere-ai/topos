@@ -73,11 +73,11 @@ func main() {
 
 	fmt.Println("final:", res.Final)
 	fmt.Println("nodes:")
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		fmt.Printf("  %s  role=%s  status=%s\n", n.ID, n.Role, n.Status)
 	}
 	fmt.Println("edges:")
-	for _, e := range res.Lineage.Edges {
+	for _, e := range res.Trace.Edges {
 		fmt.Printf("  %s -> %s (%s)\n", e.From, e.To, e.Kind)
 	}
 }

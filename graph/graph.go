@@ -61,7 +61,7 @@ const (
 // SystemPrompt, Tools, Scopes) are ignored until [Graph.Resolve] replaces the ref
 // with its resolved inline agent. Name is the exception: it is the in-graph
 // identity and spawn label, so an author may set it on a ref to give the
-// referenced agent a graph-local name (lineage labels stay stable). Resolve
+// referenced agent a graph-local name (trace labels stay stable). Resolve
 // preserves an authored Name and otherwise adopts the resolved agent's Name; it
 // takes the resolved agent's spec fields wholesale and merges no inline fields the
 // ref itself carried. topos-lib never reads a registry: resolving a ref to an

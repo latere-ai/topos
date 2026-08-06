@@ -107,7 +107,7 @@ func newTestRunner(t *testing.T, mdl models.Model) *Runner {
 	return r
 }
 
-func TestDynamicDelegateBuildsLineage(t *testing.T) {
+func TestDynamicDelegateBuildsTrace(t *testing.T) {
 	r := newTestRunner(t, testModel{delegateTo: "reviewer"})
 
 	var events []hooks.EventName
@@ -124,18 +124,18 @@ func TestDynamicDelegateBuildsLineage(t *testing.T) {
 	if res.Final != "done" {
 		t.Errorf("final = %q, want done", res.Final)
 	}
-	if len(res.Lineage.Nodes) != 2 {
-		t.Fatalf("nodes = %+v, want 2", res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 2 {
+		t.Fatalf("nodes = %+v, want 2", res.Trace.Nodes)
 	}
-	if res.Lineage.Nodes[1].ID != "run-1/sub/reviewer" || res.Lineage.Nodes[1].Status != StatusDone {
-		t.Errorf("child node = %+v", res.Lineage.Nodes[1])
+	if res.Trace.Nodes[1].ID != "run-1/sub/reviewer" || res.Trace.Nodes[1].Status != StatusDone {
+		t.Errorf("child node = %+v", res.Trace.Nodes[1])
 	}
-	wantEdges := []LineageEdge{
+	wantEdges := []TraceEdge{
 		{From: "run-1/lead", To: "run-1/sub/reviewer", Kind: EdgeDelegate},
 		{From: "run-1/sub/reviewer", To: "run-1/lead", Kind: EdgeDeliver},
 	}
-	if !reflect.DeepEqual(res.Lineage.Edges, wantEdges) {
-		t.Errorf("edges = %+v, want %+v", res.Lineage.Edges, wantEdges)
+	if !reflect.DeepEqual(res.Trace.Edges, wantEdges) {
+		t.Errorf("edges = %+v, want %+v", res.Trace.Edges, wantEdges)
 	}
 	if !containsEvent(events, hooks.EventSubagentStart) || !containsEvent(events, hooks.EventSubagentStop) {
 		t.Errorf("missing Subagent events, got %v", events)
@@ -169,8 +169,8 @@ func TestDelegateRejectsPeerNotInDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(res.Lineage.Nodes) != 1 {
-		t.Errorf("gate failed: a node was created for an out-of-directory peer: %+v", res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 1 {
+		t.Errorf("gate failed: a node was created for an out-of-directory peer: %+v", res.Trace.Nodes)
 	}
 	if res.Final != "done" {
 		t.Errorf("entry did not recover after a refused delegate: final = %q", res.Final)
@@ -183,7 +183,7 @@ func TestDelegatePeerRunsInOwnSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	entry, peer := res.Lineage.Nodes[0], res.Lineage.Nodes[1]
+	entry, peer := res.Trace.Nodes[0], res.Trace.Nodes[1]
 	if entry.Sandbox == "" || peer.Sandbox == "" {
 		t.Fatalf("missing sandbox ids: entry=%q peer=%q", entry.Sandbox, peer.Sandbox)
 	}
@@ -199,7 +199,7 @@ func TestDelegateAttenuatesPeerTools(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	// reviewer asked for {write,exec}; lead holds {read,write} → granted {write}.
-	g := res.Lineage.Nodes[1].Grants
+	g := res.Trace.Nodes[1].Grants
 	if len(g) != 1 || g[0] != "write" {
 		t.Errorf("grants = %v, want [write]", g)
 	}
@@ -217,17 +217,17 @@ func TestPinnedChainRunsInOrder(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	wantIDs := []string{"run-1/impl", "run-1/test", "run-1/commit"}
-	for i, n := range res.Lineage.Nodes {
+	for i, n := range res.Trace.Nodes {
 		if n.ID != wantIDs[i] || n.Status != StatusDone {
 			t.Errorf("node %d = %+v, want id %s done", i, n, wantIDs[i])
 		}
 	}
-	wantEdges := []LineageEdge{
+	wantEdges := []TraceEdge{
 		{From: "run-1/impl", To: "run-1/test", Kind: EdgeNext},
 		{From: "run-1/test", To: "run-1/commit", Kind: EdgeNext},
 	}
-	if !reflect.DeepEqual(res.Lineage.Edges, wantEdges) {
-		t.Errorf("edges = %+v, want %+v", res.Lineage.Edges, wantEdges)
+	if !reflect.DeepEqual(res.Trace.Edges, wantEdges) {
+		t.Errorf("edges = %+v, want %+v", res.Trace.Edges, wantEdges)
 	}
 }
 
@@ -282,8 +282,8 @@ func TestOrchestratorWorkerStopsAfterOneLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(res.Lineage.Nodes) != 2 {
-		t.Fatalf("orchestrator+worker should delegate exactly one level; got %d nodes: %+v", len(res.Lineage.Nodes), res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 2 {
+		t.Fatalf("orchestrator+worker should delegate exactly one level; got %d nodes: %+v", len(res.Trace.Nodes), res.Trace.Nodes)
 	}
 }
 
@@ -295,19 +295,19 @@ func TestMeshRecursionBoundedByMaxDepth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(res.Lineage.Nodes) != 3 {
-		t.Fatalf("mesh maxDepth=2 should produce 3 nodes, got %d: %+v", len(res.Lineage.Nodes), res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 3 {
+		t.Fatalf("mesh maxDepth=2 should produce 3 nodes, got %d: %+v", len(res.Trace.Nodes), res.Trace.Nodes)
 	}
 	// Path-prefixed labels keep ids unique despite the repeated agent name.
 	seen := map[string]bool{}
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		if seen[n.ID] {
 			t.Errorf("duplicate node id %q — path-prefixing failed", n.ID)
 		}
 		seen[n.ID] = true
 	}
 	want := map[string]bool{"run-1/lead": true, "run-1/sub/worker": true, "run-1/sub/worker.worker": true}
-	for _, n := range res.Lineage.Nodes {
+	for _, n := range res.Trace.Nodes {
 		if !want[n.ID] {
 			t.Errorf("unexpected node id %q", n.ID)
 		}
@@ -321,8 +321,8 @@ func TestMeshDepthScalesWithBound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(res.Lineage.Nodes) != 4 {
-		t.Fatalf("mesh maxDepth=3 should produce 4 nodes, got %d: %+v", len(res.Lineage.Nodes), res.Lineage.Nodes)
+	if len(res.Trace.Nodes) != 4 {
+		t.Fatalf("mesh maxDepth=3 should produce 4 nodes, got %d: %+v", len(res.Trace.Nodes), res.Trace.Nodes)
 	}
 }
 

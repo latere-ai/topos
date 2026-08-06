@@ -4,7 +4,7 @@
 // An embedder running inside the topos world (wallfacer, the agents platform)
 // uses [NewCriticFactory] to run critic forks through the governed runtime:
 // model routing via Lux or Direct, a topos sandbox (local or Cella), and a
-// lineage record, instead of shelling out to local CLIs. The proposer stays on
+// trace record, instead of shelling out to local CLIs. The proposer stays on
 // the claude CLI; see the claude backend package.
 //
 // Each round runs one topos agent over the assembled critic prompt (which
@@ -31,7 +31,7 @@ type Config struct {
 	Model xtopos.ModelOptions
 	// Sandbox is the execution backend; nil uses topos's local sandbox.
 	Sandbox sandbox.Provider
-	// Tools is the agent's tool grant, recorded on the run's lineage node as
+	// Tools is the agent's tool grant, recorded on the run's trace node as
 	// Grants. nil (the default) records no grant. It is an audit record, not a
 	// sandbox: the runtime currently offers every agent tools.Builtins() (bash,
 	// the file tools, and the search tools) whatever the grant says, so a nil
@@ -43,7 +43,7 @@ type Config struct {
 
 // NewCriticFactory returns an [adversarial.CriticFactory] whose critics run one
 // topos agent per round. forkIdx is threaded into the topos SessionID and the
-// AgentSpec name so each fork is a distinct lineage node.
+// AgentSpec name so each fork is a distinct trace node.
 func NewCriticFactory(cfg Config) adversarial.CriticFactory {
 	return func(forkIdx int) adversarial.Critic {
 		return &critic{cfg: cfg, forkIdx: forkIdx}

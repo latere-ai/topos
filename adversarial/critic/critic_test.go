@@ -142,7 +142,7 @@ func TestRoundReportsNoUsage(t *testing.T) {
 	}
 }
 
-// TestToposGrantsExactlyAgentSpecTools pins what the lineage records: a node's
+// TestToposGrantsExactlyAgentSpecTools pins what the trace records: a node's
 // Grants is exactly AgentSpec.Tools, so nil tools produce no grants while an
 // explicit bash grant does appear (control, so the nil assertion is not vacuous).
 // This is an audit property, not an enforcement one: the runtime hands every
@@ -162,10 +162,10 @@ func TestToposGrantsExactlyAgentSpecTools(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		if len(res.Lineage.Nodes) == 0 {
-			t.Fatal("no lineage nodes")
+		if len(res.Trace.Nodes) == 0 {
+			t.Fatal("no trace nodes")
 		}
-		return res.Lineage.Nodes[0].Grants
+		return res.Trace.Nodes[0].Grants
 	}
 
 	// Default critic posture: nil tools => no grants => no bash.

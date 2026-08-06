@@ -149,7 +149,7 @@ type UsagePayload struct {
 
 // TextDeltaPayload is the versioned payload for EventTextDelta: one streamed
 // fragment of assistant text within a turn. SessionID and AgentID let a consumer
-// route the fragment to the right transcript and lineage node; Turn is the
+// route the fragment to the right transcript and trace node; Turn is the
 // 1-based turn index the fragment belongs to, so a consumer can group fragments
 // into the turn whose assembled AssistantMessage follows.
 type TextDeltaPayload struct {
