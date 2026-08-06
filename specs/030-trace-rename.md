@@ -48,7 +48,7 @@ pre-1.0 release.
 
 - `Lineage`, `LineageNode`, and `LineageEdge` become `Trace`, `TraceNode`, and
   `TraceEdge`.
-- `RunResult.Lineage` and `GraphResult.Lineage` become `.Trace`.
+- `RunResult.Lineage` becomes `RunResult.Trace`, on both `Run` and `RunGraph`.
 - Internal identifiers, doc comments, examples, and README prose follow.
 - Spec `008-lineage.md` keeps its number and becomes `008-trace.md`; the two
   references to its path move with it.
@@ -69,14 +69,14 @@ race, and the coverage threshold.
 
 - Outside `specs/.archive/`, no identifier, comment, doc, or spec in the module
   uses the word lineage for the run graph.
-- `RunResult.Trace` and `GraphResult.Trace` carry what `.Lineage` carried, with
+- `RunResult.Trace` carries what `.Lineage` carried, with
   identical node ids, edge kinds, and ordering.
 - `make all` passes.
 
 ## Outcome
 
 Implemented on 2026-08-07. The public surface exposes `Trace`, `TraceNode`, and
-`TraceEdge`, reached through `RunResult.Trace` and `GraphResult.Trace`. The
+`TraceEdge`, reached through `RunResult.Trace`. The
 `adversarial` capability reports per-fork traces under the same term.
 
 Consumers outside this module break on upgrade where they read `.Lineage`:
