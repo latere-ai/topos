@@ -66,7 +66,7 @@ func Compute(ctx context.Context, s DiffSpec) (*Diff, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, p := range strings.Split(strings.TrimSpace(untracked), "\n") {
+		for p := range strings.SplitSeq(strings.TrimSpace(untracked), "\n") {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
@@ -135,7 +135,7 @@ func analyzePatch(patch string) (int, []string) {
 	// "diff --git" resets the flag so a later file's headers, which
 	// arrive after a previous file's hunk, are not counted as changes.
 	inHunk := false
-	for _, line := range strings.Split(patch, "\n") {
+	for line := range strings.SplitSeq(patch, "\n") {
 		switch {
 		case strings.HasPrefix(line, "diff --git"):
 			inHunk = false

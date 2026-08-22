@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,13 +16,7 @@ func TestCleanEnvScrubsAPIKey(t *testing.T) {
 			t.Errorf("API key not scrubbed: %q", kv)
 		}
 	}
-	found := false
-	for _, kv := range env {
-		if kv == "LC_ALL=C" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(env, "LC_ALL=C")
 	if !found {
 		t.Error("LC_ALL=C not set")
 	}

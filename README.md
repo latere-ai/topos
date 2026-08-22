@@ -16,7 +16,7 @@ this runtime; any Go application can be another.
 
 ## Install
 
-Topos requires Go 1.26 or later.
+Topos requires Go 1.27 or later.
 
 ```sh
 go get latere.ai/x/topos@latest

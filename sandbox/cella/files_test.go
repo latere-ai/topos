@@ -92,8 +92,7 @@ func TestReadFilePropagatesAPIError(t *testing.T) {
 		writeJSON(t, w, http.StatusInternalServerError, map[string]string{"code": "internal", "message": "boom"})
 	}))
 	_, err := p.ReadFile(context.Background(), "sb_1", "x")
-	var apiErr *sandbox.APIError
-	if !errors.As(err, &apiErr) {
+	if _, ok := errors.AsType[*sandbox.APIError](err); !ok {
 		t.Fatalf("err = %v, want *APIError", err)
 	}
 }

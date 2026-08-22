@@ -49,7 +49,7 @@ func TestRenderHasHeadlineAndStats(t *testing.T) {
 		"c1-1": {
 			AttackID: "c1-1", Aspect: "security", Location: "x.go:1",
 			Claim: "leak", ExpectedViolation: "panic", Reproduction: "go run", Status: ledger.StatusUnresolved,
-			RoundIntroduced: ptr(1), RoundLastTouched: 3, ReAttacked: true,
+			RoundIntroduced: new(1), RoundLastTouched: 3, ReAttacked: true,
 		},
 		"c1-2": {
 			AttackID: "c1-2", Aspect: "security", Status: ledger.StatusConceded,

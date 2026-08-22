@@ -13,7 +13,7 @@ func TestSortByContentionScoreOrder(t *testing.T) {
 	mk := func(id string, lastTouched int, reAttacked bool) ledger.Record {
 		return ledger.Record{
 			AttackID: id, Status: ledger.StatusUnresolved,
-			RoundIntroduced: ptr(1), RoundLastTouched: lastTouched, ReAttacked: reAttacked,
+			RoundIntroduced: new(1), RoundLastTouched: lastTouched, ReAttacked: reAttacked,
 		}
 	}
 	in := []ledger.Record{
@@ -36,9 +36,9 @@ func TestSortByContentionScoreOrder(t *testing.T) {
 // ordering falls through to RoundIntroduced ASC, then AttackID ASC.
 func TestSortByContentionTieBreaks(t *testing.T) {
 	in := []ledger.Record{
-		{AttackID: "c1-b", RoundIntroduced: ptr(2), RoundLastTouched: 5}, // score 3, intro 2
-		{AttackID: "c1-a", RoundIntroduced: ptr(2), RoundLastTouched: 5}, // score 3, intro 2
-		{AttackID: "c1-z", RoundIntroduced: ptr(1), RoundLastTouched: 4}, // score 3, intro 1
+		{AttackID: "c1-b", RoundIntroduced: new(2), RoundLastTouched: 5}, // score 3, intro 2
+		{AttackID: "c1-a", RoundIntroduced: new(2), RoundLastTouched: 5}, // score 3, intro 2
+		{AttackID: "c1-z", RoundIntroduced: new(1), RoundLastTouched: 4}, // score 3, intro 1
 	}
 	got := SortByContention(in)
 	want := []string{"c1-z", "c1-a", "c1-b"}
@@ -62,7 +62,7 @@ func TestSortByContentionTieBreaks(t *testing.T) {
 // as round 0 for the tie-break.
 func TestSortByContentionNilRoundIntroduced(t *testing.T) {
 	in := []ledger.Record{
-		{AttackID: "c1-x", RoundIntroduced: ptr(1), RoundsSurvived: 2}, // score 2, intro 1
+		{AttackID: "c1-x", RoundIntroduced: new(1), RoundsSurvived: 2}, // score 2, intro 1
 		{AttackID: "c1-y", RoundsSurvived: 2},                          // score 2, intro 0 (nil)
 	}
 	got := SortByContention(in)

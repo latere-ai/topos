@@ -412,11 +412,12 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 				Round: round, Role: "proposer", Usage: pr.Usage, USD: pr.USD,
 				MS: int(pr.Duration.Milliseconds()),
 			})
-			body := pr.Response + "\n\n---\nmodified-files:\n"
+			var body strings.Builder
+			body.WriteString(pr.Response + "\n\n---\nmodified-files:\n")
 			for _, f := range pr.ChangedFiles {
-				body += "  - " + f + "\n"
+				body.WriteString("  - " + f + "\n")
 			}
-			if err := state.WriteRound(e.Sess, forkIdx, round, state.RoleProposer, []byte(body)); err != nil {
+			if err := state.WriteRound(e.Sess, forkIdx, round, state.RoleProposer, []byte(body.String())); err != nil {
 				return out, "", err
 			}
 			_ = state.AppendTranscript(e.Sess, &state.TranscriptRecord{

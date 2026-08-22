@@ -68,7 +68,7 @@ func TestAppendLineMultiple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if err := sess.AppendLine("attacks.jsonl", []byte(`{}`)); err != nil {
 			t.Fatal(err)
 		}
@@ -95,14 +95,12 @@ func TestAppendLineRace(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			if err := sess.AppendLine("attacks.jsonl", []byte(`{}`)); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

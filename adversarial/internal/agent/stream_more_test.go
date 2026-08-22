@@ -107,7 +107,7 @@ func TestFormatAgentMessageLinesEmpty(t *testing.T) {
 // more meaningful lines than agentMessagePreviewLines are truncated.
 func TestFormatAgentMessageLinesCap(t *testing.T) {
 	var b strings.Builder
-	for i := 0; i < agentMessagePreviewLines+4; i++ {
+	for range agentMessagePreviewLines + 4 {
 		b.WriteString("claim line\n")
 	}
 	got := formatAgentMessageLines(b.String())

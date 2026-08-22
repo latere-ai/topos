@@ -555,16 +555,16 @@ func TestEngineHeartbeatDisabledWhenNegativeInterval(t *testing.T) {
 // same time. Each Write holds the "active" count high for a fixed window
 // so a concurrent write reliably overlaps it.
 type overlapWriter struct {
-	active int32
-	raced  int32
+	active atomic.Int32
+	raced  atomic.Int32
 }
 
 func (w *overlapWriter) Write(p []byte) (int, error) {
-	if atomic.AddInt32(&w.active, 1) > 1 {
-		atomic.StoreInt32(&w.raced, 1)
+	if w.active.Add(1) > 1 {
+		w.raced.Store(1)
 	}
 	time.Sleep(50 * time.Millisecond)
-	atomic.AddInt32(&w.active, -1)
+	w.active.Add(-1)
 	return len(p), nil
 }
 
@@ -584,7 +584,7 @@ func TestHeartbeatStopWaitsForGoroutine(t *testing.T) {
 	// stop() must have waited for the in-flight write to finish; writing
 	// now must not overlap the heartbeat goroutine.
 	e.progf("[adversarial] test: done")
-	if atomic.LoadInt32(&w.raced) != 0 {
+	if w.raced.Load() != 0 {
 		t.Error("main-loop write overlapped an in-flight heartbeat write; stop() did not wait")
 	}
 }
@@ -696,7 +696,7 @@ func TestEngineProgressUsesTurnLabel(t *testing.T) {
 	}
 	// And: no stray R<n> labels in done/running lines (they were the
 	// old shape).
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if !strings.Contains(line, " running...") && !strings.Contains(line, " done in ") {
 			continue
 		}
@@ -748,7 +748,7 @@ func TestEngineProgressIncludesPerRoundTokens(t *testing.T) {
 	out := buf.String()
 
 	// Every "done" line must carry token counts.
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if !strings.Contains(line, " done in ") {
 			continue
 		}

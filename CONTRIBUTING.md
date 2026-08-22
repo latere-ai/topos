@@ -12,7 +12,7 @@ private process in [SECURITY.md](SECURITY.md), not a public issue.
 
 ## Local development
 
-Topos requires Go 1.26 or later. Clone the repository, download the module
+Topos requires Go 1.27 or later. Clone the repository, download the module
 dependencies, then run the same quality gate used in CI:
 
 ```sh

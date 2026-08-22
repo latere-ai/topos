@@ -8,6 +8,7 @@ import (
 	"context"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -347,10 +348,5 @@ func TestBuildModelKinds(t *testing.T) {
 }
 
 func containsEvent(in []hooks.EventName, want hooks.EventName) bool {
-	for _, e := range in {
-		if e == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(in, want)
 }

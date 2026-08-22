@@ -47,10 +47,7 @@ func (e *Engine) Run(ctx context.Context) (*Summary, error) {
 	if e.StateDir == "" {
 		return nil, errors.New("adversarial: StateDir is required")
 	}
-	forkCount := e.ForkCount
-	if forkCount < 1 {
-		forkCount = 1
-	}
+	forkCount := max(e.ForkCount, 1)
 	// An unset MaxRounds would otherwise make the per-fork loop run zero
 	// rounds and report a debate that never happened. CostCap gets no such
 	// default: zero there means unbounded.

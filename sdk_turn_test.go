@@ -7,6 +7,7 @@ package topos
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
@@ -183,9 +184,9 @@ func TestTurnObserverSeesTokenDeltas(t *testing.T) {
 
 // lastAssistant returns the last assistant message in the transcript.
 func lastAssistant(transcript []models.Message) (models.Message, bool) {
-	for i := len(transcript) - 1; i >= 0; i-- {
-		if transcript[i].Role == "assistant" {
-			return transcript[i], true
+	for _, t := range slices.Backward(transcript) {
+		if t.Role == "assistant" {
+			return t, true
 		}
 	}
 	return models.Message{}, false

@@ -77,7 +77,7 @@ var (
 // or empty. Used by the round loop to capture the topic the critic
 // chose in R1 so subsequent rounds can lock to it.
 func ExtractDeclaredAspect(raw string) string {
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		if m := aspectLineRE.FindStringSubmatch(line); m != nil {
 			return strings.TrimSpace(m[1])
 		}
@@ -300,15 +300,16 @@ func extractField(body, field string) string {
 	for i, l := range lines {
 		ll := strings.ToLower(strings.TrimSpace(l))
 		if strings.HasPrefix(ll, field+":") {
-			value := strings.TrimSpace(l[strings.Index(l, ":")+1:])
+			var value strings.Builder
+			value.WriteString(strings.TrimSpace(l[strings.Index(l, ":")+1:]))
 			// Single paragraph: continue lines until blank.
 			for j := i + 1; j < len(lines); j++ {
 				if strings.TrimSpace(lines[j]) == "" {
 					break
 				}
-				value += "\n" + lines[j]
+				value.WriteString("\n" + lines[j])
 			}
-			return strings.TrimSpace(value)
+			return strings.TrimSpace(value.String())
 		}
 	}
 	return ""

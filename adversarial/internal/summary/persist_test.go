@@ -27,7 +27,7 @@ func TestPersistWritesSummaryAndEnd(t *testing.T) {
 		"c1-1": {
 			AttackID: "c1-1", Aspect: "security", Status: ledger.StatusUnresolved,
 			Location: "x.go:1", Claim: "leak", ExpectedViolation: "panic",
-			Reproduction: "go run", RoundIntroduced: ptr(1), RoundLastTouched: 3, ReAttacked: true,
+			Reproduction: "go run", RoundIntroduced: new(1), RoundLastTouched: 3, ReAttacked: true,
 		},
 		"c1-2": {
 			AttackID: "c1-2", Aspect: "security", Status: ledger.StatusConceded,
@@ -36,7 +36,7 @@ func TestPersistWritesSummaryAndEnd(t *testing.T) {
 		"c1-3": {
 			AttackID: "c1-3", Aspect: "security", Status: ledger.StatusUnresolved,
 			Location: "y.go:1", Claim: "second issue", Reproduction: "ok",
-			RoundIntroduced: ptr(1), RoundLastTouched: 2, ReAttacked: false,
+			RoundIntroduced: new(1), RoundLastTouched: 2, ReAttacked: false,
 		},
 	}
 	if err := Persist(sumRes, agg, 1); err != nil {

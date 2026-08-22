@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -715,9 +716,9 @@ func TestLoopMaxIterationsCap(t *testing.T) {
 
 // lastByRole returns the last message with the given role, or false.
 func lastByRole(transcript []models.Message, role models.Role) (models.Message, bool) {
-	for i := len(transcript) - 1; i >= 0; i-- {
-		if transcript[i].Role == role {
-			return transcript[i], true
+	for _, t := range slices.Backward(transcript) {
+		if t.Role == role {
+			return t, true
 		}
 	}
 	return models.Message{}, false

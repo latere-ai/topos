@@ -81,8 +81,7 @@ func toEnvelope(err error) *errEnvelope {
 	case errors.Is(err, sandbox.ErrConsentDenied):
 		return &errEnvelope{Kind: "consent", Msg: err.Error()}
 	}
-	var apiErr *sandbox.APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*sandbox.APIError](err); ok {
 		return &errEnvelope{Kind: "api", Msg: err.Error(), API: apiErr}
 	}
 	return &errEnvelope{Kind: "other", Msg: err.Error()}

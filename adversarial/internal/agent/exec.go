@@ -100,8 +100,7 @@ func Exec(ctx context.Context, r Run) (Result, error) {
 			Duration: time.Since(start),
 		}
 		if err != nil {
-			var ee *exec.ExitError
-			if errors.As(err, &ee) {
+			if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 				res.ExitCode = ee.ExitCode()
 			}
 			if callCtx.Err() != nil {
@@ -142,8 +141,7 @@ func Exec(ctx context.Context, r Run) (Result, error) {
 		Duration: time.Since(start),
 	}
 	if waitErr != nil {
-		var ee *exec.ExitError
-		if errors.As(waitErr, &ee) {
+		if ee, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 			res.ExitCode = ee.ExitCode()
 		}
 		if callCtx.Err() != nil {
@@ -168,11 +166,10 @@ func CleanEnv(remove ...string) []string {
 	}
 	out := make([]string, 0, len(os.Environ())+1)
 	for _, kv := range os.Environ() {
-		eq := strings.IndexByte(kv, '=')
-		if eq < 0 {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok {
 			continue
 		}
-		k := kv[:eq]
 		if _, drop := excl[k]; drop {
 			continue
 		}
