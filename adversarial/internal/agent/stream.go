@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -160,7 +161,7 @@ func FormatCodexStreamEvent(line []byte) string {
 		if summary == "" {
 			summary = summarizeToolInput(ev.Item.Args)
 		}
-		return fmt.Sprintf("  → %s: %s", firstNonEmpty(ev.Item.Name, "tool"), summary)
+		return fmt.Sprintf("  → %s: %s", cmp.Or(ev.Item.Name, "tool"), summary)
 	case "command_execution", "shell_command":
 		return "  → shell: " + clip(ev.Item.Command, summaryWidth)
 	case "reasoning", "agent_reasoning", "reasoning_summary":
@@ -168,8 +169,7 @@ func FormatCodexStreamEvent(line []byte) string {
 		// reasoning events. Surfacing them as "thinking:" lines
 		// gives the operator a glimpse of the agent's plan during
 		// long calls that would otherwise show no activity.
-		text := firstNonEmpty(ev.Item.Summary, ev.Item.Text)
-		text = firstNonEmpty(text, ev.Item.Content)
+		text := cmp.Or(ev.Item.Summary, ev.Item.Text, ev.Item.Content)
 		pv := previewLine(text, textPreviewWidth)
 		if pv == "" {
 			return ""
@@ -186,7 +186,7 @@ func FormatCodexStreamEvent(line []byte) string {
 		if ev.Type != "item.completed" {
 			return ""
 		}
-		text := firstNonEmpty(ev.Item.Text, ev.Item.Content)
+		text := cmp.Or(ev.Item.Text, ev.Item.Content)
 		return formatAgentMessageLines(text)
 	}
 	return ""
@@ -224,11 +224,4 @@ func formatAgentMessageLines(text string) string {
 		return ""
 	}
 	return strings.Join(out, "\n")
-}
-
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
