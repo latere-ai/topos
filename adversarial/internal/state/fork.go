@@ -124,8 +124,8 @@ func parsePorcelain(s string) []string {
 		path := strings.TrimSpace(line[3:])
 		// Rename/copy lines are "orig -> dest"; keep the destination.
 		if status == 'R' || status == 'C' {
-			if i := strings.Index(path, " -> "); i >= 0 {
-				path = path[i+len(" -> "):]
+			if _, dest, ok := strings.Cut(path, " -> "); ok {
+				path = dest
 			}
 		}
 		// git wraps paths containing special bytes in double quotes;
