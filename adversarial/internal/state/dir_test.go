@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -24,24 +25,11 @@ func TestNewSessionLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 1; i <= 3; i++ {
-		p := filepath.Join(sess.Root, "forks", "critic-"+itoa(i), "rounds")
+		p := filepath.Join(sess.Root, "forks", "critic-"+strconv.Itoa(i), "rounds")
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("missing %s: %v", p, err)
 		}
 	}
-}
-
-func itoa(n int) string {
-	if n == 1 {
-		return "1"
-	}
-	if n == 2 {
-		return "2"
-	}
-	if n == 3 {
-		return "3"
-	}
-	return ""
 }
 
 func TestAtomicWrite(t *testing.T) {

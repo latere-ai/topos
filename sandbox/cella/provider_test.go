@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"latere.ai/x/topos/sandbox"
@@ -147,7 +148,7 @@ func TestTokenFuncPullsCurrentTokenEachRequest(t *testing.T) {
 	}
 
 	want := []string{"Bearer tok-v1", "Bearer tok-v2"}
-	if !equalStrings(authHeaders, want) {
+	if !slices.Equal(authHeaders, want) {
 		t.Fatalf("auth headers = %v, want %v (refresh did not flow through)", authHeaders, want)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -316,11 +317,7 @@ func TestEnginePerForkUsageStats(t *testing.T) {
 }
 
 func floatEq(a, b float64) bool {
-	d := a - b
-	if d < 0 {
-		d = -d
-	}
-	return d < 1e-9
+	return math.Abs(a-b) < 1e-9
 }
 
 type usageCritic struct {

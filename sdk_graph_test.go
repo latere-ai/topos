@@ -83,7 +83,7 @@ func TestRunGraphNamespacesIdsAndLinksRegions(t *testing.T) {
 		t.Errorf("missing namespaced ids; got %v", ids)
 	}
 	want := TraceEdge{From: "run-1/a/impl", To: "run-1/b/impl", Kind: EdgeNext}
-	if !hasEdge(res.Trace.Edges, want) {
+	if !slices.Contains(res.Trace.Edges, want) {
 		t.Errorf("missing cross-region edge %+v in %+v", want, res.Trace.Edges)
 	}
 }
@@ -185,7 +185,7 @@ func TestRunGraphFanOut(t *testing.T) {
 		{From: "run-1/root/root", To: "run-1/left/left", Kind: EdgeNext},
 		{From: "run-1/root/root", To: "run-1/right/right", Kind: EdgeNext},
 	} {
-		if !hasEdge(res.Trace.Edges, want) {
+		if !slices.Contains(res.Trace.Edges, want) {
 			t.Errorf("missing fan-out edge %+v", want)
 		}
 	}
@@ -250,8 +250,4 @@ func TestValidateGraph(t *testing.T) {
 	if err := ValidateGraph(Graph{}); err == nil {
 		t.Errorf("ValidateGraph(empty) = nil, want an error")
 	}
-}
-
-func hasEdge(edges []TraceEdge, want TraceEdge) bool {
-	return slices.Contains(edges, want)
 }

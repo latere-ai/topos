@@ -138,7 +138,7 @@ func TestDynamicDelegateBuildsTrace(t *testing.T) {
 	if !reflect.DeepEqual(res.Trace.Edges, wantEdges) {
 		t.Errorf("edges = %+v, want %+v", res.Trace.Edges, wantEdges)
 	}
-	if !containsEvent(events, hooks.EventSubagentStart) || !containsEvent(events, hooks.EventSubagentStop) {
+	if !slices.Contains(events, hooks.EventSubagentStart) || !slices.Contains(events, hooks.EventSubagentStop) {
 		t.Errorf("missing Subagent events, got %v", events)
 	}
 }
@@ -345,8 +345,4 @@ func TestBuildModelKinds(t *testing.T) {
 	if _, err := NewRunner(Options{Model: ModelOptions{Kind: ModelDirect, Provider: "cohere"}}); err == nil {
 		t.Error("ModelDirect with unsupported provider: want error, got nil")
 	}
-}
-
-func containsEvent(in []hooks.EventName, want hooks.EventName) bool {
-	return slices.Contains(in, want)
 }

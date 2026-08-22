@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -135,7 +136,7 @@ func TestErrGitErrorMessage(t *testing.T) {
 		"inner failure",
 		"fatal: bad revision",
 	} {
-		if !contains(got, want) {
+		if !strings.Contains(got, want) {
 			t.Errorf("Error() = %q; missing %q", got, want)
 		}
 	}
@@ -144,15 +145,6 @@ func TestErrGitErrorMessage(t *testing.T) {
 type errSentinel string
 
 func (e errSentinel) Error() string { return string(e) }
-
-func contains(haystack, needle string) bool {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
-}
 
 func TestComputeBadRange(t *testing.T) {
 	dir := t.TempDir()

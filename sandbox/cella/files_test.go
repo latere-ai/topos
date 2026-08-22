@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"testing"
 
@@ -136,7 +137,7 @@ func TestListFilesImmediateChildrenOnly(t *testing.T) {
 	}
 	names := fileNames(got)
 	want := []string{"README.md", "src"}
-	if !equalStrings(names, want) {
+	if !slices.Equal(names, want) {
 		t.Fatalf("children = %v, want %v", names, want)
 	}
 	for _, fi := range got {
@@ -180,7 +181,7 @@ func TestListFilesOfSubdir(t *testing.T) {
 	}
 	names := fileNames(got)
 	want := []string{"main.go", "sub", "util.go"}
-	if !equalStrings(names, want) {
+	if !slices.Equal(names, want) {
 		t.Fatalf("children = %v, want %v", names, want)
 	}
 }
@@ -249,16 +250,4 @@ func fileNames(in []sandbox.FileInfo) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
