@@ -3,6 +3,7 @@ package critic
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -147,9 +148,8 @@ func Parse(raw string, expectedAspect string, criticIndex, round int, priorAttac
 	for _, sid := range priorAttackIDs {
 		if m := idRE.FindStringSubmatch(sid); m != nil {
 			if ci, _ := strconv.Atoi(m[1]); ci == criticIndex {
-				if seq, _ := strconv.Atoi(m[2]); seq > maxSeq {
-					maxSeq = seq
-				}
+				seq, _ := strconv.Atoi(m[2])
+				maxSeq = max(maxSeq, seq)
 			}
 		}
 	}
@@ -301,7 +301,8 @@ func extractField(body, field string) string {
 		ll := strings.ToLower(strings.TrimSpace(l))
 		if strings.HasPrefix(ll, field+":") {
 			var value strings.Builder
-			value.WriteString(strings.TrimSpace(l[strings.Index(l, ":")+1:]))
+			_, after, _ := strings.Cut(l, ":")
+			value.WriteString(strings.TrimSpace(after))
 			// Single paragraph: continue lines until blank.
 			for j := i + 1; j < len(lines); j++ {
 				if strings.TrimSpace(lines[j]) == "" {
@@ -331,25 +332,16 @@ func extractFenced(body, label string) string {
 }
 
 func isStyleShaped(claim, exp string) bool {
-	if !anyMatch(stylePatterns, claim) {
+	if !slices.ContainsFunc(stylePatterns, func(p *regexp.Regexp) bool { return p.MatchString(claim) }) {
 		return false
 	}
-	if anyMatch(concretePatterns, exp) {
+	if slices.ContainsFunc(concretePatterns, func(p *regexp.Regexp) bool { return p.MatchString(exp) }) {
 		return false
 	}
 	if fencePattern.MatchString(exp) {
 		return false
 	}
 	return true
-}
-
-func anyMatch(patterns []*regexp.Regexp, s string) bool {
-	for _, p := range patterns {
-		if p.MatchString(s) {
-			return true
-		}
-	}
-	return false
 }
 
 func isCrossAspect(claim, expectedAspect string) bool {
