@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"latere.ai/x/topos/adversarial/internal/state"
@@ -178,9 +179,7 @@ func fold(out map[string]Record, in Record) {
 	if in.Status != "" {
 		cur.Status = in.Status
 	}
-	if in.RoundsSurvived > cur.RoundsSurvived {
-		cur.RoundsSurvived = in.RoundsSurvived
-	}
+	cur.RoundsSurvived = max(cur.RoundsSurvived, in.RoundsSurvived)
 	if in.ReAttacked {
 		cur.ReAttacked = true
 	}
@@ -231,11 +230,11 @@ func parseSpill(b string) (claim, exp, repro string) {
 	sections := splitOnHeader(b, "## ")
 	for _, sec := range sections {
 		switch {
-		case startsWith(sec, "Claim"):
+		case strings.HasPrefix(sec, "Claim"):
 			claim = trimSection(sec, "Claim")
-		case startsWith(sec, "Expected violation"):
+		case strings.HasPrefix(sec, "Expected violation"):
 			exp = trimSection(sec, "Expected violation")
-		case startsWith(sec, "Reproduction"):
+		case strings.HasPrefix(sec, "Reproduction"):
 			repro = trimSection(sec, "Reproduction")
 		}
 	}
@@ -246,11 +245,11 @@ func splitOnHeader(s, sep string) []string {
 	var out []string
 	cur := ""
 	for _, line := range splitLines(s) {
-		if startsWith(line, sep) {
+		if rest, ok := strings.CutPrefix(line, sep); ok {
 			if cur != "" {
 				out = append(out, cur)
 			}
-			cur = line[len(sep):] + "\n"
+			cur = rest + "\n"
 		} else if cur != "" {
 			cur += line + "\n"
 		}
@@ -278,26 +277,13 @@ func splitLines(s string) []string {
 	return out
 }
 
-func startsWith(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
-}
-
 func trimSection(sec, header string) string {
 	// strip header line, leading blanks
 	for i := len(header); i < len(sec); i++ {
 		if sec[i] != '\n' {
 			continue
 		}
-		rest := sec[i+1:]
-		// trim leading newlines
-		for len(rest) > 0 && rest[0] == '\n' {
-			rest = rest[1:]
-		}
-		// trim trailing newlines
-		for len(rest) > 0 && rest[len(rest)-1] == '\n' {
-			rest = rest[:len(rest)-1]
-		}
-		return rest
+		return strings.Trim(sec[i+1:], "\n")
 	}
 	return ""
 }
