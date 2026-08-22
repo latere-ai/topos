@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -610,10 +612,7 @@ func (e *Engine) criticRound(ctx context.Context, cri agent.Critic, a critic.Asp
 			delete(idSet, at.AttackID)
 		}
 	}
-	out := make([]string, 0, len(idSet))
-	for id := range idSet {
-		out = append(out, id)
-	}
+	out := slices.Collect(maps.Keys(idSet))
 	return criticRoundResult{tokens: tokens, usage: usage, usd: res.USD, priorIDs: out, declaredTopic: declared}, stats, nil
 }
 
