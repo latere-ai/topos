@@ -14,8 +14,8 @@ const markdownSidecar = "## Claim\nthe claim body\nsecond line\n\n" +
 
 // TestParseSpillMarkdownBackCompat pins that parseSpill decodes the
 // legacy markdown side-car when the body is not JSON, exercising the
-// splitOnHeader/splitLines/startsWith/trimSection helpers that only
-// run on the backward-compat path.
+// splitOnHeader/splitLines/trimSection helpers that only run on the
+// backward-compat path.
 func TestParseSpillMarkdownBackCompat(t *testing.T) {
 	claim, exp, repro := parseSpill(markdownSidecar)
 	if claim != "the claim body\nsecond line" {
