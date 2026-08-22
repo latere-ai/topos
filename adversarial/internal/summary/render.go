@@ -2,6 +2,8 @@ package summary
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"latere.ai/x/topos/adversarial/internal/ledger"
@@ -17,14 +19,14 @@ func (r *Render) Bytes(s *round.Summary, agg map[string]ledger.Record) ([]byte, 
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Adversarial review - terminated: %s\n\n", s.Termination)
 
-	hl := PickHeadline(values(agg))
+	hl := PickHeadline(slices.Collect(maps.Values(agg)))
 	if hl != nil {
 		b.WriteString("## Headline (most contested unresolved)\n")
 		writeHeadline(&b, *hl)
 		b.WriteString("\n")
 	}
 
-	others := unresolvedExcept(values(agg), hl)
+	others := unresolvedExcept(slices.Collect(maps.Values(agg)), hl)
 	if len(others) > 0 {
 		fmt.Fprintf(&b, "## Other unresolved (%d, sorted by contention)\n", len(others))
 		for _, r := range others {
@@ -33,7 +35,7 @@ func (r *Render) Bytes(s *round.Summary, agg map[string]ledger.Record) ([]byte, 
 		b.WriteString("\n")
 	}
 
-	resolved := resolvedRecords(values(agg))
+	resolved := resolvedRecords(slices.Collect(maps.Values(agg)))
 	if len(resolved) > 0 {
 		fmt.Fprintf(&b, "## Resolved (%d)\n", len(resolved))
 		for _, r := range resolved {
@@ -171,14 +173,6 @@ func resolvedRecords(records []ledger.Record) []ledger.Record {
 	return out
 }
 
-func values(m map[string]ledger.Record) []ledger.Record {
-	out := make([]ledger.Record, 0, len(m))
-	for _, r := range m {
-		out = append(out, r)
-	}
-	return out
-}
-
 func countByStatus(m map[string]ledger.Record, st ledger.Status) int {
 	n := 0
 	for _, r := range m {
@@ -220,7 +214,7 @@ func Persist(s *round.Summary, agg map[string]ledger.Record, exitCode int) error
 		ExitCode:    exitCode,
 		SummaryPath: "summary.md",
 	}
-	if hl := PickHeadline(values(agg)); hl != nil {
+	if hl := PickHeadline(slices.Collect(maps.Values(agg))); hl != nil {
 		end.Headline = &state.HeadlineRef{AttackID: hl.AttackID, Contention: Score(*hl)}
 	}
 	return state.WriteEnd(s.Sess, end)

@@ -12,10 +12,7 @@ import (
 func Score(r ledger.Record) int {
 	rs := r.RoundsSurvived
 	if r.RoundIntroduced != nil && r.RoundLastTouched > *r.RoundIntroduced {
-		survived := r.RoundLastTouched - *r.RoundIntroduced
-		if survived > rs {
-			rs = survived
-		}
+		rs = max(rs, r.RoundLastTouched-*r.RoundIntroduced)
 	}
 	if r.ReAttacked {
 		rs++
