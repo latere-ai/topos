@@ -19,9 +19,9 @@ dispatched_task_id: null
 
 ## Goal
 
-Repoint latere-cli from `x/agon` to `topos/adversarial`, rename the `latere agon`
-command to `latere review`, drop the `agon` module dependency, and scrub every
-`agon` identifier and doc reference. The command's behavior (run an adversarial
+Repoint latere-cli from the standalone module to `topos/adversarial`, rename the
+`latere agon` command to `latere review`, drop that module dependency, and scrub
+every `agon` identifier and doc reference. The command's behavior (run an adversarial
 debate over the working-tree diff of the most recent Claude Code session, critics
 routed through Lux) is unchanged.
 
@@ -32,10 +32,10 @@ tag from [03](016-capability-surface.md).
 
 **Import repoint** in `internal/commands/agon.go`:
 
-- `latere.ai/x/agon/pkg/adversarial` -> `latere.ai/x/topos/adversarial`
-- `latere.ai/x/agon/pkg/adversarial/claude` -> `latere.ai/x/topos/adversarial/claude`
-- `latere.ai/x/agon/pkg/adversarial/input` -> `latere.ai/x/topos/adversarial/input`
-- `latere.ai/x/agon/pkg/adversarial/topos` (alias `atopos`) ->
+- the standalone module's `pkg/adversarial` -> `latere.ai/x/topos/adversarial`
+- its `pkg/adversarial/claude` -> `latere.ai/x/topos/adversarial/claude`
+- its `pkg/adversarial/input` -> `latere.ai/x/topos/adversarial/input`
+- its `pkg/adversarial/topos` (alias `atopos`) ->
   `latere.ai/x/topos/adversarial/critic` (the renamed native critic)
 
 **Command rename.** `latere agon` -> `latere review`. Update `Use`, `Short`,
@@ -53,7 +53,7 @@ tag from [03](016-capability-surface.md).
 | `[agon]` stderr prefixes            | `[review]`                             |
 | `--state-dir` default `cwd`         | XDG state home (see below)             |
 
-**Module.** Remove `latere.ai/x/agon` from `latere-cli/go.mod`; bump
+**Module.** Remove the standalone module from `latere-cli/go.mod`; bump
 `latere.ai/x/topos` to the [03](016-capability-surface.md) tag; `go mod tidy`.
 
 **Docs and local spec.** Rename `docs/agon.md` -> `docs/review.md` and
@@ -101,7 +101,7 @@ $XDG_STATE_HOME/latere/reviews/<repo-key>/<session-id>/
 
 ## Steps
 
-1. Repoint imports; bump Topos; remove `x/agon`; `go mod tidy`.
+1. Repoint imports; bump Topos; remove the standalone module; `go mod tidy`.
 2. Rename the command, files, and identifiers; update help text and the state-dir
    default.
 3. Rewrite `docs/review.md` and `specs/review-local-subcommand.md`.
@@ -115,7 +115,7 @@ $XDG_STATE_HOME/latere/reviews/<repo-key>/<session-id>/
   `$XDG_STATE_HOME/latere/reviews/<repo-key>/<session-id>/` (fallback
   `~/.local/state/...`), not into the reviewed repo. A test asserts the resolved
   location and the `XDG_STATE_HOME` override.
-- `grep -rl "latere.ai/x/agon" latere-cli/go.mod` is empty.
+- `latere-cli/go.mod` no longer requires the standalone module.
 - `grep -rniw agon latere-cli` is empty (source, docs, specs, help output).
 - The command test passes under the new name.
 

@@ -47,7 +47,7 @@ Move three packages into `topos/adversarial/`:
   this today. The diff half is generic; the transcript half is Claude-Code-specific
   but small, so both stay together under `adversarial/input` for now.
 
-Rewrite all import paths from `latere.ai/x/agon/...` to
+Rewrite all import paths from the standalone module to
 `latere.ai/x/topos/adversarial/...`. Port each package's tests alongside it (the
 `input` package has substantial transcript and diff tests; they move as-is).
 
@@ -70,14 +70,14 @@ Rewrite all import paths from `latere.ai/x/agon/...` to
    packages directly.
 3. Port all three packages' tests.
 4. `go build ./...` and `go test ./adversarial/...` green.
-5. `grep -rn "latere.ai/x/agon" adversarial/` returns nothing.
+5. Confirm no import of the standalone module remains under `adversarial/`.
 
 ## Acceptance
 
 - All of `adversarial/{claude,critic,input}` builds and tests green in Topos.
-- The native critic wires to the in-module `topos` runtime with no `x/agon` and no
-  cross-module hop.
-- `grep -rn "latere.ai/x/agon" adversarial/` is empty across the whole
+- The native critic wires to the in-module `topos` runtime with no dependency on
+  the standalone module, and no cross-module hop.
+- No import of the standalone module remains under `adversarial/` across the whole
   `adversarial/` tree (core plus backends).
 - `go mod tidy` leaves the Topos module graph consistent; any dependency the
   backends pull in (the Claude CLI has none beyond stdlib; the native critic uses

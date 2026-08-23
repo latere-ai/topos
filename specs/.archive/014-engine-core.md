@@ -19,11 +19,11 @@ dispatched_task_id: null
 
 ## Goal
 
-Move the backend-agnostic core of the adversarial debate engine from
-`latere.ai/x/agon/pkg/adversarial` into `latere.ai/x/topos/adversarial`, with no
+Move the backend-agnostic core of the adversarial debate engine from the
+standalone module's `pkg/adversarial` into `latere.ai/x/topos/adversarial`, with no
 behavior change. After this step Topos compiles and tests the engine, protocol,
 interfaces, and result types on its own, and the ported package imports nothing
-from `x/agon`. Backends and input come in the next step; this one is the core only.
+from the standalone module. Backends and input come in the next step; this one is the core only.
 
 ## Scope
 
@@ -40,8 +40,8 @@ Move the engine's internal dependencies into `topos/adversarial/internal/`:
 
 - `agent/`, `critic/`, `ledger/`, `round/`, `state/`, `summary/`, `ansi/`.
 
-The first six are the internals `engine.go` imports directly
-(`latere.ai/x/agon/internal/{agent,critic,ledger,round,state,summary}`); `ansi` is
+The first six are the internals `engine.go` imports directly (the standalone
+module's `internal/{agent,critic,ledger,round,state,summary}`); `ansi` is
 a transitive engine dependency, imported by `internal/round/loop.go` and
 `internal/summary/print.go` for the escape codes the round loop and summary render.
 It is part of the engine, not CLI-side, so it moves with the core; without it
@@ -49,9 +49,9 @@ It is part of the engine, not CLI-side, so it moves with the core; without it
 restricts all of these to importers within `adversarial/`, preserving today's
 privacy.
 
-Rewrite every moved import from `latere.ai/x/agon/internal/...` to
+Rewrite every moved import from the standalone module's `internal/...` to
 `latere.ai/x/topos/adversarial/internal/...`, and the package self-reference from
-`latere.ai/x/agon/pkg/adversarial` to `latere.ai/x/topos/adversarial`.
+its `pkg/adversarial` to `latere.ai/x/topos/adversarial`.
 
 Port the engine tests alongside (`adversarial_test.go`: `TestAssemblePrompt`,
 `TestEngineSteadyState`, `TestVerifierInterface`, `TestEngineRun_WritesEndJSON`).
@@ -60,15 +60,15 @@ Port the engine tests alongside (`adversarial_test.go`: `TestAssemblePrompt`,
 
 - No backends. `claude/`, `critic/` (native), and `input/` move in
   [02](015-backends-and-input.md).
-- No `internal/web`. That is the `agon-web` site and is retired in
-  [07](020-retire-agon.md), not moved. (Note: `internal/ansi` is not excluded; it is
+- No `internal/web`. That is the standalone site and is retired with the project,
+  not moved. (Note: `internal/ansi` is not excluded; it is
   a transitive engine dependency and moves in Scope above.)
 - No API changes, renames, or signature changes. The package name stays
   `adversarial`; exported identifiers are unchanged. The on-disk `.agon/sessions/`
   path stays as-is at this step (the engine still writes it); the directory rename
   happens in the consumer specs that own the write path.
-- No consumer changes. wallfacer and latere-cli still import `x/agon` after this
-  step; they repoint in [04](017-migrate-wallfacer.md) and
+- No consumer changes. wallfacer and latere-cli still import the standalone module
+  after this step; they repoint in [04](017-migrate-wallfacer.md) and
   [05](018-migrate-latere-cli.md) after the tag in [03](016-capability-surface.md).
 
 ## Steps
@@ -77,14 +77,14 @@ Port the engine tests alongside (`adversarial_test.go`: `TestAssemblePrompt`,
 2. Copy the core files and the six internal packages in; rewrite import paths.
 3. Port `adversarial_test.go`.
 4. `go build ./...` and `go test ./adversarial/...` in the Topos module.
-5. Confirm no residual `x/agon` reference: `grep -rn "x/agon" adversarial/`
-   returns nothing.
+5. Confirm no residual import of the standalone module remains under
+   `adversarial/`.
 
 ## Acceptance
 
 - `topos/adversarial` builds as part of `go build ./...`.
 - The ported engine tests pass under `go test ./adversarial/...`.
-- `grep -rn "latere.ai/x/agon" adversarial/` is empty.
+- No import of the standalone module remains under `adversarial/`.
 - Coverage on the ported package is at or above what it was in `agon` (the engine
   tests move with it, so no regression).
 

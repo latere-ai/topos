@@ -22,8 +22,8 @@ dispatched_task_id: null
 Give Topos a small, named entrypoint for adversarial review so it reads as a
 first-class capability rather than a loose subpackage, document it, and cut the
 Topos release tag that carries the whole capability. This tag is the gate that
-unblocks the three consumer migrations ([04](017-migrate-wallfacer.md),
-[05](018-migrate-latere-cli.md), [06](019-agents-capability-page.md)).
+unblocks the consumer migrations ([04](017-migrate-wallfacer.md),
+[05](018-migrate-latere-cli.md)) and the hosted Topos platform's capability page.
 
 ## Design
 

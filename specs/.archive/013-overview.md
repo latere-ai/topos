@@ -19,20 +19,20 @@ dispatched_task_id: null
 
 Make Topos the single home for adversarial review, and remove `agon` from the
 Latere landscape entirely. Today adversarial review ships as a standalone module
-(`latere.ai/x/agon`) with its own repo, brand, and site (`agon.latere.ai`). That
+with its own repo, brand, and site (`agon.latere.ai`). That
 module already depends on Topos for its native critic backend, so the current
 dependency arrow points the wrong way: a specialization of the Topos runtime sits
 above it and imports it.
 
 This program inverts that arrow. The engine, protocol, interfaces, and backends
 move into Topos under an `adversarial/` capability namespace. Every consumer
-(wallfacer, latere-cli, and the agents platform) then imports the capability from
+(wallfacer, latere-cli, and the hosted Topos platform) then imports the capability from
 Topos and drops its `agon` dependency. When the program completes, no repository,
 module, site, or identifier named `agon` remains.
 
-The endpoint is verifiable, not aspirational. The retirement spec
-([07 Retire agon](020-retire-agon.md)) defines the teardown as a set of grep and
-deploy checks that must all come back empty.
+The endpoint is verifiable, not aspirational. The teardown of the standalone
+project's site and infrastructure is tracked outside this repository as a set of
+grep and deploy checks that must all come back empty.
 
 ## Why Topos is the right host
 
@@ -48,8 +48,8 @@ provides. Folding the capability in does three things at once:
   of pinning `agon` and transitively Topos. One release cadence, not two.
 - **Puts the capability in the platform's own vocabulary.** Adversarial review
   becomes a Topos capability with a thin, named surface, and its product story
-  moves onto the agents platform as a capability page rather than a standalone
-  site.
+  moves onto the hosted Topos platform as a capability page rather than a
+  standalone site.
 
 This is a migration, not a rewrite. The working debate engine (forks, rounds,
 attack ledger, concession handling) moves in as-is and is wrapped thinly as a
@@ -64,9 +64,9 @@ no user-facing surface, on-disk path, or internal identifier keeps the word.
 | Surface                       | Before                         | After                                  |
 | ----------------------------- | ------------------------------ | -------------------------------------- |
 | Go package                    | `pkg/adversarial`              | `adversarial` (unchanged name, new home) |
-| Import path                   | `latere.ai/x/agon/pkg/...`     | `latere.ai/x/topos/adversarial/...`    |
+| Import path                   | the standalone module's `pkg/...` | `latere.ai/x/topos/adversarial/...` |
 | CLI command                   | `latere agon`                  | `latere review`                        |
-| Agents capability page        | `agon.latere.ai`               | "Adversarial Review" page in agents    |
+| Product page                  | `agon.latere.ai`               | "Adversarial Review" page on the hosted Topos platform |
 | On-disk session artifacts     | `.agon/sessions/<id>/` (in repo) | engine writes `sessions/<id>/` under a caller `StateDir`; latere-cli defaults to `$XDG_STATE_HOME/latere/reviews/<repo>/`, wallfacer to its server data dir |
 | wallfacer runtime gate        | `AgonEnabled` / `SetAgon`      | `ReviewEnabled` / `SetReview`          |
 | wallfacer verifier ctor       | `NewAgonVerifier`              | `NewReviewVerifier`                    |
@@ -111,11 +111,11 @@ restricts to importers under `adversarial/`. That keeps the debate internals
 private to the capability exactly as they are private to `agon` today. `ansi` is
 included because the round loop and summary render through it; it is a transitive
 engine dependency, not CLI-side (see [01](014-engine-core.md)). Only
-`internal/web`, the `agon-web` site, does not move; it is retired in
-[07](020-retire-agon.md).
+`internal/web`, the standalone site, does not move; it is retired with the
+project.
 
-Naming note: the native critic backend is `latere.ai/x/agon/pkg/adversarial/topos`
-today. Inside the Topos module that path would read `topos/adversarial/topos`,
+Naming note: the native critic backend sits at `pkg/adversarial/topos` in the
+standalone module today. Inside the Topos module that path would read `topos/adversarial/topos`,
 which is confusing, so it is renamed to `adversarial/critic`.
 
 ## Consumer usage today
@@ -123,25 +123,24 @@ which is confusing, so it is renamed to `adversarial/critic`.
 The boundary below is what the consumers actually import, verified by grep. It
 determines what must move and what may stay behind.
 
-| Package                        | wallfacer | latere-cli | agents |
-| ------------------------------ | :-------: | :--------: | :----: |
-| `pkg/adversarial` (engine)     | yes       | yes        | no     |
-| `pkg/adversarial/claude`       | yes       | yes        | no     |
-| `pkg/adversarial/input`        | no        | yes        | no     |
-| `pkg/adversarial/topos` critic | no        | yes        | no     |
+| Package                        | wallfacer | latere-cli | Topos platform |
+| ------------------------------ | :-------: | :--------: | :------------: |
+| `pkg/adversarial` (engine)     | yes       | yes        | no             |
+| `pkg/adversarial/claude`       | yes       | yes        | no             |
+| `pkg/adversarial/input`        | no        | yes        | no             |
+| `pkg/adversarial/topos` critic | no        | yes        | no             |
 
 wallfacer uses the engine plus the Claude proposer, and supplies its own critic
 (`wallfacer/internal/adversarial/harness_critic.go`) rather than the native one.
-latere-cli uses the whole stack for the `latere agon` command. The agents platform
-imports none of it yet; it is the future host of the capability page. Because the
+latere-cli uses the whole stack for the `latere agon` command. The hosted Topos
+platform imports none of it yet; it is the future host of the capability page. Because the
 Claude backend has two consumers, it moves into Topos rather than down into any one
 consumer.
 
 ## Migration DAG and release ordering
 
 Topos must ship the capability and cut a tag before any consumer can bump off
-`agon` (wallfacer pins `agon v0.1.2`, latere-cli pins `agon v0.1.3`). The order
-below respects that.
+`agon`, which wallfacer and latere-cli each pin. The order below respects that.
 
 ```mermaid
 graph TD
@@ -149,49 +148,38 @@ graph TD
   s02 --> s03[03 Capability surface + tag]
   s03 --> s04[04 Migrate wallfacer]
   s03 --> s05[05 Migrate latere-cli]
-  s03 --> s06[06 Agents capability page]
-  s04 --> s07[07 Retire agon]
-  s05 --> s07
-  s06 --> s07
 ```
 
 1. [01 Engine core](014-engine-core.md). Move the backend-agnostic engine,
    protocol, interfaces, `Summary`, and `internal/*` into `adversarial/`. No
-   backends. Topos builds; ported engine tests pass; `adversarial/` imports no
-   `x/agon`.
+   backends. Topos builds; ported engine tests pass; `adversarial/` imports
+   nothing from the standalone module.
 2. [02 Backends and input](015-backends-and-input.md). Move the Claude backend,
    the native critic (renamed to `adversarial/critic`), and `input` into
    `adversarial/{claude,critic,input}`. Backends wire to the core; tests pass.
 3. [03 Capability surface](016-capability-surface.md). Add the thin
    `adversarial.Review` entrypoint and wire the capability into `specs/README.md`.
-   Cut the Topos release tag that carries the capability. This tag unblocks 04-06.
+   Cut the Topos release tag that carries the capability. This tag unblocks the
+   consumer migrations.
 4. [04 Migrate wallfacer](017-migrate-wallfacer.md). Repoint imports to Topos, bump
-   Topos, drop `x/agon`, apply the total-scrub renames (`ReviewEnabled`,
-   `NewReviewVerifier`, config key, `.topos/review/`).
+   Topos, drop the standalone module, apply the total-scrub renames
+   (`ReviewEnabled`, `NewReviewVerifier`, config key, `.topos/review/`).
 5. [05 Migrate latere-cli](018-migrate-latere-cli.md). Repoint imports, rename the
-   command to `latere review`, drop `x/agon`, rename the on-disk directory.
-6. [06 Agents capability page](019-agents-capability-page.md). Add the "Adversarial
-   Review" capability page in the agents platform, backed by
-   `topos/adversarial`. This is where the standalone story is replaced.
-7. [07 Retire agon](020-retire-agon.md). Tear down `agon-web` and `agon.latere.ai`,
-   archive the `latere.ai/x/agon` repository, and verify no trace remains.
+   command to `latere review`, drop the standalone module, rename the on-disk
+   directory.
 
-Steps 04, 05, and 06 are independent of each other once 03 tags; they may proceed
-in parallel. Step 07 is the barrier: it may only run after 04, 05, and 06 land,
-because it archives the repo the earlier steps migrate away from.
+Steps 04 and 05 are independent of each other once 03 tags; they may proceed in
+parallel. Two further steps close the program outside this repository: the hosted
+Topos platform gains the "Adversarial Review" capability page backed by
+`topos/adversarial`, and the standalone project's site and infrastructure are torn
+down once every consumer has migrated off it.
 
 ## Definition of done
 
-The program is complete when all of the following hold. These are the acceptance
-checks [07](020-retire-agon.md) automates.
+The program is complete when all of the following hold.
 
-- `grep -rl "latere.ai/x/agon" ../*/go.mod` returns nothing across every Latere
-  repo.
-- `grep -rniw agon ../{topos,wallfacer,latere-cli,agents}` returns nothing in
-  source, config, docs, or deploy manifests (total scrub).
-- `agon.latere.ai` no longer serves; its Terraform and `agon-web` deployment are
-  removed.
-- The `latere.ai/x/agon` repository is archived.
+- No repository, module, site, or identifier named `agon` remains, in source,
+  config, docs, or deploy manifests (total scrub).
 - Adversarial review still works end to end: `latere review` runs locally, and
   wallfacer's post-run verification runs, both against `topos/adversarial`.
 
@@ -202,10 +190,10 @@ it from Topos and nothing imports `agon`.
 
 ```mermaid
 graph LR
-  topos[topos: runtime + adversarial capability] --> agents[agents platform]
+  topos[topos: runtime + adversarial capability] --> platform[hosted Topos platform]
   topos --> wf[wallfacer]
   topos --> cli[latere-cli]
-  agents --> page[Adversarial Review capability page]
+  platform --> page[Adversarial Review capability page]
 ```
 
 ## Outcome

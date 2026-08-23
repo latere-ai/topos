@@ -18,9 +18,9 @@ dispatched_task_id: null
 
 ## Goal
 
-Repoint wallfacer from `x/agon` to `topos/adversarial`, drop the `agon` module
-dependency, and scrub every `agon` identifier from wallfacer per the total-scrub
-decision. wallfacer's behavior (post-run adversarial verification, gated at
+Repoint wallfacer from the standalone module to `topos/adversarial`, drop that
+module dependency, and scrub every `agon` identifier from wallfacer per the
+total-scrub decision. wallfacer's behavior (post-run adversarial verification, gated at
 runtime) is unchanged; only the source of the engine and the names change.
 
 This spec touches wallfacer, which lives outside the Topos module. It is planned
@@ -31,13 +31,13 @@ the wallfacer repo against the Topos tag from [03](016-capability-surface.md).
 
 **Import repoint.** Change these to the Topos paths:
 
-- `latere.ai/x/agon/pkg/adversarial` -> `latere.ai/x/topos/adversarial` in
+- the standalone module's `pkg/adversarial` -> `latere.ai/x/topos/adversarial` in
   `internal/handler/handler.go`, `internal/handler/tasks_autoimplement.go`,
   `internal/adversarial/{agon.go,session_proposer.go,noop.go,harness_critic.go}`.
-- `latere.ai/x/agon/pkg/adversarial/claude` -> `latere.ai/x/topos/adversarial/claude`
+- its `pkg/adversarial/claude` -> `latere.ai/x/topos/adversarial/claude`
   in `internal/adversarial/session_proposer.go`.
 
-**Module.** In `wallfacer/go.mod`, remove `latere.ai/x/agon` and bump
+**Module.** In `wallfacer/go.mod`, remove the standalone module and bump
 `latere.ai/x/topos` to the tag from [03](016-capability-surface.md). Run
 `go mod tidy`.
 
@@ -94,7 +94,7 @@ note below.
 
 ## Steps
 
-1. Repoint imports; bump Topos; remove `x/agon`; `go mod tidy`.
+1. Repoint imports; bump Topos; remove the standalone module; `go mod tidy`.
 2. Apply the identifier scrub across `internal/adversarial` and `internal/handler`.
 3. Update the frontend to send `"review"`/`"auto-review"`.
 4. `go build ./...`, `go test ./...`, and the wallfacer e2e/verification tests
@@ -103,7 +103,7 @@ note below.
 
 ## Acceptance
 
-- `grep -rl "latere.ai/x/agon" wallfacer/go.mod` is empty.
+- `wallfacer/go.mod` no longer requires the standalone module.
 - `grep -rniw agon wallfacer` is empty.
 - wallfacer builds and its adversarial-verification tests pass against
   `topos/adversarial`.

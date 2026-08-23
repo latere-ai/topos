@@ -23,8 +23,7 @@ describes what comes next.
 - [Session format](027-session-format.md) - the on-disk `<StateDir>/sessions/<id>/` layout, artifacts, and schema versions.
 
 The [`.archive/`](.archive/) directory holds the migration specs that folded this
-capability into Topos and the retired standalone-site spec, kept as historical
-record.
+capability into Topos, kept as historical record.
 
 ## Conventions
 
