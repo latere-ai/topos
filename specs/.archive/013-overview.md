@@ -19,10 +19,9 @@ dispatched_task_id: null
 
 Make Topos the single home for adversarial review, and remove `agon` from the
 Latere landscape entirely. Today adversarial review ships as a standalone module
-with its own repo, brand, and site (`agon.latere.ai`). That
-module already depends on Topos for its native critic backend, so the current
-dependency arrow points the wrong way: a specialization of the Topos runtime sits
-above it and imports it.
+with its own repo, brand, and site (`agon.latere.ai`). That module already depends
+on Topos for its native critic backend, so the current dependency arrow points the
+wrong way: a specialization of the Topos runtime sits above it and imports it.
 
 This program inverts that arrow. The engine, protocol, interfaces, and backends
 move into Topos under an `adversarial/` capability namespace. Every consumer

@@ -60,8 +60,8 @@ fixed in code and must be honored, not revisited:
 
 ## Why a hand-rolled HTTP client, not the Cella Go module
 
-Cella is module `latere.ai/x/sandbox`, a full control plane (sandboxd,
-podman, vault, DOKS deploy) with a large dependency tree. Topos is an
+Cella's server-side Go module is a full control plane (sandbox daemon, container
+runtime, vault, cluster deploy) with a large dependency tree. Topos is an
 *embeddable* runtime: `go.mod` has a single dependency (`google/uuid`).
 Importing the Cella module would drag a Kubernetes stack into every host binary.
 
