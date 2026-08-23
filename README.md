@@ -323,6 +323,19 @@ proposer and critic backends ship in subpackages; the
 [package documentation](https://pkg.go.dev/latere.ai/x/topos/adversarial) covers
 the full surface.
 
+## Testing
+
+```sh
+go test ./...     # the full suite
+make all          # the CI gate: lint, vet, race, and the 90% coverage threshold
+```
+
+The suite runs offline and needs no configuration: every test drives `ModelFake`
+and the local temp-directory sandbox, so nothing reaches a network or a hosted
+service. No test is skipped for a missing key, database, or endpoint, so a green
+run covers the whole module rather than a subset of it. [CONTRIBUTING.md](CONTRIBUTING.md)
+has the rest of the development workflow.
+
 ## Status
 
 Early. The root `topos` package is the supported surface and is what most callers
