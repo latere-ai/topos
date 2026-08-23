@@ -79,6 +79,6 @@ Implemented on 2026-08-07. The public surface exposes `Trace`, `TraceNode`, and
 `TraceEdge`, reached through `RunResult.Trace`. The
 `adversarial` capability reports per-fork traces under the same term.
 
-Consumers outside this module break on upgrade where they read `.Lineage`:
-`agents/internal/graphrun`, `agents/internal/api`, the `agents` frontend locale
-strings, and `latere-cli/internal/commands/eval.go`.
+Consumers outside this module break on upgrade where they read `.Lineage`: the
+hosted Topos platform's run and API layers, its frontend locale strings, and
+`latere-cli/internal/commands/eval.go`.

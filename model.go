@@ -28,7 +28,7 @@ const (
 	// ModelFake is the deterministic, network-free model for tests and the embed
 	// check. It is the basis of the record/replay reproducibility story.
 	ModelFake ModelKind = "fake"
-	// ModelLux reaches a provider through Lux (latere.ai/x/lux), the model gateway:
+	// ModelLux reaches a provider through Lux, the model gateway:
 	// cloud (lux.latere.ai, metered, owner-billed) or a local stateless luxd
 	// (LUX_STATELESS=1, BYO keys, no cloud dependency). Provider secrets stay in
 	// Lux, never in the embedding consumer.

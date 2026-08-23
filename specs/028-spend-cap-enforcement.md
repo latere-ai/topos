@@ -34,9 +34,9 @@ and none of the three `loop.Run` call sites (`topos.go:551,705,738`) supply one.
 Underneath that wiring gap is a harder blocker: **nothing in the runtime knows what
 a turn cost.** `billing.Usage.USD` is written nowhere in the SDK path.
 `models.Usage` (`models/model.go:215`) is tokens-only, and so is the wire type it
-is built from, `ir.Usage` (`pkg/llmdialect/ir/ir.go:277`). Lux computes
-`CostUSDMicro` internally (`lux/internal/proxy/tokens.go:22`) but does not return
-it to callers in any header or response field. The USD figure in the `adversarial`
+is built from, `ir.Usage` (`pkg/llmdialect/ir/ir.go:277`). Lux computes a
+per-request USD cost internally but does not return it to callers in any header or
+response field. The USD figure in the `adversarial`
 package comes from the Claude CLI's `total_cost_usd`, a separate path that does not
 reach the runtime loop.
 
