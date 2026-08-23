@@ -310,7 +310,15 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 				// A model that surfaces cancellation as a recv error (returning
 				// context.Canceled when the caller cancels mid-stream) is an
 				// interrupt, not a transport failure: keep the partial transcript.
-				if ctx.Err() != nil || errors.Is(recvErr, context.Canceled) || errors.Is(recvErr, context.DeadlineExceeded) {
+				//
+				// A stream cut short of its terminal event reports
+				// io.ErrUnexpectedEOF, which is not io.EOF and so does not end
+				// the turn cleanly. It is the same shape of loss: whatever text
+				// already arrived is durable, so capture it rather than dropping
+				// the turn and returning a nil Result.
+				if ctx.Err() != nil || errors.Is(recvErr, context.Canceled) ||
+					errors.Is(recvErr, context.DeadlineExceeded) ||
+					errors.Is(recvErr, io.ErrUnexpectedEOF) {
 					return captureInterrupted(recvErr)
 				}
 				return nil, fmt.Errorf("loop: stream recv (iter %d): %w", iter, recvErr)

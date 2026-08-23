@@ -959,3 +959,58 @@ func hasErrorResultContaining(transcript []models.Message, sub string) bool {
 	}
 	return false
 }
+
+// truncatedStream emits durable text and then reports the upstream stream
+// ending before its terminal event, which is what luxsdk surfaces as
+// io.ErrUnexpectedEOF when an SSE response is cut short of message_stop.
+type truncatedStream struct{ pos int }
+
+func (s *truncatedStream) Recv() (models.Event, error) {
+	if s.pos == 0 {
+		s.pos++
+		return models.Event{Kind: models.KindTextDelta, TextDelta: "partial"}, nil
+	}
+	return models.Event{}, io.ErrUnexpectedEOF
+}
+func (s *truncatedStream) Close() error { return nil }
+
+type truncatedModel struct{}
+
+func (m *truncatedModel) Stream(_ context.Context, _ models.Request) (models.Stream, error) {
+	return &truncatedStream{}, nil
+}
+
+// TestLoopTruncatedStreamReturnsPartialTranscript pins that a stream cut short
+// of its terminal event keeps the text it already delivered.
+//
+// The distinction matters because io.ErrUnexpectedEOF is not io.EOF: a plain
+// transport failure drops the turn entirely, which is right when nothing
+// arrived, but a truncated stream has already produced durable assistant text.
+// Treating it as a transport failure would discard progress the host could
+// otherwise persist and resume from, and would do so silently -- the run simply
+// returns a nil Result.
+func TestLoopTruncatedStreamReturnsPartialTranscript(t *testing.T) {
+	cfg := baseCfg(&truncatedModel{}, tools.Builtins())
+
+	result, err := loop.Run(context.Background(), cfg, nil)
+
+	if !errors.Is(err, loop.ErrInterrupted) {
+		t.Fatalf("err = %v, want it to wrap loop.ErrInterrupted", err)
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("err = %v, want it to also wrap io.ErrUnexpectedEOF", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil; a truncated turn must still return its partial result")
+	}
+	assist, ok := lastByRole(result.Transcript, "assistant")
+	if !ok {
+		t.Fatal("transcript missing the partial assistant turn")
+	}
+	if assist.Content != "partial" {
+		t.Fatalf("partial assistant content = %q, want %q", assist.Content, "partial")
+	}
+	if result.FinalText != "partial" {
+		t.Fatalf("FinalText = %q, want %q", result.FinalText, "partial")
+	}
+}
