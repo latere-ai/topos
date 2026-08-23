@@ -1,11 +1,11 @@
 // Package critic provides an [adversarial.Critic] backed by the topos runtime
 // (latere.ai/x/topos).
 //
-// An embedder running inside the topos world (wallfacer, the agents platform)
-// uses [NewCriticFactory] to run critic forks through the governed runtime:
-// model routing via Lux or Direct, a topos sandbox (local or Cella), and a
-// trace record, instead of shelling out to local CLIs. The proposer stays on
-// the claude CLI; see the claude backend package.
+// An embedder running inside the topos world (wallfacer, the hosted Topos
+// platform) uses [NewCriticFactory] to run critic forks through the governed
+// runtime: model routing via Lux or Direct, a topos sandbox (local or Cella),
+// and a trace record, instead of shelling out to local CLIs. The proposer
+// stays on the claude CLI; see the claude backend package.
 //
 // Each round runs one topos agent over the assembled critic prompt (which
 // already contains the diff) and returns the agent's text verbatim as

@@ -7,7 +7,7 @@ concede, and surfaces only the disputes that survive. It is imported as a librar
 from Topos (`latere.ai/x/topos/adversarial`), not run as a standalone tool: the
 developer CLI is `latere review` in
 [latere-cli](https://github.com/latere-ai/latere-cli), and the same engine is
-embedded by wallfacer and the agents platform.
+embedded by wallfacer and the hosted Topos platform.
 
 These specs are the current-state contracts for the engine and its protocol. They
 describe what the code does today, not a build history. The roadmap at the bottom

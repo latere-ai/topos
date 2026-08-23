@@ -48,9 +48,9 @@ no option for it yet.
 
 `adversarial/critic.NewCriticFactory(cfg)` runs each critic as a single read-only
 agent in the Topos runtime instead of a local subprocess. This is for embedders
-already inside the Topos world (wallfacer, the agents platform): model routing
-goes through Lux or Direct, execution runs in a Topos sandbox (local or Cella),
-and every fork is a distinct trace node. Secrets stay in the gateway and billing
+already inside the Topos world (wallfacer, the hosted Topos platform): model
+routing goes through Lux or Direct, execution runs in a Topos sandbox (local or
+Cella), and every fork is a distinct trace node. Secrets stay in the gateway and billing
 is centralized.
 
 `Config` carries `Model` (`xtopos.ModelOptions`: Lux, Direct, or Fake, or a

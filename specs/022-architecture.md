@@ -77,8 +77,8 @@ Adversarial Review is embedded, not run directly:
 - **`latere review`** (latere-cli) is the developer CLI: it forks the real Claude
   Code session as the proposer and routes critics through Lux on the user's Latere
   identity.
-- **wallfacer** and the **agents platform** embed the engine inside the Topos
-  world, running critics through the governed runtime (model routing via Lux, Cella
+- **wallfacer** and the **hosted Topos platform** embed the engine inside the
+  Topos world, running critics through the governed runtime (model routing via Lux, Cella
   sandboxes, trace).
 
 The canonical embedding pattern is in [Engine API](024-engine-api.md).
