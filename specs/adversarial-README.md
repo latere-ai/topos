@@ -84,7 +84,7 @@ Adversarial Review productizes adversarial-debate theory. The soundness case res
 on the 2023 *Doubly-Efficient Debate* result, which extends the 2018 PSPACE
 intuition to stochastic systems and proves soundness under compute asymmetry: the
 formal license for applying debate to LLMs at all. The
-[agents-byzantine-tolerance](https://github.com/changkun/agents-byzantine-tolerance)
+[agents-verification](https://github.com/changkun/agents-verification)
 research line asks "is Adversarial Review sound under condition X?"; the capability
 asks "given the answer, what does the engine become?" Each direction below is gated
 on an empirical result.
