@@ -332,9 +332,11 @@ make all          # the CI gate: lint, vet, race, and the 90% coverage threshold
 
 The suite runs offline and needs no configuration: every test drives `ModelFake`
 and the local temp-directory sandbox, so nothing reaches a network or a hosted
-service. No test is skipped for a missing key, database, or endpoint, so a green
-run covers the whole module rather than a subset of it. [CONTRIBUTING.md](CONTRIBUTING.md)
-has the rest of the development workflow.
+service. A default run skips nothing for a missing key, database, or endpoint, so
+a green run covers the whole module rather than a subset of it. Two tests skip on
+an environment that cannot express what they assert, running as root and running
+off POSIX. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest of the development
+workflow.
 
 ## Status
 

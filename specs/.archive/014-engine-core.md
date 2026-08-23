@@ -85,8 +85,8 @@ Port the engine tests alongside (`adversarial_test.go`: `TestAssemblePrompt`,
 - `topos/adversarial` builds as part of `go build ./...`.
 - The ported engine tests pass under `go test ./adversarial/...`.
 - No import of the standalone module remains under `adversarial/`.
-- Coverage on the ported package is at or above what it was in `agon` (the engine
-  tests move with it, so no regression).
+- Coverage on the ported package is at or above what it was in the standalone
+  module (the engine tests move with it, so no regression).
 
 ## Risks and decisions
 

@@ -177,8 +177,8 @@ down once every consumer has migrated off it.
 
 The program is complete when all of the following hold.
 
-- No repository, module, site, or identifier named `agon` remains, in source,
-  config, docs, or deploy manifests (total scrub).
+- No repository, module, site, or identifier named `agon` remains in wallfacer or
+  latere-cli, in source, config, docs, or deploy manifests (total scrub).
 - Adversarial review still works end to end: `latere review` runs locally, and
   wallfacer's post-run verification runs, both against `topos/adversarial`.
 
