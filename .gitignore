@@ -2,3 +2,6 @@
 /coverage.gate.out
 /coverage.html
 /bin/
+
+# Agent instructions live in AGENTS.md; CLAUDE.md is a local symlink to it.
+CLAUDE.md
