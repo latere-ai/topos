@@ -538,11 +538,9 @@ func executeToolCall(
 	tr, invokeErr := tool.Invoke(ctx, phase.ModifiedInput, cfg.Sandbox, toolSandboxID)
 
 	if invokeErr != nil || tr.IsError {
-		errStr := ""
+		errStr := tr.Content
 		if invokeErr != nil {
 			errStr = invokeErr.Error()
-		} else {
-			errStr = tr.Content
 		}
 		cfg.Bus.Dispatch(hooks.EventPostToolUseFailure, &hooks.PostToolUseFailurePayload{
 			Version:   "1",

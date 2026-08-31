@@ -246,7 +246,7 @@ func Lookup(name string) Aspect {
 // cross-aspect substring drift detection cannot run. Topic discipline
 // becomes the critic's responsibility once it has declared.
 func Auto(criticIndex, forkCount int, priorTopics []string) Aspect {
-	avoid := ""
+	var avoid string
 	if len(priorTopics) > 0 {
 		avoid = "Other critics in this run have claimed the following topics; pick a\ntopic that is not a near-duplicate of any of them:\n"
 		for _, t := range priorTopics {

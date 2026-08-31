@@ -23,6 +23,7 @@ package fake
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sync"
 
@@ -68,7 +69,10 @@ func (m *Model) Stream(_ context.Context, req models.Request) (models.Stream, er
 		}}, nil
 	}
 
-	input, _ := json.Marshal(map[string]string{"command": "echo " + userMsg})
+	input, err := json.Marshal(map[string]string{"command": "echo " + userMsg})
+	if err != nil {
+		return nil, fmt.Errorf("fake model: marshal bash tool input: %w", err)
+	}
 	return &cannedStream{events: []models.Event{
 		{Kind: models.KindTextDelta, TextDelta: "I will run your prompt in the sandbox."},
 		{Kind: models.KindToolCallDone, ToolCall: &models.ToolCall{
