@@ -15,7 +15,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"os"
 
 	"latere.ai/x/topos"
 	"latere.ai/x/topos/models"
@@ -57,7 +57,7 @@ func text(s string, stop models.StopReason) []models.Event {
 	}
 }
 
-func main() {
+func run() error {
 	// ModelOptions.Client plugs the scripted model straight in. A host would
 	// instead set Kind (ModelLux / ModelDirect) and leave Client nil.
 	r, err := topos.NewRunner(topos.Options{
@@ -65,7 +65,7 @@ func main() {
 		Model:     topos.ModelOptions{Client: scriptedModel{peer: "reviewer"}},
 	})
 	if err != nil {
-		log.Fatalf("new runner: %v", err)
+		return fmt.Errorf("new runner: %w", err)
 	}
 
 	// Dynamic + OrchestratorWorker (the default topology): the entry agent gets
@@ -85,7 +85,7 @@ func main() {
 
 	res, err := r.Run(context.Background(), region, "ship the change")
 	if err != nil {
-		log.Fatalf("run: %v", err)
+		return fmt.Errorf("run: %w", err)
 	}
 
 	fmt.Println("final:", res.Final)
@@ -97,6 +97,8 @@ func main() {
 	for _, e := range res.Trace.Edges {
 		fmt.Printf("  %s -> %s (%s)\n", e.From, e.To, e.Kind)
 	}
+
+	return nil
 }
 
 // canned adapts a fixed slice of events to a models.Stream.
@@ -117,3 +119,10 @@ func (s *cannedStream) Recv() (models.Event, error) {
 }
 
 func (s *cannedStream) Close() error { return nil }
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}

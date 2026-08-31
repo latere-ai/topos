@@ -23,7 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"os"
 
 	"latere.ai/x/topos"
 	"latere.ai/x/topos/graph"
@@ -71,14 +71,14 @@ func (echoModel) Stream(_ context.Context, req models.Request) (models.Stream, e
 	}}, nil
 }
 
-func main() {
+func run() error {
 	// Decode the persisted authored graph, then lower it to the runtime shape.
 	// ToRuntime validates the authored fields and the structure, and maps each
 	// coordination to autonomy+topology (lead -> dynamic/orchestrator-worker,
 	// sequence -> pinned).
 	var authored graph.Graph
 	if err := json.Unmarshal([]byte(persisted), &authored); err != nil {
-		log.Fatalf("decode authored graph: %v", err)
+		return fmt.Errorf("decode authored graph: %w", err)
 	}
 
 	// Resolve agent references against the registry before lowering. The
@@ -93,20 +93,20 @@ func main() {
 		return a, nil
 	})
 	if err != nil {
-		log.Fatalf("resolve agent refs: %v", err)
+		return fmt.Errorf("resolve agent refs: %w", err)
 	}
 	g, err := resolved.ToRuntime()
 	if err != nil {
-		log.Fatalf("lower to runtime: %v", err)
+		return fmt.Errorf("lower to runtime: %w", err)
 	}
 
 	r, err := topos.NewRunner(topos.Options{SessionID: "authored", Model: topos.ModelOptions{Client: echoModel{}}})
 	if err != nil {
-		log.Fatalf("new runner: %v", err)
+		return fmt.Errorf("new runner: %w", err)
 	}
 	res, err := r.RunGraph(context.Background(), g, "design the feature")
 	if err != nil {
-		log.Fatalf("run graph: %v", err)
+		return fmt.Errorf("run graph: %w", err)
 	}
 
 	fmt.Println("final:", res.Final)
@@ -114,6 +114,8 @@ func main() {
 	for _, n := range res.Trace.Nodes {
 		fmt.Printf("  %s  role=%s  status=%s\n", n.ID, n.Role, n.Status)
 	}
+
+	return nil
 }
 
 type cannedStream struct {
@@ -131,3 +133,10 @@ func (s *cannedStream) Recv() (models.Event, error) {
 }
 
 func (s *cannedStream) Close() error { return nil }
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}

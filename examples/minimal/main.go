@@ -12,12 +12,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"os"
 
 	"latere.ai/x/topos"
 )
 
-func main() {
+func run() error {
 	// A Runner is built from Options. ModelFake is a deterministic, network-free
 	// model: turn one runs the prompt in the sandbox, turn two reports done.
 	r, err := topos.NewRunner(topos.Options{
@@ -25,7 +25,7 @@ func main() {
 		Model:     topos.ModelOptions{Kind: topos.ModelFake},
 	})
 	if err != nil {
-		log.Fatalf("new runner: %v", err)
+		return fmt.Errorf("new runner: %w", err)
 	}
 
 	// A Region is one unit of work. Pinned runs a deterministic chain; with a
@@ -38,7 +38,7 @@ func main() {
 
 	res, err := r.Run(context.Background(), region, "say hello")
 	if err != nil {
-		log.Fatalf("run: %v", err)
+		return fmt.Errorf("run: %w", err)
 	}
 
 	fmt.Println("final:", res.Final)
@@ -47,5 +47,14 @@ func main() {
 	fmt.Println("trace:")
 	for _, n := range res.Trace.Nodes {
 		fmt.Printf("  %s  status=%s  sandbox=%s\n", n.ID, n.Status, n.Sandbox)
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
 }

@@ -16,7 +16,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 
 	"latere.ai/x/topos"
@@ -24,7 +23,7 @@ import (
 	"latere.ai/x/topos/sandbox/cella"
 )
 
-func main() {
+func run() error {
 	opts := topos.Options{
 		SessionID: "sandbox-demo",
 		Model:     topos.ModelOptions{Kind: topos.ModelFake},
@@ -49,7 +48,7 @@ func main() {
 
 	r, err := topos.NewRunner(opts)
 	if err != nil {
-		log.Fatalf("new runner: %v", err)
+		return fmt.Errorf("new runner: %w", err)
 	}
 
 	res, err := r.Run(ctx, topos.Region{
@@ -57,11 +56,20 @@ func main() {
 		Entry:    topos.AgentSpec{Name: "solo", Role: "solo", Tools: []string{"bash"}},
 	}, "say hello")
 	if err != nil {
-		log.Fatalf("run: %v", err)
+		return fmt.Errorf("run: %w", err)
 	}
 
 	fmt.Println("final:", res.Final)
 	for _, n := range res.Trace.Nodes {
 		fmt.Printf("ran %s in sandbox %s\n", n.ID, n.Sandbox)
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
 }

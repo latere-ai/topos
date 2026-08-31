@@ -16,7 +16,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"os"
 
 	"latere.ai/x/topos"
 	"latere.ai/x/topos/models"
@@ -41,10 +41,10 @@ func (echoModel) Stream(_ context.Context, req models.Request) (models.Stream, e
 	}}, nil
 }
 
-func main() {
+func run() error {
 	r, err := topos.NewRunner(topos.Options{SessionID: "graph", Model: topos.ModelOptions{Client: echoModel{}}})
 	if err != nil {
-		log.Fatalf("new runner: %v", err)
+		return fmt.Errorf("new runner: %w", err)
 	}
 
 	// Two regions, one graph. "plan" is dynamic (its entry could delegate over a
@@ -68,7 +68,7 @@ func main() {
 
 	res, err := r.RunGraph(context.Background(), g, "design the feature")
 	if err != nil {
-		log.Fatalf("run graph: %v", err)
+		return fmt.Errorf("run graph: %w", err)
 	}
 
 	fmt.Println("final:", res.Final)
@@ -80,6 +80,8 @@ func main() {
 	for _, e := range res.Trace.Edges {
 		fmt.Printf("  %s -> %s (%s)\n", e.From, e.To, e.Kind)
 	}
+
+	return nil
 }
 
 type cannedStream struct {
@@ -97,3 +99,10 @@ func (s *cannedStream) Recv() (models.Event, error) {
 }
 
 func (s *cannedStream) Close() error { return nil }
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
