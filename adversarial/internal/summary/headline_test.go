@@ -1,7 +1,7 @@
 package summary
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 
 	"latere.ai/x/topos/adversarial/internal/ledger"
