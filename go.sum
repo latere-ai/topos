@@ -2,5 +2,7 @@ github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
 github.com/goccy/go-yaml v1.19.2/go.mod h1:XBurs7gK8ATbW4ZPGKgcbrY1Br56PdM69F7LkFRi1kA=
 latere.ai/x/ci-gate v0.19.0 h1:YhZS7mtk92+REiChs05hH+QOtZ6jhmXnHb5xGaywOqs=
 latere.ai/x/ci-gate v0.19.0/go.mod h1:Iw6RuLhPgpP+hRfVTb0UxnygMyZIi1U7E0/iM5fbAhA=
+latere.ai/x/ci-gate v0.24.0 h1:+3JWga93U/TQB9Bw83797DDyJuHOtYRovNicrNLxHJM=
+latere.ai/x/ci-gate v0.24.0/go.mod h1:Iw6RuLhPgpP+hRfVTb0UxnygMyZIi1U7E0/iM5fbAhA=
 latere.ai/x/pkg v0.41.0 h1:MeXiO6vxBLniOVxbQgWrGckFbZLg249ElYj1ifmcMS4=
 latere.ai/x/pkg v0.41.0/go.mod h1:xP+/sQTNm74Tv4eCSYyqqyXU7x9LhBDrJ9BrlMelo7w=
