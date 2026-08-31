@@ -1,0 +1,38 @@
+# The per-push gate configuration for topos. Every check runs from
+# latere.ai/x/ci-gate, pinned in go.mod, so a gate that fails on a runner
+# fails the same way on a laptop.
+
+hermetic:
+  # Two directories, for binaries the suite really executes. /bin has sh,
+  # which the bash tool and sandbox/local run commands through. /usr/bin has
+  # git, which adversarial/input shells out to for the diff it reviews, and
+  # the fake CLI harnesses in adversarial/claude reach through the same
+  # shell. With allow: [] those packages fail rather than skip, so both
+  # entries are measured rather than assumed.
+  allow: [/usr/bin, /bin]
+
+modernize:
+  # newexpr rewrites pointer helpers to new(v) and inlines the call sites
+  # unevenly, leaving the helper with no callers and giving an untyped
+  # constant argument the wrong default type. errorsastype rewrites errors.As
+  # to errors.AsType[T], whose type parameter a local non-error interface
+  # target does not satisfy, so the rewrite does not compile. lateregate
+  # checks both fixers still exist, because `go fix` rejects an unknown
+  # -name=false and the gate would otherwise pass having run nothing.
+  disable: [newexpr, errorsastype]
+
+spec:
+  dir: specs
+  # Two vocabularies meet in one tree. The runtime specs are retrospective
+  # records of shipped behaviour and read `complete`; the adversarial specs
+  # follow their own lifecycle and read `current` for what ships today.
+  # Closed at what the tree uses, so a status invented in review is caught.
+  status: [complete, current]
+  require: [title, status]
+  # No index rule: specs/README.md is prose with a per-spec reading order and
+  # carries no status table, so there is no row for a spec to disagree with.
+  # Both README files are excluded because neither is a spec.
+  exclude: [README.md, adversarial-README.md]
+  # Markdown tables are how these specs carry their surface descriptions, and
+  # a row whose cell count drifts renders as silently missing columns.
+  tables: true

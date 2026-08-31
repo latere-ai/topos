@@ -1,5 +1,11 @@
 name: ci
 
+# Every Go gate this repository has runs through latere-ai/ci's reusable
+# pipeline, which probes the Makefile and runs the targets it finds. The
+# checks live in latere.ai/x/ci-gate, pinned in go.mod, so each of them runs
+# identically from a laptop: `make test`, `make cover`, `make spec-lint` and
+# the rest need nothing but this checkout.
+
 on:
   push:
     branches: [main]
@@ -9,48 +15,5 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: vet
-        run: go vet ./...
-
-      - name: lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.13.1
-
-      - name: modernize
-        run: make lint-modernize
-
-      - name: test (race) + coverage
-        run: go test -race -coverprofile=coverage.out -timeout 120s ./...
-
-      - name: coverage gate (>= 90%)
-        run: |
-          # examples/ are runnable demos with no tests; they compile and
-          # run under `go test ./...` above but are filtered out of the
-          # gate so demo code does not dilute the production total.
-          grep -v '/examples/' coverage.out > coverage.gate.out
-          total=$(go tool cover -func=coverage.gate.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')
-          echo "total coverage (excluding examples): ${total}%"
-          awk "BEGIN { exit !(${total} >= 90) }" || { echo "coverage ${total}% is below 90%"; exit 1; }
-
-  vuln:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+  verify:
+    uses: latere-ai/ci/.github/workflows/go-verify.yml@v1
