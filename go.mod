@@ -6,7 +6,7 @@ require latere.ai/x/pkg v0.41.0
 
 require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	latere.ai/x/ci-gate v0.25.1 // indirect
+	latere.ai/x/ci-gate v0.25.2 // indirect
 )
 
 tool latere.ai/x/ci-gate/cmd/lateregate
