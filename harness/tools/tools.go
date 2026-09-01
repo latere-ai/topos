@@ -15,7 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"unicode/utf8"
 
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/sandbox"
@@ -41,18 +40,6 @@ func validateExecPhase(tool string, result sandbox.ExecResult) (models.ToolResul
 		return models.ToolResult{}, false
 	}
 	return errResult("%s: command did not exit normally (phase %q)", tool, result.Phase), true
-}
-
-// truncateUTF8 caps bytes without retaining a partial trailing rune.
-func truncateUTF8(data []byte, limit int) ([]byte, bool) {
-	if len(data) <= limit {
-		return data, false
-	}
-	end := limit
-	for end > 0 && !utf8.RuneStart(data[end]) {
-		end--
-	}
-	return data[:end], true
 }
 
 // Registry is an ordered, name-indexed collection of Tools.

@@ -12,6 +12,8 @@ import (
 
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/sandbox"
+
+	"latere.ai/x/pkg/sanitize"
 )
 
 // This file adds the first-class file tools that make an agent a reliable coding
@@ -76,10 +78,14 @@ func (t *ReadFileTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	if err != nil {
 		return errResult("read_file: %v", err), nil
 	}
-	data, truncatedBytes := truncateUTF8(data, maxReadBytes)
+	text := string(data)
+	truncatedBytes := len(text) > maxReadBytes
+	if truncatedBytes {
+		text = sanitize.TruncateBytes(text, maxReadBytes)
+	}
 
-	lines := strings.Split(string(data), "\n")
-	if len(data) > 0 && data[len(data)-1] == '\n' {
+	lines := strings.Split(text, "\n")
+	if len(text) > 0 && text[len(text)-1] == '\n' {
 		lines = lines[:len(lines)-1]
 	}
 	start := 0

@@ -11,6 +11,8 @@ import (
 
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/sandbox"
+
+	"latere.ai/x/pkg/sanitize"
 )
 
 // This file adds the search half of the Claude-Code core surface: grep (search
@@ -165,8 +167,8 @@ func searchExec(ctx context.Context, sb sandbox.Provider, sandboxID, tool string
 	if strings.TrimSpace(out) == "" {
 		return models.ToolResult{Content: emptyMsg}, nil
 	}
-	if truncated, ok := truncateUTF8([]byte(out), maxSearchBytes); ok {
-		out = string(truncated) + "\n... (results truncated)"
+	if len(out) > maxSearchBytes {
+		out = sanitize.TruncateBytes(out, maxSearchBytes) + "\n... (results truncated)"
 	}
 	return models.ToolResult{Content: out}, nil
 }
