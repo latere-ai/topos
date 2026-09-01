@@ -17,6 +17,8 @@ import (
 	"latere.ai/x/topos/adversarial/internal/critic"
 	"latere.ai/x/topos/adversarial/internal/ledger"
 	"latere.ai/x/topos/adversarial/internal/state"
+
+	"latere.ai/x/pkg/wait"
 )
 
 // Proposer is the orchestrator's view of the proposer driver.
@@ -128,26 +130,19 @@ func (e *Engine) startHeartbeat(start time.Time, prefix string) func() {
 	if e.Progress == nil || tick <= 0 {
 		return func() {}
 	}
-	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		t := time.NewTicker(tick)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-t.C:
-				e.progf("%s: still running, %ds elapsed", prefix, int(time.Since(start).Seconds()))
-			}
-		}
+		wait.Every(ctx, tick, func(context.Context) {
+			e.progf("%s: still running, %ds elapsed", prefix, int(time.Since(start).Seconds()))
+		})
 	}()
 	// stop() blocks until the goroutine has returned, so a tick that is
 	// mid-write to e.Progress completes before the main loop's next write
 	// to the same writer. Without the wait the two writes race on a bare
 	// os.Stderr.
-	return func() { close(done); <-finished }
+	return func() { cancel(); <-finished }
 }
 
 func (e *Engine) progf(format string, args ...any) {
