@@ -100,8 +100,8 @@ func TestAtomicWriteRefusesExistingTemp(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Sanity: same target written twice - second wins (rename overwrites
-	// is the OS guarantee). The interesting invariant is that an
-	// in-flight temp file cannot collide because of randSuffix().
+	// is the OS guarantee). An in-flight temp file cannot collide because
+	// atomicfile creates it with a random name.
 	if err := sess.AtomicWrite("end.json", []byte("a")); err != nil {
 		t.Fatal(err)
 	}

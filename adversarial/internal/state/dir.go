@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"latere.ai/x/pkg/atomicfile"
 )
 
 // Session is one adversarial run's on-disk handle.
@@ -49,37 +51,14 @@ func (s *Session) Path(rel string) string {
 	return filepath.Join(s.Root, rel)
 }
 
-// AtomicWrite writes data to <Root>/<rel> via temp file + rename.
-// Fsyncs file then parent. Sets perm 0o644.
+// AtomicWrite writes data to <Root>/<rel> via temp file + rename, fsyncing
+// the file and then its parent directory. Sets perm 0o644.
 func (s *Session) AtomicWrite(rel string, data []byte) error {
 	abs := s.Path(rel)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return err
 	}
-	tmp := abs + ".tmp." + randSuffix()
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, abs); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return fsync(filepath.Dir(abs))
+	return atomicfile.WriteSync(abs, data, 0o644)
 }
 
 // AppendLine appends data + "\n" to <Root>/<rel>.
