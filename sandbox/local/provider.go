@@ -29,11 +29,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"latere.ai/x/topos/sandbox"
+
+	"latere.ai/x/pkg/relpath"
 )
 
 // Provider implements [sandbox.Provider] using the local filesystem and
@@ -354,17 +355,11 @@ func (p *Provider) resolve(id, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	full := filepath.Join(dir, path)
-	rel, err := filepath.Rel(dir, full)
-	if err != nil || escapes(rel) {
+	full, err := relpath.Join(dir, path)
+	if err != nil {
 		return "", fmt.Errorf("%w: %q", ErrPathEscape, path)
 	}
 	return full, nil
-}
-
-// escapes reports whether a cleaned relative path steps above its root.
-func escapes(rel string) bool {
-	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // buildEnv converts a map to a slice of "KEY=VALUE" entries suitable for

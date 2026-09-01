@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"latere.ai/x/pkg/relpath"
 )
 
 // ErrConfined is returned by a Confine-wrapped Provider when a path argument
@@ -80,26 +82,23 @@ func Confine(inner Provider, root string) Provider {
 // allow validates a single path argument. It returns ErrConfined when the path is
 // absolute-outside-root, escapes root via "..", or is deny-listed.
 func (c *confined) allow(p string) error {
-	clean := filepath.Clean(p)
-	rel := clean
-	if filepath.IsAbs(clean) {
-		r, err := filepath.Rel(c.root, clean)
-		if err != nil || escapes(r) {
+	rel := filepath.Clean(p)
+	if filepath.IsAbs(rel) {
+		r, err := filepath.Rel(c.root, rel)
+		if err != nil {
+			return fmt.Errorf("%w: absolute path %q outside root %q", ErrConfined, p, c.root)
+		}
+		if _, err := relpath.Clean(filepath.ToSlash(r)); err != nil {
 			return fmt.Errorf("%w: absolute path %q outside root %q", ErrConfined, p, c.root)
 		}
 		rel = r
-	} else if escapes(clean) {
+	} else if _, err := relpath.Clean(filepath.ToSlash(rel)); err != nil {
 		return fmt.Errorf("%w: path %q escapes root %q", ErrConfined, p, c.root)
 	}
 	if isSecretPath(rel) {
 		return fmt.Errorf("%w: secret path %q", ErrConfined, p)
 	}
 	return nil
-}
-
-// escapes reports whether a cleaned relative path steps above its root.
-func escapes(rel string) bool {
-	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (c *confined) Create(ctx context.Context, opts CreateOptions) (Sandbox, error) {
