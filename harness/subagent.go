@@ -10,10 +10,11 @@ package harness
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"latere.ai/x/topos/billing"
 	"latere.ai/x/topos/harness/hooks"
+
+	"cmp"
 )
 
 // Permissions is an agent's delegated authority: the scopes it holds, the tool
@@ -154,28 +155,17 @@ func intersect(have, want []string) []string {
 // limit (unlimited) passes the request through.
 func subAllocate(parent, req billing.Budget) billing.Budget {
 	return billing.Budget{
-		LimitUSD:      capFloat(parent.LimitUSD, req.LimitUSD),
-		LimitTokens:   capInt(parent.LimitTokens, req.LimitTokens),
-		LimitWallTime: capDuration(parent.LimitWallTime, req.LimitWallTime),
+		LimitUSD:      capTo(parent.LimitUSD, req.LimitUSD),
+		LimitTokens:   capTo(parent.LimitTokens, req.LimitTokens),
+		LimitWallTime: capTo(parent.LimitWallTime, req.LimitWallTime),
 	}
 }
 
-func capFloat(parent, req float64) float64 {
-	if parent > 0 && (req == 0 || req > parent) {
-		return parent
-	}
-	return req
-}
-
-func capInt(parent, req int) int {
-	if parent > 0 && (req == 0 || req > parent) {
-		return parent
-	}
-	return req
-}
-
-func capDuration(parent, req time.Duration) time.Duration {
-	if parent > 0 && (req == 0 || req > parent) {
+// capTo bounds a requested limit by the parent's. A zero request inherits the
+// parent's limit; a zero parent means unlimited and passes the request through.
+func capTo[T cmp.Ordered](parent, req T) T {
+	var zero T
+	if parent > zero && (req == zero || req > parent) {
 		return parent
 	}
 	return req
