@@ -26,8 +26,9 @@ spec:
   # Two vocabularies meet in one tree. The runtime specs are retrospective
   # records of shipped behaviour and read `complete`; the adversarial specs
   # follow their own lifecycle and read `current` for what ships today.
-  # Closed at what the tree uses, so a status invented in review is caught.
-  status: [complete, current]
+  # `archived` is the terminal status for both of them. Closed at what the tree
+  # uses, so a status invented in review is caught.
+  status: [complete, current, archived]
   require: [title, status]
   # No index rule: specs/README.md is prose with a per-spec reading order and
   # carries no status table, so there is no row for a spec to disagree with.
@@ -36,3 +37,10 @@ spec:
   # Markdown tables are how these specs carry their surface descriptions, and
   # a row whose cell count drifts renders as silently missing columns.
   tables: true
+  # `complete` is not terminal here: the runtime specs are retrospective
+  # records of behaviour that ships today, kept at the root because that is
+  # what they are for. Retiring one sets `archived`, and the rule then holds it
+  # to the same vocabulary and required frontmatter as the rest.
+  archive:
+    dir: .archive
+    statuses: [archived]
