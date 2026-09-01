@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"latere.ai/x/pkg/sanitize"
 )
 
 // FormatClaudeStreamEvent turns one line of `claude --output-format
@@ -84,10 +86,10 @@ func summarizeToolInput(input json.RawMessage) string {
 	}
 	for _, key := range []string{"file_path", "path", "command", "pattern", "url", "query"} {
 		if v, ok := generic[key].(string); ok && v != "" {
-			return clip(v, summaryWidth)
+			return sanitize.Truncate(v, summaryWidth)
 		}
 	}
-	return clip(string(input), summaryWidth)
+	return sanitize.Truncate(string(input), summaryWidth)
 }
 
 // summaryWidth is the column budget for tool/command/path
@@ -102,7 +104,7 @@ const summaryWidth = 120
 // reasoning about a multi-clause claim.
 const textPreviewWidth = 280
 
-// previewLine returns the first line of s, ellipsized at width.
+// previewLine returns the first line of s, ellipsized at width runes.
 // Used for thinking/text events where the full body is usually
 // multi-paragraph and would dominate the progress stream.
 func previewLine(s string, width int) string {
@@ -110,14 +112,7 @@ func previewLine(s string, width int) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
 	}
-	return clip(s, width)
-}
-
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return sanitize.Truncate(s, width)
 }
 
 // FormatCodexStreamEvent is the codex counterpart of
@@ -163,7 +158,7 @@ func FormatCodexStreamEvent(line []byte) string {
 		}
 		return fmt.Sprintf("  → %s: %s", cmp.Or(ev.Item.Name, "tool"), summary)
 	case "command_execution", "shell_command":
-		return "  → shell: " + clip(ev.Item.Command, summaryWidth)
+		return "  → shell: " + sanitize.Truncate(ev.Item.Command, summaryWidth)
 	case "reasoning", "agent_reasoning", "reasoning_summary":
 		// Reasoning models (o1/o3 family) emit summary-shaped
 		// reasoning events. Surfacing them as "thinking:" lines
@@ -215,7 +210,7 @@ func formatAgentMessageLines(text string) string {
 		if strings.HasPrefix(line, "# Critic ") {
 			continue
 		}
-		out = append(out, "  text: "+clip(line, textPreviewWidth))
+		out = append(out, "  text: "+sanitize.Truncate(line, textPreviewWidth))
 		if len(out) >= agentMessagePreviewLines {
 			break
 		}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestFormatClaudeStreamEventToolUse pins the operator-facing string
@@ -341,5 +342,17 @@ func TestSummarizeToolInput_Variants(t *testing.T) {
 func TestSummarizeToolInput_BadJSON(t *testing.T) {
 	if got := summarizeToolInput([]byte("{not-json")); got != "" {
 		t.Errorf("bad JSON should return empty: got %q", got)
+	}
+}
+
+// A CJK preview clipped at the byte offset used to end inside a rune and
+// emit invalid UTF-8 into the progress stream.
+func TestPreviewLineKeepsUTF8Whole(t *testing.T) {
+	got := previewLine(strings.Repeat("日", textPreviewWidth+20), textPreviewWidth)
+	if !utf8.ValidString(got) {
+		t.Fatalf("previewLine emitted invalid UTF-8: %q", got)
+	}
+	if !strings.HasSuffix(got, "…") || utf8.RuneCountInString(got) != textPreviewWidth+1 {
+		t.Fatalf("got %d runes, want %d plus the ellipsis", utf8.RuneCountInString(got), textPreviewWidth)
 	}
 }
