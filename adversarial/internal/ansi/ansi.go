@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ansi holds the minimal set of ANSI escape codes shared by the
 // terminal-output packages (round progress lines and the rendered
 // summary). It is a leaf package with no internal imports so any

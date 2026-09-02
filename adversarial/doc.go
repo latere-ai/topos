@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package adversarial is a topos capability: a proposer agent and one or more
 // critic agents cross-examine a diff over bounded rounds, with per-fork traces.
 // It is a use of the topos runtime, not a peer of it — multi-agent spawning with
