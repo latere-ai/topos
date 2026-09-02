@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Copyright 2026 The Latere Authors. All rights reserved.
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
@@ -26,6 +29,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/sandbox"
 )
@@ -69,7 +74,7 @@ func New(opts Options) *Provider {
 	}
 	hc := opts.HTTPClient
 	if hc == nil {
-		hc = &http.Client{}
+		hc = otel.HTTPClient()
 	}
 	return &Provider{
 		baseURL: strings.TrimRight(opts.BaseURL, "/"),
