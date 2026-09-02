@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+
 # The verification contract for topos.
 #
 # Every target here is one latere-ai/ci's go-verify workflow probes for and
@@ -5,9 +8,7 @@
 # The gates themselves live in latere.ai/x/ci-gate, pinned in go.mod; what
 # each one asserts for this repository is in .lateregate.yaml.
 
-COVER_MIN ?= 90
-
-.PHONY: all build test test-race test-hermetic cover fmt fmt-check lint lint-config lint-modernize spec-lint validate vuln tidy hooks
+.PHONY: all check build test test-race test-hermetic cover fmt fmt-check lint lint-config lint-modernize spec-lint validate vuln tidy hooks
 
 all: fmt-check lint test cover spec-lint validate
 
@@ -17,13 +18,12 @@ build:
 # vet before test, because a vet finding is a fact about the code that does
 # not need the suite to run to be true.
 test:
-	go vet ./...
-	go test ./...
+	@go tool lateregate test
 
 # The suite under the race detector. Kept separate from `test` so the fast
 # path stays fast and a race failure names itself.
 test-race:
-	go test -race -timeout 120s ./...
+	@go tool lateregate race
 
 # The suite with only the Go toolchain and the directories .lateregate.yaml
 # names on PATH. A test that depends on whatever happens to be installed
@@ -37,11 +37,7 @@ test-hermetic:
 # tests; they compile and run here but are filtered out of the measurement so
 # demo code does not dilute the production total.
 cover:
-	go test -race -coverprofile=coverage.out -timeout 120s ./...
-	@grep -v '/examples/' coverage.out > coverage.gate.out; \
-	total=$$(go tool cover -func=coverage.gate.out | awk '/^total:/ {print substr($$3, 1, length($$3)-1)}'); \
-	echo "total coverage (excluding examples): $$total% (min $(COVER_MIN)%)"; \
-	awk "BEGIN { exit !($$total >= $(COVER_MIN)) }" || { echo "coverage below $(COVER_MIN)%"; exit 1; }
+	@go tool lateregate cover
 
 fmt:
 	gofmt -w .
@@ -62,12 +58,9 @@ lint-modernize:
 lint-config:
 	@go tool lateregate golangci
 
-GOLANGCI_VERSION ?= v2.13.1
-
-# The linter CI runs, against the config lint-config renders. Without this the
-# only machine that ever lints this repository is a runner.
-lint: lint-config
-	@go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run ./...
+# golangci-lint at the version lateregate pins, against the config it renders.
+lint:
+	@go tool lateregate lint
 
 # specs/ records the shipped surface, and a spec tree nobody checks drifts
 # from the code within a milestone. The vocabulary and the required
@@ -81,7 +74,7 @@ validate: vuln
 # A dependency with a known advisory is a fact about the module graph, not
 # about this code, so nothing else here would ever report it.
 vuln:
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	@go tool lateregate vuln
 
 tidy:
 	go mod tidy
@@ -91,3 +84,9 @@ hooks:
 	git config core.hooksPath .githooks
 	@[ -e CLAUDE.md ] || [ -L CLAUDE.md ] || ln -s AGENTS.md CLAUDE.md
 	@echo "installed git hooks (core.hooksPath=.githooks)"
+
+# The whole shared bar. Every gate lives in lateregate, pinned as a tool in
+# go.mod; this target is a name for `go tool lateregate` and nothing else.
+# The plan: `go tool lateregate list`. One gate: `go tool lateregate <gate>`.
+check:
+	@go tool lateregate

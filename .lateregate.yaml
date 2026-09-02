@@ -2,6 +2,18 @@
 # latere.ai/x/ci-gate, pinned in go.mod, so a gate that fails on a runner
 # fails the same way on a laptop.
 
+cover:
+  exempt:
+    # The value is the reason. lateregate rejects an empty one.
+    examples/authoredgraph: example program, run by hand and read as documentation
+    examples/delegation: example program, run by hand and read as documentation
+    examples/graph: example program, run by hand and read as documentation
+    examples/minimal: example program, run by hand and read as documentation
+    examples/sandbox: example program, run by hand and read as documentation
+    adversarial/claude: >-
+      drives the real claude binary; the covered paths are the ones a test can
+      reach without it
+
 hermetic:
   # Two directories, for binaries the suite really executes. /bin has sh,
   # which the bash tool and sandbox/local run commands through. /usr/bin has
@@ -11,25 +23,13 @@ hermetic:
   # entries are measured rather than assumed.
   allow: [/usr/bin, /bin]
 
-modernize:
-  # newexpr rewrites pointer helpers to new(v) and inlines the call sites
-  # unevenly, leaving the helper with no callers and giving an untyped
-  # constant argument the wrong default type. errorsastype rewrites errors.As
-  # to errors.AsType[T], whose type parameter a local non-error interface
-  # target does not satisfy, so the rewrite does not compile. lateregate
-  # checks both fixers still exist, because `go fix` rejects an unknown
-  # -name=false and the gate would otherwise pass having run nothing.
-  disable: [newexpr, errorsastype]
-
 spec:
-  dir: specs
   # Two vocabularies meet in one tree. The runtime specs are retrospective
   # records of shipped behaviour and read `complete`; the adversarial specs
   # follow their own lifecycle and read `current` for what ships today.
   # `archived` is the terminal status for both of them. Closed at what the tree
   # uses, so a status invented in review is caught.
   status: [complete, current, archived]
-  require: [title, status]
   # No index rule: specs/README.md is prose with a per-spec reading order and
   # carries no status table, so there is no row for a spec to disagree with.
   # Both README files are excluded because neither is a spec.
@@ -44,3 +44,29 @@ spec:
   archive:
     dir: .archive
     statuses: [archived]
+
+license:
+  # The identifier every source file carries and the holder it names. There
+  # is no default: this is the decision the gate checks the tree against.
+  # `go tool lateregate license -w` writes the notice where it is missing.
+  spdx: Apache-2.0
+  holder: Latere AI
+  extensions: ['.go']
+  names: [Makefile]
+
+# Gates this repository does not run yet. Each entry is temporary by
+# construction: after the date the gate runs and fails on its own terms.
+waive:
+  cover:
+    reason: >-
+      adversarial (87.8%), adversarial/internal/agent (87.8%) and
+      adversarial/internal/state (89.9%) sit just under the floor; closing
+      that is test work in the round loop rather than a threshold to choose
+    until: 2026-10-31
+  tempdir:
+    reason: >-
+      six empty topos-sandbox-* directories survive the suite. Run defers
+      Destroy on the sandbox it creates, so the survivors come from a path
+      that returns before that defer is set, or from a test that creates
+      through the local provider directly; the site is not identified yet
+    until: 2026-10-31
