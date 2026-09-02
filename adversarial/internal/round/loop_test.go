@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 package round
 
 import (
@@ -573,7 +576,7 @@ func (w *overlapWriter) Write(p []byte) (int, error) {
 func TestHeartbeatStopWaitsForGoroutine(t *testing.T) {
 	w := &overlapWriter{}
 	e := &Engine{Progress: w, HeartbeatInterval: 10 * time.Millisecond}
-	stop := e.startHeartbeat(time.Now(), "[adversarial] test")
+	stop := e.startHeartbeat(context.Background(), time.Now(), "[adversarial] test")
 	// Let the heartbeat fire and enter an in-flight Write (started at the
 	// 10ms tick, held active until 60ms).
 	time.Sleep(40 * time.Millisecond)

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 package round
 
 import (
@@ -125,12 +128,15 @@ func (e *Engine) heartbeatTick() time.Duration {
 // elapsed" every tick until the returned stop function is invoked.
 // The goroutine is a no-op when Progress is nil or the interval is
 // non-positive, so callers can defer stop unconditionally.
-func (e *Engine) startHeartbeat(start time.Time, prefix string) func() {
+func (e *Engine) startHeartbeat(ctx context.Context, start time.Time, prefix string) func() {
 	tick := e.heartbeatTick()
 	if e.Progress == nil || tick <= 0 {
 		return func() {}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	// Derived from the caller's context so a cancelled run stops the
+	// heartbeat with it rather than leaving a goroutine ticking on a
+	// background context nobody can cancel.
+	ctx, cancel := context.WithCancel(ctx)
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
@@ -299,7 +305,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 			// Critic round.
 			prefix := fmt.Sprintf("[adversarial] fork %d/%d %s: T%d critic", forkIdx, e.ForkCount, forkLabel(out.Topic), turnOf(round))
 			e.progf("%s running...", prefix)
-			stop := e.startHeartbeat(roundStart, prefix)
+			stop := e.startHeartbeat(ctx, roundStart, prefix)
 			res, stats, err := e.criticRound(ctx, cri, a, forkIdx, round, priorIDs)
 			stop()
 			if err != nil {
@@ -369,7 +375,7 @@ func (e *Engine) runFork(ctx context.Context, forkIdx int, priorTopics []string,
 				e.progf("[adversarial] fork %d/%d: changed-files snapshot failed: %v", forkIdx, e.ForkCount, beforeErr)
 				before = nil
 			}
-			stop := e.startHeartbeat(roundStart, prefix)
+			stop := e.startHeartbeat(ctx, roundStart, prefix)
 			if forkID == "" {
 				pr, err = e.Proposer.FirstRound(ctx, pointer)
 				if err == nil {

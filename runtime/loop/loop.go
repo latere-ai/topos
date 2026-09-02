@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Copyright 2026 The Latere Authors. All rights reserved.
 // Use of this source code is governed by an Apache-2.0
 // license that can be found in the LICENSE file.
@@ -233,7 +236,7 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 		// it while this one was starting; without this check every remaining
 		// agent would spend one further turn before its own usage fold noticed.
 		if breached, br := meter.Breached(); breached {
-			logger.Info("loop: region spend cap already reached; not starting the turn",
+			logger.InfoContext(ctx, "loop: region spend cap already reached; not starting the turn",
 				"iter", iter,
 				"limit_usd", br.Limit,
 				"actual_usd", br.Actual,
@@ -261,7 +264,7 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 			// tools, disable tools for this session and retry once without them.
 			if errors.Is(err, models.ErrToolsUnsupported) && len(req.Tools) > 0 {
 				toolsDisabled = true
-				logger.Warn("loop: model does not support tools; continuing in chat-only mode",
+				logger.WarnContext(ctx, "loop: model does not support tools; continuing in chat-only mode",
 					"agent_id", cfg.AgentID,
 					"session_id", cfg.SessionID,
 				)
@@ -410,7 +413,7 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 		// (usage event, assistant message) is complete and the returned
 		// transcript reflects everything that was actually paid for.
 		if budgetBreached {
-			logger.Info("loop: region spend cap reached; stopping run",
+			logger.InfoContext(ctx, "loop: region spend cap reached; stopping run",
 				"iter", iter,
 				"limit_usd", budgetBreach.Limit,
 				"actual_usd", budgetBreach.Actual,
@@ -422,7 +425,7 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 
 		// Stop if no tool calls requested.
 		if stopReason != models.StopToolUse || len(toolCalls) == 0 {
-			logger.Info("loop: turn completed",
+			logger.InfoContext(ctx, "loop: turn completed",
 				"iter", iter,
 				"stop_reason", stopReason,
 				"tool_calls", len(toolCalls),
@@ -437,7 +440,7 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 			tr.CallID = tc.ID
 			toolResults = append(toolResults, tr)
 			if execErr != nil {
-				logger.Warn("loop: tool execution error",
+				logger.WarnContext(ctx, "loop: tool execution error",
 					"tool", tc.Name,
 					"error", execErr,
 				)
@@ -483,7 +486,7 @@ func executeToolCall(
 	tc *models.ToolCall,
 	logger *slog.Logger,
 ) (models.ToolResult, error) {
-	logger.Info("loop: tool call", "tool", tc.Name, "id", tc.ID)
+	logger.InfoContext(ctx, "loop: tool call", "tool", tc.Name, "id", tc.ID)
 
 	// Input normalisation: ensure valid JSON.
 	rawInput := tc.Input
@@ -494,7 +497,7 @@ func executeToolCall(
 	// Step 1+2: permission via hook bus.
 	phase := tp.Resolve(cfg.SessionID, models.ToolCall{ID: tc.ID, Name: tc.Name, Input: rawInput})
 	if !phase.Allowed {
-		logger.Warn("loop: tool denied",
+		logger.WarnContext(ctx, "loop: tool denied",
 			"tool", tc.Name,
 			"denied_by", phase.DeniedBy,
 			"reason", phase.Reason,
