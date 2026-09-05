@@ -138,8 +138,8 @@ func (a *Adapter) buildRequest(req models.Request) (*luxsdk.Request, error) {
 		t := req.Temperature
 		wire.Temperature = &t
 	}
-	if req.ThinkingBudget > 0 {
-		wire.Reasoning = &luxsdk.Reasoning{BudgetTokens: int64(req.ThinkingBudget)}
+	if req.Effort != "" {
+		wire.Reasoning = &luxsdk.Reasoning{Effort: luxsdk.Effort(req.Effort)}
 	}
 	for _, td := range req.Tools {
 		schema := td.InputSchema

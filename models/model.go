@@ -66,9 +66,11 @@ type Request struct {
 	// provider default). Most providers clamp to [0, 1] or [0, 2].
 	Temperature float64
 
-	// ThinkingBudget is the extended thinking token budget (Anthropic) or an
-	// analogous reasoning budget for other providers. Zero disables it.
-	ThinkingBudget int
+	// Effort is the reasoning effort for the turn ("low", "medium", "high",
+	// "xhigh", "max"). Empty leaves the provider default. Current Claude
+	// models take effort, not a thinking token budget: a budget is mapped to
+	// an effort band with recorded loss, so callers state the effort directly.
+	Effort string
 }
 
 // Role is the author of one conversation turn. It is a closed

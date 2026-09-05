@@ -80,11 +80,11 @@ func TestStreamEventMapping(t *testing.T) {
 	}
 
 	st, err := a.Stream(context.Background(), models.Request{
-		System:         "be brief",
-		MaxTokens:      256,
-		Temperature:    0.5,
-		ThinkingBudget: 1024,
-		Tools:          []models.ToolDef{{Name: "bash", Description: "run"}},
+		System:      "be brief",
+		MaxTokens:   256,
+		Temperature: 0.5,
+		Effort:      "high",
+		Tools:       []models.ToolDef{{Name: "bash", Description: "run"}},
 		Messages: []models.Message{
 			{Role: "user", Content: "list files"},
 		},
@@ -102,7 +102,9 @@ func TestStreamEventMapping(t *testing.T) {
 	if captured["temperature"].(float64) != 0.5 {
 		t.Fatalf("bad temperature: %v", captured["temperature"])
 	}
-	if captured["reasoning"].(map[string]any)["budget_tokens"].(float64) != 1024 {
+	// Effort rides through verbatim; no budget_tokens is synthesized, since
+	// current Claude models reject the budget form.
+	if reasoning := captured["reasoning"].(map[string]any); reasoning["effort"] != "high" || reasoning["budget_tokens"] != nil {
 		t.Fatalf("bad reasoning: %v", captured["reasoning"])
 	}
 	sys := captured["system"].([]any)[0].(map[string]any)
