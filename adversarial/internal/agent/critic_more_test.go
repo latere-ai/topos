@@ -207,6 +207,44 @@ func main() {
 	}
 }
 
+// TestClaudeCriticDisallowsMutatingTools pins Directives rule 2 as a CLI
+// contract: every claude critic invocation carries --disallowedTools with
+// the mutating and executing tools, so the read-only review does not rest
+// on prose alone. The helper echoes its argv back as the result text.
+func TestClaudeCriticDisallowsMutatingTools(t *testing.T) {
+	bin := buildHelper(t, "argv-claude", `package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+)
+func main() {
+	b, _ := json.Marshal(map[string]any{
+		"type": "result", "subtype": "success", "session_id": "s",
+		"result": strings.Join(os.Args[1:], "\n"), "is_error": false,
+		"usage": map[string]int{"input_tokens": 1, "output_tokens": 2},
+	})
+	fmt.Println(string(b))
+}
+`)
+	for _, verbose := range []bool{false, true} {
+		c := &ClaudeCritic{Bin: bin, Verbose: verbose, EventOut: &strings.Builder{}}
+		res, err := c.Round(context.Background(), CriticInput{
+			Aspect: critic.Lookup("security"), CriticIndex: 1, Round: 1,
+			SystemPrompt: "x", TaskContext: "t", DiffPatch: "d",
+			Cwd: t.TempDir(), Deadline: 5 * time.Second,
+		})
+		if err != nil {
+			t.Fatalf("verbose=%v: %v", verbose, err)
+		}
+		want := "--disallowedTools\n" + criticDisallowedTools
+		if !strings.Contains(res.Markdown, want) {
+			t.Errorf("verbose=%v: argv lacks %q:\n%s", verbose, want, res.Markdown)
+		}
+	}
+}
+
 // TestCodexCriticVerboseSurfacesToolCalls covers the codex side of
 // the same UX: tool_call / command_execution events emitted during
 // the run are surfaced live; the final usage from turn.completed

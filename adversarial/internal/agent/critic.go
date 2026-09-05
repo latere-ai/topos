@@ -80,24 +80,29 @@ func AssemblePrompt(in CriticInput) string {
 	return b.String()
 }
 
-// Directives is appended to every critic system prompt to keep the
-// agent on-task: emit ONLY the markdown document, no preamble, no tool
-// calls, no thinking aloud. The public assembler in the adversarial
+// Directives is appended to every critic system prompt: the reply is the
+// markdown document alone, and the evidence is the diff, the task context,
+// and the prior round files. The public assembler in the adversarial
 // package appends the same block, so both prompt paths stay identical.
-const Directives = `Critical output rules:
-1. Your entire reply MUST be the markdown attack document and nothing
-   else. No preamble like "I'll review this" or "Let me start by". No
-   trailing summary. Just the document.
-2. Do NOT run shell commands, search the file tree, or otherwise
-   investigate beyond the diff, task context, and prior round files
-   provided above. Reading the files listed under "# Prior rounds" is
-   expected (round 3+ requires it); reading anything else is not.
-   The reproduction in each attack is what proves the bug; you do not
-   need to verify it with a tool.
-3. If you decide there is nothing to attack, emit an empty document
-   that still has the top header and "aspect:" line, then stop.
-4. The very first non-blank line of your reply MUST be the top header
+// Rule 2 is also enforced on the claude driver through
+// criticDisallowedTools; the codex driver runs in its read-only sandbox.
+const Directives = `Output rules:
+1. Reply with the markdown attack document only, with no preamble and
+   no trailing summary. The parser reads the reply verbatim.
+2. Work from the diff, the task context, and the prior round files
+   listed above. Do not run commands or read other files: the
+   reproduction inside each attack is the evidence, and the mediator
+   does not re-run it.
+3. If there is nothing to attack, emit the top header and the "aspect:"
+   line and stop.
+4. The first non-blank line is the top header
    "# Critic <i> - round <n> attacks".`
+
+// criticDisallowedTools is the --disallowedTools value for the claude
+// critic: it can read the prior round files but cannot mutate the tree or
+// execute commands, which is Directives rule 2 enforced by the CLI rather
+// than by prose.
+const criticDisallowedTools = "Bash,Write,Edit,MultiEdit,NotebookEdit"
 
 // CodexCritic invokes `codex exec --sandbox read-only --json`.
 //
@@ -316,6 +321,7 @@ func (c *ClaudeCritic) Round(ctx context.Context, in CriticInput) (*CriticResult
 	} else {
 		args = []string{"--output-format", "json", "--print", prompt}
 	}
+	args = append(args, "--disallowedTools", criticDisallowedTools)
 	if in.Model != "" {
 		args = append(args, "--model", in.Model)
 	}
