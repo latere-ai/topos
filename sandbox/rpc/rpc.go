@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 
 	"latere.ai/x/topos/sandbox"
 )
@@ -220,7 +219,7 @@ func dispatch(ctx context.Context, p sandbox.Provider, req *request) response {
 
 // client is a sandbox.Provider that marshals each call over conn to a Serve peer.
 type client struct {
-	mu   sync.Mutex // one in-flight request at a time per connection
+	gate chan struct{} // one in-flight request at a time per connection
 	enc  *json.Encoder
 	dec  *json.Decoder
 	conn io.Closer
@@ -228,30 +227,71 @@ type client struct {
 
 // NewClient returns a sandbox.Provider backed by a Serve peer on the other end of
 // conn. The caller owns conn's lifetime; Close on the returned provider closes it.
+// Canceling an in-flight call closes conn to interrupt I/O and prevent response
+// desynchronization. Cancellation while waiting for another call does not close
+// conn. A canceled in-flight call requires a new connection before further use.
 func NewClient(conn io.ReadWriteCloser) sandbox.Provider {
 	return &client{
+		gate: make(chan struct{}, 1),
 		enc:  json.NewEncoder(conn),
 		dec:  json.NewDecoder(conn),
 		conn: conn,
 	}
 }
 
+// begin waits for exclusive connection access, then ties active I/O to ctx.
+// finish waits for an already-started cancellation callback before releasing the
+// gate, so that callback cannot close a later caller's connection unexpectedly.
+func (c *client) begin(ctx context.Context) (finish func(), err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case c.gate <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		<-c.gate
+		return nil, err
+	}
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = c.conn.Close()
+		close(closed)
+	})
+	return func() {
+		if !stop() {
+			<-closed
+		}
+		<-c.gate
+	}, nil
+}
+
 // call performs one synchronous request/response round-trip.
-func (c *client) call(req *request) (response, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *client) call(ctx context.Context, req *request) (resp response, err error) {
+	finish, err := c.begin(ctx)
+	if err != nil {
+		return response{}, err
+	}
+	defer func() {
+		finish()
+		if ctx.Err() != nil {
+			resp = response{}
+			err = ctx.Err()
+		}
+	}()
 	if err := c.enc.Encode(req); err != nil {
 		return response{}, fmt.Errorf("sandbox/rpc: send %s: %w", req.Method, err)
 	}
-	var resp response
 	if err := c.dec.Decode(&resp); err != nil {
 		return response{}, fmt.Errorf("sandbox/rpc: recv %s: %w", req.Method, err)
 	}
 	return resp, nil
 }
 
-func (c *client) Create(_ context.Context, opts sandbox.CreateOptions) (sandbox.Sandbox, error) {
-	resp, err := c.call(&request{Method: "Create", Create: &opts})
+func (c *client) Create(ctx context.Context, opts sandbox.CreateOptions) (sandbox.Sandbox, error) {
+	resp, err := c.call(ctx, &request{Method: "Create", Create: &opts})
 	if err != nil {
 		return sandbox.Sandbox{}, err
 	}
@@ -264,16 +304,16 @@ func (c *client) Create(_ context.Context, opts sandbox.CreateOptions) (sandbox.
 	return *resp.Sandbox, nil
 }
 
-func (c *client) Destroy(_ context.Context, id string) error {
-	resp, err := c.call(&request{Method: "Destroy", ID: id})
+func (c *client) Destroy(ctx context.Context, id string) error {
+	resp, err := c.call(ctx, &request{Method: "Destroy", ID: id})
 	if err != nil {
 		return err
 	}
 	return resp.Err.toError()
 }
 
-func (c *client) Exec(_ context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecResult, error) {
-	resp, err := c.call(&request{Method: "Exec", ID: id, Exec: &opts})
+func (c *client) Exec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecResult, error) {
+	resp, err := c.call(ctx, &request{Method: "Exec", ID: id, Exec: &opts})
 	if err != nil {
 		return sandbox.ExecResult{}, err
 	}
@@ -287,21 +327,30 @@ func (c *client) Exec(_ context.Context, id string, opts sandbox.ExecOptions) (s
 }
 
 // StreamExec starts a streaming command on the peer. It holds the connection's
-// write/read lock for the stream's whole lifetime (one in-flight call per
-// connection), so the caller MUST Close the returned stream to release it. The
+// gate until the stream terminates or Close drains it. Callers must Close
+// streams they do not drain, or cancel their context to abort blocked I/O. The
 // first frame is read eagerly so an immediate StreamExec error surfaces here.
-func (c *client) StreamExec(_ context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecStream, error) {
-	c.mu.Lock()
+func (c *client) StreamExec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecStream, error) {
+	finish, err := c.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s := &clientStream{c: c, ctx: ctx, finish: finish}
 	if err := c.enc.Encode(&request{Method: "StreamExec", ID: id, Exec: &opts}); err != nil {
-		c.mu.Unlock()
+		s.release()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("sandbox/rpc: send StreamExec: %w", err)
 	}
-	s := &clientStream{c: c}
 	// Peek the first frame: a StreamExec that fails to start returns its error
 	// here rather than on the first Recv.
 	var fr streamFrame
 	if err := c.dec.Decode(&fr); err != nil {
 		s.release()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("sandbox/rpc: recv StreamExec: %w", err)
 	}
 	if fr.Err != nil {
@@ -315,6 +364,8 @@ func (c *client) StreamExec(_ context.Context, id string, opts sandbox.ExecOptio
 // clientStream is a sandbox.ExecStream reading streamFrames off the connection.
 type clientStream struct {
 	c        *client
+	ctx      context.Context
+	finish   func()
 	pending  *streamFrame // the eagerly-read (or last-decoded) frame not yet consumed
 	result   sandbox.ExecResult
 	done     bool
@@ -325,11 +376,14 @@ type clientStream struct {
 func (s *clientStream) release() {
 	if !s.released {
 		s.released = true
-		s.c.mu.Unlock()
+		s.finish()
 	}
 }
 
 func (s *clientStream) next() (*streamFrame, error) {
+	if err := s.ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.pending != nil {
 		fr := s.pending
 		s.pending = nil
@@ -337,12 +391,20 @@ func (s *clientStream) next() (*streamFrame, error) {
 	}
 	var fr streamFrame
 	if err := s.c.dec.Decode(&fr); err != nil {
+		if s.ctx.Err() != nil {
+			return nil, s.ctx.Err()
+		}
 		return nil, fmt.Errorf("sandbox/rpc: recv stream frame: %w", err)
 	}
 	return &fr, nil
 }
 
 func (s *clientStream) Recv() ([]byte, error) {
+	defer func() {
+		if s.done {
+			s.release()
+		}
+	}()
 	if s.done {
 		return nil, io.EOF
 	}
@@ -385,8 +447,8 @@ func (s *clientStream) Close() error {
 	return nil
 }
 
-func (c *client) ReadFile(_ context.Context, id, path string) ([]byte, error) {
-	resp, err := c.call(&request{Method: "ReadFile", ID: id, Path: path})
+func (c *client) ReadFile(ctx context.Context, id, path string) ([]byte, error) {
+	resp, err := c.call(ctx, &request{Method: "ReadFile", ID: id, Path: path})
 	if err != nil {
 		return nil, err
 	}
@@ -396,16 +458,16 @@ func (c *client) ReadFile(_ context.Context, id, path string) ([]byte, error) {
 	return resp.Data, nil
 }
 
-func (c *client) WriteFile(_ context.Context, id, path string, data []byte) error {
-	resp, err := c.call(&request{Method: "WriteFile", ID: id, Path: path, Data: data})
+func (c *client) WriteFile(ctx context.Context, id, path string, data []byte) error {
+	resp, err := c.call(ctx, &request{Method: "WriteFile", ID: id, Path: path, Data: data})
 	if err != nil {
 		return err
 	}
 	return resp.Err.toError()
 }
 
-func (c *client) ListFiles(_ context.Context, id, path string) ([]sandbox.FileInfo, error) {
-	resp, err := c.call(&request{Method: "ListFiles", ID: id, Path: path})
+func (c *client) ListFiles(ctx context.Context, id, path string) ([]sandbox.FileInfo, error) {
+	resp, err := c.call(ctx, &request{Method: "ListFiles", ID: id, Path: path})
 	if err != nil {
 		return nil, err
 	}
@@ -415,8 +477,8 @@ func (c *client) ListFiles(_ context.Context, id, path string) ([]sandbox.FileIn
 	return resp.Files, nil
 }
 
-func (c *client) HealthCheck(_ context.Context, id string) error {
-	resp, err := c.call(&request{Method: "HealthCheck", ID: id})
+func (c *client) HealthCheck(ctx context.Context, id string) error {
+	resp, err := c.call(ctx, &request{Method: "HealthCheck", ID: id})
 	if err != nil {
 		return err
 	}
