@@ -268,3 +268,51 @@ func TestClientCancelGracefulTransport(t *testing.T) {
 	cancel()
 	requireCanceled(t, done, context.Canceled)
 }
+
+// heldAfterContext models an AfterFunc callback that has not been scheduled
+// yet. Hiding the parent's values prevents context from bypassing AfterFunc via
+// its private cancel-context lookup; Done and Err still report cancellation.
+type heldAfterContext struct{ context.Context }
+
+func (heldAfterContext) Value(any) any                { return nil }
+func (heldAfterContext) AfterFunc(func()) func() bool { return func() bool { return true } }
+
+func TestClientCancelBeforeAbortCallback(t *testing.T) {
+	c, s := net.Pipe()
+	defer c.Close()
+	defer s.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	p := rpc.NewClient(c)
+	peer := make(chan error, 1)
+	go func() {
+		var req map[string]any
+		err := json.NewDecoder(s).Decode(&req)
+		if err == nil {
+			err = json.NewEncoder(s).Encode(map[string]any{"chunk": []byte("pending")})
+		}
+		peer <- err
+	}()
+	stream, err := p.StreamExec(heldAfterContext{ctx}, "sb", sandbox.ExecOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-peer; err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if _, err := stream.Recv(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled stream = %v", err)
+	}
+	_ = stream.Close()
+	next := make(chan error, 1)
+	go func() { next <- p.HealthCheck(t.Context(), "sb") }()
+	select {
+	case err := <-next:
+		if err == nil {
+			t.Fatal("canceled connection was reused")
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("cleanup stopped abort callback without closing connection")
+	}
+}

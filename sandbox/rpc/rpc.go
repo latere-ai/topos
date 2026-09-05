@@ -113,31 +113,90 @@ func (e *errEnvelope) toError() error {
 	return errors.New(e.Msg)
 }
 
-// Serve reads Provider requests off conn and invokes provider until conn closes
-// or a decode error occurs. It returns nil on a clean EOF. Intended composition
-// (mode 2): Serve(ctx, conn, sandbox.Confine(host, root)).
-func Serve(ctx context.Context, conn io.ReadWriteCloser, provider sandbox.Provider) error {
-	dec := json.NewDecoder(conn)
+// Serve reads Provider requests until the peer disconnects, ctx is canceled,
+// or a transport error occurs. It owns conn and closes it before returning.
+// A peer disconnect cancels in-flight provider work; providers must honor their
+// context. It returns nil on a clean peer EOF and ctx.Err() on cancellation.
+// Intended composition: Serve(ctx, conn, sandbox.Confine(host, root)).
+func Serve(parent context.Context, conn io.ReadWriteCloser, provider sandbox.Provider) error {
+	ctx, cancel := context.WithCancelCause(parent)
+	interrupted := make(chan struct{})
+	context.AfterFunc(ctx, func() {
+		interruptConn(conn)
+		close(interrupted)
+	})
+	requests := make(chan request)
+	readerDone := make(chan struct{})
+	// Keep reading during dispatch so a disconnected peer cancels a blocked
+	// provider. The unbuffered channel preserves sequential request dispatch.
+	go func() {
+		defer close(readerDone)
+		dec := json.NewDecoder(conn)
+		for {
+			var req request
+			if err := dec.Decode(&req); err != nil {
+				if errors.Is(err, io.EOF) {
+					cancel(io.EOF)
+				} else {
+					cancel(fmt.Errorf("sandbox/rpc: decode request: %w", err))
+				}
+				return
+			}
+			select {
+			case requests <- req:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	defer func() {
+		cancel(nil)
+		<-interrupted
+		<-readerDone
+	}()
+	transportError := func(err error) error {
+		if parent.Err() != nil {
+			return parent.Err()
+		}
+		if cause := context.Cause(ctx); cause != nil {
+			if errors.Is(cause, io.EOF) {
+				return nil
+			}
+			return cause
+		}
+		return err
+	}
 	enc := json.NewEncoder(conn)
 	for {
 		var req request
-		if err := dec.Decode(&req); err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("sandbox/rpc: decode request: %w", err)
+		select {
+		case <-ctx.Done():
+			return transportError(ctx.Err())
+		case req = <-requests:
+		}
+		if ctx.Err() != nil {
+			return transportError(ctx.Err())
 		}
 		if req.Method == "StreamExec" {
 			if err := serveStream(ctx, enc, provider, &req); err != nil {
-				return err
+				return transportError(err)
 			}
 			continue
 		}
 		resp := dispatch(ctx, provider, &req)
 		if err := enc.Encode(&resp); err != nil {
-			return fmt.Errorf("sandbox/rpc: encode response: %w", err)
+			return transportError(fmt.Errorf("sandbox/rpc: encode response: %w", err))
 		}
 	}
+}
+
+// interruptConn also expires deadlines because multiplexed transports can close
+// gracefully without unblocking a pending read.
+func interruptConn(conn io.Closer) {
+	if conn, ok := conn.(interface{ SetDeadline(time.Time) error }); ok {
+		_ = conn.SetDeadline(time.Now())
+	}
+	_ = conn.Close()
 }
 
 // serveStream runs a StreamExec on the provider and forwards its output as a
@@ -259,16 +318,16 @@ func (c *client) begin(ctx context.Context) (finish func(), err error) {
 	}
 	closed := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
-		// A multiplexed stream may close gracefully without interrupting reads.
-		if conn, ok := c.conn.(interface{ SetDeadline(time.Time) error }); ok {
-			_ = conn.SetDeadline(time.Now())
-		}
-		_ = c.conn.Close()
+		interruptConn(c.conn)
 		close(closed)
 	})
 	return func() {
 		if !stop() {
 			<-closed
+		} else if ctx.Err() != nil {
+			// Cancellation may be observed before its callback is scheduled.
+			// Stopping that callback must not leave a partial response reusable.
+			interruptConn(c.conn)
 		}
 		<-c.gate
 	}, nil
