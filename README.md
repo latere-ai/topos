@@ -210,6 +210,12 @@ backend is pluggable through the `sandbox.Provider` interface. By default the
 runner uses `sandbox/local`, a temp-directory implementation that needs no
 external services. It is the zero-config path for development and tests.
 
+Local file reads, writes, and directory listings stay within the sandbox root.
+Relative symlinks within that root are supported; escaping and absolute
+symlinks are rejected. Commands have their working directory checked before
+starting and execute with the host process's privileges, so command execution
+requires trusted code.
+
 For hosted compute, inject a backend via `Options.Sandbox`. The `sandbox/cella`
 provider backs runs with [Latere Cella](https://cella.latere.ai), the hosted
 Kubernetes sandbox platform:

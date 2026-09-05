@@ -13,10 +13,11 @@
 // os.MkdirTemp directory and Destroy removes it. In rooted mode ([NewAt]) every
 // sandbox maps to a caller-owned directory that Destroy deregisters but never
 // removes. Exec runs commands with exec.CommandContext against that directory in
-// either mode. ReadFile/WriteFile/ListFiles operate directly on the filesystem,
-// confined to that directory: every path argument, and Exec/StreamExec's Cwd,
-// is resolved against it and rejected with [ErrPathEscape] when it would land
-// outside. HealthCheck returns nil iff the directory still exists.
+// either mode. ReadFile/WriteFile/ListFiles use [os.Root] to confine filesystem
+// access, including relative symlinks, to that directory. Absolute symlinks
+// are rejected. Exec/StreamExec validate Cwd before starting; executed commands
+// run with the host process's privileges and must be trusted. Escaping paths are
+// rejected with [ErrPathEscape]. HealthCheck returns nil iff the directory exists.
 //
 // Concurrency: the id→dir map is protected by a sync.Mutex; all methods are
 // safe for concurrent use.
@@ -259,11 +260,12 @@ func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecO
 
 // ReadFile reads a file from the sandbox's temp directory.
 func (p *Provider) ReadFile(_ context.Context, id, path string) ([]byte, error) {
-	full, err := p.resolve(id, path)
+	root, rel, err := p.openPath(id, path)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(full)
+	defer func() { _ = root.Close() }()
+	data, err := root.ReadFile(rel)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, sandbox.ErrNotFound
@@ -276,14 +278,15 @@ func (p *Provider) ReadFile(_ context.Context, id, path string) ([]byte, error) 
 // WriteFile writes a file into the sandbox's temp directory, creating parent
 // directories as needed.
 func (p *Provider) WriteFile(_ context.Context, id, path string, data []byte) error {
-	full, err := p.resolve(id, path)
+	root, rel, err := p.openPath(id, path)
 	if err != nil {
 		return err
 	}
-	if mkdirErr := os.MkdirAll(filepath.Dir(full), 0o755); mkdirErr != nil {
+	defer func() { _ = root.Close() }()
+	if mkdirErr := root.MkdirAll(filepath.Dir(rel), 0o755); mkdirErr != nil {
 		return fmt.Errorf("local sandbox: write file mkdir %q: %w", path, mkdirErr)
 	}
-	if writeErr := os.WriteFile(full, data, 0o644); writeErr != nil {
+	if writeErr := root.WriteFile(rel, data, 0o644); writeErr != nil {
 		return fmt.Errorf("local sandbox: write file %q: %w", path, writeErr)
 	}
 	return nil
@@ -291,11 +294,12 @@ func (p *Provider) WriteFile(_ context.Context, id, path string, data []byte) er
 
 // ListFiles lists the immediate children of a directory in the sandbox.
 func (p *Provider) ListFiles(_ context.Context, id, path string) ([]sandbox.FileInfo, error) {
-	full, err := p.resolve(id, path)
+	root, rel, err := p.openPath(id, path)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(full)
+	defer func() { _ = root.Close() }()
+	entries, err := fs.ReadDir(root.FS(), filepath.ToSlash(rel))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, sandbox.ErrNotFound
@@ -362,7 +366,43 @@ func (p *Provider) resolve(id, path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: %q", ErrPathEscape, path)
 	}
+	inside, err := relpath.Contains(dir, full)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", sandbox.ErrNotFound
+		}
+		return "", fmt.Errorf("local sandbox: resolve %q: %w", path, err)
+	}
+	if !inside {
+		return "", fmt.Errorf("%w: %q", ErrPathEscape, path)
+	}
 	return full, nil
+}
+
+// openPath keeps file operations bound to the directory even if a symlink is
+// swapped after resolve's validation. The resolved string alone is not a guard
+// against concurrent filesystem changes.
+func (p *Provider) openPath(id, path string) (*os.Root, string, error) {
+	full, err := p.resolve(id, path)
+	if err != nil {
+		return nil, "", err
+	}
+	dir, err := p.sandboxDir(id)
+	if err != nil {
+		return nil, "", err
+	}
+	rel, err := filepath.Rel(dir, full)
+	if err != nil {
+		return nil, "", fmt.Errorf("local sandbox: relative path %q: %w", path, err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, "", sandbox.ErrNotFound
+		}
+		return nil, "", fmt.Errorf("local sandbox: open root: %w", err)
+	}
+	return root, rel, nil
 }
 
 // buildEnv converts a map to a slice of "KEY=VALUE" entries suitable for

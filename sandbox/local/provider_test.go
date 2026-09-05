@@ -149,6 +149,126 @@ func TestNewAt_CurrentDirectory(t *testing.T) {
 	}
 }
 
+func TestLocalRejectsSymlinkEscapes(t *testing.T) {
+	for _, operation := range []string{"read", "write", "list", "exec", "stream"} {
+		t.Run(operation, func(t *testing.T) {
+			base := t.TempDir()
+			root, outside := filepath.Join(base, "root"), filepath.Join(base, "outside")
+			for _, dir := range []string{root, outside} {
+				if err := os.Mkdir(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			secret := filepath.Join(outside, "secret.txt")
+			if err := os.WriteFile(secret, []byte("outside data"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("../outside", filepath.Join(root, "escape")); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			p := local.NewAt(root)
+			ctx := context.Background()
+			sb, err := p.Create(ctx, sandbox.CreateOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = p.Destroy(ctx, sb.ID) })
+			switch operation {
+			case "read":
+				_, err = p.ReadFile(ctx, sb.ID, "escape/secret.txt")
+			case "write":
+				err = p.WriteFile(ctx, sb.ID, "escape/secret.txt", []byte("overwritten"))
+			case "list":
+				_, err = p.ListFiles(ctx, sb.ID, "escape")
+			case "exec":
+				_, err = p.Exec(ctx, sb.ID, sandbox.ExecOptions{Cwd: "escape", Argv: []string{"sh", "-c", "pwd"}})
+			case "stream":
+				var stream sandbox.ExecStream
+				stream, err = p.StreamExec(ctx, sb.ID, sandbox.ExecOptions{Cwd: "escape", Argv: []string{"sh", "-c", "pwd"}})
+				if stream != nil {
+					_ = stream.Close()
+				}
+			}
+			if !errors.Is(err, local.ErrPathEscape) {
+				t.Errorf("%s through escaping symlink = %v, want ErrPathEscape", operation, err)
+			}
+			got, err := os.ReadFile(secret)
+			if err != nil || string(got) != "outside data" {
+				t.Fatalf("outside file = %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestLocalAllowsRelativeSymlinksWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "real"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(root, "alias")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	p := local.NewAt(root)
+	ctx := context.Background()
+	sb, err := p.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Destroy(ctx, sb.ID) })
+	if err := p.WriteFile(ctx, sb.ID, "alias/nested/file.txt", []byte("inside")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.ReadFile(ctx, sb.ID, "alias/nested/file.txt")
+	if err != nil || string(got) != "inside" {
+		t.Fatalf("ReadFile = %q, %v", got, err)
+	}
+	entries, err := p.ListFiles(ctx, sb.ID, "alias/nested")
+	if err != nil || len(entries) != 1 || entries[0].Name != "file.txt" {
+		t.Fatalf("ListFiles = %+v, %v", entries, err)
+	}
+}
+
+func TestLocalRejectsDanglingSymlinkWrite(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "missing.txt")
+	if err := os.Symlink(outside, filepath.Join(root, "alias")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	p := local.NewAt(root)
+	ctx := context.Background()
+	sb, err := p.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Destroy(ctx, sb.ID) })
+	if err := p.WriteFile(ctx, sb.ID, "alias", []byte("outside")); err == nil {
+		t.Fatal("write through dangling symlink succeeded")
+	}
+	if _, err := os.Stat(outside); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside target = %v, want not found", err)
+	}
+}
+
+func TestLocalMissingBackingDirectory(t *testing.T) {
+	root := t.TempDir()
+	p := local.NewAt(root)
+	ctx := context.Background()
+	sb, err := p.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Destroy(ctx, sb.ID) })
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ReadFile(ctx, sb.ID, "file.txt"); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Errorf("ReadFile = %v, want ErrNotFound", err)
+	}
+	if _, err := p.ListFiles(ctx, sb.ID, "."); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Errorf("ListFiles = %v, want ErrNotFound", err)
+	}
+}
+
 // TestNewAt_DistinctIdsShareRoot verifies concurrent peers get distinct ids that
 // all map to the shared root, and destroying one does not break another.
 func TestNewAt_DistinctIdsShareRoot(t *testing.T) {
