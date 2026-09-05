@@ -53,6 +53,81 @@ func (s *spyProvider) ListFiles(_ context.Context, _, p string) ([]sandbox.FileI
 }
 func (s *spyProvider) HealthCheck(context.Context, string) error { s.healths++; return nil }
 
+type resolvingSpy struct {
+	*spyProvider
+	resolved string
+	err      error
+}
+
+func (s *resolvingSpy) ResolvePath(context.Context, string, string) (string, error) {
+	return s.resolved, s.err
+}
+
+func TestConfineChecksResolvedPath(t *testing.T) {
+	for _, target := range []string{".env", ".ssh/key", ".aws/credentials", "../outside"} {
+		t.Run(target, func(t *testing.T) {
+			spy := &spyProvider{}
+			c := sandbox.Confine(&resolvingSpy{spyProvider: spy, resolved: target}, "/work")
+			ctx := t.Context()
+			if _, err := c.ReadFile(ctx, "sb", "alias"); !errors.Is(err, sandbox.ErrConfined) {
+				t.Errorf("resolved read = %v, want ErrConfined", err)
+			}
+			if err := c.WriteFile(ctx, "sb", "alias", nil); !errors.Is(err, sandbox.ErrConfined) {
+				t.Errorf("resolved write = %v, want ErrConfined", err)
+			}
+			if _, err := c.ListFiles(ctx, "sb", "alias"); !errors.Is(err, sandbox.ErrConfined) {
+				t.Errorf("resolved list = %v, want ErrConfined", err)
+			}
+			if _, err := c.Exec(ctx, "sb", sandbox.ExecOptions{Cwd: "alias"}); !errors.Is(err, sandbox.ErrConfined) {
+				t.Errorf("resolved cwd = %v, want ErrConfined", err)
+			}
+			if _, err := c.StreamExec(ctx, "sb", sandbox.ExecOptions{Cwd: "alias"}); !errors.Is(err, sandbox.ErrConfined) {
+				t.Errorf("resolved stream cwd = %v, want ErrConfined", err)
+			}
+			if len(spy.reads)+len(spy.writes)+len(spy.lists)+len(spy.execCwds) != 0 {
+				t.Fatal("resolved secret reached provider")
+			}
+		})
+	}
+}
+
+func TestConfineUsesResolvedPathAndPreservesErrors(t *testing.T) {
+	spy := &spyProvider{}
+	resolver := &resolvingSpy{spyProvider: spy, resolved: "real/file"}
+	c := sandbox.Confine(resolver, "/work")
+	ctx := t.Context()
+	if _, err := c.ReadFile(ctx, "sb", "alias"); err != nil {
+		t.Fatal(err)
+	}
+	if spy.reads[0] != "real/file" {
+		t.Fatalf("operation used alias rather than checked target: %v", spy.reads)
+	}
+	if err := c.WriteFile(ctx, "sb", "alias", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ListFiles(ctx, "sb", "alias"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Exec(ctx, "sb", sandbox.ExecOptions{Cwd: "alias"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.StreamExec(ctx, "sb", sandbox.ExecOptions{Cwd: "alias"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range append(append(spy.writes, spy.lists...), spy.execCwds...) {
+		if got != "real/file" {
+			t.Fatalf("operation used %q, want checked target", got)
+		}
+	}
+	resolver.err = errors.New("resolver failed")
+	if _, err := c.ReadFile(ctx, "sb", "alias"); !errors.Is(err, resolver.err) {
+		t.Fatalf("resolver error lost: %v", err)
+	}
+	if len(spy.reads) != 1 {
+		t.Fatal("operation ran despite resolution failure")
+	}
+}
+
 func TestConfineAllowsInRoot(t *testing.T) {
 	spy := &spyProvider{}
 	c := sandbox.Confine(spy, "/work")

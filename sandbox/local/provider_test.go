@@ -249,6 +249,32 @@ func TestLocalRejectsDanglingSymlinkWrite(t *testing.T) {
 	}
 }
 
+func TestConfinedLocalRejectsSecretAlias(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(".env", filepath.Join(root, "alias")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	p := sandbox.Confine(local.NewAt(root), root)
+	ctx := t.Context()
+	sb, err := p.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Destroy(ctx, sb.ID) })
+	if _, err := p.ReadFile(ctx, sb.ID, "alias"); !errors.Is(err, sandbox.ErrConfined) {
+		t.Errorf("read secret alias = %v, want ErrConfined", err)
+	}
+	if err := p.WriteFile(ctx, sb.ID, "alias", []byte("changed")); !errors.Is(err, sandbox.ErrConfined) {
+		t.Errorf("write secret alias = %v, want ErrConfined", err)
+	}
+	if _, err := p.ReadFile(ctx, "missing-sandbox", "file"); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Errorf("unknown sandbox = %v, want ErrNotFound", err)
+	}
+}
+
 func TestLocalMissingBackingDirectory(t *testing.T) {
 	root := t.TempDir()
 	p := local.NewAt(root)

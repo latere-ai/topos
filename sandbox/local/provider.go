@@ -405,6 +405,16 @@ func (p *Provider) openPath(id, path string) (*os.Root, string, error) {
 	return root, rel, nil
 }
 
+// ResolvePath lets sandbox.Confine apply its secret policy to symlink targets.
+func (p *Provider) ResolvePath(_ context.Context, id, path string) (string, error) {
+	root, rel, err := p.openPath(id, path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }()
+	return sandbox.ResolveRootPath(root, rel)
+}
+
 // buildEnv converts a map to a slice of "KEY=VALUE" entries suitable for
 // exec.Cmd.Env. A nil map yields a non-nil but empty slice so that Cmd.Env
 // is explicitly set (empty, not inherited).

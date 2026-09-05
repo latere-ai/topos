@@ -62,17 +62,26 @@ func isSecretPath(relPath string) bool {
 	return false
 }
 
-// confined wraps a Provider so every path argument is confined to a workspace
-// root and screened against the secret deny-list. It rewrites nothing — it validates and passes the
-// caller's original path through, since the inner Provider owns path
-// interpretation.
+// PathResolver is implemented by providers that can resolve filesystem aliases.
+// The returned path must name the same target and be usable by that provider.
+// Confine validates both names and passes the resolved name to the operation.
+// Resolution must stay within the provider's filesystem; providers remain
+// responsible for guarding the eventual access against concurrent path changes.
+type PathResolver interface {
+	ResolvePath(context.Context, string, string) (string, error)
+}
+
+// confined checks requested and, when available, resolved paths against the
+// workspace root and secret deny-list.
 type confined struct {
 	inner Provider
 	root  string
 }
 
-// Confine wraps inner so that every file/exec path must resolve inside root and
-// no deny-listed secret path is reachable. root is the session's workspace root
+// Confine checks file paths and explicit exec working directories against root
+// and the secret deny-list. Providers implementing PathResolver also have their
+// resolved targets checked; other providers receive lexical checks only.
+// root is the session's workspace root
 // ("." when empty, i.e. confine relative paths against upward escape only).
 // Create, Destroy, and HealthCheck carry no path and pass straight through.
 func Confine(inner Provider, root string) Provider {
@@ -104,6 +113,23 @@ func (c *confined) allow(p string) error {
 	return nil
 }
 
+func (c *confined) checkedPath(ctx context.Context, id, p string) (string, error) {
+	if err := c.allow(p); err != nil {
+		return "", err
+	}
+	if resolver, ok := c.inner.(PathResolver); ok {
+		resolved, err := resolver.ResolvePath(ctx, id, p)
+		if err != nil {
+			return "", err
+		}
+		if err := c.allow(resolved); err != nil {
+			return "", err
+		}
+		return resolved, nil
+	}
+	return p, nil
+}
+
 func (c *confined) Create(ctx context.Context, opts CreateOptions) (Sandbox, error) {
 	return c.inner.Create(ctx, opts)
 }
@@ -114,41 +140,48 @@ func (c *confined) Destroy(ctx context.Context, id string) error {
 
 func (c *confined) Exec(ctx context.Context, id string, opts ExecOptions) (ExecResult, error) {
 	if opts.Cwd != "" {
-		if err := c.allow(opts.Cwd); err != nil {
+		cwd, err := c.checkedPath(ctx, id, opts.Cwd)
+		if err != nil {
 			return ExecResult{}, err
 		}
+		opts.Cwd = cwd
 	}
 	return c.inner.Exec(ctx, id, opts)
 }
 
 func (c *confined) StreamExec(ctx context.Context, id string, opts ExecOptions) (ExecStream, error) {
 	if opts.Cwd != "" {
-		if err := c.allow(opts.Cwd); err != nil {
+		cwd, err := c.checkedPath(ctx, id, opts.Cwd)
+		if err != nil {
 			return nil, err
 		}
+		opts.Cwd = cwd
 	}
 	return c.inner.StreamExec(ctx, id, opts)
 }
 
 func (c *confined) ReadFile(ctx context.Context, id, p string) ([]byte, error) {
-	if err := c.allow(p); err != nil {
+	resolved, err := c.checkedPath(ctx, id, p)
+	if err != nil {
 		return nil, err
 	}
-	return c.inner.ReadFile(ctx, id, p)
+	return c.inner.ReadFile(ctx, id, resolved)
 }
 
 func (c *confined) WriteFile(ctx context.Context, id, p string, data []byte) error {
-	if err := c.allow(p); err != nil {
+	resolved, err := c.checkedPath(ctx, id, p)
+	if err != nil {
 		return err
 	}
-	return c.inner.WriteFile(ctx, id, p, data)
+	return c.inner.WriteFile(ctx, id, resolved, data)
 }
 
 func (c *confined) ListFiles(ctx context.Context, id, p string) ([]FileInfo, error) {
-	if err := c.allow(p); err != nil {
+	resolved, err := c.checkedPath(ctx, id, p)
+	if err != nil {
 		return nil, err
 	}
-	return c.inner.ListFiles(ctx, id, p)
+	return c.inner.ListFiles(ctx, id, resolved)
 }
 
 func (c *confined) HealthCheck(ctx context.Context, id string) error {
