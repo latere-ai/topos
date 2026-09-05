@@ -242,3 +242,29 @@ func TestClientDeadlineWhileStreamOwnsConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Multiplexed transports may send a FIN on Close while waiting for the peer to
+// finish writing. Their read deadline is needed to interrupt that pending read.
+type gracefulConn struct{ net.Conn }
+
+func (gracefulConn) Close() error { return nil }
+
+func TestClientCancelGracefulTransport(t *testing.T) {
+	c, s := net.Pipe()
+	defer c.Close()
+	defer s.Close()
+	p := rpc.NewClient(gracefulConn{c})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- p.HealthCheck(ctx, "sb") }()
+	if err := s.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var req map[string]any
+	if err := json.NewDecoder(s).Decode(&req); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	requireCanceled(t, done, context.Canceled)
+}

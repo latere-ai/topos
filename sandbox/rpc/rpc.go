@@ -15,7 +15,7 @@
 // WriteFile, ListFiles, HealthCheck) plus StreamExec (streaming output as a
 // sequence of frames terminated by the final ExecResult). One
 // request is in flight at a time per connection (the loop dispatches tools
-// sequentially, and a StreamExec holds the connection until its stream is closed);
+// sequentially, and a StreamExec holds the connection until it ends or is closed);
 // stream multiplexing belongs to the transport (yamux) below.
 package rpc
 
@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"latere.ai/x/topos/sandbox"
 )
@@ -230,6 +231,7 @@ type client struct {
 // Canceling an in-flight call closes conn to interrupt I/O and prevent response
 // desynchronization. Cancellation while waiting for another call does not close
 // conn. A canceled in-flight call requires a new connection before further use.
+// Transports without SetDeadline must unblock pending I/O when closed.
 func NewClient(conn io.ReadWriteCloser) sandbox.Provider {
 	return &client{
 		gate: make(chan struct{}, 1),
@@ -257,6 +259,10 @@ func (c *client) begin(ctx context.Context) (finish func(), err error) {
 	}
 	closed := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
+		// A multiplexed stream may close gracefully without interrupting reads.
+		if conn, ok := c.conn.(interface{ SetDeadline(time.Time) error }); ok {
+			_ = conn.SetDeadline(time.Now())
+		}
 		_ = c.conn.Close()
 		close(closed)
 	})
