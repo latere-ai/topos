@@ -2,7 +2,7 @@ module latere.ai/x/topos
 
 go 1.27.0
 
-require latere.ai/x/pkg v0.50.0
+require latere.ai/x/pkg v0.50.1-0.20260905122732-8add66b8b7d1
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

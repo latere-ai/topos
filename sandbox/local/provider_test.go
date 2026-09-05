@@ -124,6 +124,31 @@ func TestNewAt_RootsExecAndFiles(t *testing.T) {
 	}
 }
 
+func TestNewAt_CurrentDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	p := local.NewAt(".")
+	ctx := context.Background()
+	sb, err := p.Create(ctx, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Destroy(ctx, sb.ID) })
+	if err := p.WriteFile(ctx, sb.ID, "notes.txt", []byte("workspace data")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.ReadFile(ctx, sb.ID, "notes.txt")
+	if err != nil || string(got) != "workspace data" {
+		t.Fatalf("ReadFile = %q, %v", got, err)
+	}
+	files, err := p.ListFiles(ctx, sb.ID, ".")
+	if err != nil || len(files) != 1 || files[0].Name != "notes.txt" {
+		t.Fatalf("ListFiles = %+v, %v", files, err)
+	}
+	if err := p.WriteFile(ctx, sb.ID, "../escape.txt", []byte("outside")); !errors.Is(err, local.ErrPathEscape) {
+		t.Fatalf("parent traversal = %v, want ErrPathEscape", err)
+	}
+}
+
 // TestNewAt_DistinctIdsShareRoot verifies concurrent peers get distinct ids that
 // all map to the shared root, and destroying one does not break another.
 func TestNewAt_DistinctIdsShareRoot(t *testing.T) {
