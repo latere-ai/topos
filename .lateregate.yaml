@@ -29,7 +29,7 @@ spec:
   # follow their own lifecycle and read `current` for what ships today.
   # `archived` is the terminal status for both of them. Closed at what the tree
   # uses, so a status invented in review is caught.
-  status: [complete, current, archived]
+  status: [drafted, complete, current, archived]
   # No index rule: specs/README.md is prose with a per-spec reading order and
   # carries no status table, so there is no row for a spec to disagree with.
   # Both README files are excluded because neither is a spec.

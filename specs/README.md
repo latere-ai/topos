@@ -77,6 +77,8 @@ delegation and topology mechanics, then the supporting engine specs.
   repository entry points, contributor paths, metadata, and release surface.
 - [Rename Lineage to Trace](030-trace-rename.md): why the run graph is named
   `Trace`, and what the rename touched.
+- [Tool Grant Enforcement](031-tool-grant-enforcement.md): applying builtin
+  declarations and delegated authority to the registry and its trace.
 
 ## Dependency view
 
