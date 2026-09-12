@@ -23,7 +23,9 @@ import (
 // Permissions is an agent's delegated authority: the scopes it holds, the tool
 // pool it may use, and whether it may itself spawn sub-agents.
 type Permissions struct {
-	Scopes       []string
+	Scopes []string
+	// Tools contains concrete capability names. Nil and empty grant none;
+	// callers resolve defaults and family aliases before the spawn boundary.
 	Tools        []string
 	AllowRecurse bool
 }

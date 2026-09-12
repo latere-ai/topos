@@ -66,9 +66,17 @@ sharing a name across regions stay distinct. Composition across regions is
 text-only (a region's output is its final text, not a shared filesystem).
 
 **Delegation.** Handing work to a peer is a tool call. The `delegate` tool spawns
-the chosen peer with attenuated authority, meaning a strict subset of the parent's
+the chosen peer with attenuated authority, meaning a subset of the parent's
 tools and scopes, runs it in its own sandbox, and returns its result back into the
 parent's transcript.
+
+**Tool grants.** `AgentSpec.Tools` restricts both the tools offered to the model
+and the calls the runtime can execute. Nil selects all builtins; an explicit
+empty slice selects none. Concrete names and families are supported: `read`
+selects `read_file`, `grep`, and `glob`; `write` selects `write_file` and
+`edit_file`; `exec` selects `bash`. Unknown names grant nothing. Delegated peers
+receive only tools also held by their parent. The `delegate` tool remains
+controlled by topology and depth. Traces record concrete available tool names.
 
 **Bounded recursion.** Under `Mesh`, a peer can delegate again. `Options.MaxHandoffDepth`
 (default 3) caps how deep that can go, so a run cannot fan out without limit.

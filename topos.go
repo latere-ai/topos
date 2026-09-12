@@ -62,12 +62,16 @@ const (
 
 // AgentSpec is a declarative agent in a region.
 type AgentSpec struct {
-	Name         string   // identity within the region (and the spawn label)
-	Role         string   // short role label, e.g. "reviewer"
-	Description  string   // when-to-use; published into the directory for discovery
-	SystemPrompt string   // the agent's system prompt
-	Tools        []string // tool families this agent may use
-	Scopes       []string // permission scopes this agent holds
+	Name         string // identity within the region (and the spawn label)
+	Role         string // short role label, e.g. "reviewer"
+	Description  string // when-to-use; published into the directory for discovery
+	SystemPrompt string // the agent's system prompt
+	// Tools selects builtins by concrete name or family (read, write, exec).
+	// Nil grants all builtins; an explicit empty slice grants none. Delegated
+	// peers receive the intersection with their parent's tools. The delegate
+	// tool is controlled separately by topology and depth.
+	Tools  []string
+	Scopes []string // permission scopes this agent holds
 }
 
 // PeerCard is what a dynamic agent sees in the directory: enough to decide whether
@@ -154,7 +158,7 @@ type TraceNode struct {
 	Name    string
 	Role    string
 	Status  NodeStatus
-	Grants  []string // tool families actually granted after attenuation (audit-visible)
+	Grants  []string // concrete registry names offered to this agent, including delegate when available
 	Sandbox string   // the sandbox this agent ran in (a delegated peer gets its own)
 }
 
@@ -761,12 +765,12 @@ func (r *Runner) runDynamic(ctx context.Context, sb sandbox.Provider, sandboxID,
 	entryID := sess + "/" + region.Entry.Name
 	lin := &Trace{Nodes: []TraceNode{{
 		ID: entryID, Name: region.Entry.Name, Role: region.Entry.Role,
-		Status: StatusRunning, Grants: region.Entry.Tools, Sandbox: sandboxID,
+		Status: StatusRunning, Sandbox: sandboxID,
 	}}}
 	parent := harness.ParentContext{
 		SessionID: sess,
 		AgentID:   region.Entry.Name,
-		Perms:     harness.Permissions{Scopes: region.Entry.Scopes, Tools: region.Entry.Tools, AllowRecurse: region.Topology == Mesh},
+		Perms:     harness.Permissions{Scopes: region.Entry.Scopes, Tools: tools.BuiltinsFor(region.Entry.Tools).Names(), AllowRecurse: region.Topology == Mesh},
 		Budget:    billing.Budget{LimitUSD: r.opts.BudgetUSD},
 	}
 	final, err := r.runAgent(ctx, dynRun{
@@ -805,7 +809,9 @@ func terminalStatus(err error) NodeStatus {
 // peer may only under Mesh topology; and never at or past MaxHandoffDepth. That
 // depth gate is what bounds recursion and prevents runaway fan-out.
 func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
-	reg := tools.Builtins()
+	// ParentContext carries resolved capabilities. In particular, a nil
+	// intersection here means none, never AgentSpec.Tools' all-builtins default.
+	reg := tools.Builtins().Select(rc.parent.Perms.Tools)
 	sysPrompt := rc.agent.SystemPrompt
 	canDelegate := len(rc.dir) > 0 && rc.depth < r.maxDepth() && (rc.depth == 0 || rc.topology == Mesh)
 	if canDelegate {
@@ -815,6 +821,12 @@ func (r *Runner) runAgent(ctx context.Context, rc dynRun) (string, error) {
 			meter: rc.meter,
 		})
 		sysPrompt = composeSystem(sysPrompt, renderDirectory(toCards(rc.dir)))
+	}
+	for i := range rc.lin.Nodes {
+		if rc.lin.Nodes[i].ID == rc.nodeID {
+			rc.lin.Nodes[i].Grants = reg.Names()
+			break
+		}
 	}
 	res, err := loop.Run(ctx, loop.Config{
 		Model:        r.model,
@@ -846,8 +858,9 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, 
 	prevID := ""
 	for _, step := range chain {
 		id := sess + "/" + step.Name
+		reg := tools.BuiltinsFor(step.Tools)
 		lin.Nodes = append(lin.Nodes, TraceNode{
-			ID: id, Name: step.Name, Role: step.Role, Status: StatusRunning, Grants: step.Tools, Sandbox: sandboxID,
+			ID: id, Name: step.Name, Role: step.Role, Status: StatusRunning, Grants: reg.Names(), Sandbox: sandboxID,
 		})
 		if prevID != "" {
 			lin.Edges = append(lin.Edges, TraceEdge{From: prevID, To: id, Kind: EdgeNext})
@@ -856,7 +869,7 @@ func (r *Runner) runPinned(ctx context.Context, sb sandbox.Provider, sandboxID, 
 			Model:        r.model,
 			Sandbox:      sb,
 			SandboxID:    sandboxID,
-			Tools:        tools.Builtins(),
+			Tools:        reg,
 			Bus:          r.bus,
 			SessionID:    id,
 			AgentID:      step.Name,
@@ -936,7 +949,7 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 	// tool past the bound.
 	allowRecurse := d.topology == Mesh && d.depth+1 < d.runner.maxDepth()
 	child, err := d.runner.spawner.Spawn(ctx, d.parent, harness.SpawnRequest{
-		Label: childLabel, Scopes: peer.Scopes, Tools: peer.Tools,
+		Label: childLabel, Scopes: peer.Scopes, Tools: tools.BuiltinsFor(peer.Tools).Names(),
 		Budget: d.parent.Budget, AllowRecurse: allowRecurse,
 	})
 	if err != nil {
@@ -993,7 +1006,7 @@ func (d *delegateTool) Invoke(ctx context.Context, input json.RawMessage, sb san
 func (d *delegateTool) appendChild(child *harness.SubAgent, peer AgentSpec, status NodeStatus, box string) {
 	d.trace.Nodes = append(d.trace.Nodes, TraceNode{
 		ID: child.ID, Name: peer.Name, Role: peer.Role, Status: status,
-		Grants: child.Perms.Tools, Sandbox: box,
+		Sandbox: box,
 	})
 	d.trace.Edges = append(d.trace.Edges, TraceEdge{From: d.entryID, To: child.ID, Kind: EdgeDelegate})
 }

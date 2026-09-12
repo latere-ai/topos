@@ -26,8 +26,8 @@ enough to render live and to diff across runs.
 `Run` returns a `Trace` alongside the final text. The trace is a small graph:
 
 - A `TraceNode` per agent: a stable `ID`, the agent's `Name` and `Role`, a
-  `Status` (`running`, `done`, `failed`, or `stopped`), the tool families actually `Grants`-ed
-  after attenuation (so the graph shows real authority, not what was requested),
+  `Status` (`running`, `done`, `failed`, or `stopped`), the concrete registry names
+  in `Grants` after attenuation (including `delegate` when topology/depth permit),
   and the `Sandbox` it ran in (a delegated peer gets its own).
 - A `TraceEdge` per relationship, tagged by `Kind`: `next` for one step of a
   pinned chain, `delegate` from a caller to the peer it spawned, and `deliver` from

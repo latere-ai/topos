@@ -76,7 +76,7 @@ type Agent struct {
 	Role         string   `json:"role,omitempty"`
 	Description  string   `json:"description,omitempty"` // when-to-use; shown to a dynamic lead for discovery
 	SystemPrompt string   `json:"system_prompt,omitempty"`
-	Tools        []string `json:"tools,omitempty"`  // tool families this agent may use
+	Tools        []string `json:"tools,omitzero"`   // nil defaults to all builtins; [] grants none
 	Scopes       []string `json:"scopes,omitempty"` // permission scopes this agent holds
 }
 

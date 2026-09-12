@@ -71,6 +71,33 @@ func (r *Registry) Get(name string) Tool {
 	return r.byName[name]
 }
 
+// Names returns the concrete tool names in registration order. The returned
+// slice is independent of the registry and is non-nil even when empty.
+func (r *Registry) Names() []string {
+	names := make([]string, len(r.order))
+	for i, t := range r.order {
+		names[i] = t.Name()
+	}
+	return names
+}
+
+// Select returns a new registry containing only the named tools, in original
+// registration order. Unknown names are ignored; nil and empty both grant none.
+// Selection never modifies the source registry.
+func (r *Registry) Select(names []string) *Registry {
+	allowed := make(map[string]bool, len(names))
+	for _, name := range names {
+		allowed[name] = true
+	}
+	selected := NewRegistry()
+	for _, t := range r.order {
+		if allowed[t.Name()] {
+			selected.Register(t)
+		}
+	}
+	return selected
+}
+
 // Defs returns the ToolDef list in registration order — ready to pass to a
 // model Request.
 func (r *Registry) Defs() []models.ToolDef {

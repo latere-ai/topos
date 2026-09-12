@@ -39,6 +39,10 @@ When the model calls `delegate`, the tool:
    asks for. The result is always a subset of the parent's pool: trust decreases
    with distance from the entry agent. A child's authority is captured at spawn,
    so it cannot drift back up.
+   The runner resolves nil defaults and tool-family aliases to concrete builtin
+   names before intersection. Execution selects only the resulting grant, with
+   an empty intersection always granting none. `delegate` remains a separate
+   topology/depth capability; see [Tool Grant Enforcement](031-tool-grant-enforcement.md).
 3. Creates a fresh sandbox for the peer. The peer runs in its own sandbox, so a
    provisioning failure is the child's problem and the peer's filesystem work is
    isolated from the parent's.

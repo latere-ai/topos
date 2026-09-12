@@ -204,8 +204,8 @@ func TestDelegateAttenuatesPeerTools(t *testing.T) {
 	}
 	// reviewer asked for {write,exec}; lead holds {read,write} → granted {write}.
 	g := res.Trace.Nodes[1].Grants
-	if len(g) != 1 || g[0] != "write" {
-		t.Errorf("grants = %v, want [write]", g)
+	if !slices.Equal(g, []string{"write_file", "edit_file"}) {
+		t.Errorf("grants = %v, want [write_file edit_file]", g)
 	}
 }
 
