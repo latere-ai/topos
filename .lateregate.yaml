@@ -27,6 +27,7 @@ spec:
   # Two vocabularies meet in one tree. The runtime specs are retrospective
   # records of shipped behaviour and read `complete`; the adversarial specs
   # follow their own lifecycle and read `current` for what ships today.
+  # New runtime work starts `drafted` before implementation.
   # `archived` is the terminal status for both of them. Closed at what the tree
   # uses, so a status invented in review is caught.
   status: [drafted, complete, current, archived]

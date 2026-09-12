@@ -1,6 +1,6 @@
 ---
 title: Tool Grant Enforcement
-status: drafted
+status: complete
 track: runtime
 depends_on:
   - specs/006-delegation.md
@@ -78,3 +78,23 @@ defaults. Denied dispatch retains the existing unknown-tool error result.
 - A default native critic cannot execute or write; explicit tools work.
 - Regression tests fail before the fix and pass afterward; package suites,
   race checks, and repository gates pass.
+
+## Outcome
+
+Implemented in `f506930` (runner, registry, delegated capabilities, and graph
+serialization) and `0d07854` (native critic defaults). Forced shell/write calls
+reproduced unauthorized execution before the fix and now return tool errors
+without sandbox execution or writes. Read controls succeed; empty intersections
+remain empty through mesh recursion, and graph JSON preserves explicit denial.
+The native critic regression also failed with its original default handling.
+
+The full race suite passes. Coverage is 97.5% for the root runtime, 93.5% for
+tools, and 94.1% for the native critic. Existing coverage waivers for unrelated
+adversarial packages remain unchanged.
+
+## Design evolution
+
+Selection distinguishes declarations (`BuiltinsFor`, where nil means all) from
+resolved capabilities (`Registry.Select`, where nil means none). This avoids
+changing the harness's existing intersection semantics and makes the empty-grant
+boundary explicit. No loop dispatch change was needed.
