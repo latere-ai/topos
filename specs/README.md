@@ -34,7 +34,7 @@ Underneath the root package sits an engine made of public but advanced subpackag
   When an agent is allowed to hand work off, a `delegate` tool is injected into
   its registry.
 - A spawner (`harness`) that derives a sub-agent with attenuated authority (a
-  strict subset of its parent's tools and scopes) and enforces a recursion bound.
+  subset of its parent's tools and scopes) and enforces a recursion bound.
 - A sandbox abstraction (`sandbox`) with a local, temp-directory implementation
   (`sandbox/local`) so a run needs no external services.
 
