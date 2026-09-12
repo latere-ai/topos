@@ -22,7 +22,7 @@ type criticGrantModel struct {
 	want []string
 }
 
-func (m criticGrantModel) Stream(_ context.Context, req models.Request) (models.Stream, error) {
+func (m criticGrantModel) Stream(ctx context.Context, req models.Request) (models.Stream, error) {
 	names := make([]string, len(req.Tools))
 	for i, tool := range req.Tools {
 		names[i] = tool.Name
@@ -39,7 +39,7 @@ func (m criticGrantModel) Stream(_ context.Context, req models.Request) (models.
 				m.t.Errorf("critic dispatched tool outside its grant: %+v", result)
 			}
 		}
-		return scriptedModel{text: "critique"}.Stream(context.Background(), req)
+		return scriptedModel{text: "critique"}.Stream(ctx, req)
 	}
 	return &scriptStream{events: []models.Event{
 		{Kind: models.KindToolCallDone, ToolCall: &models.ToolCall{ID: "bash", Name: "bash", Input: json.RawMessage(`{"command":"echo changed"}`)}},
