@@ -9,3 +9,8 @@ A section says what changed for whoever uses the release, not what was
 committed: the commit log already holds that.
 
 ## Unreleased
+
+- Agent tool grants now restrict the available tools and their execution,
+  including delegated agents. Traces show the concrete tools offered.
+- Native critics have no tools by default. Explicit grants enable selected
+  tools; persisted empty grants remain empty after a JSON round-trip.

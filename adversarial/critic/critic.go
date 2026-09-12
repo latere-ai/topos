@@ -34,13 +34,9 @@ type Config struct {
 	Model xtopos.ModelOptions
 	// Sandbox is the execution backend; nil uses topos's local sandbox.
 	Sandbox sandbox.Provider
-	// Tools is the agent's tool grant, recorded on the run's trace node as
-	// Grants. nil (the default) records no grant. It is an audit record, not a
-	// sandbox: the runtime currently offers every agent tools.Builtins() (bash,
-	// the file tools, and the search tools) whatever the grant says, so a nil
-	// Tools does not by itself keep the critic from executing or mutating the
-	// tree. Confine the Sandbox provider when that matters. The critic reasons
-	// over the diff embedded in the prompt and needs no tool to do its job.
+	// Tools explicitly enables builtin tools by name or family. Nil and empty
+	// grant no tools: the critic reasons over the diff embedded in its prompt.
+	// The runtime enforces this selection at both model exposure and dispatch.
 	Tools []string
 }
 
@@ -82,7 +78,7 @@ func (c *critic) Round(ctx context.Context, in adversarial.CriticInput) (*advers
 		Entry: xtopos.AgentSpec{
 			Name:  fmt.Sprintf("critic-%d", c.forkIdx),
 			Role:  "critic",
-			Tools: c.cfg.Tools,
+			Tools: append([]string{}, c.cfg.Tools...),
 		},
 	}
 	res, err := runner.Run(ctx, region, adversarial.AssemblePrompt(in))

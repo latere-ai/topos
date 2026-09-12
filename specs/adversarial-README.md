@@ -58,12 +58,6 @@ items carried over from the native critic work (`adversarial/critic`):
   outside the engine's cost-cap accounting. Either sum `EventUsage` through an
   observer or carry the total on `RunResult`. This is the one gap that keeps
   native critics "sound for correctness but not for cost".
-- **An enforced read-only posture for native critics.** The runtime ships
-  `read_file`, `grep`, and `glob`, so the file-tool gap is closed. What remains is
-  enforcement: `AgentSpec.Tools` is recorded on the trace node as `Grants` but
-  does not filter the registry handed to the model, which is always
-  `tools.Builtins()`. Until the registry is filtered by the grant, a native critic
-  holds `bash` and the write tools regardless of what its `Config.Tools` says.
 - **Cella workspace wiring.** How an embedder's worktree reaches a Cella sandbox
   cwd (mount versus copy). Moot for the local sandbox and wallfacer's existing
   worktree; needed when a Cella embedder arrives.

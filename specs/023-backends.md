@@ -55,12 +55,11 @@ is centralized.
 
 `Config` carries `Model` (`xtopos.ModelOptions`: Lux, Direct, or Fake, or a
 `Client` the caller supplies outright — tests set a scripted model there),
-`Sandbox` (nil uses the local sandbox), and `Tools`. `Tools` is recorded on the trace node as `Grants` and is
-an audit record rather than a sandbox: the runtime offers every agent
-`tools.Builtins()` whatever the grant says, so a nil `Tools` does not by itself
-keep the critic from executing or mutating. A caller that needs a read-only critic
-confines the sandbox provider. The critic itself reasons over the diff embedded in
-the assembled prompt and calls no tool to do so. Each round runs one `Pinned` single-agent region
+`Sandbox` (nil uses the local sandbox), and `Tools`. Nil or empty `Tools` grants
+no tools; the critic reasons over the diff embedded in the assembled prompt.
+Explicit tools use the runtime's builtin names or families, and the runtime
+enforces the grant at both model exposure and dispatch. `Grants` records the
+concrete registry names. Each round runs one `Pinned` single-agent region
 over `AssemblePrompt(in)` and returns the agent's final text as
 `CriticResult.Markdown`.
 

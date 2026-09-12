@@ -145,13 +145,9 @@ func TestRoundReportsNoUsage(t *testing.T) {
 	}
 }
 
-// TestToposGrantsExactlyAgentSpecTools pins what the trace records: a node's
-// Grants is exactly AgentSpec.Tools, so nil tools produce no grants while an
-// explicit bash grant does appear (control, so the nil assertion is not vacuous).
-// This is an audit property, not an enforcement one: the runtime hands every
-// agent tools.Builtins() regardless of Grants, so a nil grant does not by itself
-// keep a critic read-only. See the roadmap note in specs/adversarial-README.md.
-func TestToposGrantsExactlyAgentSpecTools(t *testing.T) {
+// An explicit empty declaration produces no registry grants; a concrete bash
+// declaration appears in the trace. Critic defaults are tested through Round.
+func TestToposTraceRecordsConcreteTools(t *testing.T) {
 	grants := func(tools []string) []string {
 		runner, err := xtopos.NewRunner(xtopos.Options{SessionID: "t", Model: xtopos.ModelOptions{Client: scriptedModel{text: "ok"}}})
 		if err != nil {
@@ -171,8 +167,7 @@ func TestToposGrantsExactlyAgentSpecTools(t *testing.T) {
 		return res.Trace.Nodes[0].Grants
 	}
 
-	// Default critic posture: nil tools => no grants => no bash.
-	for _, g := range grants(nil) {
+	for _, g := range grants([]string{}) {
 		t.Errorf("read-only critic was granted a tool: %q", g)
 	}
 	// Control: an explicit bash grant does show up, proving the assertion above
