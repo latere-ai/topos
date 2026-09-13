@@ -71,3 +71,7 @@ waive:
       that returns before that defer is set, or from a test that creates
       through the local provider directly; the site is not identified yet
     until: 2026-10-31
+
+# The identity shape of the family: specs/infrastructure/identity.md in latere-ai/specs
+identity:
+  role: none
