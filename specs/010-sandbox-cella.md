@@ -13,7 +13,7 @@ affects:
   - README.md
 effort: medium
 created: 2026-06-28
-updated: 2026-06-28
+updated: 2026-09-17
 author: changkun
 dispatched_task_id: null
 ---
@@ -88,15 +88,17 @@ the contract.
 
 ### Authentication and token ownership
 
-Cella is bearer-token authenticated. There are two issuers (the legacy auth
-service and Cella's own signing key), and `POST /v1/tokens/exchange` mints a
-Cella bearer from an upstream actor token. The ownership split:
+Cella is bearer-token authenticated. It issues no credential of its own: the
+bearer is the short-lived token the caller's issuer mints for the audience
+`sandboxd`, presented as it was minted (see the amendment of 2026-09-17). The
+ownership split:
 
-- **The host owns the exchange.** At run start it bridges the inbound user JWT
-  to a user-subject Cella bearer (once), then stores it on the context with
-  `sandbox.WithBearer(ctx, bearer)`. This scopes the entire run (entry agent
-  plus every delegated peer's create/exec/destroy) to the session user's
-  identity.
+- **The host owns the mint.** It asks its issuer for a token addressed to Cella
+  and stores it on the context with `sandbox.WithBearer(ctx, bearer)`, which
+  scopes the call (entry agent plus every delegated peer's
+  create/exec/destroy) to the session user's identity. The token lives for
+  minutes, so a run longer than one token re-mints rather than bridging once at
+  run start.
 
 The provider stores no token: `send` asks the configured `TokenSource` on every
 request and sets `Authorization: Bearer <token>`. Three sources cover the
@@ -110,12 +112,12 @@ ownership models a caller might have:
   including for requests deep inside a long-running `Run`.
 - **`ContextTokenSource`**: reads a per-request bearer from `BearerFromContext`
   (set by `sandbox.WithBearer`). Best for multi-tenant hosts (a different user
-  per request), but the token is fixed for whatever context is passed, so it does
-  not pick up a refresh mid-run.
+  per request), but the token is fixed for whatever context is passed, so a leg
+  longer than the token's lifetime needs a fresh context or `TokenFunc`.
 
-The provider does **not** call `/v1/tokens/exchange` itself; minting and refresh
-are the caller's concern, kept out of the runtime. A long run that may outlive a
-token's TTL should use `TokenFunc` so rotation propagates.
+The provider mints nothing itself; minting and re-minting are the caller's
+concern, kept out of the runtime. A long run, which is any run that may outlive
+one token's few minutes, uses `TokenFunc` so a fresh token propagates.
 
 ### Method mapping
 
@@ -297,3 +299,38 @@ coverage ~95%.
 
 Caveats that only a live Cella can settle are tracked under Open questions
 (missing-file ReadFile, server-side kill on cancel, default image catalog ref).
+
+## Amendment, 2026-09-17: Cella issues no bearer
+
+This spec was written when Cella minted its own 30-day bearer at a token
+exchange route of its own, and the sections above described the host as owning
+that exchange. The route is gone, and this tree no longer spells its path:
+decision D2 of
+`specs/decisions/2026-09-13-identity-one-shape.md` removed it, leaf
+`id-03-one-hop.md` carried out the removal, and sandbox shipped it in
+v0.11.0: Cella issues no credential in return for an upstream token, and a
+caller presents the actor token its own issuer minted for the audience
+`sandboxd` directly, as it already did at Lux and Drive. Revocation is
+lifetime rather than a catalog entry.
+
+Nothing in `sandbox/cella` called the route, so no code moved. What changed is
+what the documentation promised:
+
+| Before | Today |
+|---|---|
+| Cella's exchange route mints a Cella bearer from an upstream actor token | the issuer mints an actor token for `sandboxd`; Cella mints nothing |
+| the bearer lives 30 days | the token lives about 300 seconds at the hosted deployment |
+| the host bridges the user JWT once at run start and threads the context | the host holds a source that hands out a valid token per request and re-mints before the current one lapses |
+
+The last row is the consequence to design around, and the reason `TokenFunc`
+is now the recommended shape rather than one of three equals: a bearer bridged
+once at run start expires inside any run that lasts longer than a few minutes.
+The host in the family, `agents`, models exactly this in its
+`internal/sandbox/bearer` package, whose source is asked per request.
+
+The `TokenSource` interface, its three implementations and the provider's
+per-request `Authorization` header are unchanged: the seam was always "ask the
+host for the current token", which is the seam this shape needs.
+
+`retired_route_test.go` at the repository root holds the correction, failing on
+any tracked source or document outside `.archive` that names the removed route.

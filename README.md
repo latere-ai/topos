@@ -246,8 +246,10 @@ ctx = sandbox.WithBearer(ctx, userBearer)
 res, _ := r.Run(ctx, region, task)
 ```
 
-The host owns minting the Cella bearer (exchanging the user's token); the
-provider only presents it. The root `topos` package never imports a concrete
+The host owns minting the Cella bearer, a short-lived token its issuer mints
+for Cella alone; the provider only presents it. Because that token is good for
+minutes rather than days, a run longer than one token needs a source that
+re-mints (see below). The root `topos` package never imports a concrete
 backend; a host wires one in as the interface.
 
 ### Authenticating to Cella
@@ -274,8 +276,10 @@ prov := cella.New(cella.Options{
 })
 ```
 
-Cella issues the token (dashboard/CLI, or `POST /v1/tokens/exchange`); obtaining
-and refreshing it is the host's job, not the provider's.
+Cella issues no token of its own. Present the token your own issuer mints for
+Cella (audience `sandboxd`), which lives for minutes; obtaining it and
+re-minting it before it lapses is the host's job, not the provider's. That is
+why `TokenFunc` is the shape to reach for whenever a run can outlast one token.
 
 ### Secrets
 

@@ -17,10 +17,16 @@ import (
 // TokenSource yields the bearer token to present on each outbound request to
 // the Cella API. Implementations MUST be safe for concurrent use.
 //
-// The Cella backend does not mint tokens itself: exchanging an upstream user
-// JWT for a Cella bearer (POST /v1/tokens/exchange) is the host's job, done
-// once at run start. A TokenSource only supplies whatever token the host has
-// already arranged.
+// Cella issues no credential of its own. The token to present is the one the
+// caller's own issuer mints for Cella and for nobody else, short-lived by
+// design (300 seconds at the hosted deployment), and it goes on the request
+// as it was minted. Obtaining it, and re-minting it before it lapses, is the
+// host's job; a TokenSource only supplies whatever token the host holds at the
+// moment of the call.
+//
+// The lifetime is the thing to design around: a run outlives one token, so a
+// host arranges a source that hands out a valid token per request rather than
+// a bearer bridged once at run start.
 type TokenSource interface {
 	// Token returns the bearer token to use for a request made under ctx.
 	Token(ctx context.Context) (string, error)
@@ -54,11 +60,14 @@ type TokenFunc func(ctx context.Context) (string, error)
 func (f TokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
 
 // ContextTokenSource reads a per-request bearer from the context, as set by
-// [sandbox.WithBearer]. This is how a host scopes an entire agent run — the
-// entry agent plus every delegated peer's create/exec/destroy — to the session
-// user's identity: it bridges the inbound user JWT to a user-subject Cella
-// bearer once at run start, stores it with sandbox.WithBearer, and threads the
-// resulting context through every sandbox call.
+// [sandbox.WithBearer]. It scopes a call to the identity the context carries,
+// so the entry agent and every delegated peer's create/exec/destroy act as the
+// session user when the host threads one context through the whole run.
+//
+// The bearer is fixed for whatever context is passed, so a run longer than the
+// token's few minutes needs a fresh context per leg. A run that cannot promise
+// that is better served by [TokenFunc], which is asked per request and can
+// return a freshly minted token.
 type ContextTokenSource struct{}
 
 // Token returns the bearer carried by ctx, or an error if none was set.
