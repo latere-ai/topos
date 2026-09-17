@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- The Cella provider's documentation describes the credential that exists.
+  Cella issues no bearer of its own: present the short-lived token your issuer
+  mints for the audience `sandboxd`. Because that token lives for minutes
+  rather than days, a run that outlasts one token needs `TokenFunc`, which is
+  asked per request, rather than a bearer bridged once at run start. No code
+  changed; the `TokenSource` interface and its three implementations are
+  unchanged.
+
 - Agent tool grants now restrict the available tools and their execution,
   including delegated agents. Traces show the concrete tools offered.
 - Native critics have no tools by default. Explicit grants enable selected
