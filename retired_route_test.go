@@ -33,7 +33,9 @@ var retiredCellaRoute = "/v1/tokens" + "/exchange"
 // the sentence from coming back.
 //
 // An archive records what was once true and is not read, the same rule the
-// family's gate applies to its own document scans.
+// family's gate applies to its own document scans. Neither is .claude, which
+// holds worktrees: a full copy of the tree at whatever commit somebody is
+// working from, including copies that predate this correction.
 func TestNoSourceNamesTheRetiredCellaRoute(t *testing.T) {
 	read := map[string]bool{".go": true, ".md": true, ".yaml": true, ".yml": true}
 	var found []string
@@ -43,7 +45,7 @@ func TestNoSourceNamesTheRetiredCellaRoute(t *testing.T) {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if p != "." && (name == ".git" || name == ".archive" || name == "node_modules" || name == "testdata") {
+			if p != "." && (name == ".git" || name == ".claude" || name == ".archive" || name == "node_modules" || name == "testdata") {
 				return filepath.SkipDir
 			}
 			return nil
