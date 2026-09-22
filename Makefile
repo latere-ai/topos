@@ -82,7 +82,6 @@ tidy:
 # hooks installs the repository git hooks (pre-commit gofmt and go fix guards).
 hooks:
 	git config core.hooksPath .githooks
-	@[ -e CLAUDE.md ] || [ -L CLAUDE.md ] || ln -s AGENTS.md CLAUDE.md
 	@echo "installed git hooks (core.hooksPath=.githooks)"
 
 # The whole shared bar. Every gate lives in lateregate, pinned as a tool in
