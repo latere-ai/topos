@@ -86,7 +86,7 @@ func TestSpawnSubAllocatesBudget(t *testing.T) {
 	}
 }
 
-func TestSpawnBudgetUnderParentCapHonoured(t *testing.T) {
+func TestSpawnBudgetUnderParentCapHonored(t *testing.T) {
 	sp := harness.NewSpawner(nil)
 	parent := parentCtx() // USD 10, tokens 100000, wall 1h
 

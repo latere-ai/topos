@@ -230,7 +230,7 @@ func TestToolPathAppliesHookModifiedInput(t *testing.T) {
 			t.Fatalf("payload type = %T, want *PreToolUsePayload", payload)
 		}
 		rewritten := *p
-		rewritten.NormalisedInput = json.RawMessage(`{"command":"safe"}`)
+		rewritten.NormalizedInput = json.RawMessage(`{"command":"safe"}`)
 		return hooks.Modify(&rewritten)
 	})
 
@@ -245,8 +245,8 @@ func TestToolPathAppliesHookModifiedInput(t *testing.T) {
 	}
 }
 
-// TestToolPathNormalisesNilInput asserts a nil tool input is backfilled to {}.
-func TestToolPathNormalisesNilInput(t *testing.T) {
+// TestToolPathNormalizesNilInput asserts a nil tool input is backfilled to {}.
+func TestToolPathNormalizesNilInput(t *testing.T) {
 	bus := hooks.New()
 	tp := hooks.NewToolPath(bus, nil)
 	result := tp.Resolve("sess-1", models.ToolCall{ID: "c1", Name: "bash", Input: nil})

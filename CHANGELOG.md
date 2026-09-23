@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- **Breaking:** the PreToolUse hook payload names its validated tool input
+  `normalized_input`, and the Go field is `PreToolUsePayload.NormalizedInput`.
+  A hook that reads `normalised_input`, or a modified payload that sets it,
+  must use the new key; a payload stored before this release carries the old
+  one.
+
 ## v0.5.0 - 2026-09-18
 
 - The identity gate now also reads the frontend for the retired admin flag

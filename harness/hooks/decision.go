@@ -92,7 +92,7 @@ type PhaseResult struct {
 	DeniedBy string
 	// Reason is the human-readable denial reason (empty on allow).
 	Reason string
-	// ModifiedInput is the normalised/modified input to pass to the tool
+	// ModifiedInput is the normalized/modified input to pass to the tool
 	// executor. Always non-nil on allow; equals the original if no modification
 	// was requested.
 	ModifiedInput json.RawMessage
@@ -108,9 +108,9 @@ type PhaseResult struct {
 //   - Step 3 execution (tool invoke) if Allowed.
 //   - Dispatching EventPostToolUse / EventPostToolUseFailure after execution.
 func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult {
-	normalised := call.Input
-	if normalised == nil {
-		normalised = json.RawMessage("{}")
+	normalized := call.Input
+	if normalized == nil {
+		normalized = json.RawMessage("{}")
 	}
 
 	// Carry the full call identity (ID + name + normalized input) on the
@@ -120,8 +120,8 @@ func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult 
 	payload := &PreToolUsePayload{
 		Version:         "1",
 		SessionID:       sessionID,
-		ToolCall:        models.ToolCall{ID: call.ID, Name: call.Name, Input: normalised},
-		NormalisedInput: normalised,
+		ToolCall:        models.ToolCall{ID: call.ID, Name: call.Name, Input: normalized},
+		NormalizedInput: normalized,
 	}
 
 	// Step 1: hook consumers.
@@ -134,15 +134,15 @@ func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult 
 		}
 	}
 	if d.Verdict == VerdictModify && d.ModifiedPayload != nil {
-		// Accept modified payload if it includes normalised_input.
+		// Accept modified payload if it includes normalized_input.
 		if mp, ok := d.ModifiedPayload.(*PreToolUsePayload); ok {
-			normalised = mp.NormalisedInput
+			normalized = mp.NormalizedInput
 		}
 	}
 
 	// Step 2: policy deny-rules.  Independent of hook outcomes.
 	for _, rule := range tp.denyRules {
-		if rule.Predicate(call.Name, normalised) {
+		if rule.Predicate(call.Name, normalized) {
 			return PhaseResult{
 				Allowed:  false,
 				DeniedBy: "rule:" + rule.Name,
@@ -153,6 +153,6 @@ func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult 
 
 	return PhaseResult{
 		Allowed:       true,
-		ModifiedInput: normalised,
+		ModifiedInput: normalized,
 	}
 }

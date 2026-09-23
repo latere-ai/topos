@@ -684,7 +684,7 @@ func TestLoopToolReportsErrorResultWithoutGoError(t *testing.T) {
 	}
 }
 
-func TestLoopNullToolInputNormalised(t *testing.T) {
+func TestLoopNullToolInputNormalized(t *testing.T) {
 	// A tool call with nil Input must reach the tool as "{}".
 	var got string
 	noop := &stubTool{name: "noop", res: models.ToolResult{Content: "ok"}, gotInput: &got}

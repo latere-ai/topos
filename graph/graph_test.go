@@ -57,12 +57,12 @@ func TestGraphJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	reMarshalled, err := json.Marshal(back)
+	reMarshaled, err := json.Marshal(back)
 	if err != nil {
 		t.Fatalf("re-Marshal: %v", err)
 	}
-	if string(data) != string(reMarshalled) {
-		t.Errorf("round-trip changed the JSON:\n first: %s\nsecond: %s", data, reMarshalled)
+	if string(data) != string(reMarshaled) {
+		t.Errorf("round-trip changed the JSON:\n first: %s\nsecond: %s", data, reMarshaled)
 	}
 }
 
@@ -134,12 +134,12 @@ func TestAgentRefJSONRoundTrip(t *testing.T) {
 	if !back.Regions[0].Entry.IsRef() || back.Regions[0].Entry.Ref != "shared-lead" {
 		t.Errorf("entry ref not preserved: %+v", back.Regions[0].Entry)
 	}
-	reMarshalled, err := json.Marshal(back)
+	reMarshaled, err := json.Marshal(back)
 	if err != nil {
 		t.Fatalf("re-Marshal: %v", err)
 	}
-	if string(data) != string(reMarshalled) {
-		t.Errorf("round-trip changed the JSON:\n first: %s\nsecond: %s", data, reMarshalled)
+	if string(data) != string(reMarshaled) {
+		t.Errorf("round-trip changed the JSON:\n first: %s\nsecond: %s", data, reMarshaled)
 	}
 }
 

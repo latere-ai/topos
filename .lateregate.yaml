@@ -25,7 +25,7 @@ hermetic:
 
 spec:
   # Two vocabularies meet in one tree. The runtime specs are retrospective
-  # records of shipped behaviour and read `complete`; the adversarial specs
+  # records of shipped behavior and read `complete`; the adversarial specs
   # follow their own lifecycle and read `current` for what ships today.
   # New runtime work starts `drafted` before implementation.
   # `archived` is the terminal status for both of them. Closed at what the tree
@@ -39,7 +39,7 @@ spec:
   # a row whose cell count drifts renders as silently missing columns.
   tables: true
   # `complete` is not terminal here: the runtime specs are retrospective
-  # records of behaviour that ships today, kept at the root because that is
+  # records of behavior that ships today, kept at the root because that is
   # what they are for. Retiring one sets `archived`, and the rule then holds it
   # to the same vocabulary and required frontmatter as the rest.
   archive:

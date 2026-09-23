@@ -99,14 +99,14 @@ type UserPromptSubmitPayload struct {
 }
 
 // PreToolUsePayload is the versioned payload for EventPreToolUse.
-// Consumers may mutate NormalisedInput (via Decision.Modify) or deny the call.
+// Consumers may mutate NormalizedInput (via Decision.Modify) or deny the call.
 type PreToolUsePayload struct {
 	Version   string          `json:"version"`
 	SessionID string          `json:"session_id"`
 	ToolCall  models.ToolCall `json:"tool_call"`
-	// NormalisedInput is the backfilled, validated JSON input for the tool.
+	// NormalizedInput is the backfilled, validated JSON input for the tool.
 	// Consumers see this (not the raw model output) to prevent injection attacks.
-	NormalisedInput json.RawMessage `json:"normalised_input"`
+	NormalizedInput json.RawMessage `json:"normalized_input"`
 }
 
 // PostToolUsePayload is the versioned payload for EventPostToolUse.
