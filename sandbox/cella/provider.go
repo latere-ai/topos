@@ -59,7 +59,7 @@ type manifestLifecycle struct {
 }
 
 // manifestSecrets carries the vault entries to mount. Mount intentionally has
-// no omitempty: an explicit empty slice must serialise as [] ("mount none"),
+// no omitempty: an explicit empty slice must serialize as [] ("mount none"),
 // which the server distinguishes from an absent secrets block ("default_mount").
 type manifestSecrets struct {
 	Mount []string `json:"mount"`

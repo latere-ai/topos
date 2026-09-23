@@ -203,9 +203,9 @@ func (p *Provider) WriteFile(ctx context.Context, id, filePath string, data []by
 	return nil
 }
 
-// normalizeTarName canonicalises a tar entry name or a caller path to a clean,
+// normalizeTarName canonicalizes a tar entry name or a caller path to a clean,
 // slash-separated, relative form with no leading "./" or trailing "/". The
-// workspace root ("." or "") normalises to "".
+// workspace root ("." or "") normalizes to "".
 func normalizeTarName(name string) string {
 	name = strings.TrimPrefix(name, "./")
 	name = strings.TrimSuffix(name, "/")
@@ -219,7 +219,7 @@ func normalizeTarName(name string) string {
 	return cleaned
 }
 
-// relativeTo returns name relative to prefix (both already normalised), and
+// relativeTo returns name relative to prefix (both already normalized), and
 // whether name is within the prefix subtree. For the root prefix ("") it
 // returns name unchanged.
 func relativeTo(name, prefix string) (string, bool) {

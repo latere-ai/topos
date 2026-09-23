@@ -16,7 +16,7 @@ type bearerCtxKey struct{}
 
 // WithBearer returns a copy of ctx carrying bearer as the credential to use for
 // outbound sandbox-provider requests made under that context. A TokenSource
-// that honours the context (see cella.ContextTokenSource) reads it back via
+// that honors the context (see cella.ContextTokenSource) reads it back via
 // BearerFromContext.
 //
 // This is how an embedding host scopes an entire agent run to the

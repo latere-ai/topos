@@ -199,13 +199,13 @@ type RunResult struct {
 // which equals the corresponding Trace node id for agentic runs — so a live
 // consumer can join events to graph nodes. AgentID is the agent name when the
 // underlying payload carries one (else ""). PayloadJSON is the full typed payload
-// marshalled to JSON (audit/replay grade).
+// marshaled to JSON (audit/replay grade).
 type Event struct {
 	Name        string          // event name; compare against the Event* constants
 	SessionID   string          // emitting agent's loop session id == Trace node id
 	AgentID     string          // agent name when available, else ""
 	At          time.Time       // dispatch time (UTC)
-	PayloadJSON json.RawMessage // full payload, JSON-marshalled
+	PayloadJSON json.RawMessage // full payload, JSON-marshaled
 }
 
 // Event name constants an embedder is likely to switch on. They mirror the

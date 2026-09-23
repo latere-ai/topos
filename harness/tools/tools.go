@@ -31,7 +31,7 @@ type Tool interface {
 	// requests.
 	Def() models.ToolDef
 	// Invoke executes the tool with the given input and returns a ToolResult.
-	// sb and sandboxID identify the execution sandbox. input is the normalised
+	// sb and sandboxID identify the execution sandbox. input is the normalized
 	// (post-hook) JSON object from the model.
 	Invoke(ctx context.Context, input json.RawMessage, sb sandbox.Provider, sandboxID string) (models.ToolResult, error)
 }

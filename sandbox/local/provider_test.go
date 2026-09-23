@@ -26,7 +26,7 @@ var _ sandbox.Provider = (*local.Provider)(nil)
 
 // TestLocalIgnoresVaultCredentials asserts the local provider treats the
 // vault-credential fields as a no-op (it has no vault): SecretMounts on Create
-// and SecretEnv on Exec neither error nor change behaviour.
+// and SecretEnv on Exec neither error nor change behavior.
 func TestLocalIgnoresVaultCredentials(t *testing.T) {
 	p := local.New()
 	ctx := context.Background()

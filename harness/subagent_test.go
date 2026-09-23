@@ -82,7 +82,7 @@ func TestSpawnSubAllocatesBudget(t *testing.T) {
 		t.Fatalf("child usd budget = %v, want capped at parent's 10", child.Budget.LimitUSD)
 	}
 	if child.Budget.LimitTokens != 5000 {
-		t.Fatalf("child tokens = %d, want 5000 (under parent cap, honoured)", child.Budget.LimitTokens)
+		t.Fatalf("child tokens = %d, want 5000 (under parent cap, honored)", child.Budget.LimitTokens)
 	}
 }
 
@@ -90,13 +90,13 @@ func TestSpawnBudgetUnderParentCapHonoured(t *testing.T) {
 	sp := harness.NewSpawner(nil)
 	parent := parentCtx() // USD 10, tokens 100000, wall 1h
 
-	// Every requested axis is strictly under the parent's cap → honoured as-is.
+	// Every requested axis is strictly under the parent's cap → honored as-is.
 	child, _ := sp.Spawn(context.Background(), parent, harness.SpawnRequest{
 		Label:  "w",
 		Budget: billing.Budget{LimitUSD: 3, LimitTokens: 1000, LimitWallTime: 30 * time.Minute},
 	})
 	if child.Budget.LimitUSD != 3 {
-		t.Fatalf("child usd = %v, want 3 (under parent cap, honoured)", child.Budget.LimitUSD)
+		t.Fatalf("child usd = %v, want 3 (under parent cap, honored)", child.Budget.LimitUSD)
 	}
 	if child.Budget.LimitTokens != 1000 {
 		t.Fatalf("child tokens = %d, want 1000", child.Budget.LimitTokens)

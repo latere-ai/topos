@@ -8,7 +8,7 @@
 // Package fake provides a deterministic models.Model implementation for local
 // development and tests. It requires no external services.
 //
-// Behaviour:
+// Behavior:
 //   - Turn 1: emits a bash tool call carrying {"command":"echo <first-user-message>"},
 //     StopReason=tool_use.
 //   - Turn 2+: emits "done" text + StopReason=end_turn.

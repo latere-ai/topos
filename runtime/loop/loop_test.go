@@ -459,7 +459,7 @@ func (m *toolCallThenCancelModel) Stream(_ context.Context, _ models.Request) (m
 }
 
 // stubTool is a registry tool with a fixed result/error and an optional record
-// of the (normalised) input it was invoked with.
+// of the (normalized) input it was invoked with.
 type stubTool struct {
 	name     string
 	res      models.ToolResult

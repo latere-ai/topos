@@ -177,6 +177,6 @@ type SessionEndPayload struct {
 	Version   string    `json:"version"`
 	SessionID string    `json:"session_id"`
 	EndedAt   time.Time `json:"ended_at"`
-	// FinalReason is the normalised stop reason that ended the session.
+	// FinalReason is the normalized stop reason that ended the session.
 	FinalReason models.StopReason `json:"final_reason"`
 }

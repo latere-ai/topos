@@ -39,7 +39,7 @@ func (failCreateProvider) Create(context.Context, sandbox.CreateOptions) (sandbo
 }
 
 // readyAfterProvider wraps the local provider but reports "not running" for the
-// first notReady HealthCheck calls, modelling a backend (like Cella) whose
+// first notReady HealthCheck calls, modeling a backend (like Cella) whose
 // Create returns a sandbox still in the "creating" state.
 type readyAfterProvider struct {
 	*local.Provider

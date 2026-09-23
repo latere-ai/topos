@@ -18,8 +18,8 @@ import (
 )
 
 // A fully populated authored graph round-trips through JSON unchanged: the
-// snake_case wire form is the persistence contract, so marshalling then
-// unmarshalling must reproduce the value exactly.
+// snake_case wire form is the persistence contract, so marshaling then
+// unmarshaling must reproduce the value exactly.
 func TestGraphJSONRoundTrip(t *testing.T) {
 	g := graph.Graph{
 		Regions: []graph.Region{

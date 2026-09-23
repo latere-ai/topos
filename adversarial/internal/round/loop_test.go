@@ -856,7 +856,7 @@ func TestEnginePromptCachingPerFork(t *testing.T) {
 		// A working cache should be paying for itself: cache reads
 		// should outweigh fresh inputs across the fork.
 		if fu.Total.CacheRead <= fu.Total.Input {
-			t.Errorf("fork %d: cache_read=%d <= input=%d; cache not amortising input cost",
+			t.Errorf("fork %d: cache_read=%d <= input=%d; cache not amortizing input cost",
 				f.Index, fu.Total.CacheRead, fu.Total.Input)
 		}
 		// Per-round assertions: R1 must NOT yet show cache reads (the

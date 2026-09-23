@@ -73,7 +73,7 @@ func TestRenderRoundTripWithWithdraw(t *testing.T) {
 // TestParseRenamesReusedPriorIDOnIntroduce reproduces the bug a adversarial
 // session in agents-byzantine-tolerance hit: the R3 critic emitted a
 // completely new claim under "## c1-1 [...]" (the R1 id), no
-// "(re-attack)" marker, no acknowledgement of R2's defense. The parser
+// "(re-attack)" marker, no acknowledgment of R2's defense. The parser
 // used to silently accept the id, collapsing two unrelated attacks
 // onto a single ledger entry. With the fix, the new claim is kept but
 // renamed to a fresh id and stats.Renamed is bumped so the drift is

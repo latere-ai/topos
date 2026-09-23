@@ -221,7 +221,7 @@ func TestBusModifyWithNilPayloadIsNoOp(t *testing.T) {
 }
 
 // TestToolPathAppliesHookModifiedInput asserts a hook consumer that rewrites the
-// normalised input via Modify is reflected in the net ModifiedInput.
+// normalized input via Modify is reflected in the net ModifiedInput.
 func TestToolPathAppliesHookModifiedInput(t *testing.T) {
 	bus := hooks.New()
 	bus.Register("rewrite-input", []hooks.EventName{hooks.EventPreToolUse}, func(_ hooks.EventName, payload any) hooks.Decision {

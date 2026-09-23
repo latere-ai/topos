@@ -203,7 +203,7 @@ func Run(ctx context.Context, cfg Config, meter *billing.Meter) (*Result, error)
 	// Build the tool path for permission resolution.
 	tp := hooks.NewToolPath(cfg.Bus, nil /* no deny-rules in MVP trusted sandbox */)
 
-	// Initialise the transcript: seed from a resumed transcript if provided,
+	// Initialize the transcript: seed from a resumed transcript if provided,
 	// then append the new user prompt (if any).
 	var transcript []models.Message
 	transcript = append(transcript, cfg.InitialTranscript...)
@@ -488,7 +488,7 @@ func executeToolCall(
 ) (models.ToolResult, error) {
 	logger.InfoContext(ctx, "loop: tool call", "tool", tc.Name, "id", tc.ID)
 
-	// Input normalisation: ensure valid JSON.
+	// Input normalization: ensure valid JSON.
 	rawInput := tc.Input
 	if len(rawInput) == 0 || string(rawInput) == "null" {
 		rawInput = json.RawMessage("{}")

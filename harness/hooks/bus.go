@@ -24,7 +24,7 @@ type LogEntry struct {
 	At        time.Time `json:"at"`
 	EventName EventName `json:"event"`
 	// Payload is the dispatched payload as handed to the bus, kept for
-	// audit/replay. It is marshalled only when the log itself is encoded.
+	// audit/replay. It is marshaled only when the log itself is encoded.
 	Payload any `json:"payload,omitempty"`
 }
 

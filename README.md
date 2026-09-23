@@ -259,7 +259,7 @@ every request and sends it as `Authorization: Bearer …`. The provider stores n
 token, so a rotated credential flows through automatically. Choose the source
 that matches the host's ownership model:
 
-| Source | Use when | Refresh behaviour |
+| Source | Use when | Refresh behavior |
 |---|---|---|
 | `StaticTokenSource("tok")` | one fixed token for the process (CLI, service account, dev) | none; fixed at construction |
 | `TokenFunc(func(ctx) (string, error))` | the host holds the token and rotates it out of band | **picks up refreshes**; called per request, returns the current token |

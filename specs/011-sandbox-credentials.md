@@ -89,7 +89,7 @@ distinguishes.
 ### Cella mapping
 
 - `Create`: when `SecretMounts != nil`, set `spec.secrets.mount` to it (even when
-  empty, so an empty slice serialises as `[]` and means "mount none"). When nil,
+  empty, so an empty slice serializes as `[]` and means "mount none"). When nil,
   omit `spec.secrets` entirely so the server applies `default_mount`. This
   requires a pointer `secrets` block and a `mount` field **without** `omitempty`,
   since `omitempty` cannot tell nil from `[]string{}`.
@@ -116,7 +116,7 @@ Argv/Env/Cwd/Name); tests assert the no-op (no error) explicitly.
 - `CreateOptions.SecretMounts` and `ExecOptions.SecretEnv` exist with the
   documented nil/empty/non-empty semantics.
 - Cella `Create` sends `spec.secrets.mount` only when `SecretMounts != nil`, and
-  serialises an empty slice as `[]`.
+  serializes an empty slice as `[]`.
 - Cella `Exec` sends `env_from_vault` when `SecretEnv` is non-empty.
 - Local provider ignores both without error.
 - README documents how a host delivers a secret into a Cella sandbox.
@@ -130,7 +130,7 @@ Implemented:
   semantics.
 - `sandbox/cella/provider.go`: `Create` adds a pointer `spec.secrets` block
   (`mount` without `omitempty`) set only when `SecretMounts != nil`, so nil
-  omits the block (default_mount), `[]` serialises as mount-none, and a list
+  omits the block (default_mount), `[]` serializes as mount-none, and a list
   mounts exactly those. `sandbox/cella/exec.go`: `Exec` maps `SecretEnv` to the
   command body's `env_from_vault`.
 - `sandbox/local/provider.go`: unchanged; it already reads only

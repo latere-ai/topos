@@ -192,7 +192,7 @@ func TestCreateSecretMountsSemantics(t *testing.T) {
 		}
 	})
 
-	t.Run("empty slice mounts none (serialises as [])", func(t *testing.T) {
+	t.Run("empty slice mounts none (serializes as [])", func(t *testing.T) {
 		got := captureCreate(t, sandbox.CreateOptions{SecretMounts: []string{}})
 		if got.Spec.Secrets == nil {
 			t.Fatal("secrets omitted; an empty SecretMounts must send mount: []")

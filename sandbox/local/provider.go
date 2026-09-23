@@ -352,7 +352,7 @@ func (p *Provider) sandboxDir(id string) (string, error) {
 
 // resolve maps a caller-supplied path to an absolute path inside the sandbox's
 // directory. The path is always joined onto that directory, so an absolute
-// argument is re-rooted rather than honoured against the host, and the joined
+// argument is re-rooted rather than honored against the host, and the joined
 // result is verified to stay at or below the directory. Escapes return
 // [ErrPathEscape]; an empty path resolves to the directory itself. This is the
 // containment check that makes the package doc's per-sandbox-directory

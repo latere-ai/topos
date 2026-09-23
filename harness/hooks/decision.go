@@ -66,7 +66,7 @@ type DenyRule struct {
 
 // ToolPath is the three-phase decision engine for tool calls:
 //
-//  1. Validate + normalise input (backfill).
+//  1. Validate + normalize input (backfill).
 //  2. Permission resolution: run hook consumers (may allow/deny/modify)
 //     AND policy deny-rules. Both must pass.
 //  3. Execute + post-hooks (caller's responsibility after ToolPath returns
@@ -113,7 +113,7 @@ func (tp *ToolPath) Resolve(sessionID string, call models.ToolCall) PhaseResult 
 		normalised = json.RawMessage("{}")
 	}
 
-	// Carry the full call identity (ID + name + normalised input) on the
+	// Carry the full call identity (ID + name + normalized input) on the
 	// PreToolUse event so the durable event log can pair a tool-use with its
 	// result on replay — including detecting an orphan whose result never
 	// arrived (harness crash mid-execution).
