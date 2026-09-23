@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.6.0 - 2026-09-23
+
 - **Breaking:** the PreToolUse hook payload names its validated tool input
   `normalized_input`, and the Go field is `PreToolUsePayload.NormalizedInput`.
   A hook that reads `normalised_input`, or a modified payload that sets it,
