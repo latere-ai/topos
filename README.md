@@ -5,14 +5,19 @@
 [![Release](https://img.shields.io/github/v/release/latere-ai/topos)](https://github.com/latere-ai/topos/releases/latest)
 [![License](https://img.shields.io/github/license/latere-ai/topos)](LICENSE)
 
-**Topos Runtime** is an embeddable Go runtime for multi-agent systems. A host
-application defines agents, composes them into regions, and runs a single region
-or a graph of regions in-process, with sandboxed tools, sub-agent spawning under
-attenuated permissions, peer discovery for agent-to-agent work, and a
-deterministic trace of everything that ran.
+**An embeddable Go runtime for multi-agent systems.** A host application
+defines agents, groups them into regions, and runs one region or a graph of
+regions in its own process. Each agent works in a sandbox, hands work to a
+peer through a tool call that can only narrow its authority, and leaves a
+deterministic trace of what ran. A spend cap stops a region at a dollar
+figure, and a model can be swapped by name without touching host code.
 
-[Topos](https://topos.latere.ai), the Latere agent platform, is one host built on
-this runtime; any Go application can be another.
+[Topos](https://topos.latere.ai), the Latere agent platform, is one host built
+on this runtime. Any Go program can be another.
+
+**Status:** pre-1.0. The root `topos` package is the supported surface. The
+subpackages are public for advanced use and may change between minor
+releases; the [changelog](CHANGELOG.md) names every breaking change.
 
 ## Install
 
@@ -22,350 +27,152 @@ Topos requires Go 1.27 or later.
 go get latere.ai/x/topos@latest
 ```
 
-Start with the runnable [`minimal`](examples/minimal) example, then browse the
-[examples](examples) and [Go package reference](https://pkg.go.dev/latere.ai/x/topos)
-for the complete API.
+The examples run offline, with a deterministic model and a temporary-directory
+sandbox, so the first run needs no keys and no services:
+
+```sh
+git clone https://github.com/latere-ai/topos.git
+cd topos
+go run ./examples/minimal
+```
+
+## A first run
+
+A `Runner` holds the model connection and the sandbox backend. A `Region`
+names the agent that starts the work and the peers it may hand work to.
 
 ```go
-import "latere.ai/x/topos"
+package main
 
-r, _ := topos.NewRunner(topos.Options{
-    Model: topos.ModelOptions{Kind: topos.ModelLux, BaseURL: "http://localhost:8080"},
-})
-res, _ := r.Run(ctx, topos.Region{
-    Autonomy: topos.Dynamic,
-    Topology: topos.Mesh, // or topos.OrchestratorWorker (the default)
-    Entry:    topos.AgentSpec{Name: "lead", Role: "lead", Tools: []string{"bash", "read_file", "write_file"}},
-    Peers: []topos.AgentSpec{
-        {Name: "reviewer", Role: "review", Description: "reviews diffs", Tools: []string{"read_file"}},
-    },
-}, "ship the change")
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
 
-fmt.Println(res.Final)
-for _, n := range res.Trace.Nodes {
-    fmt.Println(n.ID, n.Status, n.Sandbox)
+	"latere.ai/x/topos"
+)
+
+func main() {
+	r, err := topos.NewRunner(topos.Options{
+		SessionID: "first-run",
+		Model: topos.ModelOptions{
+			Kind:   topos.ModelLux,
+			APIKey: os.Getenv("LUX_API_KEY"), // a Lux virtual key
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	res, err := r.Run(context.Background(), topos.Region{
+		Autonomy: topos.Dynamic,
+		Entry: topos.AgentSpec{
+			Name: "lead", Role: "lead",
+			Tools: []string{"read", "write", "exec"},
+		},
+		Peers: []topos.AgentSpec{{
+			Name: "reviewer", Role: "review",
+			Description: "reviews a diff and reports problems",
+			Tools:       []string{"read"},
+		}},
+	}, "add input validation to parse.go and have it reviewed")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(res.Final)
+	for _, n := range res.Trace.Nodes {
+		fmt.Println(n.ID, n.Status, n.Grants)
+	}
 }
 ```
+
+`ModelLux` reaches `https://lux.latere.ai` unless `BaseURL` names another
+[Lux](https://github.com/latere-ai/lux) gateway, such as one running locally.
+`ModelFake` needs no network and no key, which is how the examples and the
+test suite run.
 
 ## Concepts
 
-**Agent.** A name, a role, a system prompt, the tools and scopes it is allowed to
-use, and a model.
+**Agent.** An `AgentSpec`: a name, a role, a system prompt, the builtin tools
+it may use, and the permission scopes it holds.
 
-**Region.** One unit of work. Its autonomy mode is either `Pinned` (a deterministic
-chain of agents, like a fixed pipeline) or `Dynamic` (the model decides who to hand
-off to at runtime). Its `Topology` is either `OrchestratorWorker`, the default,
-where only the entry agent delegates, or `Mesh`, where peers can delegate too.
+**Region.** One unit of work with one way of deciding who runs next.
+`Pinned` runs the entry agent and then each peer in order, like a fixed
+pipeline. `Dynamic` gives the entry agent a directory of its peers and a
+`delegate` tool, and the model decides whom to hand work to.
 
-**Graph.** Several regions compose into one run. `Graph` holds the regions and the
-edges between them; an edge `From -> To` seeds the target region's task with the
-source region's final output, so a dynamic planning region can feed a pinned
-shipping chain. Regions run in topological order, each in its own isolated sandbox,
-and their traces merge into one graph. Region ids namespace agent ids, so agents
-sharing a name across regions stay distinct. Composition across regions is
-text-only (a region's output is its final text, not a shared filesystem).
+**Topology.** In a dynamic region, `OrchestratorWorker` (the default) lets
+only the entry agent delegate. `Mesh` lets any peer delegate again, down to
+`Options.MaxHandoffDepth` levels (3 by default).
 
-**Delegation.** Handing work to a peer is a tool call. The `delegate` tool spawns
-the chosen peer with attenuated authority, meaning a subset of the parent's
-tools and scopes, runs it in its own sandbox, and returns its result back into the
-parent's transcript.
+**Delegation.** A handoff is a tool call. The chosen peer is spawned with the
+intersection of its own tools and scopes and its parent's, runs in a sandbox
+of its own, and its answer returns into the parent's transcript. Authority
+only ever narrows.
 
-**Tool grants.** `AgentSpec.Tools` restricts both the tools offered to the model
-and the calls the runtime can execute. Nil selects all builtins; an explicit
-empty slice selects none. Concrete names and families are supported: `read`
-selects `read_file`, `grep`, and `glob`; `write` selects `write_file` and
-`edit_file`; `exec` selects `bash`. Unknown names grant nothing. Delegated peers
-receive only tools also held by their parent. The `delegate` tool remains
-controlled by topology and depth. Traces record concrete available tool names.
+**Tool grants.** `AgentSpec.Tools` limits both the tools the model is offered
+and the calls the runtime executes. The builtins are `bash`, `read_file`,
+`write_file`, `edit_file`, `grep`, and `glob`, and three families name groups
+of them: `read` (`read_file`, `grep`, `glob`), `write` (`write_file`,
+`edit_file`), and `exec` (`bash`). A nil list grants every builtin, an empty
+list grants none, and an unknown name grants nothing.
 
-**Bounded recursion.** Under `Mesh`, a peer can delegate again. `Options.MaxHandoffDepth`
-(default 3) caps how deep that can go, so a run cannot fan out without limit.
+**Graph.** Several regions composed into one run. An edge from one region to
+another passes the first region's final text in as the second's task.
 
-**Trace.** Every run produces a deterministic graph: who delegated or handed off
-to whom, with each node's status, the tools it was granted, and the sandbox it ran
-in. The ids are stable, so runs can be diffed or rendered live.
+**Trace.** Every run returns a graph of who ran, who delegated to whom, each
+agent's status, the tools it was offered, and the sandbox it ran in. Node ids
+derive from the session id, so two runs can be compared and a live view can
+reconnect to the same ids.
 
-## Models through Lux
+**Budget.** `Options.BudgetUSD` caps what a region spends across all of its
+agents. The run stops on the turn that reaches the cap and returns its partial
+output with an error.
 
-The model connection speaks the Lux dialect — the provider-agnostic native API of
-[Lux](https://lux.latere.ai), the Latere model gateway — via `latere.ai/x/pkg/luxsdk`.
-Swapping the model behind a run changes a model name, not host code, and provider
-keys never live in the host application. `ModelOptions.Kind` chooses the backend:
+## What else it covers
 
-- `ModelLux` reaches any model the gateway routes, authenticated with a Lux
-  virtual key or a per-call bearer. For local development it can point at a
-  stateless `luxd` running with local provider keys.
-- `ModelDirect` talks to one provider endpoint with your own credential —
-  Anthropic (API key or OAuth token), OpenAI, Gemini, OpenRouter, or a local
-  Ollama — with the same dialect translated client-side, no gateway in the path.
-- `ModelFake` is the deterministic, network-free model for tests.
+| Need | Where |
+|---|---|
+| a chat or coding session driven turn by turn, resumable from a stored transcript, with streamed tokens and interrupts | [Sessions](docs/sessions.md) |
+| several regions wired into one run, and a JSON form of a graph that a person edits and a host stores | [Graphs](docs/graphs.md) |
+| Lux, a provider called directly, a custom model, pricing, and the spend cap | [Models and budgets](docs/models.md) |
+| a hosted sandbox, credentials that never enter the sandbox as plaintext, a path deny-list, and approval before a command runs | [Sandboxes](docs/sandboxes.md) |
+| a proposer and several critics cross-examining a diff | [Adversarial review](docs/adversarial.md) |
 
-For a model the built-in kinds do not cover, `ModelOptions.Client` takes a
-`models.Model` outright — a custom provider adapter, or a scripted model that
-makes a run reproducible without keys or services. A non-nil `Client` is used
-directly and `Kind` is not consulted.
+[`docs/`](docs/README.md) is the index of these guides. The
+[Go package reference](https://pkg.go.dev/latere.ai/x/topos) is the complete
+API, and [`examples/`](examples) holds five programs that run offline.
 
-## Interactive, resumable turns
+## Packages
 
-`Runner.Run` runs a region start to finish. For a back-and-forth session — a chat
-assistant, a coding agent you steer turn by turn — use `Runner.Turn` instead. A
-turn is one agent against a sandbox **you** own, seeded from the conversation so
-far:
+| Package | What it is |
+|---|---|
+| `latere.ai/x/topos` | the supported surface: `Runner`, regions, graphs, turns, the trace, and events |
+| `.../graph` | the JSON form of a graph, and the lowering to a runnable one |
+| `.../billing` | pricing a turn and enforcing a budget |
+| `.../sandbox` | the `Provider` interface, and the `Confine` and `Consent` wrappers |
+| `.../sandbox/local` | the default provider: a temporary directory, or a directory the host names |
+| `.../sandbox/cella` | a provider backed by hosted Cella sandboxes |
+| `.../sandbox/rpc` | a provider served over a byte stream, so a remote machine can act as a sandbox |
+| `.../models`, `.../models/lux`, `.../models/fake` | the model interface, the Lux adapter, and the deterministic model |
+| `.../harness`, `.../harness/tools`, `.../harness/hooks`, `.../runtime/loop` | the engine: the spawner, the tool registry, the hook bus, and the agentic loop |
+| `.../adversarial` and its subpackages | adversarial review of a diff |
 
-```go
-r, _ := topos.NewRunner(topos.Options{
-    SessionID: "sess-42",
-    Model:     topos.ModelOptions{Kind: topos.ModelLux},
-    Observer:  func(e topos.Event) { /* render e.Name == topos.EventTextDelta live */ },
-})
+The root package imports no sandbox backend beyond its local default; a
+hosted one is passed in as a `sandbox.Provider`. Its signatures reach into the
+engine packages only where a host hands in or reads back an engine value: a
+sandbox provider, a cost source, a custom model, and a turn's transcript and
+tool registry.
 
-// You create and keep the sandbox for the whole session, so the workspace
-// (files, installed deps) survives between turns.
-var transcript []models.Message
-for _, prompt := range []string{"add a test for parse()", "now make it pass"} {
-    res, _ := r.Turn(ctx, topos.TurnInput{
-        Sandbox: sb, SandboxID: sbID,
-        InitialTranscript: transcript, // the history threads forward
-        UserPrompt:        prompt,
-    })
-    transcript = res.Transcript // persist this; it is the canonical state
-    fmt.Println(res.Final)
-}
-```
+## Contributing and security
 
-Three properties make a turn safe to drive from a server:
-
-- **The transcript is the state.** `TurnResult.Transcript` is the full
-  conversation; feed it back as the next turn's `InitialTranscript`. Persist it
-  and you can resume the session later, even on another machine.
-- **Interrupt keeps the work.** Cancel the context to interrupt a long turn
-  (a user hitting Esc). `Turn` returns the *partial* transcript with
-  `Interrupted == true` and a nil error — an interrupt is a control action, not a
-  failure.
-- **Tokens stream.** The `Observer` receives `EventTextDelta` for each fragment
-  as the model writes, then the assembled `EventAssistantMessage` for the turn.
-  The observer is synchronous, so a host should hand off to a buffered channel
-  and return rather than block on I/O.
-
-## Composing regions into a graph
-
-`Runner.Run` runs one region. `Runner.RunGraph` runs several, wired by data flow.
-A `Graph` names each region and connects them with edges; an edge threads the
-source region's final output into the target region's task. Regions with no
-incoming edge start from the graph task. A dynamic region and a pinned region mix
-freely in one graph:
-
-```go
-g := topos.Graph{
-    Regions: []topos.GraphRegion{
-        {ID: "plan", Region: topos.Region{
-            Autonomy: topos.Dynamic,
-            Entry:    topos.AgentSpec{Name: "lead", Role: "lead"},
-        }},
-        {ID: "ship", Region: topos.Region{
-            Autonomy: topos.Pinned,
-            Entry:    topos.AgentSpec{Name: "impl", Role: "impl"},
-            Peers:    []topos.AgentSpec{{Name: "commit", Role: "commit"}},
-        }},
-    },
-    Edges: []topos.GraphEdge{{From: "plan", To: "ship"}}, // plan's output seeds ship's task
-}
-
-res, _ := r.RunGraph(ctx, g, "design the feature")
-fmt.Println(res.Final)             // the last region's output
-for _, e := range res.Trace.Edges {
-    fmt.Println(e.From, "->", e.To, e.Kind) // region flow plus each region's internal trace
-}
-```
-
-Linear chains and fan-out (one region feeding
-several) are supported; fan-in, a region with more than one incoming edge, is
-rejected, along with cycles and unknown edges, before any region runs. A runnable
-version is in [`examples/graph`](examples/graph); [`examples/delegation`](examples/delegation)
-shows a single dynamic region delegating to a peer.
-
-## Authoring and persisting a graph
-
-`topos.Graph` is the in-memory shape the runner executes; it carries no JSON tags
-and names its concepts for execution. To persist a graph a person authored, or to
-serialize one over the wire, use `latere.ai/x/topos/graph`. Its `graph.Graph` is
-the JSON-tagged, round-trippable form, and a region declares its behavior with one
-`Coordination` field instead of the runtime's autonomy+topology pair: `sequence`
-(a fixed chain), `lead` (only the entry agent delegates), or `mesh` (any peer
-delegates). `ToRuntime` validates the authored graph and lowers it to a runnable
-`topos.Graph`:
-
-```go
-var authored graph.Graph
-_ = json.Unmarshal(stored, &authored) // {"regions":[{"id":"plan","coordination":"lead", ...}], "edges":[...]}
-
-g, err := authored.ToRuntime() // maps coordination -> autonomy+topology, validates structure
-if err != nil {
-    // authored-field or structural error (missing id/entry, bad coordination, fan-in, cycle)
-}
-res, _ := r.RunGraph(ctx, g, "design the feature")
-```
-
-`ToRuntime` runs the same structural checks as `topos.ValidateGraph` (the gate
-`RunGraph` applies), so an authored graph that lowers cleanly runs without a
-configuration error. A runnable version is in
-[`examples/authoredgraph`](examples/authoredgraph).
-
-## Sandboxes
-
-Every run executes in a sandbox, and each delegated peer gets its own. The
-backend is pluggable through the `sandbox.Provider` interface. By default the
-runner uses `sandbox/local`, a temp-directory implementation that needs no
-external services. It is the zero-config path for development and tests.
-
-Local file reads, writes, and directory listings stay within the sandbox root.
-Relative symlinks within that root are supported; escaping and absolute
-symlinks are rejected. Commands have their working directory checked before
-starting and execute with the host process's privileges, so command execution
-requires trusted code.
-
-For hosted compute, inject a backend via `Options.Sandbox`. The `sandbox/cella`
-provider backs runs with [Latere Cella](https://cella.latere.ai), the hosted
-Kubernetes sandbox platform:
-
-```go
-import (
-    "latere.ai/x/topos"
-    "latere.ai/x/topos/sandbox"
-    "latere.ai/x/topos/sandbox/cella"
-)
-
-prov := cella.New(cella.Options{
-    BaseURL: "https://cella.latere.ai",
-    Token:   cella.ContextTokenSource{}, // reads the bearer set by sandbox.WithBearer
-})
-r, _ := topos.NewRunner(topos.Options{Sandbox: prov, Model: /* ... */})
-
-// Scope the whole run to the session user's Cella identity.
-ctx = sandbox.WithBearer(ctx, userBearer)
-res, _ := r.Run(ctx, region, task)
-```
-
-The host owns minting the Cella bearer, a short-lived token its issuer mints
-for Cella alone; the provider only presents it. Because that token is good for
-minutes rather than days, a run longer than one token needs a source that
-re-mints (see below). The root `topos` package never imports a concrete
-backend; a host wires one in as the interface.
-
-### Authenticating to Cella
-
-The host owns the token; the provider asks the configured `TokenSource` for it on
-every request and sends it as `Authorization: Bearer …`. The provider stores no
-token, so a rotated credential flows through automatically. Choose the source
-that matches the host's ownership model:
-
-| Source | Use when | Refresh behavior |
-|---|---|---|
-| `StaticTokenSource("tok")` | one fixed token for the process (CLI, service account, dev) | none; fixed at construction |
-| `TokenFunc(func(ctx) (string, error))` | the host holds the token and rotates it out of band | **picks up refreshes**; called per request, returns the current token |
-| `ContextTokenSource{}` | multi-tenant: a different user's token per request, set with `sandbox.WithBearer(ctx, tok)` | per-request, but fixed for the context passed (a long run will not see a mid-run refresh) |
-
-```go
-// Host-held token that may be refreshed elsewhere. The recommended shape when
-// the host owns the credential and rotation should flow through with no re-wiring:
-prov := cella.New(cella.Options{
-    BaseURL: "https://cella.latere.ai",
-    Token: cella.TokenFunc(func(ctx context.Context) (string, error) {
-        return auth.CurrentToken(), nil // the host's cached, out-of-band-refreshed token
-    }),
-})
-```
-
-Cella issues no token of its own. Present the token your own issuer mints for
-Cella (audience `sandboxd`), which lives for minutes; obtaining it and
-re-minting it before it lapses is the host's job, not the provider's. That is
-why `TokenFunc` is the shape to reach for whenever a run can outlast one token.
-
-### Secrets
-
-Secrets the agent's workload needs (provider keys, tokens) are never passed as
-plaintext. The host stores them in Cella's vault out of band and references them
-by name. Mount them as read-only files at sandbox start with
-`CreateOptions.SecretMounts`, or inject one into a single command with
-`ExecOptions.SecretEnv` (resolved server-side, never on argv):
-
-```go
-opts := sandbox.CreateOptions{SecretMounts: []string{"OPENAI_API_KEY"}}
-// ... or per command:
-exec := sandbox.ExecOptions{
-    Argv:      []string{"deploy"},
-    SecretEnv: map[string]string{"OPENAI_API_KEY": "openai_key"}, // env var -> vault entry
-}
-```
-
-A nil `SecretMounts` mounts the caller's default set; an empty slice mounts
-none. The local provider has no vault and ignores both fields. (Separately, the
-lift/drop deny-list keeps laptop secrets like `.env` and `*.pem` from ever
-entering a sandbox.) Plain `Env` remains the channel for non-secret config.
-
-## Adversarial Review
-
-Adversarial review is a Topos capability built on the runtime: a proposer agent
-and one or more critic agents cross-examine a diff over bounded rounds, with
-per-fork traces. It lives under `latere.ai/x/topos/adversarial`, deliberately
-separate from the provider-agnostic core.
-
-The debate runs as N independent forks. In each fork a critic attacks the diff
-aspect by aspect, the proposer concedes or rebuts each attack, and the round loop
-runs until the fork reaches steady state, exhausts its round budget, or trips the
-shared cost cap. An attack ledger tracks every claim so the returned `Summary`
-reports what stayed unresolved.
-
-Reach for `adversarial.Review` for the common single call; drop to
-`adversarial.Engine` when you need per-fork control:
-
-```go
-import "latere.ai/x/topos/adversarial"
-
-sum, err := adversarial.Review(ctx, adversarial.ReviewOptions{
-    StateDir:    stateDir, // required; the engine writes sessions/<id>/ under it
-    Cwd:         worktree,
-    Forks:       3,
-    Proposer:    proposer,  // your Proposer, or adversarial/claude.NewProposer
-    NewCritic:   newCritic, // your CriticFactory, or adversarial/critic.NewCriticFactory
-    MaxRounds:   6,
-    CostCap:     1_000_000,
-    TaskContext: "add user login",
-    DiffPatch:   diff,
-})
-```
-
-`StateDir` is required: topos writes session artifacts under it and invents no
-default of its own, so any host stays in control of where reviews land. Ready-made
-proposer and critic backends ship in subpackages; the
-[package documentation](https://pkg.go.dev/latere.ai/x/topos/adversarial) covers
-the full surface.
-
-## Testing
-
-```sh
-go test ./...     # the full suite
-make all          # the CI gate: lint, vet, race, and the 90% coverage threshold
-```
-
-The suite runs offline and needs no configuration: every test drives `ModelFake`
-and the local temp-directory sandbox, so nothing reaches a network or a hosted
-service. A default run skips nothing for a missing key, database, or endpoint, so
-a green run covers the whole module rather than a subset of it. Two tests skip on
-an environment that cannot express what they assert, running as root and running
-off POSIX. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest of the development
-workflow.
-
-## Status
-
-Early. The root `topos` package is the supported surface and is what most callers
-should use. The engine subpackages (`harness`, `runtime/loop`, `models`, `sandbox`,
-and others) are public for advanced and host use, but their APIs may still change.
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the local
+quality gate, the test suite, and how the code is organized.
+[SECURITY.md](SECURITY.md) describes private vulnerability reporting; do not
+report a vulnerability in a public issue.
 
 ## License
 
 [Apache-2.0](LICENSE).
-
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local
-development workflow and [SECURITY.md](SECURITY.md) for private vulnerability
-reporting.
