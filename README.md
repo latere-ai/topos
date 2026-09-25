@@ -155,7 +155,7 @@ API, and [`examples/`](examples) holds five programs that run offline.
 | `.../billing` | pricing a turn and enforcing a budget |
 | `.../sandbox` | the `Provider` interface, and the `Confine` and `Consent` wrappers |
 | `.../sandbox/local` | the default provider: a temporary directory, or a directory the host names |
-| `.../sandbox/cella` | a provider backed by hosted Cella sandboxes |
+| `.../sandbox/cella` | a provider backed by a Cella control plane, hosted at `api.latere.ai/v1/environments` |
 | `.../sandbox/rpc` | a provider served over a byte stream, so a remote machine can act as a sandbox |
 | `.../models`, `.../models/lux`, `.../models/fake` | the model interface, the Lux adapter, and the deterministic model |
 | `.../harness`, `.../harness/tools`, `.../harness/hooks`, `.../runtime/loop` | the engine: the spawner, the tool registry, the hook bus, and the agentic loop |

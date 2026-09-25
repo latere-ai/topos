@@ -29,8 +29,9 @@ backend such as Cella.
 
 ## Hosted Cella
 
-`sandbox/cella` runs each sandbox in [Cella](https://cella.latere.ai), the
-hosted sandbox service:
+`sandbox/cella` runs each sandbox on a [Cella](https://github.com/latere-ai/cella)
+control plane, the open source sandbox runtime Latere hosts at
+`https://api.latere.ai/v1/environments`:
 
 ```go
 import (
@@ -40,7 +41,7 @@ import (
 )
 
 prov := cella.New(cella.Options{
-	BaseURL: "https://cella.latere.ai",
+	BaseURL: "https://api.latere.ai/v1/environments",
 	Token:   cella.ContextTokenSource{}, // the bearer set by sandbox.WithBearer
 })
 r, err := topos.NewRunner(topos.Options{Sandbox: prov, Model: model})
@@ -53,20 +54,66 @@ ctx = sandbox.WithBearer(ctx, userBearer)
 res, err := r.Run(ctx, region, task)
 ```
 
-The provider is a plain HTTP client of the service's API and pulls in no Cella
-dependency. It speaks the API of the hosted service; the open source Cella
-control plane's routes differ, and this provider is not a client of them yet.
+`BaseURL` is a control plane's address including the path it is served under,
+so the same provider reaches a Cella control plane run elsewhere. The provider
+is built on Cella's exported Go client, `latere.ai/x/cella/client`, which
+brings the standard library and Cella's manifest types into the build and none
+of the control plane's own code.
 
-Each sandbox it creates is ephemeral unless `CreateOptions.Tier` says
-`persistent`, uses the image `ghcr.io/latere-ai/sandbox-base:latest` unless
-`CreateOptions.Image` names another, and carries the label `kind=agent`. It
-also stops itself after 15 minutes idle, so a sandbox the host forgets to
-destroy does not run up cost.
+### What a sandbox gets
+
+| Setting | Value |
+|---|---|
+| Image | `CreateOptions.Image`, else `base`. The hosted control plane runs images from its catalog only: `base`, and `gui` for a desktop |
+| Label | `kind=agent`, beside the caller's `CreateOptions.Labels` |
+| Idle stop | after 15 minutes without activity, so a sandbox the host forgets to destroy does not run up cost; the workspace survives a stop |
+| Tier | `ephemeral`, the default, is also deleted 24 hours after it was created; `persistent` is kept until it is deleted |
+| Network | `allowlist` with `api.latere.ai` alone, unless `Options.AllowedHosts` names the hosts |
+
+`Create` holds the request until the sandbox runs, bounded by the context's
+deadline, so the first command can follow at once. A sandbox that fails to
+start is deleted, and `Create` returns an error naming it and the reason. The
+`Tier` a sandbox reports is read from the control plane's answer: an
+installation that deletes every sandbox after a fixed time reports each as
+`ephemeral`.
+
+### The network boundary
+
+A hosted sandbox reaches only the hosts its boundary admits, and an
+organization's sandboxes are held to an allowlist whatever the request asks.
+The default list is the Latere API origin, where the hosted models are served,
+so an agent placed in a sandbox can still call its model. `Options.AllowedHosts`
+replaces that list; each entry is an exact host name or one leading `*.`
+wildcard:
+
+```go
+prov := cella.New(cella.Options{
+	BaseURL:      "https://api.latere.ai/v1/environments",
+	Token:        src,
+	AllowedHosts: []string{"api.latere.ai", "github.com", "*.githubusercontent.com"},
+})
+```
+
+A control plane with no egress gateway connected refuses an allowlist: the
+create returns `*sandbox.APIError` with the code `egress_gateway_unavailable`.
+
+### Commands and files
+
+A command runs to completion, and its standard input is at end of file.
+`ExecResult.Stdout` holds its standard output followed by its standard error;
+the control plane keeps the first mebibyte of each. The timeout sent with it is
+the context's remaining time, at most an hour, and an hour when the context has
+no deadline. A context that ends first reports the `killed` phase. `StreamExec`
+delivers the same output as one chunk when the command ends.
+
+A relative path, in a file operation or in `ExecOptions.Cwd`, is resolved under
+the workspace, `/workspace`. An absolute path is used as given, and one outside
+the workspace is refused.
 
 ### The bearer
 
 Cella issues no token of its own. The host presents a token its identity
-provider minted for Cella, with the audience `sandboxd`, and obtaining that
+provider minted for an audience the control plane accepts, and obtaining that
 token and renewing it before it expires is the host's job. The provider asks
 its `TokenSource` for the token on every request and stores none, so a renewed
 token takes effect on the next request.
@@ -77,12 +124,12 @@ token takes effect on the next request.
 | `TokenFunc(func(ctx) (string, error))` | a token the host holds and renews elsewhere | on every request, so a renewal flows through |
 | `ContextTokenSource{}` | a different user per run, set with `sandbox.WithBearer(ctx, tok)` | per context: a long run keeps the token its context carried |
 
-Cella's tokens live for minutes, so a run that can outlast one token needs
+Hosted tokens live for minutes, so a run that can outlast one token needs
 `TokenFunc`:
 
 ```go
 prov := cella.New(cella.Options{
-	BaseURL: "https://cella.latere.ai",
+	BaseURL: "https://api.latere.ai/v1/environments",
 	Token: cella.TokenFunc(func(ctx context.Context) (string, error) {
 		return tokens.Current(ctx) // the host's cached, renewed token
 	}),
@@ -90,30 +137,22 @@ prov := cella.New(cella.Options{
 ```
 
 `Options.HTTPClient` replaces the default client, which has no timeout of its
-own: deadlines come from the context, which suits commands that run for a long
-time.
+own: deadlines come from the context. A client with a `Timeout` shorter than a
+sandbox's start or a command's run cuts that request off.
 
-### Secrets
+### What the Cella backend refuses
 
-A secret the workload needs, such as a provider key, never travels as
-plaintext in a request. The host stores it in Cella's secret store and refers
-to it by name. `CreateOptions.SecretMounts` mounts named secrets as read-only
-files under `/run/cella/secrets/<NAME>` when the sandbox starts, and
-`ExecOptions.SecretEnv` places one in a single command's environment,
-resolved by the service rather than passed on the command line:
+Three fields have no counterpart on the control plane, and each asks for a
+restriction or a credential, so the provider refuses a request that sets one
+rather than run the work without it:
 
-```go
-create := sandbox.CreateOptions{SecretMounts: []string{"OPENAI_API_KEY"}}
+| Field | Why |
+|---|---|
+| `CreateOptions.Policy` | the control plane has no named policies; a sandbox's boundary is its own manifest |
+| `CreateOptions.SecretMounts` | a Cella secret reaches a sandbox as a placeholder its egress gateway replaces on the way to the secret's hosts, never as a file holding the value; nil and empty mount nothing |
+| `ExecOptions.SecretEnv` | the exec route resolves no secret for one command |
 
-exec := sandbox.ExecOptions{
-	Argv:      []string{"deploy"},
-	SecretEnv: map[string]string{"OPENAI_API_KEY": "openai_key"}, // variable -> secret name
-}
-```
-
-A nil `SecretMounts` mounts the caller's default set, and an empty slice mounts
-none. `Env` remains the place for configuration that is not secret. The local
-provider has no secret store and ignores both fields.
+`Env` remains the place for configuration that is not secret.
 
 ## Guarding a provider
 

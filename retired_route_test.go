@@ -25,8 +25,8 @@ var retiredCellaRoute = "/v1/tokens" + "/exchange"
 // TestNoSourceNamesTheRetiredCellaRoute holds the correction of 2026-09-17.
 //
 // Cella issues no credential in exchange for an upstream token any more: a
-// caller presents the actor token its own issuer minted for the audience
-// sandboxd. This repository never called the route, but its SDK comment and
+// caller presents the actor token its own issuer minted for an audience the
+// Cella control plane accepts. This repository never called the route, but its SDK comment and
 // two documents described it as the way a bearer is obtained, which sent a
 // reader to a door that is gone. topos declares identity role none, so no
 // family gate reads this tree for retired mechanisms; this test is what keeps
@@ -69,8 +69,8 @@ func TestNoSourceNamesTheRetiredCellaRoute(t *testing.T) {
 	}
 	if len(found) != 0 {
 		t.Errorf("these lines name %s, a Cella route removed under D2 on 2026-09-13:\n  %s\n\n"+
-			"a caller presents the short-lived actor token its own issuer mints for the "+
-			"audience sandboxd; Cella mints nothing in return. See the amendment of "+
+			"a caller presents the short-lived actor token its own issuer mints for an "+
+			"audience the Cella control plane accepts; Cella mints nothing in return. See the amendment of "+
 			"2026-09-17 in specs/010-sandbox-cella.md.",
 			retiredCellaRoute, strings.Join(found, "\n  "))
 	}
