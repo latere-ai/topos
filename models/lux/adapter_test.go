@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"latere.ai/x/pkg/luxsdk"
+
 	"latere.ai/x/topos/models"
 )
 
@@ -315,4 +317,35 @@ func TestEmptyToolArgsDefault(t *testing.T) {
 		}
 	}
 	t.Fatal("no ToolCallDone event")
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// An empty baseURL reaches Latere's Lux core under the platform origin, where
+// the native dialect sits below /v1/models. The hosted gateway that answered
+// at lux.latere.ai was retired, and its host no longer resolves.
+func TestDefaultBaseURLIsTheCoreUnderThePlatformOrigin(t *testing.T) {
+	var got string
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		got = r.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(fullStream())),
+			Request:    r,
+		}, nil
+	})
+	viaRecorder := Option(func(_ *Adapter, o *[]luxsdk.Option) {
+		*o = append(*o, luxsdk.WithHTTPClient(&http.Client{Transport: rt}))
+	})
+	st, err := New("key", "", viaRecorder).Stream(context.Background(), models.Request{Messages: []models.Message{{Role: "user", Content: "x"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+	if want := "https://api.latere.ai/v1/models/lux/v1/generate"; got != want {
+		t.Fatalf("request URL = %q, want %q", got, want)
+	}
 }

@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- `ModelLux` with no `BaseURL` reaches `https://api.latere.ai/v1/models`,
+  Latere's Lux core under the platform origin. The default was
+  `https://lux.latere.ai`, the retired hosted gateway, whose host no longer
+  resolves. A `BaseURL` set by the caller is unaffected.
+
 ## v0.6.0 - 2026-09-23
 
 - **Breaking:** the PreToolUse hook payload names its validated tool input

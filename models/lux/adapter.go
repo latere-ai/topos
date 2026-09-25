@@ -37,7 +37,9 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://lux.latere.ai"
+	// defaultBaseURL is Latere's Lux core, served under the platform
+	// origin's /v1/models.
+	defaultBaseURL = "https://api.latere.ai/v1/models"
 
 	// defaultModel is used when the caller names no model, so swapping
 	// ModelKind alone keeps behavior.
@@ -72,7 +74,7 @@ type tokenFunc func(ctx context.Context) (string, error)
 func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
 
 // New builds an Adapter for the Lux deployment at baseURL (the
-// gateway root, e.g. "https://lux.latere.ai"). apiKey is a Lux
+// gateway root, e.g. "https://api.latere.ai/v1/models"). apiKey is a Lux
 // virtual key; leave it empty when a [WithBearerSource] option
 // supplies the credential.
 func New(apiKey, baseURL string, opts ...Option) *Adapter {

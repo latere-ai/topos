@@ -88,8 +88,9 @@ func main() {
 }
 ```
 
-`ModelLux` reaches `https://lux.latere.ai` unless `BaseURL` names another
-[Lux](https://github.com/latere-ai/lux) gateway, such as one running locally.
+`ModelLux` reaches Latere's Lux deployment at `https://api.latere.ai/v1/models`
+unless `BaseURL` names another [Lux](https://github.com/latere-ai/lux) gateway,
+such as one running locally.
 `ModelFake` needs no network and no key, which is how the examples and the
 test suite run.
 

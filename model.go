@@ -31,10 +31,10 @@ const (
 	// ModelFake is the deterministic, network-free model for tests and the embed
 	// check. It is the basis of the record/replay reproducibility story.
 	ModelFake ModelKind = "fake"
-	// ModelLux reaches a provider through Lux, the model gateway:
-	// cloud (lux.latere.ai, metered, owner-billed) or a local stateless luxd
-	// (LUX_STATELESS=1, BYO keys, no cloud dependency). Provider secrets stay in
-	// Lux, never in the embedding consumer.
+	// ModelLux reaches a provider through Lux, the model gateway: Latere's
+	// hosted core (api.latere.ai/v1/models, metered, owner-billed) or a local
+	// stateless luxd (LUX_STATELESS=1, BYO keys, no cloud dependency). Provider
+	// secrets stay in Lux, never in the embedding consumer.
 	ModelLux ModelKind = "lux"
 	// ModelDirect talks to a provider endpoint directly (dev convenience / BYO key).
 	ModelDirect ModelKind = "direct"
@@ -51,7 +51,7 @@ type ModelOptions struct {
 	Kind     ModelKind
 	Provider string // ModelDirect only: a luxsdk.Provider name (anthropic, openai, gemini, openrouter, ollama); defaults to anthropic. Ignored for ModelLux — the gateway routes any provider.
 	Model    string // model id, e.g. "claude-sonnet-4-6"
-	BaseURL  string // ModelLux: the gateway root, e.g. "https://lux.latere.ai". ModelDirect: the provider endpoint.
+	BaseURL  string // ModelLux: the gateway root, e.g. "https://api.latere.ai/v1/models". ModelDirect: the provider endpoint.
 
 	APIKey       string
 	BearerSource func(ctx context.Context) (string, error)

@@ -9,7 +9,7 @@ model behind a run changes a model id, not host code.
 
 | Kind | Reaches | Credential |
 |---|---|---|
-| `ModelLux` | any model a [Lux](https://github.com/latere-ai/lux) gateway routes. `BaseURL` is the gateway root and defaults to `https://lux.latere.ai`; a local `luxd` running with its own provider keys works the same way | a Lux virtual key in `APIKey`, or a token from `BearerSource` |
+| `ModelLux` | any model a [Lux](https://github.com/latere-ai/lux) gateway routes. `BaseURL` is the gateway root and defaults to `https://api.latere.ai/v1/models`, Latere's deployment; a local `luxd` running with its own provider keys works the same way | a Lux virtual key in `APIKey`, or a token from `BearerSource` |
 | `ModelDirect` | one provider endpoint, with no gateway in between. `Provider` names it: `anthropic` (the default), `openai`, `gemini`, `openrouter`, `ollama`, `moonshot`, `xai`, or `zhipu`. `BaseURL` defaults to the provider's public endpoint | the provider's own key in `APIKey`, or a token from `BearerSource` |
 | `ModelFake` | a deterministic model with no network, for tests and examples. It is also what an empty `Kind` selects | none |
 
