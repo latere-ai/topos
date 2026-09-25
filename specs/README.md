@@ -71,6 +71,9 @@ delegation and topology mechanics, then the supporting engine specs.
   interface with hosted Cella compute.
 - [Sandbox Credential Delivery](011-sandbox-credentials.md): delivering
   vault secrets into a sandbox without plaintext.
+- [Cella Provider on the Cella Core](032-sandbox-cella-core.md): the Cella
+  provider on the open source control plane and its exported client, with a
+  held create, an explicit egress boundary, and the fields it refuses.
 - [Spend Cap Enforcement](028-spend-cap-enforcement.md): pricing a turn's usage
   and stopping a region whose combined spend reaches `Options.BudgetUSD`.
 - [Open Source Package Presentation](029-open-source-package.md): the public

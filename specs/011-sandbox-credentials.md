@@ -12,7 +12,7 @@ affects:
   - README.md
 effort: small
 created: 2026-06-28
-updated: 2026-06-28
+updated: 2026-09-26
 author: changkun
 dispatched_task_id: null
 ---
@@ -141,3 +141,21 @@ Implemented:
   documents the host-facing usage.
 
 All tests pass under `-race`; total repo coverage stays ~95%.
+
+## Amendment, 2026-09-26: the Cella core carries neither field
+
+The Cella mapping above was the retired hosted service's: a vault whose
+entries it mounted as files and resolved into one command's environment.
+[Cella Provider on the Cella Core](032-sandbox-cella-core.md) moved the
+provider to the open source control plane, whose secrets work another way. A
+Secret there is an object the sandbox never holds: the sandbox receives a
+placeholder in an environment variable, and the egress gateway replaces it with
+the value on a request toward a host the secret's scope names. Nothing is
+written to a file, and the exec route resolves no secret for one command.
+
+Neither field has a faithful mapping onto that, so the Cella provider refuses a
+non-empty `SecretMounts` or `SecretEnv` before any request. Mapping them to the
+placeholder form would hand the workload a string that is not the value in the
+place the caller asked for the value, which fails later and further from the
+cause than a refusal does. A nil or empty `SecretMounts` still mounts nothing.
+The interface's two fields and the local provider are unchanged.

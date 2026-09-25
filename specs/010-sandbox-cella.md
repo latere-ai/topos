@@ -13,7 +13,7 @@ affects:
   - README.md
 effort: medium
 created: 2026-06-28
-updated: 2026-09-17
+updated: 2026-09-26
 author: changkun
 dispatched_task_id: null
 ---
@@ -334,3 +334,21 @@ host for the current token", which is the seam this shape needs.
 
 `retired_route_test.go` at the repository root holds the correction, failing on
 any tracked source or document outside `.archive` that names the removed route.
+
+## Amendment, 2026-09-26: the Cella core replaces the hosted API
+
+The sections above describe the API of the hosted sandbox service at
+`cella.latere.ai`, which is retired. [Cella Provider on the Cella
+Core](032-sandbox-cella-core.md) moved `sandbox/cella` onto the open source
+control plane, hosted at `https://api.latere.ai/v1/environments`, and records
+the mapping in force: a `cella.latere.ai/v1beta1` manifest, a create held until
+the sandbox runs, the synchronous exec route, the one-file routes, and an
+explicit egress boundary. The reason given above for a hand-rolled client no
+longer holds, because the control plane now exports a client whose build list
+is the standard library and its manifest types, and the provider is built on
+it.
+
+What stands from this spec: the single interface boundary and the boundary
+test, the error contract, the three token sources and the per-request bearer,
+`Options.Sandbox` injection, the readiness wait after `Create`, and the idle
+stop as the cost backstop.

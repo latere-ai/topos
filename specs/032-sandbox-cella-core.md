@@ -1,6 +1,6 @@
 ---
 title: Cella Provider on the Cella Core
-status: drafted
+status: complete
 track: runtime
 depends_on:
   - specs/010-sandbox-cella.md
@@ -177,3 +177,27 @@ an instrumented one with no timeout, and deadlines come from the context.
 | 6 | Every request goes through the configured `http.Client` | a counting transport |
 | 7 | `503 egress_gateway_unavailable` surfaces as `*sandbox.APIError` with that code | fake core |
 | 8 | The example defaults to `https://api.latere.ai/v1/environments` | read in review |
+
+## Outcome
+
+Built on 2026-09-26 on `latere.ai/x/cella` v0.6.3, not released. Every
+criterion has a passing test in `sandbox/cella`, against a fake control plane
+under `/v1/environments` (`fakecore_test.go`) that answers a create `201
+Pending`, a held create with the phase the sandbox reached, and a later read
+with the phase the scheduler moved it to; the package's coverage is 98.8%.
+
+| # | Tests |
+|---|---|
+| 1 | `TestCreateHoldsUntilRunning` (the manifest, `?wait=1`, the ten minute hold), `TestCreatePendingThenRunningOnRead`, `TestCreateHoldBoundedByDeadline`, `TestCreatePersistentTierAndCatalogImage`, `TestCreateTierReadFromObject` |
+| 2 | `TestCreateFailedIsDeleted`, `TestCreateFailedDeleteFailureIsReported` |
+| 3 | `TestExecSendsCommandAndCombinesOutput`, `TestExecAbsoluteCwdAndNoCwd`, `TestExecTimeoutFollowsTheDeadline`, `TestExecCancelledIsKilled`, `TestExecDeadlineIsKilled`, `TestExecOnAnEndedContextSendsNothing`, and the `StreamExec` tests |
+| 4 | `TestFilesRoundTrip`, `TestReadFileMissingIsNotFound`, `TestWriteFileMissingSandbox`, `TestListFilesMapsEntries`, `TestListFilesErrors`, `TestDestroyIsIdempotent`, `TestHealthCheck`, `TestHealthCheckNamesTheReason`, `TestCreateConflict`, `TestExecErrors` |
+| 5 | `TestCreateRefusesWhatTheCoreDoesNotCarry`, `TestExecRefusesBeforeSending`, `TestCreateEmptySecretMountsMountsNothing` |
+| 6 | `TestRequestsUseTheConfiguredClient`, `TestDefaultClientReachesTheCore` |
+| 7 | `TestCreateEgressGatewayUnavailable` |
+| 8 | `examples/sandbox/main.go` selects Cella on `TOPOS_CELLA_TOKEN` and defaults the address to `https://api.latere.ai/v1/environments` |
+
+Where the build differs from the draft: none in behavior. The exported
+client's module requires `latere.ai/x/pkg` v0.80.0, whose Lux usage reports an
+unmeasured cache figure as nil rather than zero, so the Lux adapter now reads a
+nil figure as zero; that is a separate commit, before this one.
