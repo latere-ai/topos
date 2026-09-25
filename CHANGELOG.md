@@ -10,6 +10,31 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- **Breaking:** `sandbox/cella` speaks to a Cella control plane, the open source
+  runtime hosted at `https://api.latere.ai/v1/environments`, through its
+  exported client `latere.ai/x/cella/client`. The hosted service at
+  `cella.latere.ai` that it spoke to before is retired. Set
+  `Options.BaseURL` to the control plane's address including that path.
+- `Create` holds the request until the sandbox runs, so the first command can
+  follow at once. A sandbox that fails to start is deleted and `Create` returns
+  an error naming it and the reason.
+- A created sandbox reaches only `api.latere.ai`, where the hosted models are
+  served, unless the new `Options.AllowedHosts` names the hosts it may reach.
+  The image defaults to `base` from the control plane's catalog. An `ephemeral`
+  sandbox is deleted 24 hours after it was created; every sandbox still stops
+  after 15 minutes idle.
+- `Exec` returns the command's standard output followed by its standard error
+  in `Stdout`, each cut at a mebibyte, and the command's standard input is at
+  end of file. `StreamExec` delivers the same output as one chunk when the
+  command ends.
+- **Breaking:** the Cella provider refuses `CreateOptions.Policy`, a non-empty
+  `CreateOptions.SecretMounts` and `ExecOptions.SecretEnv`, which have no
+  counterpart on the control plane, instead of sending them.
+- `examples/sandbox` runs on hosted Cella when `TOPOS_CELLA_TOKEN` is set, at
+  `https://api.latere.ai/v1/environments` unless `TOPOS_CELLA_URL` names
+  another address.
+- A Lux usage figure the gateway did not measure counts as zero.
+
 - `ModelLux` with no `BaseURL` reaches `https://api.latere.ai/v1/models`,
   Latere's Lux core under the platform origin. The default was
   `https://lux.latere.ai`, the retired hosted gateway, whose host no longer
