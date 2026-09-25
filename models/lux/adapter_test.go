@@ -349,3 +349,18 @@ func TestDefaultBaseURLIsTheCoreUnderThePlatformOrigin(t *testing.T) {
 		t.Fatalf("request URL = %q, want %q", got, want)
 	}
 }
+
+// TestUsageFromWireUnmeasuredCache holds the gateway's contract for cache
+// figures: nil means the backend measured nothing, which adds nothing to the
+// run's total, and a reported figure, zero included, is carried as reported.
+func TestUsageFromWireUnmeasuredCache(t *testing.T) {
+	unmeasured := usageFromWire(luxsdk.Usage{InputTokens: 5, OutputTokens: 6})
+	if unmeasured.CacheReadTokens != 0 || unmeasured.CacheWriteTokens != 0 || unmeasured.InputTokens != 5 || unmeasured.OutputTokens != 6 {
+		t.Fatalf("unmeasured cache = %#v", unmeasured)
+	}
+	read, written := int64(7), int64(0)
+	reported := usageFromWire(luxsdk.Usage{CacheReadInputTokens: &read, CacheWriteInputTokens: &written})
+	if reported.CacheReadTokens != 7 || reported.CacheWriteTokens != 0 {
+		t.Fatalf("reported cache = %#v", reported)
+	}
+}

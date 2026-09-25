@@ -337,9 +337,19 @@ func usageFromWire(u luxsdk.Usage) *models.Usage {
 	return &models.Usage{
 		InputTokens:      int(u.InputTokens),
 		OutputTokens:     int(u.OutputTokens),
-		CacheReadTokens:  int(u.CacheReadInputTokens),
-		CacheWriteTokens: int(u.CacheWriteInputTokens),
+		CacheReadTokens:  countOf(u.CacheReadInputTokens),
+		CacheWriteTokens: countOf(u.CacheWriteInputTokens),
 	}
+}
+
+// countOf reads a cache figure the gateway may leave unreported. The wire
+// carries nil for "not measured"; models.Usage accumulates plain counts, so an
+// unmeasured figure adds nothing to the run's total.
+func countOf(n *int64) int {
+	if n == nil {
+		return 0
+	}
+	return int(*n)
 }
 
 // Close implements [models.Stream].
