@@ -11,200 +11,128 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/url"
-	"strconv"
 	"sync"
 	"time"
+
+	cellaclient "latere.ai/x/cella/client"
 
 	"latere.ai/x/topos/sandbox"
 )
 
-// defaultPollInterval is how long the log poller waits between cursor reads
-// while a command is still running. Cella commands are asynchronous: start
-// returns immediately and output is pulled with cursor-based polling
-// (?stream=false&cursor=N), which — unlike SSE — carries the terminal phase and
-// exit code inline in every envelope.
-const defaultPollInterval = 250 * time.Millisecond
+// maxExecTimeout is the longest command the control plane runs: its exec
+// routes refuse a timeout above an hour.
+const maxExecTimeout = time.Hour
 
-// createCommandReq is the POST /v1/sandboxes/{id}/commands body.
-type createCommandReq struct {
-	Argv         []string          `json:"argv"`
-	Env          map[string]string `json:"env,omitempty"`
-	Cwd          string            `json:"cwd,omitempty"`
-	EnvFromVault map[string]string `json:"env_from_vault,omitempty"`
-}
+// The terminal phases this provider reports, from the interface's vocabulary.
+const (
+	phaseExited = "exited"
+	phaseKilled = "killed"
+)
 
-// commandResp is the Command response from starting a command. Only the id is
-// consumed: the terminal phase and exit code arrive later on the logs envelope,
-// which is the single place the stream reads them from.
-type commandResp struct {
-	CommandID string `json:"command_id"`
-}
-
-// logEnvelope is the cursor-mode logs response
-// (GET .../commands/{cid}/logs?stream=false&cursor=N).
-type logEnvelope struct {
-	Bytes      string `json:"bytes"`
-	NextCursor int64  `json:"next_cursor"`
-	Phase      string `json:"phase"`
-	ExitCode   *int   `json:"exit_code"`
-}
-
-// Exec runs a command to completion and returns its combined output and
-// terminal status. It is implemented on top of StreamExec so the
-// start → poll → terminal lifecycle lives in one place.
+// Exec runs a command to completion on the control plane's synchronous exec
+// route and returns its output and exit code. The command's standard input is
+// at end of file, as in the local provider.
+//
+// Stdout carries the command's standard output followed by its standard error,
+// and Stderr stays empty: callers read Stdout alone for the combined output.
+// The control plane keeps the first mebibyte of each channel. A context that
+// ends while the command runs is the killed phase with no error.
 func (p *Provider) Exec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecResult, error) {
-	stream, err := p.StreamExec(ctx, id, opts)
+	if len(opts.Argv) == 0 {
+		return sandbox.ExecResult{}, errors.New("cella: exec: argv is empty")
+	}
+	if len(opts.SecretEnv) > 0 {
+		return sandbox.ExecResult{}, errors.New("cella: ExecOptions.SecretEnv has no equivalent: the Cella exec route resolves no secret for one command")
+	}
+	timeout, live := execTimeout(ctx)
+	if !live {
+		return sandbox.ExecResult{Phase: phaseKilled}, nil
+	}
+	req := cellaclient.ExecRequest{
+		Command: opts.Argv,
+		Env:     opts.Env,
+		Timeout: timeout.String(),
+	}
+	if opts.Cwd != "" {
+		req.Workdir = resolvePath(opts.Cwd)
+	}
+	res, _, err := p.core.Exec(ctx, id, req)
+	// The context decides killed, not the error's type: the client returns a
+	// cancellation as it is and wraps a deadline in *client.Unreachable.
+	if ctx.Err() != nil {
+		return sandbox.ExecResult{Phase: phaseKilled}, nil
+	}
 	if err != nil {
-		return sandbox.ExecResult{}, err
+		return sandbox.ExecResult{}, mapError(err)
 	}
-	defer stream.Close() //nolint:errcheck
-	for {
-		if _, err := stream.Recv(); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return sandbox.ExecResult{}, err
-		}
-	}
-	return stream.Result(), nil
+	return sandbox.ExecResult{
+		Stdout:   []byte(res.Stdout + res.Stderr),
+		ExitCode: res.ExitCode,
+		Phase:    phaseExited,
+	}, nil
 }
 
-// StreamExec starts a command and returns a stream over its output. Output is
-// pulled from Cella with cursor-based polling in a background goroutine that
-// writes into an io.Pipe; Recv reads the pipe, so a slow consumer applies
-// backpressure to the poller.
-func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecStream, error) {
-	if len(opts.Argv) == 0 {
-		return nil, errors.New("cella: exec: argv is empty")
+// execTimeout is the timeout sent with a command: the context's remaining
+// time, at most maxExecTimeout, and maxExecTimeout when there is no deadline,
+// so the control plane ends a command its caller stopped waiting for rather
+// than applying its own shorter default. It reports false for a context whose
+// deadline has already passed.
+func execTimeout(ctx context.Context) (time.Duration, bool) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return maxExecTimeout, ctx.Err() == nil
 	}
+	remaining := time.Until(deadline).Round(time.Millisecond)
+	if remaining <= 0 || ctx.Err() != nil {
+		return 0, false
+	}
+	return min(remaining, maxExecTimeout), true
+}
 
-	var started commandResp
-	if err := p.doJSON(ctx, "POST", "/v1/sandboxes/"+url.PathEscape(id)+"/commands",
-		createCommandReq{Argv: opts.Argv, Env: opts.Env, Cwd: opts.Cwd, EnvFromVault: opts.SecretEnv}, &started); err != nil {
+// StreamExec runs the command as Exec does and returns a stream holding its
+// whole output as one chunk, delivered once the command has ended. The control
+// plane's live exec form keeps the command's standard input open until the
+// session closes, so a command that reads its input would wait there; one
+// contract for both methods is the one this provider keeps.
+func (p *Provider) StreamExec(ctx context.Context, id string, opts sandbox.ExecOptions) (sandbox.ExecStream, error) {
+	res, err := p.Exec(ctx, id, opts)
+	if err != nil {
 		return nil, err
 	}
-
-	pr, pw := io.Pipe()
-	s := &execStream{pr: pr, pw: pw}
-
-	go p.pollLogs(ctx, id, started.CommandID, s)
-
-	return s, nil
+	return &execStream{pending: res.Stdout, result: res}, nil
 }
 
-// pollLogs reads the command's combined output via cursor polling and feeds it
-// into the stream's pipe, recording the terminal phase and exit code before
-// closing the writer. The io.EOF a consumer observes from Recv happens-after
-// the terminal fields are set, so Result is always populated by then.
-func (p *Provider) pollLogs(ctx context.Context, sandboxID, commandID string, s *execStream) {
-	logPath := "/v1/sandboxes/" + url.PathEscape(sandboxID) + "/commands/" + url.PathEscape(commandID) + "/logs"
-	var cursor int64
-	for {
-		if ctx.Err() != nil {
-			p.killed(s)
-			return
-		}
-
-		var env logEnvelope
-		q := logPath + "?stream=false&cursor=" + strconv.FormatInt(cursor, 10)
-		if err := p.doJSON(ctx, "GET", q, nil, &env); err != nil {
-			// A cancelled context is a terminal "killed" phase, not a transport
-			// error — matching the local provider, Exec returns the result with
-			// no error. Any other failure propagates through the pipe.
-			if ctx.Err() != nil {
-				p.killed(s)
-				return
-			}
-			_ = s.pw.CloseWithError(err)
-			return
-		}
-		if env.Bytes != "" {
-			// Write blocks until Recv drains it (backpressure). A consumer that
-			// gives up closes the read end, surfacing here as an error.
-			if _, err := s.pw.Write([]byte(env.Bytes)); err != nil {
-				return
-			}
-		}
-		cursor = env.NextCursor
-
-		if env.Phase != phaseRunning {
-			s.finish(env.Phase, env.ExitCode)
-			_ = s.pw.Close()
-			return
-		}
-
-		select {
-		case <-ctx.Done():
-		case <-time.After(p.pollIntervalOrDefault()):
-		}
-	}
-}
-
-// killed records the killed phase and closes the stream cleanly (EOF), so a
-// consumer sees the terminal phase rather than a transport error.
-func (p *Provider) killed(s *execStream) {
-	s.finish("killed", nil)
-	_ = s.pw.Close()
-}
-
-// phaseRunning is the only non-terminal command phase.
-const phaseRunning = "running"
-
-func (p *Provider) pollIntervalOrDefault() time.Duration {
-	if p.pollInterval > 0 {
-		return p.pollInterval
-	}
-	return defaultPollInterval
-}
-
-// execStream implements [sandbox.ExecStream] over a cursor-polled command.
+// execStream implements [sandbox.ExecStream] over a command that has already
+// ended.
 type execStream struct {
-	pr *io.PipeReader
-	pw *io.PipeWriter
-
-	mu     sync.Mutex
-	result sandbox.ExecResult
+	mu      sync.Mutex
+	pending []byte
+	result  sandbox.ExecResult
 }
 
-// Recv returns the next chunk of combined output, or io.EOF when the command
-// terminates.
+// Recv returns the command's output on the first call, and io.EOF after it.
 func (s *execStream) Recv() ([]byte, error) {
-	buf := make([]byte, 4096)
-	n, err := s.pr.Read(buf)
-	if n > 0 {
-		out := make([]byte, n)
-		copy(out, buf[:n])
-		s.mu.Lock()
-		s.result.Stdout = append(s.result.Stdout, out...)
-		s.mu.Unlock()
-		return out, nil
-	}
-	if errors.Is(err, io.EOF) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.pending) == 0 {
 		return nil, io.EOF
 	}
-	return nil, err
+	out := s.pending
+	s.pending = nil
+	return out, nil
 }
 
-// Result returns the terminal ExecResult. Valid only after Recv returns io.EOF.
+// Result returns the terminal ExecResult.
 func (s *execStream) Result() sandbox.ExecResult {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.result
 }
 
-// Close releases the pipe. Safe to call multiple times.
+// Close releases the stream. Safe to call multiple times.
 func (s *execStream) Close() error {
-	return s.pr.Close()
-}
-
-// finish records the terminal phase and exit code under the lock, preserving
-// the Stdout that Recv accumulated.
-func (s *execStream) finish(phase string, exitCode *int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.result.Phase = phase
-	if exitCode != nil {
-		s.result.ExitCode = *exitCode
-	}
+	s.pending = nil
+	return nil
 }

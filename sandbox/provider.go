@@ -48,8 +48,9 @@ func (e *APIError) Error() string {
 		e.Status, e.Code, e.Message, e.RequestID)
 }
 
-// State mirrors the Cella sandbox state enum but is defined here
-// so interface consumers don't need to know about Cella.
+// State is a sandbox's lifecycle state in a vocabulary of its own, so
+// interface consumers need not know a backend's; each backend maps its own
+// states onto it.
 type State string
 
 // Sandbox lifecycle states reported by the backend.
@@ -86,7 +87,8 @@ type CreateOptions struct {
 	// generates one.
 	Name string
 	// Image is the container image ref. If empty the backend uses its
-	// platform base image.
+	// platform base image. The Cella backend names an image of its control
+	// plane's catalog, "base" when empty.
 	Image string
 	// Env is the set of environment variables to inject at sandbox start.
 	Env map[string]string
@@ -98,15 +100,17 @@ type CreateOptions struct {
 	// Policy names the sandbox policy to request: a backend-specific policy
 	// name (e.g. a locked-down, compute-only profile) that overrides the
 	// caller's default. If empty the backend resolves the caller's default
-	// policy.
+	// policy. The Cella backend has no named policies and refuses a
+	// non-empty value rather than run without the restriction asked for.
 	Policy string
 	// SecretMounts names secret entries the backend mounts read-only into the
-	// sandbox filesystem at start, so the workload reads each value as a file
-	// (the Cella backend mounts them at /run/cella/secrets/<NAME>). The secret
-	// values never travel in this request — only their names. A nil slice
-	// requests the backend's default mount set; a non-nil slice (including an
-	// empty one) requests exactly those names, so an empty slice means "mount
-	// none". The local provider ignores this field.
+	// sandbox filesystem at start, so the workload reads each value as a
+	// file. The secret values never travel in this request, only their
+	// names. A nil slice requests the backend's default mount set; a non-nil
+	// slice (including an empty one) requests exactly those names, so an
+	// empty slice means "mount none". The local provider ignores this field.
+	// The Cella backend delivers no secret as a file and refuses a non-empty
+	// slice; nil and empty mount nothing.
 	SecretMounts []string
 }
 
@@ -122,30 +126,32 @@ type ExecOptions struct {
 	Cwd string
 	// SecretEnv maps environment-variable names to backend secret-entry names.
 	// The backend resolves each value server-side and injects it for this
-	// command only, without exposing the value on argv (the Cella backend
-	// resolves it into a tmpfs file, so it does not leak via /proc/<pid>/cmdline).
-	// Only the entry names travel in this request, never the values. The local
-	// provider ignores this field.
+	// command only, without exposing the value on argv. Only the entry names
+	// travel in this request, never the values. The local provider ignores
+	// this field, and the Cella backend, whose exec route resolves no secret,
+	// refuses a non-empty map.
 	SecretEnv map[string]string
 }
 
 // ExecResult holds the result of a completed command execution.
 //
-// Note: the Cella backend merges stdout and stderr into a single
-// combined stream in arrival order. As a result, for the cella provider:
-//   - Stdout carries the COMBINED stdout+stderr output.
-//   - Stderr is nil/empty; Cella provides no per-stream separation.
+// Note: the local and Cella backends both report the combined output in
+// Stdout and leave Stderr empty, so a caller reads Stdout alone:
+//   - the local backend merges the two streams in arrival order;
+//   - the Cella backend receives them apart and puts standard output
+//     first, then standard error, each cut at its control plane's cap of
+//     one mebibyte.
 //
 // The interface retains separate Stdout/Stderr fields so that backends
 // with native per-stream separation can use both without an interface
 // break.
 type ExecResult struct {
-	// Stdout holds the command's standard output. For the Cella backend
-	// this is the combined stdout+stderr in arrival order.
+	// Stdout holds the command's standard output. For the local and Cella
+	// backends this is the combined stdout and stderr (see above).
 	Stdout []byte
-	// Stderr holds the command's standard error. Unused by the Cella
-	// backend (see comment above); reserved for backends that separate
-	// streams.
+	// Stderr holds the command's standard error. Unused by the local and
+	// Cella backends (see comment above); reserved for backends that
+	// separate streams.
 	Stderr []byte
 	// ExitCode is the process exit status. Meaningful only when Phase
 	// is "exited".

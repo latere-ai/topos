@@ -1,256 +1,96 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Copyright 2026 The Latere Authors. All rights reserved.
-// Use of this source code is governed by an Apache-2.0
-// license that can be found in the LICENSE file.
-
 package cella_test
 
 import (
-	"archive/tar"
-	"bytes"
-	"context"
 	"errors"
-	"io"
-	"net/http"
 	"slices"
-	"sort"
 	"testing"
+
+	cellaclient "latere.ai/x/cella/client"
 
 	"latere.ai/x/topos/sandbox"
 )
 
-// tarEntry describes one file/dir the fake export server should emit.
-type tarEntry struct {
-	name string // tar name, e.g. "src/main.go" or "src/" for a dir
-	body string // file content (ignored for dirs)
-	dir  bool
-}
-
-// exportServer returns a handler that serves the given entries as a tar from
-// files/export. It echoes back all entries regardless of the requested paths
-// (sufficient for unit tests; the real server filters with tar -C).
-func exportServer(t *testing.T, entries []tarEntry) http.HandlerFunc {
-	t.Helper()
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "" || r.Method != "POST" {
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/x-tar")
-		tw := tar.NewWriter(w)
-		for _, e := range entries {
-			hdr := &tar.Header{Name: e.name, Mode: 0o644, Size: int64(len(e.body)), Typeflag: tar.TypeReg}
-			if e.dir {
-				hdr.Typeflag, hdr.Mode, hdr.Size = tar.TypeDir, 0o755, 0
-			}
-			if err := tw.WriteHeader(hdr); err != nil {
-				t.Errorf("write tar header: %v", err)
-			}
-			if !e.dir {
-				_, _ = tw.Write([]byte(e.body))
-			}
-		}
-		_ = tw.Close()
+// TestFilesRoundTrip reaches the one-file routes with relative paths resolved
+// under the workspace, which is how the harness's file tools address them.
+func TestFilesRoundTrip(t *testing.T) {
+	f, p, id := running(t)
+	if err := p.WriteFile(t.Context(), id, "notes/todo.txt", []byte("ship it\n")); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
-}
-
-func TestReadFileReturnsEntry(t *testing.T) {
-	p := newProvider(t, exportServer(t, []tarEntry{
-		{name: "foo/bar.txt", body: "hello world"},
-	}))
-	data, err := p.ReadFile(context.Background(), "sb_1", "foo/bar.txt")
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	f.mu.Lock()
+	stored := string(f.files["/workspace/notes/todo.txt"])
+	f.mu.Unlock()
+	if stored != "ship it\n" {
+		t.Fatalf("stored = %q at /workspace/notes/todo.txt", stored)
 	}
-	if string(data) != "hello world" {
-		t.Errorf("data = %q, want hello world", data)
+	data, err := p.ReadFile(t.Context(), id, "./notes/todo.txt")
+	if err != nil || string(data) != "ship it\n" {
+		t.Fatalf("ReadFile = %q, %v", data, err)
 	}
-}
-
-func TestReadFileNormalizesLeadingDotSlash(t *testing.T) {
-	// The server may prefix entries with "./"; the path is still found.
-	p := newProvider(t, exportServer(t, []tarEntry{
-		{name: "./notes.md", body: "content"},
-	}))
-	data, err := p.ReadFile(context.Background(), "sb_1", "notes.md")
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if string(data) != "content" {
-		t.Errorf("data = %q, want content", data)
+	data, err = p.ReadFile(t.Context(), id, "/workspace/notes/todo.txt")
+	if err != nil || string(data) != "ship it\n" {
+		t.Fatalf("ReadFile absolute = %q, %v", data, err)
 	}
 }
 
 func TestReadFileMissingIsNotFound(t *testing.T) {
-	// An empty tar (the file does not exist) yields ErrNotFound.
-	p := newProvider(t, exportServer(t, nil))
-	_, err := p.ReadFile(context.Background(), "sb_1", "nope.txt")
-	if !errors.Is(err, sandbox.ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
+	_, p, id := running(t)
+	if _, err := p.ReadFile(t.Context(), id, "absent.txt"); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("ReadFile = %v, want ErrNotFound", err)
 	}
 }
 
-func TestReadFilePropagatesAPIError(t *testing.T) {
-	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, http.StatusInternalServerError, map[string]string{"code": "internal", "message": "boom"})
-	}))
-	_, err := p.ReadFile(context.Background(), "sb_1", "x")
-	if _, ok := errors.AsType[*sandbox.APIError](err); !ok {
-		t.Fatalf("err = %v, want *APIError", err)
+func TestWriteFileEmptyPathSendsNothing(t *testing.T) {
+	f, p, id := running(t)
+	before := len(f.requestLog())
+	if err := p.WriteFile(t.Context(), id, "", []byte("x")); err == nil {
+		t.Fatal("WriteFile with an empty path succeeded")
+	}
+	if len(f.requestLog()) != before {
+		t.Error("a request was sent")
 	}
 }
 
-func TestReadFileMalformedTar(t *testing.T) {
-	// A body that claims to be a tar but is garbage surfaces a tar error.
-	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/x-tar")
-		_, _ = w.Write([]byte("this is not a tar archive at all, just bytes"))
-	}))
-	_, err := p.ReadFile(context.Background(), "sb_1", "x.txt")
-	if err == nil || errors.Is(err, sandbox.ErrNotFound) {
-		t.Fatalf("err = %v, want a tar parse error", err)
+func TestWriteFileMissingSandbox(t *testing.T) {
+	_, p, _ := running(t)
+	if err := p.WriteFile(t.Context(), "sbx_missing", "a.txt", []byte("x")); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("WriteFile = %v, want ErrNotFound", err)
 	}
 }
 
-func TestListFilesPropagatesError(t *testing.T) {
-	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, http.StatusNotFound, map[string]string{"code": "not_found", "message": "gone"})
-	}))
-	_, err := p.ListFiles(context.Background(), "sb_1", ".")
-	if !errors.Is(err, sandbox.ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
+// TestListFilesMapsEntries: the root and a subdirectory, the octal mode read
+// into permission bits, and a directory's size left at zero.
+func TestListFilesMapsEntries(t *testing.T) {
+	f, p, id := running(t)
+	f.dirs["/workspace"] = []cellaclient.FileEntry{
+		{Name: "src", Path: "/workspace/src", Size: 4096, Mode: "0755", IsDir: true},
+		{Name: "go.mod", Path: "/workspace/go.mod", Size: 42, Mode: "0644"},
 	}
-}
-
-func TestListFilesImmediateChildrenOnly(t *testing.T) {
-	// A recursive tar of the root; ListFiles must collapse it to the top level.
-	p := newProvider(t, exportServer(t, []tarEntry{
-		{name: "./", dir: true},
-		{name: "README.md", body: "readme"},
-		{name: "src/", dir: true},
-		{name: "src/main.go", body: "package main"},
-		{name: "src/sub/", dir: true},
-		{name: "src/sub/deep.go", body: "deep"},
-	}))
-
-	got, err := p.ListFiles(context.Background(), "sb_1", ".")
+	f.dirs["/workspace/src"] = []cellaclient.FileEntry{{Name: "main.go", Size: 7, Mode: "0600"}}
+	got, err := p.ListFiles(t.Context(), id, "")
 	if err != nil {
 		t.Fatalf("ListFiles: %v", err)
 	}
-	names := fileNames(got)
-	want := []string{"README.md", "src"}
-	if !slices.Equal(names, want) {
-		t.Fatalf("children = %v, want %v", names, want)
+	want := []sandbox.FileInfo{{Name: "go.mod", Size: 42, Mode: 0o644}, {Name: "src", Mode: 0o755, IsDir: true}}
+	if !slices.Equal(got, want) {
+		t.Errorf("ListFiles = %+v, want %+v", got, want)
 	}
-	for _, fi := range got {
-		switch fi.Name {
-		case "README.md":
-			if fi.IsDir || fi.Size != int64(len("readme")) {
-				t.Errorf("README.md = %+v, want file size 6", fi)
-			}
-		case "src":
-			if !fi.IsDir {
-				t.Errorf("src = %+v, want dir", fi)
-			}
-		}
+	got, err = p.ListFiles(t.Context(), id, "src")
+	if err != nil || !slices.Equal(got, []sandbox.FileInfo{{Name: "main.go", Size: 7, Mode: 0o600}}) {
+		t.Errorf("ListFiles src = %+v, %v", got, err)
 	}
 }
 
-func TestListFilesInfersDirFromDescendantWithoutHeader(t *testing.T) {
-	// No explicit "src/" header, only a descendant: src must still appear as a dir.
-	p := newProvider(t, exportServer(t, []tarEntry{
-		{name: "src/main.go", body: "x"},
-	}))
-	got, err := p.ListFiles(context.Background(), "sb_1", ".")
-	if err != nil {
-		t.Fatalf("ListFiles: %v", err)
+func TestListFilesErrors(t *testing.T) {
+	f, p, id := running(t)
+	if _, err := p.ListFiles(t.Context(), id, "absent"); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Errorf("ListFiles missing = %v, want ErrNotFound", err)
 	}
-	if len(got) != 1 || got[0].Name != "src" || !got[0].IsDir {
-		t.Fatalf("children = %+v, want a single dir 'src'", got)
+	f.dirs["/workspace/odd"] = []cellaclient.FileEntry{{Name: "x", Mode: "rw-r--r--"}}
+	if _, err := p.ListFiles(t.Context(), id, "odd"); err == nil {
+		t.Error("ListFiles accepted a mode that is not octal")
 	}
-}
-
-func TestListFilesOfSubdir(t *testing.T) {
-	p := newProvider(t, exportServer(t, []tarEntry{
-		{name: "src/", dir: true},
-		{name: "src/main.go", body: "m"},
-		{name: "src/util.go", body: "u"},
-		{name: "src/sub/inner.go", body: "i"},
-	}))
-	got, err := p.ListFiles(context.Background(), "sb_1", "src")
-	if err != nil {
-		t.Fatalf("ListFiles: %v", err)
-	}
-	names := fileNames(got)
-	want := []string{"main.go", "sub", "util.go"}
-	if !slices.Equal(names, want) {
-		t.Fatalf("children = %v, want %v", names, want)
-	}
-}
-
-func TestWriteFileImportsOneEntryTar(t *testing.T) {
-	var gotName, gotDest string
-	var gotBody []byte
-	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
-			t.Errorf("ParseMultipartForm: %v", err)
-		}
-		gotDest = r.FormValue("dest")
-		f, _, err := r.FormFile("tarball")
-		if err != nil {
-			t.Fatalf("FormFile tarball: %v", err)
-		}
-		defer f.Close() //nolint:errcheck
-		raw, _ := io.ReadAll(f)
-		tr := tar.NewReader(bytes.NewReader(raw))
-		hdr, err := tr.Next()
-		if err != nil {
-			t.Fatalf("tar Next: %v", err)
-		}
-		gotName = hdr.Name
-		gotBody, _ = io.ReadAll(tr)
-		writeJSON(t, w, http.StatusOK, map[string]string{"status": "imported"})
-	}))
-
-	if err := p.WriteFile(context.Background(), "sb_1", "dir/file.txt", []byte("payload")); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	if gotName != "dir/file.txt" {
-		t.Errorf("tar entry name = %q, want dir/file.txt", gotName)
-	}
-	if string(gotBody) != "payload" {
-		t.Errorf("tar entry body = %q, want payload", gotBody)
-	}
-	if gotDest != "" {
-		t.Errorf("dest = %q, want empty (server defaults to /workspace)", gotDest)
-	}
-}
-
-func TestWriteFileEmptyPath(t *testing.T) {
-	p := newProvider(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		t.Error("no request expected for empty path")
-	}))
-	if err := p.WriteFile(context.Background(), "sb_1", "", []byte("x")); err == nil {
-		t.Fatal("empty path: want error, got nil")
-	}
-}
-
-func TestWriteFilePropagatesError(t *testing.T) {
-	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, http.StatusNotFound, map[string]string{"code": "not_found", "message": "no sandbox"})
-	}))
-	err := p.WriteFile(context.Background(), "missing", "a.txt", []byte("x"))
-	if !errors.Is(err, sandbox.ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
-	}
-}
-
-func fileNames(in []sandbox.FileInfo) []string {
-	out := make([]string, len(in))
-	for i, fi := range in {
-		out[i] = fi.Name
-	}
-	sort.Strings(out)
-	return out
 }
