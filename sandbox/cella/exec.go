@@ -57,19 +57,21 @@ func (p *Provider) Exec(ctx context.Context, id string, opts sandbox.ExecOptions
 		req.Workdir = resolvePath(opts.Cwd)
 	}
 	res, _, err := p.core.Exec(ctx, id, req)
-	// The context decides killed, not the error's type: the client returns a
-	// cancellation as it is and wraps a deadline in *client.Unreachable.
-	if ctx.Err() != nil {
-		return sandbox.ExecResult{Phase: phaseKilled}, nil
-	}
-	if err != nil {
-		return sandbox.ExecResult{}, mapError(err)
-	}
-	return sandbox.ExecResult{
+	result := sandbox.ExecResult{
 		Stdout:   []byte(res.Stdout + res.Stderr),
 		ExitCode: res.ExitCode,
 		Phase:    phaseExited,
-	}, nil
+	}
+	// The context decides killed, not the error's type: the client returns a
+	// cancellation as it is and wraps a deadline in *client.Unreachable. A
+	// killed command is a terminal phase, not a failure of the call.
+	switch {
+	case ctx.Err() != nil:
+		result = sandbox.ExecResult{Phase: phaseKilled}
+	case err != nil:
+		return sandbox.ExecResult{}, mapError(err)
+	}
+	return result, nil
 }
 
 // execTimeout is the timeout sent with a command: the context's remaining

@@ -6,6 +6,7 @@ package cella_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -295,7 +296,7 @@ func TestTokenAskedPerRequest(t *testing.T) {
 		BaseURL:    f.url(),
 		HTTPClient: f.srv.Client(),
 		Token: cella.TokenFunc(func(context.Context) (string, error) {
-			return "tok-" + string(rune('a'+n.Add(1)-1)), nil
+			return fmt.Sprintf("tok-%d", n.Add(1)), nil
 		}),
 	})
 	sb, err := p.Create(t.Context(), sandbox.CreateOptions{})
@@ -308,7 +309,7 @@ func TestTokenAskedPerRequest(t *testing.T) {
 	f.mu.Lock()
 	got := append([]string(nil), f.bearers...)
 	f.mu.Unlock()
-	if !slices.Equal(got, []string{"tok-a", "tok-b"}) {
+	if !slices.Equal(got, []string{"tok-1", "tok-2"}) {
 		t.Errorf("bearers = %v, want a fresh token per request", got)
 	}
 }
