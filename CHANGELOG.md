@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- **Breaking:** the repository restarts as the Topos core. Every package of
+  v0.7.0 is removed: the root `topos` package, `graph`, `billing`, `harness`,
+  `models`, `runtime`, `sandbox` and `adversarial`. A program pinned to v0.7.0
+  or earlier keeps building, because those versions stay in the Go module
+  proxy; the v0.7.0 tree is at its tag, and its specs are under
+  `docs/history/`. The adversarial review engine continues as its own module,
+  `latere.ai/x/adversarial`.
+
 ## v0.7.0 - 2026-09-26
 
 - **Breaking:** `sandbox/cella` speaks to a Cella control plane, the open source
