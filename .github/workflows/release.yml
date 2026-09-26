@@ -3,7 +3,8 @@ name: release
 # A tag is a release, and a release has notes. The shared pipeline reads the
 # CHANGELOG.md section for the tag, refuses the tag when there is none, and
 # otherwise publishes the GitHub release with that section as the body.
-# Nothing is built here: the site deploys from latere-ai/agents.
+# The images, archives and attestations join with spec 028; until then a
+# pre-release proves the notes path.
 
 on:
   push:

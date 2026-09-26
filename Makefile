@@ -1,91 +1,54 @@
 # SPDX-FileCopyrightText: 2026 Latere AI
 # SPDX-License-Identifier: Apache-2.0
 
-# The verification contract for topos.
-#
-# Every target here is one latere-ai/ci's go-verify workflow probes for and
-# runs, so `make <target>` on a laptop is the same check the runner performs.
-# The gates themselves live in latere.ai/x/ci-gate, pinned in go.mod; what
-# each one asserts for this repository is in .lateregate.yaml.
+GO ?= go
 
-.PHONY: all check build test test-race test-hermetic cover fmt fmt-check lint lint-config lint-modernize spec-lint validate vuln tidy hooks
+.PHONY: build check clean fmt hooks run
 
-all: fmt-check lint test cover spec-lint validate
+# The whole bar. Every gate lives in latere.ai/x/ci-gate, pinned as a tool
+# in go.mod and configured in .lateregate.yaml, so this target is a name for
+# `go tool lateregate` and nothing else. One gate at a time: `go tool
+# lateregate cover`. The plan: `go tool lateregate list`.
+check:
+	@$(GO) tool lateregate
 
+.DEFAULT_GOAL := check
+
+OUT_DIR := out
+MODULE := $(shell $(GO) list -m)
+
+# Build metadata, deferred so the git and date calls run only for a build. A
+# dirty tree marks the commit, because a binary built from uncommitted
+# changes cannot be reproduced from its commit.
+VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DIRTY = $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_PKG = $(MODULE)/internal/version
+LDFLAGS = -X $(VERSION_PKG).Version=$(VERSION) \
+          -X $(VERSION_PKG).Commit=$(COMMIT)$(DIRTY) \
+          -X $(VERSION_PKG).Date=$(BUILD_DATE)
+
+# Both binaries: toposd, the server, and topos, the scripting and test client.
 build:
-	go build ./...
+	@mkdir -p $(OUT_DIR)
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(OUT_DIR)/toposd ./cmd/toposd
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(OUT_DIR)/topos ./cmd/topos
+	@echo "built $(OUT_DIR)/toposd $(OUT_DIR)/topos"
 
-# vet before test, because a vet finding is a fact about the code that does
-# not need the suite to run to be true.
-test:
-	@go tool lateregate test
-
-# The suite under the race detector. Kept separate from `test` so the fast
-# path stays fast and a race failure names itself.
-test-race:
-	@go tool lateregate race
-
-# The suite with only the Go toolchain and the directories .lateregate.yaml
-# names on PATH. A test that depends on whatever happens to be installed
-# passes locally and fails on a runner, which is the worst order to find out.
-test-hermetic:
-	@go tool lateregate hermetic
-
-# The floor lives in this target rather than a separate one: CI runs
-# `make cover`, and a target that only prints a percentage reports green at
-# any coverage. The examples/ packages are runnable demonstrations with no
-# tests; they compile and run here but are filtered out of the measurement so
-# demo code does not dilute the production total.
-cover:
-	@go tool lateregate cover
+# The server on loopback. Until spec 015 lands the process serves its probes.
+run: build
+	TOPOS_PUBLIC_ADDR=127.0.0.1:8080 TOPOS_INTERNAL_ADDR=127.0.0.1:8081 \
+		$(OUT_DIR)/toposd
 
 fmt:
-	gofmt -w .
+	gofmt -w $$(git ls-files '*.go')
 
-fmt-check:
-	@go tool lateregate fmt-check
-
-# Fails on code a standard library call or a language builtin already covers.
-# Carries fixers golangci-lint's modernize linter does not, so it runs whether
-# or not the linter does.
-lint-modernize:
-	@go tool lateregate modernize
-
-# .golangci.yml is generated and gitignored: golangci-lint has no config
-# inheritance, so the org's set is rendered from latere.ai/x/ci-gate on every
-# run. Regenerating is what makes divergence impossible rather than merely
-# detectable.
-lint-config:
-	@go tool lateregate golangci
-
-# golangci-lint at the version lateregate pins, against the config it renders.
-lint:
-	@go tool lateregate lint
-
-# specs/ records the shipped surface, and a spec tree nobody checks drifts
-# from the code within a milestone. The vocabulary and the required
-# frontmatter are in .lateregate.yaml.
-spec-lint:
-	@go tool lateregate spec-lint
-
-# The repo-specific check the shared pipeline cannot know about.
-validate: vuln
-
-# A dependency with a known advisory is a fact about the module graph, not
-# about this code, so nothing else here would ever report it.
-vuln:
-	@go tool lateregate vuln
-
-tidy:
-	go mod tidy
-
-# hooks installs the repository git hooks (pre-commit gofmt and go fix guards).
+# Point git at the delegating hooks. Per clone, so it is a target.
 hooks:
+	chmod +x .githooks/*
 	git config core.hooksPath .githooks
-	@echo "installed git hooks (core.hooksPath=.githooks)"
 
-# The whole shared bar. Every gate lives in lateregate, pinned as a tool in
-# go.mod; this target is a name for `go tool lateregate` and nothing else.
-# The plan: `go tool lateregate list`. One gate: `go tool lateregate <gate>`.
-check:
-	@go tool lateregate
+# Remove the build output.
+clean:
+	rm -rf $(OUT_DIR)

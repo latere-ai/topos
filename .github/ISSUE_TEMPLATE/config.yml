@@ -1,5 +1,8 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/latere-ai/topos/security/advisories/new
-    about: Report security issues privately
+    url: https://github.com/latere-ai/topos/blob/main/SECURITY.md
+    about: Report it privately to security@latere.ai, never as an issue.
+  - name: Running toposd and writing agent manifests
+    url: https://github.com/latere-ai/topos/blob/main/docs/README.md
+    about: Install, configuration, manifest reference, API, and operations documentation.

@@ -1,77 +1,82 @@
-# The per-push gate configuration for topos. Every check runs from
-# latere.ai/x/ci-gate, pinned in go.mod, so a gate that fails on a runner
-# fails the same way on a laptop.
+# The shared quality bar, read by `go tool lateregate`. The gates live in
+# latere.ai/x/ci-gate, pinned in go.mod; only repository-specific values are
+# here.
 
 cover:
-  exempt:
-    # The value is the reason. lateregate rejects an empty one.
-    examples/authoredgraph: example program, run by hand and read as documentation
-    examples/delegation: example program, run by hand and read as documentation
-    examples/graph: example program, run by hand and read as documentation
-    examples/minimal: example program, run by hand and read as documentation
-    examples/sandbox: example program, run by hand and read as documentation
-    adversarial/claude: >-
-      drives the real claude binary; the covered paths are the ones a test can
-      reach without it
-
-hermetic:
-  # Two directories, for binaries the suite really executes. /bin has sh,
-  # which the bash tool and sandbox/local run commands through. /usr/bin has
-  # git, which adversarial/input shells out to for the diff it reviews, and
-  # the fake CLI harnesses in adversarial/claude reach through the same
-  # shell. With allow: [] those packages fail rather than skip, so both
-  # entries are measured rather than assumed.
-  allow: [/usr/bin, /bin]
+  trim_prefix: latere.ai/x/topos/
 
 spec:
-  # Two vocabularies meet in one tree. The runtime specs are retrospective
-  # records of shipped behavior and read `complete`; the adversarial specs
-  # follow their own lifecycle and read `current` for what ships today.
-  # New runtime work starts `drafted` before implementation.
-  # `archived` is the terminal status for both of them. Closed at what the tree
-  # uses, so a status invented in review is caught.
-  status: [drafted, complete, current, archived]
-  # No index rule: specs/README.md is prose with a per-spec reading order and
-  # carries no status table, so there is no row for a spec to disagree with.
-  # Both README files are excluded because neither is a spec.
-  exclude: [README.md, adversarial-README.md]
-  # Markdown tables are how these specs carry their surface descriptions, and
-  # a row whose cell count drifts renders as silently missing columns.
-  tables: true
-  # `complete` is not terminal here: the runtime specs are retrospective
-  # records of behavior that ships today, kept at the root because that is
-  # what they are for. Retiring one sets `archived`, and the rule then holds it
-  # to the same vocabulary and required frontmatter as the rest.
   archive:
     dir: .archive
-    statuses: [archived]
+    statuses: [complete, superseded]
+  status:
+    - vague
+    - drafted
+    - validated
+    - dispatched
+    - in-progress
+    - testing
+    - complete
+    - stale
+    - superseded
+  require: [title, status, track, depends_on, affects, effort, created, updated, author]
+  wikilinks: true
+  numbered: true
+  started: [dispatched, in-progress, testing, complete]
+  settled: [complete, superseded]
+  exclude: [README.md]
+  tables: true
+  require_section:
+    - Overview
+    - Current state
+    - Design
+    - Not in this spec
+    - Acceptance criteria
+  require_section_by_status:
+    complete: [Outcome]
+
+# The suite runs with only the Go toolchain on PATH. The host machine of
+# spec 009 runs sh for the bash tool and adds /bin when its tests land.
+hermetic:
+  allow: []
+
+tempdir:
+  allow: {}
+
+# Spec 001's dependency rule: the build list of every role reaches the
+# standard library and latere.ai/x/pkg on day one, and each later
+# dependency is a row with its decision.
+depcheck:
+  packages:
+    latere.ai/x/topos/cmd/toposd:
+      decision: >-
+        the server reaches latere.ai/x/pkg and the standard library; the
+        Postgres driver joins with spec 014, the Cella client with spec 009,
+        the OpenTelemetry SDK with spec 023, and nothing else does without a
+        row here (spec 001)
+      allow:
+        latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
+    latere.ai/x/topos/cmd/topos:
+      decision: >-
+        the core's scripting and test client reaches the standard library and
+        latere.ai/x/pkg; the harness packages of this module join with spec
+        024, and nothing else does without a row here
+      allow:
+        latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
 
 license:
-  # The identifier every source file carries and the holder it names. There
-  # is no default: this is the decision the gate checks the tree against.
-  # `go tool lateregate license -w` writes the notice where it is missing.
   spdx: Apache-2.0
   holder: Latere AI
-  extensions: ['.go']
-  names: [Makefile]
 
-# Gates this repository does not run yet. Each entry is temporary by
-# construction: after the date the gate runs and fails on its own terms.
-waive:
-  cover:
-    reason: >-
-      adversarial (87.8%), adversarial/internal/agent (87.8%) and
-      adversarial/internal/state (89.9%) sit just under the floor; closing
-      that is test work in the round loop rather than a threshold to choose
-    until: 2026-10-31
-  tempdir:
-    reason: >-
-      six empty topos-sandbox-* directories survive the suite. Run defers
-      Destroy on the sandbox it creates, so the survivors come from a path
-      that returns before that defer is set, or from a test that creates
-      through the local provider directly; the site is not identified yet
-    until: 2026-10-31
-
-# The identity shape of the family: specs/infrastructure/identity.md in latere-ai/specs
+# The identity shape of the family. Topos is a core: it verifies a caller's
+# token and asks one authorizer, and decides nothing about a person (spec
+# 006). The v0.7.0 record under docs/history names hosts of that time and is
+# a record the rules assert nothing about.
 identity:
-  role: none
+  role: core
+  audience: topos
+  config_prefix: TOPOS
+  api_group: topos.latere.ai
+  reached_by: self-hosted
+  roles_only: true
+  skip: [docs/history]
