@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# The smallest installation: the base in the namespace of
+# deploy/bootstrap, with the image an operator builds or pulls.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: topos
+resources:
+  - ../../base
+images:
+  - name: toposd
+    newName: ghcr.io/example/toposd
+    newTag: dev

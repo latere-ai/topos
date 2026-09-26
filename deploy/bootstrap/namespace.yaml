@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# The namespace an installation runs in, applied once by an operator.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: topos

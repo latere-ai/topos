@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# One replica may be down at a time, so a node drain never takes the API
+# away.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: toposd
+  labels:
+    app.kubernetes.io/name: toposd
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: toposd

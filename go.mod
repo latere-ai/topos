@@ -2,6 +2,8 @@ module latere.ai/x/topos
 
 go 1.27.0
 
+require latere.ai/x/pkg v0.87.0
+
 require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect

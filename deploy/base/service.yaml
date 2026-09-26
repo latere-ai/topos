@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# The public listener: /v1 and the three probes an ingress reaches. The
+# internal listener is the cluster's, for the kubelet's probes, a metrics
+# scrape and, from spec 016, the runners, and is not routed here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: toposd
+  labels:
+    app.kubernetes.io/name: toposd
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: toposd
+  ports:
+    - name: public
+      port: 8080
+      targetPort: public

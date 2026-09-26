@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# The base of every installation (spec 028): the server's Deployment with
+# the hardening of spec 027, its Service, its account, the network policy
+# around it, and the disruption budget. The runner Deployment joins with
+# spec 016, when the runner role exists.
+#
+# It names no namespace, so an overlay names one, and no image registry:
+# the reference is the placeholder `toposd`, which an overlay or the
+# release pipeline points at the published image with an `images` entry.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+  - pdb.yaml

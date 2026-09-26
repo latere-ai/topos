@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Inbound: the public port from anywhere in the cluster an ingress sits,
+# the internal port for probes and scrapes. Outbound is left to the
+# overlay, which knows the issuer, the authorizer and the database it
+# reaches.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: toposd
+  labels:
+    app.kubernetes.io/name: toposd
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: toposd
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - port: 8080
+        - port: 8081
