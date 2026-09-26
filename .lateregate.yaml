@@ -58,11 +58,10 @@ depcheck:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
     latere.ai/x/topos/cmd/topos:
       decision: >-
-        the core's scripting and test client reaches the standard library and
-        latere.ai/x/pkg; the harness packages of this module join with spec
-        024, and nothing else does without a row here
-      allow:
-        latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
+        the core's scripting and test client reaches the standard library
+        alone on day one; the harness packages of this module and
+        latere.ai/x/pkg join with spec 024, each as a row here
+      allow: {}
 
 license:
   spdx: Apache-2.0
@@ -80,3 +79,17 @@ identity:
   reached_by: self-hosted
   roles_only: true
   skip: [docs/history]
+  # Nothing is served under /v1 and nothing is decided before spec 006
+  # mounts the shared verifier and asks through the shared authorizer
+  # client. The waivers end with that spec, in phase 2.
+  waive:
+    verifier:
+      reason: >-
+        spec 006 mounts latere.ai/x/pkg/authkit/jwt on /v1; toposd serves
+        only its probes until then, so no token is verified by anything
+      until: 2026-12-31
+    authorizer:
+      reason: >-
+        spec 006 asks through latere.ai/x/pkg/authz; toposd decides nothing
+        until then, because it serves no action to decide
+      until: 2026-12-31
