@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.7.0 - 2026-09-26
+
 - **Breaking:** `sandbox/cella` speaks to a Cella control plane, the open source
   runtime hosted at `https://api.latere.ai/v1/environments`, through its
   exported client `latere.ai/x/cella/client`. The hosted service at
