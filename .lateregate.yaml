@@ -76,8 +76,9 @@ depcheck:
         the OpenTelemetry SDK behind pkg/otel, which the shared verifier of
         spec 006 instruments its key-set reads with and the family's
         otel-client gate requires for every outbound call (spec 001 admits
-        the SDK in both binaries); the Postgres driver joins with spec 014,
-        the Cella client with spec 009, and nothing else does without a row
+        the SDK in both binaries); the Postgres driver and its migrator
+        (spec 014) and the YAML decoder of manifests (spec 003); the Cella
+        client joins with spec 009, and nothing else does without a row
         here
       allow:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
@@ -95,6 +96,14 @@ depcheck:
         github.com/felixge/httpsnoop: response capture in otelhttp
         github.com/go-logr: the SDK's internal logger
         github.com/google/uuid: the SDK's instance ids
+        github.com/goccy/go-yaml: the YAML decoder of manifests and the OpenAPI document's encoder
+        github.com/jackc/pgx: the Postgres driver of the session and object stores (spec 014)
+        github.com/jackc/puddle: the connection pool under pgxpool
+        github.com/jackc/pgpassfile: the .pgpass reader pgx consults
+        github.com/jackc/pgservicefile: the pg_service.conf reader pgx consults
+        github.com/jackc/pgerrcode: the SQLSTATE names the migrator reads
+        github.com/golang-migrate/migrate: the migrator behind latere.ai/x/pkg/pgxmigrate
+        golang.org/x/sync: the semaphore of the puddle pool
     latere.ai/x/topos/cmd/topos-machine:
       decision: >-
         the helper a Cella machine uploads into its sandbox reaches the
