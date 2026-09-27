@@ -56,7 +56,7 @@ another spec.
 
 | # | Spec | Effort | Status | Builds on |
 |---|---|---|---|---|
-| [001](001-architecture.md) | Architecture: three parts over one session schema, the packages, extension points, invariants | medium | testing | - |
+| [001](.archive/001-architecture.md) | Architecture: three parts over one session schema, the packages, extension points, invariants | medium | complete | - |
 | [002](002-scaffold-and-configuration.md) | Scaffold and configuration reference: layout, the toposd roles, listeners, every TOPOS_* variable | small | validated | 001 |
 | [003](003-manifest.md) | manifest/v1: the Agent, Trigger, MemoryStore and Connection kinds, references, versioning, one resolver | large | validated | 001 |
 | [004](004-session-log.md) | The session log: schema v1, event types, status and stop reasons, the fold, the directory store | large | validated | 001, 002 |

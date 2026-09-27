@@ -1,6 +1,6 @@
 ---
 title: "Architecture: three parts over one session schema, the packages, extension points, invariants"
-status: testing
+status: complete
 track: core
 depends_on: []
 affects: [session/, harness/, prompts/, models/, machine/, runner/, memory/, manifest/, client/, authorizer/, internal/, cmd/toposd/, cmd/topos/, internal/arch/]
