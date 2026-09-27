@@ -831,3 +831,27 @@ func testAHostSessionRuns(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 }
+
+// TestServeRefusesScriptedModel is invariant 9 of spec 001 for the
+// server roles: serve and runner stop with one configuration line and
+// exit 1 when no model connection is named, and when the one named is
+// the scripted model, which answers from a script and never from a
+// model.
+func TestServeRefusesScriptedModel(t *testing.T) {
+	runnerEnv := map[string]string{"TOPOS_INTERNAL_URL": "http://127.0.0.1:1", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"}
+	for name, url := range map[string]string{"no connection": "", "the scripted model": "scripted:/tmp/script.yaml"} {
+		for _, role := range []string{"serve", "runner"} {
+			vars := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_MODELS_URL": url}
+			getenv := selfHosted(t, vars)
+			if role == "runner" {
+				maps.Copy(runnerEnv, map[string]string{"TOPOS_MODELS_URL": url})
+				getenv = env(runnerEnv)
+			}
+			var errOut bytes.Buffer
+			code := run(t.Context(), []string{role}, getenv, io.Discard, &errOut)
+			if got := errOut.String(); code != 1 || !strings.HasPrefix(got, "toposd: configuration: ") || !strings.Contains(got, "TOPOS_MODELS_URL") || strings.Count(got, "\n") != 1 {
+				t.Errorf("%s, %s: exit %d, stderr %q", role, name, code, got)
+			}
+		}
+	}
+}
