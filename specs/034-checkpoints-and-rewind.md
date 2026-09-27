@@ -155,3 +155,4 @@ attribution ([[019-git]]); the fork and handoff procedures
 | An isolated thread's worktree has its own chain under `threads/<thread>/` | `TestThreadCheckpointChain` | not built |
 | Rewind is refused while the session runs, with `rewind_not_idle` | `TestRewindOnlyWhenIdle` | not built |
 | A cloud session with no repository pushes each checkpoint to its session repository, and a new sandbox restores the latest one | `TestCloudCheckpointRestore` in the Cella tier | not built |
+| A session whose sandbox was deleted gets a new one restored from its latest checkpoint, recorded as `session.machine` reason `restored` | `TestCellaMachineRestoredFromCheckpoint` | not built |
