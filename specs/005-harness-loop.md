@@ -185,7 +185,7 @@ provider's `Retry-After` raises a delay and never lowers it.
 
 | Retried | Not retried (`retry.Stop`) |
 |---|---|
-| HTTP 408, 429, 500, 502, 503, 504, 529; an overloaded or rate-limit error event inside a stream; a connection error; a stream that ends before its terminal event | HTTP 400, 401, 403, 404, 413, 422; a codec error encoding the request |
+| HTTP 408, 429, 500, 502, 503, 504, 529; an overloaded or rate-limit error event inside a stream; a connection error; a stream that ends before its terminal event | HTTP 400, 401, 403, 404, 413, 422; a codec error encoding the request; a gateway's refusal for spend, `budget_exhausted` or `spend_exceeded`, whatever its status (Lux sends it as 429), which stops the turn with `budget` and a `session.error` naming the refusal |
 
 A retried stream's partial output is discarded and the Observer
 receives a reset for the step. Waiting counts against the turn

@@ -290,3 +290,16 @@ func TestAccumulator(t *testing.T) {
 		}
 	}
 }
+
+func TestSpendRefusalsAreNotRetried(t *testing.T) {
+	for typ, spent := range map[string]bool{"budget_exhausted": true, "spend_exceeded": true, "rate_limit_error": false} {
+		err := fmt.Errorf("wrapped: %w", &HTTPError{Status: 429, Type: typ})
+		code, ok := SpendRefused(err)
+		if ok != spent || (ok && code != typ) || Retryable(err) == spent {
+			t.Errorf("%s: SpendRefused %q %v, Retryable %v", typ, code, ok, Retryable(err))
+		}
+	}
+	if _, ok := SpendRefused(errors.New("plain")); ok {
+		t.Fatal("a plain error is a spend refusal")
+	}
+}

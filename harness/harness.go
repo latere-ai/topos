@@ -736,6 +736,15 @@ func (t *turn) modelFailed(ctx context.Context, err error, attempts int, toolsSH
 	if errors.As(err, &he) {
 		detail = fmt.Sprintf("HTTP %d %s", he.Status, he.Type)
 	}
+	if code, spent := models.SpendRefused(err); spent {
+		// The gateway's budget for this caller is spent: the turn stops
+		// with budget, which a message resumes once the budget is raised.
+		se, eerr := t.sessionError(code, err.Error(), false, detail)
+		if eerr != nil {
+			return eerr
+		}
+		return t.finish(ctx, session.StopBudget, code, mr, se)
+	}
 	se, eerr := t.sessionError(CodeModelError, err.Error(), models.Retryable(err), detail)
 	if eerr != nil {
 		return eerr

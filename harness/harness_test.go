@@ -1152,3 +1152,27 @@ func TestAResponsesModelIsAskedToReplayItsReasoning(t *testing.T) {
 		}
 	}
 }
+
+// TestASpentBudgetAtTheGatewayStopsTheTurnWithBudget: the gateway's
+// refusal for spend, an HTTP 429 like a rate limit, is asked once and
+// stops the turn with budget, where a rate limit is retried.
+func TestASpentBudgetAtTheGatewayStopsTheTurnWithBudget(t *testing.T) {
+	for _, typ := range []string{"budget_exhausted", "spend_exceeded"} {
+		e := setup(t, nil)
+		e.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model}, Fail: &luxstub.Failure{Status: 429, Times: 9,
+			Body: `{"type":"error","error":{"type":"` + typ + `","message":"The budget has nothing left for the window."}}`}})
+		e.send(t.Context(), "Go.")
+		out := e.turn(t.Context())
+		if out.StopReason != session.StopBudget || out.Detail != typ {
+			t.Fatalf("%s: %+v", typ, out)
+		}
+		var mr session.ModelRequest
+		if err := e.events(t.Context(), session.TypeModelRequest)[0].Decode(&mr); err != nil || mr.Attempts != 1 {
+			t.Fatalf("%s: the refusal was asked %d times, %v", typ, mr.Attempts, err)
+		}
+		var se session.SessionError
+		if err := e.events(t.Context(), session.TypeSessionError)[0].Decode(&se); err != nil || se.Code != typ || se.Retryable {
+			t.Fatalf("%s: session.error %+v, %v", typ, se, err)
+		}
+	}
+}

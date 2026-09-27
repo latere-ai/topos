@@ -236,6 +236,10 @@ committed: the commit log already holds that.
   on its internal listener when `TOPOS_RUNNER_TOKEN` is set, frees the
   claims of a runner that stopped renewing, and with
   `TOPOS_RUNNER_CAPACITY=0` runs no runner of its own.
+- A model gateway's refusal for spend, `budget_exhausted` or
+  `spend_exceeded` (Lux sends it as HTTP 429), is no longer retried like a
+  rate limit: the turn stops with `budget` and a `session.error` naming the
+  refusal, where it was retried six times and ended as `model_error`.
 
 ## v0.7.0 - 2026-09-26
 

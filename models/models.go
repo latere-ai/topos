@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -196,9 +197,27 @@ var retryableStatus = map[int]bool{408: true, 429: true, 500: true, 502: true, 5
 // an overloaded model, a rate limit, or a server fault.
 var retryableStream = []string{"overloaded", "rate_limit", "server_error", "api_error", "internal_error"}
 
+// spendRefusals are the error types a gateway answers when the budget it
+// holds for the caller is spent. Lux sends them as HTTP 429, a status
+// otherwise retried; a spent budget does not come back by waiting.
+var spendRefusals = []string{"budget_exhausted", "spend_exceeded"}
+
+// SpendRefused reports whether err is the gateway refusing a request
+// because the caller's budget is spent, and names the refusal.
+func SpendRefused(err error) (string, bool) {
+	var he *HTTPError
+	if errors.As(err, &he) && slices.Contains(spendRefusals, he.Type) {
+		return he.Type, true
+	}
+	return "", false
+}
+
 // Retryable reports whether spec 005 retries err.
 func Retryable(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	if _, spent := SpendRefused(err); spent {
 		return false
 	}
 	var he *HTTPError

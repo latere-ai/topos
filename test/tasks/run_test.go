@@ -157,7 +157,7 @@ func TestSpendCapsFailClosed(t *testing.T) {
 		if !rep.Incomplete || rep.Total != 1 || !strings.Contains(rep.IncompleteReason, "budget_exhausted") {
 			t.Fatalf("report %+v", rep)
 		}
-		if r := rep.Runs[0]; r.Passed || !r.BudgetExhausted || r.Stop != session.StopError {
+		if r := rep.Runs[0]; r.Passed || !r.BudgetExhausted || r.Stop != session.StopBudget {
 			t.Fatalf("run %+v", r)
 		}
 	})

@@ -562,13 +562,10 @@ func (r *run) measure(res *RunResult, log []session.Event) {
 				continue
 			}
 			res.Error = p.Message
-			if p.Code != harness.CodeModelError {
-				continue
-			}
-			for _, c := range budgetCodes {
-				if strings.Contains(p.Detail, c) || strings.Contains(p.Message, c) {
-					res.BudgetExhausted = true
-				}
+			// The gateway's refusal for spend is its own session.error
+			// code, the turn stopping with budget.
+			if slices.Contains(budgetCodes, p.Code) {
+				res.BudgetExhausted = true
 			}
 		}
 	}

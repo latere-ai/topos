@@ -129,7 +129,7 @@ claims a session, before anything else, every time it claims it.
 | `idle` | `end_turn` | the model ended its turn, by `end_turn`, a stop sequence, or a refusal (named in `detail`) | `user.message` |
 | `idle` | `tool_confirmation` | at least one call's verdict is ask and waits for a person | `user.tool_confirmation` for every pending call, or a `user.message`, which denies each pending call with the message as its note |
 | `idle` | `tool_result` | a client-executed tool call waits for its result | `user.tool_result` for every pending call |
-| `idle` | `budget` | the session's or a thread's budget is reached | `user.message` after the budget is raised |
+| `idle` | `budget` | the session's or a thread's budget is reached, or the model gateway refused the request for spend (`detail` names the refusal) | `user.message` after the budget is raised |
 | `idle` | `turn_limit` | the turn's wall-clock limit passed | `user.message` |
 | `idle` | `output_limit` | a `max_tokens` stop the harness could not continue | `user.message` |
 | `idle` | `interrupted` | a `user.interrupt` took effect | `user.message` |
