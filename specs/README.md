@@ -33,7 +33,7 @@ stateDiagram-v2
   [*] --> drafted
   vague --> drafted: scoped
   drafted --> validated: review passes
-  validated --> dispatched: every dependency at testing or later
+  validated --> dispatched: every dependency complete or superseded
   dispatched --> in_progress: first commit
   in_progress --> testing: implementation lands
   testing --> complete: verified, Outcome written
@@ -47,8 +47,10 @@ stateDiagram-v2
 `testing` moves to `complete` when every acceptance criterion has a
 passing test in the tree and its Outcome section records every
 divergence. A validated spec is dispatched when every spec in its
-`depends_on` is at `testing` or later. `stale` marks a spec the code
-has moved past; `superseded` one whose work moved to another spec.
+`depends_on` is `complete` or `superseded`; the gate refuses a spec at
+`dispatched` or later whose dependency is anywhere else. `stale` marks
+a spec the code has moved past; `superseded` one whose work moved to
+another spec.
 
 ## Index
 
