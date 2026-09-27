@@ -3,7 +3,7 @@ title: "Models: the connection, the IR in the log, llmdialect's codecs, raw capt
 status: testing
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session-log.md]
-affects: [models/, models/dialect/, tools/catalog/, cmd/toposd/, harness/, harness/tools/, runner/, machine/cella/, internal/hosted/, internal/toposcli/, session/, test/stubs/luxstub/]
+affects: [models/, models/dialect/, tools/catalog/, cmd/toposd/, harness/, harness/tools/, runner/, machine/cella/, internal/hosted/, internal/toposcli/, session/, test/stubs/luxstub/, test/tasks/]
 effort: large
 created: 2026-09-27
 updated: 2026-09-27
@@ -343,7 +343,7 @@ with the provider's own SDK ([[025-task-suite]]).
 | Replaying a recorded session reproduces every request hash with the same codec version | `harness.TestReplayReproducesRequestHash`, `harness.TestReplayReportsWhatItDoesNotCompare`, `harness.TestASummaryRequestReplays`, `models.TestReplayComparesEachRecordedRequest` | built |
 | `max_tokens` on each request equals the catalog's output limit, and a model with no input window or output limit is refused with `model_unknown` | `harness.TestATurnRunsToolsAndEnds`, `harness.TestNewRefusesAnIncompleteConfig`, `models.TestResolveOverlaysSources` | built |
 | The embedded catalog resolves a model by name or alias with its windows and prices, carries free development models at price zero, and overlays the Lux and agent figures it is handed in precedence order; `tools/catalog` merges Lux prices with OpenRouter windows | `models.TestEmbeddedCatalog`, `models.TestResolveOverlaysSources`, `tools/catalog.TestRunMergesPricesAndWindows`, `tools/catalog.TestRunRefusesBadInput` | built |
-| The figures a Lux connection serves for a model are read and overlaid between the agent's and the embedded catalog's | `internal/hosted.TestLuxServedFiguresOverlayTheCatalog`, `internal/toposcli.TestRunSizesTheRequestByTheDoorsFigures`, `models/dialect.TestServedReadsTheDoorsModelList`, `models/dialect.TestServedRefusesWhatItCannotRead`, `test/stubs/luxstub.TestEachDoorListsTheModelsWithTheirFigures` | built |
+| The figures a Lux connection serves for a model are read and overlaid between the agent's and the embedded catalog's | `internal/hosted.TestLuxServedFiguresOverlayTheCatalog`, `internal/toposcli.TestRunSizesTheRequestByTheDoorsFigures`, `test/tasks.TestARunTakesTheDoorsFigures`, `models/dialect.TestServedReadsTheDoorsModelList`, `models/dialect.TestServedRefusesWhatItCannotRead`, `test/stubs/luxstub.TestEachDoorListsTheModelsWithTheirFigures` | built |
 | Cost comes from the gateway's figure when reported and from the catalog otherwise, a missing cache-read price is the input price and a missing cache-write price 1.25 times it, and the cost reaches the session's meter | `models.TestCost`, `models.TestPrices`, `harness.TestATurnRunsToolsAndEnds`, `harness.TestTheBudgetStopsTheTurn` | built |
 | A turn that would pass the budget stops with `budget` before the request is sent; a budget over an unpriced model is refused with `model_unpriced` before any request | `harness.TestTheBudgetStopsTheTurn`, `harness.TestAnUnpricedModelUnderABudgetIsRefused` | built |
 | A model gateway's refusal for spend is not retried and stops the turn `budget` with the refusal in `detail` | `models.TestSpendRefusalsAreNotRetried`, `harness.TestASpentBudgetAtTheGatewayStopsTheTurnWithBudget` | built |
