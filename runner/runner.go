@@ -158,8 +158,10 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	if err := r.running(ctx, log); err != nil {
 		return harness.Outcome{}, err
 	}
-	ctx, tokens := r.tokens(ctx, id, lease)
-	cfg, err := r.o.Harness(ctx, s)
+	// The harness builder reads the drive's token source from its
+	// context; the fence above goes on reading the drive's own.
+	built, tokens := r.tokens(ctx, id, lease)
+	cfg, err := r.o.Harness(built, s)
 	if err != nil {
 		return harness.Outcome{}, r.setupFailed(ctx, log, err)
 	}
@@ -343,8 +345,8 @@ func (r *Runner) Rewind(ctx context.Context, id string, turn int, by session.Sen
 	if target == nil {
 		return session.SessionRewound{}, &models.Coded{Code: checkpoint.CodeMissing, Message: fmt.Sprintf("turn %d of %s has no checkpoint", turn, id)}
 	}
-	ctx, _ = r.tokens(ctx, id, lease)
-	cfg, err := r.o.Harness(ctx, s)
+	built, _ := r.tokens(ctx, id, lease)
+	cfg, err := r.o.Harness(built, s)
 	if err != nil {
 		return session.SessionRewound{}, err
 	}
