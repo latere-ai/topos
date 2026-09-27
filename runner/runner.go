@@ -221,10 +221,15 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 
 // setupFailed closes a turn that could not start, with a session.error
 // and an idle status, so the session waits for its next message instead
-// of staying running with nobody driving it.
+// of staying running with nobody driving it. A core's refusal for spend,
+// such as Cella refusing the session's sandbox, stops the turn with
+// budget as a model gateway's does (spec 007), so a resume continues it
+// once the allowance is raised.
 func (r *Runner) setupFailed(ctx context.Context, log *Log, cause error) error {
-	code := CodeSetupFailed
-	if se, ok := errors.AsType[*SetupError](cause); ok {
+	code, stop := CodeSetupFailed, session.StopError
+	if refusal, spent := models.SpendRefused(cause); spent {
+		code, stop = refusal, session.StopBudget
+	} else if se, ok := errors.AsType[*SetupError](cause); ok {
 		code = se.Code
 	} else if mc, ok := errors.AsType[*models.Coded](cause); ok {
 		code = mc.Code
@@ -234,7 +239,7 @@ func (r *Runner) setupFailed(ctx context.Context, log *Log, cause error) error {
 	if err != nil {
 		return errors.Join(cause, err)
 	}
-	e2, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopError, Detail: code}, now)
+	e2, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: stop, Detail: code}, now)
 	if err != nil {
 		return errors.Join(cause, err)
 	}
