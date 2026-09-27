@@ -453,14 +453,17 @@ func (s *Store) Blob(ctx context.Context, id string, d session.Digest) (io.ReadC
 		}
 		return io.NopCloser(bytes.NewReader(b)), nil
 	}
-	f, err := os.Open(blobPath(s.dir(id), d))
+	b, err := os.ReadFile(blobPath(s.dir(id), d))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("%w: blob %s", session.ErrNotFound, d)
 		}
 		return nil, fmt.Errorf("dir: open blob: %w", err)
 	}
-	return f, nil
+	if session.DigestOf(b) != d {
+		return nil, fmt.Errorf("%w: blob %s does not match its digest", session.ErrCorrupt, d)
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
 // Redact tombstones one event, appends event.redacted, rewrites the log

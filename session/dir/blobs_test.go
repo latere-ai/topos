@@ -113,3 +113,24 @@ func (f *failing) DeleteSession(ctx context.Context, id string) error {
 	}
 	return f.Blobs.DeleteSession(ctx, id)
 }
+
+// TestABlobInTheDirectoryIsVerified: a body kept in the session's
+// directory that no longer hashes to its digest is ErrCorrupt.
+func TestABlobInTheDirectoryIsVerified(t *testing.T) {
+	ctx := t.Context()
+	st := open(t, t.TempDir())
+	s := storetest.NewSession()
+	if err := st.Create(ctx, s, nil); err != nil {
+		t.Fatal(err)
+	}
+	d, err := st.PutBlob(ctx, s.ID, bytes.NewReader([]byte("a raw response")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blobPath(st.dir(s.ID), d), []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Blob(ctx, s.ID, d); !errors.Is(err, session.ErrCorrupt) {
+		t.Fatalf("a tampered body: %v", err)
+	}
+}
