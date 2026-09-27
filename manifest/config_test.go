@@ -293,8 +293,9 @@ func TestTestdataResolves(t *testing.T) {
 }
 
 // TestIgnoredFieldsNameWhatAThreadDoesNotUse: a subagent's thread acts
-// with the session's identity, credentials, attachments and machine, so
-// every one of them its spec declares is named, and defaults are not.
+// with the session's identity, credentials, attachments, repositories
+// and machine, so every one of them its spec declares is named, and
+// defaults are not.
 func TestIgnoredFieldsNameWhatAThreadDoesNotUse(t *testing.T) {
 	if got := ignoredFields(v1.AgentSpec{Machine: v1.Machine{Kind: v1.MachineHost}}); got != nil {
 		t.Fatalf("defaults named %v", got)
@@ -304,9 +305,10 @@ func TestIgnoredFieldsNameWhatAThreadDoesNotUse(t *testing.T) {
 		Model:        v1.AgentModel{Name: "m", Credential: "cred_1"},
 		Connections:  []string{"github"},
 		MemoryStores: []v1.MemoryStoreRef{{Name: "notes", Access: "readWrite"}},
+		Repositories: []v1.Repository{{URL: "https://code.example/app"}},
 		Machine:      v1.Machine{Kind: v1.MachineCella},
 	}
-	want := []string{"permissions", "model.credential", "connections", "memoryStores", "machine"}
+	want := []string{"permissions", "model.credential", "connections", "memoryStores", "repositories", "machine"}
 	if got := ignoredFields(full); !slices.Equal(got, want) {
 		t.Fatalf("ignored %v, want %v", got, want)
 	}

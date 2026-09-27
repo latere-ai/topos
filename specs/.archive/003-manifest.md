@@ -6,7 +6,7 @@ depends_on: [001-architecture.md]
 affects: [manifest/, manifest/v1/, manifest/testdata/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-28
 author: changkun
 ---
 
@@ -107,6 +107,7 @@ at the installation's identity provider ([[018-credentials-and-secrets]]).
 | `mcpServers` | list of `{name, command, args, env, url, connection}` | none | [[021-mcp-servers]]; `command` for stdio, `url` for streamable HTTP, exactly one |
 | `memoryStores` | list of `{name, access}`, `name` a reference, `access` `readWrite` or `readOnly` and required | none | [[020-memory-stores]] |
 | `connections` | list of Connection names | none | [[018-credentials-and-secrets]] |
+| `repositories` | list of `{url, ref}`, at most 8: `url` an `https` URL that names its host and holds no credential, `ref` a branch, a tag or a commit | none; `ref` absent is the repository's default branch | the repositories a session of the agent works in when its create names none ([[019-git]], [[015-api]]); a subagent's are not used ([[013-threads-and-subagents]]) |
 | `machine.kind` | `host` or `cella` | `host` | [[009-machines]] |
 | `machine.image`, `machine.environment` | string | Cella's `base`; the installation's default Environment | [[009-machines]] |
 | `machine.resources` | `{cpu, memory, disk}` as Kubernetes quantities | Cella's defaults | [[009-machines]] |
@@ -280,6 +281,7 @@ key on apply ([[018-credentials-and-secrets]]).
 | Applying the same Agent twice through the API creates one version; changing its instructions creates the next under the same id | `internal/server.TestApplyingAnAgentVersionsItsSpec` | built |
 | A resolved Agent pins each subagent reference to an id and version, and every unknown reference is reported in one `unknown_reference` | `manifest.TestReferencesPinVersions`, `manifest.TestStoredSubagentsArePinnedTransitively` | built |
 | `threads.maxDepth: 5` and a Connection with `mode: person` and a `credential` are refused | `manifest.TestValidationRules` | built |
+| An agent's repositories resolve into its spec as written, and one that is not `https`, names no host, holds a credential (refused with a detail that does not carry it), has a ref git would read as an option, or is past the limit is refused | `manifest.TestAnAgentNamesItsRepositories`, `manifest.TestValidationRules` | built |
 | A label under `topos.latere.ai/` is refused | `manifest.TestReservedLabelsRefused` | built |
 | Another `apiVersion` refuses the file before any other problem, a cycle among one file's documents is refused, and `instructionsFile` is read only through the caller's file system | `manifest.TestTheEnvelopeIsCheckedFirst`, `manifest.TestReferenceCyclesAndLookupFailures`, `manifest.TestInstructionsFile` | built |
 | `AgentConfig` carries a resolved Agent's instructions, tools, policy, model overlay, subagents to `maxDepth` and limits, and the bundle reads back to the same configuration and refuses one whose spec does not hash to its digest | `manifest.TestAgentConfigCarriesTheHarnessPieces`, `manifest.TestBundleRoundTrip` | built |

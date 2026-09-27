@@ -537,7 +537,8 @@ func localUnsupported(r *manifest.Resolved) []string {
 		}{
 			{"hooks", len(s.Hooks) > 0}, {"advisor", s.Advisor != nil}, {"skills", len(s.Skills) > 0},
 			{"mcpServers", len(s.MCPServers) > 0}, {"memoryStores", len(s.MemoryStores) > 0},
-			{"connections", len(s.Connections) > 0}, {"machine.kind cella", s.Machine.Kind == v1.MachineCella},
+			{"connections", len(s.Connections) > 0}, {"repositories", len(s.Repositories) > 0},
+			{"machine.kind cella", s.Machine.Kind == v1.MachineCella},
 		} {
 			if f.set {
 				out = append(out, at+"."+f.name)

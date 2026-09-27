@@ -239,6 +239,7 @@ func (v *validator) agent(at string, s v1.AgentSpec) {
 		v.name(indexed(at+".connections", i), c)
 	}
 	v.unique(at+".connections", s.Connections)
+	v.repositories(at+".repositories", s.Repositories)
 	v.machine(at+".machine", s.Machine)
 	v.decimal(at+".budget.maxCost", s.Budget.MaxCost)
 	v.duration(at+".limits.turnTimeout", s.Limits.TurnTimeout)
@@ -397,6 +398,27 @@ func (v *validator) mcpServers(at string, servers []v1.MCPServer) {
 		}
 	}
 	v.unique(at, names)
+}
+
+// repositories checks an agent's repositories as the API checks a
+// session's, since a session that names none takes them (spec 019): at
+// most session.MaxRepositories, each an https URL naming its host with no
+// credential, and a ref git reads as a name.
+func (v *validator) repositories(at string, repos []v1.Repository) {
+	if len(repos) > session.MaxRepositories {
+		v.add(at, fmt.Sprintf("%d repositories, at most %d", len(repos), session.MaxRepositories))
+	}
+	for i, r := range repos {
+		rp := indexed(at, i)
+		if r.URL == "" {
+			v.add(rp+".url", "required")
+			continue
+		}
+		v.text(rp+".url", r.URL)
+		if err := session.CheckRepository(session.Resource{URL: r.URL, Ref: r.Ref}, "https"); err != nil {
+			v.add(rp, err.Error())
+		}
+	}
 }
 
 func (v *validator) machine(at string, m v1.Machine) {

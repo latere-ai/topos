@@ -627,15 +627,16 @@ func TestAgentManifestRefusals(t *testing.T) {
 	for name, c := range map[string]struct {
 		body, want string
 	}{
-		"invalid":     {agent("  threads: {maxDepth: 5}\n"), "invalid_manifest"},
-		"secret":      {agent("  instructions: use sk-ant-api03-Zq8vXk2Lr9TnB4wYc7HdM1pF\n"), "manifest_holds_secret"},
-		"unknown":     {agent("  subagents: [{name: g, agent: ghost}]\n"), "unknown_reference"},
-		"hooks":       {agent("  hooks: [{event: turn_end, command: 'true'}]\n"), "does not apply spec.hooks yet"},
-		"client tool": {agent("  tools: [{name: ask, client: true, description: Ask., inputSchema: {type: object}}]\n"), "does not apply spec.tools[0] yet"},
-		"cella":       {agent("  machine: {kind: cella}\n"), "machine.kind cella"},
-		"inline":      {agent("  subagents: [{name: s, spec: {model: {name: m}, advisor: {model: {name: m}}}}]\n"), "spec.subagents[0].spec.advisor"},
-		"referenced":  {agent("  subagents: [{name: s, agent: b}]\n") + "---\napiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: b}\nspec: {model: {name: m}, skills: [{path: /s}]}\n", "b.spec.skills"},
-		"no agent":    {"apiVersion: topos.latere.ai/v1\nkind: MemoryStore\nmetadata: {name: n}\nspec: {description: Notes.}\n", "no Agent document"},
+		"invalid":      {agent("  threads: {maxDepth: 5}\n"), "invalid_manifest"},
+		"secret":       {agent("  instructions: use sk-ant-api03-Zq8vXk2Lr9TnB4wYc7HdM1pF\n"), "manifest_holds_secret"},
+		"unknown":      {agent("  subagents: [{name: g, agent: ghost}]\n"), "unknown_reference"},
+		"hooks":        {agent("  hooks: [{event: turn_end, command: 'true'}]\n"), "does not apply spec.hooks yet"},
+		"client tool":  {agent("  tools: [{name: ask, client: true, description: Ask., inputSchema: {type: object}}]\n"), "does not apply spec.tools[0] yet"},
+		"cella":        {agent("  machine: {kind: cella}\n"), "machine.kind cella"},
+		"repositories": {agent("  repositories: [{url: 'https://code.example/app'}]\n"), "does not apply spec.repositories yet"},
+		"inline":       {agent("  subagents: [{name: s, spec: {model: {name: m}, advisor: {model: {name: m}}}}]\n"), "spec.subagents[0].spec.advisor"},
+		"referenced":   {agent("  subagents: [{name: s, agent: b}]\n") + "---\napiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: b}\nspec: {model: {name: m}, skills: [{path: /s}]}\n", "b.spec.skills"},
+		"no agent":     {"apiVersion: topos.latere.ai/v1\nkind: MemoryStore\nmetadata: {name: n}\nspec: {description: Notes.}\n", "no Agent document"},
 	} {
 		path := f.manifest(strings.ReplaceAll(name, " ", "-")+".yaml", c.body)
 		code, _, errOut := f.run("run", "--agent", path, "x")

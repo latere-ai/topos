@@ -6,7 +6,7 @@ depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 005-harness-
 affects: [client/, cmd/topos/, internal/toposcli/, skills/topos/, examples/embed/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-28
 author: changkun
 ---
 
@@ -141,7 +141,7 @@ client built on this package outside the module.
 | `run --agent <file>` runs the file's first Agent ([[003-manifest]]) with its model, instructions, tools, mode, subagents, budget and limits, and `--session` and `topos confirm` continue the session with the same agent from its bundle blob without the file; a bundle that does not match its digest, or is gone, stops the run | `internal/toposcli.TestRunAnAgentManifest`, `internal/toposcli.TestTheManifestModeHoldsAcrossAConfirmation`, `internal/toposcli.TestAnAgentSpawnsItsSubagent` | built |
 | `--model` and `--mode` replace the agent's `spec.model` and mode | `internal/toposcli.TestTheModelFlagReplacesTheManifestModel`, `internal/toposcli.TestTheManifestModeHoldsAcrossAConfirmation` | built |
 | Without `--agent`, `$XDG_CONFIG_HOME/topos/agent.yaml`, or `$HOME/.config/topos/agent.yaml` when `XDG_CONFIG_HOME` is unset, runs when present, and the built-in agent otherwise | `internal/toposcli.TestTheDefaultAgentManifest` | built |
-| A refused manifest, a missing file, `--agent` with `--session`, a file with no Agent, and a field a local run does not apply yet (hooks, client tools, output limits, the advisor, skills, MCP servers, memory stores, connections, a Cella machine) exit 2 before a session is created | `internal/toposcli.TestAgentManifestRefusals` | built |
+| A refused manifest, a missing file, `--agent` with `--session`, a file with no Agent, and a field a local run does not apply yet (hooks, client tools, output limits, the advisor, skills, MCP servers, memory stores, connections, repositories, a Cella machine) exit 2 before a session is created | `internal/toposcli.TestAgentManifestRefusals` | built |
 | `run --agent <name>` runs an agent applied to the local state | `TestRunAnAppliedAgentByName` | not built |
 | `topos apply` resolves a manifest's references through the local state's `Lookup` when `TOPOS_URL` is unset and sends the server a manifest it can resolve (instructions inlined) when it is set, and an agent applied both ways pins the same stored objects at the same versions | `TestApplyResolvesLikeTheServer` | not built |
 | `client.Store` passes `session/storetest` against a test toposd | `TestClientStoreConformance` | not built |

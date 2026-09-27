@@ -69,10 +69,13 @@ type AgentSpec struct {
 	MCPServers   []MCPServer      `json:"mcpServers,omitempty"`
 	MemoryStores []MemoryStoreRef `json:"memoryStores,omitempty"`
 	Connections  []string         `json:"connections,omitempty"`
-	Machine      Machine          `json:"machine"`
-	Budget       Budget           `json:"budget,omitzero"`
-	Limits       Limits           `json:"limits"`
-	Context      Context          `json:"context"`
+	// Repositories are the repositories a session of the agent works in
+	// when it names none of its own (spec 019).
+	Repositories []Repository `json:"repositories,omitempty"`
+	Machine      Machine      `json:"machine"`
+	Budget       Budget       `json:"budget,omitzero"`
+	Limits       Limits       `json:"limits"`
+	Context      Context      `json:"context"`
 }
 
 // AgentModel is the model an agent runs and the figures it gives for
@@ -217,6 +220,14 @@ type MCPServer struct {
 type MemoryStoreRef struct {
 	Name   string `json:"name"`
 	Access string `json:"access"`
+}
+
+// Repository is a git repository an agent's sessions work in: an https
+// URL and a ref, a branch, a tag or a commit, absent for the
+// repository's default branch (spec 019).
+type Repository struct {
+	URL string `json:"url"`
+	Ref string `json:"ref,omitempty"`
 }
 
 // Machine is the machine an agent's sessions default to (spec 009).

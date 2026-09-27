@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, harness/tools/, prompts/advisor/, prompts/results/threads/, prompts/tools/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-28
 author: changkun
 ---
 
@@ -74,12 +74,13 @@ budget, whoever owns the agent it names. A referenced agent contributes
 its instructions, tools, model, approvals, hooks, skills, subagents,
 advisor, threads and context settings, each narrowed as the table below
 says. Its `identity`, `permissions`, `model.credential`, `connections`,
-`memoryStores` and `machine` are not used, and `thread.started` lists
-the ones the referenced agent declares in `ignored`, so a reader of the
-log sees that the thread did not act as that agent. Reaching another
-agent's own authority is starting a session of that agent, which the
-installation's authorizer decides and that agent's owner pays for
-([[033-peers-and-authored-graphs]]); a spawn never reaches it.
+`memoryStores`, `repositories` and `machine` are not used, and
+`thread.started` lists the ones the referenced agent declares in
+`ignored`, so a reader of the log sees that the thread did not act as
+that agent. Reaching another agent's own authority is starting a
+session of that agent, which the installation's authorizer decides and
+that agent's owner pays for ([[033-peers-and-authored-graphs]]); a
+spawn never reaches it.
 
 ### The spawn tool
 

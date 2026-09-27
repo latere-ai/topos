@@ -5,11 +5,13 @@ package manifest
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/session"
 )
 
 func TestStrictDecodingCollectsEveryProblem(t *testing.T) {
@@ -260,6 +262,25 @@ func TestReferencesPinVersions(t *testing.T) {
 	}
 }
 
+// TestAnAgentNamesItsRepositories: an agent's repositories resolve into
+// its spec as written, and one whose URL holds a credential is refused
+// with a detail that does not carry it.
+func TestAnAgentNamesItsRepositories(t *testing.T) {
+	rs, err := Resolve(t.Context(), []byte(agent("builder", "model: {name: m}",
+		"repositories: [{url: 'https://code.example/acme/app.git', ref: release/1.2}, {url: 'https://code.example/acme/lib'}]")), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []v1.Repository{{URL: "https://code.example/acme/app.git", Ref: "release/1.2"}, {URL: "https://code.example/acme/lib"}}
+	if got := rs[0].Agent.Spec.Repositories; !reflect.DeepEqual(got, want) {
+		t.Fatalf("repositories %+v", got)
+	}
+	e := refused(t, CodeInvalidManifest, agent("builder", "model: {name: m}", "repositories: [{url: 'https://bot:hunter2@code.example/app'}]"), Options{})
+	if !hasProblem(e, "spec.repositories[0]", "holds a credential") || strings.Contains(e.Detail(), "hunter2") {
+		t.Fatalf("a credential in the url: %s", e.Detail())
+	}
+}
+
 func TestValidationRules(t *testing.T) {
 	e := refused(t, CodeInvalidManifest, agent("deep", "model: {name: m}", "threads: {maxDepth: 5}"), Options{})
 	if !hasProblem(e, "spec.threads.maxDepth", "outside 1 to 4") {
@@ -339,6 +360,13 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "memoryStores: [{name: n, access: all}]"), "spec.memoryStores[0].access", "not one of readWrite, readOnly"},
 		{agent("a", m, "memoryStores: [{name: n, access: readOnly}, {name: n, access: readOnly}]"), "spec.memoryStores[1]", "repeats"},
 		{agent("a", m, "connections: [Bad]"), "spec.connections[0]", "not a DNS label"},
+		{agent("a", m, "repositories: [{ref: main}]"), "spec.repositories[0].url", "required"},
+		{agent("a", m, "repositories: [{url: 'http://code.example/app'}]"), "spec.repositories[0]", "is not https"},
+		{agent("a", m, "repositories: [{url: 'file:///srv/app.git'}]"), "spec.repositories[0]", "is not https"},
+		{agent("a", m, "repositories: [{url: 'https:///app'}]"), "spec.repositories[0]", "names no host"},
+		{agent("a", m, "repositories: [{url: 'https://code.example/app', ref: '--upload-pack=x'}]"), "spec.repositories[0]", "not a branch, a tag or a commit"},
+		{agent("a", m, "repositories: [{url: 'https://code.example/app', access: readOnly}]"), "spec.repositories[0].access", "unknown field"},
+		{agent("a", m, "repositories: ["+strings.Repeat("{url: 'https://code.example/app'}, ", session.MaxRepositories)+"{url: 'https://code.example/app'}]"), "spec.repositories", fmt.Sprintf("at most %d", session.MaxRepositories)},
 		{agent("a", m, "machine: {kind: vm}"), "spec.machine.kind", "not one of host, cella"},
 		{agent("a", m, "machine: {image: base}"), "spec.machine", "are for a cella machine"},
 		{agent("a", m, "machine: {kind: cella, roots: [/x]}"), "spec.machine", "are for the host"},
