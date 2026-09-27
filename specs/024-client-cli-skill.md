@@ -143,6 +143,7 @@ client built on this package outside the module.
 | Without `--agent`, `$XDG_CONFIG_HOME/topos/agent.yaml`, or `$HOME/.config/topos/agent.yaml` when `XDG_CONFIG_HOME` is unset, runs when present, and the built-in agent otherwise | `internal/toposcli.TestTheDefaultAgentManifest` | built |
 | A refused manifest, a missing file, `--agent` with `--session`, a file with no Agent, and a field a local run does not apply yet (hooks, client tools, output limits, the advisor, skills, MCP servers, memory stores, connections, a Cella machine) exit 2 before a session is created | `internal/toposcli.TestAgentManifestRefusals` | built |
 | `run --agent <name>` runs an agent applied to the local state | `TestRunAnAppliedAgentByName` | not built |
+| `topos apply` resolves a manifest's references through the local state's `Lookup` when `TOPOS_URL` is unset and sends the server a manifest it can resolve (instructions inlined) when it is set, and an agent applied both ways pins the same stored objects at the same versions | `TestApplyResolvesLikeTheServer` | not built |
 | `client.Store` passes `session/storetest` against a test toposd | `TestClientStoreConformance` | not built |
 | A client error decodes into `*client.Error` with the envelope's code and detail | `TestClientDecodesErrors` | not built |
 | The examples import only the supported set | `TestExamplesImportOnlyTheSupportedSet` | not built |

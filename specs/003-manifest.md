@@ -271,7 +271,7 @@ key on apply ([[018-credentials-and-secrets]]).
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Every agent file in `manifest/testdata/` resolves to byte-identical canonical JSON and digest through the CLI's lookup and the server's | `TestCLIAndServerResolveAgree` | not built |
+| Every agent of `manifest/testdata/` that both the topos command's resolver and `PUT /v1/agents/{name}` resolve comes back as one canonical spec: byte for byte with the same digest when it pins no other agent, and byte for byte up to the ids of the agents it pins, which each store mints; an agent naming a memory store or a connection, which the API holds no route for yet, is `unknown_reference` there | `internal/toposcli.TestCLIAndServerResolveAgree` | built |
 | Every file in `manifest/testdata/` resolves to the specs, statuses and digests of its golden file, and a YAML file and the same documents as a JSON stream resolve alike | `manifest.TestTestdataResolves`, `manifest.TestYAMLAndJSONStreamsResolveAlike` | built |
 | An unknown field, a wrong type and an out-of-range value are each refused with `invalid_manifest` and their field paths, all in one error | `manifest.TestStrictDecodingCollectsEveryProblem` | built |
 | A manifest carrying a token in `instructions` or in an MCP server's `env` is refused with `manifest_holds_secret`, and the error text holds the path and not the value | `manifest.TestManifestHoldingASecretIsRefused`, `manifest.TestTheInputCheck` | built |
