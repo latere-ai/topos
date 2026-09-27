@@ -150,7 +150,7 @@ func (s *Server) Handler() http.Handler {
 				return
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
-			if err := h(w, r); err != nil {
+			if err := h(w, r); err != nil && !errors.Is(err, errHungUp) {
 				s.fail(w, r, err)
 			}
 		})
@@ -396,13 +396,16 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if _, werr := w.Write(append(b, '\n')); werr != nil {
-			// The runner hung up; there is nobody to answer.
-			break
+			return fmt.Errorf("%w: %w", errHungUp, werr)
 		}
 		flusher.Flush()
 	}
 	return nil
 }
+
+// errHungUp is a stream whose runner went away: there is nobody left to
+// answer, so no error response is written.
+var errHungUp = errors.New("runnerapi: the runner hung up")
 
 // putBlob stores a blob the runner names by its digest, which the
 // bytes must hash to.

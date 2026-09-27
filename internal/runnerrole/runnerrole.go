@@ -60,14 +60,13 @@ func New(base, token string, hc *http.Client) (*Client, error) {
 // SetRenewInterval sets how often a claim's lease is renewed.
 func (c *Client) SetRenewInterval(d time.Duration) { c.renew = d }
 
-// do sends one request. It decodes a JSON answer into out and returns
-// no body, or, with out nil, returns the answer's body for the caller to
-// read and close; an error envelope becomes the error the runner package
-// reads.
-func (c *Client) do(ctx context.Context, method, path string, body io.Reader, contentType string, out any) (io.ReadCloser, error) {
+// do sends one request and hands the answer's body to read, or turns
+// an error envelope into the error the runner package reads. The body is
+// closed when do returns.
+func (c *Client) do(ctx context.Context, method, path string, body io.Reader, contentType string, read func(io.Reader) error) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	if contentType != "" {
@@ -75,20 +74,17 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, co
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	// The body's close error is the connection's, and no answer is lost.
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		defer closeBody(resp.Body)
-		return nil, readError(resp)
+		return readError(resp)
 	}
-	if out == nil {
-		return resp.Body, nil
+	if read == nil {
+		return nil
 	}
-	defer closeBody(resp.Body)
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return nil, fmt.Errorf("runnerrole: %s %s: %w", method, path, err)
-	}
-	return nil, nil
+	return read(resp.Body)
 }
 
 func (c *Client) json(ctx context.Context, method, path string, in, out any) error {
@@ -100,16 +96,16 @@ func (c *Client) json(ctx context.Context, method, path string, in, out any) err
 		}
 		body = bytes.NewReader(b)
 	}
-	rc, err := c.do(ctx, method, path, body, "application/json", out)
-	if rc != nil {
-		closeBody(rc)
+	var read func(io.Reader) error
+	if out != nil {
+		read = func(r io.Reader) error {
+			if err := json.NewDecoder(r).Decode(out); err != nil {
+				return fmt.Errorf("runnerrole: %s %s: %w", method, path, err)
+			}
+			return nil
+		}
 	}
-	return err
-}
-
-func closeBody(rc io.ReadCloser) {
-	// The body's close error is the connection's, and no answer is lost.
-	_ = rc.Close()
+	return c.do(ctx, method, path, body, "application/json", read)
 }
 
 // readError maps the protocol's codes onto the session package's errors.
@@ -153,30 +149,39 @@ func (c *Client) Events(ctx context.Context, id string, fromSeq uint64, limit in
 }
 
 // Watch follows a session's events from fromSeq until ctx ends or the
-// server hangs up.
+// server hangs up. The stream is read on its own goroutine; an answer
+// that is no stream is the error Watch returns.
 func (c *Client) Watch(ctx context.Context, id string, fromSeq uint64) (<-chan session.Event, error) {
-	rc, err := c.do(ctx, http.MethodGet, sessionPath(id)+"/stream?from_seq="+strconv.FormatUint(max(fromSeq, 1), 10), nil, "", nil)
-	if err != nil {
-		return nil, err
-	}
 	out := make(chan session.Event)
+	opened := make(chan error, 1)
 	go func() {
 		defer close(out)
-		defer closeBody(rc)
-		sc := bufio.NewScanner(rc)
-		sc.Buffer(make([]byte, 1<<20), 16<<20)
-		for sc.Scan() {
-			var e session.Event
-			if json.Unmarshal(sc.Bytes(), &e) != nil {
-				return
+		streaming := false
+		err := c.do(ctx, http.MethodGet, sessionPath(id)+"/stream?from_seq="+strconv.FormatUint(max(fromSeq, 1), 10), nil, "", func(r io.Reader) error {
+			streaming = true
+			opened <- nil
+			sc := bufio.NewScanner(r)
+			sc.Buffer(make([]byte, 1<<20), 16<<20)
+			for sc.Scan() {
+				var e session.Event
+				if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+					return err
+				}
+				select {
+				case out <- e:
+				case <-ctx.Done():
+					return nil
+				}
 			}
-			select {
-			case out <- e:
-			case <-ctx.Done():
-				return
-			}
+			return sc.Err()
+		})
+		if !streaming {
+			opened <- err
 		}
 	}()
+	if err := <-opened; err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -187,17 +192,24 @@ func (c *Client) PutBlob(ctx context.Context, id string, r io.Reader) (session.D
 		return "", err
 	}
 	d := session.DigestOf(b)
-	rc, err := c.do(ctx, http.MethodPut, sessionPath(id)+"/blobs/"+string(d), bytes.NewReader(b), "application/octet-stream", nil)
-	if err != nil {
+	if err := c.do(ctx, http.MethodPut, sessionPath(id)+"/blobs/"+string(d), bytes.NewReader(b), "application/octet-stream", nil); err != nil {
 		return "", err
 	}
-	closeBody(rc)
 	return d, nil
 }
 
-// Blob reads a blob.
+// Blob reads a blob, whole: a session's blobs are its agent bundle and
+// its captured bodies, each small enough to hold.
 func (c *Client) Blob(ctx context.Context, id string, d session.Digest) (io.ReadCloser, error) {
-	return c.do(ctx, http.MethodGet, sessionPath(id)+"/blobs/"+string(d), nil, "", nil)
+	var buf bytes.Buffer
+	err := c.do(ctx, http.MethodGet, sessionPath(id)+"/blobs/"+string(d), nil, "", func(r io.Reader) error {
+		_, err := io.Copy(&buf, r)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(&buf), nil
 }
 
 // Append is refused: a runner writes a session only through its claim's
