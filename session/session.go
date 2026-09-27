@@ -109,6 +109,24 @@ type Resource struct {
 	Ref           string `json:"ref,omitempty"`
 }
 
+// Policy is a session's approval policy (spec 012): the agent's
+// spec.approvals merged at create with the authorizer's limits, so every
+// runner that drives the session applies the same mode, lists and
+// thresholds.
+type Policy struct {
+	Mode          string     `json:"mode"`
+	AlwaysConfirm []string   `json:"always_confirm,omitempty"`
+	AlwaysAllow   []string   `json:"always_allow,omitempty"`
+	Thresholds    Thresholds `json:"thresholds"`
+}
+
+// Thresholds are the progressive mode's risk cut-offs, each in [0, 1].
+type Thresholds struct {
+	FlagAt  float64 `json:"flag_at"`
+	AskAt   float64 `json:"ask_at"`
+	BlockAt float64 `json:"block_at"`
+}
+
 // Budget is a session's spend ceiling and its spend so far, in millionths
 // of a USD. A nil MaxCostUSDMicro means no ceiling.
 type Budget struct {
@@ -159,16 +177,19 @@ type Session struct {
 	Machine    Machine           `json:"machine"`
 	Resources  []Resource        `json:"resources,omitempty"`
 	Scope      []json.RawMessage `json:"scope,omitempty"`
-	Budget     Budget            `json:"budget"`
-	Limits     Limits            `json:"limits"`
-	Capture    Capture           `json:"capture"`
-	EndOnIdle  bool              `json:"end_on_idle,omitempty"`
-	Parent     *Parent           `json:"parent,omitempty"`
-	TriggerID  string            `json:"trigger_id,omitempty"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
-	ExpiresAt  time.Time         `json:"expires_at"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	// Policy is the merged approval policy; nil, as on a local session,
+	// leaves the agent's own to the runner.
+	Policy    *Policy           `json:"policy,omitempty"`
+	Budget    Budget            `json:"budget"`
+	Limits    Limits            `json:"limits"`
+	Capture   Capture           `json:"capture"`
+	EndOnIdle bool              `json:"end_on_idle,omitempty"`
+	Parent    *Parent           `json:"parent,omitempty"`
+	TriggerID string            `json:"trigger_id,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	ExpiresAt time.Time         `json:"expires_at"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
 // MaxMetadata is the most entries a session's metadata holds.
