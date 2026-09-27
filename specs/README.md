@@ -54,7 +54,7 @@ has moved past; `superseded` one whose work moved to another spec.
 
 | # | Spec | Effort | Status | Builds on |
 |---|---|---|---|---|
-| [001](001-architecture.md) | Architecture: three parts over one session schema, the packages, extension points, invariants | medium | in-progress | - |
+| [001](001-architecture.md) | Architecture: three parts over one session schema, the packages, extension points, invariants | medium | testing | - |
 | [002](002-scaffold-and-configuration.md) | Scaffold and configuration reference: layout, the toposd roles, listeners, every TOPOS_* variable | small | drafted | 001 |
 | [003](003-manifest.md) | manifest/v1: the Agent, Trigger, MemoryStore and Connection kinds, references, versioning, one resolver | large | drafted | 001 |
 | [004](004-session-log.md) | The session log: schema v1, event types, status and stop reasons, the fold, the directory store | large | drafted | 001, 002 |
