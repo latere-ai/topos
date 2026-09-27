@@ -60,7 +60,7 @@ type attachOptions struct {
 // as a blob of the session.
 func attach(ctx context.Context, m machine.Machine, l *Log, o attachOptions) (Attachment, error) {
 	info := m.Info()
-	a := Attachment{Machine: session.AttachedMachine{Kind: info.Kind, ID: info.ID, Workdir: info.Workdir, OS: info.OS, Arch: info.Arch, Environment: info.Environment}}
+	a := Attachment{Machine: session.AttachedMachine{Kind: info.Kind, ID: info.ID, Workdir: info.Workdir, OS: info.OS, Arch: info.Arch, Environment: info.Environment, Sandbox: info.Sandbox}}
 	top, inRepo := gitTop(ctx, m)
 	root := info.Workdir
 	if inRepo {

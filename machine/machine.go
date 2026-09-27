@@ -29,6 +29,9 @@ type Info struct {
 	OS          string
 	Arch        string
 	Environment string
+	// Sandbox names the host sandbox driver every command runs under;
+	// empty on a machine that runs commands without one.
+	Sandbox string
 }
 
 // ExecRequest is one command. Command runs under /bin/sh -c.

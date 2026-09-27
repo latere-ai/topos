@@ -291,6 +291,9 @@ type AttachedMachine struct {
 	OS          string `json:"os,omitempty"`
 	Arch        string `json:"arch,omitempty"`
 	Environment string `json:"environment,omitempty"`
+	// Sandbox is the host sandbox driver the machine's commands run
+	// under, set on a server's host (spec 009).
+	Sandbox string `json:"sandbox,omitempty"`
 }
 
 // Instructions names one project instruction file the harness loaded.
