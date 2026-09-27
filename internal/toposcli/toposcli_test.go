@@ -473,7 +473,8 @@ func TestRunAnAgentManifest(t *testing.T) {
 	if err := os.WriteFile(blob, []byte(`{"apiVersion":"topos.latere.ai/v1","kind":"Agent"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, errOut := f.run("run", "--session", s.ID, "Again?"); code != ExitError || !strings.Contains(errOut, "hashes to") {
+	// The store refuses the tampered body before the runner reads it.
+	if code, _, errOut := f.run("run", "--session", s.ID, "Again?"); code != ExitError || !strings.Contains(errOut, "does not match its digest") {
 		t.Fatalf("a tampered bundle: exit %d, stderr %q", code, errOut)
 	}
 	if err := os.Remove(blob); err != nil {
