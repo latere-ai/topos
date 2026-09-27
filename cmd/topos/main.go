@@ -1,38 +1,30 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Command topos is the core's scripting and test client: it runs a session
-// in print mode in the working directory, attaches to a session, and
-// applies manifests (spec 024). It has no interactive terminal. Until spec
-// 024 lands it prints its build identity.
+// Command topos is the core's scripting and test client: it runs a local
+// session in print mode in the working directory and continues it after
+// a confirmation (spec 024). It has no interactive terminal.
 package main
 
 import (
-	"flag"
-	"fmt"
+	"context"
 	"io"
 	"os"
 
-	"latere.ai/x/topos/internal/version"
+	"latere.ai/x/topos/internal/toposcli"
 )
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-// run returns the process exit code: 0 for -version, 2 for anything else
-// until the commands of spec 024 exist.
-func run(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("topos", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	showVersion := fs.Bool("version", false, "print the build identity and exit")
-	if err := fs.Parse(args); err != nil {
-		return 2
+// run returns the process exit code of spec 024.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "."
 	}
-	if *showVersion {
-		_, _ = fmt.Fprintln(stdout, version.String("topos"))
-		return 0
-	}
-	_, _ = fmt.Fprintln(stderr, "topos: no commands yet; spec 024 builds them")
-	return 2
+	return toposcli.Run(context.Background(), args, toposcli.Env{
+		Getenv: os.Getenv, Stdin: stdin, Stdout: stdout, Stderr: stderr, Dir: wd,
+	})
 }

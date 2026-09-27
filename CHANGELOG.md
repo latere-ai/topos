@@ -39,6 +39,30 @@ committed: the commit log already holds that.
   confined to the session's roots through `os.Root`, each command in its
   own process group, killed on timeout, on cancel and when its shell
   exits, and background jobs that end with the session.
+- `harness/tools` holds the built-in tools: `read`, `write`, `edit`,
+  `bash`, `grep`, `glob`, `web_fetch` and `todo`. `write` and `edit` refuse
+  a file that changed since the thread last read it, `bash` keeps its
+  directory between calls and runs servers as background jobs, and output
+  past 32 KiB goes to a spill file with its head and tail kept. The
+  registry validates every call against the tool's JSON Schema before it
+  is scored.
+- `harness` runs one agent's turns over a session: no step cap, the
+  model's own output limit from the catalog, retries with backoff that
+  honor `Retry-After`, thinking replayed with its signature, a risk score
+  and a verdict (`allow`, `flag`, `ask`, `block`) on every call under the
+  `plan`, `confirm` and `progressive` modes, confirmations that survive a
+  restart, and old tool results cleared and the conversation summarized
+  when a session nears the model's window.
+- `runner` drives a session in process: it holds the session's lock,
+  attaches the machine with the context block, the project's `AGENTS.md`
+  and `CLAUDE.md` files and its skills index, and starts the next turn at
+  once when a message arrived during the last one.
+- `models/scripted` plays a YAML script as a model, for tests; a
+  connection names it with the `scripted:` scheme.
+- `topos run` runs a turn of a local session in the working directory,
+  and `topos confirm` answers a pending call and continues it. The exit
+  code says how the turn ended: 0 done, 1 error, 2 usage, 3 waiting for a
+  person, 4 at a limit, 5 interrupted.
 
 ## v0.7.0 - 2026-09-26
 

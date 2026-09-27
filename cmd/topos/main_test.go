@@ -11,7 +11,7 @@ import (
 
 func TestVersionPrintsTheIdentity(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if code := run([]string{"-version"}, &out, &errOut); code != 0 {
+	if code := run([]string{"-version"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
 	}
 	if !strings.HasPrefix(out.String(), "topos dev (") {
@@ -21,16 +21,16 @@ func TestVersionPrintsTheIdentity(t *testing.T) {
 
 func TestNoCommandIsAUsageError(t *testing.T) {
 	var errOut bytes.Buffer
-	if code := run(nil, &bytes.Buffer{}, &errOut); code != 2 {
+	if code := run(nil, strings.NewReader(""), &bytes.Buffer{}, &errOut); code != 2 {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(errOut.String(), "spec 024") {
+	if !strings.Contains(errOut.String(), "topos run") {
 		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
 
-func TestBadFlagIsAUsageError(t *testing.T) {
-	if code := run([]string{"-nope"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 2 {
+func TestAnUnknownCommandIsAUsageError(t *testing.T) {
+	if code := run([]string{"nope"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 2 {
 		t.Fatalf("exit %d", code)
 	}
 }
