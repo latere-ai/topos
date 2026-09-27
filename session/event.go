@@ -266,6 +266,10 @@ type ModelRequest struct {
 	Outcome       string        `json:"outcome"`
 	Error         string        `json:"error,omitempty"`
 	Loss          []string      `json:"loss,omitempty"`
+	// FoldSeq is the log's last sequence when the request was built:
+	// the request is the fold of the events through it, which a replay
+	// folds again (spec 007).
+	FoldSeq uint64 `json:"fold_seq,omitempty"`
 }
 
 // CheckpointRef names a checkpoint (spec 034).

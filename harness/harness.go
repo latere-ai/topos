@@ -518,12 +518,14 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	if !t.h.c.Clock().Before(t.deadline) {
 		return t.finish(ctx, session.StopTurnLimit, "")
 	}
-	tr, err := session.Fold(t.events(), t.thread)
+	evs := t.events()
+	tr, err := session.Fold(evs, t.thread)
 	if errors.Is(err, session.ErrRedactionUncompacted) {
 		if err := t.compactRedaction(ctx); err != nil {
 			return err
 		}
-		tr, err = session.Fold(t.events(), t.thread)
+		evs = t.events()
+		tr, err = session.Fold(evs, t.thread)
 	}
 	if err != nil {
 		return err
@@ -531,7 +533,7 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	if err := tr.Check(); err != nil {
 		return err
 	}
-	if evs := t.events(); len(evs) > 0 {
+	if len(evs) > 0 {
 		t.seen = evs[len(evs)-1].Seq
 	}
 	if err := t.checkBudget(ctx); err != nil {
@@ -830,7 +832,7 @@ func (t *turn) modelRequest(ctx context.Context, res models.Result, attempts int
 	mr := session.ModelRequest{
 		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), Codec: res.Codec,
 		PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion), ToolsSHA256: toolsSHA,
-		RequestSHA256: res.RequestSHA256, RequestBytes: res.RequestSize, RequestBlob: reqBlob, ResponseBlob: respBlob,
+		RequestSHA256: res.RequestSHA256, FoldSeq: t.seen, RequestBytes: res.RequestSize, RequestBlob: reqBlob, ResponseBlob: respBlob,
 		Usage: &res.Usage, LatencyMS: latency.Milliseconds(), FirstTokenMS: res.FirstToken.Milliseconds(),
 		StopReason: res.StopReason, Attempts: attempts, Outcome: "ok", Loss: res.Loss,
 	}

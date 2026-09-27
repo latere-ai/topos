@@ -102,10 +102,16 @@ func (t *turn) manageContext(ctx context.Context, req ir.Request, toolsSHA strin
 	return req, toolsSHA, nil
 }
 
+// rebuild builds the request again from the log as it is now, after a
+// clear or a compaction appended to it.
 func (t *turn) rebuild(ctx context.Context) (ir.Request, string, int64, error) {
-	tr, err := session.Fold(t.events(), t.thread)
+	evs := t.events()
+	tr, err := session.Fold(evs, t.thread)
 	if err != nil {
 		return ir.Request{}, "", 0, err
+	}
+	if len(evs) > 0 {
+		t.seen = evs[len(evs)-1].Seq
 	}
 	req, sum, err := t.request(ctx, tr)
 	if err != nil {
