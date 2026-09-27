@@ -161,6 +161,22 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		stopRunners()
 		<-runners
 	}()
+	// The reaper of spec 014 ends expired sessions and deletes the ones
+	// past their retention, until the process stops.
+	go func() {
+		tick := time.NewTicker(server.ReapInterval)
+		defer tick.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-tick.C:
+				if err := api.Reap(runCtx); err != nil {
+					log.ErrorContext(runCtx, "reap sessions", "err", err)
+				}
+			}
+		}
+	}()
 
 	draining := make(chan struct{})
 	probes := health.Handler(health.Options{

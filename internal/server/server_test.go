@@ -76,6 +76,7 @@ type fixture struct {
 	sessions session.Store
 	objects  *store.Memory
 	authz    *recording
+	api      *Server
 	srv      *httptest.Server
 }
 
@@ -90,6 +91,7 @@ func newFixture(t *testing.T, mut ...func(*Options)) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.api = s
 	f.srv = httptest.NewServer(s.Handler())
 	t.Cleanup(f.srv.Close)
 	return f
