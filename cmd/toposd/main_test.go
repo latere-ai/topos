@@ -19,17 +19,22 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/runner"
+	"latere.ai/x/topos/session"
+	sessiondir "latere.ai/x/topos/session/dir"
 	"latere.ai/x/topos/test/stubs/cellastub"
 	"latere.ai/x/topos/test/stubs/luxstub"
 )
@@ -170,12 +175,24 @@ var listening = regexp.MustCompile(`listening public=(\S+) internal=(\S+)`)
 // returns the exit code.
 func startServe(t *testing.T, vars map[string]string) (publicURL, internalURL string, stop func() int) {
 	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	publicURL, internalURL, wait := serveOn(t, ctx, vars, 10*time.Millisecond)
+	return publicURL, internalURL, func() int {
+		cancel()
+		return wait()
+	}
+}
+
+// serveOn runs serve on loopback ports until ctx ends, with drain as the
+// drain delay, and returns the two base URLs and a function that waits
+// for the exit code.
+func serveOn(t *testing.T, ctx context.Context, vars map[string]string, drain time.Duration) (publicURL, internalURL string, wait func() int) {
+	t.Helper()
 	oldDrain := drainDelay
-	drainDelay = 10 * time.Millisecond
+	drainDelay = drain
 	t.Cleanup(func() { drainDelay = oldDrain })
 
 	dataDir := t.TempDir()
-	ctx, cancel := context.WithCancel(t.Context())
 	var out syncBuffer
 	var errOut bytes.Buffer
 	codec := make(chan int, 1)
@@ -188,7 +205,6 @@ func startServe(t *testing.T, vars map[string]string) (publicURL, internalURL st
 	for {
 		if m := listening.FindStringSubmatch(out.String()); m != nil {
 			return "http://" + m[1], "http://" + m[2], func() int {
-				cancel()
 				select {
 				case code := <-codec:
 					return code
@@ -424,10 +440,11 @@ func TestServeStopsOnAStoreItCannotOpen(t *testing.T) {
 	}
 }
 
-// hostedStubs are a stub Lux that answers once and a stub Cella that
-// wants a bearer, with the helper built for this machine, and the
-// variables that point a role at them.
-func hostedStubs(t *testing.T) (map[string]string, *luxstub.Server, *cellastub.Server) {
+// hostedStubs are a stub Lux that answers with replies, or once with
+// "Reviewed." when none is given, and a stub Cella that wants a bearer,
+// with the helper built for this machine, and the variables that point a
+// role at them.
+func hostedStubs(t *testing.T, replies ...luxstub.Reply) (map[string]string, *luxstub.Server, *cellastub.Server) {
 	t.Helper()
 	helpers := t.TempDir()
 	out := filepath.Join(helpers, "topos-machine-"+runtime.GOOS+"-"+runtime.GOARCH)
@@ -443,7 +460,10 @@ func hostedStubs(t *testing.T) (map[string]string, *luxstub.Server, *cellastub.S
 		t.Fatal(err)
 	}
 	lux := luxstub.New(t)
-	lux.Script("anthropic/claude-haiku-4.5", luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}})
+	if len(replies) == 0 {
+		replies = []luxstub.Reply{{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}}}
+	}
+	lux.Script("anthropic/claude-haiku-4.5", replies...)
 	machineDir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -459,6 +479,31 @@ func hostedStubs(t *testing.T) (map[string]string, *luxstub.Server, *cellastub.S
 // the API with the local issuer's token, waits until its turn answered,
 // and returns the session's events.
 func hostedSession(t *testing.T, publicURL string, vars map[string]string) string {
+	t.Helper()
+	send, id := createHostedSession(t, publicURL, vars)
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		_, body := send(http.MethodGet, "/v1/sessions/"+id, "")
+		if strings.Contains(body, `"status":"idle"`) && strings.Contains(body, `"stop_reason":"end_turn"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			_, events := send(http.MethodGet, "/v1/sessions/"+id+"/events", "")
+			t.Fatalf("the session never answered: %s\nevents %s", body, events)
+		}
+	}
+	_, events := send(http.MethodGet, "/v1/sessions/"+id+"/events", "")
+	for _, want := range []string{`"type":"session.machine"`, `"kind":"cella"`, `"text":"Reviewed."`} {
+		if !strings.Contains(events, want) {
+			t.Errorf("the log lacks %s: %s", want, events)
+		}
+	}
+	return events
+}
+
+// createHostedSession applies a Cella agent and creates a session of it
+// over the API with the local issuer's token, and returns the function
+// that sends as that token and the session's id.
+func createHostedSession(t *testing.T, publicURL string, vars map[string]string) (func(method, path, body string) (int, string), string) {
 	t.Helper()
 	var tok bytes.Buffer
 	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
@@ -497,23 +542,7 @@ func hostedSession(t *testing.T, publicURL string, vars map[string]string) strin
 	if err := json.Unmarshal([]byte(body), &s); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		_, body := send(http.MethodGet, "/v1/sessions/"+s.ID, "")
-		if strings.Contains(body, `"status":"idle"`) && strings.Contains(body, `"stop_reason":"end_turn"`) {
-			break
-		}
-		if time.Now().After(deadline) {
-			_, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
-			t.Fatalf("the session never answered: %s\nevents %s", body, events)
-		}
-	}
-	_, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
-	for _, want := range []string{`"type":"session.machine"`, `"kind":"cella"`, `"text":"Reviewed."`} {
-		if !strings.Contains(events, want) {
-			t.Errorf("the log lacks %s: %s", want, events)
-		}
-	}
-	return events
+	return send, s.ID
 }
 
 // TestServeRunsAHostedSession: a session created over the API is claimed
@@ -618,5 +647,78 @@ func TestTheRunnerRoleStopsOnWhatItCannotStart(t *testing.T) {
 		if code := run(t.Context(), []string{"runner"}, env(vars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), want) {
 			t.Errorf("%s: exit %d, stderr %q", want, code, errOut.String())
 		}
+	}
+}
+
+// TestSigtermLeavesARunningSessionToTheNextClaim is spec 002's shutdown
+// with spec 016's served session: on SIGTERM readiness answers 503 while
+// the drain delay runs, the runner stops the turn it was in, the session
+// stays running with nothing appended after the stop, its lease is
+// released for the next runner's claim, and the process exits 0.
+func TestSigtermLeavesARunningSessionToTheNextClaim(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a process cannot send itself SIGTERM on Windows")
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	vars, _, _ := hostedStubs(t, luxstub.Reply{Respond: func(*ir.Request, *ir.Response) {
+		once.Do(func() { close(started) })
+		<-release
+	}})
+	t.Cleanup(func() { close(release) })
+	data := t.TempDir()
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": data, "TOPOS_RUNNER_CAPACITY": "1"})
+
+	ctx, stop := signal.NotifyContext(t.Context(), syscall.SIGTERM)
+	defer stop()
+	publicURL, internalURL, wait := serveOn(t, ctx, vars, time.Second)
+	send, id := createHostedSession(t, publicURL, vars)
+	select {
+	case <-started:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the runner never asked the model")
+	}
+	var before session.Session
+	if code, body := send(http.MethodGet, "/v1/sessions/"+id, ""); code != http.StatusOK || json.Unmarshal([]byte(body), &before) != nil || before.Status != session.StatusRunning {
+		t.Fatalf("the session mid-turn: %d %s", code, body)
+	}
+
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := self.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(time.Second); ; time.Sleep(10 * time.Millisecond) {
+		code, body := get(t, internalURL+"/readyz")
+		if code == http.StatusServiceUnavailable {
+			if body != "not ready: draining: shutting down\n" {
+				t.Fatalf("readiness while draining: %q", body)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("readiness still %d %q after SIGTERM", code, body)
+		}
+	}
+	if code := wait(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+
+	st, err := sessiondir.Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.Get(t.Context(), id)
+	if err != nil || after.Status != session.StatusRunning || after.LastSeq != before.LastSeq {
+		t.Fatalf("after the stop %+v (last %d before), %v", after, before.LastSeq, err)
+	}
+	claims, err := runner.NewQueue(st, time.Hour).Claim(t.Context(), session.Holder{Runner: "run_next"}, 1, 0)
+	if err != nil || len(claims) != 1 || claims[0].ID != id {
+		t.Fatalf("the next runner's claim: %+v, %v", claims, err)
+	}
+	if err := claims[0].Lease.Release(); err != nil {
+		t.Fatal(err)
 	}
 }
