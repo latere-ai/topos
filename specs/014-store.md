@@ -3,7 +3,7 @@ title: "The server's store: the Postgres schema, toposd on the directory store, 
 status: drafted
 track: core
 depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 006-identity.md]
-affects: [internal/store/postgres/, internal/store/dirobjects/, internal/blob/, internal/serve/]
+affects: [internal/store/postgres/, internal/store/dir/, internal/blob/, internal/serve/]
 effort: medium
 created: 2026-09-27
 updated: 2026-09-27
@@ -82,7 +82,24 @@ replays from the table, then follows `LISTEN topos_events`, with a
 With `TOPOS_DB_URL` unset, sessions live in `session/dir` under
 `$TOPOS_DATA_DIR/sessions/`, and the other objects as one JSON file per
 object under `$TOPOS_DATA_DIR/objects/<kind>/<id>.json`, each replaced
-atomically (write, fsync, rename, fsync the directory). The queue and
+atomically (write, fsync, rename, fsync the directory):
+
+```
+objects/agent/<agent_id>.json              the agent: name, owner, latest version, archive time
+objects/agent_version/<agent_id>/<n>.json  version n: digest, the resolved document and the bundle as text
+objects/idempotency/<hex>.json             an idempotency record; hex is the SHA-256 of its subject and key
+```
+
+An agent's file is the commit record of its versions: a version's
+file is written before its agent's, and a reader opens only the
+versions the agent's latest version counts. A crash between the two
+writes leaves a version file nothing reads, which the next write of
+that version replaces, and never an agent whose latest version is
+missing. The name index is derived from the agent files when the
+store opens, so no index file can disagree with them. A file whose
+name is not an object's, such as the temporary file of an interrupted
+write, is ignored, and a well-named file that does not decode refuses
+the open with `ErrCorrupt`; the open deletes nothing. The queue and
 the leases of [[016-runners]] live in the process. The mode is one
 replica: `toposd serve` holds `flock` on `$TOPOS_DATA_DIR/serve.lock`,
 and a second `serve` on the same directory refuses to start with
@@ -140,3 +157,7 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 | Migrations apply on an empty database when the store opens | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`, every subtest opens a fresh database) | built |
 | A lease that expires is taken over by the next holder, and the old holder's renew fails and its `Lost` closes | `internal/store/postgres.TestAnExpiredLeaseIsTakenOverAndTheOldHolderLosesIt` (tag `postgres`) | built |
 | A replica that finds a newer schema than it knows refuses to start | `TestMigrationsAtStart` | not built |
+| The suite of `store.Store` (`internal/store/storetest`) passes on the memory store and the directory store | `internal/store.TestMemoryStoreConformance`, `internal/store/dir.TestObjectStoreConformance` | built |
+| The directory store reads back every agent, version, name and idempotency record after a restart, and ignores a torn temporary file | `internal/store/dir.TestReopenReadsEverythingBack`, `internal/store/dir.TestATornTemporaryFileIsIgnoredAtOpen` | built |
+| A crash between a version's file and its agent's leaves the version unread and replaceable, and never an agent whose latest version is missing | `internal/store/dir.TestAVersionIsVisibleOnlyOnceItsAgentCountsIt` | built |
+| A well-named object file that does not decode, or holds another object, is `ErrCorrupt` | `internal/store/dir.TestOpenRefusesACorruptAgent`, `internal/store/dir.TestACorruptVersionIsRefused`, `internal/store/dir.TestACorruptIdempotencyRecordIsRefused` | built |
