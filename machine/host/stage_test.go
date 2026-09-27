@@ -268,7 +268,14 @@ func TestAStageTheDriverFails(t *testing.T) {
 				res, err := h.Exec(t.Context(), r)
 				if r.Background && err == nil && (call == "observe" || call == "discard") {
 					// A job's observation and discard fail after it
-					// started; the session's end reports them.
+					// started, and the session's end reports them. The
+					// job ends with the failure still injected, so the
+					// report is certain rather than a race with the
+					// failure's removal below.
+					waitForJobEnd(t, res.Log)
+					if err := h.Release(t.Context(), true); !errors.Is(err, errInjected) {
+						t.Fatalf("the session's end reported %v, want the job's %s failure", err, call)
+					}
 					continue
 				}
 				if !errors.Is(err, errInjected) {
@@ -300,6 +307,21 @@ func TestAStageTheDriverFails(t *testing.T) {
 	}
 }
 
+// waitForJobEnd waits until a background job's log carries its exit
+// line and returns the log.
+func waitForJobEnd(t *testing.T, log string) string {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		b, err := os.ReadFile(log)
+		if err == nil && strings.Contains(string(b), "exited with code") {
+			return string(b)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the job's log %q, %v", b, err)
+		}
+	}
+}
+
 // TestAJobTheDriverLosesIsReported: a job whose observation fails ends
 // with its exit line, and the session's end reports the failure.
 func TestAJobTheDriverLosesIsReported(t *testing.T) {
@@ -311,14 +333,8 @@ func TestAJobTheDriverLosesIsReported(t *testing.T) {
 	rec.mu.Lock()
 	rec.fail = "observe"
 	rec.mu.Unlock()
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		b, err := os.ReadFile(job.Log)
-		if err == nil && strings.Contains(string(b), "exited with code -1") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the job's log %q, %v", b, err)
-		}
+	if b := waitForJobEnd(t, job.Log); !strings.Contains(b, "exited with code -1") {
+		t.Fatalf("the job's log %q", b)
 	}
 	if err := h.Release(t.Context(), true); !errors.Is(err, errInjected) {
 		t.Fatalf("release: %v", err)
