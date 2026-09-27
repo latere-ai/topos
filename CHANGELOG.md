@@ -276,6 +276,12 @@ committed: the commit log already holds that.
   and `confirm` run. With `HOME` unset, `USERPROFILE` places the data and
   configuration directories and the credential deny-list. `toposd` with
   `TOPOS_HOST_SESSIONS=on` refuses to start on Windows.
+- The credential deny-list of the file tools and search matches without
+  regard to case, so `~/.SSH/ID_RSA`, `SERVER.PEM` or `.ENV` on a
+  case-insensitive filesystem, macOS's and Windows' default, is refused
+  like the entry it spells; before, such a path read the file. On a
+  case-sensitive filesystem a name that differs from an entry only in
+  case is now refused too.
 
 ## v0.7.0 - 2026-09-26
 
