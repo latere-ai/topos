@@ -4,8 +4,8 @@
 // Package postgres is the Postgres store of spec 014. As a
 // session.Store it keeps sessions, their logs and their blobs in three
 // tables, an append as one transaction under the session row's lock,
-// Watch over LISTEN with a poll as the fallback, and the one-writer
-// lease on the row's lease columns. As a store.Store it keeps agents,
+// Watch over the store's one LISTEN connection with a poll as the
+// fallback, and the one-writer lease on the row's lease columns. As a store.Store it keeps agents,
 // their versions and idempotency records, each write one transaction
 // that any number of replicas may race.
 package postgres
@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -52,15 +53,18 @@ type Options struct {
 	// Now is the clock idempotency records expire on: time.Now by
 	// default.
 	Now func() time.Time
+	// Log receives the listener connection's failures; none by default.
+	Log *slog.Logger
 }
 
 // Store is the Postgres store.
 type Store struct {
-	pool   *pgxpool.Pool
-	listen *pgx.ConnConfig
-	poll   time.Duration
-	ttl    time.Duration
-	now    func() time.Time
+	pool     *pgxpool.Pool
+	listen   *pgx.ConnConfig
+	listener *listener
+	poll     time.Duration
+	ttl      time.Duration
+	now      func() time.Time
 }
 
 // Open applies the migrations on dsn and connects.
@@ -89,7 +93,11 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: connect: %w", err)
 	}
-	s := &Store{pool: pool, listen: listen, poll: o.Poll, ttl: o.LeaseTTL, now: o.Now}
+	log := o.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	s := &Store{pool: pool, listen: listen, listener: newListener(listen, log), poll: o.Poll, ttl: o.LeaseTTL, now: o.Now}
 	if s.poll <= 0 {
 		s.poll = 2 * time.Second
 	}
@@ -102,8 +110,13 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	return s, nil
 }
 
-// Close closes the pool.
-func (s *Store) Close() { s.pool.Close() }
+// Close closes the listener connection and the pool. A watcher still
+// open wakes, finds the pool closed, and closes its channel.
+func (s *Store) Close() {
+	s.listener.stop()
+	s.pool.Close()
+	s.listener.wakeAll()
+}
 
 // Ping reports whether the serving pool reaches the database; toposd's
 // readiness asks it.
@@ -380,29 +393,23 @@ func (s *Store) Events(ctx context.Context, id string, fromSeq uint64, limit int
 	return queryEvents(ctx, s.pool, id, fromSeq, limit)
 }
 
-// Watch replays the events from fromSeq, then follows LISTEN on a
-// connection of its own, with a poll as the fallback for a lost
-// notification. The channel closes when ctx ends, when the session is
-// deleted, or when the log cannot be read.
+// Watch replays the events from fromSeq, then reads again each time the
+// store's listener announces an append to the session, and every poll
+// interval in case a notification was lost. The channel closes when ctx
+// ends, when the session is deleted, or when the log cannot be read.
 func (s *Store) Watch(ctx context.Context, id string, fromSeq uint64) (<-chan session.Event, error) {
 	if err := s.exists(ctx, id); err != nil {
 		return nil, err
 	}
-	conn, err := pgx.ConnectConfig(ctx, s.listen)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: connect to listen: %w", err)
-	}
-	if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
-		return nil, errors.Join(fmt.Errorf("postgres: listen: %w", err), conn.Close(context.WithoutCancel(ctx)))
-	}
+	// The watcher is registered before the replay reads, so an append
+	// that commits after the read began still wakes it.
+	w := s.listener.subscribe(id)
 	out := make(chan session.Event)
 	go func() {
 		defer close(out)
-		defer func() {
-			if err := conn.Close(context.WithoutCancel(ctx)); err != nil {
-				return
-			}
-		}()
+		defer s.listener.unsubscribe(id, w)
+		poll := time.NewTimer(s.poll)
+		defer poll.Stop()
 		next := max(fromSeq, 1)
 		for {
 			evs, err := queryEvents(ctx, s.pool, id, next, 0)
@@ -420,13 +427,11 @@ func (s *Store) Watch(ctx context.Context, id string, fromSeq uint64) (<-chan se
 			if len(evs) == 0 && s.exists(ctx, id) != nil {
 				return
 			}
-			wctx, cancel := context.WithTimeout(ctx, s.poll)
-			_, err = conn.WaitForNotification(wctx)
-			cancel()
-			if ctx.Err() != nil {
-				return
-			}
-			if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			poll.Reset(s.poll)
+			select {
+			case <-w.wake:
+			case <-poll.C:
+			case <-ctx.Done():
 				return
 			}
 		}

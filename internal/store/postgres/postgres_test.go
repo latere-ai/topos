@@ -445,3 +445,282 @@ func TestAFencedAppendAfterATakeoverIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// sessions creates n empty sessions on st and returns their ids.
+func sessions(t *testing.T, st *Store, n int) []string {
+	t.Helper()
+	var ids []string
+	for range n {
+		s := storetest.NewSession()
+		if err := st.Create(t.Context(), s, nil); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, s.ID)
+	}
+	return ids
+}
+
+// say appends one message to session id after its last event.
+func say(t *testing.T, st *Store, id, text string) session.Event {
+	t.Helper()
+	s, err := st.Get(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := []session.Event{message(t, text)}
+	session.Stamp(id, s.LastSeq, evs)
+	if _, err := st.Append(t.Context(), id, s.LastSeq, evs); err != nil {
+		t.Fatal(err)
+	}
+	return evs[0]
+}
+
+// receive reads the next event of ch, failing when none comes before
+// ctx ends.
+func receive(t *testing.T, ctx context.Context, ch <-chan session.Event, what string) session.Event {
+	t.Helper()
+	select {
+	case e, open := <-ch:
+		if !open {
+			t.Fatalf("%s: the watch closed", what)
+		}
+		return e
+	case <-ctx.Done():
+		t.Fatalf("%s: no event; the poll is an hour away", what)
+	}
+	return session.Event{}
+}
+
+// eventually polls cond until it holds, failing after ten seconds.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s did not happen", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// connects reports how many listener connections of st reached LISTEN,
+// and the backend of the current one.
+func connects(st *Store) (int, uint32) {
+	st.listener.mu.Lock()
+	defer st.listener.mu.Unlock()
+	return st.listener.connects, st.listener.pid
+}
+
+// wakes sums the signals sent to the watchers of session id.
+func wakes(st *Store, id string) int {
+	st.listener.mu.Lock()
+	defer st.listener.mu.Unlock()
+	n := 0
+	for w := range st.listener.watchers[id] {
+		n += w.wakes
+	}
+	return n
+}
+
+// backends counts the client backends on st's database, and those of
+// them whose last statement was the LISTEN, from a connection on the
+// admin database, which the count leaves out.
+func backends(t *testing.T, st *Store) (all, listening int) {
+	t.Helper()
+	conn, err := pgx.Connect(t.Context(), admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := conn.Close(context.WithoutCancel(t.Context())); err != nil {
+			t.Error(err)
+		}
+	}()
+	err = conn.QueryRow(t.Context(), `SELECT count(*), count(*) FILTER (WHERE query = 'LISTEN `+channel+`')
+		FROM pg_stat_activity WHERE datname = $1 AND backend_type = 'client backend'`, st.listen.Database).Scan(&all, &listening)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return all, listening
+}
+
+// TestManyWatchesShareOneListener: fifty watches at once on one store
+// hold one LISTEN connection beside the pool, and each still sees an
+// append to its session through it.
+func TestManyWatchesShareOneListener(t *testing.T) {
+	st := fresh(t, Options{Poll: time.Hour})
+	ids := sessions(t, st, 5)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	chans := make([]<-chan session.Event, 50)
+	errs := make([]error, len(chans))
+	var wg sync.WaitGroup
+	for i := range chans {
+		wg.Go(func() { chans[i], errs[i] = st.Watch(ctx, ids[i%len(ids)], 1) })
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the listener connection", func() bool { _, l := backends(t, st); return l > 0 })
+	all, listening := backends(t, st)
+	pool := int(st.pool.Config().MaxConns)
+	t.Logf("%d watches: %d backends, %d of them listening, the pool at most %d", len(chans), all, listening, pool)
+	if listening != 1 || all > pool+1 {
+		t.Fatalf("%d watches hold %d backends, %d listening; want 1 listening and at most %d", len(chans), all, listening, pool+1)
+	}
+	want := map[string]string{}
+	for _, id := range ids {
+		want[id] = say(t, st, id, "to every watcher").ID
+	}
+	for i, ch := range chans {
+		if e := receive(t, ctx, ch, fmt.Sprint("watcher ", i)); e.ID != want[ids[i%len(ids)]] {
+			t.Fatalf("watcher %d of %s saw %s", i, ids[i%len(ids)], e.ID)
+		}
+	}
+}
+
+// TestANotificationWakesOnlyItsSessionsWatchers: appends to one session
+// wake its watcher and leave the watcher of another asleep.
+func TestANotificationWakesOnlyItsSessionsWatchers(t *testing.T) {
+	st := fresh(t, Options{Poll: time.Hour})
+	ids := sessions(t, st, 2)
+	a, b := ids[0], ids[1]
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	chA, err := st.Watch(ctx, a, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chB, err := st.Watch(ctx, b, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the listener connection", func() bool { n, _ := connects(st); return n == 1 })
+	before := wakes(st, b)
+	for i := range 3 {
+		want := say(t, st, a, fmt.Sprint("to a ", i))
+		if e := receive(t, ctx, chA, "a"); e.ID != want.ID {
+			t.Fatalf("a saw %s, want %s", e.ID, want.ID)
+		}
+	}
+	// A wake is counted under the lock the routing of its notification
+	// holds, so a's event in hand means b's count is final for it.
+	if got := wakes(st, b); got != before {
+		t.Fatalf("appends to a woke b's watcher %d times", got-before)
+	}
+	select {
+	case e := <-chB:
+		t.Fatalf("b's watcher saw %s", e.ID)
+	default:
+	}
+	want := say(t, st, b, "to b")
+	if e := receive(t, ctx, chB, "b"); e.ID != want.ID {
+		t.Fatalf("b saw %s, want %s", e.ID, want.ID)
+	}
+	if got := wakes(st, b); got != before+1 {
+		t.Fatalf("one append to b woke its watcher %d times", got-before)
+	}
+}
+
+// TestADroppedListenerReconnectsAndMissesNothing: with the listener's
+// backend terminated, appends made before it listens again announce
+// nothing, and every watcher still sees them once it is back, and sees
+// the appends after it, with the poll an hour away.
+func TestADroppedListenerReconnectsAndMissesNothing(t *testing.T) {
+	st := fresh(t, Options{Poll: time.Hour})
+	dropped := make(chan struct{}, 1)
+	release := make(chan struct{})
+	resume := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(resume)
+	st.listener.mu.Lock()
+	st.listener.dropped = func() {
+		select {
+		case dropped <- struct{}{}:
+		default:
+		}
+		<-release
+	}
+	st.listener.mu.Unlock()
+	ids := sessions(t, st, 2)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	type watch struct {
+		id string
+		ch <-chan session.Event
+	}
+	var watches []watch
+	for i := range 6 {
+		id := ids[i%len(ids)]
+		ch, err := st.Watch(ctx, id, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		watches = append(watches, watch{id, ch})
+	}
+	var pid uint32
+	eventually(t, "the listener connection", func() bool { n, p := connects(st); pid = p; return n == 1 && p != 0 })
+
+	conn, err := pgx.Connect(t.Context(), admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := conn.Close(context.WithoutCancel(t.Context())); err != nil {
+			t.Error(err)
+		}
+	}()
+	var terminated bool
+	if err := conn.QueryRow(t.Context(), `SELECT pg_terminate_backend($1)`, int64(pid)).Scan(&terminated); err != nil || !terminated {
+		t.Fatalf("terminate the listener's backend %d: %v, %v", pid, terminated, err)
+	}
+	select {
+	case <-dropped:
+	case <-ctx.Done():
+		t.Fatal("the listener did not notice its connection was terminated")
+	}
+	during := map[string]string{}
+	for _, id := range ids {
+		during[id] = say(t, st, id, "while the listener is down").ID
+	}
+	resume()
+	eventually(t, "the listener reconnecting", func() bool { n, p := connects(st); return n == 2 && p != 0 && p != pid })
+	for i, w := range watches {
+		if e := receive(t, ctx, w.ch, fmt.Sprint("watcher ", i, " during the drop")); e.ID != during[w.id] {
+			t.Fatalf("watcher %d saw %s, want %s", i, e.ID, during[w.id])
+		}
+	}
+	after := map[string]string{}
+	for _, id := range ids {
+		after[id] = say(t, st, id, "after the listener is back").ID
+	}
+	for i, w := range watches {
+		if e := receive(t, ctx, w.ch, fmt.Sprint("watcher ", i, " after the drop")); e.ID != after[w.id] {
+			t.Fatalf("watcher %d saw %s, want %s", i, e.ID, after[w.id])
+		}
+	}
+}
+
+// TestAClosedStoreClosesItsWatches: closing the store ends its listener
+// and every open watch.
+func TestAClosedStoreClosesItsWatches(t *testing.T) {
+	st := fresh(t, Options{Poll: time.Hour})
+	ids := sessions(t, st, 1)
+	ch, err := st.Watch(t.Context(), ids[0], 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the listener connection", func() bool { n, _ := connects(st); return n == 1 })
+	st.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	select {
+	case e, open := <-ch:
+		if open {
+			t.Fatalf("a watch of a closed store saw %s", e.ID)
+		}
+	case <-ctx.Done():
+		t.Fatal("a watch of a closed store stayed open")
+	}
+	eventually(t, "the listener's backend leaving", func() bool { _, l := backends(t, st); return l == 0 })
+}
