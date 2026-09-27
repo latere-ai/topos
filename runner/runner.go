@@ -47,7 +47,12 @@ type Options struct {
 	// directories that are not checkouts (spec 034); empty takes no
 	// checkpoints outside a repository.
 	CheckpointDir string
-	Clock         func() time.Time
+	// Credentials reaches the session's credentials for a lease that
+	// does not reach them itself (spec 018): toposd's minter for the
+	// leases of its own runners. Nil, and with such a lease, a drive
+	// has no token source.
+	Credentials func(id string, lease session.Lease) Credentials
+	Clock       func() time.Time
 }
 
 // Runner drives sessions.
@@ -153,6 +158,7 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	if err := r.running(ctx, log); err != nil {
 		return harness.Outcome{}, err
 	}
+	ctx, tokens := r.tokens(ctx, id, lease)
 	cfg, err := r.o.Harness(ctx, s)
 	if err != nil {
 		return harness.Outcome{}, r.setupFailed(ctx, log, err)
@@ -181,9 +187,17 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		}
 	}
 	intr := newInterrupts()
-	if cfg.Interrupt == nil {
-		cfg.Interrupt = intr.current
-		stop, err := intr.watch(ctx, st, id, log.Last()+1)
+	if cfg.Interrupt == nil || tokens != nil {
+		if cfg.Interrupt == nil {
+			cfg.Interrupt = intr.current
+		}
+		// A scope change drops every credential the drive holds, so the
+		// next call acts with one minted under the new scope.
+		var scoped func()
+		if tokens != nil {
+			scoped = tokens.Drop
+		}
+		stop, err := intr.watch(ctx, st, id, log.Last()+1, scoped)
 		if err != nil {
 			return harness.Outcome{}, err
 		}
@@ -329,6 +343,7 @@ func (r *Runner) Rewind(ctx context.Context, id string, turn int, by session.Sen
 	if target == nil {
 		return session.SessionRewound{}, &models.Coded{Code: checkpoint.CodeMissing, Message: fmt.Sprintf("turn %d of %s has no checkpoint", turn, id)}
 	}
+	ctx, _ = r.tokens(ctx, id, lease)
 	cfg, err := r.o.Harness(ctx, s)
 	if err != nil {
 		return session.SessionRewound{}, err
@@ -428,9 +443,10 @@ func newInterrupts() *interrupts {
 	return &interrupts{ch: make(chan struct{})}
 }
 
-// watch follows the log from seq and fires on every user.interrupt,
-// until the returned stop is called or ctx ends.
-func (i *interrupts) watch(ctx context.Context, st session.Store, id string, seq uint64) (func(), error) {
+// watch follows the log from seq and fires on every user.interrupt, and
+// calls scoped, when set, on every session.scope_changed, until the
+// returned stop is called or ctx ends.
+func (i *interrupts) watch(ctx context.Context, st session.Store, id string, seq uint64, scoped func()) (func(), error) {
 	wctx, cancel := context.WithCancel(ctx)
 	evs, err := st.Watch(wctx, id, seq)
 	if err != nil {
@@ -439,8 +455,11 @@ func (i *interrupts) watch(ctx context.Context, st session.Store, id string, seq
 	}
 	go func() {
 		for e := range evs {
-			if e.Type == session.TypeUserInterrupt {
+			switch {
+			case e.Type == session.TypeUserInterrupt:
 				i.fire()
+			case e.Type == session.TypeScopeChanged && scoped != nil:
+				scoped()
 			}
 		}
 	}()
