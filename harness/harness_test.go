@@ -356,6 +356,37 @@ func TestThreeTruncationsEndWithOutputLimit(t *testing.T) {
 	}
 }
 
+// TestRetriedStreamStoresFinalAttempt: a stream cut before its terminal
+// frame is retried, and the agent.message holds the final attempt's
+// response alone, with none of the cut attempt's partial output.
+func TestRetriedStreamStoresFinalAttempt(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	r := reply(ir.StopEndTurn, text("a draft the cut stream carried"))
+	r.Fail = &luxstub.Failure{Cut: true, Times: 1}
+	r.Respond = func(_ *ir.Request, resp *ir.Response) { resp.Blocks = []ir.Block{text("the final answer")} }
+	e.stub.Script(model, r)
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	msgs := e.events(ctx, session.TypeAgentMessage)
+	if len(msgs) != 1 {
+		t.Fatalf("%d agent messages", len(msgs))
+	}
+	var m session.AgentMessage
+	if err := msgs[0].Decode(&m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Message.Blocks) != 1 || m.Message.Blocks[0].Text != "the final answer" {
+		t.Fatalf("the stored message %+v", m.Message.Blocks)
+	}
+	var mr session.ModelRequest
+	if err := e.events(ctx, session.TypeModelRequest)[0].Decode(&mr); err != nil || mr.Attempts != 2 {
+		t.Fatalf("attempts %d, %v", mr.Attempts, err)
+	}
+}
+
 func TestTransientErrorsAreRetried(t *testing.T) {
 	e := setup(t, nil)
 	ctx := t.Context()
@@ -945,6 +976,74 @@ func TestAConfirmedCallForAToolThatIsGone(t *testing.T) {
 	var res session.ToolResult
 	if err := e.events(ctx, session.TypeToolResult)[0].Decode(&res); err != nil || res.Outcome != tools.OutcomeUnknownTool {
 		t.Fatalf("result %+v", res)
+	}
+}
+
+// TestModelCredentialNeverLogged: the connection's credential reaches
+// the gateway in a header, and no event and no blob of the session holds
+// it, with every request's bytes captured.
+func TestModelCredentialNeverLogged(t *testing.T) {
+	const canary = "sk-canary-credential-6f1d2a9c"
+	e := setup(t, func(c *Config) { c.Connection.Credential = canary })
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "echo", `{"x":1}`)), reply(ir.StopEndTurn, text("done")))
+	e.send(ctx, "Go.")
+	s, err := e.store.Get(ctx, e.s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Capture.Requests = true
+	evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.RunTurn(ctx, s, evs, e.log); err != nil {
+		t.Fatal(err)
+	}
+	reqs := e.stub.Requests()
+	if len(reqs) != 2 || reqs[0].Header.Get("X-Api-Key") != canary {
+		t.Fatalf("the gateway saw %d requests, the first with key %q", len(reqs), reqs[0].Header.Get("X-Api-Key"))
+	}
+	all, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobs := 0
+	for _, ev := range all {
+		b, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), canary) {
+			t.Errorf("event %d (%s) holds the credential", ev.Seq, ev.Type)
+		}
+		if ev.Type != session.TypeModelRequest {
+			continue
+		}
+		var mr session.ModelRequest
+		if err := ev.Decode(&mr); err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range []session.Digest{mr.RequestBlob, mr.ResponseBlob} {
+			if d == "" {
+				t.Fatalf("model.request %d names no request or response blob", ev.Seq)
+			}
+			rc, err := e.store.Blob(ctx, e.s.ID, d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(rc)
+			if cerr := rc.Close(); err != nil || cerr != nil {
+				t.Fatal(errors.Join(err, cerr))
+			}
+			if strings.Contains(string(body), canary) {
+				t.Errorf("blob %s holds the credential", d)
+			}
+			blobs++
+		}
+	}
+	if blobs != 4 {
+		t.Fatalf("%d blobs read, want the request and response of both steps", blobs)
 	}
 }
 
