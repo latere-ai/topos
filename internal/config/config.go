@@ -117,6 +117,21 @@ type Config struct {
 	// inside the mandatory host sandbox and a directory of its own under
 	// DataDir. Off, such a session is refused machine_unavailable.
 	HostSessions bool
+	// OrigoURL is the git host a hosted session's sandbox pushes to with
+	// its agent's token (spec 018).
+	OrigoURL string
+	// IdentityURL is the identity provider that hosts the installation's
+	// agents; empty gives agents no identity (spec 018). IdentityClientID
+	// is the host client toposd authenticates as, and IdentitySecretFile
+	// the file holding its secret, read at each fetch of its token.
+	IdentityURL        string
+	IdentityClientID   string
+	IdentitySecretFile string
+	// SessionKeysURL and SessionKeysToken are the authorizer's session key
+	// routes and their bearer, where toposd registers each session's Lux
+	// keys by hash; an empty URL mints no session key (spec 018).
+	SessionKeysURL   string
+	SessionKeysToken string
 }
 
 // Defaults of the runner variables.
@@ -225,6 +240,7 @@ func Load(role string, getenv Getenv) (Config, error) {
 	}
 	if role == RoleServe || role == RoleCheck {
 		problems = append(problems, c.readRunner(getenv)...)
+		problems = append(problems, c.readCredentials(getenv)...)
 		if c.PublicURL == "" {
 			problems = append(problems, "TOPOS_PUBLIC_URL is required; it is the base of every URL toposd writes")
 		}
@@ -304,8 +320,59 @@ func (c *Config) readRunner(getenv Getenv) []string {
 		if err := checkURL(c.CellaURL); err != nil {
 			problems = append(problems, "TOPOS_CELLA_URL "+err.Error())
 		}
-		if c.CellaTokenFile == "" {
-			problems = append(problems, "TOPOS_CELLA_URL needs TOPOS_CELLA_TOKEN_FILE, the bearer toposd presents to Cella")
+	}
+	c.OrigoURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_ORIGO_URL")), "/")
+	if c.OrigoURL != "" {
+		if err := checkURL(c.OrigoURL); err != nil {
+			problems = append(problems, "TOPOS_ORIGO_URL "+err.Error())
+		}
+	}
+	return problems
+}
+
+// readCredentials reads the variables of a server whose sessions act
+// with credentials of their own (spec 018): the identity provider that
+// hosts its agents and the authorizer's session key routes. Each needs
+// the installation's authorizer, which alone records the sessions their
+// credentials name, and neither sits beside the installation credential
+// it replaces. A server without an identity provider presents
+// TOPOS_CELLA_TOKEN_FILE to Cella, so its Cella URL needs one.
+func (c *Config) readCredentials(getenv Getenv) []string {
+	var problems []string
+	c.IdentityURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_IDENTITY_URL")), "/")
+	c.IdentityClientID = strings.TrimSpace(getenv("TOPOS_IDENTITY_CLIENT_ID"))
+	c.IdentitySecretFile = strings.TrimSpace(getenv("TOPOS_IDENTITY_SECRET_FILE"))
+	c.SessionKeysURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_SESSION_KEYS_URL")), "/")
+	c.SessionKeysToken = strings.TrimSpace(getenv("TOPOS_SESSION_KEYS_TOKEN"))
+	authorizer := strings.TrimSpace(getenv("TOPOS_AUTHORIZER_URL")) != ""
+	if c.IdentityURL != "" {
+		if err := checkURL(c.IdentityURL); err != nil {
+			problems = append(problems, "TOPOS_IDENTITY_URL "+err.Error())
+		}
+		if c.IdentityClientID == "" || c.IdentitySecretFile == "" {
+			problems = append(problems, "TOPOS_IDENTITY_URL needs TOPOS_IDENTITY_CLIENT_ID and TOPOS_IDENTITY_SECRET_FILE, the host client toposd authenticates as")
+		}
+		if !authorizer {
+			problems = append(problems, "TOPOS_IDENTITY_URL needs TOPOS_AUTHORIZER_URL: only the installation's authorizer checks the sessions its agents' tokens name")
+		}
+		if c.CellaTokenFile != "" {
+			problems = append(problems, "TOPOS_CELLA_TOKEN_FILE is set beside TOPOS_IDENTITY_URL; sessions reach Cella with their agents' tokens, so unset it")
+		}
+	} else if c.CellaURL != "" && c.CellaTokenFile == "" {
+		problems = append(problems, "TOPOS_CELLA_URL needs TOPOS_CELLA_TOKEN_FILE, the bearer toposd presents to Cella, unless TOPOS_IDENTITY_URL mints its sessions' tokens")
+	}
+	if c.SessionKeysURL != "" {
+		if err := checkURL(c.SessionKeysURL); err != nil {
+			problems = append(problems, "TOPOS_SESSION_KEYS_URL "+err.Error())
+		}
+		if c.SessionKeysToken == "" {
+			problems = append(problems, "TOPOS_SESSION_KEYS_URL needs TOPOS_SESSION_KEYS_TOKEN, the bearer its routes require")
+		}
+		if !authorizer {
+			problems = append(problems, "TOPOS_SESSION_KEYS_URL needs TOPOS_AUTHORIZER_URL: the session keys are the authorizer's, for the sessions it recorded")
+		}
+		if c.ModelsKey != "" {
+			problems = append(problems, "TOPOS_MODELS_KEY is set beside TOPOS_SESSION_KEYS_URL; sessions ask models with their own keys, so unset it")
 		}
 	}
 	return problems

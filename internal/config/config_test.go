@@ -339,3 +339,52 @@ func TestTheBlobVariables(t *testing.T) {
 		}
 	}
 }
+
+// TestTheCredentialVariables: the identity provider's and the session
+// keys' variables are read; each URL needs its partners and the
+// installation's authorizer, and neither installation credential is
+// accepted beside the per-session one that replaces it; a server with an
+// identity provider needs no Cella bearer file, and a runner role needs
+// none either.
+func TestTheCredentialVariables(t *testing.T) {
+	all := map[string]string{
+		"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a",
+		"TOPOS_IDENTITY_URL": "https://login.example/", "TOPOS_IDENTITY_CLIENT_ID": " host ", "TOPOS_IDENTITY_SECRET_FILE": "/run/host/secret",
+		"TOPOS_SESSION_KEYS_URL": "https://platform.example/sessions/", "TOPOS_SESSION_KEYS_TOKEN": "k",
+		"TOPOS_CELLA_URL": "https://cella.example", "TOPOS_ORIGO_URL": "https://origo.example/",
+	}
+	c, err := Load(RoleServe, serve(all))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IdentityURL != "https://login.example" || c.IdentityClientID != "host" || c.IdentitySecretFile != "/run/host/secret" ||
+		c.SessionKeysURL != "https://platform.example/sessions" || c.SessionKeysToken != "k" || c.OrigoURL != "https://origo.example" {
+		t.Fatalf("config %+v", c)
+	}
+	for name, mut := range map[string]map[string]string{
+		"identity without its client":    {"TOPOS_IDENTITY_CLIENT_ID": ""},
+		"identity without its secret":    {"TOPOS_IDENTITY_SECRET_FILE": ""},
+		"identity url not a url":         {"TOPOS_IDENTITY_URL": "login"},
+		"no authorizer":                  {"TOPOS_AUTHORIZER_URL": "", "TOPOS_AUTHORIZER_TOKEN": ""},
+		"a cella bearer beside tokens":   {"TOPOS_CELLA_TOKEN_FILE": "/run/cella/token"},
+		"keys without their token":       {"TOPOS_SESSION_KEYS_TOKEN": ""},
+		"keys url not a url":             {"TOPOS_SESSION_KEYS_URL": "keys"},
+		"a models key beside keys":       {"TOPOS_MODELS_KEY": "installation-key"},
+		"origo url not a url":            {"TOPOS_ORIGO_URL": "origo"},
+		"cella without identity or file": {"TOPOS_IDENTITY_URL": ""},
+	} {
+		vars := maps.Clone(all)
+		maps.Copy(vars, mut)
+		if _, err := Load(RoleServe, serve(vars)); err == nil {
+			t.Errorf("%s: loaded", name)
+		}
+	}
+	keysOnly := map[string]string{"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a", "TOPOS_SESSION_KEYS_URL": "https://platform.example/sessions", "TOPOS_SESSION_KEYS_TOKEN": "k"}
+	if _, err := Load(RoleServe, serve(keysOnly)); err != nil {
+		t.Fatalf("session keys alone: %v", err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example", "TOPOS_CELLA_URL": "https://cella.example", "TOPOS_ORIGO_URL": "https://origo.example"}))
+	if err != nil || r.CellaTokenFile != "" || r.OrigoURL != "https://origo.example" || r.IdentityURL != "" {
+		t.Fatalf("a runner role with no Cella bearer: %+v %v", r, err)
+	}
+}
