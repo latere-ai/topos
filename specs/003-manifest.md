@@ -38,9 +38,11 @@ Lux's and Cella's manifest specs define theirs.
 
 `manifest/v1` holds the four kinds as Go types and `manifest` holds the
 resolver, `AgentConfig` and the session bundle; `topos run --agent`
-runs a resolved Agent ([[024-client-cli-skill]]). The server's `Lookup`,
-the topos command's local state and the apply path are not built, so a
-local run resolves every reference inside its own file.
+runs a resolved Agent ([[024-client-cli-skill]]). The server resolves
+`PUT /v1/agents/{name}` through a `Lookup` over its store, scoped to the
+agents the caller may read ([[015-api]]). The topos command's local
+state and `topos apply` are not built, so a local run resolves every
+reference inside its own file.
 
 ## Design
 
@@ -275,7 +277,7 @@ key on apply ([[018-credentials-and-secrets]]).
 | A manifest carrying a token in `instructions` or in an MCP server's `env` is refused with `manifest_holds_secret`, and the error text holds the path and not the value | `manifest.TestManifestHoldingASecretIsRefused`, `manifest.TestTheInputCheck` | built |
 | Every fixed default of the four kinds' tables is written into the resolved spec | `manifest.TestDefaultsAreWrittenOut` | built |
 | Resolving the same Agent against its stored version keeps that id and version, and changed instructions resolve to the next version under the same id | `manifest.TestAgentVersioning`, `manifest.TestStoredObjectsKeepTheirIDs` | built |
-| Applying the same Agent twice through the API creates one version; changing its instructions creates the next | `TestAgentVersioningThroughTheAPI` | not built |
+| Applying the same Agent twice through the API creates one version; changing its instructions creates the next under the same id | `internal/server.TestApplyingAnAgentVersionsItsSpec` | built |
 | A resolved Agent pins each subagent reference to an id and version, and every unknown reference is reported in one `unknown_reference` | `manifest.TestReferencesPinVersions`, `manifest.TestStoredSubagentsArePinnedTransitively` | built |
 | `threads.maxDepth: 5` and a Connection with `mode: person` and a `credential` are refused | `manifest.TestValidationRules` | built |
 | A label under `topos.latere.ai/` is refused | `manifest.TestReservedLabelsRefused` | built |
