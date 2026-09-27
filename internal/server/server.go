@@ -43,6 +43,9 @@ const (
 	RequestsPerMin   = 600
 	IdempotencyTTL   = 24 * time.Hour
 	DefaultHeartbeat = 15 * time.Second
+	// StreamsPerSubject is how many event streams one subject may hold
+	// open at once on one server.
+	StreamsPerSubject = 16
 )
 
 // Authenticator verifies a request's bearer; auth.Verifier is the one
@@ -69,8 +72,11 @@ type Options struct {
 	// PerMinute is the rate limit per subject; RequestsPerMin when zero,
 	// none when negative.
 	PerMinute int
-	Now       func() time.Time
-	Log       *slog.Logger
+	// MaxStreams bounds the event streams one subject holds open at once;
+	// StreamsPerSubject when zero, none when negative.
+	MaxStreams int
+	Now        func() time.Time
+	Log        *slog.Logger
 	// Notify is called once a hosted session has new input, a first
 	// message or a sent event, so the server's runners claim it without
 	// waiting for their next poll. Nil notifies nobody.
@@ -79,9 +85,10 @@ type Options struct {
 
 // Server answers the API.
 type Server struct {
-	o      Options
-	limits *ratelimit.Buckets
-	routes []route
+	o       Options
+	limits  *ratelimit.Buckets
+	streams *slots
+	routes  []route
 }
 
 // New builds the server over its stores.
@@ -104,6 +111,9 @@ func New(o Options) (*Server, error) {
 	if o.PerMinute == 0 {
 		o.PerMinute = RequestsPerMin
 	}
+	if o.MaxStreams == 0 {
+		o.MaxStreams = StreamsPerSubject
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -113,7 +123,7 @@ func New(o Options) (*Server, error) {
 	if o.Notify == nil {
 		o.Notify = func() {}
 	}
-	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now})}
+	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now}), streams: newSlots(o.MaxStreams)}
 	s.routes = table()
 	for _, rt := range s.routes {
 		if len(rt.actions) == 0 && !rt.public {
