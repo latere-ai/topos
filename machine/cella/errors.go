@@ -63,7 +63,7 @@ func spent(what string, err error) (error, bool) {
 	if !errors.As(err, &ce) || !models.SpendCode(ce.Code) {
 		return nil, false
 	}
-	return &models.SpendError{Core: machine.KindCella, Code: ce.Code, Err: fmt.Errorf("Cella refused to %s: %w", what, refusal{ce})}, true
+	return &models.SpendError{Core: machine.KindCella, Code: ce.Code, Err: fmt.Errorf("machine: Cella refused to %s: %w", what, refusal{ce})}, true
 }
 
 // refusal renders Cella's refusal with its code and the developer
