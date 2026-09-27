@@ -149,6 +149,45 @@ func TestSessionCreateCarriesTheAgentsPermissions(t *testing.T) {
 	}
 }
 
+// TestLimitListsReachThePolicy: the authorizer's lists and thresholds
+// merge at create with the agent's approvals into the session's policy,
+// neither loosening the other, and a session under an allow with no
+// limits records the agent's own.
+func TestLimitListsReachThePolicy(t *testing.T) {
+	f := newFixture(t)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: claude-haiku-4-5}\n  machine: {kind: cella}\n" +
+		"  approvals: {mode: progressive, alwaysConfirm: [\"bash(rm*)\"], alwaysAllow: [\"bash(go test*)\", \"bash(ls*)\"]}\n"
+	if a := f.do(http.MethodPut, "/v1/agents/reviewer", "alice", manifest); a.status != http.StatusCreated {
+		t.Fatalf("apply: %d %s", a.status, a.body)
+	}
+	limits := `{"always_confirm":["bash(git push*)"],"always_allow":["bash(go test*)","read"],"thresholds":{"flag_at":0.2,"ask_at":0.6,"block_at":0.95}}`
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		d := authz.Decision{Allow: true}
+		if req.Action == authorizer.ActionSessionCreate {
+			d.Limits = json.RawMessage(limits)
+		}
+		return d, nil
+	}
+	s := f.create("alice", "reviewer")
+	want := &session.Policy{
+		Mode: "progressive", AlwaysConfirm: []string{"bash(rm*)", "bash(git push*)"}, AlwaysAllow: []string{"bash(go test*)"},
+		Thresholds: session.Thresholds{FlagAt: 0.2, AskAt: 0.5, BlockAt: 0.9},
+	}
+	if !reflect.DeepEqual(s.Policy, want) {
+		t.Fatalf("the session's policy\n%+v\nwant\n%+v", s.Policy, want)
+	}
+	var stored session.Session
+	f.do(http.MethodGet, "/v1/sessions/"+s.ID, "alice", "").decode(t, &stored)
+	if !reflect.DeepEqual(stored.Policy, want) {
+		t.Fatalf("the stored policy %+v", stored.Policy)
+	}
+	limits = `{}`
+	own := f.create("alice", "reviewer")
+	if own.Policy == nil || own.Policy.Mode != "progressive" || !reflect.DeepEqual(own.Policy.AlwaysAllow, []string{"bash(go test*)", "bash(ls*)"}) || own.Policy.Thresholds.AskAt != 0.5 {
+		t.Fatalf("the agent's own policy %+v", own.Policy)
+	}
+}
+
 // TestSendSetsSender: the appended event's sender is the verified
 // subject whatever the body says; a type a person does not send, a
 // malformed payload and a send to an ended session are refused.

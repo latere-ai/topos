@@ -17,6 +17,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -152,6 +153,14 @@ func (c *call) createSession() error {
 	s := session.New(ref, session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted,
 		session.Machine{Kind: kind, Environment: cfg.Machine.Environment, Image: cfg.Machine.Image}, now)
 	s.Title, s.Metadata, s.EndOnIdle = b.Title, b.Metadata, b.EndOnIdle
+	// The session records its approval policy merged from the agent's and
+	// the organization's limits, so every runner applies the same one.
+	var thresholds *harness.Thresholds
+	if t := limits.Thresholds; t != nil {
+		thresholds = &harness.Thresholds{FlagAt: t.FlagAt, AskAt: t.AskAt, BlockAt: t.BlockAt}
+	}
+	policy := cfg.Policy.Merge(limits.AlwaysConfirm, limits.AlwaysAllow, thresholds).Session()
+	s.Policy = &policy
 	if b.Capture != nil {
 		s.Capture = *b.Capture
 	}

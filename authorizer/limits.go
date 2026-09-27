@@ -21,15 +21,18 @@ type Thresholds struct {
 }
 
 // Limits are what an allow of session.create granted, decoded from the
-// answer's limits object. The session takes the lowest of each against
-// the agent's and the request's own (spec 005). A member the answer left
-// out is its zero here: no list, no thresholds, no ceiling.
+// answer's limits object. The session takes the lowest of each figure
+// against the agent's and the request's own (spec 005), and merges the
+// lists and thresholds with the agent's approvals so neither loosens the
+// other (spec 012). A member the answer left out is its zero here: no
+// list, no thresholds, no ceiling.
 type Limits struct {
 	// AlwaysConfirm and AlwaysAllow are the organization's permission
 	// patterns (spec 012).
 	AlwaysConfirm []string
 	AlwaysAllow   []string
-	// Thresholds replaces the mode's cut-offs; nil keeps them.
+	// Thresholds lower the agent's cut-offs, each to the lower of the
+	// two; nil keeps the agent's.
 	Thresholds *Thresholds
 	// BudgetUSDMicro is a ceiling on the session's spend in micro-USD;
 	// nil is no ceiling, and a ceiling of zero allows no model request.
