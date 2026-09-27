@@ -32,6 +32,7 @@ import (
 	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/internal/blob"
 	"latere.ai/x/topos/internal/config"
 	"latere.ai/x/topos/internal/hosted"
 	"latere.ai/x/topos/internal/runnerapi"
@@ -272,8 +273,12 @@ type stores struct {
 // openStores opens Postgres when TOPOS_DB_URL names it, and the data
 // directory otherwise, which one serving toposd holds alone.
 func openStores(ctx context.Context, cfg config.Config, log *slog.Logger) (stores, error) {
+	blobs, err := blob.Open(cfg.BlobURL, cfg.BlobAccessKey, cfg.BlobSecretKey, &http.Client{Transport: otel.Transport(nil)})
+	if err != nil {
+		return stores{}, fmt.Errorf("TOPOS_BLOB_URL: %w", err)
+	}
 	if cfg.DBURL != "" {
-		pg, err := postgres.Open(ctx, cfg.DBURL, postgres.Options{PoolDSN: cfg.DBPoolURL, Log: log})
+		pg, err := postgres.Open(ctx, cfg.DBURL, postgres.Options{PoolDSN: cfg.DBPoolURL, Log: log, Blobs: blobs})
 		if err != nil {
 			return stores{}, fmt.Errorf("TOPOS_DB_URL: %w", err)
 		}
@@ -283,7 +288,7 @@ func openStores(ctx context.Context, cfg config.Config, log *slog.Logger) (store
 	if err != nil {
 		return stores{}, fmt.Errorf("TOPOS_DATA_DIR %s: %w", cfg.DataDir, err)
 	}
-	sessions, err := sessiondir.Open(cfg.DataDir)
+	sessions, err := sessiondir.OpenWith(cfg.DataDir, sessiondir.Options{Blobs: blobs})
 	if err != nil {
 		return stores{}, errors.Join(err, release())
 	}

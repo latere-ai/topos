@@ -937,3 +937,33 @@ func TestCellaMachineSurvivesRunnerRestart(t *testing.T) {
 		t.Fatalf("the second serve exited %d", code)
 	}
 }
+
+// TestServeKeepsBlobsWhereTheURLSays: with TOPOS_BLOB_URL naming a
+// directory, a hosted session's raw response lands there, under the
+// session, and not in the session's own directory.
+func TestServeKeepsBlobsWhereTheURLSays(t *testing.T) {
+	vars, _, _ := hostedStubs(t)
+	outside, data := t.TempDir(), t.TempDir()
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": data, "TOPOS_RUNNER_CAPACITY": "1", "TOPOS_BLOB_URL": "file://" + outside})
+	publicURL, _, stop := startServe(t, vars)
+	events := hostedSession(t, publicURL, vars)
+	var s struct {
+		Items []struct {
+			SessionID string `json:"session_id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(events), &s); err != nil || len(s.Items) == 0 {
+		t.Fatalf("the events %s: %v", events, err)
+	}
+	id := s.Items[0].SessionID
+	bodies, err := os.ReadDir(filepath.Join(outside, id))
+	if err != nil || len(bodies) == 0 {
+		t.Fatalf("the session's bodies outside: %v, %v", bodies, err)
+	}
+	if kept, err := os.ReadDir(filepath.Join(data, "sessions", id, "blobs", "sha256")); err != nil || len(kept) != 0 {
+		t.Fatalf("the session's own blob directory holds %v, %v", kept, err)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}

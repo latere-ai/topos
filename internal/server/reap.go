@@ -15,8 +15,9 @@ import (
 const ReapInterval = 10 * time.Minute
 
 // Reap is spec 014's reaper. Every idle session past its expires_at is
-// ended expired, and every ended session past its retention is deleted:
-// retention runs from the session's last event, its end. A session with
+// ended expired, every ended session past its retention is deleted, and
+// the blob bodies a store keeps outside whose session is gone are
+// removed: retention runs from the session's last event, its end. A session with
 // no retention is kept until someone deletes it. A running session is
 // left for a later pass, since its runner holds it and its turn ends
 // first, and so is one another writer holds or appends to meanwhile.
@@ -50,6 +51,13 @@ func (s *Server) Reap(ctx context.Context) error {
 		}
 		return skipHeld(s.o.Sessions.Delete(ctx, sess.ID))
 	}))
+	// A store that keeps blob bodies outside sweeps the ones a crash left
+	// after their session's delete.
+	if sw, ok := s.o.Sessions.(interface {
+		SweepBlobs(context.Context, time.Time) error
+	}); ok {
+		errs = append(errs, sw.SweepBlobs(ctx, now))
+	}
 	return errors.Join(errs...)
 }
 
