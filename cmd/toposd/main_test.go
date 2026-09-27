@@ -424,11 +424,11 @@ func TestServeStopsOnAStoreItCannotOpen(t *testing.T) {
 	}
 }
 
-// TestServeRunsAHostedSession: a session created over the API is claimed
-// by serve's own runner, which opens its Cella sandbox, uploads the
-// helper, asks the model and records the answer, with the Cella bearer
-// read from its file.
-func TestServeRunsAHostedSession(t *testing.T) {
+// hostedStubs are a stub Lux that answers once and a stub Cella that
+// wants a bearer, with the helper built for this machine, and the
+// variables that point a role at them.
+func hostedStubs(t *testing.T) (map[string]string, *luxstub.Server, *cellastub.Server) {
+	t.Helper()
 	helpers := t.TempDir()
 	out := filepath.Join(helpers, "topos-machine-"+runtime.GOOS+"-"+runtime.GOARCH)
 	build := exec.CommandContext(t.Context(), "go", "build", "-o", out, "latere.ai/x/topos/cmd/topos-machine")
@@ -448,18 +448,22 @@ func TestServeRunsAHostedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, data := localKey(t), t.TempDir()
-	vars := map[string]string{
-		"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": key, "TOPOS_DATA_DIR": data,
+	return map[string]string{
 		"TOPOS_MODELS_URL": lux.URL() + "/anthropic", "TOPOS_MODELS_KEY": "model-key",
 		"TOPOS_CELLA_URL": cella.URL(), "TOPOS_CELLA_TOKEN_FILE": tokenFile,
-		"TOPOS_MACHINE_HELPERS": helpers, "TOPOS_MACHINE_DIR": machineDir, "TOPOS_RUNNER_CAPACITY": "2",
-	}
+		"TOPOS_MACHINE_HELPERS": helpers, "TOPOS_MACHINE_DIR": machineDir,
+	}, lux, cella
+}
+
+// hostedSession applies a Cella agent and creates a session of it over
+// the API with the local issuer's token, waits until its turn answered,
+// and returns the session's events.
+func hostedSession(t *testing.T, publicURL string, vars map[string]string) string {
+	t.Helper()
 	var tok bytes.Buffer
 	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
 		t.Fatalf("token: exit %d", code)
 	}
-	publicURL, _, stop := startServe(t, vars)
 	bearer := strings.TrimSpace(tok.String())
 	send := func(method, path, body string) (int, string) {
 		t.Helper()
@@ -504,10 +508,25 @@ func TestServeRunsAHostedSession(t *testing.T) {
 		}
 	}
 	_, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
-	for _, want := range []string{`"type":"session.machine"`, `"kind":"cella"`, `"text":"Reviewed."`, `"type":"session.status"`} {
+	for _, want := range []string{`"type":"session.machine"`, `"kind":"cella"`, `"text":"Reviewed."`} {
 		if !strings.Contains(events, want) {
 			t.Errorf("the log lacks %s: %s", want, events)
 		}
+	}
+	return events
+}
+
+// TestServeRunsAHostedSession: a session created over the API is claimed
+// by serve's own runner, which opens its Cella sandbox, uploads the
+// helper, asks the model with the installation's key and records the
+// answer, with the Cella bearer read from its file.
+func TestServeRunsAHostedSession(t *testing.T) {
+	vars, lux, cella := hostedStubs(t)
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_RUNNER_CAPACITY": "2"})
+	publicURL, _, stop := startServe(t, vars)
+	events := hostedSession(t, publicURL, vars)
+	if !strings.Contains(events, `"kind":"serve"`) {
+		t.Errorf("the session ran on no serve runner: %s", events)
 	}
 	if reqs := lux.Requests(); len(reqs) != 1 || reqs[0].Header.Get("X-Api-Key") != "model-key" && reqs[0].Header.Get("Authorization") != "Bearer model-key" {
 		t.Errorf("the model was asked %d times, credential %v", len(reqs), reqs)
@@ -517,6 +536,41 @@ func TestServeRunsAHostedSession(t *testing.T) {
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestTheRunnerRoleRunsAHostedSession: serve with no runner of its own
+// and the runner routes mounted, and a runner role claiming from its
+// internal listener, run a session created over the API; a runner with
+// a token serve does not hold claims nothing.
+func TestTheRunnerRoleRunsAHostedSession(t *testing.T) {
+	vars, _, _ := hostedStubs(t)
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(),
+		"TOPOS_RUNNER_CAPACITY": "0", "TOPOS_RUNNER_TOKEN": "runner-token"})
+	publicURL, internalURL, stop := startServe(t, vars)
+	runnerVars := maps.Clone(vars)
+	maps.Copy(runnerVars, map[string]string{"TOPOS_INTERNAL_URL": internalURL, "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_RUNNER_CAPACITY": "1"})
+	ctx, cancel := context.WithCancel(t.Context())
+	var out, errOut syncBuffer
+	done := make(chan int, 1)
+	go func() { done <- run(ctx, []string{"runner"}, env(runnerVars), &out, &errOut) }()
+	events := hostedSession(t, publicURL, vars)
+	if !strings.Contains(events, `"kind":"runner"`) {
+		t.Errorf("the session ran on no runner role: %s", events)
+	}
+	cancel()
+	if code := <-done; code != 0 || !strings.Contains(out.String(), "runner claiming from "+internalURL) {
+		t.Fatalf("the runner role exited %d: %s %s", code, out.String(), errOut.String())
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("serve exited %d", code)
+	}
+	var usage bytes.Buffer
+	if code := run(t.Context(), []string{"runner"}, env(nil), io.Discard, &usage); code != 1 || !strings.Contains(usage.String(), "TOPOS_INTERNAL_URL") {
+		t.Fatalf("a runner with no configuration: %d %q", code, usage.String())
+	}
+	if code := run(t.Context(), []string{"runner", "-no-such-flag"}, env(nil), io.Discard, io.Discard); code != 2 {
+		t.Fatalf("a bad flag: %d", code)
 	}
 }
 
@@ -537,5 +591,32 @@ func TestServeStartsNoRunnerOrRefusesMissingHelpers(t *testing.T) {
 		"TOPOS_CELLA_URL": "http://127.0.0.1:1", "TOPOS_CELLA_TOKEN_FILE": tokenFile, "TOPOS_MACHINE_HELPERS": t.TempDir()}
 	if code := run(t.Context(), nil, selfHosted(t, vars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "TOPOS_MACHINE_HELPERS") {
 		t.Fatalf("no helpers: exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+// TestTheRunnerRoleStopsOnWhatItCannotStart: an internal address in use
+// and a Cella URL with no helper builds each stop the runner role.
+func TestTheRunnerRoleStopsOnWhatItCannotStart(t *testing.T) {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	base := map[string]string{"TOPOS_INTERNAL_URL": "http://127.0.0.1:1", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example/anthropic", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"}
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for want, extra := range map[string]map[string]string{
+		"TOPOS_INTERNAL_ADDR":   {"TOPOS_INTERNAL_ADDR": ln.Addr().String()},
+		"TOPOS_MACHINE_HELPERS": {"TOPOS_CELLA_URL": "http://127.0.0.1:1", "TOPOS_CELLA_TOKEN_FILE": tokenFile, "TOPOS_MACHINE_HELPERS": t.TempDir()},
+	} {
+		vars := maps.Clone(base)
+		maps.Copy(vars, extra)
+		var errOut bytes.Buffer
+		if code := run(t.Context(), []string{"runner"}, env(vars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), want) {
+			t.Errorf("%s: exit %d, stderr %q", want, code, errOut.String())
+		}
 	}
 }

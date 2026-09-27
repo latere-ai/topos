@@ -175,7 +175,14 @@ role claims over the internal listener.
 
 Mounted on toposd's internal listener when `TOPOS_RUNNER_TOKEN` is set
 ([[002-scaffold-and-configuration]]); every request carries
-`Authorization: Bearer <token>`.
+`Authorization: Bearer <token>`. A remote claim holds the store's lease
+on the session in the serving replica for as long as its runner renews
+it: the store's own lease may renew itself, so the claim's 60 second
+expiry is what a runner that went away loses, and a reaper every 5
+seconds frees the expired ones. The generation is the claim's own. The
+event stream a runner follows is one JSON event per line, not
+Server-Sent Events, and a blob is put under the digest its bytes must
+hash to.
 
 | Method and path | Body | Answer |
 |---|---|---|
@@ -236,6 +243,8 @@ columns and migrations ([[014-store]]); credential resolution
 | A turn that cannot start closes with its setup code and `idle` `error`, and is not claimed again until a new message | `runner.TestASetupFailureClosesTheTurn` | built |
 | A lost lease stops the turn and refuses every later append; a server stopping mid-turn leaves the session running for the next claim | `runner.TestALostLeaseStopsTheDrive`, `runner.TestAServedDriveLeavesItsSessionToTheNextRunner` | built |
 | A session created over the API is run by `toposd serve`'s own runner on a Cella machine against the model URL | `cmd/toposd.TestServeRunsAHostedSession` | built |
-| The internal routes refuse a request without the runner token | `TestRunnerRoutesNeedTheToken` | not built |
+| The internal routes refuse a request without the runner token, and accept every token `TOPOS_RUNNER_TOKEN` lists | `internal/runnerrole.TestTheRoutesNeedTheRunnerToken` | built |
+| A remote claim holds the store's lease while its runner renews it; a renew or an append at another generation is `lease_lost`; the reaper frees a claim whose runner stopped renewing; a store that fences carries the runner's appends | `internal/runnerrole.TestTheProtocolsLeases`, `internal/runnerrole.TestTheServerFollowsTheStoresLease`, `internal/runnerrole.TestALeaseRenewsItself` | built |
+| The runner role claims from a toposd's internal listener and runs a session created over the API, writing only through its claims | `internal/runnerrole.TestARemoteRunnerRunsASession`, `cmd/toposd.TestTheRunnerRoleRunsAHostedSession` | built |
 | toposd opens no connection to a runner: every runner connection is outbound from the runner | `TestServerOpensNoConnectionToARunner` | not built |
 | The `topos` CLI drives a local session over the directory store with no server | `internal/toposcli.TestRunATurnInTheWorkingDirectory`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |

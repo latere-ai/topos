@@ -34,6 +34,8 @@ import (
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/config"
 	"latere.ai/x/topos/internal/hosted"
+	"latere.ai/x/topos/internal/runnerapi"
+	"latere.ai/x/topos/internal/runnerrole"
 	"latere.ai/x/topos/internal/server"
 	"latere.ai/x/topos/internal/store"
 	storedir "latere.ai/x/topos/internal/store/dir"
@@ -57,8 +59,7 @@ var (
 // listed here exits 1 with one line naming its spec, so a manifest that
 // runs it fails loudly instead of idling.
 var pending = map[string]string{
-	"runner": "016",
-	"check":  "028",
+	"check": "028",
 }
 
 func main() {
@@ -77,6 +78,8 @@ func run(ctx context.Context, args []string, getenv config.Getenv, stdout, stder
 		return serve(ctx, rest, getenv, stdout, stderr)
 	case "token":
 		return signToken(rest, getenv, stdout, stderr)
+	case "runner":
+		return runnerRole(ctx, rest, getenv, stdout, stderr)
 	}
 	if spec, ok := pending[name]; ok {
 		_, _ = fmt.Fprintf(stderr, "toposd: %s is not built yet; spec %s builds it\n", name, spec)
@@ -144,7 +147,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	// The runners stop with the process, and on every other way out of
 	// serve too; each drive then leaves its session to the next runner.
 	runCtx, stopRunners := context.WithCancel(ctx)
-	runners, err := startRunners(runCtx, cfg, st.sessions, queue, log)
+	runners, err := startRunners(runCtx, cfg, st.sessions, queue, runner.KindServe, log)
 	if err != nil {
 		stopRunners()
 		return fail(stderr, err)
@@ -194,9 +197,19 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	_, _ = fmt.Fprintf(stdout, "toposd: %s listening public=%s internal=%s store=%s\n",
 		version.Version, publicLn.Addr(), internalLn.Addr(), st.name)
 
+	internal := http.NewServeMux()
+	internal.Handle("/", probes)
+	if len(cfg.RunnerTokens) > 0 {
+		routes, err := runnerapi.New(runnerapi.Options{Store: st.sessions, Queue: queue, Tokens: cfg.RunnerTokens, Log: log})
+		if err != nil {
+			return fail(stderr, err)
+		}
+		internal.Handle(runnerapi.Root+"/", routes.Handler())
+		go routes.Reap(runCtx, reapInterval)
+	}
 	servers := []*http.Server{
 		{Handler: public, ReadHeaderTimeout: 10 * time.Second},
-		{Handler: probes, ReadHeaderTimeout: 10 * time.Second},
+		{Handler: internal, ReadHeaderTimeout: 10 * time.Second},
 	}
 	errc := make(chan error, len(servers))
 	for i, ln := range []net.Listener{publicLn, internalLn} {
@@ -264,10 +277,15 @@ func openStores(ctx context.Context, cfg config.Config) (stores, error) {
 	return stores{sessions: sessions, objects: objects, name: "dir:" + cfg.DataDir, ping: ping, close: release}, nil
 }
 
-// startRunners starts the runners that drive hosted sessions in
-// process, TOPOS_RUNNER_CAPACITY of them at once, and returns a channel
-// closed once they have stopped with ctx. A capacity of zero runs none.
-func startRunners(ctx context.Context, cfg config.Config, st session.Store, queue *runner.Queue, log *slog.Logger) (<-chan struct{}, error) {
+// startRunners starts the runners that drive hosted sessions,
+// TOPOS_RUNNER_CAPACITY of them at once, claiming from queue and running
+// over st, and returns a channel closed once they have stopped with ctx.
+// A capacity of zero runs none.
+// reapInterval is how often serve frees the claims of remote runners
+// that stopped renewing them.
+var reapInterval = 5 * time.Second
+
+func startRunners(ctx context.Context, cfg config.Config, st session.Store, queue runner.Claimer, kind string, log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)
@@ -289,7 +307,7 @@ func startRunners(ctx context.Context, cfg config.Config, st session.Store, queu
 	if err != nil {
 		return nil, err
 	}
-	r, err := runner.New(runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("serve-%s-%d", host, os.Getpid()), Kind: runner.KindServe})
+	r, err := runner.New(runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind})
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +319,65 @@ func startRunners(ctx context.Context, cfg config.Config, st session.Store, queu
 		}
 	}()
 	return done, nil
+}
+
+// runnerRole is the runner role (spec 016): it claims hosted sessions
+// from a toposd's internal listener and runs them, and serves only the
+// probes. Every connection is its own; toposd never dials it.
+func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("toposd runner", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cfg, err := config.Load(config.RoleRunner, getenv)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	client, err := runnerrole.New(cfg.InternalURL, cfg.RunnerTokens[0], &http.Client{Transport: otel.Transport(nil)})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	log := slog.New(slog.NewTextHandler(stderr, nil))
+	draining := make(chan struct{})
+	probes := health.Handler(health.Options{
+		Ready:   health.Checks(health.Check{Name: "draining", Run: notDraining(draining)}),
+		Timeout: 2 * time.Second, Version: version.Version, Commit: version.Commit, BuildTime: version.Date,
+	})
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", cfg.InternalAddr)
+	if err != nil {
+		return fail(stderr, fmt.Errorf("TOPOS_INTERNAL_ADDR: %w", err))
+	}
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	runners, err := startRunners(runCtx, cfg, client, client, runner.KindRunner, log)
+	if err != nil {
+		return fail(stderr, errors.Join(err, ln.Close()))
+	}
+	srv := &http.Server{Handler: probes, ReadHeaderTimeout: 10 * time.Second}
+	errc := make(chan error, 1)
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errc <- err
+		}
+	}()
+	_, _ = fmt.Fprintf(stdout, "toposd: %s runner claiming from %s internal=%s\n", version.Version, cfg.InternalURL, ln.Addr())
+	code := 0
+	select {
+	case <-ctx.Done():
+	case err := <-errc:
+		code = fail(stderr, err)
+	}
+	close(draining)
+	stop()
+	<-runners
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gracePeriod)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil && code == 0 {
+		code = fail(stderr, err)
+	}
+	return code
 }
 
 // identity is what the API asks through (spec 006): the verifier, the

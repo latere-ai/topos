@@ -178,7 +178,7 @@ func CheckBatch(id string, last, afterSeq uint64, events []Event, stored func(fr
 	seen := make(map[string]bool, len(events))
 	for i, e := range events {
 		if err := CheckID(PrefixEvent, e.ID); err != nil {
-			return false, err
+			return false, fmt.Errorf("%w: event id %q: %w", ErrInvalid, e.ID, err)
 		}
 		if seen[e.ID] {
 			return false, fmt.Errorf("%w: event %s repeats in the batch", ErrInvalid, e.ID)

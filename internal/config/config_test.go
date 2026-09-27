@@ -157,7 +157,7 @@ func TestServeRequiresAnIssuerAndThePublicURL(t *testing.T) {
 	if _, err := Load(RoleServe, env(map[string]string{"TOPOS_PUBLIC_URL": "http://localhost:8080", "TOPOS_LOCAL_ISSUER_KEY": pemOf(t, key), "HOME": "/home/topos", "TOPOS_MODELS_URL": "https://lux.example/anthropic"})); err != nil {
 		t.Fatalf("the local issuer alone: %v", err)
 	}
-	if _, err := Load(RoleRunner, env(nil)); err != nil {
+	if _, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example/anthropic"})); err != nil {
 		t.Fatalf("the runner reads no identity variable: %v", err)
 	}
 }
@@ -251,7 +251,25 @@ func TestTheRunnerVariables(t *testing.T) {
 			t.Errorf("%s: loaded", name)
 		}
 	}
-	if _, err := Load(RoleRunner, env(nil)); err != nil {
-		t.Fatalf("the runner role reads none of serve's: %v", err)
+	runnerVars := map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081/", "TOPOS_RUNNER_TOKEN": "new, old", "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
+	r, err := Load(RoleRunner, env(runnerVars))
+	if err != nil || r.InternalURL != "http://toposd:8081" || !slices.Equal(r.RunnerTokens, []string{"new", "old"}) || r.RunnerCapacity != DefaultRunnerCapacity || r.PublicURL != "" {
+		t.Fatalf("the runner role %+v, %v", r, err)
+	}
+	for name, mut := range map[string]map[string]string{
+		"no internal url":  {"TOPOS_INTERNAL_URL": ""},
+		"bad internal url": {"TOPOS_INTERNAL_URL": "toposd"},
+		"no token":         {"TOPOS_RUNNER_TOKEN": ""},
+		"no capacity":      {"TOPOS_RUNNER_CAPACITY": "0"},
+		"no models":        {"TOPOS_MODELS_URL": ""},
+	} {
+		vars := maps.Clone(runnerVars)
+		maps.Copy(vars, mut)
+		if _, err := Load(RoleRunner, env(vars)); err == nil {
+			t.Errorf("%s: loaded", name)
+		}
+	}
+	if s, err := Load(RoleServe, serve(map[string]string{"TOPOS_RUNNER_TOKEN": "t"})); err != nil || !slices.Equal(s.RunnerTokens, []string{"t"}) {
+		t.Fatalf("serve's runner tokens: %+v, %v", s.RunnerTokens, err)
 	}
 }

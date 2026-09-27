@@ -52,6 +52,9 @@ func (r *Runner) Serve(ctx context.Context, c Claimer, capacity int, report func
 			continue
 		}
 		claims, err := c.Claim(ctx, r.holder(), free, ClaimWait)
+		if err != nil && ctx.Err() != nil {
+			break
+		}
 		if err != nil {
 			report("", err)
 			sleep(ctx, claimBackoff)

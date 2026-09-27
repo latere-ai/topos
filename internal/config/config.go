@@ -98,6 +98,13 @@ type Config struct {
 	// MachineDir is where the helper lives inside each sandbox; empty is
 	// the machine's default under /tmp.
 	MachineDir string
+	// RunnerTokens are TOPOS_RUNNER_TOKEN: the bearers of the runner
+	// routes, the first the one the runner role sends. Empty mounts no
+	// runner route on serve.
+	RunnerTokens []string
+	// InternalURL is where the runner role reaches a toposd's internal
+	// listener.
+	InternalURL string
 }
 
 // Defaults of the runner variables.
@@ -169,6 +176,22 @@ func Load(role string, getenv Getenv) (Config, error) {
 	}
 	if sameEndpoint(c.PublicAddr, c.InternalAddr) {
 		problems = append(problems, "TOPOS_INTERNAL_ADDR must differ from TOPOS_PUBLIC_ADDR; both are "+c.PublicAddr)
+	}
+	c.RunnerTokens = list(strings.TrimSpace(getenv("TOPOS_RUNNER_TOKEN")), false)
+	if role == RoleRunner {
+		problems = append(problems, c.readRunner(getenv)...)
+		c.InternalURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_INTERNAL_URL")), "/")
+		if c.InternalURL == "" {
+			problems = append(problems, "TOPOS_INTERNAL_URL is required; it is the toposd internal listener the runner claims from")
+		} else if err := checkURL(c.InternalURL); err != nil {
+			problems = append(problems, "TOPOS_INTERNAL_URL "+err.Error())
+		}
+		if len(c.RunnerTokens) == 0 {
+			problems = append(problems, "TOPOS_RUNNER_TOKEN is required; the runner sends its first bearer")
+		}
+		if c.RunnerCapacity == 0 {
+			problems = append(problems, "TOPOS_RUNNER_CAPACITY is 0, and a runner that runs no session has nothing to do")
+		}
 	}
 	if role == RoleServe || role == RoleCheck {
 		var err error

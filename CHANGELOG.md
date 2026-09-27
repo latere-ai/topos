@@ -229,6 +229,13 @@ committed: the commit log already holds that.
   On Postgres a runner writes through its lease, and a batch from a runner
   whose lease another replica has taken over is refused with
   `lease_lost`, so two runners never interleave in one session.
+- `toposd runner` runs hosted sessions as a separate deployment: it claims
+  from the internal listener at `TOPOS_INTERNAL_URL` with the first bearer
+  of `TOPOS_RUNNER_TOKEN`, keeps each claim's lease by renewing it, and
+  writes the log only through it. `toposd serve` mounts the runner routes
+  on its internal listener when `TOPOS_RUNNER_TOKEN` is set, frees the
+  claims of a runner that stopped renewing, and with
+  `TOPOS_RUNNER_CAPACITY=0` runs no runner of its own.
 
 ## v0.7.0 - 2026-09-26
 
