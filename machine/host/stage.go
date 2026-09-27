@@ -5,6 +5,7 @@ package host
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -408,6 +409,15 @@ func (h *Host) stageBackground(ctx context.Context, r machine.ExecRequest) (mach
 	if err != nil {
 		return machine.ExecResult{}, errors.Join(fmt.Errorf("machine: read the job's output: %w", err), h.stop(ctx, l, 0), h.finish(ctx, l), log.Close(), remove())
 	}
+	// The job's handle is kept in its stage directory, so the end of a
+	// session whose later turns opened another machine still finds it.
+	b, err := json.Marshal(l.handle)
+	if err == nil {
+		err = os.WriteFile(filepath.Join(l.dir, jobHandle), b, 0o600)
+	}
+	if err != nil {
+		return machine.ExecResult{}, errors.Join(fmt.Errorf("machine: keep the job's handle: %w", err), h.stop(ctx, l, 0), h.finish(ctx, l), out.Close(), log.Close(), remove())
+	}
 	pid := stageGroup(l.handle)
 	job := &stageJob{l: l, done: make(chan struct{})}
 	h.stages[l.handle.ID] = job
@@ -455,6 +465,48 @@ func (h *Host) follow(ctx context.Context, l launched, out io.ReadCloser, log *o
 		errs = append(errs, fmt.Errorf("write the exit line: %w", err))
 	}
 	return errors.Join(append(errs, log.Close(), out.Close())...)
+}
+
+// jobHandle is the file in a job's stage directory that holds its
+// handle while the job runs.
+const jobHandle = "handle.json"
+
+// StopJobs stops every background job whose stage directory is still
+// under stageDir, each with KillGrace between SIGTERM and SIGKILL, and
+// removes the directories. A machine stops its own jobs at the session's
+// end; this reaches the jobs of machines the session opened before, one
+// per drive of a server's runner, which the last machine never held.
+func StopJobs(ctx context.Context, driver hostsandbox.Sandbox, stageDir string) error {
+	paths, err := filepath.Glob(filepath.Join(stageDir, "*", jobHandle))
+	if err != nil {
+		return err
+	}
+	h := &Host{opts: Options{Sandbox: &Sandbox{Driver: driver}}}
+	errs := make(chan error, len(paths))
+	for _, p := range paths {
+		go func() {
+			b, err := os.ReadFile(p)
+			if errors.Is(err, fs.ErrNotExist) {
+				errs <- nil
+				return
+			}
+			var handle hostsandbox.StageHandle
+			if err == nil {
+				err = json.Unmarshal(b, &handle)
+			}
+			if err != nil {
+				errs <- fmt.Errorf("machine: read the job's handle %s: %w", p, err)
+				return
+			}
+			l := launched{handle: handle, dir: filepath.Dir(p)}
+			errs <- errors.Join(h.stop(ctx, l, KillGrace), h.finish(ctx, l))
+		}()
+	}
+	var all []error
+	for range paths {
+		all = append(all, <-errs)
+	}
+	return errors.Join(all...)
 }
 
 // releaseStages stops every running job at the session's end, each with

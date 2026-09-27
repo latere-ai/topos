@@ -191,23 +191,28 @@ func (o HostOptions) open(id string, egress []string) (machine.Machine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &hostSession{Host: h, dataDir: o.DataDir, id: id}, nil
+	return &hostSession{Host: h, driver: o.Driver, dataDir: o.DataDir, id: id, stages: stages}, nil
 }
 
 // hostSession is the machine of a host session, which removes the
 // session's directories when the session ends.
 type hostSession struct {
 	*host.Host
+	driver  hostsandbox.Sandbox
 	dataDir string
 	id      string
+	stages  string
 }
 
+// Release at the session's end also stops the background jobs of the
+// machines earlier turns opened, each turn on a machine of its own,
+// before the directories they run in are removed.
 func (s *hostSession) Release(ctx context.Context, end bool) error {
 	err := s.Host.Release(ctx, end)
 	if !end {
 		return err
 	}
-	return errors.Join(err, RemoveHostSession(s.dataDir, s.id))
+	return errors.Join(err, host.StopJobs(ctx, s.driver, s.stages), RemoveHostSession(s.dataDir, s.id))
 }
 
 // RemoveHostSession removes the directories of the host session id

@@ -10,11 +10,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"latere.ai/x/pkg/hostsandbox"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/machine/host"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/srtstub"
@@ -359,5 +361,50 @@ func TestTheProbesOwnFailures(t *testing.T) {
 	})
 	if err := RemoveHostSession(spill.DataDir, id); err == nil {
 		t.Fatal("removed a session directory that cannot be removed")
+	}
+}
+
+// TestAJobOfAnEarlierTurnEndsWithTheSession: a background job started on
+// the machine of one drive, left running when that drive's machine was
+// let go idle, is stopped when a later drive's machine ends the session.
+func TestAJobOfAnEarlierTurnEndsWithTheSession(t *testing.T) {
+	o := hostOptions(t)
+	id := session.NewID(session.PrefixSession)
+	first, err := o.open(id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := first.Exec(t.Context(), machine.ExecRequest{Command: "/bin/sleep 30", Background: true})
+	if err != nil || job.PID == 0 {
+		t.Fatalf("job %+v, %v", job, err)
+	}
+	if err := first.Release(t.Context(), false); err != nil {
+		t.Fatal(err)
+	}
+	last, err := o.open(id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := last.Release(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(-job.PID, 0); err == nil {
+		t.Fatalf("the job's process group %d outlived its session", job.PID)
+	}
+	_, _, stages, err := hostDirs(o.DataDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(stages, "cmd-x"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stages, "cmd-x", "handle.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.StopJobs(t.Context(), o.Driver, stages); err == nil {
+		t.Fatal("stopped a job whose handle does not read")
+	}
+	if err := host.StopJobs(t.Context(), o.Driver, "["); err == nil {
+		t.Fatal("stopped the jobs of a malformed directory")
 	}
 }
