@@ -143,7 +143,7 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 		s.fail(c, "capability_unsupported", "the stub serves no terminal")
 		return
 	}
-	s.drive(c, sb, req, timeout)
+	s.drive(r.Context(), c, sb, req, timeout)
 }
 
 // fail sends the error frame and closes with 1011.
@@ -158,9 +158,10 @@ func (s *Server) fail(c *wsConn, code, detail string) {
 }
 
 // drive runs the command until it exits, its timeout passes, or the
-// client goes away.
-func (s *Server) drive(c *wsConn, sb sandbox, req execRequest, timeout time.Duration) {
-	cmd := exec.Command(lookPath(req.Command[0]), req.Command[1:]...)
+// client goes away. The stub ends the command itself in each case, input
+// first as Cella does, so the request's context never kills it.
+func (s *Server) drive(ctx context.Context, c *wsConn, sb sandbox, req execRequest, timeout time.Duration) {
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), lookPath(req.Command[0]), req.Command[1:]...)
 	cmd.Dir = workdir(sb, req.Workdir)
 	cmd.Env = environ(sb, req.Env)
 	cmd.WaitDelay = waitDelay

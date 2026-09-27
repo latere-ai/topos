@@ -183,34 +183,40 @@ func (w *sender) frame(kind byte, payload []byte) error {
 	return err
 }
 
-// input sends r as input frames and then the end frame. A read error of
-// r ends the input as its end does and is returned; a write error is the
-// session's, which its reader reports.
+// input sends r as input frames and then the end frame, and returns r's
+// read error, which ends the input as its end does.
 func (w *sender) input(r io.Reader) error {
 	var rerr error
 	if r != nil {
-		buf := make([]byte, chunk)
-		for {
-			n, err := r.Read(buf)
-			if n > 0 {
-				if werr := w.frame(frameInput, buf[:n]); werr != nil {
-					// The session failed; its reader reports that.
-					return rerr
-				}
-			}
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				rerr = fmt.Errorf("machine: read the command's input: %w", err)
-				break
-			}
-		}
+		rerr = w.pipe(r)
 	}
 	// A failed end frame is the session failing, which its reader reports.
 	_ = w.frame(frameEOF, nil)
 	return rerr
 }
+
+// pipe sends r's bytes as input frames until r ends. A frame that cannot
+// be written ends the copy without an error: the session failing is its
+// reader's to report, and a command that exits before it reads its input
+// is not a failure, as exec.Cmd drops EPIPE on a command's input.
+func (w *sender) pipe(r io.Reader) error {
+	buf := make([]byte, chunk)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 && !w.sent(buf[:n]) {
+			return nil
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("machine: read the command's input: %w", err)
+		}
+	}
+}
+
+// sent reports whether an input frame reached the session.
+func (w *sender) sent(p []byte) bool { return w.frame(frameInput, p) == nil }
 
 // readAll reads a session's output to its end, keeping at most limit
 // bytes and discarding the rest.

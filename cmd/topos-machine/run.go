@@ -47,7 +47,7 @@ func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return fail(stderr, "run [flags] -- <script>")
 	}
 	out := &frameWriter{w: stdout}
-	c, err := start(*dir, flags.Arg(0), *report)
+	c, err := start(ctx, *dir, flags.Arg(0), *report)
 	if err != nil {
 		return sent(out.json(frameFail, failure(err)))
 	}
@@ -95,12 +95,14 @@ type command struct {
 }
 
 // start starts the script with one pipe for its standard output and
-// standard error, in the order written, and one for its input.
-func start(dir, script string, report bool) (*command, error) {
+// standard error, in the order written, and one for its input. The helper
+// cancels a command itself, SIGTERM to its process group and SIGKILL after
+// the grace, so the context never kills it.
+func start(ctx context.Context, dir, script string, report bool) (*command, error) {
 	if report {
 		script = reportPrefix + script
 	}
-	cmd := exec.Command(shell, "-c", script)
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, "-c", script)
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	outR, outW, err := os.Pipe()
@@ -294,7 +296,7 @@ const jobWrapper = shell + ` -c "$1"; code=$?; printf '\n[job %d exited with cod
 // job starts a script detached in its own process group, with its output
 // in a new log in the jobs directory, and answers its pid and log at
 // once. The job outlives the helper and ends with the sandbox.
-func job(args []string, stdout, stderr io.Writer) int {
+func job(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("job", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	jobs := flags.String("jobs", "", "the directory of job logs")
@@ -312,7 +314,8 @@ func job(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return answer(stdout, response{Error: failure(fmt.Errorf("machine: create the job log: %w", err))})
 	}
-	cmd := exec.Command(shell, "-c", jobWrapper, "job", flags.Arg(0))
+	// A job outlives the helper that started it, and so its context.
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, "-c", jobWrapper, "job", flags.Arg(0))
 	cmd.Dir = *dir
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

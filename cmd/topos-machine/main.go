@@ -51,7 +51,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "run":
 		return runCommand(ctx, args[1:], stdin, stdout, stderr)
 	case "job":
-		return job(args[1:], stdout, stderr)
+		return job(ctx, args[1:], stdout, stderr)
 	case "fs":
 		return fileOp(ctx, args[1:], stdin, stdout, stderr)
 	}
