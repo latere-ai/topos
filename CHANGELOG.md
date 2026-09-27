@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.8.0-rc.2 - 2026-09-28
+
 - An Agent manifest names the repositories its sessions work in as
   `spec.repositories`, a list of `{url, ref}` with `ref` optional, checked
   as a session's are: at most 8, each an `https` URL that names its host
