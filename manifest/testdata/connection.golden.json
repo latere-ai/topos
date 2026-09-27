@@ -1,0 +1,87 @@
+[
+  {
+    "kind": "Connection",
+    "name": "github",
+    "status": {
+      "version": 1,
+      "digest": "sha256:6fe82dbed71d11b53df46bd70c22a642e8e538f99a19ccafb6759cff8138bab3",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "service": "github",
+      "mode": "agent",
+      "hosts": [
+        "api.github.com",
+        "github.com"
+      ],
+      "credential": "cred_77777777777777777777777777",
+      "inject": {
+        "header": "Authorization",
+        "format": "Bearer {value}"
+      }
+    }
+  },
+  {
+    "kind": "Agent",
+    "name": "triager",
+    "status": {
+      "id": "agent_00000000000000000000000001",
+      "version": 1,
+      "digest": "sha256:aeb92817c34de7a2b7e4f964c3e1a4044114c65dee423e7638324b686b331662",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "model": {
+        "name": "gpt-5",
+        "family": "openai",
+        "inputWindow": 400000,
+        "maxOutputTokens": 128000,
+        "pricing": {
+          "input": "1.25",
+          "output": "10"
+        }
+      },
+      "instructions": "Label each new issue by the area it touches and ask for a reproduction\nwhen one is missing.\n",
+      "tools": [],
+      "permissions": [
+        {
+          "action": "session.create",
+          "resource": "agent:triager"
+        }
+      ],
+      "identity": "agent",
+      "approvals": {
+        "mode": "confirm",
+        "thresholds": {
+          "flagAt": 0.3,
+          "askAt": 0.5,
+          "blockAt": 0.9
+        }
+      },
+      "threads": {
+        "maxDepth": 1,
+        "maxConcurrent": 4
+      },
+      "mcpServers": [
+        {
+          "name": "github",
+          "url": "https://api.github.com/mcp",
+          "connection": "github"
+        }
+      ],
+      "connections": [
+        "github"
+      ],
+      "machine": {
+        "kind": "host"
+      },
+      "limits": {
+        "turnTimeout": "30m",
+        "maxAge": "168h"
+      },
+      "context": {
+        "compactAt": 0.7
+      }
+    }
+  }
+]

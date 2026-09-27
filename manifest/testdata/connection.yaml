@@ -1,0 +1,34 @@
+# A Connection in agent mode and an agent that reaches GitHub through it,
+# over an MCP server and from its commands.
+apiVersion: topos.latere.ai/v1
+kind: Connection
+metadata:
+  name: github
+spec:
+  service: github
+  mode: agent
+  hosts: [api.github.com, github.com]
+  credential: github-bot
+---
+apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata:
+  name: triager
+spec:
+  model:
+    name: gpt-5
+    family: openai
+    inputWindow: 400000
+    maxOutputTokens: 128000
+    pricing: {input: "1.25", output: "10"}
+  instructionsFile: triager.md
+  tools: []
+  identity: agent
+  permissions:
+    - {action: session.create, resource: "agent:triager"}
+  mcpServers:
+    - {name: github, url: "https://api.github.com/mcp", connection: github}
+  connections: [github]
+  threads: {maxDepth: 1, maxConcurrent: 4}
+  limits: {turnTimeout: 30m}
+  context: {compactAt: 0.7}
