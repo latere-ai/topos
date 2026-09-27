@@ -137,7 +137,12 @@ client built on this package outside the module.
 | Each line `--output stream-json` prints is one appended event | `internal/toposcli.TestStreamJSONAndLimits` | built |
 | `--output stream-json` prints every appended event exactly once, in sequence | `TestCLIStreamJSONIsCompleteAndOrdered` | not built |
 | `topos rewind` restores a turn's files from the command | `internal/toposcli.TestRewindFromTheCommand` | built |
-| `attach`, `send`, `interrupt`, `apply`, `sessions` and `fork`, and `run --agent`, work as the command table says | one test per command in `internal/toposcli` | not built |
+| `attach`, `send`, `interrupt`, `apply`, `sessions` and `fork` work as the command table says | one test per command in `internal/toposcli` | not built |
+| `run --agent <file>` runs the file's first Agent ([[003-manifest]]) with its model, instructions, tools, mode, subagents, budget and limits, and `--session` and `topos confirm` continue the session with the same agent from its bundle blob without the file; a bundle that does not match its digest, or is gone, stops the run | `internal/toposcli.TestRunAnAgentManifest`, `internal/toposcli.TestTheManifestModeHoldsAcrossAConfirmation`, `internal/toposcli.TestAnAgentSpawnsItsSubagent` | built |
+| `--model` and `--mode` replace the agent's `spec.model` and mode | `internal/toposcli.TestTheModelFlagReplacesTheManifestModel`, `internal/toposcli.TestTheManifestModeHoldsAcrossAConfirmation` | built |
+| Without `--agent`, `$XDG_CONFIG_HOME/topos/agent.yaml`, or `$HOME/.config/topos/agent.yaml` when `XDG_CONFIG_HOME` is unset, runs when present, and the built-in agent otherwise | `internal/toposcli.TestTheDefaultAgentManifest` | built |
+| A refused manifest, a missing file, `--agent` with `--session`, a file with no Agent, and a field a local run does not apply yet (hooks, client tools, output limits, the advisor, skills, MCP servers, memory stores, connections, a Cella machine) exit 2 before a session is created | `internal/toposcli.TestAgentManifestRefusals` | built |
+| `run --agent <name>` runs an agent applied to the local state | `TestRunAnAppliedAgentByName` | not built |
 | `client.Store` passes `session/storetest` against a test toposd | `TestClientStoreConformance` | not built |
 | A client error decodes into `*client.Error` with the envelope's code and detail | `TestClientDecodesErrors` | not built |
 | The examples import only the supported set | `TestExamplesImportOnlyTheSupportedSet` | not built |
