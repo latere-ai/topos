@@ -25,12 +25,18 @@ const importPath = "latere.ai/x/topos/prompts"
 func constants(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, func(fi fs.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }, 0)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range pkgs["prompts"].Files {
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, e.Name()), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, d := range f.Decls {
 			g, ok := d.(*ast.GenDecl)
 			if !ok || g.Tok != token.CONST {

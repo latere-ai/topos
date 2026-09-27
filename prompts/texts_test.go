@@ -331,8 +331,13 @@ func TestRenderingIsConcurrentAndRepeatable(t *testing.T) {
 					errs <- err
 					return
 				}
-				if b, err := Execute(c.name, c.data); err != nil || a != b {
-					errs <- fmt.Errorf("%s rendered %q, then %q (%v)", c.name, a, b, err)
+				b, err := Execute(c.name, c.data)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if a != b {
+					errs <- fmt.Errorf("%s rendered %q, then %q", c.name, a, b)
 					return
 				}
 			}
