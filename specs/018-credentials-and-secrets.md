@@ -3,7 +3,7 @@ title: "Credentials, connections and secrets: write-only credentials, the agent'
 status: drafted
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 003-manifest.md, 004-session-log.md, 006-identity.md, 009-machines.md]
-affects: [internal/credentials/, internal/egressproxy/, session/inputcheck/, runner/, machine/cella/]
+affects: [internal/credentials/, internal/identity/, internal/egressproxy/, session/inputcheck/, runner/, machine/cella/, manifest/, internal/hosted/, internal/runnerapi/, internal/runnerrole/, internal/server/, internal/config/, test/stubs/]
 effort: large
 created: 2026-09-27
 updated: 2026-09-27
@@ -112,12 +112,37 @@ permissions, so a token of an ended session is refused before it
 expires, and a token for a session the authorizer never allowed opens
 nothing.
 
-A runner reaches tokens through a `TokenSource(ctx, audience) (token,
-expiry, error)` built for the session: in `serve` it calls toposd's
-minter in process, and in the runner role it asks the internal
-listener, which answers only for a lease the runner holds. Each token
-is cached until 2 minutes before its expiry. After a scope change or a
-lost lease every cached token is dropped.
+toposd speaks to the identity provider through one interface, which
+an installation without one does not configure:
+
+| Call | When | What toposd sends |
+|---|---|---|
+| create | an apply of an agent that has no identity yet, after the authorizer allowed it; a refusal or an unanswered call refuses the apply | the agent's id as the identity provider's `ref`, its name, the owner, and the applier; the answer's subject is kept as the agent's `status.identity` ([[003-manifest]]) and carried to every later version |
+| archive | the archive route, before toposd archives the agent, so a failed call leaves the agent as it was and a retry is idempotent | the agent's id, with the confirmation `permanent: true` |
+| disable | once the archived agent has no session that has not ended: at the archive itself, and in a pass at start and on every reaper pass ([[014-store]]) over the provider's list of archived identities | the agent's id and subject, with `permanent: true` |
+| mint | a runner's token request, above | the subject, the audience and the `session` claim |
+
+The owner is read from the applier's verified token: the organization
+its `org_id` claim names, or else the person of its `sub`. toposd holds
+its own token from the identity provider until 2 minutes before its
+expiry and reads its client secret from a file at each fetch, so the
+secret rotates in place. The variables are [[002-scaffold-and-configuration]]'s;
+the identity provider's variables need the installation's authorizer,
+since only it can check the `session` claim.
+
+A runner reaches its session's credentials through a `TokenSource`
+built for each drive: `Token(ctx, audience, workload)` answers a value
+and its expiry. In `serve` it calls toposd's minter in process, which
+refuses once the drive's lease is lost; in the runner role it asks the
+internal listener ([[016-runners]]), which answers only at the lease's
+current generation. The audience `lux` answers the session's Lux key
+for the workload, and any other audience a token. Each answer is cached
+until 2 minutes before its expiry. After a `session.scope_changed` or a
+lost lease every cached answer is dropped. An installation that mints
+nothing for an audience says so (`not_minted`), and the runner then
+uses the installation's own credential below. A session of an agent
+with no identity, on an installation with an identity provider, fails
+its turn with `agent_identity_missing`.
 
 ### Model access
 
@@ -128,13 +153,24 @@ the session, which the authorizer has Lux create: one for the runner's
 own requests and one for the session's sandbox, each marked with the
 session and its workload, lasting at most the session's lease plus 15
 minutes and renewed with it, and carrying the session's budget
-([[007-models]]). The runner presents its key as the model connection's
-credential. The sandbox's key is a Cella Secret scoped to Lux's host
-and its model doors' path, a placeholder inside the sandbox that Cella's
-egress gateway swaps in ([[009-machines]]); it opens nothing but models,
-because no other core accepts a Lux key. Lux enforces the budget per
-key and records each call against the session and its workload, so the
-ledger keeps a session's own spend apart from its sandbox's
+([[007-models]]). toposd generates each value, `lux_` and 40 random
+characters of `[A-Za-z0-9_-]` as Lux mints its own, and sends the
+authorizer only its SHA-256 (`PUT` of the session's key for the
+workload); the value lives in toposd's memory and in the runner's. A
+request for a key with less than 10 minutes left sends the same hash
+again, which renews it; a new lease generation or a new toposd process
+generates a new value, whose hash replaces the old key, so a runner
+that lost its lease loses its key at the next claim. The runner
+presents its key as the model connection's credential, asked again for
+every model request. The sandbox's key is a Cella Secret named after
+the sandbox with `-lux`, mounted as `LUX_KEY` and scoped to Lux's host,
+and to its model doors' path once Cella scopes a Secret by path; the
+sandbox holds a placeholder that Cella's egress gateway swaps in
+([[009-machines]]), and the runner applies the Secret again whenever
+the value changes. It opens nothing but models, because no other core
+accepts a Lux key. Lux enforces the budget per key and records each
+call against the session and its workload, so the ledger keeps a
+session's own spend apart from its sandbox's
 ([[023-events-and-observability]]).
 
 ### Without an identity provider
@@ -144,7 +180,10 @@ credentials: `TOPOS_MODELS_KEY` for models and the file of
 `TOPOS_CELLA_TOKEN_FILE` for Cella ([[002-scaffold-and-configuration]]).
 Every session acts as the installation, with no per-agent reach and no
 per-session binding; the operator's choice of those credentials is the
-bound.
+bound. An installation whose authorizer creates session keys refuses to
+start with `TOPOS_MODELS_KEY` set, and one with an identity provider
+with `TOPOS_CELLA_TOKEN_FILE` set, so neither installation credential
+is used beside the per-session ones.
 
 ### Connections
 
@@ -241,6 +280,9 @@ fresh ones, so no cached allow crosses a change.
 | `credential_value_too_short` | a value under 8 bytes |
 | `connection_not_connected` | a `person` connection with no credential of the initiator's |
 | `scope_widening_refused` | a widening beyond the agent's permissions or the widener's rights, or of an irreversible action |
+| `identity_refused` | the identity provider refused to create or archive the agent's identity; the detail names its code |
+| `identity_unavailable` | the identity provider did not answer an apply's or an archive's call; try again |
+| `agent_identity_missing` | a session's turn on an installation with an identity provider, of an agent that has no identity there |
 
 ## Not in this spec
 
@@ -262,6 +304,10 @@ egress swapping a Secret by host and path.
 | A value sealed under an old key opens after a new key is prepended, the background rewrap moves it, and a ciphertext copied to another row does not open | `TestCredentialsEnvelopeRotation`, `TestCiphertextBoundToItsRow` | not built |
 | Every call a session makes to a core carries a token whose subject is the agent's identity and whose `session` claim names the session and the workload, and none carries toposd's own identity | `TestSessionCallsCarryTheAgentsSessionToken` | not built |
 | toposd mints a token only for the holder of the session's current lease, and a runner that lost its lease gets none | `TestTokensOnlyForTheLeaseHolder` | not built |
+| An agent first applied with an identity provider gets its identity after the authorizer's allow, with the owner its applier's token names, and keeps its subject as `status.identity`; a refused or unanswered create refuses the apply; the archive route archives the identity with `permanent: true` before the agent; the archived agent's identity is disabled with `permanent: true` once no session of it is left unended, and not before | `internal/server.TestAgentIdentityLifecycle` | not built |
+| A `TokenSource` caches each answer until 2 minutes before its expiry, answers nothing after its lease is lost, and a `session.scope_changed` drops what it holds | `runner.TestTokenSourceCachesAndDrops` | not built |
+| The stub identity provider answers the host's token, create, archive, disable, list and mint with the host contract's codes, and the stub session keys answer the key routes | `test/stubs/idpstub.TestTheStubAnswersTheHostContract`, `test/stubs/keystub.TestTheStubAnswersTheKeyRoutes` | not built |
+| The identity provider's and the session keys' variables are read; each URL needs its partners and the authorizer, and neither installation credential is accepted beside them | `internal/config.TestTheCredentialVariables` | not built |
 | A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules` | not built |
 | A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `TestSessionAndSandboxLuxKeys` | not built |
 | A `person` connection uses the initiator's credential, and fails with `connection_not_connected` when there is none | `TestPersonConnectionUsesInitiatorsCredential` | not built |
