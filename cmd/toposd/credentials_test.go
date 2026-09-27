@@ -19,6 +19,7 @@ import (
 	"latere.ai/x/pkg/authz/stub"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/hosted"
 	cellamachine "latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/test/stubs/cellastub"
 	"latere.ai/x/topos/test/stubs/idpstub"
@@ -191,4 +192,41 @@ func TestSessionCallsCarryTheAgentsSessionToken(t *testing.T) {
 			t.Fatalf("serve exited %d", code)
 		}
 	})
+}
+
+// TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox: with
+// TOPOS_MODELS_URL a Lux root that Lux publishes under another address,
+// as an installation reaches Lux at its in-cluster Service, every model
+// request of the runner goes to the configured root, where the published
+// one does not even resolve, while the sandbox is given the published
+// root as LUX_URL, its Lux key is scoped to that host, and its egress
+// allowlist admits that host and the git host its token is for.
+func TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox(t *testing.T) {
+	const published = "https://lux.public.example/v1/models"
+	vars, s := credentialStubs(t)
+	s.lux.Publish(published)
+	maps.Copy(vars, map[string]string{"TOPOS_MODELS_URL": s.lux.URL(), "TOPOS_RUNNER_CAPACITY": "1"})
+	publicURL, _, stop := startServe(t, vars)
+	_, id := createHostedSession(t, publicURL, vars, "cella")
+	waitAnswered(t, publicURL, vars, id)
+	checkSessionCredentials(t, s, id)
+	name := cellamachine.SandboxName(id)
+	sb, ok := s.cella.Sandbox(name)
+	if !ok {
+		t.Fatal("no sandbox")
+	}
+	if got := sb.Spec.Env[hosted.EnvLuxURL]; got != published {
+		t.Errorf("the sandbox's %s is %q, want the published root %q", hosted.EnvLuxURL, got, published)
+	}
+	if sec, _, ok := s.cella.Secret(name + "-lux"); !ok || !slices.Equal(sec.Spec.Scope.Hosts, []string{"lux.public.example"}) {
+		t.Errorf("the sandbox's Lux key is scoped to %v", sec.Spec.Scope.Hosts)
+	}
+	for _, host := range []string{"lux.public.example", "origo.example"} {
+		if !slices.Contains(sb.Spec.Network.Egress.AllowedHosts, host) {
+			t.Errorf("the sandbox's egress %v does not admit %s", sb.Spec.Network.Egress.AllowedHosts, host)
+		}
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("serve exited %d", code)
+	}
 }

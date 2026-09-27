@@ -10,6 +10,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -377,13 +378,24 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		close(done)
 		return done, nil
 	}
+	// TOPOS_MODELS_URL may name a Lux root, whose discovery document
+	// names each family's door; a URL that does not answer stops the
+	// start, as an issuer that does not answer does. The runners reach
+	// each door under TOPOS_MODELS_URL itself, which may be an address
+	// inside the installation's network, and a sandbox reaches Lux at the
+	// root Lux published its doors under, since a sandbox leaves only
+	// through Cella's egress gateway, toward public hosts.
+	doors, err := dialect.Discover(ctx, &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}, cfg.ModelsURL)
+	if err != nil {
+		return nil, fmt.Errorf("TOPOS_MODELS_URL: %w", err)
+	}
 	cella := hosted.Cella(hosted.CellaOptions{})
 	if cfg.CellaURL != "" {
 		helpers, err := hosted.ReadHelpers(cfg.MachineHelpers)
 		if err != nil {
 			return nil, fmt.Errorf("TOPOS_MACHINE_HELPERS: %w", err)
 		}
-		co := hosted.CellaOptions{URL: cfg.CellaURL, Helpers: helpers, Dir: cfg.MachineDir, ModelsURL: cfg.ModelsURL, OrigoURL: cfg.OrigoURL, Log: log}
+		co := hosted.CellaOptions{URL: cfg.CellaURL, Helpers: helpers, Dir: cfg.MachineDir, ModelsURL: cmp.Or(doors.Root(), cfg.ModelsURL), OrigoURL: cfg.OrigoURL, Log: log}
 		if cfg.CellaTokenFile != "" {
 			co.Token = client.TokenFile(cfg.CellaTokenFile)
 		}
@@ -397,14 +409,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		}
 	}
 	machines := hosted.ByKind(cella, onHost)
-	// TOPOS_MODELS_URL may name a Lux root, whose discovery document
-	// names each family's door; a URL that does not answer stops the
-	// start, as an issuer that does not answer does.
-	doors, err := dialect.Discover(ctx, &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}, cfg.ModelsURL)
-	if err != nil {
-		return nil, fmt.Errorf("TOPOS_MODELS_URL: %w", err)
-	}
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors, Machines: machines})
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines})
 	if err != nil {
 		return nil, err
 	}

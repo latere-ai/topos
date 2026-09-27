@@ -61,7 +61,8 @@ type Options struct {
 	ModelsURL string
 	ModelsKey string
 	// Doors are the family doors TOPOS_MODELS_URL names when it is a Lux
-	// root, as dialect.Discover read them; nil uses it as it is.
+	// root, as dialect.Discover read them and under TOPOS_MODELS_URL
+	// itself (models.Doors.Under); nil uses it as it is.
 	Doors models.Doors
 	// Model streams the requests; dialect.Model when nil.
 	Model models.Model
@@ -227,8 +228,10 @@ type CellaOptions struct {
 	// presented when the server mints no Cella token for the session;
 	// nil presents none.
 	Token client.TokenSource
-	// ModelsURL is TOPOS_MODELS_URL: the sandbox's Lux key is scoped to
-	// its host, and the sandbox reads it as LUX_URL.
+	// ModelsURL is the Lux root a sandbox reaches: the root Lux
+	// published its doors under when TOPOS_MODELS_URL is a Lux root, and
+	// TOPOS_MODELS_URL otherwise. The sandbox's Lux key is scoped to its
+	// host, and the sandbox reads it as LUX_URL.
 	ModelsURL string
 	// OrigoURL is TOPOS_ORIGO_URL, the git host whose token the sandbox's
 	// git sends; empty mounts none.
