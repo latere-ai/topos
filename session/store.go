@@ -236,8 +236,8 @@ func SameEvent(a, b Event) bool {
 }
 
 // ApplyBatch updates the Session header from appended events: the last
-// sequence, the turn, the update time, and the status and stop reason of
-// the last session.status event.
+// sequence, the turn, the update time, the status and stop reason of the
+// last session.status event, and the budget of the last session.resumed.
 func ApplyBatch(s *Session, events []Event) {
 	for _, e := range events {
 		if e.Seq > s.LastSeq {
@@ -248,6 +248,13 @@ func ApplyBatch(s *Session, events []Event) {
 		}
 		if t := e.Time.UTC(); t.After(s.UpdatedAt) {
 			s.UpdatedAt = t
+		}
+		if e.Type == TypeSessionResumed && !e.Redacted() {
+			var r SessionResumed
+			if e.Decode(&r) == nil {
+				s.Budget.MaxCostUSDMicro = r.MaxCostUSDMicro
+			}
+			continue
 		}
 		if e.Type != TypeSessionStatus || e.Redacted() {
 			continue

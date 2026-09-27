@@ -268,7 +268,7 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 		path := strings.NewReplacer("{name}", "reviewer", "{ref}", "reviewer", "{n}", "1", "{id}", s.ID, "{digest}", string(s.Agent.Digest), "{event_id}", before[0].ID).Replace(rt.path)
 		body := map[string]string{
 			"applyAgent": agentYAML("reviewer", "Changed."), "createSession": `{"agent":"reviewer"}`, "endSession": `{"reason":"canceled"}`,
-			"sendEvent": `{"type":"user.interrupt"}`, "redactEvent": `{"reason":"x"}`,
+			"sendEvent": `{"type":"user.interrupt"}`, "redactEvent": `{"reason":"x"}`, "resumeSession": `{}`,
 		}[rt.op]
 		if a := f.do(rt.method, "/v1"+path, "alice", body); a.status != http.StatusServiceUnavailable || a.code() != auth.CodeAuthorizerUnavailable {
 			t.Errorf("%s: %d %s", rt.op, a.status, a.body)
@@ -729,5 +729,65 @@ func TestHostSessionsBehindTheSwitch(t *testing.T) {
 	}
 	if a := on.do(http.MethodDelete, "/v1/sessions/"+s.ID, "alice", ""); a.status != http.StatusNoContent || len(deleted) != 1 || deleted[0] != s.ID {
 		t.Fatalf("delete: %d %s, cleaned %v", a.status, a.body, deleted)
+	}
+}
+
+// TestResumeAfterTheCapIsRaised: a session idle on its budget resumes
+// with a raised cap, which session.resumed carries into the header and
+// makes pending input; any other status, a budget already spent and a
+// budget of zero are refused (spec 007).
+func TestResumeAfterTheCapIsRaised(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	resume := func(body string) answer {
+		return f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/resume", "alice", body)
+	}
+	if a := resume(`{}`); a.code() != CodeConflict {
+		t.Fatalf("a resume of a session not stopped on its budget: %d %s", a.status, a.body)
+	}
+	cost := int64(500)
+	var batch []session.Event
+	for _, e := range []struct {
+		typ     session.Type
+		payload any
+	}{
+		{session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning}},
+		{session.TypeModelRequest, session.ModelRequest{CostUSDMicro: &cost}},
+		{session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopBudget}},
+	} {
+		ev, err := session.NewEvent(e.typ, e.payload, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		batch = append(batch, ev)
+	}
+	session.Stamp(s.ID, 1, batch)
+	if _, err := f.sessions.Append(t.Context(), s.ID, 1, batch); err != nil {
+		t.Fatal(err)
+	}
+	if a := resume(`{"max_cost_usd_micro":0}`); a.code() != CodeInvalidRequest {
+		t.Fatalf("a budget of zero: %d %s", a.status, a.body)
+	}
+	if a := resume(`{"max_cost_usd_micro":400}`); a.code() != CodeConflict {
+		t.Fatalf("a budget already spent: %d %s", a.status, a.body)
+	}
+	var resumed session.Session
+	a := resume(`{"reason":"budget_raised","max_cost_usd_micro":1000}`)
+	a.decode(t, &resumed)
+	if a.status != http.StatusOK || resumed.Budget.MaxCostUSDMicro == nil || *resumed.Budget.MaxCostUSDMicro != 1000 {
+		t.Fatalf("resume: %d %s", a.status, a.body)
+	}
+	evs, err := f.sessions.Events(t.Context(), s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := evs[len(evs)-1]
+	var p session.SessionResumed
+	if last.Type != session.TypeSessionResumed || last.Decode(&p) != nil || !strings.HasSuffix(p.By.Subject, "|alice") || p.Reason != "budget_raised" {
+		t.Fatalf("the last event %s %s", last.Type, last.Payload)
+	}
+	if !session.HasPendingInput(evs) {
+		t.Fatal("a resumed session holds no pending input")
 	}
 }

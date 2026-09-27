@@ -615,22 +615,6 @@ func (t *turn) interrupted() bool {
 	return false
 }
 
-// spent is the budget meter: the cost of every model.request of every
-// thread.
-func spent(log []session.Event) int64 {
-	var total int64
-	for _, e := range log {
-		if e.Type != session.TypeModelRequest || e.Redacted() {
-			continue
-		}
-		var p session.ModelRequest
-		if e.Decode(&p) == nil && p.CostUSDMicro != nil {
-			total += *p.CostUSDMicro
-		}
-	}
-	return total
-}
-
 // checkBudget is the pre-request check of spec 007: the spend so far
 // plus the next request's input, priced at the input rate, against the
 // session's ceiling.
@@ -647,7 +631,7 @@ func (t *turn) checkBudget(ctx context.Context) error {
 		}
 		return t.finish(ctx, session.StopError, models.CodeUnpriced, e)
 	}
-	if spent(t.events())+est >= *max {
+	if session.Spent(t.events())+est >= *max {
 		return t.finish(ctx, session.StopBudget, "")
 	}
 	return nil

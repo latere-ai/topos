@@ -195,6 +195,26 @@ paths:
           description: OK
         default:
           $ref: "#/components/responses/Error"
+  /sessions/{id}/resume:
+    post:
+      operationId: resumeSession
+      summary: Resume a session idle on its budget once the cap is raised
+      x-topos-actions:
+        - session.resume
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
   /sessions/{id}/events:
     get:
       operationId: listEvents

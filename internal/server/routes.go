@@ -35,6 +35,8 @@ func table() []route {
 			op: "getSession", summary: "Get a session", status: http.StatusOK, handle: (*call).getSession},
 		{method: http.MethodPost, path: "/sessions/{id}/end", actions: a(authorizer.ActionSessionEnd),
 			op: "endSession", summary: "End an idle session completed or canceled", status: http.StatusOK, body: MaxBody, handle: (*call).endSession},
+		{method: http.MethodPost, path: "/sessions/{id}/resume", actions: a(authorizer.ActionSessionResume),
+			op: "resumeSession", summary: "Resume a session idle on its budget once the cap is raised", status: http.StatusOK, body: MaxBody, handle: (*call).resumeSession},
 		{method: http.MethodDelete, path: "/sessions/{id}", actions: a(authorizer.ActionSessionDelete),
 			op: "deleteSession", summary: "Delete a session, its log and its blobs", status: http.StatusNoContent, handle: (*call).deleteSession},
 		{method: http.MethodGet, path: "/sessions/{id}/events", actions: a(authorizer.ActionSessionRead),

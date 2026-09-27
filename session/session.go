@@ -206,9 +206,26 @@ func Marshal(v any) ([]byte, error) {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
+// Spent is the budget meter of spec 007: the cost of every model.request
+// of every thread.
+func Spent(log []Event) int64 {
+	var total int64
+	for _, e := range log {
+		if e.Type != TypeModelRequest || e.Redacted() {
+			continue
+		}
+		var p ModelRequest
+		if e.Decode(&p) == nil && p.CostUSDMicro != nil {
+			total += *p.CostUSDMicro
+		}
+	}
+	return total
+}
+
 // HasPendingInput reports whether a session's log holds input a runner
-// should act on: a resuming user event, a message, a confirmation or a
-// client tool's result, after its last session.status (the stop reason
+// should act on: a resuming user event, a message, a confirmation, a
+// client tool's result, or a session.resumed after a budget stop, after
+// its last session.status (the stop reason
 // table of spec 004). A session that has never run has pending input once
 // its first message is in the log.
 func HasPendingInput(evs []Event) bool {
@@ -216,7 +233,7 @@ func HasPendingInput(evs []Event) bool {
 		switch ev.Type {
 		case TypeSessionStatus:
 			return false
-		case TypeUserMessage, TypeUserToolConfirmation, TypeUserToolResult:
+		case TypeUserMessage, TypeUserToolConfirmation, TypeUserToolResult, TypeSessionResumed:
 			return true
 		}
 	}

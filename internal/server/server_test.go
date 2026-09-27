@@ -200,6 +200,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"listSessions":      {http.MethodGet, "/v1/sessions", ""},
 		"getSession":        {http.MethodGet, "/v1/sessions/" + s.ID, ""},
 		"endSession":        {http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`},
+		"resumeSession":     {http.MethodPost, "/v1/sessions/" + s.ID + "/resume", `{}`},
 		"deleteSession":     {http.MethodDelete, "/v1/sessions/" + doomed.ID, ""},
 		"listEvents":        {http.MethodGet, "/v1/sessions/" + ended.ID + "/events", ""},
 		"sendEvent":         {http.MethodPost, "/v1/sessions/" + ended.ID + "/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"x"}]}}`},

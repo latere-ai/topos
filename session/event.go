@@ -32,6 +32,7 @@ const (
 	TypeSessionStatus        Type = "session.status"
 	TypeSessionMachine       Type = "session.machine"
 	TypeScopeChanged         Type = "session.scope_changed"
+	TypeSessionResumed       Type = "session.resumed"
 	TypeSessionError         Type = "session.error"
 	TypeMemoryAttached       Type = "memory.attached"
 	TypeMemorySynced         Type = "memory.synced"
@@ -46,7 +47,7 @@ var Known = map[Type]bool{
 	TypeUserToolResult: true, TypeAgentMessage: true, TypeAgentToolUse: true,
 	TypeToolResult: true, TypeThreadStarted: true, TypeThreadEnded: true,
 	TypeThreadMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
-	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true,
+	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeSessionResumed: true,
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true,
 }
@@ -352,6 +353,16 @@ type ScopeChanged struct {
 	New    []json.RawMessage `json:"new"`
 	Reason string            `json:"reason,omitempty"`
 	Until  string            `json:"until,omitempty"`
+}
+
+// SessionResumed is the payload of session.resumed: a session idle on its
+// budget resumes once its cap is raised or its payer's credit restored
+// (spec 007). MaxCostUSDMicro is the session's budget from here on,
+// absent when it has none.
+type SessionResumed struct {
+	By              Sender `json:"by"`
+	Reason          string `json:"reason,omitempty"`
+	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitempty"`
 }
 
 // MemorySynced is the payload of memory.synced.

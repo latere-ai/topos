@@ -1275,3 +1275,53 @@ func TestASpentBudgetAtTheGatewayStopsTheTurnWithBudget(t *testing.T) {
 		}
 	}
 }
+
+// TestAResumedSessionContinuesTheTurn: after a budget stop, a
+// session.resumed with a raised cap is the input the next claim acts
+// on, and the turn continues from where it stopped with no message.
+func TestAResumedSessionContinuesTheTurn(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	limit := int64(200)
+	e.s.Budget.MaxCostUSDMicro = &limit
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "echo", `{"text":"x"}`)), reply(ir.StopEndTurn, text("done")))
+	e.send(ctx, "Spend.")
+	s, err := e.store.Get(ctx, e.s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Budget.MaxCostUSDMicro = &limit
+	evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := e.h.RunTurn(ctx, s, evs, e.log); err != nil || out.StopReason != session.StopBudget {
+		t.Fatalf("outcome %+v, %v", out, err)
+	}
+	raised := int64(1_000_000)
+	resumed, err := session.NewEvent(session.TypeSessionResumed, session.SessionResumed{By: e.s.Initiator, Reason: "budget_raised", MaxCostUSDMicro: &raised}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.appendEvents(ctx, resumed)
+	if evs, err = e.store.Events(ctx, e.s.ID, 1, 0); err != nil || !session.HasPendingInput(evs) {
+		t.Fatalf("no pending input after session.resumed: %v", err)
+	}
+	e.running(ctx)
+	if s, err = e.store.Get(ctx, e.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if s.Budget.MaxCostUSDMicro == nil || *s.Budget.MaxCostUSDMicro != raised {
+		t.Fatalf("the header's budget %v, want the raised cap", s.Budget.MaxCostUSDMicro)
+	}
+	if evs, err = e.store.Events(ctx, e.s.ID, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.h.RunTurn(ctx, s, evs, e.log)
+	if err != nil || out.StopReason != session.StopEndTurn {
+		t.Fatalf("the resumed turn: %+v, %v", out, err)
+	}
+	if n := len(e.stub.Requests()); n != 2 {
+		t.Fatalf("%d requests, want the one refused before the stop to be sent after the resume", n)
+	}
+}
