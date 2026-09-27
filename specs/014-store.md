@@ -1,6 +1,6 @@
 ---
 title: "The server's store: the Postgres schema, toposd on the directory store, the blob store, retention and deletion"
-status: validated
+status: dispatched
 track: core
 depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 006-identity.md]
 affects: [internal/store/postgres/, internal/store/dir/, internal/blob/, internal/serve/]
