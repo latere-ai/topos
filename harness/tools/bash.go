@@ -6,6 +6,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"strings"
 	"syscall"
@@ -21,17 +22,19 @@ const (
 	BashMaxTimeoutMS     = 600000
 )
 
-const bashSchema = `{
+// bashSchema states the timeouts from their constants, so the schema
+// cannot drift from what runBash enforces.
+var bashSchema = fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "command": {"type": "string", "minLength": 1, "description": "The command, run by /bin/sh -c."},
-    "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 600000, "description": "Milliseconds before the command is killed; default 120000."},
+    "timeout_ms": {"type": "integer", "minimum": 1, "maximum": %d, "description": "Milliseconds before the command is killed; default %d."},
     "background": {"type": "boolean", "description": "Start the command detached and return at once with its pid and log; default false."},
     "description": {"type": "string", "description": "What the command does, in a few words."}
   },
   "required": ["command"],
   "additionalProperties": false
-}`
+}`, BashMaxTimeoutMS, BashDefaultTimeoutMS)
 
 func bashTool() Tool {
 	return newBuiltin(NameBash, prompts.Text(prompts.ToolBash), bashSchema, Properties{Effect: EffectWrite}, runBash)

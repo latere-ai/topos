@@ -33,16 +33,18 @@ const (
 	binarySniff = 8000
 )
 
-const readSchema = `{
+// readSchema states the default from ReadDefaultLimit, so the schema
+// cannot drift from what runRead does.
+var readSchema = fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "path": {"type": "string", "minLength": 1, "description": "The file to read: absolute, or relative to the working directory."},
     "offset": {"type": "integer", "minimum": 1, "description": "The first line to show, counted from 1."},
-    "limit": {"type": "integer", "minimum": 1, "description": "How many lines to show; default 2000."}
+    "limit": {"type": "integer", "minimum": 1, "description": "How many lines to show; default %d."}
   },
   "required": ["path"],
   "additionalProperties": false
-}`
+}`, ReadDefaultLimit)
 
 func readTool() Tool {
 	return newBuiltin(NameRead, prompts.Text(prompts.ToolRead), readSchema, Properties{Parallel: true, Effect: EffectRead}, runRead)

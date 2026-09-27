@@ -5,6 +5,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -21,12 +22,14 @@ const (
 	TodoCompleted  = "completed"
 )
 
-const todoSchema = `{
+// todoSchema states the limit from TodoLimit, so the schema cannot drift
+// from what runTodo enforces.
+var todoSchema = fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "todos": {
       "type": "array",
-      "description": "The whole list, which replaces the previous one; at most 100 items.",
+      "description": "The whole list, which replaces the previous one; at most %d items.",
       "items": {
         "type": "object",
         "properties": {
@@ -41,7 +44,7 @@ const todoSchema = `{
   },
   "required": ["todos"],
   "additionalProperties": false
-}`
+}`, TodoLimit)
 
 func todoTool() Tool {
 	return newBuiltin(NameTodo, prompts.Text(prompts.ToolTodo), todoSchema, Properties{Parallel: true, Effect: EffectNone}, runTodo)

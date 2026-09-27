@@ -301,9 +301,8 @@ func agentModels(r manifest.Resolved) []string {
 		if s.Advisor != nil {
 			add(s.Advisor.Model.Name)
 		}
-		// Spec 013's deepest graph is four levels; the bound also ends
-		// a pin that names its own agent.
-		if depth >= 4 {
+		// The resolver pins subagents no deeper than a thread may spawn.
+		if depth >= harness.MaxDepthLimit {
 			return
 		}
 		for _, sub := range s.Subagents {
