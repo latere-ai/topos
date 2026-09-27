@@ -53,7 +53,10 @@ snapshots are not. Migrations follow the family's shared
 | `sink_outbox` | `id` | a sink event awaiting delivery ([[023-events-and-observability]]) |
 
 `toposd serve` applies the migrations at start on `TOPOS_DB_URL`
-through `pgxmigrate`, and a replica that finds a newer schema than it
+through `pgxmigrate` (golang-migrate's pgx v5 driver, `pgx5://`); the
+store in `internal/store/postgres` does so when it opens. The first
+migration holds `sessions`, `events` and `blobs`; each other table joins
+with the spec that uses it, and a replica that finds a newer schema than it
 knows refuses to start. Serving queries use `TOPOS_DB_POOL_URL` when it
 is set, in pgx's describe-cached execution mode so a
 transaction-pooling proxy accepts them, with JSON bound as text;
@@ -125,11 +128,15 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `session/storetest` passes on the Postgres store and on the directory store, the Postgres tier through Testcontainers | `TestPostgresStoreConformance`, and `TestDirStoreConformance` of [[004-session-log]] | not built |
+| `session/storetest` passes on the Postgres store and on the directory store, the Postgres tier against `DATABASE_URL` or a container it starts | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`), `session/dir.TestDirStoreConformance` | built |
 | Two replicas appending to one session through Postgres keep a dense sequence, and the one that is not the writer gets `sequence_conflict` | `TestPostgresTwoReplicasOneWriter` | not built |
-| A `Watch` on one replica sees an event appended on another within one second, and within the poll interval with notifications dropped | `TestPostgresWatchAcrossReplicas` | not built |
+| A `Watch` on one store instance sees an event another instance appends through `NOTIFY`, with the poll an hour away | `internal/store/postgres.TestWatchSeesAnotherStoresAppends` (tag `postgres`) | built |
+| A `Watch` sees an event within the poll interval with notifications dropped | `TestPostgresWatchAcrossReplicas` | not built |
 | A second `toposd serve` on the same data directory refuses to start | `TestDirModeIsOneReplica` | not built |
-| A blob is readable by digest from each of the three blob locations, and a corrupted object answers `ErrCorrupt` | `TestBlobStoreLocations` | not built |
+| A blob in the database is readable by digest, and one whose bytes no longer match answers `ErrCorrupt` | `internal/store/postgres.TestACorruptBlobIsRefused` (tag `postgres`) | built |
+| A blob is readable by digest from the `file://` and `s3://` locations | `TestBlobStoreLocations` | not built |
 | Deleting a session removes its rows and every blob object; a crash between the two leaves no session without its blobs, and the reaper removes the orphans | `TestSessionDeletionOrder` | not built |
 | A session past `expires_at` is ended `expired`, and an ended one past its retention is deleted | `TestReaperExpiresAndDeletes` | not built |
-| Migrations apply on an empty database at start, and a replica that finds a newer schema refuses to start | `TestMigrationsAtStart` | not built |
+| Migrations apply on an empty database when the store opens | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`, every subtest opens a fresh database) | built |
+| A lease that expires is taken over by the next holder, and the old holder's renew fails and its `Lost` closes | `internal/store/postgres.TestAnExpiredLeaseIsTakenOverAndTheOldHolderLosesIt` (tag `postgres`) | built |
+| A replica that finds a newer schema than it knows refuses to start | `TestMigrationsAtStart` | not built |

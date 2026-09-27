@@ -81,3 +81,18 @@ func TestPortZeroTwiceIsTwoSockets(t *testing.T) {
 		t.Fatalf("port 0 twice refused: %v", err)
 	}
 }
+
+func TestTheDatabaseURLs(t *testing.T) {
+	c, err := Load(env(map[string]string{"TOPOS_DB_URL": "postgres://u@db/topos", "TOPOS_DB_POOL_URL": " postgres://u@pool/topos "}))
+	if err != nil || c.DBURL != "postgres://u@db/topos" || c.DBPoolURL != "postgres://u@pool/topos" {
+		t.Fatalf("config %+v, %v", c, err)
+	}
+	for name, vars := range map[string]map[string]string{
+		"pool without direct": {"TOPOS_DB_POOL_URL": "postgres://u@pool/topos"},
+		"not postgres":        {"TOPOS_DB_URL": "mysql://u@db/topos"},
+	} {
+		if _, err := Load(env(vars)); err == nil {
+			t.Fatalf("%s: loaded", name)
+		}
+	}
+}

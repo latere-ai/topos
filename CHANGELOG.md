@@ -90,6 +90,13 @@ committed: the commit log already holds that.
   summarizes the conversation up to it from a transcript that leaves the
   redacted content out, so the removed value never reaches the model
   again.
+- Sessions can live in Postgres: `TOPOS_DB_URL` names the database the
+  migrations and change notifications use, and `TOPOS_DB_POOL_URL`, when
+  set, serves queries through a transaction-pooling proxy. An append is
+  one transaction, watchers follow `LISTEN` with a poll as the fallback,
+  and a session's one-writer lease expires and is taken over when its
+  holder stops renewing it. `go test -tags postgres` runs the store's
+  tests against `DATABASE_URL` or a Postgres container it starts.
 
 ## v0.7.0 - 2026-09-26
 

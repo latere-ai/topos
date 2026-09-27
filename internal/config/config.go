@@ -34,6 +34,12 @@ type Config struct {
 	// InternalAddr is where the probes and metrics listen for the cluster,
 	// and, from spec 016, the runner protocol.
 	InternalAddr string
+	// DBURL is the Postgres the migrations and LISTEN use, directly;
+	// empty keeps sessions in the directory store (spec 014).
+	DBURL string
+	// DBPoolURL serves queries through a transaction-pooling proxy; empty
+	// serves them on DBURL.
+	DBPoolURL string
 }
 
 // Load reads every variable through getenv and returns the configuration,
@@ -42,6 +48,8 @@ func Load(getenv Getenv) (Config, error) {
 	c := Config{
 		PublicAddr:   withDefault(getenv("TOPOS_PUBLIC_ADDR"), DefaultPublicAddr),
 		InternalAddr: withDefault(getenv("TOPOS_INTERNAL_ADDR"), DefaultInternalAddr),
+		DBURL:        strings.TrimSpace(getenv("TOPOS_DB_URL")),
+		DBPoolURL:    strings.TrimSpace(getenv("TOPOS_DB_POOL_URL")),
 	}
 	var problems []string
 	if err := checkAddr(c.PublicAddr); err != nil {
@@ -49,6 +57,14 @@ func Load(getenv Getenv) (Config, error) {
 	}
 	if err := checkAddr(c.InternalAddr); err != nil {
 		problems = append(problems, "TOPOS_INTERNAL_ADDR "+err.Error())
+	}
+	if c.DBPoolURL != "" && c.DBURL == "" {
+		problems = append(problems, "TOPOS_DB_POOL_URL needs TOPOS_DB_URL, which the migrations and LISTEN use")
+	}
+	for name, v := range map[string]string{"TOPOS_DB_URL": c.DBURL, "TOPOS_DB_POOL_URL": c.DBPoolURL} {
+		if v != "" && !strings.HasPrefix(v, "postgres://") && !strings.HasPrefix(v, "postgresql://") {
+			problems = append(problems, name+" must be a postgres:// URL")
+		}
 	}
 	if sameEndpoint(c.PublicAddr, c.InternalAddr) {
 		problems = append(problems, "TOPOS_INTERNAL_ADDR must differ from TOPOS_PUBLIC_ADDR; both are "+c.PublicAddr)

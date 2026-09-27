@@ -5,6 +5,10 @@
 cover:
   trim_prefix: latere.ai/x/topos/
   exempt:
+    internal/store/postgres: >-
+      measured by the postgres tier (go test -tags postgres), which runs the
+      store conformance suite against a real Postgres from DATABASE_URL or a
+      container it starts; the hermetic suite has neither.
     cmd/topos: >-
       main hands the process's streams, environment and working directory to
       internal/toposcli, where the command and its tests live; the wiring is
@@ -126,3 +130,10 @@ identity:
         spec 006 asks through latere.ai/x/pkg/authz; toposd decides nothing
         until then, because it serves no action to decide
       until: 2026-12-31
+
+# Serving queries read the pooled URL when it is set; the migrations and
+# LISTEN keep the direct one (spec 014).
+postgres:
+  role: pooled
+  direct_env: TOPOS_DB_URL
+  pool_env: TOPOS_DB_POOL_URL

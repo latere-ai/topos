@@ -79,7 +79,7 @@ of an installation.
 |---|---|---|---|
 | unit | none | the Go toolchain, `/bin/sh`, `git` | every package, the scripted model, the directory store, the host machine in temporary directories; the hermetic gate runs it |
 | e2e | `integration` | the stubs, built by the test | `toposd` and `topos` as processes against the stubs |
-| postgres | `postgres` | a container engine | the Postgres store, the queue and the store conformance suite, with a Postgres started by Testcontainers |
+| postgres | `postgres` | `DATABASE_URL`, or a container engine | the Postgres store, the queue and the store conformance suite, against `DATABASE_URL` when set, otherwise a `postgres:17-alpine` the test binary starts with `podman` or `docker` and removes at exit, each test on a database of its own |
 | cella | `cella` | a container engine | `machine/cella` against a real Cella control plane with its local driver |
 | instructions | `instructions` | a model credential | the instruction tests of [[008-tools]] and [[011-instructions-and-skills]] |
 | tasks | `tasks` | the CI key | the task suite and the release bar ([[025-task-suite]]) |
