@@ -12,7 +12,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
+	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -965,5 +967,33 @@ func TestServeKeepsBlobsWhereTheURLSays(t *testing.T) {
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestReapEveryRunsUntilTheContextEnds: the reaper runs on each tick,
+// logs what it could not do, and stops with its context.
+func TestReapEveryRunsUntilTheContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	var logged syncBuffer
+	ran := make(chan struct{}, 8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		reapEvery(ctx, time.Millisecond, func(context.Context) error {
+			ran <- struct{}{}
+			return errors.New("the store is down")
+		}, slog.New(slog.NewTextHandler(&logged, nil)))
+	}()
+	for range 2 {
+		select {
+		case <-ran:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the reaper never ran")
+		}
+	}
+	cancel()
+	<-done
+	if !strings.Contains(logged.String(), "the store is down") {
+		t.Fatalf("the log %q", logged.String())
 	}
 }
