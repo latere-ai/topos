@@ -102,6 +102,10 @@ type Options struct {
 	// Secrets are the session's named secrets, each under the variable
 	// its placeholder arrives in.
 	Secrets []v1.SecretMount
+	// Env is the sandbox's environment beside the secrets' placeholders,
+	// such as the model gateway's URL a sandbox's own model key is for;
+	// it never holds a credential.
+	Env map[string]string
 	// TTL is the session's remaining age, the sandbox's backstop; zero
 	// leaves Cella's default.
 	TTL time.Duration
@@ -496,6 +500,7 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 			Image:       m.o.Image,
 			Workdir:     m.o.Workdir,
 			Resources:   m.o.Resources,
+			Env:         m.o.Env,
 			Secrets:     m.o.Secrets,
 			Network:     v1.Network{Egress: v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: hosts}},
 			Lifecycle:   life,

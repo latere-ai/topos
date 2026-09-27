@@ -86,6 +86,7 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 		o.Resources = v1.Resources{CPU: "2", Memory: "4Gi"}
 		o.Egress = []string{"proxy.golang.org", "github.com", " "}
 		o.Secrets = []v1.SecretMount{{Name: "gh", Env: "GITHUB_TOKEN"}}
+		o.Env = map[string]string{"LUX_URL": "https://lux.example/v1/models"}
 		o.TTL = 2 * time.Hour
 	})
 	if !f.m.Created() {
@@ -112,6 +113,9 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 	}
 	if len(spec.Secrets) != 1 || spec.Secrets[0] != (v1.SecretMount{Name: "gh", Env: "GITHUB_TOKEN"}) {
 		t.Errorf("secrets = %+v", spec.Secrets)
+	}
+	if len(spec.Env) != 1 || spec.Env["LUX_URL"] != "https://lux.example/v1/models" {
+		t.Errorf("env = %+v", spec.Env)
 	}
 	if spec.Lifecycle != (v1.Lifecycle{AutoStop: "900s", TTL: "7200s", AutoDelete: v1.DurationNever}) {
 		t.Errorf("lifecycle = %+v", spec.Lifecycle)
