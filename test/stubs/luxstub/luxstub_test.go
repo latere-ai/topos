@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"latere.ai/x/pkg/llmdialect/anthropic"
 	"latere.ai/x/pkg/llmdialect/bridge"
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/openairesp"
@@ -175,5 +176,38 @@ func TestAResponsesReasoningItemStreamsAsTheProviderSendsIt(t *testing.T) {
 	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`[`)}}}}})
 	if code, body := post(t, s.URL()+PathResponses, `{"model":"m","stream":true,"input":"hi"}`); code != http.StatusOK || strings.Contains(body, "response.completed") {
 		t.Fatalf("an unreadable reasoning item: %d %s", code, body)
+	}
+}
+
+func TestARedactedThinkingBlockStreamsAsTheMessagesAPISendsIt(t *testing.T) {
+	s := New(t)
+	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{
+		{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{}`)}},
+		{Type: ir.BlockRedactedThinking, Redacted: "r1"},
+		{Type: ir.BlockText, Text: "done"},
+	}}})
+	code, body := post(t, s.URL()+PathMessages, `{"model":"m","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	if code != http.StatusOK {
+		t.Fatalf("%d %s", code, body)
+	}
+	dec := anthropic.NewBackend(anthropic.BackendOptions{}).NewEventDecoder(strings.NewReader(body))
+	var blocks []ir.Block
+	for {
+		ev, err := dec.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ev.Type == ir.EventBlockStart {
+			if ev.Index != len(blocks) {
+				t.Fatalf("block %d started at index %d", len(blocks), ev.Index)
+			}
+			blocks = append(blocks, *ev.Block)
+		}
+	}
+	if len(blocks) != 2 || blocks[0].Type != ir.BlockRedactedThinking || blocks[0].Redacted != "r1" || blocks[1].Type != ir.BlockText {
+		t.Fatalf("blocks %+v", blocks)
 	}
 }
