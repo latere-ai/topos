@@ -1,0 +1,18 @@
+data: {"choices":[{"delta":{"role":"assistant"},"index":0,"logprobs":null}],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"Reading the entry point."},"index":0,"logprobs":null}],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"","name":"read"},"id":"call_01","index":0,"type":"function"}]},"index":0,"logprobs":null}],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"path\":\"main.go\"}"},"index":0}]},"index":0,"logprobs":null}],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"","name":"grep"},"id":"call_02","index":1,"type":"function"}]},"index":0,"logprobs":null}],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"pattern\":\"func main\"}"},"index":1}]},"index":0,"logprobs":null}],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"tool_calls","index":0,"logprobs":null}],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":0,"id":"msg_stub","model":"m","object":"chat.completion.chunk","usage":{"completion_tokens":80,"completion_tokens_details":{"reasoning_tokens":0},"prompt_tokens":1200,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":1280}}
+
+data: [DONE]
+
