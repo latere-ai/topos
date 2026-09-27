@@ -90,6 +90,40 @@ func CodecVersion(d ir.Dialect) string {
 	return string(d) + "@" + v
 }
 
+// encoded is a request in its connection's dialect: the codec, the body,
+// the path it is posted to, and what the encoding lost.
+type encoded struct {
+	be   llmdialect.Backend
+	body []byte
+	path string
+	loss []string
+}
+
+func encode(req models.Request) (encoded, error) {
+	be, path, err := codec(req.Connection.EffectiveDialect())
+	if err != nil {
+		return encoded{}, err
+	}
+	ireq := req.IR
+	ireq.Model = req.Connection.Model
+	ireq.Stream = true
+	body, err := be.EncodeRequest(&ireq)
+	if err != nil {
+		return encoded{}, &models.EncodeError{Err: err}
+	}
+	return encoded{be: be, body: body, path: path, loss: ireq.Loss.Strings()}, nil
+}
+
+// Encode is the body Stream would send for req: the bytes a replay
+// hashes against a recorded request (spec 007).
+func (m *Model) Encode(req models.Request) ([]byte, error) {
+	enc, err := encode(req)
+	return enc.body, err
+}
+
+// Codec is CodecVersion, the codec this build encodes a dialect with.
+func (m *Model) Codec(d ir.Dialect) string { return CodecVersion(d) }
+
 // Stream sends one request and returns its stream.
 func (m *Model) Stream(ctx context.Context, req models.Request) (models.Stream, error) {
 	conn := req.Connection
@@ -100,19 +134,13 @@ func (m *Model) Stream(ctx context.Context, req models.Request) (models.Stream, 
 		return nil, errors.New("models: a scripted connection is played by models/scripted, not sent over HTTP")
 	}
 	d := conn.EffectiveDialect()
-	be, path, err := codec(d)
+	enc, err := encode(req)
 	if err != nil {
 		return nil, err
 	}
-	ireq := req.IR
-	ireq.Model = conn.Model
-	ireq.Stream = true
-	body, err := be.EncodeRequest(&ireq)
-	if err != nil {
-		return nil, &models.EncodeError{Err: err}
-	}
+	body := enc.body
 	sum := sha256.Sum256(body)
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(conn.BaseURL, "/")+path, bytes.NewReader(body))
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(conn.BaseURL, "/")+enc.path, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("models: build the request: %w", err)
 	}
@@ -152,14 +180,14 @@ func (m *Model) Stream(ctx context.Context, req models.Request) (models.Stream, 
 			RequestSHA256: hex.EncodeToString(sum[:]),
 			RequestSize:   int64(len(body)),
 			Codec:         CodecVersion(d),
-			Loss:          ireq.Loss.Strings(),
+			Loss:          enc.loss,
 		},
 	}
 	if req.Capture {
 		s.result.RequestBytes = body
 	}
 	s.reader = &recordingReader{r: resp.Body, raw: &s.raw}
-	s.dec = be.NewEventDecoder(s.reader)
+	s.dec = enc.be.NewEventDecoder(s.reader)
 	return s, nil
 }
 
@@ -323,4 +351,7 @@ func (s *stream) Result() models.Result { return s.result }
 
 func (s *stream) Close() error { return s.body.Close() }
 
-var _ models.Model = (*Model)(nil)
+var (
+	_ models.Model   = (*Model)(nil)
+	_ models.Encoder = (*Model)(nil)
+)
