@@ -302,4 +302,14 @@ func TestSpendRefusalsAreNotRetried(t *testing.T) {
 	if _, ok := SpendRefused(errors.New("plain")); ok {
 		t.Fatal("a plain error is a spend refusal")
 	}
+	core := fmt.Errorf("machine: %w", &SpendError{Core: "cella", Code: "spend_exceeded", Err: errors.New("the sandbox allowance is spent")})
+	if code, ok := SpendRefused(core); !ok || code != "spend_exceeded" || Retryable(core) || !strings.Contains(core.Error(), "cella refused for spend (spend_exceeded)") {
+		t.Fatalf("a core's refusal: %q %v, %v", code, ok, core)
+	}
+	if _, ok := SpendRefused(&SpendError{Core: "cella", Code: "quota", Err: errors.New("x")}); ok {
+		t.Fatal("a core's refusal for another reason is a spend refusal")
+	}
+	if !errors.Is(core, errors.Unwrap(errors.Unwrap(core))) {
+		t.Fatal("a core's refusal does not unwrap")
+	}
 }

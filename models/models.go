@@ -202,12 +202,38 @@ var retryableStream = []string{"overloaded", "rate_limit", "server_error", "api_
 // otherwise retried; a spent budget does not come back by waiting.
 var spendRefusals = []string{"budget_exhausted", "spend_exceeded"}
 
-// SpendRefused reports whether err is the gateway refusing a request
-// because the caller's budget is spent, and names the refusal.
+// SpendError is a spend refusal from a core other than the model
+// gateway: Cella refusing a sandbox create or a command because the
+// session's allowance for sandbox time is spent. Code is one of the
+// spend refusals; the gateway's own arrive as HTTPError, and
+// SpendRefused reads both.
+type SpendError struct {
+	// Core names the core that refused, such as "cella".
+	Core string
+	Code string
+	Err  error
+}
+
+func (e *SpendError) Error() string {
+	return "models: " + e.Core + " refused for spend (" + e.Code + "): " + e.Err.Error()
+}
+
+func (e *SpendError) Unwrap() error { return e.Err }
+
+// SpendCode reports whether a core's refusal code is a spend refusal.
+func SpendCode(code string) bool { return slices.Contains(spendRefusals, code) }
+
+// SpendRefused reports whether err is a core refusing a request because
+// the caller's budget is spent, the model gateway or another core, and
+// names the refusal.
 func SpendRefused(err error) (string, bool) {
 	var he *HTTPError
-	if errors.As(err, &he) && slices.Contains(spendRefusals, he.Type) {
+	if errors.As(err, &he) && SpendCode(he.Type) {
 		return he.Type, true
+	}
+	var se *SpendError
+	if errors.As(err, &se) && SpendCode(se.Code) {
+		return se.Code, true
 	}
 	return "", false
 }
