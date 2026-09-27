@@ -182,6 +182,7 @@ func TestDenyList(t *testing.T) {
 	for name, want := range map[string]bool{
 		"GITHUB_TOKEN": true, "db_password": true, "OPENAI_API_KEY": true, "SIGNING_PRIVATE_KEY": true,
 		"AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true, "TOPOS_MODELS_KEY": true, "TOPOS_TOKEN": true,
+		"TOPOS_LOCAL_ISSUER_KEY": true, "TOPOS_CREDENTIALS_KEY": true, "TOPOS_DB_URL": true, "topos_blob_secret_key": true,
 		"PATH": false, "HOME": false, "TOKENIZER": false, "AWS_REGION": false,
 	} {
 		if EnvDenied(name) != want {

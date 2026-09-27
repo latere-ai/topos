@@ -69,12 +69,17 @@ func within(p, target string, dir bool) bool {
 var envSuffixes = []string{"_TOKEN", "_SECRET", "_PASSWORD", "_API_KEY", "_PRIVATE_KEY"}
 
 // envNames are the variables refused by name.
-var envNames = []string{"AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "TOPOS_MODELS_KEY", "TOPOS_TOKEN"}
+var envNames = []string{"AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}
+
+// envPrefix is Topos's own configuration, refused whole: a server's
+// holds its signing key, its credentials key and its database URL,
+// whose names no suffix catches.
+const envPrefix = "TOPOS_"
 
 // EnvDenied reports whether a variable is kept from commands.
 func EnvDenied(name string) bool {
 	upper := strings.ToUpper(name)
-	if slices.Contains(envNames, upper) {
+	if strings.HasPrefix(upper, envPrefix) || slices.Contains(envNames, upper) {
 		return true
 	}
 	for _, s := range envSuffixes {
