@@ -113,7 +113,7 @@ func TestParseBarChecksItsFigures(t *testing.T) {
 		{head + "baseline: 0.8\nnoise: 0\nthreshold: 0.8\n" + runs, "is not the mean"},
 		{head + "baseline: 0.9\nnoise: 0.1\nthreshold: 0.8\n" + runs, "is not twice"},
 		{head + "baseline: 0.9\nnoise: 0\nthreshold: 0.85\n" + runs, "rounded down"},
-		{head + "colour: blue\n", "colour"},
+		{head + "shade: blue\n", "shade"},
 	} {
 		_, err := ParseBar([]byte(c.src))
 		if err == nil || !strings.Contains(err.Error(), c.want) {

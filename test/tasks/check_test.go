@@ -23,7 +23,7 @@ func TestParseCheckRefuses(t *testing.T) {
 		{"file: {path: a}\n", "check.yaml"},
 		{"- {}\n", "sets 0 kinds"},
 		{"- {absent: [a], unchanged: [b]}\n", "sets 2 kinds"},
-		{"- colour: [a]\n", "colour"},
+		{"- shade: [a]\n", "shade"},
 		{"- go: {args: []}\n", "no args"},
 		{"- file: {equals: a}\n", "no path"},
 		{"- file: {path: a, matches: '('}\n", "missing closing"},

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -142,7 +143,7 @@ func Run(ctx context.Context, o Options) (Report, error) {
 				return rep.finish(start), ctx.Err()
 			}
 			if err != nil {
-				r = RunResult{Task: t.ID, Run: i, Reason: "the run could not run: " + err.Error()}
+				r = RunResult{Task: t.ID, Run: i, Reason: "the suite could not run it: " + err.Error()}
 			}
 			rep.Runs = append(rep.Runs, r)
 			rep.SpendUSDMicro += r.CostUSDMicro
@@ -264,9 +265,9 @@ type run struct {
 
 // RunTask runs a task once, as its n-th run: it copies the starting
 // files into a fresh working directory, drives one session over it to
-// the end of its turn, and evaluates the checker. The error is a run
-// that could not be set up; everything after the session starts is in
-// the result.
+// the end of its turn, and evaluates the checker. How the session ended
+// and what the checker said are in the result; the error is a run the
+// suite could not set up, drive or judge.
 func RunTask(ctx context.Context, t Task, o Options, n int) (RunResult, error) {
 	started := time.Now()
 	base, err := os.MkdirTemp(o.Work, fmt.Sprintf("%s-%s-%d-", t.Category, t.Name, n))
@@ -294,8 +295,7 @@ func RunTask(ctx context.Context, t Task, o Options, n int) (RunResult, error) {
 // start lays out the starting files: the fixture copied, the bundle
 // cloned, or an empty directory.
 func (r *run) start(ctx context.Context) error {
-	switch {
-	case r.t.Bundle:
+	if r.t.Bundle {
 		cmd := exec.CommandContext(ctx, "git", "clone", "--quiet", filepath.Join(r.t.Dir, FileBundle), r.workdir)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("tasks: clone %s: %w: %s", FileBundle, err, out)
@@ -303,8 +303,12 @@ func (r *run) start(ctx context.Context) error {
 		return nil
 	}
 	fixture := filepath.Join(r.t.Dir, DirFixture)
-	if _, err := os.Stat(fixture); err == nil {
+	_, err := os.Stat(fixture)
+	switch {
+	case err == nil:
 		return copyTree(fixture, r.workdir)
+	case !errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("tasks: %w", err)
 	}
 	return os.MkdirAll(r.workdir, 0o755)
 }

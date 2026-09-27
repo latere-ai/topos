@@ -218,7 +218,7 @@ func TestAModelTheCatalogDoesNotKnow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Passed != 0 || !strings.Contains(rep.Runs[0].Reason, "the run could not run") {
+	if rep.Passed != 0 || !strings.Contains(rep.Runs[0].Reason, "the suite could not run it") {
 		t.Fatalf("report %+v", rep)
 	}
 	stub.Script("house-model",

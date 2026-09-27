@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestTheSuiteAgainstAModel is the tasks tier of spec 026, and with the
@@ -40,8 +41,22 @@ func TestTheSuiteAgainstAModel(t *testing.T) {
 	if err := os.MkdirAll(o.Work, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if deadline, ok := t.Deadline(); ok {
+		t.Logf("go test ends this run at %s; a whole suite needs -timeout 0", deadline.Format(time.RFC3339))
+	}
+	// The report so far is written after every run, so a run cut short
+	// by the test's timeout still leaves one.
+	partial := Report{Model: o.Connection.Model, Commit: o.Commit}
+	start := time.Now()
 	o.OnRun = func(r RunResult) {
 		t.Logf("%s run %d: passed %v, %d steps, %s, %s", r.Task, r.Run, r.Passed, r.Steps, usd(r.CostUSDMicro), r.Reason)
+		partial.Runs = append(partial.Runs, r)
+		partial.SpendUSDMicro += r.CostUSDMicro
+		p := partial
+		p.incomplete("the run was still going when this report was written")
+		if err := WriteReport(out, p.finish(start)); err != nil {
+			t.Errorf("write the report so far: %v", err)
+		}
 	}
 	rep, err := Run(t.Context(), o)
 	if err != nil {
