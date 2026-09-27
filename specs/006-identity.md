@@ -81,7 +81,7 @@ gains fields.
 | Action | Kind | Resource fields | Asked at |
 |---|---|---|---|
 | `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner`, `identity` | the agent routes of [[015-api]] |
-| `session.create` | `session` | `agent`, `agent_version`, `agent_owner`, `runner`, `machine`, `initiator` | session create; the authorizer applies the initiator cap here |
+| `session.create` | `session` | `agent`, `agent_version`, `agent_owner`, `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, empty when it has none) | session create; the authorizer applies the initiator cap here |
 | `session.read`, `session.list` | `session` | `agent`, `owner`, `runner` | session get, list, events list, stream |
 | `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
@@ -96,10 +96,11 @@ gains fields.
 | `memory_store.write` | `memory_store` | `name`, `owner`, `session`, `initiator`, `partition` | a document write, and a session attaching the store `read_write` ([[020-memory-stores]]) |
 
 The initiator cap and the sender rule are the authorizer's policy, not
-toposd's: toposd passes the initiator and each sender in the resource,
-and the authorizer refuses a session whose agent's permissions exceed
-what its initiator could do, and a send from someone who could not
-have started the session.
+toposd's: toposd passes the initiator, the permissions of the agent
+version the session pins, read from its bundle, and each sender in the
+resource, and the authorizer refuses a session whose agent's
+permissions exceed what its initiator could do, and a send from
+someone who could not have started the session.
 
 ### Limits
 
@@ -195,6 +196,7 @@ authorizer.
 | A token older than the age bound, with a wrong audience, or from an unlisted issuer is refused `unauthenticated` | `internal/auth.TestVerificationRules` | built |
 | An allow's limits decode member by member, a member toposd does not know is ignored, and one that does not decode refuses the create `authorizer_unavailable` | `authorizer.TestDecodeLimitsReadsEveryMember`, `authorizer.TestDecodeLimitsRefusesWhatItCannotApply`, `internal/auth.TestLimitsAtCreate` | built |
 | A `session.create` allow with limits lowers the session's budget, turn timeout and age, and sets its retention and scope | `internal/server.TestLimitsApplyAtCreate` | built |
+| `session.create` carries the permissions of the agent version the session pins, an older pinned version its own and an agent with none an empty list | `internal/server.TestSessionCreateCarriesTheAgentsPermissions` | built |
 | The limits' `always_confirm`, `always_allow` and `thresholds` reach the session's permission policy | `TestLimitListsReachThePolicy` | not built: the session header keeps no permission lists yet |
 | `toposd token` prints a token the same toposd accepts, refuses a `--ttl` over 24 h, and opens no store | `cmd/toposd.TestTokenRoleRoundTrip` | built |
 | The owner policy lets the creator and the admin subjects act and denies everyone else, narrowed by a key's grants | `internal/auth.TestOwnerPolicyRows` | built |
