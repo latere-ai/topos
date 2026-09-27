@@ -137,17 +137,21 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		}
 	}()
 	queue := runner.NewQueue(st.sessions, 0)
-	api, err := server.New(server.Options{
+	so := server.Options{
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
-		PublicURL: cfg.PublicURL, Log: log, Notify: queue.Notify,
-	})
+		PublicURL: cfg.PublicURL, Log: log, Notify: queue.Notify, HostSessions: cfg.HostSessions,
+	}
+	if cfg.HostSessions {
+		so.Deleted = func(id string) error { return hosted.RemoveHostSession(cfg.DataDir, id) }
+	}
+	api, err := server.New(so)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	// The runners stop with the process, and on every other way out of
 	// serve too; each drive then leaves its session to the next runner.
 	runCtx, stopRunners := context.WithCancel(ctx)
-	runners, err := startRunners(runCtx, cfg, st.sessions, queue, runner.KindServe, log)
+	runners, err := startRunners(runCtx, cfg, getenv, st.sessions, queue, runner.KindServe, log)
 	if err != nil {
 		stopRunners()
 		return fail(stderr, err)
@@ -277,28 +281,49 @@ func openStores(ctx context.Context, cfg config.Config, log *slog.Logger) (store
 	return stores{sessions: sessions, objects: objects, name: "dir:" + cfg.DataDir, ping: ping, close: release}, nil
 }
 
-// startRunners starts the runners that drive hosted sessions,
-// TOPOS_RUNNER_CAPACITY of them at once, claiming from queue and running
-// over st, and returns a channel closed once they have stopped with ctx.
-// A capacity of zero runs none.
 // reapInterval is how often serve frees the claims of remote runners
 // that stopped renewing them.
 var reapInterval = 5 * time.Second
 
-func startRunners(ctx context.Context, cfg config.Config, st session.Store, queue runner.Claimer, kind string, log *slog.Logger) (<-chan struct{}, error) {
+// startRunners starts the runners that drive hosted sessions,
+// TOPOS_RUNNER_CAPACITY of them at once, claiming from queue and running
+// over st, and returns a channel closed once they have stopped with ctx.
+// A capacity of zero runs none. With TOPOS_HOST_SESSIONS=on the host
+// sandbox is checked first, and a sandbox that does not run or does not
+// confine stops the start.
+func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, st session.Store, queue runner.Claimer, kind string, log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)
 		return done, nil
 	}
-	machines := hosted.Cella(hosted.CellaOptions{})
+	cella := hosted.Cella(hosted.CellaOptions{})
 	if cfg.CellaURL != "" {
 		helpers, err := hosted.ReadHelpers(cfg.MachineHelpers)
 		if err != nil {
 			return nil, fmt.Errorf("TOPOS_MACHINE_HELPERS: %w", err)
 		}
-		machines = hosted.Cella(hosted.CellaOptions{URL: cfg.CellaURL, Token: client.TokenFile(cfg.CellaTokenFile), Helpers: helpers, Dir: cfg.MachineDir})
+		cella = hosted.Cella(hosted.CellaOptions{URL: cfg.CellaURL, Token: client.TokenFile(cfg.CellaTokenFile), Helpers: helpers, Dir: cfg.MachineDir})
 	}
+	var onHost hosted.Machines
+	if cfg.HostSessions {
+		driver, err := hosted.SandboxDriver(getenv)
+		if err != nil {
+			return nil, fmt.Errorf("TOPOS_HOST_SESSIONS: %w", err)
+		}
+		// Every file the configuration names is denied to commands, the
+		// Cella bearer's among them.
+		var denied []string
+		for _, p := range []string{cfg.CellaTokenFile, cfg.MachineHelpers} {
+			if p != "" {
+				denied = append(denied, p)
+			}
+		}
+		if onHost, err = hosted.NewHost(ctx, hosted.HostOptions{DataDir: cfg.DataDir, Denied: denied, Driver: driver}); err != nil {
+			return nil, fmt.Errorf("TOPOS_HOST_SESSIONS: %w", err)
+		}
+	}
+	machines := hosted.ByKind(cella, onHost)
 	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Machines: machines})
 	if err != nil {
 		return nil, err
@@ -351,7 +376,7 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 	}
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	runners, err := startRunners(runCtx, cfg, client, client, runner.KindRunner, log)
+	runners, err := startRunners(runCtx, cfg, getenv, client, client, runner.KindRunner, log)
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}

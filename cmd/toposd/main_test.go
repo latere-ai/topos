@@ -37,6 +37,7 @@ import (
 	sessiondir "latere.ai/x/topos/session/dir"
 	"latere.ai/x/topos/test/stubs/cellastub"
 	"latere.ai/x/topos/test/stubs/luxstub"
+	"latere.ai/x/topos/test/stubs/srtstub"
 )
 
 func env(m map[string]string) func(string) string {
@@ -480,7 +481,14 @@ func hostedStubs(t *testing.T, replies ...luxstub.Reply) (map[string]string, *lu
 // and returns the session's events.
 func hostedSession(t *testing.T, publicURL string, vars map[string]string) string {
 	t.Helper()
-	send, id := createHostedSession(t, publicURL, vars)
+	return runSession(t, publicURL, vars, "cella")
+}
+
+// runSession creates a session of an agent whose machine is of kind,
+// waits until its turn answered, and returns the session's events.
+func runSession(t *testing.T, publicURL string, vars map[string]string, kind string) string {
+	t.Helper()
+	send, id := createHostedSession(t, publicURL, vars, kind)
 	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
 		_, body := send(http.MethodGet, "/v1/sessions/"+id, "")
 		if strings.Contains(body, `"status":"idle"`) && strings.Contains(body, `"stop_reason":"end_turn"`) {
@@ -492,7 +500,7 @@ func hostedSession(t *testing.T, publicURL string, vars map[string]string) strin
 		}
 	}
 	_, events := send(http.MethodGet, "/v1/sessions/"+id+"/events", "")
-	for _, want := range []string{`"type":"session.machine"`, `"kind":"cella"`, `"text":"Reviewed."`} {
+	for _, want := range []string{`"type":"session.machine"`, `"kind":"` + kind + `"`, `"text":"Reviewed."`} {
 		if !strings.Contains(events, want) {
 			t.Errorf("the log lacks %s: %s", want, events)
 		}
@@ -500,10 +508,11 @@ func hostedSession(t *testing.T, publicURL string, vars map[string]string) strin
 	return events
 }
 
-// createHostedSession applies a Cella agent and creates a session of it
-// over the API with the local issuer's token, and returns the function
-// that sends as that token and the session's id.
-func createHostedSession(t *testing.T, publicURL string, vars map[string]string) (func(method, path, body string) (int, string), string) {
+// createHostedSession applies an agent whose machine is of kind and
+// creates a session of it over the API with the local issuer's token,
+// and returns the function that sends as that token and the session's
+// id.
+func createHostedSession(t *testing.T, publicURL string, vars map[string]string, kind string) (func(method, path, body string) (int, string), string) {
 	t.Helper()
 	var tok bytes.Buffer
 	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
@@ -528,7 +537,7 @@ func createHostedSession(t *testing.T, publicURL string, vars map[string]string)
 		}
 		return resp.StatusCode, string(b)
 	}
-	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: cella}\n"
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: " + kind + "}\n"
 	if code, body := send(http.MethodPut, "/v1/agents/reviewer", manifest); code != http.StatusCreated {
 		t.Fatalf("apply: %d %s", code, body)
 	}
@@ -672,7 +681,7 @@ func TestSigtermLeavesARunningSessionToTheNextClaim(t *testing.T) {
 	ctx, stop := signal.NotifyContext(t.Context(), syscall.SIGTERM)
 	defer stop()
 	publicURL, internalURL, wait := serveOn(t, ctx, vars, time.Second)
-	send, id := createHostedSession(t, publicURL, vars)
+	send, id := createHostedSession(t, publicURL, vars, "cella")
 	select {
 	case <-started:
 	case <-time.After(30 * time.Second):
@@ -720,5 +729,105 @@ func TestSigtermLeavesARunningSessionToTheNextClaim(t *testing.T) {
 	}
 	if err := claims[0].Lease.Release(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestServeRefusesAHostSessionWithoutTheSwitch: without
+// TOPOS_HOST_SESSIONS=on a session of an agent whose machine is the host
+// is refused machine_unavailable, and nothing runs on the server's host.
+func TestServeRefusesAHostSessionWithoutTheSwitch(t *testing.T) {
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_RUNNER_CAPACITY": "0"}
+	publicURL, _, stop := startServe(t, vars)
+	var tok bytes.Buffer
+	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
+		t.Fatalf("token: exit %d", code)
+	}
+	send := func(method, path, body string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), method, publicURL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(tok.String()))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(b)
+	}
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: local\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: host}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/local", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	if code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"local","message":"Hi."}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, `"machine_unavailable"`) {
+		t.Fatalf("a host session: %d %s", code, body)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestHostSessionsOnAServer: with TOPOS_HOST_SESSIONS=on, serve and the
+// runner role refuse to start when the host sandbox's preflight fails,
+// when the sandbox cannot run a command, and when it lets a command read
+// the data directory; with srt, serve runs a host session in a directory
+// of its own inside the sandbox and records the sandbox driver.
+func TestHostSessionsOnAServer(t *testing.T) {
+	t.Run("refuses a sandbox that does not hold", testHostSessionsRefused)
+	t.Run("runs a session inside srt", testAHostSessionRuns)
+}
+
+func testHostSessionsRefused(t *testing.T) {
+	system := "/usr/bin:/bin"
+	for name, c := range map[string]struct{ path, want string }{
+		"no srt":         {t.TempDir(), "srt: missing"},
+		"a broken srt":   {srtstub.Bin(t, srtstub.Broken) + ":" + system, "could not run a probe command"},
+		"no confinement": {srtstub.Bin(t, srtstub.Unconfined) + ":" + system, "does not confine commands on this host"},
+	} {
+		host := map[string]string{"TOPOS_HOST_SESSIONS": "on", "PATH": c.path, "HOME": t.TempDir()}
+		var errOut bytes.Buffer
+		serveVars := maps.Clone(host)
+		maps.Copy(serveVars, map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"})
+		if code := run(t.Context(), nil, selfHosted(t, serveVars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "TOPOS_HOST_SESSIONS") || !strings.Contains(errOut.String(), c.want) {
+			t.Errorf("serve, %s: exit %d, stderr %q", name, code, errOut.String())
+		}
+		runnerVars := maps.Clone(host)
+		maps.Copy(runnerVars, map[string]string{"TOPOS_INTERNAL_URL": "http://127.0.0.1:1", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example/anthropic", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_DATA_DIR": t.TempDir()})
+		errOut.Reset()
+		if code := run(t.Context(), []string{"runner"}, env(runnerVars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), c.want) {
+			t.Errorf("the runner role, %s: exit %d, stderr %q", name, code, errOut.String())
+		}
+	}
+	var errOut bytes.Buffer
+	if code := run(t.Context(), nil, selfHosted(t, map[string]string{"TOPOS_HOST_SESSIONS": "on", "HOME": "/", "TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"}), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "HOME") {
+		t.Errorf("a server whose home is the root: exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+func testAHostSessionRuns(t *testing.T) {
+	srt, err := exec.LookPath("srt")
+	if err != nil {
+		t.Skip("srt, the host sandbox's runtime, is not on PATH; running a host session inside it needs it")
+	}
+	vars, _, _ := hostedStubs(t)
+	data := t.TempDir()
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": data, "TOPOS_RUNNER_CAPACITY": "1",
+		"TOPOS_HOST_SESSIONS": "on", "PATH": filepath.Dir(srt) + ":" + os.Getenv("PATH"), "HOME": os.Getenv("HOME")})
+	publicURL, _, stop := startServe(t, vars)
+	events := runSession(t, publicURL, vars, "host")
+	resolved, err := filepath.EvalSymlinks(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(events, `"sandbox":"host"`) || !strings.Contains(events, `"workdir":"`+filepath.Join(resolved, "host-sessions", "ses_")) {
+		t.Errorf("the session ran outside a host session's sandbox: %s", events)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
 	}
 }
