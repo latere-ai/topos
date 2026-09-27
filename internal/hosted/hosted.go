@@ -21,6 +21,7 @@ import (
 
 	"latere.ai/x/cella/client"
 	cellav1 "latere.ai/x/cella/manifest/v1"
+	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
@@ -99,13 +100,13 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		return harness.Config{}, setup(CodeAgentMissing, fmt.Errorf("session %s names no agent bundle", s.ID))
 	}
 	ac, err := r.AgentConfig(func(m v1.AgentModel, overlay models.Entry) (models.Model, *models.Connection, *models.Entry, error) {
-		conn, entry, err := b.connect(m, overlay)
+		conn, entry, err := b.connect(ctx, m, overlay)
 		return b.o.Model, &conn, &entry, err
 	})
 	if err != nil {
 		return harness.Config{}, err
 	}
-	conn, entry, err := b.connect(ac.Model, ac.Overlay)
+	conn, entry, err := b.connect(ctx, ac.Model, ac.Overlay)
 	if err != nil {
 		return harness.Config{}, err
 	}
@@ -139,8 +140,10 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	return cfg, nil
 }
 
-// connect is the connection and the catalog figures of one spec.model.
-func (b builder) connect(m v1.AgentModel, overlay models.Entry) (models.Connection, models.Entry, error) {
+// connect is the connection and the catalog figures of one spec.model:
+// the embedded catalog's, overlaid by the figures a Lux door serves for
+// the model, then by the agent's own.
+func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Connection, models.Entry, error) {
 	base := cmp.Or(m.BaseURL, b.o.ModelsURL)
 	if base == "" {
 		return models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, errors.New("the agent names no base URL and TOPOS_MODELS_URL is unset"))
@@ -153,14 +156,26 @@ func (b builder) connect(m v1.AgentModel, overlay models.Entry) (models.Connecti
 	if b.o.ModelsKey == "" {
 		return models.Connection{}, models.Entry{}, setup(CodeModelCredentialMissing, errors.New("the agent names no credential and TOPOS_MODELS_KEY is unset"))
 	}
-	entry, err := b.cat.Resolve(m.Name, overlay)
+	// The family and the dialect pick the door, whose list may name the
+	// model's figures; a model known to neither the catalog nor the
+	// agent is still asked of its door before it is refused.
+	first := b.cat.Overlay(m.Name, overlay)
+	if m.BaseURL == "" {
+		base = b.o.Doors.Door(base, first.Dialect)
+	}
+	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: b.o.ModelsKey, Family: first.Family, Dialect: first.Dialect}
+	var served models.Entry
+	if models.NamesADoor(base) {
+		var err error
+		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
+			return models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, err)
+		}
+	}
+	entry, err := b.cat.Resolve(m.Name, served, overlay)
 	if err != nil {
 		return models.Connection{}, models.Entry{}, err
 	}
-	if m.BaseURL == "" {
-		base = b.o.Doors.Door(base, entry.Dialect)
-	}
-	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: b.o.ModelsKey, Family: entry.Family, Dialect: entry.Dialect}
+	conn.Family, conn.Dialect = entry.Family, entry.Dialect
 	return conn, entry, nil
 }
 

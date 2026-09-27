@@ -595,7 +595,8 @@ func (e *errUsage) Error() string { return e.msg }
 
 // connect is the model a name runs on: the connection to the agent's
 // base URL or TOPOS_MODELS_URL with TOPOS_MODELS_KEY, and the figures
-// of the catalog overlaid by the agent's own, or of the scripted model.
+// of the catalog overlaid by those a Lux door serves for the model and
+// then by the agent's own, or of the scripted model.
 func (l *local) connect(ctx context.Context, m v1.AgentModel, overlay *models.Entry) (models.Model, models.Connection, models.Entry, error) {
 	base := m.BaseURL
 	if base == "" {
@@ -605,32 +606,43 @@ func (l *local) connect(ctx context.Context, m v1.AgentModel, overlay *models.En
 		return nil, models.Connection{}, models.Entry{}, &errUsage{"no model connection: set TOPOS_MODELS_URL"}
 	}
 	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: l.getenv("TOPOS_MODELS_KEY")}
-	model := l.model
-	var entry models.Entry
 	if conn.Scripted() {
-		entry, model = scriptedEntry(m.Name), l.scripted
-	} else {
-		cat, err := models.Embedded()
-		if err != nil {
-			return nil, models.Connection{}, models.Entry{}, err
-		}
-		var over []models.Entry
-		if overlay != nil {
-			over = append(over, *overlay)
-		}
-		if entry, err = cat.Resolve(m.Name, over...); err != nil {
-			return nil, models.Connection{}, models.Entry{}, err
-		}
+		entry := scriptedEntry(m.Name)
+		conn.Family, conn.Dialect = entry.Family, entry.Dialect
+		return l.scripted, conn, entry, nil
 	}
-	conn.Family, conn.Dialect = entry.Family, entry.Dialect
-	if m.BaseURL == "" && !conn.Scripted() {
+	cat, err := models.Embedded()
+	if err != nil {
+		return nil, models.Connection{}, models.Entry{}, err
+	}
+	var agent []models.Entry
+	if overlay != nil {
+		agent = append(agent, *overlay)
+	}
+	// The family and the dialect pick the door, whose list may name the
+	// model's figures; a model known to neither the catalog nor the
+	// agent is still asked of its door before it is refused.
+	first := cat.Overlay(m.Name, agent...)
+	conn.Family, conn.Dialect = first.Family, first.Dialect
+	if m.BaseURL == "" {
 		doors, err := l.modelDoors(ctx, base)
 		if err != nil {
 			return nil, models.Connection{}, models.Entry{}, err
 		}
 		conn.BaseURL = doors.Door(base, conn.EffectiveDialect())
 	}
-	return model, conn, entry, nil
+	var served models.Entry
+	if models.NamesADoor(conn.BaseURL) {
+		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
+			return nil, models.Connection{}, models.Entry{}, err
+		}
+	}
+	entry, err := cat.Resolve(m.Name, append([]models.Entry{served}, agent...)...)
+	if err != nil {
+		return nil, models.Connection{}, models.Entry{}, err
+	}
+	conn.Family, conn.Dialect = entry.Family, entry.Dialect
+	return l.model, conn, entry, nil
 }
 
 // modelDoors are the family doors of TOPOS_MODELS_URL, asked of it the

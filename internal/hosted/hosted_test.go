@@ -6,11 +6,16 @@ package hosted
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"latere.ai/x/pkg/llmdialect/bridge"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/machine"
@@ -20,6 +25,7 @@ import (
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
+	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
 const reviewer = `apiVersion: topos.latere.ai/v1
@@ -76,7 +82,8 @@ func TestTheHarnessOfAHostedSession(t *testing.T) {
 	st := session.NewMemoryStore()
 	s := newSession(t, st, reviewer)
 	var asked v1.Machine
-	h, err := Harness(Options{Store: st, ModelsURL: "https://lux.example/anthropic", ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	door := luxstub.New(t).URL() + "/anthropic"
+	h, err := Harness(Options{Store: st, ModelsURL: door, ModelsKey: "k", Machines: hostMachines(t, &asked)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +97,7 @@ func TestTheHarnessOfAHostedSession(t *testing.T) {
 		names = append(names, d.Name)
 	}
 	slices.Sort(names)
-	if cfg.Connection.BaseURL != "https://lux.example/anthropic" || cfg.Connection.Credential != "k" || cfg.Connection.Model != "anthropic/claude-haiku-4.5" ||
+	if cfg.Connection.BaseURL != door || cfg.Connection.Credential != "k" || cfg.Connection.Model != "anthropic/claude-haiku-4.5" ||
 		cfg.Connection.Family != models.FamilyAnthropic || cfg.Entry.InputWindow == 0 || cfg.Policy.Mode != harness.ModePlan ||
 		cfg.Instructions != "Review." || cfg.TurnTimeout != 5*time.Minute || !slices.Equal(names, []string{"grep", "read"}) || asked.Image != "base" || cfg.Prompt.Host {
 		t.Fatalf("config %+v tools %v machine %+v", cfg.Connection, names, asked)
@@ -101,7 +108,7 @@ func TestTheSetupFailuresOfAHostedSession(t *testing.T) {
 	st := session.NewMemoryStore()
 	s := newSession(t, st, reviewer)
 	var asked v1.Machine
-	good := Options{Store: st, ModelsURL: "https://lux.example/anthropic", ModelsKey: "k", Machines: hostMachines(t, &asked)}
+	good := Options{Store: st, ModelsURL: luxstub.New(t).URL() + "/anthropic", ModelsKey: "k", Machines: hostMachines(t, &asked)}
 	for want, mut := range map[string]func(*Options, *session.Session){
 		CodeAgentMissing:           func(_ *Options, s *session.Session) { s.Agent.Bundle = "" },
 		CodeModelUnavailable:       func(o *Options, _ *session.Session) { o.ModelsURL = "" },
@@ -150,13 +157,86 @@ spec:
 		t.Fatalf("an unknown model: %v", err)
 	}
 	b := builder{o: good}
-	if _, _, err := b.connect(v1.AgentModel{Name: "anthropic/claude-haiku-4.5", Credential: "cred_x"}, models.Entry{}); code(t, err) != CodeModelCredentialMissing {
+	if _, _, err := b.connect(t.Context(), v1.AgentModel{Name: "anthropic/claude-haiku-4.5", Credential: "cred_x"}, models.Entry{}); code(t, err) != CodeModelCredentialMissing {
 		t.Fatalf("a credential the agent names: %v", err)
 	}
 	for _, o := range []Options{{Machines: good.Machines}, {Store: st}} {
 		if _, err := Harness(o); err == nil {
 			t.Fatalf("built with %+v", o)
 		}
+	}
+}
+
+// TestLuxServedFiguresOverlayTheCatalog: the figures a Lux door serves
+// for the agent's model replace the embedded catalog's, and the agent's
+// own replace both; a model only the door knows runs on the door's
+// figures, a door that does not answer is model_unavailable, and a
+// provider's own API is not asked.
+func TestLuxServedFiguresOverlayTheCatalog(t *testing.T) {
+	st := session.NewMemoryStore()
+	stub := luxstub.New(t)
+	stub.Models(
+		bridge.Model{Name: "anthropic/claude-haiku-4.5", ContextWindow: 150_000, MaxOutputTokens: 9_000, Pricing: &bridge.ModelPricing{Currency: "USD", Input: "2", Output: "8"}},
+		bridge.Model{Name: "vendor/door-only", ContextWindow: 32_000, MaxOutputTokens: 4_000},
+	)
+	var asked v1.Machine
+	h, err := Harness(Options{Store: st, ModelsURL: stub.URL() + "/anthropic", ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := models.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded, ok := cat.Lookup("anthropic/claude-haiku-4.5")
+	if !ok || embedded.InputWindow == 150_000 {
+		t.Fatalf("the embedded catalog's entry %+v cannot tell the door's figures apart", embedded)
+	}
+	agent := func(model string) string {
+		return strings.Replace(reviewer, "model: {name: anthropic/claude-haiku-4.5}", "model: "+model, 1)
+	}
+	for name, c := range map[string]struct {
+		model          string
+		window, output int64
+		input          models.Price
+	}{
+		"the door's":    {"{name: anthropic/claude-haiku-4.5}", 150_000, 9_000, 2_000_000},
+		"the agent's":   {"{name: anthropic/claude-haiku-4.5, inputWindow: 100000, pricing: {input: \"3\", output: \"9\"}}", 100_000, 9_000, 3_000_000},
+		"the door only": {"{name: vendor/door-only, family: anthropic}", 32_000, 4_000, 0},
+	} {
+		cfg, err := h(t.Context(), newSession(t, st, agent(c.model)))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+		e := cfg.Entry
+		if e.InputWindow != c.window || e.MaxOutputTokens != c.output || (c.input != 0) != (e.Pricing != nil) || e.Pricing != nil && *e.Pricing.Input != c.input {
+			t.Fatalf("%s: %+v %+v", name, e, e.Pricing)
+		}
+	}
+	if len(stub.Listed()) != 3 || stub.Listed()[0].Get("X-Api-Key") != "k" {
+		t.Fatalf("the door's list was asked %d times: %v", len(stub.Listed()), stub.Listed())
+	}
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	down, err := Harness(Options{Store: st, ModelsURL: gone.URL + "/anthropic", ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := down(t.Context(), newSession(t, st, reviewer)); code(t, err) != CodeModelUnavailable {
+		t.Fatalf("a door that does not answer: %v", err)
+	}
+	provider, err := Harness(Options{Store: st, ModelsURL: gone.URL, ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := provider(t.Context(), newSession(t, st, reviewer))
+	if err != nil {
+		t.Fatalf("a provider's API was asked for a model list: %v", err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if cfg.Entry.InputWindow != embedded.InputWindow {
+		t.Fatalf("a provider's API: %+v", cfg.Entry)
 	}
 }
 

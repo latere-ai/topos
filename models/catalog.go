@@ -142,12 +142,11 @@ func (c Catalog) Lookup(name string) (Entry, bool) {
 	return Entry{}, false
 }
 
-// Resolve returns the figures of the model a connection names: the
+// Overlay returns the figures of the model a connection names: the
 // catalog's entry, overlaid by each later source in turn (the figures a
 // Lux connection serves, then the agent's own), each non-zero field
-// replacing the one before. A model with no input window or output
-// limit from any source is model_unknown.
-func (c Catalog) Resolve(name string, over ...Entry) (Entry, error) {
+// replacing the one before, whether or not any source gives its windows.
+func (c Catalog) Overlay(name string, over ...Entry) Entry {
 	e, _ := c.Lookup(name)
 	if e.Name == "" {
 		e.Name = name
@@ -155,6 +154,13 @@ func (c Catalog) Resolve(name string, over ...Entry) (Entry, error) {
 	for _, o := range over {
 		e = overlay(e, o)
 	}
+	return e
+}
+
+// Resolve is Overlay for a model a harness runs on: one with no input
+// window or output limit from any source is model_unknown.
+func (c Catalog) Resolve(name string, over ...Entry) (Entry, error) {
+	e := c.Overlay(name, over...)
 	if e.InputWindow <= 0 || e.MaxOutputTokens <= 0 {
 		return e, &Coded{Code: CodeUnknown, Message: fmt.Sprintf("no source gives the input window and output limit of %q", name)}
 	}
