@@ -176,8 +176,9 @@ at the end of its retention: the `retention` of the authorizer's
 `limits` at create ([[006-identity]]), recorded on the session; with
 none, an ended session is kept until someone deletes it, which is the
 self-hoster's default. A reaper in `serve` runs every 10 minutes: it
-ends `expired` every session past `expires_at`, and deletes every
-ended session past its retention. Deleting a session removes its row,
+ends `expired` every idle session past `expires_at`, leaving a running
+one, which its runner holds, to a later pass, and deletes every ended
+session past its retention, counted from its last event. Deleting a session removes its row,
 its events and its blobs, the objects under `<prefix>/<session>/`
 included, in that order, so a crash midway leaves blobs without a
 session, which the next reaper run removes, and never a session
@@ -208,7 +209,7 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 | A blob in the database is readable by digest, and one whose bytes no longer match answers `ErrCorrupt` | `internal/store/postgres.TestACorruptBlobIsRefused` (tag `postgres`) | built |
 | A blob is readable by digest from the `file://` and `s3://` locations | `TestBlobStoreLocations` | not built |
 | Deleting a session removes its rows and every blob object; a crash between the two leaves no session without its blobs, and the reaper removes the orphans | `TestSessionDeletionOrder` | not built |
-| A session past `expires_at` is ended `expired`, and an ended one past its retention is deleted | `TestReaperExpiresAndDeletes` | not built |
+| A session past `expires_at` is ended `expired`, and an ended one past its retention is deleted | `internal/server.TestReaperExpiresAndDeletes` | built |
 | Migrations apply on an empty database when the store opens | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`, every subtest opens a fresh database) | built |
 | A lease that expires is taken over by the next holder, and the old holder's renew fails and its `Lost` closes | `internal/store/postgres.TestAnExpiredLeaseIsTakenOverAndTheOldHolderLosesIt` (tag `postgres`) | built |
 | A replica that finds a newer schema than it knows refuses to start | `internal/store/postgres.TestMigrationsAtStart` (tag `postgres`), with `cmd/toposd.TestServeStopsOnAStoreItCannotOpen` for the start | built |
