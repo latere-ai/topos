@@ -70,8 +70,8 @@ func TestSandboxDriver(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	if p, err := lookPath(srtstub.Bin(t, srtstub.Unconfined), "bubblewrap"); err != nil || filepath.Base(p) != "bwrap" {
-		t.Fatalf("bubblewrap is bwrap: %s, %v", p, err)
+	if p, err := lookPath(srtstub.Bin(t, srtstub.Unconfined), "bwrap"); err != nil || filepath.Base(p) != "bwrap" {
+		t.Fatalf("bwrap: %s, %v", p, err)
 	}
 }
 

@@ -8,7 +8,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	golang.org/x/sys v0.47.0
 	latere.ai/x/cella v0.8.0
-	latere.ai/x/pkg v0.88.0
+	latere.ai/x/pkg v0.90.0
 )
 
 require (

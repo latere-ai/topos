@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"latere.ai/x/pkg/hostsandbox"
@@ -92,12 +91,11 @@ var (
 	stageObserve = 100 * time.Millisecond
 )
 
-// stageGroup is the process group of a stage the srt driver launched.
-// The driver starts each stage's wrapper with setsid, so the wrapper's
-// pid is the group's id, and its handle carries that pid in the form
-// hostsandbox documents, "pid:<pid>@<start>:<log>". A handle of another
-// driver names no group here, and 0 is returned.
-func stageGroup(h hostsandbox.StageHandle) int {
+// stagePID is the pid a job reports: the srt driver's handle carries it
+// in the form hostsandbox documents, "pid:<pid>@<start>:<log>". It is for
+// display only; the driver ends a stage's processes itself. A handle of
+// another driver names no pid, and 0 is returned.
+func stagePID(h hostsandbox.StageHandle) int {
 	if h.Driver != hostsandbox.Host {
 		return 0
 	}
@@ -115,10 +113,6 @@ func stageGroup(h hostsandbox.StageHandle) int {
 	}
 	return pid
 }
-
-// groupAlive reports whether any process of a group is left. EPERM,
-// which macOS answers for a group of zombies, is none left.
-func groupAlive(pgid int) bool { return syscall.Kill(-pgid, 0) == nil }
 
 // stageNetwork is the egress policy of a stage: the allowlist of the
 // sandbox's hosts, or none.
@@ -170,14 +164,11 @@ func (h *Host) launch(ctx context.Context, argv []string, dir string, env map[st
 	return launched{handle: handle, dir: stageDir}, nil
 }
 
-// finish ends what a stage that has exited left running in its process
-// group, as the host does once its shell exits, lets the driver discard
-// the stage, and removes the stage's directory.
+// finish lets the driver discard a stage that has exited, which ends
+// what it left running in its process group, as the host does once its
+// shell exits, and removes the stage's directory.
 func (h *Host) finish(ctx context.Context, l launched) error {
 	var errs []error
-	if pgid := stageGroup(l.handle); pgid > 0 {
-		errs = append(errs, signalGroup(pgid, syscall.SIGKILL))
-	}
 	if err := h.opts.Sandbox.Driver.Discard(context.WithoutCancel(ctx), l.handle); err != nil {
 		errs = append(errs, fmt.Errorf("machine: discard the command: %w", err))
 	}
@@ -188,31 +179,12 @@ func (h *Host) finish(ctx context.Context, l launched) error {
 }
 
 // stop stops a running stage through its driver, which sends SIGTERM to
-// its process group and SIGKILL once grace has passed. The grace ends
-// early once the group is empty, so a command that exits on SIGTERM
-// returns as soon as it has.
+// its process group, returns once the group is empty, and sends SIGKILL
+// once grace has passed.
 func (h *Host) stop(ctx context.Context, l launched, grace time.Duration) error {
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), grace)
 	defer cancel()
-	stopped := make(chan error, 1)
-	go func() { stopped <- h.opts.Sandbox.Driver.Stop(sctx, l.handle) }()
-	var err error
-	received := false
-	if pgid := stageGroup(l.handle); pgid > 0 {
-		t := time.NewTicker(stagePoll)
-		defer t.Stop()
-		for !received && groupAlive(pgid) {
-			select {
-			case err = <-stopped:
-				received = true
-			case <-t.C:
-			}
-		}
-		cancel()
-	}
-	if !received {
-		err = <-stopped
-	}
+	err := h.opts.Sandbox.Driver.Stop(sctx, l.handle)
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("machine: stop the command: %w", err)
 	}
@@ -426,7 +398,7 @@ func (h *Host) stageBackground(ctx context.Context, r machine.ExecRequest) (mach
 	if err != nil {
 		return machine.ExecResult{}, errors.Join(fmt.Errorf("machine: keep the job's handle: %w", err), h.stop(ctx, l, 0), h.finish(ctx, l), out.Close(), log.Close(), remove())
 	}
-	pid := stageGroup(l.handle)
+	pid := stagePID(l.handle)
 	job := &stageJob{l: l, done: make(chan struct{})}
 	h.stages[l.handle.ID] = job
 	go func() {
@@ -469,7 +441,7 @@ func (h *Host) follow(ctx context.Context, l launched, out io.ReadCloser, log *o
 		time.Sleep(stageObserve)
 	}
 	errs = append(errs, h.finish(bg, l))
-	if _, err := fmt.Fprintf(log, "\n[job %d exited with code %d]\n", stageGroup(l.handle), code); err != nil {
+	if _, err := fmt.Fprintf(log, "\n[job %d exited with code %d]\n", stagePID(l.handle), code); err != nil {
 		errs = append(errs, fmt.Errorf("write the exit line: %w", err))
 	}
 	return errors.Join(append(errs, log.Close(), out.Close())...)

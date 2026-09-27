@@ -325,13 +325,13 @@ func TestAJobTheDriverLosesIsReported(t *testing.T) {
 	}
 }
 
-func TestStageGroup(t *testing.T) {
+func TestStagePID(t *testing.T) {
 	for id, want := range map[string]int{"pid:42@1700000000:/l/out.log": 42, "pid:x@1:/l": 0, "pid:0@1:/l": 0, "pid:42": 0, "42@1:/l": 0} {
-		if got := stageGroup(hostsandbox.StageHandle{Driver: hostsandbox.Host, ID: id}); got != want {
+		if got := stagePID(hostsandbox.StageHandle{Driver: hostsandbox.Host, ID: id}); got != want {
 			t.Errorf("%s: %d, want %d", id, got, want)
 		}
 	}
-	if got := stageGroup(hostsandbox.StageHandle{Driver: "container", ID: "pid:42@1:/l"}); got != 0 {
+	if got := stagePID(hostsandbox.StageHandle{Driver: "container", ID: "pid:42@1:/l"}); got != 0 {
 		t.Errorf("another driver's handle: %d", got)
 	}
 }

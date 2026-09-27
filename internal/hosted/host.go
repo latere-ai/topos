@@ -6,7 +6,6 @@
 package hosted
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -56,14 +55,9 @@ func SandboxDriver(getenv func(string) string) (*hostsandbox.Driver, error) {
 	}), nil
 }
 
-// executables maps the components the driver checks for to the program
-// that provides each: Bubblewrap's is bwrap.
-var executables = map[string]string{"bubblewrap": "bwrap"}
-
 // lookPath finds an executable on path, the server's PATH, rather than
 // on this process's own.
 func lookPath(path, name string) (string, error) {
-	name = cmp.Or(executables[name], name)
 	for _, dir := range filepath.SplitList(path) {
 		if dir == "" {
 			continue
