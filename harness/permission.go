@@ -5,6 +5,7 @@ package harness
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -45,6 +46,22 @@ func Stricter(a, b Verdict) Verdict {
 		return b
 	}
 	return a
+}
+
+// CodeSandboxUnavailable is spec 012's code for progressive asked for
+// on a host with no operating-system sandbox.
+const CodeSandboxUnavailable = "sandbox_unavailable"
+
+// CheckSandbox refuses progressive on a machine that records
+// machine.SandboxNone. progressive runs a call the score rates low
+// without asking, which spec 012 allows only where an operating-system
+// sandbox holds when the score is wrong; such a host runs in plan or
+// confirm, where the person decides every write.
+func CheckSandbox(mode Mode, info machine.Info) error {
+	if mode != ModeProgressive || info.Sandbox != machine.SandboxNone {
+		return nil
+	}
+	return fmt.Errorf("the progressive mode needs an operating-system sandbox, and this %s host has none; run in plan or confirm", info.OS)
 }
 
 // Thresholds are the progressive mode's score cut-offs.

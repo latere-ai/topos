@@ -681,6 +681,9 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 		if err != nil {
 			return harness.Config{}, err
 		}
+		if err := harness.CheckSandbox(cfg.Policy.Mode, m.Info()); err != nil {
+			return harness.Config{}, errors.Join(&runner.SetupError{Code: harness.CodeSandboxUnavailable, Err: err}, m.Release(ctx, true))
+		}
 		reg := tools.NewRegistry()
 		for _, t := range tools.Builtins() {
 			if !slices.Contains(held, t.Definition().Name) {

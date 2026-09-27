@@ -116,3 +116,24 @@ func TestGlobRegexpQuotesItsText(t *testing.T) {
 		t.Fatal("a dot matched any character")
 	}
 }
+
+// TestProgressiveNeedsASandbox: progressive is refused on a host that
+// records no operating-system sandbox, and plan and confirm run there;
+// a machine with a sandbox driver, or one that names none, runs every
+// mode.
+func TestProgressiveNeedsASandbox(t *testing.T) {
+	none := machine.Info{Kind: machine.KindHost, OS: "windows", Sandbox: machine.SandboxNone}
+	if err := CheckSandbox(ModeProgressive, none); err == nil {
+		t.Fatal("progressive ran on a host without a sandbox")
+	}
+	for _, mode := range []Mode{ModePlan, ModeConfirm, ""} {
+		if err := CheckSandbox(mode, none); err != nil {
+			t.Errorf("%q on a host without a sandbox: %v", mode, err)
+		}
+	}
+	for _, sandbox := range []string{"host", ""} {
+		if err := CheckSandbox(ModeProgressive, machine.Info{Kind: machine.KindHost, Sandbox: sandbox}); err != nil {
+			t.Errorf("progressive with sandbox %q: %v", sandbox, err)
+		}
+	}
+}
