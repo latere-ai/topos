@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -428,5 +429,68 @@ func TestOpenRefusesAMissingExtraRoot(t *testing.T) {
 	}
 	if err := h.Release(t.Context(), true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWorktrees(t *testing.T) {
+	if _, err := osexec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(base, "work")
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + base, "GIT_AUTHOR_NAME=p", "GIT_AUTHOR_EMAIL=p@example.com", "GIT_COMMITTER_NAME=p", "GIT_COMMITTER_EMAIL=p@example.com"}
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h, err := Open(Options{Workdir: work, SpillDir: filepath.Join(base, "spill"), WorktreeDir: filepath.Join(base, "wt"), Environ: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := h.Release(t.Context(), true); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := h.Worktree(t.Context(), "t1", "agents/a/s.t1"); err == nil {
+		t.Fatal("a worktree outside a repository")
+	}
+	for _, cmd := range []string{"git init -q -b main", "echo x > a.txt", "git add a.txt", "git commit -q -m init"} {
+		if res := run(t, h, machine.ExecRequest{Command: cmd}); res.ExitCode != 0 {
+			t.Fatalf("%s: %s", cmd, res.Output)
+		}
+	}
+	m, err := h.Worktree(t.Context(), "t1", "agents/a/s.t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Info().Workdir != filepath.Join(base, "wt", "t1") || !strings.HasSuffix(m.SpillDir(), filepath.Join("worktrees", "t1")) {
+		t.Fatalf("worktree machine %+v spill %s", m.Info(), m.SpillDir())
+	}
+	if got, err := read(t, m.(*Host), "a.txt"); err != nil || got != "x\n" {
+		t.Fatalf("the worktree's files %q, %v", got, err)
+	}
+	again, err := h.Worktree(t.Context(), "t1", "agents/a/s.t1")
+	if err != nil || again.Info().Workdir != m.Info().Workdir {
+		t.Fatalf("reopen %v", err)
+	}
+	for _, bad := range []string{"", "..", "a/b"} {
+		if _, err := h.Worktree(t.Context(), bad, "b"); err == nil {
+			t.Fatalf("worktree name %q accepted", bad)
+		}
+	}
+	plain, err := Open(Options{Workdir: work, SpillDir: filepath.Join(base, "spill2"), Environ: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plain.Worktree(t.Context(), "t1", "b"); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("a host without a worktree directory: %v", err)
+	}
+	for _, r := range []machine.Machine{m, again, plain} {
+		if err := r.Release(t.Context(), true); err != nil {
+			t.Error(err)
+		}
 	}
 }

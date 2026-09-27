@@ -108,6 +108,15 @@ type Machine interface {
 	Release(ctx context.Context, end bool) error
 }
 
+// Worktrees is the optional interface of a machine that gives an
+// isolated thread a git worktree of its own (spec 013). Worktree returns
+// the machine of the worktree named name on branch, creating it from the
+// HEAD commit of the machine's working directory the first time, and
+// reopening it after.
+type Worktrees interface {
+	Worktree(ctx context.Context, name, branch string) (Machine, error)
+}
+
 // Errors every machine returns.
 var (
 	// ErrOutside is a path in none of the machine's roots.

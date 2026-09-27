@@ -56,10 +56,14 @@ type Options struct {
 	Environ []string
 	// ID names the machine in session.machine.
 	ID string
+	// WorktreeDir holds the git worktrees of isolated threads; empty
+	// offers none.
+	WorktreeDir string
 }
 
 // Host is the host machine.
 type Host struct {
+	opts  Options
 	info  machine.Info
 	roots []root
 	spill string
@@ -89,7 +93,7 @@ func Open(o Options) (*Host, error) {
 	if err := os.MkdirAll(o.SpillDir, 0o700); err != nil {
 		return nil, fmt.Errorf("machine: create the spill directory: %w", err)
 	}
-	h := &Host{deny: machine.DenyList{Home: o.Home, DataDir: o.DataDir}, jobs: map[int]*exec.Cmd{}}
+	h := &Host{opts: o, deny: machine.DenyList{Home: o.Home, DataDir: o.DataDir}, jobs: map[int]*exec.Cmd{}}
 	dirs := append([]string{o.Workdir}, o.Roots...)
 	dirs = append(dirs, o.SpillDir)
 	for i, d := range dirs {
@@ -657,3 +661,41 @@ func appendLine(path, text string) error {
 }
 
 var _ machine.Machine = (*Host)(nil)
+
+// Worktree gives an isolated thread its own git worktree under the
+// worktree directory, on branch, from the HEAD commit of the working
+// directory; a worktree made before is reopened.
+func (h *Host) Worktree(ctx context.Context, name, branch string) (machine.Machine, error) {
+	if h.opts.WorktreeDir == "" {
+		return nil, fmt.Errorf("machine: this host keeps no worktrees: %w", errors.ErrUnsupported)
+	}
+	if name == "" || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		return nil, fmt.Errorf("machine: %q is not a worktree name", name)
+	}
+	dir := filepath.Join(h.opts.WorktreeDir, name)
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		if err := os.MkdirAll(h.opts.WorktreeDir, 0o755); err != nil {
+			return nil, fmt.Errorf("machine: create the worktree directory: %w", err)
+		}
+		res, err := h.Exec(ctx, machine.ExecRequest{Command: "git worktree add -q -b " + shellQuote(branch) + " " + shellQuote(dir) + " HEAD", Timeout: time.Minute})
+		if err != nil {
+			return nil, err
+		}
+		if res.ExitCode != 0 {
+			return nil, fmt.Errorf("machine: git worktree add: %s", strings.TrimSpace(string(res.Output)))
+		}
+	} else if err != nil {
+		return nil, fmt.Errorf("machine: stat the worktree: %w", err)
+	}
+	o := h.opts
+	o.Workdir, o.WorktreeDir = dir, ""
+	o.SpillDir = filepath.Join(h.spill, "worktrees", name)
+	o.ID = h.info.ID + "/" + name
+	o.Environ = h.opts.Environ
+	return Open(o)
+}
+
+// shellQuote renders an argument for /bin/sh.
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+var _ machine.Worktrees = (*Host)(nil)

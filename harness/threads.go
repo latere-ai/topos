@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 )
@@ -350,8 +352,12 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	if t.depth+1 > t.h.maxDepth() {
 		return errorResult(CodeDepthExceeded, fmt.Sprintf("a thread at depth %d may not spawn", t.depth)), nil
 	}
+	var wt machine.Worktrees
 	if isolation == "worktree" {
-		return errorResult(CodeIsolationUnavailable, "worktree isolation is not available on this machine; spawn with isolation shared"), nil
+		var ok bool
+		if wt, ok = t.h.c.Machine.(machine.Worktrees); !ok {
+			return errorResult(CodeIsolationUnavailable, "this machine keeps no worktrees; spawn with isolation shared"), nil
+		}
 	}
 	held := t.reg.Names()
 	var names []string
@@ -368,15 +374,29 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 		names = append(names, n)
 	}
 	cfg := t.childConfig(sub)
+	id := session.NewID(session.PrefixEvent)
 	started := session.ThreadStarted{
 		Agent: session.AgentRef{Name: agent}, Parent: t.thread, ToolUseID: callID, Task: task,
 		Isolation: "shared", Depth: t.depth + 1, Model: cfg.Connection.Model, Tools: names,
+	}
+	var note string
+	if wt != nil {
+		branch := fmt.Sprintf("agents/%s/%s.%s", agent, t.s.ID, id)
+		m, err := wt.Worktree(ctx, id, branch)
+		if err != nil {
+			return errorResult(CodeIsolationUnavailable, err.Error()), nil
+		}
+		cfg.Machine = m
+		started.Isolation, started.Branch, started.Workdir = "worktree", branch, m.Info().Workdir
+		if dirty(ctx, t.h.c.Machine) {
+			note = "The thread works from the last commit: your uncommitted changes are not in its worktree."
+		}
 	}
 	e, err := t.event(session.TypeThreadStarted, started)
 	if err != nil {
 		return tools.Result{}, err
 	}
-	e.Thread = e.ID
+	e.ID, e.Thread = id, id
 	if !t.sh.claim(t.h.maxConcurrent()) {
 		return errorResult(CodeTooManyThreads, fmt.Sprintf("the session already runs %d threads", t.h.maxConcurrent())), nil
 	}
@@ -388,8 +408,61 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	if err != nil {
 		return tools.Result{}, err
 	}
-	return child.drive(ctx)
+	res, err := child.drive(ctx)
+	if err != nil || started.Isolation != "worktree" {
+		return res, err
+	}
+	return child.commitWorktree(ctx, started, res, note)
 }
+
+// threadMachine is the machine a thread runs on: its worktree's for an
+// isolated thread, reopened by name, otherwise the session's.
+func (t *turn) threadMachine(ctx context.Context, started session.ThreadStarted, id string) (machine.Machine, error) {
+	if started.Isolation != "worktree" {
+		return t.h.c.Machine, nil
+	}
+	wt, ok := t.h.c.Machine.(machine.Worktrees)
+	if !ok {
+		return nil, fmt.Errorf("%s: this machine keeps no worktrees", CodeIsolationUnavailable)
+	}
+	return wt.Worktree(ctx, id, started.Branch)
+}
+
+// dirty reports uncommitted changes in a machine's working directory.
+func dirty(ctx context.Context, m machine.Machine) bool {
+	res, err := m.Exec(ctx, machine.ExecRequest{Command: "git status --porcelain", Timeout: time.Minute})
+	return err == nil && res.ExitCode == 0 && len(strings.TrimSpace(string(res.Output))) > 0
+}
+
+// commitWorktree commits an isolated thread's changes to its branch at
+// the end of its turn and names the branch and commit in the result.
+func (t *turn) commitWorktree(ctx context.Context, started session.ThreadStarted, res tools.Result, note string) (tools.Result, error) {
+	m := t.h.c.Machine
+	env := map[string]string{
+		"GIT_AUTHOR_NAME": started.Agent.Name, "GIT_AUTHOR_EMAIL": started.Agent.Name + "@agents.topos.invalid",
+		"GIT_COMMITTER_NAME": started.Agent.Name, "GIT_COMMITTER_EMAIL": started.Agent.Name + "@agents.topos.invalid",
+	}
+	msg := fmt.Sprintf("topos thread %s turn %d\n\nTopos-Session: %s\nTopos-Agent: %s", t.thread, t.num, t.s.ID, started.Agent.Name)
+	script := "git add -A && (git diff --cached --quiet || git commit -q -m " + shellQuote(msg) + ") && git rev-parse --short HEAD"
+	out, err := m.Exec(ctx, machine.ExecRequest{Command: script, Env: env, Timeout: 2 * time.Minute})
+	if err != nil {
+		return tools.Result{}, err
+	}
+	if out.ExitCode != 0 {
+		return tools.Text(tools.OutcomeError, "The thread's work could not be committed to "+started.Branch+": "+strings.TrimSpace(string(out.Output))), nil
+	}
+	lines := []string{fmt.Sprintf("Its work is on branch %s at %s; merge it with git.", started.Branch, strings.TrimSpace(string(out.Output)))}
+	if note != "" {
+		lines = append(lines, note)
+	}
+	for _, l := range lines {
+		res.Content = append(res.Content, lux.Block{Type: ir.BlockText, Text: l})
+	}
+	return res, nil
+}
+
+// shellQuote renders an argument for the machine's shell.
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // message sends a thread this thread spawned more work and runs its turn.
 func (t *turn) message(ctx context.Context, callID, thread, content string, end bool) (tools.Result, error) {
@@ -419,11 +492,18 @@ func (t *turn) message(ctx context.Context, callID, thread, content string, end 
 	if err := t.commit(ctx, e); err != nil {
 		return tools.Result{}, err
 	}
-	child, err := t.child(thread, started.Depth, t.childConfig(sub), started.Tools)
+	cfg := t.childConfig(sub)
+	if cfg.Machine, err = t.threadMachine(ctx, started, thread); err != nil {
+		return errorResult(CodeIsolationUnavailable, err.Error()), nil
+	}
+	child, err := t.child(thread, started.Depth, cfg, started.Tools)
 	if err != nil {
 		return tools.Result{}, err
 	}
 	res, err := child.drive(ctx)
+	if err == nil && started.Isolation == "worktree" {
+		res, err = child.commitWorktree(ctx, started, res, "")
+	}
 	if err != nil || !end {
 		return res, err
 	}
@@ -582,11 +662,20 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 		return errorResult(CodeTooManyThreads, fmt.Sprintf("the session already runs %d threads", t.h.maxConcurrent())), nil
 	}
 	defer t.sh.release()
-	child, err := t.child(thread, started.Depth, t.childConfig(sub), started.Tools)
+	cfg := t.childConfig(sub)
+	var err error
+	if cfg.Machine, err = t.threadMachine(ctx, started, thread); err != nil {
+		return errorResult(CodeIsolationUnavailable, err.Error()), nil
+	}
+	child, err := t.child(thread, started.Depth, cfg, started.Tools)
 	if err != nil {
 		return tools.Result{}, err
 	}
-	return child.drive(ctx)
+	res, err := child.drive(ctx)
+	if err == nil && started.Isolation == "worktree" {
+		res, err = child.commitWorktree(ctx, started, res, "")
+	}
+	return res, err
 }
 
 // settled reports whether a thread's turn after the event that drove it
