@@ -1,0 +1,65 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
+package runner
+
+import (
+	"context"
+	"io"
+	"sync"
+
+	"latere.ai/x/topos/session"
+)
+
+// Log is the harness.Log a runner hands its harness: appends go to the
+// session's store after its true last sequence, and whatever others
+// appended in the meantime comes back to the harness.
+type Log struct {
+	st   session.Store
+	id   string
+	mu   sync.Mutex
+	last uint64
+}
+
+// NewLog returns the log of one session whose last sequence is last.
+func NewLog(st session.Store, id string, last uint64) *Log {
+	return &Log{st: st, id: id, last: last}
+}
+
+// Last is the last sequence the log has seen.
+func (l *Log) Last() uint64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.last
+}
+
+// Append reads the events appended since the last one it saw, then
+// appends the batch after them, stamping it in place.
+func (l *Log) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	foreign, err := l.st.Events(ctx, l.id, l.last+1, 0)
+	if err != nil {
+		return nil, err
+	}
+	if n := len(foreign); n > 0 {
+		l.last = foreign[n-1].Seq
+	}
+	session.Stamp(l.id, l.last, batch)
+	last, err := l.st.Append(ctx, l.id, l.last, batch)
+	if err != nil {
+		return nil, err
+	}
+	l.last = last
+	return foreign, nil
+}
+
+// PutBlob stores a blob of the session.
+func (l *Log) PutBlob(ctx context.Context, r io.Reader) (session.Digest, error) {
+	return l.st.PutBlob(ctx, l.id, r)
+}
+
+// Blob reads a blob of the session.
+func (l *Log) Blob(ctx context.Context, d session.Digest) (io.ReadCloser, error) {
+	return l.st.Blob(ctx, l.id, d)
+}
