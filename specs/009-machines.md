@@ -89,6 +89,13 @@ The credential deny-list:
 | any root | `.env` and `.env.*` except `.env.example`, `.env.sample` and `.env.template`; `*.pem`, `*.key`, `*.p12`, `*.pfx`; `id_rsa*`, `id_ecdsa*`, `id_ed25519*` |
 | the environment | names ending `_TOKEN`, `_SECRET`, `_PASSWORD`, `_API_KEY` or `_PRIVATE_KEY`; `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`; every name starting `TOPOS_`, since a server's configuration holds its signing key, its credentials key and its database URL |
 
+Every entry matches without regard to case, on every platform, since
+APFS and NTFS open `~/.SSH/ID_RSA` or `SERVER.PEM` as the file an
+entry names; on a case-sensitive filesystem this also refuses a file
+whose name differs from an entry only in case, an accepted
+over-denial. The host sandbox receives its denied paths as written and
+matches them by its own rules.
+
 ### Worktrees on the host
 
 Two sessions never write the same working directory. When a session
@@ -255,7 +262,7 @@ repository delivery and git credentials ([[019-git]]); named secrets
 |---|---|---|
 | A symlink or `..` path out of the working directory is refused by every file operation of the host, and a path outside every root answers `ErrOutside` | `machine/host.TestFilesAreConfinedToTheRoots`, `machine/host.TestEveryFileOperationRefusesOutsideAndDenied`, `machine/host.TestRemoveAndRename` | built |
 | The host's roots are the working directory, the spill directory and the extra roots, each resolved; a missing extra root is refused at open | `machine/host.TestInfoAndRoots`, `machine/host.TestOpenValidates`, `machine/host.TestOpenRefusesAMissingExtraRoot` | built |
-| Every deny-list path inside a root is refused by `read`, `write` and `edit` and skipped by search, and the deny-listed variables are absent from a `bash` command's environment while `PATH` is the person's | `machine.TestDenyList`, `machine/host.TestTheDenyListHoldsInsideARoot`, `machine/host.TestExec` | built |
+| Every deny-list path inside a root is refused by `read`, `write` and `edit` and skipped by search, and the deny-listed variables are absent from a `bash` command's environment while `PATH` is the person's | `machine.TestDenyList`, `machine.TestTheDenyListIgnoresCase`, `machine/host.TestTheDenyListHoldsInsideARoot`, `machine/host.TestTheDenyListIgnoresCaseInsideARoot`, `machine/host.TestExec` | built |
 | Commands run in their own process group, time out and cancel, stream their output, and background jobs end with the session | `machine/host.TestExecTimeoutAndCancel`, `machine/host.TestExecStream`, `machine/host.TestBackgroundJobsEndWithTheSession` | built |
 | A script longer than one Linux argument may be runs in the foreground and the background and leaves no file behind | `machine.TestShellArgsRunsAScriptPastTheArgumentLimit`, `machine/host.TestAScriptPastTheArgumentLimitRuns`, `machine/cella.TestLongScripts` | built |
 | The module compiles and passes `go vet` for `windows/amd64`, and `topos` links for it: the host machine's Job Object code, its shell search, the final directory through a file, the `sandbox: none` record, and the refusals of what has no Windows form, a server's host sessions and the helper's `run` and `job`, which answer an error | `machine/host.TestTheModuleBuildsForWindows`, `machine/host.TestFindShell`, `machine/host.TestAHostWithoutASandbox`, `machine/host.TestReportedDir`, and the `process-dir-by-file` backend of `machine/host.TestExec`, `machine/host.TestExecTimeoutAndCancel`, `machine/host.TestExecStream`, `machine/host.TestBackgroundJobsEndWithTheSession` and `machine/host.TestAScriptPastTheArgumentLimitRuns`, which run the Windows directory report on Unix; no Windows runner is available, so CI cross-compiles and vets the Job Object code from a Unix host and does not run it | built |
