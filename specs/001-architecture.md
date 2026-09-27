@@ -41,8 +41,10 @@ reference under `docs/history/`; its specs are cited from this deck as
 fixed step cap and a fixed output cap that reported both as success, a
 root package its consumers bypassed, and a multi-agent vocabulary
 (regions, autonomy modes, topologies, a peer directory) that this core
-retires. Nothing of this design is built; the tree holds the scaffold
-of [[002-scaffold-and-configuration]].
+retires. The packages of the table below are built as their own specs
+record; the architecture tests of `internal/arch` and the `depcheck`
+rows hold the package rules of this spec over every tree that exists,
+and bind each later tree the day it lands.
 
 Borrowed and cited: the rule that authority only narrows (invariant 6)
 is v0.7.0 spec 031 and v0.7.0 spec 006's "a peer of a peer is a subset
@@ -281,7 +283,7 @@ because every spec depends on this one.
 | Every package sits in one of the root trees `session`, `harness`, `prompts`, `models`, `machine`, `runner`, `memory`, `manifest`, `client` or `authorizer`, or under `cmd`, `internal`, `test`, `tools` or `examples`, and none at the module root | `internal/arch.TestPackagesSitInTheirTrees` over `go list` | built |
 | No package of `session`, `harness`, `prompts`, `manifest` or `authorizer` reaches a package that opens a connection (`net`, `net/http`, `net/rpc`, `net/smtp`, `crypto/tls`), directly or through a dependency; the one exception is the shared contract `latere.ai/x/pkg/authz`, whose value types `authorizer` publishes and whose client toposd dials with, and the walk does not descend into it; a tree that does not exist yet is skipped by name, so the rule binds each tree the day it lands | `internal/arch.TestRootPackagesDialNothing` over the import graph of `go list -deps` | built |
 | No package of `prompts` imports a package of this module, so every other tree can import it | `internal/arch.TestPromptsImportNothingOfTheModule` over `go list -deps` | built |
-| `machine/cella` reaches `latere.ai/x/cella/client` and no other network client; `models/dialect` and `client` construct one HTTP client each and reach nothing under `internal/` | one allow list per package in `internal/arch` | not built |
+| `machine/cella`, `models/dialect` and `client` each reach no network client (a package outside the standard library that imports a dialing package) but their allow list, `latere.ai/x/cella/client`, `latere.ai/x/pkg/llmdialect` and none, and `latere.ai/x/pkg/otel`'s instrumented transport; each constructs one HTTP client and reaches nothing under `internal/`; a tree that does not exist yet is skipped by name | `internal/arch.TestClientsKeepToTheirAllowLists` over the import graph of `go list -deps` and the package's source | built |
 | Each role's and each binary's build list matches its `depcheck` allow list | the `depcheck` gate over the rows of `.lateregate.yaml` for `cmd/toposd` and `cmd/topos` | built |
 | No file in the tree (a document, a manifest, a workflow, a default, a Go comment or string) names a hostname of the maintainer's outside the API group `topos.latere.ai/`, a particular deployment of Topos, a component internal to one, or a private document; module paths under `latere.ai/x/` and the shared CI pipeline are allowed; the walk skips only binaries | `internal/arch.TestNoLatereCoordinatesInReleasedArtifacts` | built |
 
