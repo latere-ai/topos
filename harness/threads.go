@@ -43,7 +43,15 @@ const (
 const (
 	ToolSpawn   = "spawn"
 	ToolMessage = "message"
+	ToolAdvisor = "advisor"
 )
+
+// advisorAgent is the agent name of an advisor thread.
+const advisorAgent = "advisor"
+
+// advisorInstructions are an advisor's own when its configuration names
+// none.
+const advisorInstructions = "You advise another agent. You see the conversation it has had so far and the question it asks. You act on nothing and have no tools: read what it did, say what is wrong or missing, and what it should do next, briefly and concretely."
 
 // The error codes of spec 013, the text of a call's error result.
 const (
@@ -106,15 +114,165 @@ func stricterMode(a, b Mode) Mode {
 // subagents and is below the depth limit.
 func (t *turn) registry(names []string) (*tools.Registry, error) {
 	r := t.root.Subset(names)
-	if len(t.h.c.Subagents) == 0 || t.depth >= t.h.maxDepth() {
-		return r, nil
+	var extra []tools.Tool
+	if len(t.h.c.Subagents) > 0 && t.depth < t.h.maxDepth() {
+		extra = append(extra, spawnTool{t}, messageTool{t})
 	}
-	for _, tool := range []tools.Tool{spawnTool{t}, messageTool{t}} {
+	if t.h.c.Advisor != nil {
+		extra = append(extra, advisorTool{t})
+	}
+	for _, tool := range extra {
 		if err := r.AddBuiltin(tool); err != nil {
 			return nil, err
 		}
 	}
 	return r, nil
+}
+
+type advisorTool struct{ t *turn }
+
+func (a advisorTool) Definition() tools.Definition {
+	return tools.Definition{
+		Name:        ToolAdvisor,
+		Description: "Ask a stronger model to review your work so far. It sees this conversation and your question, acts on nothing, and answers with advice. Use it before a hard decision or when you are stuck.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"question":{"type":"string"}},"additionalProperties":false}`),
+	}
+}
+
+func (a advisorTool) Properties() tools.Properties {
+	return tools.Properties{Effect: tools.EffectNone}
+}
+
+func (a advisorTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
+	var in struct {
+		Question string `json:"question"`
+	}
+	if err := json.Unmarshal(c.Input, &in); err != nil {
+		return tools.Result{}, err
+	}
+	return a.t.advise(ctx, c.ID, in.Question)
+}
+
+// advise sends the caller's transcript and question to its advisor
+// thread, starting the thread on the first call, and returns the answer.
+func (t *turn) advise(ctx context.Context, callID, question string) (tools.Result, error) {
+	tr, err := session.Fold(t.events(), t.thread)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	body := renderTranscript(tr)
+	if q := strings.TrimSpace(question); q != "" {
+		body += "\n\nThe question: " + q
+	} else {
+		body += "\n\nReview the work so far."
+	}
+	sub := t.advisorConfig()
+	id, found := t.advisorThread()
+	var e session.Event
+	if found {
+		e, err = t.event(session.TypeThreadMessage, session.ThreadMessage{From: t.thread, To: id, FromName: t.h.c.Name, ToolUseID: callID, Content: []lux.Block{{Type: ir.BlockText, Text: body}}})
+		if err != nil {
+			return tools.Result{}, err
+		}
+		e.Thread = id
+	} else {
+		e, err = t.event(session.TypeThreadStarted, session.ThreadStarted{
+			Agent: session.AgentRef{Name: advisorAgent}, Parent: t.thread, ToolUseID: callID, Task: body,
+			Isolation: "shared", Depth: t.depth + 1, Model: sub.Connection.Model, Tools: []string{},
+		})
+		if err != nil {
+			return tools.Result{}, err
+		}
+		e.Thread, id = e.ID, e.ID
+	}
+	if err := t.commit(ctx, e); err != nil {
+		return tools.Result{}, err
+	}
+	child, err := t.child(id, t.depth+1, sub, nil)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	return child.answer(ctx)
+}
+
+// advisorConfig is the advisor thread's configuration: the advisor's
+// model and instructions, no tools, no subagents, no advisor of its own.
+func (t *turn) advisorConfig() Config {
+	a := *t.h.c.Advisor
+	a.Name = advisorAgent
+	if strings.TrimSpace(a.Instructions) == "" {
+		a.Instructions = advisorInstructions
+	}
+	a.Subagents = nil
+	cfg := t.childConfig(a)
+	cfg.Advisor = nil
+	return cfg
+}
+
+// advisorThread finds this thread's advisor thread.
+func (t *turn) advisorThread() (string, bool) {
+	for _, e := range t.events() {
+		if e.Type != session.TypeThreadStarted || e.Redacted() {
+			continue
+		}
+		var p session.ThreadStarted
+		if e.Decode(&p) == nil && p.Parent == t.thread && p.Agent.Name == advisorAgent {
+			return e.ID, true
+		}
+	}
+	return "", false
+}
+
+// answer runs an advisor's turn and returns its answer as the call's
+// result.
+func (t *turn) answer(ctx context.Context) (tools.Result, error) {
+	out, err := t.run(ctx)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	if out.StopReason != session.StopEndTurn {
+		return tools.Text(tools.OutcomeError, fmt.Sprintf("The advisor stopped: %s %s", out.StopReason, out.Detail)), nil
+	}
+	return tools.Text(tools.OutcomeOK, finalText(t.events(), t.thread)), nil
+}
+
+// renderTranscript is a transcript as text for an advisor: who said
+// what, the calls made and what they returned, each result cut to a
+// few kilobytes.
+func renderTranscript(tr session.Transcript) string {
+	const maxResult = 4 << 10
+	var b strings.Builder
+	b.WriteString("The conversation so far:\n")
+	for _, m := range tr.Messages {
+		who := "Person"
+		if m.Role == ir.RoleAssistant {
+			who = "Agent"
+		}
+		for _, blk := range m.Blocks {
+			switch blk.Type {
+			case ir.BlockText:
+				fmt.Fprintf(&b, "\n%s: %s\n", who, blk.Text)
+			case ir.BlockToolUse:
+				if blk.ToolUse != nil {
+					fmt.Fprintf(&b, "\nAgent called %s with %s\n", blk.ToolUse.Name, blk.ToolUse.Args)
+				}
+			case ir.BlockToolResult:
+				if blk.ToolResult == nil {
+					continue
+				}
+				var out []string
+				for _, in := range blk.ToolResult.Blocks {
+					out = append(out, in.Text)
+				}
+				text := strings.Join(out, "\n")
+				if len(text) > maxResult {
+					text = text[:maxResult] + "\n[cut]"
+				}
+				fmt.Fprintf(&b, "\nThe call returned:\n%s\n", text)
+			}
+		}
+	}
+	return b.String()
 }
 
 type spawnTool struct{ t *turn }
@@ -294,6 +452,8 @@ func (t *turn) childConfig(sub Subagent) Config {
 	}
 	cfg.Policy.Mode = stricterMode(t.h.c.Policy.Mode, sub.Mode)
 	cfg.Subagents = sub.Subagents
+	// The advisor belongs to the agent whose configuration names it.
+	cfg.Advisor = nil
 	cfg.Checkpoint = nil
 	cfg.Prompt.Threads = len(sub.Subagents) > 0
 	return cfg
@@ -406,6 +566,13 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 	started, ok := t.spawned(thread)
 	if !ok {
 		return unknownEffect(), nil
+	}
+	if started.Agent.Name == advisorAgent && t.h.c.Advisor != nil {
+		child, err := t.child(thread, started.Depth, t.advisorConfig(), nil)
+		if err != nil {
+			return tools.Result{}, err
+		}
+		return child.answer(ctx)
 	}
 	sub, ok := t.h.c.Subagents[started.Agent.Name]
 	if !ok {

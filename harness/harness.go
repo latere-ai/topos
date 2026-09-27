@@ -82,6 +82,9 @@ type Config struct {
 	Instructions string
 	// Subagents are the agents this agent's threads may spawn (spec 013).
 	Subagents map[string]Subagent
+	// Advisor is the model the advisor tool asks (spec 013); nil offers
+	// no advisor.
+	Advisor *Subagent
 	// MaxDepth bounds how deep threads nest: zero is 2, at most 4.
 	MaxDepth int
 	// MaxConcurrent bounds the threads running at once in a session:
@@ -452,7 +455,7 @@ func (t *turn) resume(ctx context.Context) error {
 			default:
 				run = append(run, c)
 			}
-		case c.use.Name == ToolSpawn || c.use.Name == ToolMessage:
+		case c.use.Name == ToolSpawn || c.use.Name == ToolMessage || c.use.Name == ToolAdvisor:
 			res, err := t.resumeThread(ctx, c)
 			if isPause(err) {
 				return t.finish(ctx, pauseReason(err), "")

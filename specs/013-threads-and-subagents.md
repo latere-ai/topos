@@ -189,11 +189,13 @@ each stage ([[025-task-suite]]); what the model is told about spawning
 |---|---|---|
 | A subagent reads the file its parent wrote in the step before it was spawned | `TestSubagentReadsParentFile` | not built |
 | A subagent cannot call a tool its parent lacks, with the tool neither offered nor run when the model asks for it | `TestSubagentCannotCallToolParentLacks` | not built |
-| A thread receives a second message after its first task, continues from its own transcript, and answers it | `TestThreadContinuesOnSecondMessage` | not built |
+| A thread receives a second message after its first task, continues from its own transcript, and answers it | `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
 | A child's mode, lists, thresholds and budget are never looser than its parent's | `TestNarrowingAlongSpawnEdges` as a table test | not built |
-| At depth 2 `spawn` is not offered, a forced call is refused with `depth_exceeded`, and a manifest asking depth 5 is refused at resolve | `TestDepthGates` | not built |
-| Three `spawn` calls in one step run concurrently, their events interleave, and each thread's fold contains only its own conversation | `TestThreadsRunConcurrently` | not built |
+| A thread at the depth limit is not offered `spawn` or `message`, and a spawn's `tools` narrows the child's set | `harness.TestTheDepthLimitWithholdsSpawn` | built |
+| A forced `spawn` past the limit is refused with `depth_exceeded`, and a manifest asking depth 5 is refused at resolve | `TestDepthGates` | not built |
+| Several `spawn` calls in one step run concurrently, at most `maxConcurrent` at once, and each thread's fold contains only its own conversation | `harness.TestParallelSpawnsAndTheConcurrencyCap`, `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
 | Two threads spawned with `isolation: worktree` write the same file on two branches, and the parent merges both | `TestIsolatedThreadsReturnBranches` | not built |
-| A thread that reaches an ask pauses the session `tool_confirmation`, and after the confirmation the child and then the parent continue | `TestThreadAskPausesSession` | not built |
-| The advisor thread gets the caller's transcript, has no tools, runs on the configured model, and its cost reaches the budget | `TestAdvisorThread` | not built |
+| A thread that reaches an ask pauses the session `tool_confirmation`, and after the confirmation the child and then the parent continue, through `spawn` and through `message`, however many times it pauses | `harness.TestAPausedThreadPausesTheSessionAndResumes`, `harness.TestAPausedMessageResumes`, `harness.TestAThreadCanPauseAgainAfterResuming` | built |
+| The advisor thread gets the caller's transcript, has no tools, runs on the configured model, keeps one thread across calls, and its requests count in the meter every thread shares | `harness.TestTheAdvisorSeesTheConversationAndActsOnNothing`, `harness.TestAnAdvisorCallResumes`, `harness.TestSubagentsDoNotInheritTheAdvisor` | built |
+| A spawn whose thread finished before the runner stopped yields its final text without running it again, and a spawn that started no thread is closed `unknown_effect` | `harness.TestAThreadThatFinishedBeforeACrashIsNotRunAgain` | built |
 | A session killed while two threads run resumes both from the log on another runner | `TestThreadsResumeAfterRunnerLoss` | not built |

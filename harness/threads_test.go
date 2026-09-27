@@ -659,3 +659,118 @@ func TestAPauseFromASequentialCallAndALostAppend(t *testing.T) {
 		l.appendEvents(ctx, st)
 	}
 }
+
+const advisorModel = "advisor-model"
+
+func withAdvisor(c *Config) {
+	conn := c.Connection
+	conn.Model = advisorModel
+	c.Name = "builder"
+	c.Advisor = &Subagent{Connection: &conn}
+}
+
+func TestTheAdvisorSeesTheConversationAndActsOnNothing(t *testing.T) {
+	e := setup(t, withAdvisor)
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopToolUse, call("toolu_1", "echo", `{"text":"probe"}`)),
+		reply(ir.StopToolUse, call("toolu_a1", ToolAdvisor, `{"question":"Is the probe enough?"}`)),
+		reply(ir.StopToolUse, call("toolu_a2", ToolAdvisor, `{}`)),
+		reply(ir.StopEndTurn, text("Following the advice.")),
+	)
+	e.stub.Script(advisorModel,
+		luxstub.Reply{Response: ir.Response{Model: advisorModel, Blocks: []ir.Block{text("Add a second probe.")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
+			if len(r.Tools) != 0 {
+				return fmt.Errorf("the advisor holds %d tools", len(r.Tools))
+			}
+			if !strings.Contains(r.System[1].Text, "You advise another agent") {
+				return errors.New("the advisor's instructions are missing")
+			}
+			first := r.Messages[0].Blocks[0].Text
+			if !strings.Contains(first, "Agent called echo") || !strings.Contains(first, "echo probe") || !strings.Contains(first, "The question: Is the probe enough?") {
+				return fmt.Errorf("the advisor saw %q", first)
+			}
+			return nil
+		}},
+		luxstub.Reply{Response: ir.Response{Model: advisorModel, Blocks: []ir.Block{text("Looks right now.")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1].Blocks
+			if !strings.Contains(last[len(last)-1].Text, "Review the work so far.") || len(r.Messages) < 3 {
+				return fmt.Errorf("the second call did not continue the advisor thread: %+v", r.Messages)
+			}
+			return nil
+		}},
+	)
+	e.send(ctx, "Probe it.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	byID := map[string]session.ToolResult{}
+	for _, r := range e.parentResults(t) {
+		byID[r.ToolUseID] = r
+	}
+	if byID["toolu_a1"].Content[0].Text != "Add a second probe." || byID["toolu_a2"].Content[0].Text != "Looks right now." {
+		t.Fatalf("advice %+v", byID)
+	}
+	starts := 0
+	for _, ev := range e.all() {
+		if ev.Type == session.TypeThreadStarted {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("%d advisor threads; the second call reuses the first", starts)
+	}
+}
+
+func TestAnAdvisorCallResumes(t *testing.T) {
+	e := setup(t, withAdvisor)
+	ctx := t.Context()
+	e.send(ctx, "Go.")
+	msg, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockToolUse, ToolUse: &lux.ToolUse{ID: "toolu_a", Name: ToolAdvisor, Args: json.RawMessage(`{}`)}}}}, StopReason: ir.StopToolUse}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_a", Name: ToolAdvisor, Input: json.RawMessage(`{}`), Verdict: "allow"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := session.NewEvent(session.TypeThreadStarted, session.ThreadStarted{Agent: session.AgentRef{Name: advisorAgent}, ToolUseID: "toolu_a", Task: "Review.", Depth: 1, Tools: []string{}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started.Thread = started.ID
+	e.appendEvents(ctx, msg, use, started)
+	e.running(ctx)
+	e.stub.Script(advisorModel, reply(ir.StopEndTurn, text("resumed advice")))
+	e.stub.Script(model, reply(ir.StopEndTurn, text("done")))
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	if res := e.parentResults(t); len(res) != 1 || res[0].Content[0].Text != "resumed advice" {
+		t.Fatalf("results %+v", res)
+	}
+}
+
+func TestSubagentsDoNotInheritTheAdvisor(t *testing.T) {
+	e := setup(t, func(c *Config) {
+		withReviewer(nil)(c)
+		withAdvisor(c)
+	})
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("ok")))
+	e.stub.Script(reviewerModel, luxstub.Reply{Response: ir.Response{Model: reviewerModel, Blocks: []ir.Block{text("done")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
+		for _, tool := range r.Tools {
+			if tool.Name == ToolAdvisor {
+				return errors.New("a subagent inherited the advisor")
+			}
+		}
+		return nil
+	}})
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	if !strings.Contains(renderTranscript(session.Transcript{Messages: []lux.Message{{Role: ir.RoleUser, Blocks: []lux.Block{{Type: ir.BlockToolResult, ToolResult: &lux.ToolResult{Blocks: []lux.Block{{Type: ir.BlockText, Text: strings.Repeat("x", 5000)}}}}}}}}), "[cut]") {
+		t.Fatal("a long result was not cut")
+	}
+}
