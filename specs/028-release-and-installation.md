@@ -103,6 +103,7 @@ deployment, which lives in the operator's overlay.
 | Criterion | Test that proves it | State |
 |---|---|---|
 | The installation document is walked in CI and a session runs to `end_turn` against the stub Lux | the `install` job, `TestInstallDocumentWalks` | not built |
+| `topos` builds for the `windows/amd64` archive, and the module passes `go vet` for it | `machine/host.TestTheModuleBuildsForWindows`, which cross-compiles from the Unix runner; no Windows runner is available, so no Windows binary runs in CI | built |
 | A release built from a fork publishes under the fork's namespace | `TestReleasePublishesUnderTheOwnersNamespace` | not built |
 | `toposd check` prints one line per requirement and exits 1 when any fails | `TestCheckReportsEveryRequirement` | not built |
 | The release job refuses to publish when the bar or the conformance suite fails | `TestReleaseStopsOnFailedSuite` over the workflow | not built |
