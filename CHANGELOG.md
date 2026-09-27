@@ -77,6 +77,19 @@ committed: the commit log already holds that.
   taking work through `message`. Several spawns in one step run at once,
   threads nest two deep by default, and a thread waiting for a
   confirmation pauses the session until the answer arrives.
+- A thread spawned with `isolation: worktree` works in a git worktree of
+  its own on the branch `agents/<agent>/<session>.<thread>`; each of its
+  turns is committed there, and the result names the branch and commit
+  for the parent to merge.
+- An agent configured with an advisor gets the `advisor` tool: a stronger
+  model that sees the conversation so far, acts on nothing, and answers
+  with advice.
+- An interrupt cancels the model request in flight and the running tool
+  calls at once, instead of waiting for the next step.
+- A redacted message no longer stops a session: the next turn first
+  summarizes the conversation up to it from a transcript that leaves the
+  redacted content out, so the removed value never reaches the model
+  again.
 
 ## v0.7.0 - 2026-09-26
 
