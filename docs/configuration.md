@@ -2,8 +2,7 @@
 
 `toposd` reads its configuration from `TOPOS_*` variables once at start-up.
 A start-up with anything missing or malformed exits 1 with one line that
-names every problem. Spec [002](../specs/002-scaffold-and-configuration.md)
-is the reference for every variable; this page lists the ones read today.
+names every problem. This page lists the variables read today.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -17,7 +16,7 @@ is the reference for every variable; this page lists the ones read today.
 | `TOPOS_ADMIN_SUBJECTS` | unset | subjects (`<issuer>\|<sub>`) the owner policy lets act on every object |
 | `TOPOS_LOCAL_ISSUER_KEY` | unset | a PEM PKCS#8 ECDSA P-256 or RSA (2048 bits or more) private key; set, toposd accepts the tokens `toposd token` signs and serves its key set at `/.well-known/jwks.json` |
 | `TOPOS_DB_URL`, `TOPOS_DB_POOL_URL` | unset | Postgres for sessions, and an optional transaction-pooling URL for queries |
-| `TOPOS_MODELS_URL` | required | the model connection of an agent that names none: one door of a Lux gateway, such as `https://lux.example/v1/models/anthropic`, or a provider's API |
+| `TOPOS_MODELS_URL` | required | the model connection of an agent that names none: a Lux gateway's root, such as `https://lux.example/v1/models`, from which each model reaches its own family's door; one door of it, such as `https://lux.example/v1/models/anthropic`; or a provider's API. toposd asks a URL that names no door for Lux's discovery document at start, and one that does not answer stops the start |
 | `TOPOS_MODELS_KEY` | unset | the credential sent with `TOPOS_MODELS_URL`; a session whose agent names no credential fails its turn with `model_credential_missing` without it |
 | `TOPOS_RUNNER_CAPACITY` | `16` | how many hosted sessions the server drives at once; `0` runs none |
 | `TOPOS_CELLA_URL`, `TOPOS_CELLA_TOKEN_FILE` | unset | the Cella control plane hosted sessions' sandboxes are created on, and the file holding the bearer presented to it, read on every request; without a URL a hosted session fails its turn with `machine_unavailable` |
