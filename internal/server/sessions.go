@@ -19,6 +19,7 @@ import (
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
@@ -134,6 +135,7 @@ func (c *call) createSession() error {
 	res := authz.NewResource(authorizer.KindSession, "", map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
 		"runner": session.RunnerHosted, "machine": kind, "initiator": c.caller.Subject,
+		"permissions": permissionsField(r.Agent.Spec.Permissions),
 	})
 	limits, err := c.askCreate(ctx, authorizer.ActionSessionCreate, res)
 	if err != nil {
@@ -193,6 +195,18 @@ func (c *call) createSession() error {
 		c.s.o.Notify()
 	}
 	return c.replySession(http.StatusCreated, s)
+}
+
+// permissionsField is the pinned agent version's permissions as the
+// session.create resource carries them, so the authorizer compares them
+// with what the initiator may do (the initiator cap, spec 006). An agent
+// with none carries an empty list, never an absent field.
+func permissionsField(ps []v1.Permission) []any {
+	out := make([]any, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, map[string]any{"action": p.Action, "resource": p.Resource})
+	}
+	return out
 }
 
 // lowestCost is the lowest of the budgets that are set, nil when none

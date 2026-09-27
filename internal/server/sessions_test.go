@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -107,6 +108,44 @@ func TestLimitsApplyAtCreate(t *testing.T) {
 	limits = `{"turn_timeout":"soon"}`
 	if a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer"}`); a.code() != auth.CodeAuthorizerUnavailable {
 		t.Fatalf("unreadable limits: %d %s", a.status, a.body)
+	}
+}
+
+// TestSessionCreateCarriesTheAgentsPermissions: session.create names
+// the permissions of the agent version the session pins, so the
+// authorizer can hold them to what the initiator may do; a pinned older
+// version carries its own, and an agent with none carries an empty list.
+func TestSessionCreateCarriesTheAgentsPermissions(t *testing.T) {
+	f := newFixture(t)
+	withPermissions := func(perms string) string {
+		return "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: claude-haiku-4-5}\n  machine: {kind: cella}\n" + perms
+	}
+	for _, body := range []string{
+		withPermissions("  permissions:\n    - {action: repo.read, resource: \"repo:acme/*\"}\n"),
+		withPermissions("  permissions:\n    - {action: repo.read, resource: \"repo:acme/*\"}\n    - {action: repo.write, resource: \"repo:acme/web\"}\n"),
+	} {
+		if a := f.do(http.MethodPut, "/v1/agents/reviewer", "alice", body); a.status != http.StatusCreated && a.status != http.StatusOK {
+			t.Fatalf("apply: %d %s", a.status, a.body)
+		}
+	}
+	f.apply("alice", "plain", "Review.")
+	var asked []any
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionCreate {
+			asked = append(asked, req.Resource.Fields["permissions"])
+		}
+		return authz.Decision{Allow: true}, nil
+	}
+	for _, agent := range []string{"reviewer", "reviewer@1", "plain"} {
+		f.create("alice", agent)
+	}
+	want := []any{
+		[]any{map[string]any{"action": "repo.read", "resource": "repo:acme/*"}, map[string]any{"action": "repo.write", "resource": "repo:acme/web"}},
+		[]any{map[string]any{"action": "repo.read", "resource": "repo:acme/*"}},
+		[]any{},
+	}
+	if !reflect.DeepEqual(asked, want) {
+		t.Fatalf("session.create carried the permissions\n%#v\nwant\n%#v", asked, want)
 	}
 }
 
