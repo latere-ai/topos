@@ -41,9 +41,9 @@ agent APIs use where the meaning is the same; the resemblance is
 vocabulary and no compatibility promise.
 
 The schema, the fold, the in-memory store and the directory store are
-built. The directory store's lock is built on Unix only: there is no
-`LockFileEx` implementation, so on Windows, as on any platform without
-a lock, `session/dir` refuses to take one with `ErrUnsupported`.
+built. The directory store's lock is `flock` on Unix and `LockFileEx`
+on Windows; on a platform with neither, `session/dir` refuses to take
+one with `ErrUnsupported`.
 
 ## Design
 
@@ -458,4 +458,4 @@ store's other backends ([[014-store]]); the routes that expose the log
 | `List` filters by status, agent, owners and runner kind before it pages: each match appears once across the pages and the last page names no next cursor | the `List` and `ListFilters` cases of `session/storetest.Run` | built |
 | The directory store and the in-memory store pass `session/storetest` | `session/dir.TestDirStoreConformance`, `session.TestMemoryStoreConformance` | built |
 | Every id the package mints matches its prefix and the ULID form, and a thread's id is its `thread.started` event id | `session.TestIdentifiersArePrefixedULIDs`; the `threads_and_messages` golden log of `session.TestFoldRendersEveryType` | built |
-| The directory store takes its lock on Windows with `LockFileEx`, and a second process is locked out as on Unix | `TestDirStoreLockOnWindows`, run on a Windows runner | not built |
+| The directory store takes its lock on Windows with `LockFileEx` over one byte past the holder record, so a second open file is refused without waiting and still reads the holder; the session tree and its tests compile and pass `go vet` for Windows, and the lock contract every platform keeps passes on the host | `session/dir.TestTheStoreBuildsForWindows`, `session/dir.TestTheLockIsExclusiveAcrossOpenFiles`; the two-process half is `session/dir.TestDirStoreSingleWriterLock`, which needs a Windows runner to run there | built |
