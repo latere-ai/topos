@@ -6,11 +6,13 @@ package toposcli
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
@@ -372,5 +374,296 @@ func TestRewindFromTheCommand(t *testing.T) {
 	}
 	if code, _, _ := f.run("rewind", id, "7"); code != ExitError {
 		t.Fatalf("a turn with no checkpoint exits %d", code)
+	}
+}
+
+// manifest writes a file next to the working directory and returns its
+// path relative to the working directory.
+func (f *fixture) manifest(name, body string) string {
+	f.t.Helper()
+	if err := os.WriteFile(filepath.Join(filepath.Dir(f.work), name), []byte(body), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	return filepath.Join("..", name)
+}
+
+// toolNames are the tools a request offers.
+func toolNames(r *ir.Request) string {
+	var names []string
+	for _, t := range r.Tools {
+		names = append(names, t.Name)
+	}
+	return strings.Join(names, ",")
+}
+
+// system is a request's system text.
+func system(r *ir.Request) string {
+	var parts []string
+	for _, b := range r.System {
+		parts = append(parts, b.Text)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// expectAgent checks that a request carries the agent's instructions
+// and exactly its tools.
+func expectAgent(instructions, tools string) func(*ir.Request) error {
+	return func(r *ir.Request) error {
+		if !strings.Contains(system(r), instructions) {
+			return errUnexpected("the instructions did not reach the model")
+		}
+		if got := toolNames(r); got != tools {
+			return errUnexpected("tools " + got + ", want " + tools)
+		}
+		return nil
+	}
+}
+
+const reviewer = `apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata: {name: reviewer}
+spec:
+  model: {name: claude-haiku-4-5}
+  instructionsFile: reviewer.md
+  tools: [read, glob]
+  budget: {maxCost: "1.50"}
+  limits: {turnTimeout: 30m, maxAge: 48h}
+`
+
+func TestRunAnAgentManifest(t *testing.T) {
+	f := setup(t)
+	path := f.manifest("reviewer.yaml", reviewer)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(f.work), "reviewer.md"), []byte("You review changes and report findings.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const instr = "You review changes and report findings."
+	f.stub.Script(model, luxstub.Reply{Response: reply(text("Reviewed.")).Response, Expect: expectAgent(instr, "read,glob")})
+	code, out, errOut := f.run("run", "--agent", path, "Review it.")
+	if code != ExitOK || out != "Reviewed.\n" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	s := f.sessions()[0]
+	if s.Agent.Name != "reviewer" || s.Agent.Version != 1 || !strings.HasPrefix(s.Agent.ID, "agent_") || !s.Agent.Digest.Valid() {
+		t.Fatalf("agent %+v", s.Agent)
+	}
+	if s.Budget.MaxCostUSDMicro == nil || *s.Budget.MaxCostUSDMicro != 1_500_000 || s.Limits.TurnTimeout != "30m" || s.Limits.MaxAge != "48h" || !s.ExpiresAt.Equal(s.CreatedAt.Add(48*time.Hour)) {
+		t.Fatalf("budget %v, limits %+v, expires %v", s.Budget.MaxCostUSDMicro, s.Limits, s.ExpiresAt)
+	}
+	st, err := dir.Open(f.vars["TOPOS_DATA_DIR"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, err := st.Blob(t.Context(), s.ID, s.Agent.Digest)
+	if err != nil {
+		t.Fatalf("the resolved spec is not a blob of the session: %v", err)
+	}
+	if err := rc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Continuing the session runs the same agent without the file.
+	if err := os.Remove(filepath.Join(filepath.Dir(f.work), "reviewer.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	f.stub.Script(model, luxstub.Reply{Response: reply(text("Still reviewing.")).Response, Expect: expectAgent(instr, "read,glob")})
+	if code, out, errOut := f.run("run", "--session", s.ID, "And now?"); code != ExitOK || out != "Still reviewing.\n" {
+		t.Fatalf("continue: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+
+	// A bundle that no longer matches its digest, or is gone, stops the
+	// session rather than running another agent.
+	var blob string
+	hex := session.Digest(s.Metadata["manifest"]).Hex()
+	if err := filepath.WalkDir(f.vars["TOPOS_DATA_DIR"], func(p string, _ fs.DirEntry, err error) error {
+		if err == nil && filepath.Base(p) == hex {
+			blob = p
+		}
+		return err
+	}); err != nil || blob == "" {
+		t.Fatalf("no bundle blob: %v", err)
+	}
+	if err := os.Chmod(blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blob, []byte(`{"apiVersion":"topos.latere.ai/v1","kind":"Agent"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := f.run("run", "--session", s.ID, "Again?"); code != ExitError || !strings.Contains(errOut, "hashes to") {
+		t.Fatalf("a tampered bundle: exit %d, stderr %q", code, errOut)
+	}
+	if err := os.Remove(blob); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := f.run("run", "--session", s.ID, "Again?"); code != ExitError {
+		t.Fatalf("a missing bundle: exit %d", code)
+	}
+}
+
+func TestTheManifestModeHoldsAcrossAConfirmation(t *testing.T) {
+	f := setup(t)
+	path := f.manifest("builder.yaml", `apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata: {name: builder}
+spec:
+  model: {name: claude-haiku-4-5}
+  instructions: You build things.
+  tools: [bash]
+  approvals: {mode: plan}
+`)
+	// In the manifest's plan mode the command is blocked.
+	f.stub.Script(model,
+		reply(toolUse("toolu_p", "bash", `{"command":"echo built > out.txt"}`)),
+		luxstub.Reply{Response: reply(text("Blocked, as planned.")).Response, Expect: expectAgent("You build things.", "bash")},
+	)
+	if code, out, errOut := f.run("run", "--agent", path, "Build it."); code != ExitOK || out != "Blocked, as planned.\n" || !strings.Contains(errOut, "[block]") {
+		t.Fatalf("plan: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	// --mode replaces it for the session: the call asks, and topos
+	// confirm continues under the manifest's instructions and tools.
+	f.stub.Script(model,
+		reply(toolUse("toolu_c", "bash", `{"command":"echo built > out.txt"}`)),
+		luxstub.Reply{Response: reply(text("Built.")).Response, Expect: expectAgent("You build things.", "bash")},
+	)
+	code, _, errOut := f.run("run", "--agent", path, "--mode", "confirm", "Build it.")
+	if code != ExitWaiting || !strings.Contains(errOut, "toolu_c") {
+		t.Fatalf("confirm mode: exit %d, stderr %q", code, errOut)
+	}
+	var id string
+	for _, s := range f.sessions() {
+		if s.Metadata["mode"] == "confirm" {
+			id = s.ID
+		}
+	}
+	if code, out, errOut := f.run("confirm", id, "toolu_c", "allow"); code != ExitOK || out != "Built.\n" {
+		t.Fatalf("confirm: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if b, err := os.ReadFile(filepath.Join(f.work, "out.txt")); err != nil || string(b) != "built\n" {
+		t.Fatalf("out.txt %q, %v", b, err)
+	}
+}
+
+func TestAnAgentSpawnsItsSubagent(t *testing.T) {
+	f := setup(t)
+	path := f.manifest("lead.yaml", `apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata: {name: lead}
+spec:
+  model: {name: claude-haiku-4-5, effort: low}
+  instructions: You lead.
+  tools: [read, glob]
+  subagents: [{name: tester, agent: tester}]
+  threads: {maxDepth: 1, maxConcurrent: 2}
+---
+apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata: {name: tester}
+spec:
+  model: {name: claude-haiku-4-5}
+  instructions: You test.
+  tools: [read]
+`)
+	f.stub.Script(model,
+		luxstub.Reply{Response: reply(toolUse("toolu_s", "spawn", `{"agent":"tester","task":"Run the tests."}`)).Response, Expect: expectAgent("You lead.", "read,glob,spawn,message")},
+		luxstub.Reply{Response: reply(text("All green.")).Response, Expect: expectAgent("You test.", "read")},
+		luxstub.Reply{Response: reply(text("The tests pass.")).Response, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1]
+			if tr := last.Blocks[0].ToolResult; tr == nil || !strings.Contains(tr.Blocks[0].Text, "All green.") {
+				return errUnexpected("the thread's answer did not reach the lead")
+			}
+			if r.Reasoning == nil || r.Reasoning.Effort != ir.Effort("low") {
+				return errUnexpected("the lead's effort did not reach the request")
+			}
+			return nil
+		}},
+	)
+	code, out, errOut := f.run("run", "--agent", path, "Check the tests.")
+	if code != ExitOK || out != "The tests pass.\n" || !strings.Contains(errOut, "spawn") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+func TestTheModelFlagReplacesTheManifestModel(t *testing.T) {
+	f := setup(t)
+	path := f.manifest("a.yaml", "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: a}\nspec:\n  model: {name: no-such-model, inputWindow: 1000}\n  instructions: Answer briefly.\n")
+	if code, _, errOut := f.run("run", "--agent", path, "Hi."); code != ExitError || !strings.Contains(errOut, "no-such-model") {
+		t.Fatalf("the manifest's model: exit %d, stderr %q", code, errOut)
+	}
+	f.stub.Script(model, luxstub.Reply{Response: reply(text("Hello.")).Response, Expect: expectAgent("Answer briefly.", "read,write,edit,bash,grep,glob,web_fetch,todo")})
+	if code, out, errOut := f.run("run", "--agent", path, "--model", model, "Hi."); code != ExitOK || out != "Hello.\n" {
+		t.Fatalf("--model: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+func TestTheDefaultAgentManifest(t *testing.T) {
+	f := setup(t)
+	cfg := filepath.Join(filepath.Dir(f.work), "config")
+	f.vars["XDG_CONFIG_HOME"] = cfg
+	if err := os.MkdirAll(filepath.Join(cfg, "topos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: mine}\nspec:\n  model: {name: " + model + "}\n  instructions: Always answer in one line.\n  tools: [grep]\n"
+	if err := os.WriteFile(filepath.Join(cfg, "topos", "agent.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.stub.Script(model, luxstub.Reply{Response: reply(text("One line.")).Response, Expect: expectAgent("Always answer in one line.", "grep")})
+	if code, out, errOut := f.run("run", "Hi."); code != ExitOK || out != "One line.\n" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if s := f.sessions()[0]; s.Agent.Name != "mine" {
+		t.Fatalf("agent %+v", s.Agent)
+	}
+	for env, want := range map[string]string{"XDG_CONFIG_HOME=/x": "/x/topos", "HOME=/h": "/h/.config/topos", "": ""} {
+		k, v, _ := strings.Cut(env, "=")
+		if got := ConfigDir(func(n string) string {
+			if n == k {
+				return v
+			}
+			return ""
+		}); got != want {
+			t.Fatalf("ConfigDir with %q = %q", env, got)
+		}
+	}
+	// No configuration directory is the built-in agent.
+	g := setup(t)
+	delete(g.vars, "HOME")
+	g.vars["TOPOS_DATA_DIR"] = filepath.Join(filepath.Dir(g.work), "data")
+	g.stub.Script(model, luxstub.Reply{Response: reply(text("Built in.")).Response, Expect: expectAgent("", "read,write,edit,bash,grep,glob,web_fetch,todo")})
+	if code, out, errOut := g.run("run", "--model", model, "Hi."); code != ExitOK || out != "Built in.\n" {
+		t.Fatalf("built in: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+func TestAgentManifestRefusals(t *testing.T) {
+	f := setup(t)
+	agent := func(spec string) string {
+		return "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: a}\nspec:\n  model: {name: " + model + "}\n" + spec
+	}
+	for name, c := range map[string]struct {
+		body, want string
+	}{
+		"invalid":     {agent("  threads: {maxDepth: 5}\n"), "invalid_manifest"},
+		"secret":      {agent("  instructions: use sk-ant-api03-Zq8vXk2Lr9TnB4wYc7HdM1pF\n"), "manifest_holds_secret"},
+		"unknown":     {agent("  subagents: [{name: g, agent: ghost}]\n"), "unknown_reference"},
+		"hooks":       {agent("  hooks: [{event: turn_end, command: 'true'}]\n"), "does not apply spec.hooks yet"},
+		"client tool": {agent("  tools: [{name: ask, client: true, description: Ask., inputSchema: {type: object}}]\n"), "does not apply spec.tools[0] yet"},
+		"cella":       {agent("  machine: {kind: cella}\n"), "machine.kind cella"},
+		"inline":      {agent("  subagents: [{name: s, spec: {model: {name: m}, advisor: {model: {name: m}}}}]\n"), "spec.subagents[0].spec.advisor"},
+		"referenced":  {agent("  subagents: [{name: s, agent: b}]\n") + "---\napiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: b}\nspec: {model: {name: m}, skills: [{path: /s}]}\n", "b.spec.skills"},
+		"no agent":    {"apiVersion: topos.latere.ai/v1\nkind: MemoryStore\nmetadata: {name: n}\nspec: {description: Notes.}\n", "no Agent document"},
+	} {
+		path := f.manifest(strings.ReplaceAll(name, " ", "-")+".yaml", c.body)
+		code, _, errOut := f.run("run", "--agent", path, "x")
+		if code != ExitUsage || !strings.Contains(errOut, c.want) {
+			t.Errorf("%s: exit %d, stderr %q", name, code, errOut)
+		}
+	}
+	if code, _, errOut := f.run("run", "--agent", "missing.yaml", "x"); code != ExitUsage || !strings.Contains(errOut, "--agent") {
+		t.Fatalf("a missing file: exit %d, stderr %q", code, errOut)
+	}
+	if code, _, _ := f.run("run", "--agent", "a.yaml", "--session", session.NewID(session.PrefixSession), "x"); code != ExitUsage {
+		t.Fatalf("--agent with --session: exit %d", code)
+	}
+	if len(f.sessions()) != 0 {
+		t.Fatal("a refused manifest created a session")
 	}
 }

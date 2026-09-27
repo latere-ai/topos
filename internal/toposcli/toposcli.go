@@ -8,16 +8,19 @@
 package toposcli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +35,8 @@ import (
 	"latere.ai/x/topos/internal/version"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
+	"latere.ai/x/topos/manifest"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/models/scripted"
@@ -131,6 +136,7 @@ func (c *cli) run(ctx context.Context, args []string) int {
 func usage(w *console) {
 	w.printf("%s", `usage:
   topos run [flags] [<prompt>]        run a turn of a local session in the working directory
+                                      (--agent <file>, --model, --mode, --max-cost, --dir, --output, --session)
   topos confirm <session> <tool_use_id> allow|deny [--note <text>] [--remember <pattern>]
   topos rewind <session> <turn>       restore the working directory to the end of a turn
   topos version
@@ -140,6 +146,7 @@ func usage(w *console) {
 // runOptions are the flags of run and confirm.
 type runOptions struct {
 	session string
+	agent   string
 	model   string
 	mode    string
 	maxCost float64
@@ -149,8 +156,8 @@ type runOptions struct {
 
 func (o *runOptions) flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.session, "session", "", "continue this session")
-	fs.StringVar(&o.model, "model", "", "the model to run, by catalog name")
-	fs.StringVar(&o.mode, "mode", string(harness.ModeConfirm), "plan, confirm or progressive")
+	fs.StringVar(&o.model, "model", "", "the model to run, by catalog name; replaces the agent's")
+	fs.StringVar(&o.mode, "mode", "", "plan, confirm or progressive; empty is the agent's, else confirm")
 	fs.Float64Var(&o.maxCost, "max-cost", 0, "the session's budget in USD; 0 is none")
 	fs.StringVar(&o.dir, "dir", "", "the working directory; empty is the current one")
 	fs.StringVar(&o.output, "output", "text", "text, json or stream-json")
@@ -158,7 +165,7 @@ func (o *runOptions) flags(fs *flag.FlagSet) {
 
 func (o runOptions) validate() error {
 	switch harness.Mode(o.mode) {
-	case harness.ModePlan, harness.ModeConfirm, harness.ModeProgressive:
+	case "", harness.ModePlan, harness.ModeConfirm, harness.ModeProgressive:
 	default:
 		return fmt.Errorf("--mode %q is not plan, confirm or progressive", o.mode)
 	}
@@ -178,6 +185,7 @@ func runCmd(ctx context.Context, args []string, env *cli) int {
 	fs.SetOutput(env.stderr.w)
 	var o runOptions
 	o.flags(fs)
+	fs.StringVar(&o.agent, "agent", "", "the agent manifest to run; default $XDG_CONFIG_HOME/topos/agent.yaml when present")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -187,6 +195,10 @@ func runCmd(ctx context.Context, args []string, env *cli) int {
 	}
 	if env.Getenv("TOPOS_URL") != "" {
 		env.stderr.println("topos: server sessions are not built yet; unset TOPOS_URL to run a local session")
+		return ExitUsage
+	}
+	if o.session != "" && o.agent != "" {
+		env.stderr.println("topos: --agent starts a new session; a session keeps the agent it was created with")
 		return ExitUsage
 	}
 	prompt := strings.Join(fs.Args(), " ")
@@ -202,13 +214,21 @@ func runCmd(ctx context.Context, args []string, env *cli) int {
 		env.stderr.println("topos: no prompt: pass it as an argument or on stdin")
 		return ExitUsage
 	}
+	var agent *manifest.Resolved
+	if o.session == "" {
+		a, err := loadAgent(ctx, env, o.agent)
+		if err != nil {
+			return report(env, err)
+		}
+		agent = a
+	}
 	l, err := openLocal(env, o)
 	if err != nil {
 		return report(env, err)
 	}
 	id := o.session
 	if id == "" {
-		s, err := l.create(ctx, o)
+		s, err := l.create(ctx, o, agent)
 		if err != nil {
 			return report(env, err)
 		}
@@ -367,19 +387,158 @@ func openLocal(env *cli, o runOptions) (*local, error) {
 	}, nil
 }
 
-func (l *local) create(ctx context.Context, o runOptions) (session.Session, error) {
-	s := session.New(session.AgentRef{ID: builtinAgent, Name: "topos", Version: 1}, l.person, session.RunnerExternal,
-		session.Machine{Kind: machine.KindHost, Workdir: l.workdir}, time.Now())
+// create creates the session: of the resolved agent when there is one,
+// otherwise of the built-in agent. The agent's resolved spec and its
+// bundle are blobs of the session, so every later invocation that
+// continues it, and a runner elsewhere, runs the same agent.
+func (l *local) create(ctx context.Context, o runOptions, agent *manifest.Resolved) (session.Session, error) {
+	ref := session.AgentRef{ID: builtinAgent, Name: "topos", Version: 1}
+	if agent != nil {
+		st := agent.Agent.Status
+		ref = session.AgentRef{ID: st.ID, Name: agent.Name, Version: st.Version, Digest: session.Digest(st.Digest)}
+	}
+	s := session.New(ref, l.person, session.RunnerExternal, session.Machine{Kind: machine.KindHost, Workdir: l.workdir}, time.Now())
 	s.Writer = &session.Writer{Kind: session.RunnerExternal, Subject: l.person.Subject, Since: s.CreatedAt}
 	if o.maxCost > 0 {
 		micro := int64(math.Ceil(o.maxCost * 1e6))
 		s.Budget.MaxCostUSDMicro = &micro
 	}
 	s.Metadata = map[string]string{"model": o.model, "mode": o.mode}
-	if err := l.store.Create(ctx, s, nil); err != nil {
+	var blobs map[session.Digest][]byte
+	if agent != nil {
+		c, err := agent.AgentConfig(nil)
+		if err != nil {
+			return session.Session{}, err
+		}
+		if s.Budget.MaxCostUSDMicro == nil {
+			s.Budget.MaxCostUSDMicro = c.MaxCostUSDMicro
+		}
+		lim := agent.Agent.Spec.Limits
+		s.Limits = session.Limits{TurnTimeout: lim.TurnTimeout, MaxAge: lim.MaxAge}
+		s.ExpiresAt = s.CreatedAt.Add(c.MaxAge)
+		bundle, err := agent.Bundle()
+		if err != nil {
+			return session.Session{}, err
+		}
+		d := session.DigestOf(bundle)
+		blobs = map[session.Digest][]byte{ref.Digest: agent.Spec, d: bundle}
+		s.Metadata[metaManifest] = string(d)
+	}
+	if err := l.store.Create(ctx, s, blobs); err != nil {
 		return session.Session{}, err
 	}
 	return s, nil
+}
+
+// metaManifest is the session metadata key holding the digest of the
+// agent's bundle blob.
+const metaManifest = "manifest"
+
+// ConfigDir is $XDG_CONFIG_HOME/topos, or $HOME/.config/topos, or empty
+// when neither variable is set.
+func ConfigDir(getenv func(string) string) string {
+	if d := getenv("XDG_CONFIG_HOME"); d != "" {
+		return filepath.Join(d, "topos")
+	}
+	if h := getenv("HOME"); h != "" {
+		return filepath.Join(h, ".config", "topos")
+	}
+	return ""
+}
+
+// loadAgent resolves the agent a new session runs: the --agent file, or
+// agent.yaml in the configuration directory when it exists, or none,
+// which is the built-in agent. The first Agent document of the file is
+// the one that runs; the others are the agents it references. A local
+// run knows no stored objects, so every reference names a document of
+// the same file.
+func loadAgent(ctx context.Context, env *cli, file string) (*manifest.Resolved, error) {
+	if file == "" {
+		dir := ConfigDir(env.Getenv)
+		if dir == "" {
+			return nil, nil
+		}
+		file = filepath.Join(dir, "agent.yaml")
+		if _, err := os.Stat(file); errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		} else if err != nil {
+			return nil, err
+		}
+	} else if !filepath.IsAbs(file) {
+		file = filepath.Join(env.Dir, file)
+	}
+	body, err := os.ReadFile(file)
+	if err != nil {
+		return nil, &errUsage{"--agent: " + err.Error()}
+	}
+	root, err := os.OpenRoot(filepath.Dir(file))
+	if err != nil {
+		return nil, &errUsage{"--agent: " + err.Error()}
+	}
+	defer func() {
+		if err := root.Close(); err != nil {
+			env.stderr.println("topos: close the manifest's directory:", err)
+		}
+	}()
+	rs, err := manifest.Resolve(ctx, body, manifest.Options{Files: root.FS()})
+	if err != nil {
+		return nil, &errUsage{fmt.Sprintf("%s: %v", file, err)}
+	}
+	var agent *manifest.Resolved
+	for i := range rs {
+		if rs[i].Agent != nil && (agent == nil || rs[i].Doc < agent.Doc) {
+			agent = &rs[i]
+		}
+	}
+	if agent == nil {
+		return nil, &errUsage{file + ": no Agent document to run"}
+	}
+	if paths := localUnsupported(agent); len(paths) > 0 {
+		return nil, &errUsage{fmt.Sprintf("%s: a local run does not apply %s yet", file, strings.Join(paths, ", "))}
+	}
+	return agent, nil
+}
+
+// localUnsupported lists the fields of an agent and its subagents that
+// a local run cannot honor. Each is refused rather than ignored: a hook
+// or a client tool left out would change what the agent may do.
+func localUnsupported(r *manifest.Resolved) []string {
+	var out []string
+	var walk func(at string, s v1.AgentSpec)
+	walk = func(at string, s v1.AgentSpec) {
+		for i, t := range s.Tools {
+			if t.Client || t.OutputLimit != 0 {
+				out = append(out, fmt.Sprintf("%s.tools[%d]", at, i))
+			}
+		}
+		for _, f := range []struct {
+			name string
+			set  bool
+		}{
+			{"hooks", len(s.Hooks) > 0}, {"advisor", s.Advisor != nil}, {"skills", len(s.Skills) > 0},
+			{"mcpServers", len(s.MCPServers) > 0}, {"memoryStores", len(s.MemoryStores) > 0},
+			{"connections", len(s.Connections) > 0}, {"machine.kind cella", s.Machine.Kind == v1.MachineCella},
+		} {
+			if f.set {
+				out = append(out, at+"."+f.name)
+			}
+		}
+		for i, sub := range s.Subagents {
+			if sub.Spec != nil {
+				walk(fmt.Sprintf("%s.subagents[%d].spec", at, i), *sub.Spec)
+			}
+		}
+	}
+	walk("spec", r.Agent.Spec)
+	refs := make([]string, 0, len(r.Pinned))
+	for ref := range r.Pinned {
+		refs = append(refs, ref)
+	}
+	slices.Sort(refs)
+	for _, ref := range refs {
+		walk(r.Pinned[ref].Metadata.Name+".spec", r.Pinned[ref].Spec)
+	}
+	return out
 }
 
 // builtinAgent is the agent a run with no manifest runs.
@@ -414,42 +573,105 @@ type errUsage struct{ msg string }
 
 func (e *errUsage) Error() string { return e.msg }
 
+// connect is the model a name runs on: the connection to the agent's
+// base URL or TOPOS_MODELS_URL with TOPOS_MODELS_KEY, and the figures
+// of the catalog overlaid by the agent's own, or of the scripted model.
+func (l *local) connect(m v1.AgentModel, overlay *models.Entry) (models.Model, models.Connection, models.Entry, error) {
+	base := m.BaseURL
+	if base == "" {
+		base = l.getenv("TOPOS_MODELS_URL")
+	}
+	if base == "" {
+		return nil, models.Connection{}, models.Entry{}, &errUsage{"no model connection: set TOPOS_MODELS_URL"}
+	}
+	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: l.getenv("TOPOS_MODELS_KEY")}
+	model := l.model
+	var entry models.Entry
+	if conn.Scripted() {
+		entry, model = scriptedEntry(m.Name), l.scripted
+	} else {
+		cat, err := models.Embedded()
+		if err != nil {
+			return nil, models.Connection{}, models.Entry{}, err
+		}
+		var over []models.Entry
+		if overlay != nil {
+			over = append(over, *overlay)
+		}
+		if entry, err = cat.Resolve(m.Name, over...); err != nil {
+			return nil, models.Connection{}, models.Entry{}, err
+		}
+	}
+	conn.Family, conn.Dialect = entry.Family, entry.Dialect
+	return model, conn, entry, nil
+}
+
+// agentConfig is the harness pieces of the session's agent, read back
+// from its bundle blob; nil for the built-in agent.
+func (l *local) agentConfig(ctx context.Context, s session.Session) (*manifest.AgentConfig, error) {
+	d := s.Metadata[metaManifest]
+	if d == "" {
+		return nil, nil
+	}
+	rc, err := l.store.Blob(ctx, s.ID, session.Digest(d))
+	if err != nil {
+		return nil, err
+	}
+	b, err := io.ReadAll(rc)
+	if err := errors.Join(err, rc.Close()); err != nil {
+		return nil, err
+	}
+	r, err := manifest.ReadBundle(b)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.AgentConfig(func(m v1.AgentModel, overlay models.Entry) (models.Model, *models.Connection, *models.Entry, error) {
+		model, conn, entry, err := l.connect(m, &overlay)
+		return model, &conn, &entry, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 // config builds a session's harness: the host machine in the session's
-// working directory, the built-in tools, and the model the run names.
+// working directory, and the model, instructions, tools, policy,
+// subagents and limits of the session's agent. --model replaces the
+// agent's spec.model and --mode its mode, each for this invocation or,
+// when the session was created with it, for the whole session.
 func (l *local) config(o runOptions) func(ctx context.Context, s session.Session) (harness.Config, error) {
 	return func(ctx context.Context, s session.Session) (harness.Config, error) {
-		name := o.model
-		if name == "" {
-			name = s.Metadata["model"]
+		ac, err := l.agentConfig(ctx, s)
+		if err != nil {
+			return harness.Config{}, err
 		}
-		if name == "" {
+		var spec v1.AgentModel
+		var overlay *models.Entry
+		cfg := harness.Config{Prompt: prompt.Options{Host: true}}
+		if ac != nil {
+			spec, overlay = ac.Model, &ac.Overlay
+			cfg.Name, cfg.Instructions, cfg.Policy, cfg.Effort = ac.Name, ac.Instructions, ac.Policy, ac.Effort
+			cfg.Subagents, cfg.MaxDepth, cfg.MaxConcurrent, cfg.CompactAt = ac.Subagents, ac.MaxDepth, ac.MaxConcurrent, ac.CompactAt
+			cfg.Prompt.Threads = len(ac.Subagents) > 0
+		}
+		if name := cmp.Or(o.model, s.Metadata["model"]); name != "" {
+			spec, overlay, cfg.Effort = v1.AgentModel{Name: name}, nil, ""
+		}
+		if spec.Name == "" {
 			return harness.Config{}, &errUsage{"no model: pass --model or --agent"}
 		}
-		base := l.getenv("TOPOS_MODELS_URL")
-		if base == "" {
-			return harness.Config{}, &errUsage{"no model connection: set TOPOS_MODELS_URL"}
+		if cfg.Model, cfg.Connection, cfg.Entry, err = l.connect(spec, overlay); err != nil {
+			return harness.Config{}, err
 		}
-		conn := models.Connection{BaseURL: base, Model: name, Credential: l.getenv("TOPOS_MODELS_KEY")}
-		model := l.model
-		var entry models.Entry
-		if conn.Scripted() {
-			entry, model = scriptedEntry(name), l.scripted
-		} else {
-			cat, err := models.Embedded()
-			if err != nil {
-				return harness.Config{}, err
-			}
-			if entry, err = cat.Resolve(name); err != nil {
-				return harness.Config{}, err
-			}
-		}
-		conn.Family, conn.Dialect = entry.Family, entry.Dialect
-		mode := o.mode
-		if mode == "" {
-			mode = s.Metadata["mode"]
+		cfg.Policy.Mode = harness.Mode(cmp.Or(o.mode, s.Metadata["mode"], string(cfg.Policy.Mode), string(harness.ModeConfirm)))
+		var roots []string
+		held := manifest.Builtins()
+		if ac != nil {
+			roots, held = ac.Machine.Roots, ac.Tools
 		}
 		m, err := host.Open(host.Options{
-			Workdir: s.Machine.Workdir, SpillDir: filepath.Join(l.dataDir, "spill", s.ID),
+			Workdir: s.Machine.Workdir, Roots: roots, SpillDir: filepath.Join(l.dataDir, "spill", s.ID),
 			Home: l.getenv("HOME"), DataDir: l.dataDir, ID: s.ID,
 		})
 		if err != nil {
@@ -457,19 +679,15 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 		}
 		reg := tools.NewRegistry()
 		for _, t := range tools.Builtins() {
+			if !slices.Contains(held, t.Definition().Name) {
+				continue
+			}
 			if err := reg.AddBuiltin(t); err != nil {
 				return harness.Config{}, errors.Join(err, m.Release(ctx, true))
 			}
 		}
-		return harness.Config{
-			Model:      model,
-			Connection: conn,
-			Entry:      entry,
-			Machine:    m,
-			Tools:      reg,
-			Policy:     harness.Policy{Mode: harness.Mode(mode)},
-			Prompt:     prompt.Options{Host: true},
-		}, nil
+		cfg.Machine, cfg.Tools = m, reg
+		return cfg, nil
 	}
 }
 
