@@ -1100,9 +1100,6 @@ func (t *turn) unopened(ctx context.Context, err error) (tools.Result, error) {
 	if isSpent(err) {
 		return settle(ctx, tools.Result{}, err), err
 	}
-	if ctx.Err() != nil {
-		return settle(ctx, tools.Result{}, err), nil
-	}
 	code := machine.CodeUnavailable
 	if oe, ok := errors.AsType[*machine.OpenError](err); ok {
 		code = oe.Code
