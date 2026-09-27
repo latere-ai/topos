@@ -91,8 +91,8 @@ its key acts as ([[018-credentials-and-secrets]]).
 | `instructions` | string | empty | [[011-instructions-and-skills]] |
 | `instructionsFile` | path, relative to the manifest | none | read by the loader and inlined into `instructions`; the resolved spec has no `instructionsFile` |
 | `tools` | list of names or `{name, outputLimit, client, description, inputSchema}` | absent: every built-in; `[]`: none | [[008-tools]]; `client: true` declares a client-executed tool, which needs `description` and `inputSchema` |
-| `permissions` | list of `{action, resource}` | none | the agent's grants, which become its key's ([[006-identity]], [[018-credentials-and-secrets]]) |
-| `identity` | `agent` or `person` | `person` | [[018-credentials-and-secrets]] |
+| `permissions` | list of `{action, resource}` | none | the agent's grants, the reach of its identity ([[006-identity]], [[018-credentials-and-secrets]]) |
+| `identity` | `agent` or `person` | `person` | removed with [[018-credentials-and-secrets]]: the agent's owner, a person or an organization, decides, so an organization's agent applied without the field no longer acts as whoever applied it |
 | `approvals.mode` | `plan`, `confirm`, `progressive` | `confirm` | [[012-permissions-and-approvals]] |
 | `approvals.alwaysAllow`, `approvals.alwaysConfirm` | list of patterns | none | [[012-permissions-and-approvals]], used only when no authorizer supplies the lists |
 | `approvals.thresholds` | `{flagAt, askAt, blockAt}` in `[0, 1]`, increasing | `0.3`, `0.5`, `0.9` | [[012-permissions-and-approvals]] |

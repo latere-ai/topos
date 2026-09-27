@@ -189,6 +189,7 @@ hash to.
 | `POST /internal/v1/claims` | `runner`, `capacity`, `wait` | a list of `{session_id, generation, expires_at}` |
 | `POST /internal/v1/leases/{session}/renew` | `generation` | `expires_at`, or 409 `lease_lost` |
 | `POST /internal/v1/leases/{session}/release` | `generation` | 204 |
+| `POST /internal/v1/leases/{session}/tokens` | `generation`, `audience`, `workload` (`session` or `sandbox`) | a token for the session's agent and its `expires_at`, or the session's Lux key for the audience `lux`; 409 `lease_lost` for a lease the runner does not hold ([[018-credentials-and-secrets]]) |
 | `POST /internal/v1/sessions/{session}/events` | `generation`, `after_seq`, `events` | `last_seq`, or 409 `lease_lost` or `sequence_conflict` |
 | `GET /internal/v1/sessions/{session}` and `.../events?from_seq=` and `.../stream` | none | the Session, a page of events, replay then live |
 | `PUT` and `GET /internal/v1/sessions/{session}/blobs/{digest}` | bytes | the blob |

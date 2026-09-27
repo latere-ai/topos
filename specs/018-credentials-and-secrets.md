@@ -1,5 +1,5 @@
 ---
-title: "Credentials, connections and secrets: write-only credentials, the agent's key, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope"
+title: "Credentials, connections and secrets: write-only credentials, the agent's identity and its session tokens, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope"
 status: drafted
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 003-manifest.md, 004-session-log.md, 006-identity.md, 009-machines.md]
@@ -18,7 +18,8 @@ A credential is a secret a session uses to reach one connection. It is
 a Topos object, written once, never returned, never placed in an event
 and never placed in a machine (invariant 5 of [[001-architecture]]).
 This spec owns the Credential object and its encryption at rest, the
-agent's key and how a session acts with it (invariant 8), connections
+agent's identity and the short-lived tokens a session acts with
+(invariant 8), connections
 configured as the person running the agent or owned by the agent,
 per-call resolution and injection outside the machine, scrubbing of
 known values from tool output, named secrets as placeholders, the input
@@ -33,7 +34,9 @@ plaintext; that is retired, because nothing here places a secret in a
 machine at all. The retired hosted service reached other services
 through per-product actor audiences, a Cella grant mode and stored
 service-account secrets under an encryption key that was never set, so
-no unattended session could act; none of that is carried. Borrowed:
+no unattended session could act; none of that is carried. Until this
+spec lands, a hosted session acts with the installation's one model
+key and one Cella bearer. Borrowed:
 envelope encryption under a list of keys where the first wraps and all
 are tried, as Lux custodies provider credentials, and Cella's Secret
 kind, whose placeholder its egress gateway substitutes at the last hop.
@@ -46,9 +49,9 @@ kind, whose placeholder its egress gateway substitutes at the last hop.
 |---|---|
 | `id` | `cred_…` ([[004-session-log]]) |
 | `name` | a DNS label, unique per owner |
-| `kind` | `agent_key` (an agent's key), `token` (a bearer or API key sent in a header), `oauth_refresh` (a refresh token the runner trades for access tokens) |
-| `owner` | the subject or organization that owns it; an `agent_key` is owned by its agent |
-| `hosts` | the hosts the value may be sent to; empty for `agent_key`, whose use is the token trade below |
+| `kind` | `token` (a bearer or API key sent in a header), `oauth_refresh` (a refresh token the runner trades for access tokens) |
+| `owner` | the subject or organization that owns it |
+| `hosts` | the hosts the value may be sent to |
 | `connection` | the Connection a person's own credential answers for, when it is one |
 | `created_by`, `created_at`, `last_used_at`, `expires_at` | bookkeeping; `expires_at` optional |
 | `status` | `active` or `revoked` |
@@ -73,27 +76,75 @@ key, and `toposd check` reports how many remain
 ([[028-release-and-installation]]). With the variable unset, every
 credential route answers `credentials_unavailable`.
 
-### The agent's key
+### The agent's identity and its session tokens
 
-| Agent | Acts as | Its key |
-|---|---|---|
-| `identity: agent`, an organization's agent ([[003-manifest]]) | its own agent identity, a principal the installation's identity provider holds for the agent | a key narrowed to the agent's `permissions`, stored once as an `agent_key` credential; revoked when the agent is archived |
-| `identity: person`, a personal agent | the person, narrowed; audit reads "agent X, acting for you" | one of the person's keys narrowed to the agent's `permissions`, stored the same way |
-| any agent run by an external runner | the runner's own credential for the append | the developer's, never stored by Topos ([[017-external-runners-handoff-fork]]) |
+An agent holds no key. Every agent applied to a server with an identity
+provider is its own identity there, recorded with its owner: the person
+for a personal agent, the organization for an organization's agent
+([[003-manifest]]). Subagents, forks, sessions and trigger firings are
+not identities; they act as the agent they belong to
+([[013-threads-and-subagents]]). The identity is created when the agent
+is first applied and disabled when it is archived. An agent a person
+runs locally with `topos` acts as that person and has no identity.
+The owner is what makes an agent personal or an organization's, so the
+manifest's `identity` field is removed ([[003-manifest]]).
 
-The core stores the key a client provisioned when it applied the agent
-with its own authority; it mints no key at an identity provider. Every
-session of the agent acts with that key, whoever starts it and whoever
-writes to it. The runner resolves it per outbound call through a
-`TokenSource(ctx, audience) (token, expiry, error)` built for the
-session: it trades the key at its issuer for a token of 15 minutes per
-core audience, caches each until 2 minutes before its expiry, and
-presents it as a bearer; at Lux's model doors it presents the key's
-token the same way, so money follows the key ([[007-models]]). A local
-issuer implements the same `TokenSource` for a self-hoster. The runner
-sets the session attribution field of `latere.ai/x/pkg/authz`'s
-envelope on every call it makes, an additive pkg change that lands with
-this spec, so an installation's authorizer knows which session asks.
+| Agent | Its identity | Reach | Spend |
+|---|---|---|---|
+| a personal agent | owned by the person | at most the person's, narrowed to the agent's `permissions` | the person's wallet |
+| an organization's agent | owned by the organization | the agent's `permissions`, capped per session by the initiator | the organization's allowance, per the authorizer |
+| a session of an external runner | the developer's own credential for the append ([[017-external-runners-handoff-fork]]) | the developer's | the developer's |
+
+The installation holds one credential of its own at its identity
+provider, as every service does; no runner and no machine holds it.
+toposd asks the identity provider for a token for a hosted agent: its
+subject is the agent's identity, its audience one core, its lifetime at
+most 15 minutes, and it carries the session as a claim, `session`, with
+the session's id and the workload, `session` for the runner's own calls
+and `sandbox` for a sandbox's. The identity provider mints only for the
+agents the installation hosts; toposd asks only for a session whose
+lease the requesting runner holds at its current generation
+([[016-runners]]). The session claim is authority, not attribution: a
+core forwards the verified claims to the installation's authorizer
+([[006-identity]]), which checks on every decision that the session is
+live and applies its scope, the initiator cap and the agent's
+permissions, so a token of an ended session is refused before it
+expires, and a token for a session the authorizer never allowed opens
+nothing.
+
+A runner reaches tokens through a `TokenSource(ctx, audience) (token,
+expiry, error)` built for the session: in `serve` it calls toposd's
+minter in process, and in the runner role it asks the internal
+listener, which answers only for a lease the runner holds. Each token
+is cached until 2 minutes before its expiry. After a scope change or a
+lost lease every cached token is dropped.
+
+### Model access
+
+Lux's model doors take Lux keys, so a session reaches models with
+short-lived Lux keys rather than tokens. At the first claim the runner
+asks, through toposd, the installation's authorizer for two keys for
+the session, which the authorizer has Lux create: one for the runner's
+own requests and one for the session's sandbox, each marked with the
+session and its workload, lasting at most the session's lease plus 15
+minutes and renewed with it, and carrying the session's budget
+([[007-models]]). The runner presents its key as the model connection's
+credential. The sandbox's key is a Cella Secret scoped to Lux's host
+and its model doors' path, a placeholder inside the sandbox that Cella's
+egress gateway swaps in ([[009-machines]]); it opens nothing but models,
+because no other core accepts a Lux key. Lux enforces the budget per
+key and records each call against the session and its workload, so the
+ledger keeps a session's own spend apart from its sandbox's
+([[023-events-and-observability]]).
+
+### Without an identity provider
+
+A self-hosted installation with no identity provider acts with its own
+credentials: `TOPOS_MODELS_KEY` for models and the file of
+`TOPOS_CELLA_TOKEN_FILE` for Cella ([[002-scaffold-and-configuration]]).
+Every session acts as the installation, with no per-agent reach and no
+per-session binding; the operator's choice of those credentials is the
+bound.
 
 ### Connections
 
@@ -117,7 +168,7 @@ rotates a Secret's value before the token in it expires.
 ### Scrubbing known values
 
 The runner keeps the set of exact values it resolved for the session:
-the key and its tokens, connection credentials, named secret values.
+its tokens and Lux keys, connection credentials, named secret values.
 Before a `tool.result`, a hook's output or a `session.error` detail is
 appended or reaches the model, every occurrence of a value, and of its
 standard base64, URL-safe base64 and percent-encoded forms, is replaced
@@ -172,13 +223,13 @@ as the agent's permissions, capped by the initiator.
 | Change | Who | Bound |
 |---|---|---|
 | narrow | anyone who may send | none |
-| widen | anyone who may send | only within the agent's permissions and the widener's own rights; until the end of the turn by default, or for a set number of minutes, or standing when asked |
-| grant an irreversible action (a push to a protected branch, a production deploy) | nobody | never grantable; stays a per-action confirmation ([[012-permissions-and-approvals]]) |
+| widen | whom the authorizer allows | within the agent's permissions and the widener's own rights; how long a widening lasts is the authorizer's decision |
+| grant a flagged action, one a core marks irreversible | nobody, by a widening | only a one-shot step-up grant for one action and resource ([[012-permissions-and-approvals]]) |
 
 Each change is a `session.scope_changed` event ([[004-session-log]]);
 a widening that lapses is reverted by the runner with another one.
 toposd records and serves the scope and decides nothing about it: the
-authorizer, which learns the session from the envelope's attribution,
+authorizer, which learns the session from the token's `session` claim,
 reads it. After any change the runner drops its cached tokens and takes
 fresh ones, so no cached allow crosses a change.
 
@@ -196,8 +247,11 @@ fresh ones, so no cached allow crosses a change.
 The routes ([[015-api]]); the action vocabulary and the owner policy
 ([[006-identity]]); git credentials and ref rules ([[019-git]]); memory
 backends' credentials ([[020-memory-stores]]); the threat model of a
-compromised runner ([[027-security]]); how a client provisions an
-agent's key at its identity provider.
+compromised runner ([[027-security]]). Outside this repository: the
+identity provider's agent identities and the tokens it mints for a
+hosted agent with the `session` claim; the authorizer's session record
+and its live check; Lux creating short-lived session keys; Cella's
+egress swapping a Secret by host and path.
 
 ## Acceptance criteria
 
@@ -206,7 +260,10 @@ agent's key at its identity provider.
 | Canary credentials used by the suite's cloud tasks appear in no event, blob, sink record, log line, sandbox environment, sandbox file or process list | `TestNoCredentialInAnyEventOrMachine` in the e2e tier | not built |
 | No route returns a credential's value, and a value under 8 bytes is refused | `TestCredentialValueIsWriteOnly` | not built |
 | A value sealed under an old key opens after a new key is prepended, the background rewrap moves it, and a ciphertext copied to another row does not open | `TestCredentialsEnvelopeRotation`, `TestCiphertextBoundToItsRow` | not built |
-| Every call a session makes to a core carries a token traded from the agent's key, and none carries toposd's own identity | `TestSessionCallsCarryTheAgentKey` | not built |
+| Every call a session makes to a core carries a token whose subject is the agent's identity and whose `session` claim names the session and the workload, and none carries toposd's own identity | `TestSessionCallsCarryTheAgentsSessionToken` | not built |
+| toposd mints a token only for the holder of the session's current lease, and a runner that lost its lease gets none | `TestTokensOnlyForTheLeaseHolder` | not built |
+| A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules` | not built |
+| A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `TestSessionAndSandboxLuxKeys` | not built |
 | A `person` connection uses the initiator's credential, and fails with `connection_not_connected` when there is none | `TestPersonConnectionUsesInitiatorsCredential` | not built |
 | A value the runner holds, and its base64 and percent-encoded forms, are replaced in tool output before the log and the model | `TestScrubbingKnownValues` | not built |
 | On the host, a named secret is substituted only on requests to its hosts, and a request elsewhere carries the placeholder | `TestHostProxySubstitutesOnlyNamedHosts` | not built |

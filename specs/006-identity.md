@@ -174,8 +174,9 @@ the token's subject, and needs no identity provider.
 
 ## Not in this spec
 
-The routes and their HTTP statuses ([[015-api]]); the agent's key and
-the session scope's grants ([[018-credentials-and-secrets]]); the
+The routes and their HTTP statuses ([[015-api]]); the agent's identity,
+its session tokens and the session scope's grants
+([[018-credentials-and-secrets]]); the
 runner token ([[016-runners]]); how an installation writes its
 authorizer.
 

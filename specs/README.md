@@ -71,7 +71,7 @@ has moved past; `superseded` one whose work moved to another spec.
 | [015](015-api.md) | The API: every route under /v1, streaming, errors, paging, idempotency, the OpenAPI document | large | drafted | 003, 004, 006, 014 |
 | [016](016-runners.md) | Runners: driving a session, recovery of a step without results, the queue, claim, renew and release | large | drafted | 001, 002, 004, 005, 008, 009 |
 | [017](017-external-runners-handoff-fork.md) | External runners, handoff and fork: the append route, the writer rule, the inbox, moving a session's writer | large | drafted | 004, 016, 034 |
-| [018](018-credentials-and-secrets.md) | Credentials, connections and secrets: write-only credentials, the agent's key, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope | large | drafted | 001, 002, 003, 004, 006, 009 |
+| [018](018-credentials-and-secrets.md) | Credentials, connections and secrets: write-only credentials, the agent's identity and its session tokens, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope | large | drafted | 001, 002, 003, 004, 006, 009 |
 | [019](019-git.md) | Git in a session: repositories as inputs, plain git in the sandbox, the token at the egress gateway, ref rules, attribution, the git cache | medium | drafted | 001, 002, 004, 009, 018 |
 | [020](020-memory-stores.md) | Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts | medium | drafted | 002, 003, 004, 008, 009, 018 |
 | [021](021-mcp-servers.md) | MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials | medium | drafted | 003, 008, 009, 012, 018 |

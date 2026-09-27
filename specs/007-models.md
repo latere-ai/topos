@@ -101,7 +101,7 @@ frame itself would replace this check in pkg.
 | `model` | the upstream model name | none; required |
 | `family` | `anthropic`, `openai`, or `other` | from the catalog entry |
 | `dialect` | `anthropic-messages`, `openai-responses` or `openai-chat` | `anthropic` → `anthropic-messages`, `openai` → `openai-responses`, `other` → `openai-chat` |
-| `credential` | resolved per call, never stored in the connection | the agent's `spec.model.credential`, then the session's agent key ([[018-credentials-and-secrets]]), then `TOPOS_MODELS_KEY`; none of them is `model_credential_missing` |
+| `credential` | resolved per call, never stored in the connection | the agent's `spec.model.credential` (a provider key the owner brings); otherwise, on an installation with an authorizer, the session's Lux key ([[018-credentials-and-secrets]]), never the installation's key; on one without, `TOPOS_MODELS_KEY`; none of them is `model_credential_missing` |
 
 The request path is the dialect's own under the base URL
 (`/v1/messages`, `/v1/responses`, `/v1/chat/completions`), and the
@@ -278,7 +278,7 @@ each with one configuration line and exit 1.
 
 Where cache breakpoints go and how tokens are counted between
 requests ([[010-context]]); the loop's use of the result
-([[005-harness-loop]]); credential custody and the agent's key
+([[005-harness-loop]]); credentials, the agent's identity and the session's Lux keys
 ([[018-credentials-and-secrets]]); the scripted model itself
 ([[026-stubs-and-tiers]]); the task suite's comparison of the IR path
 with the provider's own SDK ([[025-task-suite]]).
