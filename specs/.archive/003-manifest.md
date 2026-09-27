@@ -76,8 +76,8 @@ digits and hyphens, at most 63 characters). Labels and annotations
 under `topos.latere.ai/` are the core's own, and a manifest that sets
 one is refused. `status` is written by the server or the local resolver
 and ignored on input: `id`, `version`, `digest` (the `sha256:` of the
-resolved spec), `createdAt`, and for an Agent `identity`, the subject
-its key acts as ([[018-credentials-and-secrets]]).
+resolved spec), `createdAt`, and for an Agent `identity`, its subject
+at the installation's identity provider ([[018-credentials-and-secrets]]).
 
 ### Agent
 
@@ -94,7 +94,7 @@ its key acts as ([[018-credentials-and-secrets]]).
 | `instructionsFile` | path, relative to the manifest | none | read by the loader and inlined into `instructions`; the resolved spec has no `instructionsFile` |
 | `tools` | list of names or `{name, outputLimit, client, description, inputSchema}` | absent: every built-in; `[]`: none | [[008-tools]]; `client: true` declares a client-executed tool, which needs `description` and `inputSchema` |
 | `permissions` | list of `{action, resource}` | none | the agent's grants, the reach of its identity ([[006-identity]], [[018-credentials-and-secrets]]) |
-| `identity` | `agent` or `person` | `person` | removed with [[018-credentials-and-secrets]]: the agent's owner, a person or an organization, decides, so an organization's agent applied without the field no longer acts as whoever applied it |
+| `identity` | removed | none | refused by the resolver, naming the field: the agent's owner, a person or an organization, decides whose authority it acts with ([[018-credentials-and-secrets]]) |
 | `approvals.mode` | `plan`, `confirm`, `progressive` | `confirm` | [[012-permissions-and-approvals]] |
 | `approvals.alwaysAllow`, `approvals.alwaysConfirm` | list of patterns | none | [[012-permissions-and-approvals]], used only when no authorizer supplies the lists |
 | `approvals.thresholds` | `{flagAt, askAt, blockAt}` in `[0, 1]`, increasing | `0.3`, `0.5`, `0.9` | [[012-permissions-and-approvals]] |
@@ -319,4 +319,4 @@ the acceptance table passes.
 | Open | Why |
 |---|---|
 | a manifest with `instructionsFile` through the API | the API reads no files and refuses the field; a client inlines the file before it applies, as the `topos apply` row of [[024-client-cli-skill]] requires |
-| `status.identity`, the subject an agent's key acts as | the resolver carries a stored agent's identity forward and writes none for a new one; provisioning is [[018-credentials-and-secrets]]'s |
+| `status.identity`, the agent's subject at the installation's identity provider | the resolver carries a stored agent's identity forward and writes none for a new one; the server writes it when it creates the identity ([[018-credentials-and-secrets]]) |
