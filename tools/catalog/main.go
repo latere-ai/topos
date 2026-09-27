@@ -214,6 +214,11 @@ func fromLux(path string, windows map[string]openRouterModel) (models.Entry, boo
 			e.InputWindow, e.MaxOutputTokens = w.ContextLength, w.TopProvider.MaxCompletionTokens
 			s := supports(w)
 			e.Supports.Thinking, e.Supports.ParallelTools = s.Thinking, s.ParallelTools
+			// The hosted Lux names its models as OpenRouter does, with
+			// dots in a version, so that spelling resolves too.
+			if w.ID != e.Name && !slices.Contains(e.Aliases, w.ID) {
+				e.Aliases = append(e.Aliases, w.ID)
+			}
 			break
 		}
 	}

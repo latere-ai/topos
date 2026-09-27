@@ -68,6 +68,13 @@ func TestRunMergesPricesAndWindows(t *testing.T) {
 	if !ok || gpt.Dialect != "openai-responses" || gpt.InputWindow != 400_000 || !gpt.Supports.ParallelTools || gpt.Pricing != nil {
 		t.Fatalf("gpt %+v", gpt)
 	}
+	// The hosted Lux's spelling, dots in the version, names the same entry.
+	if dotted, ok := c.Lookup("openai/gpt-5.6"); !ok || dotted.Name != "openai/gpt-5-6" {
+		t.Fatalf("openai/gpt-5.6 = %+v, %v", dotted, ok)
+	}
+	if opus.Aliases[len(opus.Aliases)-1] == "anthropic/claude-opus-5" {
+		t.Fatalf("an alias repeats the name: %v", opus.Aliases)
+	}
 	if _, ok := c.Lookup("gemini/flash"); ok {
 		t.Fatal("a Gemini model, which no codec speaks, is in the catalog")
 	}
