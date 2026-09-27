@@ -22,13 +22,17 @@ RUN for arch in amd64 arm64; do \
       CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -o /out/helpers/topos-machine-linux-$arch ./cmd/topos-machine; \
     done
 
+# >>> shared runtime base <<<
 # toposd forks no binary of its own on the server roles, so the runtime
 # stage is distroless: CA roots for the OIDC issuers and the cores it dials,
 # and the helper builds it uploads, nothing else. A runner that drives git
-# or the host machine uses its own image (spec 016).
+# or the host machine uses its own image (spec 016). Dockerfile.ci carries
+# this stage byte for byte, so the released image differs from this one in
+# where the binaries came from and in nothing else.
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/toposd /usr/local/bin/toposd
-COPY --from=build /out/helpers/ /usr/local/lib/topos/
 EXPOSE 8080 8081
 USER nonroot:nonroot
+# <<< shared runtime base >>>
+COPY --from=build /out/toposd /usr/local/bin/toposd
+COPY --from=build /out/helpers/ /usr/local/lib/topos/
 ENTRYPOINT ["/usr/local/bin/toposd"]
