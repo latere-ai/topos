@@ -125,7 +125,7 @@ func TestAnotherSubjectsAgentIsNotThere(t *testing.T) {
 	if a := f.do(http.MethodPut, "/v1/agents/reviewer", "root", agentYAML("reviewer", "Reviewed by root.")); a.status != http.StatusOK {
 		t.Fatalf("the admin's update: %d %s", a.status, a.body)
 	}
-	if a := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "bob", ""); a.status != http.StatusNotFound {
+	if a := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "bob", `{"permanent":true}`); a.status != http.StatusNotFound {
 		t.Fatalf("bob's archive: %d", a.status)
 	}
 }
@@ -133,13 +133,25 @@ func TestAnotherSubjectsAgentIsNotThere(t *testing.T) {
 func TestAnArchivedAgentTakesNoVersionAndNoSession(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
-	a := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "alice", "")
+	// Archiving cannot be undone, so it waits for an explicit confirmation
+	// and archives nothing without one.
+	for _, body := range []string{"", `{}`, `{"permanent":false}`} {
+		if a := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "alice", body); a.code() != CodeConfirmationRequired {
+			t.Fatalf("an archive with body %q: %d %s", body, a.status, a.body)
+		}
+	}
+	var live v1.Agent
+	f.do(http.MethodGet, "/v1/agents/reviewer", "alice", "").decode(t, &live)
+	if live.Status.ArchivedAt != nil {
+		t.Fatal("an unconfirmed archive archived the agent")
+	}
+	a := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "alice", `{"permanent":true}`)
 	var archived v1.Agent
 	a.decode(t, &archived)
 	if a.status != http.StatusOK || archived.Status.ArchivedAt == nil {
 		t.Fatalf("archive: %d %s", a.status, a.body)
 	}
-	if a := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "alice", ""); a.code() != CodeConflict {
+	if a := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "alice", `{"permanent":true}`); a.code() != CodeConflict {
 		t.Fatalf("a second archive: %d %s", a.status, a.body)
 	}
 	if a := f.do(http.MethodPut, "/v1/agents/reviewer", "alice", agentYAML("reviewer", "Again.")); a.code() != CodeConflict {

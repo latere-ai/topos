@@ -4,10 +4,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"latere.ai/x/pkg/authz"
@@ -245,14 +248,46 @@ func (c *call) getAgentVersion() error {
 	return c.reply(http.StatusOK, doc)
 }
 
+// archiveBody is the body of POST /agents/{ref}/archive.
+type archiveBody struct {
+	Permanent bool `json:"permanent"`
+}
+
+// confirmPermanent refuses an archive whose body does not confirm it is
+// permanent, an empty body included.
+func (c *call) confirmPermanent() error {
+	b, err := c.body()
+	if err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(string(b))) == 0 {
+		return refuse(CodeConfirmationRequired, "the body is empty")
+	}
+	var body archiveBody
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		return refuse(CodeInvalidRequest, "the body does not decode: %v", err)
+	}
+	if !body.Permanent {
+		return refuse(CodeConfirmationRequired, "permanent is not true")
+	}
+	return nil
+}
+
 // archiveAgent is POST /agents/{ref}/archive. Sessions keep the version
 // they pinned; no new session starts on an archived agent. The agent's
 // identity is archived first, so a failed call leaves the agent as it
 // was and a retry is idempotent, and it is disabled for good once no
 // session of the agent is left: here when none runs, and otherwise by
-// the reconcile pass (spec 018).
+// the reconcile pass (spec 018). Archiving cannot be undone, so the
+// caller confirms it with {"permanent": true}, and a client shows the
+// person that consequence before it sends the request.
 func (c *call) archiveAgent() error {
 	ctx := c.r.Context()
+	if err := c.confirmPermanent(); err != nil {
+		return err
+	}
 	a, doc, err := c.agent(c.r.PathValue("ref"), authorizer.ActionAgentArchive)
 	if err != nil {
 		return err

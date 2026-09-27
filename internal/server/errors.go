@@ -21,14 +21,17 @@ import (
 
 // The error codes this spec owns; the others are their specs'.
 const (
-	CodeInvalidRequest      = "invalid_request"
-	CodeNotFound            = auth.CodeNotFound
-	CodeConflict            = "conflict"
-	CodeSequenceConflict    = "sequence_conflict"
-	CodeIdempotencyConflict = "idempotency_conflict"
-	CodePayloadTooLarge     = "payload_too_large"
-	CodeRateLimited         = "rate_limited"
-	CodeInternal            = "internal"
+	CodeInvalidRequest = "invalid_request"
+	// CodeConfirmationRequired is an archive sent without its explicit
+	// confirmation, since archiving cannot be undone.
+	CodeConfirmationRequired = "confirmation_required"
+	CodeNotFound             = auth.CodeNotFound
+	CodeConflict             = "conflict"
+	CodeSequenceConflict     = "sequence_conflict"
+	CodeIdempotencyConflict  = "idempotency_conflict"
+	CodePayloadTooLarge      = "payload_too_large"
+	CodeRateLimited          = "rate_limited"
+	CodeInternal             = "internal"
 	// CodeMachineUnavailable is spec 009's: the session's machine cannot
 	// be had.
 	CodeMachineUnavailable = "machine_unavailable"
@@ -41,6 +44,7 @@ var codes = map[string]struct {
 	message string
 }{
 	CodeInvalidRequest:              {http.StatusBadRequest, "The request is not valid."},
+	CodeConfirmationRequired:        {http.StatusBadRequest, "Archiving an agent is permanent: its identity is disabled after its last session and cannot be restored, and applying it again creates a new agent. Send {\"permanent\": true} to confirm."},
 	manifest.CodeInvalidManifest:    {http.StatusBadRequest, "The manifest is not valid."},
 	manifest.CodeHoldsSecret:        {http.StatusBadRequest, "The manifest holds what looks like a secret; name a credential instead."},
 	manifest.CodeUnknownReference:   {http.StatusBadRequest, "The manifest references an object that does not exist."},

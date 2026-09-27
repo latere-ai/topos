@@ -345,7 +345,7 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 		}
 		path := strings.NewReplacer("{name}", "reviewer", "{ref}", "reviewer", "{n}", "1", "{id}", s.ID, "{digest}", string(s.Agent.Digest), "{event_id}", before[0].ID).Replace(rt.path)
 		body := map[string]string{
-			"applyAgent": agentYAML("reviewer", "Changed."), "createSession": `{"agent":"reviewer"}`, "endSession": `{"reason":"canceled"}`,
+			"applyAgent": agentYAML("reviewer", "Changed."), "createSession": `{"agent":"reviewer"}`, "endSession": `{"reason":"canceled"}`, "archiveAgent": `{"permanent":true}`,
 			"sendEvent": `{"type":"user.interrupt"}`, "redactEvent": `{"reason":"x"}`, "resumeSession": `{}`,
 		}[rt.op]
 		if a := f.do(rt.method, "/v1"+path, "alice", body); a.status != http.StatusServiceUnavailable || a.code() != auth.CodeAuthorizerUnavailable {

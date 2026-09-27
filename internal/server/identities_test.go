@@ -102,7 +102,7 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 	if fields["session_id"] != s.ID || fields["agent_identity"] != a.Status.Identity {
 		t.Fatalf("session.create asked with %v, session %s", fields, s.ID)
 	}
-	if ar := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "alice", ""); ar.status != http.StatusOK {
+	if ar := f.do(http.MethodPost, "/v1/agents/reviewer/archive", "alice", `{"permanent":true}`); ar.status != http.StatusOK {
 		t.Fatalf("archive: %d %s", ar.status, ar.body)
 	}
 	if got := f.idp.Agents()[0]; got.Status != idpstub.StatusArchived {
@@ -127,7 +127,7 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 		}
 	}
 	// An agent with no session is disabled at its archive.
-	if ar := f.do(http.MethodPost, "/v1/agents/triager/archive", "acme-carol", ""); ar.status != http.StatusOK {
+	if ar := f.do(http.MethodPost, "/v1/agents/triager/archive", "acme-carol", `{"permanent":true}`); ar.status != http.StatusOK {
 		t.Fatalf("archive: %d %s", ar.status, ar.body)
 	}
 	if got := f.idp.Agents()[1]; got.Status != idpstub.StatusDisabled {
@@ -152,7 +152,7 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 	// A refused archive leaves the agent unarchived.
 	f.apply("alice", "linter", "Lint.")
 	f.idp.Fail(idpstub.OpArchive, idpstub.Failure{Status: http.StatusBadGateway, Code: "bad_gateway"})
-	if ar := f.do(http.MethodPost, "/v1/agents/linter/archive", "alice", ""); ar.code() != CodeIdentityUnavailable {
+	if ar := f.do(http.MethodPost, "/v1/agents/linter/archive", "alice", `{"permanent":true}`); ar.code() != CodeIdentityUnavailable {
 		t.Fatalf("an unanswered archive: %d %s", ar.status, ar.body)
 	}
 	if stored, err := f.objects.Agent(t.Context(), "linter"); err != nil || stored.ArchivedAt != nil {
