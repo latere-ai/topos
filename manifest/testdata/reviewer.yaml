@@ -1,0 +1,48 @@
+# The Agent of spec 003's example, with the agent it spawns, the memory
+# store it attaches and a trigger that runs it each weekday morning.
+apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata:
+  name: reviewer
+  labels: {team: platform}
+spec:
+  description: Reviews a change and fixes what it finds.
+  model: {name: claude-sonnet-4-6, effort: high}
+  instructions: |
+    Review the diff on the current branch. Fix what you can and list the rest.
+  tools: [read, edit, bash, grep, glob]
+  approvals: {mode: progressive, alwaysAllow: ["bash(go test *)"]}
+  subagents:
+    - {name: tester, agent: tester}
+  memoryStores:
+    - {name: review-notes, access: readWrite}
+  machine: {kind: cella, image: base, egress: [proxy.golang.org, sum.golang.org]}
+  budget: {maxCost: "5.00"}
+---
+apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata:
+  name: tester
+spec:
+  description: Runs the tests a change touches and reports the failures.
+  model: {name: claude-haiku-4-5}
+  instructions: Run the tests of the packages the diff touches and report each failure with its output.
+  tools: [read, bash, grep, glob]
+---
+apiVersion: topos.latere.ai/v1
+kind: MemoryStore
+metadata:
+  name: review-notes
+spec:
+  description: Notes from earlier reviews of this repository, one file per pull request.
+---
+apiVersion: topos.latere.ai/v1
+kind: Trigger
+metadata:
+  name: morning-review
+spec:
+  agent: reviewer
+  schedule: "0 9 * * 1-5"
+  timeZone: Europe/Berlin
+  session:
+    message: Review the changes merged since yesterday.

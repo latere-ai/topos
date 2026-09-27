@@ -36,6 +36,12 @@ manifests: a Kubernetes-style object with `apiVersion`, `kind`,
 `metadata`, `spec` and `status`, strict decoding, and one resolve, as
 Lux's and Cella's manifest specs define theirs.
 
+`manifest/v1` holds the four kinds as Go types and `manifest` holds the
+resolver, `AgentConfig` and the session bundle; `topos run --agent`
+runs a resolved Agent ([[024-client-cli-skill]]). The server's `Lookup`,
+the topos command's local state and the apply path are not built, so a
+local run resolves every reference inside its own file.
+
 ## Design
 
 ### The object
@@ -94,10 +100,10 @@ its key acts as ([[018-credentials-and-secrets]]).
 | `subagents` | list of `{name, agent}` or `{name, spec}` | none | `agent` is a reference, `spec` an inline Agent spec ([[013-threads-and-subagents]]) |
 | `threads.maxDepth` | integer 1 to 4 | `2` | [[013-threads-and-subagents]] |
 | `threads.maxConcurrent` | integer 1 to 32 | `8` | [[013-threads-and-subagents]] |
-| `advisor` | `{model, instructions}` | none | [[013-threads-and-subagents]] |
+| `advisor` | `{model, instructions}`, `model` in the form of `spec.model` | none | [[013-threads-and-subagents]] |
 | `skills` | list of `{path}` or `{git, ref, path}` | none | [[011-instructions-and-skills]] |
 | `mcpServers` | list of `{name, command, args, env, url, connection}` | none | [[021-mcp-servers]]; `command` for stdio, `url` for streamable HTTP, exactly one |
-| `memoryStores` | list of `{name, access}`, access `readWrite` or `readOnly` | none | [[020-memory-stores]] |
+| `memoryStores` | list of `{name, access}`, `name` a reference, `access` `readWrite` or `readOnly` and required | none | [[020-memory-stores]] |
 | `connections` | list of Connection names | none | [[018-credentials-and-secrets]] |
 | `machine.kind` | `host` or `cella` | `host` | [[009-machines]] |
 | `machine.image`, `machine.environment` | string | Cella's `base`; the installation's default Environment | [[009-machines]] |
@@ -116,7 +122,7 @@ its key acts as ([[018-credentials-and-secrets]]).
 | `schedule` | a five-field cron expression, or `@hourly`, `@daily`, `@weekly` | required | [[022-triggers]] |
 | `timeZone` | an IANA zone name | `UTC` | [[022-triggers]] |
 | `session.message` | string | required | the first `user.message` of each session |
-| `session.title`, `session.machine`, `session.resources`, `session.budget`, `session.limits` | as the session's fields | the agent's | [[004-session-log]] |
+| `session.title`, `session.machine`, `session.resources`, `session.budget`, `session.limits` | as the session's fields, camelCase: `machine` `{kind, image, environment}`, each resource `{type, memoryStore, access}` with `type: memoryStore` or `{type, url, ref}` with `type: repository` | the agent's | [[004-session-log]] |
 | `session.endOnIdle` | boolean | `true` | [[004-session-log]] |
 | `skipIfActive` | boolean | `true` | [[022-triggers]] |
 | `maxAge` | Go duration | `1h` | [[022-triggers]] |
@@ -143,11 +149,19 @@ its key acts as ([[018-credentials-and-secrets]]).
 A reference names another object by `metadata.name` or by id: an agent
 as `reviewer`, `agent_<ulid>` (the latest version) or
 `agent_<ulid>@<n>`; a credential as a name or `cred_<ulid>`; a memory
-store as a name or `mem_<ulid>`. The resolver checks each through a
-`Lookup` its caller supplies (the server's store, or the local state
-directory for the CLI) and writes the resolved spec with ids and
-versions in place of names, so a resolved Agent pins its subagents'
-versions.
+store as a name or `mem_<ulid>`; a Connection by name only, since it has
+no id. A name resolves first to a document of the same file, then
+through a `Lookup` its caller supplies (the server's store, or the local
+state directory for the CLI); an id resolves through the `Lookup`. The
+resolver writes the resolved spec with ids and versions in place of
+names: a subagent as `agent_<ulid>@<n>`, so a resolved Agent pins its
+subagents' versions; a trigger's `agent` as `agent_<ulid>`, so the
+trigger runs the agent's latest version, unless the manifest names a
+version; a memory store as `mem_<ulid>` and a credential as
+`cred_<ulid>`. The documents of one file resolve in dependency order,
+each after the documents it references; a cycle among them has no order
+in which versions can be pinned and is refused with `invalid_manifest`.
+Two documents of one kind and name are refused the same way.
 
 ### No secret in a manifest
 
@@ -155,10 +169,18 @@ No field holds a secret value; credentials exist only as Credential
 objects created through the API, write-only
 ([[018-credentials-and-secrets]]). Decoding is strict, so a field named
 `value`, `token` or `password` is refused as unknown. The free-text
-fields that could still carry one (`instructions`, `mcpServers[].env`
-values and `args`, hook `command`) are checked by the input check of
-[[018-credentials-and-secrets]], and a match is refused with
-`manifest_holds_secret`, naming the field path and never the value.
+fields that could still carry one (`instructions`, after
+`instructionsFile` is read, of the agent, its inline subagents and its
+advisor; `mcpServers[].env` values and `args`; hook `command`; a
+trigger's `session.message`) and the credential references, where a
+pasted key would otherwise pass as a name, are checked by the input
+check of [[018-credentials-and-secrets]], and a match is refused with
+`manifest_holds_secret`, naming the field path and never the value. No
+problem of any code quotes a string value of the manifest. Until
+`session/inputcheck` exists the resolver carries its own copy of the
+check, which counts a base64 run as high-entropy only when it mixes
+letters and digits, so an identifier such as a long CamelCase test name
+in the instructions is not refused.
 
 ### The resolver
 
@@ -166,22 +188,63 @@ values and `args`, hook `command`) are checked by the input check of
 func Resolve(ctx context.Context, docs []byte, o Options) ([]Resolved, error)
 ```
 
-One function, in five stages: decode (YAML or JSON, several documents
-in one file), strict field check, defaulting, validation (every
-problem collected, each with its field path), and reference
-resolution. `Resolved` carries the kind, the resolved spec in canonical
-JSON (fields in declaration order, defaults written out), and its
-digest. Applying an Agent whose digest differs from its latest version
-creates the next version; the same digest creates none. A session pins
-the version it was created with, and the resolved manifest is a blob of
-the session ([[004-session-log]]).
+One function, in five stages: decode (YAML documents separated by
+`---`, or a stream of JSON values when the file starts with `{`), strict
+field check, defaulting, validation (every problem collected, each with
+its field path), and reference resolution. The stages refuse in order:
+a document of another `apiVersion` refuses the file with
+`unsupported_version` before anything else is reported; then every
+decoding, strict-check, defaulting and validation problem of every
+document comes in one `invalid_manifest`, where a field that did not
+decode is not reported again as missing; then `manifest_holds_secret`;
+then every unknown reference in one `unknown_reference`. `status` is
+ignored on input. `instructionsFile` is read through the file system the
+caller hands the resolver, rooted at the manifest's directory; a caller
+that hands none, such as the API, refuses it.
+
+A default in the tables that is a fixed value is written into the
+resolved spec. One that comes from outside the manifest (the catalog,
+`TOPOS_MODELS_URL`, Cella's defaults, the installation's Environment,
+the agent a trigger runs) is applied where the value is used and is not
+written, so a digest depends on the manifest and the build's fixed
+defaults alone, and the CLI and the server agree on it.
+
+`Resolved` carries the kind, the resolved spec in canonical JSON (the
+byte form of [[004-session-log]]: fields in declaration order, HTML
+escaping off, no trailing newline, fixed defaults written out, every
+optional field without a value left out), its digest, the resolved
+object with its status, and for an Agent the agents its subagents pin,
+down to its `maxDepth`. The digest covers the spec alone: a label or an
+annotation changes no version. The resolver writes `status` itself from
+the `Lookup`'s answer for the object's name: the same digest as the
+stored latest version is that version, a different digest is the next
+version under the same id, and an object the `Lookup` does not hold is
+version 1 under a new id. Applying a resolved object stores the version
+the status names, so applying the same Agent twice creates one version
+and a changed one creates the next. The documents come back in
+dependency order.
+
+`AgentConfig` turns a resolved Agent into the pieces of a harness
+configuration that need no I/O: its instructions, the tools it holds,
+the policy (mode, lists, thresholds, `machine.egress`), `spec.model`
+with its catalog overlay and effort, the subagents as
+`harness.Subagent` values nested to `maxDepth`, `maxDepth`,
+`maxConcurrent`, `compactAt`, the limits and the budget. The caller
+fills each subagent's model and connection. A session pins the version
+it was created with, and the resolved manifest is a blob of the session
+([[004-session-log]]); beside it the session keeps the bundle, the
+resolved agent and the agents it pins as one JSON stream, so another
+runner continues the session without the store that resolved it.
 
 ### Versioning
 
 `topos.latere.ai/v1` changes only by adding optional fields; a
 manifest v1 accepts today is accepted by every later v1 build, and
-resolves to the same digest when it sets no new field. Another version
-is refused with `unsupported_version`. A `Graph` kind joins in
+resolves to the same digest when it sets no new field. One default is
+the build's own: an agent that leaves out `tools` holds every built-in
+of the build that resolves it, so a build that adds a built-in moves
+that agent to a new version rather than widening a pinned one. Another
+version is refused with `unsupported_version`. A `Graph` kind joins in
 [[033-peers-and-authored-graphs]].
 
 ### Error codes
@@ -205,10 +268,14 @@ key on apply ([[018-credentials-and-secrets]]).
 | Criterion | Test that proves it | State |
 |---|---|---|
 | Every agent file in `manifest/testdata/` resolves to byte-identical canonical JSON and digest through the CLI's lookup and the server's | `TestCLIAndServerResolveAgree` | not built |
-| An unknown field, a wrong type and an out-of-range value are each refused with `invalid_manifest` and their field paths, all in one error | `TestStrictDecodingCollectsEveryProblem` | not built |
-| A manifest carrying a token in `instructions` or in an MCP server's `env` is refused with `manifest_holds_secret`, and the error text holds the path and not the value | `TestManifestHoldingASecretIsRefused` | not built |
-| Every default of the four kinds' tables is written into the resolved spec | `TestDefaultsAreWrittenOut` | not built |
-| Applying the same Agent twice creates one version; changing its instructions creates the next | `TestAgentVersioning` | not built |
-| A resolved Agent pins each subagent reference to an id and version | `TestReferencesPinVersions` | not built |
-| `threads.maxDepth: 5` and a Connection with `mode: person` and a `credential` are refused | `TestValidationRules` | not built |
-| A label under `topos.latere.ai/` is refused | `TestReservedLabelsRefused` | not built |
+| Every file in `manifest/testdata/` resolves to the specs, statuses and digests of its golden file, and a YAML file and the same documents as a JSON stream resolve alike | `manifest.TestTestdataResolves`, `manifest.TestYAMLAndJSONStreamsResolveAlike` | built |
+| An unknown field, a wrong type and an out-of-range value are each refused with `invalid_manifest` and their field paths, all in one error | `manifest.TestStrictDecodingCollectsEveryProblem` | built |
+| A manifest carrying a token in `instructions` or in an MCP server's `env` is refused with `manifest_holds_secret`, and the error text holds the path and not the value | `manifest.TestManifestHoldingASecretIsRefused`, `manifest.TestTheInputCheck` | built |
+| Every fixed default of the four kinds' tables is written into the resolved spec | `manifest.TestDefaultsAreWrittenOut` | built |
+| Resolving the same Agent against its stored version keeps that id and version, and changed instructions resolve to the next version under the same id | `manifest.TestAgentVersioning`, `manifest.TestStoredObjectsKeepTheirIDs` | built |
+| Applying the same Agent twice through the API creates one version; changing its instructions creates the next | `TestAgentVersioningThroughTheAPI` | not built |
+| A resolved Agent pins each subagent reference to an id and version, and every unknown reference is reported in one `unknown_reference` | `manifest.TestReferencesPinVersions`, `manifest.TestStoredSubagentsArePinnedTransitively` | built |
+| `threads.maxDepth: 5` and a Connection with `mode: person` and a `credential` are refused | `manifest.TestValidationRules` | built |
+| A label under `topos.latere.ai/` is refused | `manifest.TestReservedLabelsRefused` | built |
+| Another `apiVersion` refuses the file before any other problem, a cycle among one file's documents is refused, and `instructionsFile` is read only through the caller's file system | `manifest.TestTheEnvelopeIsCheckedFirst`, `manifest.TestReferenceCyclesAndLookupFailures`, `manifest.TestInstructionsFile` | built |
+| `AgentConfig` carries a resolved Agent's instructions, tools, policy, model overlay, subagents to `maxDepth` and limits, and the bundle reads back to the same configuration and refuses one whose spec does not hash to its digest | `manifest.TestAgentConfigCarriesTheHarnessPieces`, `manifest.TestBundleRoundTrip` | built |

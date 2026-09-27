@@ -1,0 +1,154 @@
+[
+  {
+    "kind": "Agent",
+    "name": "tester",
+    "status": {
+      "id": "agent_00000000000000000000000001",
+      "version": 1,
+      "digest": "sha256:2927311bd0b6a4af93f21e31fee9910117a712f21fd068cfc1743f8d1e30a4c3",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "description": "Runs the tests a change touches and reports the failures.",
+      "model": {
+        "name": "claude-haiku-4-5"
+      },
+      "instructions": "Run the tests of the packages the diff touches and report each failure with its output.",
+      "tools": [
+        "read",
+        "bash",
+        "grep",
+        "glob"
+      ],
+      "identity": "person",
+      "approvals": {
+        "mode": "confirm",
+        "thresholds": {
+          "flagAt": 0.3,
+          "askAt": 0.5,
+          "blockAt": 0.9
+        }
+      },
+      "threads": {
+        "maxDepth": 2,
+        "maxConcurrent": 8
+      },
+      "machine": {
+        "kind": "host"
+      },
+      "limits": {
+        "turnTimeout": "2h",
+        "maxAge": "168h"
+      },
+      "context": {
+        "compactAt": 0.8
+      }
+    }
+  },
+  {
+    "kind": "MemoryStore",
+    "name": "review-notes",
+    "status": {
+      "id": "mem_00000000000000000000000002",
+      "version": 1,
+      "digest": "sha256:a156669eb4938dac1f400c3004830e719f7dac362cda29dead2ea6567b06fbd6",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "description": "Notes from earlier reviews of this repository, one file per pull request."
+    }
+  },
+  {
+    "kind": "Agent",
+    "name": "reviewer",
+    "status": {
+      "id": "agent_00000000000000000000000003",
+      "version": 1,
+      "digest": "sha256:90c8c52f6c190073b4ec64aede9f83d9d9ced45223cb31ea9ddbe5dbbd4ef5b7",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "description": "Reviews a change and fixes what it finds.",
+      "model": {
+        "name": "claude-sonnet-4-6",
+        "effort": "high"
+      },
+      "instructions": "Review the diff on the current branch. Fix what you can and list the rest.\n",
+      "tools": [
+        "read",
+        "edit",
+        "bash",
+        "grep",
+        "glob"
+      ],
+      "identity": "person",
+      "approvals": {
+        "mode": "progressive",
+        "alwaysAllow": [
+          "bash(go test *)"
+        ],
+        "thresholds": {
+          "flagAt": 0.3,
+          "askAt": 0.5,
+          "blockAt": 0.9
+        }
+      },
+      "subagents": [
+        {
+          "name": "tester",
+          "agent": "agent_00000000000000000000000001@1"
+        }
+      ],
+      "threads": {
+        "maxDepth": 2,
+        "maxConcurrent": 8
+      },
+      "memoryStores": [
+        {
+          "name": "mem_00000000000000000000000002",
+          "access": "readWrite"
+        }
+      ],
+      "machine": {
+        "kind": "cella",
+        "image": "base",
+        "egress": [
+          "proxy.golang.org",
+          "sum.golang.org"
+        ]
+      },
+      "budget": {
+        "maxCost": "5.00"
+      },
+      "limits": {
+        "turnTimeout": "2h",
+        "maxAge": "168h"
+      },
+      "context": {
+        "compactAt": 0.8
+      }
+    }
+  },
+  {
+    "kind": "Trigger",
+    "name": "morning-review",
+    "status": {
+      "id": "trg_00000000000000000000000004",
+      "version": 1,
+      "digest": "sha256:ece7f66300270dc4315cda4bdd2baa1ce8c00c566053620aabb56a1969071f3a",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "agent": "agent_00000000000000000000000003",
+      "schedule": "0 9 * * 1-5",
+      "timeZone": "Europe/Berlin",
+      "session": {
+        "message": "Review the changes merged since yesterday.",
+        "endOnIdle": true
+      },
+      "skipIfActive": true,
+      "maxAge": "1h",
+      "suspend": false
+    }
+  }
+]
