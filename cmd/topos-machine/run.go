@@ -313,8 +313,9 @@ func signalGroup(pgid int, sig syscall.Signal) error {
 // arguments machine.ShellArgs chose, removes the script's file when it
 // had one, and appends the line the host machine appends to a job log
 // when the job exits. Its $$ is the job's pid, which leads the job's
-// process group.
-const jobWrapper = shell + ` "$@"; code=$?; [ "$1" = -c ] || rm -f "$1"; printf '\n[job %d exited with code %d]\n' "$$" "$code"`
+// process group. rm is named by its path, as the shell is, so a job
+// does not depend on the PATH it was started with.
+const jobWrapper = shell + ` "$@"; code=$?; [ "$1" = -c ] || /bin/rm -f "$1"; printf '\n[job %d exited with code %d]\n' "$$" "$code"`
 
 // job starts a script detached in its own process group, with its output
 // in a new log in the jobs directory, and answers its pid and log at
