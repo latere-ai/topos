@@ -28,6 +28,9 @@ type Subagent struct {
 	Model        models.Model
 	Connection   *models.Connection
 	Entry        *models.Entry
+	// Effort is the reasoning effort of the subagent's requests; empty
+	// holds the parent's.
+	Effort string
 	// Tools are the subagent's declared tools; nil holds the parent's.
 	Tools     []string
 	Mode      Mode
@@ -529,6 +532,9 @@ func (t *turn) childConfig(sub Subagent) Config {
 	}
 	if sub.Entry != nil {
 		cfg.Entry = *sub.Entry
+	}
+	if sub.Effort != "" {
+		cfg.Effort = sub.Effort
 	}
 	cfg.Policy.Mode = stricterMode(t.h.c.Policy.Mode, sub.Mode)
 	cfg.Subagents = sub.Subagents

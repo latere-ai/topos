@@ -182,7 +182,7 @@ func (b *builder) subagents(s v1.AgentSpec, level int) (map[string]harness.Subag
 			return nil, fmt.Errorf("manifest: subagent %s: %w", sub.Name, err)
 		}
 		h := harness.Subagent{
-			Name: sub.Name, Instructions: spec.Instructions, Entry: &overlay,
+			Name: sub.Name, Instructions: spec.Instructions, Entry: &overlay, Effort: spec.Model.Effort,
 			Tools: toolNames(spec.Tools), Mode: harness.Mode(spec.Approvals.Mode),
 		}
 		if b.connect != nil {

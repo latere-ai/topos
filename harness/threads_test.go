@@ -774,3 +774,27 @@ func TestSubagentsDoNotInheritTheAdvisor(t *testing.T) {
 		t.Fatal("a long result was not cut")
 	}
 }
+
+func TestASubagentsEffortReachesItsRequests(t *testing.T) {
+	for want, sub := range map[string]string{"low": "low", "high": ""} {
+		e := setup(t, func(c *Config) {
+			withReviewer(func(s *Subagent) { s.Effort = sub })(c)
+			c.Effort = "high"
+		})
+		ctx := t.Context()
+		e.stub.Script(model,
+			luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{spawnCall("toolu_s", `{"agent":"reviewer","task":"Review."}`)}, StopReason: ir.StopToolUse}},
+			reply(ir.StopEndTurn, text("done")),
+		)
+		e.stub.Script(reviewerModel, luxstub.Reply{Response: ir.Response{Model: reviewerModel, Blocks: []ir.Block{text("fine")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
+			if r.Reasoning == nil || string(r.Reasoning.Effort) != want {
+				return fmt.Errorf("the reviewer's effort is %+v, want %s", r.Reasoning, want)
+			}
+			return nil
+		}})
+		e.send(ctx, "Build it.")
+		if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+			t.Fatalf("want %s: %+v", want, out)
+		}
+	}
+}
