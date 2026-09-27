@@ -77,7 +77,7 @@ func scanLog(r io.Reader) (logScan, error) {
 			var l line
 			if derr := json.Unmarshal(b, &l); derr != nil {
 				if bad == nil {
-					bad = fmt.Errorf("%w: undecodable line at byte %d: %v", session.ErrCorrupt, out.size+pendingBytes, derr)
+					bad = fmt.Errorf("%w: undecodable line at byte %d: %w", session.ErrCorrupt, out.size+pendingBytes, derr)
 				}
 			} else if bad == nil {
 				pending = append(pending, l)
@@ -105,25 +105,33 @@ func scanLog(r io.Reader) (logScan, error) {
 }
 
 // readLog scans the events file at path.
-func readLog(path string) (logScan, error) {
+func readLog(path string) (s logScan, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return logScan{}, fmt.Errorf("dir: open events: %w", err)
 	}
-	defer f.Close()
+	defer closeInto(&err, f)
 	return scanLog(f)
+}
+
+// closeInto closes c and joins its error into *err, for a deferred close
+// of a file a function only reads.
+func closeInto(err *error, c io.Closer) {
+	if cerr := c.Close(); cerr != nil {
+		*err = errors.Join(*err, cerr)
+	}
 }
 
 // tailAfter returns the committed events of the file at path whose
 // sequence is above after, reading backwards from the end so a header
 // read costs the tail, not the log. The scan starts after a line that
 // closes a batch at or below after, so it never begins inside a batch.
-func tailAfter(path string, after uint64) ([]session.Event, error) {
+func tailAfter(path string, after uint64) (evs []session.Event, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("dir: open events: %w", err)
 	}
-	defer f.Close()
+	defer closeInto(&err, f)
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("dir: stat events: %w", err)
@@ -199,13 +207,11 @@ func appendBatch(path string, events []session.Event) error {
 		return fmt.Errorf("dir: open events: %w", err)
 	}
 	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return fmt.Errorf("dir: write events: %w", err)
+		return errors.Join(fmt.Errorf("dir: write events: %w", err), f.Close())
 	}
 	hook("events.written")
 	if err := fsync(f); err != nil {
-		f.Close()
-		return fmt.Errorf("dir: sync events: %w", err)
+		return errors.Join(fmt.Errorf("dir: sync events: %w", err), f.Close())
 	}
 	hook("events.synced")
 	if err := f.Close(); err != nil {
@@ -238,7 +244,9 @@ func writeFileAtomic(path string, b []byte) error {
 	}
 	tmp := f.Name()
 	fail := func(err error) error {
-		f.Close()
+		if cerr := f.Close(); cerr != nil && !errors.Is(cerr, os.ErrClosed) {
+			err = errors.Join(err, cerr)
+		}
 		if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 			return errors.Join(err, rerr)
 		}

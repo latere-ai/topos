@@ -6,7 +6,6 @@ package session_test
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -88,9 +87,9 @@ func (b *logb) user(s session.Sender, text string, turn int) string {
 }
 
 func (b *logb) assistant(thread string, turn int, truncated bool, blocks ...lux.Block) string {
-	stop := string(ir.StopEndTurn)
+	stop := ir.StopEndTurn
 	if truncated {
-		stop = string(ir.StopMaxTokens)
+		stop = ir.StopMaxTokens
 	}
 	return b.add(session.TypeAgentMessage, thread, turn, session.AgentMessage{
 		Message: lux.Message{Role: ir.RoleAssistant, Blocks: blocks}, StopReason: stop, Truncated: truncated,
@@ -343,7 +342,7 @@ func TestFoldRendersEveryType(t *testing.T) {
 // in-memory store and the directory store, reads it back, and folds it
 // twice: every fold is the golden bytes.
 func TestFoldIsByteIdenticalAcrossStores(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d, err := dir.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

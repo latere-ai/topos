@@ -35,19 +35,19 @@ func TestDirStoreConformance(t *testing.T) {
 	storetest.Run(t, func(t *testing.T) session.Store { return open(t, t.TempDir()) })
 }
 
-func newSession(t *testing.T, st session.Store) session.Session {
+func newSession(ctx context.Context, t *testing.T, st session.Store) session.Session {
 	t.Helper()
 	s := storetest.NewSession()
-	if err := st.Create(context.Background(), s, nil); err != nil {
+	if err := st.Create(ctx, s, nil); err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 
-func appendBatchOf(t *testing.T, st session.Store, id string, after uint64, evs ...session.Event) uint64 {
+func appendBatchOf(ctx context.Context, t *testing.T, st session.Store, id string, after uint64, evs ...session.Event) uint64 {
 	t.Helper()
 	session.Stamp(id, after, evs)
-	last, err := st.Append(context.Background(), id, after, evs)
+	last, err := st.Append(ctx, id, after, evs)
 	if err != nil {
 		t.Fatalf("Append after %d: %v", after, err)
 	}
@@ -78,7 +78,7 @@ func appendRaw(t *testing.T, path string, b []byte) {
 }
 
 func TestDirStoreTruncatesTornTail(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for name, tail := range map[string]func(t *testing.T, id string) []byte{
 		"torn last line": func(t *testing.T, id string) []byte {
 			return []byte(`{"id":"evt_01J9Z3Q4W8KX6T0M2V5N7R1B3C","seq":3,"session_id":"` + id + `","ty`)
@@ -98,8 +98,8 @@ func TestDirStoreTruncatesTornTail(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			st := open(t, t.TempDir())
-			s := newSession(t, st)
-			appendBatchOf(t, st, s.ID, 0, storetest.Message(t, "one", t0), storetest.Message(t, "two", t0))
+			s := newSession(ctx, t, st)
+			appendBatchOf(ctx, t, st, s.ID, 0, storetest.Message(t, "one", t0), storetest.Message(t, "two", t0))
 			path := st.eventsPath(s.ID)
 			acked := fileSize(t, path)
 			appendRaw(t, path, tail(t, s.ID))
@@ -117,7 +117,7 @@ func TestDirStoreTruncatesTornTail(t *testing.T) {
 			if got := fileSize(t, path); got != acked {
 				t.Fatalf("after recovery events.jsonl is %d bytes, want the acknowledged %d", got, acked)
 			}
-			if last := appendBatchOf(t, st, s.ID, 2, storetest.Message(t, "three", t0)); last != 3 {
+			if last := appendBatchOf(ctx, t, st, s.ID, 2, storetest.Message(t, "three", t0)); last != 3 {
 				t.Fatalf("append after recovery: last %d", last)
 			}
 			if err := l.Release(); err != nil {
@@ -128,10 +128,10 @@ func TestDirStoreTruncatesTornTail(t *testing.T) {
 }
 
 func TestDirStoreRefusesCorruptSequence(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st := open(t, t.TempDir())
-	s := newSession(t, st)
-	appendBatchOf(t, st, s.ID, 0, storetest.Message(t, "one", t0))
+	s := newSession(ctx, t, st)
+	appendBatchOf(ctx, t, st, s.ID, 0, storetest.Message(t, "one", t0))
 	gap := []session.Event{storetest.Message(t, "gap", t0)}
 	session.Stamp(s.ID, 4, gap)
 	b, err := encodeBatch(gap)
@@ -146,7 +146,7 @@ func TestDirStoreRefusesCorruptSequence(t *testing.T) {
 		t.Fatalf("Append over a gap: %v, want ErrCorrupt", err)
 	}
 
-	bad := newSession(t, st)
+	bad := newSession(ctx, t, st)
 	appendRaw(t, st.eventsPath(bad.ID), []byte("not json\n"))
 	later := []session.Event{storetest.Message(t, "after", t0)}
 	session.Stamp(bad.ID, 0, later)
@@ -160,13 +160,13 @@ func TestDirStoreRefusesCorruptSequence(t *testing.T) {
 }
 
 func TestDirStoreGetReadsTheTailAcrossChunks(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st := open(t, t.TempDir())
-	s := newSession(t, st)
+	s := newSession(ctx, t, st)
 	big := strings.Repeat("x", 40<<10)
 	var last uint64
 	for range 6 {
-		last = appendBatchOf(t, st, s.ID, last, storetest.Message(t, big, t0), storetest.Message(t, big, t0))
+		last = appendBatchOf(ctx, t, st, s.ID, last, storetest.Message(t, big, t0), storetest.Message(t, big, t0))
 	}
 	h, err := st.Get(ctx, s.ID)
 	if err != nil || h.LastSeq != last {
@@ -182,22 +182,22 @@ func TestDirStoreWatchSeesAnotherWriter(t *testing.T) {
 	PollInterval = 20 * time.Millisecond
 	data := t.TempDir()
 	reader, writer := open(t, data), open(t, data)
-	s := newSession(t, writer)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
+	s := newSession(ctx, t, writer)
 	ch, err := reader.Watch(ctx, s.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	last := appendBatchOf(t, writer, s.ID, 0, storetest.Message(t, "one", t0))
+	last := appendBatchOf(ctx, t, writer, s.ID, 0, storetest.Message(t, "one", t0))
 	if e := <-ch; e.Seq != 1 {
 		t.Fatalf("first event %d", e.Seq)
 	}
-	appendBatchOf(t, writer, s.ID, last, storetest.Message(t, "two", t0))
+	appendBatchOf(ctx, t, writer, s.ID, last, storetest.Message(t, "two", t0))
 	if e := <-ch; e.Seq != 2 {
 		t.Fatalf("second event %d", e.Seq)
 	}
-	if err := writer.Redact(ctx, s.ID, mustEvents(t, writer, s.ID)[0].ID, session.Sender{Subject: "usr_1", Kind: session.SenderPerson}, ""); err != nil {
+	if err := writer.Redact(ctx, s.ID, mustEvents(ctx, t, writer, s.ID)[0].ID, session.Sender{Subject: "usr_1", Kind: session.SenderPerson}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if e := <-ch; e.Seq != 3 || e.Type != session.TypeEventRedacted {
@@ -210,9 +210,9 @@ func TestDirStoreWatchSeesAnotherWriter(t *testing.T) {
 	}
 }
 
-func mustEvents(t *testing.T, st session.Store, id string) []session.Event {
+func mustEvents(ctx context.Context, t *testing.T, st session.Store, id string) []session.Event {
 	t.Helper()
-	evs, err := st.Events(context.Background(), id, 1, 0)
+	evs, err := st.Events(ctx, id, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,10 +220,10 @@ func mustEvents(t *testing.T, st session.Store, id string) []session.Event {
 }
 
 func TestDirStoreSecondInstanceIsLockedOut(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	data := t.TempDir()
 	a, b := open(t, data), open(t, data)
-	s := newSession(t, a)
+	s := newSession(ctx, t, a)
 	l, err := a.Acquire(ctx, s.ID, session.Holder{Runner: "run_a"})
 	if err != nil {
 		t.Fatal(err)
@@ -238,11 +238,11 @@ func TestDirStoreSecondInstanceIsLockedOut(t *testing.T) {
 	if err := b.Delete(ctx, s.ID); !errors.Is(err, session.ErrLocked) {
 		t.Fatalf("delete by a second instance while leased: %v", err)
 	}
-	appendBatchOf(t, a, s.ID, 0, storetest.Message(t, "by the holder", t0))
+	appendBatchOf(ctx, t, a, s.ID, 0, storetest.Message(t, "by the holder", t0))
 	if err := l.Release(); err != nil {
 		t.Fatal(err)
 	}
-	appendBatchOf(t, b, s.ID, 1, storetest.Message(t, "after release", t0))
+	appendBatchOf(ctx, t, b, s.ID, 1, storetest.Message(t, "after release", t0))
 }
 
 // The helper process: TOPOS_DIR_HELPER names what it does, over the data
@@ -315,10 +315,10 @@ func child(t *testing.T, mode, data, id, crash string) *exec.Cmd {
 }
 
 func TestDirStoreSingleWriterLock(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	data := t.TempDir()
 	st := open(t, data)
-	s := newSession(t, st)
+	s := newSession(ctx, t, st)
 	cmd := child(t, "hold", data, s.ID, "")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -362,7 +362,7 @@ func TestDirStoreSingleWriterLock(t *testing.T) {
 // acknowledged event is lost, that a blob precedes the event naming it,
 // and that the header mirrors the log.
 func TestDirStoreCrashAtEachDurabilityPoint(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, c := range []struct {
 		point string
 		batch bool // whether the crashed batch is in the log
@@ -375,8 +375,8 @@ func TestDirStoreCrashAtEachDurabilityPoint(t *testing.T) {
 		t.Run(c.point, func(t *testing.T) {
 			data := t.TempDir()
 			st := open(t, data)
-			s := newSession(t, st)
-			last := appendBatchOf(t, st, s.ID, 0, storetest.Status(t, session.StatusRunning, "", t0), storetest.Message(t, "go", t0))
+			s := newSession(ctx, t, st)
+			last := appendBatchOf(ctx, t, st, s.ID, 0, storetest.Status(t, session.StatusRunning, "", t0), storetest.Message(t, "go", t0))
 			cmd := child(t, "crash", data, s.ID, c.point)
 			cmd.Stderr = os.Stderr
 			err := cmd.Run()
@@ -389,7 +389,7 @@ func TestDirStoreCrashAtEachDurabilityPoint(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer l.Release()
-			evs := mustEvents(t, st, s.ID)
+			evs := mustEvents(ctx, t, st, s.ID)
 			want := int(last)
 			if c.batch {
 				want += 2
@@ -422,15 +422,15 @@ func TestDirStoreCrashAtEachDurabilityPoint(t *testing.T) {
 }
 
 func TestSessionStatusMirrorsTheLog(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st := open(t, t.TempDir())
-	s := newSession(t, st)
-	appendBatchOf(t, st, s.ID, 0, storetest.Status(t, session.StatusRunning, "", t0))
+	s := newSession(ctx, t, st)
+	appendBatchOf(ctx, t, st, s.ID, 0, storetest.Status(t, session.StatusRunning, "", t0))
 	stale, err := os.ReadFile(st.headerPath(s.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
-	appendBatchOf(t, st, s.ID, 1, storetest.Status(t, session.StatusIdle, session.StopToolConfirmation, t0))
+	appendBatchOf(ctx, t, st, s.ID, 1, storetest.Status(t, session.StatusIdle, session.StopToolConfirmation, t0))
 	// a crash between the events fsync and the header rename
 	if err := os.WriteFile(st.headerPath(s.ID), stale, 0o600); err != nil {
 		t.Fatal(err)
@@ -461,14 +461,14 @@ func TestDirStoreCreateIsAllOrNothing(t *testing.T) {
 	if err := os.MkdirAll(leftover, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	list, _, err := st.List(context.Background(), session.ListOptions{})
+	list, _, err := st.List(t.Context(), session.ListOptions{})
 	if err != nil || len(list) != 0 {
 		t.Fatalf("a hidden partial directory listed: %v, %v", list, err)
 	}
-	if _, err := st.Get(context.Background(), "ses_nope"); !errors.Is(err, session.ErrBadID) {
+	if _, err := st.Get(t.Context(), "ses_nope"); !errors.Is(err, session.ErrBadID) {
 		t.Fatalf("Get of a bad id: %v", err)
 	}
-	if _, err := st.Events(context.Background(), "../escape", 1, 0); !errors.Is(err, session.ErrBadID) {
+	if _, err := st.Events(t.Context(), "../escape", 1, 0); !errors.Is(err, session.ErrBadID) {
 		t.Fatalf("a path outside the store: %v", err)
 	}
 }

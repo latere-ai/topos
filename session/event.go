@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 )
 
@@ -133,11 +134,11 @@ type UserToolResult struct {
 
 // AgentMessage is the payload of agent.message.
 type AgentMessage struct {
-	Message        lux.Message `json:"message"`
-	StopReason     string      `json:"stop_reason"`
-	Request        string      `json:"request,omitempty"`
-	Truncated      bool        `json:"truncated,omitempty"`
-	ContinuationOf string      `json:"continuation_of,omitempty"`
+	Message        lux.Message   `json:"message"`
+	StopReason     ir.StopReason `json:"stop_reason"`
+	Request        string        `json:"request,omitempty"`
+	Truncated      bool          `json:"truncated,omitempty"`
+	ContinuationOf string        `json:"continuation_of,omitempty"`
 }
 
 // Risk is the risk score recorded on a tool call (spec 012).
@@ -236,26 +237,26 @@ type ContextCompacted struct {
 
 // ModelRequest is the payload of model.request.
 type ModelRequest struct {
-	Model         string     `json:"model"`
-	Family        string     `json:"family,omitempty"`
-	Dialect       string     `json:"dialect,omitempty"`
-	Codec         string     `json:"codec,omitempty"`
-	PromptVersion string     `json:"prompt_version,omitempty"`
-	ToolsSHA256   string     `json:"tools_sha256,omitempty"`
-	RequestSHA256 string     `json:"request_sha256,omitempty"`
-	RequestBytes  int64      `json:"request_bytes,omitempty"`
-	RequestBlob   Digest     `json:"request_blob,omitempty"`
-	ResponseBlob  Digest     `json:"response_blob,omitempty"`
-	Usage         *lux.Usage `json:"usage,omitempty"`
-	CostUSDMicro  *int64     `json:"cost_usd_micro,omitempty"`
-	CostSource    string     `json:"cost_source,omitempty"`
-	LatencyMS     int64      `json:"latency_ms,omitempty"`
-	FirstTokenMS  int64      `json:"first_token_ms,omitempty"`
-	StopReason    string     `json:"stop_reason,omitempty"`
-	Attempts      int        `json:"attempts,omitempty"`
-	Outcome       string     `json:"outcome"`
-	Error         string     `json:"error,omitempty"`
-	Loss          []string   `json:"loss,omitempty"`
+	Model         string        `json:"model"`
+	Family        string        `json:"family,omitempty"`
+	Dialect       string        `json:"dialect,omitempty"`
+	Codec         string        `json:"codec,omitempty"`
+	PromptVersion string        `json:"prompt_version,omitempty"`
+	ToolsSHA256   string        `json:"tools_sha256,omitempty"`
+	RequestSHA256 string        `json:"request_sha256,omitempty"`
+	RequestBytes  int64         `json:"request_bytes,omitempty"`
+	RequestBlob   Digest        `json:"request_blob,omitempty"`
+	ResponseBlob  Digest        `json:"response_blob,omitempty"`
+	Usage         *lux.Usage    `json:"usage,omitempty"`
+	CostUSDMicro  *int64        `json:"cost_usd_micro,omitempty"`
+	CostSource    string        `json:"cost_source,omitempty"`
+	LatencyMS     int64         `json:"latency_ms,omitempty"`
+	FirstTokenMS  int64         `json:"first_token_ms,omitempty"`
+	StopReason    ir.StopReason `json:"stop_reason,omitempty"`
+	Attempts      int           `json:"attempts,omitempty"`
+	Outcome       string        `json:"outcome"`
+	Error         string        `json:"error,omitempty"`
+	Loss          []string      `json:"loss,omitempty"`
 }
 
 // CheckpointRef names a checkpoint (spec 034).

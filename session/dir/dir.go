@@ -191,7 +191,7 @@ func (s *Store) Get(ctx context.Context, id string) (session.Session, error) {
 	}
 	var sess session.Session
 	if err := json.Unmarshal(b, &sess); err != nil {
-		return session.Session{}, fmt.Errorf("%w: session.json of %s: %v", session.ErrCorrupt, id, err)
+		return session.Session{}, fmt.Errorf("%w: session.json of %s: %w", session.ErrCorrupt, id, err)
 	}
 	tail, err := tailAfter(s.eventsPath(id), sess.LastSeq)
 	if err != nil {
@@ -351,12 +351,12 @@ type tailReader struct {
 	fi   os.FileInfo
 }
 
-func (r *tailReader) read() ([]session.Event, error) {
+func (r *tailReader) read() (evs []session.Event, err error) {
 	f, err := os.Open(r.path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer closeInto(&err, f)
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -477,7 +477,7 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 	})
 }
 
-func (s *Store) Delete(ctx context.Context, id string) error {
+func (s *Store) Delete(ctx context.Context, id string) (err error) {
 	if err := s.exists(id); err != nil {
 		return err
 	}
@@ -491,7 +491,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer closeInto(&err, f)
 	ok, err := tryLock(f)
 	if err != nil {
 		return err
@@ -539,7 +539,7 @@ func readHolder(f *os.File) session.Holder {
 // locked runs fn with the session's header under the lock: this
 // process's lease when it holds one, otherwise the lock taken for the
 // call, with the log recovered first.
-func (s *Store) locked(id string, st *state, fn func(hdr *session.Session) error) error {
+func (s *Store) locked(id string, st *state, fn func(hdr *session.Session) error) (err error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.lease != nil {
@@ -549,7 +549,7 @@ func (s *Store) locked(id string, st *state, fn func(hdr *session.Session) error
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer closeInto(&err, f)
 	ok, err := tryLock(f)
 	if err != nil {
 		return err
@@ -589,7 +589,7 @@ func (s *Store) recover(id string) (session.Session, error) {
 	}
 	var hdr session.Session
 	if err := json.Unmarshal(b, &hdr); err != nil {
-		return session.Session{}, fmt.Errorf("%w: session.json of %s: %v", session.ErrCorrupt, id, err)
+		return session.Session{}, fmt.Errorf("%w: session.json of %s: %w", session.ErrCorrupt, id, err)
 	}
 	if hdr.LastSeq > uint64(len(events)) {
 		return session.Session{}, fmt.Errorf("%w: session.json of %s records seq %d, the log ends at %d", session.ErrCorrupt, id, hdr.LastSeq, len(events))
@@ -610,12 +610,10 @@ func truncate(path string, size int64) error {
 		return fmt.Errorf("dir: open events: %w", err)
 	}
 	if err := f.Truncate(size); err != nil {
-		f.Close()
-		return fmt.Errorf("dir: truncate events: %w", err)
+		return errors.Join(fmt.Errorf("dir: truncate events: %w", err), f.Close())
 	}
 	if err := fsync(f); err != nil {
-		f.Close()
-		return fmt.Errorf("dir: sync events: %w", err)
+		return errors.Join(fmt.Errorf("dir: sync events: %w", err), f.Close())
 	}
 	return f.Close()
 }

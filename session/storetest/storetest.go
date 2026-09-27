@@ -92,7 +92,7 @@ func Status(t *testing.T, st session.Status, reason session.StopReason, at time.
 func create(t *testing.T, st session.Store) session.Session {
 	t.Helper()
 	s := NewSession()
-	if err := st.Create(context.Background(), s, nil); err != nil {
+	if err := st.Create(t.Context(), s, nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	return s
@@ -101,7 +101,7 @@ func create(t *testing.T, st session.Store) session.Session {
 func appendAll(t *testing.T, st session.Store, id string, after uint64, evs ...session.Event) uint64 {
 	t.Helper()
 	session.Stamp(id, after, evs)
-	last, err := st.Append(context.Background(), id, after, evs)
+	last, err := st.Append(t.Context(), id, after, evs)
 	if err != nil {
 		t.Fatalf("Append after %d: %v", after, err)
 	}
@@ -109,7 +109,7 @@ func appendAll(t *testing.T, st session.Store, id string, after uint64, evs ...s
 }
 
 func testCreateGet(t *testing.T, st session.Store) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewSession()
 	s.Title = "fix the build"
 	s.Metadata = map[string]string{"k": "v"}
@@ -131,7 +131,7 @@ func testCreateGet(t *testing.T, st session.Store) {
 }
 
 func testCreateRejects(t *testing.T, st session.Store) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := create(t, st)
 	if err := st.Create(ctx, s, nil); !errors.Is(err, session.ErrExists) {
 		t.Fatalf("second Create: %v, want ErrExists", err)
@@ -155,7 +155,11 @@ func testCreateRejects(t *testing.T, st session.Store) {
 	if err != nil {
 		t.Fatalf("Blob created with the session: %v", err)
 	}
-	defer rc.Close()
+	defer func() {
+		if err := rc.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	if got, _ := io.ReadAll(rc); !bytes.Equal(got, manifest) {
 		t.Fatalf("blob = %q", got)
 	}
@@ -171,7 +175,7 @@ func testAppendSequences(t *testing.T, st session.Store) {
 	if last != 3 {
 		t.Fatalf("last = %d, want 3", last)
 	}
-	evs, err := st.Events(context.Background(), s.ID, 1, 0)
+	evs, err := st.Events(t.Context(), s.ID, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +187,7 @@ func testAppendSequences(t *testing.T, st session.Store) {
 			t.Fatalf("event %s names session %s", e.ID, e.SessionID)
 		}
 	}
-	got, err := st.Get(context.Background(), s.ID)
+	got, err := st.Get(t.Context(), s.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +202,7 @@ func testAppendRejectsStaleSequence(t *testing.T, st session.Store) {
 	for _, after := range []uint64{0, 5} {
 		evs := []session.Event{Message(t, "late", t0)}
 		session.Stamp(s.ID, after, evs)
-		if _, err := st.Append(context.Background(), s.ID, after, evs); !errors.Is(err, session.ErrSequenceConflict) {
+		if _, err := st.Append(t.Context(), s.ID, after, evs); !errors.Is(err, session.ErrSequenceConflict) {
 			t.Fatalf("Append after %d with last 1: %v, want ErrSequenceConflict", after, err)
 		}
 	}
@@ -209,25 +213,25 @@ func testAppendRetryIsIdempotent(t *testing.T, st session.Store) {
 	batch := []session.Event{Message(t, "one", t0), Message(t, "two", t0)}
 	appendAll(t, st, s.ID, 0, batch...)
 	session.Stamp(s.ID, 0, batch)
-	last, err := st.Append(context.Background(), s.ID, 0, batch)
+	last, err := st.Append(t.Context(), s.ID, 0, batch)
 	if err != nil || last != 2 {
 		t.Fatalf("retry: last %d, %v; want 2 and no error", last, err)
 	}
-	evs, err := st.Events(context.Background(), s.ID, 1, 0)
+	evs, err := st.Events(t.Context(), s.ID, 1, 0)
 	if err != nil || len(evs) != 2 {
 		t.Fatalf("after a retry: %d events, %v; want 2", len(evs), err)
 	}
 	changed := []session.Event{batch[0], Message(t, "other", t0)}
 	changed[1].ID = batch[1].ID
 	session.Stamp(s.ID, 0, changed)
-	if _, err := st.Append(context.Background(), s.ID, 0, changed); !errors.Is(err, session.ErrSequenceConflict) {
+	if _, err := st.Append(t.Context(), s.ID, 0, changed); !errors.Is(err, session.ErrSequenceConflict) {
 		t.Fatalf("retry with different content: %v, want ErrSequenceConflict", err)
 	}
 }
 
 func testAppendRejectsBadBatch(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := st.Append(ctx, s.ID, 0, nil); !errors.Is(err, session.ErrInvalid) {
 		t.Fatalf("empty batch: %v, want ErrInvalid", err)
 	}
@@ -259,7 +263,7 @@ func testAppendMirrorsStatus(t *testing.T, st session.Store) {
 	t1 := t0.Add(time.Minute)
 	last := appendAll(t, st, s.ID, 0, Status(t, session.StatusRunning, "", t0), Message(t, "go", t1))
 	appendAll(t, st, s.ID, last, Status(t, session.StatusIdle, session.StopEndTurn, t1.Add(time.Second)))
-	got, err := st.Get(context.Background(), s.ID)
+	got, err := st.Get(t.Context(), s.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +277,7 @@ func testAppendMirrorsStatus(t *testing.T, st session.Store) {
 
 func testNeverRewritten(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx := context.Background()
+	ctx := t.Context()
 	appendAll(t, st, s.ID, 0, Message(t, "one", t0))
 	before, err := st.Events(ctx, s.ID, 1, 0)
 	if err != nil {
@@ -298,7 +302,7 @@ func testNeverRewritten(t *testing.T, st session.Store) {
 
 func testEventsWindow(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx := context.Background()
+	ctx := t.Context()
 	for i := range 5 {
 		appendAll(t, st, s.ID, uint64(i), Message(t, "m", t0))
 	}
@@ -322,7 +326,7 @@ func testEventsWindow(t *testing.T, st session.Store) {
 
 func testWatch(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	appendAll(t, st, s.ID, 0, Message(t, "one", t0), Message(t, "two", t0))
 	ch, err := st.Watch(ctx, s.ID, 2)
@@ -347,14 +351,14 @@ func testWatch(t *testing.T, st session.Store) {
 	cancel()
 	for range ch {
 	}
-	if _, err := st.Watch(context.Background(), session.NewID(session.PrefixSession), 1); !errors.Is(err, session.ErrNotFound) {
+	if _, err := st.Watch(t.Context(), session.NewID(session.PrefixSession), 1); !errors.Is(err, session.ErrNotFound) {
 		t.Fatalf("Watch of a missing session: %v", err)
 	}
 }
 
 func testBlobs(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx := context.Background()
+	ctx := t.Context()
 	body := []byte(`{"id":"resp_1"}`)
 	d, err := st.PutBlob(ctx, s.ID, bytes.NewReader(body))
 	if err != nil {
@@ -387,7 +391,7 @@ func testBlobs(t *testing.T, st session.Store) {
 
 func testRedact(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx := context.Background()
+	ctx := t.Context()
 	secret, err := st.PutBlob(ctx, s.ID, strings.NewReader("token=abc"))
 	if err != nil {
 		t.Fatal(err)
@@ -449,7 +453,7 @@ func testRedact(t *testing.T, st session.Store) {
 
 func testLease(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx := context.Background()
+	ctx := t.Context()
 	l, err := st.Acquire(ctx, s.ID, session.Holder{Runner: "run_a", PID: 1, Host: "h"})
 	if err != nil {
 		t.Fatal(err)
@@ -491,7 +495,7 @@ func testLease(t *testing.T, st session.Store) {
 
 func testDelete(t *testing.T, st session.Store) {
 	s := create(t, st)
-	ctx := context.Background()
+	ctx := t.Context()
 	appendAll(t, st, s.ID, 0, Message(t, "one", t0))
 	l, err := st.Acquire(ctx, s.ID, session.Holder{Runner: "run_a"})
 	if err != nil {
@@ -515,7 +519,7 @@ func testDelete(t *testing.T, st session.Store) {
 }
 
 func testList(t *testing.T, st session.Store) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var ids []string
 	for range 5 {
 		ids = append(ids, create(t, st).ID)
@@ -561,7 +565,7 @@ func testUnknownType(t *testing.T, st session.Store) {
 		t.Fatal(err)
 	}
 	appendAll(t, st, s.ID, 0, Message(t, "hi", t0), e)
-	evs, err := st.Events(context.Background(), s.ID, 1, 0)
+	evs, err := st.Events(t.Context(), s.ID, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
