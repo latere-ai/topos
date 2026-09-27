@@ -129,10 +129,24 @@ Laptop to cloud, called by the external writer:
    is needed.
 3. It appends up to `N` and calls handoff with `to: hosted`. toposd
    checks `N` is the last sequence and the inbox is empty
-   (`inbox_not_empty`), and sets the writer to `hosted`.
+   (`inbox_not_empty`), that the session's agent is one the server
+   holds and that its `bundle` is a version of that agent
+   (`agent_not_hosted`), and asks the authorizer `session.handoff`,
+   which applies the initiator cap as at a create, because from here
+   the session acts as the agent's identity and no longer as the
+   developer ([[018-credentials-and-secrets]]). It then sets the writer
+   to `hosted`.
 4. A hosted runner claims the session on its next input, creates the
    sandbox, restores the checkpoint, appends `session.machine` with
    reason `handoff`, and continues from `N + 1`.
+
+The log an external runner wrote is input to the hosted runner, never
+authority. The hosted runner takes the agent, its policy, the scope and
+the budget from the Session and the authorizer's decision, never from
+an event; the external writer's events render into the transcript and
+change nothing it may do. A handed-off session is as trustworthy as any
+content its model reads, and the approval layers apply to what it does
+next ([[012-permissions-and-approvals]]).
 
 Cloud to laptop, called by the external runner that takes the write:
 
@@ -172,6 +186,7 @@ sequenceDiagram
 | `session_exists` | 409 | a first sync names an id another subject holds |
 | `inbox_not_empty` | 409 | a handoff while inbox events are not yet appended |
 | `handoff_in_progress` | 409 | a handoff while another is pending |
+| `agent_not_hosted` | 422 | a handoff to `hosted` for a session whose agent the server does not hold, or whose bundle is no version of it |
 
 ## Not in this spec
 
@@ -192,3 +207,4 @@ presents ([[006-identity]]).
 | A retried append batch succeeds once and never duplicates an event | `TestAppendRouteRetryIsIdempotent` | not built |
 | One session moves laptop to cloud to laptop with an identical fold at every sequence and identical files, with and without a git remote of the user's | `TestHandoffRoundTrip` in the e2e tier, two subtests | not built |
 | A handoff to external while a hosted turn runs ends that turn `interrupted` with `detail` `handoff` at the next step boundary | `TestHandoffInterruptsRunningTurn` | not built |
+| A handoff to `hosted` of a session whose agent the server does not hold, or whose bundle is no version of it, is `agent_not_hosted`; an accepted one is asked of the authorizer as `session.handoff` with the initiator cap, and the hosted runner takes policy, scope and budget from the Session, not from events | `TestHandoffToHostedActsAsTheAgent` | not built |
