@@ -71,7 +71,7 @@ type createBody struct {
 }
 
 // repositories reads a create's resources: repositories alone, at most
-// runner.MaxRepositories, each an https URL with no credential in it and
+// session.MaxRepositories, each an https URL with no credential in it and
 // a ref git reads as a name (spec 019). A memory store is its agent's
 // (spec 020).
 func repositories(raw json.RawMessage) ([]session.Resource, error) {
@@ -84,8 +84,8 @@ func repositories(raw json.RawMessage) ([]session.Resource, error) {
 	if err := dec.Decode(&rs); err != nil {
 		return nil, refuse(CodeInvalidRequest, "resources is a list of {type, url, ref}: %v", err)
 	}
-	if len(rs) > runner.MaxRepositories {
-		return nil, refuse(CodeInvalidRequest, "%d resources, at most %d repositories", len(rs), runner.MaxRepositories)
+	if len(rs) > session.MaxRepositories {
+		return nil, refuse(CodeInvalidRequest, "%d resources, at most %d repositories", len(rs), session.MaxRepositories)
 	}
 	for i, r := range rs {
 		switch {
@@ -94,7 +94,7 @@ func repositories(raw json.RawMessage) ([]session.Resource, error) {
 		case r.MemoryStoreID != "" || r.Access != "":
 			return nil, refuse(CodeInvalidRequest, "resources[%d]: a repository has a url and a ref alone", i)
 		}
-		if err := runner.CheckRepository(r, "https"); err != nil {
+		if err := session.CheckRepository(r, "https"); err != nil {
 			return nil, refuse(CodeInvalidRequest, "resources[%d]: %v", i, err)
 		}
 	}

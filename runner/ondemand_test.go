@@ -293,29 +293,6 @@ func TestARepositoryThatCannotBeDeliveredIsReported(t *testing.T) {
 	}
 }
 
-func TestCheckRepository(t *testing.T) {
-	for _, c := range []struct {
-		r    session.Resource
-		fail string
-	}{
-		{session.Resource{URL: "https://code.example/org/app.git", Ref: "release/1.2"}, ""},
-		{session.Resource{URL: "https://code.example/org/app.git", Ref: "0123abcd"}, ""},
-		{session.Resource{URL: "http://code.example/org/app.git"}, "is not https"},
-		{session.Resource{URL: "https:///app.git"}, "names no host"},
-		{session.Resource{URL: "https://user:pw@code.example/app.git"}, "holds a credential"},
-		{session.Resource{URL: "https://code.example/app.git?x=1"}, "query or a fragment"},
-		{session.Resource{URL: "::"}, "does not parse"},
-		{session.Resource{URL: "https://code.example/app.git", Ref: "--upload-pack=x"}, "not a branch"},
-		{session.Resource{URL: "https://code.example/app.git", Ref: "main..dev"}, "not a branch"},
-		{session.Resource{URL: "https://code.example/app.git", Ref: "a b"}, "not a branch"},
-	} {
-		err := CheckRepository(c.r, "https")
-		if c.fail == "" && err != nil || c.fail != "" && (err == nil || !strings.Contains(err.Error(), c.fail)) {
-			t.Errorf("%+v: %v, want %q", c.r, err, c.fail)
-		}
-	}
-}
-
 func TestRepoDir(t *testing.T) {
 	taken := map[string]bool{}
 	for _, c := range []struct{ url, want string }{
