@@ -200,3 +200,40 @@ authorizer.
 | The limits' `always_confirm`, `always_allow` and `thresholds` merge with the agent's approvals into the Session's `policy` at create, and a turn is decided by that policy rather than the agent's own | `internal/server.TestLimitListsReachThePolicy`, `harness.TestPolicyMergeNeverLoosens`, `harness.TestTheSessionsPolicyDecides` | built |
 | `toposd token` prints a token the same toposd accepts, refuses a `--ttl` over 24 h, and opens no store | `cmd/toposd.TestTokenRoleRoundTrip` | built |
 | The owner policy lets the creator and the admin subjects act and denies everyone else, narrowed by a key's grants | `internal/auth.TestOwnerPolicyRows` | built |
+
+## Outcome
+
+Built on 2026-09-27. toposd verifies every bearer through the shared
+verifier, asks one question per action through `authz`, decides with
+the owner policy when no authorizer is configured, and signs local
+tokens with `toposd token`. Every row of the acceptance table passes.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| the action vocabulary, the resource kinds and their headings | `authorizer/actions.go` |
+| the `limits` of a `session.create` allow and their decoding | `authorizer/limits.go` |
+| verification, the subject form and the grants a narrowed key carries | `internal/auth/verifier.go` |
+| the guard: `not_found` for a denied read, `forbidden` for a denied mutation, `authorizer_unavailable` for no answer, and the caller's request id, address and user agent in each question | `internal/auth/guard.go` |
+| the owner policy | `internal/auth/policy.go` |
+| the local issuer, its key set and `toposd token` | `internal/token`, `cmd/toposd` |
+| the question of each route, the limits and the initiator cap's fields at create | `internal/server` (`agents.go`, `sessions.go`, `events.go`, `resume.go`) |
+| the approval policy merged at create and applied by the harness | `harness/permission.go` (`Policy.Merge`, `Policy.Under`), `session.Policy` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| a call a session makes to another core carries a token whose `session` claim names the session | no such token is minted yet; toposd forwards whatever claims a bearer carries | the agent's session tokens are [[018-credentials-and-secrets]]'s, not built |
+| every action of the table is asked at its route | the agent routes and `session.create`, `read`, `list`, `send`, `interrupt`, `end`, `delete`, `redact` and `resume` are asked; the other actions are published for the routes that are not built | fork, rewind over the API, append and handoff are [[017-external-runners-handoff-fork]]'s, scope [[018-credentials-and-secrets]]'s, triggers [[022-triggers]]'s, credentials [[018-credentials-and-secrets]]'s, memory stores [[020-memory-stores]]'s |
+| the session takes the lowest of each limit against the agent's and the request's own | the figures take the lowest; the lists and thresholds merge with the agent's approvals by [[012-permissions-and-approvals]]'s rule, and the mode is the agent's, since an allow carries none | a list has no lowest; the merge is what keeps either side from loosening the other |
+| the merged policy reaches every session's permission policy | a hosted session records it in its header; a local `topos` session records none and is decided by its agent's approvals and `--mode` | a local session has no authorizer to merge with |
+| the initiator cap compares the agent's permissions with the initiator's | `session.create` carries the pinned version's `permissions` for the comparison, which the authorizer makes | toposd decides nothing about a person |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| the `session` claim on a session's calls to other cores | [[018-credentials-and-secrets]] |
+| the questions of the routes not built | the specs that build those routes ask them |
