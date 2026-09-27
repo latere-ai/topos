@@ -54,3 +54,15 @@ func TestEncodeULIDIsCrockford(t *testing.T) {
 		t.Fatalf("all ones = %s", got)
 	}
 }
+
+func TestMintedAtReadsTheIDsTime(t *testing.T) {
+	before := time.Now().Truncate(time.Millisecond)
+	id := NewID(PrefixSession)
+	at, err := MintedAt(PrefixSession, id)
+	if err != nil || at.Before(before) || at.After(time.Now()) {
+		t.Fatalf("MintedAt(%s) = %v, %v", id, at, err)
+	}
+	if _, err := MintedAt(PrefixSession, "ses_nope"); !errors.Is(err, ErrBadID) {
+		t.Fatalf("a bad id: %v", err)
+	}
+}

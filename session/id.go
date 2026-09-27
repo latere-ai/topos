@@ -109,3 +109,16 @@ func CheckID(prefix, id string) error {
 	}
 	return nil
 }
+
+// MintedAt is the time an id was minted: the first 48 bits of its ULID,
+// which its first ten characters carry.
+func MintedAt(prefix, id string) (time.Time, error) {
+	if err := CheckID(prefix, id); err != nil {
+		return time.Time{}, err
+	}
+	var ms int64
+	for _, c := range id[len(prefix) : len(prefix)+10] {
+		ms = ms<<5 | int64(strings.IndexRune(crockford, c))
+	}
+	return time.UnixMilli(ms), nil
+}

@@ -119,6 +119,53 @@ type ListOptions struct {
 // DefaultListLimit is the page size of a List with no limit.
 const DefaultListLimit = 50
 
+// Blobs keeps the bodies of a store's blobs outside it, in a directory
+// or an object store (spec 014), each under its session's id and its
+// digest. A store handed one writes each body there before the event
+// that names it, reads it back verified against its digest, and deletes
+// a session's bodies after its rows.
+type Blobs interface {
+	PutBlob(ctx context.Context, sessionID string, d Digest, body []byte) error
+	// GetBlob answers ErrNotFound for a body it does not hold.
+	GetBlob(ctx context.Context, sessionID string, d Digest) ([]byte, error)
+	DeleteBlob(ctx context.Context, sessionID string, d Digest) error
+	DeleteSession(ctx context.Context, sessionID string) error
+	// Sessions are the ids that hold at least one body, for the sweep of
+	// the bodies a crash left without their session.
+	Sessions(ctx context.Context) ([]string, error)
+}
+
+// SweepGrace is how long after its id was minted a session's bodies are
+// safe from SweepBlobs, since a session being created puts its bodies
+// before the session itself appears.
+const SweepGrace = time.Hour
+
+// SweepBlobs removes the bodies of every session that gone reports is
+// no longer in the store, which a crash between a session's delete and
+// its bodies' leaves behind (spec 014). A session minted within
+// SweepGrace of now is left alone.
+func SweepBlobs(ctx context.Context, b Blobs, gone func(ctx context.Context, id string) (bool, error), now time.Time) error {
+	ids, err := b.Sessions(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, id := range ids {
+		minted, err := MintedAt(PrefixSession, id)
+		if err != nil || now.Sub(minted) < SweepGrace {
+			continue
+		}
+		missing, err := gone(ctx, id)
+		switch {
+		case err != nil:
+			errs = append(errs, err)
+		case missing:
+			errs = append(errs, b.DeleteSession(ctx, id))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Store keeps sessions, their logs and their blobs (spec 004).
 type Store interface {
 	Create(ctx context.Context, s Session, blobs map[Digest][]byte) error
