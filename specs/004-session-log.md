@@ -81,7 +81,7 @@ and writes them back unchanged.
 |---|---|---|
 | `schema` | integer | `1` |
 | `id` | string | `ses_…` |
-| `agent` | object | `id`, `name`, `version`, and `digest`: the `sha256:` of the resolved agent manifest, whose bytes are a blob of the session so the log is self-contained when it moves |
+| `agent` | object | `id`, `name`, `version`, `digest`: the `sha256:` of the resolved agent manifest, and `bundle`: the `sha256:` of the agent together with the agents it pins; both are blobs of the session, so the log is self-contained when it moves and a runner rebuilds the agent from `bundle` alone |
 | `title` | string | optional, set by a client |
 | `initiator` | Sender | who created the session |
 | `runner` | string | `hosted` or `external`; a local session is `external` |
@@ -94,7 +94,7 @@ and writes them back unchanged.
 | `resources` | array | attachments: `{"type":"memory_store","memory_store_id","access"}` ([[020-memory-stores]]) and `{"type":"repository","url","ref"}` ([[019-git]]) |
 | `scope` | array | the session scope, a list of grants ([[018-credentials-and-secrets]]) |
 | `budget` | object | `max_cost_usd_micro` (absent: none) and `spent_cost_usd_micro` ([[007-models]]) |
-| `limits` | object | `turn_timeout` (default `2h`) and `max_age` (default `168h`), Go durations ([[005-harness-loop]]) |
+| `limits` | object | `turn_timeout` (default `2h`) and `max_age` (default `168h`), Go durations ([[005-harness-loop]]), and `retention`, how long the session is kept after it ends, absent to keep it until it is deleted ([[014-store]]) |
 | `capture` | object | `requests`: when true every model request's bytes are kept as a blob ([[007-models]]) |
 | `end_on_idle` | boolean | end `completed` when the first turn goes idle `end_turn`; set by triggers ([[022-triggers]]) |
 | `parent` | object | `session_id` and `seq` of the session this one was forked from |

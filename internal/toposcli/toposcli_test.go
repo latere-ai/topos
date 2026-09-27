@@ -473,7 +473,7 @@ func TestRunAnAgentManifest(t *testing.T) {
 	// A bundle that no longer matches its digest, or is gone, stops the
 	// session rather than running another agent.
 	var blob string
-	hex := session.Digest(s.Metadata["manifest"]).Hex()
+	hex := s.Agent.Bundle.Hex()
 	if err := filepath.WalkDir(f.vars["TOPOS_DATA_DIR"], func(p string, _ fs.DirEntry, err error) error {
 		if err == nil && filepath.Base(p) == hex {
 			blob = p

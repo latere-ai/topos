@@ -392,12 +392,7 @@ func openLocal(env *cli, o runOptions) (*local, error) {
 // bundle are blobs of the session, so every later invocation that
 // continues it, and a runner elsewhere, runs the same agent.
 func (l *local) create(ctx context.Context, o runOptions, agent *manifest.Resolved) (session.Session, error) {
-	ref := session.AgentRef{ID: builtinAgent, Name: "topos", Version: 1}
-	if agent != nil {
-		st := agent.Agent.Status
-		ref = session.AgentRef{ID: st.ID, Name: agent.Name, Version: st.Version, Digest: session.Digest(st.Digest)}
-	}
-	s := session.New(ref, l.person, session.RunnerExternal, session.Machine{Kind: machine.KindHost, Workdir: l.workdir}, time.Now())
+	s := session.New(session.AgentRef{ID: builtinAgent, Name: "topos", Version: 1}, l.person, session.RunnerExternal, session.Machine{Kind: machine.KindHost, Workdir: l.workdir}, time.Now())
 	s.Writer = &session.Writer{Kind: session.RunnerExternal, Subject: l.person.Subject, Since: s.CreatedAt}
 	if o.maxCost > 0 {
 		micro := int64(math.Ceil(o.maxCost * 1e6))
@@ -416,23 +411,15 @@ func (l *local) create(ctx context.Context, o runOptions, agent *manifest.Resolv
 		lim := agent.Agent.Spec.Limits
 		s.Limits = session.Limits{TurnTimeout: lim.TurnTimeout, MaxAge: lim.MaxAge}
 		s.ExpiresAt = s.CreatedAt.Add(c.MaxAge)
-		bundle, err := agent.Bundle()
-		if err != nil {
+		if s.Agent, blobs, err = runner.AgentRef(*agent); err != nil {
 			return session.Session{}, err
 		}
-		d := session.DigestOf(bundle)
-		blobs = map[session.Digest][]byte{ref.Digest: agent.Spec, d: bundle}
-		s.Metadata[metaManifest] = string(d)
 	}
 	if err := l.store.Create(ctx, s, blobs); err != nil {
 		return session.Session{}, err
 	}
 	return s, nil
 }
-
-// metaManifest is the session metadata key holding the digest of the
-// agent's bundle blob.
-const metaManifest = "manifest"
 
 // ConfigDir is $XDG_CONFIG_HOME/topos, or $HOME/.config/topos, or empty
 // when neither variable is set.
@@ -609,20 +596,8 @@ func (l *local) connect(m v1.AgentModel, overlay *models.Entry) (models.Model, m
 // agentConfig is the harness pieces of the session's agent, read back
 // from its bundle blob; nil for the built-in agent.
 func (l *local) agentConfig(ctx context.Context, s session.Session) (*manifest.AgentConfig, error) {
-	d := s.Metadata[metaManifest]
-	if d == "" {
-		return nil, nil
-	}
-	rc, err := l.store.Blob(ctx, s.ID, session.Digest(d))
-	if err != nil {
-		return nil, err
-	}
-	b, err := io.ReadAll(rc)
-	if err := errors.Join(err, rc.Close()); err != nil {
-		return nil, err
-	}
-	r, err := manifest.ReadBundle(b)
-	if err != nil {
+	r, ok, err := runner.Agent(ctx, l.store, s)
+	if err != nil || !ok {
 		return nil, err
 	}
 	c, err := r.AgentConfig(func(m v1.AgentModel, overlay models.Entry) (models.Model, *models.Connection, *models.Entry, error) {

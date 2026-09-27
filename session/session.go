@@ -72,6 +72,9 @@ type AgentRef struct {
 	Name    string `json:"name,omitempty"`
 	Version int    `json:"version"`
 	Digest  Digest `json:"digest,omitempty"`
+	// Bundle is the digest of the blob holding the agent and the agents
+	// it pins, which a runner rebuilds the agent from.
+	Bundle Digest `json:"bundle,omitempty"`
 }
 
 // Writer is who may append to a session now.
@@ -116,6 +119,9 @@ type Budget struct {
 type Limits struct {
 	TurnTimeout string `json:"turn_timeout,omitempty"`
 	MaxAge      string `json:"max_age,omitempty"`
+	// Retention is how long the session is kept after it ends; empty
+	// keeps it until it is deleted (spec 014).
+	Retention string `json:"retention,omitempty"`
 }
 
 // The default limits of spec 004.
