@@ -41,9 +41,10 @@ var PollInterval = 250 * time.Millisecond
 
 // Store is the directory store.
 type Store struct {
-	root string
-	host string
-	now  func() time.Time
+	root  string
+	host  string
+	now   func() time.Time
+	blobs session.Blobs
 
 	mu     sync.Mutex
 	states map[string]*state
@@ -72,8 +73,19 @@ func (st *state) notify() {
 	st.signal = make(chan struct{})
 }
 
-// Open returns the store over dataDir/sessions, creating it.
-func Open(dataDir string) (*Store, error) {
+// Options configure a directory store.
+type Options struct {
+	// Blobs keeps the blob bodies outside the session directories (spec
+	// 014); nil keeps them under each session's blobs/sha256/.
+	Blobs session.Blobs
+}
+
+// Open returns the store over dataDir/sessions, creating it, with the
+// blob bodies in each session's directory.
+func Open(dataDir string) (*Store, error) { return OpenWith(dataDir, Options{}) }
+
+// OpenWith is Open with options.
+func OpenWith(dataDir string, o Options) (*Store, error) {
 	root := filepath.Join(dataDir, "sessions")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("dir: create %s: %w", root, err)
@@ -82,7 +94,7 @@ func Open(dataDir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dir: hostname: %w", err)
 	}
-	return &Store{root: root, host: host, now: time.Now, states: map[string]*state{}}, nil
+	return &Store{root: root, host: host, now: time.Now, blobs: o.Blobs, states: map[string]*state{}}, nil
 }
 
 func (s *Store) state(id string) *state {
@@ -156,6 +168,13 @@ func (s *Store) Create(ctx context.Context, sess session.Session, blobs map[sess
 	}
 	slices.Sort(digests)
 	for _, d := range digests {
+		// A body kept outside is durable before the session appears.
+		if s.blobs != nil {
+			if err := s.blobs.PutBlob(ctx, sess.ID, d, blobs[d]); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := writeBlob(tmp, d, blobs[d]); err != nil {
 			return err
 		}
@@ -392,6 +411,9 @@ func (s *Store) PutBlob(ctx context.Context, id string, r io.Reader) (session.Di
 		return "", fmt.Errorf("dir: read blob: %w", err)
 	}
 	d := session.DigestOf(b)
+	if s.blobs != nil {
+		return d, s.blobs.PutBlob(ctx, id, d, b)
+	}
 	if err := writeBlob(s.dir(id), d, b); err != nil {
 		return "", err
 	}
@@ -420,6 +442,16 @@ func (s *Store) Blob(ctx context.Context, id string, d session.Digest) (io.ReadC
 	}
 	if !d.Valid() {
 		return nil, fmt.Errorf("%w: digest %q", session.ErrInvalid, d)
+	}
+	if s.blobs != nil {
+		b, err := s.blobs.GetBlob(ctx, id, d)
+		if err != nil {
+			return nil, err
+		}
+		if session.DigestOf(b) != d {
+			return nil, fmt.Errorf("%w: blob %s does not match its digest", session.ErrCorrupt, d)
+		}
+		return io.NopCloser(bytes.NewReader(b)), nil
 	}
 	f, err := os.Open(blobPath(s.dir(id), d))
 	if err != nil {
@@ -463,11 +495,17 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 		}
 		session.ApplyBatch(hdr, []session.Event{red})
 		for _, d := range orphans {
+			if s.blobs != nil {
+				if err := s.blobs.DeleteBlob(ctx, id, d); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := os.Remove(blobPath(s.dir(id), d)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return fmt.Errorf("dir: delete blob %s: %w", d, err)
 			}
 		}
-		if len(orphans) > 0 {
+		if len(orphans) > 0 && s.blobs == nil {
 			if err := syncDir(blobDir(s.dir(id))); err != nil {
 				return err
 			}
@@ -513,7 +551,29 @@ func (s *Store) Delete(ctx context.Context, id string) (err error) {
 		return fmt.Errorf("dir: remove %s: %w", id, err)
 	}
 	st.notify()
+	// The bodies kept outside go last, so a crash before leaves bodies
+	// with no session, which SweepBlobs removes, and never a session
+	// without its bodies.
+	if s.blobs != nil {
+		return s.blobs.DeleteSession(ctx, id)
+	}
 	return nil
+}
+
+// SweepBlobs removes the bodies kept outside whose session is gone, which
+// a crash between a session's delete and its bodies' leaves (spec 014),
+// judging the grace of session.SweepBlobs on now.
+func (s *Store) SweepBlobs(ctx context.Context, now time.Time) error {
+	if s.blobs == nil {
+		return nil
+	}
+	return session.SweepBlobs(ctx, s.blobs, func(_ context.Context, id string) (bool, error) {
+		err := s.exists(id)
+		if errors.Is(err, session.ErrNotFound) {
+			return true, nil
+		}
+		return false, err
+	}, now)
 }
 
 func (s *Store) lockFile(id string) (*os.File, error) {
