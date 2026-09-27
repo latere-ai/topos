@@ -4,6 +4,8 @@
 package authorizer
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"regexp"
 	"slices"
@@ -16,7 +18,11 @@ import (
 // acting on the kind the spec names, and nothing here is missing from
 // the spec.
 func TestVocabularyMatchesTheSpec(t *testing.T) {
+	// A spec that is complete moves to specs/.archive keeping its name.
 	raw, err := os.ReadFile("../specs/006-identity.md")
+	if errors.Is(err, fs.ErrNotExist) {
+		raw, err = os.ReadFile("../specs/.archive/006-identity.md")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
