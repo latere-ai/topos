@@ -440,22 +440,9 @@ func loadAgent(ctx context.Context, env *cli, file string) (*manifest.Resolved, 
 	} else if !filepath.IsAbs(file) {
 		file = filepath.Join(env.Dir, file)
 	}
-	body, err := os.ReadFile(file)
+	rs, err := resolveFile(ctx, env, "--agent", file)
 	if err != nil {
-		return nil, &errUsage{"--agent: " + err.Error()}
-	}
-	root, err := os.OpenRoot(filepath.Dir(file))
-	if err != nil {
-		return nil, &errUsage{"--agent: " + err.Error()}
-	}
-	defer func() {
-		if err := root.Close(); err != nil {
-			env.stderr.println("topos: close the manifest's directory:", err)
-		}
-	}()
-	rs, err := manifest.Resolve(ctx, body, manifest.Options{Files: root.FS()})
-	if err != nil {
-		return nil, &errUsage{fmt.Sprintf("%s: %v", file, err)}
+		return nil, err
 	}
 	var agent *manifest.Resolved
 	for i := range rs {
@@ -470,6 +457,32 @@ func loadAgent(ctx context.Context, env *cli, file string) (*manifest.Resolved, 
 		return nil, &errUsage{fmt.Sprintf("%s: a local run does not apply %s yet", file, strings.Join(paths, ", "))}
 	}
 	return agent, nil
+}
+
+// resolveFile resolves the manifest file the way the topos command
+// reads every manifest: its documents through manifest.Resolve, with the
+// file's directory as the only file system instructionsFile reads from
+// and no stored object to reference. flag names the option the file came
+// from in a usage error.
+func resolveFile(ctx context.Context, env *cli, flag, file string) ([]manifest.Resolved, error) {
+	body, err := os.ReadFile(file)
+	if err != nil {
+		return nil, &errUsage{flag + ": " + err.Error()}
+	}
+	root, err := os.OpenRoot(filepath.Dir(file))
+	if err != nil {
+		return nil, &errUsage{flag + ": " + err.Error()}
+	}
+	defer func() {
+		if err := root.Close(); err != nil {
+			env.stderr.println("topos: close the manifest's directory:", err)
+		}
+	}()
+	rs, err := manifest.Resolve(ctx, body, manifest.Options{Files: root.FS()})
+	if err != nil {
+		return nil, &errUsage{fmt.Sprintf("%s: %v", file, err)}
+	}
+	return rs, nil
 }
 
 // localUnsupported lists the fields of an agent and its subagents that
