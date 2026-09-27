@@ -18,6 +18,7 @@ import (
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/identity"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/idpstub"
 )
@@ -94,6 +95,14 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 	org := f.apply("acme-carol", "triager", "Triage.")
 	if got := f.idp.Agents()[1]; got.Subject != org.Status.Identity || got.Owner != (idpstub.Owner{Type: "organization", ID: "acme"}) || got.AppliedBy != "acme-carol" {
 		t.Fatalf("an organization's agent %+v", got)
+	}
+	// The status keeps the owner, carried to later versions, so a session
+	// of an organization's agent names the organization, not the applier.
+	if org.Status.Owner == nil || *org.Status.Owner != (v1.Owner{Type: "organization", ID: "acme"}) {
+		t.Fatalf("the organization's agent's status owner %+v", org.Status.Owner)
+	}
+	if v2 := f.apply("acme-carol", "triager", "Triage twice."); v2.Status.Owner == nil || v2.Status.Owner.ID != "acme" {
+		t.Fatalf("a later version lost the owner: %+v", v2.Status.Owner)
 	}
 	s := f.create("alice", "reviewer")
 	f.mu.Lock()

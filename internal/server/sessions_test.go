@@ -182,10 +182,13 @@ func TestSessionCreateCarriesTheAgentsPermissions(t *testing.T) {
 	for _, agent := range []string{"reviewer", "reviewer@1", "plain"} {
 		f.create("alice", agent)
 	}
+	// Every agent may use the models it names, so each list ends with its
+	// model's grant.
+	model := map[string]any{"action": "lux:model.use", "resource": "claude-haiku-4-5"}
 	want := []any{
-		[]any{map[string]any{"action": "repo.read", "resource": "repo:acme/*"}, map[string]any{"action": "repo.write", "resource": "repo:acme/web"}},
-		[]any{map[string]any{"action": "repo.read", "resource": "repo:acme/*"}},
-		[]any{},
+		[]any{map[string]any{"action": "repo.read", "resource": "repo:acme/*"}, map[string]any{"action": "repo.write", "resource": "repo:acme/web"}, model},
+		[]any{map[string]any{"action": "repo.read", "resource": "repo:acme/*"}, model},
+		[]any{model},
 	}
 	if !reflect.DeepEqual(asked, want) {
 		t.Fatalf("session.create carried the permissions\n%#v\nwant\n%#v", asked, want)

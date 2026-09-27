@@ -81,7 +81,7 @@ gains fields.
 | Action | Kind | Resource fields | Asked at |
 |---|---|---|---|
 | `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner` | the agent routes of [[015-api]] |
-| `session.create` | `session` | `agent`, `agent_version`, `agent_owner`, `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, empty when it has none) | session create; the authorizer applies the initiator cap here |
+| `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent whose identity the authorizer created for the organization), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity` | session create; the authorizer applies the initiator cap here |
 | `session.read`, `session.list` | `session` | `agent`, `owner`, `runner` | session get, list, events list, stream |
 | `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |

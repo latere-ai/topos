@@ -374,7 +374,7 @@ func (r *resolver) status(ctx context.Context, ob *object, digest string) (v1.St
 	if existing.Digest == digest {
 		return *existing, nil
 	}
-	return v1.Status{ID: existing.ID, Version: existing.Version + 1, Digest: digest, CreatedAt: now().UTC(), Identity: existing.Identity}, nil
+	return v1.Status{ID: existing.ID, Version: existing.Version + 1, Digest: digest, CreatedAt: now().UTC(), Identity: existing.Identity, Owner: existing.Owner}, nil
 }
 
 func (r *resolver) newID(prefix string) string {

@@ -62,21 +62,22 @@ func (c *call) ensureIdentity(ctx context.Context, a *v1.Agent, named *authorize
 		return identityRefusal(err)
 	}
 	a.Status.Identity = subject
+	a.Status.Owner = &v1.Owner{Type: owner.Type, ID: owner.ID}
 	return nil
 }
 
-// agentIdentity is the identity of the agent: its latest version's
-// status.identity.
-func (s *Server) agentIdentity(ctx context.Context, a store.Agent) (string, error) {
+// agentStatus is the agent's latest version's status: its identity and
+// the owner its identity was created for.
+func (s *Server) agentStatus(ctx context.Context, a store.Agent) (v1.Status, error) {
 	v, err := s.o.Objects.Version(ctx, a.ID, a.Latest)
 	if err != nil {
-		return "", err
+		return v1.Status{}, err
 	}
 	doc, err := store.DecodeAgent(v.Doc)
 	if err != nil {
-		return "", err
+		return v1.Status{}, err
 	}
-	return doc.Status.Identity, nil
+	return doc.Status, nil
 }
 
 // live reports whether the agent has a session that has not ended.

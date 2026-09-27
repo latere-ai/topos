@@ -19,6 +19,7 @@ import (
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -176,17 +177,23 @@ func (c *call) createSession() error {
 	fields := map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
 		"runner": session.RunnerHosted, "machine": kind, "initiator": c.caller.Subject,
-		"permissions": permissionsField(r.Agent.Spec.Permissions), "session_id": id,
+		"permissions": permissionsField(r.Agent.Spec.Permissions, agentModels(r)), "session_id": id,
 	}
 	if c.s.o.Identities != nil {
-		subject, err := c.s.agentIdentity(ctx, a)
+		st, err := c.s.agentStatus(ctx, a)
 		if err != nil {
 			return err
 		}
-		if subject == "" {
+		if st.Identity == "" {
 			return refuse(CodeAgentIdentityMissing, "agent %s was applied before this server had an identity provider", a.Name)
 		}
-		fields["agent_identity"] = subject
+		fields["agent_identity"] = st.Identity
+		// An organization's agent belongs to the organization its identity
+		// was created for, not to whoever applied it. A person's agent
+		// keeps the person's subject, which every authorizer reads.
+		if st.Owner != nil && st.Owner.Type == identity.OwnerOrganization {
+			fields["agent_owner"] = map[string]any{"type": st.Owner.Type, "id": st.Owner.ID}
+		}
 	}
 	limits, err := c.askCreate(ctx, authorizer.ActionSessionCreate, authz.NewResource(authorizer.KindSession, "", fields))
 	if err != nil {
@@ -261,10 +268,54 @@ func (c *call) createSession() error {
 // session.create resource carries them, so the authorizer compares them
 // with what the initiator may do (the initiator cap, spec 006). An agent
 // with none carries an empty list, never an absent field.
-func permissionsField(ps []v1.Permission) []any {
-	out := make([]any, 0, len(ps))
+func permissionsField(ps []v1.Permission, models []string) []any {
+	out := make([]any, 0, len(ps)+len(models))
 	for _, p := range ps {
 		out = append(out, map[string]any{"action": p.Action, "resource": p.Resource})
+	}
+	// An agent cannot run without the models it names, so using exactly
+	// those is part of its definition and no author has to spell it out.
+	for _, m := range models {
+		out = append(out, map[string]any{"action": modelUse, "resource": m})
+	}
+	return out
+}
+
+// modelUse is the action at the model gateway an agent's own models need.
+const modelUse = "lux:model.use"
+
+// agentModels are the models an agent's sessions call: its own, its
+// advisor's, and its subagents', inline and pinned, each once, in order.
+func agentModels(r manifest.Resolved) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if name != "" && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	var walk func(s v1.AgentSpec, depth int)
+	walk = func(s v1.AgentSpec, depth int) {
+		add(s.Model.Name)
+		if s.Advisor != nil {
+			add(s.Advisor.Model.Name)
+		}
+		// Spec 013's deepest graph is four levels; the bound also ends
+		// a pin that names its own agent.
+		if depth >= 4 {
+			return
+		}
+		for _, sub := range s.Subagents {
+			if sub.Spec != nil {
+				walk(*sub.Spec, depth+1)
+			} else if p := r.Pinned[sub.Agent]; p != nil {
+				walk(p.Spec, depth+1)
+			}
+		}
+	}
+	if r.Agent != nil {
+		walk(r.Agent.Spec, 0)
 	}
 	return out
 }

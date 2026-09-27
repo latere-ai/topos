@@ -59,9 +59,20 @@ type Status struct {
 	Digest    string    `json:"digest,omitempty"`
 	CreatedAt time.Time `json:"createdAt,omitzero"`
 	Identity  string    `json:"identity,omitempty"`
+	// Owner is who the agent belongs to, as the authorizer named it when
+	// the agent's identity was created: a person or an organization. It
+	// is empty on an installation with no identity provider, where the
+	// applier owns the agent.
+	Owner *Owner `json:"owner,omitempty"`
 	// ArchivedAt is when the object was archived; a server writes it
 	// when it answers, and a stored version never carries it.
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+}
+
+// Owner is an agent's owner: Type is "user" or "organization".
+type Owner struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
 }
 
 // Agent is an agent definition.

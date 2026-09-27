@@ -97,6 +97,12 @@ not identities; they act as the agent they belong to
 ([[013-threads-and-subagents]]). The identity is created when the agent
 is first applied and disabled when it is archived. An agent a person
 runs locally with `topos` acts as that person and has no identity.
+The agent's status keeps the owner its identity was created for, the
+one the authorizer's `agent.create` allow names, and every later version
+carries it, so a session of an organization's agent names the
+organization, not its applier. An agent cannot run without the models
+it names, so a session's permissions include `lux:model.use` on each of
+them without the author listing it.
 The owner is what makes an agent personal or an organization's, so the
 manifest's `identity` field is removed ([[003-manifest]]).
 
