@@ -43,6 +43,7 @@ const (
 	ActionSessionDelete    = "session.delete"
 	ActionSessionFork      = "session.fork"
 	ActionSessionRewind    = "session.rewind"
+	ActionSessionResume    = "session.resume"
 	ActionSessionRedact    = "session.redact"
 	ActionSessionAppend    = "session.append"
 	ActionSessionHandoff   = "session.handoff"
@@ -85,6 +86,7 @@ var table = []authz.Action{
 	{Name: ActionSessionDelete, Kind: KindSession},
 	{Name: ActionSessionFork, Kind: KindSession},
 	{Name: ActionSessionRewind, Kind: KindSession},
+	{Name: ActionSessionResume, Kind: KindSession},
 	{Name: ActionSessionRedact, Kind: KindSession},
 	{Name: ActionSessionAppend, Kind: KindSession},
 	{Name: ActionSessionHandoff, Kind: KindSession},
