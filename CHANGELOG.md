@@ -24,6 +24,14 @@ committed: the commit log already holds that.
   keeps each in a directory with an fsync before every acknowledged append
   and a single-writer lock held with `flock`. `session/storetest` is the
   suite every `session.Store` passes.
+- `models` is the model boundary: a `Connection` that must name a base URL
+  and a model, the `Model` a request streams through, retry classification
+  of HTTP answers, stream errors and cut streams, a catalog of model
+  windows and prices built into the binary, and exact cost in micro-USD.
+  `models/dialect` sends requests over HTTP in the Anthropic Messages,
+  OpenAI Responses and Chat Completions wire formats through the
+  llmdialect codecs, and reports a stream the server closed before its
+  last frame as incomplete, never as a finished answer.
 
 ## v0.7.0 - 2026-09-26
 

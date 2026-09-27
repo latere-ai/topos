@@ -1,0 +1,1529 @@
+{
+  "source": "Lux model catalog prices and OpenRouter model windows, read 2026-09-27",
+  "models": [
+    {
+      "name": "anthropic/claude-3-5-haiku",
+      "aliases": [
+        "claude-3-5-haiku"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "0.8",
+        "output": "4",
+        "cache_read": "0.08"
+      }
+    },
+    {
+      "name": "anthropic/claude-3-5-sonnet",
+      "aliases": [
+        "claude-3-5-sonnet"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "3",
+        "output": "15"
+      }
+    },
+    {
+      "name": "anthropic/claude-3-7-sonnet",
+      "aliases": [
+        "claude-3-7-sonnet"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "3",
+        "output": "15",
+        "cache_read": "0.3"
+      }
+    },
+    {
+      "name": "anthropic/claude-3-haiku",
+      "aliases": [
+        "claude-3-haiku"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "0.25",
+        "output": "1.25",
+        "cache_read": "0.03"
+      }
+    },
+    {
+      "name": "anthropic/claude-3-opus",
+      "aliases": [
+        "claude-3-opus"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "15",
+        "output": "75",
+        "cache_read": "1.5"
+      }
+    },
+    {
+      "name": "anthropic/claude-3-sonnet",
+      "aliases": [
+        "claude-3-sonnet"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "3",
+        "output": "15",
+        "cache_read": "0.3"
+      }
+    },
+    {
+      "name": "anthropic/claude-fable-5",
+      "aliases": [
+        "claude-fable-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "10",
+        "output": "50",
+        "cache_read": "1"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-haiku-4",
+      "aliases": [
+        "claude-haiku-4"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "0.8",
+        "output": "4"
+      }
+    },
+    {
+      "name": "anthropic/claude-haiku-4-5",
+      "aliases": [
+        "claude-haiku-4-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 200000,
+      "max_output_tokens": 64000,
+      "pricing": {
+        "input": "1",
+        "output": "5",
+        "cache_read": "0.1"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-4",
+      "aliases": [
+        "claude-opus-4"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "15",
+        "output": "75"
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-4-1",
+      "aliases": [
+        "claude-opus-4-1"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 200000,
+      "max_output_tokens": 32000,
+      "pricing": {
+        "input": "15",
+        "output": "75",
+        "cache_read": "1.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-4-5",
+      "aliases": [
+        "claude-opus-4-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 200000,
+      "max_output_tokens": 64000,
+      "pricing": {
+        "input": "5",
+        "output": "25",
+        "cache_read": "0.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-4-6",
+      "aliases": [
+        "claude-opus-4-6"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "5",
+        "output": "25",
+        "cache_read": "0.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-4-7",
+      "aliases": [
+        "claude-opus-4-7"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "5",
+        "output": "25",
+        "cache_read": "0.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-4-8",
+      "aliases": [
+        "claude-opus-4-8"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "5",
+        "output": "25",
+        "cache_read": "0.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-5",
+      "aliases": [
+        "claude-opus-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "5",
+        "output": "25",
+        "cache_read": "0.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-4",
+      "aliases": [
+        "claude-sonnet-4"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 200000,
+      "max_output_tokens": 64000,
+      "pricing": {
+        "input": "3",
+        "output": "15"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-4-1",
+      "aliases": [
+        "claude-sonnet-4-1"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "pricing": {
+        "input": "3",
+        "output": "15",
+        "cache_read": "0.3"
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-4-5",
+      "aliases": [
+        "claude-sonnet-4-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 64000,
+      "pricing": {
+        "input": "3",
+        "output": "15",
+        "cache_read": "0.3"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-4-6",
+      "aliases": [
+        "claude-sonnet-4-6"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "3",
+        "output": "15",
+        "cache_read": "0.3"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-5",
+      "aliases": [
+        "claude-sonnet-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "10",
+        "cache_read": "0.2"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "moonshot/kimi-k2.5",
+      "aliases": [
+        "kimi-k2.5"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.6",
+        "output": "3",
+        "cache_read": "0.1"
+      }
+    },
+    {
+      "name": "moonshot/kimi-k2.6",
+      "aliases": [
+        "kimi-k2.6"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.95",
+        "output": "4",
+        "cache_read": "0.16"
+      }
+    },
+    {
+      "name": "moonshot/kimi-k2.7-code",
+      "aliases": [
+        "kimi-k2.7-code"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.95",
+        "output": "4",
+        "cache_read": "0.19"
+      }
+    },
+    {
+      "name": "moonshot/kimi-k2.7-code-highspeed",
+      "aliases": [
+        "kimi-k2.7-code-highspeed"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1.9",
+        "output": "8",
+        "cache_read": "0.38"
+      }
+    },
+    {
+      "name": "moonshot/kimi-k3",
+      "aliases": [
+        "kimi-k3"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "3",
+        "output": "15",
+        "cache_read": "0.3"
+      }
+    },
+    {
+      "name": "moonshot/moonshot-v1-128k",
+      "aliases": [
+        "moonshot-v1-128k"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "2",
+        "output": "5"
+      }
+    },
+    {
+      "name": "moonshot/moonshot-v1-32k",
+      "aliases": [
+        "moonshot-v1-32k"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1",
+        "output": "3"
+      }
+    },
+    {
+      "name": "moonshot/moonshot-v1-8k",
+      "aliases": [
+        "moonshot-v1-8k"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.2",
+        "output": "2"
+      }
+    },
+    {
+      "name": "openai/gpt-3.5",
+      "aliases": [
+        "gpt-3.5"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "pricing": {
+        "input": "0.5",
+        "output": "1.5"
+      }
+    },
+    {
+      "name": "openai/gpt-4",
+      "aliases": [
+        "gpt-4"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 8191,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": "10",
+        "output": "30"
+      }
+    },
+    {
+      "name": "openai/gpt-4.1",
+      "aliases": [
+        "gpt-4.1"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1047576,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "2",
+        "output": "8",
+        "cache_read": "0.5"
+      }
+    },
+    {
+      "name": "openai/gpt-4.1-mini",
+      "aliases": [
+        "gpt-4.1-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1047576,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.4",
+        "output": "1.6",
+        "cache_read": "0.1"
+      }
+    },
+    {
+      "name": "openai/gpt-4.1-nano",
+      "aliases": [
+        "gpt-4.1-nano"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1047576,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.4",
+        "cache_read": "0.025"
+      }
+    },
+    {
+      "name": "openai/gpt-4o",
+      "aliases": [
+        "gpt-4o"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "2.5",
+        "output": "10"
+      }
+    },
+    {
+      "name": "openai/gpt-4o-mini",
+      "aliases": [
+        "gpt-4o-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.6",
+        "cache_read": "0.075"
+      }
+    },
+    {
+      "name": "openai/gpt-5",
+      "aliases": [
+        "gpt-5"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.25",
+        "output": "10"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5-mini",
+      "aliases": [
+        "gpt-5-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.25",
+        "output": "2",
+        "cache_read": "0.025"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5-nano",
+      "aliases": [
+        "gpt-5-nano"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.05",
+        "output": "0.4",
+        "cache_read": "0.005"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5-pro",
+      "aliases": [
+        "gpt-5-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "15",
+        "output": "120"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.1",
+      "aliases": [
+        "gpt-5.1"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.25",
+        "output": "10",
+        "cache_read": "0.125"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.2",
+      "aliases": [
+        "gpt-5.2"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.75",
+        "output": "14",
+        "cache_read": "0.175"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.2-pro",
+      "aliases": [
+        "gpt-5.2-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "21",
+        "output": "168"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.3-codex",
+      "aliases": [
+        "gpt-5.3-codex"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.75",
+        "output": "14",
+        "cache_read": "0.175"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4",
+      "aliases": [
+        "gpt-5.4"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2.5",
+        "output": "15",
+        "cache_read": "0.25"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4-mini",
+      "aliases": [
+        "gpt-5.4-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.75",
+        "output": "4.5",
+        "cache_read": "0.075"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4-nano",
+      "aliases": [
+        "gpt-5.4-nano"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.2",
+        "output": "1.25",
+        "cache_read": "0.02"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4-pro",
+      "aliases": [
+        "gpt-5.4-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "30",
+        "output": "180"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.5",
+      "aliases": [
+        "gpt-5.5"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "5",
+        "output": "30",
+        "cache_read": "0.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.5-pro",
+      "aliases": [
+        "gpt-5.5-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "30",
+        "output": "180"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.6",
+      "aliases": [
+        "gpt-5.6"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "pricing": {
+        "input": "5",
+        "output": "30",
+        "cache_read": "0.5"
+      }
+    },
+    {
+      "name": "openai/gpt-5.6-luna",
+      "aliases": [
+        "gpt-5.6-luna"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.2",
+        "output": "1.2",
+        "cache_read": "0.02"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.6-terra",
+      "aliases": [
+        "gpt-5.6-terra"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "12",
+        "cache_read": "0.2"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-6",
+      "aliases": [
+        "gpt-6"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "pricing": {
+        "input": "10",
+        "output": "50",
+        "cache_read": "1"
+      }
+    },
+    {
+      "name": "openai/o1",
+      "aliases": [
+        "o1"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "15",
+        "output": "60",
+        "cache_read": "7.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/o1-mini",
+      "aliases": [
+        "o1-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "pricing": {
+        "input": "1.1",
+        "output": "4.4",
+        "cache_read": "0.55"
+      }
+    },
+    {
+      "name": "openai/o3",
+      "aliases": [
+        "o3"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "10",
+        "output": "40",
+        "cache_read": "2.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/o3-mini",
+      "aliases": [
+        "o3-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "1.1",
+        "output": "4.4",
+        "cache_read": "0.55"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/o4-mini",
+      "aliases": [
+        "o4-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "1.1",
+        "output": "4.4",
+        "cache_read": "0.275"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/anthropic/claude-opus-5",
+      "aliases": [
+        "anthropic/claude-opus-5"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "5",
+        "output": "25"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/anthropic/claude-sonnet-4",
+      "aliases": [
+        "anthropic/claude-sonnet-4"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 200000,
+      "max_output_tokens": 64000,
+      "pricing": {
+        "input": "3",
+        "output": "15"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/cohere/north-mini-code:free",
+      "aliases": [
+        "cohere/north-mini-code:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 256000,
+      "max_output_tokens": 64000,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/dots-studio/dots-3-note-preview:free",
+      "aliases": [
+        "dots-studio/dots-3-note-preview:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 512000,
+      "max_output_tokens": 460800,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openrouter/google/gemma-4-26b-a4b-it:free",
+      "aliases": [
+        "google/gemma-4-26b-a4b-it:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openrouter/google/gemma-4-31b-it:free",
+      "aliases": [
+        "google/gemma-4-31b-it:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openrouter/inclusionai/ling-3.0-flash-fin:free",
+      "aliases": [
+        "inclusionai/ling-3.0-flash-fin:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/inclusionai/ling-3.0-flash-sante:free",
+      "aliases": [
+        "inclusionai/ling-3.0-flash-sante:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/liquid/lfm-2.5-2.6b:free",
+      "aliases": [
+        "liquid/lfm-2.5-2.6b:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 65536,
+      "max_output_tokens": 8192,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "aliases": [
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 256000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      "aliases": [
+        "nvidia/nemotron-3-super-120b-a12b:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "aliases": [
+        "nvidia/nemotron-3-ultra-550b-a55b:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/nvidia/nemotron-3.5-lightning:free",
+      "aliases": [
+        "nvidia/nemotron-3.5-lightning:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/openai/gpt-5",
+      "aliases": [
+        "openai/gpt-5"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.25",
+        "output": "10"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/poolside/laguna-s-2.1:free",
+      "aliases": [
+        "poolside/laguna-s-2.1:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/poolside/laguna-xs-2.1:free",
+      "aliases": [
+        "poolside/laguna-xs-2.1:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/qwen/qwen3.8-27b:free",
+      "aliases": [
+        "qwen/qwen3.8-27b:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openrouter/thinkingmachines/inkling-small:free",
+      "aliases": [
+        "thinkingmachines/inkling-small:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 262144,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openrouter/thinkingmachines/inkling:free",
+      "aliases": [
+        "thinkingmachines/inkling:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 262144,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "xai/grok-4.20",
+      "aliases": [
+        "grok-4.20"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1.25",
+        "output": "2.5",
+        "cache_read": "0.2"
+      }
+    },
+    {
+      "name": "xai/grok-4.3",
+      "aliases": [
+        "grok-4.3"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1.25",
+        "output": "2.5",
+        "cache_read": "0.2"
+      }
+    },
+    {
+      "name": "xai/grok-4.5",
+      "aliases": [
+        "grok-4.5"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.3"
+      }
+    },
+    {
+      "name": "xai/grok-build-0.1",
+      "aliases": [
+        "grok-build-0.1"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1",
+        "output": "2",
+        "cache_read": "0.2"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.5",
+      "aliases": [
+        "glm-4.5"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.6",
+        "output": "2.2",
+        "cache_read": "0.11"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.5-air",
+      "aliases": [
+        "glm-4.5-air"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.2",
+        "output": "1.1",
+        "cache_read": "0.03"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.5-airx",
+      "aliases": [
+        "glm-4.5-airx"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1.1",
+        "output": "4.5",
+        "cache_read": "0.22"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.5-flash",
+      "aliases": [
+        "glm-4.5-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.5-x",
+      "aliases": [
+        "glm-4.5-x"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "2.2",
+        "output": "8.9",
+        "cache_read": "0.45"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.5v",
+      "aliases": [
+        "glm-4.5v"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.6",
+        "output": "1.8",
+        "cache_read": "0.11"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.6",
+      "aliases": [
+        "glm-4.6"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.6",
+        "output": "2.2",
+        "cache_read": "0.11"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.6v",
+      "aliases": [
+        "glm-4.6v"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.3",
+        "output": "0.9",
+        "cache_read": "0.05"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.6v-flash",
+      "aliases": [
+        "glm-4.6v-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.6v-flashx",
+      "aliases": [
+        "glm-4.6v-flashx"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.04",
+        "output": "0.4",
+        "cache_read": "0.004"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.7",
+      "aliases": [
+        "glm-4.7"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.6",
+        "output": "2.2",
+        "cache_read": "0.11"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.7-flash",
+      "aliases": [
+        "glm-4.7-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      }
+    },
+    {
+      "name": "zhipu/glm-4.7-flashx",
+      "aliases": [
+        "glm-4.7-flashx"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.07",
+        "output": "0.4",
+        "cache_read": "0.01"
+      }
+    },
+    {
+      "name": "zhipu/glm-5",
+      "aliases": [
+        "glm-5"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1",
+        "output": "3.2",
+        "cache_read": "0.2"
+      }
+    },
+    {
+      "name": "zhipu/glm-5-turbo",
+      "aliases": [
+        "glm-5-turbo"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1.2",
+        "output": "4",
+        "cache_read": "0.24"
+      }
+    },
+    {
+      "name": "zhipu/glm-5.1",
+      "aliases": [
+        "glm-5.1"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1.4",
+        "output": "4.4",
+        "cache_read": "0.26"
+      }
+    },
+    {
+      "name": "zhipu/glm-5.2",
+      "aliases": [
+        "glm-5.2"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "1.4",
+        "output": "4.4",
+        "cache_read": "0.26"
+      }
+    }
+  ]
+}
