@@ -150,8 +150,8 @@ func TestRunOutputAndExit(t *testing.T) {
 func TestRunReportsTheFinalDirectory(t *testing.T) {
 	dir := tempDir(t)
 	for script, want := range map[string]string{
-		"mkdir -p sub && cd sub": filepath.Join(dir, "sub"),
-		"cd /; exit 3":           "/",
+		"/bin/mkdir -p sub && cd sub": filepath.Join(dir, "sub"),
+		"cd /; exit 3":                "/",
 	} {
 		d := drive(t, t.Context(), "-dir", dir, "-report-dir", "--", script)
 		d.started(t)
@@ -165,7 +165,7 @@ func TestRunReportsTheFinalDirectory(t *testing.T) {
 }
 
 func TestRunDeliversInput(t *testing.T) {
-	d := drive(t, t.Context(), "--", "cat; echo done")
+	d := drive(t, t.Context(), "--", "/bin/cat; echo done")
 	d.started(t)
 	d.send(t, frameInput, "hello ")
 	d.send(t, frameInput, "world\n")
@@ -203,7 +203,7 @@ func TestRunRefusesAMissingDirectory(t *testing.T) {
 }
 
 func TestRunTimesOut(t *testing.T) {
-	d := drive(t, t.Context(), "-timeout", "200ms", "--", "echo begun; sleep 30")
+	d := drive(t, t.Context(), "-timeout", "200ms", "--", "echo begun; /bin/sleep 30")
 	d.started(t)
 	d.send(t, frameEOF, "")
 	begun := time.Now()
@@ -220,7 +220,7 @@ func TestRunTimesOut(t *testing.T) {
 func TestRunCancels(t *testing.T) {
 	// The shell traps SIGTERM, so a canceled command gets its SIGTERM
 	// before anything harder.
-	script := "trap 'echo term; exit 7' TERM; echo ready; while :; do sleep 0.05; done"
+	script := "trap 'echo term; exit 7' TERM; echo ready; while :; do /bin/sleep 0.05; done"
 	t.Run("kill frame", func(t *testing.T) {
 		d := drive(t, t.Context(), "--", script)
 		d.started(t)
@@ -258,7 +258,7 @@ func TestRunCancels(t *testing.T) {
 		}
 	})
 	t.Run("grace", func(t *testing.T) {
-		d := drive(t, t.Context(), "-grace", "100ms", "--", "trap '' TERM; echo ready; sleep 30")
+		d := drive(t, t.Context(), "-grace", "100ms", "--", "trap '' TERM; echo ready; /bin/sleep 30")
 		d.started(t)
 		d.send(t, frameEOF, "")
 		d.until(t, "ready")
@@ -271,7 +271,7 @@ func TestRunCancels(t *testing.T) {
 }
 
 func TestRunEndsTheProcessGroup(t *testing.T) {
-	d := drive(t, t.Context(), "--", "sleep 30 & echo started")
+	d := drive(t, t.Context(), "--", "/bin/sleep 30 & echo started")
 	d.started(t)
 	d.send(t, frameEOF, "")
 	begun := time.Now()
@@ -303,11 +303,11 @@ func TestRunStopsWhenTheOutputCannotBeWritten(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if code := run(t.Context(), []string{"run", "--", "sleep 30"}, inR, &limitedWriter{}, io.Discard); code != 3 {
+	if code := run(t.Context(), []string{"run", "--", "/bin/sleep 30"}, inR, &limitedWriter{}, io.Discard); code != 3 {
 		t.Errorf("a start that cannot be reported: exit %d", code)
 	}
 	begun := time.Now()
-	if code := run(t.Context(), []string{"run", "--", "echo out; sleep 30"}, inR, &limitedWriter{n: 1}, io.Discard); code != 3 {
+	if code := run(t.Context(), []string{"run", "--", "echo out; /bin/sleep 30"}, inR, &limitedWriter{n: 1}, io.Discard); code != 3 {
 		t.Errorf("output that cannot be sent: exit %d", code)
 	}
 	if time.Since(begun) > 20*time.Second {

@@ -149,7 +149,7 @@ func TestFSStatListRemoveRename(t *testing.T) {
 		"list missing":        {[]string{"list", root, "gone"}, kindNotExist},
 		"remove the root":     {[]string{"remove", root, root}, kindOther},
 		"remove missing":      {[]string{"remove", root, "gone"}, kindNotExist},
-		"remove non-empty":    {[]string{"remove", root, "full"}, kindExist},
+		"remove non-empty":    {[]string{"remove", root, "full"}, kindNotEmpty},
 		"rename missing":      {[]string{"rename", root, "gone", "other"}, kindNotExist},
 		"rename out":          {[]string{"rename", root, "b.txt", "/elsewhere"}, kindOther},
 		"rename to denied":    {[]string{"rename", root, "b.txt", "key.pem"}, kindPermission},

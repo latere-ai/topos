@@ -96,6 +96,7 @@ type errorBody struct {
 const (
 	kindNotExist   = "not_exist"
 	kindExist      = "exist"
+	kindNotEmpty   = "not_empty"
 	kindNotDir     = "not_dir"
 	kindIsDir      = "is_dir"
 	kindPermission = "permission"
@@ -118,6 +119,10 @@ func kindOf(err error) string {
 		return kindDenied
 	case errors.Is(err, fs.ErrNotExist):
 		return kindNotExist
+	case errors.Is(err, syscall.ENOTEMPTY):
+		// Checked before ErrExist, which a directory with entries also
+		// answers.
+		return kindNotEmpty
 	case errors.Is(err, fs.ErrExist):
 		return kindExist
 	case errors.Is(err, syscall.ENOTDIR):
