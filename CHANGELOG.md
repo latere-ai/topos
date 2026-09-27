@@ -246,6 +246,14 @@ committed: the commit log already holds that.
   (messages, tool calls and results, summaries) can be redacted, so a
   redaction can no longer erase a verdict or a confirmation, or reset a
   session's spend by removing its model requests.
+- On Postgres, toposd holds one `LISTEN` connection per replica on
+  `TOPOS_DB_URL`, however many event streams and runners watch sessions,
+  where each stream and each runner's interrupt watch opened its own. A
+  replica uses its serving pool plus that one connection, and one more at
+  start for migrations. A dropped listener reconnects with backoff while
+  watchers poll every 2 s, so no event is missed. A subject's 17th
+  concurrent `GET /v1/sessions/{id}/stream` on a replica is refused
+  `rate_limited` until one of its streams ends.
 
 ## v0.7.0 - 2026-09-26
 
