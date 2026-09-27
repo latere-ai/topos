@@ -313,6 +313,12 @@ committed: the commit log already holds that.
   recorded session again, on its own thread, re-encodes it with the
   current build and compares its hash with the recorded one, reporting
   each step `match`, `mismatch`, `codec_mismatch` or `skipped`.
+- `TOPOS_BLOB_URL` keeps raw model responses and captured requests
+  outside the database or the data directory: in a directory,
+  `file:///<path>`, or in an S3 compatible object store,
+  `s3://<host>/<bucket>/<prefix>` with `TOPOS_BLOB_ACCESS_KEY` and
+  `TOPOS_BLOB_SECRET_KEY`. A deleted session's objects go after its
+  records, and the reaper removes objects a failed delete left behind.
 
 ## v0.7.0 - 2026-09-26
 
