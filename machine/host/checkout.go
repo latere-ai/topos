@@ -207,8 +207,11 @@ func git(ctx context.Context, dir string, environ []string, args ...string) (str
 
 func runGit(ctx context.Context, dir string, environ []string, args ...string) (out, errOut string, ok bool, err error) {
 	path, err := exec.LookPath("git")
-	if err != nil {
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
 		return "", "", false, nil
+	case err != nil:
+		return "", "", false, fmt.Errorf("machine: find git: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, path, append([]string{"-C", dir}, args...)...)
 	cmd.Env = environ

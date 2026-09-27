@@ -155,10 +155,142 @@ func TestWorktreeRemovalRule(t *testing.T) {
 			t.Fatalf("%s: the branch %s went with the worktree", c.name, c.co.Branch)
 		}
 	}
+	locked := claim("ses_locked")
+	gitIn(t, work, env, "worktree", "lock", locked.Workdir)
+	if _, err := ReleaseCheckout(ctx, locked.Workdir, "ses_locked", env); err == nil || !strings.Contains(err.Error(), "git worktree remove") {
+		t.Fatalf("a locked worktree: %v", err)
+	}
 	if removed, err := ReleaseCheckout(ctx, work, "ses_owner", env); err != nil || removed {
 		t.Fatalf("the checkout's owner: removed %v, %v", removed, err)
 	}
 	if owner, err := readTrimmed(filepath.Join(work, ".git", ownerFile)); err != nil || owner != "" {
 		t.Fatalf("the owner file after the owner's end: %q, %v", owner, err)
+	}
+}
+
+// TestClaimAndReleaseRefusals: a checkout another session writes cannot
+// be claimed on a host that keeps no worktrees, an owner whose state
+// cannot be read stops the claim, a worktree git cannot add carries git's
+// message, and a release of a plain directory or of a worktree whose
+// record does not decode is refused or ignored as it should be.
+func TestClaimAndReleaseRefusals(t *testing.T) {
+	work, worktrees, env := repo(t)
+	ctx := t.Context()
+	live := sessions{"ses_owner": true}
+	if _, err := Claim(ctx, ClaimOptions{Dir: work, WorktreeDir: worktrees, Agent: "a", Session: "ses_owner", Active: live.active, Environ: env}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Claim(ctx, ClaimOptions{Dir: work, Agent: "a", Session: "ses_2", Active: live.active, Environ: env}); err == nil || !strings.Contains(err.Error(), "keeps no worktrees") {
+		t.Fatalf("no worktree directory: %v", err)
+	}
+	broken := func(context.Context, string) (bool, error) { return false, os.ErrPermission }
+	if _, err := Claim(ctx, ClaimOptions{Dir: work, WorktreeDir: worktrees, Agent: "a", Session: "ses_2", Active: broken, Environ: env}); err == nil || !strings.Contains(err.Error(), "ses_owner") {
+		t.Fatalf("an owner that cannot be read: %v", err)
+	}
+	gitIn(t, work, env, "branch", "agents/a/ses_3")
+	if _, err := Claim(ctx, ClaimOptions{Dir: work, WorktreeDir: worktrees, Agent: "a", Session: "ses_3", Active: live.active, Environ: env}); err == nil || !strings.Contains(err.Error(), "git worktree add") {
+		t.Fatalf("a branch that exists: %v", err)
+	}
+	if removed, err := ReleaseCheckout(ctx, t.TempDir(), "ses_owner", env); err != nil || removed {
+		t.Fatalf("a plain directory: %v, %v", removed, err)
+	}
+	c, err := Claim(ctx, ClaimOptions{Dir: work, WorktreeDir: worktrees, Agent: "a", Session: "ses_4", Active: live.active, Environ: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitDir := gitIn(t, c.Workdir, env, "rev-parse", "--absolute-git-dir")
+	if err := os.WriteFile(filepath.Join(gitDir, worktreeFile), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReleaseCheckout(ctx, c.Workdir, "ses_4", env); err == nil {
+		t.Fatal("a worktree record that does not decode was released")
+	}
+}
+
+// TestReleaseAtTheSessionsEndGivesTheCheckoutBack: a host opened for the
+// session that owns its checkout gives it back when released at the
+// session's end, and a Stop leaves the claim in place.
+func TestReleaseAtTheSessionsEndGivesTheCheckoutBack(t *testing.T) {
+	work, worktrees, env := repo(t)
+	ctx := t.Context()
+	if _, err := Claim(ctx, ClaimOptions{Dir: work, WorktreeDir: worktrees, Agent: "a", Session: "ses_1", Active: sessions{}.active, Environ: env}); err != nil {
+		t.Fatal(err)
+	}
+	owner := filepath.Join(work, ".git", ownerFile)
+	open := func() *Host {
+		t.Helper()
+		h, err := Open(Options{Workdir: work, SpillDir: filepath.Join(t.TempDir(), "spill"), Environ: env, Owner: "ses_1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	if err := open().Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readTrimmed(owner); err != nil || got != "ses_1" {
+		t.Fatalf("after a stop the owner is %q, %v", got, err)
+	}
+	h := open()
+	if err := h.Release(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readTrimmed(owner); err != nil || got != "ses_1" {
+		t.Fatalf("after an idle release the owner is %q, %v", got, err)
+	}
+	if err := h.Release(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readTrimmed(owner); err != nil || got != "" {
+		t.Fatalf("after the session's end the owner is %q, %v", got, err)
+	}
+}
+
+// TestClaimEdgeCases: a detached checkout's worktree is based on its
+// commit and removed once clean; a worktree directory that cannot be
+// made, and an owner file that cannot be read or written, stop the claim.
+func TestClaimEdgeCases(t *testing.T) {
+	work, worktrees, env := repo(t)
+	ctx := t.Context()
+	live := sessions{"ses_owner": true}
+	opts := func(id, wt string) ClaimOptions {
+		return ClaimOptions{Dir: work, WorktreeDir: wt, Agent: "a", Session: id, Active: live.active, Environ: env}
+	}
+	if _, err := Claim(ctx, opts("ses_owner", worktrees)); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, work, env, "checkout", "-q", "--detach")
+	c, err := Claim(ctx, opts("ses_detached", worktrees))
+	if err != nil || c.Branch != "agents/a/ses_detached" {
+		t.Fatalf("a detached checkout: %+v, %v", c, err)
+	}
+	if removed, err := ReleaseCheckout(ctx, c.Workdir, "ses_detached", env); err != nil || !removed {
+		t.Fatalf("a clean worktree of a detached checkout: %v, %v", removed, err)
+	}
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Claim(ctx, opts("ses_blocked", filepath.Join(blocked, "worktrees"))); err == nil {
+		t.Fatal("a worktree directory under a file was made")
+	}
+	owner := filepath.Join(work, ".git", ownerFile)
+	if err := os.Remove(owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(owner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Claim(ctx, opts("ses_x", worktrees)); err == nil {
+		t.Fatal("an owner file that is a directory was read")
+	}
+	if err := os.RemoveAll(filepath.Join(work, ".git", "topos")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, ".git", "topos"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Claim(ctx, opts("ses_y", worktrees)); err == nil {
+		t.Fatal("an owner file under a file was written")
 	}
 }
