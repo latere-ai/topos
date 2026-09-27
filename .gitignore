@@ -22,3 +22,4 @@ coverage.out
 # binary at the repository root is always a stray from a bare `go build`.
 /topos
 /toposd
+/topos-machine
