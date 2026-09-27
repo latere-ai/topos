@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +23,8 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
+	"latere.ai/x/topos/internal/store"
+	objstoretest "latere.ai/x/topos/internal/store/storetest"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/storetest"
 )
@@ -134,6 +137,149 @@ func fresh(t *testing.T, o Options) *Store {
 
 func TestPostgresStoreConformance(t *testing.T) {
 	storetest.Run(t, func(t *testing.T) session.Store { return fresh(t, Options{Poll: 200 * time.Millisecond}) })
+}
+
+func TestPostgresObjectStoreConformance(t *testing.T) {
+	objstoretest.Run(t, func(t *testing.T, now func() time.Time) store.Store { return fresh(t, Options{Now: now}) })
+}
+
+// replicas returns two stores on one fresh database, as two toposd
+// replicas would hold.
+func replicas(t *testing.T, o Options) [2]*Store {
+	t.Helper()
+	a := fresh(t, o)
+	b, err := Open(t.Context(), a.listen.ConnString(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(b.Close)
+	return [2]*Store{a, b}
+}
+
+// race runs fn n times at once, alternating the replicas, and returns
+// each call's error.
+func race(n int, rs [2]*Store, fn func(i int, st *Store) error) []error {
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range n {
+		wg.Go(func() {
+			<-start
+			errs[i] = fn(i, rs[i%2])
+		})
+	}
+	close(start)
+	wg.Wait()
+	return errs
+}
+
+func TestBeginReservesAKeyOnceAcrossReplicas(t *testing.T) {
+	clock := objstoretest.NewClock()
+	rs := replicas(t, Options{Now: clock.Now})
+	for _, round := range []string{"a new key", "an expired key"} {
+		var reserved atomic.Int64
+		errs := race(16, rs, func(i int, st *Store) error {
+			r := store.Idempotency{Subject: "alice", Key: "k", Route: "POST /v1/sessions", BodyHash: fmt.Sprint(i), ExpiresAt: clock.Now().Add(time.Hour)}
+			got, fresh, err := st.Begin(t.Context(), r)
+			if err != nil {
+				return err
+			}
+			if fresh {
+				reserved.Add(1)
+			} else if got.Done || got.Route != r.Route {
+				return fmt.Errorf("held %+v", got)
+			}
+			return nil
+		})
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("%s: %v", round, err)
+		}
+		if n := reserved.Load(); n != 1 {
+			t.Fatalf("%s was reserved %d times", round, n)
+		}
+		clock.Advance(2 * time.Hour)
+	}
+}
+
+func TestPutVersionHasOneWinnerAcrossReplicas(t *testing.T) {
+	rs := replicas(t, Options{})
+	r := objstoretest.Apply(t, rs[0], "alice", "reviewer", "one")
+	v, err := rs[0].Version(t.Context(), r.Agent.Status.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := rs[1].Agent(t.Context(), "reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, round := range []struct {
+		name string
+		put  func(i int, st *Store) error
+	}{
+		{"a second version", func(i int, st *Store) error {
+			next := v
+			next.Version, next.Digest = 2, fmt.Sprintf("sha256:%d", i)
+			return st.PutVersion(t.Context(), a, next)
+		}},
+		{"a new agent of one name", func(i int, st *Store) error {
+			fresh := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "builder", Owner: fmt.Sprint(i)}
+			first := v
+			first.AgentID = fresh.ID
+			return st.PutVersion(t.Context(), fresh, first)
+		}},
+	} {
+		won := 0
+		for _, err := range race(8, rs, round.put) {
+			switch {
+			case err == nil:
+				won++
+			case !errors.Is(err, store.ErrConflict):
+				t.Fatalf("%s: %v", round.name, err)
+			}
+		}
+		if won != 1 {
+			t.Fatalf("%s was stored %d times", round.name, won)
+		}
+	}
+	if got, err := rs[1].Agent(t.Context(), "reviewer"); err != nil || got.Latest != 2 {
+		t.Fatalf("the agent after the race %+v, %v", got, err)
+	}
+}
+
+func TestObjectCallsOnAClosedStoreReturnTheirErrors(t *testing.T) {
+	st := fresh(t, Options{})
+	r := objstoretest.Apply(t, st, "alice", "reviewer", "one")
+	v, err := st.Version(t.Context(), r.Agent.Status.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := st.Agent(t.Context(), r.Agent.Status.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	next := v
+	next.Version = 2
+	fresh := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "builder", Owner: "bob"}
+	first := v
+	first.AgentID = fresh.ID
+	rec := store.Idempotency{Subject: "alice", Key: "k"}
+	for name, call := range map[string]func() error{
+		"Agent":      func() error { _, err := st.Agent(t.Context(), "reviewer"); return err },
+		"ListAgents": func() error { _, _, err := st.ListAgents(t.Context(), store.AgentList{}); return err },
+		"Version":    func() error { _, err := st.Version(t.Context(), a.ID, 1); return err },
+		"Versions":   func() error { _, _, err := st.Versions(t.Context(), a.ID, 0, ""); return err },
+		"PutVersion": func() error { return st.PutVersion(t.Context(), a, next) },
+		"create":     func() error { return st.PutVersion(t.Context(), fresh, first) },
+		"Archive":    func() error { return st.Archive(t.Context(), a.ID, time.Now()) },
+		"Begin":      func() error { _, _, err := st.Begin(t.Context(), rec); return err },
+		"Finish":     func() error { return st.Finish(t.Context(), rec) },
+		"Abandon":    func() error { return st.Abandon(t.Context(), "alice", "k") },
+	} {
+		if err := call(); err == nil || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrConflict) {
+			t.Errorf("%s on a closed store: %v", name, err)
+		}
+	}
 }
 
 func message(t *testing.T, text string) session.Event {

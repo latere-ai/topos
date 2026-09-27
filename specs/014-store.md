@@ -41,7 +41,7 @@ snapshots are not. Migrations follow the family's shared
 | Table | Key | Holds |
 |---|---|---|
 | `agents` | `id` | `name`, `owner`, `latest_version`, `archived_at`, `created_at` |
-| `agent_versions` | `(agent_id, version)` | `digest`, the resolved spec as JSON text, `created_by`, `created_at` |
+| `agent_versions` | `(agent_id, version)` | `digest`, the resolved document and the bundle of [[003-manifest]] as JSON text, `created_by`, `created_at` |
 | `sessions` | `id` | the columns a query filters on (`agent_id`, `agent_version`, `owner`, `runner`, `status`, `stop_reason`, `turn`, `last_seq`, `created_at`, `updated_at`, `expires_at`, `ended_at`), the Session object as JSON text, and the queue columns of [[016-runners]]: `wake`, `lease_holder`, `lease_generation`, `lease_expires_at`, `writer_kind`, `writer_subject` |
 | `events` | `(session_id, seq)`, unique `(session_id, id)` | `id`, `type`, `time`, `thread`, `turn`, `step`, `payload` as JSON text, `redacted` |
 | `blobs` | `(session_id, digest)` | `size`, `location` (`db` or `object`), and `body` when `location` is `db` |
@@ -49,7 +49,7 @@ snapshots are not. Migrations follow the family's shared
 | `trigger_firings` | `(trigger_id, scheduled_at)` | the replica that claimed the firing, the outcome (`started`, `skipped_active`, `skipped_late`, `refused`) and the session it started, so one firing starts one session across replicas ([[022-triggers]]) |
 | `credentials` | `id` | `name`, `owner`, `service`, the wrapped data key, the key index, nonce and ciphertext ([[018-credentials-and-secrets]]) |
 | `memory_stores` | `id` | `name`, `owner`, `description`, `created_at`; documents live in the memory backend ([[020-memory-stores]]) |
-| `idempotency_keys` | `(subject, key)` | the route, the body's hash, the stored answer, `expires_at` ([[015-api]]) |
+| `idempotency_keys` | `(subject, key)` | the route, the body's hash, `done`, the stored answer (`status`, `content_type`, `body` as bytes), `expires_at` ([[015-api]]) |
 | `sink_outbox` | `id` | a sink event awaiting delivery ([[023-events-and-observability]]) |
 
 `toposd serve` applies the migrations at start on `TOPOS_DB_URL`
@@ -61,6 +61,24 @@ knows refuses to start. Serving queries use `TOPOS_DB_POOL_URL` when it
 is set, in pgx's describe-cached execution mode so a
 transaction-pooling proxy accepts them, with JSON bound as text;
 `LISTEN` and the migrations use `TOPOS_DB_URL`.
+
+A session's `owner` is its initiator's subject, and `sessions` keeps
+an index on `(owner, id)` so a list narrowed to its owners
+([[006-identity]]) walks it newest first.
+
+### Agents and idempotency on Postgres
+
+`PutVersion` is one transaction. Version 1 inserts the `agents` row
+and the version; a unique violation on the id or the name is
+`ErrConflict`. A later version locks the agent's row with
+`SELECT ... FOR UPDATE`, is `ErrConflict` unless it follows
+`latest_version`, and inserts the version and moves `latest_version`
+before the lock is released, so replicas racing one version store it
+once. `Begin` is one transaction too: `INSERT ... ON CONFLICT DO
+NOTHING` reserves a free key; otherwise the held row is read under
+its lock, answered while it is unexpired, and replaced when it has
+expired, so replicas racing one key reserve it once. Expiry is judged
+on the clock of `toposd`, which set `expires_at`, not the database's.
 
 ### Append on Postgres
 
@@ -157,7 +175,8 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 | Migrations apply on an empty database when the store opens | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`, every subtest opens a fresh database) | built |
 | A lease that expires is taken over by the next holder, and the old holder's renew fails and its `Lost` closes | `internal/store/postgres.TestAnExpiredLeaseIsTakenOverAndTheOldHolderLosesIt` (tag `postgres`) | built |
 | A replica that finds a newer schema than it knows refuses to start | `TestMigrationsAtStart` | not built |
-| The suite of `store.Store` (`internal/store/storetest`) passes on the memory store and the directory store | `internal/store.TestMemoryStoreConformance`, `internal/store/dir.TestObjectStoreConformance` | built |
+| The suite of `store.Store` (`internal/store/storetest`) passes on the memory store, the directory store and the Postgres store | `internal/store.TestMemoryStoreConformance`, `internal/store/dir.TestObjectStoreConformance`, `internal/store/postgres.TestPostgresObjectStoreConformance` (tag `postgres`) | built |
+| Replicas racing one idempotency key reserve it once, new or expired, and replicas racing one agent version or one new agent name store it once | `internal/store/postgres.TestBeginReservesAKeyOnceAcrossReplicas`, `internal/store/postgres.TestPutVersionHasOneWinnerAcrossReplicas` (tag `postgres`) | built |
 | The directory store reads back every agent, version, name and idempotency record after a restart, and ignores a torn temporary file | `internal/store/dir.TestReopenReadsEverythingBack`, `internal/store/dir.TestATornTemporaryFileIsIgnoredAtOpen` | built |
 | A crash between a version's file and its agent's leaves the version unread and replaceable, and never an agent whose latest version is missing | `internal/store/dir.TestAVersionIsVisibleOnlyOnceItsAgentCountsIt` | built |
 | A well-named object file that does not decode, or holds another object, is `ErrCorrupt` | `internal/store/dir.TestOpenRefusesACorruptAgent`, `internal/store/dir.TestACorruptVersionIsRefused`, `internal/store/dir.TestACorruptIdempotencyRecordIsRefused` | built |
