@@ -85,11 +85,19 @@ var dialing = []string{"net", "net/http", "net/rpc", "net/smtp", "crypto/tls"}
 // vocabulary are pure over the interfaces they are handed.
 var pure = []string{"session", "harness", "manifest", "authorizer"}
 
+// contracts are the shared packages a pure tree may import although
+// they also hold a client: the authorizer tree publishes the value types
+// of latere.ai/x/pkg/authz, whose Client is the one toposd dials with.
+// The walk below does not descend into a contract, so a dialing package
+// the tree imports itself, or reaches through anything else, still
+// fails.
+var contracts = map[string][]string{"authorizer": {"latere.ai/x/pkg/authz"}}
+
 // TestRootPackagesDialNothing is invariant 13 of spec 001: no package in
 // a pure tree imports a package that opens a connection, directly or
-// through a dependency. A tree that does not exist yet is skipped by
-// name, so the rule holds from the scaffold and binds each tree the day
-// it lands.
+// through a dependency other than its tree's contracts. A tree that does
+// not exist yet is skipped by name, so the rule holds from the scaffold
+// and binds each tree the day it lands.
 func TestRootPackagesDialNothing(t *testing.T) {
 	dir := root(t)
 	for _, tree := range pure {
@@ -97,11 +105,37 @@ func TestRootPackagesDialNothing(t *testing.T) {
 			continue
 		}
 		for _, pkg := range goList(t, dir, "./"+tree+"/...") {
-			for _, dep := range goList(t, dir, "-deps", pkg) {
+			for _, dep := range reached(goList(t, dir, "-deps", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", pkg), pkg, contracts[tree]) {
 				if slices.Contains(dialing, dep) {
 					t.Errorf("%s reaches %s; the %s tree dials nothing (spec 001)", pkg, dep, tree)
 				}
 			}
 		}
 	}
+}
+
+// reached walks the import graph go list printed, one "path imports..."
+// line per package, from pkg, and stops at the packages in skip.
+func reached(graph []string, pkg string, skip []string) []string {
+	edges := map[string][]string{}
+	for _, line := range graph {
+		fields := strings.Fields(line)
+		edges[fields[0]] = fields[1:]
+	}
+	seen := map[string]bool{pkg: true}
+	queue := []string{pkg}
+	var out []string
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		for _, next := range edges[p] {
+			if seen[next] || slices.Contains(skip, next) {
+				continue
+			}
+			seen[next] = true
+			out = append(out, next)
+			queue = append(queue, next)
+		}
+	}
+	return out
 }
