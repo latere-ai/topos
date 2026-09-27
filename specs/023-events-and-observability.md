@@ -145,3 +145,5 @@ The session log itself ([[004-session-log]]); who may read it
 | A crash after a mutation commits and before delivery delivers the event after restart | `TestOutboxSurvivesCrash` | not built |
 | A turn's spans nest session, turn, step, model request and tool call, and the stub Lux receives the `topos.session_id` baggage | `TestSpansFromTheLog` | not built |
 | The metric table here and the registry are the same set | `TestMetricTableMatchesTheSpec` | not built |
+| `GET /metrics` answers on the internal listener and not on the public one | `TestMetricsInternalOnly` | not built |
+| `TOPOS_EVENTS_URL` without `TOPOS_EVENTS_SECRET` is a start-up failure, with both variables named in the one configuration message | `TestEventsURLWithoutItsSecretIsRefused` | not built |
