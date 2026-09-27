@@ -63,8 +63,11 @@ type Options struct {
 	// PublicURL is TOPOS_PUBLIC_URL, the base of every URL an answer
 	// carries.
 	PublicURL string
-	// BasePath is the path the API answers under; DefaultBasePath when
-	// empty.
+	// BasePath is TOPOS_BASE_PATH, the path the API answers under in the
+	// place of DefaultBasePath (spec 030). Set, it is the path of
+	// PublicURL, which is then the API root itself; empty, the API
+	// answers under DefaultBasePath and its root is PublicURL with
+	// DefaultBasePath after it.
 	BasePath string
 	// Heartbeat is the stream's comment interval; DefaultHeartbeat when
 	// zero.
@@ -100,6 +103,9 @@ type Server struct {
 	limits  *ratelimit.Buckets
 	streams *slots
 	routes  []route
+	// root is the path every route is served under, and rootURL the
+	// absolute URL of that path, the base of every URL an answer writes.
+	root, rootURL string
 }
 
 // New builds the server over its stores.
@@ -113,8 +119,9 @@ func New(o Options) (*Server, error) {
 		return nil, errors.New("server: the public URL is empty")
 	}
 	o.PublicURL = strings.TrimRight(o.PublicURL, "/")
-	if o.BasePath == "" {
-		o.BasePath = DefaultBasePath
+	root, rootURL, err := apiRoot(o.PublicURL, o.BasePath)
+	if err != nil {
+		return nil, err
 	}
 	if o.Heartbeat <= 0 {
 		o.Heartbeat = DefaultHeartbeat
@@ -134,7 +141,7 @@ func New(o Options) (*Server, error) {
 	if o.Notify == nil {
 		o.Notify = func() {}
 	}
-	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now}), streams: newSlots(o.MaxStreams)}
+	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now}), streams: newSlots(o.MaxStreams), root: root, rootURL: rootURL}
 	s.routes = table()
 	for _, rt := range s.routes {
 		if len(rt.actions) == 0 && !rt.public {
@@ -144,15 +151,32 @@ func New(o Options) (*Server, error) {
 	return s, nil
 }
 
-// Handler is the router: every route of the table under the base path,
-// and nothing else.
+// apiRoot is the path the routes are served under and its absolute URL:
+// DefaultBasePath under publicURL when basePath is empty, and otherwise
+// basePath, which must then be publicURL's own path, so that publicURL
+// is the root and no URL an answer writes carries the base path twice.
+func apiRoot(publicURL, basePath string) (root, rootURL string, err error) {
+	if basePath == "" {
+		return DefaultBasePath, publicURL + DefaultBasePath, nil
+	}
+	u, err := url.Parse(publicURL)
+	if err != nil || u.Path != basePath {
+		return "", "", fmt.Errorf("server: the base path %s is not the path of the public URL %s", basePath, publicURL)
+	}
+	return basePath, publicURL, nil
+}
+
+// Handler is the router: every route of the table under the base path.
+// Every other path, outside the base path as well as under it, answers
+// not_found, so the router mounts at the listener's root beneath the
+// probes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	for i := range s.routes {
 		rt := &s.routes[i]
-		mux.HandleFunc(rt.method+" "+s.o.BasePath+rt.path, func(w http.ResponseWriter, r *http.Request) { s.serve(w, r, rt) })
+		mux.HandleFunc(rt.method+" "+s.root+rt.path, func(w http.ResponseWriter, r *http.Request) { s.serve(w, r, rt) })
 	}
-	mux.HandleFunc(s.o.BasePath+"/", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, s.o.Log, refuse(CodeNotFound, "no route"))
 	})
 	return mux
@@ -275,9 +299,10 @@ func (c *call) reply(status int, v any) error {
 	return err
 }
 
-// url is an absolute URL of a path under the API root.
+// url is the absolute URL of a path under the API root, as a client
+// outside reaches it.
 func (c *call) url(path string, q url.Values) string {
-	u := c.s.o.PublicURL + c.s.o.BasePath + path
+	u := c.s.rootURL + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
@@ -309,7 +334,7 @@ func (c *call) replyPage(items any, next string) error {
 	if next != "" {
 		q := c.r.URL.Query()
 		q.Set("cursor", next)
-		c.w.Header().Add("Link", "<"+c.url(strings.TrimPrefix(c.r.URL.Path, c.s.o.BasePath), q)+`>; rel="next"`)
+		c.w.Header().Add("Link", "<"+c.url(strings.TrimPrefix(c.r.URL.Path, c.s.root), q)+`>; rel="next"`)
 	}
 	return c.reply(http.StatusOK, page{Items: items, NextCursor: next})
 }

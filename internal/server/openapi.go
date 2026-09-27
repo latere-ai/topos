@@ -131,10 +131,11 @@ func errorResponses(statuses map[int][]string) yaml.MapSlice {
 	}}}
 }
 
-// openAPI is GET /openapi.yaml, with this installation's URL as its
-// server.
+// openAPI is GET /openapi.yaml, with this installation's API root as
+// its server, so every path of the document joined to it is the address
+// a client outside reaches.
 func (c *call) openAPI() error {
-	b, err := OpenAPI(c.s.o.PublicURL + c.s.o.BasePath)
+	b, err := OpenAPI(c.s.rootURL)
 	if err != nil {
 		return err
 	}

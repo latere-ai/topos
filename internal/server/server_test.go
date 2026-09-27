@@ -254,12 +254,77 @@ func TestNewRefusesAnIncompleteServer(t *testing.T) {
 		"no verifier": func(o *Options) { o.Verifier = nil },
 		"no guard":    func(o *Options) { o.Guard = auth.Guard{} },
 		"no url":      func(o *Options) { o.PublicURL = "" },
+		// The base path is the public URL's path, or a written URL would
+		// carry it twice or not at all.
+		"a base path the URL lacks": func(o *Options) { o.BasePath = "/v1/agents" },
 	} {
 		o := good
 		mut(&o)
 		if _, err := New(o); err == nil {
 			t.Errorf("%s: built", name)
 		}
+	}
+}
+
+// TestWrittenURLsUsePublicURL is spec 030's rule for the URLs an answer
+// carries: under a base path each is TOPOS_PUBLIC_URL joined with the
+// route's path after the root, whatever Host the request named, and none
+// carries the base path twice. The stream and next-page Link headers and
+// the served document's server are the three this server writes.
+func TestWrittenURLsUsePublicURL(t *testing.T) {
+	const public = "https://api.example.com/v1/agents"
+	f := newFixture(t, func(o *Options) { o.PublicURL = public + "/"; o.BasePath = "/v1/agents" })
+	// Every request names another host than the public URL's, which no
+	// written URL may take.
+	withHost := func(method, path, body string) answer {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), method, f.srv.URL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = "elsewhere.example"
+		req.Header.Set("Authorization", "Bearer alice")
+		resp, err := f.srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return answer{status: resp.StatusCode, header: resp.Header, body: b}
+	}
+	for _, name := range []string{"a1", "a2"} {
+		if a := withHost(http.MethodPut, "/v1/agents/agents/"+name, agentYAML(name, "Review.")); a.status != http.StatusCreated {
+			t.Fatalf("apply %s: %d %s", name, a.status, a.body)
+		}
+	}
+	created := withHost(http.MethodPost, "/v1/agents/sessions", `{"agent":"a1","message":"Review main.go."}`)
+	var s session.Session
+	created.decode(t, &s)
+	if link := created.header.Get("Link"); link != "<"+public+"/sessions/"+s.ID+`/stream>; rel="stream"` {
+		t.Errorf("the stream's Link is %q", link)
+	}
+	if link := withHost(http.MethodGet, "/v1/agents/sessions/"+s.ID, "").header.Get("Link"); link != "<"+public+"/sessions/"+s.ID+`/stream>; rel="stream"` {
+		t.Errorf("a read session's Link is %q", link)
+	}
+	page := withHost(http.MethodGet, "/v1/agents/agents?limit=1", "")
+	if link := page.header.Get("Link"); !strings.HasPrefix(link, "<"+public+"/agents?") || !strings.HasSuffix(link, `>; rel="next"`) {
+		t.Errorf("the next page's Link is %q", link)
+	}
+	doc := withHost(http.MethodGet, "/v1/agents/openapi.yaml", "")
+	if doc.status != http.StatusOK || !strings.Contains(string(doc.body), "url: "+public+"\n") {
+		t.Errorf("the served document: %d, its server is not %s", doc.status, public)
+	}
+	for _, a := range []answer{created, page, doc} {
+		if strings.Contains(a.header.Get("Link")+string(a.body), "/v1/agents/v1/agents") {
+			t.Errorf("an answer carries the base path twice: %v %s", a.header, a.body)
+		}
+	}
+	// The root /v1 is replaced, not kept beside the base path.
+	if a := withHost(http.MethodGet, "/v1/agents/v1/agents", ""); a.status != http.StatusNotFound || a.code() != CodeNotFound {
+		t.Errorf("/v1/agents/v1/agents: %d %s", a.status, a.body)
 	}
 }
 
