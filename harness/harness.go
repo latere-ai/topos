@@ -1072,6 +1072,14 @@ func (t *turn) call(ctx context.Context, c plannedCall) error {
 // refusal returns beside it to stop the turn once the step's calls are
 // answered.
 func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (tools.Result, error) {
+	// A tool that acts on the machine opens a machine opened on demand
+	// first, so its paths resolve against the working directory of the
+	// machine that exists; a tool of no effect never opens one.
+	if c.tool.Properties().Effect != tools.EffectNone {
+		if err := machine.Open(ctx, t.h.c.Machine); err != nil {
+			return t.unopened(ctx, err)
+		}
+	}
 	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: t.h.c.Machine, State: state})
 	var lost *appendError
 	if isPause(err) || errors.As(err, &lost) {
@@ -1081,6 +1089,32 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 		return settle(ctx, res, err), err
 	}
 	return settle(ctx, res, err), nil
+}
+
+// unopened answers a call whose machine could not be opened. A core's
+// refusal for spend stops the turn with budget as a tool's does; any
+// other failure is appended as a session.error with its code and is the
+// call's result, so the model can go on without the machine or try
+// again.
+func (t *turn) unopened(ctx context.Context, err error) (tools.Result, error) {
+	if isSpent(err) {
+		return settle(ctx, tools.Result{}, err), err
+	}
+	if ctx.Err() != nil {
+		return settle(ctx, tools.Result{}, err), nil
+	}
+	code := machine.CodeUnavailable
+	if oe, ok := errors.AsType[*machine.OpenError](err); ok {
+		code = oe.Code
+	}
+	e, eerr := t.sessionError(code, err.Error(), false, "")
+	if eerr != nil {
+		return tools.Result{}, eerr
+	}
+	if cerr := t.commit(ctx, e); cerr != nil {
+		return tools.Result{}, cerr
+	}
+	return tools.Text(tools.OutcomeError, prompts.Render(prompts.CallMachineUnavailable, prompts.Data{"Error": err.Error()})), nil
 }
 
 // settle turns what a tool returned into the result the model sees: a

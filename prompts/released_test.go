@@ -37,6 +37,7 @@ var released = map[string]string{
 	"results/call/canceled-v1.md":            "f752d3fb1d539b351cb97f6bdd2401d8238ceb67e0564e8751be572afecca127",
 	"results/call/denied-v1.md":              "d5562154e0075f2dc557261fac75b8648b71aed9847c9729a7a9b2b079afcf39",
 	"results/call/failed-v1.md":              "94d94f0ebf374eda7f43ddff785d094a8d411f23f5772473f6b8f3df312f630b",
+	"results/call/machine-unavailable-v1.md": "743652b192c5544eabbd8d0eb6c454679c3f8898024ae4b44948db573b0428dc",
 	"results/call/plan-mode-v1.md":           "d0ef370776d9b1e51d58f22fbaf393351e4c9cce4709e57f51f14264f981099b",
 	"results/call/unknown-effect-v1.md":      "e983d2391d701da2beaec81dfdc551972fa1474daa18843ccb65ab387a3ffba6",
 	"results/call/unknown-tool-v1.md":        "00bb5747d21c866b0350e3ea8f0cd39f1f4abd2c50a8f5d83113b334cb0a2320",

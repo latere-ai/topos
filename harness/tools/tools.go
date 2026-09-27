@@ -180,6 +180,10 @@ func Cap(ctx context.Context, m machine.Machine, id, text string, limit int) (st
 	if len(text) <= limit {
 		return text, nil, nil
 	}
+	// A machine opened on demand has a spill directory once it is open.
+	if err := machine.Open(ctx, m); err != nil {
+		return "", nil, fmt.Errorf("tools: open the machine for the spill file: %w", err)
+	}
 	p := path.Join(m.SpillDir(), "tool-"+spillName(id)+".txt")
 	if err := m.WriteFile(ctx, p, strings.NewReader(text), 0o600); err != nil {
 		return "", nil, fmt.Errorf("tools: write the spill file: %w", err)

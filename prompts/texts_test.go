@@ -106,6 +106,7 @@ var textCases = func() []textCase {
 		{name: CallUnknownEffect, want: "The runner stopped while this call ran. Its effects are unknown; inspect the machine before repeating it."},
 		{name: CallCanceled, want: "The call was canceled before it finished."},
 		{name: CallFailed, data: Data{"Error": "disk full"}, want: "The tool failed: " + "disk full"},
+		{name: CallMachineUnavailable, data: Data{"Error": "no sandbox"}, want: "The machine this tool acts on could not be started, so the call did not run: " + "no sandbox"},
 		{name: CallPlanMode, want: "Plan mode: only read-only tools run."},
 		{name: CallAboveBlock, want: "above the block threshold"},
 

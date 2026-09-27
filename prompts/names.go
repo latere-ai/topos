@@ -63,6 +63,9 @@ const (
 	CallCanceled      Name = "results/call/canceled-v1"
 	// CallFailed takes the tool's Error.
 	CallFailed Name = "results/call/failed-v1"
+	// CallMachineUnavailable takes the Error of a machine opened on
+	// demand that could not be had (spec 009).
+	CallMachineUnavailable Name = "results/call/machine-unavailable-v1"
 	// CallPlanMode and CallAboveBlock are the reasons of a blocked call,
 	// recorded on its agent.tool_use and read by the model as its result.
 	CallPlanMode   Name = "results/call/plan-mode-v1"
