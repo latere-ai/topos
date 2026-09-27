@@ -18,7 +18,10 @@ What the core protects, from whom, at which boundary, and which test
 or invariant holds each threat. The design places policy where an
 effect crosses a boundary as a typed request, not on the text of a
 command, and treats every tool output as untrusted input to the model.
-This spec adds no mechanism; it indexes the ones the other specs build
+It assumes the workload in a sandbox is hostile: code the agent wrote
+or fetched may try to use whatever the sandbox can reach, to act
+outside its session, to spend, and to persist. This spec adds no
+mechanism; it indexes the ones the other specs build
 and is complete when every row names a passing test.
 
 ## Current state
@@ -33,7 +36,10 @@ credentials under a key that was never set. Nothing is borrowed.
 
 | Asset | Where it lives |
 |---|---|
-| credentials: agent keys, connection credentials, named secrets, model keys | encrypted in the store; in a runner's memory while it holds a session ([[018-credentials-and-secrets]]) |
+| agent keys | the installation's authorizer; never toposd, a runner or a machine ([[018-credentials-and-secrets]]) |
+| connection credentials, named secrets | encrypted in the store; swapped in at Cella's egress, never inside a sandbox ([[018-credentials-and-secrets]]) |
+| short-lived tokens | a runner's memory while it holds a session's lease, each bound to that session and to one destination ([[018-credentials-and-secrets]]) |
+| the installation's own keys: the local issuer key, the credentials key, the database URL | the server's configuration, which no command sees ([[009-machines]]) |
 | session logs and blobs | the store ([[004-session-log]], [[014-store]]) |
 | the person's host: files, credential files, processes | the host machine ([[009-machines]]) |
 | repositories and their protected branches | the git host ([[019-git]]) |
@@ -48,6 +54,8 @@ credentials under a key that was never set. Nothing is borrowed.
 | the runner | credentials and the lease from the machine | [[016-runners]], [[018-credentials-and-secrets]] |
 | the API | people and programs from the store, through verification and the authorizer | [[006-identity]], [[015-api]] |
 | the internal listener | runners from the public API, with the runner token | [[016-runners]] |
+| a sandbox's tokens | a workload from every destination and action its session was not allowed | the authorizer's mint per destination and Cella's egress by host and path ([[018-credentials-and-secrets]], [[012-permissions-and-approvals]]) |
+| a server's host sandbox | one person's host session from another's, and from the server's own files and environment | [[009-machines]] |
 
 ### Threats
 
@@ -60,7 +68,16 @@ credentials under a key that was never set. Nothing is borrowed.
 | a credential leaks into a log, an event or tool output | the runner scrubs the values it holds before append; no event field holds one | invariant 5; `TestNoCredentialInAnyEventOrMachine` |
 | a secret pasted into a message | the input check warns and offers a named secret; redaction tombstones the event and compacts past it; the person is told to rotate | [[018-credentials-and-secrets]], [[004-session-log]] `TestRedactionTombstonesAndRequiresCompaction` |
 | a manifest carries a secret | strict decoding and the input check at resolve | [[003-manifest]] `TestManifestHoldingASecretIsRefused` |
-| a compromised runner | it exposes the credentials of the sessions it holds at that moment and no others; each agent key is narrowed to its agent's permissions and each session to its scope; per-core tokens last 15 minutes; a lost lease fences its appends within 60 seconds | [[016-runners]] `TestSecondWriterIsRefused`; [[018-credentials-and-secrets]] |
+| a compromised runner | it holds no agent key, only the short-lived tokens of the sessions whose leases it holds, each bound to its session and destination and lasting minutes; a token is minted only for the holder of a session's current lease; a lost lease fences its appends within 60 seconds | [[016-runners]] `TestSecondWriterIsRefused`; [[018-credentials-and-secrets]] |
+| a hostile workload uses a swapped-in credential at another core or against another session | each token is minted for one destination within the session's scope, bound to the session and marked workload `sandbox`; egress swaps it only toward that destination's host and path, so a model-only token never reaches Cella, Origo or Arca | [[018-credentials-and-secrets]] `TestASandboxTokenReachesOnlyItsDestination` |
+| a hostile workload runs an irreversible action from a script the classifier cannot read | sandbox tokens carry no flagged action; the step-up at egress asks before a one-shot grant | [[012-permissions-and-approvals]] `TestEgressStepUp` |
+| a hostile workload rewrites another session's branch or an earlier checkpoint | a session writes only its own branches; only the runner creates checkpoint refs, and none is updated | [[019-git]] `TestASessionWritesOnlyItsOwnBranches`, [[034-checkpoints-and-rewind]] `TestCheckpointRefsAreTheRunners` |
+| a hostile workload spends the agent's budget through model calls | Lux enforces the session's allowance on every call, sandbox calls included, and a refusal stops the session `budget` | [[007-models]] `TestACoresSpendRefusalStopsTheTurn` |
+| a hostile workload carries data to another initiator, or persists an injected instruction, through memory | stores are partitioned by initiator; a shared store is an admin's choice with a declared audience, and its writes are attributed and versioned | [[020-memory-stores]] `TestMemoryPartitionsByInitiator` |
+| a hostile workload reads the value of a credential | no value is inside the sandbox; a minted token is swapped into headers only, never a body, and only toward its destination | [[018-credentials-and-secrets]] `TestNoCredentialInAnyEventOrMachine` |
+| a subagent reaches the authority of the agent it names | a thread acts with the session's credentials; the named agent's identity and permissions are ignored and recorded | [[013-threads-and-subagents]] `TestASubagentActsWithTheSessionsCredentials` |
+| a host session on a server reads another session's files or the server's keys | the mandatory host sandbox, a directory per session, none of the server's environment | [[009-machines]] `TestHostSessionsOnAServer` |
+| a log written by an external runner steers a hosted runner that continues it | the log is input, never authority: the hosted runner takes policy, scope and budget from the Session and the authorizer, not from events | [[017-external-runners-handoff-fork]] |
 | a second writer corrupts a session | one writer by lease and generation; a takeover forks | invariant 3; `TestKillRunnerMidTurnLosesNoEvent` |
 | a call repeated after a crash duplicates an effect | no call without a result runs again, except `memory_sync` with preconditions | [[016-runners]] `TestRecoveryRules` |
 | the authorizer is down | every decision is a refusal | invariant 7; [[006-identity]] `TestAuthorizerDownIsRefusal` |
