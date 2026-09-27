@@ -126,48 +126,89 @@ still runs in place, and `session.machine` says checkpoints are off.
 `latere.ai/x/cella/client` at `TOPOS_CELLA_URL`, with the session's
 own credential ([[018-credentials-and-secrets]]); unset, a session
 asking for a `cella` machine is refused with `machine_unavailable`.
+Every call carries an instrumented client on HTTP/1.1, which the exec
+socket's upgrade needs, and bounds no call: a held create and a
+command's session are bounded by their contexts.
 
 | Cella Sandbox manifest (`v1beta1`) | From |
 |---|---|
 | `metadata.name` | `ses-` and the session's ULID in lowercase, so a runner finds the sandbox by name |
-| `metadata.labels` | `topos.latere.ai/session`, `topos.latere.ai/agent` |
-| `spec.environment` | the session's `machine.environment`, which may name an Environment whose workers the developer runs |
-| `spec.image` | the agent's `spec.machine.image`, default Cella's `base` |
+| `metadata.labels` | `topos.latere.ai/session`, the session's id, and `topos.latere.ai/agent`, the agent's name |
+| `spec.environment` | the session's `machine.environment`, which may name an Environment whose workers the developer runs; absent, Cella's default |
+| `spec.image` | the agent's `spec.machine.image`; absent, Cella's default, `base` |
 | `spec.resources` | the agent's `spec.machine.resources` |
-| `spec.network.egress` | `allowlist` with the hosts of the agent's `spec.machine.egress`, the session's repositories' git host ([[019-git]]) and its named secrets' hosts |
-| `spec.secrets` | the session's named secrets ([[018-credentials-and-secrets]]) |
-| `spec.lifecycle` | `persistent`, `autoStop: 15m`, and a `ttl` of the session's remaining age as a backstop |
+| `spec.network.egress` | `allowlist` with the hosts of the agent's `spec.machine.egress`, the session's repositories' git host ([[019-git]]) and the scope hosts of its named secrets, each read from its `Secret`, lowercased, sorted and once each |
+| `spec.secrets` | the session's named secrets, each under the variable its placeholder arrives in ([[018-credentials-and-secrets]]) |
+| `spec.lifecycle` | persistent: `autoStop: 15m` and `autoDelete: never`, so a stopped sandbox keeps its workspace until the session ends, and a `ttl` of the session's remaining age as a backstop; a `ttl` under 15 minutes is the `autoStop` too, because Cella holds an idle stop inside the sandbox's life |
 
-The create is held until the sandbox runs (`CreateSandbox` with the
-wait option). `bash` runs through `ExecSession`, which streams output
-frames and the exit code; short commands use `Exec`. The file tools
-use `FileGet`, `FilePut`, `FileStat`, `FileList`, `FileRemove`,
-`FileMkdir` and `FileMove`; repository delivery and checkpoint restore
-use `ImportTar` and `ExportTar`. At creation the machine uploads the
-helper `topos-machine`, a static binary of this module
+Open reads the sandbox by name. One that runs is used; one Cella
+stopped is started; one queued, pending, starting, stopping or
+recovering is read again until it runs; one that failed cannot be
+started and is deleted and created again; one being deleted is waited
+out and created again. A sandbox that is not there is created, and the
+create is held until the sandbox runs (`CreateSandbox` with the wait
+option); a create that loses a race with another runner's takes that
+runner's sandbox. The machine reports whether it created the sandbox,
+which is how a runner that expected one learns its files are gone.
+
+The helper `topos-machine` is a static binary of this module
 (`cmd/topos-machine`, built for `linux/amd64` and `linux/arm64` and
-embedded in the runner), to `/tmp/topos/bin/`, and `Search` runs it,
-so grep and glob need no binary in the image. The spill directory is
-`/tmp/topos/spill`, outside the working directory.
+embedded in the runner, which hands the builds to `machine/cella` by
+platform). On every open and every start, one `Exec` makes the spill
+directory, reads the platform with `uname`, and reads the SHA-256 of
+the helper already at `/tmp/topos/bin/topos-machine`; when it is
+absent or another build, the machine uploads the build of that
+platform. Cella's file routes serve the workspace alone, so the upload
+travels as the input of an `ExecSession` that `head -c` reads to its
+length, because the exec socket cannot end an input. A call that finds
+no helper, which a start by another caller can leave behind, puts it
+back and runs once more. The helper is reached through `/bin/sh`, so a
+missing one answers exit 127 the same way on every driver.
 
-Lifetime: the sandbox is the session's. While the session is idle for
-15 minutes Cella stops it and keeps its workspace; the next runner that
-claims the session finds it by name and starts it. When the session
-ends the runner deletes it. When a runner finds the sandbox gone, it
-creates one again, restores the latest checkpoint
-([[034-checkpoints-and-rewind]]), and appends `session.machine` with
-reason `restored`; with no checkpoint to restore it appends
-`session.machine` with reason `replaced` and a `session.error`
-`machine_lost`, so the model and the person know the files are gone.
-The control plane never dials a sandbox or a worker: every call goes to
-Cella's API, and a self-hosted Environment's workers connect out to
-Cella (invariant 10 of [[001-architecture]]).
+| Operation | Through |
+|---|---|
+| `Exec`, `ExecStream` | an `ExecSession` running the helper's `run`: the command under `/bin/sh -c` in its own process group, its input sent as frames with an end frame, its output streamed as frames as it is written, its final directory in a frame of its own when asked for, and its exit; the helper kills the group on the timeout, on a kill frame the machine sends when the context ends, and when the session ends; Cella's own bound on the session lies past the command's timeout and the grace, at most Cella's hour; a script past 8 KiB travels as input frames before the command's input, because Cella bounds the session's first message with its body limit |
+| `Exec` with `Background` | an `Exec` running the helper's `job`: the command detached in its own process group, its output in a job log in `/tmp/topos/spill/jobs/` that ends with the host's exit line; a script past 8 KiB is written to the jobs directory first, which the helper reads and removes; the job ends with the sandbox |
+| `ReadFile`, `WriteFile`, `Stat`, `List`, `Remove`, `Rename` in the workspace | `FileGet`, `FilePut`, `FileStat`, `FileList`, `FileRemove`, `FileMove`; a write with mode 0 keeps the file's mode, read with `FileStat` first; `Remove` refuses a directory with entries, as `os.Remove` does on the host, before Cella's route, which removes a tree |
+| the same outside the workspace | the helper's `fs`, through `os.Root` over the root the path is in; the spill directory is reached this way |
+| `Search` | an `ExecSession` running the helper's `search`, which reads the `SearchRequest` as JSON on its input and writes the `SearchResult` as JSON, running `machine.SearchFS` over the root the path is in, so grep and glob need no binary in the image and give the host's results |
+| `Fetch` | a command in the sandbox running `curl` with the limits of `web_fetch` ([[008-tools]]), so Cella's egress gateway decides what it reaches; an image without `curl` answers an error |
+| `ImportTar`, `ExportTar` | Cella's tar routes, for repository delivery ([[019-git]]) and checkpoint restore ([[034-checkpoints-and-rewind]]), below the workspace |
+
+The roots are the working directory (the sandbox's `spec.workdir`,
+its workspace unless the session names another), the workspace, and
+the spill directory `/tmp/topos/spill`, outside both. The deny-list's
+base-name entries hold in every root and are hidden from search; the
+home entries name nothing in a sandbox, which holds none of the
+person's credentials. The sandbox's environment is Cella's, named
+secrets arrive as placeholders, and no variable is removed. Each
+failure answers what the host machine answers for it: a missing path
+is `fs.ErrNotExist`, a missing start directory too, so `bash` falls
+back to the working directory as on the host.
+
+Lifetime: the sandbox is the session's. `Release(ctx, false)` leaves
+it: while the session is idle for 15 minutes Cella stops it and keeps
+its workspace, and a call on a machine whose sandbox Cella stopped
+starts it and runs once more. The next runner that claims the session
+finds it by name and starts it. `Release(ctx, true)` deletes it when
+the session ends, and a delete Cella could not do leaves the machine
+to be released again. A call that finds the sandbox gone answers
+`machine_lost`, as every call does after it, until `Recreate` creates
+the sandbox again with a fresh workspace. When a runner finds the
+sandbox gone, it creates one again, restores the latest checkpoint
+([[034-checkpoints-and-rewind]]) with `ImportTar`, and appends
+`session.machine` with reason `restored`; with no checkpoint to
+restore it appends `session.machine` with reason `replaced` and a
+`session.error` `machine_lost`, so the model and the person know the
+files are gone. The control plane never dials a sandbox or a worker:
+every call goes to Cella's API, and a self-hosted Environment's
+workers connect out to Cella (invariant 10 of [[001-architecture]]).
 
 ### Error codes
 
 | Code | Retryable | Meaning |
 |---|---|---|
-| `machine_unavailable` | no | the machine kind is not configured, or Cella refused the Environment or the image |
+| `machine_unavailable` | no | the machine kind is not configured, the runner carries no helper for the sandbox's platform, or Cella refused the sandbox: its Environment, its image, a secret it names, or the session's credential; a Cella that could not answer, a 5xx, a 429 or no answer, is transient and carries no code |
 | `machine_lost` | yes | the session's sandbox was gone and no checkpoint could restore its files |
 
 ## Not in this spec
@@ -189,7 +230,16 @@ repository delivery and git credentials ([[019-git]]); named secrets
 | Search is Go-native where the files are: grep honors `.gitignore` at and above the root, has its three output modes, and glob lists newest first | `machine.TestGrepFilesHonorsGitignore`, `machine.TestGrepBelowTheRootHonorsParentIgnores`, `machine.TestGrepModes`, `machine.TestGlobNewestFirst`, `machine.TestSearchRefusesBadRequests` | built |
 | A second session started in a checkout another running session writes gets a worktree on `agents/<agent>/<session>`; three sessions give three worktrees on three branches | `TestSecondSessionGetsAWorktree`, `TestThreeSessionsThreeWorktrees` | not built |
 | An ended session's worktree whose branch is merged and clean is removed, and one with uncommitted changes is kept | `TestWorktreeRemovalRule` | not built |
+| A Cella machine creates the session's sandbox by name on the Environment the session names, with the labels, the allowlist with the secrets' hosts, the named secrets and the persistent lifecycle held inside the ttl, holds the create until it runs, and uploads the helper; each Cella refusal at open is `machine_unavailable` and a Cella that could not answer is not | `machine/cella.TestOpenCreatesTheSandbox`, `machine/cella.TestTheLifecycleStaysInsideTheTTL`, `machine/cella.TestOpenRefusals`, `machine/cella.TestCode` | built |
 | A Cella machine is created on the Environment the session names, including one served by a worker outside the stub cluster, and the runner opens no connection to the worker | `TestCellaMachineOnNamedEnvironment` in the Cella tier | not built |
+| Open finds the sandbox by name and uploads nothing again, starts one Cella stopped and waits for one starting, replaces a failed one as created, and takes the sandbox of a runner whose create won a race; a sandbox Cella stopped under a running machine is started by its next call, and a missing helper is put back | `machine/cella.TestOpenFindsTheSandboxByName`, `machine/cella.TestAStoppedSandboxIsStartedByTheNextCall`, `machine/cella.TestTheHelperIsPutBackWhenMissing`, `machine/cella.TestWaitsAndRaces` | built |
+| A sandbox that is gone answers `machine_lost` on every call until `Recreate` creates it again, reported created with a fresh workspace, and `ImportTar` and `ExportTar` carry the workspace as tar | `machine/cella.TestALostSandboxIsRecreated`, `machine/cella.TestTar` | built |
+| `Release(ctx, false)` leaves the sandbox to Cella's idle stop and `Release(ctx, true)` deletes it, after which every call answers `ErrReleased` | `machine/cella.TestRelease` | built |
 | A runner restarted mid-session finds the sandbox by name, starts it if stopped, and continues; a deleted sandbox is recreated with the latest checkpoint and `session.machine` reason `restored` | `TestCellaMachineSurvivesRunnerRestart`, `TestCellaMachineRestoredFromCheckpoint` | not built |
+| Commands on a Cella machine run under the helper in their own process group with their exit code, their final directory, an input that ends, a timeout and a cancel that end the group, and a script of any length; background jobs log to the spill directory | `machine/cella.TestExec`, `machine/cella.TestExecTimeoutAndCancel`, `machine/cella.TestAHelperThatDoesNotAnswerACancelIsClosed`, `machine/cella.TestBackgroundJobs`, `machine/cella.TestLongScripts`, `cmd/topos-machine.TestRunOutputAndExit`, `cmd/topos-machine.TestRunReportsTheFinalDirectory`, `cmd/topos-machine.TestRunDeliversInput`, `cmd/topos-machine.TestRunTimesOut`, `cmd/topos-machine.TestRunCancels`, `cmd/topos-machine.TestRunEndsTheProcessGroup`, `cmd/topos-machine.TestRunReadsAFramedScript`, `cmd/topos-machine.TestJob` | built |
+| A Cella machine's file operations go through Cella's file routes in the workspace and through the helper outside it, with the host's errors, the deny-list and the roots | `machine/cella.TestFilesInTheWorkspace`, `machine/cella.TestFilesInTheSpillDirectory`, `cmd/topos-machine.TestFSWrite`, `cmd/topos-machine.TestFSStatListRemoveRename`, `cmd/topos-machine.TestFSRead` | built |
+| Search on a Cella machine runs the Go-native grep and glob in the helper, where the files are | `machine/cella.TestSearch`, `cmd/topos-machine.TestSearch` | built |
+| Searches, commands and file operations on a Cella machine over the stub Cella answer as the host machine does over the same files | `machine/cella.TestParityWithTheHost` | built |
 | The suite's recorded tool calls give the same results on the host and on a Cella machine | `TestMachineParity` in the e2e tier | not built |
-| `bash` output on a Cella machine arrives as it is produced, not only at exit | `TestCellaExecStreams` | not built |
+| `bash` output on a Cella machine arrives as it is produced, not only at exit | `machine/cella.TestCellaExecStreams` | built |
+| A Cella machine's fetch runs `curl` inside the sandbox with the redirect, scheme, size and time limits of `web_fetch` | `machine/cella.TestFetchRunsInTheSandbox`, `machine/cella.TestFetchRefuses`, `machine/cella.TestFetchTimeout` | built |

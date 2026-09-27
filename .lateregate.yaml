@@ -95,6 +95,12 @@ depcheck:
         github.com/felixge/httpsnoop: response capture in otelhttp
         github.com/go-logr: the SDK's internal logger
         github.com/google/uuid: the SDK's instance ids
+    latere.ai/x/topos/cmd/topos-machine:
+      decision: >-
+        the helper a Cella machine uploads into its sandbox reaches the
+        standard library and this module's machine package alone, so the
+        binary stays small and static (spec 009)
+      allow: {}
     latere.ai/x/topos/cmd/topos:
       decision: >-
         the scripting and test client runs local sessions in process, so it

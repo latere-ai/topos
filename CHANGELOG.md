@@ -158,6 +158,20 @@ committed: the commit log already holds that.
   results, the transcript's framing and the context block, each rendered
   from `prompts/<area>/<name>-v<N>.md`. A released file never changes; a
   new wording is a new version.
+- `machine/cella` runs a session's tools in a Cella sandbox through
+  `latere.ai/x/cella/client`: one sandbox per session named `ses-<ulid>`,
+  found by name or created and held until it runs, with the session's
+  labels, an egress allowlist that includes the named secrets' hosts, and
+  a persistent lifecycle (stops after 15 minutes idle, never deleted until
+  the session ends). Commands run through `topos-machine`, a static helper
+  the machine uploads into the sandbox, which gives each command its own
+  process group, a timeout, an input that ends and its final directory,
+  and runs grep and glob where the files are. A sandbox that is gone
+  answers `machine_lost`, and Cella's refusals `machine_unavailable`. The
+  machine needs a Cella Environment that offers the Attach capability,
+  because every command runs over the exec socket; Cella's `local` driver
+  does not. `test/stubs/cellastub` is the stub Cella its tests run
+  against.
 
 ## v0.7.0 - 2026-09-26
 
