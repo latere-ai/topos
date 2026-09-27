@@ -78,12 +78,19 @@ its ref, so every turn has one.
 |---|---|
 | a checkout of a repository | that repository; the refs are not reachable from HEAD, a branch or a tag, and git's default fetch and push refspecs carry none of them |
 | not a checkout, on the host | a bare session repository, `$TOPOS_DATA_DIR/checkpoints/<session>.git`, used as `GIT_DIR` with the directory as the work tree |
-| not a checkout, in a Cella sandbox | a bare session repository at `/topos/checkpoints.git` inside the sandbox, outside the working directory, pushed after each turn to a repository the git host at `TOPOS_ORIGO_URL` holds for the session's owner and names by the session id |
-| a checkout in a Cella sandbox | the checkout's repository, and the refs pushed to its remote under `refs/topos/checkpoints/<session>/`, which the git host's ref rules allow the session ([[019-git]]) |
+| not a checkout, in a Cella sandbox | a bare session repository at `/topos/checkpoints.git` inside the sandbox, outside the working directory; the runner copies each turn's checkpoint out and pushes it to a repository the git host at `TOPOS_ORIGO_URL` holds for the session's owner and names by the session id |
+| a checkout in a Cella sandbox | the checkout's repository; the runner copies each turn's checkpoint out and pushes it to the checkout's remote under `refs/topos/checkpoints/<session>/` ([[019-git]]) |
 
-In the cloud the push uses the session's own credential, substituted
-at Cella's egress gateway, never one inside the sandbox
-([[018-credentials-and-secrets]]). Without `TOPOS_ORIGO_URL` a cloud
+In the cloud the runner pushes, never the sandbox: the helper writes
+the turn's checkpoint as a `git bundle` of the one new commit, the
+runner reads the bundle out through the helper's file routes and
+pushes it with its own token, and the git host lets only that token
+create a checkpoint ref and none update one ([[019-git]]). A workload
+can shape the files a checkpoint records, as it shapes the working
+directory, but cannot rewrite an earlier turn's checkpoint. A cloud
+checkpoint restored onto a host runs there under the host sandbox, or
+in `plan` or `confirm` where the host has none
+([[012-permissions-and-approvals]]). Without `TOPOS_ORIGO_URL` a cloud
 session with no repository keeps checkpoints only inside its sandbox
 and cannot be handed off ([[002-scaffold-and-configuration]]). A host
 without `git` keeps no checkpoint and says so in `session.machine`
