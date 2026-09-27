@@ -275,3 +275,47 @@ column); the routes ([[015-api]]).
 | On SIGTERM readiness answers 503 before the listeners close, the in-process runners stop, a session in the middle of a turn stays `running` with nothing appended after the stop and its lease released for the next claim, and the process exits 0 | `cmd/toposd.TestSigtermLeavesARunningSessionToTheNextClaim`, `runner.TestAServedDriveLeavesItsSessionToTheNextRunner` | built |
 | Every variable the server roles (`internal/config`), the `topos` command (`internal/toposcli`) and the conformance suite (`test/conformance`) read is in the table, and every variable the table gives to this spec is read; each owning spec's acceptance proves its own variables are read | `internal/config.TestConfigurationTableMatchesTheSpec` | built |
 | The gate passes on the scaffold: the family gate's first green run | the `gate` job of `.github/workflows/verify.yml`, green on `main` | built |
+
+## Outcome
+
+Built on 2026-09-27. `toposd` dispatches its roles, reads its
+configuration once with every problem in one sorted message, serves
+the probes on both listeners and shuts down as [[016-runners]] leaves a
+served session; the gate, the verify workflow, the developer image and
+the community files are in the tree. Every row of the acceptance table
+passes, and the `gate` job of `verify.yml` is green on `main`.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| the role dispatcher, the exit codes, the listeners, the probes and the shutdown | `cmd/toposd/main.go` |
+| the configuration and its one message | `internal/config/config.go` |
+| the check that the table lists every variable the binaries and the conformance suite read | `internal/config/table_test.go` |
+| the build identity | `internal/version` |
+| the gate: the spec vocabulary, the hermetic allowance, the `depcheck` rows, the license | `.lateregate.yaml`, `Makefile` (`check`), `.githooks/` |
+| the verify workflow: the gate, `tidy` and `image` jobs | `.github/workflows/verify.yml` |
+| the developer image | `Dockerfile` |
+| the community files | `README.md`, `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`, `AGENTS.md` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| a role not built prints `toposd: <role>: not built; see specs/<NNN-name>.md` | it prints `toposd: <role> is not built yet; spec <NNN> builds it`, and `check` is the one such role; the Binary section now says so | the line names its spec either way, and the test pins the binary's |
+| on a stop each running session is brought to its next step boundary within a 60 second drain grace, a call still running gets a `tool.result` recording its cancellation, and the servers close with a 10 second grace | the runners stop at the signal; a session in the middle of a turn is fenced, its lease released, and left `running` for the next claim to resume from the log; the servers close with a 60 second grace after the 3 second drain delay; the Shutdown section now says so | [[016-runners]] defines what a server that stops mid-turn leaves, and one rule for a stop and for a lost lease is one recovery path |
+| the table holds every variable any binary or test tier reads, and the variables read and the table are one set | the table holds what the server roles, the `topos` command and the conformance suite read; the test holds the read set within the table and this spec's own variables read, and each owning spec proves its own are read; the task suite's variables are [[025-task-suite]]'s table | the table lists variables later specs give a meaning to before anything reads them, so the two sets cannot be equal until the deck is built |
+| `/metrics` is on the internal listener only, and `TOPOS_EVENTS_URL` without its secret is a start-up failure | both are rows of [[023-events-and-observability]], not built; neither listener serves `/metrics` yet | the registry and the sink are that spec's |
+| `internal/serve/` holds the serve role, `internal/queue/` the claims and leases, `internal/store/dirobjects/` the objects on the data directory | the serve role is wired in `cmd/toposd`; a hosted session's harness is `internal/hosted`; the claims are `runner.Queue` in process and `internal/runnerapi` on the internal listener; the objects are `internal/store/dir`; the Layout now says so | [[015-api]], [[014-store]] and [[016-runners]] built them there |
+| `make run` runs `toposd serve` under a temporary `TOPOS_DATA_DIR` | it runs on the default data directory, `$XDG_STATE_HOME/topos` or `$HOME/.local/state/topos`, and takes `TOPOS_MODELS_URL` from the caller, without which `serve` refuses to start; `make token` prints a token for it | the stub Lux of [[026-stubs-and-tiers]] is an in-process test server with no binary for `make run` to start |
+| the developer image has a volume at `/var/lib/topos` and sets it as `TOPOS_DATA_DIR` | it declares no volume and sets no `TOPOS_DATA_DIR`, so the directory store lands under the non-root user's home; it also carries the `topos-machine` builds under `/usr/local/lib/topos`, the default of `TOPOS_MACHINE_HELPERS` | not built; a container without a mounted data directory loses its sessions on restart |
+| `TOPOS_MACHINE_DIR` defaults to `/tmp/topos` | `internal/config` leaves it empty and `machine/cella` applies `/tmp/topos` | the machine owns its default |
+| readiness runs `draining` and `store` | the `runner` role, which opens no store, runs `draining` alone | the runner writes through toposd's internal listener, and toposd's own readiness holds the store |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| the image's data volume and `TOPOS_DATA_DIR` | a change to `Dockerfile`; the release images of [[028-release-and-installation]] take the same runtime stage |
+| `make run` on a temporary data directory with a model connection that needs no credential | waits for a stub Lux that runs as a process ([[026-stubs-and-tiers]]) |
+| `toposd check` | [[028-release-and-installation]] |
