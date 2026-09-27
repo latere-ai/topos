@@ -11,6 +11,7 @@
 package luxstub
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -85,6 +86,9 @@ type Server struct {
 	requests []Recorded
 	models   []bridge.Model
 	listed   []http.Header
+	// published is the root the discovery document names the doors
+	// under; "" is the stub's own URL.
+	published string
 }
 
 // New starts a stub for the test and closes it when the test ends.
@@ -98,6 +102,15 @@ func New(t testing.TB) *Server {
 // URL is the stub's base URL; a connection's base URL is URL plus
 // "/anthropic" or "/openai".
 func (s *Server) URL() string { return s.srv.URL }
+
+// Publish has the discovery document name the doors under root, as a
+// Lux whose public URL is root names them while it is also reached at
+// the stub's own address, such as an in-cluster Service.
+func (s *Server) Publish(root string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.published = root
+}
 
 // Script queues replies for a model, served in order.
 func (s *Server) Script(model string, replies ...Reply) {
@@ -220,11 +233,15 @@ func (s *Server) fail(w http.ResponseWriter, fe llmdialect.Frontend, reply Reply
 }
 
 // discovery answers Lux's discovery document with the stub's doors,
-// each the stub's URL plus the dialect, as a Lux at the root names them.
+// each the published root plus the dialect, as a Lux at the root names
+// them.
 func (s *Server) discovery(w http.ResponseWriter) {
+	s.mu.Lock()
+	root := cmp.Or(s.published, s.srv.URL)
+	s.mu.Unlock()
 	doors := map[string]string{}
 	for _, d := range []string{"anthropic", "openai", "gemini", "lux"} {
-		doors[d] = s.srv.URL + "/" + d
+		doors[d] = root + "/" + d
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// A failed write means the client is gone; the stub has nothing left
