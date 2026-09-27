@@ -22,10 +22,10 @@ import (
 	"latere.ai/x/pkg/llmdialect/tokencount"
 	"latere.ai/x/pkg/retry"
 
-	"latere.ai/x/topos/harness/prompt"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -93,7 +93,7 @@ type Config struct {
 	Effort        string
 	// PromptVersion is the harness prompt version; zero is the current.
 	PromptVersion int
-	Prompt        prompt.Options
+	Prompt        prompts.HarnessOptions
 	Retry         retry.Policy
 	// TurnTimeout bounds a turn's wall clock; zero is the session's
 	// limit, then the default.
@@ -161,7 +161,7 @@ func New(c Config) (*Harness, error) {
 		return nil, err
 	}
 	if c.PromptVersion == 0 {
-		c.PromptVersion = prompt.Current
+		c.PromptVersion = prompts.HarnessCurrent
 	}
 	return &Harness{c: c, prompt: p}, nil
 }
@@ -441,10 +441,7 @@ func (t *turn) resume(ctx context.Context) error {
 			case c.confirmation == nil:
 				waitAsk = true
 			case c.confirmation.Decision == session.DecisionDeny:
-				text := "A person denied this call."
-				if c.confirmation.Note != "" {
-					text += " Their note: " + c.confirmation.Note
-				}
+				text := prompts.Render(prompts.CallDenied, prompts.Data{"Note": c.confirmation.Note})
 				if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeDenied, text), 0); err != nil {
 					return err
 				}
@@ -484,7 +481,7 @@ func (t *turn) resume(ctx context.Context) error {
 	for _, c := range run {
 		tool, ok := t.reg.Get(c.use.Name)
 		if !ok {
-			if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeUnknownTool, "No tool named "+c.use.Name+"."), 0); err != nil {
+			if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeUnknownTool, prompts.Render(prompts.CallUnknownTool, prompts.Data{"Name": c.use.Name})), 0); err != nil {
 				return err
 			}
 			continue
@@ -501,7 +498,7 @@ func (t *turn) resume(ctx context.Context) error {
 }
 
 func unknownEffect() tools.Result {
-	return tools.Text(tools.OutcomeUnknownEffect, "The runner stopped while this call ran. Its effects are unknown; inspect the machine before repeating it.")
+	return tools.Text(tools.OutcomeUnknownEffect, prompts.Text(prompts.CallUnknownEffect))
 }
 
 // stepOnce runs one step: the boundary checks, the request, the first
@@ -599,7 +596,7 @@ func (t *turn) interruptible(ctx context.Context) (context.Context, func()) {
 func (t *turn) canceledRequest(ctx context.Context, attempts int, toolsSHA string, latency time.Duration) error {
 	c := t.h.c.Connection
 	mr, err := t.event(session.TypeModelRequest, session.ModelRequest{
-		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompt.Version(t.h.c.PromptVersion),
+		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
 		ToolsSHA256: toolsSHA, LatencyMS: latency.Milliseconds(), Attempts: attempts, Outcome: "canceled",
 	})
 	if err != nil {
@@ -727,7 +724,7 @@ func (t *turn) modelFailed(ctx context.Context, err error, attempts int, toolsSH
 	}
 	c := t.h.c.Connection
 	mr, eerr := t.event(session.TypeModelRequest, session.ModelRequest{
-		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompt.Version(t.h.c.PromptVersion),
+		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
 		ToolsSHA256: toolsSHA, LatencyMS: latency.Milliseconds(), Attempts: attempts, Outcome: "error", Error: err.Error(),
 	})
 	if eerr != nil {
@@ -831,7 +828,7 @@ func (t *turn) modelRequest(ctx context.Context, res models.Result, attempts int
 	c := t.h.c.Connection
 	mr := session.ModelRequest{
 		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), Codec: res.Codec,
-		PromptVersion: prompt.Version(t.h.c.PromptVersion), ToolsSHA256: toolsSHA,
+		PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion), ToolsSHA256: toolsSHA,
 		RequestSHA256: res.RequestSHA256, RequestBytes: res.RequestSize, RequestBlob: reqBlob, ResponseBlob: respBlob,
 		Usage: &res.Usage, LatencyMS: latency.Milliseconds(), FirstTokenMS: res.FirstToken.Milliseconds(),
 		StopReason: res.StopReason, Attempts: attempts, Outcome: "ok", Loss: res.Loss,
@@ -1037,9 +1034,9 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 func settle(ctx context.Context, res tools.Result, err error) tools.Result {
 	switch {
 	case ctx.Err() != nil && (err != nil || len(res.Content) == 0):
-		return tools.Text(tools.OutcomeCanceled, "The call was canceled before it finished.")
+		return tools.Text(tools.OutcomeCanceled, prompts.Text(prompts.CallCanceled))
 	case err != nil:
-		return tools.Text(tools.OutcomeError, "The tool failed: "+err.Error())
+		return tools.Text(tools.OutcomeError, prompts.Render(prompts.CallFailed, prompts.Data{"Error": err.Error()}))
 	}
 	if res.Outcome == "" {
 		res.Outcome = tools.OutcomeOK

@@ -153,6 +153,11 @@ committed: the commit log already holds that.
   and `TOPOS_TASKS_MODEL` name and writes a JSON and Markdown report.
 - A subagent's own reasoning effort from its manifest reaches its requests,
   where it took the parent's.
+- `prompts` holds every text a model reads as a versioned file: the
+  harness prompt, the compaction prompt, the tool descriptions, the tool
+  results, the transcript's framing and the context block, each rendered
+  from `prompts/<area>/<name>-v<N>.md`. A released file never changes; a
+  new wording is a new version.
 
 ## v0.7.0 - 2026-09-26
 

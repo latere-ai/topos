@@ -1,0 +1,1 @@
+This is the person's own computer. Files you delete or overwrite outside version control are gone, and commands run with the person's own account. Prefer reversible changes, and ask before a command that deletes data, rewrites history, or reaches another system.

@@ -15,8 +15,8 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
-	"latere.ai/x/topos/harness/prompt"
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -69,28 +69,16 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 		}
 		body := string(b)
 		if len(b) > maxInstructionBytes {
-			body = string(b[:maxInstructionBytes]) + "\n[the file is longer than 64 KiB and was cut here]"
+			body = string(b[:maxInstructionBytes]) + "\n" + prompts.Text(prompts.InstructionCut)
 		}
-		return fmt.Sprintf("<instructions path=%q>\n%s\n</instructions>", in.Path, strings.TrimRight(body, "\n")), nil
+		return prompts.Render(prompts.ContextInstructions, prompts.Data{"Path": in.Path, "Body": strings.TrimRight(body, "\n")}), nil
 	case session.PartSkills:
-		var b strings.Builder
-		b.WriteString("<skills>\n")
-		for _, s := range p.Skills {
-			fmt.Fprintf(&b, "- name: %s\n  description: %s\n  path: %s\n", s.Name, s.Description, s.Path)
-		}
-		b.WriteString("</skills>")
-		return b.String(), nil
+		return prompts.Render(prompts.ContextSkills, prompts.Data{"Skills": p.Skills}), nil
 	case session.PartMemory:
 		m := p.Memory
-		access := "read-write"
-		if m.Access == "read_only" {
-			access = "read-only"
-		}
-		line := fmt.Sprintf("Memory store %s (%s) is at %s", m.Name, access, m.Path)
-		if m.Description != "" {
-			line += ": " + m.Description
-		}
-		return line, nil
+		return prompts.Render(prompts.ContextMemory, prompts.Data{
+			"Name": m.Name, "ReadOnly": m.Access == "read_only", "Path": m.Path, "Description": m.Description,
+		}), nil
 	}
 	return "", nil
 }
@@ -176,9 +164,9 @@ func buildRequest(p requestParts) (ir.Request, error) {
 }
 
 // harnessPrompt renders the harness prompt of a version.
-func harnessPrompt(version int, o prompt.Options) (string, error) {
+func harnessPrompt(version int, o prompts.HarnessOptions) (string, error) {
 	if version == 0 {
-		version = prompt.Current
+		version = prompts.HarnessCurrent
 	}
-	return prompt.Render(version, o)
+	return prompts.Harness(version, o)
 }

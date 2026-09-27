@@ -3,7 +3,7 @@ title: "Architecture: three parts over one session schema, the packages, extensi
 status: drafted
 track: core
 depends_on: []
-affects: [session/, harness/, models/, machine/, runner/, memory/, manifest/, client/, authorizer/, internal/, cmd/toposd/, cmd/topos/, internal/arch/]
+affects: [session/, harness/, prompts/, models/, machine/, runner/, memory/, manifest/, client/, authorizer/, internal/, cmd/toposd/, cmd/topos/, internal/arch/]
 effort: medium
 created: 2026-09-27
 updated: 2026-09-27
@@ -116,6 +116,7 @@ is under `internal/`.
 | `harness` | one agent's loop over a session: request building, streaming, tool dispatch, permissions, hooks, context management, subagent threads | nothing itself; it calls a `models.Model` and a `machine.Machine` it is given | [[005-harness-loop]], [[010-context]], [[011-instructions-and-skills]], [[012-permissions-and-approvals]], [[013-threads-and-subagents]] |
 | `harness/tools` | the built-in tools and the registry | nothing; tools act through the machine | [[008-tools]] |
 | `harness/tools/mcp` | MCP servers as tools | the MCP server a manifest names, or the process it starts on the host | [[021-mcp-servers]] |
+| `prompts` | every text a model reads that the core writes: the harness prompt and its sections, the compaction prompt, the advisor's texts, the tool descriptions, the texts the fold writes into a transcript, the results of calls, tools and threads, and the context block, instruction, skills and memory renderings; each is a versioned file embedded in the build, rendered with `text/template` | nothing; it imports no package of this module | [[004-session-log]], [[008-tools]], [[010-context]], [[011-instructions-and-skills]], [[013-threads-and-subagents]] |
 | `models`, `models/dialect` | the `Model` interface, the model connection, the catalog entry, cost and the budget meter; one implementation over `latere.ai/x/pkg/llmdialect`'s backend codecs | `models/dialect` dials only the connection's base URL | [[007-models]] |
 | `models/scripted` | the scripted model for tests | nothing | [[026-stubs-and-tiers]] |
 | `machine`, `machine/host`, `machine/cella` | the `Machine` interface and the optional `Fetcher`; the host directory with its operating-system sandbox; a Cella sandbox through `latere.ai/x/cella/client` | host: the local filesystem and processes, and the URLs `web_fetch` names, through its `Fetcher`; cella: its base URL | [[009-machines]], [[008-tools]], [[012-permissions-and-approvals]] |
@@ -132,11 +133,13 @@ is under `internal/`.
 | `tools/catalog` | the generator of `models/catalog.json` from a Lux model catalog and OpenRouter's public model list | nothing; it reads files | [[007-models]] |
 | `test/stubs/luxstub` | the stub Lux, an in-process test server on loopback | nothing; it serves | [[026-stubs-and-tiers]] |
 
-The rule for the root packages: `session`, `harness`, `manifest` and
-`authorizer` compute and decide and import no network client. The one
-shared contract a root package imports although it also holds a client
-is `latere.ai/x/pkg/authz`: `authorizer` publishes its value types and
-never constructs its client. A
+The rule for the root packages: `session`, `harness`, `prompts`,
+`manifest` and `authorizer` compute and decide and import no network
+client. The one shared contract a root package imports although it
+also holds a client is `latere.ai/x/pkg/authz`: `authorizer` publishes
+its value types and never constructs its client. `prompts` sits below
+every other package of the module: `session`, `harness`,
+`harness/tools` and `runner` import it, and it imports none of them. A
 machine dials only its substrate; `models/dialect` and `client` dial
 only the base URL their caller hands them. An embedder imports
 `harness`, `runner`, `session`, a machine, `models` and
@@ -215,7 +218,7 @@ sequence number, replay then live ([[015-api]]).
 | 10 | **The control plane never dials a runner or a machine it does not own.** Runners connect to toposd; a developer's own machine serves a hosted session as a Cella worker connecting to Cella | [[009-machines]], [[016-runners]] |
 | 11 | **Every mutation emits one event to the sink, never content** | [[023-events-and-observability]] |
 | 12 | **No Latere coordinates in the tree** outside examples and the API group. The module path, its `latere.ai/x/*` dependencies and the shared CI pipeline are the project's own coordinates and are not what this forbids | [[002-scaffold-and-configuration]], [[028-release-and-installation]] |
-| 13 | **Root packages dial nothing**: `session`, `harness`, `manifest` and `authorizer` import no network client, `authorizer` reaching one only inside the shared contract `latere.ai/x/pkg/authz` whose value types it publishes; a machine dials only its substrate, `models/dialect` and `client` only their base URL | this spec's architecture tests |
+| 13 | **Root packages dial nothing**: `session`, `harness`, `prompts`, `manifest` and `authorizer` import no network client, `authorizer` reaching one only inside the shared contract `latere.ai/x/pkg/authz` whose value types it publishes; a machine dials only its substrate, `models/dialect` and `client` only their base URL | this spec's architecture tests |
 
 A lost lease is not a stop of the session under invariant 9: the runner
 that lost it stops appending, and the session continues under the next
@@ -275,8 +278,9 @@ because every spec depends on this one.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Every package sits in one of the root trees `session`, `harness`, `models`, `machine`, `runner`, `memory`, `manifest`, `client` or `authorizer`, or under `cmd`, `internal`, `test`, `tools` or `examples`, and none at the module root | `internal/arch.TestPackagesSitInTheirTrees` over `go list` | built |
-| No package of `session`, `harness`, `manifest` or `authorizer` reaches a package that opens a connection (`net`, `net/http`, `net/rpc`, `net/smtp`, `crypto/tls`), directly or through a dependency; the one exception is the shared contract `latere.ai/x/pkg/authz`, whose value types `authorizer` publishes and whose client toposd dials with, and the walk does not descend into it; a tree that does not exist yet is skipped by name, so the rule binds each tree the day it lands | `internal/arch.TestRootPackagesDialNothing` over the import graph of `go list -deps` | built |
+| Every package sits in one of the root trees `session`, `harness`, `prompts`, `models`, `machine`, `runner`, `memory`, `manifest`, `client` or `authorizer`, or under `cmd`, `internal`, `test`, `tools` or `examples`, and none at the module root | `internal/arch.TestPackagesSitInTheirTrees` over `go list` | built |
+| No package of `session`, `harness`, `prompts`, `manifest` or `authorizer` reaches a package that opens a connection (`net`, `net/http`, `net/rpc`, `net/smtp`, `crypto/tls`), directly or through a dependency; the one exception is the shared contract `latere.ai/x/pkg/authz`, whose value types `authorizer` publishes and whose client toposd dials with, and the walk does not descend into it; a tree that does not exist yet is skipped by name, so the rule binds each tree the day it lands | `internal/arch.TestRootPackagesDialNothing` over the import graph of `go list -deps` | built |
+| No package of `prompts` imports a package of this module, so every other tree can import it | `internal/arch.TestPromptsImportNothingOfTheModule` over `go list -deps` | built |
 | `machine/cella` reaches `latere.ai/x/cella/client` and no other network client; `models/dialect` and `client` construct one HTTP client each and reach nothing under `internal/` | one allow list per package in `internal/arch` | not built |
 | Each role's and each binary's build list matches its `depcheck` allow list | the `depcheck` gate over the rows of `.lateregate.yaml` for `cmd/toposd` and `cmd/topos` | built |
 | No file in the tree (a document, a manifest, a workflow, a default, a Go comment or string) names a hostname of the maintainer's outside the API group `topos.latere.ai/`, a particular deployment of Topos, a component internal to one, or a private document; module paths under `latere.ai/x/` and the shared CI pipeline are allowed; the walk skips only binaries | `internal/arch.TestNoLatereCoordinatesInReleasedArtifacts` | built |

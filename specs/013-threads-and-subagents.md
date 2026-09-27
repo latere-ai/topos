@@ -3,7 +3,7 @@ title: "Threads, subagents and the advisor: the session's graph, spawn and messa
 status: drafted
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md]
-affects: [harness/, harness/tools/]
+affects: [harness/, harness/tools/, prompts/advisor/, prompts/results/threads/, prompts/tools/]
 effort: large
 created: 2026-09-27
 updated: 2026-09-27
@@ -174,6 +174,14 @@ acts on nothing; its cost counts toward the session's budget.
 | `isolation_unavailable` | `worktree` asked for outside a git checkout |
 
 These are the text of the call's error result; none ends the turn.
+
+The descriptions of `spawn`, `message` and `advisor` are files of
+`prompts/tools/`; the advisor's instructions, used when its
+configuration names none, and the request that carries the caller's
+transcript and question are files of `prompts/advisor/`; and the texts
+of the results above, with the idle line, the branch line and the note
+on uncommitted changes, are files of `prompts/results/threads/`
+([[011-instructions-and-skills]]).
 
 ## Not in this spec
 

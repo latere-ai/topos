@@ -3,7 +3,7 @@ title: "Context: the order of the prompt's parts, cache breakpoints, token accou
 status: drafted
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instructions-and-skills.md]
-affects: [harness/, harness/prompt/]
+affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
 updated: 2026-09-27
@@ -94,7 +94,7 @@ thread:
    `tool_use_ids`, the range, and the estimates before and after.
 3. If the estimate is still over the threshold, compact:
    1. Send one request with the thread's transcript and the compaction
-      prompt `harness/prompt/compact-v1.md`, on the thread's own model,
+      prompt `prompts/compact/compact-v1.md`, on the thread's own model,
       recorded as a `model.request` that counts toward the budget.
    2. The summary covers every event up to the last complete step
       before the thread's three most recent steps; a step is never

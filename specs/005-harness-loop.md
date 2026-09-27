@@ -208,6 +208,9 @@ without running or asking:
 | the name is in the registry | `unknown_tool` | `No tool named <name>. Available tools: <names>.` |
 | the input is a JSON object matching the tool's JSON Schema | `invalid_input` | `The input does not match the schema of <name>:` and up to five lines `<JSON pointer>: <problem>` |
 
+Both texts are files of `prompts/results/registry/`, as every result
+text is ([[008-tools]]); the problem lines are the validator's own.
+
 The validator is Go-native and covers `type`, `properties`,
 `required`, `additionalProperties`, `items`, `enum`, `const`,
 `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `oneOf` and

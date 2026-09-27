@@ -24,13 +24,13 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness"
-	"latere.ai/x/topos/harness/prompt"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/models/scripted"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/dir"
@@ -396,7 +396,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 			Instructions: r.t.Agent.Instructions,
 			Subagents:    subs,
 			TurnTimeout:  r.t.Timeout,
-			Prompt:       prompt.Options{Host: m.Info().Kind == machine.KindHost, Threads: len(subs) > 0},
+			Prompt:       prompts.HarnessOptions{Host: m.Info().Kind == machine.KindHost, Threads: len(subs) > 0},
 		}, nil
 	}
 }

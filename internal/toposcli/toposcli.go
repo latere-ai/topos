@@ -30,7 +30,6 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness"
-	"latere.ai/x/topos/harness/prompt"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/version"
 	"latere.ai/x/topos/machine"
@@ -40,6 +39,7 @@ import (
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/models/scripted"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/dir"
@@ -648,7 +648,7 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 		}
 		var spec v1.AgentModel
 		var overlay *models.Entry
-		cfg := harness.Config{Prompt: prompt.Options{Host: true}}
+		cfg := harness.Config{Prompt: prompts.HarnessOptions{Host: true}}
 		if ac != nil {
 			spec, overlay = ac.Model, &ac.Overlay
 			cfg.Name, cfg.Instructions, cfg.Policy, cfg.Effort = ac.Name, ac.Instructions, ac.Policy, ac.Effort

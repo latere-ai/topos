@@ -5,17 +5,13 @@ package tools
 
 import (
 	"context"
-	_ "embed"
 	"errors"
-	"fmt"
 	"io/fs"
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 )
-
-//go:embed descriptions/grep.md
-var grepDescription string
 
 const grepSchema = `{
   "type": "object",
@@ -34,7 +30,7 @@ const grepSchema = `{
 }`
 
 func grepTool() Tool {
-	return newBuiltin(NameGrep, grepDescription, grepSchema, Properties{Parallel: true, Effect: EffectRead}, runGrep)
+	return newBuiltin(NameGrep, prompts.Text(prompts.ToolGrep), grepSchema, Properties{Parallel: true, Effect: EffectRead}, runGrep)
 }
 
 type grepInput struct {
@@ -73,11 +69,11 @@ func runGrep(ctx context.Context, b *builtin, c Call) (Result, error) {
 		return searchFailed(ctx, b, c, q.Path, err)
 	}
 	if len(res.Lines) == 0 {
-		return b.result(ctx, c, OutcomeOK, "No matches.", nil)
+		return b.result(ctx, c, OutcomeOK, prompts.Text(prompts.GrepNoMatches), nil)
 	}
 	text := strings.Join(res.Lines, "\n") + "\n"
 	if res.Truncated {
-		text += fmt.Sprintf("[... more results past head_limit %d; narrow the pattern, the path or the glob, or raise head_limit]\n", limit)
+		text += prompts.Render(prompts.GrepMore, prompts.Data{"Limit": limit}) + "\n"
 	}
 	return b.result(ctx, c, OutcomeOK, text, nil)
 }
@@ -100,5 +96,5 @@ func searchFailed(ctx context.Context, b *builtin, c Call, p string, err error) 
 		return b.fail(ctx, c, p, err)
 	}
 	msg := strings.TrimPrefix(err.Error(), "machine: ")
-	return b.result(ctx, c, OutcomeError, "The search failed: "+msg+".", nil)
+	return b.result(ctx, c, OutcomeError, prompts.Render(prompts.SearchFailed, prompts.Data{"Error": msg}), nil)
 }

@@ -7,10 +7,11 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
-	"strconv"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
+
+	"latere.ai/x/topos/prompts"
 )
 
 // Kinds of a system Part.
@@ -40,13 +41,6 @@ type Transcript struct {
 	Open     []string      `json:"open"`
 	Unknown  []string      `json:"unknown"`
 }
-
-// The texts the fold writes into a transcript.
-const (
-	textTruncated = "Your previous response was cut off at the output limit. Continue from where it stopped."
-	textSummary   = "Summary of the conversation so far:"
-	textCleared   = "[cleared to save context; run the tool again if the result is needed]"
-)
 
 // Check returns ErrSchemaTooNew when the transcript met event types this
 // build does not know. A runner calls it before it continues a session.
@@ -144,7 +138,7 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 		if r := covering(ranges, e.Seq); r != nil {
 			if !r.emitted {
 				r.emitted = true
-				user(text(textSummary + "\n\n" + r.summary))
+				user(summary(r.summary))
 			}
 			continue
 		}
@@ -163,7 +157,7 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 			noteSender(p.Sender)
 			blocks := slices.Clone(p.Content)
 			if multi {
-				blocks = append([]lux.Block{text("Message from " + name(p.Sender) + ":")}, blocks...)
+				blocks = append([]lux.Block{text(prompts.Render(prompts.TranscriptSender, sender(p.Sender)))}, blocks...)
 			}
 			user(blocks...)
 		case TypeUserInterrupt:
@@ -172,7 +166,7 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				return Transcript{}, err
 			}
 			noteSender(p.Sender)
-			user(text(name(p.Sender) + " interrupted the previous turn."))
+			user(text(prompts.Render(prompts.TranscriptInterrupt, sender(p.Sender))))
 		case TypeUserToolConfirmation:
 			var p UserToolConfirmation
 			if err := e.Decode(&p); err != nil {
@@ -206,7 +200,7 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				}
 			}
 			if p.Truncated {
-				user(text(textTruncated))
+				user(text(prompts.Text(prompts.TranscriptTruncated)))
 			}
 		case TypeToolResult:
 			var p ToolResult
@@ -232,20 +226,20 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 			if err := e.Decode(&p); err != nil {
 				return Transcript{}, err
 			}
-			from := cmp.Or(p.FromName, p.From, "session")
-			user(append([]lux.Block{text("Message from thread " + from + ":")}, p.Content...)...)
+			from := prompts.Render(prompts.TranscriptThreadMessage, prompts.Data{"FromName": p.FromName, "From": p.From})
+			user(append([]lux.Block{text(from)}, p.Content...)...)
 		case TypeSessionRewound:
 			var p SessionRewound
 			if err := e.Decode(&p); err != nil {
 				return Transcript{}, err
 			}
-			user(text("The working directory was restored to its state at the end of turn " + strconv.Itoa(p.ToTurn) + "."))
+			user(text(prompts.Render(prompts.TranscriptRewound, prompts.Data{"Turn": p.ToTurn})))
 		}
 	}
 	for i := range ranges {
 		if !ranges[i].emitted {
 			ranges[i].emitted = true
-			user(text(textSummary + "\n\n" + ranges[i].summary))
+			user(summary(ranges[i].summary))
 		}
 	}
 
@@ -433,7 +427,7 @@ func emitBefore(ranges []summaryRange, seq uint64, user func(...lux.Block)) {
 	for i := range ranges {
 		if !ranges[i].emitted && ranges[i].to < seq {
 			ranges[i].emitted = true
-			user(text(textSummary + "\n\n" + ranges[i].summary))
+			user(summary(ranges[i].summary))
 		}
 	}
 }
@@ -441,11 +435,20 @@ func emitBefore(ranges []summaryRange, seq uint64, user func(...lux.Block)) {
 func resultBlock(id string, content []lux.Block, isError bool, cleared map[string]bool) lux.Block {
 	blocks := slices.Clone(content)
 	if cleared[id] {
-		blocks = []lux.Block{text(textCleared)}
+		blocks = []lux.Block{text(prompts.Text(prompts.TranscriptCleared))}
 	}
 	return lux.Block{Type: ir.BlockToolResult, ToolResult: &lux.ToolResult{ToolUseID: id, Blocks: blocks, IsError: isError}}
 }
 
 func text(s string) lux.Block { return lux.Block{Type: ir.BlockText, Text: s} }
 
-func name(s Sender) string { return cmp.Or(s.Name, s.Subject, "someone") }
+// summary is the user text a summary compaction renders as.
+func summary(s string) lux.Block {
+	return text(prompts.Render(prompts.TranscriptSummary, prompts.Data{"Summary": s}))
+}
+
+// sender is the values a text naming a sender renders with; the text
+// falls back from the name to the subject to a word of its own.
+func sender(s Sender) prompts.Data {
+	return prompts.Data{"Name": s.Name, "Subject": s.Subject}
+}

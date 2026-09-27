@@ -132,7 +132,10 @@ later set them per person and per agent. The order of evaluation is:
 hard boundary, `always_confirm`, the mode, then hooks. Verdicts are
 ordered allow, flag, ask, block from most to least permissive, and the
 final verdict is the least permissive of the mode's and every hook's.
-`agent.tool_use` records the verdict, the reason, and the mode.
+`agent.tool_use` records the verdict, the reason, and the mode. A
+block's reason is also the result the model reads, so the reasons a
+block gives are files of `prompts/results/call/`
+([[011-instructions-and-skills]]).
 
 Ask never silently denies: nothing times out an ask, because an agent
 that is refused routes around the refusal. An unattended session that

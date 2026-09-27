@@ -14,7 +14,7 @@ Paths are the machine's own. An absolute path is used as given. A relative path 
 
 # The machine
 
-{{machine}}
+{{if .Host}}{{template "harness/machine-host-v1"}}{{else}}{{template "harness/machine-sandbox-v1"}}{{end}}
 
 # Permissions
 
@@ -23,4 +23,10 @@ A call can be denied by a person or blocked by a rule. A denial or a block is an
 # After a stop
 
 A tool result with outcome `unknown_effect` means the runner stopped while that call ran, so its effects are unknown. Inspect the machine (for example `git status`, or read the files the call was writing) before you repeat anything.
-{{threads}}{{memory}}{{git}}
+{{if .Threads}}
+
+{{template "harness/threads-v1"}}{{end}}{{if .Memory}}
+
+{{template "harness/memory-v1"}}{{end}}{{if .Git}}
+
+{{template "harness/git-v1"}}{{end}}
