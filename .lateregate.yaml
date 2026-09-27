@@ -55,12 +55,15 @@ spec:
   require_section_by_status:
     complete: [Outcome]
 
-# The suite runs with the Go toolchain and /usr/bin on PATH. The host
+# The suite runs with the Go toolchain, /usr/bin and /bin on PATH. The host
 # machine runs commands with /bin/sh by its absolute path; /usr/bin is for
 # git, which the checkpoints of spec 034 run on the machine, found there
-# on the runners and on macOS alike.
+# on the runners and on macOS alike. /bin is for the host sandbox driver,
+# which reads a stage's start time with ps and records its exit with mv,
+# both in /bin on macOS; its stages run over a stand-in for srt, and the
+# tests that need a real srt skip, naming it, when PATH has none.
 hermetic:
-  allow: [/usr/bin]
+  allow: [/usr/bin, /bin]
 
 tempdir:
   allow: {}
