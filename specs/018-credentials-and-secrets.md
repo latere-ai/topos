@@ -41,6 +41,17 @@ envelope encryption under a list of keys where the first wraps and all
 are tried, as Lux custodies provider credentials, and Cella's Secret
 kind, whose placeholder its egress gateway substitutes at the last hop.
 
+Built so far, for the hosted path: the identity provider's client
+(`internal/identity`), the minter of a session's tokens and generated
+Lux keys (`internal/credentials`), the `TokenSource` of a drive
+(`runner`), the lease-checked token route (`internal/runnerapi`,
+`internal/runnerrole`), a session's own model key, Cella token and
+sandbox Secrets (`internal/hosted`), the identity's lifecycle at apply,
+archive and reconcile (`internal/server`), the variables, and stubs of
+the identity provider and the authorizer's key routes (`test/stubs`).
+The Credential object and its encryption, connections, scrubbing, named
+secrets, the input check and the scope route are not built.
+
 ## Design
 
 ### The Credential object
@@ -299,19 +310,19 @@ egress swapping a Secret by host and path.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Canary credentials used by the suite's cloud tasks appear in no event, blob, sink record, log line, sandbox environment, sandbox file or process list | `TestNoCredentialInAnyEventOrMachine` in the e2e tier | not built |
-| No route returns a credential's value, and a value under 8 bytes is refused | `TestCredentialValueIsWriteOnly` | not built |
-| A value sealed under an old key opens after a new key is prepended, the background rewrap moves it, and a ciphertext copied to another row does not open | `TestCredentialsEnvelopeRotation`, `TestCiphertextBoundToItsRow` | not built |
-| Every call a session makes to a core carries a token whose subject is the agent's identity and whose `session` claim names the session and the workload, and none carries toposd's own identity | `TestSessionCallsCarryTheAgentsSessionToken` | not built |
-| toposd mints a token only for the holder of the session's current lease, and a runner that lost its lease gets none | `TestTokensOnlyForTheLeaseHolder` | not built |
-| An agent first applied with an identity provider gets its identity after the authorizer's allow, with the owner its applier's token names, and keeps its subject as `status.identity`; a refused or unanswered create refuses the apply; the archive route archives the identity with `permanent: true` before the agent; the archived agent's identity is disabled with `permanent: true` once no session of it is left unended, and not before | `internal/server.TestAgentIdentityLifecycle` | not built |
-| A `TokenSource` caches each answer until 2 minutes before its expiry, answers nothing after its lease is lost, and a `session.scope_changed` drops what it holds | `runner.TestTokenSourceCachesAndDrops` | not built |
-| The stub identity provider answers the host's token, create, archive, disable, list and mint with the host contract's codes, and the stub session keys answer the key routes | `test/stubs/idpstub.TestTheStubAnswersTheHostContract`, `test/stubs/keystub.TestTheStubAnswersTheKeyRoutes` | not built |
-| The identity provider's and the session keys' variables are read; each URL needs its partners and the authorizer, and neither installation credential is accepted beside them | `internal/config.TestTheCredentialVariables` | not built |
-| A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules` | not built |
-| A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `TestSessionAndSandboxLuxKeys` | not built |
-| A `person` connection uses the initiator's credential, and fails with `connection_not_connected` when there is none | `TestPersonConnectionUsesInitiatorsCredential` | not built |
-| A value the runner holds, and its base64 and percent-encoded forms, are replaced in tool output before the log and the model | `TestScrubbingKnownValues` | not built |
-| On the host, a named secret is substituted only on requests to its hosts, and a request elsewhere carries the placeholder | `TestHostProxySubstitutesOnlyNamedHosts` | not built |
-| The input check finds each listed format and a high-entropy string, reports no value, and never blocks the message | `TestInputCheckFindsTokensAndNeverBlocks` | not built |
-| A widening beyond the widener's rights is refused, a lapsed widening is reverted, every change is an event, and the next call after a change uses a fresh token | `TestScopeWideningBoundedAndRecorded`, `TestScopeChangeTakesFreshToken` | not built |
+| Canary credentials used by the suite's cloud tasks appear in no event, blob, sink record, log line, sandbox environment, sandbox file or process list | `TestNoCredentialInAnyEventOrMachine` in the e2e tier | not built: it needs the Credential object and a real Cella's egress gateway; `internal/hosted.TestSessionAndSandboxLuxKeys` holds that the sandbox's environment carries placeholders and no value |
+| No route returns a credential's value, and a value under 8 bytes is refused | `TestCredentialValueIsWriteOnly` | not built: the Credential object and its routes ([[015-api]]) come after the hosted path |
+| A value sealed under an old key opens after a new key is prepended, the background rewrap moves it, and a ciphertext copied to another row does not open | `TestCredentialsEnvelopeRotation`, `TestCiphertextBoundToItsRow` | not built: comes with the Credential object; `TOPOS_CREDENTIALS_KEY` is not read yet |
+| Every call a session makes to a core carries a token whose subject is the agent's identity and whose `session` claim names the session and the workload, and none carries toposd's own identity | `cmd/toposd.TestSessionCallsCarryTheAgentsSessionToken`, in `serve` and in the runner role | built against the stub identity provider for the runner's calls to Cella and the sandbox's git host; Arca's memory token is [[020-memory-stores]]'s, and the same run against auth and platformd waits for their deployment |
+| toposd mints a token only for the holder of the session's current lease, and a runner that lost its lease gets none | `internal/credentials.TestTokensOnlyForTheLeaseHolder`, `internal/runnerrole.TestTokensOnlyForTheLeaseHolder` | built |
+| An agent first applied with an identity provider gets its identity after the authorizer's allow, with the owner its applier's token names, and keeps its subject as `status.identity`; a refused or unanswered create refuses the apply; the archive route archives the identity with `permanent: true` before the agent; the archived agent's identity is disabled with `permanent: true` once no session of it is left unended, and not before | `internal/server.TestAgentIdentityLifecycle`, `internal/server.TestReconcileCatchesUp`, `internal/identity.TestTheHostsCalls` | built against the stub identity provider |
+| A `TokenSource` caches each answer until 2 minutes before its expiry, answers nothing after its lease is lost, and a `session.scope_changed` drops what it holds | `runner.TestTokenSourceCachesAndDrops`, `runner.TestScopeChangeTakesFreshToken`, `internal/hosted.TestSandboxCredentialsAreRenewed` | built |
+| The stub identity provider answers the host's token, create, archive, disable, list and mint with the host contract's codes, and the stub session keys answer the key routes | `test/stubs/idpstub.TestTheStubAnswersTheHostContract`, `test/stubs/keystub.TestTheStubAnswersTheKeyRoutes` | built |
+| The identity provider's and the session keys' variables are read; each URL needs its partners and the authorizer, and neither installation credential is accepted beside them | `internal/config.TestTheCredentialVariables` | built |
+| A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules`, `internal/server.TestAgentIdentityLifecycle`, `internal/identity.TestOwnerOfReadsTheOrganizationClaim` | built |
+| A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `internal/credentials.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestAnInstallationThatMintsNothingActsAsToday`, `internal/config.TestTheCredentialVariables` | built against the stub key routes, with the refusal of the installation's key tied to `TOPOS_SESSION_KEYS_URL` rather than to the authorizer; the swap itself is Cella's egress gateway's, the Secret is scoped by host until Cella scopes one by path, and the run against platformd waits for its deployment |
+| A `person` connection uses the initiator's credential, and fails with `connection_not_connected` when there is none | `TestPersonConnectionUsesInitiatorsCredential` | not built: needs the Credential object |
+| A value the runner holds, and its base64 and percent-encoded forms, are replaced in tool output before the log and the model | `TestScrubbingKnownValues` | not built: comes after the hosted path |
+| On the host, a named secret is substituted only on requests to its hosts, and a request elsewhere carries the placeholder | `TestHostProxySubstitutesOnlyNamedHosts` | not built: comes after the hosted path |
+| The input check finds each listed format and a high-entropy string, reports no value, and never blocks the message | `TestInputCheckFindsTokensAndNeverBlocks` | not built: comes after the hosted path |
+| A widening beyond the widener's rights is refused, a lapsed widening is reverted, every change is an event, and the next call after a change uses a fresh token | `TestScopeWideningBoundedAndRecorded`, `runner.TestScopeChangeTakesFreshToken` | partly built: the next call after a `session.scope_changed` takes a fresh token; the scope route that bounds and records a change is not built, and its bound is the authorizer's |
