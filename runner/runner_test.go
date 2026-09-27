@@ -591,3 +591,24 @@ func TestLogAppendReportsTheStore(t *testing.T) {
 		t.Fatalf("append to a deleted session: %v", err)
 	}
 }
+
+func TestAttachedSetsThePromptSections(t *testing.T) {
+	m, err := session.NewEvent(session.TypeSessionMachine, session.SessionMachine{Context: "<context>\nGit: branch main at abc, 0 modified, 0 untracked\n</context>"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, err := session.NewEvent(session.TypeMemoryAttached, session.MemoryAttached{Name: "notes"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if git, memory := attached([]session.Event{m, mem}); !git || !memory {
+		t.Fatalf("git %v memory %v", git, memory)
+	}
+	plain, err := session.NewEvent(session.TypeSessionMachine, session.SessionMachine{Context: "<context>\n</context>"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if git, memory := attached([]session.Event{m, plain}); git || memory {
+		t.Fatal("a later machine outside a repository kept the git section")
+	}
+}

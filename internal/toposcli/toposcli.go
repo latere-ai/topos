@@ -347,16 +347,22 @@ func (l *local) create(ctx context.Context, o runOptions) (session.Session, erro
 // builtinAgent is the agent a run with no manifest runs.
 const builtinAgent = "agent_00000000000000000000000000"
 
-// append adds one event after the session's last sequence.
+// append adds one event after the session's last sequence. A runner may
+// append between the read and the write; the event is then stamped
+// again after the new last sequence.
 func (l *local) append(ctx context.Context, id string, e session.Event) error {
-	s, err := l.store.Get(ctx, id)
-	if err != nil {
-		return err
+	for attempt := 0; ; attempt++ {
+		s, err := l.store.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		evs := []session.Event{e}
+		session.Stamp(id, s.LastSeq, evs)
+		_, err = l.store.Append(ctx, id, s.LastSeq, evs)
+		if !errors.Is(err, session.ErrSequenceConflict) || attempt == 9 {
+			return err
+		}
 	}
-	evs := []session.Event{e}
-	session.Stamp(id, s.LastSeq, evs)
-	_, err = l.store.Append(ctx, id, s.LastSeq, evs)
-	return err
 }
 
 // scriptedEntry is the figures of a scripted model, which no catalog

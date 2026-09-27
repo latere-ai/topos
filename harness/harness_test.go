@@ -877,12 +877,17 @@ func TestACancelDuringACallIsCanceled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.h.RunTurn(ctx, s, evs, e.log); !errors.Is(err, context.Canceled) {
-		t.Fatalf("a canceled turn: %v", err)
+	out, err := e.h.RunTurn(ctx, s, evs, e.log)
+	if err != nil || out.StopReason != session.StopInterrupted {
+		t.Fatalf("a canceled turn: %+v, %v", out, err)
 	}
 	var res session.ToolResult
-	if err := e.events(t.Context(), session.TypeToolResult)[0].Decode(&res); err != nil || res.Outcome != tools.OutcomeCanceled {
-		t.Fatalf("result %+v, %v", res, err)
+	if err := e.events(t.Context(), session.TypeToolResult)[0].Decode(&res); err != nil || res.Outcome != tools.OutcomeOK || res.Content[0].Text != "partial" {
+		t.Fatalf("a call that finished before the cancel keeps its result: %+v, %v", res, err)
+	}
+	h, err := e.store.Get(t.Context(), e.s.ID)
+	if err != nil || h.Status != session.StatusIdle {
+		t.Fatalf("the header after a cancel: %+v, %v", h, err)
 	}
 }
 
@@ -994,8 +999,11 @@ func TestATurnRefusesALogItCannotFold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.h.RunTurn(ctx, s, evs, e.log); !errors.Is(err, session.ErrSchemaTooNew) {
-		t.Fatalf("an unknown event type: %v", err)
+	if out, err := e.h.RunTurn(ctx, s, evs, e.log); err != nil || out.StopReason != session.StopError || out.Detail != "schema_too_new" {
+		t.Fatalf("an unknown event type: %+v, %v", out, err)
+	}
+	if h, err := e.store.Get(ctx, e.s.ID); err != nil || h.Status != session.StatusIdle || len(e.events(ctx, session.TypeSessionError)) != 1 {
+		t.Fatalf("the header after a refused fold: %+v, %v", h, err)
 	}
 
 	r := setup(t, nil)
@@ -1016,7 +1024,30 @@ func TestATurnRefusesALogItCannotFold(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.log.last = s.LastSeq
-	if _, err := r.h.RunTurn(ctx, s, evs, r.log); !errors.Is(err, session.ErrRedactionUncompacted) {
-		t.Fatalf("an uncompacted redaction: %v", err)
+	if out, err := r.h.RunTurn(ctx, s, evs, r.log); err != nil || out.Detail != "redaction_uncompacted" {
+		t.Fatalf("an uncompacted redaction: %+v, %v", out, err)
+	}
+}
+
+func TestAHarnessFailureClosesTheTurn(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	e.send(ctx, "Go.")
+	missing := session.DigestOf([]byte("never stored"))
+	m, err := session.NewEvent(session.TypeSessionMachine, session.SessionMachine{Reason: "attached", Instructions: []session.Instructions{{Path: "/work/AGENTS.md", Blob: missing}}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.appendEvents(ctx, m)
+	out := e.turn(ctx)
+	if out.StopReason != session.StopError || out.Detail != CodeInternal {
+		t.Fatalf("outcome %+v", out)
+	}
+	var se session.SessionError
+	if err := e.events(ctx, session.TypeSessionError)[0].Decode(&se); err != nil || se.Code != CodeInternal || !strings.Contains(se.Message, "instructions") {
+		t.Fatalf("session.error %+v, %v", se, err)
+	}
+	if h, err := e.store.Get(ctx, e.s.ID); err != nil || h.Status != session.StatusIdle || h.StopReason != session.StopError {
+		t.Fatalf("header %+v, %v", h, err)
 	}
 }

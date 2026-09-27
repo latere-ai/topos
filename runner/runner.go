@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"latere.ai/x/topos/harness"
@@ -95,6 +96,13 @@ func (r *Runner) Drive(ctx context.Context, id string) (out harness.Outcome, err
 	if err := r.attach(ctx, cfg, log); err != nil {
 		return harness.Outcome{}, err
 	}
+	evs, err := st.Events(ctx, id, 1, 0)
+	if err != nil {
+		return harness.Outcome{}, err
+	}
+	git, memory := attached(evs)
+	cfg.Prompt.Git = cfg.Prompt.Git || git
+	cfg.Prompt.Memory = cfg.Prompt.Memory || memory
 	h, err := harness.New(cfg)
 	if err != nil {
 		return harness.Outcome{}, err
@@ -170,4 +178,25 @@ func (r *Runner) attach(ctx context.Context, cfg harness.Config, log *Log) error
 	}
 	_, err = log.Append(ctx, []session.Event{e})
 	return err
+}
+
+// attached reads what the log's attachments say about the prompt's
+// conditional sections: whether the latest machine is in a repository,
+// and whether a memory store is attached.
+func attached(evs []session.Event) (git, memory bool) {
+	for _, e := range evs {
+		if e.Redacted() {
+			continue
+		}
+		switch e.Type {
+		case session.TypeSessionMachine:
+			var p session.SessionMachine
+			if e.Decode(&p) == nil {
+				git = strings.Contains(p.Context, "\nGit: ")
+			}
+		case session.TypeMemoryAttached:
+			memory = true
+		}
+	}
+	return git, memory
 }

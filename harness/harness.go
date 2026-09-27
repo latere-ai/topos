@@ -233,7 +233,7 @@ func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
 func (t *turn) commit(ctx context.Context, batch ...session.Event) error {
 	foreign, err := t.l.Append(ctx, batch)
 	if err != nil {
-		return fmt.Errorf("harness: append: %w", err)
+		return &appendError{err}
 	}
 	t.log = append(t.log, foreign...)
 	t.log = append(t.log, batch...)
@@ -276,12 +276,46 @@ func (t *turn) sessionError(code, message string, retryable bool, detail string)
 	return t.event(session.TypeSessionError, session.SessionError{Code: code, Message: message, Retryable: retryable, Detail: detail})
 }
 
+// appendError is a failed append: a lost lease or a store failure. It
+// stops the turn at once with nothing more appended (spec 005).
+type appendError struct{ err error }
+
+func (e *appendError) Error() string { return "harness: append: " + e.err.Error() }
+func (e *appendError) Unwrap() error { return e.err }
+
 func (t *turn) run(ctx context.Context) (Outcome, error) {
 	err := t.resume(ctx)
 	for err == nil {
 		err = t.stepOnce(ctx)
 	}
 	var stop *errStop
+	var lost *appendError
+	switch {
+	case errors.As(err, &stop):
+		return stop.out, nil
+	case errors.As(err, &lost):
+		return Outcome{}, err
+	}
+	// Every other way out of a turn still closes it, so the header never
+	// stays running: a cancel as interrupted, a failure of the harness as
+	// error with its session.error.
+	closing := context.WithoutCancel(ctx)
+	if ctx.Err() != nil {
+		err = t.finish(closing, session.StopInterrupted, "canceled")
+	} else {
+		code := CodeInternal
+		switch {
+		case errors.Is(err, session.ErrSchemaTooNew):
+			code = "schema_too_new"
+		case errors.Is(err, session.ErrRedactionUncompacted):
+			code = "redaction_uncompacted"
+		}
+		se, eerr := t.sessionError(code, err.Error(), false, "")
+		if eerr != nil {
+			return Outcome{}, errors.Join(err, eerr)
+		}
+		err = t.finish(closing, session.StopError, code, se)
+	}
 	if errors.As(err, &stop) {
 		return stop.out, nil
 	}
@@ -768,7 +802,7 @@ func (t *turn) call(ctx context.Context, c plannedCall) error {
 func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) tools.Result {
 	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: t.h.c.Machine, State: state})
 	switch {
-	case ctx.Err() != nil:
+	case err != nil && ctx.Err() != nil, err == nil && ctx.Err() != nil && len(res.Content) == 0:
 		return tools.Text(tools.OutcomeCanceled, "The call was canceled before it finished.")
 	case err != nil:
 		return tools.Text(tools.OutcomeError, "The tool failed: "+err.Error())
