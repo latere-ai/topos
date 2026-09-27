@@ -118,11 +118,18 @@ func (c *call) createSession() error {
 	if err != nil {
 		return err
 	}
-	// A hosted session runs on a Cella machine, never on the server's own
-	// host; the manifest's host default is for a local run.
+	// A hosted session runs on a Cella machine, or on the server's own
+	// host when the operator turned host sessions on; the manifest's host
+	// default is otherwise for a local run. Roots and read paths name
+	// paths of the host itself, which a session on a server never reaches.
 	kind := cfg.Machine.Kind
-	if kind != session.MachineCella {
-		return refuse(CodeMachineUnavailable, "agent %s runs on machine kind %q; a hosted session runs on cella", a.Name, kind)
+	switch {
+	case kind == session.MachineHost && !c.s.o.HostSessions:
+		return refuse(CodeMachineUnavailable, "agent %s runs on machine kind host, and this server runs sessions on its own host only with TOPOS_HOST_SESSIONS=on", a.Name)
+	case kind == session.MachineHost && (len(cfg.Machine.Roots) > 0 || len(cfg.Machine.ReadPaths) > 0):
+		return refuse(CodeMachineUnavailable, "agent %s names machine.roots or machine.readPaths, paths of the server's own host, which a session on it never reaches", a.Name)
+	case kind != session.MachineCella && kind != session.MachineHost:
+		return refuse(CodeMachineUnavailable, "agent %s runs on machine kind %q; a hosted session runs on cella or the host", a.Name, kind)
 	}
 	res := authz.NewResource(authorizer.KindSession, "", map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
@@ -318,6 +325,13 @@ func (c *call) deleteSession() error {
 	}
 	if err := c.s.o.Sessions.Delete(c.r.Context(), s.ID); err != nil {
 		return err
+	}
+	// The session is gone whatever its leftovers do, so a failed removal
+	// is logged for the operator and the delete still succeeds.
+	if c.s.o.Deleted != nil {
+		if err := c.s.o.Deleted(s.ID); err != nil {
+			c.s.o.Log.ErrorContext(c.r.Context(), "remove a deleted session's files", "session", s.ID, "err", err)
+		}
 	}
 	c.w.WriteHeader(http.StatusNoContent)
 	return nil

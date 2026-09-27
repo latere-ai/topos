@@ -81,6 +81,14 @@ type Options struct {
 	// message or a sent event, so the server's runners claim it without
 	// waiting for their next poll. Nil notifies nobody.
 	Notify func()
+	// HostSessions is TOPOS_HOST_SESSIONS=on: a session whose agent asks
+	// for a host machine runs on the server's own host. Off, it is
+	// refused machine_unavailable.
+	HostSessions bool
+	// Deleted is called after a session is deleted, to remove what the
+	// server keeps for it outside the store, such as a host session's
+	// directories. Nil removes nothing.
+	Deleted func(id string) error
 }
 
 // Server answers the API.

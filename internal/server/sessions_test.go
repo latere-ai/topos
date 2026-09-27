@@ -687,3 +687,47 @@ func TestInputNotifiesTheRunners(t *testing.T) {
 		t.Fatalf("%d calls, want 2", calls.Load())
 	}
 }
+
+// TestHostSessionsBehindTheSwitch: a session of a host agent is refused
+// machine_unavailable unless host sessions are on; with them on it is
+// created on the host, still refused when its agent names roots or read
+// paths, and its deletion reaches the server's clean-up.
+func TestHostSessionsBehindTheSwitch(t *testing.T) {
+	hostAgent := func(name, extra string) string {
+		return strings.Replace(agentYAML(name, "x"), "  machine: {kind: cella}\n", "  machine: {kind: host"+extra+"}\n", 1)
+	}
+	off := newFixture(t)
+	if got := off.do(http.MethodPut, "/v1/agents/local", "alice", hostAgent("local", "")); got.status != http.StatusCreated {
+		t.Fatalf("a host agent: %d %s", got.status, got.body)
+	}
+	if got := off.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"local"}`); got.code() != CodeMachineUnavailable || !strings.Contains(string(got.body), "machine_unavailable") {
+		t.Fatalf("a host session with the switch off: %d %s", got.status, got.body)
+	}
+	var deleted []string
+	on := newFixture(t, func(o *Options) {
+		o.HostSessions = true
+		o.Deleted = func(id string) error {
+			deleted = append(deleted, id)
+			return errors.New("the directory is busy")
+		}
+	})
+	for name, extra := range map[string]string{"local": "", "rooted": ", roots: [/srv]", "reading": ", readPaths: [/etc]"} {
+		if got := on.do(http.MethodPut, "/v1/agents/"+name, "alice", hostAgent(name, extra)); got.status != http.StatusCreated {
+			t.Fatalf("%s: %d %s", name, got.status, got.body)
+		}
+	}
+	for _, name := range []string{"rooted", "reading"} {
+		if got := on.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"`+name+`"}`); got.code() != CodeMachineUnavailable {
+			t.Fatalf("a host agent that names %s: %d %s", name, got.status, got.body)
+		}
+	}
+	resp := on.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"local"}`)
+	var s session.Session
+	resp.decode(t, &s)
+	if resp.status != http.StatusCreated || s.Machine.Kind != session.MachineHost || s.Machine.Workdir != "" {
+		t.Fatalf("a host session with the switch on: %d %s", resp.status, resp.body)
+	}
+	if a := on.do(http.MethodDelete, "/v1/sessions/"+s.ID, "alice", ""); a.status != http.StatusNoContent || len(deleted) != 1 || deleted[0] != s.ID {
+		t.Fatalf("delete: %d %s, cleaned %v", a.status, a.body, deleted)
+	}
+}
