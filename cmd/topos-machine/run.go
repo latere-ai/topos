@@ -31,6 +31,9 @@ const killGrace = 5 * time.Second
 // runCommand runs one script under /bin/sh in its own process group and
 // speaks the frames of wire.go: input frames on standard input, then the
 // start, the output, the final directory and the exit on standard output.
+// A script too long for the exec socket's first message, which Cella
+// bounds with its body limit, arrives instead as input frames ended by an
+// end frame, before the command's own input.
 // The timeout kills the group; a kill frame, standard input ending, or a
 // signal to the helper cancels it with SIGTERM and SIGKILL after the grace.
 func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -40,14 +43,23 @@ func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, std
 	timeout := flags.Duration("timeout", 0, "kill the command's process group after this long; zero is no timeout")
 	report := flags.Bool("report-dir", false, "report the shell's final directory")
 	grace := flags.Duration("grace", killGrace, "how long a canceled command has between SIGTERM and SIGKILL")
+	framed := flags.Bool("script-frames", false, "read the script from the input frames before the command's input")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if flags.NArg() != 1 {
-		return fail(stderr, "run [flags] -- <script>")
+	if *framed != (flags.NArg() == 0) || flags.NArg() > 1 {
+		return fail(stderr, "run [flags] -- <script>, or run -script-frames [flags]")
 	}
 	out := &frameWriter{w: stdout}
-	c, err := start(ctx, *dir, flags.Arg(0), *report)
+	script := flags.Arg(0)
+	if *framed {
+		var b strings.Builder
+		if err := copyFrames(&b, stdin); err != nil {
+			return sent(out.json(frameFail, failure(fmt.Errorf("machine: read the script: %w", err))))
+		}
+		script = b.String()
+	}
+	c, err := start(ctx, *dir, script, *report)
 	if err != nil {
 		return sent(out.json(frameFail, failure(err)))
 	}
@@ -301,11 +313,25 @@ func job(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	jobs := flags.String("jobs", "", "the directory of job logs")
 	dir := flags.String("dir", "", "the directory the job starts in")
+	file := flags.String("script-file", "", "read the script from this file and remove it")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if flags.NArg() != 1 || *jobs == "" {
-		return fail(stderr, "job -jobs <dir> [-dir <dir>] -- <script>")
+	if (*file == "") != (flags.NArg() == 1) || flags.NArg() > 1 || *jobs == "" {
+		return fail(stderr, "job -jobs <dir> [-dir <dir>] -- <script>, or job -jobs <dir> -script-file <file> [-dir <dir>]")
+	}
+	script := flags.Arg(0)
+	if *file != "" {
+		// A script too long for Cella's synchronous exec body arrives as
+		// a file the machine wrote in the spill directory.
+		b, err := os.ReadFile(*file)
+		if err != nil {
+			return answer(stdout, response{Error: failure(fmt.Errorf("machine: read the script: %w", err))})
+		}
+		if err := os.Remove(*file); err != nil {
+			return answer(stdout, response{Error: failure(fmt.Errorf("machine: remove the script: %w", err))})
+		}
+		script = string(b)
 	}
 	if err := os.MkdirAll(*jobs, 0o700); err != nil {
 		return answer(stdout, response{Error: failure(fmt.Errorf("machine: create the job directory: %w", err))})
@@ -315,7 +341,7 @@ func job(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return answer(stdout, response{Error: failure(fmt.Errorf("machine: create the job log: %w", err))})
 	}
 	// A job outlives the helper that started it, and so its context.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, "-c", jobWrapper, "job", flags.Arg(0))
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, "-c", jobWrapper, "job", script)
 	cmd.Dir = *dir
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

@@ -359,6 +359,32 @@ func TestJob(t *testing.T) {
 	if err != nil || len(logs) != 1 {
 		t.Errorf("logs %v %v: the log of a job that did not start is removed", logs, err)
 	}
+	script := filepath.Join(dir, "script.sh")
+	writeFile(t, script, "echo from a file")
+	res = start("-jobs", jobs, "-dir", dir, "-script-file", script)
+	if res.Job == nil {
+		t.Fatalf("a job from a file = %+v", res)
+	}
+	if _, err := os.Stat(script); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the script file is left: %v", err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		b, err := os.ReadFile(res.Job.Log)
+		if err == nil && strings.HasPrefix(string(b), "from a file\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("log = %q %v", b, err)
+		}
+	}
+	if res := start("-jobs", jobs, "-script-file", script); res.Error == nil || res.Error.Kind != kindNotExist {
+		t.Errorf("a missing script file: %+v", res)
+	}
+	for _, args := range [][]string{{"job", "-jobs", jobs, "-script-file", script, "--", "x"}, {"job", "-jobs", jobs}} {
+		if code := run(t.Context(), args, nil, io.Discard, io.Discard); code != 2 {
+			t.Errorf("%q: exit %d", args, code)
+		}
+	}
 	file := filepath.Join(dir, "file")
 	writeFile(t, file, "x")
 	if res := start("-jobs", filepath.Join(file, "jobs"), "--", "true"); res.Error == nil {
@@ -370,5 +396,30 @@ func TestJob(t *testing.T) {
 	}
 	if res := start("-jobs", locked, "--", "true"); res.Error == nil {
 		t.Error("a log was made in a directory that refuses it")
+	}
+}
+
+func TestRunReadsAFramedScript(t *testing.T) {
+	d := drive(t, t.Context(), "-script-frames", "--")
+	script := "read line; echo \"got $line\"; " + strings.Repeat(": padding;", 10000) + " echo done"
+	d.send(t, frameInput, script[:len(script)/2])
+	d.send(t, frameInput, script[len(script)/2:])
+	d.send(t, frameEOF, "")
+	d.started(t)
+	d.send(t, frameInput, "input\n")
+	d.send(t, frameEOF, "")
+	frames, _ := d.rest(t)
+	if out, _, exit := outcome(t, frames); out != "got input\ndone\n" || exit.Code != 0 {
+		t.Errorf("output %q, exit %+v", out, exit)
+	}
+	d = drive(t, t.Context(), "-script-frames", "--")
+	d.send(t, frameKill, "")
+	if f := d.next(t); f.kind != frameFail || !strings.Contains(string(f.payload), "read the script") {
+		t.Errorf("a script cut short: %c %q", f.kind, f.payload)
+	}
+	for _, args := range [][]string{{"run", "-script-frames", "--", "echo"}, {"run", "--", "a", "b"}} {
+		if code := run(t.Context(), args, nil, io.Discard, io.Discard); code != 2 {
+			t.Errorf("%q: exit %d", args, code)
+		}
 	}
 }

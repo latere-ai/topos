@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/cella/client"
+
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/test/stubs/cellastub"
 )
@@ -245,5 +247,38 @@ func TestSessionTimeout(t *testing.T) {
 		if got := sessionTimeout(in); got != want {
 			t.Errorf("sessionTimeout(%s) = %s, want %s", in, got, want)
 		}
+	}
+}
+
+func TestLongScripts(t *testing.T) {
+	f := open(t)
+	long := "echo start; " + strings.Repeat(": padding \"<&>\";", 12<<10) + " cd /; echo end"
+	if len(long) <= cellastub.MaxBodyBytes {
+		t.Fatalf("the script is %d bytes, not past Cella's body limit", len(long))
+	}
+	res, err := f.m.Exec(t.Context(), machine.ExecRequest{Command: long, ReportDir: true, Stdin: strings.NewReader("in")})
+	if err != nil || string(res.Output) != "start\nend\n" || res.Dir != "/" {
+		t.Errorf("a long script = %+v %q %v", res, res.Output, err)
+	}
+	res, err = f.m.Exec(t.Context(), machine.ExecRequest{Command: long, Background: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("start\nend\n\n[job %d exited with code 0]\n", res.PID)
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		got, err := read(t, f.m, res.Log)
+		if err == nil && got == want {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("log = %q %v, want %q", got, err, want)
+		}
+	}
+	scripts, err := filepath.Glob(filepath.Join(f.m.SpillDir(), "jobs", "script-*"))
+	if err != nil || len(scripts) != 0 {
+		t.Errorf("job scripts left: %v %v", scripts, err)
+	}
+	if _, err := f.m.Exec(t.Context(), machine.ExecRequest{Command: "true", Env: map[string]string{"HTTPS_PROXY": "x"}}); client.CodeOf(err) != "invalid_field" {
+		t.Errorf("a variable Cella reserves: %v", err)
 	}
 }

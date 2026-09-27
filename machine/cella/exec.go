@@ -5,6 +5,7 @@ package cella
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,12 @@ var (
 	killGrace   = 5 * time.Second
 	closeMargin = 10 * time.Second
 )
+
+// inlineScript is the longest script a command's first socket message
+// carries. Cella bounds that message with its body limit, 64 KiB by
+// default, and JSON escaping can grow a script several times over, so a
+// longer script travels as input frames before the command's input.
+const inlineScript = 8 << 10
 
 // maxSession is the longest a command's session may be open: Cella's
 // bound on one command.
@@ -108,7 +115,12 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 	if r.ReportDir {
 		args = append(args, "-report-dir")
 	}
-	args = append(args, "--", r.Command)
+	framed := len(r.Command) > inlineScript
+	if framed {
+		args = append(args, "-script-frames")
+	} else {
+		args = append(args, "--", r.Command)
+	}
 	var st *stream
 	err := m.call(ctx, true, func(id string) error {
 		sess, err := m.session(ctx, id, client.ExecRequest{
@@ -116,6 +128,11 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 		})
 		if err != nil {
 			return err
+		}
+		if framed {
+			// A failed frame is the session failing, which the helper's
+			// first frame, or its absence, reports.
+			_ = (&sender{s: sess}).input(strings.NewReader(r.Command))
 		}
 		if err := opened(sess, "chdir", dir); err != nil {
 			return err
@@ -372,7 +389,18 @@ func (st *stream) Wait() (machine.ExecResult, error) {
 // its output in a job log in the spill directory, and returns at once.
 func (m *Machine) background(ctx context.Context, r machine.ExecRequest) (machine.ExecResult, error) {
 	dir := m.dir(r.Dir)
-	resp, err := m.runHelper(ctx, r.Env, "job", "-jobs", path.Join(m.SpillDir(), "jobs"), "-dir", dir, "--", r.Command)
+	jobs := path.Join(m.SpillDir(), "jobs")
+	args := []string{"job", "-jobs", jobs, "-dir", dir, "--", r.Command}
+	if len(r.Command) > inlineScript {
+		// Cella's synchronous route has no input to carry a long script,
+		// so the script goes to a file the helper reads and removes.
+		file := path.Join(jobs, "script-"+rand.Text()+".sh")
+		if err := m.WriteFile(ctx, file, strings.NewReader(r.Command), 0o600); err != nil {
+			return machine.ExecResult{}, fmt.Errorf("machine: write the job's script: %w", err)
+		}
+		args = []string{"job", "-jobs", jobs, "-dir", dir, "-script-file", file}
+	}
+	resp, err := m.runHelper(ctx, r.Env, args...)
 	if err != nil {
 		return machine.ExecResult{}, err
 	}

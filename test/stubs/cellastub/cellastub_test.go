@@ -439,3 +439,37 @@ func TestExecSessionMessage(t *testing.T) {
 		}
 	}
 }
+
+func TestExecRules(t *testing.T) {
+	s := New(t)
+	c, sb := create(t, s, "ses-rules")
+	for name, req := range map[string]client.ExecRequest{
+		"a reserved variable": {Command: []string{"true"}, Env: map[string]string{"HTTPS_PROXY": "x"}},
+		"a Cella variable":    {Command: []string{"true"}, Env: map[string]string{"CELLA_TOKEN": "x"}},
+		"a bad name":          {Command: []string{"true"}, Env: map[string]string{"1X": "x"}},
+		"a NUL":               {Command: []string{"true", "a\x00b"}},
+		"a workdir outside":   {Command: []string{"true"}, Workdir: "/elsewhere"},
+	} {
+		_, _, err := c.Exec(t.Context(), sb.Status.ID, req)
+		if client.CodeOf(err) != "invalid_field" {
+			t.Errorf("%s: %v", name, err)
+		}
+		sess, err := c.ExecSession(t.Context(), sb.Status.ID, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.ReadAll(sess); client.CodeOf(err) != "invalid_field" {
+			t.Errorf("%s on the socket: %v", name, err)
+		}
+	}
+	long := strings.Repeat("x", MaxBodyBytes)
+	_, _, err := c.Exec(t.Context(), sb.Status.ID, client.ExecRequest{Command: []string{"echo", long}})
+	code(t, err, "body_too_large")
+	sess, err := c.ExecSession(t.Context(), sb.Status.ID, client.ExecRequest{Command: []string{"echo", long}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadAll(sess); err == nil || !strings.Contains(err.Error(), "1009") {
+		t.Errorf("a first frame past the body limit: %v", err)
+	}
+}

@@ -8,9 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +33,39 @@ const waitDelay = 2 * time.Second
 // input closed before it is killed, so a helper that cancels its own
 // process group on the input's end has the time to.
 const inputGrace = 2 * time.Second
+
+// MaxBodyBytes is Cella's default bound on a JSON body, the exec route's
+// and the exec socket's first message alike.
+const MaxBodyBytes = 64 << 10
+
+// envPattern is the name a command's variable must have.
+var envPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// reservedEnv are the variables Cella sets itself and refuses from a
+// caller: its own, and the egress gateway's proxy and trust.
+var reservedEnv = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"}
+
+// validExec holds a command to Cella's rule: no NUL in an argument, each
+// variable named as a shell names one and none of Cella's own, and a
+// working directory in the workspace.
+func validExec(sb sandbox, req execRequest) error {
+	for _, arg := range req.Command {
+		if strings.ContainsRune(arg, 0) {
+			return errors.New("command contains NUL")
+		}
+	}
+	for k, v := range req.Env {
+		if !envPattern.MatchString(k) || strings.HasPrefix(k, "CELLA_") || slices.Contains(reservedEnv, strings.ToUpper(k)) || strings.ContainsRune(v, 0) {
+			return fmt.Errorf("invalid exec environment variable %q", k)
+		}
+	}
+	if req.Workdir != "" {
+		if _, err := inWorkspace(sb, req.Workdir); err != nil {
+			return errors.New("workdir must be an absolute path in the workspace")
+		}
+	}
+	return nil
+}
 
 // execRequest is the body of both exec routes and the first frame of the
 // socket.
@@ -64,9 +101,14 @@ func (s *Server) execWait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req execRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || req.Cols != 0 || req.Rows != 0 {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			refuse(w, http.StatusRequestEntityTooLarge, "body_too_large", err.Error())
+			return
+		}
 		refuse(w, http.StatusBadRequest, "invalid_field", "the body is one exec request without a window")
 		return
 	}
@@ -77,6 +119,10 @@ func (s *Server) execWait(w http.ResponseWriter, r *http.Request) {
 	}
 	sb, ok := s.running(w, r)
 	if !ok {
+		return
+	}
+	if err := validExec(sb, req); err != nil {
+		refuse(w, http.StatusBadRequest, "invalid_field", err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
@@ -123,7 +169,11 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { s.record(c.conn.Close()) }()
 	kind, first, err := c.read()
-	if err != nil || kind != opText {
+	switch {
+	case err == nil && kind == opText && len(first) > MaxBodyBytes:
+		s.record(c.closeWith(1009, "the first frame is past the body limit"))
+		return
+	case err != nil || kind != opText:
 		s.record(c.closeWith(1008, "the first frame is the JSON request, as text"))
 		return
 	}
@@ -141,6 +191,10 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	case req.Cols > 0 && req.Rows > 0:
 		s.fail(c, "capability_unsupported", "the stub serves no terminal")
+		return
+	}
+	if err := validExec(sb, req); err != nil {
+		s.fail(c, "invalid_field", err.Error())
 		return
 	}
 	s.drive(r.Context(), c, sb, req, timeout)
