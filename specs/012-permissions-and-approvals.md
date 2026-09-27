@@ -3,7 +3,7 @@ title: "Permissions, approvals and hooks: the boundary, the layers, the risk sco
 status: drafted
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-tools.md, 009-machines.md]
-affects: [harness/permission/, harness/, machine/host/]
+affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
 updated: 2026-09-27
@@ -151,10 +151,11 @@ An ask is durable: its `agent.tool_use` is in the log before the
 session goes idle, and an idle session holds no lease. When the
 confirmation arrives, the runner that claims the session runs the call.
 If a runner stops after a confirmation and before the result, the next
-one reads the log: when a `session.status` `running` follows the
-confirmation, a runner may have started the call, and it is closed with
-`unknown_effect` ([[016-runners]]); when none does, the call never
-started and runs.
+one reads the log: when a `session.status` `running` other than its
+own claim follows the confirmation, an earlier runner may have started
+the call, and it is closed with `unknown_effect` ([[016-runners]]);
+when only its own does, the call never started and runs. A confirmed
+call for a tool the registry no longer has is answered `unknown_tool`.
 
 ### Hooks
 
@@ -215,11 +216,14 @@ console that answers an ask.
 | Criterion | Test that proves it | State |
 |---|---|---|
 | A `bash` call on the host cannot write outside the working directory or read a deny-listed credential file in any mode, including when a person allowed the call and when an allow pattern matches it | `TestHostSandboxConfinesBash`, one subtest per mode and mechanism available on the runner | not built |
-| Every tool call in a recorded session carries a score, a source and a verdict in its `agent.tool_use` | `TestEveryCallHasScoreAndVerdict` | not built |
-| Each mode gives the table's verdict for each feature row, and `always_confirm` asks in `confirm` and `progressive` and blocks in `plan` | `TestModeVerdicts` as a table test | not built |
+| The rule-feature score of each row of the score table, with source `rules/1` and its features, including the command-text hint and the egress host of `web_fetch` | `harness.TestScoreFollowsTheRuleFeatures` | built |
+| A tool call's `agent.tool_use` carries its score, its source and its verdict | `harness.TestConfirmationsAndDenials` | built |
+| Each mode gives the table's verdict, patterns match by tool and glob (a single `*` stays in a path segment, `domain:` matches a fetch host), `always_confirm` asks in `confirm` and `progressive` and blocks in `plan`, and the thresholds move the progressive bands | `harness.TestDecideAppliesTheModeAndTheLists`, `harness.TestGlobRegexpQuotesItsText`, `harness.TestPlanModeBlocksWrites` | built |
+| Verdicts are ordered allow, flag, ask, block, and the stricter of two is the less permissive | `harness.TestStricterOrdersVerdicts` | built |
 | No hook and no mode can raise a verdict: a hook answering `continue` to a blocked call leaves it blocked, and a hook that replaces the input gets the new input scored again | `TestHookCannotWiden`, `TestHookReplacedInputIsRescored` | not built |
-| An ask pauses the session idle `tool_confirmation`, holds no lease, and never times out into a deny | `TestAskIsDurableAndNeverDenies` | not built |
-| A confirmation survives a runner restart: the confirmed call runs exactly once when no runner started it, and is closed `unknown_effect` when one did | `TestConfirmationSurvivesRestart` | not built |
+| An ask pauses the session idle `tool_confirmation`, and a claim with no answer keeps it waiting and sends no request | `harness.TestAnUnansweredAskKeepsWaiting` | built |
+| An ask holds no lease and never times out into a deny | `TestAskIsDurableAndNeverDenies` | not built |
+| A confirmation survives a runner restart: the confirmed call runs exactly once when no runner started it, is closed `unknown_effect` when one may have, a denied call is answered `denied` with the note, and a confirmed call for a tool that is gone is `unknown_tool` | `harness.TestConfirmationsAndDenials`, `harness.TestAConfirmedCallAnEarlierRunnerMayHaveStarted`, `harness.TestAConfirmedCallForAToolThatIsGone` | built |
 | A command hook receives the documented payload, exit code 2 blocks with stderr as the reason, and a timeout blocks | `TestCommandHookContract` | not built |
 | `progressive` on a host without a sandbox is refused with `sandbox_unavailable` | `TestProgressiveNeedsASandbox` | not built |
-| `remember` adds a pattern that a fresh runner applies to the next matching call | `TestRememberedPatternSurvivesRestart` | not built |
+| `remember` adds a pattern that the next turn, on a fresh harness, applies to the next matching call | `harness.TestConfirmationsAndDenials` | built |

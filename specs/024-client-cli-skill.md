@@ -79,8 +79,10 @@ a usage error `no model: pass --model or --agent`. The model connection
 is `TOPOS_MODELS_URL` and `TOPOS_MODELS_KEY` ([[002-scaffold-and-configuration]]).
 
 Output: `text` prints the session's final agent text to stdout and one
-line per tool call to stderr; `json` prints the last `session.status`
-and the final text as one object; `stream-json` prints every appended
+line per tool call to stderr, `<tool> <summary> [<verdict>]`; `json`
+prints one object with `session_id`, `status`, `stop_reason`,
+`detail`, `text` (the final agent text) and `pending` (the `tool_use` ids
+waiting for a confirmation); `stream-json` prints every appended
 event as one JSON line, and deltas when `--deltas` is set. When the
 turn stops at an ask, `topos run` prints the pending calls and exits 3,
 and `topos confirm` continues it. The first `SIGINT` appends
@@ -123,11 +125,19 @@ client built on this package outside the module.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
+| `topos run` runs a turn of a local session in the working directory with no server against the stub Lux: the model's `read` reaches the file, the answer is on stdout, each tool call is a line on stderr, the credential is `TOPOS_MODELS_KEY`, and `--session` continues the session with `--output json` | `internal/toposcli.TestRunATurnInTheWorkingDirectory` | built |
 | `topos run` runs a task of the suite end to end with no server, against the stub Lux, and exits 0 with the checker passing | `TestCLIRunsASuiteTaskWithNoServer` in the e2e tier | not built |
-| Each exit code of the table is returned for its stop reason | `TestCLIExitCodes` | not built |
-| An ask stops `topos run` with exit 3, and `topos confirm` continues the same turn | `TestCLIConfirmationRoundTrip` | not built |
-| The first SIGINT ends the turn `interrupted` and exit 5, and a second exits at once leaving the session resumable | `TestCLIInterrupt` | not built |
-| `--output stream-json` prints every appended event once, in sequence | `TestCLIStreamJSON` | not built |
+| The prompt is read from stdin when none is given, and a scripted connection runs a scripted session | `internal/toposcli.TestAPromptFromStdin`, `internal/toposcli.TestAScriptedRun` | built |
+| Each exit code of the table is returned for its stop reason, and the data directory follows `TOPOS_DATA_DIR`, then `XDG_STATE_HOME`, then the home directory | `internal/toposcli.TestExitCodes` | built |
+| A usage error (no command, an unknown one, a bad flag, mode, output or cost, no prompt, no model, no model URL, a server URL, missing confirm arguments) exits 2; an unknown model, a missing session and a lost stdout exit 1 | `internal/toposcli.TestUsageErrors`, `internal/toposcli.TestLostOutputExitsOne`, `cmd/topos.TestNoCommandIsAUsageError`, `cmd/topos.TestAnUnknownCommandIsAUsageError`, `cmd/topos.TestVersionPrintsTheIdentity` | built |
+| An ask stops `topos run` with exit 3 naming `topos confirm`, and `topos confirm` continues the same turn; a denial with a note runs nothing and the turn continues | `internal/toposcli.TestAConfirmationRoundTrip`, `internal/toposcli.TestConfirmPathsAndDenial` | built |
+| `--max-cost` below one step's cost stops the run at the budget with exit 4 | `internal/toposcli.TestStreamJSONAndLimits` | built |
+| Two SIGINTs exit at once with exit 5 | `internal/toposcli.TestTwoInterruptsExitAtOnce` | built |
+| The first SIGINT alone ends the turn `interrupted` and leaves the session resumable | `TestCLIFirstInterruptEndsTheTurn` | not built |
+| Each line `--output stream-json` prints is one appended event | `internal/toposcli.TestStreamJSONAndLimits` | built |
+| `--output stream-json` prints every appended event exactly once, in sequence | `TestCLIStreamJSONIsCompleteAndOrdered` | not built |
+| `topos rewind` restores a turn's files from the command | `internal/toposcli.TestRewindFromTheCommand` | built |
+| `attach`, `send`, `interrupt`, `apply`, `sessions` and `fork`, and `run --agent`, work as the command table says | one test per command in `internal/toposcli` | not built |
 | `client.Store` passes `session/storetest` against a test toposd | `TestClientStoreConformance` | not built |
 | A client error decodes into `*client.Error` with the envelope's code and detail | `TestClientDecodesErrors` | not built |
 | The examples import only the supported set | `TestExamplesImportOnlyTheSupportedSet` | not built |

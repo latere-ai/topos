@@ -189,7 +189,7 @@ Each phase ends in a test or a release job, not a statement.
 
 | Phase | Specs | Exit criterion |
 |---|---|---|
-| 0 | 001, 002 | the scaffold's first green run of the family gate, with `TestRootPackagesAreTheListed`, `TestRootPackagesDialNothing` and `TestNoLatereCoordinatesInReleasedArtifacts` passing in `internal/arch` |
+| 0 | 001, 002 | the scaffold's first green run of the family gate, with `TestPackagesSitInTheirTrees`, `TestRootPackagesDialNothing` and `TestNoLatereCoordinatesInReleasedArtifacts` passing in `internal/arch` |
 | 1: a harness that finishes tasks | 003, 004, 005, 007, 008, 009 (host), 010, 011, 012, 013 (persistent subagents and the orchestrator), 016 (in process), 017 (local fork), 024 (local), 025, 026, 034 (host) | the release bar job of 025 passes against a real model through Lux, run by `topos` on a person's machine with no server, and the tag that closes the phase carries the pass rate in its release notes |
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox) | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |

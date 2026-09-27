@@ -58,7 +58,7 @@ to.
 
 | Breakpoint | On |
 |---|---|
-| 1 | the last tool definition |
+| 1 | the last tool definition, covered by breakpoint 2: the IR's tool definitions carry no cache hint, and the tool definitions precede the system prompt in the cached prefix |
 | 2 | the last block of the system prompt |
 | 3 | the last block of the previous request's final user message |
 | 4 | the last block of this request's final user message |
@@ -67,6 +67,7 @@ Breakpoints 3 and 4 roll forward with the conversation, so each step's
 request reads the previous step's prefix from the cache and writes its
 own. [[007-models]] expresses them per dialect. The history is only
 appended to, so a prefix, once cached, stays valid until a compaction.
+The session id is the request's cache key, for dialects that take one.
 
 ### Token accounting
 
@@ -113,7 +114,12 @@ replaced by a failed attempt.
 
 A redaction ([[004-session-log]]) forces a compaction with `cause`
 `redaction` whose range covers the redacted event, before the thread's
-next request.
+next request. Its summary request is built from a fold that leaves the
+redacted content out, so the value never reaches the model again. A
+turn over a log whose redaction no summary covers, and for which no
+such request can be built, is refused: the harness appends
+`session.error` `redaction_uncompacted` and ends the turn idle with
+`error` ([[005-harness-loop]]).
 
 ### Cache hit rate
 
@@ -144,11 +150,15 @@ encoding and pricing ([[007-models]]).
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A request's parts are in the table's order and carry the four breakpoints | `TestRequestPartOrderAndBreakpoints` | not built |
-| A session past the threshold clears first and compacts only when clearing is not enough, and continues without an error | `TestClearThenCompact` with a scripted model and a small catalog window | not built |
-| Clearing keeps the last ten steps' results and every `todo` result | `TestClearingKeepsRecentSteps` | not built |
+| The system prompt renders its parts in the table's order (the harness prompt, the agent's instructions, the context block, each instruction file cut at 64 KiB, the skills index, the memory notes), and a part it does not know renders nothing | `harness.TestSystemBlocksRenderEveryPart` | built |
+| Breakpoint 2 is on the last system block and breakpoints 3 and 4 on the last blocks of the last two user messages; the request carries the effort, `max_tokens` and the session id as cache key | `harness.TestBreakpointsRollWithTheConversation` | built |
+| A session past the threshold clears first and compacts only when clearing is not enough, and the compaction's request is recorded as a `model.request` | `harness.TestClearingOldResultsIsEnough`, `harness.TestSummaryWhenClearingIsNotEnough` | built |
+| Clearing keeps the last ten steps' results and every `todo` result, and a second clearing skips what the first cleared | `harness.TestClearingOldResultsIsEnough`, `harness.TestTodoResultsAreNeverCleared`, `harness.TestASecondClearingSkipsWhatIsCleared` | built |
+| The threshold is `compactAt` of the input window, held between 0.5 and 0.95 | `harness.TestThresholdIsHeldInRange` | built |
+| A step that cannot fit the window after compaction ends the turn with `context_exhausted` | `harness.TestAContextThatCannotFitIsExhausted` | built |
+| A compaction that fails ends the turn and replaces nothing | `harness.TestAFailedCompactionEndsTheTurn` | built |
 | The summary never splits a step from its results and keeps the three most recent steps verbatim | `TestCompactionRangeRespectsSteps` | not built |
 | A runner restarted after a compaction rebuilds the same request as the one that would have followed it | `TestCompactionSurvivesRestart` | not built |
 | A turn of twenty steps against the stub Lux has a cache hit rate of at least 0.8 from its second request | `TestCacheHitRate` | not built |
-| A redaction forces a compaction covering the redacted event before the next request | `TestRedactionForcesCompaction` | not built |
-| A compaction that fails leaves the log as it was apart from its `model.request` and the error | `TestFailedCompactionChangesNothing` | not built |
+| A turn over a redaction no summary covers is refused with `redaction_uncompacted` | `harness.TestATurnRefusesALogItCannotFold` | built |
+| A redaction forces a compaction covering the redacted event before the next request, from a fold without the redacted content | `TestRedactionForcesCompaction` | not built |

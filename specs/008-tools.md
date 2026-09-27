@@ -75,10 +75,13 @@ nothing, `write` changes the machine, `external` reaches outside it.
 | `web_fetch` | yes | external | `url` (`http` or `https`) | 30 second timeout, 5 redirects, 10 MiB read; HTML converted to text |
 | `todo` | yes | none | `todos`: a list of `{id, content, status}`, status `pending`, `in_progress` or `completed` | replaces the thread's list; at most 100 items |
 
-`grep` and `glob` are Go-native and need no external binary. The
-current-content rule of `write` and `edit` reads the log, not memory:
-each `read`, `write` and `edit` result records the file's `sha256` in
-its meta, and a write proceeds only when the file's current hash
+`grep` and `glob` are Go-native and need no external binary. A
+result's `meta` ([[004-session-log]]) is the tool's record for later
+calls of its thread, and `tools.StateOf` folds the thread's metas from
+the log into the `State` each call receives: `{path, sha256}` from
+`read`, `write` and `edit`, `{dir, exit_code}` from `bash`, `{todos}`
+from `todo`. The current-content rule of `write` and `edit` reads that
+state, not memory: a write proceeds only when the file's current hash
 equals the last one this thread recorded for that path, or the file
 does not exist. Otherwise the result is
 `<path> changed since it was last read; read it again before writing.`
@@ -94,10 +97,15 @@ model reads the log with `read` and stops the job with `bash`. The
 machine kills background jobs when the session ends.
 
 `web_fetch` runs inside the machine's network boundary, never from the
-runner's own network: on the host in the harness process under the host
-sandbox's network rule ([[012-permissions-and-approvals]]), on a Cella
-machine as a command in the sandbox, whose egress Cella's gateway
-decides.
+runner's own network. `harness/tools` dials nothing: the tool reaches
+the network only through `machine.Fetcher`, an optional interface a
+machine implements, whose `Fetch` enforces the limits above (30
+seconds, 5 redirects to `http` or `https` only, 10 MiB). The host's
+fetch runs from the host's own network, which the host sandbox's
+network rule governs ([[012-permissions-and-approvals]]); a Cella
+machine's runs in the sandbox, whose egress Cella's gateway decides. A
+machine that does not implement `Fetcher` has no web access, and the
+call's result says so.
 
 Memory sync is a built-in tool too, `memory_sync`, defined with its
 stores in [[020-memory-stores]]; threads use `spawn`, `message` and
@@ -188,14 +196,18 @@ routes, the credential deny-list and the environment
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| An absolute path inside the working directory is read and written as given, never re-rooted | `TestProbe/absolute_paths_not_rerooted`, `TestFileToolsUseMachinePaths` | not built |
-| `write` and `edit` refuse a file changed since this thread last read it, with the hash taken from the log, and a fresh harness enforces the same rule | `TestWriteRequiresCurrentContent` | not built |
-| `edit` refuses an `old_string` that occurs zero or two times without `replace_all` | `TestEditRequiresUniqueMatch` | not built |
-| `bash` keeps its directory between calls across a harness restart, keeps no variable, and kills its process group on timeout | `TestBashPersistentDirectory`, `TestBashTimeoutKillsGroup` | not built |
-| A `background` command returns at once with a pid and a log path, keeps running across steps, and is killed at session end | `TestBashBackgroundJob` | not built |
-| `grep` and `glob` pass their suites in the hermetic tier with only the Go toolchain on `PATH` | `TestGrepNeedsNoBinary`, `TestGlobNeedsNoBinary` | not built |
-| An output of 100 KiB is spilled: the result carries 20 KiB of head, the omission line and 10 KiB of tail, and the spill file holds all 100 KiB outside the working directory | `TestOutputSpill` | not built |
+| The built-in set has the table's names, parallel flags and effects, each description is embedded, and each decodes its input | `harness/tools.TestBuiltinsFollowTheTable`, `harness/tools.TestBuiltinsDecodeTheirInput` | built |
+| An absolute path inside the working directory is read and written as given, never re-rooted | `harness/tools.TestFileToolsUseMachinePaths` | built |
+| `read` numbers lines, cuts long lines, returns images, and refuses a binary file or a directory | `harness/tools.TestReadNumbersLines`, `harness/tools.TestReadCutsLongLines`, `harness/tools.TestReadImages`, `harness/tools.TestReadRefuses` | built |
+| `write` and `edit` refuse a file changed since this thread last read it, with the hash taken from the log, and a fresh harness enforces the same rule | `harness/tools.TestWriteRequiresCurrentContent`, `harness/tools.TestStateOfFoldsMetas`, `harness.TestMetaIsRecordedAndFoldedIntoState` | built |
+| `edit` refuses an `old_string` that occurs zero or two times without `replace_all` | `harness/tools.TestEditRequiresUniqueMatch` | built |
+| `bash` keeps its directory between calls across a harness restart, keeps no variable, and kills its process group on timeout | `harness/tools.TestBashPersistentDirectory`, `harness/tools.TestBashTimeoutKillsGroup`, `harness/tools.TestBashCanceled` | built |
+| A `background` command returns at once with a pid and a log path, keeps running across steps, and is killed at session end | `harness/tools.TestBashBackgroundJob`, `machine/host.TestBackgroundJobsEndWithTheSession` | built |
+| `grep` and `glob` run with no external binary | `harness/tools.TestGrepNeedsNoBinary`, `harness/tools.TestGlobNeedsNoBinary` | built |
+| An output of 100 KiB is spilled: the result carries 20 KiB of head, the omission line and 10 KiB of tail, and the spill file in the machine's spill directory holds all 100 KiB | `harness/tools.TestOutputSpill`, `harness/tools.TestCap` | built |
+| `todo` replaces the thread's list and validates its items | `harness/tools.TestTodoReplacesTheList`, `harness/tools.TestTodoValidates` | built |
+| `web_fetch` reaches the network only through the machine's `Fetcher`, converts HTML to text, spills a long page, and answers a failure, a timeout and a cancel as results; the host's fetch holds to the redirect, scheme, size and time limits | `harness/tools.TestWebFetch`, `harness/tools.TestWebFetchFailures`, `harness/tools.TestHTMLText`, `machine/host.TestFetch`, `machine/host.TestFetchRefuses`, `machine/host.TestFetchTimeout` | built |
 | `web_fetch` on a Cella machine runs inside the sandbox and never from the runner's network | `TestWebFetchRunsInsideTheMachine` | not built |
-| A client-executed tool stops the turn with `tool_result` and resumes on `user.tool_result` | `TestClientToolRoundTrip` | not built |
-| Registering a non-built-in tool with `Repeatable` fails | `TestOnlyBuiltinsAreRepeatable` | not built |
+| A client-executed tool stops the turn with `tool_result` and resumes on `user.tool_result` | `harness.TestClientToolsWaitForTheirResult` | built |
+| Registering a non-built-in tool with `Repeatable` fails, and the registry refuses a bad name or a duplicate | `harness/tools.TestOnlyBuiltinsAreRepeatable`, `harness/tools.TestRegistryRefuses` | built |
 | Every built-in's description file has at least one instruction test directory | `TestEveryToolDescriptionHasAnInstructionTest` | not built |

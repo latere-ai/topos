@@ -118,7 +118,7 @@ is under `internal/`.
 | `harness/tools/mcp` | MCP servers as tools | the MCP server a manifest names, or the process it starts on the host | [[021-mcp-servers]] |
 | `models`, `models/dialect` | the `Model` interface, the model connection, the catalog entry, cost and the budget meter; one implementation over `latere.ai/x/pkg/llmdialect`'s backend codecs | `models/dialect` dials only the connection's base URL | [[007-models]] |
 | `models/scripted` | the scripted model for tests | nothing | [[026-stubs-and-tiers]] |
-| `machine`, `machine/host`, `machine/cella` | the `Machine` interface; the host directory with its operating-system sandbox; a Cella sandbox through `latere.ai/x/cella/client` | host: the local filesystem and processes; cella: its base URL | [[009-machines]], [[012-permissions-and-approvals]] |
+| `machine`, `machine/host`, `machine/cella` | the `Machine` interface and the optional `Fetcher`; the host directory with its operating-system sandbox; a Cella sandbox through `latere.ai/x/cella/client` | host: the local filesystem and processes, and the URLs `web_fetch` names, through its `Fetcher`; cella: its base URL | [[009-machines]], [[008-tools]], [[012-permissions-and-approvals]] |
 | `runner`, `runner/checkpoint` | claims sessions from a `session.Store`, holds leases, drives the harness, appends events; commits each turn's checkpoint | the store it is given; checkpoints through the machine and the git host it is given | [[016-runners]], [[034-checkpoints-and-rewind]] |
 | `memory`, `memory/dir`, `memory/arca` | memory stores: attach, sync and the conflict rule; a directory backend and an Arca files-plane backend | dir: the local filesystem; arca: its base URL | [[020-memory-stores]] |
 | `manifest`, `manifest/v1` | the Agent, Trigger, MemoryStore and Connection kinds as files, and one resolver | nothing | [[003-manifest]] |
@@ -128,6 +128,9 @@ is under `internal/`.
 | `cmd/toposd` | the roles `serve`, `runner`, `check` and `token` | per role | [[002-scaffold-and-configuration]] |
 | `cmd/topos` | the scripting and test client: run a session in print mode in the working directory, attach, apply manifests | its configured toposd, or nothing when it runs a local session | [[024-client-cli-skill]] |
 | `cmd/topos-machine` | the static helper a Cella machine uploads into its sandbox to run grep and glob where the files are | nothing | [[009-machines]] |
+| `internal/toposcli` | the `topos` command: its commands, flags, output and exit codes | through the runner and the model connection | [[024-client-cli-skill]] |
+| `tools/catalog` | the generator of `models/catalog.json` from a Lux model catalog and OpenRouter's public model list | nothing; it reads files | [[007-models]] |
+| `test/stubs/luxstub` | the stub Lux, an in-process test server on loopback | nothing; it serves | [[026-stubs-and-tiers]] |
 
 The rule for the root packages: `session`, `harness`, `manifest` and
 `authorizer` compute and decide and import no network client. A
@@ -222,10 +225,20 @@ The build list of `./cmd/toposd` reaches the standard library,
 `llmdialect`, `retry`, `otel`, `health`), `latere.ai/x/cella/client`
 and `latere.ai/x/cella/egress`, the Arca client once it is exported,
 the YAML decoder `manifest` uses, the Postgres driver and migration
-library of [[014-store]], and the OpenTelemetry SDK. `./cmd/topos`
-reaches the same set without the Postgres driver. No cloud SDK, no web
-framework, no ORM. The `depcheck` gate holds each list; a new entry is a
-row with a reason.
+library of [[014-store]], and the OpenTelemetry SDK. No cloud SDK, no
+web framework, no ORM.
+
+`./cmd/topos` runs sessions in process, so it reaches what the harness
+reaches: `latere.ai/x/pkg` for the llmdialect codecs, retry and the
+instrumented HTTP client of `pkg/otel` that the family's otel-client
+gate requires for every outbound call, and behind that client the
+OpenTelemetry SDK, its OTLP exporters, grpc and protobuf and their
+dependencies, plus the YAML decoder of scripted-model scripts and
+manifests. A transport-only subpackage of `pkg/otel` would cut that
+set to the OpenTelemetry API and its HTTP instrumentation.
+
+The `depcheck` gate holds each list in `.lateregate.yaml`, one row per
+module with a reason; a new entry is a new row.
 
 ### Naming
 
@@ -250,17 +263,20 @@ model ([[027-security]]), and every consumer outside this module.
 
 ## Acceptance criteria
 
-This spec owns three tests, each writable against the scaffold, and is
-complete when they pass. The invariants a built component proves are
+This spec owns the architecture tests of `internal/arch` and the
+`depcheck` gate, each writable against the scaffold, and is complete
+when they pass. The invariants a built component proves are
 held by the specs named in the invariants table and are that spec's
 acceptance, not this one's; without this split nothing could dispatch,
 because every spec depends on this one.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Every package at the module root is one of `session`, `harness`, `models`, `machine`, `runner`, `memory`, `manifest`, `client` or `authorizer`, or under one of them; `session`, `harness`, `manifest` and `authorizer` reach no `net/http` client construction, no database driver and no package under `internal/`; `machine/host` reaches no network client; `machine/cella` reaches `latere.ai/x/cella/client` and no other network client; `models/dialect` and `client` construct one HTTP client each and reach nothing under `internal/`; a tree that does not exist yet is skipped by name, so the test passes on the scaffold and bites as each lands | `TestRootPackagesAreTheListed` and `TestRootPackagesDialNothing` in `internal/arch`, over `go list -deps`, one allow list per package | not built |
-| Each role's and each binary's build list matches its `depcheck` allow list | the `depcheck` gate | not built |
-| No file in the tree (a document, a manifest, a workflow, a default, a Go comment or string) names a hostname of the maintainer's outside the API group `topos.latere.ai/`, a particular deployment of Topos, a component internal to one, or a private document; module paths under `latere.ai/x/` and the shared CI pipeline are allowed; the walk skips only binaries | `TestNoLatereCoordinatesInReleasedArtifacts` in `internal/arch` | not built |
+| Every package sits in one of the root trees `session`, `harness`, `models`, `machine`, `runner`, `memory`, `manifest`, `client` or `authorizer`, or under `cmd`, `internal`, `test`, `tools` or `examples`, and none at the module root | `internal/arch.TestPackagesSitInTheirTrees` over `go list` | built |
+| No package of `session`, `harness`, `manifest` or `authorizer` reaches a package that opens a connection (`net`, `net/http`, `net/rpc`, `net/smtp`, `crypto/tls`), directly or through a dependency; a tree that does not exist yet is skipped by name, so the rule binds each tree the day it lands | `internal/arch.TestRootPackagesDialNothing` over `go list -deps` | built |
+| `machine/cella` reaches `latere.ai/x/cella/client` and no other network client; `models/dialect` and `client` construct one HTTP client each and reach nothing under `internal/` | one allow list per package in `internal/arch` | not built |
+| Each role's and each binary's build list matches its `depcheck` allow list | the `depcheck` gate over the rows of `.lateregate.yaml` for `cmd/toposd` and `cmd/topos` | built |
+| No file in the tree (a document, a manifest, a workflow, a default, a Go comment or string) names a hostname of the maintainer's outside the API group `topos.latere.ai/`, a particular deployment of Topos, a component internal to one, or a private document; module paths under `latere.ai/x/` and the shared CI pipeline are allowed; the walk skips only binaries | `internal/arch.TestNoLatereCoordinatesInReleasedArtifacts` | built |
 
 ### Held by other specs
 
@@ -274,7 +290,7 @@ because every spec depends on this one.
 | 6 | [[013-threads-and-subagents]], [[012-permissions-and-approvals]] | `TestSubagentCannotCallToolParentLacks`, `TestHookCannotWiden` |
 | 7 | [[006-identity]] | `pkg/authz/conformance` against the stub; `TestAuthorizerDownIsRefusal` |
 | 8 | [[018-credentials-and-secrets]] | `TestSessionCallsCarryTheAgentKey` |
-| 9 | [[005-harness-loop]], [[007-models]] | `TestProbe`, `TestServeRefusesScriptedModel` |
+| 9 | [[005-harness-loop]], [[007-models]] | the tests of 005's failures table; `TestServeRefusesScriptedModel` |
 | 10 | [[016-runners]], [[009-machines]] | `TestServerOpensNoConnectionToARunner` |
 | 11 | [[023-events-and-observability]] | `TestEveryMutationEmitsOneSinkEvent` |
 | 12 | [[028-release-and-installation]] | `TestReleasePublishesUnderTheOwnersNamespace` |

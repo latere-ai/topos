@@ -182,8 +182,11 @@ repository delivery and git credentials ([[019-git]]); named secrets
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A symlink or `..` path out of the working directory is refused by every file tool on the host | `TestHostRootConfinement` | not built |
-| Every deny-list path inside a root is refused by `read`, `write` and `edit`, and the deny-listed variables are absent from a `bash` command's environment while `PATH` and `HOME` are the person's | `TestHostDenyList`, `TestProbe/bash_has_persons_path` | not built |
+| A symlink or `..` path out of the working directory is refused by every file operation of the host, and a path outside every root answers `ErrOutside` | `machine/host.TestFilesAreConfinedToTheRoots`, `machine/host.TestEveryFileOperationRefusesOutsideAndDenied`, `machine/host.TestRemoveAndRename` | built |
+| The host's roots are the working directory, the spill directory and the extra roots, each resolved; a missing extra root is refused at open | `machine/host.TestInfoAndRoots`, `machine/host.TestOpenValidates`, `machine/host.TestOpenRefusesAMissingExtraRoot` | built |
+| Every deny-list path inside a root is refused by `read`, `write` and `edit` and skipped by search, and the deny-listed variables are absent from a `bash` command's environment while `PATH` is the person's | `machine.TestDenyList`, `machine/host.TestTheDenyListHoldsInsideARoot`, `machine/host.TestExec` | built |
+| Commands run in their own process group, time out and cancel, stream their output, and background jobs end with the session | `machine/host.TestExecTimeoutAndCancel`, `machine/host.TestExecStream`, `machine/host.TestBackgroundJobsEndWithTheSession` | built |
+| Search is Go-native where the files are: grep honors `.gitignore` at and above the root, has its three output modes, and glob lists newest first | `machine.TestGrepFilesHonorsGitignore`, `machine.TestGrepBelowTheRootHonorsParentIgnores`, `machine.TestGrepModes`, `machine.TestGlobNewestFirst`, `machine.TestSearchRefusesBadRequests` | built |
 | A second session started in a checkout another running session writes gets a worktree on `agents/<agent>/<session>`; three sessions give three worktrees on three branches | `TestSecondSessionGetsAWorktree`, `TestThreeSessionsThreeWorktrees` | not built |
 | An ended session's worktree whose branch is merged and clean is removed, and one with uncommitted changes is kept | `TestWorktreeRemovalRule` | not built |
 | A Cella machine is created on the Environment the session names, including one served by a worker outside the stub cluster, and the runner opens no connection to the worker | `TestCellaMachineOnNamedEnvironment` in the Cella tier | not built |

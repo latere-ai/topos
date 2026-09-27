@@ -3,7 +3,7 @@ title: "Stubs and test tiers: the scripted model, the stub Lux, authorizer, issu
 status: drafted
 track: core
 depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 007-models.md, 009-machines.md]
-affects: [models/scripted/, test/stubs/, test/e2e/, Makefile, .github/workflows/]
+affects: [models/scripted/, test/stubs/luxstub/, test/stubs/, test/e2e/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-27
 updated: 2026-09-27
@@ -42,30 +42,36 @@ the authorizer and issuer stubs are `latere.ai/x/pkg`'s own.
 | Step field | Meaning |
 |---|---|
 | `text`, `thinking` | text and thinking blocks; a thinking block gets the signature `scripted` and is replayed as given |
-| `tool_calls` | a list of `{name, input}`; ids are `call_<seq>_<n>` |
-| `stop` | `end_turn` (default), `tool_use` (default when there are calls), `max_tokens`, `refusal` |
-| `usage` | token counts, and `cost_usd_micro` when set |
-| `fail` | inject a failure before the response: `{status, retry_after, times}` for an HTTP error, or `cut` for a stream that ends early |
-| `expect` | assertions on the request: a tool result containing a string, a system part present, a number of messages |
+| `tool_calls` | a list of `{name, input}`; ids are `call_<request>_<n>` |
+| `stop` | the IR stop reason; default `tool_use` when there are calls, `end_turn` otherwise |
+| `usage` | `input_tokens`, `output_tokens`, and `cost_usd_micro` when set |
+| `fail` | a failure before the response: `{status, retry_after, times, type}` for an HTTP error `times` over, or `cut` for a stream that ends before its terminal event |
+| `expect` | assertions on the request: `tool_result_contains`, `system_contains`, `messages` (a count) |
 
-A step's `expect` failing fails the test with the request's diff. The
-script's responses go through the Lux wire encoding like a real
-model's, so the log a scripted session writes is a v1 log.
+A script is `{steps: [...]}`; one `scripted.Model` keeps each script's
+position, so the requests of a session advance through its steps, and a
+request past the last step is `ErrExhausted`. A step's `expect` failing
+answers an `ExpectationError` naming the step, the problem and the
+request. The script's responses go through the Lux wire encoding like a
+real model's, and a scripted `model.request` records the codec
+`scripted@1`, so the log a scripted session writes is a v1 log.
 
 ### The stubs
 
 | Stub | Where | Does |
 |---|---|---|
-| Lux | `test/stubs/lux` | serves `/anthropic/v1/messages`, `/openai/v1/responses` and `/openai/v1/chat/completions` with scripted responses per model name, streaming; reports usage, with cache reads computed by matching each request's breakpoint prefixes against its earlier requests, and `cost_usd_micro`; injects the failures a script or a header names |
+| Lux | `test/stubs/luxstub` | an in-process HTTP server on loopback (`luxstub.New(t)`) that serves `/anthropic/v1/messages`, `/openai/v1/responses` and `/openai/v1/chat/completions`, decodes each request with that dialect's frontend codec, and streams the reply scripted for the request's model (`Script(model, replies...)`) back through the same codec; a reply may carry an `Expect` check on the decoded request and a `Failure` (an HTTP status `Times` over with `RetryAfter`, a `Cut` stream, or a dialect error `Event` after the first events); `Requests()` returns every request with its dialect, headers and body; usage, cache figures and `cost_usd_micro` are the scripted response's, and cache reads computed by matching each request's breakpoint prefixes against its earlier requests join them for [[010-context]] |
 | authorizer | `latere.ai/x/pkg/authz/stub` told the `authorizer` vocabulary ([[006-identity]]) | allows, denies and answers limits as a test sets |
 | issuer | `latere.ai/x/pkg/authkit/issuertest` | an OIDC issuer on loopback that signs tokens for any subject |
 | sink | `test/stubs/sink` | receives sink events, verifies the signature, and records them for assertions ([[023-events-and-observability]]) |
 | Cella | `test/stubs/cella` | the Cella routes `machine/cella` calls (sandboxes, exec with streaming, files, tar), backed by a temporary directory per sandbox; the `cella` tier uses a real Cella control plane instead |
 
-`test/stubs` builds into one binary, `topos-stubs`, which `make run`
+Unit tests use the stubs in process: `luxstub.New(t)` starts a server
+that the test's cleanup stops. For `make run` and the e2e tier the
+stubs also build into one binary, `topos-stubs`, which `make run`
 starts beside `toposd` ([[002-scaffold-and-configuration]]) and the
-e2e tier starts for each test. It is a test artifact and never part of
-an installation.
+e2e tier starts for each test. Both are test artifacts and never part
+of an installation.
 
 ### The tiers
 
@@ -95,8 +101,10 @@ The task suite and the bar ([[025-task-suite]]); the conformance suite
 |---|---|---|
 | Every tier but instructions and tasks runs in CI with no paid credential and no secret in the workflow | `TestWorkflowTiersNeedNoPaidCredential` over the workflow files | not built |
 | `go test ./...` with no tag passes in the hermetic gate with only `/bin` and `/usr/bin` on `PATH` | the `hermetic` gate | not built |
-| A script's `fail` injects a 429 with `Retry-After`, a 500, and a cut stream, each observed by the harness as that failure | `TestScriptedFailures` | not built |
-| A script's `expect` that does not match fails the test and prints the request's diff | `TestScriptedExpectations` | not built |
-| The stub Lux answers each dialect in its native streaming form, and reports cache reads for a repeated prefix and none for a changed one | `TestStubLuxDialects`, `TestStubLuxCacheSimulation` | not built |
+| A script plays step by step: text, thinking with its signature, tool calls with their ids, usage and cost; its `fail` injects an HTTP error the given number of times and a cut stream; its `expect` refuses a request that does not match with an `ExpectationError`; a request past the last step is `ErrExhausted` | `models/scripted.TestAScriptPlaysStepByStep` | built |
+| A malformed script is refused | `models/scripted.TestScriptsAreRefusedWhenMalformed` | built |
+| A scripted connection drives the `topos` command to the end of a turn | `internal/toposcli.TestAScriptedRun` | built |
+| The stub Lux answers each dialect in its native streaming form, refuses an unknown door, an undecodable body, a missing reply and a failed expectation, injects failures, and records every request | `test/stubs/luxstub.TestTheStubAnswersAsScripted`, `test/stubs/luxstub.TestEventsFollowTheGrammar`, `test/stubs/luxstub.TestAnInjectedErrorEventFollowsThePartialStream`, `models/dialect.TestEveryDialectRoundTripsThroughTheStub` | built |
+| The stub Lux reports cache reads for a repeated prefix and none for a changed one | `TestStubLuxCacheSimulation` | not built |
 | The stub Cella passes the parity cases `machine/cella` runs against the real Cella tier | `TestStubCellaMatchesCella` | not built |
 | `make run` starts `toposd` and the stubs and a session completes against them with no credential | `TestMakeRunCompletesASession` | not built |

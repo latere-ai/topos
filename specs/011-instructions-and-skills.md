@@ -59,6 +59,15 @@ against the previous one ([[025-task-suite]]).
 | memory | present only when a store is attached: memory is files in the named directories, read and written with the file tools |
 | git | present only in a repository: commit on the session's branch, never push a protected branch |
 
+The conditional sections render from `prompt.Options`, set per
+session: the machine's section from its kind, `threads` when the agent
+has subagents, and `git` and `memory` by the runner from the log. The
+git section renders when the latest `session.machine`'s context block
+has a `Git` line, and the memory section when a `memory.attached`
+exists, so a later machine outside a repository drops the git section
+again. The compaction prompt is `harness/prompt/compact-v<N>.md`,
+versioned the same way ([[010-context]]).
+
 ### The context block
 
 Computed when a machine attaches and recorded as the `context` of
@@ -152,9 +161,12 @@ stores are ([[020-memory-stores]]).
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Every request carries the harness prompt and the context block, and `model.request` records the prompt version | `TestProbe/system_prompt_present` | not built |
+| Every request carries the harness prompt and the context block, and `model.request` records the prompt version | `harness.TestATurnRunsToolsAndEnds`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
+| The prompt renders only the sections that apply, a version that does not exist is refused, and the compaction prompt renders | `harness/prompt.TestRenderIncludesOnlyTheSectionsThatApply`, `harness/prompt.TestCompact` | built |
+| The runner sets the git and memory sections from the log, and a later machine outside a repository drops the git section | `runner.TestAttachedSetsThePromptSections` | built |
 | A released harness prompt file is never changed: its hash is pinned in the test | `TestReleasedPromptsAreImmutable` | not built |
-| The context block reports a worktree's branch, the git counts and five commits, and is identical on a second runner | `TestContextBlock` | not built |
-| Instruction files are found from the repository root to the working directory, `AGENTS.md` before `CLAUDE.md`, the nearest last, cut at the size limits | `TestInstructionFileSearchOrder` | not built |
-| The skills index lists each source's skills with the first source winning a name, and the model can read a listed `SKILL.md` | `TestSkillSources` | not built |
+| The context block reports the branch, the git counts and five commits in the documented lines, is recorded once in `session.machine`, and is the same on a second drive | `runner.TestTheContextBlock`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
+| Instruction files are found from the repository root to the working directory, `AGENTS.md` before `CLAUDE.md`, the person's first and the nearest last, cut at 64 KiB each and 256 KiB in all; a Cella machine reads no personal file | `runner.TestDriveAttachesTheMachineAndRunsATurn`, `runner.TestAttachInARepository`, `runner.TestChainAndSkills` | built |
+| The skills index lists each source's skills with the first source winning a name, refuses a skill without valid frontmatter, and holds at most 100 | `runner.TestAttachInARepository`, `runner.TestChainAndSkills`, `runner.TestLocalSkillsReportsAnUnreadableFolder` | built |
+| The model can read a listed `SKILL.md` through a read-only root | `TestSkillFoldersAreReadOnlyRoots` | not built |
 | A project `AGENTS.md` that requires a changelog line, and a skill that defines a release-notes format, each change the agent's output in an instruction test against a real model | `test/tasks/instructions/agents-md` and `test/tasks/instructions/skill` in the instruction tier | not built |

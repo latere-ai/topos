@@ -28,8 +28,10 @@ turn with a stop reason that names it (invariant 9).
 ## Current state
 
 The loop of v0.7.0 spec 001 is replaced. A probe that drove it through
-its public surface reproduced eight failures, each of which now has a
-test that fails the old behavior (the table at the end of Design). The
+its public surface reproduced eight failures; the table at the end of
+Design names the test that fails each old behavior, and the delegated
+agent's empty sandbox is held by the threads of
+[[013-threads-and-subagents]]. The
 three-phase tool path of v0.7.0 spec 001 (validate, permission,
 execute) is kept, with each phase now defined. From v0.7.0 spec 028 the
 loop keeps the rule that a budget that cannot be priced is refused
@@ -43,29 +45,69 @@ threaded into the loop at each request.
 
 ```go
 type Config struct {
-	Model       models.Model
-	Connection  models.Connection
-	Machine     machine.Machine
-	Tools       *tools.Registry
-	Hooks       []Hook
-	Permissions permission.Policy
-	Retry       retry.Policy // latere.ai/x/pkg/retry
-	Clock       func() time.Time
-	Observer    Observer
+	Model         models.Model
+	Connection    models.Connection
+	Entry         models.Entry // the model's catalog figures
+	Machine       machine.Machine
+	Tools         *tools.Registry
+	Policy        Policy // spec 012: the mode, the lists, the thresholds
+	Instructions  string
+	Effort        string
+	PromptVersion int
+	Prompt        prompt.Options // which harness prompt sections apply
+	Retry         retry.Policy   // latere.ai/x/pkg/retry
+	TurnTimeout   time.Duration
+	CompactAt     float64 // spec 010
+	Clock         func() time.Time
+	Sleep         func(ctx context.Context, d time.Duration) error
+	Observer      Observer
 }
 
-type Appender interface {
-	Append(ctx context.Context, batch []session.Event) error
+type Log interface {
+	Append(ctx context.Context, batch []session.Event) ([]session.Event, error)
+	PutBlob(ctx context.Context, r io.Reader) (session.Digest, error)
+	Blob(ctx context.Context, d session.Digest) (io.ReadCloser, error)
 }
 
-func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.Event, a Appender) (session.Status, error)
+type Outcome struct {
+	Status     session.Status
+	StopReason session.StopReason
+	Detail     string
+	Pending    bool
+}
+
+func New(c Config) (*Harness, error)
+func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.Event, l Log) (Outcome, error)
 ```
 
-`RunTurn` reads nothing but its arguments and the machine, appends
-through `a` only, and returns when the session is idle or ended. An
-`Append` error (a lost lease, a store failure) stops the turn at once
-with no further call and no further event: the runner, not the
-harness, decides what happens next ([[016-runners]]).
+`New` refuses a configuration with no model, machine or registry, an
+invalid connection, or a catalog entry with no input window or output
+limit (`model_unknown`, [[007-models]]). The hooks of
+[[012-permissions-and-approvals]] join the configuration as a list of
+`Hook`s.
+
+`Log` is the harness's view of the session's store, held by the
+runner. `Append` sets each event's sequence and session id in place and
+returns the events others appended since the harness last saw the log
+(a `user.interrupt`, a `user.message`), so the harness sees them at
+every commit point without watching the store. `PutBlob` and `Blob`
+reach the session's blobs: raw responses, captured requests, and the
+instruction files the harness renders ([[011-instructions-and-skills]]).
+
+`RunTurn` reads nothing but its arguments, the machine and the log's
+blobs, appends only through `l`, and returns when the session is idle
+or ended. `Outcome.Pending` reports a person's event appended after the
+turn's last request was built, which the model has not seen; the runner
+starts the next turn from it at once ([[016-runners]]). Every way out of
+a turn closes it with a `session.status`, except one: an `Append` error
+(a lost lease, a store failure) stops the turn at once with no further
+call and no further event, and `RunTurn` returns that error, because
+the runner, not the harness, decides what happens next
+([[016-runners]]). A failure inside the harness appends `session.error`
+(`internal`, or `schema_too_new` and `redaction_uncompacted` when the
+fold refuses the log, [[004-session-log]]) and ends the turn idle with
+`error` and that code as `detail`; a canceled context ends it idle with
+`interrupted` and `detail` `canceled`.
 
 ### A turn
 
@@ -135,9 +177,11 @@ turn with `output_limit`.
 
 ### Retries
 
-The request is sent through `retry.Do` with `retry.Policy{MaxAttempts:
-6, Base: 2 * time.Second, Max: 60 * time.Second, Jitter: 0.2}`, and a
+The request is sent under `retry.Policy{MaxAttempts: 6, Base: 2 *
+time.Second, Max: 60 * time.Second, Jitter: 0.2}`, the policy's
+`Attempts` and `Delay` driving the harness's own attempt loop, and a
 provider's `Retry-After` raises a delay and never lowers it.
+`models.Retryable` classifies each failure.
 
 | Retried | Not retried (`retry.Stop`) |
 |---|---|
@@ -145,10 +189,14 @@ provider's `Retry-After` raises a delay and never lowers it.
 
 A retried stream's partial output is discarded and the Observer
 receives a reset for the step. Waiting counts against the turn
-deadline, and a wait that would pass it stops with `turn_limit`. After
-the last attempt the step appends one `model.request` with `outcome`
-`error` and `attempts`, then `session.error` with code `model_error`
-and `retryable` true; every earlier event of the turn stays in the log.
+deadline: a wait that would pass it ends the attempts, and the step
+fails as the error it last saw. After the last attempt, or at a failure
+that is not retried, the step appends one `model.request` with
+`outcome` `error` and `attempts`, then `session.error` with code
+`model_error`, `retryable` as the failure's class, and the HTTP status
+and error type in `detail`; every earlier event of the turn stays in
+the log. A turn whose context is canceled during a request records no
+`model.request` for it and ends `interrupted` with `detail` `canceled`.
 
 ### Tool-call validation
 
@@ -178,13 +226,19 @@ Several `spawn` calls in one step run their threads at once
 
 ### Interrupt
 
-A `user.interrupt` takes effect at the next step boundary, and the
-harness brings the boundary forward: an in-flight model request is
-canceled (its `model.request` has `outcome` `canceled`, no
-`agent.message` is appended, and its partial output is discarded), and
-running calls are canceled through their context. Every canceled call
-still gets a `tool.result`, with outcome `canceled`; `bash` sends its
-process group `SIGTERM` and `SIGKILL` 5 seconds later. Then the turn
+A `user.interrupt` takes effect at the next step boundary. The harness
+sees it at its commit points, where `Log.Append` returns the events
+others appended, and the first boundary check after it ends the turn
+with `interrupted` before another request is sent.
+
+The runner brings the boundary forward by watching the store while a
+turn runs: an in-flight model request is canceled (its `model.request`
+has `outcome` `canceled`, no `agent.message` is appended, and its
+partial output is discarded), and running calls are canceled through
+their context. Every canceled call still gets a `tool.result`, with
+outcome `canceled`; `bash` sends its process group `SIGTERM` and
+`SIGKILL` 5 seconds later. A call whose tool returned before the cancel
+keeps its result; only a call cut short is `canceled`. Then the turn
 stops with `interrupted`.
 
 ### Streaming deltas versus events
@@ -209,25 +263,26 @@ runner forwards deltas to attached clients ([[015-api]]).
 
 | Code | Retryable | Meaning |
 |---|---|---|
-| `model_error` | yes | the model answered with an error after retries, or with one that is not retried; `detail` carries the provider's status and error type |
+| `model_error` | as the failure's class: true after retries of a retryable failure, false for one that is not retried | the model answered with an error after retries, or with one that is not retried; `detail` carries the provider's status and error type |
 | `output_truncated` | yes | three `max_tokens` stops in a row |
-| `internal` | no | a failure of the harness itself; `detail` carries the error |
+| `internal` | no | a failure of the harness itself, for example an instruction blob it cannot read; `message` carries the error |
 
 ### The eight failures of v0.7.0
 
 | # | v0.7.0 behavior | Now | Test |
 |---|---|---|---|
-| 1 | a turn stopped after 16 model calls and reported success with the last preamble as the answer | no step cap; a turn ends only as the stop table says | `TestProbe/no_step_cap`: 200 scripted tool steps, the turn ends `end_turn` after all 200 |
-| 2 | output capped at 4096 tokens; a `max_tokens` stop treated as a normal stop, leaving a `tool_use` with no result | `max_tokens` from the catalog; a `max_tokens` stop continues or fails with `output_limit` and never runs a call | `TestProbe/max_tokens_from_catalog`, `TestProbe/truncated_call_never_runs` |
-| 3 | one transient model error returned an empty turn and discarded every tool call already run | retry with backoff; a failure after retries keeps every earlier event and ends `error` | `TestProbe/transient_error_retried`, `TestProbe/failure_keeps_earlier_events` |
-| 4 | no system prompt: the model was never told its working directory, platform, date or path rules | the harness prompt and the context block on every request | `TestProbe/system_prompt_present` ([[011-instructions-and-skills]]) |
-| 5 | a delegated agent ran in a fresh, empty sandbox and could not read the file its parent wrote | threads share the session's machine | `TestProbe/subagent_reads_parent_file` ([[013-threads-and-subagents]]) |
-| 6 | file tools re-rooted absolute paths; `bash` ran with a fixed `PATH` and `HOME=/tmp` | absolute paths are the machine's own; `bash` has the person's environment on the host | `TestProbe/absolute_paths_not_rerooted`, `TestProbe/bash_has_persons_path` ([[008-tools]], [[009-machines]]) |
-| 7 | a zero model kind silently selected the fake model and reported success | a connection with no base URL is an error; a server role refuses the scripted model | `TestProbe/no_silent_fake_model` ([[007-models]]) |
-| 8 | thinking blocks were dropped, only the system block was cached, and the gateway's cost was discarded | thinking replayed with its signature, rolling cache breakpoints, cost into the meter | `TestProbe/thinking_replayed`, `TestProbe/cost_reaches_budget` ([[007-models]], [[010-context]]) |
+| 1 | a turn stopped after 16 model calls and reported success with the last preamble as the answer | no step cap; a turn ends only as the stop table says | `harness.TestNoStepCap`: 200 tool steps against the stub Lux, the turn ends `end_turn` after all 200 calls ran |
+| 2 | output capped at 4096 tokens; a `max_tokens` stop treated as a normal stop, leaving a `tool_use` with no result | `max_tokens` from the catalog; a `max_tokens` stop continues or fails with `output_limit` and never runs a call | `harness.TestATurnRunsToolsAndEnds` (`max_tokens` is the catalog's 64000), `harness.TestATruncatedCallNeverRuns`, `harness.TestThreeTruncationsEndWithOutputLimit` |
+| 3 | one transient model error returned an empty turn and discarded every tool call already run | retry with backoff; a failure after retries keeps every earlier event and ends `error` | `harness.TestTransientErrorsAreRetried`, `harness.TestAFailureKeepsEarlierEvents` |
+| 4 | no system prompt: the model was never told its working directory, platform, date or path rules | the harness prompt and the context block on every request | `harness.TestATurnRunsToolsAndEnds`, `runner.TestDriveAttachesTheMachineAndRunsATurn` ([[011-instructions-and-skills]]) |
+| 5 | a delegated agent ran in a fresh, empty sandbox and could not read the file its parent wrote | threads share the session's machine | not built ([[013-threads-and-subagents]]) |
+| 6 | file tools re-rooted absolute paths; `bash` ran with a fixed `PATH` and `HOME=/tmp` | absolute paths are the machine's own; `bash` has the person's environment on the host | `harness/tools.TestFileToolsUseMachinePaths`, `machine/host.TestExec` ([[008-tools]], [[009-machines]]) |
+| 7 | a zero model kind silently selected the fake model and reported success | a connection with no base URL is an error; a server role refuses the scripted model | `models.TestConnectionValidate`, `harness.TestNewRefusesAnIncompleteConfig`; the server's refusal is [[007-models]]'s |
+| 8 | thinking blocks were dropped, only the system block was cached, and the gateway's cost was discarded | thinking replayed with its signature, rolling cache breakpoints, cost into the meter | `harness.TestThinkingIsReplayedWithItsSignature`, `harness.TestBreakpointsRollWithTheConversation`, `harness.TestTheBudgetStopsTheTurn` ([[007-models]], [[010-context]]) |
 
-Each probe test is written against the old loop's behavior first and
-fails it; the suite lives in `harness/probe_test.go`.
+Each test fails the old loop's behavior: the step cap, the output cap,
+the lost turn, the missing prompt, the re-rooted path and the dropped
+thinking each make one of its assertions fail.
 
 ## Not in this spec
 
@@ -241,14 +296,22 @@ hooks ([[012-permissions-and-approvals]]); context management
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| The eight failures of v0.7.0 each have a test that fails the old behavior and passes the new | `TestProbe` and its eight subtests | not built |
+| Failures 1 to 4 and 6 to 8 of v0.7.0 each have a test that fails the old behavior and passes the new | the tests of the failures table | built |
+| Failure 5 has a test: a subagent reads the file its parent wrote | `TestSubagentReadsParentFile` ([[013-threads-and-subagents]]) | not built |
 | A grep for a numeric step cap or a default output cap in `harness/` returns nothing | `TestNoFixedLimitsInHarness` | not built |
-| Each row of the stop table ends the turn with its stop reason and appends what the row names, with a scripted model driving each condition | `TestStopReasons`, one subtest per row | not built |
-| Nothing runs before commit point one is durable: an Appender that fails the first batch leaves no call executed on the machine | `TestNoCallRunsBeforeToolUseIsDurable` | not built |
-| A 429 then a 200 is one step with `attempts` 2 and a delay of at least `Retry-After`; a 400 is not retried | `TestRetryHonorsRetryAfter`, `TestClientErrorNotRetried` | not built |
-| An unknown tool and an input failing its schema are answered with `unknown_tool` and `invalid_input` and nothing runs | `TestValidationAnswersWithoutRunning` | not built |
-| A step with three parallel calls and one serial call runs the three concurrently and the serial one alone, and the fold orders the results as the model did | `TestParallelCallsGroupedAndOrdered` | not built |
+| Each row of the stop table ends the turn with its stop reason and appends what the row names | `harness.TestATurnRunsToolsAndEnds` (end_turn), `harness.TestEndOnIdleAndRefusal` (refusal, and `end_on_idle` ending `completed`), `harness.TestConfirmationsAndDenials` (tool_confirmation), `harness.TestClientToolsWaitForTheirResult` (tool_result), `harness.TestATruncatedCallNeverRuns` (a continuation), `harness.TestThreeTruncationsEndWithOutputLimit` (output_limit and `output_truncated`), `harness.TestTheTurnDeadline` (turn_limit), `harness.TestTheBudgetStopsTheTurn` (budget), `harness.TestAnInterruptStopsAtTheNextStep` (interrupted), `harness.TestAFailureKeepsEarlierEvents` (error and `model_error`), `harness.TestAHarnessFailureClosesTheTurn` (error and `internal`) | built |
+| A failure inside the harness or a fold that refuses the log closes the turn idle `error` with its `session.error`, and a cancel closes it idle `interrupted` with `detail` `canceled`; only a failed append returns an error | `harness.TestAHarnessFailureClosesTheTurn`, `harness.TestATurnRefusesALogItCannotFold`, `harness.TestACancelDuringACallIsCanceled`, `harness.TestALostLeaseStopsTheTurn` | built |
+| Nothing runs before commit point one is durable: a Log that fails the first batch leaves no call executed on the machine | `TestNoCallRunsBeforeToolUseIsDurable` | not built |
+| A 529 twice then a response is one step with `attempts` 3; a 400 is not retried and its `session.error` is not retryable; `Retry-After` is read as seconds and as a date; a retry wait that would pass the turn deadline ends the attempts | `harness.TestTransientErrorsAreRetried`, `harness.TestAFailureKeepsEarlierEvents`, `models/dialect.TestErrorsAreClassifiedForRetry`, `harness.TestTheTurnDeadline` | built |
+| An unknown tool and an input failing its schema are answered with `unknown_tool` and `invalid_input`, get no `agent.tool_use`, and nothing runs | `harness.TestInvalidCallsAreAnsweredWithoutRunning`, `harness/tools.TestSchemaValidates`, `harness/tools.TestCompileSchemaRefuses` | built |
+| A step with three parallel calls and one serial call runs the three concurrently and the serial one alone | `TestParallelCallsGroupedAndOrdered` | not built |
+| The results of a step's calls reach the next request in the model's `tool_use` order | `harness.TestATurnRunsToolsAndEnds` | built |
+| An interrupt appended while a step runs ends the turn `interrupted` at the next boundary, and no further request is sent | `harness.TestAnInterruptStopsAtTheNextStep` | built |
 | An interrupt during a streaming response cancels it, appends no `agent.message`, and ends `interrupted`; an interrupt during a 60 second `bash` ends within 6 seconds with a `canceled` result | `TestInterruptCancelsStream`, `TestInterruptCancelsRunningCall` | not built |
+| A call whose tool returned before a cancel keeps its result | `harness.TestACancelDuringACallIsCanceled` | built |
+| Input a person appends after the turn's last request was built is reported as `Outcome.Pending`, and the runner starts the next turn from it | `runner.TestDriveContinuesWhileInputIsPending` | built |
 | A fresh harness given the log of a turn stopped after any commit point continues it with the same next request bytes as the original harness | `TestResumeFromLogOnFreshHarness` | not built |
-| Deltas reach the Observer and never appear in the log | `TestDeltasAreNotAppended` | not built |
-| The turn wall clock takes the lowest of agent, session and authorizer limits and ends `turn_limit` | `TestTurnLimitTakesTheLowest` | not built |
+| Deltas reach the Observer, and a retried request sends one reset | `harness.TestObserverSeesDeltasAndResets` | built |
+| Deltas never appear in the log | `TestDeltasAreNotAppended` | not built |
+| A turn past its wall-clock limit ends `turn_limit` at the next boundary | `harness.TestTheTurnDeadline` | built |
+| The turn wall clock takes the lowest of agent, session and authorizer limits | `TestTurnLimitTakesTheLowest` | not built |

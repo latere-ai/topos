@@ -174,7 +174,7 @@ appending and the session stays `running` until the next runner's claim
 | `user.tool_result` | a client | yes | `sender`, `tool_use_id`, `content`, `is_error` |
 | `agent.message` | the runner | yes | `message` (the Lux wire message, role `assistant`, every block verbatim, thinking and its signature included), `stop_reason` (the IR's: `end_turn`, `tool_use`, `max_tokens`, `stop_sequence`, `refusal`), `request` (the `model.request` event id), `truncated`, `continuation_of` |
 | `agent.tool_use` | the runner | no | `tool_use_id`, `name`, `input`, `risk` (`score`, `source`, `features`), `verdict`, `reason`, `mode`, `client`, `repeatable`; verdicts, sources and modes are [[012-permissions-and-approvals]]'s |
-| `tool.result` | the runner | yes | `tool_use_id`, `content`, `is_error`, `outcome`, `duration_ms`, `spill` (`path`, `bytes`); outcomes are [[008-tools]]'s |
+| `tool.result` | the runner | yes | `tool_use_id`, `content`, `is_error`, `outcome`, `duration_ms`, `spill` (`path`, `bytes`), `meta` (the tool's record for later calls of the thread: `{path, sha256}` for `read`, `write` and `edit`, `{dir, exit_code}` for `bash`, `{todos}` for `todo`; not rendered); outcomes and meta are [[008-tools]]'s |
 | `thread.started` | the runner | yes, in the new thread | `agent` (`id`, `name`, `version`, `digest`), `parent` (thread id, absent for the session's thread), `tool_use_id`, `task`, `isolation` (`shared` or `worktree`), `branch`, `workdir`, `depth`, `model`, `tools`, `budget` ([[013-threads-and-subagents]]) |
 | `thread.ended` | the runner | no | `reason` (`completed`, `failed`, `canceled`), `final_text`, `usage`, `cost_usd_micro` |
 | `thread.message` | the runner | yes, in the receiving thread | `from`, `to` (thread ids, absent for the session's thread), `from_name` (the sending thread's agent name), `content`, `tool_use_id` |
@@ -272,10 +272,12 @@ harness reads the blobs and renders every part into system blocks
      `truncated`, a `tool_use` block with no `agent.tool_use` event is
      dropped, and a user text block `Your previous response was cut
      off at the output limit. Continue from where it stopped.`
-     follows.
+     follows. An assistant message left with no blocks renders
+     nothing.
    - `tool.result` and `user.tool_result`: a `tool_result` block in
      the user message after the step's assistant message, ordered by
-     the assistant message's `tool_use` order, not by `seq`.
+     the assistant message's `tool_use` order, not by `seq`. A result
+     that no rendered `tool_use` names is dropped.
    - `thread.started`: a user message of its `task`, in the thread it
      opened.
    - `thread.message`: a user message led by
@@ -284,7 +286,9 @@ harness reads the blobs and renders every part into system blocks
      in `from_seq..to_seq` are replaced by one user message
      `Summary of the conversation so far:` followed by the summary. A
      later summary whose range overlaps an earlier one supersedes it,
-     and the replaced range is the union of the two.
+     and the replaced range is the union of the two. A summary whose
+     range holds no event of the thread's view renders at the first
+     view event after its range, or at the end.
    - `context.compacted` `clear_tool_results`: the content of each
      named `tool_result` becomes the text `[cleared to save context;
      run the tool again if the result is needed]`.
@@ -333,7 +337,16 @@ directory store here, Postgres ([[014-store]]), the `client` Store
 | `redaction_uncompacted` | the fold met a redacted event no summary covers |
 | `schema_too_new` | the fold met an event type this build does not know |
 | `ErrLocked` | another holder has the session's lease |
-| `ErrCorrupt` | the stored sequence has a gap or a repeat |
+| `ErrCorrupt` | the stored sequence has a gap or a repeat, a batch marker miscounts, or an undecodable line is followed by a closed batch |
+| `ErrNotFound` | no such session, event or blob |
+| `ErrExists` | a create names a session that exists |
+| `ErrInvalid` | a session or an event fails validation |
+| `ErrBlobMismatch` | a blob's bytes do not hash to its digest |
+| `ErrBadID` | an id without its prefix or not in the ULID form |
+| `ErrUnsupported` | the platform has no lock the store can take |
+
+`Transcript.Check` returns the `schema_too_new` error when the fold
+reported unknown types, so a caller refuses such a log in one call.
 
 ### The directory store
 
@@ -353,7 +366,9 @@ sessions/<ses_id>/
 | put a blob | write `blobs/sha256/<hex>.tmp`, fsync it, rename, fsync `blobs/sha256/`; before any event naming it |
 | append a batch | one `write` of every line, then fsync `events.jsonl`; the append is acknowledged only after the fsync |
 | a batch carrying `session.status` | then write `session.json.tmp`, fsync, rename over `session.json`, fsync the session directory |
-| create | the directory, `session.json`, the blobs, then fsync the parent directory |
+| create | the whole session written into `sessions/.<id>.creating`, then renamed into place and the parent directory fsynced, so a failed create leaves no partial session |
+| redact | `events.jsonl` rewritten to a temporary file, fsynced, renamed over the log, and the directory fsynced |
+| delete | the directory renamed to `sessions/.<id>.<ulid>.deleting`, then removed |
 
 The harness appends in batches that match [[005-harness-loop]]'s
 commit points: a step's `model.request`, `agent.message` and
@@ -361,14 +376,17 @@ commit points: a step's `model.request`, `agent.message` and
 its call returns, and each `session.status`.
 
 The lock is the file `lock`, held with `flock(LOCK_EX|LOCK_NB)` on
-Unix and `LockFileEx` on Windows for as long as a runner drives a turn;
+Unix and `LockFileEx` on Windows for as long as a runner drives a turn
+(a build whose platform has no lock implementation refuses to take one
+with `ErrUnsupported`);
 the holder writes `{"pid","host","runner","acquired_at"}` into it for
 diagnosis only, and the operating-system lock is the truth, released
 when the process exits for any reason. An idle session holds no lock.
-`Append` takes the lock for its batch: the store's own lease when it
-holds one, otherwise a transient non-blocking lock released after the
-write, so a second process that appends while a runner drives a turn
-gets `ErrLocked`. Readers take none.
+`Append`, `Redact` and `Delete` take the lock for their call: the
+store's own lease when it holds one, otherwise a transient non-blocking
+lock released after the write, so a second store instance or process
+that writes while a runner drives a turn gets `ErrLocked`. Readers take
+none.
 
 `session.json` records the `last_seq` it was written at. `Get` applies
 the events after that sequence, so `turn`, `last_seq` and `updated_at`
@@ -402,13 +420,16 @@ store's other backends ([[014-store]]); the routes that expose the log
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A recorded log of every event type folds to byte-identical Transcripts across two runs, on the directory store and on the in-memory store | `TestFoldIsByteIdenticalAcrossStores` over the golden logs in `session/testdata/fold/` | built |
-| The fold renders each type as the table says: tool results ordered by the assistant message, a truncated message's incomplete `tool_use` dropped, a summary replacing its range, cleared results replaced | `TestFoldRendersEveryType` with one golden transcript per rule | built |
-| An event is never rewritten after append; redaction keeps id, sequence and type, tombstones the payload, deletes only that event's blobs, and the fold refuses the redacted event until a summary covers it | the `AppendedEventIsNeverRewritten` and `Redact` cases of `session/storetest`, and the `redacted_uncompacted` and `redacted_and_summarized` golden logs of `TestFoldRendersEveryType` | built |
-| An append whose `after_seq` is not the last sequence is `sequence_conflict`; a retried accepted batch with the same event ids succeeds without a duplicate | the `AppendRejectsStaleSequence` and `AppendRetryIsIdempotent` cases of `session/storetest` | built |
-| A crash between write and fsync leaves a torn line or a partial batch that the next lock holder truncates to the last closed batch, readers never see, and no acknowledged event is lost | `TestDirStoreTruncatesTornTail`, and `TestDirStoreCrashAtEachDurabilityPoint`, which stops a child process at each durability point | built |
-| A second process that tries to take a held session's lock gets `ErrLocked` naming the holder, and gets the lock once the holder process is killed | `TestDirStoreSingleWriterLock` across two processes | built |
-| The Session's `status` always equals the last `session.status` event, including after a crash between the two writes | `TestSessionStatusMirrorsTheLog` | built |
-| An unknown event type is kept, is not rendered, and makes a runner refuse with `schema_too_new` | the `UnknownTypeIsKept` case of `session/storetest`, and the `unknown_type` golden log | built |
-| The directory store and the in-memory store pass `session/storetest` | `TestDirStoreConformance`, `TestMemoryStoreConformance` | built |
-| Every id the package mints matches its prefix and the ULID form, and a thread's id is its `thread.started` event id | `TestIdentifiersArePrefixedULIDs` | built |
+| A recorded log of every event type folds to byte-identical Transcripts across two runs, on the directory store and on the in-memory store | `session.TestFoldIsByteIdenticalAcrossStores` over the golden logs in `session/testdata/fold/` | built |
+| The fold renders each type as the table says: tool results ordered by the assistant message, a truncated message's incomplete `tool_use` dropped, a summary replacing its range, cleared results replaced, senders, interrupts, threads and messages, system parts, a rewind | `session.TestFoldRendersEveryType`, one golden transcript per rule; `session.TestFoldIsPure`, `session.TestFoldRejectsMalformed` | built |
+| An event is never rewritten after append; redaction keeps id, sequence and type, tombstones the payload, deletes only that event's blobs, and the fold refuses the redacted event until a summary covers it | the `AppendedEventIsNeverRewritten` and `Redact` cases of `session/storetest.Run`, and the `redacted_uncompacted` and `redacted_and_summarized` golden logs of `session.TestFoldRendersEveryType` | built |
+| An append whose `after_seq` is not the last sequence is `sequence_conflict`; a retried accepted batch with the same event ids succeeds without a duplicate | the `AppendRejectsStaleSequence` and `AppendRetryIsIdempotent` cases of `session/storetest.Run` | built |
+| A crash between write and fsync leaves a torn line or a partial batch that the next lock holder truncates to the last closed batch, readers never see, and no acknowledged event is lost | `session/dir.TestDirStoreTruncatesTornTail`, and `session/dir.TestDirStoreCrashAtEachDurabilityPoint`, which stops a child process at each durability point | built |
+| A batch marker that miscounts, and a gap or a repeat in the sequence, are `ErrCorrupt` | `session/dir.TestABatchMarkerThatMiscountsIsCorrupt`, `session/dir.TestDirStoreRefusesCorruptSequence` | built |
+| A second process that tries to take a held session's lock gets `ErrLocked` naming the holder, and gets the lock once the holder process is killed; a second store instance that writes while another holds the lease is locked out | `session/dir.TestDirStoreSingleWriterLock` across two processes, `session/dir.TestDirStoreSecondInstanceIsLockedOut` | built |
+| A create that fails leaves no partial session, and every failed write and sync is returned | `session/dir.TestDirStoreCreateIsAllOrNothing`, `session/dir.TestCreateLeavesNoPartialSessionWhenABlobFails`, `session/dir.TestWriteFailuresAreReturned`, `session/dir.TestEveryFailedSyncIsReturned` | built |
+| The Session's `status` always equals the last `session.status` event, including after a crash between the two writes | `session/dir.TestSessionStatusMirrorsTheLog` | built |
+| An unknown event type is kept, is not rendered, and makes a runner refuse with `schema_too_new` | the `UnknownTypeIsKept` case of `session/storetest.Run`, the `unknown_type` golden log, `session.TestTranscriptCheck`, and `harness.TestATurnRefusesALogItCannotFold` | built |
+| The directory store and the in-memory store pass `session/storetest` | `session/dir.TestDirStoreConformance`, `session.TestMemoryStoreConformance` | built |
+| Every id the package mints matches its prefix and the ULID form, and a thread's id is its `thread.started` event id | `session.TestIdentifiersArePrefixedULIDs`; the `threads_and_messages` golden log of `session.TestFoldRendersEveryType` | built |
+| The directory store takes its lock on Windows | `TestDirStoreLockOnWindows` | not built |
