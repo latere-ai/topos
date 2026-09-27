@@ -112,7 +112,7 @@ role; without one the binary serves.
 | `token` | `TOPOS_PUBLIC_URL`, `TOPOS_LOCAL_ISSUER_KEY`, `TOPOS_OIDC_AUDIENCE` | signs one API token with the local issuer's key, prints it, exits; opens no store | [[006-identity]] |
 
 Until the spec that builds a role lands, the role prints one line
-`toposd: <role>: not built; see specs/<NNN-name>.md` on stderr and
+`toposd: <role> is not built yet; spec <NNN> builds it` on stderr and
 exits 1. An unknown role is a usage error.
 
 | Exit code | Meaning |
@@ -138,7 +138,7 @@ The probes are `latere.ai/x/pkg/health`.
 | GET | `/livez` | 200 `ok`, touches no dependency |
 | GET | `/readyz` | 200 `ok` when every check passes; 503 `not ready: <check>: <error>` otherwise; `not ready: draining: shutting down` during shutdown |
 | GET | `/version` | `{"version","commit","build_time"}` from `internal/version` |
-| GET | `/metrics` | the metrics registry in the Prometheus text format; internal listener only |
+| GET | `/metrics` | the metrics registry in the Prometheus text format; internal listener only ([[023-events-and-observability]]) |
 
 Readiness runs `draining` and `store` with a 2 second budget. A model
 provider, Cella or the git host being unreachable never fails
@@ -147,16 +147,19 @@ replica that cannot reach one serves every session that does not.
 
 ### Shutdown
 
-On `SIGTERM` or `SIGINT`: readiness answers 503 at once; the process
-waits a 3 second drain delay; the in-process runners stop claiming and
-each running session is brought to its next step boundary within a 60
-second drain grace, its events appended and its lease released. A tool
-call still running at the end of the grace is canceled and its
-`tool.result` records the cancellation ([[016-runners]]), so no step is
-left without a result by a clean shutdown. Event streams to clients
-close; a client reconnects from its last sequence. The HTTP servers
-then close with a 10 second grace. A Deployment sets
-`terminationGracePeriodSeconds` to 90.
+On `SIGTERM` or `SIGINT`: readiness answers 503 at once and the
+in-process runners stop. A session in the middle of a turn is left
+where it stands, as [[016-runners]] defines for a server that stops
+mid-turn: its log is fenced so nothing more is appended, its lease is
+released, and it stays `running`, so the next runner's claim resumes it
+from the log with recovery instead of the turn being closed as
+interrupted. The process waits a 3 second drain delay so a load
+balancer stops routing to it, then the HTTP servers close, waiting up
+to a 60 second grace for the requests in flight; an event stream still
+open at the end of the grace ends with the process, and a client
+reconnects from its last sequence. The `runner` role stops its runners
+the same way and closes its probe listener with no drain delay. A
+Deployment sets `terminationGracePeriodSeconds` to 90.
 
 ### Configuration
 
@@ -259,12 +262,12 @@ column); the routes ([[015-api]]).
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `toposd -version` prints the identity and exits 0; an unknown role and a bad flag exit 2 | `TestVersionFlagPrintsTheIdentity`, `TestUnknownRoleIsAUsageError`, `TestBadFlagIsAUsageError` | not built |
-| `toposd runner` and `toposd check` each exit 1 with one line naming their spec until that spec lands; `toposd token` is built ([[006-identity]]) | `TestUnbuiltRoleNamesItsSpec` | not built |
-| A configuration with two problems fails with one line sorted by variable name, exit 1 | `TestLoadReportsEveryProblemInOneSortedMessage` | not built |
-| Every variable in the table is read, every unset variable takes its default, and a blank value is unset | `TestLoadReadsEveryVariable`, `TestLoadAppliesEveryDefault`, `TestLoadTreatsBlankAsUnset` | not built |
-| `TOPOS_AUTHORIZER_URL` without its token, and `TOPOS_EVENTS_URL` without its secret, are start-up failures | `TestLoadRefusesURLWithoutItsSecret` | not built |
-| The two listeners serve the probes; `/metrics` is on the internal listener only; the same address for both is refused | `TestProbesOnBothListeners`, `TestMetricsInternalOnly`, `TestLoadRefusesOneSocketForBothListeners` | not built |
-| On SIGTERM readiness answers 503 at once and the process exits 0 within the drain grace with no session left mid-step | `TestSigtermDrains` | not built |
-| The variable table in this spec and the variables the binaries and the test tiers read (`internal/config` for the server roles, `internal/toposcli` for `TOPOS_URL` and `TOPOS_TOKEN`, the conformance suite for `TOPOS_TEST_URL`) are the same set | `TestConfigurationTableMatchesTheSpec` | not built |
-| The gate passes on the scaffold: the family gate's first green run | the `gate` job of `verify.yml` | not built |
+| `toposd -version` prints the identity and exits 0; an unknown role and a bad flag exit 2 | `cmd/toposd.TestVersionFlagPrintsTheIdentityAndExitsZero`, `cmd/toposd.TestUnknownSubcommandIsAUsageError`, `cmd/toposd.TestBadFlagIsAUsageError` | built |
+| `toposd check` exits 1 with one line naming its spec until [[028-release-and-installation]] lands; `toposd runner` ([[016-runners]]) and `toposd token` ([[006-identity]]) are built | `cmd/toposd.TestRolesNotBuiltYetExitOneNamingTheirSpec` | built |
+| A configuration with two problems fails with one line sorted by variable name, exit 1 | `internal/config.TestEveryProblemIsReportedAtOnceAndSorted`, `cmd/toposd.TestBadConfigurationExitsOneWithOneLine` | built |
+| Each variable this spec owns is read, takes its default when unset, and a blank value is unset | `internal/config.TestLoadReadsTheVariables`, `internal/config.TestLoadAppliesDefaults`, `internal/config.TestBlankIsTheDefault` | built |
+| `TOPOS_AUTHORIZER_URL` without its token is a start-up failure | `internal/config.TestTheIdentityProblems` | built |
+| The two listeners serve the probes, and the same address for both is refused | `cmd/toposd.TestServeAnswersTheProbesOnBothListenersAndStopsCleanly`, `internal/config.TestTheTwoListenersMustDiffer` | built |
+| On SIGTERM readiness answers 503 before the listeners close, the in-process runners stop, a session in the middle of a turn stays `running` with nothing appended after the stop and its lease released for the next claim, and the process exits 0 | `cmd/toposd.TestSigtermLeavesARunningSessionToTheNextClaim`, `runner.TestAServedDriveLeavesItsSessionToTheNextRunner` | built |
+| Every variable the server roles (`internal/config`), the `topos` command (`internal/toposcli`) and the conformance suite (`test/conformance`) read is in the table, and every variable the table gives to this spec is read; each owning spec's acceptance proves its own variables are read | `internal/config.TestConfigurationTableMatchesTheSpec` | built |
+| The gate passes on the scaffold: the family gate's first green run | the `gate` job of `.github/workflows/verify.yml`, green on `main` | built |
