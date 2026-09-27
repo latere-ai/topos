@@ -11,6 +11,10 @@ cover:
       never takes. The stores it runs against carry the floor.
 
 spec:
+  index: specs/README.md
+  vocabulary:
+    track: [core]
+    effort: [small, medium, large, xlarge]
   archive:
     dir: .archive
     statuses: [complete, superseded]

@@ -1,0 +1,201 @@
+---
+title: "Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule"
+status: drafted
+track: core
+depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
+affects: [harness/tools/, harness/tools/descriptions/, test/tasks/instructions/]
+effort: large
+created: 2026-09-27
+updated: 2026-09-27
+author: changkun
+---
+
+# Tools
+
+## Overview
+
+A tool is a definition the model sees (a name, a description and a
+JSON Schema for its input), properties the harness reads, and code that
+acts through the session's machine. This spec owns the `Tool`
+interface, the registry, the built-in set (`read`, `write`, `edit`,
+`bash`, `grep`, `glob`, `web_fetch`, `todo`), client-executed tools,
+how paths resolve, the output cap and spill files, the outcomes a
+result can carry, and the rule that a call with no result is never run
+again. Each description is a file that an instruction test measures.
+
+## Current state
+
+v0.7.0 spec 001 shipped `bash`, `read_file`, `write_file`,
+`edit_file`, `grep` and `glob`; v0.7.0 spec 031 selected them by
+family (`read`, `write`, `exec`) and made the offered registry and the
+dispatch agree, which [[013-threads-and-subagents]] keeps as narrowing.
+Two probe failures were here: the file tools promised absolute paths
+and the local sandbox re-rooted them, and `bash` ran with a fixed
+`PATH` and `HOME=/tmp`, so `go` was not found. No tool capped its
+output and no description was ever measured.
+
+## Design
+
+### The interface
+
+```go
+type Tool interface {
+	Definition() Definition // Name, Description, InputSchema
+	Properties() Properties
+	Run(ctx context.Context, c Call) (Result, error)
+}
+
+type Properties struct {
+	Parallel    bool   // may run beside other parallel calls in a step
+	Repeatable  bool   // built-ins only; see the repeat rule
+	Effect      Effect // EffectNone, EffectRead, EffectWrite, EffectExternal
+	Client      bool   // executed by the client, not the runner
+	OutputLimit int    // bytes; 0 means the default
+}
+```
+
+A `Call` carries the `tool_use` id, the validated input, the machine,
+the thread's fold (read only), and a spill writer. `Run` returns
+content blocks, an error flag and an outcome; a Go error is reserved
+for a failure of the harness and becomes the outcome `error` with the
+message. `Effect` is the input to [[012-permissions-and-approvals]]'s
+risk features: `read` and `none` stay on the machine and change
+nothing, `write` changes the machine, `external` reaches outside it.
+
+### The built-in set
+
+| Name | Parallel | Effect | Input | Limits |
+|---|---|---|---|---|
+| `read` | yes | read | `path`, `offset` (first line, from 1), `limit` (lines, default 2000) | lines over 2000 characters are cut; PNG, JPEG, GIF and WebP up to 5 MiB return an image block; a binary file or a directory is an error |
+| `write` | no | write | `path`, `content` | creates parent directories; an existing file must have been read or written by this thread at its current content |
+| `edit` | no | write | `path`, `old_string`, `new_string`, `replace_all` (default false) | `old_string` must occur exactly once unless `replace_all`; the same current-content rule as `write` |
+| `bash` | no | write | `command`, `timeout_ms` (default 120000, at most 600000), `background` (default false), `description` | stdout and stderr combined in order, the exit code; on timeout the process group is killed |
+| `grep` | yes | read | `pattern` (RE2), `path`, `glob`, `output_mode` (`files_with_matches` default, `content`, `count`), `context` (lines), `case_insensitive`, `multiline`, `head_limit` (default 250) | honors `.gitignore`, skips `.git` and binary files |
+| `glob` | yes | read | `pattern` (`**` matches any depth), `path` | newest first by modification time, at most 1000 paths |
+| `web_fetch` | yes | external | `url` (`http` or `https`) | 30 second timeout, 5 redirects, 10 MiB read; HTML converted to text |
+| `todo` | yes | none | `todos`: a list of `{id, content, status}`, status `pending`, `in_progress` or `completed` | replaces the thread's list; at most 100 items |
+
+`grep` and `glob` are Go-native and need no external binary. The
+current-content rule of `write` and `edit` reads the log, not memory:
+each `read`, `write` and `edit` result records the file's `sha256` in
+its meta, and a write proceeds only when the file's current hash
+equals the last one this thread recorded for that path, or the file
+does not exist. Otherwise the result is
+`<path> changed since it was last read; read it again before writing.`
+
+`bash` keeps a persistent working directory: each result records the
+shell's final directory, taken with `pwd -P` written to a separate file
+descriptor so output is not mixed, and the next `bash` call of the
+thread starts there, read from the log. Environment variables do not
+persist between calls. A `background` call starts the command detached
+in its own process group, writes its output to a job log in the spill
+directory, and returns at once with the pid and the log's path; the
+model reads the log with `read` and stops the job with `bash`. The
+machine kills background jobs when the session ends.
+
+`web_fetch` runs inside the machine's network boundary, never from the
+runner's own network: on the host in the harness process under the host
+sandbox's network rule ([[012-permissions-and-approvals]]), on a Cella
+machine as a command in the sandbox, whose egress Cella's gateway
+decides.
+
+Memory sync is a built-in tool too, `memory_sync`, defined with its
+stores in [[020-memory-stores]]; threads use `spawn`, `message` and
+`advisor` from [[013-threads-and-subagents]].
+
+### Client-executed tools
+
+An agent may declare a tool with `client: true` ([[003-manifest]]): a
+name, a description and an input schema, and no code in the runner.
+The harness validates and scores its calls like any other, appends the
+`agent.tool_use` with `client` true, and stops idle with `tool_result`;
+the client appends `user.tool_result` for each, and the turn resumes.
+Nothing times out: the wait is durable.
+
+### Paths
+
+Every path is the machine's own. An absolute path is used as given and
+is never re-rooted. A relative path resolves against the session's
+working directory for the file tools, and against the persistent
+directory for `bash`. The host confines the file tools to the roots of
+[[009-machines]]; a path outside them is refused with
+`<path> is outside the working directory.`
+
+### Output cap and spill files
+
+A result's text is capped at the tool's output limit, 32 KiB by
+default and set per tool in the agent's `spec.tools[].outputLimit`
+([[003-manifest]]). Past the cap, the whole output is written to a file
+in the machine's spill directory, which is outside the working
+directory so that checkpoints and git never see it and the file tools
+can read it, and the result carries the first 20 KiB, the line
+`[... <n> bytes omitted; the full output is in <path> ...]`, and the
+last 10 KiB. The `tool.result` records `spill` with the path and the
+full size.
+
+### Outcomes
+
+| Outcome | Is error | Meaning |
+|---|---|---|
+| `ok` | no | the tool ran and succeeded; `bash` with a non-zero exit is `ok` with the code in the text |
+| `error` | yes | the tool ran and failed |
+| `timeout` | yes | the call passed its timeout and was killed |
+| `unknown_tool` | yes | no such tool ([[005-harness-loop]]) |
+| `invalid_input` | yes | the input did not match the schema ([[005-harness-loop]]) |
+| `denied` | yes | a person denied the call; the note is in the text |
+| `blocked` | yes | the verdict was block; the reason is in the text |
+| `canceled` | yes | an interrupt or a shutdown canceled the call while it ran |
+| `unknown_effect` | yes | the runner stopped while the call ran; the text says its effects are unknown and to inspect the machine |
+
+Result text is written for the model: what happened, in one or two
+sentences, and what to do next when there is something to do.
+
+### The repeat rule
+
+A call whose `agent.tool_use` is durable and whose `tool.result` is
+not is never run again. A resumed runner closes it with
+`unknown_effect` ([[016-runners]]) and the model inspects the machine,
+which it does well (`git status`, reading the files it was writing).
+`Repeatable` is the one exception and is a property of built-ins that
+are idempotent by construction; the only one is `memory_sync`, whose
+writes carry version preconditions. There is no effect classification
+for tool authors, and MCP and custom tools are never repeated: the
+registry refuses to register a non-built-in with `Repeatable` set.
+
+### Descriptions and instruction tests
+
+Each built-in's description is the file
+`harness/tools/descriptions/<name>.md`, embedded in the build. Every
+description has at least one instruction test in
+`test/tasks/instructions/<name>/`: a small task whose checker passes
+only when the model used the tool as the description says (an `edit`
+with a unique `old_string`, a `grep` with `output_mode` `content`, a
+`bash` call that uses `background` for a server). The tests run against
+a real model in the task suite's instruction tier ([[025-task-suite]]);
+a change to a description ships with the tier's result for that tool.
+
+## Not in this spec
+
+Validation, grouping of parallel calls and cancellation
+([[005-harness-loop]]); verdicts and the host's network rule
+([[012-permissions-and-approvals]]); the machine's file and exec
+routes, the credential deny-list and the environment
+([[009-machines]]); `memory_sync` ([[020-memory-stores]]); MCP tools
+([[021-mcp-servers]]); `spawn`, `message` and `advisor`
+([[013-threads-and-subagents]]).
+
+## Acceptance criteria
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| An absolute path inside the working directory is read and written as given, never re-rooted | `TestProbe/absolute_paths_not_rerooted`, `TestFileToolsUseMachinePaths` | not built |
+| `write` and `edit` refuse a file changed since this thread last read it, with the hash taken from the log, and a fresh harness enforces the same rule | `TestWriteRequiresCurrentContent` | not built |
+| `edit` refuses an `old_string` that occurs zero or two times without `replace_all` | `TestEditRequiresUniqueMatch` | not built |
+| `bash` keeps its directory between calls across a harness restart, keeps no variable, and kills its process group on timeout | `TestBashPersistentDirectory`, `TestBashTimeoutKillsGroup` | not built |
+| A `background` command returns at once with a pid and a log path, keeps running across steps, and is killed at session end | `TestBashBackgroundJob` | not built |
+| `grep` and `glob` pass their suites in the hermetic tier with only the Go toolchain on `PATH` | `TestGrepNeedsNoBinary`, `TestGlobNeedsNoBinary` | not built |
+| An output of 100 KiB is spilled: the result carries 20 KiB of head, the omission line and 10 KiB of tail, and the spill file holds all 100 KiB outside the working directory | `TestOutputSpill` | not built |
+| `web_fetch` on a Cella machine runs inside the sandbox and never from the runner's network | `TestWebFetchRunsInsideTheMachine` | not built |
+| A client-executed tool stops the turn with `tool_result` and resumes on `user.tool_result` | `TestClientToolRoundTrip` | not built |
+| Registering a non-built-in tool with `Repeatable` fails | `TestOnlyBuiltinsAreRepeatable` | not built |
+| Every built-in's description file has at least one instruction test directory | `TestEveryToolDescriptionHasAnInstructionTest` | not built |
