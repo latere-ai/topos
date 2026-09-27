@@ -403,7 +403,7 @@ func (s *Store) Watch(ctx context.Context, id string, fromSeq uint64) (<-chan se
 	}
 	// The watcher is registered before the replay reads, so an append
 	// that commits after the read began still wakes it.
-	w := s.listener.subscribe(id)
+	w := s.listener.subscribe(ctx, id)
 	out := make(chan session.Event)
 	go func() {
 		defer close(out)

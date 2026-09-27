@@ -69,9 +69,10 @@ func newListener(cfg *pgx.ConnConfig, log *slog.Logger) *listener {
 }
 
 // subscribe registers a watcher of session id and starts the connection
-// when it is the first. A subscription after stop registers a watcher
-// that no notification wakes; its poll finds the store closed.
-func (l *listener) subscribe(id string) *watcher {
+// when it is the first; the connection outlives ctx, whose values it
+// keeps. A subscription after stop registers a watcher that no
+// notification wakes; its poll finds the store closed.
+func (l *listener) subscribe(ctx context.Context, id string) *watcher {
 	w := &watcher{wake: make(chan struct{}, 1)}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -80,7 +81,7 @@ func (l *listener) subscribe(id string) *watcher {
 	}
 	l.watchers[id][w] = struct{}{}
 	if l.cancel == nil && !l.stopped {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		l.cancel, l.done = cancel, make(chan struct{})
 		go l.run(ctx)
 	}
