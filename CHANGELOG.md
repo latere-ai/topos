@@ -265,6 +265,17 @@ committed: the commit log already holds that.
   agent may do more than the person starting it.
 - The directory store takes its single-writer lock on Windows with
   `LockFileEx`, as it does with `flock` on Unix.
+- `topos` builds for Windows. On a Windows host each command runs in a Job
+  Object of its own, which a timeout, a cancel or the session's end
+  terminates with every process the command started; a cancel ends the
+  command at once, since Windows has no SIGTERM. Commands run under `sh`
+  on `PATH`, or the `sh.exe` of Git for Windows beside `git`, and are
+  refused with that remedy when there is neither. A Windows host records
+  `sandbox: none`, since it has no host sandbox, and a session there that
+  asks for `progressive` is refused with `sandbox_unavailable`; `plan`
+  and `confirm` run. With `HOME` unset, `USERPROFILE` places the data and
+  configuration directories and the credential deny-list. `toposd` with
+  `TOPOS_HOST_SESSIONS=on` refuses to start on Windows.
 
 ## v0.7.0 - 2026-09-26
 
