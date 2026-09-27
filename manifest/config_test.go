@@ -139,6 +139,9 @@ func TestAgentConfigCarriesTheHarnessPieces(t *testing.T) {
 	if _, err := (Resolved{Kind: v1.KindTrigger, Name: "t"}).AgentConfig(nil); err == nil {
 		t.Fatal("a trigger has an agent config")
 	}
+	if _, err := (Resolved{Kind: v1.KindAgent, Name: "raw", Agent: &v1.Agent{}}).AgentConfig(nil); err == nil || !strings.Contains(err.Error(), "not a resolved spec") {
+		t.Fatalf("an unresolved spec: %v", err)
+	}
 	broken := r
 	broken.Pinned = nil
 	if _, err := broken.AgentConfig(nil); err == nil || !strings.Contains(err.Error(), "does not carry") {

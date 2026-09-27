@@ -62,6 +62,9 @@ func (r Resolved) AgentConfig(connect Connect) (AgentConfig, error) {
 		return AgentConfig{}, fmt.Errorf("manifest: %s %s is not an Agent", r.Kind, r.Name)
 	}
 	s := r.Agent.Spec
+	if !defaulted(s) {
+		return AgentConfig{}, fmt.Errorf("manifest: %s is not a resolved spec: its fixed defaults are not written out", r.Name)
+	}
 	overlay, err := Overlay(s.Model)
 	if err != nil {
 		return AgentConfig{}, err
@@ -91,6 +94,15 @@ func (r Resolved) AgentConfig(connect Connect) (AgentConfig, error) {
 		return AgentConfig{}, err
 	}
 	return c, nil
+}
+
+// defaulted reports whether the fields AgentConfig reads through
+// pointers carry the values Resolve writes, as they do in every resolved
+// spec and bundle.
+func defaulted(s v1.AgentSpec) bool {
+	t := s.Approvals.Thresholds
+	return s.Threads.MaxDepth != nil && s.Threads.MaxConcurrent != nil && s.Context.CompactAt != nil &&
+		t.FlagAt != nil && t.AskAt != nil && t.BlockAt != nil
 }
 
 // Overlay is the catalog overlay of a spec.model: the figures it gives,
