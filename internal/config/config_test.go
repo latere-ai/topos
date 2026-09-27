@@ -51,12 +51,12 @@ func TestLoadReadsTheVariables(t *testing.T) {
 }
 
 func TestBlankIsTheDefault(t *testing.T) {
-	c, err := Load(RoleServe, serve(map[string]string{"TOPOS_PUBLIC_ADDR": "  "}))
+	c, err := Load(RoleServe, serve(map[string]string{"TOPOS_PUBLIC_ADDR": "  ", "TOPOS_INTERNAL_ADDR": "\t"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PublicAddr != DefaultPublicAddr {
-		t.Fatalf("PublicAddr = %q, want the default", c.PublicAddr)
+	if c.PublicAddr != DefaultPublicAddr || c.InternalAddr != DefaultInternalAddr {
+		t.Fatalf("PublicAddr = %q, InternalAddr = %q, want the defaults", c.PublicAddr, c.InternalAddr)
 	}
 }
 
