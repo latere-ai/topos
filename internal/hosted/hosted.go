@@ -54,6 +54,9 @@ type Options struct {
 	// credential of one that names no credential.
 	ModelsURL string
 	ModelsKey string
+	// Doors are the family doors TOPOS_MODELS_URL names when it is a Lux
+	// root, as dialect.Discover read them; nil uses it as it is.
+	Doors models.Doors
 	// Model streams the requests; dialect.Model when nil.
 	Model models.Model
 	// Machines opens each session's machine.
@@ -153,6 +156,9 @@ func (b builder) connect(m v1.AgentModel, overlay models.Entry) (models.Connecti
 	entry, err := b.cat.Resolve(m.Name, overlay)
 	if err != nil {
 		return models.Connection{}, models.Entry{}, err
+	}
+	if m.BaseURL == "" {
+		base = b.o.Doors.Door(base, entry.Dialect)
 	}
 	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: b.o.ModelsKey, Family: entry.Family, Dialect: entry.Dialect}
 	return conn, entry, nil

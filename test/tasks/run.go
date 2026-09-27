@@ -53,6 +53,10 @@ type Options struct {
 	// Connection names the model. Its family and dialect come from the
 	// catalog when empty.
 	Connection models.Connection
+	// Doors are the family doors the connection's base URL names when it
+	// is a Lux root, as dialect.Discover read them; nil uses the base as
+	// it is.
+	Doors models.Doors
 	// Entry overlays the catalog's figures for the connection's model,
 	// for a model the catalog does not know.
 	Entry *models.Entry
@@ -347,6 +351,7 @@ func (r *run) connection() (models.Model, models.Connection, models.Entry, error
 	if conn.Dialect == "" {
 		conn.Dialect = entry.Dialect
 	}
+	conn.BaseURL = r.o.Doors.Door(conn.BaseURL, conn.EffectiveDialect())
 	m := r.o.Model
 	if m == nil {
 		m = &dialect.Model{}

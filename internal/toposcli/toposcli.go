@@ -28,6 +28,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
+	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
@@ -340,6 +341,12 @@ type local struct {
 	// scripted plays scripted: connections, for tests (spec 026).
 	scripted *scripted.Model
 	getenv   func(string) string
+
+	// doors are the family doors of TOPOS_MODELS_URL when it names a Lux
+	// root, read once per invocation.
+	doorsMu    sync.Mutex
+	doors      models.Doors
+	discovered bool
 }
 
 func openLocal(env *cli, o runOptions) (*local, error) {
@@ -562,7 +569,7 @@ func (e *errUsage) Error() string { return e.msg }
 // connect is the model a name runs on: the connection to the agent's
 // base URL or TOPOS_MODELS_URL with TOPOS_MODELS_KEY, and the figures
 // of the catalog overlaid by the agent's own, or of the scripted model.
-func (l *local) connect(m v1.AgentModel, overlay *models.Entry) (models.Model, models.Connection, models.Entry, error) {
+func (l *local) connect(ctx context.Context, m v1.AgentModel, overlay *models.Entry) (models.Model, models.Connection, models.Entry, error) {
 	base := m.BaseURL
 	if base == "" {
 		base = l.getenv("TOPOS_MODELS_URL")
@@ -589,7 +596,30 @@ func (l *local) connect(m v1.AgentModel, overlay *models.Entry) (models.Model, m
 		}
 	}
 	conn.Family, conn.Dialect = entry.Family, entry.Dialect
+	if m.BaseURL == "" && !conn.Scripted() {
+		doors, err := l.modelDoors(ctx, base)
+		if err != nil {
+			return nil, models.Connection{}, models.Entry{}, err
+		}
+		conn.BaseURL = doors.Door(base, conn.EffectiveDialect())
+	}
 	return model, conn, entry, nil
+}
+
+// modelDoors are the family doors of TOPOS_MODELS_URL, asked of it the
+// first time a connection needs them: a Lux root names them, and any
+// other base names none and is used as it is.
+func (l *local) modelDoors(ctx context.Context, base string) (models.Doors, error) {
+	l.doorsMu.Lock()
+	defer l.doorsMu.Unlock()
+	if !l.discovered {
+		doors, err := dialect.Discover(ctx, otel.HTTPClient(), base)
+		if err != nil {
+			return nil, fmt.Errorf("TOPOS_MODELS_URL: %w", err)
+		}
+		l.doors, l.discovered = doors, true
+	}
+	return l.doors, nil
 }
 
 // agentConfig is the harness pieces of the session's agent, read back
@@ -600,7 +630,7 @@ func (l *local) agentConfig(ctx context.Context, s session.Session) (*manifest.A
 		return nil, err
 	}
 	c, err := r.AgentConfig(func(m v1.AgentModel, overlay models.Entry) (models.Model, *models.Connection, *models.Entry, error) {
-		model, conn, entry, err := l.connect(m, &overlay)
+		model, conn, entry, err := l.connect(ctx, m, &overlay)
 		return model, &conn, &entry, err
 	})
 	if err != nil {
@@ -635,7 +665,7 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 		if spec.Name == "" {
 			return harness.Config{}, &errUsage{"no model: pass --model or --agent"}
 		}
-		if cfg.Model, cfg.Connection, cfg.Entry, err = l.connect(spec, overlay); err != nil {
+		if cfg.Model, cfg.Connection, cfg.Entry, err = l.connect(ctx, spec, overlay); err != nil {
 			return harness.Config{}, err
 		}
 		cfg.Policy.Mode = harness.Mode(cmp.Or(o.mode, s.Metadata["mode"], string(cfg.Policy.Mode), string(harness.ModeConfirm)))

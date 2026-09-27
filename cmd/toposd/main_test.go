@@ -855,3 +855,26 @@ func TestServeRefusesScriptedModel(t *testing.T) {
 		}
 	}
 }
+
+// TestServeFindsTheFamilysDoorFromLuxsRoot: with TOPOS_MODELS_URL naming
+// a Lux root, serve's runner sends a hosted session's request to the
+// family's door the discovery document names; a model URL that does not
+// answer stops the start naming the variable.
+func TestServeFindsTheFamilysDoorFromLuxsRoot(t *testing.T) {
+	vars, lux, _ := hostedStubs(t)
+	maps.Copy(vars, map[string]string{"TOPOS_MODELS_URL": lux.URL(), "TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_RUNNER_CAPACITY": "1"})
+	publicURL, _, stop := startServe(t, vars)
+	hostedSession(t, publicURL, vars)
+	if reqs := lux.Requests(); len(reqs) != 1 || reqs[0].Dialect != ir.DialectAnthropicMessages {
+		t.Errorf("the model was asked %+v", reqs)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	var errOut bytes.Buffer
+	if code := run(t.Context(), nil, selfHosted(t, map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_MODELS_URL": gone.URL}), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "TOPOS_MODELS_URL") {
+		t.Fatalf("a model URL that does not answer: exit %d, stderr %q", code, errOut.String())
+	}
+}

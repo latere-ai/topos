@@ -42,6 +42,7 @@ import (
 	"latere.ai/x/topos/internal/store/postgres"
 	"latere.ai/x/topos/internal/token"
 	"latere.ai/x/topos/internal/version"
+	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	sessiondir "latere.ai/x/topos/session/dir"
@@ -324,7 +325,14 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		}
 	}
 	machines := hosted.ByKind(cella, onHost)
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Machines: machines})
+	// TOPOS_MODELS_URL may name a Lux root, whose discovery document
+	// names each family's door; a URL that does not answer stops the
+	// start, as an issuer that does not answer does.
+	doors, err := dialect.Discover(ctx, &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}, cfg.ModelsURL)
+	if err != nil {
+		return nil, fmt.Errorf("TOPOS_MODELS_URL: %w", err)
+	}
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors, Machines: machines})
 	if err != nil {
 		return nil, err
 	}

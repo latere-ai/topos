@@ -12,6 +12,10 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"latere.ai/x/pkg/otel"
+
+	"latere.ai/x/topos/models/dialect"
 )
 
 // TestTheSuiteAgainstAModel is the tasks tier of spec 026, and with the
@@ -26,6 +30,9 @@ func TestTheSuiteAgainstAModel(t *testing.T) {
 		t.Skip(err.Error())
 	}
 	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Doors, err = dialect.Discover(t.Context(), otel.HTTPClient(), o.Connection.BaseURL); err != nil {
 		t.Fatal(err)
 	}
 	if o.Filter == "" {
