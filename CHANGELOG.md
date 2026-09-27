@@ -355,6 +355,13 @@ committed: the commit log already holds that.
   commit; `git push` publishes the branch. A repository that cannot be
   cloned is reported as `repository_unavailable` and the session goes on
   without it.
+- With `TOPOS_MODELS_URL` a Lux root, the runners reach each door Lux's
+  discovery document names under that URL, so an installation that
+  points it at Lux's in-cluster address keeps every model request inside
+  its network even though Lux publishes its doors under its public URL.
+  A sandbox's `LUX_URL`, the host its Lux key is swapped in for, and the
+  host its egress admits are that published root, since a sandbox
+  reaches only public hosts.
 - `TOPOS_BASE_PATH` serves the API under a prefix of an origin toposd
   shares with other services, in the place of `/v1`: with `/v1/agents`
   and `TOPOS_PUBLIC_URL=https://api.example.com/v1/agents`, agents are at
