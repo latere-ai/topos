@@ -325,8 +325,9 @@ committed: the commit log already holds that.
   agent or a session stored by an earlier build of this release whose
   agent carries the field no longer reads; apply the agent again.
 - With `TOPOS_IDENTITY_URL`, every agent applied is an identity at the
-  installation's identity provider, owned by its applier or by the
-  organization the applier's token names, and holds no key. Its hosted
+  installation's identity provider, owned by the organization the
+  authorizer's allow names for it (the limits member `owner`), or else by
+  its applier, and holds no key. Its hosted
   sessions reach Cella with tokens minted for the agent, at most 15
   minutes long and naming the session, and a session's sandbox pushes to
   `TOPOS_ORIGO_URL` with its own token, which the sandbox holds only as a

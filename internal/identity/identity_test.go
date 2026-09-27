@@ -158,14 +158,3 @@ func TestAnUnansweredProviderIsUnavailable(t *testing.T) {
 		t.Fatal("built without an HTTP client")
 	}
 }
-
-func TestOwnerOfReadsTheOrganizationClaim(t *testing.T) {
-	if o := OwnerOf("alice", map[string]any{"org_id": "org-1"}); o != (Owner{Type: OwnerOrganization, ID: "org-1"}) {
-		t.Fatalf("an organization's token: %+v", o)
-	}
-	for _, claims := range []map[string]any{nil, {"org_id": ""}, {"org_id": 7}} {
-		if o := OwnerOf("alice", claims); o != (Owner{Type: OwnerUser, ID: "alice"}) {
-			t.Fatalf("a personal token %v: %+v", claims, o)
-		}
-	}
-}

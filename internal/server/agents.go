@@ -110,11 +110,12 @@ func (c *call) applyAgent() error {
 	st := r.Agent.Status
 	stored, err := c.s.o.Objects.Agent(ctx, name)
 	exists := err == nil
+	var allowed authorizer.Limits
 	switch {
 	case err != nil && !errors.Is(err, store.ErrNotFound):
 		return err
 	case exists:
-		if _, err := c.ask(c.r.Context(), authorizer.ActionAgentUpdate, agentResource(stored)); err != nil {
+		if allowed, err = c.askCreate(ctx, authorizer.ActionAgentUpdate, agentResource(stored)); err != nil {
 			return err
 		}
 		if stored.ArchivedAt != nil {
@@ -129,11 +130,11 @@ func (c *call) applyAgent() error {
 			return c.reply(http.StatusOK, r.Agent)
 		}
 	default:
-		if _, err := c.ask(c.r.Context(), authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", map[string]any{"name": name})); err != nil {
+		if allowed, err = c.askCreate(ctx, authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", map[string]any{"name": name})); err != nil {
 			return err
 		}
 	}
-	if err := c.ensureIdentity(ctx, r.Agent); err != nil {
+	if err := c.ensureIdentity(ctx, r.Agent, allowed.Owner); err != nil {
 		return err
 	}
 	doc, err := session.Marshal(r.Agent)

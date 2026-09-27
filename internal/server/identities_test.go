@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -14,28 +15,12 @@ import (
 	"testing"
 
 	"latere.ai/x/pkg/authz"
-	"latere.ai/x/pkg/bearer"
 
-	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/idpstub"
 )
-
-// orgTokens is tokens with one more form: a sub that starts acme- is
-// signed in to the organization acme, whose token carries org_id.
-type orgTokens struct{}
-
-func (orgTokens) Authenticate(r *http.Request) (auth.Caller, error) {
-	c, err := tokens{}.Authenticate(r)
-	if err != nil {
-		return c, err
-	}
-	if tok, _ := bearer.FromRequest(r); strings.HasPrefix(tok, "acme-") {
-		c.Claims["org_id"] = "acme"
-	}
-	return c, nil
-}
 
 // identityFixture is the API with the stub identity provider as its
 // Identities, and the session.create resources the authorizer was asked.
@@ -58,15 +43,22 @@ func newIdentityFixture(t *testing.T) *identityFixture {
 		t.Fatal(err)
 	}
 	f := &identityFixture{idp: idp}
-	f.fixture = newFixture(t, func(o *Options) { o.Identities = ic; o.Verifier = orgTokens{} })
+	f.fixture = newFixture(t, func(o *Options) { o.Identities = ic })
 	policy := f.authz.next
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
-		if req.Action == "session.create" {
+		if req.Action == authorizer.ActionSessionCreate {
 			f.mu.Lock()
 			f.creates = append(f.creates, req.Resource)
 			f.mu.Unlock()
 		}
-		return policy.Authorize(context.Background(), req)
+		d, err := policy.Authorize(context.Background(), req)
+		// The authorizer names the organization as the owner of an agent
+		// its member applies in the organization's context, here every
+		// subject that starts acme-.
+		if err == nil && d.Allow && req.Action == authorizer.ActionAgentCreate && strings.HasPrefix(req.Sub, "acme-") {
+			d.Limits = json.RawMessage(`{"owner":{"type":"organization","id":"acme"}}`)
+		}
+		return d, err
 	}
 	return f
 }
@@ -80,7 +72,8 @@ func (f *identityFixture) end(token, id string) {
 }
 
 // TestAgentIdentityLifecycle: an agent first applied gets its identity,
-// owned by the applier, or by the organization the applier's token names,
+// owned by the applier, or by the organization the authorizer's allow
+// names,
 // and keeps the subject as status.identity through its versions; a
 // session's create asks the authorizer with its id and that identity; an
 // archive archives the identity before the agent, and the identity is

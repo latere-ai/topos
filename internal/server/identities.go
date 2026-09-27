@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -44,14 +45,19 @@ func identityRefusal(err error) error {
 
 // ensureIdentity gives an agent being applied its identity at the
 // identity provider when it has none, after the authorizer allowed the
-// apply: the owner is the applier's organization or the applier, and the
-// subject becomes the agent's status.identity, which every later version
-// carries.
-func (c *call) ensureIdentity(ctx context.Context, a *v1.Agent) error {
+// apply: the owner is the one the allow names, since the authorizer and
+// not the core reads the applier's claims, and the applier as a person
+// when it names none. The subject becomes the agent's status.identity,
+// which every later version carries.
+func (c *call) ensureIdentity(ctx context.Context, a *v1.Agent, named *authorizer.Owner) error {
 	if c.s.o.Identities == nil || a.Status.Identity != "" {
 		return nil
 	}
-	subject, err := c.s.o.Identities.Create(ctx, a.Status.ID, a.Metadata.Name, identity.OwnerOf(c.caller.Sub, c.caller.Claims), c.caller.Sub)
+	owner := identity.Owner{Type: identity.OwnerUser, ID: c.caller.Sub}
+	if named != nil {
+		owner = identity.Owner{Type: named.Type, ID: named.ID}
+	}
+	subject, err := c.s.o.Identities.Create(ctx, a.Status.ID, a.Metadata.Name, owner, c.caller.Sub)
 	if err != nil {
 		return identityRefusal(err)
 	}

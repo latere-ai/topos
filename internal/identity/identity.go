@@ -70,17 +70,6 @@ type Owner struct {
 	ID   string `json:"id"`
 }
 
-// OwnerOf is the owner of an agent applied with a token of sub whose
-// claims are claims: the organization its org_id claim names, which the
-// identity provider sets for a token in an organization's context, or
-// else the person.
-func OwnerOf(sub string, claims map[string]any) Owner {
-	if org, _ := claims["org_id"].(string); org != "" {
-		return Owner{Type: OwnerOrganization, ID: org}
-	}
-	return Owner{Type: OwnerUser, ID: sub}
-}
-
 // Session is the session claim of a hosted-agent token.
 type Session struct {
 	ID       string `json:"id"`
