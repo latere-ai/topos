@@ -146,16 +146,7 @@ func (m *Model) Stream(ctx context.Context, req models.Request) (models.Stream, 
 	}
 	hreq.Header.Set("Content-Type", "application/json")
 	hreq.Header.Set("Accept", "text/event-stream")
-	if conn.Credential != "" {
-		if d == ir.DialectAnthropicMessages {
-			hreq.Header.Set("x-api-key", conn.Credential)
-		} else {
-			hreq.Header.Set("Authorization", "Bearer "+conn.Credential)
-		}
-	}
-	if d == ir.DialectAnthropicMessages {
-		hreq.Header.Set("anthropic-version", AnthropicVersion)
-	}
+	authorize(hreq, conn)
 	now := m.Now
 	if now == nil {
 		now = time.Now
@@ -189,6 +180,23 @@ func (m *Model) Stream(ctx context.Context, req models.Request) (models.Stream, 
 	s.reader = &recordingReader{r: resp.Body, raw: &s.raw}
 	s.dec = enc.be.NewEventDecoder(s.reader)
 	return s, nil
+}
+
+// authorize puts the connection's credential in the header its
+// dialect's provider reads, x-api-key with anthropic-version for
+// Messages and a bearer otherwise; Lux accepts both.
+func authorize(r *http.Request, conn models.Connection) {
+	messages := conn.EffectiveDialect() == ir.DialectAnthropicMessages
+	if conn.Credential != "" {
+		if messages {
+			r.Header.Set("x-api-key", conn.Credential)
+		} else {
+			r.Header.Set("Authorization", "Bearer "+conn.Credential)
+		}
+	}
+	if messages {
+		r.Header.Set("anthropic-version", AnthropicVersion)
+	}
 }
 
 // httpError reads a model server's error answer.
