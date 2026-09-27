@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/cella/client"
 	"latere.ai/x/pkg/llmdialect/bridge"
 
 	"latere.ai/x/topos/harness"
@@ -247,7 +248,10 @@ func TestCellaMachinesNeedAURL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	s := session.Session{ID: session.NewID(session.PrefixSession), Agent: session.AgentRef{Name: "reviewer"}, ExpiresAt: time.Now().Add(time.Hour)}
-	if _, err := Cella(CellaOptions{URL: "http://127.0.0.1:1"})(ctx, s, v1.Machine{Image: "base"}); err == nil {
+	if _, err := Cella(CellaOptions{URL: "http://127.0.0.1:1"})(ctx, s, v1.Machine{Image: "base"}); code(t, err) != CodeMachineUnavailable {
+		t.Fatalf("no bearer and nothing minted: %v", err)
+	}
+	if _, err := Cella(CellaOptions{URL: "http://127.0.0.1:1", Token: client.StaticToken("b")})(ctx, s, v1.Machine{Image: "base"}); err == nil {
 		t.Fatal("opened a machine on a Cella that does not answer")
 	}
 }
