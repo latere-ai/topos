@@ -355,6 +355,13 @@ committed: the commit log already holds that.
   commit; `git push` publishes the branch. A repository that cannot be
   cloned is reported as `repository_unavailable` and the session goes on
   without it.
+- A `v*` tag publishes the image `ghcr.io/<owner>/topos` for `linux/amd64`
+  and `linux/arm64`, under the namespace of the account that pushed the
+  tag: `toposd` and the `topos-machine` helper builds on the distroless
+  base, the same runtime as the developer image, signed and with its bill
+  of materials and provenance attested. The image is pushed by digest,
+  tagged with the release's tag only once it reports that tag's version,
+  and the release notes follow.
 - With `TOPOS_MODELS_URL` a Lux root, the runners reach each door Lux's
   discovery document names under that URL, so an installation that
   points it at Lux's in-cluster address keeps every model request inside
