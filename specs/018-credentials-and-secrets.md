@@ -186,7 +186,11 @@ the sandbox with `-lux`, mounted as `LUX_KEY` and scoped to Lux's host,
 and to its model doors' path once Cella scopes a Secret by path; the
 sandbox holds a placeholder that Cella's egress gateway swaps in
 ([[009-machines]]), and the runner applies the Secret again whenever
-the value changes. It opens nothing but models, because no other core
+the value changes. Lux's host here is the one Lux publishes its doors
+under, which the sandbox also reads as `LUX_URL`: a sandbox leaves
+only through the egress gateway, toward public hosts, while the runner
+may reach the same Lux at `TOPOS_MODELS_URL`, an address inside the
+installation's network, and reaches each discovered door under it. It opens nothing but models, because no other core
 accepts a Lux key. Lux enforces the budget per key and records each
 call against the session and its workload, so the ledger keeps a
 session's own spend apart from its sandbox's
@@ -329,6 +333,7 @@ egress swapping a Secret by host and path.
 | The identity provider's and the session keys' variables are read; each URL needs its partners and the authorizer, and neither installation credential is accepted beside them | `internal/config.TestTheCredentialVariables` | built |
 | A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules`, `internal/server.TestAgentIdentityLifecycle`, `authorizer.TestDecodeLimitsReadsEveryMember` | built |
 | A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `internal/credentials.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestAnInstallationThatMintsNothingActsAsToday`, `internal/config.TestTheCredentialVariables` | built against the stub key routes, with the refusal of the installation's key tied to `TOPOS_SESSION_KEYS_URL` rather than to the authorizer; the swap itself is Cella's egress gateway's, the Secret is scoped by host until Cella scopes one by path, and the run against the real authorizer waits for its deployment |
+| With `TOPOS_MODELS_URL` a Lux root that publishes its doors under another address, the runner's model requests go to the configured root, and the sandbox's `LUX_URL`, its Lux key's host and its egress allowlist are the published one's | `models.TestDoorsMoveUnderTheRootTheyWereDiscoveredAt`, `cmd/toposd.TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox` | built against the stub Lux |
 | A `person` connection uses the initiator's credential, and fails with `connection_not_connected` when there is none | `TestPersonConnectionUsesInitiatorsCredential` | not built: needs the Credential object |
 | A value the runner holds, and its base64 and percent-encoded forms, are replaced in tool output before the log and the model | `TestScrubbingKnownValues` | not built: comes after the hosted path |
 | On the host, a named secret is substituted only on requests to its hosts, and a request elsewhere carries the placeholder | `TestHostProxySubstitutesOnlyNamedHosts` | not built: comes after the hosted path |
