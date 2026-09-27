@@ -34,6 +34,15 @@ const RefreshBefore = 2 * time.Minute
 // credential instead.
 var ErrNotMinted = errors.New("runner: the installation mints no credential for this audience")
 
+// CodeAgentIdentityMissing is the setup code of a session whose agent
+// has no identity at the installation's identity provider.
+const CodeAgentIdentityMissing = "agent_identity_missing"
+
+// ErrNoIdentity is a token asked for a session whose agent has no
+// identity at the installation's identity provider: it was applied
+// before the installation had one.
+var ErrNoIdentity = errors.New("runner: the session's agent has no identity at the identity provider; apply it again")
+
 // Credential is a value a session acts with, a token or a Lux key, and
 // when it expires. It is held in memory and never appended.
 type Credential struct {
