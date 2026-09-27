@@ -204,11 +204,15 @@ of [[004-session-log]]'s fold tests.
 `test/tasks` is importable: `tasks.Run(ctx, tasks.Options{Dir, Work,
 Model, Connection, Machine, Filter, Runs})` returns a report, so an
 external evaluation harness runs the same harness as one cell of its
-matrix. `Dir` is the suite's root (by default the directory the package
-was built from, which a checkout has), `Work` keeps every run's working
+matrix. `Dir` is the suite's root: by default the directory the package
+was built from, or the working directory when a build with `-trimpath`
+leaves no such directory. The Go fixtures are modules of their own,
+which a module download leaves out, so an external harness runs the
+suite from a checkout. `Work` keeps every run's working
 directory and session data and must not be inside a git checkout,
-`Machine` opens a run's machine (the host by default), and `Filter` is a
-regular expression over task ids. `Script` plays each task's
+`Machine` opens a run's machine (the host by default; the checker reads
+the final directory from local disk, so the machine's working directory
+is one), and `Filter` is a regular expression over task ids. `Script` plays each task's
 `solution.yaml` or `wrong.yaml` through the scripted model in place of
 the connection. `tasks.RunTask` runs one task once, and `tasks.Judge`
 evaluates a finished run's checker again.

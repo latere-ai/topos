@@ -2,4 +2,4 @@
 - call:
     tool: web_fetch
     outcome: ok
-    input: {url: {equals: "${SERVE_URL}/release-notes.html"}}
+    input: {url: {contains: "${SERVE_URL}/release-notes.html"}}

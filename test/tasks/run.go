@@ -188,10 +188,15 @@ func (o Options) tasks() ([]Task, error) {
 	return out, nil
 }
 
-// sourceDir is the directory this file was compiled from.
+// sourceDir is the directory this file was compiled from, or the
+// working directory when that is not a directory on this disk, as in a
+// build with -trimpath, where go test runs in the package's directory.
 func sourceDir() string {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
+		return "."
+	}
+	if fi, err := os.Stat(filepath.Dir(file)); err != nil || !fi.IsDir() {
 		return "."
 	}
 	return filepath.Dir(file)

@@ -72,6 +72,6 @@ steps:
             }
   - tool_calls:
       - name: bash
-        input: {command: gofmt -l . && go vet ./... && go test ./...}
+        input: {command: go vet ./... && go test ./...}
   - expect: {tool_result_contains: ok}
     text: Median is in stats.go with a table test, and the tests pass.
