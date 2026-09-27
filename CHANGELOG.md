@@ -254,6 +254,17 @@ committed: the commit log already holds that.
   watchers poll every 2 s, so no event is missed. A subject's 17th
   concurrent `GET /v1/sessions/{id}/stream` on a replica is refused
   `rate_limited` until one of its streams ends.
+- `TOPOS_MODELS_URL` may name a Lux gateway's root, such as
+  `https://lux.example/v1/models`: toposd and `topos` read its discovery
+  document and send each model to its own family's door, Anthropic models
+  to `/anthropic` and OpenAI models to `/openai`. A URL that names a door,
+  and a provider's API, are used as before. A server that cannot reach a
+  URL naming no door refuses to start.
+- `session.create` tells the authorizer the permissions of the agent
+  version the session pins, so an installation can refuse a session whose
+  agent may do more than the person starting it.
+- The directory store takes its single-writer lock on Windows with
+  `LockFileEx`, as it does with `flock` on Unix.
 
 ## v0.7.0 - 2026-09-26
 
