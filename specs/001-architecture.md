@@ -303,3 +303,42 @@ because every spec depends on this one.
 | 10 | [[016-runners]], [[009-machines]] | `TestServerOpensNoConnectionToARunner` |
 | 11 | [[023-events-and-observability]] | `TestEveryMutationEmitsOneSinkEvent` |
 | 12 | [[028-release-and-installation]] | `TestReleasePublishesUnderTheOwnersNamespace` |
+
+## Outcome
+
+Built on 2026-09-27. The package rules of this spec are tests over the
+tree as it stands: `internal/arch` reads `go list` and the source, and
+the `depcheck` gate reads `.lateregate.yaml`. Every row of the
+acceptance table passes, and each binds a tree that does not exist yet
+the day it lands.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| every package in one of the named trees, none at the root | `internal/arch/deps_test.go`, `TestPackagesSitInTheirTrees` |
+| `session`, `harness`, `prompts`, `manifest` and `authorizer` dial nothing, `latere.ai/x/pkg/authz` the one contract the walk does not enter | `internal/arch/deps_test.go`, `TestRootPackagesDialNothing` |
+| `prompts` at the bottom of the module's graph | `internal/arch/deps_test.go`, `TestPromptsImportNothingOfTheModule` |
+| the allow lists of `machine/cella`, `models/dialect` and `client` | `internal/arch/deps_test.go`, `TestClientsKeepToTheirAllowLists` |
+| no Latere coordinate in the tree | `internal/arch/coordinates_test.go`, `TestNoLatereCoordinatesInReleasedArtifacts` |
+| the build lists of the binaries | the `depcheck` rows of `.lateregate.yaml` for `cmd/toposd`, `cmd/topos` and `cmd/topos-machine` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| a machine dials only its substrate, and `models/dialect` and `client` only the base URL their caller hands them (invariant 13) | the rule is held on the import graph: the test names the network clients a package may import, not the addresses it dials, and an allowed client's own dials are not examined | an address is chosen at run time; the imports are what a test over the tree can hold |
+| `machine/cella` reaches `latere.ai/x/cella/client` and no other network client | every dialing package may also reach `latere.ai/x/pkg/otel`, whose exporters reach grpc and the OTLP HTTP clients | every outbound call goes through the family's instrumented transport (Dependencies); a transport-only subpackage of `pkg/otel` would narrow what the three reach |
+| `models/dialect` and `client` construct one HTTP client each | the count is over the source, an `http.Client` literal or an `otel.HTTPClient` call; the one of `models/dialect` is `otel.HTTPClient`, taken when its caller hands none | a client the caller hands in is the caller's to count |
+| `depcheck` rows for `cmd/toposd` and `cmd/topos` | a third row holds `cmd/topos-machine` to the standard library and `machine` | the helper is uploaded into each sandbox and stays small and static ([[009-machines]]) |
+| `internal/queue` holds leases and claims | `runner.Queue` claims in process over a `session.Store`; `internal/runnerapi` serves the claim routes on the internal listener, and `internal/runnerrole` is the runner role's store and claimer over them | the `runner` package is the same in every role ([[016-runners]]) |
+| the Packages table lists the internal packages | `internal/hosted` (a hosted session's harness and its Cella machines), `internal/auth`, `internal/token`, `internal/store` with `dir` and `postgres`, and `test/stubs/cellastub` exist and are not in it | [[006-identity]], [[014-store]], [[016-runners]] and [[026-stubs-and-tiers]] built them after the table was written |
+| the build list of `cmd/toposd` reaches `latere.ai/x/cella/egress` | it does not yet | the egress client is [[018-credentials-and-secrets]]'s, which is not built |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| `harness/tools/mcp` dials an MCP server over streamable HTTP, and it sits in the `harness` tree that `TestRootPackagesDialNothing` holds to dialing nothing | the rule refuses it the day it lands; whether the package moves out of `harness` or the rule admits it with its client is [[021-mcp-servers]]'s decision |
+| `machine/host` has no allow list | it dials the URLs `web_fetch` names through its `Fetcher` by design, and no import rule tells that dial from another |
+| `client` is held by name | the tree does not exist; its allow list is the transport alone until [[024-client-cli-skill]] builds it |
