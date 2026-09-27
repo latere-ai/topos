@@ -4,8 +4,11 @@
 // Package hosted builds the harness of a session toposd runs itself
 // (spec 016): its agent read back from the session's bundle, its model
 // connection to the installation's model URL, and its machine, a Cella
-// sandbox. Every failure is a runner.SetupError naming its code, so the
-// session's turn closes with it instead of the session staying running.
+// sandbox created when a tool first acts on it, or the server's own host.
+// Every failure of the harness is a runner.SetupError naming its code, so
+// the session's turn closes with it instead of the session staying
+// running; a sandbox that cannot be created is a machine.OpenError with
+// the same code, which answers the call that needed it.
 package hosted
 
 import (
@@ -14,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -130,15 +134,37 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 			}
 		}
 	}
-	m, err := b.o.Machines(ctx, s, ac.Machine)
-	if err != nil {
-		if _, coded := errors.AsType[*runner.SetupError](err); coded {
-			return harness.Config{}, err
+	cfg.Tools = reg
+	if cmp.Or(s.Machine.Kind, ac.Machine.Kind) == session.MachineHost {
+		m, err := b.o.Machines(ctx, s, ac.Machine)
+		if err != nil {
+			return harness.Config{}, machineSetup(err)
 		}
-		return harness.Config{}, setup(CodeMachineUnavailable, err)
+		cfg.Machine = m
+		return cfg, nil
 	}
-	cfg.Machine, cfg.Tools = m, reg
+	// A Cella sandbox is created when a tool first acts on it (spec
+	// 009), under the drive's context, so a session whose agent never
+	// needs one has none.
+	cfg.Machine = machine.Defer(ctx, machine.KindCella, func(ctx context.Context) (machine.Machine, error) {
+		m, err := b.o.Machines(ctx, s, ac.Machine)
+		if err == nil {
+			return m, nil
+		}
+		se, _ := errors.AsType[*runner.SetupError](machineSetup(err))
+		return nil, &machine.OpenError{Code: se.Code, Err: se.Err}
+	})
 	return cfg, nil
+}
+
+// machineSetup is a machine that could not be had as the setup error a
+// turn closes with: its own code when it names one, machine_unavailable
+// otherwise.
+func machineSetup(err error) error {
+	if _, coded := errors.AsType[*runner.SetupError](err); coded {
+		return err
+	}
+	return setup(CodeMachineUnavailable, err)
 }
 
 // connect is the model, the connection and the catalog figures of one
@@ -255,7 +281,7 @@ func Cella(o CellaOptions) Machines {
 			URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
 			Environment: cmp.Or(s.Machine.Environment, m.Environment), Image: cmp.Or(s.Machine.Image, m.Image),
 			Resources: cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
-			Egress:    m.Egress, Secrets: mounts, Env: env, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
+			Egress:    append(slices.Clone(m.Egress), repositoryHosts(s)...), Secrets: mounts, Env: env, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
 		})
 		if err != nil {
 			return nil, err
@@ -272,6 +298,18 @@ func Cella(o CellaOptions) Machines {
 		}
 		return mach, nil
 	}
+}
+
+// repositoryHosts are the git hosts of the session's repositories, which
+// the sandbox's egress allowlist includes (spec 009).
+func repositoryHosts(s session.Session) []string {
+	var out []string
+	for _, r := range runner.Repositories(s) {
+		if u, err := url.Parse(r.URL); err == nil && u.Hostname() != "" {
+			out = append(out, u.Hostname())
+		}
+	}
+	return out
 }
 
 // ReadHelpers reads the topos-machine builds under dir, each named

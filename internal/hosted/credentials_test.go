@@ -100,6 +100,20 @@ func newCredentialFixture(t *testing.T, helpers map[string][]byte, creds *issued
 	return f
 }
 
+// opened builds the harness of s and opens its machine, as the first
+// tool that acts on it does, and answers the first failure: a machine
+// that cannot be had answers as the setup error its code names.
+func opened(ctx context.Context, h func(context.Context, session.Session) (harness.Config, error), s session.Session) error {
+	cfg, err := h(ctx, s)
+	if err != nil {
+		return err
+	}
+	if oe, ok := errors.AsType[*machine.OpenError](machine.Open(ctx, cfg.Machine)); ok {
+		return &runner.SetupError{Code: oe.Code, Err: oe.Err}
+	}
+	return cfg.Machine.Release(context.WithoutCancel(ctx), true)
+}
+
 // TestSessionAndSandboxLuxKeys, the runner's half: a session on an
 // installation that mints its credentials asks models with its own Lux
 // key, asked again for every request, and never with the installation's
@@ -115,6 +129,10 @@ func TestSessionAndSandboxLuxKeys(t *testing.T) {
 	defer cancel()
 	cfg, err := f.h(ctx, f.s)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// The sandbox and its secrets are made when a tool first acts on it.
+	if err := machine.Open(ctx, cfg.Machine); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
@@ -184,6 +202,9 @@ func TestSandboxCredentialsAreRenewed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := machine.Open(ctx, cfg.Machine); err != nil {
+		t.Fatal(err)
+	}
 	name := cella.SandboxName(f.s.ID) + "-origo"
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
 		if sec, value, _ := f.cella.Secret(name); sec.Status.Version >= 2 && value != "origo-sandbox-1" {
@@ -212,6 +233,9 @@ func TestAnInstallationThatMintsNothingActsAsToday(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := machine.Open(ctx, cfg.Machine); err != nil {
+		t.Fatal(err)
+	}
 	if err := cfg.Machine.Release(ctx, true); err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +251,7 @@ func TestAnInstallationThatMintsNothingActsAsToday(t *testing.T) {
 		}
 	}
 	g := newCredentialFixture(t, helpers, creds, nil)
-	if _, err := g.h(ctx, g.s); code(t, err) != CodeMachineUnavailable {
+	if err := opened(ctx, g.h, g.s); code(t, err) != CodeMachineUnavailable {
 		t.Fatalf("no Cella bearer at all: %v", err)
 	}
 }
@@ -253,7 +277,7 @@ func TestSessionCredentialFailuresCloseTheTurn(t *testing.T) {
 		creds := &issued{life: 15 * time.Minute, err: map[string]error{c.audience: c.err}}
 		f := newCredentialFixture(t, helpers, creds, client.StaticToken("b"))
 		ctx := runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil))
-		if _, err := f.h(ctx, f.s); err == nil || code(t, err) != c.code {
+		if err := opened(ctx, f.h, f.s); err == nil || code(t, err) != c.code {
 			t.Errorf("%s refused with %v: %v, want %s", c.audience, c.err, err, c.code)
 		}
 	}

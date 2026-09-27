@@ -41,7 +41,8 @@ spec:
   machine: {kind: cella, image: base}
 `
 
-// session creates a hosted session of the manifest in st.
+// newSession creates a hosted session of the manifest in st, on the
+// machine kind its agent names.
 func newSession(t *testing.T, st session.Store, doc string) session.Session {
 	t.Helper()
 	rs, err := manifest.Resolve(t.Context(), []byte(doc), manifest.Options{})
@@ -52,7 +53,7 @@ func newSession(t *testing.T, st session.Store, doc string) session.Session {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := session.New(ref, session.Sender{Subject: "u", Kind: session.SenderPerson}, session.RunnerHosted, session.Machine{Kind: session.MachineCella}, time.Now())
+	s := session.New(ref, session.Sender{Subject: "u", Kind: session.SenderPerson}, session.RunnerHosted, session.Machine{Kind: rs[0].Agent.Spec.Machine.Kind}, time.Now())
 	s.Limits.TurnTimeout = "5m0s"
 	if err := st.Create(t.Context(), s, blobs); err != nil {
 		t.Fatal(err)
@@ -93,6 +94,12 @@ func TestTheHarnessOfAHostedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if asked.Image != "" {
+		t.Fatal("a Cella machine was opened before a tool needed it")
+	}
+	if err := machine.Open(t.Context(), cfg.Machine); err != nil {
+		t.Fatal(err)
+	}
 	var names []string
 	for _, d := range cfg.Tools.Definitions() {
 		names = append(names, d.Name)
@@ -131,9 +138,38 @@ func TestTheSetupFailuresOfAHostedSession(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := h(t.Context(), sc); code(t, err) != want {
+		cfg, err := h(t.Context(), sc)
+		if err == nil {
+			// A Cella machine is opened on demand, and its failure is
+			// the open's, with the code the setup error named.
+			oe, ok := errors.AsType[*machine.OpenError](machine.Open(t.Context(), cfg.Machine))
+			if !ok || oe.Code != want {
+				t.Errorf("%s: the open answered %v", want, oe)
+			}
+			continue
+		}
+		if code(t, err) != want {
 			t.Errorf("%s: %v", want, err)
 		}
+	}
+	host := newSession(t, st, `apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata:
+  name: local
+spec:
+  model: {name: anthropic/claude-haiku-4.5}
+  machine: {kind: host}
+`)
+	down := good
+	down.Machines = func(context.Context, session.Session, v1.Machine) (machine.Machine, error) {
+		return nil, errors.New("no host")
+	}
+	hd, err := Harness(down)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hd(t.Context(), host); code(t, err) != CodeMachineUnavailable {
+		t.Fatalf("a host machine is opened with the harness: %v", err)
 	}
 	missing := s
 	missing.Agent.Bundle = session.DigestOf([]byte("gone"))
