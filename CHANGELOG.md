@@ -282,6 +282,11 @@ committed: the commit log already holds that.
   like the entry it spells; before, such a path read the file. On a
   case-sensitive filesystem a name that differs from an entry only in
   case is now refused too.
+- A hosted session records its approval policy at create: the agent's
+  `spec.approvals` merged with the lists and thresholds the authorizer's
+  allow carries, the confirm lists joined, the allow lists narrowed to
+  what both allow, each threshold the lower. Every runner decides the
+  session's calls by that policy.
 
 ## v0.7.0 - 2026-09-26
 
