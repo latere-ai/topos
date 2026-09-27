@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -796,5 +797,25 @@ func TestASubagentsEffortReachesItsRequests(t *testing.T) {
 		if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
 			t.Fatalf("want %s: %+v", want, out)
 		}
+	}
+}
+
+// TestASubagentActsWithTheSessionsCredentials: a subagent whose agent
+// declares its own identity and permissions acts as a thread of the
+// session, and its thread.started names what it ignores (spec 013).
+func TestASubagentActsWithTheSessionsCredentials(t *testing.T) {
+	e := setup(t, withReviewer(func(s *Subagent) { s.Ignored = []string{"identity", "permissions"} }))
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review."}`)),
+		reply(ir.StopEndTurn, text("done")),
+	)
+	e.stub.Script(reviewerModel, reply(ir.StopEndTurn, text("Fine.")))
+	e.send(ctx, "Review it.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	if _, started := e.thread(e.all()); !slices.Equal(started.Ignored, []string{"identity", "permissions"}) {
+		t.Fatalf("thread.started ignored %v", started.Ignored)
 	}
 }

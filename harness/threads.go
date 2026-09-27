@@ -36,6 +36,10 @@ type Subagent struct {
 	Tools     []string
 	Mode      Mode
 	Subagents map[string]Subagent
+	// Ignored are the fields the agent declares that its thread does not
+	// use, recorded on thread.started so the log shows the thread did not
+	// act as that agent.
+	Ignored []string
 }
 
 // Limits of spec 013.
@@ -370,6 +374,7 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	started := session.ThreadStarted{
 		Agent: session.AgentRef{Name: agent}, Parent: t.thread, ToolUseID: callID, Task: task,
 		Isolation: "shared", Depth: t.depth + 1, Model: cfg.Connection.Model, Tools: names,
+		Ignored: sub.Ignored,
 	}
 	var note string
 	if wt != nil {

@@ -195,6 +195,11 @@ type ThreadStarted struct {
 	Model     string   `json:"model,omitempty"`
 	Tools     []string `json:"tools,omitempty"`
 	Budget    *Budget  `json:"budget,omitempty"`
+	// Ignored are the fields of the agent the thread names that it does
+	// not use, since a thread acts with the session's credentials and
+	// machine (spec 013): identity, permissions, model.credential,
+	// connections, memoryStores, machine.
+	Ignored []string `json:"ignored,omitempty"`
 }
 
 // ThreadEnded is the payload of thread.ended.

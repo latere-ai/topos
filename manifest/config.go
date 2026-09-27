@@ -154,6 +154,36 @@ func toolNames(list []v1.Tool) []string {
 	return names
 }
 
+// ignoredFields are the fields a subagent's spec declares that its
+// thread does not use: a thread acts with the session's identity,
+// credentials, attachments and machine (spec 013). Defaults are not
+// listed: identity only when it names an agent identity, and the
+// machine only when it asks for more than the default host.
+func ignoredFields(s v1.AgentSpec) []string {
+	var out []string
+	if s.Identity == v1.IdentityAgent {
+		out = append(out, "identity")
+	}
+	if len(s.Permissions) > 0 {
+		out = append(out, "permissions")
+	}
+	if s.Model.Credential != "" {
+		out = append(out, "model.credential")
+	}
+	if len(s.Connections) > 0 {
+		out = append(out, "connections")
+	}
+	if len(s.MemoryStores) > 0 {
+		out = append(out, "memoryStores")
+	}
+	m := s.Machine
+	if (m.Kind != "" && m.Kind != v1.MachineHost) || m.Image != "" || m.Environment != "" || m.Resources != (v1.Resources{}) ||
+		len(m.Egress) > 0 || len(m.Roots) > 0 || len(m.ReadPaths) > 0 {
+		out = append(out, "machine")
+	}
+	return out
+}
+
 // builder builds the subagent tree from the pinned agents.
 type builder struct {
 	pinned  map[string]*v1.Agent
@@ -183,7 +213,7 @@ func (b *builder) subagents(s v1.AgentSpec, level int) (map[string]harness.Subag
 		}
 		h := harness.Subagent{
 			Name: sub.Name, Instructions: spec.Instructions, Entry: &overlay, Effort: spec.Model.Effort,
-			Tools: toolNames(spec.Tools), Mode: harness.Mode(spec.Approvals.Mode),
+			Tools: toolNames(spec.Tools), Mode: harness.Mode(spec.Approvals.Mode), Ignored: ignoredFields(*spec),
 		}
 		if b.connect != nil {
 			m, conn, entry, err := b.connect(spec.Model, overlay)

@@ -212,7 +212,7 @@ each stage ([[025-task-suite]]); what the model is told about spawning
 | A subagent cannot call a tool its parent lacks, with the tool neither offered nor run when the model asks for it | `TestSubagentCannotCallToolParentLacks` | not built |
 | A thread receives a second message after its first task, continues from its own transcript, and answers it | `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
 | A child's mode, lists, thresholds and budget are never looser than its parent's | `TestNarrowingAlongSpawnEdges` as a table test | not built |
-| A subagent that names an agent with its own identity and permissions acts with the session's credentials, and its `thread.started` lists them in `ignored` | `TestASubagentActsWithTheSessionsCredentials` | not built |
+| A subagent that names an agent with its own identity and permissions acts with the session's credentials, and its `thread.started` lists them in `ignored` | `harness.TestASubagentActsWithTheSessionsCredentials`, `manifest.TestIgnoredFieldsNameWhatAThreadDoesNotUse` | built |
 | A thread at the depth limit is not offered `spawn` or `message`, and a spawn's `tools` narrows the child's set | `harness.TestTheDepthLimitWithholdsSpawn` | built |
 | A forced `spawn` past the limit is refused with `depth_exceeded`, and a manifest asking depth 5 is refused at resolve | `TestDepthGates` | not built |
 | Several `spawn` calls in one step run concurrently, at most `maxConcurrent` at once, and each thread's fold contains only its own conversation | `harness.TestParallelSpawnsAndTheConcurrencyCap`, `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
