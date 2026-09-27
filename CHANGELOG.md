@@ -295,6 +295,24 @@ committed: the commit log already holds that.
 - `toposd serve` ends every idle session past its maximum age as
   `expired` and deletes every ended session past the retention its
   authorizer gave it, every ten minutes.
+- A model reached through a Lux door takes its window, output limit and
+  prices from the door's own model list where the list gives them,
+  before the built-in catalog's and after the agent's own `spec.model`
+  figures, so a model the catalog does not know runs when Lux serves it.
+  A door that does not answer its model list fails the turn's setup with
+  `model_unavailable`.
+- Cella refusing a session's sandbox, or a command in it, because the
+  session's allowance is spent (`budget_exhausted` or `spend_exceeded`)
+  stops the turn with `budget` and a `session.error` naming the refusal,
+  as a model gateway's refusal does, where a refused create was
+  `machine_unavailable` and a refused command a failed call the model
+  retried. `POST /v1/sessions/{id}/resume` continues the session once
+  the allowance is raised.
+- Every `model.request` records `fold_seq`, the log's last sequence when
+  its request was built, and `models.Replay` builds every request of a
+  recorded session again, on its own thread, re-encodes it with the
+  current build and compares its hash with the recorded one, reporting
+  each step `match`, `mismatch`, `codec_mismatch` or `skipped`.
 
 ## v0.7.0 - 2026-09-26
 
