@@ -97,7 +97,7 @@ frame itself would replace this check in pkg.
 
 | Field | Meaning | Default |
 |---|---|---|
-| `base_url` | a Lux door or a provider's API base, for example `https://lux.example.com/anthropic` | `TOPOS_MODELS_URL` ([[002-scaffold-and-configuration]]) |
+| `base_url` | a Lux door or a provider's API base, for example `https://lux.example.com/v1/models/anthropic` | `TOPOS_MODELS_URL` ([[002-scaffold-and-configuration]]), which may name a Lux root instead: its discovery document, `GET <url>/.well-known/lux`, names each family's door, and the connection takes its family's (`anthropic` for Messages, `openai` for Responses and Chat), never the translating `/lux` door; a URL that already names a door, and one that does not answer as Lux, are used as they are; an agent's own `spec.model.baseURL` is used as it is |
 | `model` | the upstream model name | none; required |
 | `family` | `anthropic`, `openai`, or `other` | from the catalog entry |
 | `dialect` | `anthropic-messages`, `openai-responses` or `openai-chat` | `anthropic` → `anthropic-messages`, `openai` → `openai-responses`, `other` → `openai-chat` |
@@ -262,7 +262,9 @@ The scripted model of [[026-stubs-and-tiers]] is reached only through
 a connection whose base URL has the scheme `scripted:`, which `topos`
 accepts for tests. `toposd serve` and `toposd runner` refuse to start
 without `TOPOS_MODELS_URL`, and refuse one with the `scripted:` scheme,
-each with one configuration line and exit 1.
+each with one configuration line and exit 1. A role that runs sessions
+asks a URL naming no door for Lux's discovery document at start, and
+one that does not answer stops the start the same way.
 
 ### Error codes
 
@@ -302,6 +304,7 @@ with the provider's own SDK ([[025-task-suite]]).
 | A spend refusal from Cella or a memory backend stops the turn `budget` the same way | `TestACoresSpendRefusalStopsTheTurn` | not built |
 | `POST /v1/sessions/{id}/resume` on a session idle with `budget` appends `session.resumed` with the decision's raised cap and a runner continues the turn; on any other status, and for a budget already spent, it answers `conflict` | `internal/server.TestResumeAfterTheCapIsRaised`, `harness.TestAResumedSessionContinuesTheTurn` | built |
 | The zero connection is an error, and so is one with no model or an unknown scheme, family or dialect | `models.TestConnectionValidate` | built |
+| `TOPOS_MODELS_URL` naming a Lux root sends each model to its family's door, as the discovery document names it, never the `/lux` door; a door URL and a provider's base are used as they are; a URL that does not answer stops a server role's start and fails a `topos` run naming the variable | `models.TestDoorsPickTheFamilysDoor`, `models.TestNamesADoor`, `models/dialect.TestDiscoverFindsLuxsDoors`, `cmd/toposd.TestServeFindsTheFamilysDoorFromLuxsRoot`, `internal/toposcli.TestRunReachesTheFamilysDoorFromLuxsRoot` | built |
 | `toposd serve` and `toposd runner` exit 1 with one configuration line with no `TOPOS_MODELS_URL` or with a `scripted:` one | `cmd/toposd.TestServeRefusesScriptedModel` | built |
 | A stream that ends before its dialect's terminal frame is an incomplete response and is retried, in every dialect; an error event inside a stream, an unreachable server and a canceled request are classified | `models/dialect.TestErrorsAreClassifiedForRetry` | built |
 | A retry of a stream reuses no partial output: the stored message equals the final attempt's response | `harness.TestRetriedStreamStoresFinalAttempt` | built |
