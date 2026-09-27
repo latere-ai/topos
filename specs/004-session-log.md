@@ -1,6 +1,6 @@
 ---
 title: "The session log: schema v1, event types, status and stop reasons, the fold, the directory store"
-status: validated
+status: dispatched
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md]
 affects: [session/, session/dir/, session/storetest/, prompts/transcript/]
