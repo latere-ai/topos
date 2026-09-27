@@ -3,7 +3,7 @@ title: "Scaffold and configuration reference: layout, the toposd roles, listener
 status: validated
 track: core
 depends_on: [001-architecture.md]
-affects: [cmd/toposd/, cmd/topos/, internal/config/, internal/version/, internal/serve/, internal/runnerrole/, internal/check/, internal/token/, Makefile, .lateregate.yaml, Dockerfile, .github/workflows/, .githooks/, docs/]
+affects: [cmd/toposd/, cmd/topos/, internal/config/, internal/version/, internal/runnerrole/, internal/check/, internal/token/, Makefile, .lateregate.yaml, Dockerfile, .github/workflows/, .githooks/, docs/]
 effort: small
 created: 2026-09-27
 updated: 2026-09-27
@@ -22,9 +22,11 @@ image, the verify workflow, and the community files. Every later spec
 lands into a tree that already enforces the bar.
 
 This spec is also the configuration reference. It owns the table of
-every `TOPOS_*` variable any binary or test tier reads, including the
-ones later specs give a meaning to, so an operator has one table. The
-Owner column names the spec that defines each variable's behavior.
+every `TOPOS_*` variable the server roles, the `topos` command and the
+conformance suite read, including the ones later specs give a meaning
+to, so an operator has one table. The Owner column names the spec that
+defines each variable's behavior. The task suite's variables, which
+only a run of the suite reads, are in [[025-task-suite]]'s table.
 
 ## Current state
 
@@ -44,11 +46,12 @@ Every entry either is in the tree or names the spec that builds it.
 
 ```
 api/                     openapi.yaml, the committed API document (015)
-cmd/toposd/              main: the role dispatcher, configuration, listeners, run group
+cmd/toposd/              main: the role dispatcher, configuration, listeners, run group, the wiring of each role
 cmd/topos/               main of the scripting and test client (024)
 cmd/topos-machine/       the static helper a Cella machine runs for search (009)
 session/                 the v1 schema, the fold, the Store interface (004)
 session/dir/             the directory store (004)
+session/storetest/       the conformance suite of session.Store (004)
 session/inputcheck/      the input check for secrets a client or the resolver runs (018)
 harness/                 the loop, context, prompt assembly, the permission policy (harness.Policy), hooks, threads (005, 010-013)
 harness/tools/           the built-in tools and the registry (008)
@@ -68,16 +71,17 @@ client/                  the toposd API client and the Store over it (024)
 authorizer/              the action vocabulary (006)
 internal/config/         typed configuration from the environment; every problem in one message
 internal/version/        build identity set by -ldflags
-internal/serve/          the serve role: API, store, in-process runners, triggers (015)
+internal/hosted/         the harness of a session toposd runs: its agent, model connection and Cella machine (016)
 internal/runnerrole/     the runner role: outbound to a toposd internal listener (016)
 internal/check/          the check role (028)
 internal/token/          the token role and the local issuer (006)
 internal/server/         the /v1 handlers (015)
 internal/auth/           the verifier, the authorizer client, the owner policy (006)
+internal/store/          the store of the objects other than sessions, and its conformance suite under storetest/ (014)
 internal/store/postgres/ the Postgres store (014)
-internal/store/dirobjects/ agents, triggers, credentials and memory stores on the directory store (014)
+internal/store/dir/      agents, triggers, credentials and memory stores on the directory store (014)
 internal/blob/           the blob store (014)
-internal/queue/          claims and leases on the server (016)
+internal/runnerapi/      the runner routes on the internal listener: claims, leases, appends (016)
 internal/triggers/       schedules (022)
 internal/events/         the sink client (023)
 internal/credentials/    credential custody (018)

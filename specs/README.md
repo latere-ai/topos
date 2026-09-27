@@ -12,8 +12,8 @@ from, and acceptance criteria that are testable statements. Spec 001
 fixes the architecture and the invariants every other spec assumes;
 read it first. Spec 004 is the schema everything else reads and writes,
 and spec 005 is the loop. Spec 002 is the configuration reference:
-every `TOPOS_*` variable is in its table, with the spec that owns its
-behavior.
+every `TOPOS_*` variable an operator sets is in its table, with the
+spec that owns its behavior.
 
 ## Layout
 
