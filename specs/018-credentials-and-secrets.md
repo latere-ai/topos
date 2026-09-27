@@ -1,6 +1,6 @@
 ---
 title: "Credentials, connections and secrets: write-only credentials, the agent's identity and its session tokens, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope"
-status: validated
+status: dispatched
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 003-manifest.md, 004-session-log.md, 006-identity.md, 009-machines.md]
 affects: [internal/credentials/, internal/identity/, internal/egressproxy/, session/inputcheck/, runner/, machine/cella/, manifest/, internal/hosted/, internal/runnerapi/, internal/runnerrole/, internal/server/, internal/config/, test/stubs/]
