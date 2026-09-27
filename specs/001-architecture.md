@@ -123,7 +123,7 @@ is under `internal/`.
 | `memory`, `memory/dir`, `memory/arca` | memory stores: attach, sync and the conflict rule; a directory backend and an Arca files-plane backend | dir: the local filesystem; arca: its base URL | [[020-memory-stores]] |
 | `manifest`, `manifest/v1` | the Agent, Trigger, MemoryStore and Connection kinds as files, and one resolver | nothing | [[003-manifest]] |
 | `client` | the toposd API client, including the `session.Store` an external runner uses | its base URL | [[024-client-cli-skill]] |
-| `authorizer` | the action vocabulary an installation's authorizer is written against | nothing | [[006-identity]] |
+| `authorizer` | the action vocabulary an installation's authorizer is written against, as the value types of `latere.ai/x/pkg/authz` | nothing | [[006-identity]] |
 | `internal/server`, `internal/store/postgres`, `internal/queue`, `internal/triggers`, `internal/events`, `internal/credentials` | toposd's API, the Postgres store, leases and claims, triggers, the sink, credential custody | the database; the authorizer and the sink | [[015-api]], [[014-store]], [[016-runners]], [[022-triggers]], [[023-events-and-observability]], [[018-credentials-and-secrets]] |
 | `cmd/toposd` | the roles `serve`, `runner`, `check` and `token` | per role | [[002-scaffold-and-configuration]] |
 | `cmd/topos` | the scripting and test client: run a session in print mode in the working directory, attach, apply manifests | its configured toposd, or nothing when it runs a local session | [[024-client-cli-skill]] |
@@ -133,7 +133,10 @@ is under `internal/`.
 | `test/stubs/luxstub` | the stub Lux, an in-process test server on loopback | nothing; it serves | [[026-stubs-and-tiers]] |
 
 The rule for the root packages: `session`, `harness`, `manifest` and
-`authorizer` compute and decide and import no network client. A
+`authorizer` compute and decide and import no network client. The one
+shared contract a root package imports although it also holds a client
+is `latere.ai/x/pkg/authz`: `authorizer` publishes its value types and
+never constructs its client. A
 machine dials only its substrate; `models/dialect` and `client` dial
 only the base URL their caller hands them. An embedder imports
 `harness`, `runner`, `session`, a machine, `models` and
@@ -212,7 +215,7 @@ sequence number, replay then live ([[015-api]]).
 | 10 | **The control plane never dials a runner or a machine it does not own.** Runners connect to toposd; a developer's own machine serves a hosted session as a Cella worker connecting to Cella | [[009-machines]], [[016-runners]] |
 | 11 | **Every mutation emits one event to the sink, never content** | [[023-events-and-observability]] |
 | 12 | **No Latere coordinates in the tree** outside examples and the API group. The module path, its `latere.ai/x/*` dependencies and the shared CI pipeline are the project's own coordinates and are not what this forbids | [[002-scaffold-and-configuration]], [[028-release-and-installation]] |
-| 13 | **Root packages dial nothing**: `session`, `harness`, `manifest` and `authorizer` import no network client; a machine dials only its substrate, `models/dialect` and `client` only their base URL | this spec's architecture tests |
+| 13 | **Root packages dial nothing**: `session`, `harness`, `manifest` and `authorizer` import no network client, `authorizer` reaching one only inside the shared contract `latere.ai/x/pkg/authz` whose value types it publishes; a machine dials only its substrate, `models/dialect` and `client` only their base URL | this spec's architecture tests |
 
 A lost lease is not a stop of the session under invariant 9: the runner
 that lost it stops appending, and the session continues under the next

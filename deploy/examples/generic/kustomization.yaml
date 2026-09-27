@@ -12,3 +12,11 @@ images:
   - name: toposd
     newName: ghcr.io/example/toposd
     newTag: dev
+# The address clients reach the server at and the identity provider whose
+# tokens it accepts. A self-hoster without one leaves TOPOS_OIDC_ISSUERS
+# out and puts a TOPOS_LOCAL_ISSUER_KEY in a toposd Secret instead.
+configMapGenerator:
+  - name: toposd
+    literals:
+      - TOPOS_PUBLIC_URL=https://topos.example.com
+      - TOPOS_OIDC_ISSUERS=https://login.example.com

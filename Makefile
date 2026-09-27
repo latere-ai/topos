@@ -3,7 +3,7 @@
 
 GO ?= go
 
-.PHONY: build check clean fmt hooks run
+.PHONY: build check clean fmt hooks run token
 
 # The whole bar. Every gate lives in latere.ai/x/ci-gate, pinned as a tool
 # in go.mod and configured in .lateregate.yaml, so this target is a name for
@@ -36,10 +36,25 @@ build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(OUT_DIR)/topos ./cmd/topos
 	@echo "built $(OUT_DIR)/toposd $(OUT_DIR)/topos"
 
-# The server on loopback. Until spec 015 lands the process serves its probes.
-run: build
-	TOPOS_PUBLIC_ADDR=127.0.0.1:8080 TOPOS_INTERNAL_ADDR=127.0.0.1:8081 \
+# The server on loopback as a self-hoster runs it: the local issuer with a
+# key generated once under out/, the owner policy, and admin as its admin.
+# `make token` prints a token for it. Until spec 015 lands the process
+# serves its probes and its key set.
+LOCAL_KEY := $(OUT_DIR)/local-issuer.pem
+LOCAL_ENV = TOPOS_PUBLIC_URL=http://127.0.0.1:8080 \
+	TOPOS_LOCAL_ISSUER_KEY="$$(cat $(LOCAL_KEY))" \
+	TOPOS_ADMIN_SUBJECTS='http://127.0.0.1:8080|admin'
+
+$(LOCAL_KEY):
+	@mkdir -p $(OUT_DIR)
+	openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out $@
+
+run: build $(LOCAL_KEY)
+	$(LOCAL_ENV) TOPOS_PUBLIC_ADDR=127.0.0.1:8080 TOPOS_INTERNAL_ADDR=127.0.0.1:8081 \
 		$(OUT_DIR)/toposd
+
+token: build $(LOCAL_KEY)
+	@$(LOCAL_ENV) $(OUT_DIR)/toposd token
 
 fmt:
 	gofmt -w $$(git ls-files '*.go')

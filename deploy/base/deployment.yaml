@@ -39,6 +39,17 @@ spec:
           # the published image with an `images` entry.
           image: toposd
           args: ["serve"]
+          # The installation's own variables: TOPOS_PUBLIC_URL and
+          # TOPOS_OIDC_ISSUERS from the overlay's toposd ConfigMap, and
+          # the local issuer's TOPOS_LOCAL_ISSUER_KEY, when there is one,
+          # from a toposd Secret. toposd does not start without the URL
+          # and one of the other two (spec 006).
+          envFrom:
+            - configMapRef:
+                name: toposd
+            - secretRef:
+                name: toposd
+                optional: true
           env:
             # The audience this server answers to. Every token it accepts
             # carries it. An installation whose callers hold tokens
