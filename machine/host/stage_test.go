@@ -194,9 +194,9 @@ func TestAStageRunsWithTheSessionsPolicy(t *testing.T) {
 	}
 }
 
-// TestAStraysProcessGroupEndsWithIt: a child a command leaves behind is
+// TestAStrayChildEndsWithItsCommand: a child a command leaves behind is
 // killed once the command has exited, as on the host.
-func TestAStraysProcessGroupEndsWithIt(t *testing.T) {
+func TestAStrayChildEndsWithItsCommand(t *testing.T) {
 	h, _, _ := staging(t)
 	pidFile := filepath.Join(h.SpillDir(), "stray.pid")
 	res, err := h.Exec(t.Context(), machine.ExecRequest{Command: "/bin/sleep 30 & echo $! > " + pidFile})
