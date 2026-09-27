@@ -3,10 +3,11 @@
 
 // Package luxstub is the stub Lux of spec 026: an HTTP server on
 // loopback that serves the Messages, Responses and Chat Completions
-// doors and Lux's discovery document, decodes each request with that dialect's frontend codec, and
-// streams the scripted reply for the request's model back through the
-// same codec. It records every request and injects the failures a reply
-// names. It is a test artifact.
+// doors, each door's model list, and Lux's discovery document, decodes
+// each request with that dialect's frontend codec, and streams the
+// scripted reply for the request's model back through the same codec.
+// It records every request and injects the failures a reply names. It
+// is a test artifact.
 package luxstub
 
 import (
@@ -21,6 +22,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect"
 	"latere.ai/x/pkg/llmdialect/anthropic"
+	"latere.ai/x/pkg/llmdialect/bridge"
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/openaichat"
 	"latere.ai/x/pkg/llmdialect/openairesp"
@@ -33,6 +35,8 @@ const (
 	PathChat      = "/openai/v1/chat/completions"
 	// PathDiscovery is Lux's discovery document, which names the doors.
 	PathDiscovery = "/.well-known/lux"
+	// PathModels is each door's model list, under the door's path.
+	PathModels = "/v1/models"
 )
 
 // Failure is an injected failure before a reply.
@@ -79,6 +83,8 @@ type Server struct {
 	replies  map[string][]Reply
 	failed   map[string]int
 	requests []Recorded
+	models   []bridge.Model
+	listed   []http.Header
 }
 
 // New starts a stub for the test and closes it when the test ends.
@@ -107,6 +113,21 @@ func (s *Server) Requests() []Recorded {
 	return append([]Recorded(nil), s.requests...)
 }
 
+// Models sets the entries every door's model list answers, with the
+// figures each carries, as a Lux Model declares them.
+func (s *Server) Models(models ...bridge.Model) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.models = append([]bridge.Model(nil), models...)
+}
+
+// Listed returns the headers of every model list request so far.
+func (s *Server) Listed() []http.Header {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]http.Header(nil), s.listed...)
+}
+
 func frontend(path string) (llmdialect.Frontend, ir.Dialect, bool) {
 	switch {
 	case strings.HasSuffix(path, PathMessages):
@@ -122,6 +143,10 @@ func frontend(path string) (llmdialect.Frontend, ir.Dialect, bool) {
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && r.URL.Path == PathDiscovery {
 		s.discovery(w)
+		return
+	}
+	if wire, ok := listWire(r.URL.Path); ok && r.Method == http.MethodGet {
+		s.list(w, r, wire)
 		return
 	}
 	fe, d, ok := frontend(r.URL.Path)
@@ -209,6 +234,31 @@ func (s *Server) discovery(w http.ResponseWriter) {
 	}
 }
 
+// listWire is the wire of the door whose model list path is p.
+func listWire(p string) (bridge.Wire, bool) {
+	switch p {
+	case "/anthropic" + PathModels:
+		return bridge.WireAnthropic, true
+	case "/openai" + PathModels:
+		return bridge.WireOpenAI, true
+	}
+	return "", false
+}
+
+// list answers a door's model list in that door's shape.
+func (s *Server) list(w http.ResponseWriter, r *http.Request, wire bridge.Wire) {
+	s.mu.Lock()
+	s.listed = append(s.listed, r.Header.Clone())
+	body := bridge.ModelList(wire, s.models)
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	// A failed write means the client is gone; the stub has nothing left
+	// to answer.
+	if _, err := w.Write(body); err != nil {
+		return
+	}
+}
+
 func writeError(w http.ResponseWriter, status int, typ, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -220,7 +270,10 @@ func writeError(w http.ResponseWriter, status int, typ, msg string) {
 }
 
 // stream writes the response as the dialect's SSE, through its
-// frontend encoder; cut stops before the terminal events.
+// frontend encoder; cut stops before the terminal events. A Responses
+// reasoning item, an opaque block of that dialect, is written as the
+// provider streams one, since the frontend encoder writes no opaque
+// block.
 func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.Response, cut bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	enc := fe.NewEventEncoder(w)
@@ -229,6 +282,14 @@ func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.R
 		evs = evs[:len(evs)-2]
 	}
 	for _, ev := range evs {
+		if fe.Name() == ir.DialectOpenAIResponses && reasoningItem(resp, ev) {
+			if ev.Type == ir.EventBlockStart {
+				if err := writeReasoning(w, ev.Index, resp.Blocks[ev.Index].Opaque.Raw); err != nil {
+					return
+				}
+			}
+			continue
+		}
 		if err := enc.Encode(ev); err != nil {
 			return
 		}
@@ -236,6 +297,47 @@ func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.R
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// reasoningItem reports whether ev starts or stops a block of resp that
+// is a Responses reasoning item.
+func reasoningItem(resp ir.Response, ev ir.Event) bool {
+	if (ev.Type != ir.EventBlockStart && ev.Type != ir.EventBlockStop) || ev.Index >= len(resp.Blocks) {
+		return false
+	}
+	o := resp.Blocks[ev.Index].Opaque
+	return o != nil && o.Dialect == ir.DialectOpenAIResponses && o.Kind == "reasoning"
+}
+
+// writeReasoning writes a Responses reasoning item as the provider
+// streams one: the item added with an empty summary, each summary part
+// as a delta, and the item done as raw holds it, its encrypted content
+// included.
+func writeReasoning(w io.Writer, index int, raw json.RawMessage) error {
+	var item struct {
+		ID      string `json:"id"`
+		Summary []struct {
+			Text string `json:"text"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return fmt.Errorf("luxstub: the reasoning item: %w", err)
+	}
+	frames := []map[string]any{{"type": "response.output_item.added", "output_index": index, "item": map[string]any{"type": "reasoning", "id": item.ID, "summary": []any{}}}}
+	for i, part := range item.Summary {
+		frames = append(frames, map[string]any{"type": "response.reasoning_summary_text.delta", "item_id": item.ID, "output_index": index, "summary_index": i, "delta": part.Text})
+	}
+	frames = append(frames, map[string]any{"type": "response.output_item.done", "output_index": index, "item": raw})
+	for _, f := range frames {
+		b, err := json.Marshal(f)
+		if err != nil {
+			return fmt.Errorf("luxstub: the reasoning item: %w", err)
+		}
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", f["type"], b); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Events is the IR event sequence of a whole response: the stream
@@ -254,6 +356,8 @@ func Events(resp ir.Response) []ir.Event {
 			head.ToolUse = &ir.ToolUse{ID: b.ToolUse.ID, Name: b.ToolUse.Name}
 		case ir.BlockRedactedThinking:
 			head.Redacted = b.Redacted
+		case ir.BlockOpaque:
+			head.Opaque = b.Opaque
 		}
 		evs = append(evs, ir.Event{Type: ir.EventBlockStart, Index: i, Block: &head})
 		switch b.Type {

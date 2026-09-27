@@ -5,13 +5,16 @@ package luxstub
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"latere.ai/x/pkg/llmdialect/bridge"
 	"latere.ai/x/pkg/llmdialect/ir"
+	"latere.ai/x/pkg/llmdialect/openairesp"
 )
 
 func post(t *testing.T, url, body string) (int, string) {
@@ -94,5 +97,83 @@ func TestAnInjectedErrorEventFollowsThePartialStream(t *testing.T) {
 	code, body := post(t, s.URL()+PathChat, chatBody)
 	if code != http.StatusOK || !bytes.HasSuffix([]byte(body), []byte("event: error\ndata: {}\n\n")) || strings.Contains(body, "[DONE]") {
 		t.Fatalf("%d %q", code, body)
+	}
+}
+
+func TestEachDoorListsTheModelsWithTheirFigures(t *testing.T) {
+	s := New(t)
+	s.Models(bridge.Model{Name: "vendor/m", ContextWindow: 1000, MaxOutputTokens: 100, InputModalities: []string{"text", "image"},
+		Pricing: &bridge.ModelPricing{Currency: "USD", Input: "1.5", Output: "6"}})
+	for path, want := range map[string]string{
+		"/openai" + PathModels:    `"context_window":1000,"max_output_tokens":100`,
+		"/anthropic" + PathModels: `"max_input_tokens":1000,"max_tokens":100`,
+	} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL()+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer k")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(resp.Body)
+		if cerr := resp.Body.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), `"id":"vendor/m"`) || !strings.Contains(string(b), want) || !strings.Contains(string(b), `"input":"1.5"`) {
+			t.Fatalf("%s: %d %s", path, resp.StatusCode, b)
+		}
+	}
+	if l := s.Listed(); len(l) != 2 || l[0].Get("Authorization") != "Bearer k" || len(s.Requests()) != 0 {
+		t.Fatalf("listed %v, %d model requests", l, len(s.Requests()))
+	}
+}
+
+func TestAResponsesReasoningItemStreamsAsTheProviderSendsIt(t *testing.T) {
+	raw := json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"weigh it"}],"encrypted_content":"gAAAA-stub"}`)
+	s := New(t)
+	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{
+		{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: raw}},
+		{Type: ir.BlockText, Text: "done"},
+	}}})
+	code, body := post(t, s.URL()+PathResponses, `{"model":"m","stream":true,"input":"hi"}`)
+	if code != http.StatusOK {
+		t.Fatalf("%d %s", code, body)
+	}
+	dec := openairesp.NewBackend().NewEventDecoder(strings.NewReader(body))
+	var blocks []ir.BlockType
+	var opaque *ir.Opaque
+	var thinking string
+	for {
+		ev, err := dec.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch ev.Type {
+		case ir.EventBlockStart:
+			blocks = append(blocks, ev.Block.Type)
+			if ev.Block.Opaque != nil {
+				opaque = ev.Block.Opaque
+			}
+		case ir.EventThinkingDelta:
+			thinking += ev.Delta
+		}
+	}
+	if len(blocks) != 3 || blocks[0] != ir.BlockThinking || blocks[1] != ir.BlockOpaque || blocks[2] != ir.BlockText || thinking != "weigh it" {
+		t.Fatalf("blocks %v, thinking %q", blocks, thinking)
+	}
+	if opaque == nil || !strings.Contains(string(opaque.Raw), `"encrypted_content":"gAAAA-stub"`) {
+		t.Fatalf("opaque %+v", opaque)
+	}
+	s.Script("m", Reply{Response: ir.Response{Blocks: []ir.Block{{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`[`)}}}}})
+	if code, body := post(t, s.URL()+PathResponses, `{"model":"m","stream":true,"input":"hi"}`); code != http.StatusOK || strings.Contains(body, "response.completed") {
+		t.Fatalf("an unreadable reasoning item: %d %s", code, body)
 	}
 }
