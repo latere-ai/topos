@@ -32,6 +32,13 @@ committed: the commit log already holds that.
   OpenAI Responses and Chat Completions wire formats through the
   llmdialect codecs, and reports a stream the server closed before its
   last frame as incomplete, never as a finished answer.
+- `machine` is where a session's tools run: the `Machine` interface, the
+  credential deny-list (home credential files, `.env` files, key files,
+  and secret-named environment variables), and grep and glob that honor
+  `.gitignore`. `machine/host` is the person's own computer: file access
+  confined to the session's roots through `os.Root`, each command in its
+  own process group, killed on timeout, on cancel and when its shell
+  exits, and background jobs that end with the session.
 
 ## v0.7.0 - 2026-09-26
 
