@@ -17,6 +17,13 @@ committed: the commit log already holds that.
   proxy; the v0.7.0 tree is at its tag, and its specs are under
   `docs/history/`. The adversarial review engine continues as its own module,
   `latere.ai/x/adversarial`.
+- `session` is the session log of schema v1: the `Session` header, the
+  typed events a session appends, and `Fold`, which renders one thread's
+  transcript as Lux wire messages and is byte-identical for the same log.
+  `session.NewMemoryStore` keeps sessions in memory, and `session/dir`
+  keeps each in a directory with an fsync before every acknowledged append
+  and a single-writer lock held with `flock`. `session/storetest` is the
+  suite every `session.Store` passes.
 
 ## v0.7.0 - 2026-09-26
 

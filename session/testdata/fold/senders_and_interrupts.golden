@@ -1,0 +1,52 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Plan the release."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Planning."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Message from Grace:"
+          },
+          {
+            "type": "text",
+            "text": "Skip the changelog."
+          },
+          {
+            "type": "text",
+            "text": "Grace interrupted the previous turn."
+          },
+          {
+            "type": "text",
+            "text": "Message from Ada:"
+          },
+          {
+            "type": "text",
+            "text": "Keep it."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Summary of the conversation so far:\n\nAda shared a credential, since removed."
+          },
+          {
+            "type": "text",
+            "text": "Continue."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

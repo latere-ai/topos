@@ -1,0 +1,60 @@
+{
+  "": {
+    "system": [
+      {
+        "kind": "context",
+        "context": "Working directory /work on linux/arm64."
+      },
+      {
+        "kind": "instructions",
+        "instructions": {
+          "path": "AGENTS.md",
+          "sha256": "abc",
+          "blob": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      {
+        "kind": "skills",
+        "skills": [
+          {
+            "name": "release",
+            "description": "Cut a release.",
+            "path": ".agents/skills/release/SKILL.md"
+          }
+        ]
+      },
+      {
+        "kind": "memory",
+        "memory": {
+          "memory_store_id": "mem_01J9Z3Q4W8KX6T0M2V5N7R0001",
+          "name": "notes",
+          "access": "read_write",
+          "path": "/mnt/memory/notes",
+          "version": "2"
+        }
+      },
+      {
+        "kind": "memory",
+        "memory": {
+          "memory_store_id": "mem_01J9Z3Q4W8KX6T0M2V5N7R0002",
+          "name": "team",
+          "access": "read_only",
+          "path": "/mnt/memory/team"
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Hi."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

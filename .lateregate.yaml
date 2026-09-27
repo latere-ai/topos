@@ -4,6 +4,11 @@
 
 cover:
   trim_prefix: latere.ai/x/topos/
+  exempt:
+    session/storetest: >-
+      the conformance suite of session.Store; its statements are assertions,
+      and the uncovered ones are the failure branches a conforming store
+      never takes. The stores it runs against carry the floor.
 
 spec:
   archive:

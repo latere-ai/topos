@@ -1,0 +1,40 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Try the refactor."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Refactored."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "The working directory was restored to its state at the end of turn 0."
+          },
+          {
+            "type": "text",
+            "text": "Try something smaller."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

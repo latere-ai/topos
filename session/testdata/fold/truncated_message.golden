@@ -1,0 +1,67 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Write the file."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Writing"
+          },
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_kept",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_kept",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "ok"
+                }
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "Your previous response was cut off at the output limit. Continue from where it stopped."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "continued"
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

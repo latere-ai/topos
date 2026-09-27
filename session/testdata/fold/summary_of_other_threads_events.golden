@@ -1,0 +1,26 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "start"
+          },
+          {
+            "type": "text",
+            "text": "Summary of the conversation so far:\n\nA reviewer ran."
+          },
+          {
+            "type": "text",
+            "text": "next"
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

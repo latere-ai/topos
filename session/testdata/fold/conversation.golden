@@ -1,0 +1,32 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Fix the failing test."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "thinking",
+            "text": "look first",
+            "signature": "sig"
+          },
+          {
+            "type": "text",
+            "text": "Done."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

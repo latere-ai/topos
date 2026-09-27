@@ -1,0 +1,76 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "List."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_big",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          },
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_small",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_big",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "[cleared to save context; run the tool again if the result is needed]"
+                }
+              ]
+            }
+          },
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_small",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "short"
+                }
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "Again."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

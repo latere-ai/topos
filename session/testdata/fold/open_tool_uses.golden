@@ -1,0 +1,94 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Go."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_1",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_1",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "one"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_2",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          },
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_3",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_3",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "three"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "open": [
+      "toolu_2"
+    ],
+    "unknown": []
+  }
+}

@@ -1,0 +1,327 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
+package session
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"slices"
+	"time"
+)
+
+// Digest addresses a blob: "sha256:" and the lowercase hex of its bytes.
+type Digest string
+
+// DigestOf returns the digest of b.
+func DigestOf(b []byte) Digest {
+	sum := sha256.Sum256(b)
+	return Digest("sha256:" + hex.EncodeToString(sum[:]))
+}
+
+var digestForm = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// Valid reports whether d has the digest form.
+func (d Digest) Valid() bool { return digestForm.MatchString(string(d)) }
+
+// Hex returns the hex part of d.
+func (d Digest) Hex() string {
+	if !d.Valid() {
+		return ""
+	}
+	return string(d[len("sha256:"):])
+}
+
+// The errors of spec 004. Codes a client sees are the text after
+// "session: ".
+var (
+	ErrSequenceConflict     = errors.New("session: sequence_conflict")
+	ErrRedactionUncompacted = errors.New("session: redaction_uncompacted")
+	ErrSchemaTooNew         = errors.New("session: schema_too_new")
+	ErrLocked               = errors.New("session: locked")
+	ErrCorrupt              = errors.New("session: corrupt")
+	ErrNotFound             = errors.New("session: not_found")
+	ErrExists               = errors.New("session: exists")
+	ErrInvalid              = errors.New("session: invalid")
+	ErrBlobMismatch         = errors.New("session: blob_mismatch")
+)
+
+// Holder is who holds a session's lease.
+type Holder struct {
+	Runner     string    `json:"runner"`
+	PID        int       `json:"pid,omitempty"`
+	Host       string    `json:"host,omitempty"`
+	AcquiredAt time.Time `json:"acquired_at"`
+}
+
+// LockedError is ErrLocked naming the current holder.
+type LockedError struct {
+	Holder Holder
+}
+
+func (e *LockedError) Error() string {
+	h := e.Holder
+	if h.Runner == "" && h.PID == 0 {
+		return "session: locked by another holder"
+	}
+	return fmt.Sprintf("session: locked by runner %q (pid %d on %s) since %s",
+		h.Runner, h.PID, h.Host, h.AcquiredAt.UTC().Format(time.RFC3339))
+}
+
+// Is makes errors.Is(err, ErrLocked) hold.
+func (e *LockedError) Is(target error) bool { return target == ErrLocked }
+
+// Lease is a session's one-writer lease.
+type Lease interface {
+	// Renew extends the lease; it fails once the lease is lost.
+	Renew(ctx context.Context) error
+	// Release gives the lease up. A second Release is a no-op.
+	Release() error
+	// Lost is closed when the lease ends for any reason.
+	Lost() <-chan struct{}
+}
+
+// ListOptions filter and page List. Sessions list newest first; Cursor
+// is the value a previous page returned.
+type ListOptions struct {
+	Status  Status
+	AgentID string
+	Limit   int
+	Cursor  string
+}
+
+// DefaultListLimit is the page size of a List with no limit.
+const DefaultListLimit = 50
+
+// Store keeps sessions, their logs and their blobs (spec 004).
+type Store interface {
+	Create(ctx context.Context, s Session, blobs map[Digest][]byte) error
+	Get(ctx context.Context, id string) (Session, error)
+	List(ctx context.Context, o ListOptions) ([]Session, string, error)
+	Append(ctx context.Context, id string, afterSeq uint64, events []Event) (uint64, error)
+	Events(ctx context.Context, id string, fromSeq uint64, limit int) ([]Event, error)
+	Watch(ctx context.Context, id string, fromSeq uint64) (<-chan Event, error)
+	PutBlob(ctx context.Context, id string, r io.Reader) (Digest, error)
+	Blob(ctx context.Context, id string, d Digest) (io.ReadCloser, error)
+	Redact(ctx context.Context, id, eventID string, by Sender, reason string) error
+	Acquire(ctx context.Context, id string, holder Holder) (Lease, error)
+	Delete(ctx context.Context, id string) error
+}
+
+// CheckCreate validates a session and its blobs for Create.
+func CheckCreate(s Session, blobs map[Digest][]byte) error {
+	if err := CheckID(PrefixSession, s.ID); err != nil {
+		return err
+	}
+	if s.Schema != SchemaVersion {
+		return fmt.Errorf("%w: schema %d, this build writes %d", ErrInvalid, s.Schema, SchemaVersion)
+	}
+	if s.LastSeq != 0 {
+		return fmt.Errorf("%w: a new session has last_seq 0, got %d", ErrInvalid, s.LastSeq)
+	}
+	if len(s.Metadata) > MaxMetadata {
+		return fmt.Errorf("%w: %d metadata entries, at most %d", ErrInvalid, len(s.Metadata), MaxMetadata)
+	}
+	for d, b := range blobs {
+		if DigestOf(b) != d {
+			return fmt.Errorf("%w: %s", ErrBlobMismatch, d)
+		}
+	}
+	return nil
+}
+
+// Stamp fills the session id and the sequences of a batch that follows
+// afterSeq, in place, and returns the batch's last sequence.
+func Stamp(id string, afterSeq uint64, events []Event) uint64 {
+	for i := range events {
+		events[i].SessionID = id
+		events[i].Seq = afterSeq + uint64(i) + 1
+	}
+	return afterSeq + uint64(len(events))
+}
+
+// CheckBatch validates a batch against the stored log. last is the
+// session's last sequence; stored returns the stored events from a
+// sequence onward, and is called only for a retry. It returns
+// retried=true when the batch is an accepted batch sent again, in which
+// case the store answers success without writing.
+func CheckBatch(id string, last, afterSeq uint64, events []Event, stored func(from uint64) ([]Event, error)) (retried bool, err error) {
+	if len(events) == 0 {
+		return false, fmt.Errorf("%w: an append carries at least one event", ErrInvalid)
+	}
+	seen := make(map[string]bool, len(events))
+	for i, e := range events {
+		if err := CheckID(PrefixEvent, e.ID); err != nil {
+			return false, err
+		}
+		if seen[e.ID] {
+			return false, fmt.Errorf("%w: event %s repeats in the batch", ErrInvalid, e.ID)
+		}
+		seen[e.ID] = true
+		if e.SessionID != id {
+			return false, fmt.Errorf("%w: event %s names session %q", ErrInvalid, e.ID, e.SessionID)
+		}
+		if want := afterSeq + uint64(i) + 1; e.Seq != want {
+			return false, fmt.Errorf("%w: event %s has seq %d, want %d", ErrInvalid, e.ID, e.Seq, want)
+		}
+		if e.Type == "" {
+			return false, fmt.Errorf("%w: event %s has no type", ErrInvalid, e.ID)
+		}
+		if !json.Valid(e.Payload) || !bytes.HasPrefix(bytes.TrimSpace(e.Payload), []byte("{")) {
+			return false, fmt.Errorf("%w: event %s payload is not a JSON object", ErrInvalid, e.ID)
+		}
+		if e.Time.IsZero() {
+			return false, fmt.Errorf("%w: event %s has no time", ErrInvalid, e.ID)
+		}
+	}
+	if afterSeq == last {
+		return false, nil
+	}
+	if afterSeq > last {
+		return false, fmt.Errorf("%w: after_seq %d, last sequence %d", ErrSequenceConflict, afterSeq, last)
+	}
+	have, err := stored(afterSeq + 1)
+	if err != nil {
+		return false, err
+	}
+	if len(have) < len(events) {
+		return false, fmt.Errorf("%w: after_seq %d, last sequence %d", ErrSequenceConflict, afterSeq, last)
+	}
+	for i, e := range events {
+		if !SameEvent(have[i], e) {
+			return false, fmt.Errorf("%w: after_seq %d, last sequence %d", ErrSequenceConflict, afterSeq, last)
+		}
+	}
+	return true, nil
+}
+
+// SameEvent reports whether a and b are the same event: equal fields and
+// the same payload up to insignificant whitespace.
+func SameEvent(a, b Event) bool {
+	if a.ID != b.ID || a.Seq != b.Seq || a.SessionID != b.SessionID || a.Type != b.Type ||
+		!a.Time.Equal(b.Time) || a.Turn != b.Turn || a.Step != b.Step || a.Thread != b.Thread {
+		return false
+	}
+	var ca, cb bytes.Buffer
+	if json.Compact(&ca, a.Payload) != nil || json.Compact(&cb, b.Payload) != nil {
+		return false
+	}
+	return bytes.Equal(ca.Bytes(), cb.Bytes())
+}
+
+// ApplyBatch updates the Session header from appended events: the last
+// sequence, the turn, the update time, and the status and stop reason of
+// the last session.status event.
+func ApplyBatch(s *Session, events []Event) {
+	for _, e := range events {
+		if e.Seq > s.LastSeq {
+			s.LastSeq = e.Seq
+		}
+		if e.Turn > s.Turn {
+			s.Turn = e.Turn
+		}
+		if t := e.Time.UTC(); t.After(s.UpdatedAt) {
+			s.UpdatedAt = t
+		}
+		if e.Type != TypeSessionStatus || e.Redacted() {
+			continue
+		}
+		var p SessionStatus
+		if e.Decode(&p) == nil && p.Status != "" {
+			s.Status = p.Status
+			s.StopReason = p.StopReason
+		}
+	}
+}
+
+// CheckSequence reports ErrCorrupt when events are not dense from their
+// first sequence.
+func CheckSequence(events []Event, from uint64) error {
+	for i, e := range events {
+		if want := from + uint64(i); e.Seq != want {
+			return fmt.Errorf("%w: seq %d where %d was expected", ErrCorrupt, e.Seq, want)
+		}
+	}
+	return nil
+}
+
+// Tombstone returns e redacted, and the event.redacted event recording
+// it, sequenced after last.
+func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (Event, Event, error) {
+	red, err := NewEvent(TypeEventRedacted, EventRedacted{EventID: e.ID, By: by, Reason: reason}, now)
+	if err != nil {
+		return Event{}, Event{}, err
+	}
+	red.SessionID = e.SessionID
+	red.Seq = last + 1
+	e.Payload = slices.Clone(tombstone)
+	return e, red, nil
+}
+
+// Blobs returns the digests a payload names, in order of appearance,
+// each once.
+func (e Event) Blobs() []Digest {
+	var v any
+	if json.Unmarshal(e.Payload, &v) != nil {
+		return nil
+	}
+	var out []Digest
+	seen := map[Digest]bool{}
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case string:
+			if d := Digest(x); d.Valid() && !seen[d] {
+				seen[d] = true
+				out = append(out, d)
+			}
+		case []any:
+			for _, y := range x {
+				walk(y)
+			}
+		case map[string]any:
+			keys := make([]string, 0, len(x))
+			for k := range x {
+				keys = append(keys, k)
+			}
+			slices.Sort(keys)
+			for _, k := range keys {
+				walk(x[k])
+			}
+		}
+	}
+	walk(v)
+	return out
+}
+
+// OrphanBlobs returns the blobs the redacted event named that no other
+// event of the log names.
+func OrphanBlobs(redacted Event, log []Event) []Digest {
+	named := redacted.Blobs()
+	if len(named) == 0 {
+		return nil
+	}
+	others := map[Digest]bool{}
+	for _, e := range log {
+		if e.ID == redacted.ID {
+			continue
+		}
+		for _, d := range e.Blobs() {
+			others[d] = true
+		}
+	}
+	var out []Digest
+	for _, d := range named {
+		if !others[d] {
+			out = append(out, d)
+		}
+	}
+	return out
+}

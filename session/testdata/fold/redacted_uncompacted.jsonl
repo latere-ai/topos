@@ -1,0 +1,3 @@
+{"id":"evt_01J9Z3Q4W8KX6T0M2V5N7R0001","seq":1,"session_id":"ses_01J9Z3P9D2F6H8K0M2Q4S6T8W0","type":"user.message","time":"2026-09-27T10:00:01Z","turn":1,"payload":{"tombstone":true}}
+{"id":"evt_01J9Z3Q4W8KX6T0M2V5N7R0002","seq":2,"session_id":"ses_01J9Z3P9D2F6H8K0M2Q4S6T8W0","type":"agent.message","time":"2026-09-27T10:00:02Z","turn":1,"payload":{"message":{"role":"assistant","blocks":[{"type":"text","text":"Noted."}]},"stop_reason":"end_turn"}}
+{"id":"evt_01J9Z3Q4W8KX6T0M2V5N7R0003","seq":3,"session_id":"ses_01J9Z3P9D2F6H8K0M2Q4S6T8W0","type":"event.redacted","time":"2026-09-27T10:00:03Z","payload":{"event_id":"evt_01J9Z3Q4W8KX6T0M2V5N7R0001","by":{"subject":"usr_ada","name":"Ada","kind":"person"}}}

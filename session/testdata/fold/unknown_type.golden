@@ -1,0 +1,21 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Hi."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": [
+      "future.kind",
+      "other.kind"
+    ]
+  }
+}

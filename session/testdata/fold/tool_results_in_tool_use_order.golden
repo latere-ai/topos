@@ -1,0 +1,111 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Run three things."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Running."
+          },
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_a",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          },
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_b",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          },
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_c",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_a",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "a"
+                }
+              ]
+            }
+          },
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_b",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "b"
+                }
+              ]
+            }
+          },
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_c",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "c"
+                }
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "Also check the docs."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "All three ran."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}
