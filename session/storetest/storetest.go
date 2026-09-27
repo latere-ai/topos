@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,7 @@ func Run(t *testing.T, open Open) {
 		{"Lease", testLease},
 		{"Delete", testDelete},
 		{"List", testList},
+		{"ListFilters", testListFilters},
 		{"UnknownTypeIsKept", testUnknownType},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open(t)) })
@@ -555,6 +557,74 @@ func testList(t *testing.T, st session.Store) {
 	none, _, err := st.List(ctx, session.ListOptions{AgentID: "agent_none"})
 	if err != nil || len(none) != 0 {
 		t.Fatalf("agent filter: %v, %v", none, err)
+	}
+}
+
+func testListFilters(t *testing.T, st session.Store) {
+	// Newest first, the order List answers in, each with its initiator
+	// and runner kind.
+	var all []session.Session
+	for _, c := range []struct{ owner, runner string }{
+		{"usr_a", session.RunnerHosted}, {"usr_b", session.RunnerExternal}, {"usr_a", session.RunnerExternal},
+		{"usr_c", session.RunnerHosted}, {"usr_a", session.RunnerHosted}, {"usr_b", session.RunnerHosted},
+		{"usr_a", session.RunnerHosted}, {"usr_c", session.RunnerExternal},
+	} {
+		s := NewSession()
+		s.Initiator.Subject, s.Runner = c.owner, c.runner
+		if err := st.Create(t.Context(), s, nil); err != nil {
+			t.Fatal(err)
+		}
+		all = append([]session.Session{s}, all...)
+	}
+	for _, c := range []struct {
+		name string
+		o    session.ListOptions
+	}{
+		{"one owner", session.ListOptions{Owners: []string{"usr_a"}}},
+		{"two owners", session.ListOptions{Owners: []string{"usr_b", "usr_c"}}},
+		{"no such owner", session.ListOptions{Owners: []string{"usr_z"}}},
+		{"runner", session.ListOptions{Runner: session.RunnerExternal}},
+		{"owner and runner", session.ListOptions{Owners: []string{"usr_a"}, Runner: session.RunnerHosted}},
+		{"owners and runner", session.ListOptions{Owners: []string{"usr_a", "usr_b"}, Runner: session.RunnerHosted}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var want []string
+			for _, s := range all {
+				if (len(c.o.Owners) == 0 || slices.Contains(c.o.Owners, s.Initiator.Subject)) && (c.o.Runner == "" || s.Runner == c.o.Runner) {
+					want = append(want, s.ID)
+				}
+			}
+			for _, limit := range []int{1, 2, 3, 0} {
+				o := c.o
+				o.Limit = limit
+				var got []string
+				for pages := 0; ; pages++ {
+					if pages > len(all) {
+						t.Fatalf("limit %d: the cursor never ends", limit)
+					}
+					page, next, err := st.List(t.Context(), o)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if limit > 0 && len(page) > limit {
+						t.Fatalf("limit %d: a page of %d", limit, len(page))
+					}
+					if len(page) == 0 && o.Cursor != "" {
+						t.Fatalf("limit %d: the page before the last named a next page", limit)
+					}
+					for _, s := range page {
+						got = append(got, s.ID)
+					}
+					if next == "" {
+						break
+					}
+					o.Cursor = next
+				}
+				if !slices.Equal(got, want) {
+					t.Fatalf("limit %d: listed %v, want %v", limit, got, want)
+				}
+			}
+		})
 	}
 }
 

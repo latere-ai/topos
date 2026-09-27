@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package postgres is the Postgres session.Store of spec 014: sessions,
-// their logs and their blobs in three tables, an append as one
-// transaction under the session row's lock, Watch over LISTEN with a
-// poll as the fallback, and the one-writer lease on the row's lease
-// columns.
+// Package postgres is the Postgres store of spec 014. As a
+// session.Store it keeps sessions, their logs and their blobs in three
+// tables, an append as one transaction under the session row's lock,
+// Watch over LISTEN with a poll as the fallback, and the one-writer
+// lease on the row's lease columns. As a store.Store it keeps agents,
+// their versions and idempotency records, each write one transaction
+// that any number of replicas may race.
 package postgres
 
 import (
@@ -47,6 +49,9 @@ type Options struct {
 	// LeaseTTL is how long a lease holds without a renew: 60 s by
 	// default, renewed every quarter of it.
 	LeaseTTL time.Duration
+	// Now is the clock idempotency records expire on: time.Now by
+	// default.
+	Now func() time.Time
 }
 
 // Store is the Postgres store.
@@ -55,6 +60,7 @@ type Store struct {
 	listen *pgx.ConnConfig
 	poll   time.Duration
 	ttl    time.Duration
+	now    func() time.Time
 }
 
 // Open applies the migrations on dsn and connects.
@@ -81,12 +87,15 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: connect: %w", err)
 	}
-	s := &Store{pool: pool, listen: listen, poll: o.Poll, ttl: o.LeaseTTL}
+	s := &Store{pool: pool, listen: listen, poll: o.Poll, ttl: o.LeaseTTL, now: o.Now}
 	if s.poll <= 0 {
 		s.poll = 2 * time.Second
 	}
 	if s.ttl <= 0 {
 		s.ttl = 60 * time.Second
+	}
+	if s.now == nil {
+		s.now = time.Now
 	}
 	return s, nil
 }
@@ -183,9 +192,14 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 	if limit <= 0 {
 		limit = session.DefaultListLimit
 	}
+	owners := o.Owners
+	if owners == nil {
+		owners = []string{}
+	}
 	rows, err := s.pool.Query(ctx, `SELECT body FROM sessions
 		WHERE ($1 = '' OR status = $1) AND ($2 = '' OR agent_id = $2) AND ($3 = '' OR id < $3)
-		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1)
+		AND (cardinality($5::text[]) = 0 OR owner = ANY($5::text[])) AND ($6 = '' OR runner = $6)
+		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1, owners, o.Runner)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: list sessions: %w", err)
 	}

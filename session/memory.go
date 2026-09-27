@@ -106,6 +106,12 @@ func ListPage(all []Session, o ListOptions) ([]Session, string) {
 		if o.AgentID != "" && s.Agent.ID != o.AgentID {
 			continue
 		}
+		if len(o.Owners) > 0 && !slices.Contains(o.Owners, s.Initiator.Subject) {
+			continue
+		}
+		if o.Runner != "" && s.Runner != o.Runner {
+			continue
+		}
 		if len(page) == limit {
 			return page, page[len(page)-1].ID
 		}

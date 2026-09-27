@@ -326,7 +326,13 @@ type Store interface {
 }
 ```
 
-`Append` updates the Session's `status`, `stop_reason`, `turn` and
+`List` answers sessions newest first, filtered by `ListOptions`:
+`Status`, `AgentID`, `Owners` (the initiator's subject is one of
+them, the narrowing an authorizer's list decision carries,
+[[006-identity]]) and `Runner` (the runner kind). A store filters
+before it pages, so every page holds only matching sessions, a walk of
+the cursors meets each match once, and the last page names no next
+cursor. `Append` updates the Session's `status`, `stop_reason`, `turn` and
 `updated_at` from the batch in the same atomic write. `Watch` is replay
 then live: every event from `fromSeq`, then each new one, in order.
 `Acquire` returns the one-writer lease: `ErrLocked` names the current
@@ -437,6 +443,7 @@ store's other backends ([[014-store]]); the routes that expose the log
 | A create that fails leaves no partial session, and every failed write and sync is returned | `session/dir.TestDirStoreCreateIsAllOrNothing`, `session/dir.TestCreateLeavesNoPartialSessionWhenABlobFails`, `session/dir.TestWriteFailuresAreReturned`, `session/dir.TestEveryFailedSyncIsReturned` | built |
 | The Session's `status` always equals the last `session.status` event, including after a crash between the two writes | `session/dir.TestSessionStatusMirrorsTheLog` | built |
 | An unknown event type is kept, is not rendered, and makes a runner refuse with `schema_too_new` | the `UnknownTypeIsKept` case of `session/storetest.Run`, the `unknown_type` golden log, `session.TestTranscriptCheck`, and `harness.TestATurnRefusesALogItCannotFold` | built |
+| `List` filters by status, agent, owners and runner kind before it pages: each match appears once across the pages and the last page names no next cursor | the `List` and `ListFilters` cases of `session/storetest.Run` | built |
 | The directory store and the in-memory store pass `session/storetest` | `session/dir.TestDirStoreConformance`, `session.TestMemoryStoreConformance` | built |
 | Every id the package mints matches its prefix and the ULID form, and a thread's id is its `thread.started` event id | `session.TestIdentifiersArePrefixedULIDs`; the `threads_and_messages` golden log of `session.TestFoldRendersEveryType` | built |
 | The directory store takes its lock on Windows | `TestDirStoreLockOnWindows` | not built |
