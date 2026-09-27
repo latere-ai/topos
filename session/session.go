@@ -6,6 +6,7 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"time"
 )
 
@@ -203,4 +204,21 @@ func Marshal(v any) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
+// HasPendingInput reports whether a session's log holds input a runner
+// should act on: a resuming user event, a message, a confirmation or a
+// client tool's result, after its last session.status (the stop reason
+// table of spec 004). A session that has never run has pending input once
+// its first message is in the log.
+func HasPendingInput(evs []Event) bool {
+	for _, ev := range slices.Backward(evs) {
+		switch ev.Type {
+		case TypeSessionStatus:
+			return false
+		case TypeUserMessage, TypeUserToolConfirmation, TypeUserToolResult:
+			return true
+		}
+	}
+	return false
 }

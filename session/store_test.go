@@ -243,3 +243,23 @@ func TestFoldOmittingRedactedAndUncompacted(t *testing.T) {
 		t.Fatalf("a malformed compaction: %v", err)
 	}
 }
+
+func TestHasPendingInput(t *testing.T) {
+	ev := func(typ Type) Event { return Event{Type: typ} }
+	for name, c := range map[string]struct {
+		evs  []Event
+		want bool
+	}{
+		"a new session":             {nil, false},
+		"a first message":           {[]Event{ev(TypeUserMessage)}, true},
+		"answered":                  {[]Event{ev(TypeUserMessage), ev(TypeSessionStatus), ev(TypeAgentMessage), ev(TypeSessionStatus)}, false},
+		"a message after the turn":  {[]Event{ev(TypeUserMessage), ev(TypeSessionStatus), ev(TypeUserMessage)}, true},
+		"a confirmation":            {[]Event{ev(TypeSessionStatus), ev(TypeUserToolConfirmation)}, true},
+		"a client result":           {[]Event{ev(TypeSessionStatus), ev(TypeUserToolResult)}, true},
+		"an interrupt resumes none": {[]Event{ev(TypeSessionStatus), ev(TypeUserInterrupt)}, false},
+	} {
+		if got := HasPendingInput(c.evs); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}

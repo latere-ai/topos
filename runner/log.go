@@ -19,6 +19,9 @@ type Log struct {
 	id   string
 	mu   sync.Mutex
 	last uint64
+	// lost is the lease's Lost channel; once it is closed every append
+	// is refused with ErrLeaseLost.
+	lost <-chan struct{}
 }
 
 // NewLog returns the log of one session whose last sequence is last.
@@ -38,6 +41,11 @@ func (l *Log) Last() uint64 {
 func (l *Log) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	select {
+	case <-l.lost:
+		return nil, ErrLeaseLost
+	default:
+	}
 	foreign, err := l.st.Events(ctx, l.id, l.last+1, 0)
 	if err != nil {
 		return nil, err

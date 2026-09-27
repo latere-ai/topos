@@ -77,15 +77,67 @@ func New(o Options) (*Runner, error) {
 // ErrEnded is a session that has ended.
 var ErrEnded = errors.New("runner: the session has ended")
 
+// ErrLeaseLost is an append after the runner's lease on the session
+// ended: another runner may hold it now, so nothing more is written.
+var ErrLeaseLost = errors.New("runner: the session's lease was lost")
+
+// SetupError is a session a runner could not start a turn of: its
+// harness configuration or its machine could not be had. Code is the
+// error code the session's session.error carries.
+type SetupError struct {
+	Code string
+	Err  error
+}
+
+func (e *SetupError) Error() string { return e.Code + ": " + e.Err.Error() }
+
+func (e *SetupError) Unwrap() error { return e.Err }
+
+// CodeSetupFailed is the code of a setup failure that names none.
+const CodeSetupFailed = "runner_setup_failed"
+
 // Drive runs one session in process until it is idle or ended: its
 // lease is the store's own, held for the whole drive.
-func (r *Runner) Drive(ctx context.Context, id string) (out harness.Outcome, err error) {
-	st := r.o.Store
-	lease, err := st.Acquire(ctx, id, session.Holder{Runner: r.o.ID, AcquiredAt: r.o.Clock()})
+func (r *Runner) Drive(ctx context.Context, id string) (harness.Outcome, error) {
+	lease, err := r.o.Store.Acquire(ctx, id, r.holder())
 	if err != nil {
 		return harness.Outcome{}, err
 	}
+	return r.drive(ctx, id, lease, false)
+}
+
+// holder is this runner as a lease names it.
+func (r *Runner) holder() session.Holder {
+	return session.Holder{Runner: r.o.ID, AcquiredAt: r.o.Clock()}
+}
+
+// drive runs a session whose lease the runner holds, and releases it.
+// A lost lease cancels the turn and fences the log, so a runner that
+// lost the session writes nothing more to it. A served drive also fences
+// the log when its context ends: a server shutting down leaves the
+// session running with its lease released, for the next runner to claim
+// and resume, rather than closing the turn as interrupted.
+func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, served bool) (out harness.Outcome, err error) {
+	st := r.o.Store
 	defer func() { err = errors.Join(err, lease.Release()) }()
+	outer := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	fence := make(chan struct{})
+	go func() {
+		defer cancel()
+		stop := outer.Done()
+		if !served {
+			stop = nil
+		}
+		select {
+		case <-lease.Lost():
+		case <-stop:
+		case <-ctx.Done():
+			return
+		}
+		close(fence)
+	}()
 	s, err := st.Get(ctx, id)
 	if err != nil {
 		return harness.Outcome{}, err
@@ -94,15 +146,16 @@ func (r *Runner) Drive(ctx context.Context, id string) (out harness.Outcome, err
 		return harness.Outcome{}, fmt.Errorf("%w: %s", ErrEnded, id)
 	}
 	log := NewLog(st, id, s.LastSeq)
+	log.lost = fence
 	if err := r.running(ctx, log); err != nil {
 		return harness.Outcome{}, err
 	}
 	cfg, err := r.o.Harness(ctx, s)
 	if err != nil {
-		return harness.Outcome{}, err
+		return harness.Outcome{}, r.setupFailed(ctx, log, err)
 	}
 	if err := r.attach(ctx, cfg, log); err != nil {
-		return harness.Outcome{}, err
+		return harness.Outcome{}, r.setupFailed(ctx, log, err)
 	}
 	evs, err := st.Events(ctx, id, 1, 0)
 	if err != nil {
@@ -161,6 +214,29 @@ func (r *Runner) Drive(ctx context.Context, id string) (out harness.Outcome, err
 			return harness.Outcome{}, err
 		}
 	}
+}
+
+// setupFailed closes a turn that could not start, with a session.error
+// and an idle status, so the session waits for its next message instead
+// of staying running with nobody driving it.
+func (r *Runner) setupFailed(ctx context.Context, log *Log, cause error) error {
+	code := CodeSetupFailed
+	if se, ok := errors.AsType[*SetupError](cause); ok {
+		code = se.Code
+	} else if mc, ok := errors.AsType[*models.Coded](cause); ok {
+		code = mc.Code
+	}
+	now := r.o.Clock()
+	e1, err := session.NewEvent(session.TypeSessionError, session.SessionError{Code: code, Message: cause.Error()}, now)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	e2, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopError, Detail: code}, now)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	_, err = log.Append(context.WithoutCancel(ctx), []session.Event{e1, e2})
+	return errors.Join(cause, err)
 }
 
 func (r *Runner) running(ctx context.Context, log *Log) error {
