@@ -496,10 +496,7 @@ func (t *turn) resume(ctx context.Context) error {
 		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: c.use.Input})
 	}
 	if err := t.runCalls(ctx, calls); err != nil {
-		if !isPause(err) {
-			return err
-		}
-		return t.finish(ctx, pauseReason(err), "")
+		return t.callsStopped(ctx, err)
 	}
 	return nil
 }
@@ -797,10 +794,7 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, attempts int, 
 		return t.finish(ctx, session.StopEndTurn, detail)
 	}
 	if err := t.runCalls(ctx, planned.run); err != nil {
-		if !isPause(err) {
-			return err
-		}
-		return t.finish(ctx, pauseReason(err), "")
+		return t.callsStopped(ctx, err)
 	}
 	if t.cut.Load() {
 		return t.finish(ctx, session.StopInterrupted, "")
@@ -925,16 +919,29 @@ func (t *turn) plan(res models.Result) (stepPlan, []answeredCall, []session.Even
 
 // runCalls runs a step's calls: each maximal run of consecutive parallel
 // tools concurrently, at most MaxParallel at once, every other call alone
-// in order. Each result is appended as its call returns.
+// in order. Each result is appended as its call returns. A call a core
+// refused for spend, and a thread that waits for a person, leave the
+// rest of the step's calls to run and are returned after them, the spend
+// refusal first.
 func (t *turn) runCalls(ctx context.Context, calls []plannedCall) error {
-	var paused error
+	var paused, spent error
+	keep := func(err error) error {
+		switch {
+		case isSpent(err):
+			spent = err
+		case isPause(err):
+			paused = err
+		default:
+			return err
+		}
+		return nil
+	}
 	for i := 0; i < len(calls); {
 		if !calls[i].tool.Properties().Parallel {
 			if err := t.call(ctx, calls[i]); err != nil {
-				if !isPause(err) {
+				if err := keep(err); err != nil {
 					return err
 				}
-				paused = err
 			}
 			i++
 			continue
@@ -944,19 +951,49 @@ func (t *turn) runCalls(ctx context.Context, calls []plannedCall) error {
 			j++
 		}
 		if err := t.parallel(ctx, calls[i:j]); err != nil {
-			if !isPause(err) {
+			if err := keep(err); err != nil {
 				return err
 			}
-			paused = err
 		}
 		i = j
 	}
+	if spent != nil {
+		return spent
+	}
 	return paused
+}
+
+// callsStopped ends a step whose calls stopped it: a core's refusal for
+// spend with budget and a session.error naming the refusal, as a model
+// gateway's refusal does (spec 007), a thread that waits for a person
+// with its stop reason. Any other error is returned.
+func (t *turn) callsStopped(ctx context.Context, err error) error {
+	if code, spent := models.SpendRefused(err); spent {
+		var detail string
+		if se, ok := errors.AsType[*models.SpendError](err); ok {
+			detail = se.Core
+		}
+		e, eerr := t.sessionError(code, err.Error(), false, detail)
+		if eerr != nil {
+			return eerr
+		}
+		return t.finish(ctx, session.StopBudget, code, e)
+	}
+	if !isPause(err) {
+		return err
+	}
+	return t.finish(ctx, pauseReason(err), "")
 }
 
 func isPause(err error) bool {
 	var p *errPause
 	return errors.As(err, &p)
+}
+
+// isSpent reports whether a call's error is a core's refusal for spend.
+func isSpent(err error) bool {
+	_, spent := models.SpendRefused(err)
+	return spent
 }
 
 // pauseReason is the stop reason a paused call leaves the step with.
@@ -988,22 +1025,28 @@ func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
 		}()
 	}
 	var errs []error
-	var paused error
+	var paused, spent error
 	for range calls {
 		d := <-results
 		switch {
 		case isPause(d.err):
 			paused = d.err
-		case d.err != nil:
+		case d.err != nil && !isSpent(d.err):
 			errs = append(errs, d.err)
 		case len(errs) == 0:
 			if err := t.result(ctx, d.id, d.res, d.dur); err != nil {
 				errs = append(errs, err)
 			}
+			if d.err != nil {
+				spent = d.err
+			}
 		}
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
+	}
+	if spent != nil {
+		return spent
 	}
 	return paused
 }
@@ -1011,22 +1054,31 @@ func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
 func (t *turn) call(ctx context.Context, c plannedCall) error {
 	start := t.h.c.Clock()
 	res, err := t.execute(ctx, c, tools.StateOf(t.events(), t.thread))
-	if err != nil {
+	if err != nil && !isSpent(err) {
 		return err
 	}
-	return t.result(ctx, c.id, res, t.h.c.Clock().Sub(start))
+	if rerr := t.result(ctx, c.id, res, t.h.c.Clock().Sub(start)); rerr != nil {
+		return rerr
+	}
+	return err
 }
 
 // execute runs one call. A tool's Go error is a failure of the tool
 // side and becomes the outcome error with its message; a call a cancel
 // cut short is canceled. Two errors pass through instead: a thread that
 // waits for a person, whose driving call keeps no result, and a failed
-// append inside a thread's turn, which stops the turn.
+// append inside a thread's turn, which stops the turn. A core's refusal
+// for spend is both: the call's result says it was refused, and the
+// refusal returns beside it to stop the turn once the step's calls are
+// answered.
 func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (tools.Result, error) {
 	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: t.h.c.Machine, State: state})
 	var lost *appendError
 	if isPause(err) || errors.As(err, &lost) {
 		return tools.Result{}, err
+	}
+	if isSpent(err) {
+		return settle(ctx, res, err), err
 	}
 	return settle(ctx, res, err), nil
 }
