@@ -226,6 +226,39 @@ func TestSecret(t *testing.T) {
 	}
 	_, _, err = c.GetSecret(t.Context(), "gone")
 	code(t, err, "not_found")
+	apply := func(sec v1.Secret) (v1.Secret, error) {
+		m, err := client.Encode(sec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := c.ApplySecret(t.Context(), sec.Metadata.Name, m)
+		return got, err
+	}
+	key := v1.Secret{APIVersion: v1.APIVersion, Kind: v1.KindSecret, Metadata: v1.Metadata{Name: "key"},
+		Spec: v1.SecretSpec{Kind: v1.SecretStatic, Scope: v1.SecretScope{Hosts: []string{"lux.example"}}, Value: "lux_one"}}
+	got, err := apply(key)
+	if err != nil || got.Spec.Value != "" || got.Status.Version != 1 {
+		t.Fatalf("apply = %+v %v", got, err)
+	}
+	key.Spec.Value = "lux_two"
+	if got, err := apply(key); err != nil || got.Status.Version != 2 || got.Status.ID != v1.SecretIDPrefix+"key" {
+		t.Fatalf("a second apply = %+v %v", got, err)
+	}
+	if held, value, ok := s.Secret("key"); !ok || value != "lux_two" || held.Spec.Value != "" || held.Spec.Scope.Hosts[0] != "lux.example" {
+		t.Fatalf("held %+v %q %v", held, value, ok)
+	}
+	key.Spec.Scope.Hosts = nil
+	_, err = apply(key)
+	code(t, err, "invalid_field")
+	key.Metadata.Name = "other"
+	if _, _, err := c.ApplySecret(t.Context(), "key", client.JSON([]byte(`{"kind":"Secret","metadata":{"name":"other"},"spec":{"scope":{"hosts":["h"]}}}`))); err == nil {
+		t.Fatal("a secret applied under another name")
+	}
+	_, _, err = c.ApplySecret(t.Context(), "key", client.JSON([]byte(`{"nope":1}`)))
+	code(t, err, "bad_request")
+	if _, _, ok := s.Secret("none"); ok {
+		t.Fatal("a secret nobody applied")
+	}
 }
 
 func TestExecWait(t *testing.T) {

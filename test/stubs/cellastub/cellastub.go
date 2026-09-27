@@ -4,7 +4,8 @@
 // Package cellastub is the stub Cella of spec 026: an HTTP server on
 // loopback that serves the routes machine/cella calls, the sandboxes'
 // create, read, start, stop and delete, the synchronous exec route, the
-// exec socket, the file routes and the tar routes, and the secret read.
+// exec socket, the file routes and the tar routes, and the secret read
+// and apply.
 // Each sandbox is a temporary directory with its workspace in it, and a
 // command runs on the machine the test runs on, in that directory, so
 // the workspace path a sandbox reports is a real path and a command and
@@ -82,6 +83,7 @@ type Server struct {
 	token     string
 	envs      map[string]bool
 	secrets   map[string]v1.Secret
+	values    map[string]string
 	sandboxes map[string]*sandbox
 	failures  map[string][]Failure
 	starting  int
@@ -112,6 +114,7 @@ func New(t testing.TB) *Server {
 		root:      root,
 		envs:      map[string]bool{DefaultEnvironment: true},
 		secrets:   map[string]v1.Secret{},
+		values:    map[string]string{},
 		sandboxes: map[string]*sandbox{},
 		failures:  map[string][]Failure{},
 	}
@@ -147,6 +150,15 @@ func (s *Server) AddSecret(name string, hosts ...string) {
 		Spec:   v1.SecretSpec{Kind: v1.SecretStatic, Scope: v1.SecretScope{Hosts: hosts}},
 		Status: v1.SecretStatus{ID: v1.SecretIDPrefix + name, Owner: "stub"},
 	}
+}
+
+// Secret is a secret the stub holds and its value, which no route
+// answers; ok is false for a secret it does not hold.
+func (s *Server) Secret(name string) (sec v1.Secret, value string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sec, ok = s.secrets[name]
+	return sec, s.values[name], ok
 }
 
 // Fail refuses the next requests of an operation with f.
@@ -289,6 +301,7 @@ func (s *Server) routes() http.Handler {
 	handle("POST /v1/sandboxes/{ref}/files/mkdir", OpFiles, s.fileMkdir)
 	handle("POST /v1/sandboxes/{ref}/files/move", OpFiles, s.fileMove)
 	handle("GET /v1/secrets/{ref}", OpSecret, s.secret)
+	handle("PUT /v1/secrets/{ref}", OpSecret, s.applySecret)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusNotFound, "not_found", "the stub serves no "+r.Method+" "+r.URL.Path)
 	})
@@ -527,6 +540,47 @@ func (s *Server) secret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpjson.Write(w, http.StatusOK, sec)
+}
+
+// applySecret creates or updates a secret by name, keeping its value
+// and counting value writes in its version, as Cella does; the answer
+// carries no value.
+func (s *Server) applySecret(w http.ResponseWriter, r *http.Request) {
+	var in v1.Secret
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil {
+		refuse(w, http.StatusBadRequest, "bad_request", "the secret does not decode: "+err.Error())
+		return
+	}
+	name := r.PathValue("ref")
+	switch {
+	case in.Kind != v1.KindSecret || in.Metadata.Name != name:
+		refuse(w, http.StatusBadRequest, "invalid_field", "the body is not a Secret named "+name)
+		return
+	case len(in.Spec.Scope.Hosts) == 0:
+		refuse(w, http.StatusBadRequest, "invalid_field", "a secret names the hosts it is for")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev, held := s.secrets[name]
+	value := in.Spec.Value
+	in.Spec.Value = ""
+	in.Status = prev.Status
+	if !held {
+		in.Status = v1.SecretStatus{ID: v1.SecretIDPrefix + name, Owner: "stub", CreatedAt: time.Now().UTC()}
+	}
+	if value != "" {
+		s.values[name] = value
+		in.Status.Version++
+	}
+	s.secrets[name] = in
+	status := http.StatusOK
+	if !held {
+		status = http.StatusCreated
+	}
+	httpjson.Write(w, status, in)
 }
 
 // sandboxPath is the PATH of every command, as an image's would be.
