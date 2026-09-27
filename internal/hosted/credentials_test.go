@@ -7,10 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -55,21 +52,10 @@ func (c *issued) Credential(_ context.Context, audience, workload string) (runne
 	return runner.Credential{Value: fmt.Sprintf("%s-%s-%d", audience, workload, c.n[audience+workload]), ExpiresAt: time.Now().Add(c.life)}, nil
 }
 
-// helper builds the topos-machine helper for the machine the tests run
-// on.
+// helper is the topos-machine helper for the machine the tests run on.
 func helper(t *testing.T) map[string][]byte {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "topos-machine")
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", out, "latere.ai/x/topos/cmd/topos-machine")
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if b, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build the helper: %v\n%s", err, b)
-	}
-	b, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return map[string][]byte{runtime.GOOS + "/" + runtime.GOARCH: b}
+	return helpers(t)
 }
 
 // credentialFixture is a hosted harness on the stub Lux and the stub

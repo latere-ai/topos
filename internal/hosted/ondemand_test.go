@@ -4,7 +4,6 @@
 package hosted
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,7 +28,6 @@ import (
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/manifest"
-	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/cellastub"
@@ -98,7 +96,9 @@ type cloud struct {
 	cella *cellastub.Server
 	o     Options
 	s     session.Session
-	creds runner.GitCredentials
+	// creds are the session's credentials the runner reaches; nil acts
+	// with the installation's own.
+	creds runner.Credentials
 }
 
 // newCloud is a cloud whose sessions run the builder agent, with its
@@ -153,7 +153,11 @@ func (c *cloud) drive(text string, replies ...luxstub.Reply) {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	r, err := runner.New(runner.Options{Store: c.st, Harness: h, ID: "run_" + session.NewID("x"), Kind: runner.KindServe, GitCredentials: c.creds})
+	o := runner.Options{Store: c.st, Harness: h, ID: "run_" + session.NewID("x"), Kind: runner.KindServe}
+	if c.creds != nil {
+		o.Credentials = func(string, session.Lease) runner.Credentials { return c.creds }
+	}
+	r, err := runner.New(o)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -313,15 +317,15 @@ func TestTheSandboxReachesItsRepositoriesHosts(t *testing.T) {
 }
 
 // gitHost serves bare repositories under root over git's own http
-// backend, admitting only requests that carry want as their
-// Authorization header, and records every Authorization it saw.
+// backend, admitting only requests whose Authorization header is what
+// want answers, and records every Authorization it saw.
 type gitHost struct {
 	srv  *httptest.Server
 	mu   sync.Mutex
 	seen []string
 }
 
-func newGitHost(t *testing.T, root, want string) *gitHost {
+func newGitHost(t *testing.T, root string, want func() string) *gitHost {
 	t.Helper()
 	git, err := exec.LookPath("git")
 	if err != nil {
@@ -334,7 +338,7 @@ func newGitHost(t *testing.T, root, want string) *gitHost {
 		g.mu.Lock()
 		g.seen = append(g.seen, auth)
 		g.mu.Unlock()
-		if auth != want {
+		if auth != want() {
 			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -343,18 +347,6 @@ func newGitHost(t *testing.T, root, want string) *gitHost {
 	}))
 	t.Cleanup(g.srv.Close)
 	return g
-}
-
-// placeholder is the git credential of a session: the variable its
-// sandbox's Secret mount puts the placeholder in.
-type placeholder struct {
-	host, env string
-	asked     []string
-}
-
-func (p *placeholder) GitCredential(_ context.Context, _ session.Session, host string) (string, bool, error) {
-	p.asked = append(p.asked, host)
-	return p.env, host == p.host, nil
 }
 
 func gitIn(t *testing.T, dir string, args ...string) string {
@@ -370,11 +362,12 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 }
 
 // TestASessionClonesCommitsAndPushesThroughItsSandbox: a session naming a
-// repository on a git host gets it cloned into its sandbox's working
-// directory at the first bash call, on its own branch; git in the sandbox
-// sends the git host the placeholder of the Secret the sandbox's
-// manifest names, never a credential; and a commit made by bash carries
-// the session's trailers and pushes to the git host.
+// repository on the installation's git host gets it cloned into its
+// sandbox's working directory at the first bash call, on its own branch;
+// git in the sandbox sends the git host the placeholder of the git host's
+// Secret the sandbox's manifest names, never a credential; and a commit
+// made by bash carries the session's trailers and author and pushes to
+// the git host.
 func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -392,8 +385,8 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	gitIn(t, seed, "commit", "--quiet", "-m", "Start")
 	gitIn(t, seed, "push", "--quiet", "origin", "HEAD:main")
 
-	secret := "git-host"
-	host := newGitHost(t, root, "Bearer cella-placeholder-"+secret)
+	var name string
+	host := newGitHost(t, root, func() string { return "Bearer cella-placeholder-" + name + "-origo" })
 	u, err := url.Parse(host.srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -401,19 +394,15 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	c := newCloud(t, func(s *session.Session) {
 		s.Resources = []session.Resource{{Type: runner.ResourceRepository, URL: host.srv.URL + "/app.git"}}
 	})
-	creds := &placeholder{host: u.Hostname(), env: "GIT_HOST_TOKEN"}
-	c.creds = creds
-	// The sandbox mounts the git host's Secret, as the installation's
-	// credential custody applies it (spec 018).
-	c.cella.AddSecret(secret, u.Hostname())
-	c.o.Machines = func(ctx context.Context, s session.Session, m v1.Machine) (machine.Machine, error) {
-		dir, err := filepath.EvalSymlinks(t.TempDir())
-		if err != nil {
-			return nil, err
-		}
-		return cella.Open(ctx, cella.Options{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Session: s.ID, Agent: s.Agent.Name, Helpers: helpers(t), Dir: dir,
-			Egress: repositoryHosts(s), Secrets: []cellav1.SecretMount{{Name: secret, Env: creds.env}}})
+	name = cella.SandboxName(c.s.ID)
+	// The installation mints the session's token for its git host, and no
+	// Lux key for the sandbox, since it names no model URL for it.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
+	c.o.Machines = Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir, OrigoURL: host.srv.URL})
+	c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
 	commit := `echo change >> README.md && git commit -q -am "Change the readme" && git push -q && git log -1 --format=%B`
 	c.drive("Change the readme and push.", bash("toolu_1", commit), said("Pushed."))
 	got := c.results()
@@ -430,18 +419,20 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	host.mu.Lock()
 	seen := slices.Clone(host.seen)
 	host.mu.Unlock()
-	if len(seen) == 0 || slices.ContainsFunc(seen, func(a string) bool { return a != "Bearer cella-placeholder-"+secret }) {
+	if len(seen) == 0 || slices.ContainsFunc(seen, func(a string) bool { return a != "Bearer cella-placeholder-"+name+"-origo" }) {
 		t.Fatalf("the git host saw %q, want the placeholder alone", seen)
 	}
-	if !slices.Equal(creds.asked, []string{u.Hostname()}) {
-		t.Fatalf("the credential was asked for %v", creds.asked)
+	sec, value, ok := c.cella.Secret(name + "-origo")
+	if !ok || !strings.HasPrefix(value, "origo-sandbox-") || !slices.Equal(sec.Spec.Scope.Hosts, []string{u.Hostname()}) {
+		t.Fatalf("the git host's secret %+v %q %v", sec.Spec, value, ok)
 	}
-	sb, ok := c.cella.Sandbox(cella.SandboxName(c.s.ID))
-	if !ok || !slices.Equal(sb.Spec.Secrets, []cellav1.SecretMount{{Name: secret, Env: creds.env}}) || !slices.Contains(sb.Spec.Network.Egress.AllowedHosts, u.Hostname()) {
+	sb, ok := c.cella.Sandbox(name)
+	if !ok || !slices.Equal(sb.Spec.Secrets, []cellav1.SecretMount{{Name: name + "-origo", Env: EnvOrigoToken}}) || !slices.Contains(sb.Spec.Network.Egress.AllowedHosts, u.Hostname()) {
 		t.Fatalf("the sandbox's manifest %+v", sb.Spec)
 	}
-	config, err := os.ReadFile(filepath.Join(c.cella.Workspace(cella.SandboxName(c.s.ID)), ".git", "config"))
-	if err != nil || !strings.Contains(string(config), "Authorization: Bearer cella-placeholder-"+secret) {
-		t.Fatalf("the repository's configuration %s, %v", config, err)
+	for _, e := range c.events(session.TypeToolResult) {
+		if strings.Contains(string(e.Payload), value) {
+			t.Fatal("a tool result carries the git host's token")
+		}
 	}
 }

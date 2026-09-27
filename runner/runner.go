@@ -44,10 +44,6 @@ type Options struct {
 	// instruction file and skills folder, read on the host.
 	PersonalInstructions string
 	PersonalSkills       string
-	// GitCredentials names the variable that holds the placeholder of the
-	// session's credential for a repository's git host (spec 019); nil
-	// clones every repository without one.
-	GitCredentials GitCredentials
 	// CheckpointDir holds the session repositories of working
 	// directories that are not checkouts (spec 034); empty takes no
 	// checkpoints outside a repository.
@@ -316,7 +312,7 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool) error {
 	var delivered error
 	if first && len(Repositories(s)) > 0 {
-		delivered = r.deliver(ctx, s, m)
+		delivered = deliver(ctx, s, m)
 	}
 	return errors.Join(r.attach(ctx, m, log, beside), delivered)
 }

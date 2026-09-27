@@ -40,16 +40,6 @@ const (
 // branch and its configuration.
 const deliverTimeout = 15 * time.Minute
 
-// GitCredentials names how a session's machine authenticates to a git
-// host without holding the credential (specs 018 and 019): the variable
-// of the machine's environment whose value is the placeholder of a Cella
-// Secret scoped to host, which Cella's egress gateway replaces with the
-// session's token on requests to host. ok is false when the session has
-// no credential for host, and git reaches it without one.
-type GitCredentials interface {
-	GitCredential(ctx context.Context, s session.Session, host string) (env string, ok bool, err error)
-}
-
 // Repositories are the repository resources of a session, in order.
 func Repositories(s session.Session) []session.Resource {
 	var out []session.Resource
@@ -67,9 +57,6 @@ var refPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,255}$`)
 
 // dirPattern is a directory name a repository's URL may give.
 var dirPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-
-// envPattern is a variable name a shell expands.
-var envPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // CheckRepository reports why a repository resource cannot be delivered:
 // an absolute URL naming its host, with no credential in it, and a ref
@@ -114,7 +101,7 @@ func agentName(s session.Session) string {
 // already there, as a restarted delivery finds it, is configured and not
 // cloned again. A failure is an OpenError repository_unavailable: the
 // machine stays, and the session learns which repository is missing.
-func (r *Runner) deliver(ctx context.Context, s session.Session, m machine.Machine) error {
+func deliver(ctx context.Context, s session.Session, m machine.Machine) error {
 	repos := Repositories(s)
 	if len(repos) > MaxRepositories {
 		return &machine.OpenError{Code: CodeRepositoryUnavailable, Err: fmt.Errorf("the session names %d repositories, at most %d", len(repos), MaxRepositories)}
@@ -127,7 +114,7 @@ func (r *Runner) deliver(ctx context.Context, s session.Session, m machine.Machi
 		if i > 0 {
 			dir = path.Join(workdir, repoDir(repo.URL, i, taken))
 		}
-		script, err := r.deliveryScript(ctx, s, repo, dir)
+		script, err := deliveryScript(s, repo, dir)
 		if err == nil {
 			err = runScript(ctx, m, script)
 		}
@@ -158,28 +145,13 @@ func repoDir(raw string, i int, taken map[string]bool) string {
 }
 
 // deliveryScript is the shell script that delivers one repository into
-// dir. Every value is quoted; the credential's placeholder is expanded
-// from the machine's own environment, so the script and the log never
-// carry it.
-func (r *Runner) deliveryScript(ctx context.Context, s session.Session, repo session.Resource, dir string) (string, error) {
+// dir, every value quoted. git reaches the git host with the machine's
+// own configuration: in a Cella sandbox that sends the placeholder of the
+// git host's Secret, set when the sandbox opens (spec 018), so neither
+// the script nor the log carries a credential.
+func deliveryScript(s session.Session, repo session.Resource, dir string) (string, error) {
 	if err := CheckRepository(repo, "https", "http", "file"); err != nil {
 		return "", err
-	}
-	// key and value are the header git sends on every request to the
-	// host; the value's variable expands to the placeholder Cella's
-	// egress gateway swaps for the credential.
-	var key, value string
-	if u, _ := url.Parse(repo.URL); r.o.GitCredentials != nil && (u.Scheme == "https" || u.Scheme == "http") {
-		env, ok, err := r.o.GitCredentials.GitCredential(ctx, s, strings.ToLower(u.Hostname()))
-		switch {
-		case err != nil:
-			return "", fmt.Errorf("the git credential for %s: %w", u.Hostname(), err)
-		case ok && !envPattern.MatchString(env):
-			return "", fmt.Errorf("the git credential for %s names the variable %q", u.Hostname(), env)
-		case ok:
-			key = quote("http." + u.Scheme + "://" + u.Host + "/.extraHeader")
-			value = `"Authorization: Bearer $` + env + `"`
-		}
 	}
 	agent := s.Agent.ID + "@" + strconv.Itoa(s.Agent.Version)
 	hook := "#!/bin/sh\n" +
@@ -192,16 +164,9 @@ func (r *Runner) deliveryScript(ctx context.Context, s session.Session, repo ses
 	w("dir=" + quote(dir))
 	w(`mkdir -p "$dir"`)
 	w(`if [ ! -d "$dir/.git" ]; then`)
-	if key != "" {
-		w("  git -c " + key + "=" + value + " clone --quiet -- " + quote(repo.URL) + ` "$dir"`)
-	} else {
-		w("  git clone --quiet -- " + quote(repo.URL) + ` "$dir"`)
-	}
+	w("  git clone --quiet -- " + quote(repo.URL) + ` "$dir"`)
 	w("fi")
 	w(`cd "$dir"`)
-	if key != "" {
-		w("git config --replace-all " + key + " " + value)
-	}
 	w("git config user.name " + quote(agentName(s)))
 	w("git config user.email " + quote(agentName(s)+"@agents.topos.invalid"))
 	w("git config push.autoSetupRemote true")
