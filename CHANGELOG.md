@@ -355,6 +355,18 @@ committed: the commit log already holds that.
   commit; `git push` publishes the branch. A repository that cannot be
   cloned is reported as `repository_unavailable` and the session goes on
   without it.
+- `TOPOS_BASE_PATH` serves the API under a prefix of an origin toposd
+  shares with other services, in the place of `/v1`: with `/v1/agents`
+  and `TOPOS_PUBLIC_URL=https://api.example.com/v1/agents`, agents are at
+  `/v1/agents/agents`, sessions at `/v1/agents/sessions`, and the document
+  at `/v1/agents/openapi.yaml`, whose server is the public URL. The base
+  path must equal the public URL's path, and a public URL with a path
+  needs one, so a mismatch stops the start instead of writing URLs toposd
+  does not answer on. A session's stream `Link`, a list's next-page
+  `Link` and the document's server are built from the public URL, never
+  from the request's host. A path the API does not route, outside the
+  base path as well as under it, answers the `not_found` envelope; the
+  probes and the build identity stay at the listener's root.
 
 ## v0.7.0 - 2026-09-26
 
