@@ -29,6 +29,32 @@ import (
 	"latere.ai/x/topos/session"
 )
 
+// CodeUnavailable is the setup code of a credential whose identity
+// provider or key routes did not answer.
+const CodeUnavailable = "identity_unavailable"
+
+// coded is err as the runner reads it: a refusal of the identity
+// provider or the authorizer, or their silence, is a setup error naming
+// its code, so the session's turn closes with it; a missing identity is
+// agent_identity_missing.
+func coded(err error) error {
+	var ie *identity.Error
+	var kr *Refused
+	switch {
+	case err == nil, errors.Is(err, runner.ErrNotMinted), errors.Is(err, runner.ErrLeaseLost):
+		return err
+	case errors.Is(err, runner.ErrNoIdentity):
+		return &runner.SetupError{Code: runner.CodeAgentIdentityMissing, Err: err}
+	case errors.As(err, &ie):
+		return &runner.SetupError{Code: ie.Code, Err: err}
+	case errors.As(err, &kr):
+		return &runner.SetupError{Code: kr.Code, Err: err}
+	case errors.Is(err, identity.ErrUnavailable), errors.Is(err, ErrKeysUnavailable):
+		return &runner.SetupError{Code: CodeUnavailable, Err: err}
+	}
+	return err
+}
+
 // RenewBefore is how much life a held Lux key must have left to be
 // answered as it is; one with less is renewed first.
 const RenewBefore = 10 * time.Minute
@@ -92,6 +118,11 @@ func New(o Options) (*Minter, error) {
 // key for the audience runner.AudienceLux, and a hosted-agent token for
 // any other. The caller has checked that the lease is held.
 func (m *Minter) Credential(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error) {
+	c, err := m.credential(ctx, id, lease, audience, workload)
+	return c, coded(err)
+}
+
+func (m *Minter) credential(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error) {
 	switch {
 	case workload != runner.WorkloadSession && workload != runner.WorkloadSandbox:
 		return runner.Credential{}, fmt.Errorf("credentials: the workload %q is neither session nor sandbox", workload)

@@ -202,8 +202,15 @@ func TestWhatTheMinterRefuses(t *testing.T) {
 	}
 	f.keys.EndSession(f.session)
 	var refused *Refused
-	if _, err := f.m.Credential(ctx, f.session, "l", runner.AudienceLux, runner.WorkloadSession); !errors.As(err, &refused) || refused.Code != "session_ended" || refused.Error() == "" {
+	var se *runner.SetupError
+	if _, err := f.m.Credential(ctx, f.session, "l", runner.AudienceLux, runner.WorkloadSession); !errors.As(err, &refused) || !errors.As(err, &se) || se.Code != "session_ended" || refused.Error() == "" {
 		t.Fatalf("an ended session's key: %v", err)
+	}
+	if _, err := f.m.Credential(ctx, f.session, "l", "cella", runner.WorkloadSession); !errors.As(err, &se) || se.Code != runner.CodeAgentIdentityMissing {
+		t.Fatalf("the missing identity's code: %v", err)
+	}
+	if err := coded(identity.ErrUnavailable); !errors.As(err, &se) || se.Code != CodeUnavailable {
+		t.Fatalf("an unanswered provider: %v", err)
 	}
 	none, err := New(Options{})
 	if err != nil {
@@ -220,7 +227,7 @@ func TestWhatTheMinterRefuses(t *testing.T) {
 	g := newFixture(t, true)
 	g.idp.SetAudiences("arca")
 	var ie *identity.Error
-	if _, err := g.m.Credential(ctx, g.session, "l", "cella", runner.WorkloadSession); !errors.As(err, &ie) || ie.Code != "invalid_target" {
+	if _, err := g.m.Credential(ctx, g.session, "l", "cella", runner.WorkloadSession); !errors.As(err, &ie) || !errors.As(err, &se) || se.Code != "invalid_target" {
 		t.Fatalf("a refused mint: %v", err)
 	}
 }
