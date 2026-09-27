@@ -167,14 +167,17 @@ type Spill struct {
 	Bytes int64  `json:"bytes"`
 }
 
-// ToolResult is the payload of tool.result.
+// ToolResult is the payload of tool.result. Meta is the tool's own
+// record for later calls of the thread: the hash of a file a file tool
+// read or wrote, the directory bash ended in, the todo list.
 type ToolResult struct {
-	ToolUseID  string      `json:"tool_use_id"`
-	Content    []lux.Block `json:"content"`
-	IsError    bool        `json:"is_error,omitempty"`
-	Outcome    string      `json:"outcome,omitempty"`
-	DurationMS int64       `json:"duration_ms,omitempty"`
-	Spill      *Spill      `json:"spill,omitempty"`
+	ToolUseID  string          `json:"tool_use_id"`
+	Content    []lux.Block     `json:"content"`
+	IsError    bool            `json:"is_error,omitempty"`
+	Outcome    string          `json:"outcome,omitempty"`
+	DurationMS int64           `json:"duration_ms,omitempty"`
+	Spill      *Spill          `json:"spill,omitempty"`
+	Meta       json.RawMessage `json:"meta,omitempty"`
 }
 
 // ThreadStarted is the payload of thread.started. The event's id is the
