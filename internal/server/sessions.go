@@ -157,6 +157,13 @@ func (c *call) createSession() error {
 	if err != nil {
 		return err
 	}
+	// A session that names no repositories works in its agent version's,
+	// which the manifest checked as the API checks a create's (spec 019).
+	if len(resources) == 0 {
+		for _, repo := range r.Agent.Spec.Repositories {
+			resources = append(resources, session.Resource{Type: runner.ResourceRepository, URL: repo.URL, Ref: repo.Ref})
+		}
+	}
 	// A hosted session runs on a Cella machine, or on the server's own
 	// host when the operator turned host sessions on; the manifest's host
 	// default is otherwise for a local run. Roots and read paths name

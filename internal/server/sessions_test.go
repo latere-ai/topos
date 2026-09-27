@@ -22,6 +22,8 @@ import (
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/manifest"
+	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
 
@@ -94,7 +96,7 @@ func TestASessionNamesItsRepositories(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(stored.Resources, want) {
 		t.Fatalf("stored %+v, %v", stored.Resources, err)
 	}
-	many := make([]string, 9)
+	many := make([]string, session.MaxRepositories+1)
 	for i := range many {
 		many[i] = `{"type":"repository","url":"https://code.example/r` + fmt.Sprint(i) + `"}`
 	}
@@ -113,6 +115,51 @@ func TestASessionNamesItsRepositories(t *testing.T) {
 		if got := f.do(http.MethodPost, "/v1/sessions", "alice", body); got.code() != CodeInvalidRequest {
 			t.Errorf("%s: %d %s", body, got.status, got.body)
 		}
+	}
+}
+
+// TestASessionTakesItsAgentsRepositories: a create that names no
+// repositories, absent or an empty list, records those of the agent
+// version it pins, the latest or the one named; a create that names its
+// own records those alone; and an agent whose repository the API would
+// refuse on a create is refused when it is applied.
+func TestASessionTakesItsAgentsRepositories(t *testing.T) {
+	f := newFixture(t)
+	apply := func(name, repositories string) answer {
+		t.Helper()
+		return f.do(http.MethodPut, "/v1/agents/"+name, "alice", agentYAML(name, "Build.")+"  repositories: "+repositories+"\n")
+	}
+	if got := apply("builder", "[{url: 'https://code.example/acme/app.git', ref: main}]"); got.status != http.StatusCreated {
+		t.Fatalf("apply the first version: %d %s", got.status, got.body)
+	}
+	if got := apply("builder", "[{url: 'https://code.example/acme/lib'}]"); got.status != http.StatusOK {
+		t.Fatalf("apply the second version: %d %s", got.status, got.body)
+	}
+	first := []session.Resource{{Type: runner.ResourceRepository, URL: "https://code.example/acme/app.git", Ref: "main"}}
+	latest := []session.Resource{{Type: runner.ResourceRepository, URL: "https://code.example/acme/lib"}}
+	own := []session.Resource{{Type: runner.ResourceRepository, URL: "https://code.example/acme/other", Ref: "dev"}}
+	for body, want := range map[string][]session.Resource{
+		`{"agent":"builder@1"}`:              first,
+		`{"agent":"builder"}`:                latest,
+		`{"agent":"builder","resources":[]}`: latest,
+		`{"agent":"builder@1","resources":[{"type":"repository","url":"https://code.example/acme/other","ref":"dev"}]}`: own,
+	} {
+		resp := f.do(http.MethodPost, "/v1/sessions", "alice", body)
+		if resp.status != http.StatusCreated {
+			t.Fatalf("%s: %d %s", body, resp.status, resp.body)
+		}
+		var s session.Session
+		resp.decode(t, &s)
+		stored, err := f.sessions.Get(t.Context(), s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(s.Resources, want) || !reflect.DeepEqual(stored.Resources, want) {
+			t.Errorf("%s: resources %+v, stored %+v, want %+v", body, s.Resources, stored.Resources, want)
+		}
+	}
+	if got := apply("plain", "[{url: 'http://code.example/acme/app.git'}]"); got.code() != manifest.CodeInvalidManifest {
+		t.Fatalf("an agent's http repository: %d %s", got.status, got.body)
 	}
 }
 
