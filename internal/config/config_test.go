@@ -22,7 +22,7 @@ func env(m map[string]string) Getenv {
 
 // serve is m over the two variables serve requires.
 func serve(m map[string]string) Getenv {
-	all := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": "https://login.example"}
+	all := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": "https://login.example", "TOPOS_DATA_DIR": "/var/lib/topos"}
 	maps.Copy(all, m)
 	return env(all)
 }
@@ -130,6 +130,7 @@ func TestTheIdentityVariables(t *testing.T) {
 		"TOPOS_AUTHORIZER_URL":        "https://authz.example/v1/authorize",
 		"TOPOS_AUTHORIZER_TOKEN":      "secret",
 		"TOPOS_ADMIN_SUBJECTS":        "https://login.example|root, ",
+		"HOME":                        "/home/topos",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +153,7 @@ func TestServeRequiresAnIssuerAndThePublicURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(RoleServe, env(map[string]string{"TOPOS_PUBLIC_URL": "http://localhost:8080", "TOPOS_LOCAL_ISSUER_KEY": pemOf(t, key)})); err != nil {
+	if _, err := Load(RoleServe, env(map[string]string{"TOPOS_PUBLIC_URL": "http://localhost:8080", "TOPOS_LOCAL_ISSUER_KEY": pemOf(t, key), "HOME": "/home/topos"})); err != nil {
 		t.Fatalf("the local issuer alone: %v", err)
 	}
 	if _, err := Load(RoleRunner, env(nil)); err != nil {
@@ -198,3 +199,25 @@ func TestTheTokenRoleReadsItsThreeVariables(t *testing.T) {
 		t.Fatalf("token role with nothing: %v", err)
 	}
 }
+
+func TestDataDir(t *testing.T) {
+	for env, want := range map[string]string{"TOPOS_DATA_DIR=/d": "/d", "XDG_STATE_HOME=/x": "/x/topos", "HOME=/h": "/h/.local/state/topos"} {
+		k, v, _ := strings.Cut(env, "=")
+		got, err := DataDir(env2(k, v))
+		if err != nil || got != want {
+			t.Fatalf("DataDir with %s = %q, %v", env, got, err)
+		}
+	}
+	if _, err := DataDir(env(nil)); err == nil {
+		t.Fatal("a data directory from nothing")
+	}
+	c, err := Load(RoleServe, serve(nil))
+	if err != nil || c.DataDir != "/var/lib/topos" {
+		t.Fatalf("serve's data directory: %q, %v", c.DataDir, err)
+	}
+	if _, err := Load(RoleServe, env(map[string]string{"TOPOS_PUBLIC_URL": "https://t.example", "TOPOS_OIDC_ISSUERS": "https://l.example"})); err == nil || !strings.Contains(err.Error(), "TOPOS_DATA_DIR") {
+		t.Fatalf("serve with no data directory: %v", err)
+	}
+}
+
+func env2(k, v string) Getenv { return env(map[string]string{k: v}) }

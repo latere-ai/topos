@@ -132,6 +132,16 @@ paths:
           description: Created
         default:
           $ref: "#/components/responses/Error"
+    get:
+      operationId: listSessions
+      summary: List sessions, filtered by agent, status and runner
+      x-topos-actions:
+        - session.list
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
   /sessions/{id}:
     get:
       operationId: getSession

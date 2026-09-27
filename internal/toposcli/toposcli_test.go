@@ -253,21 +253,6 @@ func TestExitCodes(t *testing.T) {
 			t.Fatalf("%s exits %d, want %d", reason, got, want)
 		}
 	}
-	for env, want := range map[string]string{"TOPOS_DATA_DIR=/d": "/d", "XDG_STATE_HOME=/x": "/x/topos", "HOME=/h": "/h/.local/state/topos"} {
-		k, v, _ := strings.Cut(env, "=")
-		got, err := DataDir(func(n string) string {
-			if n == k {
-				return v
-			}
-			return ""
-		})
-		if err != nil || got != want {
-			t.Fatalf("DataDir with %s = %q, %v", env, got, err)
-		}
-	}
-	if _, err := DataDir(func(string) string { return "" }); err == nil {
-		t.Fatal("a data directory from nothing")
-	}
 	if summarize(json.RawMessage(`{"command":"`+strings.Repeat("x", 100)+`"}`)) != strings.Repeat("x", 80)+"..." || summarize(json.RawMessage(`[`)) != "" || summarize(json.RawMessage(`{}`)) != "" {
 		t.Fatal("summarize")
 	}

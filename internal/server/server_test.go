@@ -197,6 +197,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"getAgentVersion":   {http.MethodGet, "/v1/agents/reviewer/versions/1", ""},
 		"archiveAgent":      {http.MethodPost, "/v1/agents/archivist/archive", ""},
 		"createSession":     {http.MethodPost, "/v1/sessions", `{"agent":"reviewer"}`},
+		"listSessions":      {http.MethodGet, "/v1/sessions", ""},
 		"getSession":        {http.MethodGet, "/v1/sessions/" + s.ID, ""},
 		"endSession":        {http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`},
 		"deleteSession":     {http.MethodDelete, "/v1/sessions/" + doomed.ID, ""},

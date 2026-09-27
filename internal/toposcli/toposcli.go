@@ -31,6 +31,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/internal/config"
 	"latere.ai/x/topos/internal/version"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
@@ -341,23 +342,8 @@ type local struct {
 	getenv   func(string) string
 }
 
-// DataDir is TOPOS_DATA_DIR, or $XDG_STATE_HOME/topos, or
-// $HOME/.local/state/topos.
-func DataDir(getenv func(string) string) (string, error) {
-	if d := getenv("TOPOS_DATA_DIR"); d != "" {
-		return d, nil
-	}
-	if d := getenv("XDG_STATE_HOME"); d != "" {
-		return filepath.Join(d, "topos"), nil
-	}
-	if h := getenv("HOME"); h != "" {
-		return filepath.Join(h, ".local", "state", "topos"), nil
-	}
-	return "", errors.New("no data directory: set TOPOS_DATA_DIR or HOME")
-}
-
 func openLocal(env *cli, o runOptions) (*local, error) {
-	dataDir, err := DataDir(env.Getenv)
+	dataDir, err := config.DataDir(env.Getenv)
 	if err != nil {
 		return nil, err
 	}

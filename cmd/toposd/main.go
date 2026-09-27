@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,8 +31,14 @@ import (
 
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/internal/server"
+	"latere.ai/x/topos/internal/store"
+	storedir "latere.ai/x/topos/internal/store/dir"
+	"latere.ai/x/topos/internal/store/postgres"
 	"latere.ai/x/topos/internal/token"
 	"latere.ai/x/topos/internal/version"
+	"latere.ai/x/topos/session"
+	sessiondir "latere.ai/x/topos/session/dir"
 )
 
 // Shutdown timing of spec 002: readiness answers 503 at once, the drain
@@ -89,8 +96,9 @@ func subcommand(args []string) (string, []string) {
 	return "", args
 }
 
-// serve is the server: the two listeners and the probes of spec 002. The
-// API, the store, and the in-process runners of later specs mount here.
+// serve is the server: the two listeners and the probes of spec 002, the
+// API of spec 015 on the public listener, and its store. The in-process
+// runners of spec 016 mount here.
 func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("toposd serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -111,10 +119,26 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if err != nil {
 		return fail(stderr, err)
 	}
+	st, err := openStores(ctx, cfg)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer func() {
+		if err := st.close(); err != nil {
+			_, _ = fmt.Fprintf(stderr, "toposd: close the store: %v\n", err)
+		}
+	}()
+	api, err := server.New(server.Options{
+		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
+		PublicURL: cfg.PublicURL, Log: slog.New(slog.NewTextHandler(stderr, nil)),
+	})
+	if err != nil {
+		return fail(stderr, err)
+	}
 
 	draining := make(chan struct{})
 	probes := health.Handler(health.Options{
-		Ready:     health.Checks(health.Check{Name: "draining", Run: notDraining(draining)}),
+		Ready:     health.Checks(health.Check{Name: "draining", Run: notDraining(draining)}, health.Check{Name: "store", Run: st.ping}),
 		Timeout:   2 * time.Second,
 		Version:   version.Version,
 		Commit:    version.Commit,
@@ -129,6 +153,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, version.String("toposd"))
 	})
+	public.Handle(server.DefaultBasePath+"/", api.Handler())
 	if id.signer != nil {
 		jwks := id.signer.JWKS()
 		public.HandleFunc("GET "+basePath(cfg.PublicURL)+token.JWKSPath, func(w http.ResponseWriter, _ *http.Request) {
@@ -148,8 +173,8 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		_ = publicLn.Close()
 		return fail(stderr, fmt.Errorf("TOPOS_INTERNAL_ADDR: %w", err))
 	}
-	_, _ = fmt.Fprintf(stdout, "toposd: %s listening public=%s internal=%s\n",
-		version.Version, publicLn.Addr(), internalLn.Addr())
+	_, _ = fmt.Fprintf(stdout, "toposd: %s listening public=%s internal=%s store=%s\n",
+		version.Version, publicLn.Addr(), internalLn.Addr(), st.name)
 
 	servers := []*http.Server{
 		{Handler: public, ReadHeaderTimeout: 10 * time.Second},
@@ -180,6 +205,45 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		_ = s.Shutdown(shutdownCtx)
 	}
 	return 0
+}
+
+// stores are the session store and the object store serve runs on, one
+// Postgres or one data directory (spec 014).
+type stores struct {
+	sessions session.Store
+	objects  store.Store
+	name     string
+	ping     func(context.Context) error
+	close    func() error
+}
+
+// openStores opens Postgres when TOPOS_DB_URL names it, and the data
+// directory otherwise, which one serving toposd holds alone.
+func openStores(ctx context.Context, cfg config.Config) (stores, error) {
+	if cfg.DBURL != "" {
+		pg, err := postgres.Open(ctx, cfg.DBURL, postgres.Options{PoolDSN: cfg.DBPoolURL})
+		if err != nil {
+			return stores{}, fmt.Errorf("TOPOS_DB_URL: %w", err)
+		}
+		return stores{sessions: pg, objects: pg, name: "postgres", ping: pg.Ping, close: func() error { pg.Close(); return nil }}, nil
+	}
+	release, err := storedir.LockServe(cfg.DataDir)
+	if err != nil {
+		return stores{}, fmt.Errorf("TOPOS_DATA_DIR %s: %w", cfg.DataDir, err)
+	}
+	sessions, err := sessiondir.Open(cfg.DataDir)
+	if err != nil {
+		return stores{}, errors.Join(err, release())
+	}
+	objects, err := storedir.Open(cfg.DataDir, nil)
+	if err != nil {
+		return stores{}, errors.Join(err, release())
+	}
+	ping := func(context.Context) error {
+		_, err := os.Stat(cfg.DataDir)
+		return err
+	}
+	return stores{sessions: sessions, objects: objects, name: "dir:" + cfg.DataDir, ping: ping, close: release}, nil
 }
 
 // identity is what the API asks through (spec 006): the verifier, the

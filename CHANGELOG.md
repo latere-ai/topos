@@ -172,6 +172,36 @@ committed: the commit log already holds that.
   because every command runs over the exec socket; Cella's `local` driver
   does not. `test/stubs/cellastub` is the stub Cella its tests run
   against.
+- `toposd serve` answers the API under `/v1`: `PUT /v1/agents/{name}`
+  applies an Agent manifest and makes a new version only when the spec
+  changed, and agents are listed, read by name or id, read at a version
+  and archived. `POST /v1/sessions` creates a hosted session of an
+  agent's version with an optional first message, its budget, turn
+  timeout and age the lowest of the request's, the agent's and the
+  authorizer's; sessions are listed by agent, status and runner, read,
+  ended and deleted. `POST /v1/sessions/{id}/events` sends a user event
+  with the verified subject as its sender, and
+  `GET /v1/sessions/{id}/stream` replays the log as Server-Sent Events and
+  follows it live from any replica, resuming after `Last-Event-ID`.
+  Every route asks the authorizer its action, a denied read answers
+  exactly as a missing object does, every error is one JSON envelope with
+  a code, lists page with `cursor` and `next_cursor`, every `POST` takes
+  an `Idempotency-Key`, and each subject may make 600 requests a minute.
+  The OpenAPI document is `api/openapi.yaml` and is served at
+  `/v1/openapi.yaml`. No runner claims a hosted session yet, so its turns
+  wait for the runners to come.
+- toposd keeps agents, their versions and idempotency records in both
+  storage modes. Without `TOPOS_DB_URL` they are JSON files under
+  `$TOPOS_DATA_DIR/objects/`, each written atomically, sessions live under
+  `$TOPOS_DATA_DIR/sessions/`, and one `toposd serve` holds the directory:
+  a second is refused with `data directory in use by pid <n>`. On Postgres
+  a new migration adds the `agents`, `agent_versions` and
+  `idempotency_keys` tables; replicas that race on one agent version or
+  one idempotency key store it once. Readiness checks the store.
+- A hosted session runs on a Cella machine: an agent whose
+  `machine.kind` is `host` is refused `machine_unavailable` by the server,
+  and the owner policy lets a subject start sessions of its own agents
+  only.
 
 ## v0.7.0 - 2026-09-26
 

@@ -17,6 +17,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
@@ -214,6 +215,50 @@ func lowest(field, requested string, agent, authorizer time.Duration) (time.Dura
 		out = min(out, d)
 	}
 	return out, nil
+}
+
+// listSessions is GET /sessions, filtered by agent, status and runner,
+// and narrowed to the owners the authorizer's allow names.
+func (c *call) listSessions() error {
+	limit, cursor, err := c.pageParams()
+	if err != nil {
+		return err
+	}
+	q := c.r.URL.Query()
+	o := session.ListOptions{Status: session.Status(q.Get("status")), Runner: q.Get("runner"), Limit: limit, Cursor: cursor}
+	switch o.Status {
+	case "", session.StatusIdle, session.StatusRunning, session.StatusEnded:
+	default:
+		return refuse(CodeInvalidRequest, "status is %q, not idle, running or ended", o.Status)
+	}
+	if o.Runner != "" && o.Runner != session.RunnerHosted && o.Runner != session.RunnerExternal {
+		return refuse(CodeInvalidRequest, "runner is %q, not hosted or external", o.Runner)
+	}
+	d, err := c.ask(c.r.Context(), authorizer.ActionSessionList, authz.NewResource(authorizer.KindSession, "", map[string]any{"status": string(o.Status), "runner": o.Runner}))
+	if err != nil {
+		return err
+	}
+	if d.Filter != nil {
+		o.Owners = d.Filter.Owners
+	}
+	if ref := q.Get("agent"); ref != "" {
+		a, err := c.s.o.Objects.Agent(c.r.Context(), ref)
+		if errors.Is(err, store.ErrNotFound) {
+			return c.replyPage([]session.Session{}, "")
+		}
+		if err != nil {
+			return err
+		}
+		o.AgentID = a.ID
+	}
+	all, next, err := c.s.o.Sessions.List(c.r.Context(), o)
+	if err != nil {
+		return err
+	}
+	if all == nil {
+		all = []session.Session{}
+	}
+	return c.replyPage(all, next)
 }
 
 // getSession is GET /sessions/{id}.

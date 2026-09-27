@@ -29,6 +29,8 @@ func table() []route {
 			op: "archiveAgent", summary: "Archive an agent; running sessions keep their version", status: http.StatusOK, body: MaxBody, handle: (*call).archiveAgent},
 		{method: http.MethodPost, path: "/sessions", actions: a(authorizer.ActionSessionCreate),
 			op: "createSession", summary: "Create a session of an agent", status: http.StatusCreated, body: MaxBody, handle: (*call).createSession},
+		{method: http.MethodGet, path: "/sessions", actions: a(authorizer.ActionSessionList),
+			op: "listSessions", summary: "List sessions, filtered by agent, status and runner", status: http.StatusOK, handle: (*call).listSessions},
 		{method: http.MethodGet, path: "/sessions/{id}", actions: a(authorizer.ActionSessionRead),
 			op: "getSession", summary: "Get a session", status: http.StatusOK, handle: (*call).getSession},
 		{method: http.MethodPost, path: "/sessions/{id}/end", actions: a(authorizer.ActionSessionEnd),

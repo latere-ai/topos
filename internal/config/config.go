@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -74,6 +75,24 @@ type Config struct {
 	// LocalIssuerKey is the PEM private key of the local issuer; empty
 	// is no local issuer.
 	LocalIssuerKey string
+	// DataDir is TOPOS_DATA_DIR resolved: the directory store's root, and
+	// the checkpoint and worktree directories beneath it.
+	DataDir string
+}
+
+// DataDir is TOPOS_DATA_DIR, or $XDG_STATE_HOME/topos, or
+// $HOME/.local/state/topos.
+func DataDir(getenv Getenv) (string, error) {
+	if d := strings.TrimSpace(getenv("TOPOS_DATA_DIR")); d != "" {
+		return d, nil
+	}
+	if d := strings.TrimSpace(getenv("XDG_STATE_HOME")); d != "" {
+		return filepath.Join(d, "topos"), nil
+	}
+	if h := strings.TrimSpace(getenv("HOME")); h != "" {
+		return filepath.Join(h, ".local", "state", "topos"), nil
+	}
+	return "", errors.New("no data directory: set TOPOS_DATA_DIR or HOME")
 }
 
 // Load reads the variables role reads through getenv and returns the
@@ -126,6 +145,10 @@ func Load(role string, getenv Getenv) (Config, error) {
 		problems = append(problems, "TOPOS_INTERNAL_ADDR must differ from TOPOS_PUBLIC_ADDR; both are "+c.PublicAddr)
 	}
 	if role == RoleServe || role == RoleCheck {
+		var err error
+		if c.DataDir, err = DataDir(getenv); err != nil {
+			problems = append(problems, "TOPOS_DATA_DIR is unset, and so are XDG_STATE_HOME and HOME")
+		}
 		if c.PublicURL == "" {
 			problems = append(problems, "TOPOS_PUBLIC_URL is required; it is the base of every URL toposd writes")
 		}

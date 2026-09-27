@@ -17,6 +17,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -49,7 +51,7 @@ func localKey(t *testing.T) string {
 // and the owner policy, with no identity provider.
 func selfHosted(t *testing.T, m map[string]string) func(string) string {
 	t.Helper()
-	all := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t)}
+	all := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir()}
 	maps.Copy(all, m)
 	return env(all)
 }
@@ -166,12 +168,13 @@ func startServe(t *testing.T, vars map[string]string) (publicURL, internalURL st
 	drainDelay = 10 * time.Millisecond
 	t.Cleanup(func() { drainDelay = oldDrain })
 
+	dataDir := t.TempDir()
 	ctx, cancel := context.WithCancel(t.Context())
 	var out syncBuffer
 	var errOut bytes.Buffer
 	codec := make(chan int, 1)
 	go func() {
-		all := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"}
+		all := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_DATA_DIR": dataDir}
 		maps.Copy(all, vars)
 		codec <- run(ctx, nil, env(all), &out, &errOut)
 	}()
@@ -267,7 +270,7 @@ func TestSleepCtxReturnsEarlyWhenTheContextEnds(t *testing.T) {
 // accepts, refuses a lifetime over a day, and opens no store: a database
 // URL nothing could reach does not stop it.
 func TestTokenRoleRoundTrip(t *testing.T) {
-	vars := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DB_URL": "postgres://nobody@192.0.2.1/none"}
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DB_URL": "postgres://nobody@192.0.2.1/none", "TOPOS_DATA_DIR": t.TempDir()}
 	var out, errOut bytes.Buffer
 	if code := run(t.Context(), []string{"token", "--subject", "root", "--ttl", "2h"}, env(vars), &out, &errOut); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
@@ -323,7 +326,7 @@ func TestServeStopsOnAnIssuerThatDoesNotAnswer(t *testing.T) {
 	var errOut bytes.Buffer
 	code := run(t.Context(), nil, env(map[string]string{
 		"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0",
-		"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": gone.URL,
+		"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": gone.URL, "TOPOS_DATA_DIR": t.TempDir(),
 	}), io.Discard, &errOut)
 	if code != 1 || !strings.Contains(errOut.String(), "TOPOS_OIDC_ISSUERS") {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
@@ -334,6 +337,83 @@ func TestBasePath(t *testing.T) {
 	for in, want := range map[string]string{"https://x.example": "", "https://x.example/": "", "https://x.example/topos/": "/topos", "%": ""} {
 		if got := basePath(in); got != want {
 			t.Errorf("basePath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestServeAnswersTheAPIAsASelfHoster: with the local issuer, the owner
+// policy and a data directory, a token toposd token prints applies an
+// agent and starts a session of it, and a second serve on the same data
+// directory is refused.
+func TestServeAnswersTheAPIAsASelfHoster(t *testing.T) {
+	key, data := localKey(t), t.TempDir()
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": key, "TOPOS_DATA_DIR": data, "TOPOS_ADMIN_SUBJECTS": "http://127.0.0.1:8080|admin"}
+	var tok bytes.Buffer
+	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
+		t.Fatalf("token: exit %d", code)
+	}
+	publicURL, internalURL, stop := startServe(t, vars)
+	bearer := strings.TrimSpace(tok.String())
+	send := func(method, path, body string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), method, publicURL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(b)
+	}
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: claude-haiku-4-5}\n  machine: {kind: cella}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/reviewer", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"reviewer","message":"Review main.go."}`)
+	if code != http.StatusCreated || !strings.Contains(body, `"initiator":{"subject":"http://127.0.0.1:8080|admin"`) {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	if code, body := get(t, internalURL+"/readyz"); code != 200 || body != "ok\n" {
+		t.Fatalf("readiness with the store: %d %q", code, body)
+	}
+	if code, _ := get(t, publicURL+"/v1/openapi.yaml"); code != 200 {
+		t.Fatalf("openapi: %d", code)
+	}
+	var errOut bytes.Buffer
+	second := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"}
+	maps.Copy(second, vars)
+	if code := run(t.Context(), nil, env(second), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "data directory in use by pid") {
+		t.Fatalf("a second serve: exit %d, stderr %q", code, errOut.String())
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestServeStopsOnAStoreItCannotOpen: a database that does not answer
+// and a data directory that cannot be made each stop the start with the
+// variable named.
+func TestServeStopsOnAStoreItCannotOpen(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for want, extra := range map[string]map[string]string{
+		"TOPOS_DB_URL":   {"TOPOS_DB_URL": "postgres://nobody@127.0.0.1:99999/none"},
+		"TOPOS_DATA_DIR": {"TOPOS_DATA_DIR": filepath.Join(blocked, "data")},
+	} {
+		vars := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"}
+		maps.Copy(vars, extra)
+		var errOut bytes.Buffer
+		if code := run(t.Context(), nil, selfHosted(t, vars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), want) {
+			t.Errorf("%s: exit %d, stderr %q", want, code, errOut.String())
 		}
 	}
 }

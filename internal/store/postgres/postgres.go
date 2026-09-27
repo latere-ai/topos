@@ -65,9 +65,6 @@ type Store struct {
 
 // Open applies the migrations on dsn and connects.
 func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
-	if err := pgxmigrate.Up(migrationDSN(dsn), migrations, "migrations"); err != nil {
-		return nil, fmt.Errorf("postgres: migrate: %w", err)
-	}
 	serve := dsn
 	if o.PoolDSN != "" {
 		serve = o.PoolDSN
@@ -82,6 +79,11 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	listen, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: the DSN: %w", err)
+	}
+	// A DSN that does not parse fails above at once; the migration is the
+	// first step that dials.
+	if err := pgxmigrate.Up(migrationDSN(dsn), migrations, "migrations"); err != nil {
+		return nil, fmt.Errorf("postgres: migrate: %w", err)
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -102,6 +104,10 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 
 // Close closes the pool.
 func (s *Store) Close() { s.pool.Close() }
+
+// Ping reports whether the serving pool reaches the database; toposd's
+// readiness asks it.
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 // migrationDSN names the pgx migration driver for a postgres:// DSN.
 func migrationDSN(dsn string) string {

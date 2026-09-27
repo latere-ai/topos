@@ -464,3 +464,48 @@ func TestEventsBlobsAndRedaction(t *testing.T) {
 		t.Fatalf("a redaction of no event: %d", a.status)
 	}
 }
+
+func TestListSessions(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	f.apply("alice", "writer", "Write.")
+	f.apply("bob", "helper", "Help.")
+	mine := []string{f.create("alice", "reviewer").ID, f.create("alice", "writer").ID, f.create("alice", "reviewer").ID}
+	f.create("bob", "helper")
+	list := func(token, q string) []string {
+		var page struct {
+			Items []session.Session `json:"items"`
+		}
+		a := f.do(http.MethodGet, "/v1/sessions"+q, token, "")
+		if a.status != http.StatusOK {
+			t.Fatalf("list %s: %d %s", q, a.status, a.body)
+		}
+		a.decode(t, &page)
+		var ids []string
+		for _, s := range page.Items {
+			ids = append(ids, s.ID)
+		}
+		return ids
+	}
+	// A list runs newest first.
+	if got := list("alice", ""); len(got) != 3 || got[0] != mine[2] {
+		t.Fatalf("alice lists %v", got)
+	}
+	if got := list("root", ""); len(got) != 4 {
+		t.Fatalf("the admin lists %v", got)
+	}
+	if got := list("alice", "?agent=reviewer"); len(got) != 2 || got[1] != mine[0] {
+		t.Fatalf("by agent: %v", got)
+	}
+	if got := list("alice", "?agent=nobody"); len(got) != 0 {
+		t.Fatalf("an unknown agent: %v", got)
+	}
+	if got := list("alice", "?status=ended&runner=hosted"); len(got) != 0 {
+		t.Fatalf("ended: %v", got)
+	}
+	for _, q := range []string{"?status=gone", "?runner=elsewhere", "?limit=x"} {
+		if a := f.do(http.MethodGet, "/v1/sessions"+q, "alice", ""); a.code() != CodeInvalidRequest {
+			t.Errorf("%s: %d %s", q, a.status, a.body)
+		}
+	}
+}
