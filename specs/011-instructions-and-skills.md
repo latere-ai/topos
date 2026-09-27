@@ -3,7 +3,7 @@ title: "Instructions and skills: the versioned harness prompt, the context block
 status: drafted
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
-affects: [harness/, harness/prompt/, test/tasks/instructions/]
+affects: [harness/, runner/, prompts/, test/tasks/instructions/]
 effort: medium
 created: 2026-09-27
 updated: 2026-09-27
@@ -22,8 +22,9 @@ instruction files, found from the working directory up to the
 repository root; the index of the Agent Skills it may load; and a note
 for each attached memory store. This spec owns the text each of these
 renders to, the search order of instruction files, the skill sources,
-and progressive disclosure. Their order and cache placement are
-[[010-context]]'s.
+and progressive disclosure, and the `prompts` tree that holds every
+text a model reads as a versioned file. Their order and cache placement
+are [[010-context]]'s.
 
 ## Current state
 
@@ -37,15 +38,48 @@ borrowed.
 
 ## Design
 
+### The prompts tree
+
+Every text the core writes for a model to read is a file under
+`prompts/`, embedded in the build by the `prompts` package, which
+imports nothing else of the module ([[001-architecture]]). A text's
+name is its path without the extension, and ends in its version:
+`results/files/changed-v1`. A static text is plain; a dynamic one is a
+`text/template` rendered with the values it names, a path, a count, a
+branch, and a value it names that the caller does not pass fails the
+render instead of rendering empty. Rendering reads nothing but the
+embedded files and its arguments, with no clock and no map order, so
+the same inputs give the same bytes on every run and a fold stays
+byte-identical ([[004-session-log]]). Callers name each text by a
+constant of the package, and a test checks every call: the file exists,
+and the data holds exactly the keys the template reads.
+
+| Directory | Holds |
+|---|---|
+| `harness/` | the harness prompt and its sections |
+| `compact/` | the compaction prompt ([[010-context]]) |
+| `advisor/` | the advisor's instructions and the request that carries the caller's transcript ([[013-threads-and-subagents]]) |
+| `tools/` | the descriptions of the built-in tools and of `spawn`, `message` and `advisor` ([[008-tools]], [[013-threads-and-subagents]]) |
+| `transcript/` | the texts the fold writes into a transcript ([[004-session-log]]) |
+| `results/` | the results the harness, the tools and the thread tools write, by producer ([[005-harness-loop]], [[008-tools]], [[012-permissions-and-approvals]], [[013-threads-and-subagents]]) |
+| `context/` | the context block, the instruction file wrapper and its cut lines, the skills index, and the memory note |
+
+A change of wording is a new file with the next version, never an edit
+of a released one, and every released version stays embedded so a
+replay can rebuild an old request. The SHA-256 of every released file
+is pinned in the package's tests, and each text's rendered bytes are
+pinned beside it, so a change of wording shows as a test diff.
+
 ### The harness prompt
 
-The harness prompt is `harness/prompt/harness-v<N>.md`, embedded in
-the build, and its version `harness/<N>` is the `prompt_version` of
-every `model.request` ([[004-session-log]]). A change of wording is a
-new file and a new version, never an edit of a released one, and every
-released version stays embedded so a replay can rebuild an old
-request. A new version merges only with the instruction tier's result
-against the previous one ([[025-task-suite]]).
+The harness prompt is `prompts/harness/harness-v<N>.md`, and its
+version `harness/<N>` is the `prompt_version` of every `model.request`
+([[004-session-log]]). Its conditional sections are files of their own,
+`prompts/harness/<section>-v<N>.md`, and each version of the harness
+prompt names the section versions it includes, so a released version
+renders the same text for as long as it is embedded. A new version
+merges only with the instruction tier's result against the previous
+one ([[025-task-suite]]).
 
 | Section | Says |
 |---|---|
@@ -59,13 +93,13 @@ against the previous one ([[025-task-suite]]).
 | memory | present only when a store is attached: memory is files in the named directories, read and written with the file tools |
 | git | present only in a repository: commit on the session's branch, never push a protected branch |
 
-The conditional sections render from `prompt.Options`, set per
+The conditional sections render from `prompts.HarnessOptions`, set per
 session: the machine's section from its kind, `threads` when the agent
 has subagents, and `git` and `memory` by the runner from the log. The
 git section renders when the latest `session.machine`'s context block
 has a `Git` line, and the memory section when a `memory.attached`
 exists, so a later machine outside a repository drops the git section
-again. The compaction prompt is `harness/prompt/compact-v<N>.md`,
+again. The compaction prompt is `prompts/compact/compact-v<N>.md`,
 versioned the same way ([[010-context]]).
 
 ### The context block
@@ -93,6 +127,10 @@ Recent commits:
 | `Date` | the date the machine attached, in UTC |
 | `Git` | absent outside a repository; the branch, the short HEAD, and counts of modified and untracked paths |
 | `Recent commits` | up to five, short hash and subject |
+
+The block is the template `prompts/context/context-v<N>.md`; the
+instruction wrapper, its cut lines, the skills index and the memory
+note below are templates of `prompts/context/` too.
 
 ### Project instruction files
 
@@ -153,18 +191,21 @@ Each attached store ([[020-memory-stores]]) renders as one line:
 ## Not in this spec
 
 The order and cache breakpoints of these parts ([[010-context]]); the
-sender prefix of messages ([[004-session-log]]); tool descriptions
-([[008-tools]]); the compaction prompt ([[010-context]]); what memory
-stores are ([[020-memory-stores]]).
+sender prefix of messages ([[004-session-log]]); what the tool
+descriptions and results say ([[008-tools]]), the compaction prompt
+asks for ([[010-context]]) and the thread tools' texts say
+([[013-threads-and-subagents]]), though their files are in the prompts
+tree; what memory stores are ([[020-memory-stores]]).
 
 ## Acceptance criteria
 
 | Criterion | Test that proves it | State |
 |---|---|---|
 | Every request carries the harness prompt and the context block, and `model.request` records the prompt version | `harness.TestATurnRunsToolsAndEnds`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
-| The prompt renders only the sections that apply, a version that does not exist is refused, and the compaction prompt renders | `harness/prompt.TestRenderIncludesOnlyTheSectionsThatApply`, `harness/prompt.TestCompact` | built |
+| The prompt renders only the sections that apply, a version that does not exist is refused, and the compaction prompt renders | `prompts.TestRenderIncludesOnlyTheSectionsThatApply`, `prompts.TestCompact` | built |
+| Every text renders to its pinned bytes, the harness prompt in each of its sixteen combinations of sections; a value a template names and the data lacks fails the render; every call names a text that exists with exactly the keys its template reads; and no text holds an em dash | `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestTheHarnessPromptRendersItsCurrentBytes`, `prompts.TestAMissingKeyFailsLoudly`, `prompts.TestEveryCallNamesAText`, `prompts.TestNoTextHasAnEmDash` | built |
 | The runner sets the git and memory sections from the log, and a later machine outside a repository drops the git section | `runner.TestAttachedSetsThePromptSections` | built |
-| A released harness prompt file is never changed: its hash is pinned in the test | `TestReleasedPromptsAreImmutable` | not built |
+| A released prompt file, the harness prompt's among them, is never changed: its hash is pinned in the test | `prompts.TestReleasedPromptsAreImmutable` | built |
 | The context block reports the branch, the git counts and five commits in the documented lines, is recorded once in `session.machine`, and is the same on a second drive | `runner.TestTheContextBlock`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
 | Instruction files are found from the repository root to the working directory, `AGENTS.md` before `CLAUDE.md`, the person's first and the nearest last, cut at 64 KiB each and 256 KiB in all; a Cella machine reads no personal file | `runner.TestDriveAttachesTheMachineAndRunsATurn`, `runner.TestAttachInARepository`, `runner.TestChainAndSkills` | built |
 | The skills index lists each source's skills with the first source winning a name, refuses a skill without valid frontmatter, and holds at most 100 | `runner.TestAttachInARepository`, `runner.TestChainAndSkills`, `runner.TestLocalSkillsReportsAnUnreadableFolder` | built |

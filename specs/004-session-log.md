@@ -3,7 +3,7 @@ title: "The session log: schema v1, event types, status and stop reasons, the fo
 status: drafted
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md]
-affects: [session/, session/dir/, session/storetest/]
+affects: [session/, session/dir/, session/storetest/, prompts/transcript/]
 effort: large
 created: 2026-09-27
 updated: 2026-09-27
@@ -265,7 +265,8 @@ harness reads the blobs and renders every part into system blocks
    - `user.message`: a user message of its content, led by a text
      block `Message from <name>:` from the event where a second sender
      subject first appears onward; earlier messages are not changed,
-     so their bytes and the prompt cache survive.
+     so their bytes and the prompt cache survive. `<name>` is the
+     sender's name, else its subject, else `someone`.
    - `user.interrupt`: a user text block `<name> interrupted the
      previous turn.`
    - `agent.message`: an assistant message of its blocks verbatim. When
@@ -281,7 +282,8 @@ harness reads the blobs and renders every part into system blocks
    - `thread.started`: a user message of its `task`, in the thread it
      opened.
    - `thread.message`: a user message led by
-     `Message from thread <from_name>:`, in the receiving thread.
+     `Message from thread <from_name>:`, in the receiving thread, where
+     `<from_name>` falls back to `from`, then to `session`.
    - `context.compacted` `summary`: the messages rendered from events
      in `from_seq..to_seq` are replaced by one user message
      `Summary of the conversation so far:` followed by the summary. A
@@ -296,6 +298,11 @@ harness reads the blobs and renders every part into system blocks
      restored to its state at the end of turn <n>.`
    - every other type: nothing.
 4. Adjacent messages of the same role merge, blocks in order.
+
+The texts step 3 writes are files of `prompts/transcript/`, one per
+text and version ([[011-instructions-and-skills]]). The fold renders
+the versions its build names; a change of wording ships as a new
+version of the file, never as an edit of a released one.
 
 The fold of one log is byte-identical, as `json.Marshal` of the
 Transcript, on every store and every run. A runner refuses to continue

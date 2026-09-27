@@ -3,7 +3,7 @@ title: "Tools: the built-in set, schemas and descriptions, paths, output caps an
 status: drafted
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
-affects: [harness/tools/, harness/tools/descriptions/, test/tasks/instructions/]
+affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
 updated: 2026-09-27
@@ -172,8 +172,14 @@ registry refuses to register a non-built-in with `Repeatable` set.
 
 ### Descriptions and instruction tests
 
-Each built-in's description is the file
-`harness/tools/descriptions/<name>.md`, embedded in the build. Every
+Each built-in's description is the file `prompts/tools/<name>-v<N>.md`,
+embedded in the build with every other text a model reads
+([[011-instructions-and-skills]]). The texts a tool writes into its
+results, such as the current-content refusal, the refusal of a path
+outside the roots and the spill line above, are files of
+`prompts/results/`: templates rendered with the values they name, the
+path, a count, a limit. A description or a result text changes wording
+as a new version of its file, never as an edit of a released one. Every
 description has at least one instruction test in
 `test/tasks/instructions/<name>/`: a small task whose checker passes
 only when the model used the tool as the description says (an `edit`
