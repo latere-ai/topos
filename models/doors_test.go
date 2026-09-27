@@ -47,3 +47,42 @@ func TestNamesADoor(t *testing.T) {
 		}
 	}
 }
+
+// TestDoorsMoveUnderTheRootTheyWereDiscoveredAt: Lux names its doors
+// under its public URL; a server that discovered them at another root,
+// its in-cluster address, reaches each door under that root, and the
+// public root stays readable for whoever must use it. Doors that share
+// no root, and no doors, are left as they are.
+func TestDoorsMoveUnderTheRootTheyWereDiscoveredAt(t *testing.T) {
+	public := "https://api.example.com/v1/models"
+	inside := "http://lux.internal:8080/v1/models"
+	ds := Doors{"anthropic": public + "/anthropic", "openai": public + "/openai/", "lux": public + "/lux"}
+	if got := ds.Root(); got != public {
+		t.Errorf("Root = %q, want %q", got, public)
+	}
+	under := ds.Under(inside + "/")
+	for name, want := range map[string]string{"anthropic": inside + "/anthropic", "openai": inside + "/openai", "lux": inside + "/lux"} {
+		if under[name] != want {
+			t.Errorf("Under: %s = %q, want %q", name, under[name], want)
+		}
+	}
+	if got := under.Door(inside, ir.DialectAnthropicMessages); got != inside+"/anthropic" {
+		t.Errorf("the family's door under the root is %q", got)
+	}
+	if got := ds.Under(public); got["openai"] != public+"/openai" {
+		t.Errorf("discovered at the public root, the door is %q", got["openai"])
+	}
+	for name, mixed := range map[string]Doors{
+		"two roots":        {"anthropic": public + "/anthropic", "openai": "https://other.example/openai"},
+		"a door not named": {"anthropic": public + "/claude"},
+		"a door at a root": {"anthropic": "/anthropic"},
+		"no doors":         nil,
+	} {
+		if got := mixed.Root(); got != "" {
+			t.Errorf("%s: Root = %q, want none", name, got)
+		}
+		if got := mixed.Under(inside); len(got) != len(mixed) || (mixed != nil && got["anthropic"] != mixed["anthropic"]) {
+			t.Errorf("%s: Under moved doors that share no root: %v", name, got)
+		}
+	}
+}

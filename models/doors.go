@@ -48,3 +48,37 @@ func (ds Doors) Door(base string, d ir.Dialect) string {
 	}
 	return base
 }
+
+// Root is the address a Lux installation published ds under: the URL
+// every door shares, each door being it followed by the door's own name,
+// as Lux builds them from its public URL. It is "" when ds is empty or
+// its doors share no such root.
+func (ds Doors) Root() string {
+	root := ""
+	for name, door := range ds {
+		r, ok := strings.CutSuffix(strings.TrimRight(door, "/"), "/"+name)
+		if !ok || r == "" || (root != "" && r != root) {
+			return ""
+		}
+		root = r
+	}
+	return root
+}
+
+// Under is ds with each door moved from the root it was published under
+// to base, the root it was discovered at, so a server that reaches Lux at
+// another address than Lux publishes, such as its in-cluster Service,
+// keeps every request on that address. Doors that share no root are
+// returned as they are.
+func (ds Doors) Under(base string) Doors {
+	root := ds.Root()
+	if root == "" {
+		return ds
+	}
+	base = strings.TrimRight(base, "/")
+	out := make(Doors, len(ds))
+	for name := range ds {
+		out[name] = base + "/" + name
+	}
+	return out
+}
