@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.8.0-rc.1 - 2026-09-28
+
 - **Breaking:** the repository restarts as the Topos core. Every package of
   v0.7.0 is removed: the root `topos` package, `graph`, `billing`, `harness`,
   `models`, `runtime`, `sandbox` and `adversarial`. A program pinned to v0.7.0
