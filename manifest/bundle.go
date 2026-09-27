@@ -61,10 +61,11 @@ func ReadBundle(b []byte) (Resolved, error) {
 	var r Resolved
 	for i, tree := range trees {
 		kind, vp, ip := envelope(i, tree)
-		if kind != v1.KindAgent || len(vp)+len(ip) > 0 {
+		m, ok := tree.(map[string]any)
+		if !ok || kind != v1.KindAgent || len(vp)+len(ip) > 0 {
 			return Resolved{}, fmt.Errorf("manifest: bundle document %d is not a %s Agent", i+1, v1.APIVersion)
 		}
-		ob, problems := decodeObject(i, kind, tree.(map[string]any), true)
+		ob, problems := decodeObject(i, kind, m, true)
 		if len(problems) > 0 {
 			return Resolved{}, newError(CodeInvalidManifest, len(trees), problems)
 		}

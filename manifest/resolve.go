@@ -170,10 +170,11 @@ func decodeAll(body []byte) ([]*object, int, []Problem, error) {
 	for i, tree := range trees {
 		kind, vp, ip := envelope(i, tree)
 		version, invalid = append(version, vp...), append(invalid, ip...)
-		if kind == "" || len(vp) > 0 {
+		m, ok := tree.(map[string]any)
+		if !ok || kind == "" || len(vp) > 0 {
 			continue
 		}
-		ob, problems := decodeObject(i, kind, tree.(map[string]any), false)
+		ob, problems := decodeObject(i, kind, m, false)
 		invalid = append(invalid, problems...)
 		objs = append(objs, ob)
 	}

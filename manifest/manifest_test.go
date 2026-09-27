@@ -4,6 +4,7 @@
 package manifest
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -380,7 +381,7 @@ func TestValidationRules(t *testing.T) {
 		{connection("{service: s, mode: person, hosts: [a.com], inject: {header: 7}}"), "spec.inject.header", "want a string, got a number"},
 	} {
 		_, err := Resolve(t.Context(), []byte(c.body), Options{})
-		e, ok := err.(*Error)
+		e, ok := errors.AsType[*Error](err)
 		if !ok || e.Code != CodeInvalidManifest || !hasProblem(e, c.path, c.detail) {
 			t.Errorf("%s: want %s: %s, got %v", strings.ReplaceAll(c.body, "\n", " "), c.path, c.detail, err)
 		}
