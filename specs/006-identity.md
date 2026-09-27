@@ -104,9 +104,10 @@ have started the session.
 ### Limits
 
 An allow of `session.create` may carry a `limits` object, decoded with
-`Decision.DecodeLimits` into the figures below; the session takes the
-lowest of each against the agent's and the request's own
-([[005-harness-loop]]).
+`Decision.DecodeLimits` into the members below. The session takes the
+lowest of each figure against the agent's and the request's own
+([[005-harness-loop]]), and merges the lists and thresholds with the
+agent's so neither loosens the other ([[012-permissions-and-approvals]]).
 
 | Member | Meaning | Used by |
 |---|---|---|
@@ -123,13 +124,15 @@ ceiling that cannot be read is not applied.
 
 ### Session attribution
 
-Other cores learn which session a call belongs to from a `session`
-field of the `authz` envelope, `{"id","agent","initiator"}`, added to
-`latere.ai/x/pkg/authz` as an additive change. Only trusted components
-set it: the runner on every call it makes for a session, and Cella's
-egress gateway on traffic from a sandbox, which overwrites whatever
-the sandbox sent. toposd itself ignores the field on its public
-listener.
+A call a session makes to another core carries a token for the agent
+whose `session` claim names the session and its workload
+([[018-credentials-and-secrets]]). The claim is authority, not
+attribution: the core forwards it among the verified `claims` of the
+envelope, and the installation's authorizer checks on every decision
+that the session is live and applies its scope. Nothing beside the
+token names the session, so no caller can attach a session to a request
+it makes. toposd forwards a `session` claim on its public listener like
+any other claim.
 
 ### The owner policy
 
@@ -184,14 +187,14 @@ authorizer.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `pkg/authz/conformance` passes against the shared stub told the vocabulary, and against the owner policy served through `authz/server` | `TestAuthorizerConformanceStub`, `TestAuthorizerConformanceOwnerPolicy` | built |
-| The vocabulary table here and `authorizer.Vocabulary()` are the same set, each action with its kind | `TestVocabularyMatchesTheSpec` | built |
-| The guard answers a denied read `not_found`, a denied mutation `forbidden` when the caller may read the object and `not_found` when it may not, and no decision `authorizer_unavailable` | `TestGuardAnswers` | built |
+| `pkg/authz/conformance` passes against the shared stub told the vocabulary, and against the owner policy served through `authz/server` | `authorizer.TestAuthorizerConformanceStub`, `internal/auth.TestAuthorizerConformanceOwnerPolicy` | built |
+| The vocabulary table here and `authorizer.Vocabulary()` are the same set, each action with its kind | `authorizer.TestVocabularyMatchesTheSpec` | built |
+| The guard answers a denied read `not_found`, a denied mutation `forbidden` when the caller may read the object and `not_found` when it may not, and no decision `authorizer_unavailable` | `internal/auth.TestGuardAnswers` | built |
 | A denied read of an existing session answers `not_found` with the same body as an absent one | `internal/server.TestDeniedReadAnswersAsMissing`, `internal/server.TestAnotherSubjectsAgentIsNotThere` | built |
 | With the authorizer down every API action answers `authorizer_unavailable` and nothing is written | `internal/server.TestAuthorizerDownIsRefusal` | built |
-| A token older than the age bound, with a wrong audience, or from an unlisted issuer is refused `unauthenticated` | `TestVerificationRules` | built |
-| An allow's limits decode member by member, a member toposd does not know is ignored, and one that does not decode refuses the create `authorizer_unavailable` | `TestDecodeLimitsReadsEveryMember`, `TestDecodeLimitsRefusesWhatItCannotApply`, `TestLimitsAtCreate` | built |
+| A token older than the age bound, with a wrong audience, or from an unlisted issuer is refused `unauthenticated` | `internal/auth.TestVerificationRules` | built |
+| An allow's limits decode member by member, a member toposd does not know is ignored, and one that does not decode refuses the create `authorizer_unavailable` | `authorizer.TestDecodeLimitsReadsEveryMember`, `authorizer.TestDecodeLimitsRefusesWhatItCannotApply`, `internal/auth.TestLimitsAtCreate` | built |
 | A `session.create` allow with limits lowers the session's budget, turn timeout and age, and sets its retention and scope | `internal/server.TestLimitsApplyAtCreate` | built |
 | The limits' `always_confirm`, `always_allow` and `thresholds` reach the session's permission policy | `TestLimitListsReachThePolicy` | not built: the session header keeps no permission lists yet |
-| `toposd token` prints a token the same toposd accepts, refuses a `--ttl` over 24 h, and opens no store | `TestTokenRoleRoundTrip` | built |
-| The owner policy lets the creator and the admin subjects act and denies everyone else, narrowed by a key's grants | `TestOwnerPolicyRows` | built |
+| `toposd token` prints a token the same toposd accepts, refuses a `--ttl` over 24 h, and opens no store | `cmd/toposd.TestTokenRoleRoundTrip` | built |
+| The owner policy lets the creator and the admin subjects act and denies everyone else, narrowed by a key's grants | `internal/auth.TestOwnerPolicyRows` | built |
