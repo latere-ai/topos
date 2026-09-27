@@ -312,3 +312,52 @@ func TestHostSessionsAreConfined(t *testing.T) {
 		t.Fatalf("the server's environment reached a command: %s, %v", res.Output, err)
 	}
 }
+
+// TestTheProbesOwnFailures: a probe that cannot write its file or open
+// its machine refuses the start, and a session's directories that
+// cannot be removed are an error.
+func TestTheProbesOwnFailures(t *testing.T) {
+	o := hostOptions(t)
+	absent := o
+	absent.DataDir = filepath.Join(t.TempDir(), "absent")
+	if err := absent.probe(t.Context()); err == nil || !strings.Contains(err.Error(), "create the probe's file") {
+		t.Fatalf("no data directory: %v", err)
+	}
+	blocked := o
+	blocked.DataDir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(blocked.DataDir, HostSessionsDir), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := blocked.probe(t.Context()); err == nil || !strings.Contains(err.Error(), "open the probe's machine") {
+		t.Fatalf("no room for the probe's machine: %v", err)
+	}
+	spill := o
+	id := session.NewID(session.PrefixSession)
+	work, spillDir, _, err := hostDirs(spill.DataDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(spillDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spillDir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := spill.open(id, nil); err == nil {
+		t.Fatal("opened a session whose spill directory is a file")
+	}
+	if err := os.MkdirAll(filepath.Join(work, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(work, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(work, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := RemoveHostSession(spill.DataDir, id); err == nil {
+		t.Fatal("removed a session directory that cannot be removed")
+	}
+}
