@@ -44,17 +44,27 @@ The base path replaces `/v1` whole: every route of [[015-api]] keeps
 its path after the root. Under a capability prefix such as
 `/v1/agents`, the agent collection is therefore `/v1/agents/agents`,
 and the core accepts that path rather than renaming the collection, so
-one route table serves both mounts. A base path starts with `/`, has no
-trailing `/`, and must equal the path of `TOPOS_PUBLIC_URL`; a
-mismatch is a start-up failure. A request outside the base path is
-`not_found`. The probes stay at the listener's root (`/livez`,
-`/readyz`, `/version`), and the local issuer's key set is at
+one route table serves both mounts and an address carries one version
+segment. A session is `/v1/agents/sessions/{id}`, its stream
+`/v1/agents/sessions/{id}/stream`, and the document
+`/v1/agents/openapi.yaml`; a proxy that maps its own prefix onto the
+core, such as a console's `/api/agents/...`, reaches
+`<origin>/v1/agents/...` with the rest of the path unchanged.
+
+A base path starts with `/`, has no trailing `/`, and must equal the
+path of `TOPOS_PUBLIC_URL`; with no base path, the public URL has no
+path. Either mismatch is a start-up failure. A request outside the base
+path, or under it on no route, is `not_found`. The probes stay at the
+listener's root (`/livez`, `/readyz`, `/version`) beside the build
+identity at `/`, and the local issuer's key set is at
 `<TOPOS_PUBLIC_URL>/.well-known/jwks.json` ([[006-identity]]).
 
 ### URLs toposd writes
 
-Every absolute URL in an answer is `TOPOS_PUBLIC_URL` joined with the
-route's path after the root, never taken from the request's `Host`:
+Every absolute URL in an answer is the API root's URL joined with the
+route's path after the root, never taken from the request's `Host`.
+The API root's URL is `TOPOS_PUBLIC_URL` itself under a base path, and
+`TOPOS_PUBLIC_URL` with `/v1` after it without one:
 
 | URL | Where |
 |---|---|
@@ -92,8 +102,8 @@ in front.
 | Criterion | Test that proves it | State |
 |---|---|---|
 | The conformance suite passes with `TOPOS_BASE_PATH` set to `/v1/agents` | the `base_path` group of [[029-conformance]] | not built |
-| With the base path set, the agent collection answers at `/v1/agents/agents`, `/v1/agents/v1/agents` is `not_found`, and the probes answer at the root | `TestBasePathReplacesTheRoot` | not built |
-| A base path that differs from the public URL's path is a start-up failure | `TestBasePathMustMatchPublicURL` | not built |
-| Every `Location`, `Link`, issuer and `servers` URL starts with `TOPOS_PUBLIC_URL`, whatever `Host` the request carried | `TestWrittenURLsUsePublicURL` | not built |
+| With the base path set, the agent collection answers at `/v1/agents/agents`, `/v1/agents/v1/agents` is `not_found`, and the probes answer at the root | `cmd/toposd.TestBasePathReplacesTheRoot` | built |
+| A base path that differs from the public URL's path is a start-up failure | `internal/config.TestBasePathMustMatchPublicURL` | built |
+| Every `Location`, `Link`, issuer and `servers` URL starts with `TOPOS_PUBLIC_URL`, whatever `Host` the request carried | `internal/server.TestWrittenURLsUsePublicURL` over the two `Link` headers and `servers`; the issuer is `TOPOS_PUBLIC_URL` by construction ([[006-identity]]); no answer carries a `Location` yet | built |
 | Forwarded headers are believed only from a trusted range | `TestTrustedProxies` | not built |
 | `client` and `topos` reach every route under a base path without adding `/v1` | `TestClientComposesUnderBasePath` | not built |
