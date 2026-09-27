@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
+//go:build unix
+
 package host
 
 import (
@@ -24,6 +26,13 @@ import (
 
 	"latere.ai/x/topos/machine"
 )
+
+// stagedSandbox is the fixture's host sandbox: the srt driver over
+// shimDriver, with its stage directory and the data directory denied
+// under base.
+func stagedSandbox(t *testing.T, home, base string) *Sandbox {
+	return &Sandbox{Driver: shimDriver(t, home), StageDir: filepath.Join(base, "stages"), Denied: []string{filepath.Join(base, "data")}}
+}
 
 // shimDriver is the srt driver over a stand-in for srt that drops
 // `--settings <file> --` and runs the command, with every other program

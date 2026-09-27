@@ -30,9 +30,16 @@ type Info struct {
 	Arch        string
 	Environment string
 	// Sandbox names the host sandbox driver every command runs under;
-	// empty on a machine that runs commands without one.
+	// empty on a machine that runs commands without one, and SandboxNone
+	// on a host whose operating system offers no sandbox at all.
 	Sandbox string
 }
+
+// SandboxNone is the Sandbox of a host with none of the mechanisms the
+// host sandbox is built on, Seatbelt, Bubblewrap and Landlock, which is
+// every Windows host. A session on it runs only in plan or confirm
+// (spec 012).
+const SandboxNone = "none"
 
 // ExecRequest is one command. Command runs under /bin/sh -c.
 type ExecRequest struct {

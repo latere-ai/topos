@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
+//go:build unix
+
 package host
 
 import (
@@ -43,6 +45,34 @@ type Sandbox struct {
 	// Egress are the hosts commands and fetches may reach, each a host
 	// name or "*." and a domain; empty reaches none.
 	Egress []string
+}
+
+// openSandbox checks a sandbox's driver and creates its stage
+// directory, which must lie outside every root, since a command could
+// otherwise read or rewrite its own transcript, and records the
+// driver's name.
+func (h *Host) openSandbox() error {
+	sb := h.opts.Sandbox
+	switch {
+	case sb.Driver == nil:
+		return errors.New("machine: the host sandbox has no driver")
+	case sb.StageDir == "":
+		return errors.New("machine: the host sandbox has no stage directory")
+	}
+	if err := os.MkdirAll(sb.StageDir, 0o700); err != nil {
+		return fmt.Errorf("machine: create the stage directory: %w", err)
+	}
+	dir, err := filepath.EvalSymlinks(sb.StageDir)
+	if err != nil {
+		return fmt.Errorf("machine: the stage directory: %w", err)
+	}
+	for _, r := range h.roots {
+		if dir == r.dir || strings.HasPrefix(dir, r.dir+string(filepath.Separator)) || strings.HasPrefix(r.dir, dir+string(filepath.Separator)) {
+			return fmt.Errorf("machine: the stage directory %s overlaps the root %s", dir, r.dir)
+		}
+	}
+	h.info.Sandbox = string(sb.Driver.Name())
+	return nil
 }
 
 // srtTempDir is the variable srt reads for the TMPDIR it hands a stage.
@@ -144,7 +174,7 @@ func (h *Host) launch(ctx context.Context, argv []string, dir string, env map[st
 func (h *Host) finish(ctx context.Context, l launched) error {
 	var errs []error
 	if pgid := stageGroup(l.handle); pgid > 0 {
-		errs = append(errs, kill(pgid, syscall.SIGKILL))
+		errs = append(errs, signalGroup(pgid, syscall.SIGKILL))
 	}
 	if err := h.opts.Sandbox.Driver.Discard(context.WithoutCancel(ctx), l.handle); err != nil {
 		errs = append(errs, fmt.Errorf("machine: discard the command: %w", err))
@@ -282,30 +312,6 @@ func (s *stageStream) Read(p []byte) (int, error) {
 func (s *stageStream) Wait() (machine.ExecResult, error) {
 	<-s.done
 	return s.res, errors.Join(s.err, s.out.Close())
-}
-
-// spillFile creates an empty file in the spill directory, which every
-// stage may read and write, and returns its path and its removal.
-func (h *Host) spillFile(pattern string, content io.Reader) (string, func() error, error) {
-	f, err := os.CreateTemp(h.spill, pattern)
-	if err != nil {
-		return "", nil, fmt.Errorf("machine: create %s: %w", pattern, err)
-	}
-	name := f.Name()
-	remove := func() error {
-		if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("machine: remove %s: %w", name, err)
-		}
-		return nil
-	}
-	var werr error
-	if content != nil {
-		_, werr = io.Copy(f, content)
-	}
-	if err := errors.Join(werr, f.Close()); err != nil {
-		return "", nil, errors.Join(fmt.Errorf("machine: write %s: %w", name, err), remove())
-	}
-	return name, remove, nil
 }
 
 // startStage runs a command as a stage. A stage's input is the null

@@ -4,7 +4,8 @@
 // Package host is the host machine of spec 009: the person's own
 // computer, with the file tools confined to the session's roots through
 // one os.Root each, the credential deny-list enforced on every path,
-// and each command in its own process group.
+// and each command in its own process group on Unix and its own Job
+// Object on Windows.
 package host
 
 import (
@@ -14,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,21 +23,18 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"latere.ai/x/topos/machine"
 )
-
-// Shell runs every command.
-const Shell = "/bin/sh"
 
 // MaxOutput bounds what Exec keeps of one command's output; the tool
 // layer spills anything past its own cap.
 const MaxOutput = 64 << 20
 
 // KillGrace is how long a canceled command has between SIGTERM and
-// SIGKILL.
+// SIGKILL. Windows has no SIGTERM, and a cancel there ends the command
+// at once.
 var KillGrace = 5 * time.Second
 
 // Options configure a host machine.
@@ -74,8 +73,10 @@ type Host struct {
 	deny  machine.DenyList
 	env   []string
 
-	mu       sync.Mutex
-	jobs     map[int]*exec.Cmd
+	mu sync.Mutex
+	// jobs are the groups of the running background jobs by pid. Once
+	// the machine is released, Release closes the groups it found here.
+	jobs     map[int]*group
 	stages   map[string]*stageJob
 	jobErrs  []error
 	released bool
@@ -98,7 +99,7 @@ func Open(o Options) (*Host, error) {
 	if err := os.MkdirAll(o.SpillDir, 0o700); err != nil {
 		return nil, fmt.Errorf("machine: create the spill directory: %w", err)
 	}
-	h := &Host{opts: o, deny: machine.DenyList{Home: o.Home, DataDir: o.DataDir}, jobs: map[int]*exec.Cmd{}, stages: map[string]*stageJob{}}
+	h := &Host{opts: o, deny: machine.DenyList{Home: o.Home, DataDir: o.DataDir}, jobs: map[int]*group{}, stages: map[string]*stageJob{}}
 	dirs := append([]string{o.Workdir}, o.Roots...)
 	dirs = append(dirs, o.SpillDir)
 	for i, d := range dirs {
@@ -129,10 +130,11 @@ func Open(o Options) (*Host, error) {
 		h.spill = h.info.Workdir
 	}
 	if o.Sandbox != nil {
-		if err := h.checkSandbox(); err != nil {
+		if err := h.openSandbox(); err != nil {
 			return nil, errors.Join(err, h.closeRoots())
 		}
-		h.info.Sandbox = string(o.Sandbox.Driver.Name())
+	} else {
+		h.info.Sandbox = unsandboxed(runtime.GOOS)
 	}
 	environ := o.Environ
 	if environ == nil {
@@ -142,30 +144,15 @@ func Open(o Options) (*Host, error) {
 	return h, nil
 }
 
-// checkSandbox checks a sandbox's driver and creates its stage
-// directory, which must lie outside every root, since a command could
-// otherwise read or rewrite its own transcript.
-func (h *Host) checkSandbox() error {
-	sb := h.opts.Sandbox
-	switch {
-	case sb.Driver == nil:
-		return errors.New("machine: the host sandbox has no driver")
-	case sb.StageDir == "":
-		return errors.New("machine: the host sandbox has no stage directory")
+// unsandboxed is the Sandbox a host machine without a sandbox records:
+// SandboxNone on Windows, which has none of the mechanisms the host
+// sandbox is built on, and nothing on Linux and macOS, which have them
+// and on which this machine was given none.
+func unsandboxed(goos string) string {
+	if goos == "windows" {
+		return machine.SandboxNone
 	}
-	if err := os.MkdirAll(sb.StageDir, 0o700); err != nil {
-		return fmt.Errorf("machine: create the stage directory: %w", err)
-	}
-	dir, err := filepath.EvalSymlinks(sb.StageDir)
-	if err != nil {
-		return fmt.Errorf("machine: the stage directory: %w", err)
-	}
-	for _, r := range h.roots {
-		if dir == r.dir || strings.HasPrefix(dir, r.dir+string(filepath.Separator)) || strings.HasPrefix(r.dir, dir+string(filepath.Separator)) {
-			return fmt.Errorf("machine: the stage directory %s overlaps the root %s", dir, r.dir)
-		}
-	}
-	return nil
+	return ""
 }
 
 func (h *Host) closeRoots() error {
@@ -496,6 +483,34 @@ func (h *Host) stream(ctx context.Context, r machine.ExecRequest) (machine.ExecS
 // on every exit, an explicit exit included.
 const reportPrefix = "trap 'pwd -P >&3' EXIT\n"
 
+// reportByFile is whether the shell's final directory reaches the
+// machine through a file in the spill directory instead of descriptor 3:
+// on Windows os/exec hands a child no descriptor past the standard
+// three.
+var reportByFile = runtime.GOOS == "windows"
+
+// fileReportPrefix makes the shell write its final directory to the file
+// at path on every exit. pwd -W prints the directory in its Windows
+// form, C:/Users/..., under the sh of Git for Windows, where pwd -P
+// prints /c/Users/...; a shell without the flag falls back to pwd -P.
+func fileReportPrefix(path string) string {
+	return "trap " + shellQuote("{ pwd -W || pwd -P; } >"+shellQuote(filepath.ToSlash(path))+" 2>/dev/null") + " EXIT\n"
+}
+
+// reportedDir is the final directory the exit trap wrote to path, in
+// this platform's form; a shell killed before its exit wrote none.
+func reportedDir(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("machine: read the final directory: %w", err)
+	}
+	d := strings.TrimSpace(string(b))
+	if d == "" {
+		return "", nil
+	}
+	return filepath.Clean(filepath.FromSlash(d)), nil
+}
+
 type stream struct {
 	out  *os.File
 	done chan struct{}
@@ -517,40 +532,70 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 	if released {
 		return nil, machine.ErrReleased
 	}
+	sh, err := shell()
+	if err != nil {
+		return nil, err
+	}
+	var removes []func() error
+	cleanup := func() error {
+		var errs []error
+		for _, rm := range removes {
+			errs = append(errs, rm())
+		}
+		return errors.Join(errs...)
+	}
 	script := r.Command
-	if r.ReportDir {
+	var dirFile string
+	switch {
+	case r.ReportDir && reportByFile:
+		name, remove, err := h.spillFile("topos-dir-*", nil)
+		if err != nil {
+			return nil, err
+		}
+		dirFile, removes = name, append(removes, remove)
+		script = fileReportPrefix(name) + script
+	case r.ReportDir:
 		script = reportPrefix + script
 	}
 	args, remove, err := machine.ShellArgs(h.spill, script)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, cleanup())
 	}
-	// The machine cancels a command itself, SIGTERM to its process group
-	// and SIGKILL after KillGrace, so the command's own context never
-	// kills it.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), Shell, args...)
+	removes = append(removes, remove)
+	// The machine cancels a command itself, ending its group, so the
+	// command's own context never kills it.
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), sh, args...)
 	cmd.Dir = h.dir(r.Dir)
 	cmd.Env = h.environ(r.Env)
 	cmd.Stdin = r.Stdin
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	g, err := prepare(cmd)
+	if err != nil {
+		return nil, errors.Join(err, cleanup())
+	}
 	outR, outW, err := os.Pipe()
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("machine: create the output pipe: %w", err), remove())
+		return nil, errors.Join(fmt.Errorf("machine: create the output pipe: %w", err), g.close(), cleanup())
 	}
 	cmd.Stdout, cmd.Stderr = outW, outW
 	var dirR, dirW *os.File
-	if r.ReportDir {
+	if r.ReportDir && !reportByFile {
 		if dirR, dirW, err = os.Pipe(); err != nil {
-			return nil, errors.Join(fmt.Errorf("machine: create the directory pipe: %w", err), outR.Close(), outW.Close(), remove())
+			return nil, errors.Join(fmt.Errorf("machine: create the directory pipe: %w", err), outR.Close(), outW.Close(), g.close(), cleanup())
 		}
 		cmd.ExtraFiles = []*os.File{dirW}
 	}
-	if err := cmd.Start(); err != nil {
-		errs := []error{fmt.Errorf("machine: start the command: %w", err), outR.Close(), outW.Close(), remove()}
+	closePipes := func() error {
+		errs := []error{outR.Close(), outW.Close()}
 		if dirR != nil {
 			errs = append(errs, dirR.Close(), dirW.Close())
 		}
-		return nil, errors.Join(errs...)
+		return errors.Join(errs...)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, errors.Join(fmt.Errorf("machine: start the command: %w", err), closePipes(), g.close(), cleanup())
+	}
+	if err := g.started(cmd); err != nil {
+		return nil, errors.Join(err, cmd.Process.Kill(), reap(cmd), closePipes(), g.close(), cleanup())
 	}
 	s := &stream{out: outR, done: make(chan struct{})}
 	werr := outW.Close()
@@ -572,20 +617,23 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 	}
 	go func() {
 		defer close(s.done)
-		s.res, s.err = h.wait(ctx, cmd, r.Timeout)
-		s.err = errors.Join(werr, s.err, remove())
+		s.res, s.err = h.wait(ctx, cmd, g, r.Timeout)
 		if dirOut != nil {
 			s.res.Dir = <-dirOut
 		}
+		if dirFile != "" {
+			d, err := reportedDir(dirFile)
+			s.res.Dir, s.err = d, errors.Join(s.err, err)
+		}
+		s.err = errors.Join(werr, s.err, cleanup())
 	}()
 	return s, nil
 }
 
-// wait waits for the shell and kills its process group when the
-// timeout passes, when ctx ends, and once the shell has exited, so a
-// stray child cannot hold the output open.
-func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, timeout time.Duration) (machine.ExecResult, error) {
-	pgid := cmd.Process.Pid
+// wait waits for the shell and ends its group when the timeout passes,
+// when ctx ends, and once the shell has exited, so a stray child cannot
+// hold the output open.
+func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, g *group, timeout time.Duration) (machine.ExecResult, error) {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 	var timer <-chan time.Time
@@ -600,19 +648,19 @@ func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, timeout time.Duration) (
 	case werr = <-exited:
 	case <-timer:
 		res.TimedOut = true
-		kerr = kill(pgid, syscall.SIGKILL)
+		kerr = g.kill()
 		werr = <-exited
 	case <-ctx.Done():
 		res.Canceled = true
-		kerr = kill(pgid, syscall.SIGTERM)
+		kerr = g.terminate()
 		select {
 		case werr = <-exited:
 		case <-time.After(KillGrace):
-			kerr = errors.Join(kerr, kill(pgid, syscall.SIGKILL))
+			kerr = errors.Join(kerr, g.kill())
 			werr = <-exited
 		}
 	}
-	kerr = errors.Join(kerr, kill(pgid, syscall.SIGKILL))
+	kerr = errors.Join(kerr, g.kill(), g.close())
 	res.ExitCode = cmd.ProcessState.ExitCode()
 	var ee *exec.ExitError
 	if werr != nil && !errors.As(werr, &ee) {
@@ -621,12 +669,13 @@ func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, timeout time.Duration) (
 	return res, kerr
 }
 
-// kill signals a process group. A group already gone is not an error:
-// ESRCH, or EPERM, which macOS returns for a group whose remaining
-// members are zombies waiting to be reaped.
-func kill(pgid int, sig syscall.Signal) error {
-	if err := syscall.Kill(-pgid, sig); err != nil && !errors.Is(err, syscall.ESRCH) && !errors.Is(err, syscall.EPERM) {
-		return fmt.Errorf("machine: signal process group %d: %w", pgid, err)
+// reap waits for a command the machine killed because its group could
+// not hold it. The kill's exit status is the outcome asked for, not an
+// error.
+func reap(cmd *exec.Cmd) error {
+	var ee *exec.ExitError
+	if err := cmd.Wait(); err != nil && !errors.As(err, &ee) {
+		return fmt.Errorf("machine: reap the command: %w", err)
 	}
 	return nil
 }
@@ -638,6 +687,10 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 	defer h.mu.Unlock()
 	if h.released {
 		return machine.ExecResult{}, machine.ErrReleased
+	}
+	sh, err := shell()
+	if err != nil {
+		return machine.ExecResult{}, err
 	}
 	jobs := filepath.Join(h.spill, "jobs")
 	if err := os.MkdirAll(jobs, 0o700); err != nil {
@@ -652,18 +705,26 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 		return machine.ExecResult{}, errors.Join(err, log.Close())
 	}
 	// A job outlives the call that started it and ends with the session.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), Shell, args...)
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), sh, args...)
 	cmd.Dir = h.dir(r.Dir)
 	cmd.Env = h.environ(r.Env)
 	cmd.Stdout, cmd.Stderr = log, log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	g, err := prepare(cmd)
+	if err != nil {
+		return machine.ExecResult{}, errors.Join(err, log.Close(), remove())
+	}
 	serr := cmd.Start()
+	if serr == nil {
+		if err := g.started(cmd); err != nil {
+			serr = errors.Join(err, cmd.Process.Kill(), reap(cmd))
+		}
+	}
 	cerr := log.Close()
 	if serr != nil {
-		return machine.ExecResult{}, errors.Join(fmt.Errorf("machine: start the job: %w", serr), cerr, remove())
+		return machine.ExecResult{}, errors.Join(fmt.Errorf("machine: start the job: %w", serr), cerr, g.close(), remove())
 	}
 	pid := cmd.Process.Pid
-	h.jobs[pid] = cmd
+	h.jobs[pid] = g
 	go func() {
 		werr := cmd.Wait()
 		code := cmd.ProcessState.ExitCode()
@@ -674,6 +735,11 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 		}
 		h.mu.Lock()
 		delete(h.jobs, pid)
+		// Once released, the machine's Release holds this group and
+		// closes it after its last signal.
+		if !h.released {
+			err = errors.Join(err, g.close())
+		}
 		if err != nil {
 			h.jobErrs = append(h.jobErrs, fmt.Errorf("machine: job %d: %w", pid, err))
 		}
@@ -695,14 +761,11 @@ func (h *Host) Release(ctx context.Context, end bool) error {
 		return nil
 	}
 	h.released = true
-	pids := make([]int, 0, len(h.jobs))
-	for pid := range h.jobs {
-		pids = append(pids, pid)
-	}
+	groups := slices.Collect(maps.Values(h.jobs))
 	h.mu.Unlock()
 	var errs []error
-	for _, pid := range pids {
-		errs = append(errs, kill(pid, syscall.SIGTERM))
+	for _, g := range groups {
+		errs = append(errs, g.terminate())
 	}
 	deadline := time.Now().Add(KillGrace)
 	for time.Now().Before(deadline) {
@@ -714,14 +777,41 @@ func (h *Host) Release(ctx context.Context, end bool) error {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	for _, pid := range pids {
-		errs = append(errs, kill(pid, syscall.SIGKILL))
+	// A job whose shell exited during the grace may have left children
+	// in its group, which the kill ends too.
+	for _, g := range groups {
+		errs = append(errs, g.kill(), g.close())
 	}
 	errs = append(errs, h.releaseStages(ctx))
 	h.mu.Lock()
 	errs = append(errs, h.jobErrs...)
 	h.mu.Unlock()
 	return errors.Join(append(errs, h.closeRoots())...)
+}
+
+// spillFile creates a file in the spill directory with content, and
+// returns its path and its removal. Every command may read and write
+// the spill directory, a stage of the host sandbox included.
+func (h *Host) spillFile(pattern string, content io.Reader) (string, func() error, error) {
+	f, err := os.CreateTemp(h.spill, pattern)
+	if err != nil {
+		return "", nil, fmt.Errorf("machine: create %s: %w", pattern, err)
+	}
+	name := f.Name()
+	remove := func() error {
+		if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("machine: remove %s: %w", name, err)
+		}
+		return nil
+	}
+	var werr error
+	if content != nil {
+		_, werr = io.Copy(f, content)
+	}
+	if err := errors.Join(werr, f.Close()); err != nil {
+		return "", nil, errors.Join(fmt.Errorf("machine: write %s: %w", name, err), remove())
+	}
+	return name, remove, nil
 }
 
 // appendLine appends text to the file at path.

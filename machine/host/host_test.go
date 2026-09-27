@@ -28,14 +28,18 @@ type fixture struct {
 
 func open(t *testing.T) fixture { return openOn(t, direct) }
 
-// The two ways a host machine runs a command: as a process of its own,
-// the person's host, and as a stage of the host sandbox, a server's.
+// The ways a host machine runs a command: as a process of its own, the
+// person's host, and as a stage of the host sandbox, a server's. The
+// third is the first with the final directory reported through a file
+// in the spill directory, as on Windows, where a child inherits no
+// descriptor 3.
 const (
 	direct = "process"
 	staged = "stage"
+	byFile = "process-dir-by-file"
 )
 
-var backends = []string{direct, staged}
+var backends = []string{direct, staged, byFile}
 
 // openOn opens the fixture on a backend. The stage backend runs the srt
 // driver over a stand-in for srt that runs the command unconfined, so
@@ -58,8 +62,13 @@ func openOn(t *testing.T, backend string) fixture {
 		Home: f.home, DataDir: filepath.Join(base, "data"), ID: "host-1",
 		Environ: []string{"PATH=" + os.Getenv("PATH"), "GITHUB_TOKEN=ghp_secret", "LANG=C"},
 	}
-	if backend == staged {
-		o.Sandbox = &Sandbox{Driver: shimDriver(t, f.home), StageDir: filepath.Join(base, "stages"), Denied: []string{filepath.Join(base, "data")}}
+	switch backend {
+	case staged:
+		o.Sandbox = stagedSandbox(t, f.home, base)
+	case byFile:
+		old := reportByFile
+		reportByFile = true
+		t.Cleanup(func() { reportByFile = old })
 	}
 	h, err := Open(o)
 	if err != nil {
@@ -570,8 +579,8 @@ func testAScriptPastTheArgumentLimitRuns(t *testing.T, f fixture) {
 		}
 	}
 	for _, dir := range []string{f.h.SpillDir(), filepath.Join(f.h.SpillDir(), "jobs")} {
-		if left, _ := filepath.Glob(filepath.Join(dir, "topos-script-*")); len(left) != 0 {
-			t.Fatalf("script files left in %s: %v", dir, left)
+		if left, _ := filepath.Glob(filepath.Join(dir, "topos-*")); len(left) != 0 {
+			t.Fatalf("script, input or directory files left in %s: %v", dir, left)
 		}
 	}
 }
