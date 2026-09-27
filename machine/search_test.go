@@ -160,6 +160,36 @@ func TestMatchGlob(t *testing.T) {
 	}
 }
 
+// TestTheDenyListIgnoresCase: a case-insensitive filesystem opens every
+// spelling below as the file an entry names, so each is refused: every
+// home entry, the data directory's credentials, each base-name glob and
+// the .env rule, with the home and data directories themselves spelled
+// in another case, and with the Kelvin sign and the long s, which fold
+// to k and s. The allowed .env files stay allowed in any case, and a
+// name that is not an entry in any case stays readable.
+func TestTheDenyListIgnoresCase(t *testing.T) {
+	d := DenyList{Home: "/Users/Ada", DataDir: "/Users/Ada/Library/Topos"}
+	for _, p := range []string{
+		"/USERS/ADA/.SSH/known_hosts", "/users/ada/.Ssh", "/Users/Ada/.AWS/Credentials", "/Users/Ada/.Azure/x",
+		"/Users/Ada/.CONFIG/GCLOUD/adc.json", "/Users/Ada/.KUBE/CONFIG", "/Users/Ada/.Docker/Config.JSON",
+		"/Users/Ada/.NETRC", "/Users/Ada/.Git-Credentials", "/Users/Ada/.NPMRC", "/Users/Ada/.PyPIRC",
+		"/Users/Ada/.GnuPG/pubring.kbx", "/Users/Ada/.Password-Store/x.gpg", "/Users/Ada/.Config/GH/Hosts.YML",
+		"/users/ada/library/topos/CREDENTIALS/k",
+		"/work/.ENV", "/work/.Env.Production", "/work/certs/SERVER.PEM", "/work/tls.Key", "/work/a.P12", "/work/b.PFX",
+		"/work/ID_RSA", "/work/Id_Ecdsa.pub", "/work/ID_ED25519",
+		"/work/tls.\u212aey", "/Users/Ada/.\u017f\u017fh/known_hosts",
+	} {
+		if !d.Path(p) {
+			t.Errorf("%s is not denied", p)
+		}
+	}
+	for _, p := range []string{"/Users/Ada/.SSHX", "/Users/Ada/.KUBE/CACHE", "/work/.ENV.EXAMPLE", "/work/.Env.Sample", "/work/.ENV.Template", "/work/KEYS.GO"} {
+		if d.Path(p) {
+			t.Errorf("%s is denied", p)
+		}
+	}
+}
+
 func TestDenyList(t *testing.T) {
 	d := DenyList{Home: "/home/ada", DataDir: "/home/ada/.local/share/topos"}
 	for _, p := range []string{

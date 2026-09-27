@@ -172,6 +172,41 @@ func TestFilesAreConfinedToTheRoots(t *testing.T) {
 	}
 }
 
+// TestTheDenyListIgnoresCaseInsideARoot: a credential file written in
+// one case is refused in that case and in another, which a
+// case-insensitive filesystem such as APFS or NTFS opens as the same
+// file, and list and grep show it in neither. The refusal comes before
+// the open, so it holds on a case-sensitive filesystem too.
+func TestTheDenyListIgnoresCaseInsideARoot(t *testing.T) {
+	f := open(t)
+	written := map[string]string{"Server.PEM": "server.pem", ".ENV": ".env", "ID_RSA": "id_rsa", ".Env.Local": ".ENV.LOCAL"}
+	for name := range written {
+		write(t, filepath.Join(f.work, name), "API_KEY=abc")
+	}
+	write(t, filepath.Join(f.home, ".ssh", "known_hosts"), "API_KEY=abc")
+	for name, other := range written {
+		for _, p := range []string{name, other} {
+			if _, err := read(t, f.h, p); !errors.Is(err, machine.ErrDenied) {
+				t.Errorf("read %s: %v", p, err)
+			}
+		}
+	}
+	if _, err := read(t, f.h, filepath.Join(strings.ToUpper(f.home), ".SSH", "KNOWN_HOSTS")); !errors.Is(err, machine.ErrDenied) {
+		t.Errorf("read the home entry in upper case: %v", err)
+	}
+	list, err := f.h.List(t.Context(), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Errorf("list shows %v", list)
+	}
+	res, err := f.h.Search(t.Context(), machine.SearchRequest{Kind: machine.SearchGrep, Pattern: "API_KEY"})
+	if err != nil || len(res.Lines) != 0 {
+		t.Errorf("grep %v, %v", res.Lines, err)
+	}
+}
+
 func TestTheDenyListHoldsInsideARoot(t *testing.T) {
 	f := open(t)
 	write(t, filepath.Join(f.work, ".env"), "API_KEY=abc")

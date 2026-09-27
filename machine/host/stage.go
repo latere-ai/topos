@@ -40,7 +40,9 @@ type Sandbox struct {
 	StageDir string
 	// Denied are paths no command may read though nothing else denies
 	// them: the data directory, whose roots are granted back, and the
-	// files the server's configuration names.
+	// files the server's configuration names. srt receives them as
+	// written and matches them itself; the case-insensitive match of
+	// machine.DenyList covers the file tools and search, not commands.
 	Denied []string
 	// Egress are the hosts commands and fetches may reach, each a host
 	// name or "*." and a domain; empty reaches none.

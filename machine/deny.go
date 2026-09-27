@@ -8,10 +8,13 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // homeDenied are the credential paths under the home directory (spec
 // 009). An entry ending in "/" is a directory and everything in it.
+// Every entry here and in nameDenied and envAllowed is written in lower
+// case, the form Path compares in.
 var homeDenied = []string{
 	".ssh/", ".aws/", ".azure/", ".config/gcloud/", ".kube/config",
 	".docker/config.json", ".netrc", ".git-credentials", ".npmrc", ".pypirc",
@@ -32,16 +35,24 @@ type DenyList struct {
 }
 
 // Path reports whether the file tools refuse p, an absolute clean path.
+// Every entry matches without regard to case, on every platform: APFS
+// and NTFS, the default filesystems of macOS and Windows, open
+// ~/.SSH/ID_RSA or SERVER.PEM as the file the entry names, so a match
+// that heeded case would let a differently cased path read it. On a
+// case-sensitive filesystem, as on most Linux hosts, this also refuses
+// a file whose name differs from an entry only in case, such as
+// KEY.PEM, which is an accepted over-denial.
 func (d DenyList) Path(p string) bool {
-	p = filepath.Clean(p)
+	p = fold(filepath.Clean(p))
 	if d.Home != "" {
+		home := fold(d.Home)
 		for _, e := range homeDenied {
-			if within(p, filepath.Join(d.Home, e), strings.HasSuffix(e, "/")) {
+			if within(p, filepath.Join(home, e), strings.HasSuffix(e, "/")) {
 				return true
 			}
 		}
 	}
-	if d.DataDir != "" && within(p, filepath.Join(d.DataDir, "credentials"), true) {
+	if d.DataDir != "" && within(p, filepath.Join(fold(d.DataDir), "credentials"), true) {
 		return true
 	}
 	base := filepath.Base(p)
@@ -54,6 +65,15 @@ func (d DenyList) Path(p string) bool {
 		}
 	}
 	return false
+}
+
+// fold maps s to one case, so two spellings a case-insensitive
+// filesystem opens as one file compare equal. Each rune goes to its
+// upper case and then to that one's lower case, which also maps the
+// Kelvin sign to k and the long s to s, as the Unicode case folding of
+// those filesystems does.
+func fold(s string) string {
+	return strings.Map(func(r rune) rune { return unicode.ToLower(unicode.ToUpper(r)) }, s)
 }
 
 // within reports whether p is target, or under it when dir is set.
