@@ -44,7 +44,8 @@ replaced. The retired laptop client ran every command unconfirmed.
 
 | Machine | The boundary | What decides at it |
 |---|---|---|
-| a Cella sandbox | the sandbox: its files are disposable, it holds no credential, its network leaves only through Cella's egress gateway | inside, `bash` runs freely; outside, typed points: the egress allowlist and credential substitution (Cella), the agent's permissions and the session scope at every core (the installation's authorizer), the git host's ref rules ([[019-git]]), and the runner-held tools (MCP, deploys), where irreversible ones wait for a confirmation |
+| a Cella sandbox | the sandbox: its files are disposable, it holds no credential, its network leaves only through Cella's egress gateway | inside, `bash` runs freely; outside, typed points: the egress allowlist and credential substitution (Cella), the agent's permissions and the session scope at every core (the installation's authorizer), the git host's ref rules ([[019-git]]), the scope each of the sandbox's tokens is minted with, which leaves out every action that cannot be undone, and the step-up below, which asks before one is granted |
+| a server's host ([[009-machines]]) | the host sandbox, mandatory, around each command, with a directory of the session's own and none of the server's environment | as on a person's host; the sandbox holds between the sessions of different people as well |
 | the host | an operating-system sandbox around each command | the person, through the mode and the prompt; the sandbox holds when a prompt was answered carelessly or not at all |
 
 The host sandbox is built on `latere.ai/x/pkg/hostsandbox`, which
@@ -69,10 +70,15 @@ A host with none of the three mechanisms records `sandbox: none` in
    permissions and the session scope, the git host's ref rules. They
    hold whatever anyone answers.
 2. **Lists**: `always_confirm` and `always_allow`, lists of patterns,
-   from the authorizer's `limits` in the decision at session start, or,
-   for a session with no authorizer, from the agent's `spec.approvals`.
-   Read-only tools are on `always_allow` unless a list says otherwise.
-   `always_confirm` wins over `always_allow`.
+   merged from the authorizer's `limits` in the decision at session
+   start and the agent's `spec.approvals`, so neither side can loosen
+   the other: `always_confirm` is the union of the two, `always_allow`
+   the intersection when both give one and the one given otherwise,
+   the mode the stricter, and each threshold the lower. The merged
+   policy is the Session's `policy` ([[004-session-log]]), so every
+   runner applies the same lists. Read-only tools are on
+   `always_allow` unless a list says otherwise. `always_confirm` wins
+   over `always_allow`.
 3. **Risk score**: a number in `[0, 1]` on every call, with its source.
 4. **Verdict**: from the mode, the lists and the score, then narrowed
    by hooks.
@@ -98,7 +104,9 @@ nothing in the design depends on them.
 | Features of the call | Score |
 |---|---|
 | effect `none` or `read` | 0.0 |
-| effect `write` inside a Cella machine | 0.1 |
+| effect `write` inside a Cella machine, by a file tool, or by `bash` in a sandbox that holds no swapped-in credential | 0.1 |
+| `bash` in a Cella machine whose sandbox holds a swapped-in credential toward a core or another host, since its commands can act outside the machine through it | 0.4 |
+| an `approval.requested` for an action a core flags as irreversible, or for a request matching an egress pattern | 0.9 |
 | `memory_sync`, whose writes carry preconditions ([[020-memory-stores]]) | 0.1 |
 | `write` or `edit` on the host (reversible by the turn's checkpoint) | 0.3 |
 | `bash` on the host | 0.5 |
@@ -122,7 +130,7 @@ boundary. `agent.tool_use` records `risk` as `{"score","source",
 | Mode | Verdict |
 |---|---|
 | `plan` | effect `none` or `read`: `allow`; anything else: `block` with `Plan mode: only read-only tools run.` |
-| `confirm` | on `always_allow`, a session pattern, or effect `none` or `read`: `allow`; an effect that stays inside a Cella machine: `allow`; otherwise `ask` |
+| `confirm` | on `always_allow`, a session pattern, or effect `none` or `read`: `allow`; a call inside a Cella machine, `bash` included: `allow`, since the step-up below bounds what it can do outside; otherwise `ask` |
 | `progressive` | score below `flag_at` (0.3): `allow`; below `ask_at` (0.5): `flag`; below `block_at` (0.9): `ask`; otherwise `block` |
 
 A call on `always_confirm` is `ask` in `confirm` and `progressive` and
@@ -159,6 +167,53 @@ own claim follows the confirmation, an earlier runner may have started
 the call, and it is closed with `unknown_effect` ([[016-runners]]);
 when only its own does, the call never started and runs. A confirmed
 call for a tool the registry no longer has is answered `unknown_tool`.
+
+### Step-up at the egress gateway
+
+A command in a Cella sandbox reaches other services only through
+Cella's egress gateway, which swaps in the credential for each
+destination ([[018-credentials-and-secrets]]). A classifier reads the
+command's text and cannot see what a script it runs does, so what the
+command can do outside is bounded by scope, and a step-up asks before
+the scope widens. The mechanism is the same for every destination; no
+tool exists per action.
+
+1. **Flagged actions.** Each core's action vocabulary flags the actions
+   that cannot be undone: force-updating or deleting a ref, deleting an
+   object, a sandbox or a session, a production deploy. The authorizer
+   mints each of a sandbox's tokens for one destination, within the
+   session's scope and without the flagged actions.
+2. **Egress patterns.** For third-party hosts, whose credentials carry
+   no such scope, `always_confirm` takes egress patterns
+   `egress(<METHOD> <host><path glob>)`, for example
+   `egress(DELETE api.stripe.com/**)`, which Cella's egress matches on
+   every request that carries a swapped-in credential.
+3. **Refusal.** A request that needs a flagged action is refused by the
+   core, and one matching an egress pattern by Cella's egress, with
+   HTTP 403 and the code `confirmation_required`. Cella records the
+   refusal on the sandbox: the destination, the action and resource or
+   the method, host and path, and the time.
+4. **Request.** After each `bash` call, and while a background job
+   runs, the runner reads the sandbox's new refusals and appends one
+   `approval.requested` for each, attributed to the call that caused
+   it, scored and given a verdict by the layers above. `allow` (an
+   `always_allow` pattern that names it) asks the authorizer for the
+   grant at once; `ask` sends the session idle with
+   `tool_confirmation` once the call's result is in; `block` records
+   it, and the model reads that the request stays refused.
+5. **Grant.** A `user.tool_confirmation` naming the `approval_id`
+   answers it. On `allow` the runner asks the authorizer for a one-shot
+   grant of exactly that action on that resource, or that method, host
+   and path, on the sandbox's token, lasting at most five minutes and
+   consumed by the first request it admits, and appends
+   `approval.decided`; the model reads that it may retry. On `deny`
+   the model reads the note.
+
+An approval is as durable as an ask: nothing times it out, and a
+runner that claims the session after a restart reads the pending
+approvals from the log. Without an authorizer nothing can grant a
+step-up: a sandbox holds what the operator's Cella secrets allow, and a
+request refused `confirmation_required` stays refused.
 
 ### Hooks
 
@@ -205,6 +260,7 @@ other non-zero exit is a failure.
 |---|---|
 | `sandbox_unavailable` | `progressive` asked for on a host with no operating-system sandbox |
 | `hook_failed` | an observing hook errored or timed out |
+| `grant_failed` | the authorizer refused or could not issue an approved step-up grant; `session.error`, and the model reads that the request stays refused |
 
 ## Not in this spec
 
@@ -212,7 +268,11 @@ The agent's permissions, the session scope and key narrowing
 ([[006-identity]], [[018-credentials-and-secrets]]); the git host's ref
 rules ([[019-git]]); the deny-list's entries ([[009-machines]]); where
 the lists live in the authorizer's decision ([[006-identity]]); the
-console that answers an ask.
+console that answers an ask. Outside this repository: the flags on each
+core's irreversible actions (each core's vocabulary); Cella's egress
+matching egress patterns, swapping credentials by host and path, and
+recording refusals on the sandbox for its creator to read; and the
+authorizer's one-shot grant.
 
 ## Acceptance criteria
 
@@ -230,3 +290,6 @@ console that answers an ask.
 | A command hook receives the documented payload, exit code 2 blocks with stderr as the reason, and a timeout blocks | `TestCommandHookContract` | not built |
 | `progressive` on a host without a sandbox is refused with `sandbox_unavailable` | `TestProgressiveNeedsASandbox` | not built |
 | `remember` adds a pattern that the next turn, on a fresh harness, applies to the next matching call | `harness.TestConfirmationsAndDenials` | built |
+| The authorizer's and the agent's lists merge so neither loosens the other: confirm is the union, allow the intersection, thresholds the lower, and the merged policy is in the Session | `TestPolicyMergeNeverLoosens` | not built |
+| A sandbox command refused `confirmation_required` yields one `approval.requested` scored 0.9; an allow grants a one-shot scope the retried request uses once, a deny leaves it refused, and a restart between the two keeps the approval pending | `TestEgressStepUp` over the stub Cella and a stub authorizer | not built |
+| `bash` in a sandbox holding a swapped-in credential scores 0.4 | `harness.TestScoreFollowsTheRuleFeatures` | not built |

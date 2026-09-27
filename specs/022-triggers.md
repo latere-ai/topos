@@ -48,10 +48,14 @@ so with several replicas one firing starts one session.
 
 A firing creates a session as [[015-api]]'s create route does, with
 the template's `message` as its first `user.message`, `end_on_idle`
-from `session.endOnIdle` (default true), `trigger_id` set, and the
-sender and initiator `trigger:<trg_id>` ([[004-session-log]]). The
+from `session.endOnIdle` (default true), `trigger_id` set, the sender
+`trigger:<trg_id>`, and the initiator the trigger's owner, the person
+who last applied it ([[004-session-log]]). The initiator is who the
+cap is checked against: `trigger:<trg_id>` holds no rights of its own,
+so a trigger can never start a session its owner could not. The
 create is asked of the authorizer as `session.create` like any other
-([[006-identity]]).
+([[006-identity]]), and the session's memory partition is the owner's
+([[020-memory-stores]]).
 
 ### Whose authority
 

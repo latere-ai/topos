@@ -45,7 +45,7 @@ closes, and its release notes carry the task suite's pass rate
 | Artifact | Holds |
 |---|---|
 | image `topos` | `toposd` on a distroless base, non-root, both ports exposed, a volume at `/var/lib/topos`; for installations whose sessions run on Cella machines, since it carries no shell |
-| image `topos-host` | `toposd`, `git` and a POSIX shell on a slim base, for a server whose sessions run on its host machine |
+| image `topos-host` | `toposd`, `git`, a POSIX shell and the host sandbox (`srt` with Node, and Bubblewrap, `socat` and `ripgrep`) on a slim base, for a server whose sessions run on its host machine with `TOPOS_HOST_SESSIONS=on` ([[009-machines]]); its container needs unprivileged user namespaces, which the role's start-up probe checks |
 | archives | `toposd`, `topos` and `topos-machine` for linux and darwin on amd64 and arm64, and windows on amd64 for `topos` |
 | attestations | SLSA provenance and an SBOM for every image and archive, and checksums signed by the pipeline |
 
@@ -66,8 +66,9 @@ anything is published.
 
 `deploy/compose.yaml` starts `toposd serve` from the `topos-host`
 image on the directory store in a volume, with a generated local issuer
-key, the owner policy with one admin subject, and `TOPOS_MODELS_URL`
-pointing at a model gateway or provider the operator names; a profile
+key, the owner policy with one admin subject, `TOPOS_HOST_SESSIONS=on`,
+and `TOPOS_MODELS_URL` pointing at a model gateway or provider the
+operator names; a profile
 adds Postgres. `docs/install.md` walks it: start the compose file, mint
 a token with `toposd token` ([[006-identity]]), apply an example agent
 with `topos apply`, run a session with `topos run`, attach to it.

@@ -86,13 +86,14 @@ gains fields.
 | `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
 | `session.fork`, `session.rewind` | `session` | `agent`, `owner`, `seq` or `turn` | [[017-external-runners-handoff-fork]], [[034-checkpoints-and-rewind]] |
+| `session.resume` | `session` | `agent`, `owner`, `stop_reason`, `max_cost_usd_micro` | resuming a session idle with `budget`; the decision's `limits` carry the raised cap ([[007-models]]) |
 | `session.redact` | `session` | `agent`, `owner`, `event_id` | [[015-api]], [[018-credentials-and-secrets]] |
 | `session.append`, `session.handoff` | `session` | `agent`, `owner`, `runner`, `writer` | [[017-external-runners-handoff-fork]] |
 | `session.scope` | `session` | `agent`, `owner`, `old`, `new`, `until` | a scope change; the authorizer holds a widening to the agent's permissions and the widener's own rights |
 | `trigger.create`, `trigger.read`, `trigger.list`, `trigger.update`, `trigger.delete` | `trigger` | `agent`, `owner` | the trigger routes |
 | `credential.create`, `credential.read`, `credential.list`, `credential.delete` | `credential` | `name`, `owner`, `service` | the credential routes; `read` returns metadata only |
-| `memory_store.create`, `memory_store.read`, `memory_store.list`, `memory_store.update`, `memory_store.delete` | `memory_store` | `name`, `owner` | the memory store routes |
-| `memory_store.write` | `memory_store` | `name`, `owner`, `session` | a document write, and a session attaching the store `read_write` ([[020-memory-stores]]) |
+| `memory_store.create`, `memory_store.read`, `memory_store.list`, `memory_store.update`, `memory_store.delete` | `memory_store` | `name`, `owner`, `sharing`, `audience`, and `partition` on a read of another initiator's documents | the memory store routes; `shared` is allowed, by default, to an organization admin ([[020-memory-stores]]) |
+| `memory_store.write` | `memory_store` | `name`, `owner`, `session`, `initiator`, `partition` | a document write, and a session attaching the store `read_write` ([[020-memory-stores]]) |
 
 The initiator cap and the sender rule are the authorizer's policy, not
 toposd's: toposd passes the initiator and each sender in the resource,

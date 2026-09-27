@@ -86,7 +86,7 @@ The credential deny-list:
 |---|---|
 | the home directory | `.ssh/`, `.aws/`, `.azure/`, `.config/gcloud/`, `.kube/config`, `.docker/config.json`, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, `.gnupg/`, `.password-store/`, `.config/gh/hosts.yml`, `$TOPOS_DATA_DIR/credentials/` |
 | any root | `.env` and `.env.*` except `.env.example`, `.env.sample` and `.env.template`; `*.pem`, `*.key`, `*.p12`, `*.pfx`; `id_rsa*`, `id_ecdsa*`, `id_ed25519*` |
-| the environment | names ending `_TOKEN`, `_SECRET`, `_PASSWORD`, `_API_KEY` or `_PRIVATE_KEY`; `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`; `TOPOS_MODELS_KEY`, `TOPOS_TOKEN` |
+| the environment | names ending `_TOKEN`, `_SECRET`, `_PASSWORD`, `_API_KEY` or `_PRIVATE_KEY`; `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`; every name starting `TOPOS_`, since a server's configuration holds its signing key, its credentials key and its database URL |
 
 ### Worktrees on the host
 
@@ -119,6 +119,29 @@ uncommitted files are in the session's last checkpoint
 rest on demand ([[024-client-cli-skill]]). The host needs `git` 2.30 or
 later on `PATH` for worktrees and checkpoints; without it a session
 still runs in place, and `session.machine` says checkpoints are off.
+
+### Host sessions on a server
+
+A server role, `serve` or `runner`, runs a hosted session on its own
+host only when the operator sets `TOPOS_HOST_SESSIONS=on`; otherwise a
+session asking for a `host` machine is refused with
+`machine_unavailable`. A server's host is shared by every principal
+the installation serves, so the person's-own-host rules above do not
+carry over, and these replace them:
+
+| Aspect | Rule |
+|---|---|
+| sandbox | mandatory. With the switch on, the role refuses to start unless `latere.ai/x/pkg/hostsandbox`'s preflight passes and a probe command runs inside the sandbox and is denied a read of the data directory; a binary that is present is not proof, since Bubblewrap in a container without user namespaces fails at launch. A server session never runs with `sandbox: none` |
+| working directory | `$TOPOS_DATA_DIR/host-sessions/<ses_id>/`, created empty for the session, with the session's repositories cloned into it ([[019-git]]); removed when the session is deleted |
+| roots | the working directory, the spill directory and the attached memory directories; an agent whose `spec.machine.roots` or `spec.machine.readPaths` is set is refused `machine_unavailable`, since those name the server's own paths |
+| reads | the roots, the toolchain and system directories, and nothing else under `TOPOS_DATA_DIR`: no other session's directory, no store, no credential file; the files `TOPOS_CELLA_TOKEN_FILE` and every other configured file are denied |
+| environment | only `PATH`, `LANG`, `TZ`, `TERM=dumb` and `HOME` set to the working directory, then the session's placeholders ([[018-credentials-and-secrets]]); the server's own environment never reaches a command |
+| network | the hosts of the agent's `spec.machine.egress` through the sandbox's allowlist proxy, as on a person's host |
+| worktrees | none: each session has its own directory, so the owner file and worktree rules above do not apply; isolated threads still get worktrees inside it |
+
+`session.machine` records the sandbox driver. `progressive` is
+available, since the sandbox is always present
+([[012-permissions-and-approvals]]).
 
 ### The Cella machine
 
@@ -208,7 +231,7 @@ workers connect out to Cella (invariant 10 of [[001-architecture]]).
 
 | Code | Retryable | Meaning |
 |---|---|---|
-| `machine_unavailable` | no | the machine kind is not configured, the runner carries no helper for the sandbox's platform, or Cella refused the sandbox: its Environment, its image, a secret it names, or the session's credential; a Cella that could not answer, a 5xx, a 429 or no answer, is transient and carries no code |
+| `machine_unavailable` | no | the machine kind is not configured (a `host` machine on a server without `TOPOS_HOST_SESSIONS=on`, or one whose agent names `machine.roots` or `machine.readPaths`), the runner carries no helper for the sandbox's platform, or Cella refused the sandbox: its Environment, its image, a secret it names, or the session's credential; a Cella that could not answer, a 5xx, a 429 or no answer, is transient and carries no code |
 | `machine_lost` | yes | the session's sandbox was gone and no checkpoint could restore its files |
 
 ## Not in this spec
@@ -231,6 +254,8 @@ repository delivery and git credentials ([[019-git]]); named secrets
 | Search is Go-native where the files are: grep honors `.gitignore` at and above the root, has its three output modes, and glob lists newest first | `machine.TestGrepFilesHonorsGitignore`, `machine.TestGrepBelowTheRootHonorsParentIgnores`, `machine.TestGrepModes`, `machine.TestGlobNewestFirst`, `machine.TestSearchRefusesBadRequests` | built |
 | A second session started in a checkout another running session writes gets a worktree on `agents/<agent>/<session>`; three sessions give three worktrees on three branches | `TestSecondSessionGetsAWorktree`, `TestThreeSessionsThreeWorktrees` | not built |
 | An ended session's worktree whose branch is merged and clean is removed, and one with uncommitted changes is kept | `TestWorktreeRemovalRule` | not built |
+| With `TOPOS_HOST_SESSIONS=on`, a server refuses to start when the host sandbox's preflight or probe fails; a server session works in its own directory, cannot read another session's directory or the data directory, and gets none of the server's environment | `TestHostSessionsOnAServer` | not built |
+| A server without `TOPOS_HOST_SESSIONS=on` refuses a `host` session with `machine_unavailable` | `cmd/toposd.TestServeRunsAHostedSession` | built |
 | A Cella machine creates the session's sandbox by name on the Environment the session names, with the labels, the allowlist with the secrets' hosts, the named secrets and the persistent lifecycle held inside the ttl, holds the create until it runs, and uploads the helper; each Cella refusal at open is `machine_unavailable` and a Cella that could not answer is not | `machine/cella.TestOpenCreatesTheSandbox`, `machine/cella.TestTheLifecycleStaysInsideTheTTL`, `machine/cella.TestOpenRefusals`, `machine/cella.TestCode` | built |
 | A Cella machine is created on the Environment the session names, including one served by a worker outside the stub cluster, and the runner opens no connection to the worker | `TestCellaMachineOnNamedEnvironment` in the Cella tier | not built |
 | Open finds the sandbox by name and uploads nothing again, starts one Cella stopped and waits for one starting, replaces a failed one as created, and takes the sandbox of a runner whose create won a race; a sandbox Cella stopped under a running machine is started by its next call, and a missing helper is put back | `machine/cella.TestOpenFindsTheSandboxByName`, `machine/cella.TestAStoppedSandboxIsStartedByTheNextCall`, `machine/cella.TestTheHelperIsPutBackWhenMissing`, `machine/cella.TestWaitsAndRaces` | built |

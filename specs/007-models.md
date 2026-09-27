@@ -230,6 +230,32 @@ exceed its budget by at most one response's output. A budget over a
 model that cannot be priced is refused before the first request with
 `model_unpriced`.
 
+The meter is a ceiling and a pre-check, not where spend is enforced.
+The installation's authorizer is the budget authority: it holds the
+payer's wallet, the caps and the per-session ledger across every priced
+core, and each core enforces its own resource at its point of use
+against the allowance the authorizer gives it: Lux for model calls,
+Cella for sandbox time, a memory backend for storage. A sandbox's own
+model calls reach Lux through Cella's egress, never through the
+harness, so the meter does not see them; Lux attributes them to the
+session with workload `sandbox`, and the ledger keeps them apart from
+the session's own requests. A core's refusal for spend, the codes
+`budget_exhausted` and `spend_exceeded` of `models.SpendRefused`, from
+any core the session reaches (a model request, a sandbox create or
+command, a memory push) is never retried and stops the turn `budget`
+with the refusal in `detail`. With a bring-your-own provider key, model
+tokens are billed by the provider, Lux still meters them, and the
+ceiling still applies.
+
+A session idle with `budget` resumes with a `user.message`, or with
+`POST /v1/sessions/{id}/resume` ([[015-api]]), which a client or the
+platform calls once the cap is raised or the wallet refilled. The
+server asks the authorizer `session.resume`, applies the `limits` of
+its decision and an optional new `max_cost_usd_micro` (each capped by
+the agent's), and appends `session.resumed`, which is pending input: a
+runner claims the session and continues the turn from where it
+stopped.
+
 ### Refusals
 
 The scripted model of [[026-stubs-and-tiers]] is reached only through
@@ -245,6 +271,7 @@ each with one configuration line and exit 1.
 | `model_credential_missing` | `session.error` | no credential source of the connection table has one |
 | `model_unknown` | `session.error` | no catalog source gives the model's input window and output limit |
 | `model_unpriced` | `session.error`, and the session create answer | a budget applies and the model cannot be priced |
+| `budget_exhausted`, `spend_exceeded` | `session.status` `detail` | a core refused a request for spend; never retried ([[004-session-log]]) |
 | `codec_mismatch` | the replay report | a step was encoded by another codec version and is not compared |
 
 ## Not in this spec
@@ -270,6 +297,9 @@ with the provider's own SDK ([[025-task-suite]]).
 | The embedded catalog resolves a model by name or alias with its windows and prices, carries free development models at price zero, and overlays the Lux and agent figures in precedence order; `tools/catalog` merges Lux prices with OpenRouter windows | `models.TestEmbeddedCatalog`, `models.TestResolveOverlaysSources`, `tools/catalog.TestRunMergesPricesAndWindows`, `tools/catalog.TestRunRefusesBadInput` | built |
 | Cost comes from the gateway's figure when reported and from the catalog otherwise, a missing cache-read price is the input price and a missing cache-write price 1.25 times it, and the cost reaches the session's meter | `models.TestCost`, `models.TestPrices`, `harness.TestATurnRunsToolsAndEnds`, `harness.TestTheBudgetStopsTheTurn` | built |
 | A turn that would pass the budget stops with `budget` before the request is sent; a budget over an unpriced model is refused with `model_unpriced` before any request | `harness.TestTheBudgetStopsTheTurn`, `harness.TestAnUnpricedModelUnderABudgetIsRefused` | built |
+| A model gateway's refusal for spend is not retried and stops the turn `budget` with the refusal in `detail` | `models.TestSpendRefusalsAreNotRetried`, `harness.TestASpentBudgetAtTheGatewayStopsTheTurnWithBudget` | built |
+| A spend refusal from Cella or a memory backend stops the turn `budget` the same way | `TestACoresSpendRefusalStopsTheTurn` | not built |
+| `POST /v1/sessions/{id}/resume` on a session idle with `budget` appends `session.resumed` with the decision's raised cap and a runner continues the turn; on any other status it answers `conflict` | `TestResumeAfterTheCapIsRaised` | not built |
 | The zero connection is an error, and so is one with no model or an unknown scheme, family or dialect | `models.TestConnectionValidate` | built |
 | `toposd serve` exits 1 with no `TOPOS_MODELS_URL` or with a `scripted:` one | `TestServeRefusesScriptedModel` | not built |
 | A stream that ends before its dialect's terminal frame is an incomplete response and is retried, in every dialect; an error event inside a stream, an unreachable server and a canceled request are classified | `models/dialect.TestErrorsAreClassifiedForRetry` | built |

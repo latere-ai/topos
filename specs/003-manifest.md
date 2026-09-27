@@ -133,6 +133,8 @@ its key acts as ([[018-credentials-and-secrets]]).
 | Field | Type | Default | Behavior in |
 |---|---|---|---|
 | `description` | string, at most 1024 characters, written for the model | required | [[020-memory-stores]], [[011-instructions-and-skills]] |
+| `sharing` | `initiator` or `shared` | `initiator` | [[020-memory-stores]]; `shared` is the authorizer's to allow, by default to an organization admin |
+| `audience` | string, the group the authorizer knows | none; required when `sharing` is `shared` | [[020-memory-stores]] |
 
 ### Connection
 

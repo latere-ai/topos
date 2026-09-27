@@ -53,6 +53,33 @@ not wait for it.
 A store holds at most 64 MiB of current documents. The routes that list
 stores, documents and versions are [[015-api]]'s.
 
+### Partitions
+
+An organization agent serves many people, and each session is capped
+by the person who started it. One memory shared by all of them would
+carry what one person's session read into another's, past that cap,
+and would keep an instruction injected into one session for every
+later one. A store is therefore partitioned by initiator unless it is
+shared.
+
+| `sharing` | What a session reads and writes |
+|---|---|
+| `initiator` (default) | the partition of the session's initiator: its own documents, invisible to any other initiator's sessions. A triggered session's initiator is the trigger's owner ([[022-triggers]]) |
+| `shared` | one partition for the store's declared `audience`. Setting it is `memory_store.update` with the `sharing` and `audience` in the resource, which the authorizer allows, by default, to an organization admin; the admin accepts that any member's session may write what every member's reads. A session whose initiator is outside the audience cannot attach the store |
+
+A personal agent's sessions all have its owner as initiator, so its
+store has one partition in effect. A partition is keyed by the
+lowercase hex SHA-256 of the initiator's subject, so no subject's
+characters reach a path. Every write to a shared store carries the
+session and its initiator in `updated_by`, and every earlier version
+stays readable, so a bad note is found by its writer and reverted by
+writing an earlier version back. The note rendered for a shared store
+says its documents come from other people's sessions
+([[011-instructions-and-skills]]); that is a hint to the model, not a
+boundary. The routes over documents answer the caller's own partition,
+and any partition to a caller the authorizer allows
+`memory_store.read` with the `partition` in the resource.
+
 ### Attachment
 
 An agent's `spec.memoryStores` names stores and their access
@@ -68,8 +95,10 @@ when it mirrors a store into the machine, and
 
 | Backend | `TOPOS_MEMORY_BACKEND` | Where documents live |
 |---|---|---|
-| directory | `dir` (default) | `TOPOS_MEMORY_DIR/<mem_id>/`, a document per file and its versions under `.versions/<path>/<version>` |
-| Arca | `arca` | the files plane at `TOPOS_MEMORY_ARCA_URL`, under the prefix `files/memory/<mem_id>/`, with Arca's own version per file and its checksum precondition per write |
+| directory | `dir` (default) | `TOPOS_MEMORY_DIR/<mem_id>/<partition>/`, a document per file and its versions under `.versions/<path>/<version>` |
+| Arca | `arca` | the files plane at `TOPOS_MEMORY_ARCA_URL`, under the prefix `files/memory/<mem_id>/<partition>/`, with Arca's own version per file and its checksum precondition per write |
+
+`<partition>` is the initiator's key or `shared`.
 
 The prefix is keyed by the store's id, not its name, so a renamed store
 keeps its documents. Both backends implement `memory.Backend`: `List`,
@@ -153,3 +182,5 @@ memory, which is a separate component.
 | A `read_only` attachment never pushes a change | `TestReadOnlyAttachmentNeverPushes` | not built |
 | `memory.synced` carries paths and never content | `TestMemorySyncedCarriesNoContent` | not built |
 | No machine holds a backend credential | `TestNoMemoryCredentialInMachine` | not built |
+| Two initiators' sessions of one organization agent never read each other's documents in an `initiator` store; a triggered session reads its owner's partition; a `shared` store is refused to a session whose initiator is outside its audience | `TestMemoryPartitionsByInitiator` | not built |
+| A write to a shared store records the session and the initiator in `updated_by`, and writing an earlier version back restores it | `TestSharedStoreWritesAreAttributed` | not built |

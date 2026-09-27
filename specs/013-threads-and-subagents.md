@@ -68,6 +68,19 @@ A thread may spawn only the agents its agent's `spec.subagents` names
 definition. The harness offers `spawn` only to a thread whose agent
 names at least one subagent and whose depth is below the limit.
 
+A subagent is a thread of the session, never a second principal in
+it: it acts with the session's credentials and spends the session's
+budget, whoever owns the agent it names. A referenced agent contributes
+its instructions, tools, model, approvals, hooks, skills, subagents,
+advisor, threads and context settings, each narrowed as the table below
+says. Its `identity`, `permissions`, `model.credential`, `connections`,
+`memoryStores` and `machine` are not used, and `thread.started` lists
+the ones the referenced agent declares in `ignored`, so a reader of the
+log sees that the thread did not act as that agent. Reaching another
+agent's own authority is starting a session of that agent, which the
+installation's authorizer decides and that agent's owner pays for
+([[033-peers-and-authored-graphs]]); a spawn never reaches it.
+
 ### The spawn tool
 
 | Input | Meaning |
@@ -130,9 +143,9 @@ refuses `worktree` with `isolation_unavailable`.
 | tools | the intersection of the parent's tools, the subagent's declared tools, and the call's `tools`; an empty intersection is no tools |
 | permission mode | the stricter of the parent's and the subagent's, strictest first `plan`, `confirm`, `progressive` |
 | lists and thresholds | an `always_allow` within the parent's, an `always_confirm` that contains the parent's, thresholds no higher than the parent's ([[012-permissions-and-approvals]]) |
-| budget | at most the parent's remaining budget, and the call's `budget` when lower; its spend counts toward every ancestor |
+| budget | at most the parent's remaining budget, and the call's `budget` or the subagent's `budget.maxCost` when lower; its spend counts toward every ancestor and is attributed to the thread by its id in the ledger ([[023-events-and-observability]]) |
 | machine | the parent's; a thread cannot get another machine |
-| credentials | the session's; a thread acts with nothing the session does not hold ([[018-credentials-and-secrets]]) |
+| credentials | the session's; a thread acts with nothing the session does not hold, and a referenced agent's identity, permissions, credential and connections are ignored ([[018-credentials-and-secrets]]) |
 | model | the subagent's own, whose family the thread pins when it starts ([[007-models]]) |
 
 A thread cannot call a tool it was not granted, whatever the model
@@ -199,6 +212,7 @@ each stage ([[025-task-suite]]); what the model is told about spawning
 | A subagent cannot call a tool its parent lacks, with the tool neither offered nor run when the model asks for it | `TestSubagentCannotCallToolParentLacks` | not built |
 | A thread receives a second message after its first task, continues from its own transcript, and answers it | `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
 | A child's mode, lists, thresholds and budget are never looser than its parent's | `TestNarrowingAlongSpawnEdges` as a table test | not built |
+| A subagent that names an agent with its own identity and permissions acts with the session's credentials, and its `thread.started` lists them in `ignored` | `TestASubagentActsWithTheSessionsCredentials` | not built |
 | A thread at the depth limit is not offered `spawn` or `message`, and a spawn's `tools` narrows the child's set | `harness.TestTheDepthLimitWithholdsSpawn` | built |
 | A forced `spawn` past the limit is refused with `depth_exceeded`, and a manifest asking depth 5 is refused at resolve | `TestDepthGates` | not built |
 | Several `spawn` calls in one step run concurrently, at most `maxConcurrent` at once, and each thread's fold contains only its own conversation | `harness.TestParallelSpawnsAndTheConcurrencyCap`, `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |

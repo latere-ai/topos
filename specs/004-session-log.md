@@ -55,6 +55,7 @@ behind a kind prefix. A name may be reused after delete; an id never.
 | `trg_` | a trigger | the server |
 | `cred_` | a credential | the server |
 | `mem_` | a memory store | the server |
+| `apr_` | an approval of a step-up ([[012-permissions-and-approvals]]) | the runner |
 
 Nothing else carries a prefix. A thread is identified by the id of the
 `thread.started` event that opened it; the session's own thread has no
@@ -93,6 +94,8 @@ and writes them back unchanged.
 | `machine` | object | the machine asked for: `kind` (`host` or `cella`), `environment`, `image`, `workdir` ([[009-machines]]); the attached one is in `session.machine` |
 | `resources` | array | attachments: `{"type":"memory_store","memory_store_id","access"}` ([[020-memory-stores]]) and `{"type":"repository","url","ref"}` ([[019-git]]) |
 | `scope` | array | the session scope, a list of grants ([[018-credentials-and-secrets]]) |
+| `policy` | object | the merged approval policy: `mode`, `always_confirm`, `always_allow`, `thresholds` ([[012-permissions-and-approvals]]) |
+| `requires` | array | names of Session fields a reader must understand; a runner that does not know one refuses the session with `schema_too_new` instead of running without it |
 | `budget` | object | `max_cost_usd_micro` (absent: none) and `spent_cost_usd_micro` ([[007-models]]) |
 | `limits` | object | `turn_timeout` (default `2h`) and `max_age` (default `168h`), Go durations ([[005-harness-loop]]), and `retention`, how long the session is kept after it ends, absent to keep it until it is deleted ([[014-store]]) |
 | `capture` | object | `requests`: when true every model request's bytes are kept as a blob ([[007-models]]) |
@@ -104,7 +107,8 @@ and writes them back unchanged.
 
 A Sender is `{"subject","name","kind"}`: `subject` is the verified
 subject of [[006-identity]] on a server, `local:<username>` in a local
-session, `trigger:<trg_id>` for a trigger; `kind` is `person`,
+session, `trigger:<trg_id>` for a trigger's message (a triggered
+session's initiator is the trigger's owner, [[022-triggers]]); `kind` is `person`,
 `trigger` or `service`; `name` is for display.
 
 ### Status and stop reasons
@@ -127,9 +131,9 @@ claims a session, before anything else, every time it claims it.
 | Status | Stop reason | Meaning | Resumed by |
 |---|---|---|---|
 | `idle` | `end_turn` | the model ended its turn, by `end_turn`, a stop sequence, or a refusal (named in `detail`) | `user.message` |
-| `idle` | `tool_confirmation` | at least one call's verdict is ask and waits for a person | `user.tool_confirmation` for every pending call, or a `user.message`, which denies each pending call with the message as its note |
+| `idle` | `tool_confirmation` | at least one call's verdict is ask, or one step-up approval, waits for a person | `user.tool_confirmation` for every pending call and approval, or a `user.message`, which denies each with the message as its note |
 | `idle` | `tool_result` | a client-executed tool call waits for its result | `user.tool_result` for every pending call |
-| `idle` | `budget` | the session's or a thread's budget is reached, or the model gateway refused the request for spend (`detail` names the refusal) | `user.message` after the budget is raised |
+| `idle` | `budget` | the session's or a thread's budget is reached, or a core refused a request for spend (`detail` names the refusal) | `user.message`, or `session.resumed` after the cap is raised or the wallet refilled ([[007-models]]) |
 | `idle` | `turn_limit` | the turn's wall-clock limit passed | `user.message` |
 | `idle` | `output_limit` | a `max_tokens` stop the harness could not continue | `user.message` |
 | `idle` | `interrupted` | a `user.interrupt` took effect | `user.message` |
@@ -170,21 +174,24 @@ appending and the session stays `running` until the next runner's claim
 |---|---|---|---|
 | `user.message` | a client | yes | `sender`, `content` (text and image blocks) |
 | `user.interrupt` | a client | yes | `sender`; the runner stops at the next step boundary ([[005-harness-loop]]) |
-| `user.tool_confirmation` | a client | no | `sender`, `tool_use_id`, `decision` (`allow` or `deny`), `note`, `remember` (an argument pattern, [[012-permissions-and-approvals]]) |
+| `user.tool_confirmation` | a client | no | `sender`, `tool_use_id` or `approval_id` (exactly one), `decision` (`allow` or `deny`), `note`, `remember` (an argument pattern, [[012-permissions-and-approvals]]) |
 | `user.tool_result` | a client | yes | `sender`, `tool_use_id`, `content`, `is_error` |
 | `agent.message` | the runner | yes | `message` (the Lux wire message, role `assistant`, every block verbatim, thinking and its signature included), `stop_reason` (the IR's: `end_turn`, `tool_use`, `max_tokens`, `stop_sequence`, `refusal`), `request` (the `model.request` event id), `truncated`, `continuation_of` |
 | `agent.tool_use` | the runner | no | `tool_use_id`, `name`, `input`, `risk` (`score`, `source`, `features`), `verdict`, `reason`, `mode`, `client`, `repeatable`; verdicts, sources and modes are [[012-permissions-and-approvals]]'s |
 | `tool.result` | the runner | yes | `tool_use_id`, `content`, `is_error`, `outcome`, `duration_ms`, `spill` (`path`, `bytes`), `meta` (the tool's record for later calls of the thread: `{path, sha256}` for `read`, `write` and `edit`, `{dir, exit_code}` for `bash`, `{todos}` for `todo`; not rendered); outcomes and meta are [[008-tools]]'s |
-| `thread.started` | the runner | yes, in the new thread | `agent` (`id`, `name`, `version`, `digest`), `parent` (thread id, absent for the session's thread), `tool_use_id`, `task`, `isolation` (`shared` or `worktree`), `branch`, `workdir`, `depth`, `model`, `tools`, `budget` ([[013-threads-and-subagents]]) |
+| `thread.started` | the runner | yes, in the new thread | `agent` (`id`, `name`, `version`, `digest`), `parent` (thread id, absent for the session's thread), `tool_use_id`, `task`, `isolation` (`shared` or `worktree`), `branch`, `workdir`, `depth`, `model`, `tools`, `budget`, `ignored` (the fields of a referenced agent the thread does not use: `identity`, `permissions`, `model.credential`, `connections`, `memoryStores`, `machine`; absent when none) ([[013-threads-and-subagents]]) |
 | `thread.ended` | the runner | no | `reason` (`completed`, `failed`, `canceled`), `final_text`, `usage`, `cost_usd_micro` |
 | `thread.message` | the runner | yes, in the receiving thread | `from`, `to` (thread ids, absent for the session's thread), `from_name` (the sending thread's agent name), `content`, `tool_use_id` |
 | `context.compacted` | the runner | yes | `kind` (`clear_tool_results` or `summary`), `from_seq`, `to_seq`, `tool_use_ids`, `summary`, `cause` (`threshold` or `redaction`), `request`, `tokens_before`, `tokens_after` ([[010-context]]) |
 | `model.request` | the runner | no | `model`, `family`, `dialect`, `codec`, `prompt_version`, `tools_sha256`, `request_sha256`, `request_bytes`, `request_blob`, `response_blob`, `usage` (the Lux wire usage), `cost_usd_micro`, `cost_source`, `latency_ms`, `first_token_ms`, `stop_reason`, `attempts`, `outcome` (`ok`, `error`, `canceled`), `error`, `loss` ([[007-models]]) |
 | `session.status` | the runner or the server | no | `status`, `stop_reason`, `detail`, `runner` (on `running`: `id`, `kind`), `checkpoint` (on a turn end: `ref`, `commit`) |
 | `session.machine` | the runner | yes, as system parts | `machine` (`kind`, `id`, `workdir`, `os`, `arch`, `environment`), `reason` (`attached`, `handoff`, `restored`, `replaced`), `context`, `instructions` (`path`, `sha256`, `blob`), `skills` (`name`, `description`, `path`), `checkpoint` ([[009-machines]], [[011-instructions-and-skills]]) |
+| `session.resumed` | the server | no | `by` (a Sender), `reason` (`budget_raised`, `credit_restored`, or a client's text), `max_cost_usd_micro` (the new budget, absent when unchanged) ([[007-models]]) |
 | `session.scope_changed` | the server | no | `by`, `old`, `new`, `reason`, `until` (a time, `end_of_turn`, or absent for standing) |
+| `approval.requested` | the runner | yes, as a system part | `approval_id`, `tool_use_id` (the call that caused it), `source` (`egress`), `destination` (`host`, and `core`, `action`, `resource` for a flagged action, or `method`, `path` for an egress pattern), `risk`, `verdict`, `reason` ([[012-permissions-and-approvals]]) |
+| `approval.decided` | the runner | yes, as a system part | `approval_id`, `decision`, `by`, `note`, `grant` (`id`, `expires_at`, absent on deny) |
 | `session.error` | the runner | no | `code`, `message`, `retryable`, `detail`; codes are the owning spec's |
-| `memory.attached` | the runner | yes, as a system part | `memory_store_id`, `name`, `description`, `access` (`read_write` or `read_only`), `path`, `version` |
+| `memory.attached` | the runner | yes, as a system part | `memory_store_id`, `name`, `description`, `access` (`read_write` or `read_only`), `sharing` (`initiator` or `shared`), `path`, `version` |
 | `memory.synced` | the runner | no | `memory_store_id`, `pushed`, `pulled`, `deleted`, `conflicts` (paths only), `version` |
 | `event.redacted` | the server | no | `event_id`, `by`, `reason` |
 | `session.rewound` | the runner | yes | `to_turn`, `checkpoint` (`ref`, `commit`), `saved` (the checkpoint of the state it replaced), `by` |

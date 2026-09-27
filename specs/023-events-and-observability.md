@@ -74,6 +74,15 @@ dropped and counted.
 | `session.status_changed` | the runner appended a `session.status` | `status`, `stop_reason` |
 | `session.usage` | a turn ended | `model`, `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_write_input_tokens`, `cost_usd_micro`, `requests` |
 
+`session.usage` is Topos's account of its own model requests, the
+figure its budget ceiling reads ([[007-models]]); it is not the
+ledger. The installation's authorizer keeps the authoritative ledger
+from the cores' own metering, which sees what Topos cannot, a
+sandbox's model calls and its sandbox time and storage, each
+attributed to the session with its workload, `session` or `sandbox`.
+A sink that bills reads the cores' metering, and uses `session.usage`
+to reconcile.
+
 A read, a list and a stream emit nothing. A `user.*` event sent
 through the API is one `session.send` (or `session.interrupt`); the
 runner's own appends are summarized by the two runner types, not
