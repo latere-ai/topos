@@ -187,7 +187,7 @@ each stage ([[025-task-suite]]); what the model is told about spawning
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A subagent reads the file its parent wrote in the step before it was spawned | `TestSubagentReadsParentFile` | not built |
+| A subagent reads the file its parent wrote in the step before it was spawned | the task `threads/readparent` under `test/tasks.TestScriptedSolutions` ([[025-task-suite]]) | built |
 | A subagent cannot call a tool its parent lacks, with the tool neither offered nor run when the model asks for it | `TestSubagentCannotCallToolParentLacks` | not built |
 | A thread receives a second message after its first task, continues from its own transcript, and answers it | `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
 | A child's mode, lists, thresholds and budget are never looser than its parent's | `TestNarrowingAlongSpawnEdges` as a table test | not built |

@@ -142,6 +142,17 @@ committed: the commit log already holds that.
 - `--mode` no longer defaults to `confirm` at the flag: continuing a
   session without it keeps the mode the session was created with, where it
   was silently reset to `confirm` before.
+- `test/tasks` is the task suite: each task is a directory with a prompt,
+  its starting files and a checker, run in process through the runner and
+  the harness. The tasks cover the failures of v0.7.0 (more than 16 steps,
+  an answer past 4096 tokens, a subagent reading its parent's file,
+  absolute paths, the person's `PATH`), ordinary coding work, and one
+  instruction test per built-in tool. Every task is proven against a
+  scripted right and wrong solution; `go test -tags tasks ./test/tasks/`
+  runs the suite against the model `TOPOS_MODELS_URL`, `TOPOS_MODELS_KEY`
+  and `TOPOS_TASKS_MODEL` name and writes a JSON and Markdown report.
+- A subagent's own reasoning effort from its manifest reaches its requests,
+  where it took the parent's.
 
 ## v0.7.0 - 2026-09-26
 
