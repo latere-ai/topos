@@ -1,0 +1,6 @@
+# Answers from memory without fetching the page.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: version.txt, content: "4.2.1\n"}
+  - text: The latest release is 4.2.1.

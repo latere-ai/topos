@@ -1,0 +1,5 @@
+- file: {path: version.txt, equals: 4.2.1}
+- call:
+    tool: web_fetch
+    outcome: ok
+    input: {url: {contains: "${SERVE_URL}/release-notes.html"}}

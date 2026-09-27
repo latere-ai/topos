@@ -1,0 +1,5 @@
+# The pinned model before its baseline is measured.
+model:
+  name: claude-sonnet-4-5
+  family: anthropic
+  connection: https://lux.example.com/anthropic

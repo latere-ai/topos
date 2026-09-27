@@ -1,0 +1,13 @@
+steps:
+  - tool_calls:
+      - name: bash
+        input: {command: go run ./server, background: true, description: start the server}
+  - expect: {tool_result_contains: Started in the background}
+    tool_calls:
+      - name: bash
+        input: {command: go run ./client > health.txt, description: ask the server for its health}
+  - tool_calls:
+      - name: read
+        input: {path: health.txt}
+  - expect: {tool_result_contains: healthy}
+    text: The server answered healthy; health.txt holds its answer.

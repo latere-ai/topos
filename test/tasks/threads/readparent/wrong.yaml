@@ -1,0 +1,9 @@
+# The parent writes count.txt itself and never delegates.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: colors.txt, content: "red\ngreen\nblue\n"}
+  - tool_calls:
+      - name: write
+        input: {path: count.txt, content: "3\n"}
+  - text: Both files are written.

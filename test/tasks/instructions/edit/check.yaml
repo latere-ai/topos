@@ -1,0 +1,11 @@
+- file: {path: server.go, equals_file: testdata/server.go.want}
+- call:
+    tool: edit
+    outcome: ok
+    input:
+      path: {matches: 'server\.go$'}
+      replace_all: {not_equals: true}
+- no_call:
+    tool: edit
+    outcome: error
+- no_call: {tool: write}

@@ -1,0 +1,9 @@
+- file: {path: config.ini, equals: "[server]\nhost = 0.0.0.0\nport = 9090"}
+- call:
+    tool: write
+    outcome: ok
+    input: {path: {matches: 'config\.ini$'}}
+- no_call:
+    tool: write
+    outcome: error
+    input: {path: {matches: 'config\.ini$'}}

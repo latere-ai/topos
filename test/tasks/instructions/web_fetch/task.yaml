@@ -1,0 +1,9 @@
+name: web_fetch
+category: instructions
+# web_fetch's description: a page the task names is read with
+# web_fetch. The suite serves the page over loopback for each run.
+serve: pages
+prompt: |
+  The release notes of the shop's command line tool are at
+  ${SERVE_URL}/release-notes.html. Write the version number of its latest
+  release, and nothing else, to version.txt.

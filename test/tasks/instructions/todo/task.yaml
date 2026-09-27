@@ -1,0 +1,13 @@
+name: todo
+category: instructions
+# todo's description: work of several steps is planned as a list, one
+# item in progress at a time, each marked completed when done.
+prompt: |
+  This task has several steps. Plan them first and keep track of your
+  progress as you work through them in order:
+
+  1. Create a.txt holding the word alpha.
+  2. Create b.txt holding the word beta.
+  3. Create c.txt holding the content of a.txt and of b.txt, joined by
+     one space.
+  4. Create done.txt holding the word ok.

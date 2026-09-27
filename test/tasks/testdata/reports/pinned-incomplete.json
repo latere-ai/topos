@@ -1,0 +1,1 @@
+{"model": "claude-sonnet-4-5", "commit": "4444444", "passed": 40, "total": 40, "pass_rate": 1, "spend_usd_micro": 90000000, "incomplete": true, "incomplete_reason": "the model's key was refused for spend: budget_exhausted", "tasks": [], "runs": []}

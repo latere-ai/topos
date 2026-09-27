@@ -1,0 +1,30 @@
+# Plans four items, works them one at a time, and marks each done.
+steps:
+  - tool_calls:
+      - name: todo
+        input: {todos: [{id: a, content: "Create a.txt", status: in_progress}, {id: b, content: "Create b.txt", status: pending}, {id: c, content: "Create c.txt from a.txt and b.txt", status: pending}, {id: d, content: "Create done.txt", status: pending}]}
+  - tool_calls:
+      - name: write
+        input: {path: a.txt, content: "alpha\n"}
+  - tool_calls:
+      - name: todo
+        input: {todos: [{id: a, content: "Create a.txt", status: completed}, {id: b, content: "Create b.txt", status: in_progress}, {id: c, content: "Create c.txt from a.txt and b.txt", status: pending}, {id: d, content: "Create done.txt", status: pending}]}
+  - tool_calls:
+      - name: write
+        input: {path: b.txt, content: "beta\n"}
+  - tool_calls:
+      - name: todo
+        input: {todos: [{id: a, content: "Create a.txt", status: completed}, {id: b, content: "Create b.txt", status: completed}, {id: c, content: "Create c.txt from a.txt and b.txt", status: in_progress}, {id: d, content: "Create done.txt", status: pending}]}
+  - tool_calls:
+      - name: write
+        input: {path: c.txt, content: "alpha beta\n"}
+  - tool_calls:
+      - name: todo
+        input: {todos: [{id: a, content: "Create a.txt", status: completed}, {id: b, content: "Create b.txt", status: completed}, {id: c, content: "Create c.txt from a.txt and b.txt", status: completed}, {id: d, content: "Create done.txt", status: in_progress}]}
+  - tool_calls:
+      - name: write
+        input: {path: done.txt, content: "ok\n"}
+  - tool_calls:
+      - name: todo
+        input: {todos: [{id: a, content: "Create a.txt", status: completed}, {id: b, content: "Create b.txt", status: completed}, {id: c, content: "Create c.txt from a.txt and b.txt", status: completed}, {id: d, content: "Create done.txt", status: completed}]}
+  - text: The four files are written.

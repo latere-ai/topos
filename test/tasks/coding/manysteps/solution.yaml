@@ -1,0 +1,103 @@
+# Reads the 24 clue files one per step, each named by the one before,
+# then writes the word.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: start.txt}
+  - expect: {tool_result_contains: "Next: clues/7hsmd.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/7hsmd.txt}
+  - expect: {tool_result_contains: "Next: clues/ccsp9.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/ccsp9.txt}
+  - expect: {tool_result_contains: "Next: clues/nydkc.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/nydkc.txt}
+  - expect: {tool_result_contains: "Next: clues/f4yrk.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/f4yrk.txt}
+  - expect: {tool_result_contains: "Next: clues/jaen5.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/jaen5.txt}
+  - expect: {tool_result_contains: "Next: clues/u379x.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/u379x.txt}
+  - expect: {tool_result_contains: "Next: clues/wgxa7.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/wgxa7.txt}
+  - expect: {tool_result_contains: "Next: clues/tet78.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/tet78.txt}
+  - expect: {tool_result_contains: "Next: clues/ckgw3.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/ckgw3.txt}
+  - expect: {tool_result_contains: "Next: clues/qdqdb.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/qdqdb.txt}
+  - expect: {tool_result_contains: "Next: clues/7wbzz.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/7wbzz.txt}
+  - expect: {tool_result_contains: "Next: clues/pbe7j.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/pbe7j.txt}
+  - expect: {tool_result_contains: "Next: clues/wmafs.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/wmafs.txt}
+  - expect: {tool_result_contains: "Next: clues/eveed.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/eveed.txt}
+  - expect: {tool_result_contains: "Next: clues/gbbfw.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/gbbfw.txt}
+  - expect: {tool_result_contains: "Next: clues/tcbw7.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/tcbw7.txt}
+  - expect: {tool_result_contains: "Next: clues/rcrx3.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/rcrx3.txt}
+  - expect: {tool_result_contains: "Next: clues/bxkcg.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/bxkcg.txt}
+  - expect: {tool_result_contains: "Next: clues/95rvu.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/95rvu.txt}
+  - expect: {tool_result_contains: "Next: clues/8dat3.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/8dat3.txt}
+  - expect: {tool_result_contains: "Next: clues/g9hsx.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/g9hsx.txt}
+  - expect: {tool_result_contains: "Next: clues/s8j6z.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/s8j6z.txt}
+  - expect: {tool_result_contains: "Next: clues/gzfnv.txt"}
+    tool_calls:
+      - name: read
+        input: {path: clues/gzfnv.txt}
+  - expect: {tool_result_contains: "Next: none"}
+    tool_calls:
+      - name: write
+        input: {path: answer.txt, content: qzmxkvrbtwlpjhdnygcfsaue}
+  - text: The chain spells qzmxkvrbtwlpjhdnygcfsaue.

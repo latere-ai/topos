@@ -1,0 +1,9 @@
+steps:
+  - tool_calls:
+      - name: grep
+        input: {pattern: 'legacy_fetch\(', output_mode: content}
+  - expect: {tool_result_contains: "orders.py:14:"}
+    tool_calls:
+      - name: write
+        input: {path: calls.txt, content: "app/api/orders.py:9\napp/api/orders.py:14\nscripts/sync.py:7\n"}
+  - text: calls.txt lists the three calls.

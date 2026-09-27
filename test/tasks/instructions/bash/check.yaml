@@ -1,0 +1,8 @@
+- file: {path: health.txt, equals: "healthy: 3 workers, queue empty"}
+- call:
+    tool: bash
+    outcome: ok
+    input:
+      background: {equals: true}
+      command: {contains: ./server}
+- no_call: {tool: bash, outcome: timeout}

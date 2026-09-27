@@ -1,0 +1,10 @@
+name: write
+category: instructions
+# write's description: an existing file is written only after this
+# thread read it; a write before the read is refused.
+prompt: |
+  Replace the whole content of config.ini with exactly these three lines:
+
+      [server]
+      host = 0.0.0.0
+      port = 9090

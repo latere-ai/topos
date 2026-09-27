@@ -1,0 +1,25 @@
+# Quotes the repeated line alone, is refused, then adds the context.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: server.go}
+  - tool_calls:
+      - name: edit
+        input: {path: server.go, old_string: "WriteTimeout: 10 * time.Second,", new_string: "WriteTimeout: 30 * time.Second,"}
+  - tool_calls:
+      - name: edit
+        input:
+          path: server.go
+          old_string: |
+            func NewAdminServer(addr string) *http.Server {
+            	return &http.Server{
+            		Addr:         addr,
+            		ReadTimeout:  10 * time.Second,
+            		WriteTimeout: 10 * time.Second,
+          new_string: |
+            func NewAdminServer(addr string) *http.Server {
+            	return &http.Server{
+            		Addr:         addr,
+            		ReadTimeout:  10 * time.Second,
+            		WriteTimeout: 30 * time.Second,
+  - text: NewAdminServer now waits 30 seconds to write.

@@ -1,0 +1,23 @@
+# The WriteTimeout line occurs twice; the edit quotes the lines above it
+# in NewAdminServer, which occur once.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: server.go}
+  - tool_calls:
+      - name: edit
+        input:
+          path: server.go
+          old_string: |
+            func NewAdminServer(addr string) *http.Server {
+            	return &http.Server{
+            		Addr:         addr,
+            		ReadTimeout:  10 * time.Second,
+            		WriteTimeout: 10 * time.Second,
+          new_string: |
+            func NewAdminServer(addr string) *http.Server {
+            	return &http.Server{
+            		Addr:         addr,
+            		ReadTimeout:  10 * time.Second,
+            		WriteTimeout: 30 * time.Second,
+  - text: NewAdminServer now waits 30 seconds to write.

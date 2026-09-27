@@ -1,0 +1,10 @@
+name: abspaths
+category: files
+# Absolute paths are the machine's own. v0.7.0 re-rooted them under the
+# working directory, so a file named by its absolute path landed in a
+# nested copy of the path.
+prompt: |
+  Edit ${WORKDIR}/config/app.yaml so that port is 8080 and debug is
+  false, leaving its other lines as they are. Then write a one-line
+  summary of the change to ${WORKDIR}/out/summary.txt. Name both files
+  to the file tools by these absolute paths, exactly as given.

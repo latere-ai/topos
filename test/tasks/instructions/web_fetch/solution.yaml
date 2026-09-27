@@ -1,0 +1,9 @@
+steps:
+  - tool_calls:
+      - name: web_fetch
+        input: {url: "${SERVE_URL}/release-notes.html"}
+  - expect: {tool_result_contains: "4.2.1, released"}
+    tool_calls:
+      - name: write
+        input: {path: version.txt, content: "4.2.1\n"}
+  - text: The latest release is 4.2.1.

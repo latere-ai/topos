@@ -1,0 +1,7 @@
+- file: {path: calls.txt, equals: "app/api/orders.py:9\napp/api/orders.py:14\nscripts/sync.py:7"}
+- call:
+    tool: grep
+    outcome: ok
+    input:
+      output_mode: {equals: content}
+      pattern: {contains: legacy_fetch}

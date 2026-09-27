@@ -1,0 +1,14 @@
+# The pinned model and the figures of its five baseline runs.
+model:
+  name: claude-sonnet-4-5
+  family: anthropic
+  connection: https://lux.example.com/anthropic
+baseline: 0.9
+noise: 0.0283
+threshold: 0.87
+runs:
+  - {ref: release-run-1, pass_rate: 0.90}
+  - {ref: release-run-2, pass_rate: 0.92}
+  - {ref: release-run-3, pass_rate: 0.88}
+  - {ref: release-run-4, pass_rate: 0.91}
+  - {ref: release-run-5, pass_rate: 0.89}

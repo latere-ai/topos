@@ -1,0 +1,4 @@
+# One step that ends the turn and costs more than the task's maxCost.
+steps:
+  - text: Done.
+    usage: {input_tokens: 100, output_tokens: 10, cost_usd_micro: 20000}

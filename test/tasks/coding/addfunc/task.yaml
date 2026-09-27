@@ -1,0 +1,11 @@
+name: addfunc
+category: coding
+prompt: |
+  Add a function to stats.go:
+
+      func Median(xs []float64) (float64, error)
+
+  It returns the middle value of xs, or the mean of the two middle values
+  when xs has an even length, and leaves xs in the order it was given.
+  For an empty xs it returns ErrEmpty. Add a table test of Median to
+  stats_test.go, and make sure `go test ./...` passes.

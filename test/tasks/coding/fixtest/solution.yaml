@@ -1,0 +1,23 @@
+# Runs the failing test, reads the file, replaces the split on one space
+# with a split on any white space, and runs the test again.
+steps:
+  - text: I will run the tests first.
+    tool_calls:
+      - name: bash
+        input: {command: go test ./...}
+  - expect: {tool_result_contains: FAIL}
+    tool_calls:
+      - name: read
+        input: {path: wordcount.go}
+  - expect: {tool_result_contains: strings.Split}
+    tool_calls:
+      - name: edit
+        input:
+          path: wordcount.go
+          old_string: strings.Split(text, " ")
+          new_string: strings.Fields(text)
+  - tool_calls:
+      - name: bash
+        input: {command: go test ./...}
+  - expect: {tool_result_contains: ok}
+    text: Count split the text on single spaces only; it now splits on any white space and the test passes.

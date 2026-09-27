@@ -1,0 +1,7 @@
+name: personpath
+category: coding
+# The command needs the person's own PATH and HOME: v0.7.0 ran bash with
+# a fixed PATH and HOME=/tmp, so go was not found.
+prompt: |
+  Run this Go program with `go run .` in the working directory and save
+  exactly what it prints to stamp.txt.

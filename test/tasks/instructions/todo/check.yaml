@@ -1,0 +1,5 @@
+- file: {path: a.txt, equals: alpha}
+- file: {path: b.txt, equals: beta}
+- file: {path: c.txt, equals: alpha beta}
+- file: {path: done.txt, equals: ok}
+- todo: {min_items: 4, max_in_progress: 1, final: completed}

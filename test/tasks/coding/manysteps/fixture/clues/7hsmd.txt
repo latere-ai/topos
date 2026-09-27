@@ -1,0 +1,2 @@
+Clue 2. The letter of this clue is "z".
+Next: clues/ccsp9.txt

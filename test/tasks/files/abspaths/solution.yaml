@@ -1,0 +1,12 @@
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: "${WORKDIR}/config/app.yaml"}
+  - expect: {tool_result_contains: "port: 3000"}
+    tool_calls:
+      - name: edit
+        input: {path: "${WORKDIR}/config/app.yaml", old_string: "port: 3000\ndebug: true", new_string: "port: 8080\ndebug: false"}
+  - tool_calls:
+      - name: write
+        input: {path: "${WORKDIR}/out/summary.txt", content: "Moved the port from 3000 to 8080 and turned debug off.\n"}
+  - text: app.yaml now serves on 8080 without debug.
