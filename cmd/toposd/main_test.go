@@ -32,6 +32,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/internal/config"
+	cellamachine "latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	sessiondir "latere.ai/x/topos/session/dir"
@@ -508,18 +509,16 @@ func runSession(t *testing.T, publicURL string, vars map[string]string, kind str
 	return events
 }
 
-// createHostedSession applies an agent whose machine is of kind and
-// creates a session of it over the API with the local issuer's token,
-// and returns the function that sends as that token and the session's
-// id.
-func createHostedSession(t *testing.T, publicURL string, vars map[string]string, kind string) (func(method, path, body string) (int, string), string) {
+// apiClient sends requests to publicURL with a token the local issuer of
+// vars signs.
+func apiClient(t *testing.T, publicURL string, vars map[string]string) func(method, path, body string) (int, string) {
 	t.Helper()
 	var tok bytes.Buffer
 	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
 		t.Fatalf("token: exit %d", code)
 	}
 	bearer := strings.TrimSpace(tok.String())
-	send := func(method, path, body string) (int, string) {
+	return func(method, path, body string) (int, string) {
 		t.Helper()
 		req, err := http.NewRequestWithContext(t.Context(), method, publicURL+path, strings.NewReader(body))
 		if err != nil {
@@ -537,6 +536,15 @@ func createHostedSession(t *testing.T, publicURL string, vars map[string]string,
 		}
 		return resp.StatusCode, string(b)
 	}
+}
+
+// createHostedSession applies an agent whose machine is of kind and
+// creates a session of it over the API with the local issuer's token,
+// and returns the function that sends as that token and the session's
+// id.
+func createHostedSession(t *testing.T, publicURL string, vars map[string]string, kind string) (func(method, path, body string) (int, string), string) {
+	t.Helper()
+	send := apiClient(t, publicURL, vars)
 	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: " + kind + "}\n"
 	if code, body := send(http.MethodPut, "/v1/agents/reviewer", manifest); code != http.StatusCreated {
 		t.Fatalf("apply: %d %s", code, body)
@@ -876,5 +884,56 @@ func TestServeFindsTheFamilysDoorFromLuxsRoot(t *testing.T) {
 	var errOut bytes.Buffer
 	if code := run(t.Context(), nil, selfHosted(t, map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_MODELS_URL": gone.URL}), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "TOPOS_MODELS_URL") {
 		t.Fatalf("a model URL that does not answer: exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+// TestCellaMachineSurvivesRunnerRestart: a serve stopped mid-turn leaves
+// its session running; a serve started again on the same data directory
+// claims it, finds the session's sandbox by name, starts it when Cella
+// stopped it meanwhile, and finishes the turn without creating another.
+func TestCellaMachineSurvivesRunnerRestart(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	vars, _, cella := hostedStubs(t,
+		luxstub.Reply{Respond: func(*ir.Request, *ir.Response) {
+			once.Do(func() { close(started) })
+			<-release
+		}},
+		luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}},
+	)
+	t.Cleanup(func() { close(release) })
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_RUNNER_CAPACITY": "1"})
+	publicURL, _, stop := startServe(t, vars)
+	_, id := createHostedSession(t, publicURL, vars, "cella")
+	select {
+	case <-started:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the first serve never asked the model")
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("the first serve exited %d", code)
+	}
+	if !cella.Stop(cellamachine.SandboxName(id)) {
+		t.Fatal("the session has no sandbox to stop")
+	}
+	publicURL, _, stop = startServe(t, vars)
+	send := apiClient(t, publicURL, vars)
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		_, body := send(http.MethodGet, "/v1/sessions/"+id, "")
+		if strings.Contains(body, `"status":"idle"`) && strings.Contains(body, `"stop_reason":"end_turn"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the restarted serve never finished the turn: %s", body)
+		}
+	}
+	if n := cella.Count(cellastub.OpCreate); n != 1 {
+		t.Errorf("%d sandboxes created, want the first one found again", n)
+	}
+	if n := cella.Count(cellastub.OpStart); n < 1 {
+		t.Error("the stopped sandbox was not started")
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("the second serve exited %d", code)
 	}
 }
