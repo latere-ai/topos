@@ -58,6 +58,9 @@ func (s *Server) Reap(ctx context.Context) error {
 	}); ok {
 		errs = append(errs, sw.SweepBlobs(ctx, now))
 	}
+	// The identities of archived agents whose last session ended since
+	// the last pass are disabled (spec 018).
+	errs = append(errs, s.Reconcile(ctx))
 	return errors.Join(errs...)
 }
 

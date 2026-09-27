@@ -133,12 +133,26 @@ func (c *call) createSession() error {
 	case kind != session.MachineCella && kind != session.MachineHost:
 		return refuse(CodeMachineUnavailable, "agent %s runs on machine kind %q; a hosted session runs on cella or the host", a.Name, kind)
 	}
-	res := authz.NewResource(authorizer.KindSession, "", map[string]any{
+	// The session's id is minted before the question, so the authorizer
+	// records the session every later token names, with the agent's
+	// identity those tokens carry as their subject (spec 018).
+	id := session.NewID(session.PrefixSession)
+	fields := map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
 		"runner": session.RunnerHosted, "machine": kind, "initiator": c.caller.Subject,
-		"permissions": permissionsField(r.Agent.Spec.Permissions),
-	})
-	limits, err := c.askCreate(ctx, authorizer.ActionSessionCreate, res)
+		"permissions": permissionsField(r.Agent.Spec.Permissions), "session_id": id,
+	}
+	if c.s.o.Identities != nil {
+		subject, err := c.s.agentIdentity(ctx, a)
+		if err != nil {
+			return err
+		}
+		if subject == "" {
+			return refuse(CodeAgentIdentityMissing, "agent %s was applied before this server had an identity provider", a.Name)
+		}
+		fields["agent_identity"] = subject
+	}
+	limits, err := c.askCreate(ctx, authorizer.ActionSessionCreate, authz.NewResource(authorizer.KindSession, "", fields))
 	if err != nil {
 		return err
 	}
@@ -152,6 +166,7 @@ func (c *call) createSession() error {
 	now := c.s.o.Now()
 	s := session.New(ref, session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted,
 		session.Machine{Kind: kind, Environment: cfg.Machine.Environment, Image: cfg.Machine.Image}, now)
+	s.ID = id
 	s.Title, s.Metadata, s.EndOnIdle = b.Title, b.Metadata, b.EndOnIdle
 	// The session records its approval policy merged from the agent's and
 	// the organization's limits, so every runner applies the same one.

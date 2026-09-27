@@ -133,6 +133,9 @@ func (c *call) applyAgent() error {
 			return err
 		}
 	}
+	if err := c.ensureIdentity(ctx, r.Agent); err != nil {
+		return err
+	}
 	doc, err := session.Marshal(r.Agent)
 	if err != nil {
 		return err
@@ -242,20 +245,35 @@ func (c *call) getAgentVersion() error {
 }
 
 // archiveAgent is POST /agents/{ref}/archive. Sessions keep the version
-// they pinned; no new session starts on an archived agent.
+// they pinned; no new session starts on an archived agent. The agent's
+// identity is archived first, so a failed call leaves the agent as it
+// was and a retry is idempotent, and it is disabled for good once no
+// session of the agent is left: here when none runs, and otherwise by
+// the reconcile pass (spec 018).
 func (c *call) archiveAgent() error {
-	a, _, err := c.agent(c.r.PathValue("ref"), authorizer.ActionAgentArchive)
+	ctx := c.r.Context()
+	a, doc, err := c.agent(c.r.PathValue("ref"), authorizer.ActionAgentArchive)
 	if err != nil {
 		return err
 	}
-	if err := c.s.o.Objects.Archive(c.r.Context(), a.ID, c.s.o.Now()); err != nil {
+	subject := doc.Status.Identity
+	if c.s.o.Identities != nil && subject != "" {
+		if err := c.s.o.Identities.Archive(ctx, a.ID); err != nil {
+			return identityRefusal(err)
+		}
+	}
+	if err := c.s.o.Objects.Archive(ctx, a.ID, c.s.o.Now()); err != nil {
 		return err
 	}
-	if a, err = c.s.o.Objects.Agent(c.r.Context(), a.ID); err != nil {
+	if c.s.o.Identities != nil && subject != "" {
+		if err := c.s.retire(ctx, a.ID, subject); err != nil {
+			c.s.o.Log.ErrorContext(ctx, "disable an archived agent's identity; the reconcile pass retries", "agent", a.ID, "err", err)
+		}
+	}
+	if a, err = c.s.o.Objects.Agent(ctx, a.ID); err != nil {
 		return err
 	}
-	doc, err := c.latest(a)
-	if err != nil {
+	if doc, err = c.latest(a); err != nil {
 		return err
 	}
 	return c.reply(http.StatusOK, doc)

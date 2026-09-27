@@ -347,10 +347,13 @@ components:
             code:
               type: string
               enum:
+                - agent_identity_missing
                 - authorizer_unavailable
                 - conflict
                 - forbidden
                 - idempotency_conflict
+                - identity_refused
+                - identity_unavailable
                 - internal
                 - invalid_manifest
                 - invalid_request
@@ -369,7 +372,7 @@ components:
               type: object
   responses:
     Error:
-      description: "An error of the table. By status: 400: invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden; 404: not_found; 409: conflict, idempotency_conflict, sequence_conflict; 413: payload_too_large; 422: machine_unavailable; 429: rate_limited; 500: internal; 503: authorizer_unavailable."
+      description: "An error of the table. By status: 400: invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, idempotency_conflict, sequence_conflict; 413: payload_too_large; 422: machine_unavailable; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable."
       content:
         application/json:
           schema:

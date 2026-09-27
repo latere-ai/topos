@@ -89,6 +89,9 @@ type Options struct {
 	// server keeps for it outside the store, such as a host session's
 	// directories. Nil removes nothing.
 	Deleted func(id string) error
+	// Identities is the identity provider that hosts the installation's
+	// agents (spec 018); nil gives agents no identity.
+	Identities Identities
 }
 
 // Server answers the API.

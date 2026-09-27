@@ -55,6 +55,9 @@ var codes = map[string]struct {
 	CodeRateLimited:                 {http.StatusTooManyRequests, "Too many requests; wait and try again."},
 	CodeMachineUnavailable:          {http.StatusUnprocessableEntity, "The session's machine is not available here."},
 	auth.CodeAuthorizerUnavailable:  {http.StatusServiceUnavailable, "The authorizer did not answer; try again."},
+	CodeIdentityRefused:             {http.StatusForbidden, "The identity provider refused this agent's identity."},
+	CodeIdentityUnavailable:         {http.StatusServiceUnavailable, "The identity provider did not answer; try again."},
+	CodeAgentIdentityMissing:        {http.StatusConflict, "The agent has no identity yet; apply a changed version of it."},
 	CodeInternal:                    {http.StatusInternalServerError, "The server failed to answer; try again."},
 }
 
