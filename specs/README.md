@@ -64,7 +64,7 @@ another spec.
 | [006](006-identity.md) | Identity: subjects, verification, the authorizer question, the action vocabulary, the owner policy, the local issuer | medium | in-progress | 001, 002, 004 |
 | [007](007-models.md) | Models: the connection, the IR in the log, llmdialect's codecs, raw capture, cost and the budget | large | in-progress | 001, 002, 004 |
 | [008](008-tools.md) | Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule | large | drafted | 001, 004, 009 |
-| [009](009-machines.md) | Machines: the Machine interface, the host directory and its worktrees, the Cella sandbox | large | validated | 001, 002, 004 |
+| [009](009-machines.md) | Machines: the Machine interface, the host directory and its worktrees, the Cella sandbox | large | dispatched | 001, 002, 004 |
 | [010](010-context.md) | Context: the order of the prompt's parts, cache breakpoints, token accounting, clearing, compaction | medium | drafted | 004, 005, 007, 011 |
 | [011](011-instructions-and-skills.md) | Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills | medium | drafted | 004, 005, 009 |
 | [012](012-permissions-and-approvals.md) | Permissions, approvals and hooks: the boundary, the layers, the risk score and verdict, the modes | large | drafted | 001, 004, 005, 008, 009 |

@@ -1,6 +1,6 @@
 ---
 title: "Machines: the Machine interface, the host directory and its worktrees, the Cella sandbox"
-status: validated
+status: dispatched
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session-log.md]
 affects: [machine/, machine/host/, machine/cella/, cmd/topos-machine/]
