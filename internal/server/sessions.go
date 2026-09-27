@@ -1,0 +1,307 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"maps"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"latere.ai/x/pkg/authz"
+	"latere.ai/x/pkg/llmdialect/ir"
+	"latere.ai/x/pkg/llmdialect/lux"
+
+	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/manifest"
+	"latere.ai/x/topos/runner"
+	"latere.ai/x/topos/session"
+)
+
+// sessionResource is an existing session as the authorizer reads it,
+// with the fields of the action beside the ones every action carries.
+func sessionResource(s session.Session, fields map[string]any) authz.Resource {
+	all := map[string]any{"agent": s.Agent.ID, "owner": s.Initiator.Subject, "runner": s.Runner}
+	maps.Copy(all, fields)
+	return authz.NewResource(authorizer.KindSession, s.ID, all)
+}
+
+// session reads a session and asks action about it; a denied read
+// answers as a missing session.
+func (c *call) session(action string, fields map[string]any) (session.Session, error) {
+	s, err := c.s.o.Sessions.Get(c.r.Context(), c.r.PathValue("id"))
+	if err != nil {
+		return session.Session{}, err
+	}
+	if _, err := c.ask(action, sessionResource(s, fields)); err != nil {
+		return session.Session{}, err
+	}
+	return s, nil
+}
+
+// replySession answers a session with its stream's URL.
+func (c *call) replySession(status int, s session.Session) error {
+	c.w.Header().Set("Link", "<"+c.url("/sessions/"+s.ID+"/stream", nil)+`>; rel="stream"`)
+	return c.reply(status, s)
+}
+
+// createBody is the body of POST /sessions.
+type createBody struct {
+	Agent     string            `json:"agent"`
+	Runner    string            `json:"runner,omitempty"`
+	ID        string            `json:"id,omitempty"`
+	Message   string            `json:"message,omitempty"`
+	Title     string            `json:"title,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	Budget    *createBudget     `json:"budget,omitempty"`
+	Limits    *createLimits     `json:"limits,omitempty"`
+	Capture   *session.Capture  `json:"capture,omitempty"`
+	EndOnIdle bool              `json:"end_on_idle,omitempty"`
+	Machine   json.RawMessage   `json:"machine,omitempty"`
+	Resources json.RawMessage   `json:"resources,omitempty"`
+}
+
+type createBudget struct {
+	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitempty"`
+}
+
+type createLimits struct {
+	TurnTimeout string `json:"turn_timeout,omitempty"`
+	MaxAge      string `json:"max_age,omitempty"`
+}
+
+// createSession is POST /sessions: a session of an agent's version,
+// capped by the agent, the request and the authorizer's limits.
+func (c *call) createSession() error {
+	ctx := c.r.Context()
+	var b createBody
+	if err := c.decode(&b); err != nil {
+		return err
+	}
+	switch {
+	case b.Agent == "":
+		return refuse(CodeInvalidRequest, "agent is required")
+	case b.Runner != "" && b.Runner != session.RunnerHosted:
+		return refuse(CodeInvalidRequest, "runner %q: this server runs hosted sessions; an external runner's sessions are not built", b.Runner)
+	case b.ID != "":
+		return refuse(CodeInvalidRequest, "id is an external session's, and this server runs hosted sessions")
+	case len(b.Machine) > 0 || len(b.Resources) > 0:
+		return refuse(CodeInvalidRequest, "a session's machine and resources are its agent's; a request cannot set them yet")
+	case len(b.Metadata) > session.MaxMetadata:
+		return refuse(CodeInvalidRequest, "%d metadata entries, at most %d", len(b.Metadata), session.MaxMetadata)
+	}
+	name, n, pinned := strings.Cut(b.Agent, "@")
+	a, err := c.s.o.Objects.Agent(ctx, name)
+	if err != nil {
+		return err
+	}
+	version := a.Latest
+	if pinned {
+		if version, err = strconv.Atoi(n); err != nil || strconv.Itoa(version) != n {
+			return refuse(CodeInvalidRequest, "agent %q names no version", b.Agent)
+		}
+	}
+	v, err := c.s.o.Objects.Version(ctx, a.ID, version)
+	if err != nil {
+		return err
+	}
+	r, err := manifest.ReadBundle(v.Bundle)
+	if err != nil {
+		return err
+	}
+	cfg, err := r.AgentConfig(nil)
+	if err != nil {
+		return err
+	}
+	// A hosted session runs on a Cella machine, never on the server's own
+	// host; the manifest's host default is for a local run.
+	kind := cfg.Machine.Kind
+	if kind != session.MachineCella {
+		return refuse(CodeMachineUnavailable, "agent %s runs on machine kind %q; a hosted session runs on cella", a.Name, kind)
+	}
+	res := authz.NewResource(authorizer.KindSession, "", map[string]any{
+		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
+		"runner": session.RunnerHosted, "machine": kind, "initiator": c.caller.Subject,
+	})
+	limits, err := c.askCreate(authorizer.ActionSessionCreate, res)
+	if err != nil {
+		return err
+	}
+	if a.ArchivedAt != nil {
+		return refuse(CodeConflict, "the agent %s is archived", a.Name)
+	}
+	ref, blobs, err := runner.AgentRef(r)
+	if err != nil {
+		return err
+	}
+	now := c.s.o.Now()
+	s := session.New(ref, session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted,
+		session.Machine{Kind: kind, Environment: cfg.Machine.Environment, Image: cfg.Machine.Image}, now)
+	s.Title, s.Metadata, s.EndOnIdle = b.Title, b.Metadata, b.EndOnIdle
+	if b.Capture != nil {
+		s.Capture = *b.Capture
+	}
+	var asked *int64
+	if b.Budget != nil {
+		asked = b.Budget.MaxCostUSDMicro
+	}
+	s.Budget.MaxCostUSDMicro = lowestCost(asked, cfg.MaxCostUSDMicro, limits.BudgetUSDMicro)
+	var req createLimits
+	if b.Limits != nil {
+		req = *b.Limits
+	}
+	turn, err := lowest("limits.turn_timeout", req.TurnTimeout, cfg.TurnTimeout, limits.TurnTimeout)
+	if err != nil {
+		return err
+	}
+	age, err := lowest("limits.max_age", req.MaxAge, cfg.MaxAge, limits.MaxAge)
+	if err != nil {
+		return err
+	}
+	s.Limits = session.Limits{TurnTimeout: turn.String(), MaxAge: age.String()}
+	if limits.Retention > 0 {
+		s.Limits.Retention = limits.Retention.String()
+	}
+	s.ExpiresAt = s.CreatedAt.Add(age)
+	s.Scope = limits.Scope
+	if err := c.s.o.Sessions.Create(ctx, s, blobs); err != nil {
+		return err
+	}
+	if b.Message != "" {
+		ev, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: b.Message}}}, now)
+		if err != nil {
+			return err
+		}
+		if _, err := c.append(s.ID, ev); err != nil {
+			return err
+		}
+		if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
+			return err
+		}
+	}
+	return c.replySession(http.StatusCreated, s)
+}
+
+// lowestCost is the lowest of the budgets that are set, nil when none
+// is.
+func lowestCost(costs ...*int64) *int64 {
+	var out *int64
+	for _, c := range costs {
+		if c != nil && (out == nil || *c < *out) {
+			v := *c
+			out = &v
+		}
+	}
+	return out
+}
+
+// lowest is the lowest of the request's duration and the two ceilings
+// that are set; the agent's is always set.
+func lowest(field, requested string, agent, authorizer time.Duration) (time.Duration, error) {
+	out := agent
+	if authorizer > 0 && authorizer < out {
+		out = authorizer
+	}
+	if requested != "" {
+		d, err := time.ParseDuration(requested)
+		if err != nil || d <= 0 {
+			return 0, refuse(CodeInvalidRequest, "%s is %q, not a positive duration", field, requested)
+		}
+		out = min(out, d)
+	}
+	return out, nil
+}
+
+// getSession is GET /sessions/{id}.
+func (c *call) getSession() error {
+	s, err := c.session(authorizer.ActionSessionRead, nil)
+	if err != nil {
+		return err
+	}
+	return c.replySession(http.StatusOK, s)
+}
+
+// endBody is the body of POST /sessions/{id}/end.
+type endBody struct {
+	Reason session.StopReason `json:"reason"`
+}
+
+// endSession is POST /sessions/{id}/end: an idle session ends completed
+// or canceled. A running one is interrupted first, by its sender.
+func (c *call) endSession() error {
+	var b endBody
+	if err := c.decode(&b); err != nil {
+		return err
+	}
+	if b.Reason != session.StopCompleted && b.Reason != session.StopCanceled {
+		return refuse(CodeInvalidRequest, "reason is %q, not completed or canceled", b.Reason)
+	}
+	s, err := c.session(authorizer.ActionSessionEnd, nil)
+	if err != nil {
+		return err
+	}
+	switch s.Status {
+	case session.StatusEnded:
+		return refuse(CodeConflict, "the session ended %s", s.StopReason)
+	case session.StatusRunning:
+		return refuse(CodeConflict, "the session is running; interrupt it first")
+	}
+	ev, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: b.Reason}, c.s.o.Now())
+	if err != nil {
+		return err
+	}
+	if _, err := c.append(s.ID, ev); err != nil {
+		return err
+	}
+	if s, err = c.s.o.Sessions.Get(c.r.Context(), s.ID); err != nil {
+		return err
+	}
+	return c.replySession(http.StatusOK, s)
+}
+
+// deleteSession is DELETE /sessions/{id}: the session, its log and its
+// blobs.
+func (c *call) deleteSession() error {
+	s, err := c.session(authorizer.ActionSessionDelete, nil)
+	if err != nil {
+		return err
+	}
+	if err := c.s.o.Sessions.Delete(c.r.Context(), s.ID); err != nil {
+		return err
+	}
+	c.w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// appendRetries bounds how often an append follows a session that moved
+// on under it.
+const appendRetries = 8
+
+// append appends one event after the session's last, following the log
+// when another writer appended first.
+func (c *call) append(id string, ev session.Event) (session.Event, error) {
+	ctx := c.r.Context()
+	var err error
+	for range appendRetries {
+		var s session.Session
+		if s, err = c.s.o.Sessions.Get(ctx, id); err != nil {
+			return session.Event{}, err
+		}
+		if s.Status == session.StatusEnded {
+			return session.Event{}, refuse(CodeConflict, "the session ended %s", s.StopReason)
+		}
+		batch := []session.Event{ev}
+		session.Stamp(id, s.LastSeq, batch)
+		if _, err = c.s.o.Sessions.Append(ctx, id, s.LastSeq, batch); err == nil {
+			return batch[0], nil
+		}
+		if !errors.Is(err, session.ErrSequenceConflict) {
+			return session.Event{}, err
+		}
+	}
+	return session.Event{}, err
+}

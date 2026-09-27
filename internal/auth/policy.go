@@ -73,11 +73,17 @@ func (p *OwnerPolicy) decide(req authz.Request) authz.Decision {
 	case kind == "" || kind != req.Resource.Kind:
 		return authz.Decision{Reason: ReasonUnknownAction}
 	}
+	admin := slices.Contains(p.Admins, req.Subject)
 	if authz.IsList(req.Action) {
-		if slices.Contains(p.Admins, req.Subject) {
+		if admin {
 			return authz.Decision{Allow: true}
 		}
 		return authz.Decision{Allow: true, Filter: &authz.Filter{Owners: []string{req.Subject}}}
+	}
+	// A session runs an agent, so starting one is the agent owner's to
+	// do, the way every other action on the agent is.
+	if req.Action == authorizer.ActionSessionCreate && !admin && req.Resource.String("agent_owner") != req.Subject {
+		return authz.Decision{Reason: authz.ReasonNotOwner}
 	}
 	owner := req.Resource.String("owner")
 	frame := authz.Policy{Admins: p.Admins, Create: authorizer.Create(kind)}

@@ -1,0 +1,346 @@
+openapi: 3.1.0
+info:
+  title: Topos API
+  version: v1
+  description: Agents, their versions, and the sessions people have with them. Every route is verified and asked of the installation's authorizer; every error is one envelope with a code of the table under components.schemas.Error.
+servers:
+  - url: /v1
+security:
+  - bearer: []
+paths:
+  /agents/{name}:
+    put:
+      operationId: applyAgent
+      summary: Apply an Agent manifest; a changed spec creates a version
+      x-topos-actions:
+        - agent.create
+        - agent.update
+        - agent.read
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+          application/yaml: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /agents:
+    get:
+      operationId: listAgents
+      summary: List agents
+      x-topos-actions:
+        - agent.list
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /agents/{ref}:
+    get:
+      operationId: getAgent
+      summary: Get an agent's latest version by name or id
+      x-topos-actions:
+        - agent.read
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /agents/{ref}/versions:
+    get:
+      operationId: listAgentVersions
+      summary: List an agent's versions
+      x-topos-actions:
+        - agent.read
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /agents/{ref}/versions/{n}:
+    get:
+      operationId: getAgentVersion
+      summary: Get one version of an agent
+      x-topos-actions:
+        - agent.read
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /agents/{ref}/archive:
+    post:
+      operationId: archiveAgent
+      summary: Archive an agent; running sessions keep their version
+      x-topos-actions:
+        - agent.archive
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions:
+    post:
+      operationId: createSession
+      summary: Create a session of an agent
+      x-topos-actions:
+        - session.create
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "201":
+          description: Created
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Get a session
+      x-topos-actions:
+        - session.read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteSession
+      summary: Delete a session, its log and its blobs
+      x-topos-actions:
+        - session.delete
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/end:
+    post:
+      operationId: endSession
+      summary: End an idle session completed or canceled
+      x-topos-actions:
+        - session.end
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/events:
+    get:
+      operationId: listEvents
+      summary: List a session's events from a sequence
+      x-topos-actions:
+        - session.read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: sendEvent
+      summary: Send one user event
+      x-topos-actions:
+        - session.send
+        - session.interrupt
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/stream:
+    get:
+      operationId: streamEvents
+      summary: Stream a session's events as Server-Sent Events
+      x-topos-actions:
+        - session.read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/blobs/{digest}:
+    get:
+      operationId: getBlob
+      summary: Get a blob of a session
+      x-topos-actions:
+        - session.read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: digest
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/events/{event_id}/redact:
+    post:
+      operationId: redactEvent
+      summary: Replace one event's content with a tombstone
+      x-topos-actions:
+        - session.redact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPI
+      summary: This document
+      security: []
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - authorizer_unavailable
+                - conflict
+                - forbidden
+                - idempotency_conflict
+                - internal
+                - invalid_manifest
+                - invalid_request
+                - machine_unavailable
+                - manifest_holds_secret
+                - not_found
+                - payload_too_large
+                - rate_limited
+                - sequence_conflict
+                - unauthenticated
+                - unknown_reference
+                - unsupported_version
+            message:
+              type: string
+            details:
+              type: object
+  responses:
+    Error:
+      description: "An error of the table. By status: 400: invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden; 404: not_found; 409: conflict, idempotency_conflict, sequence_conflict; 413: payload_too_large; 422: machine_unavailable; 429: rate_limited; 500: internal; 503: authorizer_unavailable."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

@@ -61,6 +61,7 @@ func TestOwnerPolicyRows(t *testing.T) {
 		{"admin acts on anyone's", root, authorizer.ActionAgentArchive, "agt_1", alice, true, ""},
 		{"another subject", bob, authorizer.ActionSessionSend, "ses_1", alice, false, authz.ReasonNotOwner},
 		{"create of a new object", bob, authorizer.ActionMemoryStoreCreate, "", "", true, ""},
+		{"a send by the session's owner", alice, authorizer.ActionSessionSend, "ses_1", alice, true, ""},
 		{"read of a missing object", bob, authorizer.ActionAgentRead, "agt_none", "", false, authz.ReasonNotOwner},
 		{"anonymous", "", authorizer.ActionAgentCreate, "", "", false, authz.ReasonAnonymous},
 		{"probe", alice, authorizer.ActionSessionRead, authz.ProbeID, alice, false, authz.ReasonProbe},
@@ -76,6 +77,17 @@ func TestOwnerPolicyRows(t *testing.T) {
 		t.Fatalf("an action asked about another kind: %+v, %v", d, err)
 	}
 
+	create := func(subject, agentOwner string) authz.Decision {
+		d, err := p.Authorize(t.Context(), authz.Request{Subject: subject, Action: authorizer.ActionSessionCreate,
+			Resource: authz.NewResource(authorizer.KindSession, "", map[string]any{"agent_owner": agentOwner})})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	if !create(alice, alice).Allow || !create(root, alice).Allow || create(bob, alice).Allow {
+		t.Fatal("a session is created on the caller's own agent, or by an admin")
+	}
 	if d := ask(t, p, alice, authorizer.ActionSessionList, "", "", nil); !d.Allow || d.Filter == nil || d.Filter.Owners[0] != alice {
 		t.Fatalf("a list: %+v", d)
 	}

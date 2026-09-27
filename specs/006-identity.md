@@ -81,14 +81,14 @@ gains fields.
 | Action | Kind | Resource fields | Asked at |
 |---|---|---|---|
 | `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner`, `identity` | the agent routes of [[015-api]] |
-| `session.create` | `session` | `agent`, `agent_version`, `runner`, `machine`, `initiator` | session create; the authorizer applies the initiator cap here |
+| `session.create` | `session` | `agent`, `agent_version`, `agent_owner`, `runner`, `machine`, `initiator` | session create; the authorizer applies the initiator cap here |
 | `session.read`, `session.list` | `session` | `agent`, `owner`, `runner` | session get, list, events list, stream |
-| `session.send` | `session` | `agent`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
+| `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
 | `session.fork`, `session.rewind` | `session` | `agent`, `owner`, `seq` or `turn` | [[017-external-runners-handoff-fork]], [[034-checkpoints-and-rewind]] |
 | `session.redact` | `session` | `agent`, `owner`, `event_id` | [[015-api]], [[018-credentials-and-secrets]] |
 | `session.append`, `session.handoff` | `session` | `agent`, `owner`, `runner`, `writer` | [[017-external-runners-handoff-fork]] |
-| `session.scope` | `session` | `agent`, `old`, `new`, `until` | a scope change; the authorizer holds a widening to the agent's permissions and the widener's own rights |
+| `session.scope` | `session` | `agent`, `owner`, `old`, `new`, `until` | a scope change; the authorizer holds a widening to the agent's permissions and the widener's own rights |
 | `trigger.create`, `trigger.read`, `trigger.list`, `trigger.update`, `trigger.delete` | `trigger` | `agent`, `owner` | the trigger routes |
 | `credential.create`, `credential.read`, `credential.list`, `credential.delete` | `credential` | `name`, `owner`, `service` | the credential routes; `read` returns metadata only |
 | `memory_store.create`, `memory_store.read`, `memory_store.list`, `memory_store.update`, `memory_store.delete` | `memory_store` | `name`, `owner` | the memory store routes |
@@ -135,8 +135,10 @@ listener.
 With `TOPOS_AUTHORIZER_URL` unset, toposd decides with `authz.Policy`:
 `Admins` from `TOPOS_ADMIN_SUBJECTS` act on every object; the subject
 that created an object owns it and may take every action on it;
-`Create` is allowed on an object that does not exist; everything else
-is denied as `not_owner`, and a denied read answers `not_found`. The
+`Create` is allowed on an object that does not exist, and a session is
+created only on an agent whose owner is the caller (`agent_owner`);
+everything else is denied as `not_owner`, and a denied read answers
+`not_found`. The
 owner policy carries no limits, so a session on it has the core's
 defaults. The policy calls `authz.Restrict` on its own answer, so a
 narrowed key is narrowed without an authorizer too.

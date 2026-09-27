@@ -56,6 +56,9 @@ type Status struct {
 	Digest    string    `json:"digest,omitempty"`
 	CreatedAt time.Time `json:"createdAt,omitzero"`
 	Identity  string    `json:"identity,omitempty"`
+	// ArchivedAt is when the object was archived; a server writes it
+	// when it answers, and a stored version never carries it.
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
 // Agent is an agent definition.
