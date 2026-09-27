@@ -178,6 +178,7 @@ memory, which is a separate component.
 | A note written in a local session on one device is read by the same agent in a cloud session and in a local session on a second device | `TestMemoryFollowsTheAgent` in the e2e tier, with the Arca tier when the Arca client exists | not built |
 | A path changed on both sides keeps both versions, the backend's at the path and the machine's as a conflict copy, and is listed in `conflicts` | `TestSyncConflictKeepsBoth` | not built |
 | A write whose precondition fails never overwrites the backend's version | `TestPreconditionPreventsOverwrite` on both backends | not built |
+| A memory push the backend refuses for spend, `budget_exhausted` or `spend_exceeded`, is a `models.SpendError` and stops the turn `budget` as [[007-models]]'s refusals do | `TestAMemoryPushRefusedForSpendStopsTheTurn` | not built |
 | A `memory_sync` call repeated after a runner stopped mid-sync leaves the store as one sync would | `TestMemorySyncIsRepeatable` | not built |
 | A `read_only` attachment never pushes a change | `TestReadOnlyAttachmentNeverPushes` | not built |
 | `memory.synced` carries paths and never content | `TestMemorySyncedCarriesNoContent` | not built |
