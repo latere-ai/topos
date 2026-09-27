@@ -270,10 +270,9 @@ func writeError(w http.ResponseWriter, status int, typ, msg string) {
 }
 
 // stream writes the response as the dialect's SSE, through its
-// frontend encoder; cut stops before the terminal events. A Responses
-// reasoning item, an opaque block of that dialect, is written as the
-// provider streams one, since the frontend encoder writes no opaque
-// block.
+// frontend encoder; cut stops before the terminal events. The blocks the
+// frontend encoder cannot stream are written as the provider streams
+// them (native).
 func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.Response, cut bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	enc := fe.NewEventEncoder(w)
@@ -282,11 +281,9 @@ func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.R
 		evs = evs[:len(evs)-2]
 	}
 	for _, ev := range evs {
-		if fe.Name() == ir.DialectOpenAIResponses && reasoningItem(resp, ev) {
-			if ev.Type == ir.EventBlockStart {
-				if err := writeReasoning(w, ev.Index, resp.Blocks[ev.Index].Opaque.Raw); err != nil {
-					return
-				}
+		if handled, err := native(w, fe.Name(), resp, ev); handled {
+			if err != nil {
+				return
 			}
 			continue
 		}
@@ -299,14 +296,48 @@ func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.R
 	}
 }
 
-// reasoningItem reports whether ev starts or stops a block of resp that
-// is a Responses reasoning item.
-func reasoningItem(resp ir.Response, ev ir.Event) bool {
+// native writes the start or the stop of a block the dialect's frontend
+// encoder cannot stream, as the provider streams it, and reports whether
+// ev was such a block's: a Responses reasoning item, an opaque block the
+// frontend drops, and a Messages redacted thinking block, which it
+// refuses.
+func native(w io.Writer, d ir.Dialect, resp ir.Response, ev ir.Event) (bool, error) {
 	if (ev.Type != ir.EventBlockStart && ev.Type != ir.EventBlockStop) || ev.Index >= len(resp.Blocks) {
-		return false
+		return false, nil
 	}
-	o := resp.Blocks[ev.Index].Opaque
-	return o != nil && o.Dialect == ir.DialectOpenAIResponses && o.Kind == "reasoning"
+	b := resp.Blocks[ev.Index]
+	switch {
+	case d == ir.DialectOpenAIResponses && b.Opaque != nil && b.Opaque.Dialect == d && b.Opaque.Kind == "reasoning":
+		if ev.Type == ir.EventBlockStart {
+			return true, writeReasoning(w, ev.Index, b.Opaque.Raw)
+		}
+		return true, nil
+	case d == ir.DialectAnthropicMessages && b.Type == ir.BlockRedactedThinking:
+		// The frontend drops opaque blocks from the wire's indexes, so
+		// the block's index counts none of them.
+		index := ev.Index
+		for _, before := range resp.Blocks[:ev.Index] {
+			if before.Type == ir.BlockOpaque {
+				index--
+			}
+		}
+		frame := map[string]any{"type": "content_block_stop", "index": index}
+		if ev.Type == ir.EventBlockStart {
+			frame = map[string]any{"type": "content_block_start", "index": index, "content_block": map[string]any{"type": "redacted_thinking", "data": b.Redacted}}
+		}
+		return true, writeFrame(w, frame)
+	}
+	return false, nil
+}
+
+// writeFrame writes one SSE frame named by its type member.
+func writeFrame(w io.Writer, f map[string]any) error {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return fmt.Errorf("luxstub: encode a %s frame: %w", f["type"], err)
+	}
+	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", f["type"], b)
+	return err
 }
 
 // writeReasoning writes a Responses reasoning item as the provider
@@ -329,11 +360,7 @@ func writeReasoning(w io.Writer, index int, raw json.RawMessage) error {
 	}
 	frames = append(frames, map[string]any{"type": "response.output_item.done", "output_index": index, "item": raw})
 	for _, f := range frames {
-		b, err := json.Marshal(f)
-		if err != nil {
-			return fmt.Errorf("luxstub: the reasoning item: %w", err)
-		}
-		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", f["type"], b); err != nil {
+		if err := writeFrame(w, f); err != nil {
 			return err
 		}
 	}
