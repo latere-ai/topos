@@ -22,6 +22,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
+	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
@@ -323,7 +324,7 @@ func (r *run) start(ctx context.Context) error {
 }
 
 // connection is the run's model, connection and catalog figures.
-func (r *run) connection() (models.Model, models.Connection, models.Entry, error) {
+func (r *run) connection(ctx context.Context) (models.Model, models.Connection, models.Entry, error) {
 	if r.o.Script != "" {
 		path := filepath.Join(r.t.Dir, r.o.Script)
 		m := &scripted.Model{Load: func(p string) ([]byte, error) {
@@ -341,17 +342,27 @@ func (r *run) connection() (models.Model, models.Connection, models.Entry, error
 	if r.o.Entry != nil {
 		over = append(over, *r.o.Entry)
 	}
-	entry, err := cat.Resolve(conn.Model, over...)
+	// The family and the dialect pick the door, whose model list may
+	// give the model's figures, which the catalog overlays under the
+	// run's own (spec 007).
+	first := cat.Overlay(conn.Model, over...)
+	if conn.Family == "" {
+		conn.Family = first.Family
+	}
+	if conn.Dialect == "" {
+		conn.Dialect = first.Dialect
+	}
+	conn.BaseURL = r.o.Doors.Door(conn.BaseURL, conn.EffectiveDialect())
+	var served models.Entry
+	if models.NamesADoor(conn.BaseURL) {
+		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
+			return nil, conn, models.Entry{}, err
+		}
+	}
+	entry, err := cat.Resolve(conn.Model, append([]models.Entry{served}, over...)...)
 	if err != nil {
 		return nil, conn, models.Entry{}, err
 	}
-	if conn.Family == "" {
-		conn.Family = entry.Family
-	}
-	if conn.Dialect == "" {
-		conn.Dialect = entry.Dialect
-	}
-	conn.BaseURL = r.o.Doors.Door(conn.BaseURL, conn.EffectiveDialect())
 	m := r.o.Model
 	if m == nil {
 		m = &dialect.Model{}
@@ -437,7 +448,7 @@ func (r *run) release(ctx context.Context) error {
 
 // drive runs the session and judges it.
 func (r *run) drive(ctx context.Context) (res RunResult, err error) {
-	model, conn, entry, err := r.connection()
+	model, conn, entry, err := r.connection(ctx)
 	if err != nil {
 		return RunResult{}, err
 	}

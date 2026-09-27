@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"latere.ai/x/pkg/llmdialect/bridge"
 	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/machine"
@@ -229,6 +232,37 @@ func TestAModelTheCatalogDoesNotKnow(t *testing.T) {
 	res, err := RunTask(t.Context(), loadTask(t, "coding/echo"), Options{Work: t.TempDir(), Connection: conn, Entry: &entry}, 1)
 	if err != nil || !res.Passed {
 		t.Fatalf("run %+v, %v", res, err)
+	}
+}
+
+// TestARunTakesTheDoorsFigures: a run through a Lux door is priced and
+// sized by the figures the door's model list gives, before the
+// catalog's, and a door that does not answer the list fails the run.
+func TestARunTakesTheDoorsFigures(t *testing.T) {
+	stub := luxstub.New(t)
+	stub.Models(bridge.Model{Name: httpModel, ContextWindow: 100_000, MaxOutputTokens: 2_048, Pricing: &bridge.ModelPricing{Currency: "USD", Input: "2", Output: "2"}})
+	stub.Script(httpModel,
+		reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: json.RawMessage(`{"path":"hello.txt","content":"hello"}`)}}),
+		reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
+	)
+	res, err := RunTask(t.Context(), loadTask(t, "coding/echo"), Options{Work: t.TempDir(), Connection: stubConnection(stub)}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two requests of 1000 input and 100 output tokens at 2 USD per
+	// million each way, where the catalog's prices come to 3000.
+	if !res.Passed || res.CostUSDMicro != 4_400 {
+		t.Fatalf("run %+v", res)
+	}
+	if reqs := stub.Requests(); len(reqs) != 2 || reqs[0].Request.MaxTokens == nil || *reqs[0].Request.MaxTokens != 2_048 {
+		t.Fatalf("requests %+v", reqs)
+	}
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	conn := stubConnection(stub)
+	conn.BaseURL = gone.URL + "/anthropic"
+	if _, err := RunTask(t.Context(), loadTask(t, "coding/echo"), Options{Work: t.TempDir(), Connection: conn}, 1); err == nil {
+		t.Fatal("a run through a door that does not answer its model list")
 	}
 }
 
