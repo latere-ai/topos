@@ -287,6 +287,14 @@ committed: the commit log already holds that.
   allow carries, the confirm lists joined, the allow lists narrowed to
   what both allow, each threshold the lower. Every runner decides the
   session's calls by that policy.
+- `topos run` in a git checkout another session still owns writes a
+  worktree of its own, under the data directory on
+  `agents/<agent>/<session>`, instead of the checkout, so two sessions
+  never write one working directory. At a session's end its worktree is
+  removed, and its branch kept, when it is clean and merged or pushed.
+- `toposd serve` ends every idle session past its maximum age as
+  `expired` and deletes every ended session past the retention its
+  authorizer gave it, every ten minutes.
 
 ## v0.7.0 - 2026-09-26
 
