@@ -1,0 +1,49 @@
+# Two agents that reference no stored object but each other: a linter
+# that sets most of the Agent's fields, with an inline subagent and an
+# advisor, and the fixer it spawns by name. The topos command and the
+# API resolve both from these bytes.
+apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata:
+  name: linter
+  labels: {team: tools}
+spec:
+  description: Lints a change and hands each finding to the fixer.
+  model: {name: claude-sonnet-4-6, effort: medium}
+  instructions: |
+    Run the linters of the packages the diff touches. Hand each finding
+    to the fixer and report what it could not fix.
+  tools: [read, grep, glob, {name: bash, outputLimit: 20000}]
+  approvals:
+    mode: confirm
+    alwaysAllow: ["bash(golangci-lint run *)"]
+    alwaysConfirm: ["bash(git push *)"]
+    thresholds: {flagAt: 0.2, askAt: 0.4, blockAt: 0.8}
+  hooks:
+    - {event: turn_end, command: "go vet ./...", timeout: 2m}
+  subagents:
+    - {name: fixer, agent: fixer}
+    - name: explainer
+      spec:
+        model: {name: claude-haiku-4-5}
+        instructions: Explain one lint rule in two sentences, with an example.
+        tools: [read]
+  threads: {maxDepth: 2, maxConcurrent: 4}
+  advisor:
+    model: {name: claude-opus-4-1}
+    instructions: Check that each fix keeps the behavior the tests describe.
+  machine: {kind: host}
+  budget: {maxCost: "2.00"}
+  limits: {turnTimeout: 45m, maxAge: 24h}
+  context: {compactAt: 0.75}
+---
+apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata:
+  name: fixer
+spec:
+  description: Fixes one lint finding and runs the linter again.
+  model: {name: claude-haiku-4-5}
+  instructions: Fix the finding you are given, then run the linter on its package.
+  tools: [read, edit, bash]
+  approvals: {mode: progressive}

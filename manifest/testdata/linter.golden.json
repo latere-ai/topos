@@ -1,0 +1,160 @@
+[
+  {
+    "kind": "Agent",
+    "name": "fixer",
+    "status": {
+      "id": "agent_00000000000000000000000001",
+      "version": 1,
+      "digest": "sha256:2f5c58730ff496708b82cf6569fd9c3e5b2e9b1e135004da5d739e155952f443",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "description": "Fixes one lint finding and runs the linter again.",
+      "model": {
+        "name": "claude-haiku-4-5"
+      },
+      "instructions": "Fix the finding you are given, then run the linter on its package.",
+      "tools": [
+        "read",
+        "edit",
+        "bash"
+      ],
+      "identity": "person",
+      "approvals": {
+        "mode": "progressive",
+        "thresholds": {
+          "flagAt": 0.3,
+          "askAt": 0.5,
+          "blockAt": 0.9
+        }
+      },
+      "threads": {
+        "maxDepth": 2,
+        "maxConcurrent": 8
+      },
+      "machine": {
+        "kind": "host"
+      },
+      "limits": {
+        "turnTimeout": "2h",
+        "maxAge": "168h"
+      },
+      "context": {
+        "compactAt": 0.8
+      }
+    }
+  },
+  {
+    "kind": "Agent",
+    "name": "linter",
+    "status": {
+      "id": "agent_00000000000000000000000002",
+      "version": 1,
+      "digest": "sha256:ee612910fa02835d36e792a184a03eebf5701b63890902995cb3a4260a6bd49b",
+      "createdAt": "2026-09-27T09:00:00Z"
+    },
+    "spec": {
+      "description": "Lints a change and hands each finding to the fixer.",
+      "model": {
+        "name": "claude-sonnet-4-6",
+        "effort": "medium"
+      },
+      "instructions": "Run the linters of the packages the diff touches. Hand each finding\nto the fixer and report what it could not fix.\n",
+      "tools": [
+        "read",
+        "grep",
+        "glob",
+        {
+          "name": "bash",
+          "outputLimit": 20000
+        }
+      ],
+      "identity": "person",
+      "approvals": {
+        "mode": "confirm",
+        "alwaysAllow": [
+          "bash(golangci-lint run *)"
+        ],
+        "alwaysConfirm": [
+          "bash(git push *)"
+        ],
+        "thresholds": {
+          "flagAt": 0.2,
+          "askAt": 0.4,
+          "blockAt": 0.8
+        }
+      },
+      "hooks": [
+        {
+          "event": "turn_end",
+          "command": "go vet ./...",
+          "timeout": "2m"
+        }
+      ],
+      "subagents": [
+        {
+          "name": "fixer",
+          "agent": "agent_00000000000000000000000001@1"
+        },
+        {
+          "name": "explainer",
+          "spec": {
+            "model": {
+              "name": "claude-haiku-4-5"
+            },
+            "instructions": "Explain one lint rule in two sentences, with an example.",
+            "tools": [
+              "read"
+            ],
+            "identity": "person",
+            "approvals": {
+              "mode": "confirm",
+              "thresholds": {
+                "flagAt": 0.3,
+                "askAt": 0.5,
+                "blockAt": 0.9
+              }
+            },
+            "threads": {
+              "maxDepth": 2,
+              "maxConcurrent": 8
+            },
+            "machine": {
+              "kind": "host"
+            },
+            "limits": {
+              "turnTimeout": "2h",
+              "maxAge": "168h"
+            },
+            "context": {
+              "compactAt": 0.8
+            }
+          }
+        }
+      ],
+      "threads": {
+        "maxDepth": 2,
+        "maxConcurrent": 4
+      },
+      "advisor": {
+        "model": {
+          "name": "claude-opus-4-1"
+        },
+        "instructions": "Check that each fix keeps the behavior the tests describe."
+      },
+      "machine": {
+        "kind": "host"
+      },
+      "budget": {
+        "maxCost": "2.00"
+      },
+      "limits": {
+        "turnTimeout": "45m",
+        "maxAge": "24h"
+      },
+      "context": {
+        "compactAt": 0.75
+      }
+    }
+  }
+]
