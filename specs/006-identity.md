@@ -88,7 +88,7 @@ gains fields.
 | `session.fork`, `session.rewind` | `session` | `agent`, `owner`, `seq` or `turn` | [[017-external-runners-handoff-fork]], [[034-checkpoints-and-rewind]] |
 | `session.resume` | `session` | `agent`, `owner`, `stop_reason`, `max_cost_usd_micro` | resuming a session idle with `budget`; the decision's `limits` carry the raised cap ([[007-models]]) |
 | `session.redact` | `session` | `agent`, `owner`, `event_id` | [[015-api]], [[018-credentials-and-secrets]] |
-| `session.append`, `session.handoff` | `session` | `agent`, `owner`, `runner`, `writer` | [[017-external-runners-handoff-fork]] |
+| `session.append`, `session.handoff` | `session` | `agent`, `owner`, `runner`, `writer`, and for a handoff `to` and `initiator` | [[017-external-runners-handoff-fork]]; a handoff to `hosted` gets the initiator cap of a create |
 | `session.scope` | `session` | `agent`, `owner`, `old`, `new`, `until` | a scope change; the authorizer holds a widening to the agent's permissions and the widener's own rights |
 | `trigger.create`, `trigger.read`, `trigger.list`, `trigger.update`, `trigger.delete` | `trigger` | `agent`, `owner` | the trigger routes |
 | `credential.create`, `credential.read`, `credential.list`, `credential.delete` | `credential` | `name`, `owner`, `service` | the credential routes; `read` returns metadata only |
