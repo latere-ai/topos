@@ -6,18 +6,52 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"io"
+	"maps"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"latere.ai/x/topos/internal/config"
 )
 
 func env(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
+}
+
+// localKey is a P-256 key in the PEM PKCS#8 form of
+// TOPOS_LOCAL_ISSUER_KEY.
+func localKey(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+}
+
+// selfHosted is m over the identity of a self-hoster: the local issuer
+// and the owner policy, with no identity provider.
+func selfHosted(t *testing.T, m map[string]string) func(string) string {
+	t.Helper()
+	all := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t)}
+	maps.Copy(all, m)
+	return env(all)
 }
 
 func TestVersionFlagPrintsTheIdentityAndExitsZero(t *testing.T) {
@@ -93,7 +127,7 @@ func TestOccupiedAddressExitsOne(t *testing.T) {
 		{"internal", "127.0.0.1:0", ln.Addr().String()},
 	} {
 		var errOut bytes.Buffer
-		code := run(t.Context(), nil, env(map[string]string{
+		code := run(t.Context(), nil, selfHosted(t, map[string]string{
 			"TOPOS_PUBLIC_ADDR":   tc.public,
 			"TOPOS_INTERNAL_ADDR": tc.internal,
 		}), io.Discard, &errOut)
@@ -126,7 +160,7 @@ var listening = regexp.MustCompile(`listening public=(\S+) internal=(\S+)`)
 // startServe runs serve on loopback ports with a short drain and returns
 // the two base URLs and a stop function that cancels the context and
 // returns the exit code.
-func startServe(t *testing.T) (publicURL, internalURL string, stop func() int) {
+func startServe(t *testing.T, vars map[string]string) (publicURL, internalURL string, stop func() int) {
 	t.Helper()
 	oldDrain := drainDelay
 	drainDelay = 10 * time.Millisecond
@@ -137,10 +171,9 @@ func startServe(t *testing.T) (publicURL, internalURL string, stop func() int) {
 	var errOut bytes.Buffer
 	codec := make(chan int, 1)
 	go func() {
-		codec <- run(ctx, nil, env(map[string]string{
-			"TOPOS_PUBLIC_ADDR":   "127.0.0.1:0",
-			"TOPOS_INTERNAL_ADDR": "127.0.0.1:0",
-		}), &out, &errOut)
+		all := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"}
+		maps.Copy(all, vars)
+		codec <- run(ctx, nil, env(all), &out, &errOut)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -187,7 +220,7 @@ func get(t *testing.T, url string) (int, string) {
 }
 
 func TestServeAnswersTheProbesOnBothListenersAndStopsCleanly(t *testing.T) {
-	publicURL, internalURL, stop := startServe(t)
+	publicURL, internalURL, stop := startServe(t, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t)})
 
 	for _, base := range []string{publicURL, internalURL} {
 		for _, p := range []string{"/livez", "/readyz"} {
@@ -227,5 +260,80 @@ func TestSleepCtxReturnsEarlyWhenTheContextEnds(t *testing.T) {
 	sleepCtx(ctx, time.Minute)
 	if time.Since(start) > time.Second {
 		t.Fatal("sleepCtx waited for the timer despite a canceled context")
+	}
+}
+
+// TestTokenRoleRoundTrip: toposd token prints a token the same toposd
+// accepts, refuses a lifetime over a day, and opens no store: a database
+// URL nothing could reach does not stop it.
+func TestTokenRoleRoundTrip(t *testing.T) {
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DB_URL": "postgres://nobody@192.0.2.1/none"}
+	var out, errOut bytes.Buffer
+	if code := run(t.Context(), []string{"token", "--subject", "root", "--ttl", "2h"}, env(vars), &out, &errOut); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	cfg, err := config.Load(config.RoleServe, env(vars))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := newIdentity(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := id.verifier.Verify(strings.TrimSpace(out.String()))
+	if err != nil || c.Subject != "https://topos.example|root" {
+		t.Fatalf("the serving toposd read %+v, %v", c, err)
+	}
+	for _, args := range [][]string{{"token", "--ttl", "25h"}, {"token", "--subject", "a|b"}, {"token", "extra"}, {"token", "--no-such-flag"}} {
+		errOut.Reset()
+		if code := run(t.Context(), args, env(vars), io.Discard, &errOut); code != 2 {
+			t.Errorf("%v: exit %d, stderr %q", args, code, errOut.String())
+		}
+	}
+	errOut.Reset()
+	if code := run(t.Context(), []string{"token"}, env(nil), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "TOPOS_LOCAL_ISSUER_KEY is required") {
+		t.Fatalf("no key: stderr %q", errOut.String())
+	}
+}
+
+// TestServePublishesTheLocalKeySet: with the local issuer on, the key
+// set is served under the path of TOPOS_PUBLIC_URL.
+func TestServePublishesTheLocalKeySet(t *testing.T) {
+	publicURL, _, stop := startServe(t, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t)})
+	code, body := get(t, publicURL+"/topos/.well-known/jwks.json")
+	var set struct {
+		Keys []struct {
+			Kid string `json:"kid"`
+			Alg string `json:"alg"`
+		} `json:"keys"`
+	}
+	if code != 200 || json.Unmarshal([]byte(body), &set) != nil || len(set.Keys) != 1 || set.Keys[0].Alg != "ES256" {
+		t.Fatalf("GET jwks.json = %d %q", code, body)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestServeStopsOnAnIssuerThatDoesNotAnswer is the start-up rule: a
+// listed issuer whose key set cannot be read is a deployment to fix.
+func TestServeStopsOnAnIssuerThatDoesNotAnswer(t *testing.T) {
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	var errOut bytes.Buffer
+	code := run(t.Context(), nil, env(map[string]string{
+		"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0",
+		"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": gone.URL,
+	}), io.Discard, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "TOPOS_OIDC_ISSUERS") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+func TestBasePath(t *testing.T) {
+	for in, want := range map[string]string{"https://x.example": "", "https://x.example/": "", "https://x.example/topos/": "/topos", "%": ""} {
+		if got := basePath(in); got != want {
+			t.Errorf("basePath(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

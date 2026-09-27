@@ -146,7 +146,10 @@ narrowed key is narrowed without an authorizer too.
 With `TOPOS_LOCAL_ISSUER_KEY` set, toposd is also an issuer named
 `TOPOS_PUBLIC_URL`: it publishes its key set at
 `/.well-known/jwks.json` under its public URL, and accepts the tokens
-it signed. `toposd token` signs one token and prints it:
+it signed. A key's `kid` is its RFC 7638 thumbprint; an ECDSA P-256
+key signs ES256 and an RSA key RS256. Every token carries `iat`,
+`nbf`, `exp` and a random `jti`, and a subject holding `|` is refused,
+because the bar separates the issuer from the `sub`. `toposd token` signs one token and prints it:
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -177,11 +180,13 @@ authorizer.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `pkg/authz/conformance` passes against the shared stub told the vocabulary, and against the owner policy served through `authz/server` | `TestAuthorizerConformanceStub`, `TestAuthorizerConformanceOwnerPolicy` | not built |
-| The vocabulary table here and `authorizer.Vocabulary()` are the same set, each action with its kind | `TestVocabularyMatchesTheSpec` | not built |
-| A denied read of an existing session answers `not_found` with the same body as an absent one | `TestDeniedReadAnswersAsMissing` | not built |
-| With the authorizer down every API action answers `authorizer_unavailable` and nothing is written | `TestAuthorizerDownIsRefusal` | not built |
-| A token older than the age bound, with a wrong audience, or from an unlisted issuer is refused `unauthenticated` | `TestVerificationRules` | not built |
-| A `session.create` allow with limits lowers the session's budget, turn timeout and lists, and an unreadable limits object refuses the create | `TestLimitsApplyAtCreate` | not built |
-| `toposd token` prints a token the same toposd accepts, refuses a `--ttl` over 24 h, and opens no store | `TestTokenRoleRoundTrip` | not built |
-| The owner policy lets the creator and the admin subjects act and denies everyone else, narrowed by a key's grants | `TestOwnerPolicyRows` | not built |
+| `pkg/authz/conformance` passes against the shared stub told the vocabulary, and against the owner policy served through `authz/server` | `TestAuthorizerConformanceStub`, `TestAuthorizerConformanceOwnerPolicy` | built |
+| The vocabulary table here and `authorizer.Vocabulary()` are the same set, each action with its kind | `TestVocabularyMatchesTheSpec` | built |
+| The guard answers a denied read `not_found`, a denied mutation `forbidden` when the caller may read the object and `not_found` when it may not, and no decision `authorizer_unavailable` | `TestGuardAnswers` | built |
+| A denied read of an existing session answers `not_found` with the same body as an absent one | `TestDeniedReadAnswersAsMissing` | not built ([[015-api]]) |
+| With the authorizer down every API action answers `authorizer_unavailable` and nothing is written | `TestAuthorizerDownIsRefusal` | not built ([[015-api]]) |
+| A token older than the age bound, with a wrong audience, or from an unlisted issuer is refused `unauthenticated` | `TestVerificationRules` | built |
+| An allow's limits decode member by member, a member toposd does not know is ignored, and one that does not decode refuses the create `authorizer_unavailable` | `TestDecodeLimitsReadsEveryMember`, `TestDecodeLimitsRefusesWhatItCannotApply`, `TestLimitsAtCreate` | built |
+| A `session.create` allow with limits lowers the session's budget, turn timeout and lists | `TestLimitsApplyAtCreate` | not built ([[015-api]]) |
+| `toposd token` prints a token the same toposd accepts, refuses a `--ttl` over 24 h, and opens no store | `TestTokenRoleRoundTrip` | built |
+| The owner policy lets the creator and the admin subjects act and denies everyone else, narrowed by a key's grants | `TestOwnerPolicyRows` | built |

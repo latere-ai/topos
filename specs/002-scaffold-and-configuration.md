@@ -256,7 +256,7 @@ column); the routes ([[015-api]]).
 | Criterion | Test that proves it | State |
 |---|---|---|
 | `toposd -version` prints the identity and exits 0; an unknown role and a bad flag exit 2 | `TestVersionFlagPrintsTheIdentity`, `TestUnknownRoleIsAUsageError`, `TestBadFlagIsAUsageError` | not built |
-| `toposd runner`, `toposd check` and `toposd token` each exit 1 with one line naming their spec until that spec lands | `TestUnbuiltRoleNamesItsSpec` | not built |
+| `toposd runner` and `toposd check` each exit 1 with one line naming their spec until that spec lands; `toposd token` is built ([[006-identity]]) | `TestUnbuiltRoleNamesItsSpec` | not built |
 | A configuration with two problems fails with one line sorted by variable name, exit 1 | `TestLoadReportsEveryProblemInOneSortedMessage` | not built |
 | Every variable in the table is read, every unset variable takes its default, and a blank value is unset | `TestLoadReadsEveryVariable`, `TestLoadAppliesEveryDefault`, `TestLoadTreatsBlankAsUnset` | not built |
 | `TOPOS_AUTHORIZER_URL` without its token, and `TOPOS_EVENTS_URL` without its secret, are start-up failures | `TestLoadRefusesURLWithoutItsSecret` | not built |

@@ -17,15 +17,20 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"latere.ai/x/pkg/authkit/jwt"
 	"latere.ai/x/pkg/health"
+	"latere.ai/x/pkg/otel"
 
+	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/internal/token"
 	"latere.ai/x/topos/internal/version"
 )
 
@@ -43,7 +48,6 @@ var (
 var pending = map[string]string{
 	"runner": "016",
 	"check":  "028",
-	"token":  "006",
 }
 
 func main() {
@@ -60,6 +64,8 @@ func run(ctx context.Context, args []string, getenv config.Getenv, stdout, stder
 	switch name {
 	case "", "serve":
 		return serve(ctx, rest, getenv, stdout, stderr)
+	case "token":
+		return signToken(rest, getenv, stdout, stderr)
 	}
 	if spec, ok := pending[name]; ok {
 		_, _ = fmt.Fprintf(stderr, "toposd: %s is not built yet; spec %s builds it\n", name, spec)
@@ -97,7 +103,11 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		return 0
 	}
 
-	cfg, err := config.Load(getenv)
+	cfg, err := config.Load(config.RoleServe, getenv)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	id, err := newIdentity(ctx, cfg)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -119,6 +129,14 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, version.String("toposd"))
 	})
+	if id.signer != nil {
+		jwks := id.signer.JWKS()
+		public.HandleFunc("GET "+basePath(cfg.PublicURL)+token.JWKSPath, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			_, _ = w.Write(jwks)
+		})
+	}
 
 	var lc net.ListenConfig
 	publicLn, err := lc.Listen(ctx, "tcp", cfg.PublicAddr)
@@ -161,6 +179,88 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	for _, s := range servers {
 		_ = s.Shutdown(shutdownCtx)
 	}
+	return 0
+}
+
+// identity is what the API asks through (spec 006): the verifier, the
+// guard over the installation's authorizer or the owner policy, and the
+// local issuer when TOPOS_LOCAL_ISSUER_KEY is set.
+type identity struct {
+	verifier *auth.Verifier
+	guard    auth.Guard
+	signer   *token.Signer
+}
+
+// newIdentity builds the identity of a serving toposd. Every listed
+// issuer's key set is read here, so an issuer that does not answer stops
+// the start.
+func newIdentity(ctx context.Context, cfg config.Config) (identity, error) {
+	var id identity
+	client := &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}
+	o := auth.Options{Issuers: cfg.OIDCIssuers, Audiences: cfg.OIDCAudiences, HTTP: client}
+	if cfg.LocalIssuerKey != "" {
+		s, err := token.New(cfg.PublicURL, cfg.LocalIssuerKey, nil)
+		if err != nil {
+			return identity{}, err
+		}
+		id.signer = s
+		o.LocalIssuer, o.LocalKeys = s.Issuer(), []jwt.LocalKey{s.LocalKey()}
+	}
+	v, err := auth.NewVerifier(ctx, o)
+	if err != nil {
+		return identity{}, err
+	}
+	a, err := auth.NewAuthorizer(auth.AuthorizerOptions{URL: cfg.AuthorizerURL, Token: cfg.AuthorizerToken, Admins: cfg.AdminSubjects, HTTP: client})
+	if err != nil {
+		return identity{}, fmt.Errorf("TOPOS_AUTHORIZER_URL: %w", err)
+	}
+	id.verifier, id.guard = v, auth.Guard{Authorizer: a}
+	return id, nil
+}
+
+// basePath is the path of TOPOS_PUBLIC_URL, which config.Load checked
+// parses, without a trailing slash.
+func basePath(publicURL string) string {
+	u, err := url.Parse(publicURL)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(u.Path, "/")
+}
+
+// signToken is the token role: it signs one token with the local
+// issuer's key and prints it, and opens no store.
+func signToken(args []string, getenv config.Getenv, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("toposd token", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	subject := fs.String("subject", "admin", "the sub claim")
+	ttl := fs.Duration("ttl", time.Hour, "the lifetime, at most 24h")
+	audience := fs.String("audience", "", "the aud claim; the first of TOPOS_OIDC_AUDIENCE when empty")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		_, _ = fmt.Fprintf(stderr, "toposd: token takes no argument, got %q\n", fs.Args())
+		return 2
+	}
+	cfg, err := config.Load(config.RoleToken, getenv)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	s, err := token.New(cfg.PublicURL, cfg.LocalIssuerKey, nil)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	aud := *audience
+	if aud == "" {
+		aud = cfg.OIDCAudiences[0]
+	}
+	raw, err := s.Sign(*subject, aud, *ttl)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "toposd: token: %v\n", err)
+		return 2
+	}
+	_, _ = fmt.Fprintln(stdout, raw)
 	return 0
 }
 

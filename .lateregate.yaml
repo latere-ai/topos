@@ -68,12 +68,29 @@ depcheck:
   packages:
     latere.ai/x/topos/cmd/toposd:
       decision: >-
-        the server reaches latere.ai/x/pkg and the standard library; the
-        Postgres driver joins with spec 014, the Cella client with spec 009,
-        the OpenTelemetry SDK with spec 023, and nothing else does without a
-        row here (spec 001)
+        the server reaches latere.ai/x/pkg and the standard library, and
+        the OpenTelemetry SDK behind pkg/otel, which the shared verifier of
+        spec 006 instruments its key-set reads with and the family's
+        otel-client gate requires for every outbound call (spec 001 admits
+        the SDK in both binaries); the Postgres driver joins with spec 014,
+        the Cella client with spec 009, and nothing else does without a row
+        here
       allow:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
+        go.opentelemetry.io: the OpenTelemetry API, SDK and OTLP exporters pkg/otel builds on
+        google.golang.org/protobuf: the wire encoding of the OTLP exporters
+        google.golang.org/grpc: reached by the OTLP trace exporter's shared types
+        google.golang.org/genproto: the status types grpc carries
+        github.com/grpc-ecosystem/grpc-gateway: reached by the OTLP HTTP exporters' error mapping
+        golang.org/x/net: HTTP/2 and trace support of grpc
+        golang.org/x/sys: the platform calls of grpc and the SDK
+        golang.org/x/text: text normalization of golang.org/x/net
+        golang.org/x/time: the rate limiter of pkg/otel's log proxy
+        github.com/cenkalti/backoff: the OTLP exporters' retry backoff
+        github.com/cespare/xxhash: attribute hashing in the metric SDK
+        github.com/felixge/httpsnoop: response capture in otelhttp
+        github.com/go-logr: the SDK's internal logger
+        github.com/google/uuid: the SDK's instance ids
     latere.ai/x/topos/cmd/topos:
       decision: >-
         the scripting and test client runs local sessions in process, so it
@@ -116,20 +133,6 @@ identity:
   reached_by: self-hosted
   roles_only: true
   skip: [docs/history]
-  # Nothing is served under /v1 and nothing is decided before spec 006
-  # mounts the shared verifier and asks through the shared authorizer
-  # client. The waivers end with that spec, in phase 2.
-  waive:
-    verifier:
-      reason: >-
-        spec 006 mounts latere.ai/x/pkg/authkit/jwt on /v1; toposd serves
-        only its probes until then, so no token is verified by anything
-      until: 2026-12-31
-    authorizer:
-      reason: >-
-        spec 006 asks through latere.ai/x/pkg/authz; toposd decides nothing
-        until then, because it serves no action to decide
-      until: 2026-12-31
 
 # Serving queries read the pooled URL when it is set; the migrations and
 # LISTEN keep the direct one (spec 014).

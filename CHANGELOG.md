@@ -97,6 +97,30 @@ committed: the commit log already holds that.
   and a session's one-writer lease expires and is taken over when its
   holder stops renewing it. `go test -tags postgres` runs the store's
   tests against `DATABASE_URL` or a Postgres container it starts.
+- `authorizer` is the vocabulary an installation's authorizer is written
+  against: the 33 actions toposd asks, each with the kind it acts on
+  (`agent`, `session`, `trigger`, `credential`, `memory_store`), as the
+  `authz.Vocabulary` the shared client, endpoint scaffold and conformance
+  suite read, and the `limits` an allow of `session.create` may carry,
+  with `DecodeLimits` to read them as toposd does.
+- toposd verifies bearer tokens from the issuers `TOPOS_OIDC_ISSUERS` lists,
+  for an audience of `TOPOS_OIDC_AUDIENCE` (`topos` by default), and
+  refuses a token older than a day or without `iat`. An issuer whose key
+  set cannot be read at start stops the start, and an `http://` issuer is
+  refused unless it is loopback or named in `TOPOS_OIDC_INSECURE_ISSUERS`.
+  `TOPOS_PUBLIC_URL` is now required to serve.
+- With `TOPOS_AUTHORIZER_URL` unset, toposd decides with the owner policy:
+  the subjects of `TOPOS_ADMIN_SUBJECTS` act on every object, the creator
+  of an object on it, and everyone else is denied, narrowed further by a
+  key's grants. `TOPOS_AUTHORIZER_URL` without `TOPOS_AUTHORIZER_TOKEN` is
+  a configuration error.
+- `toposd token` signs a token with the local issuer's key,
+  `TOPOS_LOCAL_ISSUER_KEY` (a PEM PKCS#8 ECDSA P-256 or RSA key), and
+  prints it: `--subject` (default `admin`), `--ttl` (default `1h`, at most
+  `24h`) and `--audience`. It opens no store. With the key set, toposd
+  accepts those tokens and serves the key set at
+  `/.well-known/jwks.json` under its public URL, so a self-hoster needs
+  no identity provider.
 
 ## v0.7.0 - 2026-09-26
 
