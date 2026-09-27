@@ -189,19 +189,18 @@ hash to.
 | `POST /internal/v1/claims` | `runner`, `capacity`, `wait` | a list of `{session_id, generation, expires_at}` |
 | `POST /internal/v1/leases/{session}/renew` | `generation` | `expires_at`, or 409 `lease_lost` |
 | `POST /internal/v1/leases/{session}/release` | `generation` | 204 |
-| `POST /internal/v1/leases/{session}/tokens` | `generation`, `audience`, `workload` (`session` or `sandbox`) | a token for the session's agent and its `expires_at`, or the session's Lux key for the audience `lux`; 409 `lease_lost` for a lease the runner does not hold ([[018-credentials-and-secrets]]) |
+| `POST /internal/v1/leases/{session}/tokens` | `generation`, `audience`, `workload` (`session` or `sandbox`) | `{token, expires_at}`: a token for the session's agent, or the session's Lux key for the audience `lux`; 409 `lease_lost` for a lease the runner does not hold, 404 `not_minted` when the installation mints nothing for the audience ([[018-credentials-and-secrets]]) |
 | `POST /internal/v1/sessions/{session}/events` | `generation`, `after_seq`, `events` | `last_seq`, or 409 `lease_lost` or `sequence_conflict` |
 | `GET /internal/v1/sessions/{session}` and `.../events?from_seq=` and `.../stream` | none | the Session, a page of events, replay then live |
 | `PUT` and `GET /internal/v1/sessions/{session}/blobs/{digest}` | bytes | the blob |
-| `POST /internal/v1/sessions/{session}/tokens` | `generation`, `audience` | `{token, expires_at}`: a token for one core audience, traded from the session's key by toposd, for the `TokenSource` of [[018-credentials-and-secrets]]; 409 `lease_lost` for any other generation |
 | `POST /internal/v1/sessions/{session}/connections/{name}` | `generation` | the value of one connection's credential for a runner-held call, held in memory and never appended; 409 `lease_lost` for any other generation |
 
 `internal/runnerrole` implements `session.Store` and `Claimer` over
 these routes, so the `runner` package is the same in every role. A
-session's credentials reach a runner only through the last two routes,
-only for the current lease holder, and never through the log; the
-`runner` role never holds an agent's long-lived key, only the tokens
-traded from it.
+session's credentials reach a runner only through the tokens route and
+the connections route, only for the current lease holder, and never
+through the log; no agent has a long-lived key, and the `runner` role
+holds only the tokens and keys toposd obtained for its lease.
 
 ### Capacity
 
@@ -216,6 +215,7 @@ separate deployment of the `runner` role.
 |---|---|---|
 | `lease_lost` | 409 | the generation is not the session's current one |
 | `runner_unauthorized` | 401 | no bearer, or one not in `TOPOS_RUNNER_TOKEN` |
+| `not_minted` | 404 | the installation mints nothing for the audience asked, so the runner uses its own credential ([[018-credentials-and-secrets]]) |
 
 ## Not in this spec
 
