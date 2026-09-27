@@ -147,6 +147,9 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	}
 	log := NewLog(st, id, s.LastSeq)
 	log.lost = fence
+	if f, ok := lease.(session.Fence); ok {
+		log.fence = f
+	}
 	if err := r.running(ctx, log); err != nil {
 		return harness.Outcome{}, err
 	}

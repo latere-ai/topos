@@ -226,6 +226,9 @@ committed: the commit log already holds that.
   cannot start closes with a `session.error` naming why
   (`model_credential_missing`, `machine_unavailable`, ...), and a server
   that stops mid-turn leaves the session for the next runner to resume.
+  On Postgres a runner writes through its lease, and a batch from a runner
+  whose lease another replica has taken over is refused with
+  `lease_lost`, so two runners never interleave in one session.
 
 ## v0.7.0 - 2026-09-26
 

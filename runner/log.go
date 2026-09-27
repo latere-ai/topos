@@ -5,6 +5,8 @@ package runner
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -22,6 +24,8 @@ type Log struct {
 	// lost is the lease's Lost channel; once it is closed every append
 	// is refused with ErrLeaseLost.
 	lost <-chan struct{}
+	// fence is the lease's own fenced append, when its store offers one.
+	fence session.Fence
 }
 
 // NewLog returns the log of one session whose last sequence is last.
@@ -54,7 +58,16 @@ func (l *Log) Append(ctx context.Context, batch []session.Event) ([]session.Even
 		l.last = foreign[n-1].Seq
 	}
 	session.Stamp(l.id, l.last, batch)
-	last, err := l.st.Append(ctx, l.id, l.last, batch)
+	appendTo := l.st.Append
+	if l.fence != nil {
+		appendTo = func(ctx context.Context, _ string, after uint64, evs []session.Event) (uint64, error) {
+			return l.fence.Append(ctx, after, evs)
+		}
+	}
+	last, err := appendTo(ctx, l.id, l.last, batch)
+	if errors.Is(err, session.ErrLeaseLost) {
+		return nil, fmt.Errorf("%w: %w", ErrLeaseLost, err)
+	}
 	if err != nil {
 		return nil, err
 	}

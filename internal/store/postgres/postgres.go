@@ -275,6 +275,13 @@ func insertEvents(ctx context.Context, tx pgx.Tx, events []session.Event) error 
 }
 
 func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events []session.Event) (uint64, error) {
+	return s.append(ctx, id, afterSeq, events, 0)
+}
+
+// append writes one batch in one transaction. A generation above zero is
+// the lease the writer holds: the batch is refused with ErrLeaseLost
+// unless the session's lease is still that one.
+func (s *Store) append(ctx context.Context, id string, afterSeq uint64, events []session.Event, gen int64) (uint64, error) {
 	if err := session.CheckID(session.PrefixSession, id); err != nil {
 		return 0, err
 	}
@@ -283,6 +290,16 @@ func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events [
 		sess, err := locked(ctx, tx, id)
 		if err != nil {
 			return err
+		}
+		if gen > 0 {
+			var current int64
+			var live bool
+			if err := tx.QueryRow(ctx, `SELECT lease_generation, lease_holder IS NOT NULL AND lease_expires_at >= now() FROM sessions WHERE id = $1`, id).Scan(&current, &live); err != nil {
+				return fmt.Errorf("postgres: read the lease of %s: %w", id, err)
+			}
+			if current != gen || !live {
+				return fmt.Errorf("%w: %s is at lease generation %d, the writer holds %d", session.ErrLeaseLost, id, current, gen)
+			}
 		}
 		retried, err := session.CheckBatch(id, sess.LastSeq, afterSeq, events, func(from uint64) ([]session.Event, error) {
 			return queryEvents(ctx, tx, id, from, len(events))
@@ -548,6 +565,13 @@ func (s *Store) Acquire(ctx context.Context, id string, holder session.Holder) (
 	go l.keep(context.WithoutCancel(ctx), l.stop)
 	return l, nil
 }
+
+// Append writes a batch under this lease, fenced by its generation.
+func (l *lease) Append(ctx context.Context, afterSeq uint64, events []session.Event) (uint64, error) {
+	return l.s.append(ctx, l.id, afterSeq, events, l.gen)
+}
+
+var _ session.Fence = (*lease)(nil)
 
 type lease struct {
 	s    *Store

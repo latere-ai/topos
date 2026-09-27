@@ -395,3 +395,53 @@ func TestMigrationDSN(t *testing.T) {
 		}
 	}
 }
+
+// TestAFencedAppendAfterATakeoverIsRefused: once another holder takes an
+// expired lease, an append through the old lease is refused and writes
+// nothing, the new holder's goes through, and an append outside any
+// lease, as the API makes one, still does.
+func TestAFencedAppendAfterATakeoverIsRefused(t *testing.T) {
+	st := fresh(t, Options{LeaseTTL: 400 * time.Millisecond})
+	s := storetest.NewSession()
+	if err := st.Create(t.Context(), s, nil); err != nil {
+		t.Fatal(err)
+	}
+	first, err := st.Acquire(t.Context(), s.ID, session.Holder{Runner: "run_a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := first.(*lease)
+	evs := []session.Event{message(t, "while the lease is held")}
+	session.Stamp(s.ID, 0, evs)
+	if _, err := old.Append(t.Context(), 0, evs); err != nil {
+		t.Fatalf("an append under a live lease: %v", err)
+	}
+	close(old.stop)
+	old.stop = make(chan struct{})
+	time.Sleep(600 * time.Millisecond)
+	second, err := st.Acquire(t.Context(), s.ID, session.Holder{Runner: "run_b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := []session.Event{message(t, "from the runner that lost it")}
+	session.Stamp(s.ID, 1, stale)
+	if _, err := old.Append(t.Context(), 1, stale); !errors.Is(err, session.ErrLeaseLost) {
+		t.Fatalf("an append through the lost lease: %v", err)
+	}
+	if got, err := st.Get(t.Context(), s.ID); err != nil || got.LastSeq != 1 {
+		t.Fatalf("the refused append wrote: %+v, %v", got, err)
+	}
+	current := []session.Event{message(t, "from the new holder")}
+	session.Stamp(s.ID, 1, current)
+	if _, err := second.(session.Fence).Append(t.Context(), 1, current); err != nil {
+		t.Fatalf("the new holder's append: %v", err)
+	}
+	api := []session.Event{message(t, "from a person")}
+	session.Stamp(s.ID, 2, api)
+	if _, err := st.Append(t.Context(), s.ID, 2, api); err != nil {
+		t.Fatalf("an append outside any lease: %v", err)
+	}
+	if err := errors.Join(first.Release(), second.Release()); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -51,6 +51,9 @@ var (
 	ErrExists               = errors.New("session: exists")
 	ErrInvalid              = errors.New("session: invalid")
 	ErrBlobMismatch         = errors.New("session: blob_mismatch")
+	// ErrLeaseLost is an append through a lease another holder has taken
+	// the session from.
+	ErrLeaseLost = errors.New("session: lease_lost")
 )
 
 // Holder is who holds a session's lease.
@@ -86,6 +89,16 @@ type Lease interface {
 	Release() error
 	// Lost is closed when the lease ends for any reason.
 	Lost() <-chan struct{}
+}
+
+// Fence is the optional interface of a lease another holder can take
+// over, as a Postgres lease that expires: its own Append is refused with
+// ErrLeaseLost once the session's lease is no longer this one, in the
+// same transaction as the write, so a runner that has not noticed its
+// loss yet cannot interleave with the one that took over (spec 016). A
+// lease that cannot be taken over while held needs no fence.
+type Fence interface {
+	Append(ctx context.Context, afterSeq uint64, events []Event) (uint64, error)
 }
 
 // ListOptions filter and page List. Sessions list newest first; Cursor

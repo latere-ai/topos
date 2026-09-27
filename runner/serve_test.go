@@ -401,3 +401,53 @@ func TestASetupFailureClosesTheTurn(t *testing.T) {
 		t.Fatalf("codes %v", codes)
 	}
 }
+
+// fencedLease is a lease whose store fences appends: through the store
+// until refuse is set, then ErrLeaseLost.
+type fencedLease struct {
+	session.Lease
+	st     session.Store
+	id     string
+	refuse bool
+}
+
+func (l *fencedLease) Append(ctx context.Context, afterSeq uint64, events []session.Event) (uint64, error) {
+	if l.refuse {
+		return 0, session.ErrLeaseLost
+	}
+	return l.st.Append(ctx, l.id, afterSeq, events)
+}
+
+// TestTheRunnerAppendsThroughItsLeasesFence: a lease that fences its
+// store's appends carries every append of the drive, and once it refuses,
+// the drive stops with ErrLeaseLost and nothing more is written.
+func TestTheRunnerAppendsThroughItsLeasesFence(t *testing.T) {
+	st := session.NewMemoryStore()
+	stub := luxstub.New(t)
+	stub.Script("builder-model", luxstub.Reply{Response: ir.Response{Model: "builder-model", Blocks: []ir.Block{{Type: ir.BlockText, Text: "done"}}, StopReason: ir.StopEndTurn}})
+	r := served(t, st, stub, nil)
+	ok := hosted(t, st, "Go.")
+	lease, err := st.Acquire(t.Context(), ok.ID, session.Holder{Runner: "run_serve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := r.drive(t.Context(), ok.ID, &fencedLease{Lease: lease, st: st, id: ok.ID}, true); err != nil || out.StopReason != session.StopEndTurn {
+		t.Fatalf("a fenced drive: %+v, %v", out, err)
+	}
+
+	lost := hosted(t, st, "Go.")
+	before, err := st.Get(t.Context(), lost.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err = st.Acquire(t.Context(), lost.ID, session.Holder{Runner: "run_serve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.drive(t.Context(), lost.ID, &fencedLease{Lease: lease, st: st, id: lost.ID, refuse: true}, true); !errors.Is(err, ErrLeaseLost) || !errors.Is(err, session.ErrLeaseLost) {
+		t.Fatalf("a drive whose fence refuses: %v", err)
+	}
+	if after, err := st.Get(t.Context(), lost.ID); err != nil || after.LastSeq != before.LastSeq {
+		t.Fatalf("the refused drive wrote: %d, then %d, %v", before.LastSeq, after.LastSeq, err)
+	}
+}

@@ -140,9 +140,12 @@ nobody driving it. A lost lease cancels the turn and fences the log: an
 append after it is refused. A server that stops mid-turn fences the log
 the same way and releases the lease, so the session stays `running` and
 the next runner's claim resumes it from the log, instead of the turn
-being closed as interrupted. The fence is the runner's own; the store's
-generation check on every append, below, is what makes it hold across
-replicas.
+being closed as interrupted. On a store whose lease another holder can
+take over, Postgres, the runner appends through the lease itself
+(`session.Fence`), and the store refuses the batch with `lease_lost` in
+the append's own transaction once the session's lease generation is no
+longer the writer's; an append outside any lease, a person's event
+through the API, is not fenced.
 
 ### Phase 2: the queue
 
@@ -221,7 +224,7 @@ columns and migrations ([[014-store]]); credential resolution
 | Killing a runner at each commit point of a turn, then resuming on another runner, loses no event, duplicates none, and runs no call a second time except `memory_sync` | `TestKillRunnerMidTurnLosesNoEvent`, one subtest per commit point, in process and in the queue | not built |
 | An open call is closed `unknown_effect`, a repeatable built-in runs again, a confirmed call no runner started runs once and one a runner may have started is closed `unknown_effect`, and a waiting ask or client call is left waiting | `harness.TestResumeClosesACallWithNoResult`, `harness.TestResumeRunsARepeatableCallAgain`, `harness.TestConfirmationsAndDenials`, `harness.TestAConfirmedCallAnEarlierRunnerMayHaveStarted`, `harness.TestAnUnansweredAskKeepsWaiting`, `harness.TestClientToolsWaitForTheirResult` | built |
 | A second `Drive` on a session another holder has gets `ErrLocked`; an ended or missing session is refused; a second process on a locked directory session is locked out | `runner.TestDriveRefusesWhatItCannotDrive`, `session/dir.TestDirStoreSingleWriterLock` | built |
-| An append with a stale generation gets `lease_lost` | `TestSecondWriterIsRefused` | not built |
+| An append with a stale generation gets `lease_lost` and writes nothing; the new holder's and a person's unleased append go through; a runner whose lease fence refuses stops writing | `internal/store/postgres.TestAFencedAppendAfterATakeoverIsRefused` (postgres tier), `runner.TestTheRunnerAppendsThroughItsLeasesFence` | built |
 | A runner that stops renewing loses the session within 60 seconds, and another runner resumes it within 75 seconds of the last renew | `TestLostLeaseResumes` with a fake clock | not built |
 | Two runners claiming twenty sessions each hold distinct sessions and never more than their capacity | `TestClaimsAreExclusiveAndBounded` on Postgres | not built |
 | A `user.message` appended during a turn starts the next turn without a release | `runner.TestDriveContinuesWhileInputIsPending` | built |
