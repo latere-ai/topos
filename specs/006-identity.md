@@ -1,6 +1,6 @@
 ---
 title: "Identity: subjects, verification, the authorizer question, the action vocabulary, the owner policy, the local issuer"
-status: in-progress
+status: testing
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session-log.md]
 affects: [authorizer/, internal/auth/, internal/token/, internal/config/]
