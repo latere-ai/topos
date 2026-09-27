@@ -101,6 +101,19 @@ func TestExecTimeoutAndCancel(t *testing.T) {
 	}
 }
 
+func TestACanceledDialIsAbandoned(t *testing.T) {
+	f := open(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := f.m.Exec(ctx, machine.ExecRequest{Command: "true"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("an exec whose context had ended: %v", err)
+	}
+	// The session that opens after is closed; the machine is still usable.
+	if _, err := f.m.Exec(t.Context(), machine.ExecRequest{Command: "true"}); err != nil {
+		t.Error(err)
+	}
+}
+
 // readUntil reads a stream until what it read holds s.
 func readUntil(t *testing.T, r io.Reader, s string) string {
 	t.Helper()

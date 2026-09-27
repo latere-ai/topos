@@ -111,9 +111,7 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 	args = append(args, "--", r.Command)
 	var st *stream
 	err := m.call(ctx, true, func(id string) error {
-		// The machine cancels a command itself, with a kill frame the
-		// helper answers, so the session's own context never ends it.
-		sess, err := m.c.ExecSession(context.WithoutCancel(ctx), id, client.ExecRequest{
+		sess, err := m.session(ctx, id, client.ExecRequest{
 			Command: m.invoke(args...), Env: r.Env, Timeout: sessionTimeout(r.Timeout),
 		})
 		if err != nil {
@@ -132,6 +130,38 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 	go st.input(r.Stdin)
 	go st.watch(ctx)
 	return st, nil
+}
+
+// session opens a command's exec session. The machine cancels a command
+// itself, with a kill frame the helper answers, so the session's own
+// context never ends it; the dial still ends with ctx, and a session that
+// opens after it is closed.
+func (m *Machine) session(ctx context.Context, id string, req client.ExecRequest) (*client.Session, error) {
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
+	type dialed struct {
+		s   *client.Session
+		err error
+	}
+	ch := make(chan dialed, 1)
+	go func() {
+		s, err := m.c.ExecSession(context.WithoutCancel(ctx), id, req)
+		ch <- dialed{s, err}
+	}()
+	select {
+	case d := <-ch:
+		return d.s, d.err
+	case <-ctx.Done():
+		go func() {
+			if d := <-ch; d.s != nil {
+				// Nobody is left to report the close of a session
+				// nobody asked for any more.
+				_ = closeSession(d.s)
+			}
+		}()
+		return nil, context.Cause(ctx)
+	}
 }
 
 // opened reads the helper's first frame: the start, or a failure that is
