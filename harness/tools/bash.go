@@ -75,7 +75,7 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		res, err = c.Machine.Exec(ctx, req)
 	}
 	if err != nil {
-		if errors.Is(err, machine.ErrReleased) {
+		if harnessError(err) {
 			return Result{}, err
 		}
 		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.BashNotStarted, prompts.Data{"Error": err.Error()}), nil)

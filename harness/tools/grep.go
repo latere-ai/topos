@@ -91,7 +91,7 @@ func searchPath(m machine.Machine, p string) string {
 // said as the file tools say it; anything else is the search's own
 // complaint, a bad pattern or mode.
 func searchFailed(ctx context.Context, b *builtin, c Call, p string, err error) (Result, error) {
-	if errors.Is(err, machine.ErrReleased) || errors.Is(err, machine.ErrOutside) || errors.Is(err, machine.ErrDenied) ||
+	if harnessError(err) || errors.Is(err, machine.ErrOutside) || errors.Is(err, machine.ErrDenied) ||
 		errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
 		return b.fail(ctx, c, p, err)
 	}

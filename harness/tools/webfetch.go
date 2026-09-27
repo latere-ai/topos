@@ -50,7 +50,7 @@ func runWebFetch(ctx context.Context, b *builtin, c Call) (Result, error) {
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return b.result(ctx, c, OutcomeCanceled, prompts.Render(prompts.FetchCanceled, prompts.Data{"URL": u.String()}), nil)
-	case errors.Is(err, machine.ErrReleased):
+	case harnessError(err):
 		return Result{}, err
 	case errors.Is(err, context.DeadlineExceeded):
 		return b.result(ctx, c, OutcomeTimeout, prompts.Render(prompts.FetchTimeout, prompts.Data{"URL": u.String(), "Timeout": machine.FetchTimeout.String()}), nil)

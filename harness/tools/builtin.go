@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 )
 
@@ -116,14 +117,26 @@ func (b *builtin) result(ctx context.Context, c Call, outcome, text string, meta
 	return res, nil
 }
 
-// fail answers a machine error on p. A released machine is a failure of
-// the harness and returns as a Go error; every other error is a result
-// the model can act on.
+// fail answers a machine error on p. An error the harness acts on
+// returns as a Go error; every other error is a result the model can
+// act on.
 func (b *builtin) fail(ctx context.Context, c Call, p string, err error) (Result, error) {
-	if errors.Is(err, machine.ErrReleased) {
+	if harnessError(err) {
 		return Result{}, err
 	}
 	return b.result(ctx, c, OutcomeError, pathError(p, err), nil)
+}
+
+// harnessError reports whether a machine error is the harness's to act
+// on rather than the model's: a released machine, a failure of the
+// harness, and a core's refusal for spend, which stops the turn with
+// budget (spec 007).
+func harnessError(err error) bool {
+	if errors.Is(err, machine.ErrReleased) {
+		return true
+	}
+	_, spent := models.SpendRefused(err)
+	return spent
 }
 
 // pathError is the model's sentence for a machine error on p.
