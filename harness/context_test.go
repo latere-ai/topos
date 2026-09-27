@@ -55,8 +55,8 @@ func (e *env) manage(ctx context.Context) (*turn, error) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	t := &turn{h: e.h, s: s, log: evs, l: e.log, num: s.Turn + 1, start: t0, deadline: t0.Add(DefaultRetry.Max * 100)}
-	tr, err := session.Fold(t.log, "")
+	t := &turn{h: e.h, s: s, sh: &shared{events: evs}, l: e.log, root: e.h.c.Tools, reg: e.h.c.Tools, num: s.Turn + 1, start: t0, deadline: t0.Add(DefaultRetry.Max * 100)}
+	tr, err := session.Fold(t.events(), "")
 	if err != nil {
 		e.t.Fatal(err)
 	}

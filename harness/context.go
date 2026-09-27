@@ -103,7 +103,7 @@ func (t *turn) manageContext(ctx context.Context, req ir.Request, toolsSHA strin
 }
 
 func (t *turn) rebuild(ctx context.Context) (ir.Request, string, int64, error) {
-	tr, err := session.Fold(t.log, t.thread)
+	tr, err := session.Fold(t.events(), t.thread)
 	if err != nil {
 		return ir.Request{}, "", 0, err
 	}
@@ -117,7 +117,7 @@ func (t *turn) rebuild(ctx context.Context) (ir.Request, string, int64, error) {
 // steps are the thread's agent.message events in order: one per step.
 func (t *turn) steps() []session.Event {
 	var out []session.Event
-	for _, e := range t.log {
+	for _, e := range t.events() {
 		if e.Type == session.TypeAgentMessage && e.Thread == t.thread && !e.Redacted() {
 			out = append(out, e)
 		}
@@ -136,7 +136,7 @@ func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 	keepFrom := steps[len(steps)-keepResults].Seq
 	names := map[string]string{}
 	done := map[string]bool{}
-	for _, e := range t.log {
+	for _, e := range t.events() {
 		if e.Thread != t.thread || e.Redacted() {
 			continue
 		}
@@ -157,7 +157,7 @@ func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 	}
 	var ids []string
 	var from, to uint64
-	for _, e := range t.log {
+	for _, e := range t.events() {
 		if e.Seq >= keepFrom || e.Thread != t.thread || e.Redacted() {
 			continue
 		}
@@ -209,7 +209,7 @@ func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 // estimateWith estimates the request the log would give with evs
 // appended, without appending them.
 func (t *turn) estimateWith(ctx context.Context, evs ...session.Event) (int64, error) {
-	log := slices.Clone(t.log)
+	log := slices.Clone(t.events())
 	next := uint64(1)
 	if n := len(log); n > 0 {
 		next = log[n-1].Seq + 1
@@ -241,7 +241,7 @@ func (t *turn) compact(ctx context.Context, before int64) (bool, error) {
 	to := steps[len(steps)-keepSteps].Seq - 1
 	var from uint64
 	var prefix []session.Event
-	for _, e := range t.log {
+	for _, e := range t.events() {
 		if e.Seq > to {
 			break
 		}

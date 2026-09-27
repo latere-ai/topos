@@ -70,6 +70,13 @@ committed: the commit log already holds that.
   a repository the objects go to a session repository under the data
   directory. `topos rewind <session> <turn>` restores the working
   directory to a turn's checkpoint, saving the current state first.
+- An agent with subagents gets the `spawn` and `message` tools. A spawned
+  thread runs a subagent on the same machine with its own model and
+  instructions, the tools it is granted narrowed from its parent's, and
+  the stricter permission mode; it answers with its final text and keeps
+  taking work through `message`. Several spawns in one step run at once,
+  threads nest two deep by default, and a thread waiting for a
+  confirmation pauses the session until the answer arrives.
 
 ## v0.7.0 - 2026-09-26
 

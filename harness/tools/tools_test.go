@@ -229,3 +229,22 @@ func TestResultHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestSubsetKeepsOrderAndSchemas(t *testing.T) {
+	r := NewRegistry()
+	for _, tool := range Builtins() {
+		if err := r.AddBuiltin(tool); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sub := r.Subset([]string{NameGrep, NameRead, "absent"})
+	if got := sub.Names(); len(got) != 2 || got[0] != NameRead || got[1] != NameGrep {
+		t.Fatalf("subset %v", got)
+	}
+	if _, bad := sub.Validate(NameRead, []byte(`{"path":5}`)); bad == nil || bad.Outcome != OutcomeInvalidInput {
+		t.Fatal("the subset lost its schemas")
+	}
+	if _, bad := sub.Validate(NameBash, []byte(`{}`)); bad == nil || bad.Outcome != OutcomeUnknownTool {
+		t.Fatal("a tool outside the subset validated")
+	}
+}

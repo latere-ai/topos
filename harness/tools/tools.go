@@ -277,6 +277,23 @@ func (r *Registry) add(t Tool) error {
 	return nil
 }
 
+// Subset returns a registry of the named tools, in this registry's
+// order; names it does not hold are ignored. It is a thread's registry
+// after the narrowing of spec 013.
+func (r *Registry) Subset(names []string) *Registry {
+	out := NewRegistry()
+	for _, t := range r.tools {
+		n := t.Definition().Name
+		if !slices.Contains(names, n) {
+			continue
+		}
+		out.byName[n] = len(out.tools)
+		out.tools = append(out.tools, t)
+		out.schemas[n] = r.schemas[n]
+	}
+	return out
+}
+
 // Get returns a tool by name.
 func (r *Registry) Get(name string) (Tool, bool) {
 	i, ok := r.byName[name]

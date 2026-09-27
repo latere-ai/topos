@@ -54,6 +54,9 @@ type Reply struct {
 	Fail     *Failure
 	// Expect checks the decoded request; an error answers 400.
 	Expect func(*ir.Request) error
+	// Respond edits the response when it is served, for a reply that
+	// depends on what the session has done by then.
+	Respond func(*ir.Request, *ir.Response)
 }
 
 // Recorded is one request the stub received.
@@ -153,7 +156,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.stream(w, fe, reply.Response, false)
+	resp := reply.Response
+	if reply.Respond != nil {
+		reply.Respond(req, &resp)
+	}
+	s.stream(w, fe, resp, false)
 }
 
 func (s *Server) fail(w http.ResponseWriter, fe llmdialect.Frontend, reply Reply, f Failure) {

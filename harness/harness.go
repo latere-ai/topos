@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sync"
 	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -74,9 +75,18 @@ type Config struct {
 	Machine machine.Machine
 	Tools   *tools.Registry
 	Policy  Policy
+	// Name is the agent's name, which a message it sends a thread carries.
+	Name string
 	// Instructions are the agent's own instructions.
 	Instructions string
-	Effort       string
+	// Subagents are the agents this agent's threads may spawn (spec 013).
+	Subagents map[string]Subagent
+	// MaxDepth bounds how deep threads nest: zero is 2, at most 4.
+	MaxDepth int
+	// MaxConcurrent bounds the threads running at once in a session:
+	// zero is 8.
+	MaxConcurrent int
+	Effort        string
 	// PromptVersion is the harness prompt version; zero is the current.
 	PromptVersion int
 	Prompt        prompt.Options
@@ -173,9 +183,13 @@ type Outcome struct {
 // appended its session.status running before calling. RunTurn reads
 // nothing but its arguments and the machine, and appends only through l.
 func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.Event, l Log) (Outcome, error) {
-	t := &turn{h: h, s: s, log: append([]session.Event(nil), log...), l: l, num: s.Turn + 1, start: h.c.Clock()}
-	if len(t.log) > 0 {
-		t.startSeq = t.log[len(t.log)-1].Seq
+	t := &turn{h: h, s: s, sh: &shared{events: append([]session.Event(nil), log...)}, l: l, root: h.c.Tools, num: s.Turn + 1, start: h.c.Clock()}
+	var err error
+	if t.reg, err = t.registry(h.c.Tools.Names()); err != nil {
+		return Outcome{}, err
+	}
+	if n := len(log); n > 0 {
+		t.startSeq = log[n-1].Seq
 	}
 	t.seen = t.startSeq
 	limit := h.c.TurnTimeout
@@ -201,10 +215,15 @@ func (e *errStop) Error() string { return "harness: the turn stopped: " + string
 
 // turn is one turn in progress.
 type turn struct {
-	h        *Harness
-	s        session.Session
-	log      []session.Event
-	l        Log
+	h  *Harness
+	s  session.Session
+	sh *shared
+	l  Log
+	// root is the session's own registry; reg is this thread's, narrowed
+	// from it, with the thread tools it is offered.
+	root     *tools.Registry
+	reg      *tools.Registry
+	depth    int
 	num      int
 	step     int
 	start    time.Time
@@ -235,18 +254,47 @@ func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
 
 // commit appends a batch and folds in what others appended before it.
 func (t *turn) commit(ctx context.Context, batch ...session.Event) error {
+	t.sh.mu.Lock()
+	defer t.sh.mu.Unlock()
 	foreign, err := t.l.Append(ctx, batch)
 	if err != nil {
 		return &appendError{err}
 	}
-	t.log = append(t.log, foreign...)
-	t.log = append(t.log, batch...)
+	t.sh.events = append(t.sh.events, foreign...)
+	t.sh.events = append(t.sh.events, batch...)
 	return nil
+}
+
+// shared is the session's log as the turns of every thread see it. A
+// commit appends and records under one lock, so the events stay in
+// sequence order while several threads run at once.
+type shared struct {
+	mu     sync.Mutex
+	events []session.Event
+	// running counts the threads running a turn now.
+	running int
+}
+
+// events is a snapshot of the log.
+func (t *turn) events() []session.Event {
+	t.sh.mu.Lock()
+	defer t.sh.mu.Unlock()
+	return slices.Clone(t.sh.events)
 }
 
 // finish appends the turn's closing session.status and returns the
 // outcome as an errStop, so every path out of a step ends the same way.
 func (t *turn) finish(ctx context.Context, reason session.StopReason, detail string, before ...session.Event) error {
+	if t.thread != "" {
+		// A thread's turn ends with the result of the call that drove it,
+		// not with a status of the session.
+		if len(before) > 0 {
+			if err := t.commit(ctx, before...); err != nil {
+				return err
+			}
+		}
+		return &errStop{Outcome{Status: session.StatusIdle, StopReason: reason, Detail: detail}}
+	}
 	status := session.StatusIdle
 	if t.s.EndOnIdle && reason == session.StopEndTurn {
 		status, reason = session.StatusEnded, session.StopCompleted
@@ -279,7 +327,7 @@ func (t *turn) checkpoint(ctx context.Context) (*session.CheckpointRef, error) {
 	if t.h.c.Checkpoint == nil {
 		return nil, nil
 	}
-	return t.h.c.Checkpoint(context.WithoutCancel(ctx), t.num, LastCheckpoint(t.log, t.thread))
+	return t.h.c.Checkpoint(context.WithoutCancel(ctx), t.num, LastCheckpoint(t.events(), t.thread))
 }
 
 // LastCheckpoint is the commit of the thread's latest checkpoint in the
@@ -300,7 +348,7 @@ func LastCheckpoint(log []session.Event, thread string) string {
 // pending reports a person's event after the last sequence a request
 // was built from.
 func (t *turn) pending() bool {
-	for _, e := range t.log {
+	for _, e := range t.events() {
 		if e.Seq <= t.seen {
 			continue
 		}
@@ -368,7 +416,7 @@ func (t *turn) run(ctx context.Context) (Outcome, error) {
 // or client call keeps the session waiting, a repeatable built-in runs
 // again, and any other call is closed as unknown_effect.
 func (t *turn) resume(ctx context.Context) error {
-	open := openCalls(t.log, t.thread)
+	open := openCalls(t.events(), t.thread)
 	var waitAsk, waitClient bool
 	var run []pendingCall
 	for _, c := range open {
@@ -394,6 +442,17 @@ func (t *turn) resume(ctx context.Context) error {
 			default:
 				run = append(run, c)
 			}
+		case c.use.Name == ToolSpawn || c.use.Name == ToolMessage:
+			res, err := t.resumeThread(ctx, c)
+			if isPause(err) {
+				return t.finish(ctx, pauseReason(err), "")
+			}
+			if err != nil {
+				return err
+			}
+			if err := t.result(ctx, c.use.ToolUseID, res, 0); err != nil {
+				return err
+			}
 		case c.use.Repeatable:
 			run = append(run, c)
 		default:
@@ -410,7 +469,7 @@ func (t *turn) resume(ctx context.Context) error {
 	}
 	calls := make([]plannedCall, 0, len(run))
 	for _, c := range run {
-		tool, ok := t.h.c.Tools.Get(c.use.Name)
+		tool, ok := t.reg.Get(c.use.Name)
 		if !ok {
 			if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeUnknownTool, "No tool named "+c.use.Name+"."), 0); err != nil {
 				return err
@@ -419,7 +478,13 @@ func (t *turn) resume(ctx context.Context) error {
 		}
 		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: c.use.Input})
 	}
-	return t.runCalls(ctx, calls)
+	if err := t.runCalls(ctx, calls); err != nil {
+		if !isPause(err) {
+			return err
+		}
+		return t.finish(ctx, pauseReason(err), "")
+	}
+	return nil
 }
 
 func unknownEffect() tools.Result {
@@ -436,15 +501,15 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	if !t.h.c.Clock().Before(t.deadline) {
 		return t.finish(ctx, session.StopTurnLimit, "")
 	}
-	tr, err := session.Fold(t.log, t.thread)
+	tr, err := session.Fold(t.events(), t.thread)
 	if err != nil {
 		return err
 	}
 	if err := tr.Check(); err != nil {
 		return err
 	}
-	if n := len(t.log); n > 0 {
-		t.seen = t.log[n-1].Seq
+	if evs := t.events(); len(evs) > 0 {
+		t.seen = evs[len(evs)-1].Seq
 	}
 	if err := t.checkBudget(ctx); err != nil {
 		return err
@@ -469,7 +534,7 @@ func (t *turn) stepOnce(ctx context.Context) error {
 
 // interrupted reports a user.interrupt appended since the turn began.
 func (t *turn) interrupted() bool {
-	for _, e := range t.log {
+	for _, e := range t.events() {
 		if e.Seq > t.startSeq && e.Type == session.TypeUserInterrupt {
 			return true
 		}
@@ -509,7 +574,7 @@ func (t *turn) checkBudget(ctx context.Context) error {
 		}
 		return t.finish(ctx, session.StopError, models.CodeUnpriced, e)
 	}
-	if spent(t.log)+est >= *max {
+	if spent(t.events())+est >= *max {
 		return t.finish(ctx, session.StopBudget, "")
 	}
 	return nil
@@ -521,7 +586,7 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 	if err != nil {
 		return ir.Request{}, "", err
 	}
-	defs := luxTools(t.h.c.Tools.Definitions())
+	defs := luxTools(t.reg.Definitions())
 	sum, err := toolsHash(defs)
 	if err != nil {
 		return ir.Request{}, "", err
@@ -656,7 +721,10 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, attempts int, 
 		return t.finish(ctx, session.StopEndTurn, detail)
 	}
 	if err := t.runCalls(ctx, planned.run); err != nil {
-		return err
+		if !isPause(err) {
+			return err
+		}
+		return t.finish(ctx, pauseReason(err), "")
 	}
 	switch {
 	case len(planned.ask) > 0:
@@ -702,7 +770,7 @@ func (t *turn) modelRequest(ctx context.Context, res models.Result, attempts int
 
 // lastMessage is the id of the thread's latest agent.message.
 func (t *turn) lastMessage() string {
-	for _, e := range slices.Backward(t.log) {
+	for _, e := range slices.Backward(t.events()) {
 		if e.Type == session.TypeAgentMessage && e.Thread == t.thread {
 			return e.ID
 		}
@@ -734,14 +802,14 @@ func (t *turn) plan(res models.Result) (stepPlan, []answeredCall, []session.Even
 	var p stepPlan
 	var answered []answeredCall
 	var uses []session.Event
-	remembered := rememberedPatterns(t.log)
+	remembered := rememberedPatterns(t.events())
 	kind := t.h.c.Machine.Info().Kind
 	for _, b := range res.Message.Blocks {
 		if b.Type != ir.BlockToolUse || b.ToolUse == nil {
 			continue
 		}
 		id, name, input := b.ToolUse.ID, b.ToolUse.Name, []byte(b.ToolUse.Args)
-		tool, bad := t.h.c.Tools.Validate(name, input)
+		tool, bad := t.reg.Validate(name, input)
 		if bad != nil {
 			answered = append(answered, answeredCall{id, *bad})
 			continue
@@ -780,10 +848,14 @@ func (t *turn) plan(res models.Result) (stepPlan, []answeredCall, []session.Even
 // tools concurrently, at most MaxParallel at once, every other call alone
 // in order. Each result is appended as its call returns.
 func (t *turn) runCalls(ctx context.Context, calls []plannedCall) error {
+	var paused error
 	for i := 0; i < len(calls); {
 		if !calls[i].tool.Properties().Parallel {
 			if err := t.call(ctx, calls[i]); err != nil {
-				return err
+				if !isPause(err) {
+					return err
+				}
+				paused = err
 			}
 			i++
 			continue
@@ -793,56 +865,99 @@ func (t *turn) runCalls(ctx context.Context, calls []plannedCall) error {
 			j++
 		}
 		if err := t.parallel(ctx, calls[i:j]); err != nil {
-			return err
+			if !isPause(err) {
+				return err
+			}
+			paused = err
 		}
 		i = j
 	}
-	return nil
+	return paused
+}
+
+func isPause(err error) bool {
+	var p *errPause
+	return errors.As(err, &p)
+}
+
+// pauseReason is the stop reason a paused call leaves the step with.
+func pauseReason(err error) session.StopReason {
+	var p *errPause
+	if errors.As(err, &p) {
+		return p.reason
+	}
+	return ""
 }
 
 func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
 	type done struct {
 		id  string
 		res tools.Result
+		err error
 		dur time.Duration
 	}
 	results := make(chan done, len(calls))
 	sem := make(chan struct{}, MaxParallel)
-	state := tools.StateOf(t.log, t.thread)
+	state := tools.StateOf(t.events(), t.thread)
 	for _, c := range calls {
 		go func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			start := t.h.c.Clock()
-			res := t.execute(ctx, c, state)
-			results <- done{c.id, res, t.h.c.Clock().Sub(start)}
+			res, err := t.execute(ctx, c, state)
+			results <- done{c.id, res, err, t.h.c.Clock().Sub(start)}
 		}()
 	}
 	var errs []error
+	var paused error
 	for range calls {
 		d := <-results
-		if len(errs) == 0 {
+		switch {
+		case isPause(d.err):
+			paused = d.err
+		case d.err != nil:
+			errs = append(errs, d.err)
+		case len(errs) == 0:
 			if err := t.result(ctx, d.id, d.res, d.dur); err != nil {
 				errs = append(errs, err)
 			}
 		}
 	}
-	return errors.Join(errs...)
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return paused
 }
 
 func (t *turn) call(ctx context.Context, c plannedCall) error {
 	start := t.h.c.Clock()
-	res := t.execute(ctx, c, tools.StateOf(t.log, t.thread))
+	res, err := t.execute(ctx, c, tools.StateOf(t.events(), t.thread))
+	if err != nil {
+		return err
+	}
 	return t.result(ctx, c.id, res, t.h.c.Clock().Sub(start))
 }
 
-// execute runs one call. A tool's Go error is a failure of the harness
+// execute runs one call. A tool's Go error is a failure of the tool
 // side and becomes the outcome error with its message; a call a cancel
-// cut short is canceled.
-func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) tools.Result {
+// cut short is canceled. Two errors pass through instead: a thread that
+// waits for a person, whose driving call keeps no result, and a failed
+// append inside a thread's turn, which stops the turn.
+func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (tools.Result, error) {
 	res, err := c.tool.Run(ctx, tools.Call{ID: c.id, Input: c.input, Machine: t.h.c.Machine, State: state})
+	var lost *appendError
+	if isPause(err) || errors.As(err, &lost) {
+		return tools.Result{}, err
+	}
+	return settle(ctx, res, err), nil
+}
+
+// settle turns what a tool returned into the result the model sees: a
+// cancel that cut the call short is canceled, a tool's own error is the
+// outcome error with its message, and anything else keeps its outcome.
+func settle(ctx context.Context, res tools.Result, err error) tools.Result {
 	switch {
-	case err != nil && ctx.Err() != nil, err == nil && ctx.Err() != nil && len(res.Content) == 0:
+	case ctx.Err() != nil && (err != nil || len(res.Content) == 0):
 		return tools.Text(tools.OutcomeCanceled, "The call was canceled before it finished.")
 	case err != nil:
 		return tools.Text(tools.OutcomeError, "The tool failed: "+err.Error())
