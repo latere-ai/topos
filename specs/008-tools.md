@@ -210,4 +210,6 @@ routes, the credential deny-list and the environment
 | `web_fetch` on a Cella machine runs inside the sandbox and never from the runner's network | `TestWebFetchRunsInsideTheMachine` | not built |
 | A client-executed tool stops the turn with `tool_result` and resumes on `user.tool_result` | `harness.TestClientToolsWaitForTheirResult` | built |
 | Registering a non-built-in tool with `Repeatable` fails, and the registry refuses a bad name or a duplicate | `harness/tools.TestOnlyBuiltinsAreRepeatable`, `harness/tools.TestRegistryRefuses` | built |
-| Every built-in's description file has at least one instruction test directory | `TestEveryToolDescriptionHasAnInstructionTest` | not built |
+| Every built-in's description file has at least one instruction test directory | `test/tasks.TestEveryToolDescriptionHasAnInstructionTest` | built |
+| Each instruction test's checker passes its scripted solution and refuses its scripted wrong solution by an assertion on the log, not on the files | `test/tasks.TestScriptedSolutions` | built |
+| Each built-in's instruction test passes against a real model in the instruction tier | `test/tasks.TestTheSuiteAgainstAModel` with the `instructions` tag | not built |
