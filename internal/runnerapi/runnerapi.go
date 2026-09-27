@@ -46,6 +46,12 @@ const (
 	CodeNotFound           = "not_found"
 	CodeInvalidRequest     = "invalid_request"
 	CodeInternal           = "internal"
+	// CodeNotMinted is an installation that mints nothing for the
+	// audience asked; the runner uses its own credential (spec 018).
+	CodeNotMinted = "not_minted"
+	// CodeCredentialRefused is a credential the minter could not have:
+	// details.code names the setup code the runner closes the turn with.
+	CodeCredentialRefused = "credential_refused"
 )
 
 // ClaimRequest asks for sessions to run.
@@ -81,6 +87,22 @@ type AppendRequest struct {
 	Events     []session.Event `json:"events"`
 }
 
+// TokenRequest asks for one credential of the session under the lease:
+// a token for the audience, or the session's Lux key for the audience
+// lux, for the runner's own calls or the session's sandbox.
+type TokenRequest struct {
+	Generation int64  `json:"generation"`
+	Audience   string `json:"audience"`
+	Workload   string `json:"workload"`
+}
+
+// Token is one credential and when it expires. It is held in memory and
+// never appended.
+type Token struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 // Appended is the log's last sequence after an append.
 type Appended struct {
 	LastSeq uint64 `json:"last_seq"`
@@ -97,8 +119,12 @@ type Options struct {
 	// TTL is how long a claim holds without a renew; DefaultTTL when
 	// zero.
 	TTL time.Duration
-	Now func() time.Time
-	Log *slog.Logger
+	// Credentials answers the session's credential for audience and
+	// workload to the lease named lease (spec 018), which the route has
+	// checked the runner holds; nil mints nothing.
+	Credentials func(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error)
+	Now         func() time.Time
+	Log         *slog.Logger
 }
 
 // Server holds the claims of remote runners. A claim holds the store's
@@ -158,6 +184,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST "+Root+"/claims", s.claim)
 	route("POST "+Root+"/leases/{session}/renew", s.renew)
 	route("POST "+Root+"/leases/{session}/release", s.release)
+	route("POST "+Root+"/leases/{session}/tokens", s.tokens)
 	route("POST "+Root+"/sessions/{session}/events", s.append)
 	route("GET "+Root+"/sessions/{session}", s.get)
 	route("GET "+Root+"/sessions/{session}/events", s.events)
@@ -307,6 +334,39 @@ func (s *Server) release(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// tokens answers one of the session's credentials to the runner that
+// holds its lease at the current generation, and to no other: a stale
+// generation, an expired claim or a store lease that ended is lease_lost
+// before anything is minted.
+func (s *Server) tokens(w http.ResponseWriter, r *http.Request) error {
+	var req TokenRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	if req.Audience == "" || (req.Workload != runner.WorkloadSession && req.Workload != runner.WorkloadSandbox) {
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a token request names an audience and a workload of session or sandbox"}
+	}
+	id := r.PathValue("session")
+	c, err := s.held(id, req.Generation)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-c.lease.Lost():
+		s.drop(id, c)
+		return &wireError{CodeLeaseLost, http.StatusConflict, "the store's lease on the session ended"}
+	default:
+	}
+	if s.o.Credentials == nil {
+		return &wireError{CodeNotMinted, http.StatusNotFound, "this installation mints no credential for " + req.Audience}
+	}
+	cred, err := s.o.Credentials(r.Context(), id, "claim:"+strconv.FormatInt(c.gen, 10), req.Audience, req.Workload)
+	if err != nil {
+		return err
+	}
+	return reply(w, http.StatusOK, Token{Token: cred.Value, ExpiresAt: cred.ExpiresAt.UTC()})
+}
+
 func (s *Server) append(w http.ResponseWriter, r *http.Request) error {
 	var req AppendRequest
 	if err := decode(r, &req); err != nil {
@@ -447,8 +507,14 @@ func (e *wireError) Error() string { return e.code + ": " + e.msg }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var we *wireError
+	if se, ok := errors.AsType[*runner.SetupError](err); ok {
+		httpjson.WriteError(w, http.StatusBadGateway, httpjson.Error{Code: CodeCredentialRefused, Message: "the session's credential could not be had", Details: map[string]any{"code": se.Code, "detail": se.Err.Error()}})
+		return
+	}
 	switch {
 	case errors.As(err, &we):
+	case errors.Is(err, runner.ErrNotMinted):
+		we = &wireError{CodeNotMinted, http.StatusNotFound, err.Error()}
 	case errors.Is(err, session.ErrLeaseLost):
 		we = &wireError{CodeLeaseLost, http.StatusConflict, err.Error()}
 	case errors.Is(err, session.ErrSequenceConflict):

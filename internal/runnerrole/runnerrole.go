@@ -12,6 +12,7 @@ package runnerrole
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -125,6 +126,16 @@ func readError(resp *http.Response) error {
 		return fmt.Errorf("%w: %s", session.ErrNotFound, msg)
 	case runnerapi.CodeInvalidRequest:
 		return fmt.Errorf("%w: %s", session.ErrInvalid, msg)
+	case runnerapi.CodeNotMinted:
+		return fmt.Errorf("%w: %s", runner.ErrNotMinted, msg)
+	case runnerapi.CodeCredentialRefused:
+		code, _ := env.Error.Details["code"].(string)
+		detail, _ := env.Error.Details["detail"].(string)
+		var cause error = errors.New(detail)
+		if code == runner.CodeAgentIdentityMissing {
+			cause = fmt.Errorf("%w: %s", runner.ErrNoIdentity, detail)
+		}
+		return &runner.SetupError{Code: cmp.Or(code, runnerapi.CodeCredentialRefused), Err: cause}
 	}
 	return fmt.Errorf("runnerrole: HTTP %d %s: %s", resp.StatusCode, env.Error.Code, msg)
 }
@@ -334,3 +345,19 @@ func (l *lease) Append(ctx context.Context, afterSeq uint64, events []session.Ev
 }
 
 var _ session.Fence = (*lease)(nil)
+
+// Credential asks the server for one of the session's credentials under
+// the lease's generation (spec 018); lease_lost ends the lease.
+func (l *lease) Credential(ctx context.Context, audience, workload string) (runner.Credential, error) {
+	var t runnerapi.Token
+	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/tokens", runnerapi.TokenRequest{Generation: l.gen, Audience: audience, Workload: workload}, &t)
+	if errors.Is(err, session.ErrLeaseLost) {
+		l.end()
+	}
+	if err != nil {
+		return runner.Credential{}, err
+	}
+	return runner.Credential{Value: t.Token, ExpiresAt: t.ExpiresAt}, nil
+}
+
+var _ runner.Credentials = (*lease)(nil)
