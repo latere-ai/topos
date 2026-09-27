@@ -33,13 +33,14 @@ func TestDecodeLimitsReadsEveryMember(t *testing.T) {
 		MaxAge:         "72h",
 		Scope:          []json.RawMessage{json.RawMessage(`{"action":"repo.push","resource":"*"}`)},
 		Retention:      "720h",
+		Owner:          &Owner{Type: OwnerOrganization, ID: "org-1"},
 	}
 	l, err := DecodeLimits(decision(t, w))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(l.AlwaysConfirm, w.AlwaysConfirm) || !slices.Equal(l.AlwaysAllow, w.AlwaysAllow) || *l.Thresholds != *w.Thresholds ||
-		*l.BudgetUSDMicro != budget || l.TurnTimeout != 30*time.Minute || l.MaxAge != 72*time.Hour || l.Retention != 720*time.Hour || len(l.Scope) != 1 {
+		*l.BudgetUSDMicro != budget || l.TurnTimeout != 30*time.Minute || l.MaxAge != 72*time.Hour || l.Retention != 720*time.Hour || len(l.Scope) != 1 || *l.Owner != *w.Owner {
 		t.Fatalf("DecodeLimits = %+v", l)
 	}
 	none, err := DecodeLimits(authz.Decision{Allow: true})
@@ -66,6 +67,8 @@ func TestDecodeLimitsRefusesWhatItCannotApply(t *testing.T) {
 		"above one":         WireLimits{Thresholds: &Thresholds{FlagAt: 0.1, AskAt: 0.4, BlockAt: 1.5}},
 		"scope entry":       WireLimits{Scope: []json.RawMessage{json.RawMessage(`"repo.push"`)}},
 		"wrong type":        map[string]any{"turn_timeout": 30},
+		"owner of no type":  WireLimits{Owner: &Owner{Type: "team", ID: "t"}},
+		"owner with no id":  WireLimits{Owner: &Owner{Type: OwnerUser}},
 	} {
 		if _, err := DecodeLimits(decision(t, w)); err == nil {
 			t.Errorf("%s: decoded", name)

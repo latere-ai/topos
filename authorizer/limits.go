@@ -20,8 +20,23 @@ type Thresholds struct {
 	BlockAt float64 `json:"block_at"`
 }
 
-// Limits are what an allow of session.create granted, decoded from the
-// answer's limits object. The session takes the lowest of each figure
+// Owner is the person or organization an agent belongs to at the
+// installation's identity provider, as the authorizer names it (spec
+// 018).
+type Owner struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+// The owner types an Owner names.
+const (
+	OwnerUser         = "user"
+	OwnerOrganization = "organization"
+)
+
+// Limits are what an allow of session.create granted, or an allow of
+// agent.create or agent.update named, decoded from the answer's limits
+// object. The session takes the lowest of each figure
 // against the agent's and the request's own (spec 005), and merges the
 // lists and thresholds with the agent's approvals so neither loosens the
 // other (spec 012). A member the answer left out is its zero here: no
@@ -46,6 +61,9 @@ type Limits struct {
 	// Retention is how long the session is kept after it ends; zero keeps
 	// it until it is deleted.
 	Retention time.Duration
+	// Owner is, on an allow of an agent's apply, the owner of an agent
+	// that gets its identity; nil is the applier as a person.
+	Owner *Owner
 }
 
 // WireLimits is the limits object as an answer carries it, so an
@@ -60,6 +78,7 @@ type WireLimits struct {
 	MaxAge         string            `json:"max_age,omitempty"`
 	Scope          []json.RawMessage `json:"scope,omitempty"`
 	Retention      string            `json:"retention,omitempty"`
+	Owner          *Owner            `json:"owner,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -110,6 +129,12 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		if t := bytes.TrimSpace(g); len(t) == 0 || t[0] != '{' {
 			return Limits{}, fmt.Errorf("limits.scope[%d] is not a grant object", i)
 		}
+	}
+	if o := w.Owner; o != nil {
+		if (o.Type != OwnerUser && o.Type != OwnerOrganization) || o.ID == "" {
+			return Limits{}, fmt.Errorf("limits.owner %+v is not a user or an organization with an id", *o)
+		}
+		l.Owner = o
 	}
 	return l, nil
 }

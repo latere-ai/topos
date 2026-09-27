@@ -105,7 +105,8 @@ someone who could not have started the session.
 ### Limits
 
 An allow of `session.create` may carry a `limits` object, decoded with
-`Decision.DecodeLimits` into the members below. The session takes the
+`Decision.DecodeLimits` into the members below; an allow of
+`agent.create` or `agent.update` may carry `owner`. The session takes the
 lowest of each figure against the agent's and the request's own
 ([[005-harness-loop]]), and merges the lists and thresholds with the
 agent's so neither loosens the other ([[012-permissions-and-approvals]]).
@@ -118,6 +119,7 @@ agent's so neither loosens the other ([[012-permissions-and-approvals]]).
 | `turn_timeout`, `max_age` | Go durations, ceilings | [[005-harness-loop]], [[004-session-log]] |
 | `scope` | the session's starting scope, a list of grants | [[018-credentials-and-secrets]] |
 | `retention` | a Go duration: how long the session is kept after it ends; absent, it is kept until deleted | [[014-store]] |
+| `owner` | `{type, id}`, `type` `user` or `organization`: on an agent's apply, the owner of an agent that gets its identity at the identity provider; absent, the applier as a person | [[018-credentials-and-secrets]] |
 
 A member toposd does not know is ignored; a member it knows that does
 not decode refuses the create with `authorizer_unavailable`, because a
