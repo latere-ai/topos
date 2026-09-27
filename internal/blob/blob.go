@@ -199,6 +199,8 @@ func syncDir(dir string) error {
 type S3 struct {
 	c      *s3.Client
 	prefix string
+	// page bounds a listing's page; zero is the provider's own limit.
+	page int
 }
 
 // NewS3 is the store over c, its keys under prefix.
@@ -300,6 +302,7 @@ func (s *S3) Sessions(ctx context.Context) ([]string, error) {
 // each walks every page of a listing.
 func (s *S3) each(ctx context.Context, o s3.ListOptions, fn func(s3.ListResult) error) error {
 	for {
+		o.MaxKeys = s.page
 		r, err := s.c.ListObjects(ctx, o)
 		if err != nil {
 			return fmt.Errorf("blob: list %s: %w", o.Prefix, err)
@@ -310,14 +313,20 @@ func (s *S3) each(ctx context.Context, o s3.ListOptions, fn func(s3.ListResult) 
 		if !r.Truncated {
 			return nil
 		}
-		switch {
-		case len(r.Objects) > 0:
-			o.StartAfter = r.Objects[len(r.Objects)-1].Key
-		case len(r.Prefixes) > 0:
-			o.StartAfter = r.Prefixes[len(r.Prefixes)-1]
-		default:
+		var last string
+		if len(r.Objects) > 0 {
+			last = r.Objects[len(r.Objects)-1].Key
+		}
+		// A listing grouped by prefix goes on past every key under its
+		// last prefix: its closing / with the next character, 0, sorts
+		// after all of them.
+		if n := len(r.Prefixes); n > 0 && r.Prefixes[n-1] > last {
+			last = strings.TrimSuffix(r.Prefixes[n-1], "/") + "0"
+		}
+		if last == "" || last == o.StartAfter {
 			return nil
 		}
+		o.StartAfter = last
 	}
 }
 

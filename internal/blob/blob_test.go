@@ -111,3 +111,97 @@ func TestOpenReadsTheURL(t *testing.T) {
 		t.Error("an s3:// store without its keys opened")
 	}
 }
+
+// TestS3ListsEveryPageAndReportsItsFailures: a session's bodies and the
+// sessions holding bodies are read across listing pages, and a refused
+// request fails each call with the key it named.
+func TestS3ListsEveryPageAndReportsItsFailures(t *testing.T) {
+	ctx := t.Context()
+	objects := s3test.New(t, "bucket")
+	st := NewS3(objects.Client(true), "")
+	st.page = 1
+	ids := []string{session.NewID(session.PrefixSession), session.NewID(session.PrefixSession), session.NewID(session.PrefixSession)}
+	for _, id := range ids {
+		for _, body := range []string{"one", "two", "three"} {
+			if err := st.PutBlob(ctx, id, session.DigestOf([]byte(body)), []byte(body)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	got, err := st.Sessions(ctx)
+	slices.Sort(got)
+	if err != nil || !slices.Equal(got, ids) {
+		t.Fatalf("sessions across pages %v, %v", got, err)
+	}
+	if err := st.DeleteSession(ctx, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(objects.Keys()); n != 6 {
+		t.Fatalf("%d objects after one session's delete, want 6: %v", n, objects.Keys())
+	}
+	d := session.DigestOf([]byte("one"))
+	for name, call := range map[string]func() error{
+		"put":            func() error { return st.PutBlob(ctx, ids[1], d, []byte("one")) },
+		"get":            func() error { _, err := st.GetBlob(ctx, ids[1], d); return err },
+		"delete":         func() error { return st.DeleteBlob(ctx, ids[1], d) },
+		"delete session": func() error { return st.DeleteSession(ctx, ids[1]) },
+		"sessions":       func() error { _, err := st.Sessions(ctx); return err },
+	} {
+		objects.Fail(1, http.StatusForbidden)
+		if err := call(); err == nil {
+			t.Errorf("%s: a refused request reported nothing", name)
+		}
+	}
+	for name, call := range map[string]func() error{
+		"get":            func() error { _, err := st.GetBlob(ctx, "bad", d); return err },
+		"delete":         func() error { return st.DeleteBlob(ctx, ids[1], "sha256:nope") },
+		"delete session": func() error { return st.DeleteSession(ctx, "bad") },
+	} {
+		if err := call(); err == nil {
+			t.Errorf("%s: a bad id or digest was sent", name)
+		}
+	}
+}
+
+// TestDirReportsWhatTheFilesystemRefuses: a root under a file refuses
+// every write and listing, a missing root lists no session, and a body
+// path that is a directory cannot be read.
+func TestDirReportsWhatTheFilesystemRefuses(t *testing.T) {
+	ctx := t.Context()
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, body := session.NewID(session.PrefixSession), []byte("body")
+	d := session.DigestOf(body)
+	blocked := NewDir(filepath.Join(file, "blobs"))
+	if err := blocked.PutBlob(ctx, id, d, body); err == nil {
+		t.Error("a write under a file")
+	}
+	if _, err := NewDir(file).Sessions(ctx); err == nil {
+		t.Error("a listing of a file")
+	}
+	if ids, err := NewDir(filepath.Join(t.TempDir(), "none")).Sessions(ctx); err != nil || ids != nil {
+		t.Errorf("a missing root: %v, %v", ids, err)
+	}
+	root := t.TempDir()
+	st := NewDir(root)
+	if err := os.MkdirAll(filepath.Join(root, id, d.Hex(), "inner"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetBlob(ctx, id, d); err == nil || errors.Is(err, session.ErrNotFound) {
+		t.Errorf("a body path that is a directory: %v", err)
+	}
+	if err := st.DeleteBlob(ctx, id, d); err == nil {
+		t.Error("a body path that is a directory with entries was removed")
+	}
+	for name, call := range map[string]func() error{
+		"get":            func() error { _, err := st.GetBlob(ctx, "bad", d); return err },
+		"delete":         func() error { return st.DeleteBlob(ctx, id, "sha256:nope") },
+		"delete session": func() error { return st.DeleteSession(ctx, "bad") },
+	} {
+		if err := call(); err == nil {
+			t.Errorf("%s: a bad id or digest was used", name)
+		}
+	}
+}
