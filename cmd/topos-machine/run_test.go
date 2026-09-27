@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
+//go:build unix
+
 package main
 
 import (
@@ -16,12 +18,6 @@ import (
 	"testing"
 	"time"
 )
-
-// frame is one frame the helper wrote.
-type frame struct {
-	kind    byte
-	payload []byte
-}
 
 // driven is the run mode driven as the machine drives it: frames in
 // through a pipe that stays open until the test closes it, frames out
@@ -286,16 +282,6 @@ func TestRunEndsTheProcessGroup(t *testing.T) {
 
 // limitedWriter accepts n writes and refuses the rest, as an exec socket
 // that closes part way does.
-type limitedWriter struct{ n int }
-
-func (w *limitedWriter) Write(p []byte) (int, error) {
-	if w.n == 0 {
-		return 0, errors.New("closed")
-	}
-	w.n--
-	return len(p), nil
-}
-
 func TestRunStopsWhenTheOutputCannotBeWritten(t *testing.T) {
 	inR, inW := io.Pipe()
 	t.Cleanup(func() {

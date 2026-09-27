@@ -180,3 +180,11 @@ func answer(stdout io.Writer, r response) int {
 	}
 	return 0
 }
+
+// sent is the exit code once the last frame was written, or not.
+func sent(err error) int {
+	if err != nil {
+		return 3
+	}
+	return 0
+}

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
+//go:build unix
+
 package main
 
 import (
@@ -86,14 +88,6 @@ func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		}
 	}
 	return sent(out.json(frameExit, res))
-}
-
-// sent is the exit code once the last frame was written, or not.
-func sent(err error) int {
-	if err != nil {
-		return 3
-	}
-	return 0
 }
 
 // command is one started script: its process, the read end of its

@@ -244,3 +244,20 @@ func TestWithin(t *testing.T) {
 		}
 	}
 }
+
+// frame is one frame the helper wrote.
+type frame struct {
+	kind    byte
+	payload []byte
+}
+
+// limitedWriter accepts n writes and fails every one after.
+type limitedWriter struct{ n int }
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if w.n == 0 {
+		return 0, errors.New("closed")
+	}
+	w.n--
+	return len(p), nil
+}
