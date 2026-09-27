@@ -83,10 +83,12 @@ on the clock of `toposd`, which set `expires_at`, not the database's.
 ### Append on Postgres
 
 An append is one transaction: the session row is locked with
-`SELECT ... FOR UPDATE`; the writer rule is checked (the lease
-generation for a hosted writer, the writer subject for an external
-one, [[016-runners]], [[017-external-runners-handoff-fork]]); a batch
-whose `after_seq` is the row's `last_seq` is inserted, and the row's
+`SELECT ... FOR UPDATE`; an append through a lease carries its
+generation and is refused `lease_lost` once the row's generation has
+moved on ([[016-runners]]), while an append outside any lease, a
+person's event through the API, is not fenced; the writer subject of an
+external writer is [[017-external-runners-handoff-fork]]'s check; a
+batch whose `after_seq` is the row's `last_seq` is inserted, and the row's
 `last_seq`, `status`, `stop_reason`, `turn` and `updated_at` are set
 from it; then `NOTIFY topos_events` with the session id. A batch whose
 `after_seq` is behind and whose events match, by id and content, the
@@ -195,21 +197,21 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 | Criterion | Test that proves it | State |
 |---|---|---|
 | `session/storetest` passes on the Postgres store and on the directory store, the Postgres tier against `DATABASE_URL` or a container it starts | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`), `session/dir.TestDirStoreConformance` | built |
-| Two replicas appending to one session through Postgres keep a dense sequence, and the one that is not the writer gets `sequence_conflict` | `TestPostgresTwoReplicasOneWriter` | not built |
+| Two replicas appending to one session through Postgres keep a dense sequence, and the one that is not the writer gets `sequence_conflict` | `internal/store/postgres.TestPostgresTwoReplicasOneWriter` (tag `postgres`) | built |
 | A `Watch` on one store instance sees an event another instance appends through `NOTIFY`, with the poll an hour away | `internal/store/postgres.TestWatchSeesAnotherStoresAppends` (tag `postgres`) | built |
-| A `Watch` sees an event within the poll interval with notifications dropped | `TestPostgresWatchAcrossReplicas` | not built |
+| A `Watch` sees an event within the poll interval with notifications dropped | `internal/store/postgres.TestPostgresWatchAcrossReplicas` (tag `postgres`), an append written with no `NOTIFY` | built |
 | Fifty watches on one store hold one listener connection beside the pool, and each sees an append to its session through it | `internal/store/postgres.TestManyWatchesShareOneListener` (tag `postgres`) | built |
 | An append to one session wakes its watch and not the watch of another | `internal/store/postgres.TestANotificationWakesOnlyItsSessionsWatchers` (tag `postgres`) | built |
 | A listener whose backend is terminated connects again, and every watch sees the appends made while it was down and after, with the poll an hour away | `internal/store/postgres.TestADroppedListenerReconnectsAndMissesNothing` (tag `postgres`) | built |
 | Closing the store closes its listener connection and every open watch | `internal/store/postgres.TestAClosedStoreClosesItsWatches` (tag `postgres`) | built |
-| A second `toposd serve` on the same data directory refuses to start | `TestDirModeIsOneReplica` | not built |
+| A second `toposd serve` on the same data directory refuses to start | `internal/store/dir.TestASecondServeIsRefusedWithThePidOfTheFirst`, `cmd/toposd.TestServeAnswersTheAPIAsASelfHoster` | built |
 | A blob in the database is readable by digest, and one whose bytes no longer match answers `ErrCorrupt` | `internal/store/postgres.TestACorruptBlobIsRefused` (tag `postgres`) | built |
 | A blob is readable by digest from the `file://` and `s3://` locations | `TestBlobStoreLocations` | not built |
 | Deleting a session removes its rows and every blob object; a crash between the two leaves no session without its blobs, and the reaper removes the orphans | `TestSessionDeletionOrder` | not built |
 | A session past `expires_at` is ended `expired`, and an ended one past its retention is deleted | `TestReaperExpiresAndDeletes` | not built |
 | Migrations apply on an empty database when the store opens | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`, every subtest opens a fresh database) | built |
 | A lease that expires is taken over by the next holder, and the old holder's renew fails and its `Lost` closes | `internal/store/postgres.TestAnExpiredLeaseIsTakenOverAndTheOldHolderLosesIt` (tag `postgres`) | built |
-| A replica that finds a newer schema than it knows refuses to start | `TestMigrationsAtStart` | not built |
+| A replica that finds a newer schema than it knows refuses to start | `internal/store/postgres.TestMigrationsAtStart` (tag `postgres`), with `cmd/toposd.TestServeStopsOnAStoreItCannotOpen` for the start | built |
 | The suite of `store.Store` (`internal/store/storetest`) passes on the memory store, the directory store and the Postgres store | `internal/store.TestMemoryStoreConformance`, `internal/store/dir.TestObjectStoreConformance`, `internal/store/postgres.TestPostgresObjectStoreConformance` (tag `postgres`) | built |
 | Replicas racing one idempotency key reserve it once, new or expired, and replicas racing one agent version or one new agent name store it once | `internal/store/postgres.TestBeginReservesAKeyOnceAcrossReplicas`, `internal/store/postgres.TestPutVersionHasOneWinnerAcrossReplicas` (tag `postgres`) | built |
 | The directory store reads back every agent, version, name and idempotency record after a restart, and ignores a torn temporary file | `internal/store/dir.TestReopenReadsEverythingBack`, `internal/store/dir.TestATornTemporaryFileIsIgnoredAtOpen` | built |
