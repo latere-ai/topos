@@ -1,6 +1,6 @@
 ---
 title: "Scaffold and configuration reference: layout, the toposd roles, listeners, every TOPOS_* variable"
-status: validated
+status: dispatched
 track: core
 depends_on: [001-architecture.md]
 affects: [cmd/toposd/, cmd/topos/, internal/config/, internal/version/, internal/runnerrole/, internal/check/, internal/token/, Makefile, .lateregate.yaml, Dockerfile, .github/workflows/, .githooks/, docs/]
