@@ -356,6 +356,34 @@ func TestThreeTruncationsEndWithOutputLimit(t *testing.T) {
 	}
 }
 
+// TestTheSessionsPolicyDecides: a session that records its merged
+// policy is decided by it, not by the agent's own: a read-only call the
+// agent's confirm mode allows asks once the session's always_confirm
+// names it.
+func TestTheSessionsPolicyDecides(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "echo", `{"text":"a"}`)))
+	e.send(ctx, "Go.")
+	s, err := e.store.Get(ctx, e.s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Policy = &session.Policy{Mode: string(ModeConfirm), AlwaysConfirm: []string{"echo"}, Thresholds: session.Thresholds{FlagAt: 0.3, AskAt: 0.5, BlockAt: 0.9}}
+	evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.h.RunTurn(ctx, s, evs, e.log)
+	if err != nil || out.StopReason != session.StopToolConfirmation {
+		t.Fatalf("outcome %+v, %v", out, err)
+	}
+	var use session.AgentToolUse
+	if err := e.events(ctx, session.TypeAgentToolUse)[0].Decode(&use); err != nil || use.Verdict != string(VerdictAsk) {
+		t.Fatalf("the call's verdict %+v, %v", use, err)
+	}
+}
+
 // TestRetriedStreamStoresFinalAttempt: a stream cut before its terminal
 // frame is retried, and the agent.message holds the final attempt's
 // response alone, with none of the cut attempt's partial output.
@@ -986,7 +1014,7 @@ func TestModelCredentialNeverLogged(t *testing.T) {
 	const canary = "sk-canary-credential-6f1d2a9c"
 	e := setup(t, func(c *Config) { c.Connection.Credential = canary })
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "echo", `{"x":1}`)), reply(ir.StopEndTurn, text("done")))
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "echo", `{"text":"a"}`)), reply(ir.StopEndTurn, text("done")))
 	e.send(ctx, "Go.")
 	s, err := e.store.Get(ctx, e.s.ID)
 	if err != nil {

@@ -4,6 +4,7 @@
 package harness
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -85,6 +86,62 @@ type Policy struct {
 	// Egress are the hosts the agent's machine may reach, for the
 	// external-effect feature.
 	Egress []string
+}
+
+// Merge is the policy of a session from the agent's, p, and the
+// organization's lists and thresholds from the authorizer's limits, by
+// spec 012's rule, so neither side loosens the other: always_confirm is
+// the union, always_allow the intersection when both give one and the one
+// given otherwise, and each threshold the lower. The organization sets no
+// mode, so the mode is the agent's; nil thresholds keep the agent's.
+func (p Policy) Merge(confirm, allow []string, thresholds *Thresholds) Policy {
+	out := p
+	out.Mode = cmp.Or(p.Mode, ModeConfirm)
+	out.AlwaysConfirm = slices.Clone(p.AlwaysConfirm)
+	for _, c := range confirm {
+		if !slices.Contains(out.AlwaysConfirm, c) {
+			out.AlwaysConfirm = append(out.AlwaysConfirm, c)
+		}
+	}
+	switch {
+	case len(p.AlwaysAllow) > 0 && len(allow) > 0:
+		out.AlwaysAllow = nil
+		for _, a := range p.AlwaysAllow {
+			if slices.Contains(allow, a) {
+				out.AlwaysAllow = append(out.AlwaysAllow, a)
+			}
+		}
+	case len(allow) > 0:
+		out.AlwaysAllow = slices.Clone(allow)
+	default:
+		out.AlwaysAllow = slices.Clone(p.AlwaysAllow)
+	}
+	if thresholds != nil {
+		out.Thresholds = Thresholds{
+			FlagAt: min(p.Thresholds.FlagAt, thresholds.FlagAt), AskAt: min(p.Thresholds.AskAt, thresholds.AskAt), BlockAt: min(p.Thresholds.BlockAt, thresholds.BlockAt),
+		}
+	}
+	return out
+}
+
+// Session is the policy as the Session header records it.
+func (p Policy) Session() session.Policy {
+	t := p.Thresholds
+	return session.Policy{
+		Mode: string(cmp.Or(p.Mode, ModeConfirm)), AlwaysConfirm: slices.Clone(p.AlwaysConfirm), AlwaysAllow: slices.Clone(p.AlwaysAllow),
+		Thresholds: session.Thresholds{FlagAt: t.FlagAt, AskAt: t.AskAt, BlockAt: t.BlockAt},
+	}
+}
+
+// Under is p with the mode, the lists and the thresholds of a session's
+// recorded policy in place of the agent's own; the egress stays the
+// agent's machine's.
+func (p Policy) Under(sp session.Policy) Policy {
+	t := sp.Thresholds
+	return Policy{
+		Mode: Mode(sp.Mode), AlwaysAllow: slices.Clone(sp.AlwaysAllow), AlwaysConfirm: slices.Clone(sp.AlwaysConfirm),
+		Thresholds: Thresholds{FlagAt: t.FlagAt, AskAt: t.AskAt, BlockAt: t.BlockAt}, Egress: p.Egress,
+	}
 }
 
 // RiskSource is the source of the rule-feature score.

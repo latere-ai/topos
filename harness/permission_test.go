@@ -5,6 +5,7 @@ package harness
 
 import (
 	"encoding/json"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -135,5 +136,39 @@ func TestProgressiveNeedsASandbox(t *testing.T) {
 		if err := CheckSandbox(ModeProgressive, machine.Info{Kind: machine.KindHost, Sandbox: sandbox}); err != nil {
 			t.Errorf("progressive with sandbox %q: %v", sandbox, err)
 		}
+	}
+}
+
+// TestPolicyMergeNeverLoosens is spec 012's merge of the agent's
+// approvals with the organization's limits: always_confirm is the union,
+// always_allow the intersection when both give one and the one given
+// otherwise, each threshold the lower, the mode the agent's, and the
+// merged policy survives the Session header whole.
+func TestPolicyMergeNeverLoosens(t *testing.T) {
+	agent := Policy{
+		Mode: ModeProgressive, AlwaysConfirm: []string{"bash(rm*)"}, AlwaysAllow: []string{"bash(go test*)", "bash(ls*)"},
+		Thresholds: DefaultThresholds, Egress: []string{"proxy.golang.org"},
+	}
+	org := &Thresholds{FlagAt: 0.2, AskAt: 0.6, BlockAt: 0.95}
+	got := agent.Merge([]string{"bash(git push*)", "bash(rm*)"}, []string{"bash(go test*)", "read"}, org)
+	want := Policy{
+		Mode: ModeProgressive, AlwaysConfirm: []string{"bash(rm*)", "bash(git push*)"}, AlwaysAllow: []string{"bash(go test*)"},
+		Thresholds: Thresholds{FlagAt: 0.2, AskAt: 0.5, BlockAt: 0.9}, Egress: []string{"proxy.golang.org"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("merged\n%+v\nwant\n%+v", got, want)
+	}
+	if got := agent.Merge(nil, []string{"read"}, nil); len(got.AlwaysAllow) != 0 {
+		t.Fatalf("two lists with nothing in common allow %v", got.AlwaysAllow)
+	}
+	bare := Policy{Thresholds: DefaultThresholds}
+	if got := bare.Merge(nil, []string{"read"}, nil); got.Mode != ModeConfirm || !slices.Equal(got.AlwaysAllow, []string{"read"}) || got.Thresholds != DefaultThresholds {
+		t.Fatalf("only the organization's list: %+v", got)
+	}
+	if got := agent.Merge(nil, nil, nil); !slices.Equal(got.AlwaysAllow, agent.AlwaysAllow) || !slices.Equal(got.AlwaysConfirm, agent.AlwaysConfirm) {
+		t.Fatalf("no limits: %+v", got)
+	}
+	if back := agent.Under(want.Session()); !reflect.DeepEqual(back, want) {
+		t.Fatalf("through the header\n%+v\nwant\n%+v", back, want)
 	}
 }

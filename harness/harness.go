@@ -192,6 +192,13 @@ type Outcome struct {
 // appended its session.status running before calling. RunTurn reads
 // nothing but its arguments and the machine, and appends only through l.
 func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.Event, l Log) (Outcome, error) {
+	// A session that records its merged policy is decided by it, and so
+	// is every thread the turn spawns, rather than by the agent's own.
+	if s.Policy != nil {
+		scoped := *h
+		scoped.c.Policy = h.c.Policy.Under(*s.Policy)
+		h = &scoped
+	}
 	t := &turn{h: h, s: s, sh: &shared{events: append([]session.Event(nil), log...)}, l: l, root: h.c.Tools, num: s.Turn + 1, start: h.c.Clock()}
 	var err error
 	if t.reg, err = t.registry(h.c.Tools.Names()); err != nil {
