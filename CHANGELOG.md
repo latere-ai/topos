@@ -10,6 +10,21 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- An Agent manifest names the repositories its sessions work in as
+  `spec.repositories`, a list of `{url, ref}` with `ref` optional, checked
+  as a session's are: at most 8, each an `https` URL that names its host
+  and holds no credential, and a ref that is a branch, a tag or a commit.
+  A session whose create names no repositories works in those of the
+  agent version it pins; one that names its own works in those alone. A
+  subagent's repositories are not used, and a local `topos run` refuses an
+  agent that names any.
+- The `session.machine` of a session's first machine lists the
+  repositories delivered into it as `repositories: [{url, branch,
+  commit}]`, `commit` the HEAD checked out on the session's branch, so a
+  reader of the log sees which checkout the agent started from.
+- A refused repository URL that holds a credential is no longer quoted
+  in the error.
+
 ## v0.8.0-rc.1 - 2026-09-28
 
 - **Breaking:** the repository restarts as the Topos core. Every package of
