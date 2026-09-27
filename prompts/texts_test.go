@@ -69,8 +69,10 @@ var textCases = func() []textCase {
 		{name: AdvisorRequest, data: Data{"Transcript": transcript, "Question": ""}, want: transcript + "\n\nReview the work so far."},
 
 		{name: ToolRead, wantSHA: "78568219c234ed1777a6fa6de80bdbc8984e4d80ae2faf7b280c8159dd126df8"},
-		{name: ToolWrite, wantSHA: "1b7f34af9f13f7c04c8baf8fa8213be0eb86e68d0fecb59d5a2944c55c93956f"},
-		{name: ToolEdit, wantSHA: "ab8d937843592cffe0a52d6b52e80b7faa2736cfa728321f4f37d728cb91a96c"},
+		{name: ToolWrite, wantSHA: "57efeb49ca78c1b5d8147183989ad3f539fd5dfacc1b08d7d5aa58fae6f73bf2"},
+		{name: "tools/write-v1", wantSHA: "1b7f34af9f13f7c04c8baf8fa8213be0eb86e68d0fecb59d5a2944c55c93956f"},
+		{name: ToolEdit, wantSHA: "3e3d91cd2333c7d13bfa2853bc4067232209b5e6ce48db68bc5c945ff8027622"},
+		{name: "tools/edit-v1", wantSHA: "ab8d937843592cffe0a52d6b52e80b7faa2736cfa728321f4f37d728cb91a96c"},
 		{name: ToolBash, wantSHA: "64a815c0147fa31ee847eb6d258b307f97c0951756a60e4fbd83449036eea364"},
 		{name: ToolGrep, wantSHA: "8d58c89479ca66083587ec0d96c2f9e336dc6cc1287ceed85895ac3fbc2eab97"},
 		{name: ToolGlob, wantSHA: "a52b678c89e92fb2d9d977a598e0850e84af774923efb10e42dedf09f2abeb70"},
@@ -127,6 +129,7 @@ var textCases = func() []textCase {
 		{name: OutputSpilled, data: Data{"Omitted": 73182, "Path": "/spill/tool-toolu_1.txt"}, want: strings.Trim(fmt.Sprintf("\n[... %d bytes omitted; the full output is in %s ...]\n", 73182, "/spill/tool-toolu_1.txt"), "\n")},
 
 		{name: FileChanged, data: Data{"Path": p}, want: p + " changed since it was last read; read it again before writing."},
+		{name: FileUnread, data: Data{"Path": p}, want: p + " exists and this thread has not read it; read it before writing to it."},
 		{name: FileOutside, data: Data{"Path": p}, want: p + " is outside the working directory."},
 		{name: FileDenied, data: Data{"Path": p}, want: p + " is on the credential deny-list; the tools do not open it."},
 		{name: FileNotFound, data: Data{"Path": p}, want: p + " does not exist."},

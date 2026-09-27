@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 )
 
 func TestWriteRequiresCurrentContent(t *testing.T) {
@@ -52,7 +53,7 @@ func TestWriteRequiresCurrentContent(t *testing.T) {
 	// Another thread never read the file.
 	other := &thread{id: "thr_other", events: fresh.events}
 	res = other.call(ctx, t, write, f.h, mustInput(t, map[string]string{"path": p, "content": "other\n"}))
-	if res.Outcome != OutcomeError || text(res) != changedText(p) {
+	if res.Outcome != OutcomeError || text(res) != unreadText(p) {
 		t.Fatalf("another thread %s %q", res.Outcome, text(res))
 	}
 
@@ -60,7 +61,7 @@ func TestWriteRequiresCurrentContent(t *testing.T) {
 	q := filepath.Join(f.work, "b.txt")
 	put(t, q, "existing\n")
 	res = th.call(ctx, t, write, f.h, mustInput(t, map[string]string{"path": "b.txt", "content": "x"}))
-	if res.Outcome != OutcomeError || text(res) != changedText(q) || get(t, q) != "existing\n" {
+	if res.Outcome != OutcomeError || text(res) != unreadText(q) || get(t, q) != "existing\n" {
 		t.Fatalf("an unread file %s %q", res.Outcome, text(res))
 	}
 
@@ -127,7 +128,7 @@ func TestEditRequiresUniqueMatch(t *testing.T) {
 
 	// Not read yet.
 	res := th.call(ctx, t, edit, f.h, `{"path":"a.go","old_string":"func A","new_string":"func C"}`)
-	if res.Outcome != OutcomeError || text(res) != changedText(p) {
+	if res.Outcome != OutcomeError || text(res) != unreadText(p) {
 		t.Fatalf("an unread file %s %q", res.Outcome, text(res))
 	}
 	th.call(ctx, t, read, f.h, `{"path":"a.go"}`)
@@ -200,4 +201,8 @@ func TestFileToolsUseMachinePaths(t *testing.T) {
 	if res.Outcome != OutcomeOK || res.Meta.Path != abs {
 		t.Fatalf("a relative read %+v", res.Meta)
 	}
+}
+
+func unreadText(p string) string {
+	return prompts.Render(prompts.FileUnread, prompts.Data{"Path": p})
 }

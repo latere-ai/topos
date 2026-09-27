@@ -93,7 +93,10 @@ func current(ctx context.Context, c Call, p string) (file, error) {
 		return file{}, err
 	}
 	f := file{exists: true, content: content}
-	if known, ok := c.State.Hashes[p]; !ok || known != digest(content) {
+	switch known, ok := c.State.Hashes[p]; {
+	case !ok:
+		f.refusal = prompts.Render(prompts.FileUnread, prompts.Data{"Path": p})
+	case known != digest(content):
 		f.refusal = changedText(p)
 	}
 	return f, nil

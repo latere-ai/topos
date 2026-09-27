@@ -6,6 +6,9 @@ package prompts
 // released is the SHA-256 of every released file. A new version of a
 // text adds its file and its line; a line is never changed.
 var released = map[string]string{
+	"tools/write-v2.md":                      "57a5df42ba6c03616c20b1856c790a565860889b1530b457c6ae3866c5d4d9eb",
+	"tools/edit-v2.md":                       "7bac9b8dd0c1ed5c20cab7cf9454d461835fec48e8f9f79fc9bfb0273d053b7f",
+	"results/files/unread-v1.md":             "8696c124d427a02aef413c580ce93cd2ca3f39efebba30167ed79ca657d198c1",
 	"advisor/instructions-v1.md":             "74451c614bdedad3a6971e253eba787a15c670ebf93948f1a5beacff919b604e",
 	"advisor/request-v1.md":                  "b87efb3540fbb782570ee1d627d6c4aa6aa085e3985cf1d7fd4e9c76f2020ffe",
 	"advisor/transcript-v1.md":               "adce41eea4d31209c62cbfd3afb3f48f689d2b40bc3e25e6f5ad1eb76a79b6d6",

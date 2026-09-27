@@ -23,8 +23,8 @@ const (
 // The tool descriptions (specs 008 and 013).
 const (
 	ToolRead     Name = "tools/read-v1"
-	ToolWrite    Name = "tools/write-v1"
-	ToolEdit     Name = "tools/edit-v1"
+	ToolWrite    Name = "tools/write-v2"
+	ToolEdit     Name = "tools/edit-v2"
 	ToolBash     Name = "tools/bash-v1"
 	ToolGrep     Name = "tools/grep-v1"
 	ToolGlob     Name = "tools/glob-v1"
@@ -98,6 +98,7 @@ const (
 // The results the file tools share (spec 008).
 const (
 	FileChanged    Name = "results/files/changed-v1"
+	FileUnread     Name = "results/files/unread-v1"
 	FileOutside    Name = "results/files/outside-v1"
 	FileDenied     Name = "results/files/denied-v1"
 	FileNotFound   Name = "results/files/not-found-v1"

@@ -208,6 +208,14 @@ committed: the commit log already holds that.
   across turns: the harness asks for the encrypted reasoning items, keeps
   each as an opaque block in the session log, and sends it back verbatim
   on the next request (`latere.ai/x/pkg` v0.88.0).
+- `write` and `edit` refuse an existing file the thread never read with
+  a result that says so, `<path> exists and this thread has not read it;
+  read it before writing to it.`, where they said the file had changed
+  since it was last read; the tools' descriptions (version 2) name both
+  refusals and ask for a `read` first.
+- The model catalog also knows each model by the name the hosted Lux
+  serves it under, with dots in its version (`anthropic/claude-haiku-4.5`
+  beside `anthropic/claude-haiku-4-5`).
 
 ## v0.7.0 - 2026-09-26
 
