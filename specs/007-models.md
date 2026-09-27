@@ -355,3 +355,51 @@ with the provider's own SDK ([[025-task-suite]]).
 | A stream that ends before its dialect's terminal frame is an incomplete response and is retried, in every dialect; an error event inside a stream, an unreachable server and a canceled request are classified | `models/dialect.TestErrorsAreClassifiedForRetry` | built |
 | A retry of a stream reuses no partial output: the stored message equals the final attempt's response | `harness.TestRetriedStreamStoresFinalAttempt` | built |
 | The credential reaches the gateway in its header and never appears in any event or blob of a session, every request's bytes captured | `harness.TestModelCredentialNeverLogged` | built |
+
+## Outcome
+
+Built on 2026-09-27. Every request is encoded by llmdialect's backend
+codec for its connection's dialect and sent through a Lux door or to a
+provider; the log keeps the Lux wire message, the raw response, the
+request's hash, codec and fold point, and a replay builds every request
+again and compares its hash. The catalog overlays the figures a Lux
+door serves, cost comes from the gateway or the catalog, and a spend
+refusal from Lux or Cella stops the turn `budget`. Every row of the
+acceptance table passes.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| the connection, its validation and each family's default dialect | `models/models.go` |
+| the stream over HTTP: the encoding, the credential header, the terminal-frame check, the classification of failures | `models/dialect/dialect.go` |
+| a Lux root's family doors, read from its discovery document | `models/doors.go`, `models/dialect/discover.go` |
+| the catalog with exact prices, its overlay, cost and the pre-request estimate | `models/catalog.go`, `models/catalog.json`, `tools/catalog` |
+| the figures a Lux door's model list gives a model | `models/dialect/served.go`, read by `internal/hosted`, `internal/toposcli` and `test/tasks` |
+| the same-family round-trip gate over recorded streams of each dialect | `models/dialect/replay_test.go`, `models/dialect/testdata/replay/` |
+| replay: the comparison, and the harness building each thread's request again | `models/replay.go`, `harness/replay.go`, `fold_seq` on `model.request` |
+| a core's spend refusal | `models.SpendError`, `machine/cella/errors.go`, `harness/tools` (`harnessError`), `harness` (`callsStopped`), `runner` (`setupFailed`) |
+| the stub Lux's model lists, and the frames its frontend encoders cannot write | `test/stubs/luxstub` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| the round-trip suite takes recorded native responses | the recordings are the stub Lux's bytes: llmdialect's frontend encoders, with the stub's own frames for a Responses reasoning item and a Messages redacted thinking block, which those encoders cannot write; the signatures and the encrypted content are the stub's | there was no live model access when the suite was built; a live recording is one more file beside them |
+| recordings for each dialect carry thinking with signatures, redacted thinking and parallel tool calls | Messages carries signed and redacted thinking, Responses its reasoning item and summary, Chat text and parallel tool calls | Responses replays reasoning only as its item, and Chat has no replayable reasoning; its backend reports thinking as loss |
+| another backend adds `content.opaque.<kind>` to the loss report | `opaque` | pkg's `ir.LossOpaque`; the design now says what pkg reports |
+| zero loss on a same-family replay | zero loss of content; a request with cache breakpoints still reports `cache_control` on Responses and Chat | where breakpoints go and what each dialect makes of them is [[010-context]]'s |
+| `models.Replay` folds a log step by step | `models.Replay` compares; `Harness.Rebuild` folds and builds, through the new `fold_seq` | models cannot import the harness, whose prompt, tools and threads the request depends on; folding up to the request would take in a message that arrived while the step was answered |
+| the figures a Lux connection serves | the door's model list, read each time a harness is built when the base URL names a door; a door that does not answer fails the setup | a door that cannot answer its list cannot answer the model call either |
+| a spend refusal from Cella or a memory backend | Cella's, at a sandbox create and at a command; a memory backend's is a row of [[020-memory-stores]] | memory backends are not built; the refusal's type and the harness's handling are core-agnostic |
+| (not specified) a call a core refuses | the call is answered with the refusal, the step's other calls run, then the turn stops | every `tool_use` keeps a result, so the resumed turn's model sees what was refused |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| a live recording per dialect in `testdata/replay/`: provider ids, real signatures and encrypted content, the provider's `ping` and `sequence_number` frames, and proof the provider takes its own items back as it sent them | a run with live model access |
+| a memory push refused for spend | [[020-memory-stores]] |
+| Cella's own refusal codes: it defines only `spawn_budget_exhausted` today, and the mapping keys on this spec's two codes | Cella's wallet refusals, when they ship, answer `budget_exhausted` or `spend_exceeded` |
+| [[009-machines]]'s error table reads every Cella refusal as `machine_unavailable`, and a spend code is now this spec's refusal | 009 |
+| a decoder that reports the terminal frame itself, which would replace the raw-stream check | pkg |
