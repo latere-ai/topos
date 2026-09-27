@@ -6,6 +6,9 @@ package arch
 import (
 	"bufio"
 	"bytes"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,7 +109,7 @@ func TestRootPackagesDialNothing(t *testing.T) {
 			continue
 		}
 		for _, pkg := range goList(t, dir, "./"+tree+"/...") {
-			for _, dep := range reached(goList(t, dir, "-deps", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", pkg), pkg, contracts[tree]) {
+			for _, dep := range reached(goList(t, dir, "-deps", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", pkg), pkg, func(p string) bool { return slices.Contains(contracts[tree], p) }) {
 				if slices.Contains(dialing, dep) {
 					t.Errorf("%s reaches %s; the %s tree dials nothing (spec 001)", pkg, dep, tree)
 				}
@@ -116,8 +119,8 @@ func TestRootPackagesDialNothing(t *testing.T) {
 }
 
 // reached walks the import graph go list printed, one "path imports..."
-// line per package, from pkg, and stops at the packages in skip.
-func reached(graph []string, pkg string, skip []string) []string {
+// line per package, from pkg, and does not enter a package stop names.
+func reached(graph []string, pkg string, stop func(string) bool) []string {
 	edges := map[string][]string{}
 	for _, line := range graph {
 		fields := strings.Fields(line)
@@ -130,7 +133,7 @@ func reached(graph []string, pkg string, skip []string) []string {
 		p := queue[0]
 		queue = queue[1:]
 		for _, next := range edges[p] {
-			if seen[next] || slices.Contains(skip, next) {
+			if seen[next] || stop(next) {
 				continue
 			}
 			seen[next] = true
@@ -153,4 +156,124 @@ func TestPromptsImportNothingOfTheModule(t *testing.T) {
 			}
 		}
 	}
+}
+
+// transport is the family's instrumented HTTP transport, which every
+// outbound call of the module goes through (spec 001, Dependencies).
+// It holds an exporter's client of its own and is allowed to every
+// package below.
+const transport = "latere.ai/x/pkg/otel"
+
+// clients are the packages of spec 001 that dial one base URL their
+// caller hands them, each with the network clients it may reach besides
+// the transport: a Cella sandbox through Cella's client, a model through
+// llmdialect's codecs, toposd through nothing but the transport.
+var clients = map[string][]string{
+	"machine/cella":  {"latere.ai/x/cella/client"},
+	"models/dialect": {"latere.ai/x/pkg/llmdialect"},
+	"client":         {},
+}
+
+// within reports whether pkg is one of roots or a package beneath one.
+func within(pkg string, roots []string) bool {
+	for _, r := range roots {
+		if pkg == r || strings.HasPrefix(pkg, r+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestClientsKeepToTheirAllowLists is invariant 13 of spec 001 for the
+// packages that dial: each reaches no network client but its allow list
+// and the transport, constructs one HTTP client, and reaches nothing
+// under internal/. A network client is a package outside the standard
+// library that imports a dialing package; the walk does not enter an
+// allowed one, so a client reached any other way fails. A tree that
+// does not exist yet is skipped by name and binds the day it lands.
+func TestClientsKeepToTheirAllowLists(t *testing.T) {
+	dir := root(t)
+	for rel, allowed := range clients {
+		if _, err := os.Stat(filepath.Join(dir, rel)); os.IsNotExist(err) {
+			continue
+		}
+		pkg := module + "/" + rel
+		allow := append([]string{transport}, allowed...)
+		lines := goList(t, dir, "-deps", "-f", "{{.ImportPath}} {{.Standard}} {{join .Imports \" \"}}", pkg)
+		standard := map[string]bool{}
+		dials := map[string]bool{}
+		graph := make([]string, 0, len(lines))
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				t.Fatalf("go list printed %q", line)
+			}
+			standard[fields[0]] = fields[1] == "true"
+			for _, imp := range fields[2:] {
+				if slices.Contains(dialing, imp) {
+					dials[fields[0]] = true
+				}
+			}
+			graph = append(graph, strings.Join(append(fields[:1:1], fields[2:]...), " "))
+		}
+		for _, dep := range reached(graph, pkg, func(p string) bool { return within(p, allow) }) {
+			if !standard[dep] && dials[dep] {
+				t.Errorf("%s reaches the network client %s; it may reach %s (spec 001)", pkg, dep, strings.Join(allow, ", "))
+			}
+		}
+		for _, dep := range goList(t, dir, "-deps", pkg) {
+			if strings.HasPrefix(dep, module+"/internal/") {
+				t.Errorf("%s reaches %s; a package an embedder imports reaches nothing under internal/ (spec 001)", pkg, dep)
+			}
+		}
+		if n := httpClients(t, filepath.Join(dir, rel)); n != 1 {
+			t.Errorf("%s constructs %d HTTP clients; it sends through one (spec 001)", pkg, n)
+		}
+	}
+}
+
+// httpClients counts the HTTP clients the non-test files of one package
+// directory construct: an http.Client literal, or the transport's
+// otel.HTTPClient.
+func httpClients(t *testing.T, dir string) int {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	fset := token.NewFileSet()
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(f, func(node ast.Node) bool {
+			switch x := node.(type) {
+			case *ast.CompositeLit:
+				if selects(x.Type, "http", "Client") {
+					n++
+				}
+			case *ast.CallExpr:
+				if selects(x.Fun, "otel", "HTTPClient") {
+					n++
+				}
+			}
+			return true
+		})
+	}
+	return n
+}
+
+// selects reports whether e is the selector pkg.name.
+func selects(e ast.Expr, pkg, name string) bool {
+	sel, ok := e.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != name {
+		return false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	return ok && id.Name == pkg
 }
