@@ -121,6 +121,27 @@ committed: the commit log already holds that.
   accepts those tokens and serves the key set at
   `/.well-known/jwks.json` under its public URL, so a self-hoster needs
   no identity provider.
+- `manifest/v1` holds the four kinds of the `topos.latere.ai/v1` API
+  group, `Agent`, `Trigger`, `MemoryStore` and `Connection`, and
+  `manifest.Resolve` is the one resolver of them. A manifest is refused
+  as a whole with every problem and its field path: an unsupported
+  version, unknown fields, wrong types, out-of-range values, a secret
+  pasted into a free-text field, and an unknown reference. The resolved
+  spec has its fixed defaults written out and a digest that stays the same
+  on every build; applying an unchanged spec keeps its version.
+- `topos run --agent <file>` runs an agent from a manifest: its model,
+  instructions (inline or from `instructionsFile`), tools, approval mode,
+  lists and thresholds, egress, subagents, thread limits, budget and
+  limits. With no `--agent`, `$XDG_CONFIG_HOME/topos/agent.yaml` (or
+  `~/.config/topos/agent.yaml`) runs when it exists. The session keeps the
+  resolved agent, so `--session` and `topos confirm` continue with the same
+  agent after the file changes. `--model` and `--mode` override the
+  manifest. A field a local run cannot apply yet, such as hooks, MCP
+  servers, memory stores or a Cella machine, is refused rather than
+  ignored, and every refusal exits 2 before a session is created.
+- `--mode` no longer defaults to `confirm` at the flag: continuing a
+  session without it keeps the mode the session was created with, where it
+  was silently reset to `confirm` before.
 
 ## v0.7.0 - 2026-09-26
 
