@@ -89,10 +89,16 @@ type Lease interface {
 }
 
 // ListOptions filter and page List. Sessions list newest first; Cursor
-// is the value a previous page returned.
+// is the value a previous page returned. Owners, when set, keeps the
+// sessions whose initiator's subject is one of them, the narrowing an
+// authorizer's list decision carries; Runner, when set, keeps the
+// sessions of that runner kind. A store filters before it pages, so a
+// page holds only matching sessions.
 type ListOptions struct {
 	Status  Status
 	AgentID string
+	Owners  []string
+	Runner  string
 	Limit   int
 	Cursor  string
 }

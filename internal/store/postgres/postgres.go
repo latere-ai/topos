@@ -183,9 +183,14 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 	if limit <= 0 {
 		limit = session.DefaultListLimit
 	}
+	owners := o.Owners
+	if owners == nil {
+		owners = []string{}
+	}
 	rows, err := s.pool.Query(ctx, `SELECT body FROM sessions
 		WHERE ($1 = '' OR status = $1) AND ($2 = '' OR agent_id = $2) AND ($3 = '' OR id < $3)
-		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1)
+		AND (cardinality($5::text[]) = 0 OR owner = ANY($5::text[])) AND ($6 = '' OR runner = $6)
+		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1, owners, o.Runner)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: list sessions: %w", err)
 	}
