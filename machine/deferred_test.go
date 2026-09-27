@@ -19,7 +19,6 @@ type fake struct {
 	mu       sync.Mutex
 	ops      []string
 	released []bool
-	fetches  bool
 }
 
 func (f *fake) did(op string) {

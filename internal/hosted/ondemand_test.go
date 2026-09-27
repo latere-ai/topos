@@ -257,7 +257,7 @@ func TestTheFirstBashCreatesTheSandboxAndLaterCallsReuseIt(t *testing.T) {
 	// The record lands beside the turn, after the call that opened the
 	// machine and before its result.
 	uses, results := c.events(session.TypeAgentToolUse), c.events(session.TypeToolResult)
-	if !(uses[0].Seq < machines[0].Seq && machines[0].Seq < results[0].Seq) {
+	if uses[0].Seq >= machines[0].Seq || machines[0].Seq >= results[0].Seq {
 		t.Fatalf("session.machine at %d, the call at %d, its result at %d", machines[0].Seq, uses[0].Seq, results[0].Seq)
 	}
 	c.drive("Again.", bash("toolu_3", "cat f.txt"), said("Still there."))
