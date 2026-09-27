@@ -320,14 +320,27 @@ type Skill struct {
 	Path        string `json:"path"`
 }
 
-// SessionMachine is the payload of session.machine.
+// DeliveredRepository is one repository the runner delivered into the
+// session's first machine (spec 019): its URL, the session's branch in
+// it, and the commit that branch's HEAD was at once the delivery
+// finished, absent for a repository with no commit yet.
+type DeliveredRepository struct {
+	URL    string `json:"url"`
+	Branch string `json:"branch"`
+	Commit string `json:"commit,omitempty"`
+}
+
+// SessionMachine is the payload of session.machine. Repositories are set
+// on the attachment of the session's first machine, the one its
+// repositories are delivered into, in the session's order.
 type SessionMachine struct {
-	Machine      AttachedMachine `json:"machine"`
-	Reason       string          `json:"reason"`
-	Context      string          `json:"context,omitempty"`
-	Instructions []Instructions  `json:"instructions,omitempty"`
-	Skills       []Skill         `json:"skills,omitempty"`
-	Checkpoint   *CheckpointRef  `json:"checkpoint,omitempty"`
+	Machine      AttachedMachine       `json:"machine"`
+	Reason       string                `json:"reason"`
+	Context      string                `json:"context,omitempty"`
+	Instructions []Instructions        `json:"instructions,omitempty"`
+	Skills       []Skill               `json:"skills,omitempty"`
+	Repositories []DeliveredRepository `json:"repositories,omitempty"`
+	Checkpoint   *CheckpointRef        `json:"checkpoint,omitempty"`
 }
 
 // SessionError is the payload of session.error.

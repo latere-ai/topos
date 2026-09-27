@@ -365,9 +365,10 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 // repository on the installation's git host gets it cloned into its
 // sandbox's working directory at the first bash call, on its own branch;
 // git in the sandbox sends the git host the placeholder of the git host's
-// Secret the sandbox's manifest names, never a credential; and a commit
-// made by bash carries the session's trailers and author and pushes to
-// the git host.
+// Secret the sandbox's manifest names, never a credential; the sandbox's
+// session.machine names the repository, its branch and the commit the
+// branch started at; and a commit made by bash carries the session's
+// trailers and author and pushes to the git host.
 func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -384,6 +385,7 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	gitIn(t, seed, "add", ".")
 	gitIn(t, seed, "commit", "--quiet", "-m", "Start")
 	gitIn(t, seed, "push", "--quiet", "origin", "HEAD:main")
+	start := gitIn(t, bare, "rev-parse", "refs/heads/main")
 
 	var name string
 	host := newGitHost(t, root, func() string { return "Bearer cella-placeholder-" + name + "-origo" })
@@ -434,5 +436,16 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 		if strings.Contains(string(e.Payload), value) {
 			t.Fatal("a tool result carries the git host's token")
 		}
+	}
+	// The sandbox's attachment names the delivered repository, its branch
+	// and the commit the branch started at, the default branch's.
+	machines := c.events(session.TypeSessionMachine)
+	var attached session.SessionMachine
+	if len(machines) != 1 || machines[0].Decode(&attached) != nil || attached.Reason != "attached" {
+		t.Fatalf("session.machine %+v", machines)
+	}
+	want := []session.DeliveredRepository{{URL: host.srv.URL + "/app.git", Branch: branch, Commit: start}}
+	if !slices.Equal(attached.Repositories, want) {
+		t.Fatalf("the attachment names %+v, want %+v", attached.Repositories, want)
 	}
 }

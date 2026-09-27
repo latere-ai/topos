@@ -306,20 +306,24 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 // opened records a machine the session has: at the session's first
 // machine it delivers the session's repositories into it, then appends
 // session.machine when the session has none for this machine yet, beside
-// the running turn when the machine opened on demand. A repository that
-// could not be delivered is reported after the machine is recorded, so
-// the session keeps the machine and learns what is missing.
+// the running turn when the machine opened on demand, naming the
+// repositories delivered. A repository that could not be delivered is
+// reported after the machine is recorded, so the session keeps the
+// machine and learns what is missing.
 func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool) error {
+	var repos []session.DeliveredRepository
 	var delivered error
 	if first && len(Repositories(s)) > 0 {
-		delivered = deliver(ctx, s, m)
+		repos, delivered = deliver(ctx, s, m)
 	}
-	return errors.Join(r.attach(ctx, m, log, beside), delivered)
+	return errors.Join(r.attach(ctx, m, log, beside, repos), delivered)
 }
 
 // attach appends session.machine when the session has none for this
 // machine yet: a first attachment, or a machine other than the last one.
-func (r *Runner) attach(ctx context.Context, m machine.Machine, log *Log, beside bool) error {
+// repos are the repositories delivered into the machine, set only at the
+// session's first.
+func (r *Runner) attach(ctx context.Context, m machine.Machine, log *Log, beside bool, repos []session.DeliveredRepository) error {
 	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
 	if err != nil {
 		return err
@@ -345,7 +349,7 @@ func (r *Runner) attach(ctx context.Context, m machine.Machine, log *Log, beside
 		return err
 	}
 	e, err := session.NewEvent(session.TypeSessionMachine, session.SessionMachine{
-		Machine: a.Machine, Reason: reason, Context: a.Context, Instructions: a.Instructions, Skills: a.Skills,
+		Machine: a.Machine, Reason: reason, Context: a.Context, Instructions: a.Instructions, Skills: a.Skills, Repositories: repos,
 	}, r.o.Clock())
 	if err != nil {
 		return err

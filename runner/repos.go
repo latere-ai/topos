@@ -65,35 +65,71 @@ func agentName(s session.Session) string {
 // deliver clones each of the session's repositories into the machine,
 // the first into the working directory and each further one into a
 // directory named after it, on the session's branch, with the session's
-// author and the commit-msg hook that adds its trailers. A repository
+// author and the commit-msg hook that adds its trailers, and returns the
+// ones it delivered with the commit each branch starts at. A repository
 // already there, as a restarted delivery finds it, is configured and not
-// cloned again. A failure is an OpenError repository_unavailable: the
-// machine stays, and the session learns which repository is missing.
-func deliver(ctx context.Context, s session.Session, m machine.Machine) error {
+// cloned again. A failure is an OpenError repository_unavailable beside
+// the repositories that were delivered: the machine stays, and the
+// session learns which repository is missing.
+func deliver(ctx context.Context, s session.Session, m machine.Machine) ([]session.DeliveredRepository, error) {
 	repos := Repositories(s)
 	if len(repos) > session.MaxRepositories {
-		return &machine.OpenError{Code: CodeRepositoryUnavailable, Err: fmt.Errorf("the session names %d repositories, at most %d", len(repos), session.MaxRepositories)}
+		return nil, &machine.OpenError{Code: CodeRepositoryUnavailable, Err: fmt.Errorf("the session names %d repositories, at most %d", len(repos), session.MaxRepositories)}
 	}
 	workdir := m.Info().Workdir
+	branch := SessionBranch(s)
 	taken := map[string]bool{}
+	var delivered []session.DeliveredRepository
 	var errs []error
 	for i, repo := range repos {
 		dir := workdir
 		if i > 0 {
 			dir = path.Join(workdir, repoDir(repo.URL, i, taken))
 		}
-		script, err := deliveryScript(s, repo, dir)
-		if err == nil {
-			err = runScript(ctx, m, script)
-		}
+		commit, err := deliverOne(ctx, s, m, repo, dir)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("deliver %s: %w", repo.URL, err))
+			continue
 		}
+		delivered = append(delivered, session.DeliveredRepository{URL: repo.URL, Branch: branch, Commit: commit})
 	}
 	if err := errors.Join(errs...); err != nil {
-		return &machine.OpenError{Code: CodeRepositoryUnavailable, Err: err}
+		return delivered, &machine.OpenError{Code: CodeRepositoryUnavailable, Err: err}
 	}
-	return nil
+	return delivered, nil
+}
+
+// deliverOne delivers one repository into dir and returns the commit its
+// checked-out branch is at.
+func deliverOne(ctx context.Context, s session.Session, m machine.Machine, repo session.Resource, dir string) (string, error) {
+	script, err := deliveryScript(s, repo, dir)
+	if err != nil {
+		return "", err
+	}
+	if err := runScript(ctx, m, script); err != nil {
+		return "", err
+	}
+	return head(ctx, m, dir)
+}
+
+// head is the commit HEAD of the repository in dir is at, empty on a
+// branch with no commit yet, as an empty repository's. git rev-parse
+// --verify --quiet exits 1 silently for such a HEAD and fails otherwise
+// with a message, so only a silent exit 1 is read as no commit.
+func head(ctx context.Context, m machine.Machine, dir string) (string, error) {
+	res, err := m.Exec(ctx, machine.ExecRequest{Command: "git rev-parse --verify --quiet HEAD", Dir: dir, Timeout: deliverTimeout})
+	out := strings.TrimSpace(string(res.Output))
+	switch {
+	case err != nil:
+		return "", err
+	case res.TimedOut:
+		return "", fmt.Errorf("read HEAD: timed out after %s", deliverTimeout)
+	case res.ExitCode == 1 && out == "":
+		return "", nil
+	case res.ExitCode != 0:
+		return "", fmt.Errorf("read HEAD: exit %d: %s", res.ExitCode, out)
+	}
+	return out, nil
 }
 
 // repoDir is the directory of a further repository: the last segment of

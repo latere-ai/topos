@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -246,12 +247,28 @@ func TestTheFirstMachineGetsTheSessionsRepositories(t *testing.T) {
 	if after := f.systemText(1); !strings.Contains(after, "Repository rules for app.") || !strings.Contains(after, "Git: branch "+branch) {
 		t.Fatalf("the request after the delivery lacks the repository's context:\n%s", after)
 	}
+	// The attachment names each delivered repository with the commit its
+	// branch started at: the ref's for the first, the default branch's
+	// for the second.
+	machines := f.events(ctx, session.TypeSessionMachine)
+	var attached session.SessionMachine
+	if len(machines) != 1 || machines[0].Decode(&attached) != nil || attached.Reason != "attached" {
+		t.Fatalf("session.machine %+v", machines)
+	}
+	want := []session.DeliveredRepository{
+		{URL: "file://" + app, Branch: branch, Commit: gitRun(t, app, "rev-parse", "refs/heads/dev")},
+		{URL: "file://" + lib, Branch: branch, Commit: gitRun(t, lib, "rev-parse", "refs/heads/main")},
+	}
+	if !slices.Equal(attached.Repositories, want) {
+		t.Fatalf("the attachment names %+v, want %+v", attached.Repositories, want)
+	}
 }
 
 // TestARepositoryThatCannotBeDeliveredIsReported: a repository the runner
 // cannot clone answers the call that opened the machine with
-// repository_unavailable, the machine stays and is recorded, and the next
-// call runs on it.
+// repository_unavailable, the machine stays and is recorded with the
+// repositories that were delivered, an empty one with no commit, and the
+// next call runs on it.
 func TestARepositoryThatCannotBeDeliveredIsReported(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
@@ -262,7 +279,12 @@ func TestARepositoryThatCannotBeDeliveredIsReported(t *testing.T) {
 	var opens atomic.Int32
 	f.onDemand(work, &opens)
 	s := session.New(session.AgentRef{ID: session.NewID(session.PrefixAgent), Name: "builder", Version: 1}, f.s.Initiator, session.RunnerHosted, session.Machine{Kind: machine.KindCella}, t0)
-	s.Resources = []session.Resource{{Type: ResourceRepository, URL: "file://" + filepath.Join(work, "..", "missing.git")}}
+	empty := filepath.Join(t.TempDir(), "empty.git")
+	gitRun(t, filepath.Dir(empty), "init", "--quiet", "--bare", "-b", "main", empty)
+	s.Resources = []session.Resource{
+		{Type: ResourceRepository, URL: "file://" + filepath.Join(work, "..", "missing.git")},
+		{Type: ResourceRepository, URL: "file://" + empty},
+	}
 	if err := f.store.Create(ctx, s, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -290,6 +312,11 @@ func TestARepositoryThatCannotBeDeliveredIsReported(t *testing.T) {
 	}
 	if opens.Load() != 1 || f.count(ctx, session.TypeSessionMachine) != 1 {
 		t.Fatalf("%d opens, %d session.machine", opens.Load(), f.count(ctx, session.TypeSessionMachine))
+	}
+	var attached session.SessionMachine
+	want := []session.DeliveredRepository{{URL: "file://" + empty, Branch: SessionBranch(s)}}
+	if err := f.events(ctx, session.TypeSessionMachine)[0].Decode(&attached); err != nil || !slices.Equal(attached.Repositories, want) {
+		t.Fatalf("the attachment names %+v, %v; want %+v", attached.Repositories, err, want)
 	}
 }
 
