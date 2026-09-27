@@ -48,8 +48,10 @@ func (r *Report) incomplete(reason string) {
 	r.Incomplete, r.IncompleteReason = true, reason
 }
 
-// finish computes the summary from the runs.
-func (r *Report) finish() Report {
+// finish computes the summary from the runs and the duration from
+// start.
+func (r *Report) finish(start time.Time) Report {
+	r.DurationMS = time.Since(start).Milliseconds()
 	r.Tasks = Summarize(r.Runs)
 	r.Passed, r.Total = 0, len(r.Runs)
 	for _, x := range r.Runs {

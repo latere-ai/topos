@@ -1,0 +1,8 @@
+# The first step spends the task's whole maxCost, so the budget stops
+# the turn before the second request.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: hello.txt, content: "hello\n"}
+    usage: {input_tokens: 100, output_tokens: 10, cost_usd_micro: 10000}
+  - text: Done.

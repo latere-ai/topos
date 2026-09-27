@@ -1,0 +1,5 @@
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: hello.txt, content: "goodbye\n"}
+  - text: Done.

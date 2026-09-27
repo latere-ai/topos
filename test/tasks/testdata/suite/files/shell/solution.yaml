@@ -1,0 +1,5 @@
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: out.txt, content: shell}
+  - text: Done.

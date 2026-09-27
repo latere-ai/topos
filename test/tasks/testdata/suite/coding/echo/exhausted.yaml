@@ -1,0 +1,5 @@
+# Calls a tool and has no step for the request that follows.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: hello.txt, content: "hello\n"}

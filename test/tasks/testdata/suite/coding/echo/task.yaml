@@ -1,0 +1,6 @@
+name: echo
+category: coding
+prompt: Write hello to hello.txt in ${WORKDIR}.
+timeout: 5m
+maxCost: 0.01
+runs: 2

@@ -1,0 +1,4 @@
+name: shell
+category: files
+prompt: Write shell to out.txt.
+runs: 1

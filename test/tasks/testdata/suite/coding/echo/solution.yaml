@@ -1,0 +1,7 @@
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: hello.txt, content: "hello\n"}
+    usage: {input_tokens: 100, output_tokens: 10, cost_usd_micro: 2000}
+  - text: Done.
+    usage: {input_tokens: 120, output_tokens: 5, cost_usd_micro: 1000}

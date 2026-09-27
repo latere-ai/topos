@@ -145,6 +145,10 @@ func Load(dir string) ([]Task, error) {
 // category agree with its path, it has a prompt, its tools are
 // built-ins, and it has exactly one checker whose check.yaml parses.
 func LoadTask(dir string) (Task, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return Task{}, fmt.Errorf("tasks: %w", err)
+	}
 	b, err := os.ReadFile(filepath.Join(dir, FileTask))
 	if err != nil {
 		return Task{}, fmt.Errorf("tasks: %w", err)

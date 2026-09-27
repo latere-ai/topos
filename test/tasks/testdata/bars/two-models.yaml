@@ -1,0 +1,7 @@
+models:
+  - name: claude-sonnet-4-5
+    family: anthropic
+    connection: https://lux.example.com/anthropic
+  - name: gpt-5.4
+    family: openai
+    connection: https://lux.example.com/openai

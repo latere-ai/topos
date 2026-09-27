@@ -125,9 +125,8 @@ func Run(ctx context.Context, o Options) (Report, error) {
 	if err := o.checkWork(ctx); err != nil {
 		return Report{}, err
 	}
-	rep := Report{Model: o.modelName(), Commit: o.Commit, Started: time.Now().UTC()}
 	start := time.Now()
-	defer func() { rep.DurationMS = time.Since(start).Milliseconds() }()
+	rep := Report{Model: o.modelName(), Commit: o.Commit, Started: start.UTC()}
 	for _, t := range selected {
 		n := t.Runs
 		if o.Runs > 0 {
@@ -136,11 +135,11 @@ func Run(ctx context.Context, o Options) (Report, error) {
 		for i := 1; i <= n; i++ {
 			if o.BudgetUSDMicro > 0 && rep.SpendUSDMicro >= o.BudgetUSDMicro {
 				rep.incomplete(fmt.Sprintf("the suite's budget of %s is spent", usd(o.BudgetUSDMicro)))
-				return rep.finish(), nil
+				return rep.finish(start), nil
 			}
 			r, err := RunTask(ctx, t, o, i)
 			if ctx.Err() != nil {
-				return rep.finish(), ctx.Err()
+				return rep.finish(start), ctx.Err()
 			}
 			if err != nil {
 				r = RunResult{Task: t.ID, Run: i, Reason: "the run could not run: " + err.Error()}
@@ -151,12 +150,12 @@ func Run(ctx context.Context, o Options) (Report, error) {
 				o.OnRun(r)
 			}
 			if r.BudgetExhausted {
-				rep.incomplete("the model's key was refused for spend: " + r.Detail)
-				return rep.finish(), nil
+				rep.incomplete("the model's key was refused for spend: " + r.Error)
+				return rep.finish(start), nil
 			}
 		}
 	}
-	return rep.finish(), nil
+	return rep.finish(start), nil
 }
 
 // tasks loads the suite and applies the filter.
