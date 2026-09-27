@@ -34,7 +34,9 @@ import (
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/blob"
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/internal/credentials"
 	"latere.ai/x/topos/internal/hosted"
+	idp "latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/runnerapi"
 	"latere.ai/x/topos/internal/runnerrole"
 	"latere.ai/x/topos/internal/server"
@@ -143,6 +145,13 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
 		PublicURL: cfg.PublicURL, Log: log, Notify: queue.Notify, HostSessions: cfg.HostSessions,
 	}
+	minter, identities, err := newMinter(cfg, st)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if identities != nil {
+		so.Identities = identities
+	}
 	if cfg.HostSessions {
 		so.Deleted = func(id string) error { return hosted.RemoveHostSession(cfg.DataDir, id) }
 	}
@@ -153,7 +162,11 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	// The runners stop with the process, and on every other way out of
 	// serve too; each drive then leaves its session to the next runner.
 	runCtx, stopRunners := context.WithCancel(ctx)
-	runners, err := startRunners(runCtx, cfg, getenv, st.sessions, queue, runner.KindServe, log)
+	var local func(string, session.Lease) runner.Credentials
+	if minter != nil {
+		local = minter.Local
+	}
+	runners, err := startRunners(runCtx, cfg, getenv, st.sessions, queue, runner.KindServe, local, log)
 	if err != nil {
 		stopRunners()
 		return fail(stderr, err)
@@ -165,6 +178,13 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	// The reaper of spec 014 ends expired sessions and deletes the ones
 	// past their retention, until the process stops.
 	go reapEvery(runCtx, server.ReapInterval, api.Reap, log)
+	// The identities a crash left archived and undisabled are caught up
+	// at start as well as on every reaper pass (spec 018).
+	go func() {
+		if err := api.Reconcile(runCtx); err != nil {
+			log.ErrorContext(runCtx, "reconcile the agents' identities", "err", err)
+		}
+	}()
 
 	draining := make(chan struct{})
 	probes := health.Handler(health.Options{
@@ -209,7 +229,11 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	internal := http.NewServeMux()
 	internal.Handle("/", probes)
 	if len(cfg.RunnerTokens) > 0 {
-		routes, err := runnerapi.New(runnerapi.Options{Store: st.sessions, Queue: queue, Tokens: cfg.RunnerTokens, Log: log})
+		ro := runnerapi.Options{Store: st.sessions, Queue: queue, Tokens: cfg.RunnerTokens, Log: log}
+		if minter != nil {
+			ro.Credentials = minter.Credential
+		}
+		routes, err := runnerapi.New(ro)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -307,6 +331,33 @@ func openStores(ctx context.Context, cfg config.Config, log *slog.Logger) (store
 	return stores{sessions: sessions, objects: objects, name: "dir:" + cfg.DataDir, ping: ping, close: release}, nil
 }
 
+// newMinter builds the minter of the sessions' own credentials and the
+// identity provider it asks (spec 018); both are nil on a server that
+// has neither an identity provider nor session keys.
+func newMinter(cfg config.Config, st stores) (*credentials.Minter, *idp.Client, error) {
+	if cfg.IdentityURL == "" && cfg.SessionKeysURL == "" {
+		return nil, nil, nil
+	}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: otel.Transport(nil)}
+	o := credentials.Options{Sessions: st.sessions, Agents: st.objects}
+	var ic *idp.Client
+	if cfg.IdentityURL != "" {
+		var err error
+		if ic, err = idp.New(idp.Options{URL: cfg.IdentityURL, ClientID: cfg.IdentityClientID, SecretFile: cfg.IdentitySecretFile, HTTP: client}); err != nil {
+			return nil, nil, fmt.Errorf("TOPOS_IDENTITY_URL: %w", err)
+		}
+		o.Tokens = ic
+	}
+	if cfg.SessionKeysURL != "" {
+		o.Keys = &credentials.KeyRoutes{URL: cfg.SessionKeysURL, Token: cfg.SessionKeysToken, HTTP: client}
+	}
+	m, err := credentials.New(o)
+	if err != nil {
+		return nil, nil, err
+	}
+	return m, ic, nil
+}
+
 // reapInterval is how often serve frees the claims of remote runners
 // that stopped renewing them.
 var reapInterval = 5 * time.Second
@@ -317,7 +368,7 @@ var reapInterval = 5 * time.Second
 // A capacity of zero runs none. With TOPOS_HOST_SESSIONS=on the host
 // sandbox is checked first, and a sandbox that does not run or does not
 // confine stops the start.
-func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, st session.Store, queue runner.Claimer, kind string, log *slog.Logger) (<-chan struct{}, error) {
+func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)
@@ -329,7 +380,11 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		if err != nil {
 			return nil, fmt.Errorf("TOPOS_MACHINE_HELPERS: %w", err)
 		}
-		cella = hosted.Cella(hosted.CellaOptions{URL: cfg.CellaURL, Token: client.TokenFile(cfg.CellaTokenFile), Helpers: helpers, Dir: cfg.MachineDir})
+		co := hosted.CellaOptions{URL: cfg.CellaURL, Helpers: helpers, Dir: cfg.MachineDir, ModelsURL: cfg.ModelsURL, OrigoURL: cfg.OrigoURL, Log: log}
+		if cfg.CellaTokenFile != "" {
+			co.Token = client.TokenFile(cfg.CellaTokenFile)
+		}
+		cella = hosted.Cella(co)
 	}
 	var onHost hosted.Machines
 	if cfg.HostSessions {
@@ -354,7 +409,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	if err != nil {
 		return nil, err
 	}
-	r, err := runner.New(runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind})
+	r, err := runner.New(runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind, Credentials: creds})
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +453,9 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 	}
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	runners, err := startRunners(runCtx, cfg, getenv, client, client, runner.KindRunner, log)
+	// A claim's lease reaches its session's credentials over the token
+	// route itself, so the runner role builds none.
+	runners, err := startRunners(runCtx, cfg, getenv, client, client, runner.KindRunner, nil, log)
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}
