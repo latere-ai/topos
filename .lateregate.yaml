@@ -13,6 +13,10 @@ cover:
       main hands the process's streams, environment and working directory to
       internal/toposcli, where the command and its tests live; the wiring is
       five statements and main itself is not measurable in process.
+    internal/store/storetest: >-
+      the conformance suite of store.Store, run by each store's own tests;
+      the uncovered statements are the failure branches a conforming store
+      never takes.
     session/storetest: >-
       the conformance suite of session.Store; its statements are assertions,
       and the uncovered ones are the failure branches a conforming store
