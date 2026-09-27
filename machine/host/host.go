@@ -58,6 +58,9 @@ type Options struct {
 	// WorktreeDir holds the git worktrees of isolated threads; empty
 	// offers none.
 	WorktreeDir string
+	// Owner is the session that claimed Workdir with Claim; the release
+	// at the session's end gives it back by ReleaseCheckout's rule.
+	Owner string
 	// Sandbox, when set, runs every command inside a host sandbox, one
 	// stage per command, with none of Environ; nil runs commands as the
 	// person's own processes.
@@ -749,12 +752,23 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 }
 
 // Release lets go of the machine. The host keeps nothing for an idle
-// session; at the session's end it stops every background job and
-// closes the roots.
+// session; at the session's end it stops the machine and gives back the
+// working directory its session claimed.
 func (h *Host) Release(ctx context.Context, end bool) error {
 	if !end {
 		return nil
 	}
+	err := h.Stop(ctx)
+	if h.opts.Owner != "" {
+		_, rerr := ReleaseCheckout(ctx, h.opts.Workdir, h.opts.Owner, h.opts.Environ)
+		err = errors.Join(err, rerr)
+	}
+	return err
+}
+
+// Stop stops every background job and closes the roots, for a machine
+// its caller discards while the session goes on.
+func (h *Host) Stop(ctx context.Context) error {
 	h.mu.Lock()
 	if h.released {
 		h.mu.Unlock()
