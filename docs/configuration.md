@@ -8,13 +8,14 @@ names every problem. This page lists the variables read today.
 |---|---|---|
 | `TOPOS_PUBLIC_ADDR` | `:8080` | the listener for the API and the public probes |
 | `TOPOS_INTERNAL_ADDR` | `:8081` | the listener for the cluster's probes, metrics and, later, the runners |
-| `TOPOS_PUBLIC_URL` | required | the absolute URL clients reach the public listener at, and the name of the local issuer |
+| `TOPOS_PUBLIC_URL` | required | the absolute URL clients reach the API root at, and the name of the local issuer; every URL toposd writes (a session's stream `Link`, the next page's `Link`, the served `openapi.yaml`'s server) starts with it, whatever host a request named. Its path is `TOPOS_BASE_PATH`, and it has none when that is unset |
+| `TOPOS_BASE_PATH` | unset | the path the API answers under in the place of `/v1`, for a server mounted under a prefix of an origin it shares with other services: with `/v1/agents`, agents are at `/v1/agents/agents`, sessions at `/v1/agents/sessions` and the document at `/v1/agents/openapi.yaml`. It starts with `/`, has no trailing `/`, and equals the path of `TOPOS_PUBLIC_URL`; a mismatch stops the start. A path outside it answers `not_found`, and the probes and the build identity stay at the listener's root. Unset, the API answers under `/v1` |
 | `TOPOS_OIDC_ISSUERS` | required unless `TOPOS_LOCAL_ISSUER_KEY` is set | comma-separated issuer URLs whose tokens are accepted; each must answer at start |
 | `TOPOS_OIDC_AUDIENCE` | `topos` | comma-separated audiences a token may carry, the first the primary |
 | `TOPOS_OIDC_INSECURE_ISSUERS` | unset | listed issuers allowed to use `http://` on a host other than loopback |
 | `TOPOS_AUTHORIZER_URL`, `TOPOS_AUTHORIZER_TOKEN` | unset | the installation's authorizer and its bearer; unset, the owner policy decides |
 | `TOPOS_ADMIN_SUBJECTS` | unset | subjects (`<issuer>\|<sub>`) the owner policy lets act on every object |
-| `TOPOS_LOCAL_ISSUER_KEY` | unset | a PEM PKCS#8 ECDSA P-256 or RSA (2048 bits or more) private key; set, toposd accepts the tokens `toposd token` signs and serves its key set at `/.well-known/jwks.json` |
+| `TOPOS_LOCAL_ISSUER_KEY` | unset | a PEM PKCS#8 ECDSA P-256 or RSA (2048 bits or more) private key; set, toposd accepts the tokens `toposd token` signs and serves its key set at `<TOPOS_PUBLIC_URL>/.well-known/jwks.json` |
 | `TOPOS_DB_URL`, `TOPOS_DB_POOL_URL` | unset | Postgres for sessions, and an optional transaction-pooling URL for queries |
 | `TOPOS_BLOB_URL` | unset | where raw model responses and captured requests are kept: `file:///<path>`, or `s3://<host>/<bucket>/<prefix>` for an S3 compatible object store, with `?region=` when it is not `us-east-1`; unset keeps them in the database or the data directory |
 | `TOPOS_BLOB_ACCESS_KEY`, `TOPOS_BLOB_SECRET_KEY` | required with an `s3://` URL | the object store's access key and secret; there is no credential chain |
