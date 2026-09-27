@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -143,7 +142,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	queue := runner.NewQueue(st.sessions, 0)
 	so := server.Options{
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
-		PublicURL: cfg.PublicURL, Log: log, Notify: queue.Notify, HostSessions: cfg.HostSessions,
+		PublicURL: cfg.PublicURL, BasePath: cfg.BasePath, Log: log, Notify: queue.Notify, HostSessions: cfg.HostSessions,
 	}
 	minter, identities, err := newMinter(cfg, st)
 	if err != nil {
@@ -203,10 +202,14 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, version.String("toposd"))
 	})
-	public.Handle(server.DefaultBasePath+"/", api.Handler())
+	// The API answers under its base path, and not_found for every path
+	// the patterns above and below do not name.
+	public.Handle("/", api.Handler())
 	if id.signer != nil {
 		jwks := id.signer.JWKS()
-		public.HandleFunc("GET "+basePath(cfg.PublicURL)+token.JWKSPath, func(w http.ResponseWriter, _ *http.Request) {
+		// The key set sits under the public URL, whose path is the base
+		// path, beside the API's routes (spec 030).
+		public.HandleFunc("GET "+cfg.BasePath+token.JWKSPath, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "public, max-age=300")
 			_, _ = w.Write(jwks)
@@ -518,16 +521,6 @@ func newIdentity(ctx context.Context, cfg config.Config) (identity, error) {
 	}
 	id.verifier, id.guard = v, auth.Guard{Authorizer: a}
 	return id, nil
-}
-
-// basePath is the path of TOPOS_PUBLIC_URL, which config.Load checked
-// parses, without a trailing slash.
-func basePath(publicURL string) string {
-	u, err := url.Parse(publicURL)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimRight(u.Path, "/")
 }
 
 // signToken is the token role: it signs one token with the local

@@ -63,10 +63,11 @@ func localKey(t *testing.T) string {
 }
 
 // selfHosted is m over the identity of a self-hoster: the local issuer
-// and the owner policy, with no identity provider.
+// and the owner policy, with no identity provider, served under a base
+// path.
 func selfHosted(t *testing.T, m map[string]string) func(string) string {
 	t.Helper()
-	all := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
+	all := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_BASE_PATH": "/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 	maps.Copy(all, m)
 	return env(all)
 }
@@ -326,9 +327,10 @@ func TestTokenRoleRoundTrip(t *testing.T) {
 }
 
 // TestServePublishesTheLocalKeySet: with the local issuer on, the key
-// set is served under the path of TOPOS_PUBLIC_URL.
+// set is served under the path of TOPOS_PUBLIC_URL, which is the base
+// path.
 func TestServePublishesTheLocalKeySet(t *testing.T) {
-	publicURL, _, stop := startServe(t, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t)})
+	publicURL, _, stop := startServe(t, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_BASE_PATH": "/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t)})
 	code, body := get(t, publicURL+"/topos/.well-known/jwks.json")
 	var set struct {
 		Keys []struct {
@@ -338,6 +340,64 @@ func TestServePublishesTheLocalKeySet(t *testing.T) {
 	}
 	if code != 200 || json.Unmarshal([]byte(body), &set) != nil || len(set.Keys) != 1 || set.Keys[0].Alg != "ES256" {
 		t.Fatalf("GET jwks.json = %d %q", code, body)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestBasePathReplacesTheRoot is spec 030's mount: with TOPOS_BASE_PATH
+// set to a capability prefix, every route answers under it in the place
+// of /v1, so the agent collection is /v1/agents/agents; the version
+// segment is not repeated, a path outside the base is not_found, and the
+// probes, the build identity and the key set stay where they were.
+func TestBasePathReplacesTheRoot(t *testing.T) {
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/v1/agents", "TOPOS_BASE_PATH": "/v1/agents", "TOPOS_LOCAL_ISSUER_KEY": localKey(t)}
+	var tok bytes.Buffer
+	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
+		t.Fatalf("token: exit %d", code)
+	}
+	bearer := strings.TrimSpace(tok.String())
+	publicURL, internalURL, stop := startServe(t, vars)
+	send := func(path string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, publicURL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(b)
+	}
+	if code, body := send("/v1/agents/agents"); code != http.StatusOK || !strings.Contains(body, `"items":[]`) {
+		t.Errorf("GET /v1/agents/agents = %d %s", code, body)
+	}
+	for _, p := range []string{"/v1/agents/v1/agents", "/v1/agents", "/v1/sessions", "/agents"} {
+		if code, body := send(p); code != http.StatusNotFound || !strings.Contains(body, `"code":"not_found"`) {
+			t.Errorf("GET %s = %d %s, want not_found", p, code, body)
+		}
+	}
+	if code, body := get(t, publicURL+"/v1/agents/openapi.yaml"); code != http.StatusOK || !strings.Contains(body, "url: http://127.0.0.1:8080/v1/agents\n") {
+		t.Errorf("GET /v1/agents/openapi.yaml = %d, servers not the public URL", code)
+	}
+	if code, _ := get(t, publicURL+"/v1/agents/.well-known/jwks.json"); code != http.StatusOK {
+		t.Errorf("GET the key set = %d", code)
+	}
+	for _, base := range []string{publicURL, internalURL} {
+		if code, body := get(t, base+"/livez"); code != http.StatusOK || body != "ok\n" {
+			t.Errorf("GET %s/livez = %d %q", base, code, body)
+		}
+	}
+	if code, body := get(t, publicURL+"/"); code != http.StatusOK || !strings.HasPrefix(body, "toposd") {
+		t.Errorf("GET / = %d %q", code, body)
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit %d", code)
@@ -356,14 +416,6 @@ func TestServeStopsOnAnIssuerThatDoesNotAnswer(t *testing.T) {
 	}), io.Discard, &errOut)
 	if code != 1 || !strings.Contains(errOut.String(), "TOPOS_OIDC_ISSUERS") {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
-	}
-}
-
-func TestBasePath(t *testing.T) {
-	for in, want := range map[string]string{"https://x.example": "", "https://x.example/": "", "https://x.example/topos/": "/topos", "%": ""} {
-		if got := basePath(in); got != want {
-			t.Errorf("basePath(%q) = %q, want %q", in, got, want)
-		}
 	}
 }
 
