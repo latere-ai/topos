@@ -408,10 +408,37 @@ func (l *local) create(ctx context.Context, o runOptions, agent *manifest.Resolv
 			return session.Session{}, err
 		}
 	}
+	if err := l.claim(ctx, &s); err != nil {
+		return session.Session{}, err
+	}
 	if err := l.store.Create(ctx, s, blobs); err != nil {
 		return session.Session{}, err
 	}
 	return s, nil
+}
+
+// claim picks the session's working directory: the checkout it started
+// in, or a worktree of its own when another session that has not ended
+// writes that checkout (spec 009).
+func (l *local) claim(ctx context.Context, s *session.Session) error {
+	c, err := host.Claim(ctx, host.ClaimOptions{
+		Dir: s.Machine.Workdir, WorktreeDir: filepath.Join(l.dataDir, "worktrees"), Agent: s.Agent.Name, Session: s.ID,
+		Active: func(ctx context.Context, id string) (bool, error) {
+			other, err := l.store.Get(ctx, id)
+			if errors.Is(err, session.ErrNotFound) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			return other.Status != session.StatusEnded, nil
+		},
+	})
+	if err != nil {
+		return err
+	}
+	s.Machine.Workdir = c.Workdir
+	return nil
 }
 
 // ConfigDir is $XDG_CONFIG_HOME/topos, or .config/topos under the home
@@ -676,13 +703,13 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 		}
 		m, err := host.Open(host.Options{
 			Workdir: s.Machine.Workdir, Roots: roots, SpillDir: filepath.Join(l.dataDir, "spill", s.ID),
-			Home: config.Home(l.getenv), DataDir: l.dataDir, ID: s.ID,
+			Home: config.Home(l.getenv), DataDir: l.dataDir, ID: s.ID, Owner: s.ID,
 		})
 		if err != nil {
 			return harness.Config{}, err
 		}
 		if err := harness.CheckSandbox(cfg.Policy.Mode, m.Info()); err != nil {
-			return harness.Config{}, errors.Join(&runner.SetupError{Code: harness.CodeSandboxUnavailable, Err: err}, m.Release(ctx, true))
+			return harness.Config{}, errors.Join(&runner.SetupError{Code: harness.CodeSandboxUnavailable, Err: err}, m.Stop(ctx))
 		}
 		reg := tools.NewRegistry()
 		for _, t := range tools.Builtins() {
@@ -690,7 +717,7 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 				continue
 			}
 			if err := reg.AddBuiltin(t); err != nil {
-				return harness.Config{}, errors.Join(err, m.Release(ctx, true))
+				return harness.Config{}, errors.Join(err, m.Stop(ctx))
 			}
 		}
 		cfg.Machine, cfg.Tools = m, reg
