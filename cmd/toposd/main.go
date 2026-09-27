@@ -308,19 +308,8 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	}
 	var onHost hosted.Machines
 	if cfg.HostSessions {
-		driver, err := hosted.SandboxDriver(getenv)
-		if err != nil {
-			return nil, fmt.Errorf("TOPOS_HOST_SESSIONS: %w", err)
-		}
-		// Every file the configuration names is denied to commands, the
-		// Cella bearer's among them.
-		var denied []string
-		for _, p := range []string{cfg.CellaTokenFile, cfg.MachineHelpers} {
-			if p != "" {
-				denied = append(denied, p)
-			}
-		}
-		if onHost, err = hosted.NewHost(ctx, hosted.HostOptions{DataDir: cfg.DataDir, Denied: denied, Driver: driver}); err != nil {
+		var err error
+		if onHost, err = hostSessions(ctx, cfg, getenv); err != nil {
 			return nil, fmt.Errorf("TOPOS_HOST_SESSIONS: %w", err)
 		}
 	}
