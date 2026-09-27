@@ -10,6 +10,7 @@ import (
 	"latere.ai/x/cella/client"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/models"
 )
 
 // The failures of spec 009's error codes. Every error the machine returns
@@ -36,16 +37,33 @@ func Code(err error) string {
 	return ""
 }
 
-// refused names a failed call to Cella. A refusal, any 4xx but a rate
-// limit, is ErrUnavailable: the same request would be refused again. A
-// server that could not answer, a 5xx, a 429 or no answer at all, is
-// transient and carries no code.
+// refused names a failed call to Cella. A refusal for spend is a
+// models.SpendError whatever its status, which stops the turn with
+// budget (spec 007). Any other refusal, any 4xx but a rate limit, is
+// ErrUnavailable: the same request would be refused again. A server
+// that could not answer, a 5xx, a 429 or no answer at all, is transient
+// and carries no code.
 func refused(what string, err error) error {
+	if se, ok := spent(what, err); ok {
+		return se
+	}
 	var ce *client.Error
 	if errors.As(err, &ce) && ce.Status >= 400 && ce.Status < 500 && ce.Status != 429 {
 		return fmt.Errorf("%w: Cella refused to %s: %w", ErrUnavailable, what, refusal{ce})
 	}
 	return fmt.Errorf("machine: %s: %w", what, err)
+}
+
+// spent is err as a models.SpendError when Cella refused the call
+// because the allowance the installation's authorizer gave the session
+// for sandbox time is spent: budget_exhausted or spend_exceeded, which
+// no retry and no other sandbox brings back.
+func spent(what string, err error) (error, bool) {
+	var ce *client.Error
+	if !errors.As(err, &ce) || !models.SpendCode(ce.Code) {
+		return nil, false
+	}
+	return &models.SpendError{Core: machine.KindCella, Code: ce.Code, Err: fmt.Errorf("Cella refused to %s: %w", what, refusal{ce})}, true
 }
 
 // refusal renders Cella's refusal with its code and the developer

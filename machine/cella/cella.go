@@ -669,8 +669,12 @@ func (m *Machine) call(ctx context.Context, retry bool, f func(id string) error)
 	return m.check(ctx, id, err)
 }
 
-// check tells a sandbox that is gone from a path that is missing.
+// check tells a sandbox that is gone from a path that is missing, and
+// names a refusal for spend as one.
 func (m *Machine) check(ctx context.Context, id string, err error) error {
+	if se, ok := spent("act in the sandbox "+m.name, err); ok {
+		return se
+	}
 	if client.CodeOf(err) != "not_found" {
 		return err
 	}

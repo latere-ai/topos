@@ -18,6 +18,7 @@ import (
 	"latere.ai/x/cella/client"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/models"
 )
 
 // deny is the credential deny-list inside a sandbox: the base-name
@@ -70,6 +71,9 @@ func under(p, root string) bool {
 func routeErr(op, p string, err error) error {
 	if err == nil || errors.Is(err, ErrLost) || errors.Is(err, machine.ErrReleased) {
 		return err
+	}
+	if _, spent := models.SpendRefused(err); spent {
+		return fmt.Errorf("machine: %s %s: %w", op, p, err)
 	}
 	var ce *client.Error
 	if errors.As(err, &ce) {
