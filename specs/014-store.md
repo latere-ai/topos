@@ -163,7 +163,7 @@ a directory and names it.
 |---|---|
 | unset | in the store: the `blobs.body` column on Postgres, `blobs/sha256/` in the session's directory on the directory store |
 | `file:///<path>` | as `<path>/<session>/<hex>`, written to a temporary name, fsynced and renamed |
-| `s3://<host>/<bucket>/<prefix>` | as the object `<prefix>/<session>/<hex>` through `latere.ai/x/pkg/s3`, path-style over TLS, with `TOPOS_BLOB_ACCESS_KEY` and `TOPOS_BLOB_SECRET_KEY` ([[002-scaffold-and-configuration]]) |
+| `s3://<host>/<bucket>/<prefix>` | as the object `<prefix>/<session>/<hex>` through `latere.ai/x/pkg/s3`, path-style over TLS, with `TOPOS_BLOB_ACCESS_KEY` and `TOPOS_BLOB_SECRET_KEY` ([[002-scaffold-and-configuration]]), signed for the region a `?region=` names, `us-east-1` by default |
 
 A blob is written and its `blobs` row inserted before the event that
 names it is appended. A read verifies the bytes against the digest and
@@ -181,8 +181,9 @@ one, which its runner holds, to a later pass, and deletes every ended
 session past its retention, counted from its last event. Deleting a session removes its row,
 its events and its blobs, the objects under `<prefix>/<session>/`
 included, in that order, so a crash midway leaves blobs without a
-session, which the next reaper run removes, and never a session
-without its blobs. Redaction deletes only the blobs the redacted event
+session, which a reaper run removes once the session's id is an hour
+old, since a session being created puts its blobs before it appears,
+and never a session without its blobs. Redaction deletes only the blobs the redacted event
 alone named ([[004-session-log]]). An agent is archived, never
 deleted, while a session pins one of its versions.
 
@@ -207,8 +208,8 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 | Closing the store closes its listener connection and every open watch | `internal/store/postgres.TestAClosedStoreClosesItsWatches` (tag `postgres`) | built |
 | A second `toposd serve` on the same data directory refuses to start | `internal/store/dir.TestASecondServeIsRefusedWithThePidOfTheFirst`, `cmd/toposd.TestServeAnswersTheAPIAsASelfHoster` | built |
 | A blob in the database is readable by digest, and one whose bytes no longer match answers `ErrCorrupt` | `internal/store/postgres.TestACorruptBlobIsRefused` (tag `postgres`) | built |
-| A blob is readable by digest from the `file://` and `s3://` locations | `TestBlobStoreLocations` | not built |
-| Deleting a session removes its rows and every blob object; a crash between the two leaves no session without its blobs, and the reaper removes the orphans | `TestSessionDeletionOrder` | not built |
+| A blob is readable by digest from the `file://` and `s3://` locations, through both stores, and one whose bytes no longer match answers `ErrCorrupt` | `internal/blob.TestBlobStoreLocations` over `s3test`, `session/dir.TestOutsideBlobs`, `session/dir.TestDirStoreConformanceWithOutsideBlobs`, `internal/store/postgres.TestPostgresBlobsOutsideTheDatabase` and `internal/store/postgres.TestPostgresStoreConformanceWithObjectBlobs` (tag `postgres`), `cmd/toposd.TestServeKeepsBlobsWhereTheURLSays` | built |
+| Deleting a session removes its rows and every blob object; a crash between the two leaves no session without its blobs, and the reaper removes the orphans | `internal/server.TestSessionDeletionOrder`, `session/dir.TestOutsideBlobs`, `internal/store/postgres.TestPostgresBlobsOutsideTheDatabase` (tag `postgres`) | built |
 | A session past `expires_at` is ended `expired`, and an ended one past its retention is deleted | `internal/server.TestReaperExpiresAndDeletes` | built |
 | Migrations apply on an empty database when the store opens | `internal/store/postgres.TestPostgresStoreConformance` (tag `postgres`, every subtest opens a fresh database) | built |
 | A lease that expires is taken over by the next holder, and the old holder's renew fails and its `Lost` closes | `internal/store/postgres.TestAnExpiredLeaseIsTakenOverAndTheOldHolderLosesIt` (tag `postgres`) | built |
