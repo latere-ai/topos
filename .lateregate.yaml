@@ -133,6 +133,10 @@ identity:
   reached_by: self-hosted
   roles_only: true
   skip: [docs/history]
+  # A manifest's permission is a grant of the agent's key, {action,
+  # resource} in the grammar of specs 003 and 018, and not the
+  # authorizer's question, which toposd asks through latere.ai/x/pkg/authz.
+  envelope_exempt: [manifest/v1/permission.go]
 
 # Serving queries read the pooled URL when it is set; the migrations and
 # LISTEN keep the direct one (spec 014).

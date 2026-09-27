@@ -151,12 +151,6 @@ func (t *Tool) UnmarshalJSON(b []byte) error {
 	return errToolForm
 }
 
-// Permission is one grant of the agent's key (spec 006).
-type Permission struct {
-	Action   string `json:"action"`
-	Resource string `json:"resource"`
-}
-
 // Approvals are how the agent's sessions decide calls when no
 // authorizer supplies the lists (spec 012).
 type Approvals struct {
