@@ -118,6 +118,19 @@ var foldCases = []struct {
 		b.add(session.TypeSessionStatus, "", 1, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopEndTurn})
 		return []string{""}
 	}, nil},
+	{"opaque_reasoning", func(b *logb) []string {
+		// A Responses reasoning item travels as an opaque block, its raw
+		// JSON in the escaped form encoding/json writes, and folds back
+		// byte for byte beside the thinking it was summarized as.
+		b.user(ada, "Plan the migration.", 1)
+		b.assistant("", 1, false,
+			lux.Block{Type: ir.BlockThinking, Text: "compare the two schemas"},
+			lux.Block{Type: ir.BlockOpaque, Opaque: &lux.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning",
+				Raw: json.RawMessage(`{"encrypted_content":"gAAA\u003cb\u0026c\u003e","id":"rs_1","type":"reasoning"}`)}},
+			txt("Two steps."))
+		b.user(ada, "Go on.", 2)
+		return []string{""}
+	}, nil},
 	{"tool_results_in_tool_use_order", func(b *logb) []string {
 		b.user(ada, "Run three things.", 1)
 		b.assistant("", 1, false, txt("Running."), use("toolu_a", "bash"), use("toolu_b", "bash"), use("toolu_c", "bash"))

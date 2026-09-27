@@ -108,3 +108,13 @@ func TestBreakpointsRollWithTheConversation(t *testing.T) {
 		t.Fatal("tools from nothing")
 	}
 }
+
+func TestBuildRequestCarriesTheReasoningReplayAsk(t *testing.T) {
+	for _, ask := range []bool{true, false} {
+		msgs := []lux.Message{{Role: ir.RoleUser, Blocks: []lux.Block{{Type: ir.BlockText, Text: "hi"}}}}
+		req, err := buildRequest(requestParts{Model: "m", Messages: msgs, MaxTokens: 10, ReasoningReplay: ask})
+		if err != nil || req.ReasoningReplay != ask {
+			t.Fatalf("ReasoningReplay %v: %v, %v", ask, req.ReasoningReplay, err)
+		}
+	}
+}

@@ -204,6 +204,10 @@ committed: the commit log already holds that.
   `machine.kind` is `host` is refused `machine_unavailable` by the server,
   and the owner policy lets a subject start sessions of its own agents
   only.
+- A reasoning model served over OpenAI Responses keeps its reasoning
+  across turns: the harness asks for the encrypted reasoning items, keeps
+  each as an opaque block in the session log, and sends it back verbatim
+  on the next request (`latere.ai/x/pkg` v0.88.0).
 
 ## v0.7.0 - 2026-09-26
 

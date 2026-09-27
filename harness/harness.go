@@ -667,6 +667,7 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 	req, err := buildRequest(requestParts{
 		Model: t.h.c.Connection.Model, System: system, Messages: tr.Messages, Tools: defs,
 		MaxTokens: t.h.c.Entry.MaxOutputTokens, Effort: t.h.c.Effort, CacheKey: t.s.ID,
+		ReasoningReplay: t.h.c.Connection.EffectiveDialect() == ir.DialectOpenAIResponses,
 	})
 	return req, sum, err
 }

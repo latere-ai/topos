@@ -1,0 +1,52 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Plan the migration."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "thinking",
+            "text": "compare the two schemas"
+          },
+          {
+            "type": "opaque",
+            "opaque": {
+              "dialect": "openai-responses",
+              "kind": "reasoning",
+              "raw": {
+                "encrypted_content": "gAAA\u003cb\u0026c\u003e",
+                "id": "rs_1",
+                "type": "reasoning"
+              }
+            }
+          },
+          {
+            "type": "text",
+            "text": "Two steps."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Go on."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

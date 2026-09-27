@@ -7,7 +7,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.2
 	latere.ai/x/cella v0.8.0
-	latere.ai/x/pkg v0.87.0
+	latere.ai/x/pkg v0.88.0
 )
 
 require (

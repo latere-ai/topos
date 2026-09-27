@@ -1124,3 +1124,31 @@ func TestAnInterruptCancelsRunningCalls(t *testing.T) {
 		t.Fatalf("result %+v, %v", res, err)
 	}
 }
+
+// TestAResponsesModelIsAskedToReplayItsReasoning: over OpenAI Responses
+// the request asks for the encrypted reasoning the next turn carries
+// back; over Anthropic Messages, whose thinking carries its signature,
+// it does not.
+func TestAResponsesModelIsAskedToReplayItsReasoning(t *testing.T) {
+	for d, want := range map[ir.Dialect]bool{ir.DialectOpenAIResponses: true, ir.DialectAnthropicMessages: false} {
+		e := setup(t, func(c *Config) {
+			c.Connection.Dialect = d
+			if d == ir.DialectOpenAIResponses {
+				c.Connection.BaseURL = strings.TrimSuffix(c.Connection.BaseURL, "/anthropic") + "/openai"
+				c.Connection.Family = models.FamilyOpenAI
+			}
+		})
+		e.stub.Script(model, reply(ir.StopEndTurn, text("ok")))
+		e.send(t.Context(), "Plan it.")
+		if out := e.turn(t.Context()); out.StopReason != session.StopEndTurn {
+			t.Fatalf("%s: %+v", d, out)
+		}
+		reqs := e.stub.Requests()
+		if len(reqs) != 1 || reqs[0].Dialect != d {
+			t.Fatalf("%s: %d requests", d, len(reqs))
+		}
+		if got := strings.Contains(string(reqs[0].Body), "reasoning.encrypted_content"); got != want {
+			t.Errorf("%s: the body asks for the encrypted reasoning: %v, want %v: %s", d, got, want, reqs[0].Body)
+		}
+	}
+}

@@ -134,7 +134,11 @@ type requestParts struct {
 	Tools     []lux.Tool
 	MaxTokens int64
 	Effort    string
-	CacheKey  string
+	// ReasoningReplay asks for the model's reasoning in a form the next
+	// request carries back, which a reasoning model served over OpenAI
+	// Responses needs to keep its reasoning across turns.
+	ReasoningReplay bool
+	CacheKey        string
 }
 
 // buildRequest turns the parts into the IR through the Lux codec: the Lux
@@ -148,7 +152,7 @@ func buildRequest(p requestParts) (ir.Request, error) {
 	system := append([]lux.Block(nil), p.System...)
 	placeBreakpoints(system, msgs)
 	limit := p.MaxTokens
-	req := lux.Request{Model: p.Model, System: system, Messages: msgs, Tools: p.Tools, MaxTokens: &limit, Stream: true, CacheKey: p.CacheKey}
+	req := lux.Request{Model: p.Model, System: system, Messages: msgs, Tools: p.Tools, MaxTokens: &limit, Stream: true, CacheKey: p.CacheKey, ReasoningReplay: p.ReasoningReplay}
 	if p.Effort != "" {
 		req.Reasoning = &lux.Reasoning{Effort: ir.Effort(p.Effort)}
 	}
