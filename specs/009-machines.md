@@ -284,3 +284,43 @@ repository delivery and git credentials ([[019-git]]); named secrets
 | Searches, commands and file operations on a Cella machine over the stub Cella answer as the host machine does over the same files | `machine/cella.TestParityWithTheHost` | built |
 | `bash` output on a Cella machine arrives as it is produced, not only at exit | `machine/cella.TestCellaExecStreams` | built |
 | A Cella machine's fetch runs `curl` inside the sandbox with the redirect, scheme, size and time limits of `web_fetch` | `machine/cella.TestFetchRunsInTheSandbox`, `machine/cella.TestFetchRefuses`, `machine/cella.TestFetchTimeout` | built |
+
+## Outcome
+
+Built on 2026-09-27. The `Machine` interface, the person's host with
+its confinement, deny-list, process groups and worktrees, the host of a
+server session inside the mandatory host sandbox, and the Cella
+sandbox through Cella's client and the `topos-machine` helper are in
+the tree. Every row of the acceptance table passes; the confinement
+checks of a server's host run where `srt` is installed.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| the interface, the deny-list, and the Go-native grep and glob | `machine/machine.go`, `machine/deny.go`, `machine/search.go`, `machine/shell.go` |
+| the person's host: roots through `os.Root`, commands in process groups or Windows Job Objects, background jobs, long scripts as files, fetch | `machine/host/host.go`, `machine/host/proc_unix.go`, `machine/host/proc_windows.go`, `machine/host/fetch.go` |
+| a session's claim of its checkout, its own worktree beside a session that has not ended, and the removal rule at its end | `machine/host/checkout.go`, `internal/toposcli` (`claim`) |
+| a server's host inside the host sandbox, one stage per command | `machine/host/stage.go`, `internal/hosted/host.go` |
+| the Cella sandbox: open by name, lifecycle, exec over the helper, files, search, fetch, tar | `machine/cella` |
+| the helper a sandbox runs | `cmd/topos-machine` |
+| the machines of a hosted session by kind, and the helper builds | `internal/hosted` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| a host session's spill directory is `$TOPOS_DATA_DIR/sessions/<id>/spill` | the `topos` command puts it at `$TOPOS_DATA_DIR/spill/<id>` | the path was chosen when the command was built; either place is outside every root the session reaches |
+| a session's worktree is recorded with its branch in `session.machine` | the working directory is recorded; the branch is not, and follows from the rule `agents/<agent>/<session>` | a branch field in `session.machine` is a change to the session schema of [[004-session-log]] |
+| a worktree that is neither merged nor pushed stays 30 days and is then removed, and `topos sessions prune` removes the rest | such a worktree stays; nothing removes it later yet | the later removal and the prune command are [[024-client-cli-skill]]'s |
+| the host needs `git` 2.30 or later, and without it `session.machine` says checkpoints are off | a host without `git` writes in place; no version is checked, and `session.machine` does not say whether checkpoints are on | not built |
+| the helper builds are embedded in the runner | the runner reads them at start from `TOPOS_MACHINE_HELPERS`, where the image puts them | the builds are other platforms' binaries, which the release image carries beside `toposd` |
+| a runner that finds the sandbox gone creates one, restores the latest checkpoint, and appends `session.machine` `restored`, or `replaced` with a `session.error` `machine_lost` | the machine answers `machine_lost` until `Recreate`; the runner's replacement is a row of [[016-runners]] and the restore one of [[034-checkpoints-and-rewind]], neither built | the mechanisms are the runner's and the checkpoints' |
+| `ExecRequest` has `Command`, `Dir`, `Env`, `Stdin`, `Timeout` and `Background` | it also has `ReportDir`, which asks for the command's final directory | `bash` keeps the directory a command changed to |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| a sandbox on an Environment whose worker runs outside the cluster | Cella's to prove; Topos names the Environment |
+| the task suite's tool calls compared between host and Cella | the e2e tier of [[026-stubs-and-tiers]] |
