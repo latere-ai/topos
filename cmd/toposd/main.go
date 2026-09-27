@@ -126,7 +126,8 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if err != nil {
 		return fail(stderr, err)
 	}
-	st, err := openStores(ctx, cfg)
+	log := slog.New(slog.NewTextHandler(stderr, nil))
+	st, err := openStores(ctx, cfg, log)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -135,7 +136,6 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 			_, _ = fmt.Fprintf(stderr, "toposd: close the store: %v\n", err)
 		}
 	}()
-	log := slog.New(slog.NewTextHandler(stderr, nil))
 	queue := runner.NewQueue(st.sessions, 0)
 	api, err := server.New(server.Options{
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
@@ -250,9 +250,9 @@ type stores struct {
 
 // openStores opens Postgres when TOPOS_DB_URL names it, and the data
 // directory otherwise, which one serving toposd holds alone.
-func openStores(ctx context.Context, cfg config.Config) (stores, error) {
+func openStores(ctx context.Context, cfg config.Config, log *slog.Logger) (stores, error) {
 	if cfg.DBURL != "" {
-		pg, err := postgres.Open(ctx, cfg.DBURL, postgres.Options{PoolDSN: cfg.DBPoolURL})
+		pg, err := postgres.Open(ctx, cfg.DBURL, postgres.Options{PoolDSN: cfg.DBPoolURL, Log: log})
 		if err != nil {
 			return stores{}, fmt.Errorf("TOPOS_DB_URL: %w", err)
 		}

@@ -5,8 +5,11 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -394,6 +397,116 @@ func TestStreamKeepsAlive(t *testing.T) {
 	line, err := bufio.NewReader(resp.Body).ReadString('\n')
 	if err != nil || line != ": keepalive\n" {
 		t.Fatalf("first line %q, %v", line, err)
+	}
+}
+
+// openStream opens the stream of session id as token and returns the
+// response and the function that hangs it up.
+func (f *fixture) openStream(id, token string) (*http.Response, context.CancelFunc) {
+	f.t.Helper()
+	ctx, cancel := context.WithCancel(f.t.Context())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.srv.URL+"/v1/sessions/"+id+"/stream?from_seq=2", nil)
+	if err != nil {
+		cancel()
+		f.t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := f.srv.Client().Do(req)
+	if err != nil {
+		cancel()
+		f.t.Fatal(err)
+	}
+	hangUp := func() {
+		cancel()
+		if err := resp.Body.Close(); err != nil {
+			f.t.Error(err)
+		}
+	}
+	f.t.Cleanup(hangUp)
+	return resp, hangUp
+}
+
+// TestStreamsPerSubjectAreCapped: a subject holds at most
+// StreamsPerSubject streams open at once, the one past it is refused
+// rate_limited while another subject still opens one, and a stream that
+// ends frees its slot.
+func TestStreamsPerSubjectAreCapped(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	var hangUps []context.CancelFunc
+	for i := range StreamsPerSubject {
+		resp, hangUp := f.openStream(s.ID, "alice")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("stream %d within the cap: %d", i, resp.StatusCode)
+		}
+		hangUps = append(hangUps, hangUp)
+	}
+	over, _ := f.openStream(s.ID, "alice")
+	if over.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("the stream past the cap: %d", over.StatusCode)
+	}
+	body, err := io.ReadAll(over.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := answer{status: over.StatusCode, header: over.Header, body: body}
+	var e struct {
+		Error struct {
+			Details struct {
+				Detail string `json:"detail"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	a.decode(t, &e)
+	if a.code() != CodeRateLimited || !strings.Contains(e.Error.Details.Detail, fmt.Sprint(StreamsPerSubject)) {
+		t.Fatalf("the stream past the cap: %s", a.body)
+	}
+	if resp, _ := f.openStream(s.ID, "root"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("another subject's stream: %d", resp.StatusCode)
+	}
+	hangUps[0]()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, _ := f.openStream(s.ID, "alice")
+		if resp.StatusCode == http.StatusOK {
+			break
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || time.Now().After(deadline) {
+			t.Fatalf("the stream after one ended: %d", resp.StatusCode)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if resp, _ := f.openStream(s.ID, "alice"); resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("the freed slot was given twice: %d", resp.StatusCode)
+	}
+}
+
+func TestStreamSlots(t *testing.T) {
+	two := newSlots(2)
+	first, ok := two.take("alice")
+	if !ok {
+		t.Fatal("the first slot")
+	}
+	if _, ok := two.take("alice"); !ok {
+		t.Fatal("the second slot")
+	}
+	if _, ok := two.take("alice"); ok {
+		t.Fatal("a third slot of two")
+	}
+	first()
+	first()
+	if _, ok := two.take("alice"); !ok {
+		t.Fatal("the slot a release freed")
+	}
+	if _, ok := two.take("alice"); ok {
+		t.Fatal("a release that ran twice freed two slots")
+	}
+	none := newSlots(-1)
+	for range 3 * StreamsPerSubject {
+		if _, ok := none.take("alice"); !ok {
+			t.Fatal("a negative limit bounds nothing")
+		}
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"latere.ai/x/pkg/llmdialect/lux"
@@ -222,6 +223,11 @@ func (c *call) stream() error {
 	if err != nil {
 		return err
 	}
+	release, ok := c.s.streams.take(c.caller.Subject)
+	if !ok {
+		return refuse(CodeRateLimited, "at most %d streams are open at once per subject; close one before opening another", c.s.o.MaxStreams)
+	}
+	defer release()
 	flusher, ok := c.w.(http.Flusher)
 	if !ok {
 		return errors.New("server: the response writer cannot flush")
@@ -261,6 +267,40 @@ func (c *call) stream() error {
 			}
 		}
 	}
+}
+
+// slots counts the streams each subject holds open. A stream holds a
+// watch on the store for as long as it is open, so without a bound one
+// subject within the request rate could hold any number of them.
+type slots struct {
+	limit int
+	mu    sync.Mutex
+	held  map[string]int
+}
+
+// newSlots bounds each subject to limit streams, none when limit is
+// negative.
+func newSlots(limit int) *slots { return &slots{limit: limit, held: map[string]int{}} }
+
+// take reserves one of subject's slots and returns the function that
+// frees it, or false when the subject holds every one.
+func (s *slots) take(subject string) (func(), bool) {
+	if s.limit < 0 {
+		return func() {}, true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.held[subject] >= s.limit {
+		return nil, false
+	}
+	s.held[subject]++
+	return sync.OnceFunc(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.held[subject]--; s.held[subject] == 0 {
+			delete(s.held, subject)
+		}
+	}), true
 }
 
 // frame writes one event as a Server-Sent Events frame.

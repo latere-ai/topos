@@ -91,9 +91,40 @@ whose `after_seq` is the row's `last_seq` is inserted, and the row's
 from it; then `NOTIFY topos_events` with the session id. A batch whose
 `after_seq` is behind and whose events match, by id and content, the
 rows at those sequences answers success with the same last sequence;
-any other is `sequence_conflict` ([[004-session-log]]). `Watch`
-replays from the table, then follows `LISTEN topos_events`, with a
-2 second poll as the fallback for a lost notification.
+any other is `sequence_conflict` ([[004-session-log]]).
+
+`Watch` replays from the table, then reads again each time the store's
+listener announces an append to the session, with a 2 second poll as
+the fallback for a lost notification. A store holds one listener: a
+connection on `TOPOS_DB_URL` that runs `LISTEN topos_events` from the
+first `Watch` until the store closes, however many watches are open.
+It routes each notification to the watches of the session its payload
+names, and a watch of another session does not wake. A watch's wake is
+a signal of one slot, so a burst of appends while it reads coalesces
+into one more read and a slow watch never holds the listener back. A
+dropped listener connection is dialed again with backoff from 200 ms
+to 10 s for as long as the store is open, and once it listens again
+every watch reads once, so none misses an append made while it was
+down; meanwhile the watches poll.
+
+### Connections on Postgres
+
+A replica's connections to Postgres are its serving pool, its
+listener, and its migration:
+
+| Connection | Endpoint | Count | Held |
+|---|---|---|---|
+| serving pool | `TOPOS_DB_POOL_URL`, or `TOPOS_DB_URL` without it | the DSN's `pool_max_conns`, or else the greater of 4 and the CPUs the process sees | opened on demand, each for one query or transaction |
+| listener | `TOPOS_DB_URL` | 1 | from the first `Watch` until the store closes |
+| migration | `TOPOS_DB_URL` | 1 | at start, closed by `pgxmigrate` before the pool opens |
+
+Watches and streams open no connection of their own: fifty watches on
+one store with an 18-connection pool hold at most 19 backends. On
+`TOPOS_DB_URL` alone a replica holds at most the pool plus one; behind
+a transaction-pooling proxy it holds one direct connection, the
+listener, and the pool's connections are the proxy's clients. N
+replicas hold N times that, and a rolling deploy adds one replica's
+share while the old and the new overlap.
 
 ### toposd on the directory store
 
@@ -167,6 +198,10 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 | Two replicas appending to one session through Postgres keep a dense sequence, and the one that is not the writer gets `sequence_conflict` | `TestPostgresTwoReplicasOneWriter` | not built |
 | A `Watch` on one store instance sees an event another instance appends through `NOTIFY`, with the poll an hour away | `internal/store/postgres.TestWatchSeesAnotherStoresAppends` (tag `postgres`) | built |
 | A `Watch` sees an event within the poll interval with notifications dropped | `TestPostgresWatchAcrossReplicas` | not built |
+| Fifty watches on one store hold one listener connection beside the pool, and each sees an append to its session through it | `internal/store/postgres.TestManyWatchesShareOneListener` (tag `postgres`) | built |
+| An append to one session wakes its watch and not the watch of another | `internal/store/postgres.TestANotificationWakesOnlyItsSessionsWatchers` (tag `postgres`) | built |
+| A listener whose backend is terminated connects again, and every watch sees the appends made while it was down and after, with the poll an hour away | `internal/store/postgres.TestADroppedListenerReconnectsAndMissesNothing` (tag `postgres`) | built |
+| Closing the store closes its listener connection and every open watch | `internal/store/postgres.TestAClosedStoreClosesItsWatches` (tag `postgres`) | built |
 | A second `toposd serve` on the same data directory refuses to start | `TestDirModeIsOneReplica` | not built |
 | A blob in the database is readable by digest, and one whose bytes no longer match answers `ErrCorrupt` | `internal/store/postgres.TestACorruptBlobIsRefused` (tag `postgres`) | built |
 | A blob is readable by digest from the `file://` and `s3://` locations | `TestBlobStoreLocations` | not built |
