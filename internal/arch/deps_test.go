@@ -58,7 +58,7 @@ func goList(t *testing.T, dir string, args ...string) []string {
 // module root and are imported by embedders. Everything else is a role,
 // a tool, a test, or an example under cmd, internal, test, tools or
 // examples.
-var exported = []string{"session", "harness", "models", "machine", "runner", "memory", "manifest", "client", "authorizer"}
+var exported = []string{"session", "harness", "prompts", "models", "machine", "runner", "memory", "manifest", "client", "authorizer"}
 
 var rootDirs = append([]string{"cmd", "internal", "test", "tools", "examples"}, exported...)
 
@@ -81,9 +81,10 @@ func TestPackagesSitInTheirTrees(t *testing.T) {
 var dialing = []string{"net", "net/http", "net/rpc", "net/smtp", "crypto/tls"}
 
 // pure are the root trees that dial nothing (spec 001, invariant 13): the
-// session schema, the harness, the manifest kinds and the action
-// vocabulary are pure over the interfaces they are handed.
-var pure = []string{"session", "harness", "manifest", "authorizer"}
+// session schema, the harness, the texts a model reads, the manifest
+// kinds and the action vocabulary are pure over the interfaces they are
+// handed.
+var pure = []string{"session", "harness", "prompts", "manifest", "authorizer"}
 
 // TestRootPackagesDialNothing is invariant 13 of spec 001: no package in
 // a pure tree imports a package that opens a connection, directly or
@@ -101,6 +102,20 @@ func TestRootPackagesDialNothing(t *testing.T) {
 				if slices.Contains(dialing, dep) {
 					t.Errorf("%s reaches %s; the %s tree dials nothing (spec 001)", pkg, dep, tree)
 				}
+			}
+		}
+	}
+}
+
+// TestPromptsImportNothingOfTheModule holds the prompts tree at the bottom
+// of the module's graph (spec 001): the session fold, the harness and the
+// tools import it, so it imports no package of this module.
+func TestPromptsImportNothingOfTheModule(t *testing.T) {
+	dir := root(t)
+	for _, pkg := range goList(t, dir, "./prompts/...") {
+		for _, dep := range goList(t, dir, "-deps", pkg) {
+			if dep != pkg && (dep == module || strings.HasPrefix(dep, module+"/")) {
+				t.Errorf("%s imports %s; the prompts tree imports nothing of %s", pkg, dep, module)
 			}
 		}
 	}

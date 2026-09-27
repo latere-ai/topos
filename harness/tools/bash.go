@@ -5,15 +5,14 @@ package tools
 
 import (
 	"context"
-	_ "embed"
 	"errors"
-	"fmt"
 	"io/fs"
 	"strings"
 	"syscall"
 	"time"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 )
 
 // Timeouts of bash (spec 008), in milliseconds.
@@ -21,9 +20,6 @@ const (
 	BashDefaultTimeoutMS = 120000
 	BashMaxTimeoutMS     = 600000
 )
-
-//go:embed descriptions/bash.md
-var bashDescription string
 
 const bashSchema = `{
   "type": "object",
@@ -38,7 +34,7 @@ const bashSchema = `{
 }`
 
 func bashTool() Tool {
-	return newBuiltin(NameBash, bashDescription, bashSchema, Properties{Effect: EffectWrite}, runBash)
+	return newBuiltin(NameBash, prompts.Text(prompts.ToolBash), bashSchema, Properties{Effect: EffectWrite}, runBash)
 }
 
 type bashInput struct {
@@ -54,7 +50,7 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		return *r, nil
 	}
 	if strings.TrimSpace(in.Command) == "" {
-		return b.result(ctx, c, OutcomeError, "The command is empty.", nil)
+		return b.result(ctx, c, OutcomeError, prompts.Text(prompts.BashEmpty), nil)
 	}
 	timeout := in.TimeoutMS
 	if timeout <= 0 {
@@ -74,7 +70,7 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		// The persistent directory is gone, removed by an earlier
 		// command; the call runs in the working directory instead, and
 		// the directory it ends in replaces the lost one.
-		note = fmt.Sprintf("[%s no longer exists; the command ran in the working directory %s]\n", req.Dir, c.Machine.Info().Workdir)
+		note = prompts.Render(prompts.BashDirGone, prompts.Data{"Dir": req.Dir, "Workdir": c.Machine.Info().Workdir}) + "\n"
 		req.Dir = ""
 		res, err = c.Machine.Exec(ctx, req)
 	}
@@ -82,10 +78,10 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		if errors.Is(err, machine.ErrReleased) {
 			return Result{}, err
 		}
-		return b.result(ctx, c, OutcomeError, fmt.Sprintf("The command did not start: %v.", err), nil)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.BashNotStarted, prompts.Data{"Error": err.Error()}), nil)
 	}
 	if in.Background {
-		text := fmt.Sprintf("%sStarted in the background as pid %d; its output goes to %s. Read the log with read, and stop the job with bash: kill -TERM -%d.", note, res.PID, res.Log, res.PID)
+		text := note + prompts.Render(prompts.BashBackground, prompts.Data{"PID": res.PID, "Log": res.Log})
 		return b.result(ctx, c, OutcomeOK, text, nil)
 	}
 	code := res.ExitCode
@@ -100,18 +96,18 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		out.WriteByte('\n')
 	}
 	if len(res.Output) == 0 {
-		out.WriteString("(no output)\n")
+		out.WriteString(prompts.Text(prompts.BashNoOutput) + "\n")
 	}
 	outcome := OutcomeOK
 	switch {
 	case res.TimedOut:
 		outcome = OutcomeTimeout
-		fmt.Fprintf(&out, "The command passed its timeout of %s and was killed with its process group.", time.Duration(timeout)*time.Millisecond)
+		out.WriteString(prompts.Render(prompts.BashTimeout, prompts.Data{"Timeout": (time.Duration(timeout) * time.Millisecond).String()}))
 	case res.Canceled:
 		outcome = OutcomeCanceled
-		out.WriteString("The command was canceled and killed with its process group.")
+		out.WriteString(prompts.Text(prompts.BashCanceled))
 	default:
-		fmt.Fprintf(&out, "Exit code: %d", code)
+		out.WriteString(prompts.Render(prompts.BashExitCode, prompts.Data{"Code": code}))
 	}
 	return b.result(ctx, c, outcome, out.String(), meta)
 }

@@ -17,6 +17,7 @@ import (
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -50,10 +51,6 @@ const (
 
 // advisorAgent is the agent name of an advisor thread.
 const advisorAgent = "advisor"
-
-// advisorInstructions are an advisor's own when its configuration names
-// none.
-const advisorInstructions = "You advise another agent. You see the conversation it has had so far and the question it asks. You act on nothing and have no tools: read what it did, say what is wrong or missing, and what it should do next, briefly and concretely."
 
 // The error codes of spec 013, the text of a call's error result.
 const (
@@ -136,7 +133,7 @@ type advisorTool struct{ t *turn }
 func (a advisorTool) Definition() tools.Definition {
 	return tools.Definition{
 		Name:        ToolAdvisor,
-		Description: "Ask a stronger model to review your work so far. It sees this conversation and your question, acts on nothing, and answers with advice. Use it before a hard decision or when you are stuck.",
+		Description: prompts.Text(prompts.ToolAdvisor),
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"question":{"type":"string"}},"additionalProperties":false}`),
 	}
 }
@@ -162,12 +159,7 @@ func (t *turn) advise(ctx context.Context, callID, question string) (tools.Resul
 	if err != nil {
 		return tools.Result{}, err
 	}
-	body := renderTranscript(tr)
-	if q := strings.TrimSpace(question); q != "" {
-		body += "\n\nThe question: " + q
-	} else {
-		body += "\n\nReview the work so far."
-	}
+	body := prompts.Render(prompts.AdvisorRequest, prompts.Data{"Transcript": renderTranscript(tr), "Question": strings.TrimSpace(question)})
 	sub := t.advisorConfig()
 	id, found := t.advisorThread()
 	var e session.Event
@@ -203,7 +195,7 @@ func (t *turn) advisorConfig() Config {
 	a := *t.h.c.Advisor
 	a.Name = advisorAgent
 	if strings.TrimSpace(a.Instructions) == "" {
-		a.Instructions = advisorInstructions
+		a.Instructions = prompts.Text(prompts.AdvisorInstructions)
 	}
 	a.Subagents = nil
 	cfg := t.childConfig(a)
@@ -233,7 +225,8 @@ func (t *turn) answer(ctx context.Context) (tools.Result, error) {
 		return tools.Result{}, err
 	}
 	if out.StopReason != session.StopEndTurn {
-		return tools.Text(tools.OutcomeError, fmt.Sprintf("The advisor stopped: %s %s", out.StopReason, out.Detail)), nil
+		stopped := prompts.Render(prompts.AdvisorStopped, prompts.Data{"Reason": string(out.StopReason), "Detail": out.Detail})
+		return tools.Text(tools.OutcomeError, stopped), nil
 	}
 	return tools.Text(tools.OutcomeOK, finalText(t.events(), t.thread)), nil
 }
@@ -243,20 +236,15 @@ func (t *turn) answer(ctx context.Context) (tools.Result, error) {
 // few kilobytes.
 func renderTranscript(tr session.Transcript) string {
 	const maxResult = 4 << 10
-	var b strings.Builder
-	b.WriteString("The conversation so far:\n")
+	var entries []prompts.Data
 	for _, m := range tr.Messages {
-		who := "Person"
-		if m.Role == ir.RoleAssistant {
-			who = "Agent"
-		}
 		for _, blk := range m.Blocks {
 			switch blk.Type {
 			case ir.BlockText:
-				fmt.Fprintf(&b, "\n%s: %s\n", who, blk.Text)
+				entries = append(entries, prompts.Data{"Kind": "text", "Agent": m.Role == ir.RoleAssistant, "Text": blk.Text})
 			case ir.BlockToolUse:
 				if blk.ToolUse != nil {
-					fmt.Fprintf(&b, "\nAgent called %s with %s\n", blk.ToolUse.Name, blk.ToolUse.Args)
+					entries = append(entries, prompts.Data{"Kind": "call", "Name": blk.ToolUse.Name, "Args": string(blk.ToolUse.Args)})
 				}
 			case ir.BlockToolResult:
 				if blk.ToolResult == nil {
@@ -267,14 +255,15 @@ func renderTranscript(tr session.Transcript) string {
 					out = append(out, in.Text)
 				}
 				text := strings.Join(out, "\n")
-				if len(text) > maxResult {
-					text = text[:maxResult] + "\n[cut]"
+				cut := len(text) > maxResult
+				if cut {
+					text = text[:maxResult]
 				}
-				fmt.Fprintf(&b, "\nThe call returned:\n%s\n", text)
+				entries = append(entries, prompts.Data{"Kind": "result", "Text": text, "Cut": cut})
 			}
 		}
 	}
-	return b.String()
+	return prompts.Render(prompts.AdvisorTranscript, prompts.Data{"Entries": entries})
 }
 
 type spawnTool struct{ t *turn }
@@ -291,7 +280,7 @@ func (s spawnTool) Definition() tools.Definition {
 	}
 	return tools.Definition{
 		Name:        ToolSpawn,
-		Description: "Start a thread that runs one of your subagents on a task, on this same machine, and return its final answer. The thread does not see this conversation: give it a complete task. Several spawn calls in one step run their threads at once. Send the thread more work later with message.",
+		Description: prompts.Text(prompts.ToolSpawn),
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"agent":{"type":"string","enum":` + string(enum) + `},"task":{"type":"string","minLength":1},"isolation":{"type":"string","enum":["shared","worktree"]},"tools":{"type":"array","items":{"type":"string"}},"budget":{"type":"number","minimum":0}},"required":["agent","task"],"additionalProperties":false}`),
 	}
 }
@@ -318,7 +307,7 @@ type messageTool struct{ t *turn }
 func (m messageTool) Definition() tools.Definition {
 	return tools.Definition{
 		Name:        ToolMessage,
-		Description: "Send a message to a thread you spawned and return its answer. Set end to true to end the thread after this turn.",
+		Description: prompts.Text(prompts.ToolMessage),
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"thread":{"type":"string","minLength":1},"content":{"type":"string","minLength":1},"end":{"type":"boolean"}},"required":["thread","content"],"additionalProperties":false}`),
 	}
 }
@@ -347,16 +336,16 @@ func errorResult(code, text string) tools.Result {
 func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string, narrow []string) (tools.Result, error) {
 	sub, ok := t.h.c.Subagents[agent]
 	if !ok {
-		return errorResult(CodeUnknownSubagent, fmt.Sprintf("no subagent named %q", agent)), nil
+		return errorResult(CodeUnknownSubagent, prompts.Render(prompts.ThreadUnknownSubagent, prompts.Data{"Agent": agent})), nil
 	}
 	if t.depth+1 > t.h.maxDepth() {
-		return errorResult(CodeDepthExceeded, fmt.Sprintf("a thread at depth %d may not spawn", t.depth)), nil
+		return errorResult(CodeDepthExceeded, prompts.Render(prompts.ThreadDepthExceeded, prompts.Data{"Depth": t.depth})), nil
 	}
 	var wt machine.Worktrees
 	if isolation == "worktree" {
 		var ok bool
 		if wt, ok = t.h.c.Machine.(machine.Worktrees); !ok {
-			return errorResult(CodeIsolationUnavailable, "this machine keeps no worktrees; spawn with isolation shared"), nil
+			return errorResult(CodeIsolationUnavailable, prompts.Text(prompts.ThreadNoWorktrees)), nil
 		}
 	}
 	held := t.reg.Names()
@@ -389,7 +378,7 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 		cfg.Machine = m
 		started.Isolation, started.Branch, started.Workdir = "worktree", branch, m.Info().Workdir
 		if dirty(ctx, t.h.c.Machine) {
-			note = "The thread works from the last commit: your uncommitted changes are not in its worktree."
+			note = prompts.Text(prompts.ThreadUncommitted)
 		}
 	}
 	e, err := t.event(session.TypeThreadStarted, started)
@@ -398,7 +387,7 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	}
 	e.ID, e.Thread = id, id
 	if !t.sh.claim(t.h.maxConcurrent()) {
-		return errorResult(CodeTooManyThreads, fmt.Sprintf("the session already runs %d threads", t.h.maxConcurrent())), nil
+		return errorResult(CodeTooManyThreads, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
 	}
 	defer t.sh.release()
 	if err := t.commit(ctx, e); err != nil {
@@ -449,9 +438,10 @@ func (t *turn) commitWorktree(ctx context.Context, started session.ThreadStarted
 		return tools.Result{}, err
 	}
 	if out.ExitCode != 0 {
-		return tools.Text(tools.OutcomeError, "The thread's work could not be committed to "+started.Branch+": "+strings.TrimSpace(string(out.Output))), nil
+		failed := prompts.Render(prompts.ThreadCommitFailed, prompts.Data{"Branch": started.Branch, "Output": strings.TrimSpace(string(out.Output))})
+		return tools.Text(tools.OutcomeError, failed), nil
 	}
-	lines := []string{fmt.Sprintf("Its work is on branch %s at %s; merge it with git.", started.Branch, strings.TrimSpace(string(out.Output)))}
+	lines := []string{prompts.Render(prompts.ThreadBranch, prompts.Data{"Branch": started.Branch, "Commit": strings.TrimSpace(string(out.Output))})}
 	if note != "" {
 		lines = append(lines, note)
 	}
@@ -468,14 +458,14 @@ func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''
 func (t *turn) message(ctx context.Context, callID, thread, content string, end bool) (tools.Result, error) {
 	started, ok := t.spawned(thread)
 	if !ok {
-		return errorResult(CodeThreadNotFound, fmt.Sprintf("no thread %s that this thread spawned", thread)), nil
+		return errorResult(CodeThreadNotFound, prompts.Render(prompts.ThreadNotSpawned, prompts.Data{"Thread": thread})), nil
 	}
 	if t.ended(thread) {
-		return errorResult(CodeThreadNotFound, fmt.Sprintf("thread %s has ended", thread)), nil
+		return errorResult(CodeThreadNotFound, prompts.Render(prompts.ThreadEnded, prompts.Data{"Thread": thread})), nil
 	}
 	sub, ok := t.h.c.Subagents[started.Agent.Name]
 	if !ok {
-		return errorResult(CodeUnknownSubagent, fmt.Sprintf("thread %s runs %q, which is no longer a subagent", thread, started.Agent.Name)), nil
+		return errorResult(CodeUnknownSubagent, prompts.Render(prompts.ThreadSubagentGone, prompts.Data{"Thread": thread, "Agent": started.Agent.Name})), nil
 	}
 	e, err := t.event(session.TypeThreadMessage, session.ThreadMessage{
 		From: t.thread, To: thread, FromName: t.h.c.Name, ToolUseID: callID,
@@ -486,7 +476,7 @@ func (t *turn) message(ctx context.Context, callID, thread, content string, end 
 	}
 	e.Thread = thread
 	if !t.sh.claim(t.h.maxConcurrent()) {
-		return errorResult(CodeTooManyThreads, fmt.Sprintf("the session already runs %d threads", t.h.maxConcurrent())), nil
+		return errorResult(CodeTooManyThreads, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
 	}
 	defer t.sh.release()
 	if err := t.commit(ctx, e); err != nil {
@@ -568,11 +558,18 @@ func (t *turn) drive(ctx context.Context) (tools.Result, error) {
 	switch out.StopReason {
 	case session.StopEndTurn:
 		text := finalText(t.events(), t.thread)
-		return tools.Text(tools.OutcomeOK, strings.TrimSpace(text+"\n\nThread "+t.thread+" is idle; send it more work with message.")), nil
+		return tools.Text(tools.OutcomeOK, idle(text, t.thread)), nil
 	case session.StopToolConfirmation, session.StopToolResult:
 		return tools.Result{}, &errPause{reason: out.StopReason}
 	}
-	return tools.Text(tools.OutcomeError, fmt.Sprintf("Thread %s stopped: %s %s", t.thread, out.StopReason, out.Detail)), nil
+	stopped := prompts.Render(prompts.ThreadStopped, prompts.Data{"Thread": t.thread, "Reason": string(out.StopReason), "Detail": out.Detail})
+	return tools.Text(tools.OutcomeError, stopped), nil
+}
+
+// idle is the result of a call whose thread went idle: the thread's final
+// text, then the line that says it takes more work.
+func idle(text, thread string) string {
+	return strings.TrimSpace(text + "\n\n" + prompts.Render(prompts.ThreadIdle, prompts.Data{"Thread": thread}))
 }
 
 // spawned finds a thread this thread spawned.
@@ -641,7 +638,7 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 		return unknownEffect(), nil
 	}
 	if done, text := settled(t.events(), thread, driven); done {
-		return tools.Text(tools.OutcomeOK, strings.TrimSpace(text+"\n\nThread "+thread+" is idle; send it more work with message.")), nil
+		return tools.Text(tools.OutcomeOK, idle(text, thread)), nil
 	}
 	started, ok := t.spawned(thread)
 	if !ok {
@@ -656,10 +653,10 @@ func (t *turn) resumeThread(ctx context.Context, c pendingCall) (tools.Result, e
 	}
 	sub, ok := t.h.c.Subagents[started.Agent.Name]
 	if !ok {
-		return errorResult(CodeUnknownSubagent, fmt.Sprintf("thread %s runs %q, which is no longer a subagent", thread, started.Agent.Name)), nil
+		return errorResult(CodeUnknownSubagent, prompts.Render(prompts.ThreadSubagentGone, prompts.Data{"Thread": thread, "Agent": started.Agent.Name})), nil
 	}
 	if !t.sh.claim(t.h.maxConcurrent()) {
-		return errorResult(CodeTooManyThreads, fmt.Sprintf("the session already runs %d threads", t.h.maxConcurrent())), nil
+		return errorResult(CodeTooManyThreads, prompts.Render(prompts.ThreadTooMany, prompts.Data{"Max": t.h.maxConcurrent()})), nil
 	}
 	defer t.sh.release()
 	cfg := t.childConfig(sub)

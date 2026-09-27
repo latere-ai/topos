@@ -13,11 +13,11 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -74,10 +74,10 @@ func attach(ctx context.Context, m machine.Machine, l *Log, o attachOptions) (At
 			return nil
 		}
 		if len(b) > maxInstructionFile {
-			b = append(b[:maxInstructionFile:maxInstructionFile], "\n[the file is longer than 64 KiB and was cut here]"...)
+			b = append(b[:maxInstructionFile:maxInstructionFile], "\n"+prompts.Text(prompts.InstructionCut)...)
 		}
 		if room := maxInstructionTotal - total; len(b) > room {
-			b = append(b[:room:room], "\n[the instruction files pass 256 KiB together and were cut here]"...)
+			b = append(b[:room:room], "\n"+prompts.Text(prompts.InstructionsTotalCut)...)
 		}
 		total += len(b)
 		d, err := l.PutBlob(ctx, bytes.NewReader(b))
@@ -290,24 +290,13 @@ func gitTop(ctx context.Context, m machine.Machine) (string, bool) {
 
 // contextBlock is the context block of spec 011.
 func contextBlock(ctx context.Context, m machine.Machine, info machine.Info, inRepo bool, now time.Time) string {
-	var b strings.Builder
-	b.WriteString("<context>\n")
-	fmt.Fprintf(&b, "Working directory: %s\n", info.Workdir)
-	fmt.Fprintf(&b, "Platform: %s/%s\n", info.OS, info.Arch)
-	kind := "host"
-	if info.Kind == machine.KindCella {
-		kind = "Cella sandbox"
-		if info.Environment != "" {
-			kind += " (" + info.Environment + ")"
-		}
-	}
-	fmt.Fprintf(&b, "Machine: %s\n", kind)
-	fmt.Fprintf(&b, "Date: %s\n", now.UTC().Format("2006-01-02"))
+	var branch, head string
+	var modified, untracked int
+	var commits []string
 	if inRepo {
-		branch, _ := git(ctx, m, "rev-parse --abbrev-ref HEAD")
-		head, _ := git(ctx, m, "rev-parse --short HEAD")
+		branch, _ = git(ctx, m, "rev-parse --abbrev-ref HEAD")
+		head, _ = git(ctx, m, "rev-parse --short HEAD")
 		status, _ := git(ctx, m, "status --porcelain")
-		modified, untracked := 0, 0
 		for line := range strings.SplitSeq(status, "\n") {
 			switch {
 			case line == "":
@@ -317,14 +306,14 @@ func contextBlock(ctx context.Context, m machine.Machine, info machine.Info, inR
 				modified++
 			}
 		}
-		fmt.Fprintf(&b, "Git: branch %s at %s, %s modified, %s untracked\n", branch, head, strconv.Itoa(modified), strconv.Itoa(untracked))
 		if log, ok := git(ctx, m, "log -5 --format='%h %s'"); ok && log != "" {
-			b.WriteString("Recent commits:\n")
-			for line := range strings.SplitSeq(log, "\n") {
-				b.WriteString("- " + line + "\n")
-			}
+			commits = strings.Split(log, "\n")
 		}
 	}
-	b.WriteString("</context>")
-	return b.String()
+	return prompts.Render(prompts.ContextBlock, prompts.Data{
+		"Workdir": info.Workdir, "OS": info.OS, "Arch": info.Arch,
+		"Cella": info.Kind == machine.KindCella, "Environment": info.Environment,
+		"Date": now.UTC().Format("2006-01-02"), "Git": inRepo, "Branch": branch, "Head": head,
+		"Modified": modified, "Untracked": untracked, "Commits": commits,
+	})
 }

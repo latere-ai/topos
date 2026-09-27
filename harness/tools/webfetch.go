@@ -5,21 +5,16 @@ package tools
 
 import (
 	"bytes"
-	"cmp"
 	"context"
-	_ "embed"
 	"errors"
-	"fmt"
 	"mime"
 	"net/url"
 	"slices"
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 )
-
-//go:embed descriptions/web_fetch.md
-var webFetchDescription string
 
 const webFetchSchema = `{
   "type": "object",
@@ -31,7 +26,7 @@ const webFetchSchema = `{
 }`
 
 func webFetchTool() Tool {
-	return newBuiltin(NameWebFetch, webFetchDescription, webFetchSchema, Properties{Parallel: true, Effect: EffectExternal}, runWebFetch)
+	return newBuiltin(NameWebFetch, prompts.Text(prompts.ToolWebFetch), webFetchSchema, Properties{Parallel: true, Effect: EffectExternal}, runWebFetch)
 }
 
 type webFetchInput struct {
@@ -45,22 +40,22 @@ func runWebFetch(ctx context.Context, b *builtin, c Call) (Result, error) {
 	}
 	u, err := url.Parse(in.URL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return b.result(ctx, c, OutcomeError, fmt.Sprintf("%q is not an http or https URL.", in.URL), nil)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.FetchNotURL, prompts.Data{"URL": in.URL}), nil)
 	}
 	f, ok := c.Machine.(machine.Fetcher)
 	if !ok {
-		return b.result(ctx, c, OutcomeError, "Web fetch is not available on this machine.", nil)
+		return b.result(ctx, c, OutcomeError, prompts.Text(prompts.FetchUnavailable), nil)
 	}
 	res, err := f.Fetch(ctx, machine.FetchRequest{URL: u.String()})
 	switch {
 	case err != nil && ctx.Err() != nil:
-		return b.result(ctx, c, OutcomeCanceled, fmt.Sprintf("The fetch of %s was canceled.", u), nil)
+		return b.result(ctx, c, OutcomeCanceled, prompts.Render(prompts.FetchCanceled, prompts.Data{"URL": u.String()}), nil)
 	case errors.Is(err, machine.ErrReleased):
 		return Result{}, err
 	case errors.Is(err, context.DeadlineExceeded):
-		return b.result(ctx, c, OutcomeTimeout, fmt.Sprintf("The fetch of %s passed its timeout of %s.", u, machine.FetchTimeout), nil)
+		return b.result(ctx, c, OutcomeTimeout, prompts.Render(prompts.FetchTimeout, prompts.Data{"URL": u.String(), "Timeout": machine.FetchTimeout.String()}), nil)
 	case err != nil:
-		return b.result(ctx, c, OutcomeError, fmt.Sprintf("The fetch of %s failed: %s.", u, strings.TrimPrefix(err.Error(), "machine: ")), nil)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.FetchFailed, prompts.Data{"URL": u.String(), "Error": strings.TrimPrefix(err.Error(), "machine: ")}), nil)
 	}
 	media, _, merr := mime.ParseMediaType(res.ContentType)
 	if merr != nil {
@@ -73,26 +68,20 @@ func runWebFetch(ctx context.Context, b *builtin, c Call) (Result, error) {
 	case isText(media, res.Body):
 		body = strings.ToValidUTF8(string(res.Body), "\uFFFD")
 	default:
-		return b.result(ctx, c, OutcomeError, fmt.Sprintf("%s returned %s, which is not text; web_fetch returns text and HTML pages.", res.URL, cmp.Or(res.ContentType, "no content type")), nil)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.FetchNotText, prompts.Data{"URL": res.URL, "ContentType": res.ContentType}), nil)
 	}
-	var out strings.Builder
-	fmt.Fprintf(&out, "URL: %s\nStatus: %d\n", res.URL, res.Status)
-	if res.ContentType != "" {
-		fmt.Fprintf(&out, "Content-Type: %s\n", res.ContentType)
-	}
-	out.WriteString("\n")
-	out.WriteString(body)
 	if !strings.HasSuffix(body, "\n") {
-		out.WriteString("\n")
+		body += "\n"
 	}
-	if res.Truncated {
-		fmt.Fprintf(&out, "[the body passed %d MiB and was cut there]\n", machine.FetchMaxBody>>20)
-	}
+	page := prompts.Render(prompts.FetchPage, prompts.Data{
+		"URL": res.URL, "Status": res.Status, "ContentType": res.ContentType, "Body": body,
+		"Truncated": res.Truncated, "Max": machine.FetchMaxBody >> 20,
+	})
 	outcome := OutcomeOK
 	if res.Status >= 400 {
 		outcome = OutcomeError
 	}
-	return b.result(ctx, c, outcome, out.String(), nil)
+	return b.result(ctx, c, outcome, page, nil)
 }
 
 // textTypes are the non-text/* media types web_fetch returns as text.

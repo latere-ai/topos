@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -20,6 +19,8 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
+
+	"latere.ai/x/topos/prompts"
 )
 
 // Limits of read (spec 008).
@@ -31,9 +32,6 @@ const (
 	// binary, the rule grep uses: one NUL among them is.
 	binarySniff = 8000
 )
-
-//go:embed descriptions/read.md
-var readDescription string
 
 const readSchema = `{
   "type": "object",
@@ -47,7 +45,7 @@ const readSchema = `{
 }`
 
 func readTool() Tool {
-	return newBuiltin(NameRead, readDescription, readSchema, Properties{Parallel: true, Effect: EffectRead}, runRead)
+	return newBuiltin(NameRead, prompts.Text(prompts.ToolRead), readSchema, Properties{Parallel: true, Effect: EffectRead}, runRead)
 }
 
 type readInput struct {
@@ -92,7 +90,7 @@ func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
 		return b.fail(ctx, c, p, err)
 	}
 	if fi.IsDir {
-		return b.result(ctx, c, OutcomeError, p+" is a directory; use glob to list the files in it.", nil)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadDirectory, prompts.Data{"Path": p}), nil)
 	}
 	rc, err := c.Machine.ReadFile(ctx, p)
 	if err != nil {
@@ -113,7 +111,7 @@ func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
 		return readImage(ctx, b, c, p, media, fi.Size, br, h)
 	}
 	if bytes.IndexByte(head, 0) >= 0 {
-		return b.result(ctx, c, OutcomeError, p+" is a binary file; read shows text files and PNG, JPEG, GIF and WebP images. Inspect it with bash.", nil)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadBinary, prompts.Data{"Path": p}), nil)
 	}
 	offset := max(in.Offset, 1)
 	limit := in.Limit
@@ -140,19 +138,19 @@ func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
 			text, long = cutRunes(text, ReadMaxLineChars), true
 		}
 		if long {
-			text += fmt.Sprintf(" [... line cut at %d characters]", ReadMaxLineChars)
+			text += " " + prompts.Render(prompts.ReadLineCut, prompts.Data{"Max": ReadMaxLineChars})
 		}
 		fmt.Fprintf(&out, "%6d\t%s\n", n, text)
 	}
 	meta := &Meta{Path: p, SHA256: hex.EncodeToString(h.Sum(nil))}
 	switch {
 	case n == 0:
-		return b.result(ctx, c, OutcomeOK, p+" is empty.", meta)
+		return b.result(ctx, c, OutcomeOK, prompts.Render(prompts.ReadEmpty, prompts.Data{"Path": p}), meta)
 	case offset > n:
-		return b.result(ctx, c, OutcomeError, fmt.Sprintf("%s has %s; offset %d is past its end.", p, plural(n, "line"), offset), meta)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadPastEnd, prompts.Data{"Path": p, "Lines": plural(n, "line"), "Offset": offset}), meta)
 	}
 	if last := offset + shown - 1; last < n {
-		fmt.Fprintf(&out, "[lines %d to %d of %d; read on with offset %d]\n", offset, last, n, last+1)
+		out.WriteString(prompts.Render(prompts.ReadMoreLines, prompts.Data{"From": offset, "To": last, "Total": n, "Next": last + 1}) + "\n")
 	}
 	return b.result(ctx, c, OutcomeOK, out.String(), meta)
 }
@@ -165,7 +163,7 @@ func readImage(ctx context.Context, b *builtin, c Call, p, media string, size in
 		return b.fail(ctx, c, p, err)
 	}
 	if len(data) > ReadMaxImage {
-		return b.result(ctx, c, OutcomeError, fmt.Sprintf("%s is an image of %d bytes, over the %d MiB limit of read.", p, size, ReadMaxImage>>20), nil)
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadImageTooLarge, prompts.Data{"Path": p, "Size": size, "Max": ReadMaxImage >> 20}), nil)
 	}
 	return Result{
 		Outcome: OutcomeOK,

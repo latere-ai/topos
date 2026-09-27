@@ -13,8 +13,8 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 	"latere.ai/x/pkg/llmdialect/tokencount"
 
-	"latere.ai/x/topos/harness/prompt"
 	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -292,11 +292,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 	if err != nil {
 		return false, err
 	}
-	text, err := prompt.Compact(prompt.CompactCurrent)
-	if err != nil {
-		return false, err
-	}
-	ask := lux.Block{Type: ir.BlockText, Text: text}
+	ask := lux.Block{Type: ir.BlockText, Text: prompts.Text(prompts.Compaction)}
 	if n := len(tr.Messages); n > 0 && tr.Messages[n-1].Role == ir.RoleUser {
 		tr.Messages[n-1].Blocks = append(tr.Messages[n-1].Blocks, ask)
 	} else {

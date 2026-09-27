@@ -1,0 +1,1 @@
+Start a thread that runs one of your subagents on a task, on this same machine, and return its final answer. The thread does not see this conversation: give it a complete task. Several spawn calls in one step run their threads at once. Send the thread more work later with message.

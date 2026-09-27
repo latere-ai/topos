@@ -5,15 +5,11 @@ package tools
 
 import (
 	"context"
-	_ "embed"
-	"fmt"
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 )
-
-//go:embed descriptions/glob.md
-var globDescription string
 
 const globSchema = `{
   "type": "object",
@@ -26,7 +22,7 @@ const globSchema = `{
 }`
 
 func globTool() Tool {
-	return newBuiltin(NameGlob, globDescription, globSchema, Properties{Parallel: true, Effect: EffectRead}, runGlob)
+	return newBuiltin(NameGlob, prompts.Text(prompts.ToolGlob), globSchema, Properties{Parallel: true, Effect: EffectRead}, runGlob)
 }
 
 type globInput struct {
@@ -45,11 +41,11 @@ func runGlob(ctx context.Context, b *builtin, c Call) (Result, error) {
 		return searchFailed(ctx, b, c, q.Path, err)
 	}
 	if len(res.Lines) == 0 {
-		return b.result(ctx, c, OutcomeOK, "No files match.", nil)
+		return b.result(ctx, c, OutcomeOK, prompts.Text(prompts.GlobNoMatches), nil)
 	}
 	text := strings.Join(res.Lines, "\n") + "\n"
 	if res.Truncated {
-		text += fmt.Sprintf("[... more than %d paths match; narrow the pattern or the path]\n", machine.GlobLimit)
+		text += prompts.Render(prompts.GlobMore, prompts.Data{"Limit": machine.GlobLimit}) + "\n"
 	}
 	return b.result(ctx, c, OutcomeOK, text, nil)
 }

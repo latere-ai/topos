@@ -11,6 +11,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -123,7 +124,9 @@ func fetchHost(input json.RawMessage) string {
 	return strings.ToLower(host)
 }
 
-// Decision is a verdict with its reason, as agent.tool_use records it.
+// Decision is a verdict with its reason, as agent.tool_use records it. A
+// blocked call's reason is also its result, so the model reads it and its
+// text is a prompt.
 type Decision struct {
 	Verdict Verdict
 	Reason  string
@@ -141,7 +144,7 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 	subject := patternSubject(name, input)
 	if matchAny(p.AlwaysConfirm, name, subject) {
 		if mode == ModePlan {
-			return Decision{VerdictBlock, "Plan mode: only read-only tools run."}
+			return Decision{VerdictBlock, prompts.Text(prompts.CallPlanMode)}
 		}
 		return Decision{VerdictAsk, "on the organization's always-confirm list"}
 	}
@@ -150,7 +153,7 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 		if readOnly {
 			return Decision{VerdictAllow, "read-only"}
 		}
-		return Decision{VerdictBlock, "Plan mode: only read-only tools run."}
+		return Decision{VerdictBlock, prompts.Text(prompts.CallPlanMode)}
 	case ModeProgressive:
 		t := p.Thresholds
 		if t == (Thresholds{}) {
@@ -164,7 +167,7 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 		case risk.Score < t.BlockAt:
 			return Decision{VerdictAsk, "between the ask and block thresholds"}
 		}
-		return Decision{VerdictBlock, "above the block threshold"}
+		return Decision{VerdictBlock, prompts.Text(prompts.CallAboveBlock)}
 	}
 	switch {
 	case readOnly:

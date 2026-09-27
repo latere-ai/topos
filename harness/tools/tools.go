@@ -22,6 +22,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -194,7 +195,8 @@ func Cap(ctx context.Context, m machine.Machine, id, text string, limit int) (st
 		from++
 	}
 	omitted := from - head
-	capped := text[:head] + fmt.Sprintf("\n[... %d bytes omitted; the full output is in %s ...]\n", omitted, p) + text[from:]
+	line := prompts.Render(prompts.OutputSpilled, prompts.Data{"Omitted": omitted, "Path": p})
+	capped := text[:head] + "\n" + line + "\n" + text[from:]
 	return capped, &session.Spill{Path: p, Bytes: int64(len(text))}, nil
 }
 
@@ -327,7 +329,7 @@ func (r *Registry) Definitions() []Definition {
 func (r *Registry) Validate(name string, input json.RawMessage) (Tool, *Result) {
 	t, ok := r.Get(name)
 	if !ok {
-		res := Text(OutcomeUnknownTool, fmt.Sprintf("No tool named %s. Available tools: %s.", name, strings.Join(r.Names(), ", ")))
+		res := Text(OutcomeUnknownTool, prompts.Render(prompts.RegistryUnknownTool, prompts.Data{"Name": name, "Available": strings.Join(r.Names(), ", ")}))
 		return nil, &res
 	}
 	var v any
@@ -336,18 +338,24 @@ func (r *Registry) Validate(name string, input json.RawMessage) (Tool, *Result) 
 	if len(bytes.TrimSpace(input)) == 0 {
 		v = map[string]any{}
 	} else if err := dec.Decode(&v); err != nil || !atEOF(dec) {
-		res := Text(OutcomeInvalidInput, fmt.Sprintf("The input does not match the schema of %s:\n/: not valid JSON", name))
+		res := Text(OutcomeInvalidInput, invalidInput(name, "/: not valid JSON"))
 		return nil, &res
 	}
 	if _, isObj := v.(map[string]any); !isObj {
-		res := Text(OutcomeInvalidInput, fmt.Sprintf("The input does not match the schema of %s:\n/: the input is not an object", name))
+		res := Text(OutcomeInvalidInput, invalidInput(name, "/: the input is not an object"))
 		return nil, &res
 	}
 	if probs := r.schemas[name].Validate(v); len(probs) > 0 {
-		res := Text(OutcomeInvalidInput, fmt.Sprintf("The input does not match the schema of %s:\n%s", name, strings.Join(probs[:min(len(probs), 5)], "\n")))
+		res := Text(OutcomeInvalidInput, invalidInput(name, strings.Join(probs[:min(len(probs), 5)], "\n")))
 		return nil, &res
 	}
 	return t, nil
+}
+
+// invalidInput is the result text of an input that does not match the
+// schema of tool: problems are the validator's lines, one per problem.
+func invalidInput(tool, problems string) string {
+	return prompts.Render(prompts.RegistryInvalidInput, prompts.Data{"Tool": tool, "Problems": problems})
 }
 
 // atEOF reports whether dec has nothing left but whitespace, so an input

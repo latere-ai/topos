@@ -6,7 +6,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -14,10 +13,8 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 )
-
-//go:embed descriptions/write.md
-var writeDescription string
 
 const writeSchema = `{
   "type": "object",
@@ -30,7 +27,7 @@ const writeSchema = `{
 }`
 
 func writeTool() Tool {
-	return newBuiltin(NameWrite, writeDescription, writeSchema, Properties{Effect: EffectWrite}, runWrite)
+	return newBuiltin(NameWrite, prompts.Text(prompts.ToolWrite), writeSchema, Properties{Effect: EffectWrite}, runWrite)
 }
 
 type writeInput struct {
@@ -55,14 +52,12 @@ func runWrite(ctx context.Context, b *builtin, c Call) (Result, error) {
 		return b.fail(ctx, c, p, err)
 	}
 	meta := &Meta{Path: p, SHA256: digest([]byte(in.Content))}
-	verb := "Created"
-	if f.exists {
-		verb = "Wrote"
-	}
-	return b.result(ctx, c, OutcomeOK, fmt.Sprintf("%s %s (%s, %s).", verb, p, plural(len(in.Content), "byte"), plural(lineCount(in.Content), "line")), meta)
+	done := prompts.Data{"Existed": f.exists, "Path": p, "Bytes": plural(len(in.Content), "byte"), "Lines": plural(lineCount(in.Content), "line")}
+	return b.result(ctx, c, OutcomeOK, prompts.Render(prompts.WriteDone, done), meta)
 }
 
-// plural renders a count with its noun, "1 line" or "2 lines".
+// plural renders a count with its noun, "1 line" or "2 lines", for the
+// texts that name a count of lines or bytes.
 func plural(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
@@ -91,7 +86,7 @@ func current(ctx context.Context, c Call, p string) (file, error) {
 		return file{}, err
 	}
 	if fi.IsDir {
-		return file{exists: true, refusal: p + " is a directory; write and edit change files."}, nil
+		return file{exists: true, refusal: prompts.Render(prompts.FileDirectory, prompts.Data{"Path": p})}, nil
 	}
 	content, err := load(ctx, c.Machine, p)
 	if err != nil {

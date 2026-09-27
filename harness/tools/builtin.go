@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 )
 
 // Names of the built-in tools, in the order of spec 008's table.
@@ -55,7 +56,7 @@ func (b *builtin) Run(ctx context.Context, c Call) (Result, error) { return b.ru
 
 func newBuiltin(name, description, schema string, props Properties, run func(context.Context, *builtin, Call) (Result, error)) *builtin {
 	return &builtin{
-		def:   Definition{Name: name, Description: strings.TrimSpace(description), InputSchema: json.RawMessage(schema)},
+		def:   Definition{Name: name, Description: description, InputSchema: json.RawMessage(schema)},
 		props: props,
 		run:   run,
 	}
@@ -79,7 +80,7 @@ func (b *builtin) decode(c Call, v any) *Result {
 			}
 			problem = fmt.Sprintf("/%s: expected %s, got %s", strings.ReplaceAll(te.Field, ".", "/"), jsonKind(te.Type), got)
 		}
-		res := Text(OutcomeInvalidInput, fmt.Sprintf("The input does not match the schema of %s:\n%s", b.def.Name, problem))
+		res := Text(OutcomeInvalidInput, invalidInput(b.def.Name, problem))
 		return &res
 	}
 	return nil
@@ -129,15 +130,15 @@ func (b *builtin) fail(ctx context.Context, c Call, p string, err error) (Result
 func pathError(p string, err error) string {
 	switch {
 	case errors.Is(err, machine.ErrOutside):
-		return p + " is outside the working directory."
+		return prompts.Render(prompts.FileOutside, prompts.Data{"Path": p})
 	case errors.Is(err, machine.ErrDenied):
-		return p + " is on the credential deny-list; the tools do not open it."
+		return prompts.Render(prompts.FileDenied, prompts.Data{"Path": p})
 	case errors.Is(err, fs.ErrNotExist):
-		return p + " does not exist."
+		return prompts.Render(prompts.FileNotFound, prompts.Data{"Path": p})
 	case errors.Is(err, fs.ErrPermission):
-		return p + " is not accessible: permission denied."
+		return prompts.Render(prompts.FilePermission, prompts.Data{"Path": p})
 	}
-	return fmt.Sprintf("%s: %v.", p, err)
+	return prompts.Render(prompts.FileError, prompts.Data{"Path": p, "Error": err.Error()})
 }
 
 // resolve makes p a clean absolute machine path: a relative path resolves
@@ -158,5 +159,5 @@ func digest(b []byte) string {
 
 // changedText is the refusal of the current-content rule.
 func changedText(p string) string {
-	return p + " changed since it was last read; read it again before writing."
+	return prompts.Render(prompts.FileChanged, prompts.Data{"Path": p})
 }
