@@ -339,6 +339,22 @@ committed: the commit log already holds that.
   beside `LUX_URL`; toposd generates both and sends the authorizer only
   their hashes. `toposd runner` reaches a session's tokens and keys from
   its server, only while it holds the session's lease.
+- A hosted session's Cella sandbox is created when the agent first calls
+  a tool that acts on a machine (`read`, `write`, `edit`, `bash`, `grep`,
+  `glob` or `web_fetch`), and its `session.machine` is recorded then, so
+  a session that only talks has no sandbox and costs none. A session
+  whose sandbox exists reopens it by name when a runner claims it. A
+  sandbox that cannot be created answers the call that needed it, with
+  a `session.error` naming the code, and a later call tries again.
+- `POST /v1/sessions` takes `resources`, up to 8 repositories as
+  `{"type":"repository","url","ref"}` with `https` URLs. When the
+  session's machine first exists the runner clones the first into the
+  working directory and the rest beside it, each on the branch
+  `agents/<agent>/<session>` from `ref`, with the agent as the author and
+  a hook that adds `Topos-Session` and `Topos-Agent` trailers to every
+  commit; `git push` publishes the branch. A repository that cannot be
+  cloned is reported as `repository_unavailable` and the session goes on
+  without it.
 
 ## v0.7.0 - 2026-09-26
 
