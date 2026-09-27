@@ -39,12 +39,12 @@ established what this spec keeps: cost is carried as a nullable
 unpriced model is refused before any spend, and one meter bounds every
 agent of a session.
 
-llmdialect today carries thinking signatures, redacted thinking and
-cache hints through its IR, and reports in `ir.Request.Loss` every
-field a target dialect cannot represent. Its Responses backend drops
-OpenAI's encrypted reasoning items instead of replaying them; the
-provider-opaque block below closes that and is a change to pkg that
-lands before this spec is built.
+llmdialect carries thinking signatures, redacted thinking and cache
+hints through its IR, and reports in `ir.Request.Loss` every field a
+target dialect cannot represent. The provider-opaque block below
+landed in `latere.ai/x/pkg` v0.88.0, so its Responses backend replays
+OpenAI's encrypted reasoning items instead of dropping them, and the
+harness asks a Responses model for them.
 
 ## Design
 
@@ -162,8 +162,8 @@ JSON normalization.
 
 ### The provider-opaque block
 
-A change to pkg, landed before this spec is built. The IR gains a
-block type `opaque` carrying `Opaque{Dialect, Kind string; Raw
+A change to pkg, landed in v0.88.0. The IR has a block type `opaque`
+carrying `Opaque{Dialect, Kind string; Raw
 json.RawMessage}`, encoded in the Lux wire JSON as:
 
 ```json
@@ -294,14 +294,15 @@ with the provider's own SDK ([[025-task-suite]]).
 | Every `model.request` carries `request_sha256` of the exact bytes sent, their size, `codec` and a `response_blob` holding the raw response; `request_blob` appears only with capture on and holds the bytes sent | `models/dialect.TestEveryDialectRoundTripsThroughTheStub`, `models/dialect.TestCodecVersionNamesTheDialect`, `harness.TestATurnRunsToolsAndEnds`, `harness.TestCaptureKeepsTheRequestBytes` | built |
 | Replaying a recorded session reproduces every request hash with the same codec version | `TestReplayReproducesRequestHash` | not built |
 | `max_tokens` on each request equals the catalog's output limit, and a model with no input window or output limit is refused with `model_unknown` | `harness.TestATurnRunsToolsAndEnds`, `harness.TestNewRefusesAnIncompleteConfig`, `models.TestResolveOverlaysSources` | built |
-| The embedded catalog resolves a model by name or alias with its windows and prices, carries free development models at price zero, and overlays the Lux and agent figures in precedence order; `tools/catalog` merges Lux prices with OpenRouter windows | `models.TestEmbeddedCatalog`, `models.TestResolveOverlaysSources`, `tools/catalog.TestRunMergesPricesAndWindows`, `tools/catalog.TestRunRefusesBadInput` | built |
+| The embedded catalog resolves a model by name or alias with its windows and prices, carries free development models at price zero, and overlays the Lux and agent figures it is handed in precedence order; `tools/catalog` merges Lux prices with OpenRouter windows | `models.TestEmbeddedCatalog`, `models.TestResolveOverlaysSources`, `tools/catalog.TestRunMergesPricesAndWindows`, `tools/catalog.TestRunRefusesBadInput` | built |
+| The figures a Lux connection serves for a model are read and overlaid between the agent's and the embedded catalog's | `TestLuxServedFiguresOverlayTheCatalog` | not built: nothing reads them yet |
 | Cost comes from the gateway's figure when reported and from the catalog otherwise, a missing cache-read price is the input price and a missing cache-write price 1.25 times it, and the cost reaches the session's meter | `models.TestCost`, `models.TestPrices`, `harness.TestATurnRunsToolsAndEnds`, `harness.TestTheBudgetStopsTheTurn` | built |
 | A turn that would pass the budget stops with `budget` before the request is sent; a budget over an unpriced model is refused with `model_unpriced` before any request | `harness.TestTheBudgetStopsTheTurn`, `harness.TestAnUnpricedModelUnderABudgetIsRefused` | built |
 | A model gateway's refusal for spend is not retried and stops the turn `budget` with the refusal in `detail` | `models.TestSpendRefusalsAreNotRetried`, `harness.TestASpentBudgetAtTheGatewayStopsTheTurnWithBudget` | built |
 | A spend refusal from Cella or a memory backend stops the turn `budget` the same way | `TestACoresSpendRefusalStopsTheTurn` | not built |
 | `POST /v1/sessions/{id}/resume` on a session idle with `budget` appends `session.resumed` with the decision's raised cap and a runner continues the turn; on any other status it answers `conflict` | `TestResumeAfterTheCapIsRaised` | not built |
 | The zero connection is an error, and so is one with no model or an unknown scheme, family or dialect | `models.TestConnectionValidate` | built |
-| `toposd serve` exits 1 with no `TOPOS_MODELS_URL` or with a `scripted:` one | `TestServeRefusesScriptedModel` | not built |
+| `toposd serve` and `toposd runner` exit 1 with one configuration line with no `TOPOS_MODELS_URL` or with a `scripted:` one | `cmd/toposd.TestServeRefusesScriptedModel` | built |
 | A stream that ends before its dialect's terminal frame is an incomplete response and is retried, in every dialect; an error event inside a stream, an unreachable server and a canceled request are classified | `models/dialect.TestErrorsAreClassifiedForRetry` | built |
-| A retry of a stream reuses no partial output: the stored message equals the final attempt's response | `TestRetriedStreamStoresFinalAttempt` | not built |
-| The credential never appears in any event, blob or log line of a session | `TestModelCredentialNeverLogged` | not built |
+| A retry of a stream reuses no partial output: the stored message equals the final attempt's response | `harness.TestRetriedStreamStoresFinalAttempt` | built |
+| The credential reaches the gateway in its header and never appears in any event or blob of a session, every request's bytes captured | `harness.TestModelCredentialNeverLogged` | built |
