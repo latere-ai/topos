@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner/checkpoint"
 	"latere.ai/x/topos/session"
@@ -43,6 +44,10 @@ type Options struct {
 	// instruction file and skills folder, read on the host.
 	PersonalInstructions string
 	PersonalSkills       string
+	// GitCredentials names the variable that holds the placeholder of the
+	// session's credential for a repository's git host (spec 019); nil
+	// clones every repository without one.
+	GitCredentials GitCredentials
 	// CheckpointDir holds the session repositories of working
 	// directories that are not checkouts (spec 034); empty takes no
 	// checkpoints outside a repository.
@@ -165,19 +170,45 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	if err != nil {
 		return harness.Outcome{}, r.setupFailed(ctx, log, err)
 	}
-	if err := r.attach(ctx, cfg, log); err != nil {
-		return harness.Outcome{}, r.setupFailed(ctx, log, err)
-	}
 	evs, err := st.Events(ctx, id, 1, 0)
 	if err != nil {
 		return harness.Outcome{}, err
 	}
+	// A session's first machine gets its repositories (spec 019). A
+	// machine opened on demand is recorded when a tool first acts on
+	// it, beside the running turn; one the session already had is opened
+	// at once, since its sandbox exists.
+	first := !hasMachine(evs)
+	deferred, onDemand := cfg.Machine.(*machine.Deferred)
+	switch {
+	case onDemand:
+		deferred.OnOpen(func(ctx context.Context, m machine.Machine) error {
+			return r.opened(ctx, s, m, log, first, true)
+		})
+		if !first {
+			if err := deferred.Open(ctx); err != nil {
+				return harness.Outcome{}, r.setupFailed(ctx, log, err)
+			}
+		}
+	default:
+		if err := r.opened(ctx, s, cfg.Machine, log, first, false); err != nil {
+			return harness.Outcome{}, r.setupFailed(ctx, log, err)
+		}
+	}
+	if evs, err = st.Events(ctx, id, 1, 0); err != nil {
+		return harness.Outcome{}, err
+	}
 	git, memory := attached(evs)
-	cfg.Prompt.Git = cfg.Prompt.Git || git
+	cfg.Prompt.Git = cfg.Prompt.Git || git || len(Repositories(s)) > 0
 	cfg.Prompt.Memory = cfg.Prompt.Memory || memory
 	if cfg.Checkpoint == nil {
 		cp := r.checkpointer(cfg, s)
 		cfg.Checkpoint = func(ctx context.Context, turn int, previous string) (*session.CheckpointRef, error) {
+			// A machine not opened yet has no files to keep, and a
+			// checkpoint must not open it.
+			if onDemand && deferred.Opened() == nil {
+				return nil, nil
+			}
 			ref, err := cp.Take(ctx, turn, previous)
 			if errors.Is(err, checkpoint.ErrNoGit) || errors.Is(err, checkpoint.ErrNoRepository) {
 				return nil, nil
@@ -247,6 +278,8 @@ func (r *Runner) setupFailed(ctx context.Context, log *Log, cause error) error {
 		code, stop = refusal, session.StopBudget
 	} else if se, ok := errors.AsType[*SetupError](cause); ok {
 		code = se.Code
+	} else if oe, ok := errors.AsType[*machine.OpenError](cause); ok {
+		code = oe.Code
 	} else if mc, ok := errors.AsType[*models.Coded](cause); ok {
 		code = mc.Code
 	}
@@ -274,14 +307,28 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 	return err
 }
 
+// opened records a machine the session has: at the session's first
+// machine it delivers the session's repositories into it, then appends
+// session.machine when the session has none for this machine yet, beside
+// the running turn when the machine opened on demand. A repository that
+// could not be delivered is reported after the machine is recorded, so
+// the session keeps the machine and learns what is missing.
+func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool) error {
+	var delivered error
+	if first && len(Repositories(s)) > 0 {
+		delivered = r.deliver(ctx, s, m)
+	}
+	return errors.Join(r.attach(ctx, m, log, beside), delivered)
+}
+
 // attach appends session.machine when the session has none for this
 // machine yet: a first attachment, or a machine other than the last one.
-func (r *Runner) attach(ctx context.Context, cfg harness.Config, log *Log) error {
+func (r *Runner) attach(ctx context.Context, m machine.Machine, log *Log, beside bool) error {
 	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
 	if err != nil {
 		return err
 	}
-	info := cfg.Machine.Info()
+	info := m.Info()
 	reason := "attached"
 	for _, ev := range slices.Backward(evs) {
 		if ev.Type != session.TypeSessionMachine || ev.Redacted() {
@@ -297,7 +344,7 @@ func (r *Runner) attach(ctx context.Context, cfg harness.Config, log *Log) error
 		reason = "handoff"
 		break
 	}
-	a, err := attach(ctx, cfg.Machine, log, attachOptions{PersonalInstructions: r.o.PersonalInstructions, PersonalSkills: r.o.PersonalSkills, Now: r.o.Clock()})
+	a, err := attach(ctx, m, log, attachOptions{PersonalInstructions: r.o.PersonalInstructions, PersonalSkills: r.o.PersonalSkills, Now: r.o.Clock()})
 	if err != nil {
 		return err
 	}
@@ -307,8 +354,21 @@ func (r *Runner) attach(ctx context.Context, cfg harness.Config, log *Log) error
 	if err != nil {
 		return err
 	}
+	if beside {
+		return log.appendBeside(ctx, []session.Event{e})
+	}
 	_, err = log.Append(ctx, []session.Event{e})
 	return err
+}
+
+// hasMachine reports whether the log records a machine the session had.
+func hasMachine(evs []session.Event) bool {
+	for _, e := range evs {
+		if e.Type == session.TypeSessionMachine && !e.Redacted() {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runner) checkpointer(cfg harness.Config, s session.Session) *checkpoint.Checkpointer {

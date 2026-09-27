@@ -26,6 +26,10 @@ type Log struct {
 	lost <-chan struct{}
 	// fence is the lease's own fenced append, when its store offers one.
 	fence session.Fence
+	// beside are the events the runner appended beside the harness, and
+	// the events those appends read, which the next Append hands the
+	// harness, so its view of the log misses none of them.
+	beside []session.Event
 }
 
 // NewLog returns the log of one session whose last sequence is last.
@@ -41,10 +45,40 @@ func (l *Log) Last() uint64 {
 }
 
 // Append reads the events appended since the last one it saw, then
-// appends the batch after them, stamping it in place.
+// appends the batch after them, stamping it in place. It returns what
+// others appended and what the runner appended beside it since the last
+// Append, in sequence order.
 func (l *Log) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	foreign, err := l.append(ctx, batch)
+	if err != nil {
+		return nil, err
+	}
+	if len(l.beside) > 0 {
+		foreign = append(l.beside, foreign...)
+		l.beside = nil
+	}
+	return foreign, nil
+}
+
+// appendBeside appends a batch the runner writes while the harness runs
+// a turn, such as the session.machine of a machine opened on demand
+// (spec 009). The batch and the events the append read reach the
+// harness with its next Append.
+func (l *Log) appendBeside(ctx context.Context, batch []session.Event) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	foreign, err := l.append(ctx, batch)
+	if err != nil {
+		return err
+	}
+	l.beside = append(append(l.beside, foreign...), batch...)
+	return nil
+}
+
+// append is Append's work under l.mu.
+func (l *Log) append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
 	select {
 	case <-l.lost:
 		return nil, ErrLeaseLost
