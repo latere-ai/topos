@@ -283,3 +283,40 @@ key on apply ([[018-credentials-and-secrets]]).
 | A label under `topos.latere.ai/` is refused | `manifest.TestReservedLabelsRefused` | built |
 | Another `apiVersion` refuses the file before any other problem, a cycle among one file's documents is refused, and `instructionsFile` is read only through the caller's file system | `manifest.TestTheEnvelopeIsCheckedFirst`, `manifest.TestReferenceCyclesAndLookupFailures`, `manifest.TestInstructionsFile` | built |
 | `AgentConfig` carries a resolved Agent's instructions, tools, policy, model overlay, subagents to `maxDepth` and limits, and the bundle reads back to the same configuration and refuses one whose spec does not hash to its digest | `manifest.TestAgentConfigCarriesTheHarnessPieces`, `manifest.TestBundleRoundTrip` | built |
+
+## Outcome
+
+Built on 2026-09-27. The four kinds are Go types in `manifest/v1`, and
+`manifest.Resolve` is the one resolver: the topos command calls it with
+the manifest's directory and no stored objects, and `PUT
+/v1/agents/{name}` with its store's `Lookup` and no files. Every row of
+the acceptance table passes.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| the kinds, their fields and their JSON form | `manifest/v1` |
+| decoding, the strict check, defaulting, validation, references, canonical JSON and the digest, versioning against the `Lookup` | `manifest/decode.go`, `manifest/defaults.go`, `manifest/validate.go`, `manifest/resolve.go` |
+| the input check for secrets, the resolver's own copy | `manifest/secret.go` |
+| `AgentConfig` and the session bundle | `manifest/config.go`, `manifest/bundle.go` |
+| the server's `Lookup`, scoped to the agents the caller may read, and the apply route | `internal/store` (`Lookup`), `internal/server/agents.go` |
+| the topos command's resolution of a manifest file | `internal/toposcli` (`resolveFile`) |
+| the fixtures and their golden resolutions | `manifest/testdata/` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| a digest depends on the manifest and the build's fixed defaults alone, so the CLI and the server agree on it | they agree byte for byte for an agent that pins no other; an agent that pins one carries the pinned `agent_<ulid>@<n>`, and each store mints its own ids, so the two digests of such an agent differ | a pin names a stored version, and the CLI's local state and the server's store are two stores; agreement over stored references is `topos apply`'s ([[024-client-cli-skill]]) |
+| a name resolves through the local state directory for the CLI | the topos command resolves with no `Lookup`, so every reference names a document of the same file, and a manifest naming a credential does not resolve there | the local state and `topos apply` are [[024-client-cli-skill]]'s, not built |
+| the MemoryStore has `sharing` (default `initiator`) and `audience` | `v1.MemoryStoreSpec` holds `description` alone, so a manifest that sets either is refused as an unknown field | the fields were added to the deck for [[020-memory-stores]], which is not built |
+| `machine.image` defaults to Cella's `base`, and a default from outside the manifest is not written | `base` is written into the resolved spec of a `cella` machine as a fixed default, and a host machine takes none | the resolver treats the image as this build's own default, so the digest does not move with Cella's |
+| the server holds the four kinds | it holds Agents; a manifest naming a memory store or a connection is `unknown_reference` on the API | the routes are [[020-memory-stores]]'s and [[018-credentials-and-secrets]]'s |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| a manifest with `instructionsFile` through the API | the API reads no files and refuses the field; a client inlines the file before it applies, as the `topos apply` row of [[024-client-cli-skill]] requires |
+| `status.identity`, the subject an agent's key acts as | the resolver carries a stored agent's identity forward and writes none for a new one; provisioning is [[018-credentials-and-secrets]]'s |
