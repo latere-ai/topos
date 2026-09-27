@@ -245,7 +245,7 @@ workers connect out to Cella (invariant 10 of [[001-architecture]]).
 
 | Code | Retryable | Meaning |
 |---|---|---|
-| `machine_unavailable` | no | the machine kind is not configured (a `host` machine on a server without `TOPOS_HOST_SESSIONS=on`, or one whose agent names `machine.roots` or `machine.readPaths`), the runner carries no helper for the sandbox's platform, or Cella refused the sandbox: its Environment, its image, a secret it names, or the session's credential; a Cella that could not answer, a 5xx, a 429 or no answer, is transient and carries no code |
+| `machine_unavailable` | no | the machine kind is not configured (a `host` machine on a server without `TOPOS_HOST_SESSIONS=on`, or one whose agent names `machine.roots` or `machine.readPaths`), the runner carries no helper for the sandbox's platform, or Cella refused the sandbox: its Environment, its image, a secret it names, or the session's credential; a Cella that could not answer, a 5xx, a 429 or no answer, is transient and carries no code; a Cella answer carrying `budget_exhausted` or `spend_exceeded`, whatever its status, is a refusal for spend and not this code: it stops the turn `budget` ([[007-models]]) |
 | `machine_lost` | yes | the session's sandbox was gone and no checkpoint could restore its files |
 
 ## Not in this spec
