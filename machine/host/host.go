@@ -59,6 +59,10 @@ type Options struct {
 	// WorktreeDir holds the git worktrees of isolated threads; empty
 	// offers none.
 	WorktreeDir string
+	// Sandbox, when set, runs every command inside a host sandbox, one
+	// stage per command, with none of Environ; nil runs commands as the
+	// person's own processes.
+	Sandbox *Sandbox
 }
 
 // Host is the host machine.
@@ -72,6 +76,7 @@ type Host struct {
 
 	mu       sync.Mutex
 	jobs     map[int]*exec.Cmd
+	stages   map[string]*stageJob
 	jobErrs  []error
 	released bool
 }
@@ -93,7 +98,7 @@ func Open(o Options) (*Host, error) {
 	if err := os.MkdirAll(o.SpillDir, 0o700); err != nil {
 		return nil, fmt.Errorf("machine: create the spill directory: %w", err)
 	}
-	h := &Host{opts: o, deny: machine.DenyList{Home: o.Home, DataDir: o.DataDir}, jobs: map[int]*exec.Cmd{}}
+	h := &Host{opts: o, deny: machine.DenyList{Home: o.Home, DataDir: o.DataDir}, jobs: map[int]*exec.Cmd{}, stages: map[string]*stageJob{}}
 	dirs := append([]string{o.Workdir}, o.Roots...)
 	dirs = append(dirs, o.SpillDir)
 	for i, d := range dirs {
@@ -123,12 +128,44 @@ func Open(o Options) (*Host, error) {
 	if h.spill == "" {
 		h.spill = h.info.Workdir
 	}
+	if o.Sandbox != nil {
+		if err := h.checkSandbox(); err != nil {
+			return nil, errors.Join(err, h.closeRoots())
+		}
+		h.info.Sandbox = string(o.Sandbox.Driver.Name())
+	}
 	environ := o.Environ
 	if environ == nil {
 		environ = os.Environ()
 	}
 	h.env = machine.FilterEnv(environ)
 	return h, nil
+}
+
+// checkSandbox checks a sandbox's driver and creates its stage
+// directory, which must lie outside every root, since a command could
+// otherwise read or rewrite its own transcript.
+func (h *Host) checkSandbox() error {
+	sb := h.opts.Sandbox
+	switch {
+	case sb.Driver == nil:
+		return errors.New("machine: the host sandbox has no driver")
+	case sb.StageDir == "":
+		return errors.New("machine: the host sandbox has no stage directory")
+	}
+	if err := os.MkdirAll(sb.StageDir, 0o700); err != nil {
+		return fmt.Errorf("machine: create the stage directory: %w", err)
+	}
+	dir, err := filepath.EvalSymlinks(sb.StageDir)
+	if err != nil {
+		return fmt.Errorf("machine: the stage directory: %w", err)
+	}
+	for _, r := range h.roots {
+		if dir == r.dir || strings.HasPrefix(dir, r.dir+string(filepath.Separator)) || strings.HasPrefix(r.dir, dir+string(filepath.Separator)) {
+			return fmt.Errorf("machine: the stage directory %s overlaps the root %s", dir, r.dir)
+		}
+	}
+	return nil
 }
 
 func (h *Host) closeRoots() error {
@@ -397,9 +434,12 @@ func (h *Host) environ(add map[string]string) []string {
 // Exec runs a command and returns its output, or starts a background job.
 func (h *Host) Exec(ctx context.Context, r machine.ExecRequest) (machine.ExecResult, error) {
 	if r.Background {
+		if h.opts.Sandbox != nil {
+			return h.stageBackground(ctx, r)
+		}
 		return h.background(ctx, r)
 	}
-	s, err := h.start(ctx, r)
+	s, err := h.stream(ctx, r)
 	if err != nil {
 		return machine.ExecResult{}, err
 	}
@@ -424,7 +464,32 @@ func (h *Host) ExecStream(ctx context.Context, r machine.ExecRequest) (machine.E
 	if r.Background {
 		return nil, errors.New("machine: a background job has no stream; its output is in its job log")
 	}
-	return h.start(ctx, r)
+	return h.stream(ctx, r)
+}
+
+// stream starts a command in the foreground: as a stage of the host
+// sandbox when the machine has one, as a process of its own otherwise.
+func (h *Host) stream(ctx context.Context, r machine.ExecRequest) (machine.ExecStream, error) {
+	// Each start is checked before it becomes the interface, so a failed
+	// start answers a nil stream rather than a typed nil.
+	if h.opts.Sandbox == nil {
+		s, err := h.start(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
+	}
+	h.mu.Lock()
+	released := h.released
+	h.mu.Unlock()
+	if released {
+		return nil, machine.ErrReleased
+	}
+	s, err := h.startStage(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // reportPrefix makes the shell write its final directory to descriptor 3
@@ -652,6 +717,7 @@ func (h *Host) Release(ctx context.Context, end bool) error {
 	for _, pid := range pids {
 		errs = append(errs, kill(pid, syscall.SIGKILL))
 	}
+	errs = append(errs, h.releaseStages(ctx))
 	h.mu.Lock()
 	errs = append(errs, h.jobErrs...)
 	h.mu.Unlock()

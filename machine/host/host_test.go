@@ -26,7 +26,22 @@ type fixture struct {
 	home    string
 }
 
-func open(t *testing.T) fixture {
+func open(t *testing.T) fixture { return openOn(t, direct) }
+
+// The two ways a host machine runs a command: as a process of its own,
+// the person's host, and as a stage of the host sandbox, a server's.
+const (
+	direct = "process"
+	staged = "stage"
+)
+
+var backends = []string{direct, staged}
+
+// openOn opens the fixture on a backend. The stage backend runs the srt
+// driver over a stand-in for srt that runs the command unconfined, so
+// what it proves is the machine's mapping of commands onto stages, not
+// the sandbox's confinement.
+func openOn(t *testing.T, backend string) fixture {
 	t.Helper()
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -38,11 +53,15 @@ func open(t *testing.T) fixture {
 			t.Fatal(err)
 		}
 	}
-	h, err := Open(Options{
+	o := Options{
 		Workdir: f.work, Roots: []string{filepath.Join(base, "memory"), f.work}, SpillDir: filepath.Join(base, "spill"),
 		Home: f.home, DataDir: filepath.Join(base, "data"), ID: "host-1",
 		Environ: []string{"PATH=" + os.Getenv("PATH"), "GITHUB_TOKEN=ghp_secret", "LANG=C"},
-	})
+	}
+	if backend == staged {
+		o.Sandbox = &Sandbox{Driver: shimDriver(t, f.home), StageDir: filepath.Join(base, "stages"), Denied: []string{filepath.Join(base, "data")}}
+	}
+	h, err := Open(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +243,12 @@ func run(t *testing.T, h *Host, r machine.ExecRequest) machine.ExecResult {
 }
 
 func TestExec(t *testing.T) {
-	f := open(t)
+	for _, b := range backends {
+		t.Run(b, func(t *testing.T) { testExec(t, openOn(t, b)) })
+	}
+}
+
+func testExec(t *testing.T, f fixture) {
 	res := run(t, f.h, machine.ExecRequest{Command: `echo out; echo err >&2; echo ${GITHUB_TOKEN:-unset}; echo $EXTRA; exit 3`, Env: map[string]string{"EXTRA": "added"}})
 	if string(res.Output) != "out\nerr\nunset\nadded\n" || res.ExitCode != 3 || res.TimedOut {
 		t.Fatalf("exec %q code %d", res.Output, res.ExitCode)
@@ -251,7 +275,16 @@ func TestExec(t *testing.T) {
 }
 
 func TestExecTimeoutAndCancel(t *testing.T) {
-	f := open(t)
+	for _, b := range backends {
+		t.Run(b, func(t *testing.T) { testExecTimeoutAndCancel(t, openOn(t, b)) })
+	}
+}
+
+func testExecTimeoutAndCancel(t *testing.T, f fixture) {
+	// The first command pays the operating system's first-launch checks
+	// of a freshly written program, the stage backend's stand-in for srt
+	// among them, which can outlast the timeout below.
+	run(t, f.h, machine.ExecRequest{Command: "true"})
 	start := time.Now()
 	res := run(t, f.h, machine.ExecRequest{Command: "echo started; /bin/sleep 30", Timeout: 200 * time.Millisecond})
 	if !res.TimedOut || time.Since(start) > 10*time.Second || !strings.Contains(string(res.Output), "started") {
@@ -274,7 +307,12 @@ func TestExecTimeoutAndCancel(t *testing.T) {
 }
 
 func TestExecStream(t *testing.T) {
-	f := open(t)
+	for _, b := range backends {
+		t.Run(b, func(t *testing.T) { testExecStream(t, openOn(t, b)) })
+	}
+}
+
+func testExecStream(t *testing.T, f fixture) {
 	s, err := f.h.ExecStream(t.Context(), machine.ExecRequest{Command: "echo one; echo two"})
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +331,12 @@ func TestExecStream(t *testing.T) {
 }
 
 func TestBackgroundJobsEndWithTheSession(t *testing.T) {
-	f := open(t)
+	for _, b := range backends {
+		t.Run(b, func(t *testing.T) { testBackgroundJobsEndWithTheSession(t, openOn(t, b)) })
+	}
+}
+
+func testBackgroundJobsEndWithTheSession(t *testing.T, f fixture) {
 	res := run(t, f.h, machine.ExecRequest{Command: "echo serving; /bin/sleep 30", Background: true})
 	if res.PID == 0 || !strings.HasPrefix(res.Log, f.h.SpillDir()) {
 		t.Fatalf("job %+v", res)
@@ -499,7 +542,12 @@ func TestWorktrees(t *testing.T) {
 // argument may be, as a long heredoc makes, runs in the foreground and
 // in the background, and leaves no script file behind.
 func TestAScriptPastTheArgumentLimitRuns(t *testing.T) {
-	f := open(t)
+	for _, b := range backends {
+		t.Run(b, func(t *testing.T) { testAScriptPastTheArgumentLimitRuns(t, openOn(t, b)) })
+	}
+}
+
+func testAScriptPastTheArgumentLimitRuns(t *testing.T, f fixture) {
 	long := "cd /\necho start\n" + strings.Repeat(": padding\n", 16<<10) + "echo end\n"
 	res, err := f.h.Exec(t.Context(), machine.ExecRequest{Command: long, ReportDir: true})
 	if err != nil || string(res.Output) != "start\nend\n" || res.Dir != "/" {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"latere.ai/x/pkg/otel"
 
@@ -57,8 +58,37 @@ func checkScheme(u *url.URL) error {
 	return nil
 }
 
+// egressAllows reports whether a host name is one of egress: the name
+// itself, or a subdomain of a "*." entry's domain.
+func egressAllows(egress []string, host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, e := range egress {
+		if domain, ok := strings.CutPrefix(e, "*."); ok {
+			if strings.HasSuffix(host, "."+domain) {
+				return true
+			}
+			continue
+		}
+		if host == e {
+			return true
+		}
+	}
+	return false
+}
+
+// checkEgress refuses a URL whose host a sandboxed machine may not
+// reach. A machine without a sandbox reaches every host.
+func (h *Host) checkEgress(u *url.URL) error {
+	if h.opts.Sandbox == nil || egressAllows(h.opts.Sandbox.Egress, u.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("machine: %s is not one of the hosts this machine may reach", u.Hostname())
+}
+
 // Fetch GETs a URL from the host's own network, which the host sandbox's
-// network rule governs (spec 012).
+// network rule governs (spec 012). A sandboxed machine's fetch, the URL
+// and every redirect, reaches only the sandbox's egress hosts, the
+// allowlist its commands are held to.
 func (h *Host) Fetch(ctx context.Context, r machine.FetchRequest) (res machine.FetchResult, err error) {
 	h.mu.Lock()
 	released := h.released
@@ -73,6 +103,20 @@ func (h *Host) Fetch(ctx context.Context, r machine.FetchRequest) (res machine.F
 	if err := checkScheme(u); err != nil {
 		return machine.FetchResult{}, err
 	}
+	if err := h.checkEgress(u); err != nil {
+		return machine.FetchResult{}, err
+	}
+	client := fetchClient
+	if h.opts.Sandbox != nil {
+		c := *fetchClient
+		c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if err := fetchClient.CheckRedirect(req, via); err != nil {
+				return err
+			}
+			return h.checkEgress(req.URL)
+		}
+		client = &c
+	}
 	fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(fctx, http.MethodGet, u.String(), nil)
@@ -81,7 +125,7 @@ func (h *Host) Fetch(ctx context.Context, r machine.FetchRequest) (res machine.F
 	}
 	req.Header.Set("Accept", fetchAccept)
 	req.Header.Set("User-Agent", fetchUserAgent)
-	resp, err := fetchClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return machine.FetchResult{}, fetchError(ctx, fctx, err)
 	}
