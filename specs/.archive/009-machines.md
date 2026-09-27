@@ -69,6 +69,25 @@ machines give the same results. `Release(ctx, false)` lets go of the
 machine while the session is idle; `Release(ctx, true)` removes it when
 the session ends.
 
+### A machine opened on demand
+
+An agent decides at runtime whether it needs a machine. A hosted
+session on a Cella machine starts without one: its machine is a
+`machine.Deferred`, which opens the sandbox the first time something
+acts on it and never before.
+
+| Aspect | Rule |
+|---|---|
+| what opens it | the first call of a tool whose effect is not `none` ([[008-tools]]): `read`, `write`, `edit`, `bash`, `grep`, `glob` and `web_fetch`. The harness opens the machine before the tool runs, so the tool's paths resolve against the working directory of a machine that exists. `todo`, the thread tools and the advisor never open it; a result past its output limit opens it for its spill file |
+| before it opens | `Info` answers the kind alone, so the risk score and the verdict of each call still see a Cella machine; `Roots` and `SpillDir` answer nothing; `Release` has nothing to let go of, and a checkpoint takes nothing |
+| the open | runs under the drive's context, not the call's, so an interrupt waits for the sandbox and its hook rather than leaving either half done; parallel calls wait for the one open |
+| the record | the runner's hook appends `session.machine` with reason `attached` right after the sandbox opens, between the call's `agent.tool_use` and its `tool.result`, and first delivers the session's repositories ([[019-git]]); the turn's next request carries the machine's context block, instruction files and skills, read from the sandbox then |
+| a failed open | the call's result says the machine could not be started, and a `session.error` names the code, `machine_unavailable` or the code the setup named; a Cella refusal for spend stops the turn `budget` as a call's refusal does. A later call tries again |
+| a session that had one | a drive of a session whose log records a machine opens it at once, by name, since its sandbox exists; a restarted runner reattaches this way and records nothing again |
+| the host | a person's host and a server's host session are opened with the harness, as before: they cost nothing to have |
+
+A session that never calls such a tool never creates a sandbox.
+
 ### The host machine
 
 | Aspect | Rule |
@@ -277,7 +296,10 @@ repository delivery and git credentials ([[019-git]]); named secrets
 | Open finds the sandbox by name and uploads nothing again, starts one Cella stopped and waits for one starting, replaces a failed one as created, and takes the sandbox of a runner whose create won a race; a sandbox Cella stopped under a running machine is started by its next call, and a missing helper is put back | `machine/cella.TestOpenFindsTheSandboxByName`, `machine/cella.TestAStoppedSandboxIsStartedByTheNextCall`, `machine/cella.TestTheHelperIsPutBackWhenMissing`, `machine/cella.TestWaitsAndRaces` | built |
 | A sandbox that is gone answers `machine_lost` on every call until `Recreate` creates it again, reported created with a fresh workspace, and `ImportTar` and `ExportTar` carry the workspace as tar | `machine/cella.TestALostSandboxIsRecreated`, `machine/cella.TestTar` | built |
 | `Release(ctx, false)` leaves the sandbox to Cella's idle stop and `Release(ctx, true)` deletes it, after which every call answers `ErrReleased` | `machine/cella.TestRelease` | built |
-| A runner restarted mid-session finds the sandbox by name, starts it if stopped, and continues without creating another | `cmd/toposd.TestCellaMachineSurvivesRunnerRestart` | built |
+| A runner restarted mid-session finds the sandbox by name, starts it if stopped, and continues without creating another | `cmd/toposd.TestCellaMachineSurvivesRunnerRestart`, `internal/hosted.TestARestartedRunnerReattachesTheSandboxByName` | built |
+| A hosted session whose turns call no tool that acts on a machine never reaches Cella and records no machine; the first such call creates the sandbox and records it once, between the call and its result, and every later call and turn reuses it | `internal/hosted.TestASessionThatOnlyTalksCreatesNoSandbox`, `internal/hosted.TestTheFirstBashCreatesTheSandboxAndLaterCallsReuseIt`, `runner.TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt`, `runner.TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine` | built |
+| A machine opened on demand opens once for parallel calls, answers its kind before it opens, and a failed open is the call's result with a `session.error`, or a stop with `budget` for a refusal for spend; a spill opens it | `machine.TestADeferredMachineOpensOnFirstUse`, `machine.TestADeferredMachineThatCannotOpen`, `machine.TestADeferredMachinesFailedHookLeavesItOpen`, `harness.TestAMachineOpensAtTheFirstToolThatActsOnIt`, `harness.TestAMachineThatCannotOpenIsTheCallsResult`, `harness.TestACoreRefusingTheMachineForSpendStopsTheTurn`, `harness.TestASpillOpensTheMachine` | built |
+| The egress allowlist of a session's sandbox includes its repositories' git host | `internal/hosted.TestTheSandboxReachesItsRepositoriesHosts` | built |
 | Commands on a Cella machine run under the helper in their own process group with their exit code, their final directory, an input that ends, a timeout and a cancel that end the group, and a script of any length; background jobs log to the spill directory | `machine/cella.TestExec`, `machine/cella.TestExecTimeoutAndCancel`, `machine/cella.TestAHelperThatDoesNotAnswerACancelIsClosed`, `machine/cella.TestBackgroundJobs`, `machine/cella.TestLongScripts`, `cmd/topos-machine.TestRunOutputAndExit`, `cmd/topos-machine.TestRunReportsTheFinalDirectory`, `cmd/topos-machine.TestRunDeliversInput`, `cmd/topos-machine.TestRunTimesOut`, `cmd/topos-machine.TestRunCancels`, `cmd/topos-machine.TestRunEndsTheProcessGroup`, `cmd/topos-machine.TestRunReadsAFramedScript`, `cmd/topos-machine.TestJob` | built |
 | A Cella machine's file operations go through Cella's file routes in the workspace and through the helper outside it, with the host's errors, the deny-list and the roots | `machine/cella.TestFilesInTheWorkspace`, `machine/cella.TestFilesInTheSpillDirectory`, `cmd/topos-machine.TestFSWrite`, `cmd/topos-machine.TestFSStatListRemoveRename`, `cmd/topos-machine.TestFSRead` | built |
 | Search on a Cella machine runs the Go-native grep and glob in the helper, where the files are | `machine/cella.TestSearch`, `cmd/topos-machine.TestSearch` | built |
@@ -305,6 +327,7 @@ checks of a server's host run where `srt` is installed.
 | the Cella sandbox: open by name, lifecycle, exec over the helper, files, search, fetch, tar | `machine/cella` |
 | the helper a sandbox runs | `cmd/topos-machine` |
 | the machines of a hosted session by kind, and the helper builds | `internal/hosted` |
+| a machine opened on demand, the harness's open before a tool that acts on it, and the runner's record of it | `machine/deferred.go`, `harness/harness.go` (`execute`), `runner/runner.go` (`opened`), `internal/hosted` (a Cella machine is a `machine.Deferred`) |
 
 ### What diverges from the design as written
 
@@ -317,6 +340,7 @@ checks of a server's host run where `srt` is installed.
 | the helper builds are embedded in the runner | the runner reads them at start from `TOPOS_MACHINE_HELPERS`, where the image puts them | the builds are other platforms' binaries, which the release image carries beside `toposd` |
 | a runner that finds the sandbox gone creates one, restores the latest checkpoint, and appends `session.machine` `restored`, or `replaced` with a `session.error` `machine_lost` | the machine answers `machine_lost` until `Recreate`; the runner's replacement is a row of [[016-runners]] and the restore one of [[034-checkpoints-and-rewind]], neither built | the mechanisms are the runner's and the checkpoints' |
 | `ExecRequest` has `Command`, `Dir`, `Env`, `Stdin`, `Timeout` and `Background` | it also has `ReportDir`, which asks for the command's final directory | `bash` keeps the directory a command changed to |
+| a runner attaches the machine before it runs a turn, and a hosted session's sandbox exists from its first claim | a hosted session's Cella sandbox is opened on demand, at the first tool that acts on it; the host is still opened with the harness | a session that only talks costs no sandbox, and the agent decides at runtime whether it needs one |
 
 ### What this leaves open
 
