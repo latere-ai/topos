@@ -15,6 +15,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -103,6 +104,11 @@ type Config struct {
 	// (spec 034), chained to previous; nil takes none. It returns nil for
 	// a machine that keeps no checkpoints.
 	Checkpoint func(ctx context.Context, turn int, previous string) (*session.CheckpointRef, error)
+	// Interrupt returns the current turn's interrupt channel, closed when a
+	// person interrupts the turn (spec 005): an in-flight request and the
+	// running calls are canceled at once. Nil sees interrupts only at step
+	// boundaries, through the log.
+	Interrupt func() <-chan struct{}
 	// Sleep waits between attempts; nil waits on a timer.
 	Sleep    func(ctx context.Context, d time.Duration) error
 	Observer Observer
@@ -241,6 +247,8 @@ type turn struct {
 	// bias how far the provider's count was from it.
 	lastEstimate int64
 	bias         int64
+	// cut is set when an interrupt canceled the current step.
+	cut atomic.Bool
 }
 
 func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
@@ -256,7 +264,9 @@ func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
 func (t *turn) commit(ctx context.Context, batch ...session.Event) error {
 	t.sh.mu.Lock()
 	defer t.sh.mu.Unlock()
-	foreign, err := t.l.Append(ctx, batch)
+	// Work that happened is always recorded, a cancel notwithstanding; a
+	// lost lease still refuses the append.
+	foreign, err := t.l.Append(context.WithoutCancel(ctx), batch)
 	if err != nil {
 		return &appendError{err}
 	}
@@ -495,7 +505,7 @@ func unknownEffect() tools.Result {
 // commit point, and the calls.
 func (t *turn) stepOnce(ctx context.Context) error {
 	t.step++
-	if t.interrupted() {
+	if t.interrupted() || t.signaled() {
 		return t.finish(ctx, session.StopInterrupted, "")
 	}
 	if !t.h.c.Clock().Before(t.deadline) {
@@ -523,13 +533,70 @@ func (t *turn) stepOnce(ctx context.Context) error {
 		return err
 	}
 	t.lastEstimate = tokencount.Estimate(&req)
+	sctx, stop := t.interruptible(ctx)
+	defer stop()
 	sent := t.h.c.Clock()
-	res, attempts, err := t.send(ctx, req)
+	res, attempts, err := t.send(sctx, req)
 	latency := t.h.c.Clock().Sub(sent)
 	if err != nil {
+		if t.cut.Load() {
+			return t.canceledRequest(ctx, attempts, toolsSHA, latency)
+		}
 		return t.modelFailed(ctx, err, attempts, toolsSHA, latency)
 	}
-	return t.commitStep(ctx, res, attempts, toolsSHA, latency)
+	return t.commitStep(sctx, res, attempts, toolsSHA, latency)
+}
+
+// signaled reports whether the turn's interrupt channel is closed.
+func (t *turn) signaled() bool {
+	if t.h.c.Interrupt == nil {
+		return false
+	}
+	select {
+	case <-t.h.c.Interrupt():
+		return true
+	default:
+		return false
+	}
+}
+
+// interruptible is the context one step's request and calls run under:
+// an interrupt cancels it and marks the step cut.
+func (t *turn) interruptible(ctx context.Context) (context.Context, func()) {
+	sctx, cancel := context.WithCancel(ctx)
+	t.cut.Store(false)
+	if t.h.c.Interrupt == nil {
+		return sctx, cancel
+	}
+	ch := t.h.c.Interrupt()
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ch:
+			t.cut.Store(true)
+			cancel()
+		case <-done:
+		}
+	}()
+	return sctx, func() {
+		close(done)
+		cancel()
+	}
+}
+
+// canceledRequest records a request an interrupt cut short: its
+// model.request with outcome canceled and no agent.message, and the turn
+// stops interrupted.
+func (t *turn) canceledRequest(ctx context.Context, attempts int, toolsSHA string, latency time.Duration) error {
+	c := t.h.c.Connection
+	mr, err := t.event(session.TypeModelRequest, session.ModelRequest{
+		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompt.Version(t.h.c.PromptVersion),
+		ToolsSHA256: toolsSHA, LatencyMS: latency.Milliseconds(), Attempts: attempts, Outcome: "canceled",
+	})
+	if err != nil {
+		return err
+	}
+	return t.finish(ctx, session.StopInterrupted, "", mr)
 }
 
 // interrupted reports a user.interrupt appended since the turn began.
@@ -725,6 +792,9 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, attempts int, 
 			return err
 		}
 		return t.finish(ctx, pauseReason(err), "")
+	}
+	if t.cut.Load() {
+		return t.finish(ctx, session.StopInterrupted, "")
 	}
 	switch {
 	case len(planned.ask) > 0:

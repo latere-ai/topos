@@ -764,3 +764,67 @@ func TestAFailedCheckpointStillEndsTheTurn(t *testing.T) {
 		t.Fatalf("a checkpoint %+v after a failure", cp)
 	}
 }
+
+// blocker is a tool that appends a user.interrupt through the store and
+// waits for the interrupt to cancel it.
+type blocker struct {
+	st session.Store
+	id string
+}
+
+func (blocker) Definition() tools.Definition {
+	return tools.Definition{Name: "long", Description: "runs long", InputSchema: json.RawMessage(`{"type":"object"}`)}
+}
+func (blocker) Properties() tools.Properties { return tools.Properties{Effect: tools.EffectRead} }
+func (b blocker) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
+	s, err := b.st.Get(context.WithoutCancel(ctx), b.id)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	e, err := session.NewEvent(session.TypeUserInterrupt, session.UserInterrupt{Sender: session.Sender{Subject: "usr_ada", Kind: session.SenderPerson}}, t0)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	evs := []session.Event{e}
+	session.Stamp(b.id, s.LastSeq, evs)
+	if _, err := b.st.Append(context.WithoutCancel(ctx), b.id, s.LastSeq, evs); err != nil {
+		return tools.Result{}, err
+	}
+	select {
+	case <-ctx.Done():
+		return tools.Result{}, ctx.Err()
+	case <-time.After(10 * time.Second):
+		return tools.Text(tools.OutcomeOK, "never canceled"), nil
+	}
+}
+
+func TestAnInterruptCancelsARunningCall(t *testing.T) {
+	f := setup(t)
+	base := f.r.o.Harness
+	f.r.o.Harness = func(ctx context.Context, s session.Session) (harness.Config, error) {
+		c, err := base(ctx, s)
+		if err != nil {
+			return c, err
+		}
+		err = c.Tools.AddBuiltin(blocker{st: f.store, id: s.ID})
+		return c, err
+	}
+	ctx := t.Context()
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_l", Name: "long", Args: json.RawMessage(`{}`)}}), reply(ir.Block{Type: ir.BlockText, Text: "never"}))
+	f.message(ctx, "Go.")
+	start := time.Now()
+	out, err := f.r.Drive(ctx, f.s.ID)
+	if err != nil || out.StopReason != session.StopInterrupted || time.Since(start) > 8*time.Second {
+		t.Fatalf("drive %+v, %v after %s", out, err, time.Since(start))
+	}
+	evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		var p session.ToolResult
+		if e.Type == session.TypeToolResult && e.Decode(&p) == nil && p.Outcome != tools.OutcomeCanceled {
+			t.Fatalf("the interrupted call's result %+v", p)
+		}
+	}
+}

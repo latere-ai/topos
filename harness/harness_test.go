@@ -1051,3 +1051,49 @@ func TestAHarnessFailureClosesTheTurn(t *testing.T) {
 		t.Fatalf("header %+v, %v", h, err)
 	}
 }
+
+func TestAnInterruptCancelsAnInFlightRequest(t *testing.T) {
+	intr := make(chan struct{})
+	e := setup(t, func(c *Config) { c.Interrupt = func() <-chan struct{} { return intr } })
+	ctx := t.Context()
+	e.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{text("too late")}, StopReason: ir.StopEndTurn}, Expect: func(*ir.Request) error {
+		close(intr)
+		time.Sleep(200 * time.Millisecond)
+		return nil
+	}})
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopInterrupted {
+		t.Fatalf("outcome %+v", out)
+	}
+	var mr session.ModelRequest
+	if err := e.events(ctx, session.TypeModelRequest)[0].Decode(&mr); err != nil || mr.Outcome != "canceled" {
+		t.Fatalf("model.request %+v, %v", mr, err)
+	}
+	if n := len(e.events(ctx, session.TypeAgentMessage)); n != 0 {
+		t.Fatalf("%d agent messages from a canceled request", n)
+	}
+	e.running(ctx)
+	if out := e.turn(ctx); out.StopReason != session.StopInterrupted {
+		t.Fatalf("a turn that starts with its channel closed %+v", out)
+	}
+}
+
+func TestAnInterruptCancelsRunningCalls(t *testing.T) {
+	intr := make(chan struct{})
+	e := setup(t, func(c *Config) { c.Interrupt = func() <-chan struct{} { return intr } })
+	e.echo.run = func(c tools.Call) (tools.Result, error) {
+		close(intr)
+		time.Sleep(100 * time.Millisecond)
+		return tools.Result{}, nil
+	}
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "echo", `{"text":"x"}`)), reply(ir.StopEndTurn, text("never")))
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopInterrupted {
+		t.Fatalf("outcome %+v", out)
+	}
+	var res session.ToolResult
+	if err := e.events(ctx, session.TypeToolResult)[0].Decode(&res); err != nil || res.Outcome != tools.OutcomeCanceled {
+		t.Fatalf("result %+v, %v", res, err)
+	}
+}

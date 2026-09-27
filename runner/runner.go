@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"latere.ai/x/topos/harness"
@@ -123,11 +124,21 @@ func (r *Runner) Drive(ctx context.Context, id string) (out harness.Outcome, err
 			return &ref, nil
 		}
 	}
+	intr := newInterrupts()
+	if cfg.Interrupt == nil {
+		cfg.Interrupt = intr.current
+		stop, err := intr.watch(ctx, st, id, log.Last()+1)
+		if err != nil {
+			return harness.Outcome{}, err
+		}
+		defer stop()
+	}
 	h, err := harness.New(cfg)
 	if err != nil {
 		return harness.Outcome{}, err
 	}
 	for {
+		intr.reset()
 		s, err = st.Get(ctx, id)
 		if err != nil {
 			return harness.Outcome{}, err
@@ -318,4 +329,61 @@ func attached(evs []session.Event) (git, memory bool) {
 		}
 	}
 	return git, memory
+}
+
+// interrupts closes one channel per turn when a person appends
+// user.interrupt, so the harness cancels the turn's in-flight request and
+// running calls at once (spec 005).
+type interrupts struct {
+	mu     sync.Mutex
+	ch     chan struct{}
+	closed bool
+}
+
+func newInterrupts() *interrupts {
+	return &interrupts{ch: make(chan struct{})}
+}
+
+// watch follows the log from seq and fires on every user.interrupt,
+// until the returned stop is called or ctx ends.
+func (i *interrupts) watch(ctx context.Context, st session.Store, id string, seq uint64) (func(), error) {
+	wctx, cancel := context.WithCancel(ctx)
+	evs, err := st.Watch(wctx, id, seq)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	go func() {
+		for e := range evs {
+			if e.Type == session.TypeUserInterrupt {
+				i.fire()
+			}
+		}
+	}()
+	return cancel, nil
+}
+
+// reset starts a turn with a fresh channel; an interrupt before the turn
+// began does not stop it.
+func (i *interrupts) reset() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		i.ch, i.closed = make(chan struct{}), false
+	}
+}
+
+func (i *interrupts) fire() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if !i.closed {
+		close(i.ch)
+		i.closed = true
+	}
+}
+
+func (i *interrupts) current() <-chan struct{} {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.ch
 }
