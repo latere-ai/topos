@@ -118,6 +118,13 @@ func agents(t *testing.T, f Factory) {
 	if err := st.PutVersion(t.Context(), store.Agent{}, store.AgentVersion{AgentID: "nope", Version: 1}); !errors.Is(err, session.ErrInvalid) {
 		t.Fatalf("a malformed version: %v", err)
 	}
+	binary := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "binary", Owner: "alice"}
+	if err := st.PutVersion(t.Context(), binary, store.AgentVersion{AgentID: binary.ID, Version: 1, Digest: v.Digest, Doc: []byte{0xff, 0xfe}, Bundle: v.Bundle}); !errors.Is(err, session.ErrInvalid) {
+		t.Fatalf("a document that is not UTF-8 text: %v", err)
+	}
+	if _, err := st.Agent(t.Context(), "binary"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a refused version created its agent: %v", err)
+	}
 }
 
 func versions(t *testing.T, f Factory) {
@@ -165,8 +172,13 @@ func versions(t *testing.T, f Factory) {
 	if _, _, err := st.Versions(t.Context(), session.NewID(session.PrefixAgent), 0, ""); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("versions of no agent: %v", err)
 	}
-	if _, _, err := st.Versions(t.Context(), id, 0, "!!"); !errors.Is(err, session.ErrInvalid) {
-		t.Fatalf("a forged cursor: %v", err)
+	for _, c := range []string{"!!", store.Cursor("x"), store.Cursor("-1")} {
+		if _, _, err := st.Versions(t.Context(), id, 0, c); !errors.Is(err, session.ErrInvalid) {
+			t.Fatalf("a forged cursor %q: %v", c, err)
+		}
+	}
+	if rest, next, err := st.Versions(t.Context(), id, 0, store.Cursor("9")); err != nil || len(rest) != 0 || next != "" {
+		t.Fatalf("a cursor past the latest: %v, %q, %v", rest, next, err)
 	}
 }
 

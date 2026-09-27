@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"latere.ai/x/topos/session"
 )
@@ -77,15 +78,9 @@ func (m *Memory) Version(_ context.Context, id string, version int) (AgentVersio
 }
 
 func (m *Memory) Versions(_ context.Context, id string, limit int, cursor string) ([]AgentVersion, string, error) {
-	after, err := Uncursor(cursor)
+	n, err := UncursorVersion(cursor)
 	if err != nil {
 		return nil, "", err
-	}
-	n := 0
-	if after != "" {
-		if n, err = strconv.Atoi(after); err != nil {
-			return nil, "", fmt.Errorf("%w: the cursor names no version", session.ErrInvalid)
-		}
 	}
 	m.mu.Lock()
 	if _, ok := m.agents[id]; !ok {
@@ -181,6 +176,10 @@ func CheckVersion(a Agent, v AgentVersion) error {
 		return fmt.Errorf("%w: the first version creates the agent, which needs its id, name and owner", session.ErrInvalid)
 	case len(v.Doc) == 0 || len(v.Bundle) == 0 || v.Digest == "":
 		return fmt.Errorf("%w: a version holds its document, its bundle and its digest", session.ErrInvalid)
+	case !utf8.Valid(v.Doc) || !utf8.Valid(v.Bundle):
+		// The document and the bundle are JSON text, and the stores on
+		// disk keep them as text.
+		return fmt.Errorf("%w: a version's document and bundle are UTF-8 text", session.ErrInvalid)
 	}
 	return nil
 }
@@ -200,6 +199,20 @@ func Uncursor(c string) (string, error) {
 		return "", fmt.Errorf("%w: the cursor was not issued by this server", session.ErrInvalid)
 	}
 	return string(b), nil
+}
+
+// UncursorVersion reads a cursor Versions rendered: the version the
+// previous page ended at, 0 for the first page.
+func UncursorVersion(c string) (int, error) {
+	after, err := Uncursor(c)
+	if err != nil || after == "" {
+		return 0, err
+	}
+	n, err := strconv.Atoi(after)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%w: the cursor names no version", session.ErrInvalid)
+	}
+	return n, nil
 }
 
 // page cuts a sorted list at limit and returns the cursor after its last
