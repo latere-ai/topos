@@ -27,7 +27,7 @@
     "status": {
       "id": "agent_00000000000000000000000001",
       "version": 1,
-      "digest": "sha256:aeb92817c34de7a2b7e4f964c3e1a4044114c65dee423e7638324b686b331662",
+      "digest": "sha256:baae97f8be4ee44aae13b761475e54695570df1bc6383f3e964919923a85d1a4",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -49,7 +49,6 @@
           "resource": "agent:triager"
         }
       ],
-      "identity": "agent",
       "approvals": {
         "mode": "confirm",
         "thresholds": {

@@ -70,9 +70,6 @@ func (d *defaulter) agent(path string, s *v1.AgentSpec) {
 			s.Tools = append(s.Tools, v1.Tool{Name: n})
 		}
 	}
-	if s.Identity == "" {
-		s.Identity = v1.IdentityPerson
-	}
 	if s.Approvals.Mode == "" {
 		s.Approvals.Mode = v1.ModeConfirm
 	}

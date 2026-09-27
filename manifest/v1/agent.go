@@ -9,12 +9,6 @@ import (
 	"errors"
 )
 
-// Values of AgentSpec.Identity.
-const (
-	IdentityPerson = "person"
-	IdentityAgent  = "agent"
-)
-
 // Values of Approvals.Mode.
 const (
 	ModePlan        = "plan"
@@ -66,7 +60,6 @@ type AgentSpec struct {
 	// resolved spec always lists them.
 	Tools        []Tool           `json:"tools"`
 	Permissions  []Permission     `json:"permissions,omitempty"`
-	Identity     string           `json:"identity"`
 	Approvals    Approvals        `json:"approvals"`
 	Hooks        []Hook           `json:"hooks,omitempty"`
 	Subagents    []Subagent       `json:"subagents,omitempty"`

@@ -5,7 +5,7 @@
     "status": {
       "id": "agent_00000000000000000000000001",
       "version": 1,
-      "digest": "sha256:2f5c58730ff496708b82cf6569fd9c3e5b2e9b1e135004da5d739e155952f443",
+      "digest": "sha256:e3981805f15b70e0fabfea12fa204902eee586e849c43d7a274a7058fbecb949",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -19,7 +19,6 @@
         "edit",
         "bash"
       ],
-      "identity": "person",
       "approvals": {
         "mode": "progressive",
         "thresholds": {
@@ -50,7 +49,7 @@
     "status": {
       "id": "agent_00000000000000000000000002",
       "version": 1,
-      "digest": "sha256:ee612910fa02835d36e792a184a03eebf5701b63890902995cb3a4260a6bd49b",
+      "digest": "sha256:71587d75adedd173dd5a66452c954ac7f034269dfbf713db279740992158297a",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -69,7 +68,6 @@
           "outputLimit": 20000
         }
       ],
-      "identity": "person",
       "approvals": {
         "mode": "confirm",
         "alwaysAllow": [
@@ -106,7 +104,6 @@
             "tools": [
               "read"
             ],
-            "identity": "person",
             "approvals": {
               "mode": "confirm",
               "thresholds": {

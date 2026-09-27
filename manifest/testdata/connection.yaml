@@ -23,7 +23,6 @@ spec:
     pricing: {input: "1.25", output: "10"}
   instructionsFile: triager.md
   tools: []
-  identity: agent
   permissions:
     - {action: session.create, resource: "agent:triager"}
   mcpServers:

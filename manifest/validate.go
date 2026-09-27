@@ -193,7 +193,6 @@ func (v *validator) agent(at string, s v1.AgentSpec) {
 			v.add(indexed(at+".permissions", i)+".resource", "required")
 		}
 	}
-	v.oneOf(at+".identity", s.Identity, v1.IdentityPerson, v1.IdentityAgent)
 	v.approvals(at+".approvals", s.Approvals)
 	for i, h := range s.Hooks {
 		hp := indexed(at+".hooks", i)

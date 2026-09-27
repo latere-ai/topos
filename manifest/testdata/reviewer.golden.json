@@ -5,7 +5,7 @@
     "status": {
       "id": "agent_00000000000000000000000001",
       "version": 1,
-      "digest": "sha256:2927311bd0b6a4af93f21e31fee9910117a712f21fd068cfc1743f8d1e30a4c3",
+      "digest": "sha256:759b3e445be88474407984785abb72872103d7ef6ec92b71ff5e0806b68fb958",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -20,7 +20,6 @@
         "grep",
         "glob"
       ],
-      "identity": "person",
       "approvals": {
         "mode": "confirm",
         "thresholds": {
@@ -64,7 +63,7 @@
     "status": {
       "id": "agent_00000000000000000000000003",
       "version": 1,
-      "digest": "sha256:90c8c52f6c190073b4ec64aede9f83d9d9ced45223cb31ea9ddbe5dbbd4ef5b7",
+      "digest": "sha256:35fa53bac87023d37336506a18010b5d4c57a993f4eec7ea787e0686e393d22f",
       "createdAt": "2026-09-27T09:00:00Z"
     },
     "spec": {
@@ -81,7 +80,6 @@
         "grep",
         "glob"
       ],
-      "identity": "person",
       "approvals": {
         "mode": "progressive",
         "alwaysAllow": [

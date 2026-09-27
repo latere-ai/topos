@@ -112,7 +112,7 @@ func TestDefaultsAreWrittenOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		v1.KindAgent: `{"model":{"name":"claude-haiku-4-5"},"instructions":"","tools":["read","write","edit","bash","grep","glob","web_fetch","todo"],"identity":"person",` +
+		v1.KindAgent: `{"model":{"name":"claude-haiku-4-5"},"instructions":"","tools":["read","write","edit","bash","grep","glob","web_fetch","todo"],` +
 			`"approvals":{"mode":"confirm","thresholds":{"flagAt":0.3,"askAt":0.5,"blockAt":0.9}},"threads":{"maxDepth":2,"maxConcurrent":8},` +
 			`"machine":{"kind":"cella","image":"base"},"limits":{"turnTimeout":"2h","maxAge":"168h"},"context":{"compactAt":0.8}}`,
 		v1.KindTrigger:     `{"agent":"agent_00000000000000000000000001","schedule":"@daily","timeZone":"UTC","session":{"message":"Review.","endOnIdle":true},"skipIfActive":true,"maxAge":"1h","suspend":false}`,
@@ -307,7 +307,8 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "tools: [{name: ask, client: true, description: x, inputSchema: [1]}]"), "spec.tools[0].inputSchema", "want a mapping"},
 		{agent("a", m, "permissions: [{resource: x}]"), "spec.permissions[0].action", "required"},
 		{agent("a", m, "permissions: [{action: x}]"), "spec.permissions[0].resource", "required"},
-		{agent("a", m, "identity: robot"), "spec.identity", "not one of person, agent"},
+		{agent("a", m, "identity: agent"), "spec.identity", "removed: the agent's owner, a person or an organization, decides"},
+		{agent("a", m, "identity: person"), "spec.identity", "removed: the agent's owner"},
 		{agent("a", m, "approvals: {alwaysAllow: ['bash(go test *']}"), "spec.approvals.alwaysAllow[0]", "not a pattern"},
 		{agent("a", m, "approvals: {alwaysConfirm: ['a b']}"), "spec.approvals.alwaysConfirm[0]", "not a pattern"},
 		{agent("a", m, "approvals: {thresholds: {flagAt: -0.1}}"), "spec.approvals.thresholds.flagAt", "outside 0 to 1"},
@@ -322,7 +323,7 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "subagents: [{name: s, agent: b}, {name: s, agent: c}]"), "spec.subagents[1]", "repeats"},
 		{agent("a", m, "subagents: [{name: s, agent: agent_x}]"), "spec.subagents[0].agent", "not a agent_<ulid> id"},
 		{agent("a", m, "subagents: [{name: s, agent: agent_00000000000000000000000001@0}]"), "spec.subagents[0].agent", "@<n> from 1"},
-		{agent("a", m, "subagents: [{name: s, spec: {model: {name: m}, identity: robot}}]"), "spec.subagents[0].spec.identity", "not one of"},
+		{agent("a", m, "subagents: [{name: s, spec: {model: {name: m}, identity: agent}}]"), "spec.subagents[0].spec.identity", "removed: the agent's owner"},
 		{agent("a", m, "threads: {maxConcurrent: 33}"), "spec.threads.maxConcurrent", "outside 1 to 32"},
 		{agent("a", m, "threads: {maxDepth: 0}"), "spec.threads.maxDepth", "0 is outside 1 to 4"},
 		{agent("a", m, "advisor: {model: {effort: max}}"), "spec.advisor.model.name", "required"},

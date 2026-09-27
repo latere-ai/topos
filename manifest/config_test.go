@@ -296,18 +296,17 @@ func TestTestdataResolves(t *testing.T) {
 // with the session's identity, credentials, attachments and machine, so
 // every one of them its spec declares is named, and defaults are not.
 func TestIgnoredFieldsNameWhatAThreadDoesNotUse(t *testing.T) {
-	if got := ignoredFields(v1.AgentSpec{Identity: v1.IdentityPerson, Machine: v1.Machine{Kind: v1.MachineHost}}); got != nil {
+	if got := ignoredFields(v1.AgentSpec{Machine: v1.Machine{Kind: v1.MachineHost}}); got != nil {
 		t.Fatalf("defaults named %v", got)
 	}
 	full := v1.AgentSpec{
-		Identity:     v1.IdentityAgent,
 		Permissions:  []v1.Permission{{Action: "origo:repo.write", Resource: "*"}},
 		Model:        v1.AgentModel{Name: "m", Credential: "cred_1"},
 		Connections:  []string{"github"},
 		MemoryStores: []v1.MemoryStoreRef{{Name: "notes", Access: "readWrite"}},
 		Machine:      v1.Machine{Kind: v1.MachineCella},
 	}
-	want := []string{"identity", "permissions", "model.credential", "connections", "memoryStores", "machine"}
+	want := []string{"permissions", "model.credential", "connections", "memoryStores", "machine"}
 	if got := ignoredFields(full); !slices.Equal(got, want) {
 		t.Fatalf("ignored %v, want %v", got, want)
 	}

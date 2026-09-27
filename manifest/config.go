@@ -157,13 +157,10 @@ func toolNames(list []v1.Tool) []string {
 // ignoredFields are the fields a subagent's spec declares that its
 // thread does not use: a thread acts with the session's identity,
 // credentials, attachments and machine (spec 013). Defaults are not
-// listed: identity only when it names an agent identity, and the
-// machine only when it asks for more than the default host.
+// listed: the machine only when it asks for more than the default
+// host.
 func ignoredFields(s v1.AgentSpec) []string {
 	var out []string
-	if s.Identity == v1.IdentityAgent {
-		out = append(out, "identity")
-	}
 	if len(s.Permissions) > 0 {
 		out = append(out, "permissions")
 	}

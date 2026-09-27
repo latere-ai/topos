@@ -48,8 +48,11 @@ type ObjectMeta struct {
 
 // Status is written by the resolver and ignored on input. Digest is the
 // sha256 of the resolved spec's canonical JSON; Version counts the
-// distinct digests an object has had under its ID. Identity is the
-// subject an Agent's key acts as (spec 018).
+// distinct digests an object has had under its ID. Identity is an
+// Agent's subject at the installation's identity provider, which the
+// server writes when it creates the identity and the resolver carries
+// to every later version (spec 018); an agent run with no identity
+// provider has none.
 type Status struct {
 	ID        string    `json:"id,omitempty"`
 	Version   int       `json:"version,omitempty"`

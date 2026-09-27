@@ -200,6 +200,15 @@ var (
 	typeTime = reflect.TypeFor[time.Time]()
 )
 
+// removed are the fields manifest/v1 no longer has, by the type that had
+// them, with the detail a manifest that still names one is refused with,
+// so its author reads why rather than an unknown field.
+var removed = map[reflect.Type]map[string]string{
+	reflect.TypeFor[v1.AgentSpec](): {
+		"identity": "removed: the agent's owner, a person or an organization, decides whose authority it acts with (spec 018)",
+	},
+}
+
 func (w *walker) add(path, detail string) {
 	w.problems = append(w.problems, Problem{Doc: w.doc, Path: path, Detail: detail})
 }
@@ -315,7 +324,11 @@ func (w *walker) structure(path string, in any, v reflect.Value) {
 	fields := fieldsOf(v.Type())
 	for _, k := range sortedKeys(m) {
 		if !slices.ContainsFunc(fields, func(f field) bool { return f.name == k }) {
-			w.add(join(path, k), "unknown field")
+			detail, gone := removed[v.Type()][k]
+			if !gone {
+				detail = "unknown field"
+			}
+			w.add(join(path, k), detail)
 		}
 	}
 	for _, f := range fields {
