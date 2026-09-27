@@ -485,7 +485,7 @@ host without a Windows runner can run.
 | What it said | What was built | Why |
 |---|---|---|
 | the event types table holds `session.resumed`, `approval.requested` and `approval.decided`, and the prefix table `apr_` | `session` defines `session.resumed` (007 built it); the other three are not defined yet, so a log holding one folds it as unknown, and a runner refuses that log with `schema_too_new` | they were added to the schema for [[007-models]] and [[012-permissions-and-approvals]], and the spec that first appends one adds it to `session` |
-| the Session carries `policy` and `requires` | `session.Session` has neither field | the merged policy is [[012-permissions-and-approvals]]'s, and no reader needs `requires` yet |
+| the Session carries `policy` and `requires` | it carries `policy`, the approval policy merged at create ([[012-permissions-and-approvals]]); `requires` is not built | no reader needs `requires` yet |
 | a reader keeps fields it does not know and writes them back unchanged | an event's payload is kept as raw JSON, but the Session and the Event decode into fixed structs, so a top-level field this build does not know is dropped when `session.json` is rewritten | no field has been added past v1; keeping unknown members needs the raw object carried beside the struct |
 | a gap or a repeat in the sequence is `ErrCorrupt`, which ends the session `failed` | the stores refuse with `ErrCorrupt`; nothing appends the `ended` `failed` status | not built: a runner that meets the error reports it and leaves the session as it is ([[016-runners]]) |
 | a blob is written as `blobs/sha256/<hex>.tmp` and renamed | the temporary file is `.<hex>.<random>.tmp` from `os.CreateTemp` | two writers of one blob never share a temporary file |
