@@ -494,3 +494,36 @@ func TestWorktrees(t *testing.T) {
 		}
 	}
 }
+
+// TestAScriptPastTheArgumentLimitRuns: a command longer than one
+// argument may be, as a long heredoc makes, runs in the foreground and
+// in the background, and leaves no script file behind.
+func TestAScriptPastTheArgumentLimitRuns(t *testing.T) {
+	f := open(t)
+	long := "cd /\necho start\n" + strings.Repeat(": padding\n", 16<<10) + "echo end\n"
+	res, err := f.h.Exec(t.Context(), machine.ExecRequest{Command: long, ReportDir: true})
+	if err != nil || string(res.Output) != "start\nend\n" || res.Dir != "/" {
+		t.Fatalf("a long script: %q %+v %v", res.Output, res, err)
+	}
+	job, err := f.h.Exec(t.Context(), machine.ExecRequest{Command: long, Background: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		b, err := os.ReadFile(job.Log)
+		if err == nil && strings.Contains(string(b), "exited with code 0") {
+			if !strings.HasPrefix(string(b), "start\nend\n") {
+				t.Fatalf("the job's log %q", b)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the job's log %q, %v", b, err)
+		}
+	}
+	for _, dir := range []string{f.h.SpillDir(), filepath.Join(f.h.SpillDir(), "jobs")} {
+		if left, _ := filepath.Glob(filepath.Join(dir, "topos-script-*")); len(left) != 0 {
+			t.Fatalf("script files left in %s: %v", dir, left)
+		}
+	}
+}

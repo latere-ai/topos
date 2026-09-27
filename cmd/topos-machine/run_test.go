@@ -365,17 +365,17 @@ func TestJob(t *testing.T) {
 	if res.Job == nil {
 		t.Fatalf("a job from a file = %+v", res)
 	}
-	if _, err := os.Stat(script); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the script file is left: %v", err)
-	}
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 		b, err := os.ReadFile(res.Job.Log)
-		if err == nil && strings.HasPrefix(string(b), "from a file\n") {
+		if err == nil && strings.HasPrefix(string(b), "from a file\n") && strings.Contains(string(b), "exited with code 0") {
 			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("log = %q %v", b, err)
 		}
+	}
+	if _, err := os.Stat(script); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the script file is left after the job: %v", err)
 	}
 	if res := start("-jobs", jobs, "-script-file", script); res.Error == nil || res.Error.Kind != kindNotExist {
 		t.Errorf("a missing script file: %+v", res)

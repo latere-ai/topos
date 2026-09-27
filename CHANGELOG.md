@@ -38,7 +38,9 @@ committed: the commit log already holds that.
   `.gitignore`. `machine/host` is the person's own computer: file access
   confined to the session's roots through `os.Root`, each command in its
   own process group, killed on timeout, on cancel and when its shell
-  exits, and background jobs that end with the session.
+  exits, and background jobs that end with the session. A command longer
+  than 64 KiB, such as a long heredoc, runs from a script file, since
+  Linux refuses a single argument past 128 KiB.
 - `harness/tools` holds the built-in tools: `read`, `write`, `edit`,
   `bash`, `grep`, `glob`, `web_fetch` and `todo`. `write` and `edit` refuse
   a file that changed since the thread last read it, `bash` keeps its

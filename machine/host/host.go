@@ -456,28 +456,32 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 	if r.ReportDir {
 		script = reportPrefix + script
 	}
+	args, remove, err := machine.ShellArgs(h.spill, script)
+	if err != nil {
+		return nil, err
+	}
 	// The machine cancels a command itself, SIGTERM to its process group
 	// and SIGKILL after KillGrace, so the command's own context never
 	// kills it.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), Shell, "-c", script)
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), Shell, args...)
 	cmd.Dir = h.dir(r.Dir)
 	cmd.Env = h.environ(r.Env)
 	cmd.Stdin = r.Stdin
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	outR, outW, err := os.Pipe()
 	if err != nil {
-		return nil, fmt.Errorf("machine: create the output pipe: %w", err)
+		return nil, errors.Join(fmt.Errorf("machine: create the output pipe: %w", err), remove())
 	}
 	cmd.Stdout, cmd.Stderr = outW, outW
 	var dirR, dirW *os.File
 	if r.ReportDir {
 		if dirR, dirW, err = os.Pipe(); err != nil {
-			return nil, errors.Join(fmt.Errorf("machine: create the directory pipe: %w", err), outR.Close(), outW.Close())
+			return nil, errors.Join(fmt.Errorf("machine: create the directory pipe: %w", err), outR.Close(), outW.Close(), remove())
 		}
 		cmd.ExtraFiles = []*os.File{dirW}
 	}
 	if err := cmd.Start(); err != nil {
-		errs := []error{fmt.Errorf("machine: start the command: %w", err), outR.Close(), outW.Close()}
+		errs := []error{fmt.Errorf("machine: start the command: %w", err), outR.Close(), outW.Close(), remove()}
 		if dirR != nil {
 			errs = append(errs, dirR.Close(), dirW.Close())
 		}
@@ -504,7 +508,7 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 	go func() {
 		defer close(s.done)
 		s.res, s.err = h.wait(ctx, cmd, r.Timeout)
-		s.err = errors.Join(werr, s.err)
+		s.err = errors.Join(werr, s.err, remove())
 		if dirOut != nil {
 			s.res.Dir = <-dirOut
 		}
@@ -578,8 +582,12 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 	if err != nil {
 		return machine.ExecResult{}, fmt.Errorf("machine: create the job log: %w", err)
 	}
+	args, remove, err := machine.ShellArgs(jobs, r.Command)
+	if err != nil {
+		return machine.ExecResult{}, errors.Join(err, log.Close())
+	}
 	// A job outlives the call that started it and ends with the session.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), Shell, "-c", r.Command)
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), Shell, args...)
 	cmd.Dir = h.dir(r.Dir)
 	cmd.Env = h.environ(r.Env)
 	cmd.Stdout, cmd.Stderr = log, log
@@ -587,14 +595,14 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 	serr := cmd.Start()
 	cerr := log.Close()
 	if serr != nil {
-		return machine.ExecResult{}, errors.Join(fmt.Errorf("machine: start the job: %w", serr), cerr)
+		return machine.ExecResult{}, errors.Join(fmt.Errorf("machine: start the job: %w", serr), cerr, remove())
 	}
 	pid := cmd.Process.Pid
 	h.jobs[pid] = cmd
 	go func() {
 		werr := cmd.Wait()
 		code := cmd.ProcessState.ExitCode()
-		err := appendLine(log.Name(), fmt.Sprintf("\n[job %d exited with code %d]\n", pid, code))
+		err := errors.Join(appendLine(log.Name(), fmt.Sprintf("\n[job %d exited with code %d]\n", pid, code)), remove())
 		var ee *exec.ExitError
 		if werr != nil && !errors.As(werr, &ee) {
 			err = errors.Join(werr, err)

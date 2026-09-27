@@ -15,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"latere.ai/x/topos/machine"
 )
 
 // shell runs every command, as on the host machine.
@@ -101,6 +103,9 @@ type command struct {
 	out  *os.File
 	in   *os.File
 	dirs chan string
+	// remove deletes the script's file, for a script too long to be the
+	// shell's argument.
+	remove func() error
 
 	inOnce sync.Once
 	inErr  error
@@ -114,33 +119,37 @@ func start(ctx context.Context, dir, script string, report bool) (*command, erro
 	if report {
 		script = reportPrefix + script
 	}
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, "-c", script)
+	args, remove, err := machine.ShellArgs(os.TempDir(), script)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, args...)
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	outR, outW, err := os.Pipe()
 	if err != nil {
-		return nil, fmt.Errorf("machine: create the output pipe: %w", err)
+		return nil, errors.Join(fmt.Errorf("machine: create the output pipe: %w", err), remove())
 	}
 	inR, inW, err := os.Pipe()
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("machine: create the input pipe: %w", err), outR.Close(), outW.Close())
+		return nil, errors.Join(fmt.Errorf("machine: create the input pipe: %w", err), outR.Close(), outW.Close(), remove())
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, outW
 	closers := []*os.File{outR, outW, inR, inW}
 	var dirR, dirW *os.File
 	if report {
 		if dirR, dirW, err = os.Pipe(); err != nil {
-			return nil, errors.Join(fmt.Errorf("machine: create the directory pipe: %w", err), closeAll(closers))
+			return nil, errors.Join(fmt.Errorf("machine: create the directory pipe: %w", err), closeAll(closers), remove())
 		}
 		cmd.ExtraFiles = []*os.File{dirW}
 		closers = append(closers, dirR, dirW)
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, errors.Join(err, closeAll(closers))
+		return nil, errors.Join(err, closeAll(closers), remove())
 	}
 	// The child holds its own ends now; the helper keeps the other ones.
 	errs := []error{outW.Close(), inR.Close()}
-	c := &command{cmd: cmd, out: outR, in: inW}
+	c := &command{cmd: cmd, out: outR, in: inW, remove: remove}
 	if dirW != nil {
 		errs = append(errs, dirW.Close())
 		c.dirs = make(chan string, 1)
@@ -175,7 +184,7 @@ func (c *command) abort() error {
 	err := signalGroup(c.cmd.Process.Pid, syscall.SIGKILL)
 	// The wait reports the kill itself, which is the outcome asked for.
 	_ = c.cmd.Wait()
-	return errors.Join(err, c.closeInput(), c.out.Close())
+	return errors.Join(err, c.closeInput(), c.out.Close(), c.remove())
 }
 
 // closeInput ends the command's standard input once.
@@ -281,7 +290,7 @@ func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill <
 	case <-ctx.Done():
 		canceled()
 	}
-	kerr = errors.Join(kerr, signalGroup(pgid, syscall.SIGKILL), c.closeInput())
+	kerr = errors.Join(kerr, signalGroup(pgid, syscall.SIGKILL), c.closeInput(), c.remove())
 	res.Code = c.cmd.ProcessState.ExitCode()
 	var ee *exec.ExitError
 	if werr != nil && !errors.As(werr, &ee) {
@@ -300,10 +309,12 @@ func signalGroup(pgid int, sig syscall.Signal) error {
 	return nil
 }
 
-// jobWrapper runs a background job's script and appends the line the host
-// machine appends to a job log when the job exits. Its $$ is the job's
-// pid, which leads the job's process group.
-const jobWrapper = shell + ` -c "$1"; code=$?; printf '\n[job %d exited with code %d]\n' "$$" "$code"`
+// jobWrapper runs a background job's script, given as the shell
+// arguments machine.ShellArgs chose, removes the script's file when it
+// had one, and appends the line the host machine appends to a job log
+// when the job exits. Its $$ is the job's pid, which leads the job's
+// process group.
+const jobWrapper = shell + ` "$@"; code=$?; [ "$1" = -c ] || rm -f "$1"; printf '\n[job %d exited with code %d]\n' "$$" "$code"`
 
 // job starts a script detached in its own process group, with its output
 // in a new log in the jobs directory, and answers its pid and log at
@@ -320,35 +331,36 @@ func job(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if (*file == "") != (flags.NArg() == 1) || flags.NArg() > 1 || *jobs == "" {
 		return fail(stderr, "job -jobs <dir> [-dir <dir>] -- <script>, or job -jobs <dir> -script-file <file> [-dir <dir>]")
 	}
-	script := flags.Arg(0)
-	if *file != "" {
-		// A script too long for Cella's synchronous exec body arrives as
-		// a file the machine wrote in the spill directory.
-		b, err := os.ReadFile(*file)
-		if err != nil {
-			return answer(stdout, response{Error: failure(fmt.Errorf("machine: read the script: %w", err))})
-		}
-		if err := os.Remove(*file); err != nil {
-			return answer(stdout, response{Error: failure(fmt.Errorf("machine: remove the script: %w", err))})
-		}
-		script = string(b)
-	}
 	if err := os.MkdirAll(*jobs, 0o700); err != nil {
 		return answer(stdout, response{Error: failure(fmt.Errorf("machine: create the job directory: %w", err))})
 	}
+	// A script too long for Cella's synchronous exec body arrives as a
+	// file the machine wrote in the spill directory, which the shell reads
+	// as its script and the wrapper removes when the job ends.
+	args, remove := []string{*file}, func() error { return os.Remove(*file) }
+	if *file != "" {
+		if _, err := os.Stat(*file); err != nil {
+			return answer(stdout, response{Error: failure(fmt.Errorf("machine: read the script: %w", err))})
+		}
+	} else {
+		var err error
+		if args, remove, err = machine.ShellArgs(*jobs, flags.Arg(0)); err != nil {
+			return answer(stdout, response{Error: failure(err)})
+		}
+	}
 	log, err := os.CreateTemp(*jobs, "job-*.log")
 	if err != nil {
-		return answer(stdout, response{Error: failure(fmt.Errorf("machine: create the job log: %w", err))})
+		return answer(stdout, response{Error: failure(errors.Join(fmt.Errorf("machine: create the job log: %w", err), remove()))})
 	}
 	// A job outlives the helper that started it, and so its context.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, "-c", jobWrapper, "job", script)
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, append([]string{"-c", jobWrapper, "job"}, args...)...)
 	cmd.Dir = *dir
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	serr := cmd.Start()
 	cerr := log.Close()
 	if serr != nil {
-		return answer(stdout, response{Error: failure(errors.Join(serr, cerr, os.Remove(log.Name())))})
+		return answer(stdout, response{Error: failure(errors.Join(serr, cerr, os.Remove(log.Name()), remove()))})
 	}
 	pid := cmd.Process.Pid
 	if err := errors.Join(cerr, cmd.Process.Release()); err != nil {
