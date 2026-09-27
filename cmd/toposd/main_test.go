@@ -444,8 +444,13 @@ func TestServeStopsOnAStoreItCannotOpen(t *testing.T) {
 	}
 }
 
-// hostedStubs are a stub Lux that answers with replies, or once with
-// "Reviewed." when none is given, and a stub Cella that wants a bearer,
+// glob is a reply that calls glob, a tool that acts on the machine, so
+// the session's machine is opened on demand.
+var glob = luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_glob", Name: "glob", Args: json.RawMessage(`{"pattern":"*.go"}`)}}}, StopReason: ir.StopToolUse}}
+
+// hostedStubs are a stub Lux that answers with replies, or when none is
+// given calls glob, which opens the session's machine, and then answers
+// "Reviewed.", and a stub Cella that wants a bearer,
 // with the helper built for this machine, and the variables that point a
 // role at them.
 func hostedStubs(t *testing.T, replies ...luxstub.Reply) (map[string]string, *luxstub.Server, *cellastub.Server) {
@@ -465,7 +470,7 @@ func hostedStubs(t *testing.T, replies ...luxstub.Reply) (map[string]string, *lu
 	}
 	lux := luxstub.New(t)
 	if len(replies) == 0 {
-		replies = []luxstub.Reply{{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}}}
+		replies = []luxstub.Reply{glob, {Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}}}
 	}
 	lux.Script("anthropic/claude-haiku-4.5", replies...)
 	machineDir, err := filepath.EvalSymlinks(t.TempDir())
@@ -576,8 +581,14 @@ func TestServeRunsAHostedSession(t *testing.T) {
 	if !strings.Contains(events, `"kind":"serve"`) {
 		t.Errorf("the session ran on no serve runner: %s", events)
 	}
-	if reqs := lux.Requests(); len(reqs) != 1 || reqs[0].Header.Get("X-Api-Key") != "model-key" && reqs[0].Header.Get("Authorization") != "Bearer model-key" {
-		t.Errorf("the model was asked %d times, credential %v", len(reqs), reqs)
+	reqs := lux.Requests()
+	if len(reqs) != 2 {
+		t.Errorf("the model was asked %d times", len(reqs))
+	}
+	for _, r := range reqs {
+		if r.Header.Get("X-Api-Key") != "model-key" && r.Header.Get("Authorization") != "Bearer model-key" {
+			t.Errorf("the model was asked with %v", r.Header)
+		}
 	}
 	if n := cella.Count(cellastub.OpCreate); n != 1 {
 		t.Errorf("%d sandboxes created", n)
@@ -875,7 +886,7 @@ func TestServeFindsTheFamilysDoorFromLuxsRoot(t *testing.T) {
 	maps.Copy(vars, map[string]string{"TOPOS_MODELS_URL": lux.URL(), "TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_RUNNER_CAPACITY": "1"})
 	publicURL, _, stop := startServe(t, vars)
 	hostedSession(t, publicURL, vars)
-	if reqs := lux.Requests(); len(reqs) != 1 || reqs[0].Dialect != ir.DialectAnthropicMessages {
+	if reqs := lux.Requests(); len(reqs) != 2 || reqs[0].Dialect != ir.DialectAnthropicMessages || reqs[1].Dialect != ir.DialectAnthropicMessages {
 		t.Errorf("the model was asked %+v", reqs)
 	}
 	if code := stop(); code != 0 {
@@ -889,14 +900,15 @@ func TestServeFindsTheFamilysDoorFromLuxsRoot(t *testing.T) {
 	}
 }
 
-// TestCellaMachineSurvivesRunnerRestart: a serve stopped mid-turn leaves
-// its session running; a serve started again on the same data directory
-// claims it, finds the session's sandbox by name, starts it when Cella
-// stopped it meanwhile, and finishes the turn without creating another.
+// TestCellaMachineSurvivesRunnerRestart: a serve stopped mid-turn, after
+// a tool opened the session's sandbox, leaves its session running; a
+// serve started again on the same data directory claims it, finds the
+// session's sandbox by name, starts it when Cella stopped it meanwhile,
+// and finishes the turn without creating another.
 func TestCellaMachineSurvivesRunnerRestart(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	vars, _, cella := hostedStubs(t,
+	vars, _, cella := hostedStubs(t, glob,
 		luxstub.Reply{Respond: func(*ir.Request, *ir.Response) {
 			once.Do(func() { close(started) })
 			<-release

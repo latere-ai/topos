@@ -33,19 +33,21 @@ func TestACoresSpendRefusalStopsTheTurn(t *testing.T) {
 		// requests is how many model requests the refused turn made.
 		requests int
 	}{
-		{"a sandbox create", "budget_exhausted", false, 0},
-		{"a command", "spend_exceeded", true, 1},
+		{"a sandbox create", "budget_exhausted", false, 1},
+		{"a command", "spend_exceeded", true, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			refusal := cellastub.Failure{Status: http.StatusPaymentRequired, Code: c.code, Detail: "the session's sandbox allowance is spent"}
 			var cella *cellastub.Server
-			replies := []luxstub.Reply{reviewed}
+			// The first tool that acts on the machine creates the
+			// sandbox, which is where a create refusal meets the turn.
+			replies := []luxstub.Reply{glob, reviewed}
 			if c.command {
 				bash := luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "bash", Args: json.RawMessage(`{"command":"ls"}`)}}}, StopReason: ir.StopToolUse},
-					// The sandbox is up by the time the model is asked,
-					// so the refusal meets the command, not the setup.
+					// The glob before it opened the sandbox, so the
+					// refusal meets the command, not the setup.
 					Respond: func(*ir.Request, *ir.Response) { cella.Fail(cellastub.OpSession, refusal) }}
-				replies = append([]luxstub.Reply{bash}, replies...)
+				replies = []luxstub.Reply{glob, bash, reviewed}
 			}
 			vars, lux, stub := hostedStubs(t, replies...)
 			cella = stub
