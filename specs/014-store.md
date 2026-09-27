@@ -219,3 +219,44 @@ memory documents ([[020-memory-stores]]); the routes ([[015-api]]).
 | The directory store reads back every agent, version, name and idempotency record after a restart, and ignores a torn temporary file | `internal/store/dir.TestReopenReadsEverythingBack`, `internal/store/dir.TestATornTemporaryFileIsIgnoredAtOpen` | built |
 | A crash between a version's file and its agent's leaves the version unread and replaceable, and never an agent whose latest version is missing | `internal/store/dir.TestAVersionIsVisibleOnlyOnceItsAgentCountsIt` | built |
 | A well-named object file that does not decode, or holds another object, is `ErrCorrupt` | `internal/store/dir.TestOpenRefusesACorruptAgent`, `internal/store/dir.TestACorruptVersionIsRefused`, `internal/store/dir.TestACorruptIdempotencyRecordIsRefused` | built |
+
+## Outcome
+
+Built on 2026-09-27. `toposd serve` keeps its sessions and agents on
+Postgres with any number of replicas, or on the directory store for one,
+with the blob bodies in the store or wherever `TOPOS_BLOB_URL` names,
+and a reaper that ends expired sessions, deletes the ones past their
+retention and sweeps the bodies a failed delete left. Every row of the
+acceptance table passes; the Postgres rows run in the `postgres` tier,
+against `DATABASE_URL` or a container it starts.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| the Postgres schema, its migrations, append and its lease fence, the listener and the watches, leases, blobs in rows or outside | `internal/store/postgres` |
+| agents, versions and idempotency records on Postgres and on the data directory | `internal/store/postgres/objects.go`, `internal/store/dir` |
+| the one-replica lock of a data directory | `internal/store/dir` (`LockServe`) |
+| the blob stores `file://` and `s3://` | `internal/blob` |
+| the directory store's bodies in a blob store | `session/dir` (`OpenWith`) |
+| the sweep of orphaned bodies and the id time it judges its grace by | `session` (`SweepBlobs`, `MintedAt`) |
+| the reaper, every 10 minutes in `serve` | `internal/server/reap.go`, `cmd/toposd` |
+| `TOPOS_BLOB_URL` and its keys | `internal/config` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| the schema holds `triggers`, `trigger_firings`, `credentials`, `memory_stores` and `sink_outbox` | none of them yet | each joins with the spec that uses it, as the migrations rule says: [[022-triggers]], [[018-credentials-and-secrets]], [[020-memory-stores]], [[023-events-and-observability]] |
+| the directory store keeps triggers, credentials and memory stores as object files | it keeps agents, versions and idempotency records | the same specs build the rest |
+| an append checks the writer rule of an external writer | an append through a lease is fenced by its generation; the writer subject of an external writer is not checked | that check is [[017-external-runners-handoff-fork]]'s |
+| the reaper ends `expired` every session past `expires_at` | it ends every idle one, and leaves a running one to a later pass | a running session's runner holds it, and ending it under the runner would fail the runner's next append |
+| the reaper removes the blobs a crashed delete left | it removes them once the session's id is an hour old | a session being created puts its blobs before it appears, so a sweep with no grace could remove a new session's blobs |
+| an `s3://` URL names host, bucket and prefix | it may also carry `?region=`, `us-east-1` by default | SigV4 signs for a region, which the URL form otherwise leaves out |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| the tables and object files of triggers, credentials, memory stores and the sink's outbox | their specs |
+| the writer subject of an external writer on append | [[017-external-runners-handoff-fork]] |
