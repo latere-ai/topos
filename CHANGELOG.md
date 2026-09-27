@@ -319,6 +319,25 @@ committed: the commit log already holds that.
   `s3://<host>/<bucket>/<prefix>` with `TOPOS_BLOB_ACCESS_KEY` and
   `TOPOS_BLOB_SECRET_KEY`. A deleted session's objects go after its
   records, and the reaper removes objects a failed delete left behind.
+- **Breaking:** an Agent manifest no longer takes `spec.identity`, and one
+  that names it is refused with that field's path: the agent's owner, a
+  person or an organization, decides whose authority it acts with. An
+  agent or a session stored by an earlier build of this release whose
+  agent carries the field no longer reads; apply the agent again.
+- With `TOPOS_IDENTITY_URL`, every agent applied is an identity at the
+  installation's identity provider, owned by its applier or by the
+  organization the applier's token names, and holds no key. Its hosted
+  sessions reach Cella with tokens minted for the agent, at most 15
+  minutes long and naming the session, and a session's sandbox pushes to
+  `TOPOS_ORIGO_URL` with its own token, which the sandbox holds only as a
+  placeholder that Cella's egress gateway swaps in. Archiving the agent
+  archives its identity, which is disabled for good once the agent's last
+  session ends.
+- With `TOPOS_SESSION_KEYS_URL`, each hosted session asks models with a
+  Lux key of its own, and its sandbox holds a second one as `LUX_KEY`
+  beside `LUX_URL`; toposd generates both and sends the authorizer only
+  their hashes. `toposd runner` reaches a session's tokens and keys from
+  its server, only while it holds the session's lease.
 
 ## v0.7.0 - 2026-09-26
 
