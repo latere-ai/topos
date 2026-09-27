@@ -388,3 +388,38 @@ func TestTheCredentialVariables(t *testing.T) {
 		t.Fatalf("a runner role with no Cella bearer: %+v %v", r, err)
 	}
 }
+
+// TestBasePathMustMatchPublicURL is spec 030's one address: the base
+// path is the path of TOPOS_PUBLIC_URL, and with no base path the public
+// URL has none, so every URL toposd writes is one it answers on.
+func TestBasePathMustMatchPublicURL(t *testing.T) {
+	for name, tc := range map[string]struct {
+		public, base, want string
+	}{
+		"a capability prefix":          {"https://api.example.com/v1/agents", "/v1/agents", ""},
+		"a trailing slash on the URL":  {"https://api.example.com/v1/agents/", "/v1/agents", ""},
+		"neither has a path":           {"https://topos.example", "", ""},
+		"the URL's path is another":    {"https://api.example.com/v1/models", "/v1/agents", "they must be equal"},
+		"a base path and no URL path":  {"https://api.example.com", "/v1/agents", "they must be equal"},
+		"a URL path and no base path":  {"https://api.example.com/v1/agents", "", "needs TOPOS_BASE_PATH=/v1/agents"},
+		"a base path with no slash":    {"https://api.example.com/v1/agents", "v1/agents", "starts with /"},
+		"a base path with a slash end": {"https://api.example.com/v1/agents", "/v1/agents/", "no trailing /"},
+		"the root as a base path":      {"https://api.example.com/", "/", "starts with /"},
+		"a base path to clean":         {"https://api.example.com/v1/agents", "/v1//agents", "starts with /"},
+	} {
+		c, err := Load(RoleServe, serve(map[string]string{"TOPOS_PUBLIC_URL": tc.public, "TOPOS_BASE_PATH": tc.base}))
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: %v", name, err)
+		case tc.want == "" && c.BasePath != tc.base:
+			t.Errorf("%s: BasePath = %q, want %q", name, c.BasePath, tc.base)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%s: %v, want a problem naming %q", name, err, tc.want)
+		}
+	}
+	// The runner reads neither variable, so a base path there is no
+	// problem of its own.
+	if _, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example/anthropic", "TOPOS_BASE_PATH": "x"})); err != nil {
+		t.Errorf("runner: %v", err)
+	}
+}

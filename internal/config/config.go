@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -61,6 +62,10 @@ type Config struct {
 	// PublicURL is the absolute URL clients reach the public listener at,
 	// without a trailing slash, and the local issuer's name.
 	PublicURL string
+	// BasePath is TOPOS_BASE_PATH, the path the API answers under in the
+	// place of /v1 (spec 030), and then the path of PublicURL; empty
+	// serves the API under /v1 and PublicURL has no path.
+	BasePath string
 	// OIDCIssuers are the issuers whose tokens the API accepts, and
 	// OIDCAudiences the audiences a token may carry, the first primary.
 	OIDCIssuers   []string
@@ -248,9 +253,35 @@ func Load(role string, getenv Getenv) (Config, error) {
 			problems = append(problems, "TOPOS_OIDC_ISSUERS is required unless TOPOS_LOCAL_ISSUER_KEY is set; there is no anonymous access")
 		}
 		problems = append(problems, c.readBlobs(getenv)...)
+		problems = append(problems, c.readBasePath(getenv)...)
 	}
 	problems = append(problems, c.checkIdentity()...)
 	return done(c, problems)
+}
+
+// readBasePath reads TOPOS_BASE_PATH (spec 030). The base path and the
+// path of TOPOS_PUBLIC_URL name one address: set, the two are equal, and
+// unset, the public URL has no path, since the API then answers under
+// /v1 at the listener's root. Either mismatch would have toposd write
+// URLs it does not answer on.
+func (c *Config) readBasePath(getenv Getenv) []string {
+	c.BasePath = strings.TrimSpace(getenv("TOPOS_BASE_PATH"))
+	if c.BasePath != "" && (!strings.HasPrefix(c.BasePath, "/") || c.BasePath == "/" || path.Clean(c.BasePath) != c.BasePath) {
+		return []string{"TOPOS_BASE_PATH is " + strconv.Quote(c.BasePath) + ", not a path that starts with / and has no trailing /"}
+	}
+	u, err := url.Parse(c.PublicURL)
+	if c.PublicURL == "" || err != nil {
+		// The public URL's own problem is reported where it is read.
+		return nil
+	}
+	have := strings.TrimRight(u.Path, "/")
+	switch {
+	case c.BasePath == "" && have != "":
+		return []string{"TOPOS_PUBLIC_URL has the path " + have + ", which needs TOPOS_BASE_PATH=" + have}
+	case c.BasePath != "" && have != c.BasePath:
+		return []string{"TOPOS_BASE_PATH is " + c.BasePath + " and the path of TOPOS_PUBLIC_URL is " + strconv.Quote(have) + "; they must be equal"}
+	}
+	return nil
 }
 
 // readBlobs reads where the store keeps blob bodies: a file:// URL with
