@@ -263,3 +263,40 @@ func TestHasPendingInput(t *testing.T) {
 		}
 	}
 }
+
+func TestAwaitingAndRedactable(t *testing.T) {
+	ev := func(typ Type, p any) Event {
+		e, err := NewEvent(typ, p, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	log := []Event{
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "ask", Verdict: "ask"}),
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "client", Client: true}),
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "ran", Verdict: "allow"}),
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "confirmed", Verdict: "ask"}),
+		ev(TypeUserToolConfirmation, UserToolConfirmation{ToolUseID: "confirmed", Decision: DecisionAllow}),
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "resulted", Client: true}),
+		ev(TypeUserToolResult, UserToolResult{ToolUseID: "resulted"}),
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "closed", Verdict: "ask"}),
+		ev(TypeToolResult, ToolResult{ToolUseID: "closed"}),
+		{Type: TypeAgentToolUse, Payload: json.RawMessage(`[`)},
+		{Type: TypeUserToolConfirmation, Payload: json.RawMessage(`[`)},
+		{Type: TypeUserToolResult, Payload: json.RawMessage(`[`)},
+		{Type: TypeToolResult, Payload: json.RawMessage(`[`)},
+	}
+	redacted := ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "gone", Verdict: "ask"})
+	redacted.Payload = slices.Clone(tombstone)
+	log = append(log, redacted)
+	got := Awaiting(log)
+	if len(got) != 2 || got["ask"] != AnswerConfirmation || got["client"] != AnswerResult {
+		t.Fatalf("Awaiting = %v", got)
+	}
+	for typ, want := range map[Type]bool{TypeUserMessage: true, TypeToolResult: true, TypeAgentToolUse: true, TypeModelRequest: false, TypeSessionStatus: false, TypeUserToolConfirmation: false, TypeScopeChanged: false} {
+		if Redactable(typ) != want {
+			t.Errorf("Redactable(%s) = %v", typ, !want)
+		}
+	}
+}

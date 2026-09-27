@@ -240,6 +240,12 @@ committed: the commit log already holds that.
   `spend_exceeded` (Lux sends it as HTTP 429), is no longer retried like a
   rate limit: the turn stops with `budget` and a `session.error` naming the
   refusal, where it was retried six times and ended as `model_error`.
+- A tool confirmation or a client tool's result is accepted only for a
+  call waiting for that answer, once; a second answer, or one naming a
+  call that never asked, is `conflict`. Only events that carry content
+  (messages, tool calls and results, summaries) can be redacted, so a
+  redaction can no longer erase a verdict or a confirmation, or reset a
+  session's spend by removing its model requests.
 
 ## v0.7.0 - 2026-09-26
 

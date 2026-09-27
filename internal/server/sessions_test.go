@@ -132,12 +132,44 @@ func TestSendSetsSender(t *testing.T) {
 			t.Errorf("%s: %d %s", body, got.status, got.body)
 		}
 	}
+	// An ask and a client's call wait for their answers; each takes one,
+	// of its own kind.
+	for _, use := range []session.AgentToolUse{
+		{ToolUseID: "toolu_1", Name: "bash", Input: json.RawMessage(`{}`), Verdict: "ask"},
+		{ToolUseID: "toolu_2", Name: "pick", Input: json.RawMessage(`{}`), Verdict: "allow", Client: true},
+	} {
+		cur, err := f.sessions.Get(t.Context(), s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ev, err := session.NewEvent(session.TypeAgentToolUse, use, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		batch := []session.Event{ev}
+		session.Stamp(s.ID, cur.LastSeq, batch)
+		if _, err := f.sessions.Append(t.Context(), s.ID, cur.LastSeq, batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for body, want := range map[string]int{
+		`{"type":"user.tool_result","payload":{"tool_use_id":"toolu_1"}}`:                          http.StatusConflict,
+		`{"type":"user.tool_confirmation","payload":{"tool_use_id":"toolu_2","decision":"allow"}}`: http.StatusConflict,
+		`{"type":"user.tool_confirmation","payload":{"tool_use_id":"toolu_9","decision":"allow"}}`: http.StatusConflict,
+	} {
+		if got := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", body); got.status != want {
+			t.Errorf("%s: %d %s", body, got.status, got.body)
+		}
+	}
 	for _, body := range []string{
 		`{"type":"user.tool_confirmation","payload":{"tool_use_id":"toolu_1","decision":"allow"}}`,
 		`{"type":"user.tool_result","payload":{"tool_use_id":"toolu_2"}}`,
 	} {
 		if got := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", body); got.status != http.StatusOK {
 			t.Errorf("%s: %d %s", body, got.status, got.body)
+		}
+		if got := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", body); got.code() != CodeConflict {
+			t.Errorf("a second answer %s: %d %s", body, got.status, got.body)
 		}
 	}
 	f.authz.take()
@@ -461,8 +493,24 @@ func TestEventsBlobsAndRedaction(t *testing.T) {
 	if err != nil || strings.Contains(string(redacted[0].Payload), "Review main.go.") {
 		t.Fatalf("the event still holds its content: %s, %v", redacted[0].Payload, err)
 	}
-	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events/evt_none/redact", "alice", `{"reason":"x"}`); a.status < 400 {
-		t.Fatalf("a redaction of no event: %d", a.status)
+	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events/evt_none/redact", "alice", `{"reason":"x"}`); a.code() != CodeNotFound {
+		t.Fatalf("a redaction of no event: %d %s", a.status, a.body)
+	}
+	status, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopEndTurn}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, err := f.sessions.Get(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := []session.Event{status}
+	session.Stamp(s.ID, cur.LastSeq, batch)
+	if _, err := f.sessions.Append(t.Context(), s.ID, cur.LastSeq, batch); err != nil {
+		t.Fatal(err)
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events/"+batch[0].ID+"/redact", "alice", `{"reason":"x"}`); a.code() != CodeInvalidRequest {
+		t.Fatalf("a redaction of a status: %d %s", a.status, a.body)
 	}
 }
 

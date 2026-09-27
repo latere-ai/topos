@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -147,6 +148,9 @@ func (c *call) sendEvent() error {
 	if err != nil {
 		return err
 	}
+	if err := c.answers(s.ID, b.Type, payload); err != nil {
+		return err
+	}
 	ev, err := session.NewEvent(b.Type, payload, c.s.o.Now())
 	if err != nil {
 		return err
@@ -157,6 +161,30 @@ func (c *call) sendEvent() error {
 	}
 	c.s.o.Notify()
 	return c.reply(http.StatusOK, appended)
+}
+
+// answers refuses a confirmation or a client tool's result that answers
+// no call waiting for it: a call never asked, already answered, or of
+// the other kind.
+func (c *call) answers(id string, typ session.Type, payload any) error {
+	var toolUseID string
+	var want session.Answer
+	switch p := payload.(type) {
+	case session.UserToolConfirmation:
+		toolUseID, want = p.ToolUseID, session.AnswerConfirmation
+	case session.UserToolResult:
+		toolUseID, want = p.ToolUseID, session.AnswerResult
+	default:
+		return nil
+	}
+	evs, err := c.s.o.Sessions.Events(c.r.Context(), id, 1, 0)
+	if err != nil {
+		return err
+	}
+	if session.Awaiting(evs)[toolUseID] != want {
+		return refuse(CodeConflict, "%s names %s, which waits for no such answer", typ, toolUseID)
+	}
+	return nil
 }
 
 // strict decodes a payload refusing fields the type does not name.
@@ -295,6 +323,17 @@ func (c *call) redact() error {
 	s, err := c.session(authorizer.ActionSessionRedact, map[string]any{"event_id": id})
 	if err != nil {
 		return err
+	}
+	evs, err := c.s.o.Sessions.Events(c.r.Context(), s.ID, 1, 0)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(evs, func(e session.Event) bool { return e.ID == id })
+	if i < 0 {
+		return refuse(CodeNotFound, "no event %s", id)
+	}
+	if !session.Redactable(evs[i].Type) {
+		return refuse(CodeInvalidRequest, "a %s event is part of the session's record and holds no content a redaction removes", evs[i].Type)
 	}
 	by := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
 	if err := c.s.o.Sessions.Redact(c.r.Context(), s.ID, id, by, b.Reason); err != nil {

@@ -222,3 +222,75 @@ func HasPendingInput(evs []Event) bool {
 	}
 	return false
 }
+
+// Answer is what a call waiting for a person needs: a confirmation of a
+// call whose verdict was ask, or the result of a call a client runs.
+type Answer int
+
+// The answers a waiting call takes.
+const (
+	AnswerConfirmation Answer = iota + 1
+	AnswerResult
+)
+
+// Awaiting lists the calls of a log, in every thread, that wait for a
+// person's answer, by tool_use id: an ask not yet confirmed, and a
+// client's call without its result. A call answered once is not
+// awaiting a second answer, so a repeated or stray confirmation or
+// result names no call here.
+func Awaiting(evs []Event) map[string]Answer {
+	out := map[string]Answer{}
+	for _, e := range evs {
+		if e.Redacted() {
+			continue
+		}
+		switch e.Type {
+		case TypeAgentToolUse:
+			var p AgentToolUse
+			if e.Decode(&p) != nil {
+				continue
+			}
+			switch {
+			case p.Client:
+				out[p.ToolUseID] = AnswerResult
+			case p.Verdict == "ask":
+				out[p.ToolUseID] = AnswerConfirmation
+			}
+		case TypeUserToolConfirmation:
+			var p UserToolConfirmation
+			if e.Decode(&p) == nil && out[p.ToolUseID] == AnswerConfirmation {
+				delete(out, p.ToolUseID)
+			}
+		case TypeUserToolResult, TypeToolResult:
+			var id string
+			if e.Type == TypeUserToolResult {
+				var p UserToolResult
+				if e.Decode(&p) != nil {
+					continue
+				}
+				id = p.ToolUseID
+			} else {
+				var p ToolResult
+				if e.Decode(&p) != nil {
+					continue
+				}
+				id = p.ToolUseID
+			}
+			delete(out, id)
+		}
+	}
+	return out
+}
+
+// Redactable reports whether an event of typ holds content a person or
+// a tool put in the log, which a redaction removes (spec 018). The
+// record of what was decided and spent, a verdict, a confirmation, a
+// model request, a status, a scope change, is not redactable, so no
+// redaction rewrites the audit or the budget.
+func Redactable(typ Type) bool {
+	switch typ {
+	case TypeUserMessage, TypeUserToolResult, TypeAgentMessage, TypeAgentToolUse, TypeToolResult, TypeContextCompacted:
+		return true
+	}
+	return false
+}
