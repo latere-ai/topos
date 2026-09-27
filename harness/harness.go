@@ -512,6 +512,12 @@ func (t *turn) stepOnce(ctx context.Context) error {
 		return t.finish(ctx, session.StopTurnLimit, "")
 	}
 	tr, err := session.Fold(t.events(), t.thread)
+	if errors.Is(err, session.ErrRedactionUncompacted) {
+		if err := t.compactRedaction(ctx); err != nil {
+			return err
+		}
+		tr, err = session.Fold(t.events(), t.thread)
+	}
 	if err != nil {
 		return err
 	}

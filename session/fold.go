@@ -75,6 +75,18 @@ type item struct {
 // (spec 004). thread is "" for the session's own thread. The fold is
 // pure: the same events give byte-identical output.
 func Fold(events []Event, thread string) (Transcript, error) {
+	return fold(events, thread, false)
+}
+
+// FoldOmittingRedacted renders the transcript with every redacted event
+// left out instead of refused. It exists for the one request that
+// summarizes a range holding a redaction (spec 010), so the summary is
+// written from what remains and the removed value never reaches a model.
+func FoldOmittingRedacted(events []Event, thread string) (Transcript, error) {
+	return fold(events, thread, true)
+}
+
+func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) {
 	evs := slices.Clone(events)
 	slices.SortStableFunc(evs, func(a, b Event) int { return cmp.Compare(a.Seq, b.Seq) })
 
@@ -137,7 +149,7 @@ func Fold(events []Event, thread string) (Transcript, error) {
 			continue
 		}
 		if e.Redacted() {
-			if visible(e) {
+			if visible(e) && !omitRedacted {
 				return Transcript{}, fmt.Errorf("%w: event %s (seq %d)", ErrRedactionUncompacted, e.ID, e.Seq)
 			}
 			continue
@@ -278,6 +290,31 @@ func inView(e Event, thread string) bool {
 		return thread == ""
 	}
 	return e.Thread == thread
+}
+
+// Uncompacted returns the redacted events of a thread's view that would
+// render and that no summary covers, in sequence order: the events a
+// redaction compaction must cover before the thread's next request.
+func Uncompacted(events []Event, thread string) ([]Event, error) {
+	evs := slices.Clone(events)
+	slices.SortStableFunc(evs, func(a, b Event) int { return cmp.Compare(a.Seq, b.Seq) })
+	view := make([]Event, 0, len(evs))
+	for _, e := range evs {
+		if inView(e, thread) {
+			view = append(view, e)
+		}
+	}
+	ranges, _, err := compactions(view)
+	if err != nil {
+		return nil, err
+	}
+	var out []Event
+	for _, e := range view {
+		if e.Redacted() && visible(e) && covering(ranges, e.Seq) == nil {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 // visible reports whether a redacted event of the view would have

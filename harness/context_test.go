@@ -251,3 +251,49 @@ func TestASecondClearingSkipsWhatIsCleared(t *testing.T) {
 		}
 	}
 }
+
+func TestARedactionSummaryStopsAtItsStep(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	e.send(ctx, "my token is abc")
+	secret := e.all()[0]
+	e.history(ctx, 40, 40, 40)
+	if err := e.store.Redact(ctx, e.s.ID, secret.ID, e.s.Initiator, "leaked"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := e.store.Get(ctx, e.s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.log.last = s.LastSeq
+	e.stub.Script(model, reply(ir.StopEndTurn, text("A credential was shared and removed.")), reply(ir.StopEndTurn, text("ok")))
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	var firstStep uint64
+	for _, ev := range e.all() {
+		if ev.Type == session.TypeAgentMessage && ev.Seq > secret.Seq {
+			firstStep = ev.Seq
+			break
+		}
+	}
+	cs := e.compactions(ctx)
+	if len(cs) != 1 || cs[0].Cause != session.CauseRedaction || cs[0].ToSeq != firstStep-1 {
+		t.Fatalf("compaction %+v, the first later step at %d", cs, firstStep)
+	}
+
+	f := setup(t, nil)
+	f.send(ctx, "my token is abc")
+	leaked := f.all()[0]
+	if err := f.store.Redact(ctx, f.s.ID, leaked.ID, f.s.Initiator, "leaked"); err != nil {
+		t.Fatal(err)
+	}
+	if s, err = f.store.Get(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.log.last = s.LastSeq
+	f.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model}, Fail: &luxstub.Failure{Status: 400, Times: 9}})
+	if out := f.turn(ctx); out.StopReason != session.StopError || out.Detail != CodeCompactionFailed {
+		t.Fatalf("a failed redaction compaction %+v", out)
+	}
+}

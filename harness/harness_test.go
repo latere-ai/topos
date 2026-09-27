@@ -1024,8 +1024,35 @@ func TestATurnRefusesALogItCannotFold(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.log.last = s.LastSeq
-	if out, err := r.h.RunTurn(ctx, s, evs, r.log); err != nil || out.Detail != "redaction_uncompacted" {
-		t.Fatalf("an uncompacted redaction: %+v, %v", out, err)
+	noSecret := func(req *ir.Request) error {
+		b, err := json.Marshal(req)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(b), "token is abc") {
+			return errors.New("the redacted value reached the model")
+		}
+		return nil
+	}
+	r.stub.Script(model,
+		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{text("Ada shared a credential, since removed.")}, StopReason: ir.StopEndTurn}, Expect: noSecret},
+		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{text("Carrying on.")}, StopReason: ir.StopEndTurn}, Expect: func(req *ir.Request) error {
+			if err := noSecret(req); err != nil {
+				return err
+			}
+			if !strings.Contains(req.Messages[0].Blocks[0].Text, "Summary of the conversation so far:") {
+				return errors.New("the request does not open with the summary")
+			}
+			return nil
+		}},
+	)
+	if out, err := r.h.RunTurn(ctx, s, evs, r.log); err != nil || out.StopReason != session.StopEndTurn {
+		t.Fatalf("a turn over a redaction: %+v, %v", out, err)
+	}
+	cs := r.events(ctx, session.TypeContextCompacted)
+	var c session.ContextCompacted
+	if len(cs) != 1 || cs[0].Decode(&c) != nil || c.Cause != session.CauseRedaction || c.FromSeq > first[0].Seq || c.ToSeq < first[0].Seq {
+		t.Fatalf("compaction %+v", c)
 	}
 }
 

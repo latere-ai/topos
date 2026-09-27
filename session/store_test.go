@@ -202,3 +202,44 @@ func TestTranscriptCheck(t *testing.T) {
 		t.Fatalf("Check = %v", err)
 	}
 }
+
+func TestFoldOmittingRedactedAndUncompacted(t *testing.T) {
+	msg := func(seq uint64, text string) Event {
+		e, err := NewEvent(TypeUserMessage, UserMessage{Sender: Sender{Subject: "u", Kind: SenderPerson}, Content: []lux.Block{{Type: ir.BlockText, Text: text}}}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = seq
+		return e
+	}
+	secret := msg(1, "token abc")
+	secret.Payload = slices.Clone(tombstone)
+	evs := []Event{secret, msg(2, "carry on")}
+	if _, err := Fold(evs, ""); !errors.Is(err, ErrRedactionUncompacted) {
+		t.Fatalf("Fold: %v", err)
+	}
+	tr, err := FoldOmittingRedacted(evs, "")
+	if err != nil || len(tr.Messages) != 1 || tr.Messages[0].Blocks[0].Text != "carry on" {
+		t.Fatalf("FoldOmittingRedacted %+v, %v", tr, err)
+	}
+	un, err := Uncompacted(evs, "")
+	if err != nil || len(un) != 1 || un[0].Seq != 1 {
+		t.Fatalf("Uncompacted %+v, %v", un, err)
+	}
+	c, err := NewEvent(TypeContextCompacted, ContextCompacted{Kind: CompactSummary, FromSeq: 1, ToSeq: 2, Summary: "s"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Seq = 3
+	if un, err := Uncompacted(append(evs, c), ""); err != nil || len(un) != 0 {
+		t.Fatalf("a covered redaction is still uncompacted: %+v, %v", un, err)
+	}
+	bad, err := NewEvent(TypeContextCompacted, ContextCompacted{Kind: CompactSummary, FromSeq: 1, ToSeq: 9}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad.Seq = 3
+	if _, err := Uncompacted(append(evs, bad), ""); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("a malformed compaction: %v", err)
+	}
+}

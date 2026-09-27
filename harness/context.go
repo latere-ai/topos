@@ -238,7 +238,42 @@ func (t *turn) compact(ctx context.Context, before int64) (bool, error) {
 	if len(steps) <= keepSteps {
 		return false, nil
 	}
-	to := steps[len(steps)-keepSteps].Seq - 1
+	return t.summarize(ctx, before, steps[len(steps)-keepSteps].Seq-1, session.CauseThreshold)
+}
+
+// compactRedaction summarizes the thread through the end of the step
+// holding its latest uncovered redaction, from a transcript that leaves
+// the redacted events out (spec 010): an edited history would invalidate
+// the provider's thinking signatures, and the removed value must not
+// reach the model again.
+func (t *turn) compactRedaction(ctx context.Context) error {
+	pending, err := session.Uncompacted(t.events(), t.thread)
+	if err != nil || len(pending) == 0 {
+		return err
+	}
+	last := pending[len(pending)-1].Seq
+	evs := t.events()
+	to := evs[len(evs)-1].Seq
+	for _, e := range t.steps() {
+		if e.Seq > last {
+			to = e.Seq - 1
+			break
+		}
+	}
+	done, err := t.summarize(ctx, 0, to, session.CauseRedaction)
+	if err != nil {
+		return err
+	}
+	if !done {
+		return fmt.Errorf("%w: nothing to summarize before seq %d", session.ErrRedactionUncompacted, to)
+	}
+	return nil
+}
+
+// summarize asks the thread's own model for a summary of the thread's
+// events through to, and appends the summary compaction with its cause.
+// It reports false when the range holds none of the thread's events.
+func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause string) (bool, error) {
 	var from uint64
 	var prefix []session.Event
 	for _, e := range t.events() {
@@ -253,7 +288,7 @@ func (t *turn) compact(ctx context.Context, before int64) (bool, error) {
 	if from == 0 || from > to {
 		return false, nil
 	}
-	tr, err := session.Fold(prefix, t.thread)
+	tr, err := session.FoldOmittingRedacted(prefix, t.thread)
 	if err != nil {
 		return false, err
 	}
@@ -298,7 +333,7 @@ func (t *turn) compact(ctx context.Context, before int64) (bool, error) {
 		}
 		return false, t.finish(ctx, session.StopError, CodeCompactionFailed, mr, se)
 	}
-	c := session.ContextCompacted{Kind: session.CompactSummary, FromSeq: from, ToSeq: to, Summary: strings.Join(summary, "\n\n"), Cause: session.CauseThreshold, Request: mr.ID, TokensBefore: before}
+	c := session.ContextCompacted{Kind: session.CompactSummary, FromSeq: from, ToSeq: to, Summary: strings.Join(summary, "\n\n"), Cause: cause, Request: mr.ID, TokensBefore: before}
 	e, err := t.event(session.TypeContextCompacted, c)
 	if err != nil {
 		return false, err

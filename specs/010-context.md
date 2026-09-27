@@ -113,13 +113,16 @@ next step. A compaction that fails after retries ends the turn with
 replaced by a failed attempt.
 
 A redaction ([[004-session-log]]) forces a compaction with `cause`
-`redaction` whose range covers the redacted event, before the thread's
-next request. Its summary request is built from a fold that leaves the
-redacted content out, so the value never reaches the model again. A
-turn over a log whose redaction no summary covers, and for which no
-such request can be built, is refused: the harness appends
-`session.error` `redaction_uncompacted` and ends the turn idle with
-`error` ([[005-harness-loop]]).
+`redaction` before the thread's next request. Its range runs from the
+thread's first event through the end of the step holding the latest
+redacted event the summaries do not cover, so a step is never split
+from its results, and its summary request is built from
+`session.FoldOmittingRedacted`, which leaves the redacted events out, so
+the value never reaches the model again. When that request fails the
+turn ends with `error` and `session.error` `compaction_failed`, like
+any compaction; a turn over a log for which no such request can be built
+is refused with `session.error` `redaction_uncompacted`
+([[005-harness-loop]]).
 
 ### Cache hit rate
 
@@ -160,5 +163,4 @@ encoding and pricing ([[007-models]]).
 | The summary never splits a step from its results and keeps the three most recent steps verbatim | `TestCompactionRangeRespectsSteps` | not built |
 | A runner restarted after a compaction rebuilds the same request as the one that would have followed it | `TestCompactionSurvivesRestart` | not built |
 | A turn of twenty steps against the stub Lux has a cache hit rate of at least 0.8 from its second request | `TestCacheHitRate` | not built |
-| A turn over a redaction no summary covers is refused with `redaction_uncompacted` | `harness.TestATurnRefusesALogItCannotFold` | built |
-| A redaction forces a compaction covering the redacted event before the next request, from a fold without the redacted content | `TestRedactionForcesCompaction` | not built |
+| A redaction forces a compaction covering the redacted event before the next request, from a fold without the redacted content, and the value reaches no request | `harness.TestATurnRefusesALogItCannotFold`, `harness.TestARedactionSummaryStopsAtItsStep`, `session.TestFoldOmittingRedactedAndUncompacted` | built |
