@@ -597,7 +597,7 @@ func TestTheDefaultAgentManifest(t *testing.T) {
 	if s := f.sessions()[0]; s.Agent.Name != "mine" {
 		t.Fatalf("agent %+v", s.Agent)
 	}
-	for env, want := range map[string]string{"XDG_CONFIG_HOME=/x": "/x/topos", "HOME=/h": "/h/.config/topos", "": ""} {
+	for env, want := range map[string]string{"XDG_CONFIG_HOME=/x": "/x/topos", "HOME=/h": "/h/.config/topos", "USERPROFILE=/u": "/u/.config/topos", "": ""} {
 		k, v, _ := strings.Cut(env, "=")
 		if got := ConfigDir(func(n string) string {
 			if n == k {

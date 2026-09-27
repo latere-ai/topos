@@ -201,8 +201,22 @@ func TestTheTokenRoleReadsItsThreeVariables(t *testing.T) {
 	}
 }
 
+// TestHome: the home directory is HOME, or USERPROFILE, which Windows
+// sets where HOME is unset, and HOME wins when both are set.
+func TestHome(t *testing.T) {
+	for vars, want := range map[string]string{"HOME=/h": "/h", "USERPROFILE=/u": "/u", "": ""} {
+		k, v, _ := strings.Cut(vars, "=")
+		if got := Home(env2(k, v)); got != want {
+			t.Errorf("Home with %q = %q, want %q", vars, got, want)
+		}
+	}
+	if got := Home(env(map[string]string{"HOME": "/h", "USERPROFILE": "/u"})); got != "/h" {
+		t.Errorf("Home with both = %q", got)
+	}
+}
+
 func TestDataDir(t *testing.T) {
-	for env, want := range map[string]string{"TOPOS_DATA_DIR=/d": "/d", "XDG_STATE_HOME=/x": "/x/topos", "HOME=/h": "/h/.local/state/topos"} {
+	for env, want := range map[string]string{"TOPOS_DATA_DIR=/d": "/d", "XDG_STATE_HOME=/x": "/x/topos", "HOME=/h": "/h/.local/state/topos", "USERPROFILE=/u": "/u/.local/state/topos"} {
 		k, v, _ := strings.Cut(env, "=")
 		got, err := DataDir(env2(k, v))
 		if err != nil || got != want {

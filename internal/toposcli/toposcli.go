@@ -414,13 +414,13 @@ func (l *local) create(ctx context.Context, o runOptions, agent *manifest.Resolv
 	return s, nil
 }
 
-// ConfigDir is $XDG_CONFIG_HOME/topos, or $HOME/.config/topos, or empty
-// when neither variable is set.
+// ConfigDir is $XDG_CONFIG_HOME/topos, or .config/topos under the home
+// directory of config.Home, or empty when none of the variables is set.
 func ConfigDir(getenv func(string) string) string {
 	if d := getenv("XDG_CONFIG_HOME"); d != "" {
 		return filepath.Join(d, "topos")
 	}
-	if h := getenv("HOME"); h != "" {
+	if h := config.Home(getenv); h != "" {
 		return filepath.Join(h, ".config", "topos")
 	}
 	return ""
@@ -676,7 +676,7 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 		}
 		m, err := host.Open(host.Options{
 			Workdir: s.Machine.Workdir, Roots: roots, SpillDir: filepath.Join(l.dataDir, "spill", s.ID),
-			Home: l.getenv("HOME"), DataDir: l.dataDir, ID: s.ID,
+			Home: config.Home(l.getenv), DataDir: l.dataDir, ID: s.ID,
 		})
 		if err != nil {
 			return harness.Config{}, err

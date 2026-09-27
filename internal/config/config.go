@@ -119,7 +119,7 @@ const (
 )
 
 // DataDir is TOPOS_DATA_DIR, or $XDG_STATE_HOME/topos, or
-// $HOME/.local/state/topos.
+// .local/state/topos under the Home directory.
 func DataDir(getenv Getenv) (string, error) {
 	if d := strings.TrimSpace(getenv("TOPOS_DATA_DIR")); d != "" {
 		return d, nil
@@ -127,10 +127,20 @@ func DataDir(getenv Getenv) (string, error) {
 	if d := strings.TrimSpace(getenv("XDG_STATE_HOME")); d != "" {
 		return filepath.Join(d, "topos"), nil
 	}
-	if h := strings.TrimSpace(getenv("HOME")); h != "" {
+	if h := Home(getenv); h != "" {
 		return filepath.Join(h, ".local", "state", "topos"), nil
 	}
 	return "", errors.New("no data directory: set TOPOS_DATA_DIR or HOME")
+}
+
+// Home is the person's home directory: HOME, or USERPROFILE, which
+// Windows sets where HOME is unset outside a POSIX shell; empty when
+// neither is set.
+func Home(getenv Getenv) string {
+	if h := strings.TrimSpace(getenv("HOME")); h != "" {
+		return h
+	}
+	return strings.TrimSpace(getenv("USERPROFILE"))
 }
 
 // Load reads the variables role reads through getenv and returns the
