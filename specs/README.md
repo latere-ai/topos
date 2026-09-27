@@ -69,7 +69,7 @@ another spec.
 | [011](011-instructions-and-skills.md) | Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills | medium | drafted | 004, 005, 009 |
 | [012](012-permissions-and-approvals.md) | Permissions, approvals and hooks: the boundary, the layers, the risk score and verdict, the modes | large | drafted | 001, 004, 005, 008, 009 |
 | [013](013-threads-and-subagents.md) | Threads, subagents and the advisor: the session's graph, spawn and message, worktree isolation, narrowing, depth | large | drafted | 001, 004, 005, 008, 009, 012 |
-| [014](014-store.md) | The server's store: the Postgres schema, toposd on the directory store, the blob store, retention and deletion | medium | dispatched | 002, 004, 006 |
+| [014](014-store.md) | The server's store: the Postgres schema, toposd on the directory store, the blob store, retention and deletion | medium | in-progress | 002, 004, 006 |
 | [015](015-api.md) | The API: every route under /v1, streaming, errors, paging, idempotency, the OpenAPI document | large | drafted | 003, 004, 006, 014 |
 | [016](016-runners.md) | Runners: driving a session, recovery of a step without results, the queue, claim, renew and release | large | drafted | 001, 002, 004, 005, 008, 009 |
 | [017](017-external-runners-handoff-fork.md) | External runners, handoff and fork: the append route, the writer rule, the inbox, moving a session's writer | large | drafted | 004, 016, 034 |
