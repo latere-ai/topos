@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -507,5 +508,21 @@ func TestListSessions(t *testing.T) {
 		if a := f.do(http.MethodGet, "/v1/sessions"+q, "alice", ""); a.code() != CodeInvalidRequest {
 			t.Errorf("%s: %d %s", q, a.status, a.body)
 		}
+	}
+}
+
+// TestInputNotifiesTheRunners: a first message and a sent event each
+// wake the server's runners; a session with no message does not.
+func TestInputNotifiesTheRunners(t *testing.T) {
+	var calls atomic.Int32
+	f := newFixture(t, func(o *Options) { o.Notify = func() { calls.Add(1) } })
+	f.apply("alice", "reviewer", "Review.")
+	if a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer"}`); a.status != http.StatusCreated || calls.Load() != 0 {
+		t.Fatalf("a session with no message: %d, %d calls", a.status, calls.Load())
+	}
+	s := f.create("alice", "reviewer")
+	f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", `{"type":"user.interrupt"}`)
+	if calls.Load() != 2 {
+		t.Fatalf("%d calls, want 2", calls.Load())
 	}
 }

@@ -166,6 +166,9 @@ type CellaOptions struct {
 	Token client.TokenSource
 	// Helpers are the topos-machine builds by platform.
 	Helpers map[string][]byte
+	// Dir is where the helper and the spill directory live inside each
+	// sandbox, outside its workspace; empty is cella.DefaultDir.
+	Dir string
 }
 
 // Cella opens each hosted session's machine as a Cella sandbox named
@@ -181,26 +184,30 @@ func Cella(o CellaOptions) Machines {
 			URL: o.URL, Token: o.Token, Session: s.ID, Agent: s.Agent.Name,
 			Environment: cmp.Or(s.Machine.Environment, m.Environment), Image: cmp.Or(s.Machine.Image, m.Image),
 			Resources: cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
-			Egress:    m.Egress, TTL: max(ttl, 0), Helpers: o.Helpers,
+			Egress:    m.Egress, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
 		})
 	}
 }
 
-// ReadHelpers reads the topos-machine builds under dir, named
-// topos-machine-<os>-<arch>, keyed "<os>/<arch>". A platform without a
-// build is left out; no build at all is an error.
+// ReadHelpers reads the topos-machine builds under dir, each named
+// topos-machine-<os>-<arch> and keyed "<os>/<arch>". No build at all is
+// an error.
 func ReadHelpers(dir string) (map[string][]byte, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "topos-machine-*-*"))
+	if err != nil {
+		return nil, err
+	}
 	out := map[string][]byte{}
-	for _, p := range []string{"linux/amd64", "linux/arm64"} {
-		goos, arch, _ := strings.Cut(p, "/")
-		b, err := os.ReadFile(filepath.Join(dir, "topos-machine-"+goos+"-"+arch))
-		if errors.Is(err, os.ErrNotExist) {
+	for _, p := range paths {
+		goos, arch, ok := strings.Cut(strings.TrimPrefix(filepath.Base(p), "topos-machine-"), "-")
+		if !ok || goos == "" || arch == "" {
 			continue
 		}
+		b, err := os.ReadFile(p)
 		if err != nil {
 			return nil, err
 		}
-		out[p] = b
+		out[goos+"/"+arch] = b
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no topos-machine build under %s", dir)

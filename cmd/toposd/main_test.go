@@ -18,14 +18,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/ir"
+
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/test/stubs/cellastub"
+	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
 func env(m map[string]string) func(string) string {
@@ -51,7 +57,7 @@ func localKey(t *testing.T) string {
 // and the owner policy, with no identity provider.
 func selfHosted(t *testing.T, m map[string]string) func(string) string {
 	t.Helper()
-	all := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir()}
+	all := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080/topos", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 	maps.Copy(all, m)
 	return env(all)
 }
@@ -174,7 +180,7 @@ func startServe(t *testing.T, vars map[string]string) (publicURL, internalURL st
 	var errOut bytes.Buffer
 	codec := make(chan int, 1)
 	go func() {
-		all := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_DATA_DIR": dataDir}
+		all := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_DATA_DIR": dataDir, "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 		maps.Copy(all, vars)
 		codec <- run(ctx, nil, env(all), &out, &errOut)
 	}()
@@ -270,7 +276,7 @@ func TestSleepCtxReturnsEarlyWhenTheContextEnds(t *testing.T) {
 // accepts, refuses a lifetime over a day, and opens no store: a database
 // URL nothing could reach does not stop it.
 func TestTokenRoleRoundTrip(t *testing.T) {
-	vars := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DB_URL": "postgres://nobody@192.0.2.1/none", "TOPOS_DATA_DIR": t.TempDir()}
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DB_URL": "postgres://nobody@192.0.2.1/none", "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 	var out, errOut bytes.Buffer
 	if code := run(t.Context(), []string{"token", "--subject", "root", "--ttl", "2h"}, env(vars), &out, &errOut); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
@@ -326,7 +332,7 @@ func TestServeStopsOnAnIssuerThatDoesNotAnswer(t *testing.T) {
 	var errOut bytes.Buffer
 	code := run(t.Context(), nil, env(map[string]string{
 		"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0",
-		"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": gone.URL, "TOPOS_DATA_DIR": t.TempDir(),
+		"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": gone.URL, "TOPOS_DATA_DIR": t.TempDir(), "TOPOS_MODELS_URL": "https://lux.example/anthropic",
 	}), io.Discard, &errOut)
 	if code != 1 || !strings.Contains(errOut.String(), "TOPOS_OIDC_ISSUERS") {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
@@ -347,7 +353,7 @@ func TestBasePath(t *testing.T) {
 // directory is refused.
 func TestServeAnswersTheAPIAsASelfHoster(t *testing.T) {
 	key, data := localKey(t), t.TempDir()
-	vars := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": key, "TOPOS_DATA_DIR": data, "TOPOS_ADMIN_SUBJECTS": "http://127.0.0.1:8080|admin"}
+	vars := map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": key, "TOPOS_DATA_DIR": data, "TOPOS_ADMIN_SUBJECTS": "http://127.0.0.1:8080|admin", "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 	var tok bytes.Buffer
 	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
 		t.Fatalf("token: exit %d", code)
@@ -415,5 +421,121 @@ func TestServeStopsOnAStoreItCannotOpen(t *testing.T) {
 		if code := run(t.Context(), nil, selfHosted(t, vars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), want) {
 			t.Errorf("%s: exit %d, stderr %q", want, code, errOut.String())
 		}
+	}
+}
+
+// TestServeRunsAHostedSession: a session created over the API is claimed
+// by serve's own runner, which opens its Cella sandbox, uploads the
+// helper, asks the model and records the answer, with the Cella bearer
+// read from its file.
+func TestServeRunsAHostedSession(t *testing.T) {
+	helpers := t.TempDir()
+	out := filepath.Join(helpers, "topos-machine-"+runtime.GOOS+"-"+runtime.GOARCH)
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", out, "latere.ai/x/topos/cmd/topos-machine")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if b, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build the helper: %v\n%s", err, b)
+	}
+	cella := cellastub.New(t)
+	cella.RequireToken("cella-bearer")
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("cella-bearer\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lux := luxstub.New(t)
+	lux.Script("anthropic/claude-haiku-4.5", luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}})
+	machineDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, data := localKey(t), t.TempDir()
+	vars := map[string]string{
+		"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": key, "TOPOS_DATA_DIR": data,
+		"TOPOS_MODELS_URL": lux.URL() + "/anthropic", "TOPOS_MODELS_KEY": "model-key",
+		"TOPOS_CELLA_URL": cella.URL(), "TOPOS_CELLA_TOKEN_FILE": tokenFile,
+		"TOPOS_MACHINE_HELPERS": helpers, "TOPOS_MACHINE_DIR": machineDir, "TOPOS_RUNNER_CAPACITY": "2",
+	}
+	var tok bytes.Buffer
+	if code := run(t.Context(), []string{"token"}, env(vars), &tok, io.Discard); code != 0 {
+		t.Fatalf("token: exit %d", code)
+	}
+	publicURL, _, stop := startServe(t, vars)
+	bearer := strings.TrimSpace(tok.String())
+	send := func(method, path, body string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), method, publicURL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(b)
+	}
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: cella}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/reviewer", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"reviewer","message":"Review main.go."}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	var s struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &s); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		_, body := send(http.MethodGet, "/v1/sessions/"+s.ID, "")
+		if strings.Contains(body, `"status":"idle"`) && strings.Contains(body, `"stop_reason":"end_turn"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			_, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
+			t.Fatalf("the session never answered: %s\nevents %s", body, events)
+		}
+	}
+	_, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
+	for _, want := range []string{`"type":"session.machine"`, `"kind":"cella"`, `"text":"Reviewed."`, `"type":"session.status"`} {
+		if !strings.Contains(events, want) {
+			t.Errorf("the log lacks %s: %s", want, events)
+		}
+	}
+	if reqs := lux.Requests(); len(reqs) != 1 || reqs[0].Header.Get("X-Api-Key") != "model-key" && reqs[0].Header.Get("Authorization") != "Bearer model-key" {
+		t.Errorf("the model was asked %d times, credential %v", len(reqs), reqs)
+	}
+	if n := cella.Count(cellastub.OpCreate); n != 1 {
+		t.Errorf("%d sandboxes created", n)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// TestServeStartsNoRunnerOrRefusesMissingHelpers: a capacity of zero
+// serves without runners, and a Cella URL with no helper builds stops
+// the start naming TOPOS_MACHINE_HELPERS.
+func TestServeStartsNoRunnerOrRefusesMissingHelpers(t *testing.T) {
+	_, _, stop := startServe(t, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_RUNNER_CAPACITY": "0"})
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var errOut bytes.Buffer
+	vars := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0",
+		"TOPOS_CELLA_URL": "http://127.0.0.1:1", "TOPOS_CELLA_TOKEN_FILE": tokenFile, "TOPOS_MACHINE_HELPERS": t.TempDir()}
+	if code := run(t.Context(), nil, selfHosted(t, vars), io.Discard, &errOut); code != 1 || !strings.Contains(errOut.String(), "TOPOS_MACHINE_HELPERS") {
+		t.Fatalf("no helpers: exit %d, stderr %q", code, errOut.String())
 	}
 }

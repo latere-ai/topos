@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"latere.ai/x/pkg/authz"
@@ -78,7 +79,32 @@ type Config struct {
 	// DataDir is TOPOS_DATA_DIR resolved: the directory store's root, and
 	// the checkpoint and worktree directories beneath it.
 	DataDir string
+	// ModelsURL and ModelsKey are the installation's model connection:
+	// the base URL of an agent that names none, a Lux door or a
+	// provider's API, and the credential of an agent that names none.
+	ModelsURL string
+	ModelsKey string
+	// RunnerCapacity is how many sessions serve drives at once; zero runs
+	// no runner in process.
+	RunnerCapacity int
+	// CellaURL is the Cella control plane hosted sessions' machines are
+	// created on; empty refuses them machine_unavailable. CellaTokenFile
+	// is the file holding the bearer toposd presents to Cella, read on
+	// every request so it can be rotated in place. MachineHelpers is the
+	// directory of the topos-machine builds the machines upload.
+	CellaURL       string
+	CellaTokenFile string
+	MachineHelpers string
+	// MachineDir is where the helper lives inside each sandbox; empty is
+	// the machine's default under /tmp.
+	MachineDir string
 }
+
+// Defaults of the runner variables.
+const (
+	DefaultRunnerCapacity = 16
+	DefaultMachineHelpers = "/usr/local/lib/topos"
+)
 
 // DataDir is TOPOS_DATA_DIR, or $XDG_STATE_HOME/topos, or
 // $HOME/.local/state/topos.
@@ -149,6 +175,7 @@ func Load(role string, getenv Getenv) (Config, error) {
 		if c.DataDir, err = DataDir(getenv); err != nil {
 			problems = append(problems, "TOPOS_DATA_DIR is unset, and so are XDG_STATE_HOME and HOME")
 		}
+		problems = append(problems, c.readRunner(getenv)...)
 		if c.PublicURL == "" {
 			problems = append(problems, "TOPOS_PUBLIC_URL is required; it is the base of every URL toposd writes")
 		}
@@ -158,6 +185,48 @@ func Load(role string, getenv Getenv) (Config, error) {
 	}
 	problems = append(problems, c.checkIdentity()...)
 	return done(c, problems)
+}
+
+// readRunner reads the variables of the in-process runners and the
+// machines they open.
+func (c *Config) readRunner(getenv Getenv) []string {
+	var problems []string
+	c.ModelsURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_MODELS_URL")), "/")
+	c.ModelsKey = strings.TrimSpace(getenv("TOPOS_MODELS_KEY"))
+	switch {
+	case c.ModelsURL == "":
+		problems = append(problems, "TOPOS_MODELS_URL is required; it is the model connection of an agent that names none")
+	case strings.HasPrefix(c.ModelsURL, "scripted:"):
+		problems = append(problems, "TOPOS_MODELS_URL names a scripted model, which is for tests and never served")
+	default:
+		if err := checkURL(c.ModelsURL); err != nil {
+			problems = append(problems, "TOPOS_MODELS_URL "+err.Error())
+		}
+	}
+	c.RunnerCapacity = DefaultRunnerCapacity
+	if v := strings.TrimSpace(getenv("TOPOS_RUNNER_CAPACITY")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			problems = append(problems, "TOPOS_RUNNER_CAPACITY is "+strconv.Quote(v)+", not a count of sessions")
+		}
+		c.RunnerCapacity = n
+	}
+	c.CellaURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_CELLA_URL")), "/")
+	c.CellaTokenFile = strings.TrimSpace(getenv("TOPOS_CELLA_TOKEN_FILE"))
+	c.MachineHelpers = withDefault(getenv("TOPOS_MACHINE_HELPERS"), DefaultMachineHelpers)
+	c.MachineDir = strings.TrimSpace(getenv("TOPOS_MACHINE_DIR"))
+	if c.MachineDir != "" && !strings.HasPrefix(c.MachineDir, "/") {
+		problems = append(problems, "TOPOS_MACHINE_DIR is "+strconv.Quote(c.MachineDir)+", not an absolute path inside the sandbox")
+	}
+	if c.CellaURL != "" {
+		if err := checkURL(c.CellaURL); err != nil {
+			problems = append(problems, "TOPOS_CELLA_URL "+err.Error())
+		}
+		if c.CellaTokenFile == "" {
+			problems = append(problems, "TOPOS_CELLA_URL needs TOPOS_CELLA_TOKEN_FILE, the bearer toposd presents to Cella")
+		}
+	}
+	return problems
 }
 
 func done(c Config, problems []string) (Config, error) {

@@ -25,18 +25,22 @@ import (
 	"syscall"
 	"time"
 
+	"latere.ai/x/cella/client"
+
 	"latere.ai/x/pkg/authkit/jwt"
 	"latere.ai/x/pkg/health"
 	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/internal/hosted"
 	"latere.ai/x/topos/internal/server"
 	"latere.ai/x/topos/internal/store"
 	storedir "latere.ai/x/topos/internal/store/dir"
 	"latere.ai/x/topos/internal/store/postgres"
 	"latere.ai/x/topos/internal/token"
 	"latere.ai/x/topos/internal/version"
+	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	sessiondir "latere.ai/x/topos/session/dir"
 )
@@ -128,13 +132,27 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 			_, _ = fmt.Fprintf(stderr, "toposd: close the store: %v\n", err)
 		}
 	}()
+	log := slog.New(slog.NewTextHandler(stderr, nil))
+	queue := runner.NewQueue(st.sessions, 0)
 	api, err := server.New(server.Options{
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
-		PublicURL: cfg.PublicURL, Log: slog.New(slog.NewTextHandler(stderr, nil)),
+		PublicURL: cfg.PublicURL, Log: log, Notify: queue.Notify,
 	})
 	if err != nil {
 		return fail(stderr, err)
 	}
+	// The runners stop with the process, and on every other way out of
+	// serve too; each drive then leaves its session to the next runner.
+	runCtx, stopRunners := context.WithCancel(ctx)
+	runners, err := startRunners(runCtx, cfg, st.sessions, queue, log)
+	if err != nil {
+		stopRunners()
+		return fail(stderr, err)
+	}
+	defer func() {
+		stopRunners()
+		<-runners
+	}()
 
 	draining := make(chan struct{})
 	probes := health.Handler(health.Options{
@@ -244,6 +262,45 @@ func openStores(ctx context.Context, cfg config.Config) (stores, error) {
 		return err
 	}
 	return stores{sessions: sessions, objects: objects, name: "dir:" + cfg.DataDir, ping: ping, close: release}, nil
+}
+
+// startRunners starts the runners that drive hosted sessions in
+// process, TOPOS_RUNNER_CAPACITY of them at once, and returns a channel
+// closed once they have stopped with ctx. A capacity of zero runs none.
+func startRunners(ctx context.Context, cfg config.Config, st session.Store, queue *runner.Queue, log *slog.Logger) (<-chan struct{}, error) {
+	done := make(chan struct{})
+	if cfg.RunnerCapacity == 0 {
+		close(done)
+		return done, nil
+	}
+	machines := hosted.Cella(hosted.CellaOptions{})
+	if cfg.CellaURL != "" {
+		helpers, err := hosted.ReadHelpers(cfg.MachineHelpers)
+		if err != nil {
+			return nil, fmt.Errorf("TOPOS_MACHINE_HELPERS: %w", err)
+		}
+		machines = hosted.Cella(hosted.CellaOptions{URL: cfg.CellaURL, Token: client.TokenFile(cfg.CellaTokenFile), Helpers: helpers, Dir: cfg.MachineDir})
+	}
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Machines: machines})
+	if err != nil {
+		return nil, err
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+	r, err := runner.New(runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("serve-%s-%d", host, os.Getpid()), Kind: runner.KindServe})
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		defer close(done)
+		report := func(id string, err error) { log.ErrorContext(ctx, "runner", "session", id, "err", err) }
+		if err := r.Serve(ctx, queue, cfg.RunnerCapacity, report); err != nil {
+			report("", err)
+		}
+	}()
+	return done, nil
 }
 
 // identity is what the API asks through (spec 006): the verifier, the

@@ -177,11 +177,13 @@ func TestReadHelpers(t *testing.T) {
 	if _, err := ReadHelpers(dir); err == nil {
 		t.Fatal("read helpers from an empty directory")
 	}
-	if err := os.WriteFile(filepath.Join(dir, "topos-machine-linux-arm64"), []byte("arm"), 0o755); err != nil {
-		t.Fatal(err)
+	for name, body := range map[string]string{"topos-machine-linux-arm64": "arm", "topos-machine-darwin-arm64": "mac", "topos-machine-odd": "x", "README": "r"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	got, err := ReadHelpers(dir)
-	if err != nil || string(got["linux/arm64"]) != "arm" || len(got) != 1 {
+	if err != nil || string(got["linux/arm64"]) != "arm" || string(got["darwin/arm64"]) != "mac" || len(got) != 2 {
 		t.Fatalf("helpers %v, %v", got, err)
 	}
 	if err := os.Mkdir(filepath.Join(dir, "topos-machine-linux-amd64"), 0o755); err != nil {
@@ -189,5 +191,8 @@ func TestReadHelpers(t *testing.T) {
 	}
 	if _, err := ReadHelpers(dir); err == nil {
 		t.Fatal("read a directory as a helper")
+	}
+	if _, err := ReadHelpers("["); err == nil {
+		t.Fatal("read helpers from a malformed pattern")
 	}
 }

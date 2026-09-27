@@ -191,6 +191,9 @@ the behaviors of later specs cannot exist without.
 | `TOPOS_MODELS_URL` | `serve`, `runner` | none | [[007-models]] | the default model connection's base URL, a Lux address or a provider's; a server role refuses to start without it |
 | `TOPOS_MODELS_KEY` (added by the deck) | no | unset | [[007-models]] | the installation's model credential, used for a session whose agent names no model credential; unset, such a session fails at its first step with `model_credential_missing` |
 | `TOPOS_CELLA_URL` | no | unset | [[009-machines]] | the Cella control plane a `cella` machine is created on; unset, a session asking for one is refused `machine_unavailable` |
+| `TOPOS_CELLA_TOKEN_FILE` (added by the deck) | when `TOPOS_CELLA_URL` is set | none | [[009-machines]] | a file holding the bearer toposd presents to Cella, read on every request, so whatever mints short-lived tokens rewrites it in place |
+| `TOPOS_MACHINE_HELPERS` (added by the deck) | no | `/usr/local/lib/topos` | [[009-machines]] | the directory of the `topos-machine` builds, `topos-machine-<os>-<arch>`, a Cella machine uploads; the image carries `linux/amd64` and `linux/arm64`; read at start when `TOPOS_CELLA_URL` is set |
+| `TOPOS_MACHINE_DIR` (added by the deck) | no | `/tmp/topos` | [[009-machines]] | where the helper and the spill directory live inside each sandbox, an absolute path; set it for an image whose `/tmp` cannot execute |
 | `TOPOS_ORIGO_URL` | no | unset | [[034-checkpoints-and-rewind]], [[019-git]] | the git host that holds session repositories for cloud checkpoints; unset, a cloud session without a repository keeps no checkpoint and cannot be handed off |
 | `TOPOS_RUNNER_GIT_CACHE` | no | unset | [[019-git]] | a directory of bare mirrors the runner fetches through before cloning into a machine |
 | `TOPOS_MEMORY_BACKEND` | no | `dir` | [[020-memory-stores]] | `dir` or `arca`: where memory store documents are kept |

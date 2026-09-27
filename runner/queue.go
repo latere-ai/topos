@@ -66,8 +66,11 @@ func (q *Queue) Notify() {
 func (q *Queue) Claim(ctx context.Context, holder session.Holder, n int, wait time.Duration) ([]Claim, error) {
 	deadline := time.Now().Add(wait)
 	for {
-		if ctx.Err() != nil {
+		select {
+		case <-ctx.Done():
+			// A claim its runner stopped waiting for has no work to hand.
 			return nil, nil
+		default:
 		}
 		claims, err := q.scan(ctx, holder, n)
 		if err != nil || len(claims) > 0 {

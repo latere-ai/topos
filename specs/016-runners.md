@@ -117,6 +117,33 @@ and is never lost while the process lives. A local session's first
 claim is the process that created it. The directory store's `Watch`
 delivers `user.interrupt` to the running harness.
 
+### The in-process queue
+
+`toposd serve` runs its runners over the same store as its API, through
+`runner.Queue`: a claim lists the hosted sessions that are running or
+idle, leases each one that has work, checks under the lease that it
+still does, and hands out the lease; taking the claim is taking the
+store's lease, so a session another runner holds is never handed out.
+An idle session found without pending input is remembered by its last
+sequence and not read again until it changes. The API calls `Notify`
+when a session gains input, which wakes a waiting claim at once; the
+poll (2 s) covers anything else. `Serve` drives up to
+`TOPOS_RUNNER_CAPACITY` sessions at once.
+
+A turn the runner cannot start, because the agent's bundle, the model
+connection or the machine cannot be had, is closed with a
+`session.error` naming the code (`agent_missing`, `model_unavailable`,
+`model_credential_missing`, `machine_unavailable`, or
+`runner_setup_failed`) and `session.status` `idle` `error`, so the
+session waits for its next message instead of staying `running` with
+nobody driving it. A lost lease cancels the turn and fences the log: an
+append after it is refused. A server that stops mid-turn fences the log
+the same way and releases the lease, so the session stays `running` and
+the next runner's claim resumes it from the log, instead of the turn
+being closed as interrupted. The fence is the runner's own; the store's
+generation check on every append, below, is what makes it hold across
+replicas.
+
 ### Phase 2: the queue
 
 A session is claimable when it is not ended, its writer is `hosted`
@@ -201,6 +228,11 @@ columns and migrations ([[014-store]]); credential resolution
 | Driving a session appends `session.status` `running` before anything else, attaches the machine once with its `session.machine`, and a moved machine is recorded with reason `handoff` | `runner.TestDriveAttachesTheMachineAndRunsATurn`, `runner.TestAMovedMachineIsAHandoff` | built |
 | An `end_on_idle` session ends and its machine is released for good; a harness configuration that cannot start is reported | `runner.TestAnEndOnIdleSessionEndsAndReleasesTheMachine`, `runner.TestDriveReportsAHarnessThatCannotStart` | built |
 | `Log.Append` reports the store's errors, including a log ahead of the store and a deleted session | `runner.TestLogAppendReportsTheStore` | built |
+| The in-process queue claims a hosted session idle with pending input or running with no live lease, with its lease, and never one another runner holds, an answered one or an external one; `Notify` wakes a waiting claim | `runner.TestQueueClaimsHostedSessionsWithWork`, `runner.TestQueueWakesOnNotify` | built |
+| `Serve` drives the sessions it claims up to its capacity and reports a failed claim | `runner.TestServeDrivesTheSessionsItClaims` | built |
+| A turn that cannot start closes with its setup code and `idle` `error`, and is not claimed again until a new message | `runner.TestASetupFailureClosesTheTurn` | built |
+| A lost lease stops the turn and refuses every later append; a server stopping mid-turn leaves the session running for the next claim | `runner.TestALostLeaseStopsTheDrive`, `runner.TestAServedDriveLeavesItsSessionToTheNextRunner` | built |
+| A session created over the API is run by `toposd serve`'s own runner on a Cella machine against the model URL | `cmd/toposd.TestServeRunsAHostedSession` | built |
 | The internal routes refuse a request without the runner token | `TestRunnerRoutesNeedTheToken` | not built |
 | toposd opens no connection to a runner: every runner connection is outbound from the runner | `TestServerOpensNoConnectionToARunner` | not built |
 | The `topos` CLI drives a local session over the directory store with no server | `internal/toposcli.TestRunATurnInTheWorkingDirectory`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |

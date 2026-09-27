@@ -183,6 +183,7 @@ func (c *call) createSession() error {
 		if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
 			return err
 		}
+		c.s.o.Notify()
 	}
 	return c.replySession(http.StatusCreated, s)
 }

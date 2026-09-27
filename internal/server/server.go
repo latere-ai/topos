@@ -71,6 +71,10 @@ type Options struct {
 	PerMinute int
 	Now       func() time.Time
 	Log       *slog.Logger
+	// Notify is called once a hosted session has new input, a first
+	// message or a sent event, so the server's runners claim it without
+	// waiting for their next poll. Nil notifies nobody.
+	Notify func()
 }
 
 // Server answers the API.
@@ -105,6 +109,9 @@ func New(o Options) (*Server, error) {
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
+	}
+	if o.Notify == nil {
+		o.Notify = func() {}
 	}
 	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now})}
 	s.routes = table()

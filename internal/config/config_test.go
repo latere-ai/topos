@@ -22,7 +22,7 @@ func env(m map[string]string) Getenv {
 
 // serve is m over the two variables serve requires.
 func serve(m map[string]string) Getenv {
-	all := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": "https://login.example", "TOPOS_DATA_DIR": "/var/lib/topos"}
+	all := map[string]string{"TOPOS_PUBLIC_URL": "https://topos.example", "TOPOS_OIDC_ISSUERS": "https://login.example", "TOPOS_DATA_DIR": "/var/lib/topos", "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 	maps.Copy(all, m)
 	return env(all)
 }
@@ -131,6 +131,7 @@ func TestTheIdentityVariables(t *testing.T) {
 		"TOPOS_AUTHORIZER_TOKEN":      "secret",
 		"TOPOS_ADMIN_SUBJECTS":        "https://login.example|root, ",
 		"HOME":                        "/home/topos",
+		"TOPOS_MODELS_URL":            "https://lux.example/anthropic",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +154,7 @@ func TestServeRequiresAnIssuerAndThePublicURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(RoleServe, env(map[string]string{"TOPOS_PUBLIC_URL": "http://localhost:8080", "TOPOS_LOCAL_ISSUER_KEY": pemOf(t, key), "HOME": "/home/topos"})); err != nil {
+	if _, err := Load(RoleServe, env(map[string]string{"TOPOS_PUBLIC_URL": "http://localhost:8080", "TOPOS_LOCAL_ISSUER_KEY": pemOf(t, key), "HOME": "/home/topos", "TOPOS_MODELS_URL": "https://lux.example/anthropic"})); err != nil {
 		t.Fatalf("the local issuer alone: %v", err)
 	}
 	if _, err := Load(RoleRunner, env(nil)); err != nil {
@@ -221,3 +222,36 @@ func TestDataDir(t *testing.T) {
 }
 
 func env2(k, v string) Getenv { return env(map[string]string{k: v}) }
+
+func TestTheRunnerVariables(t *testing.T) {
+	c, err := Load(RoleServe, serve(map[string]string{
+		"TOPOS_MODELS_URL": "https://lux.example/anthropic/", "TOPOS_MODELS_KEY": " k ", "TOPOS_RUNNER_CAPACITY": "3",
+		"TOPOS_CELLA_URL": "https://cella.example/v1/environments", "TOPOS_CELLA_TOKEN_FILE": "/run/cella/token",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ModelsURL != "https://lux.example/anthropic" || c.ModelsKey != "k" || c.RunnerCapacity != 3 || c.CellaURL != "https://cella.example/v1/environments" ||
+		c.CellaTokenFile != "/run/cella/token" || c.MachineHelpers != DefaultMachineHelpers {
+		t.Fatalf("config %+v", c)
+	}
+	if c, err := Load(RoleServe, serve(nil)); err != nil || c.RunnerCapacity != DefaultRunnerCapacity || c.CellaURL != "" {
+		t.Fatalf("the defaults: %+v, %v", c, err)
+	}
+	for name, vars := range map[string]map[string]string{
+		"no models url":        {"TOPOS_MODELS_URL": " "},
+		"a scripted model":     {"TOPOS_MODELS_URL": "scripted:/tmp/s.yaml"},
+		"models url not a url": {"TOPOS_MODELS_URL": "lux"},
+		"capacity":             {"TOPOS_RUNNER_CAPACITY": "-1"},
+		"cella url":            {"TOPOS_CELLA_URL": "cella", "TOPOS_CELLA_TOKEN_FILE": "/t"},
+		"cella without token":  {"TOPOS_CELLA_URL": "https://cella.example"},
+		"relative machine dir": {"TOPOS_MACHINE_DIR": "tmp/topos"},
+	} {
+		if _, err := Load(RoleServe, serve(vars)); err == nil {
+			t.Errorf("%s: loaded", name)
+		}
+	}
+	if _, err := Load(RoleRunner, env(nil)); err != nil {
+		t.Fatalf("the runner role reads none of serve's: %v", err)
+	}
+}

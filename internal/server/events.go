@@ -155,6 +155,7 @@ func (c *call) sendEvent() error {
 	if err != nil {
 		return err
 	}
+	c.s.o.Notify()
 	return c.reply(http.StatusOK, appended)
 }
 

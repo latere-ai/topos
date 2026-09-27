@@ -216,6 +216,16 @@ committed: the commit log already holds that.
 - The model catalog also knows each model by the name the hosted Lux
   serves it under, with dots in its version (`anthropic/claude-haiku-4.5`
   beside `anthropic/claude-haiku-4-5`).
+- `toposd serve` runs hosted sessions: up to `TOPOS_RUNNER_CAPACITY` (16)
+  of them at once, claimed from its own store as soon as a session gets a
+  message. Each runs its agent from the session's bundle, on a Cella
+  sandbox created at `TOPOS_CELLA_URL` with the bearer in
+  `TOPOS_CELLA_TOKEN_FILE`, against the model at `TOPOS_MODELS_URL` with
+  `TOPOS_MODELS_KEY`, which serve now requires. The image carries the
+  `topos-machine` helper for `linux/amd64` and `linux/arm64`. A turn that
+  cannot start closes with a `session.error` naming why
+  (`model_credential_missing`, `machine_unavailable`, ...), and a server
+  that stops mid-turn leaves the session for the next runner to resume.
 
 ## v0.7.0 - 2026-09-26
 
