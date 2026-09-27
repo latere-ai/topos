@@ -1,6 +1,6 @@
 ---
 title: "Models: the connection, the IR in the log, llmdialect's codecs, raw capture, cost and the budget"
-status: drafted
+status: validated
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session-log.md]
 affects: [models/, models/dialect/, tools/catalog/, cmd/toposd/]
