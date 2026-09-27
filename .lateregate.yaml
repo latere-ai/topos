@@ -48,10 +48,12 @@ spec:
   require_section_by_status:
     complete: [Outcome]
 
-# The suite runs with only the Go toolchain on PATH. The host machine of
-# spec 009 runs sh for the bash tool and adds /bin when its tests land.
+# The suite runs with the Go toolchain and /usr/bin on PATH. The host
+# machine runs commands with /bin/sh by its absolute path; /usr/bin is for
+# git, which the checkpoints of spec 034 run on the machine, found there
+# on the runners and on macOS alike.
 hermetic:
-  allow: []
+  allow: [/usr/bin]
 
 tempdir:
   allow: {}

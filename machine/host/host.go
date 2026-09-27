@@ -548,9 +548,11 @@ func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, timeout time.Duration) (
 	return res, kerr
 }
 
-// kill signals a process group. A group already gone is not an error.
+// kill signals a process group. A group already gone is not an error:
+// ESRCH, or EPERM, which macOS returns for a group whose remaining
+// members are zombies waiting to be reaped.
 func kill(pgid int, sig syscall.Signal) error {
-	if err := syscall.Kill(-pgid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := syscall.Kill(-pgid, sig); err != nil && !errors.Is(err, syscall.ESRCH) && !errors.Is(err, syscall.EPERM) {
 		return fmt.Errorf("machine: signal process group %d: %w", pgid, err)
 	}
 	return nil

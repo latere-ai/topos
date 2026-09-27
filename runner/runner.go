@@ -11,11 +11,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/runner/checkpoint"
 	"latere.ai/x/topos/session"
 )
 
@@ -39,7 +42,11 @@ type Options struct {
 	// instruction file and skills folder, read on the host.
 	PersonalInstructions string
 	PersonalSkills       string
-	Clock                func() time.Time
+	// CheckpointDir holds the session repositories of working
+	// directories that are not checkouts (spec 034); empty takes no
+	// checkpoints outside a repository.
+	CheckpointDir string
+	Clock         func() time.Time
 }
 
 // Runner drives sessions.
@@ -103,6 +110,19 @@ func (r *Runner) Drive(ctx context.Context, id string) (out harness.Outcome, err
 	git, memory := attached(evs)
 	cfg.Prompt.Git = cfg.Prompt.Git || git
 	cfg.Prompt.Memory = cfg.Prompt.Memory || memory
+	if cfg.Checkpoint == nil {
+		cp := r.checkpointer(cfg, s)
+		cfg.Checkpoint = func(ctx context.Context, turn int, previous string) (*session.CheckpointRef, error) {
+			ref, err := cp.Take(ctx, turn, previous)
+			if errors.Is(err, checkpoint.ErrNoGit) || errors.Is(err, checkpoint.ErrNoRepository) {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+			return &ref, nil
+		}
+	}
 	h, err := harness.New(cfg)
 	if err != nil {
 		return harness.Outcome{}, err
@@ -178,6 +198,105 @@ func (r *Runner) attach(ctx context.Context, cfg harness.Config, log *Log) error
 	}
 	_, err = log.Append(ctx, []session.Event{e})
 	return err
+}
+
+func (r *Runner) checkpointer(cfg harness.Config, s session.Session) *checkpoint.Checkpointer {
+	cp := &checkpoint.Checkpointer{Machine: cfg.Machine, SessionID: s.ID, AgentID: s.Agent.ID}
+	if r.o.CheckpointDir != "" {
+		cp.SessionRepo = filepath.Join(r.o.CheckpointDir, s.ID+".git")
+	}
+	return cp
+}
+
+// Rewind restores the working directory of an idle session to the files
+// of a turn's checkpoint (spec 034). It first checkpoints the current
+// state when it differs from the last one, so nothing is lost, and
+// appends session.rewound. The conversation is not cut.
+func (r *Runner) Rewind(ctx context.Context, id string, turn int, by session.Sender) (_ session.SessionRewound, err error) {
+	st := r.o.Store
+	lease, err := st.Acquire(ctx, id, session.Holder{Runner: r.o.ID, AcquiredAt: r.o.Clock()})
+	if err != nil {
+		return session.SessionRewound{}, err
+	}
+	defer func() { err = errors.Join(err, lease.Release()) }()
+	s, err := st.Get(ctx, id)
+	if err != nil {
+		return session.SessionRewound{}, err
+	}
+	if s.Status != session.StatusIdle {
+		return session.SessionRewound{}, &models.Coded{Code: checkpoint.CodeRewindNotIdle, Message: fmt.Sprintf("session %s is %s", id, s.Status)}
+	}
+	evs, err := st.Events(ctx, id, 1, 0)
+	if err != nil {
+		return session.SessionRewound{}, err
+	}
+	target, rewinds := checkpointOf(evs, turn)
+	if target == nil {
+		return session.SessionRewound{}, &models.Coded{Code: checkpoint.CodeMissing, Message: fmt.Sprintf("turn %d of %s has no checkpoint", turn, id)}
+	}
+	cfg, err := r.o.Harness(ctx, s)
+	if err != nil {
+		return session.SessionRewound{}, err
+	}
+	defer func() { err = errors.Join(err, cfg.Machine.Release(context.WithoutCancel(ctx), false)) }()
+	cp := r.checkpointer(cfg, s)
+	previous := harness.LastCheckpoint(evs, "")
+	saved, made, err := cp.Save(ctx, rewinds+1, previous)
+	if err != nil {
+		return session.SessionRewound{}, err
+	}
+	savedCommit := previous
+	rw := session.SessionRewound{ToTurn: turn, Checkpoint: *target, By: by}
+	if made {
+		savedCommit = saved.Commit
+		rw.Saved = &saved
+	} else if last := lastCheckpointRef(evs); last != nil {
+		rw.Saved = last
+	}
+	if err := cp.Restore(ctx, target.Commit, savedCommit); err != nil {
+		return session.SessionRewound{}, err
+	}
+	e, err := session.NewEvent(session.TypeSessionRewound, rw, r.o.Clock())
+	if err != nil {
+		return session.SessionRewound{}, err
+	}
+	if _, err := NewLog(st, id, s.LastSeq).Append(ctx, []session.Event{e}); err != nil {
+		return session.SessionRewound{}, err
+	}
+	return rw, nil
+}
+
+// checkpointOf finds the checkpoint of a turn of the session's own
+// thread, and counts the rewinds so far.
+func checkpointOf(evs []session.Event, turn int) (*session.CheckpointRef, int) {
+	var cp *session.CheckpointRef
+	rewinds := 0
+	for _, e := range evs {
+		if e.Redacted() || e.Thread != "" {
+			continue
+		}
+		switch e.Type {
+		case session.TypeSessionRewound:
+			rewinds++
+		case session.TypeSessionStatus:
+			var p session.SessionStatus
+			if e.Turn == turn && e.Decode(&p) == nil && p.Checkpoint != nil {
+				c := *p.Checkpoint
+				cp = &c
+			}
+		}
+	}
+	return cp, rewinds
+}
+
+func lastCheckpointRef(evs []session.Event) *session.CheckpointRef {
+	for _, e := range slices.Backward(evs) {
+		var p session.SessionStatus
+		if e.Type == session.TypeSessionStatus && e.Thread == "" && !e.Redacted() && e.Decode(&p) == nil && p.Checkpoint != nil {
+			return p.Checkpoint
+		}
+	}
+	return nil
 }
 
 // attached reads what the log's attachments say about the prompt's

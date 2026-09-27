@@ -89,6 +89,10 @@ type Config struct {
 	// context is cleared and then compacted (spec 010): zero is 0.8, and
 	// it is held between 0.5 and 0.95.
 	CompactAt float64
+	// Checkpoint takes the turn's checkpoint of the working directory
+	// (spec 034), chained to previous; nil takes none. It returns nil for
+	// a machine that keeps no checkpoints.
+	Checkpoint func(ctx context.Context, turn int, previous string) (*session.CheckpointRef, error)
 	// Sleep waits between attempts; nil waits on a timer.
 	Sleep    func(ctx context.Context, d time.Duration) error
 	Observer Observer
@@ -247,7 +251,15 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 	if t.s.EndOnIdle && reason == session.StopEndTurn {
 		status, reason = session.StatusEnded, session.StopCompleted
 	}
-	e, err := t.event(session.TypeSessionStatus, session.SessionStatus{Status: status, StopReason: reason, Detail: detail})
+	cp, cerr := t.checkpoint(ctx)
+	if cerr != nil {
+		se, err := t.sessionError(CodeCheckpointFailed, cerr.Error(), true, "")
+		if err != nil {
+			return err
+		}
+		before = append(before, se)
+	}
+	e, err := t.event(session.TypeSessionStatus, session.SessionStatus{Status: status, StopReason: reason, Detail: detail, Checkpoint: cp})
 	if err != nil {
 		return err
 	}
@@ -255,6 +267,34 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 		return err
 	}
 	return &errStop{Outcome{Status: status, StopReason: reason, Detail: detail, Pending: t.pending()}}
+}
+
+// CodeCheckpointFailed records a turn whose checkpoint could not be
+// taken; the turn still ends.
+const CodeCheckpointFailed = "checkpoint_failed"
+
+// checkpoint takes the turn's checkpoint, chained to the thread's last
+// one in the log.
+func (t *turn) checkpoint(ctx context.Context) (*session.CheckpointRef, error) {
+	if t.h.c.Checkpoint == nil {
+		return nil, nil
+	}
+	return t.h.c.Checkpoint(context.WithoutCancel(ctx), t.num, LastCheckpoint(t.log, t.thread))
+}
+
+// LastCheckpoint is the commit of the thread's latest checkpoint in the
+// log, or empty.
+func LastCheckpoint(log []session.Event, thread string) string {
+	for _, e := range slices.Backward(log) {
+		if e.Type != session.TypeSessionStatus || e.Thread != thread || e.Redacted() {
+			continue
+		}
+		var p session.SessionStatus
+		if e.Decode(&p) == nil && p.Checkpoint != nil {
+			return p.Checkpoint.Commit
+		}
+	}
+	return ""
 }
 
 // pending reports a person's event after the last sequence a request

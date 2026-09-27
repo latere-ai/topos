@@ -63,6 +63,13 @@ committed: the commit log already holds that.
   and `topos confirm` answers a pending call and continues it. The exit
   code says how the turn ended: 0 done, 1 error, 2 usage, 3 waiting for a
   person, 4 at a limit, 5 interrupted.
+- Every turn ends with a checkpoint: a git commit of the working
+  directory's tree under `refs/topos/checkpoints/<session>/<turn>`, written
+  through a temporary index so HEAD, branches and the index are never
+  touched, with credential files and files over 100 MiB left out. Outside
+  a repository the objects go to a session repository under the data
+  directory. `topos rewind <session> <turn>` restores the working
+  directory to a turn's checkpoint, saving the current state first.
 
 ## v0.7.0 - 2026-09-26
 

@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -116,6 +117,8 @@ func (c *cli) run(ctx context.Context, args []string) int {
 		return runCmd(ctx, args[1:], c)
 	case "confirm":
 		return confirmCmd(ctx, args[1:], c)
+	case "rewind":
+		return rewindCmd(ctx, args[1:], c)
 	case "-h", "--help", "help":
 		usage(c.stdout)
 		return ExitOK
@@ -129,6 +132,7 @@ func usage(w *console) {
 	w.printf("%s", `usage:
   topos run [flags] [<prompt>]        run a turn of a local session in the working directory
   topos confirm <session> <tool_use_id> allow|deny [--note <text>] [--remember <pattern>]
+  topos rewind <session> <turn>       restore the working directory to the end of a turn
   topos version
 `)
 }
@@ -253,6 +257,40 @@ func confirmCmd(ctx context.Context, args []string, env *cli) int {
 		return report(env, err)
 	}
 	return l.drive(ctx, pos[0], o, env)
+}
+
+func rewindCmd(ctx context.Context, args []string, env *cli) int {
+	if len(args) != 2 {
+		env.stderr.println("topos: rewind takes <session> <turn>")
+		return ExitUsage
+	}
+	turn, err := strconv.Atoi(args[1])
+	if err != nil || turn < 1 {
+		env.stderr.println("topos: the turn is a number from 1")
+		return ExitUsage
+	}
+	l, err := openLocal(env, runOptions{})
+	if err != nil {
+		return report(env, err)
+	}
+	r, err := l.runner(runOptions{})
+	if err != nil {
+		return report(env, err)
+	}
+	rw, err := r.Rewind(ctx, args[0], turn, l.person)
+	if err != nil {
+		return report(env, err)
+	}
+	env.stdout.printf("restored the working directory to the end of turn %d (%s)\n", rw.ToTurn, rw.Checkpoint.Commit)
+	return ExitOK
+}
+
+// runner is the local runner over the store.
+func (l *local) runner(o runOptions) (*runner.Runner, error) {
+	return runner.New(runner.Options{
+		Store: l.store, Harness: l.config(o), ID: "topos-" + fmt.Sprint(os.Getpid()), Kind: runner.KindLocal,
+		CheckpointDir: filepath.Join(l.dataDir, "checkpoints"),
+	})
 }
 
 // splitPositional takes the first n arguments that are not flags as
@@ -485,7 +523,7 @@ func (l *local) drive(ctx context.Context, id string, o runOptions, env *cli) in
 			}
 		}
 	}()
-	r, err := runner.New(runner.Options{Store: l.store, Harness: l.config(o), ID: "topos-" + fmt.Sprint(os.Getpid()), Kind: runner.KindLocal})
+	r, err := l.runner(o)
 	if err != nil {
 		return report(env, err)
 	}

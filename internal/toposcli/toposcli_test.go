@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -337,5 +338,39 @@ func TestAScriptedRun(t *testing.T) {
 	code, out, errOut := f.run("run", "--model", "scripted", "Find the text files.")
 	if code != ExitOK || out != "Found notes.txt.\n" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+func TestRewindFromTheCommand(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	f := setup(t)
+	notes := filepath.Join(f.work, "notes.txt")
+	if err := os.WriteFile(notes, []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.stub.Script(model, reply(text("first")))
+	if code, _, errOut := f.run("run", "--model", model, "One."); code != ExitOK {
+		t.Fatalf("exit %d %s", code, errOut)
+	}
+	id := f.sessions()[0].ID
+	if err := os.WriteFile(notes, []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := f.run("rewind", id, "1")
+	if code != ExitOK || !strings.Contains(out, "end of turn 1") {
+		t.Fatalf("rewind: exit %d %q %q", code, out, errOut)
+	}
+	if b, err := os.ReadFile(notes); err != nil || string(b) != "one\n" {
+		t.Fatalf("notes %q, %v", b, err)
+	}
+	for _, args := range [][]string{{"rewind", id}, {"rewind", id, "zero"}, {"rewind", id, "0"}} {
+		if code, _, _ := f.run(args...); code != ExitUsage {
+			t.Fatalf("%v exits %d", args, code)
+		}
+	}
+	if code, _, _ := f.run("rewind", id, "7"); code != ExitError {
+		t.Fatalf("a turn with no checkpoint exits %d", code)
 	}
 }

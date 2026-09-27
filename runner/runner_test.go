@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -610,5 +611,156 @@ func TestAttachedSetsThePromptSections(t *testing.T) {
 	}
 	if git, memory := attached([]session.Event{m, plain}); git || memory {
 		t.Fatal("a later machine outside a repository kept the git section")
+	}
+}
+
+func TestCheckpointsAndRewind(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	f := setup(t)
+	f.r.o.CheckpointDir = filepath.Join(filepath.Dir(f.work), "checkpoints")
+	ctx := t.Context()
+	notes := filepath.Join(f.work, "notes.txt")
+	write(t, notes, "first draft\n")
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "one"}))
+	f.message(ctx, "Turn one.")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	write(t, notes, "second draft\n")
+	write(t, filepath.Join(f.work, "extra.txt"), "added in turn two\n")
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "two"}))
+	f.message(ctx, "Turn two.")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp1, _ := checkpointOf(evs, 1)
+	cp2, _ := checkpointOf(evs, 2)
+	if cp1 == nil || cp2 == nil || cp1.Commit == cp2.Commit || !strings.HasSuffix(cp2.Ref, f.s.ID+"/2") {
+		t.Fatalf("checkpoints %+v %+v", cp1, cp2)
+	}
+	if n := f.count(ctx, session.TypeSessionError); n != 0 {
+		t.Fatalf("%d session errors", n)
+	}
+
+	write(t, notes, "unsaved edit\n")
+	rw, err := f.r.Rewind(ctx, f.s.ID, 1, f.s.Initiator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rw.ToTurn != 1 || rw.Checkpoint.Commit != cp1.Commit || rw.Saved == nil || rw.Saved.Commit == cp2.Commit {
+		t.Fatalf("rewound %+v; the unsaved edit gets its own saved checkpoint", rw)
+	}
+	if b, err := os.ReadFile(notes); err != nil || string(b) != "first draft\n" {
+		t.Fatalf("notes after rewind %q, %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(f.work, "extra.txt")); !os.IsNotExist(err) {
+		t.Fatalf("a file turn one lacked survived the rewind: %v", err)
+	}
+	f.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{{Type: ir.BlockText, Text: "three"}}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
+		for _, m := range r.Messages {
+			for _, b := range m.Blocks {
+				if strings.Contains(b.Text, "restored to its state at the end of turn 1") {
+					return nil
+				}
+			}
+		}
+		return errors.New("the model was not told of the rewind")
+	}})
+	f.message(ctx, "Turn three.")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := f.r.Rewind(ctx, f.s.ID, 3, f.s.Initiator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Saved == nil || unchanged.Saved.Ref != unchanged.Checkpoint.Ref {
+		t.Fatalf("a rewind over an unchanged tree saved %+v", unchanged.Saved)
+	}
+
+	var coded *models.Coded
+	if _, err := f.r.Rewind(ctx, f.s.ID, 9, f.s.Initiator); !errors.As(err, &coded) || coded.Code != "checkpoint_missing" {
+		t.Fatalf("a turn with no checkpoint: %v", err)
+	}
+	f.send(ctx, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning})
+	if _, err := f.r.Rewind(ctx, f.s.ID, 1, f.s.Initiator); !errors.As(err, &coded) || coded.Code != "rewind_not_idle" {
+		t.Fatalf("a running session: %v", err)
+	}
+}
+
+func TestRewindReportsWhatStopsIt(t *testing.T) {
+	f := setup(t)
+	ctx := t.Context()
+	if _, err := f.r.Rewind(ctx, session.NewID(session.PrefixSession), 1, f.s.Initiator); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("a missing session: %v", err)
+	}
+	cp := session.CheckpointRef{Ref: "refs/topos/checkpoints/x/1", Commit: strings.Repeat("a", 40)}
+	e, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopEndTurn, Checkpoint: &cp}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Turn = 1
+	s, err := f.store.Get(ctx, f.s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := []session.Event{e}
+	session.Stamp(f.s.ID, s.LastSeq, evs)
+	if _, err := f.store.Append(ctx, f.s.ID, s.LastSeq, evs); err != nil {
+		t.Fatal(err)
+	}
+	f.r.o.Harness = func(context.Context, session.Session) (harness.Config, error) {
+		return harness.Config{}, errors.New("no machine today")
+	}
+	if _, err := f.r.Rewind(ctx, f.s.ID, 1, f.s.Initiator); err == nil || !strings.Contains(err.Error(), "no machine today") {
+		t.Fatalf("a failing configuration: %v", err)
+	}
+	l, err := f.store.Acquire(ctx, f.s.ID, session.Holder{Runner: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Release()
+	if _, err := f.r.Rewind(ctx, f.s.ID, 1, f.s.Initiator); !errors.Is(err, session.ErrLocked) {
+		t.Fatalf("a held session: %v", err)
+	}
+}
+
+func TestAFailedCheckpointStillEndsTheTurn(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	f := setup(t)
+	blocker := filepath.Join(filepath.Dir(f.work), "not-a-dir")
+	write(t, blocker, "x")
+	f.r.o.CheckpointDir = blocker
+	ctx := t.Context()
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "done"}))
+	f.message(ctx, "Go.")
+	out, err := f.r.Drive(ctx, f.s.ID)
+	if err != nil || out.StopReason != session.StopEndTurn {
+		t.Fatalf("drive %+v, %v", out, err)
+	}
+	evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range evs {
+		var p session.SessionError
+		if e.Type == session.TypeSessionError && e.Decode(&p) == nil && p.Code == harness.CodeCheckpointFailed {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no checkpoint_failed error")
+	}
+	if cp := lastCheckpointRef(evs); cp != nil {
+		t.Fatalf("a checkpoint %+v after a failure", cp)
 	}
 }
