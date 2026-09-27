@@ -164,8 +164,6 @@ func TestEndAndDelete(t *testing.T) {
 	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/end", "alice", `{"reason":"paused"}`); a.code() != CodeInvalidRequest {
 		t.Fatalf("a reason that ends nothing: %d %s", a.status, a.body)
 	}
-	running := s
-	running.ID = ""
 	ev, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning}, time.Now())
 	if err != nil {
 		t.Fatal(err)

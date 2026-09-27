@@ -232,7 +232,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 				t.Errorf("%s asked %s, which its row does not name", rt.op, q)
 			}
 		}
-		if !slices.Contains(asked, rt.actions[0]) && !(rt.op == "applyAgent" && slices.Contains(asked, rt.actions[1])) {
+		if !slices.Contains(asked, rt.actions[0]) && (rt.op != "applyAgent" || !slices.Contains(asked, rt.actions[1])) {
 			t.Errorf("%s asked %v, not its own %s", rt.op, asked, rt.actions[0])
 		}
 	}

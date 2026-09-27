@@ -269,7 +269,7 @@ func (c *call) blob() error {
 	}
 	defer func() {
 		if err := rc.Close(); err != nil {
-			c.s.o.Log.Warn("close a blob", "session", s.ID, "err", err)
+			c.s.o.Log.WarnContext(c.r.Context(), "close a blob", "session", s.ID, "err", err)
 		}
 	}()
 	c.w.Header().Set("Content-Type", "application/octet-stream")

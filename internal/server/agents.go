@@ -40,7 +40,7 @@ func (c *call) agent(ref, action string) (store.Agent, *v1.Agent, error) {
 	if err != nil {
 		return store.Agent{}, nil, err
 	}
-	if _, err := c.ask(action, agentResource(a, doc.Spec.Identity)); err != nil {
+	if _, err := c.ask(c.r.Context(), action, agentResource(a, doc.Spec.Identity)); err != nil {
 		return store.Agent{}, nil, err
 	}
 	return a, doc, nil
@@ -82,7 +82,7 @@ func (l scopedLookup) Agent(ctx context.Context, ref string) (*v1.Agent, error) 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := l.c.ask(authorizer.ActionAgentRead, agentResource(a, doc.Spec.Identity)); err != nil {
+	if _, err := l.c.ask(ctx, authorizer.ActionAgentRead, agentResource(a, doc.Spec.Identity)); err != nil {
 		if auth.Code(err) == auth.CodeNotFound {
 			return nil, store.ErrNotFound
 		}
@@ -118,7 +118,7 @@ func (c *call) applyAgent() error {
 	case err != nil && !errors.Is(err, store.ErrNotFound):
 		return err
 	case exists:
-		if _, err := c.ask(authorizer.ActionAgentUpdate, agentResource(stored, r.Agent.Spec.Identity)); err != nil {
+		if _, err := c.ask(c.r.Context(), authorizer.ActionAgentUpdate, agentResource(stored, r.Agent.Spec.Identity)); err != nil {
 			return err
 		}
 		if stored.ArchivedAt != nil {
@@ -133,7 +133,7 @@ func (c *call) applyAgent() error {
 			return c.reply(http.StatusOK, r.Agent)
 		}
 	default:
-		if _, err := c.ask(authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", map[string]any{"name": name, "identity": r.Agent.Spec.Identity})); err != nil {
+		if _, err := c.ask(c.r.Context(), authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", map[string]any{"name": name, "identity": r.Agent.Spec.Identity})); err != nil {
 			return err
 		}
 	}
@@ -163,7 +163,7 @@ func (c *call) listAgents() error {
 	if err != nil {
 		return err
 	}
-	d, err := c.ask(authorizer.ActionAgentList, authz.NewResource(authorizer.KindAgent, "", nil))
+	d, err := c.ask(c.r.Context(), authorizer.ActionAgentList, authz.NewResource(authorizer.KindAgent, "", nil))
 	if err != nil {
 		return err
 	}

@@ -100,10 +100,10 @@ func TestOpenAPIMatchesHandlers(t *testing.T) {
 func TestARouteAsksOnlyItsActions(t *testing.T) {
 	f := newFixture(t)
 	c := &call{s: nil, r: httptest.NewRequest(http.MethodGet, "/", nil), rt: &route{method: http.MethodGet, path: "/x", actions: []string{authorizer.ActionAgentRead}}}
-	if _, err := c.ask(authorizer.ActionAgentArchive, authz.Resource{}); err == nil {
+	if _, err := c.ask(t.Context(), authorizer.ActionAgentArchive, authz.Resource{}); err == nil {
 		t.Fatal("asked an action the row does not name")
 	}
-	if _, err := c.askCreate(authorizer.ActionSessionCreate, authz.Resource{}); err == nil {
+	if _, err := c.askCreate(t.Context(), authorizer.ActionSessionCreate, authz.Resource{}); err == nil {
 		t.Fatal("asked a create the row does not name")
 	}
 	if len(f.authz.take()) != 0 {

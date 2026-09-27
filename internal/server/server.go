@@ -177,7 +177,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, rt *route) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, max(rt.body, 1))
 	if r.Method == http.MethodPost && r.Header.Get("Idempotency-Key") != "" {
-		s.idempotent(c)
+		s.idempotent(r.Context(), c)
 		return
 	}
 	if err := rt.handle(c); err != nil {
@@ -186,20 +186,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, rt *route) {
 }
 
 // ask asks the route's question, or one of the others it names.
-func (c *call) ask(action string, res authz.Resource) (authz.Decision, error) {
+func (c *call) ask(ctx context.Context, action string, res authz.Resource) (authz.Decision, error) {
 	if !slices.Contains(c.rt.actions, action) {
 		return authz.Decision{}, fmt.Errorf("server: %s %s asked %s, which its row does not name", c.rt.method, c.rt.path, action)
 	}
-	return c.s.o.Guard.Ask(c.r.Context(), auth.Envelope(c.caller, action, res, c.r))
+	return c.s.o.Guard.Ask(ctx, auth.Envelope(c.caller, action, res, c.r))
 }
 
 // askCreate asks a create question and decodes the limits its allow
 // carries.
-func (c *call) askCreate(action string, res authz.Resource) (authorizer.Limits, error) {
+func (c *call) askCreate(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error) {
 	if !slices.Contains(c.rt.actions, action) {
 		return authorizer.Limits{}, fmt.Errorf("server: %s %s asked %s, which its row does not name", c.rt.method, c.rt.path, action)
 	}
-	return c.s.o.Guard.Create(c.r.Context(), auth.Envelope(c.caller, action, res, c.r))
+	return c.s.o.Guard.Create(ctx, auth.Envelope(c.caller, action, res, c.r))
 }
 
 // body reads the request body.
@@ -289,7 +289,7 @@ func (c *call) replyPage(items any, next string) error {
 // idempotent answers a POST that carries an Idempotency-Key: a repeat
 // from the same subject with the same body within the window answers
 // the stored answer, and the same key with another body is refused.
-func (s *Server) idempotent(c *call) {
+func (s *Server) idempotent(ctx context.Context, c *call) {
 	body, err := c.body()
 	if err != nil {
 		writeError(c.w, s.o.Log, err)
@@ -301,7 +301,8 @@ func (s *Server) idempotent(c *call) {
 		Route: c.rt.method + " " + c.r.URL.Path, BodyHash: hex.EncodeToString(sum[:]),
 		ExpiresAt: s.o.Now().Add(IdempotencyTTL),
 	}
-	ctx := context.WithoutCancel(c.r.Context())
+	// The record outlives a caller that hangs up mid-answer.
+	ctx = context.WithoutCancel(ctx)
 	held, fresh, err := s.o.Objects.Begin(ctx, rec)
 	switch {
 	case err != nil:
@@ -318,7 +319,7 @@ func (s *Server) idempotent(c *call) {
 		c.w.Header().Set("Idempotent-Replayed", "true")
 		c.w.WriteHeader(held.Status)
 		if _, err := c.w.Write(held.Body); err != nil {
-			s.o.Log.Warn("replay an idempotent answer", "err", err)
+			s.o.Log.WarnContext(ctx, "replay an idempotent answer", "err", err)
 		}
 		return
 	}
@@ -330,13 +331,13 @@ func (s *Server) idempotent(c *call) {
 	}
 	if rw.status >= http.StatusInternalServerError {
 		if err := s.o.Objects.Abandon(ctx, rec.Subject, rec.Key); err != nil {
-			s.o.Log.Error("abandon an idempotency key", "err", err)
+			s.o.Log.ErrorContext(ctx, "abandon an idempotency key", "err", err)
 		}
 		return
 	}
 	rec.Status, rec.ContentType, rec.Body = rw.status, rw.Header().Get("Content-Type"), rw.body.Bytes()
 	if err := s.o.Objects.Finish(ctx, rec); err != nil {
-		s.o.Log.Error("store an idempotent answer", "err", err)
+		s.o.Log.ErrorContext(ctx, "store an idempotent answer", "err", err)
 	}
 }
 

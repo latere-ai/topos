@@ -37,7 +37,7 @@ func (c *call) session(action string, fields map[string]any) (session.Session, e
 	if err != nil {
 		return session.Session{}, err
 	}
-	if _, err := c.ask(action, sessionResource(s, fields)); err != nil {
+	if _, err := c.ask(c.r.Context(), action, sessionResource(s, fields)); err != nil {
 		return session.Session{}, err
 	}
 	return s, nil
@@ -127,7 +127,7 @@ func (c *call) createSession() error {
 		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
 		"runner": session.RunnerHosted, "machine": kind, "initiator": c.caller.Subject,
 	})
-	limits, err := c.askCreate(authorizer.ActionSessionCreate, res)
+	limits, err := c.askCreate(ctx, authorizer.ActionSessionCreate, res)
 	if err != nil {
 		return err
 	}
