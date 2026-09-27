@@ -1,0 +1,6 @@
+# Fetch is gone as a word, FetchOr keeps its name, and a test the model
+# never saw calls Lookup.
+- no_match: {glob: "**/*.go", pattern: '\bFetch\b'}
+- file: {path: kv/kv.go, contains: ["func Lookup(", "// Lookup returns", "func FetchOr("]}
+- go: {args: [test, ./...]}
+- go: {args: [test, -run, TestLookupHidden, ./kv], overlay: testdata/hidden}

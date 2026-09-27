@@ -1,0 +1,5 @@
+name: fixtest
+category: coding
+prompt: |
+  The test of this Go module fails. Find the bug in wordcount.go and fix
+  it so that `go test ./...` passes. Do not change the test.

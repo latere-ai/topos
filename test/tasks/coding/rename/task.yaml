@@ -1,0 +1,6 @@
+name: rename
+category: coding
+prompt: |
+  Rename the function kv.Fetch to kv.Lookup everywhere in this module:
+  its definition, its doc comment, every call site and the tests. Change
+  nothing else, and make sure `go test ./...` passes.

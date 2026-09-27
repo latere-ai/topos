@@ -1,0 +1,11 @@
+# The JSON is the CSV's rows, and it was written in one write call long
+# enough to need an answer past 4096 output tokens, the cap of v0.7.0.
+- file: {path: inventory.json, json_equals_file: testdata/inventory.json}
+- call:
+    tool: write
+    outcome: ok
+    input:
+      path: {matches: 'inventory\.json$'}
+      content: {min_length: 16000}
+- no_call: {tool: bash}
+- unchanged: [inventory.csv]

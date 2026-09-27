@@ -1,0 +1,7 @@
+- file: {path: config/app.yaml, equals: "name: shop\nport: 8080\ndebug: false"}
+- file: {path: out/summary.txt, contains: ["8080"]}
+- only_files: [config/app.yaml, out/summary.txt]
+- call:
+    tool: write
+    outcome: ok
+    input: {path: {equals: "${WORKDIR}/out/summary.txt"}}

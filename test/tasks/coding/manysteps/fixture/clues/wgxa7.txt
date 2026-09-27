@@ -1,0 +1,2 @@
+Clue 8. The letter of this clue is "b".
+Next: clues/tet78.txt

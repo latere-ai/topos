@@ -1,0 +1,9 @@
+steps:
+  - tool_calls:
+      - name: bash
+        input: {command: go run . > stamp.txt, description: run the program}
+  - tool_calls:
+      - name: read
+        input: {path: stamp.txt}
+  - expect: {tool_result_contains: "stamp e307fa92"}
+    text: stamp.txt holds the program's output.

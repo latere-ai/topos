@@ -1,0 +1,5 @@
+# The module's own test passes, it is the one the fixture shipped, and a
+# test the model never saw passes too.
+- unchanged: [wordcount_test.go]
+- go: {args: [test, ./...]}
+- go: {args: [test, ./...], overlay: testdata/hidden}

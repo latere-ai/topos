@@ -1,0 +1,16 @@
+name: readparent
+category: threads
+# The subagent shares the session's machine: it reads what its parent
+# wrote. In v0.7.0 a delegated agent ran in a fresh, empty sandbox and
+# could not.
+agent:
+  subagents:
+    reader:
+      instructions: You read files in the working directory and report what they hold.
+      tools: [read, write]
+prompt: |
+  Write the three primary colors of light to colors.txt, one per line, in
+  lower case, in the order red, green, blue. Then spawn the reader
+  subagent with a task that tells it to read colors.txt in the working
+  directory and write the number of lines colors.txt holds, as a bare
+  number, to count.txt. Do not write count.txt yourself.

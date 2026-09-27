@@ -1,0 +1,4 @@
+- go: {args: [test, ./...]}
+- file: {path: stats_test.go, matches: 'Median\('}
+- unchanged: [go.mod]
+- go: {args: [test, -run, TestMedianHidden, ./...], overlay: testdata/hidden}

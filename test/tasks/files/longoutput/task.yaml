@@ -1,0 +1,8 @@
+name: longoutput
+category: files
+prompt: |
+  Convert inventory.csv to inventory.json: a JSON array holding one
+  object per row of the CSV, in the file's order, with the keys sku,
+  name, quantity and price. quantity and price are JSON numbers; sku and
+  name are strings. Write inventory.json yourself with the write tool, in
+  one call. Do not write a program or run a command to convert it.

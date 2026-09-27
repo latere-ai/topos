@@ -1,0 +1,5 @@
+- file: {path: stamp.txt, equals: "stamp e307fa92faab6695c5cf25ea97b6227b537c16c2802a3bf15d0c16c70b1d8f3c"}
+- call:
+    tool: bash
+    outcome: ok
+    input: {command: {contains: go run}}

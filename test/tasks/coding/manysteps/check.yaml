@@ -1,0 +1,3 @@
+# The word is only known by reading all 24 files in order.
+- file: {path: answer.txt, equals: qzmxkvrbtwlpjhdnygcfsaue}
+- call: {tool: read, outcome: ok, min: 24}

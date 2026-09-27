@@ -1,0 +1,12 @@
+name: manysteps
+category: coding
+# Only read and write: each file names the next, so the chain takes one
+# step per file, more than the 16 model calls v0.7.0 stopped after.
+agent:
+  tools: [read, write]
+prompt: |
+  start.txt is the first of a chain of clue files. Each clue file holds
+  one letter and names the next file of the chain, relative to the
+  working directory, until a file whose next is "none". Follow the chain
+  from start.txt to its end and write the letters in chain order, as one
+  word with no spaces, to answer.txt.

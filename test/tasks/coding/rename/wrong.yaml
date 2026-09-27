@@ -1,0 +1,18 @@
+# Renames the definition and its call sites but leaves the tests, which
+# no longer compile.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: kv/kv.go}
+      - name: read
+        input: {path: report/report.go}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv.go, old_string: "Fetch(m", new_string: "Lookup(m", replace_all: true}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv.go, old_string: "// Fetch returns", new_string: "// Lookup returns"}
+  - tool_calls:
+      - name: edit
+        input: {path: report/report.go, old_string: "kv.Fetch(", new_string: "kv.Lookup(", replace_all: true}
+  - text: Renamed.

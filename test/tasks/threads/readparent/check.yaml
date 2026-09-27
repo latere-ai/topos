@@ -1,0 +1,17 @@
+- file: {path: colors.txt, equals: "red\ngreen\nblue"}
+- file: {path: count.txt, equals: "3"}
+- call: {tool: spawn, thread: root, outcome: ok}
+- call:
+    tool: read
+    thread: sub
+    outcome: ok
+    input: {path: {matches: 'colors\.txt$'}}
+- call:
+    tool: write
+    thread: sub
+    outcome: ok
+    input: {path: {matches: 'count\.txt$'}}
+- no_call:
+    tool: write
+    thread: root
+    input: {path: {matches: 'count\.txt$'}}

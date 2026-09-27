@@ -1,0 +1,21 @@
+# The parent writes colors.txt and spawns the reader; the subagent's
+# requests come next in the script, then the parent's last one.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: colors.txt, content: "red\ngreen\nblue\n"}
+  - tool_calls:
+      - name: spawn
+        input:
+          agent: reader
+          task: Read colors.txt in the working directory and write the number of lines it holds, as a bare number, to count.txt.
+  - tool_calls:
+      - name: read
+        input: {path: colors.txt}
+  - expect: {tool_result_contains: green}
+    tool_calls:
+      - name: write
+        input: {path: count.txt, content: "3\n"}
+  - text: colors.txt holds 3 lines; count.txt says 3.
+  - expect: {tool_result_contains: count.txt says 3}
+    text: The reader counted 3 lines in colors.txt.

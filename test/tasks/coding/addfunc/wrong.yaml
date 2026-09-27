@@ -1,0 +1,56 @@
+# Sorts xs in place, which reorders the caller's slice.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: stats.go}
+      - name: read
+        input: {path: stats_test.go}
+  - tool_calls:
+      - name: edit
+        input:
+          path: stats.go
+          old_string: |
+            import "errors"
+          new_string: |
+            import (
+            	"errors"
+            	"sort"
+            )
+  - tool_calls:
+      - name: edit
+        input:
+          path: stats.go
+          old_string: |
+            return sum / float64(len(xs)), nil
+            }
+          new_string: |
+            return sum / float64(len(xs)), nil
+            }
+
+            // Median returns the middle value of xs.
+            func Median(xs []float64) (float64, error) {
+            	if len(xs) == 0 {
+            		return 0, ErrEmpty
+            	}
+            	sort.Float64s(xs)
+            	m := len(xs) / 2
+            	if len(xs)%2 == 1 {
+            		return xs[m], nil
+            	}
+            	return (xs[m-1] + xs[m]) / 2, nil
+            }
+  - tool_calls:
+      - name: edit
+        input:
+          path: stats_test.go
+          old_string: |
+            func TestMean(t *testing.T) {
+          new_string: |
+            func TestMedian(t *testing.T) {
+            	if got, err := Median([]float64{3, 1, 2}); err != nil || got != 2 {
+            		t.Errorf("Median = %v, %v", got, err)
+            	}
+            }
+
+            func TestMean(t *testing.T) {
+  - text: Median is added.

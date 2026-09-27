@@ -1,0 +1,45 @@
+steps:
+  - tool_calls:
+      - name: grep
+        input: {pattern: '\bFetch\b', output_mode: content}
+  - expect: {tool_result_contains: report.go}
+    tool_calls:
+      - name: read
+        input: {path: kv/kv.go}
+      - name: read
+        input: {path: kv/kv_test.go}
+      - name: read
+        input: {path: report/report.go}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv.go, old_string: "// Fetch returns", new_string: "// Lookup returns"}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv.go, old_string: "func Fetch(m", new_string: "func Lookup(m"}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv.go, old_string: ":= Fetch(m, key)", new_string: ":= Lookup(m, key)"}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv_test.go, old_string: "Fetch(m,", new_string: "Lookup(m,", replace_all: true}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv_test.go, old_string: "TestFetch(", new_string: "TestLookup("}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv_test.go, old_string: "t.Fatalf(\"Fetch =", new_string: "t.Fatalf(\"Lookup ="}
+  - tool_calls:
+      - name: edit
+        input: {path: kv/kv_test.go, old_string: "t.Fatal(\"Fetch found", new_string: "t.Fatal(\"Lookup found"}
+  - tool_calls:
+      - name: edit
+        input: {path: report/report.go, old_string: "kv.Fetch(settings", new_string: "kv.Lookup(settings", replace_all: true}
+  - tool_calls:
+      - name: grep
+        input: {pattern: '\bFetch\b', output_mode: content}
+  - expect: {tool_result_contains: "No matches."}
+    tool_calls:
+      - name: bash
+        input: {command: go test ./...}
+  - expect: {tool_result_contains: "ok  \texample.com/shop/kv"}
+    text: kv.Fetch is kv.Lookup everywhere, and the tests pass.
