@@ -1,6 +1,6 @@
 ---
 title: "manifest/v1: the Agent, Trigger, MemoryStore and Connection kinds, references, versioning, one resolver"
-status: testing
+status: complete
 track: core
 depends_on: [001-architecture.md]
 affects: [manifest/, manifest/v1/, manifest/testdata/]
