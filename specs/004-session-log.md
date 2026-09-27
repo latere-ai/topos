@@ -459,3 +459,43 @@ store's other backends ([[014-store]]); the routes that expose the log
 | The directory store and the in-memory store pass `session/storetest` | `session/dir.TestDirStoreConformance`, `session.TestMemoryStoreConformance` | built |
 | Every id the package mints matches its prefix and the ULID form, and a thread's id is its `thread.started` event id | `session.TestIdentifiersArePrefixedULIDs`; the `threads_and_messages` golden log of `session.TestFoldRendersEveryType` | built |
 | The directory store takes its lock on Windows with `LockFileEx` over one byte past the holder record, so a second open file is refused without waiting and still reads the holder; the session tree and its tests compile and pass `go vet` for Windows, and the lock contract every platform keeps passes on the host | `session/dir.TestTheStoreBuildsForWindows`, `session/dir.TestTheLockIsExclusiveAcrossOpenFiles`; the two-process half is `session/dir.TestDirStoreSingleWriterLock`, which needs a Windows runner to run there | built |
+
+## Outcome
+
+Built on 2026-09-27. The schema, the fold, the in-memory store and the
+directory store are in `session` and `session/dir`, with the
+conformance suite every store passes in `session/storetest`. Every row
+of the acceptance table passes; the Windows lock is proved by what a
+host without a Windows runner can run.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| the Session, the Event, the Sender and their byte form | `session/session.go`, `session/event.go` |
+| the prefixed ULIDs | `session/id.go` |
+| the fold and `Transcript.Check` | `session/fold.go` |
+| the `Store` interface, the errors and the in-memory store | `session/store.go`, `session/memory.go` |
+| the conformance suite | `session/storetest` |
+| the directory store: the layout, the durability steps, the batch marker, recovery under the lock, `Watch` polling every 250 ms | `session/dir/dir.go`, `session/dir/log.go` |
+| the lock: `flock` on Unix, `LockFileEx` on Windows, `ErrUnsupported` elsewhere | `session/dir/lock_unix.go`, `session/dir/lock_windows.go`, `session/dir/lock_other.go` |
+
+### What diverges from the design as written
+
+| What it said | What was built | Why |
+|---|---|---|
+| the event types table holds `session.resumed`, `approval.requested` and `approval.decided`, and the prefix table `apr_` | `session` defines none of the four; a log holding one of the types folds it as unknown, and a runner refuses that log with `schema_too_new` | they were added to the schema for [[007-models]] and [[012-permissions-and-approvals]], and the spec that first appends one adds it to `session` |
+| the Session carries `policy` and `requires` | `session.Session` has neither field | the merged policy is [[012-permissions-and-approvals]]'s, and no reader needs `requires` yet |
+| a reader keeps fields it does not know and writes them back unchanged | an event's payload is kept as raw JSON, but the Session and the Event decode into fixed structs, so a top-level field this build does not know is dropped when `session.json` is rewritten | no field has been added past v1; keeping unknown members needs the raw object carried beside the struct |
+| a gap or a repeat in the sequence is `ErrCorrupt`, which ends the session `failed` | the stores refuse with `ErrCorrupt`; nothing appends the `ended` `failed` status | not built: a runner that meets the error reports it and leaves the session as it is ([[016-runners]]) |
+| a blob is written as `blobs/sha256/<hex>.tmp` and renamed | the temporary file is `.<hex>.<random>.tmp` from `os.CreateTemp` | two writers of one blob never share a temporary file |
+| the lock is `LockFileEx` on Windows | it locks one byte at offset 2^62, past the holder record | a Windows byte-range lock is mandatory for the bytes it covers, so a lock over the record would stop a second process reading who holds the session |
+| the fold is `Fold` | `FoldOmittingRedacted` renders a transcript with redacted events left out | the one request that summarizes a range holding a redaction ([[010-context]]) |
+
+### What this leaves open
+
+| Open | Why |
+|---|---|
+| the two-process lock on Windows, and the directory store as a whole there | CI has no Windows runner; `session/dir.TestDirStoreSingleWriterLock` proves it where one runs, and `syncDir` flushes a directory handle, which is unproven on Windows |
+| the serve lock of `internal/store/dir` on Windows | it has no `LockFileEx` implementation; it is [[014-store]]'s |
+| `golang.org/x/sys` is now a direct requirement | the `depcheck` rows already admit it, and their reason names only grpc and the OpenTelemetry SDK |
