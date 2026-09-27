@@ -273,3 +273,31 @@ func TestTheRunnerVariables(t *testing.T) {
 		t.Fatalf("serve's runner tokens: %+v, %v", s.RunnerTokens, err)
 	}
 }
+
+// TestHostSessions: TOPOS_HOST_SESSIONS is off unless it is on, any other
+// value is a problem, and a runner role with it on reads the data
+// directory its session directories live in.
+func TestHostSessions(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "off": false, " on ": true} {
+		c, err := Load(RoleServe, serve(map[string]string{"TOPOS_HOST_SESSIONS": v}))
+		if err != nil || c.HostSessions != want {
+			t.Fatalf("TOPOS_HOST_SESSIONS=%q: %v, %v", v, c.HostSessions, err)
+		}
+	}
+	if _, err := Load(RoleServe, serve(map[string]string{"TOPOS_HOST_SESSIONS": "yes"})); err == nil || !strings.Contains(err.Error(), `TOPOS_HOST_SESSIONS is "yes", either on or off`) {
+		t.Fatalf("a value that is neither: %v", err)
+	}
+	runnerVars := map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example/anthropic", "TOPOS_DATA_DIR": "/srv/topos"}
+	r, err := Load(RoleRunner, env(runnerVars))
+	if err != nil || r.HostSessions || r.DataDir != "" {
+		t.Fatalf("a runner without host sessions: %+v, %v", r, err)
+	}
+	runnerVars["TOPOS_HOST_SESSIONS"] = "on"
+	if r, err = Load(RoleRunner, env(runnerVars)); err != nil || !r.HostSessions || r.DataDir != "/srv/topos" {
+		t.Fatalf("a runner with host sessions: %+v, %v", r, err)
+	}
+	delete(runnerVars, "TOPOS_DATA_DIR")
+	if _, err := Load(RoleRunner, env(runnerVars)); err == nil || !strings.Contains(err.Error(), "TOPOS_DATA_DIR") {
+		t.Fatalf("a runner with host sessions and no data directory: %v", err)
+	}
+}

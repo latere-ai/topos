@@ -105,6 +105,11 @@ type Config struct {
 	// InternalURL is where the runner role reaches a toposd's internal
 	// listener.
 	InternalURL string
+	// HostSessions is TOPOS_HOST_SESSIONS=on: the role runs hosted
+	// sessions whose agent asks for a host machine on its own host, each
+	// inside the mandatory host sandbox and a directory of its own under
+	// DataDir. Off, such a session is refused machine_unavailable.
+	HostSessions bool
 }
 
 // Defaults of the runner variables.
@@ -193,11 +198,15 @@ func Load(role string, getenv Getenv) (Config, error) {
 			problems = append(problems, "TOPOS_RUNNER_CAPACITY is 0, and a runner that runs no session has nothing to do")
 		}
 	}
-	if role == RoleServe || role == RoleCheck {
+	// A runner role keeps nothing of its own, so it reads the data
+	// directory only for the session directories of host sessions.
+	if role == RoleServe || role == RoleCheck || (role == RoleRunner && c.HostSessions) {
 		var err error
 		if c.DataDir, err = DataDir(getenv); err != nil {
 			problems = append(problems, "TOPOS_DATA_DIR is unset, and so are XDG_STATE_HOME and HOME")
 		}
+	}
+	if role == RoleServe || role == RoleCheck {
 		problems = append(problems, c.readRunner(getenv)...)
 		if c.PublicURL == "" {
 			problems = append(problems, "TOPOS_PUBLIC_URL is required; it is the base of every URL toposd writes")
@@ -238,6 +247,13 @@ func (c *Config) readRunner(getenv Getenv) []string {
 	c.CellaTokenFile = strings.TrimSpace(getenv("TOPOS_CELLA_TOKEN_FILE"))
 	c.MachineHelpers = withDefault(getenv("TOPOS_MACHINE_HELPERS"), DefaultMachineHelpers)
 	c.MachineDir = strings.TrimSpace(getenv("TOPOS_MACHINE_DIR"))
+	switch v := strings.TrimSpace(getenv("TOPOS_HOST_SESSIONS")); v {
+	case "", "off":
+	case "on":
+		c.HostSessions = true
+	default:
+		problems = append(problems, "TOPOS_HOST_SESSIONS is "+strconv.Quote(v)+", either on or off")
+	}
 	if c.MachineDir != "" && !strings.HasPrefix(c.MachineDir, "/") {
 		problems = append(problems, "TOPOS_MACHINE_DIR is "+strconv.Quote(c.MachineDir)+", not an absolute path inside the sandbox")
 	}
