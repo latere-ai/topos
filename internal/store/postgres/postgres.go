@@ -55,6 +55,9 @@ type Options struct {
 	Now func() time.Time
 	// Log receives the listener connection's failures; none by default.
 	Log *slog.Logger
+	// Blobs keeps the blob bodies outside the database (spec 014), each
+	// with a blobs row of location object; nil keeps them in blobs.body.
+	Blobs session.Blobs
 }
 
 // Store is the Postgres store.
@@ -65,6 +68,7 @@ type Store struct {
 	poll     time.Duration
 	ttl      time.Duration
 	now      func() time.Time
+	blobs    session.Blobs
 }
 
 // Open applies the migrations on dsn and connects.
@@ -97,7 +101,7 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	s := &Store{pool: pool, listen: listen, listener: newListener(listen, log), poll: o.Poll, ttl: o.LeaseTTL, now: o.Now}
+	s := &Store{pool: pool, listen: listen, listener: newListener(listen, log), poll: o.Poll, ttl: o.LeaseTTL, now: o.Now, blobs: o.Blobs}
 	if s.poll <= 0 {
 		s.poll = 2 * time.Second
 	}
@@ -158,6 +162,15 @@ func (s *Store) Create(ctx context.Context, sess session.Session, blobs map[sess
 	if err != nil {
 		return err
 	}
+	// A body kept outside is durable before its row, and before the
+	// session appears.
+	if s.blobs != nil {
+		for d, b := range blobs {
+			if err := s.blobs.PutBlob(ctx, sess.ID, d, b); err != nil {
+				return err
+			}
+		}
+	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var writerKind, writerSubject string
 		if sess.Writer != nil {
@@ -175,12 +188,35 @@ func (s *Store) Create(ctx context.Context, sess session.Session, blobs map[sess
 			return fmt.Errorf("postgres: create %s: %w", sess.ID, err)
 		}
 		for d, b := range blobs {
-			if _, err := tx.Exec(ctx, `INSERT INTO blobs (session_id, digest, size, body) VALUES ($1, $2, $3, $4)`, sess.ID, string(d), len(b), b); err != nil {
-				return fmt.Errorf("postgres: store blob %s: %w", d, err)
+			if err := s.insertBlob(ctx, tx, sess.ID, d, b, false); err != nil {
+				return err
 			}
 		}
 		return nil
 	})
+}
+
+// insertBlob writes a blob's row: its body in the row, or location
+// object when the body is kept outside.
+func (s *Store) insertBlob(ctx context.Context, q interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}, id string, d session.Digest, b []byte, tolerate bool) error {
+	location, body := "db", b
+	if s.blobs != nil {
+		location, body = "object", nil
+	}
+	query := `INSERT INTO blobs (session_id, digest, size, location, body) VALUES ($1, $2, $3, $4, $5)`
+	if tolerate {
+		query += ` ON CONFLICT DO NOTHING`
+	}
+	_, err := q.Exec(ctx, query, id, string(d), len(b), location, body)
+	if isForeignKey(err) {
+		return fmt.Errorf("%w: %s", session.ErrNotFound, id)
+	}
+	if err != nil {
+		return fmt.Errorf("postgres: store blob %s: %w", d, err)
+	}
+	return nil
 }
 
 func (s *Store) Get(ctx context.Context, id string) (session.Session, error) {
@@ -448,12 +484,16 @@ func (s *Store) PutBlob(ctx context.Context, id string, r io.Reader) (session.Di
 		return "", fmt.Errorf("postgres: read blob: %w", err)
 	}
 	d := session.DigestOf(b)
-	_, err = s.pool.Exec(ctx, `INSERT INTO blobs (session_id, digest, size, body) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, id, string(d), len(b), b)
-	if isForeignKey(err) {
-		return "", fmt.Errorf("%w: %s", session.ErrNotFound, id)
+	if s.blobs != nil {
+		if err := s.exists(ctx, id); err != nil {
+			return "", err
+		}
+		if err := s.blobs.PutBlob(ctx, id, d, b); err != nil {
+			return "", err
+		}
 	}
-	if err != nil {
-		return "", fmt.Errorf("postgres: store blob: %w", err)
+	if err := s.insertBlob(ctx, s.pool, id, d, b, true); err != nil {
+		return "", err
 	}
 	return d, nil
 }
@@ -466,12 +506,21 @@ func (s *Store) Blob(ctx context.Context, id string, d session.Digest) (io.ReadC
 		return nil, fmt.Errorf("%w: digest %q", session.ErrInvalid, d)
 	}
 	var body []byte
-	err := s.pool.QueryRow(ctx, `SELECT body FROM blobs WHERE session_id = $1 AND digest = $2`, id, string(d)).Scan(&body)
+	var location string
+	err := s.pool.QueryRow(ctx, `SELECT location, body FROM blobs WHERE session_id = $1 AND digest = $2`, id, string(d)).Scan(&location, &body)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: blob %s", session.ErrNotFound, d)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("postgres: read blob %s: %w", d, err)
+	}
+	if location == "object" {
+		if s.blobs == nil {
+			return nil, fmt.Errorf("%w: blob %s is kept outside the database, and this store is given no blob store", session.ErrCorrupt, d)
+		}
+		if body, err = s.blobs.GetBlob(ctx, id, d); err != nil {
+			return nil, err
+		}
 	}
 	if session.DigestOf(body) != d {
 		return nil, fmt.Errorf("%w: blob %s does not match its digest", session.ErrCorrupt, d)
@@ -483,7 +532,8 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 	if err := session.CheckID(session.PrefixSession, id); err != nil {
 		return err
 	}
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	var removed []session.Digest
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		sess, err := locked(ctx, tx, id)
 		if err != nil {
 			return err
@@ -520,6 +570,7 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 				return fmt.Errorf("postgres: delete blob %s: %w", d, err)
 			}
 		}
+		removed = orphans
 		session.ApplyBatch(&sess, []session.Event{red})
 		if err := saveHeader(ctx, tx, sess); err != nil {
 			return err
@@ -527,6 +578,15 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 		_, err = tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, id)
 		return err
 	})
+	if err != nil || s.blobs == nil {
+		return err
+	}
+	// The bodies kept outside go once their rows have.
+	var errs []error
+	for _, d := range removed {
+		errs = append(errs, s.blobs.DeleteBlob(ctx, id, d))
+	}
+	return errors.Join(errs...)
 }
 
 // holderOf reads the recorded holder of a held lease.
@@ -657,7 +717,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	if err := session.CheckID(session.PrefixSession, id); err != nil {
 		return err
 	}
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var holder *string
 		var live bool
 		err := tx.QueryRow(ctx, `SELECT lease_holder, lease_holder IS NOT NULL AND lease_expires_at >= now() FROM sessions WHERE id = $1 FOR UPDATE`, id).Scan(&holder, &live)
@@ -676,6 +736,28 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 		_, err = tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, id)
 		return err
 	})
+	if err != nil || s.blobs == nil {
+		return err
+	}
+	// The bodies kept outside go last, so a crash before leaves bodies
+	// with no session, which SweepBlobs removes, and never a session
+	// without its bodies.
+	return s.blobs.DeleteSession(ctx, id)
+}
+
+// SweepBlobs removes the bodies kept outside whose session is gone
+// (spec 014), judging the grace of session.SweepBlobs on now.
+func (s *Store) SweepBlobs(ctx context.Context, now time.Time) error {
+	if s.blobs == nil {
+		return nil
+	}
+	return session.SweepBlobs(ctx, s.blobs, func(ctx context.Context, id string) (bool, error) {
+		err := s.exists(ctx, id)
+		if errors.Is(err, session.ErrNotFound) {
+			return true, nil
+		}
+		return false, err
+	}, now)
 }
 
 var _ session.Store = (*Store)(nil)
