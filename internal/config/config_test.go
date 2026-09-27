@@ -315,3 +315,27 @@ func TestHostSessions(t *testing.T) {
 		t.Fatalf("a runner with host sessions and no data directory: %v", err)
 	}
 }
+
+func TestTheBlobVariables(t *testing.T) {
+	c, err := Load(RoleServe, serve(map[string]string{"TOPOS_BLOB_URL": "s3://objects.example/bucket/topos", "TOPOS_BLOB_ACCESS_KEY": "k", "TOPOS_BLOB_SECRET_KEY": " s "}))
+	if err != nil || c.BlobURL != "s3://objects.example/bucket/topos" || c.BlobAccessKey != "k" || c.BlobSecretKey != "s" {
+		t.Fatalf("config %+v, %v", c, err)
+	}
+	if c, err := Load(RoleServe, serve(map[string]string{"TOPOS_BLOB_URL": "file:///var/lib/topos/blobs"})); err != nil || c.BlobURL != "file:///var/lib/topos/blobs" {
+		t.Fatalf("a file store: %+v, %v", c, err)
+	}
+	if c, err := Load(RoleServe, serve(nil)); err != nil || c.BlobURL != "" {
+		t.Fatalf("no blob store: %+v, %v", c, err)
+	}
+	for name, vars := range map[string]map[string]string{
+		"s3 without keys":   {"TOPOS_BLOB_URL": "s3://objects.example/bucket"},
+		"s3 without bucket": {"TOPOS_BLOB_URL": "s3://objects.example", "TOPOS_BLOB_ACCESS_KEY": "k", "TOPOS_BLOB_SECRET_KEY": "s"},
+		"relative file":     {"TOPOS_BLOB_URL": "file:relative"},
+		"another scheme":    {"TOPOS_BLOB_URL": "https://objects.example/bucket"},
+		"not a url":         {"TOPOS_BLOB_URL": "%"},
+	} {
+		if _, err := Load(RoleServe, serve(vars)); err == nil || !strings.Contains(err.Error(), "TOPOS_BLOB_URL") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

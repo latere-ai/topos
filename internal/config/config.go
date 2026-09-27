@@ -76,6 +76,13 @@ type Config struct {
 	// LocalIssuerKey is the PEM private key of the local issuer; empty
 	// is no local issuer.
 	LocalIssuerKey string
+	// BlobURL is where the store keeps blob bodies: file:///<path> or
+	// s3://<host>/<bucket>/<prefix>; empty keeps them in the store
+	// (spec 014). BlobAccessKey and BlobSecretKey are the object store's
+	// credential.
+	BlobURL       string
+	BlobAccessKey string
+	BlobSecretKey string
 	// DataDir is TOPOS_DATA_DIR resolved: the directory store's root, and
 	// the checkpoint and worktree directories beneath it.
 	DataDir string
@@ -224,9 +231,35 @@ func Load(role string, getenv Getenv) (Config, error) {
 		if len(c.OIDCIssuers) == 0 && c.LocalIssuerKey == "" {
 			problems = append(problems, "TOPOS_OIDC_ISSUERS is required unless TOPOS_LOCAL_ISSUER_KEY is set; there is no anonymous access")
 		}
+		problems = append(problems, c.readBlobs(getenv)...)
 	}
 	problems = append(problems, c.checkIdentity()...)
 	return done(c, problems)
+}
+
+// readBlobs reads where the store keeps blob bodies: a file:// URL with
+// an absolute path, or an s3:// URL with a host and a bucket and both
+// keys of its credential.
+func (c *Config) readBlobs(getenv Getenv) []string {
+	c.BlobURL = strings.TrimSpace(getenv("TOPOS_BLOB_URL"))
+	c.BlobAccessKey = strings.TrimSpace(getenv("TOPOS_BLOB_ACCESS_KEY"))
+	c.BlobSecretKey = strings.TrimSpace(getenv("TOPOS_BLOB_SECRET_KEY"))
+	if c.BlobURL == "" {
+		return nil
+	}
+	u, err := url.Parse(c.BlobURL)
+	switch {
+	case err != nil:
+		return []string{"TOPOS_BLOB_URL is not a URL"}
+	case u.Scheme == "file" && u.Host == "" && strings.HasPrefix(u.Path, "/"):
+		return nil
+	case u.Scheme == "s3" && u.Host != "" && strings.Trim(u.Path, "/") != "":
+		if c.BlobAccessKey == "" || c.BlobSecretKey == "" {
+			return []string{"TOPOS_BLOB_URL names an s3:// store, which needs TOPOS_BLOB_ACCESS_KEY and TOPOS_BLOB_SECRET_KEY; there is no credential chain"}
+		}
+		return nil
+	}
+	return []string{"TOPOS_BLOB_URL is " + strconv.Quote(c.BlobURL) + ", neither file:///<absolute path> nor s3://<host>/<bucket>/<prefix>"}
 }
 
 // readRunner reads the variables of the in-process runners and the
