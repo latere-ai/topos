@@ -73,6 +73,49 @@ func TestCreateASession(t *testing.T) {
 	}
 }
 
+// TestASessionNamesItsRepositories: a create names repositories as
+// resources, which the session records; a resource of another type, a
+// URL that is not https, holds a credential or names no host, a ref git
+// would read as an option, and more than the limit are refused.
+func TestASessionNamesItsRepositories(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	resp := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer","resources":[{"type":"repository","url":"https://code.example/acme/app.git","ref":"main"},{"type":"repository","url":"https://code.example/acme/lib"}]}`)
+	if resp.status != http.StatusCreated {
+		t.Fatalf("create: %d %s", resp.status, resp.body)
+	}
+	var s session.Session
+	resp.decode(t, &s)
+	want := []session.Resource{{Type: "repository", URL: "https://code.example/acme/app.git", Ref: "main"}, {Type: "repository", URL: "https://code.example/acme/lib"}}
+	if !reflect.DeepEqual(s.Resources, want) {
+		t.Fatalf("resources %+v", s.Resources)
+	}
+	stored, err := f.sessions.Get(t.Context(), s.ID)
+	if err != nil || !reflect.DeepEqual(stored.Resources, want) {
+		t.Fatalf("stored %+v, %v", stored.Resources, err)
+	}
+	many := make([]string, 9)
+	for i := range many {
+		many[i] = `{"type":"repository","url":"https://code.example/r` + fmt.Sprint(i) + `"}`
+	}
+	for _, body := range []string{
+		`{"agent":"reviewer","resources":{"type":"repository"}}`,
+		`{"agent":"reviewer","resources":[{"type":"memory_store","memory_store_id":"mem_x"}]}`,
+		`{"agent":"reviewer","resources":[{"type":"repository","url":"https://code.example/app","access":"readOnly"}]}`,
+		`{"agent":"reviewer","resources":[{"type":"repository","url":"http://code.example/app"}]}`,
+		`{"agent":"reviewer","resources":[{"type":"repository","url":"file:///srv/app.git"}]}`,
+		`{"agent":"reviewer","resources":[{"type":"repository","url":"https://bot:secret@code.example/app"}]}`,
+		`{"agent":"reviewer","resources":[{"type":"repository","url":"https:///app"}]}`,
+		`{"agent":"reviewer","resources":[{"type":"repository","url":"https://code.example/app","ref":"--upload-pack=touch"}]}`,
+		`{"agent":"reviewer","resources":[{"type":"repository","url":"https://code.example/app","extra":1}]}`,
+		`{"agent":"reviewer","resources":[` + strings.Join(many, ",") + `]}`,
+	} {
+		if got := f.do(http.MethodPost, "/v1/sessions", "alice", body); got.code() != CodeInvalidRequest {
+			t.Errorf("%s: %d %s", body, got.status, got.body)
+		}
+	}
+}
+
 func manyMetadata() string {
 	m := map[string]string{}
 	for i := range session.MaxMetadata + 1 {

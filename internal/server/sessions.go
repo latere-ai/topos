@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -68,6 +69,37 @@ type createBody struct {
 	Resources json.RawMessage   `json:"resources,omitempty"`
 }
 
+// repositories reads a create's resources: repositories alone, at most
+// runner.MaxRepositories, each an https URL with no credential in it and
+// a ref git reads as a name (spec 019). A memory store is its agent's
+// (spec 020).
+func repositories(raw json.RawMessage) ([]session.Resource, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var rs []session.Resource
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&rs); err != nil {
+		return nil, refuse(CodeInvalidRequest, "resources is a list of {type, url, ref}: %v", err)
+	}
+	if len(rs) > runner.MaxRepositories {
+		return nil, refuse(CodeInvalidRequest, "%d resources, at most %d repositories", len(rs), runner.MaxRepositories)
+	}
+	for i, r := range rs {
+		switch {
+		case r.Type != runner.ResourceRepository:
+			return nil, refuse(CodeInvalidRequest, "resources[%d] is of type %q; a session names repositories, and its memory stores are its agent's", i, r.Type)
+		case r.MemoryStoreID != "" || r.Access != "":
+			return nil, refuse(CodeInvalidRequest, "resources[%d]: a repository has a url and a ref alone", i)
+		}
+		if err := runner.CheckRepository(r, "https"); err != nil {
+			return nil, refuse(CodeInvalidRequest, "resources[%d]: %v", i, err)
+		}
+	}
+	return rs, nil
+}
+
 type createBudget struct {
 	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitempty"`
 }
@@ -92,10 +124,14 @@ func (c *call) createSession() error {
 		return refuse(CodeInvalidRequest, "runner %q: this server runs hosted sessions; an external runner's sessions are not built", b.Runner)
 	case b.ID != "":
 		return refuse(CodeInvalidRequest, "id is an external session's, and this server runs hosted sessions")
-	case len(b.Machine) > 0 || len(b.Resources) > 0:
-		return refuse(CodeInvalidRequest, "a session's machine and resources are its agent's; a request cannot set them yet")
+	case len(b.Machine) > 0:
+		return refuse(CodeInvalidRequest, "a session's machine is its agent's; a request cannot set it yet")
 	case len(b.Metadata) > session.MaxMetadata:
 		return refuse(CodeInvalidRequest, "%d metadata entries, at most %d", len(b.Metadata), session.MaxMetadata)
+	}
+	resources, err := repositories(b.Resources)
+	if err != nil {
+		return err
 	}
 	name, n, pinned := strings.Cut(b.Agent, "@")
 	a, err := c.s.o.Objects.Agent(ctx, name)
@@ -167,7 +203,7 @@ func (c *call) createSession() error {
 	s := session.New(ref, session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted,
 		session.Machine{Kind: kind, Environment: cfg.Machine.Environment, Image: cfg.Machine.Image}, now)
 	s.ID = id
-	s.Title, s.Metadata, s.EndOnIdle = b.Title, b.Metadata, b.EndOnIdle
+	s.Title, s.Metadata, s.EndOnIdle, s.Resources = b.Title, b.Metadata, b.EndOnIdle, resources
 	// The session records its approval policy merged from the agent's and
 	// the organization's limits, so every runner applies the same one.
 	var thresholds *harness.Thresholds
