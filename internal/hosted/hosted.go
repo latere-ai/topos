@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -100,18 +101,18 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		return harness.Config{}, setup(CodeAgentMissing, fmt.Errorf("session %s names no agent bundle", s.ID))
 	}
 	ac, err := r.AgentConfig(func(m v1.AgentModel, overlay models.Entry) (models.Model, *models.Connection, *models.Entry, error) {
-		conn, entry, err := b.connect(ctx, m, overlay)
-		return b.o.Model, &conn, &entry, err
+		model, conn, entry, err := b.connect(ctx, m, overlay)
+		return model, &conn, &entry, err
 	})
 	if err != nil {
 		return harness.Config{}, err
 	}
-	conn, entry, err := b.connect(ctx, ac.Model, ac.Overlay)
+	model, conn, entry, err := b.connect(ctx, ac.Model, ac.Overlay)
 	if err != nil {
 		return harness.Config{}, err
 	}
 	cfg := harness.Config{
-		Model: b.o.Model, Connection: conn, Entry: entry,
+		Model: model, Connection: conn, Entry: entry,
 		Name: ac.Name, Instructions: ac.Instructions, Policy: ac.Policy, Effort: ac.Effort,
 		Subagents: ac.Subagents, MaxDepth: ac.MaxDepth, MaxConcurrent: ac.MaxConcurrent, CompactAt: ac.CompactAt,
 		Prompt: prompts.HarnessOptions{Threads: len(ac.Subagents) > 0},
@@ -140,21 +141,34 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	return cfg, nil
 }
 
-// connect is the connection and the catalog figures of one spec.model:
-// the embedded catalog's, overlaid by the figures a Lux door serves for
-// the model, then by the agent's own.
-func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Connection, models.Entry, error) {
+// connect is the model, the connection and the catalog figures of one
+// spec.model: the embedded catalog's, overlaid by the figures a Lux door
+// serves for the model, then by the agent's own. A connection to the
+// installation's model URL acts with the session's own Lux key when the
+// installation mints one (spec 018), and with TOPOS_MODELS_KEY
+// otherwise; the session's key never leaves for another base URL.
+func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Model, models.Connection, models.Entry, error) {
 	base := cmp.Or(m.BaseURL, b.o.ModelsURL)
 	if base == "" {
-		return models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, errors.New("the agent names no base URL and TOPOS_MODELS_URL is unset"))
+		return nil, models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, errors.New("the agent names no base URL and TOPOS_MODELS_URL is unset"))
 	}
 	if m.Credential != "" {
 		// A credential the agent names is resolved by the credential
 		// custody of spec 018, which this server does not hold.
-		return models.Connection{}, models.Entry{}, setup(CodeModelCredentialMissing, fmt.Errorf("the agent names the credential %s, which this server cannot resolve", m.Credential))
+		return nil, models.Connection{}, models.Entry{}, setup(CodeModelCredentialMissing, fmt.Errorf("the agent names the credential %s, which this server cannot resolve", m.Credential))
 	}
-	if b.o.ModelsKey == "" {
-		return models.Connection{}, models.Entry{}, setup(CodeModelCredentialMissing, errors.New("the agent names no credential and TOPOS_MODELS_KEY is unset"))
+	model, credential := b.o.Model, b.o.ModelsKey
+	if m.BaseURL == "" {
+		key, keyed, ok, err := sessionKey(ctx, b.o.Model)
+		if err != nil {
+			return nil, models.Connection{}, models.Entry{}, err
+		}
+		if ok {
+			model, credential = keyed, key
+		}
+	}
+	if credential == "" {
+		return nil, models.Connection{}, models.Entry{}, setup(CodeModelCredentialMissing, errors.New("the agent names no credential, the server mints no session key, and TOPOS_MODELS_KEY is unset"))
 	}
 	// The family and the dialect pick the door, whose list may name the
 	// model's figures; a model known to neither the catalog nor the
@@ -163,28 +177,38 @@ func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.En
 	if m.BaseURL == "" {
 		base = b.o.Doors.Door(base, first.Dialect)
 	}
-	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: b.o.ModelsKey, Family: first.Family, Dialect: first.Dialect}
+	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: credential, Family: first.Family, Dialect: first.Dialect}
 	var served models.Entry
 	if models.NamesADoor(base) {
 		var err error
 		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
-			return models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, err)
+			return nil, models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, err)
 		}
 	}
 	entry, err := b.cat.Resolve(m.Name, served, overlay)
 	if err != nil {
-		return models.Connection{}, models.Entry{}, err
+		return nil, models.Connection{}, models.Entry{}, err
 	}
 	conn.Family, conn.Dialect = entry.Family, entry.Dialect
-	return conn, entry, nil
+	return model, conn, entry, nil
 }
 
 // CellaOptions configure the Cella machines of hosted sessions.
 type CellaOptions struct {
 	// URL is TOPOS_CELLA_URL.
 	URL string
-	// Token is the bearer toposd presents to Cella.
+	// Token is the installation's bearer, TOPOS_CELLA_TOKEN_FILE's,
+	// presented when the server mints no Cella token for the session;
+	// nil presents none.
 	Token client.TokenSource
+	// ModelsURL is TOPOS_MODELS_URL: the sandbox's Lux key is scoped to
+	// its host, and the sandbox reads it as LUX_URL.
+	ModelsURL string
+	// OrigoURL is TOPOS_ORIGO_URL, the git host whose token the sandbox's
+	// git sends; empty mounts none.
+	OrigoURL string
+	// Log reports a sandbox credential that could not be renewed.
+	Log *slog.Logger
 	// Helpers are the topos-machine builds by platform.
 	Helpers map[string][]byte
 	// Dir is where the helper and the spill directory live inside each
@@ -194,19 +218,59 @@ type CellaOptions struct {
 
 // Cella opens each hosted session's machine as a Cella sandbox named
 // after the session. Without a URL every session is refused
-// machine_unavailable.
+// machine_unavailable. The runner's calls carry the agent's token for
+// the session when the installation mints one, and the installation's
+// bearer otherwise; the sandbox's Lux key and git host token are Cella
+// Secrets whose placeholders it holds, renewed until the drive ends.
 func Cella(o CellaOptions) Machines {
+	if o.Log == nil {
+		o.Log = slog.New(slog.DiscardHandler)
+	}
 	return func(ctx context.Context, s session.Session, m v1.Machine) (machine.Machine, error) {
 		if o.URL == "" {
 			return nil, setup(CodeMachineUnavailable, errors.New("TOPOS_CELLA_URL is unset, so this server has no machines"))
 		}
+		token, err := cellaToken(ctx, o.Token)
+		if err != nil {
+			return nil, err
+		}
+		c, err := client.New(client.Config{URL: o.URL, Token: token, HTTPClient: otel.HTTPClient()})
+		if err != nil {
+			return nil, setup(CodeMachineUnavailable, err)
+		}
+		secrets, err := o.sandboxSecrets(ctx, s.ID, c)
+		if err != nil {
+			return nil, err
+		}
+		var mounts []cellav1.SecretMount
+		var env map[string]string
+		for _, sec := range secrets {
+			mounts = append(mounts, cellav1.SecretMount{Name: sec.name, Env: sec.env})
+			if sec.audience == runner.AudienceLux {
+				env = map[string]string{EnvLuxURL: o.ModelsURL}
+			}
+		}
 		ttl := time.Until(s.ExpiresAt)
-		return cella.Open(ctx, cella.Options{
-			URL: o.URL, Token: o.Token, Session: s.ID, Agent: s.Agent.Name,
+		mach, err := cella.Open(ctx, cella.Options{
+			URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
 			Environment: cmp.Or(s.Machine.Environment, m.Environment), Image: cmp.Or(s.Machine.Image, m.Image),
 			Resources: cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
-			Egress:    m.Egress, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
+			Egress:    m.Egress, Secrets: mounts, Env: env, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
 		})
+		if err != nil {
+			return nil, err
+		}
+		for _, sec := range secrets {
+			if sec.audience == AudienceOrigo {
+				if err := gitConfig(ctx, mach, o.OrigoURL); err != nil {
+					return nil, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false))
+				}
+			}
+		}
+		if len(secrets) > 0 {
+			keep(ctx, c, runner.TokensFrom(ctx), secrets, o.Log)
+		}
+		return mach, nil
 	}
 }
 

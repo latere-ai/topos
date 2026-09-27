@@ -157,7 +157,7 @@ spec:
 		t.Fatalf("an unknown model: %v", err)
 	}
 	b := builder{o: good}
-	if _, _, err := b.connect(t.Context(), v1.AgentModel{Name: "anthropic/claude-haiku-4.5", Credential: "cred_x"}, models.Entry{}); code(t, err) != CodeModelCredentialMissing {
+	if _, _, _, err := b.connect(t.Context(), v1.AgentModel{Name: "anthropic/claude-haiku-4.5", Credential: "cred_x"}, models.Entry{}); code(t, err) != CodeModelCredentialMissing {
 		t.Fatalf("a credential the agent names: %v", err)
 	}
 	for _, o := range []Options{{Machines: good.Machines}, {Store: st}} {
