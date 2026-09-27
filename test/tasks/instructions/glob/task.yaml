@@ -1,0 +1,8 @@
+name: glob
+category: instructions
+# glob's description: files are found by name pattern with glob, and
+# ** crosses directories.
+prompt: |
+  Write the path of every Markdown file (*.md) in this repository,
+  relative to the working directory, one per line and sorted, to
+  markdown.txt. Do not list markdown.txt itself.

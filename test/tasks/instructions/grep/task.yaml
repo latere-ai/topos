@@ -1,0 +1,9 @@
+name: grep
+category: instructions
+# grep's description: output_mode content shows each matching line with
+# its path and line number.
+prompt: |
+  List where this repository calls legacy_fetch(): write the file and
+  line number of every call, as path:line with the path relative to the
+  working directory, one per line, sorted by path and then by line, to
+  calls.txt. The definition of legacy_fetch is not a call.

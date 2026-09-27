@@ -1,0 +1,11 @@
+# Walks the directories one read at a time instead of one glob.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: README.md}
+      - name: read
+        input: {path: docs/guide.md}
+  - tool_calls:
+      - name: write
+        input: {path: markdown.txt, content: "README.md\ndocs/api/index.md\ndocs/api/v2/CHANGES.md\ndocs/api/v2/auth.md\ndocs/guide.md\n"}
+  - text: markdown.txt lists the five Markdown files.

@@ -81,6 +81,11 @@ type MachineOptions struct {
 	DataDir  string
 	Home     string
 	ID       string
+	// TempDir is the TMPDIR of the machine's commands: a directory of
+	// the run, so that what a command leaves behind, such as the build
+	// directory of a go run the session end stopped, stays in the run's
+	// artifact and never reaches the system's temporary directory.
+	TempDir string
 }
 
 // RunGrace is how long a run may pass its task's timeout before its
@@ -352,7 +357,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 		}
 		m, err := open(ctx, MachineOptions{
 			Workdir: s.Machine.Workdir, SpillDir: filepath.Join(r.data, "spill", s.ID),
-			DataDir: r.data, Home: os.Getenv("HOME"), ID: s.ID,
+			DataDir: r.data, Home: os.Getenv("HOME"), ID: s.ID, TempDir: filepath.Join(r.base, "tmp"),
 		})
 		if err != nil {
 			return harness.Config{}, err
@@ -388,8 +393,23 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 	}
 }
 
+// openHost opens the host machine with this process's environment, the
+// person's own, but for TMPDIR.
 func openHost(_ context.Context, o MachineOptions) (machine.Machine, error) {
-	return host.Open(host.Options{Workdir: o.Workdir, SpillDir: o.SpillDir, Home: o.Home, DataDir: o.DataDir, ID: o.ID})
+	env, err := withTempDir(os.Environ(), o.TempDir)
+	if err != nil {
+		return nil, err
+	}
+	return host.Open(host.Options{Workdir: o.Workdir, SpillDir: o.SpillDir, Home: o.Home, DataDir: o.DataDir, ID: o.ID, Environ: env})
+}
+
+// withTempDir creates dir and makes it the environment's TMPDIR.
+func withTempDir(environ []string, dir string) ([]string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("tasks: the temporary directory: %w", err)
+	}
+	out := slices.DeleteFunc(slices.Clone(environ), func(kv string) bool { return strings.HasPrefix(kv, "TMPDIR=") })
+	return append(out, "TMPDIR="+dir), nil
 }
 
 // release ends the machine, which stops the run's background jobs.

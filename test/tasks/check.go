@@ -302,9 +302,13 @@ func (g *GoCheck) eval(ctx context.Context, in Input, i int) (string, error) {
 			return "", err
 		}
 	}
+	env, err := withTempDir(os.Environ(), filepath.Join(in.Scratch, fmt.Sprintf("tmp-%d", i+1)))
+	if err != nil {
+		return "", err
+	}
 	cmd := exec.CommandContext(ctx, "go", g.Args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local", "GOFLAGS=")
+	cmd.Env = append(env, "GOWORK=off", "GOTOOLCHAIN=local", "GOFLAGS=")
 	out, err := cmd.CombinedOutput()
 	var ee *exec.ExitError
 	switch {

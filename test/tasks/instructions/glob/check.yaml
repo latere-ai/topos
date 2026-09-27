@@ -1,0 +1,5 @@
+- file: {path: markdown.txt, equals: "README.md\ndocs/api/index.md\ndocs/api/v2/CHANGES.md\ndocs/api/v2/auth.md\ndocs/guide.md"}
+- call:
+    tool: glob
+    outcome: ok
+    input: {pattern: {contains: "*.md"}}

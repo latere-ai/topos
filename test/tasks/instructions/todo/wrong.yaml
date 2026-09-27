@@ -1,0 +1,15 @@
+# Does the four steps and keeps no list.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: a.txt, content: "alpha\n"}
+  - tool_calls:
+      - name: write
+        input: {path: b.txt, content: "beta\n"}
+  - tool_calls:
+      - name: write
+        input: {path: c.txt, content: "alpha beta\n"}
+  - tool_calls:
+      - name: write
+        input: {path: done.txt, content: "ok\n"}
+  - text: The four files are written.

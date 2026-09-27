@@ -1,0 +1,7 @@
+name: edit
+category: instructions
+# edit's description: old_string occurs exactly once, so a line that
+# repeats in the file is quoted with enough context to be unique.
+prompt: |
+  In server.go, raise the WriteTimeout of NewAdminServer to 30 seconds.
+  Change nothing else.

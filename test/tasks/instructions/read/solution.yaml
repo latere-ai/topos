@@ -1,0 +1,10 @@
+# Reads the one line with offset and limit.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: logs/server.log, offset: 2718, limit: 1}
+  - expect: {tool_result_contains: "2026-09-27T10:45:18Z request 677810 GET /api/items 404 in 848ms"}
+    tool_calls:
+      - name: write
+        input: {path: answer.txt, content: "2026-09-27T10:45:18Z request 677810 GET /api/items 404 in 848ms\n"}
+  - text: Line 2718 is in answer.txt.

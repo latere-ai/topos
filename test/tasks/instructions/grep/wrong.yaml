@@ -1,0 +1,14 @@
+# Lists the files, then reads each to find the lines.
+steps:
+  - tool_calls:
+      - name: grep
+        input: {pattern: 'legacy_fetch\('}
+  - tool_calls:
+      - name: read
+        input: {path: app/api/orders.py}
+      - name: read
+        input: {path: scripts/sync.py}
+  - tool_calls:
+      - name: write
+        input: {path: calls.txt, content: "app/api/orders.py:9\napp/api/orders.py:14\nscripts/sync.py:7\n"}
+  - text: calls.txt lists the three calls.

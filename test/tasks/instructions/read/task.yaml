@@ -1,0 +1,7 @@
+name: read
+category: instructions
+# read's description: a long file is read in parts with offset and
+# limit, not all at once.
+prompt: |
+  logs/server.log is the access log of a web server. Write its line 2718,
+  exactly as it is in the file, to answer.txt.

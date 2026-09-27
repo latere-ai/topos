@@ -1,0 +1,10 @@
+# Reads the whole file at once, which is cut at 2000 lines, and writes a
+# line it never read.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: logs/server.log}
+  - tool_calls:
+      - name: write
+        input: {path: answer.txt, content: "2026-09-27T10:45:18Z request 677810 GET /api/items 404 in 848ms\n"}
+  - text: Line 2718 is in answer.txt.

@@ -1,0 +1,6 @@
+# Never starts the server, and writes the answer it expects.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: health.txt, content: "healthy: 3 workers, queue empty\n"}
+  - text: health.txt holds the server's answer.

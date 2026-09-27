@@ -1,0 +1,9 @@
+steps:
+  - tool_calls:
+      - name: glob
+        input: {pattern: "**/*.md"}
+  - expect: {tool_result_contains: v2/auth.md}
+    tool_calls:
+      - name: write
+        input: {path: markdown.txt, content: "README.md\ndocs/api/index.md\ndocs/api/v2/CHANGES.md\ndocs/api/v2/auth.md\ndocs/guide.md\n"}
+  - text: markdown.txt lists the five Markdown files.

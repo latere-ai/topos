@@ -1,0 +1,9 @@
+name: bash
+category: instructions
+# bash's description: a server keeps running, so it is started with
+# background; a foreground server never returns and is killed at the
+# timeout.
+prompt: |
+  The program in ./server is a server that runs until it is
+  stopped; start it with `go run ./server`. While it runs, run the client
+  with `go run ./client` and save what the client prints to health.txt.

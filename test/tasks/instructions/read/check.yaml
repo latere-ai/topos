@@ -1,0 +1,7 @@
+- file: {path: answer.txt, equals: "2026-09-27T10:45:18Z request 677810 GET /api/items 404 in 848ms"}
+- call:
+    tool: read
+    outcome: ok
+    input:
+      path: {matches: 'server\.log$'}
+      offset: {present: true}
