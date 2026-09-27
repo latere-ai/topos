@@ -508,7 +508,11 @@ func (e *wireError) Error() string { return e.code + ": " + e.msg }
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var we *wireError
 	if se, ok := errors.AsType[*runner.SetupError](err); ok {
-		httpjson.WriteError(w, http.StatusBadGateway, httpjson.Error{Code: CodeCredentialRefused, Message: "the session's credential could not be had", Details: map[string]any{"code": se.Code, "detail": se.Err.Error()}})
+		detail := ""
+		if se.Err != nil {
+			detail = se.Err.Error()
+		}
+		httpjson.WriteError(w, http.StatusBadGateway, httpjson.Error{Code: CodeCredentialRefused, Message: "the session's credential could not be had", Details: map[string]any{"code": se.Code, "detail": detail}})
 		return
 	}
 	switch {

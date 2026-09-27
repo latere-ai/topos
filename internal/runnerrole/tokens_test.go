@@ -106,6 +106,10 @@ func TestTokensOnlyForTheLeaseHolder(t *testing.T) {
 	if _, err := l.Credential(ctx, runner.AudienceLux, runner.WorkloadSession); !errors.As(err, &se) || se.Code != "session_unknown" {
 		t.Fatalf("a refused key: %v", err)
 	}
+	a.err = &runner.SetupError{Code: "agent_disabled"}
+	if _, err := l.Credential(ctx, "cella", runner.WorkloadSession); !errors.As(err, &se) || se.Code != "agent_disabled" {
+		t.Fatalf("a refusal with no cause: %v", err)
+	}
 	a.err = runner.ErrNotMinted
 	if _, err := l.Credential(ctx, runner.AudienceLux, runner.WorkloadSession); !errors.Is(err, runner.ErrNotMinted) {
 		t.Fatalf("an installation that mints nothing: %v", err)

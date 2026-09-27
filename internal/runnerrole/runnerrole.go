@@ -131,7 +131,7 @@ func readError(resp *http.Response) error {
 	case runnerapi.CodeCredentialRefused:
 		code, _ := env.Error.Details["code"].(string)
 		detail, _ := env.Error.Details["detail"].(string)
-		var cause error = errors.New(detail)
+		cause := errors.New(detail)
 		if code == runner.CodeAgentIdentityMissing {
 			cause = fmt.Errorf("%w: %s", runner.ErrNoIdentity, detail)
 		}
