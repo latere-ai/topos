@@ -56,7 +56,7 @@ has moved past; `superseded` one whose work moved to another spec.
 |---|---|---|---|---|
 | [001](001-architecture.md) | Architecture: three parts over one session schema, the packages, extension points, invariants | medium | testing | - |
 | [002](002-scaffold-and-configuration.md) | Scaffold and configuration reference: layout, the toposd roles, listeners, every TOPOS_* variable | small | validated | 001 |
-| [003](003-manifest.md) | manifest/v1: the Agent, Trigger, MemoryStore and Connection kinds, references, versioning, one resolver | large | drafted | 001 |
+| [003](003-manifest.md) | manifest/v1: the Agent, Trigger, MemoryStore and Connection kinds, references, versioning, one resolver | large | validated | 001 |
 | [004](004-session-log.md) | The session log: schema v1, event types, status and stop reasons, the fold, the directory store | large | drafted | 001, 002 |
 | [005](005-harness-loop.md) | The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls | large | drafted | 001, 004, 007, 008 |
 | [006](006-identity.md) | Identity: subjects, verification, the authorizer question, the action vocabulary, the owner policy, the local issuer | medium | drafted | 001, 002, 004 |
