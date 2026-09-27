@@ -3,13 +3,14 @@
 
 // Package luxstub is the stub Lux of spec 026: an HTTP server on
 // loopback that serves the Messages, Responses and Chat Completions
-// doors, decodes each request with that dialect's frontend codec, and
+// doors and Lux's discovery document, decodes each request with that dialect's frontend codec, and
 // streams the scripted reply for the request's model back through the
 // same codec. It records every request and injects the failures a reply
 // names. It is a test artifact.
 package luxstub
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,8 @@ const (
 	PathMessages  = "/anthropic/v1/messages"
 	PathResponses = "/openai/v1/responses"
 	PathChat      = "/openai/v1/chat/completions"
+	// PathDiscovery is Lux's discovery document, which names the doors.
+	PathDiscovery = "/.well-known/lux"
 )
 
 // Failure is an injected failure before a reply.
@@ -117,6 +120,10 @@ func frontend(path string) (llmdialect.Frontend, ir.Dialect, bool) {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == PathDiscovery {
+		s.discovery(w)
+		return
+	}
 	fe, d, ok := frontend(r.URL.Path)
 	if !ok || r.Method != http.MethodPost {
 		http.Error(w, `{"error":{"type":"not_found_error","message":"no such door"}}`, http.StatusNotFound)
@@ -183,6 +190,21 @@ func (s *Server) fail(w http.ResponseWriter, fe llmdialect.Frontend, reply Reply
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(f.Status)
 	if _, err := io.WriteString(w, body); err != nil {
+		return
+	}
+}
+
+// discovery answers Lux's discovery document with the stub's doors,
+// each the stub's URL plus the dialect, as a Lux at the root names them.
+func (s *Server) discovery(w http.ResponseWriter) {
+	doors := map[string]string{}
+	for _, d := range []string{"anthropic", "openai", "gemini", "lux"} {
+		doors[d] = s.srv.URL + "/" + d
+	}
+	w.Header().Set("Content-Type", "application/json")
+	// A failed write means the client is gone; the stub has nothing left
+	// to answer.
+	if err := json.NewEncoder(w).Encode(map[string]any{"name": "lux", "doors": doors}); err != nil {
 		return
 	}
 }
