@@ -442,7 +442,7 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	if err := st.Create(ctx, s, nil); err != nil {
 		return RunResult{}, err
 	}
-	res.Session, res.Workdir = s.ID, r.workdir
+	res.Session, res.Workdir, res.MaxCostUSDMicro = s.ID, r.workdir, r.t.MaxCostUSDMicro
 	res.Log = filepath.Join(r.data, "sessions", s.ID, "events.jsonl")
 	text := string(expand([]byte(r.t.Prompt), r.workdir, r.serveURL))
 	msg, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: person, Content: []lux.Block{{Type: ir.BlockText, Text: text}}}, now)
@@ -473,18 +473,7 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	}
 	r.measure(&res, log)
 	res.Stop, res.Detail = out.StopReason, out.Detail
-	switch {
-	case derr != nil:
-		res.Reason = "the session failed: " + derr.Error()
-		return res, nil
-	case out.StopReason != session.StopEndTurn && out.StopReason != session.StopCompleted:
-		res.Reason = strings.TrimSpace("the session stopped " + string(out.StopReason) + " " + out.Detail)
-		if res.Error != "" {
-			res.Reason += ": " + res.Error
-		}
-		return res, nil
-	case res.CostUSDMicro > r.t.MaxCostUSDMicro:
-		res.Reason = fmt.Sprintf("the run spent %s, past its maxCost of %s", usd(res.CostUSDMicro), usd(r.t.MaxCostUSDMicro))
+	if res.Reason = failure(derr, res); res.Reason != "" {
 		return res, nil
 	}
 	res.ServeURL = r.serveURL
@@ -498,6 +487,26 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 		res.Reason = fmt.Sprintf("the checker failed at %s assertion %d: %s", v.Kind, v.Assertion, v.Reason)
 	}
 	return res, nil
+}
+
+// failure is why a run fails before its checker runs: the session
+// failed, it stopped other than at the end of its turn, or it spent
+// past its maxCost. A failed session is a failed run, not an error of
+// the suite.
+func failure(sessionErr error, res RunResult) string {
+	switch {
+	case sessionErr != nil:
+		return "the session failed: " + sessionErr.Error()
+	case res.Stop != session.StopEndTurn && res.Stop != session.StopCompleted:
+		reason := strings.TrimSpace("the session stopped " + string(res.Stop) + " " + res.Detail)
+		if res.Error != "" {
+			reason += ": " + res.Error
+		}
+		return reason
+	case res.CostUSDMicro > res.MaxCostUSDMicro:
+		return fmt.Sprintf("the run spent %s, past its maxCost of %s", usd(res.CostUSDMicro), usd(res.MaxCostUSDMicro))
+	}
+	return ""
 }
 
 // Judge evaluates a task's checker again over a finished run: its final

@@ -249,14 +249,22 @@ func (t *Task) findStart() error {
 // findChecker finds the one checker, check.yaml or check.sh, and parses
 // check.yaml with its placeholders standing for sample values.
 func (t *Task) findChecker() error {
-	b, yerr := os.ReadFile(filepath.Join(t.Dir, FileCheckYAML))
-	_, serr := os.Stat(filepath.Join(t.Dir, FileCheckSh))
+	b, err := os.ReadFile(filepath.Join(t.Dir, FileCheckYAML))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	hasYAML := err == nil
+	_, err = os.Stat(filepath.Join(t.Dir, FileCheckSh))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	hasSh := err == nil
 	switch {
-	case yerr == nil && serr == nil:
+	case hasYAML && hasSh:
 		return fmt.Errorf("both %s and %s are present; a task has one checker", FileCheckYAML, FileCheckSh)
-	case yerr != nil && serr != nil:
+	case !hasYAML && !hasSh:
 		return fmt.Errorf("no checker: write %s or %s", FileCheckYAML, FileCheckSh)
-	case yerr != nil:
+	case hasSh:
 		return nil
 	}
 	if _, err := ParseCheck(expand(b, "/work", "http://127.0.0.1:1")); err != nil {
