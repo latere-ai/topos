@@ -10,8 +10,6 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
-## v0.8.0-rc.2 - 2026-09-28
-
 - An Agent manifest names the repositories its sessions work in as
   `spec.repositories`, a list of `{url, ref}` with `ref` optional, checked
   as a session's are: at most 8, each an `https` URL that names its host
@@ -26,8 +24,6 @@ committed: the commit log already holds that.
   reader of the log sees which checkout the agent started from.
 - A refused repository URL that holds a credential is no longer quoted
   in the error.
-
-## v0.8.0-rc.1 - 2026-09-28
 
 - **Breaking:** the repository restarts as the Topos core. Every package of
   v0.7.0 is removed: the root `topos` package, `graph`, `billing`, `harness`,

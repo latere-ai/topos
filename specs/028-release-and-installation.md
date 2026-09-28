@@ -34,10 +34,11 @@ shared one, as Lux and Cella release.
 
 ### Versions
 
-Every new tag sorts above v0.7.0. The rebuild ships as pre-releases
-`v0.8.0-rc.N`, which do not move `@latest`; v0.8.0 is cut when phase 1
-closes, and its release notes carry the task suite's pass rate
-([[025-task-suite]]). A tag needs a `CHANGELOG.md` section, and
+Every new tag sorts above v0.7.0, and a tag name is never reused. A
+release is cut only when a checkpoint of the rebuild is ready, never along
+the way; the first is v0.9.0, at the first hosted agent working end to
+end. The names v0.8.0-rc.1 and v0.8.0-rc.2 were cut early and withdrawn,
+and are not used again. A tag needs a `CHANGELOG.md` section, and
 `go tool lateregate release vX.Y.Z` cuts it.
 
 ### Artifacts
