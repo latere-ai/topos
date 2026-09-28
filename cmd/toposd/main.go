@@ -399,6 +399,9 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		if cfg.CellaTokenFile != "" {
 			co.Token = client.TokenFile(cfg.CellaTokenFile)
 		}
+		if cfg.OrigoTokenFile != "" {
+			co.OrigoToken = client.TokenFile(cfg.OrigoTokenFile)
+		}
 		cella = hosted.Cella(co)
 	}
 	var onHost hosted.Machines

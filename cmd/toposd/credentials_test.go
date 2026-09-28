@@ -230,3 +230,75 @@ func TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox(t *testing.T) {
 		t.Fatalf("serve exited %d", code)
 	}
 }
+
+// TestASelfHosterPushesWithItsGitCredential: on an installation with no
+// identity provider, TOPOS_ORIGO_TOKEN_FILE's credential is the
+// sandbox's git host Secret, scoped to the host of TOPOS_ORIGO_URL and
+// mounted as ORIGO_TOKEN, whether serve's own runner drives the session
+// or a runner role, and the sandbox gets no Lux key.
+func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
+	origo := filepath.Join(t.TempDir(), "origo-token")
+	if err := os.WriteFile(origo, []byte("installation-git\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check := func(t *testing.T, cella *cellastub.Server, id string) {
+		t.Helper()
+		name := cellamachine.SandboxName(id)
+		sec, value, ok := cella.Secret(name + "-origo")
+		if !ok || value != "installation-git" || !slices.Equal(sec.Spec.Scope.Hosts, []string{"origo.example"}) {
+			t.Fatalf("the git host's Secret %+v %v", sec.Spec.Scope, ok)
+		}
+		if _, _, ok := cella.Secret(name + "-lux"); ok {
+			t.Fatal("the sandbox got a Lux key")
+		}
+		sb, ok := cella.Sandbox(name)
+		if !ok || len(sb.Spec.Secrets) != 1 || sb.Spec.Secrets[0].Env != hosted.EnvOrigoToken || !slices.Contains(sb.Spec.Network.Egress.AllowedHosts, "origo.example") {
+			t.Fatalf("the sandbox %+v", sb.Spec)
+		}
+	}
+	selfHosted := func(t *testing.T) (map[string]string, *cellastub.Server) {
+		vars, _, cella := hostedStubs(t)
+		maps.Copy(vars, map[string]string{
+			"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(),
+			"TOPOS_ORIGO_URL": "https://origo.example", "TOPOS_ORIGO_TOKEN_FILE": origo,
+		})
+		return vars, cella
+	}
+	t.Run("serve", func(t *testing.T) {
+		vars, cella := selfHosted(t)
+		vars["TOPOS_RUNNER_CAPACITY"] = "1"
+		publicURL, _, stop := startServe(t, vars)
+		_, id := createHostedSession(t, publicURL, vars, "cella")
+		waitAnswered(t, publicURL, vars, id)
+		check(t, cella, id)
+		if code := stop(); code != 0 {
+			t.Fatalf("serve exited %d", code)
+		}
+	})
+	t.Run("runner", func(t *testing.T) {
+		vars, cella := selfHosted(t)
+		maps.Copy(vars, map[string]string{"TOPOS_RUNNER_CAPACITY": "0", "TOPOS_RUNNER_TOKEN": "runner-token"})
+		publicURL, internalURL, stop := startServe(t, vars)
+		runnerVars := map[string]string{
+			"TOPOS_INTERNAL_URL": internalURL, "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_RUNNER_CAPACITY": "1", "TOPOS_RUNNER_TOKEN": "runner-token",
+			"TOPOS_MODELS_URL": vars["TOPOS_MODELS_URL"], "TOPOS_MODELS_KEY": vars["TOPOS_MODELS_KEY"],
+			"TOPOS_CELLA_URL": vars["TOPOS_CELLA_URL"], "TOPOS_CELLA_TOKEN_FILE": vars["TOPOS_CELLA_TOKEN_FILE"],
+			"TOPOS_ORIGO_URL": vars["TOPOS_ORIGO_URL"], "TOPOS_ORIGO_TOKEN_FILE": origo,
+			"TOPOS_MACHINE_HELPERS": vars["TOPOS_MACHINE_HELPERS"], "TOPOS_MACHINE_DIR": vars["TOPOS_MACHINE_DIR"],
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		var out, errOut syncBuffer
+		done := make(chan int, 1)
+		go func() { done <- run(ctx, []string{"runner"}, env(runnerVars), &out, &errOut) }()
+		_, id := createHostedSession(t, publicURL, vars, "cella")
+		waitAnswered(t, publicURL, vars, id)
+		check(t, cella, id)
+		cancel()
+		if code := <-done; code != 0 {
+			t.Fatalf("the runner role exited %d: %s", code, errOut.String())
+		}
+		if code := stop(); code != 0 {
+			t.Fatalf("serve exited %d", code)
+		}
+	})
+}
