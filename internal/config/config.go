@@ -125,6 +125,11 @@ type Config struct {
 	// OrigoURL is the git host a hosted session's sandbox pushes to with
 	// its agent's token (spec 018).
 	OrigoURL string
+	// OrigoTokenFile is the file holding the git host's credential of an
+	// installation without an identity provider, which each sandbox's git
+	// sends to OrigoURL in the place of an agent's token; read at each
+	// sandbox's open, so it can be rotated in place.
+	OrigoTokenFile string
 	// IdentityURL is the identity provider that hosts the installation's
 	// agents; empty gives agents no identity (spec 018). IdentityClientID
 	// is the host client toposd authenticates as, and IdentitySecretFile
@@ -358,6 +363,10 @@ func (c *Config) readRunner(getenv Getenv) []string {
 			problems = append(problems, "TOPOS_ORIGO_URL "+err.Error())
 		}
 	}
+	c.OrigoTokenFile = strings.TrimSpace(getenv("TOPOS_ORIGO_TOKEN_FILE"))
+	if c.OrigoTokenFile != "" && c.OrigoURL == "" {
+		problems = append(problems, "TOPOS_ORIGO_TOKEN_FILE needs TOPOS_ORIGO_URL, the git host its credential is sent to")
+	}
 	return problems
 }
 
@@ -367,7 +376,8 @@ func (c *Config) readRunner(getenv Getenv) []string {
 // the installation's authorizer, which alone records the sessions their
 // credentials name, and neither sits beside the installation credential
 // it replaces. A server without an identity provider presents
-// TOPOS_CELLA_TOKEN_FILE to Cella, so its Cella URL needs one.
+// TOPOS_CELLA_TOKEN_FILE to Cella, so its Cella URL needs one, and its
+// sandboxes' git presents TOPOS_ORIGO_TOKEN_FILE when it is set.
 func (c *Config) readCredentials(getenv Getenv) []string {
 	var problems []string
 	c.IdentityURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_IDENTITY_URL")), "/")
@@ -388,6 +398,9 @@ func (c *Config) readCredentials(getenv Getenv) []string {
 		}
 		if c.CellaTokenFile != "" {
 			problems = append(problems, "TOPOS_CELLA_TOKEN_FILE is set beside TOPOS_IDENTITY_URL; sessions reach Cella with their agents' tokens, so unset it")
+		}
+		if c.OrigoTokenFile != "" {
+			problems = append(problems, "TOPOS_ORIGO_TOKEN_FILE is set beside TOPOS_IDENTITY_URL; sandboxes reach the git host with their agents' tokens, so unset it")
 		}
 	} else if c.CellaURL != "" && c.CellaTokenFile == "" {
 		problems = append(problems, "TOPOS_CELLA_URL needs TOPOS_CELLA_TOKEN_FILE, the bearer toposd presents to Cella, unless TOPOS_IDENTITY_URL mints its sessions' tokens")

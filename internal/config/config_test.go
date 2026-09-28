@@ -367,6 +367,7 @@ func TestTheCredentialVariables(t *testing.T) {
 		"identity url not a url":         {"TOPOS_IDENTITY_URL": "login"},
 		"no authorizer":                  {"TOPOS_AUTHORIZER_URL": "", "TOPOS_AUTHORIZER_TOKEN": ""},
 		"a cella bearer beside tokens":   {"TOPOS_CELLA_TOKEN_FILE": "/run/cella/token"},
+		"a git credential beside tokens": {"TOPOS_ORIGO_TOKEN_FILE": "/run/origo/token"},
 		"keys without their token":       {"TOPOS_SESSION_KEYS_TOKEN": ""},
 		"keys url not a url":             {"TOPOS_SESSION_KEYS_URL": "keys"},
 		"a models key beside keys":       {"TOPOS_MODELS_KEY": "installation-key"},
@@ -386,6 +387,43 @@ func TestTheCredentialVariables(t *testing.T) {
 	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example", "TOPOS_CELLA_URL": "https://cella.example", "TOPOS_ORIGO_URL": "https://origo.example"}))
 	if err != nil || r.CellaTokenFile != "" || r.OrigoURL != "https://origo.example" || r.IdentityURL != "" {
 		t.Fatalf("a runner role with no Cella bearer: %+v %v", r, err)
+	}
+}
+
+// TestTheOrigoTokenFile: an installation without an identity provider
+// names the file of its git host's credential, read in serve and in the
+// runner role alike; the file needs the git host it is sent to, and an
+// installation with an identity provider refuses it, since its sandboxes
+// push with their agents' tokens.
+func TestTheOrigoTokenFile(t *testing.T) {
+	selfHosted := map[string]string{
+		"TOPOS_CELLA_URL": "https://cella.example", "TOPOS_CELLA_TOKEN_FILE": "/run/cella/token",
+		"TOPOS_ORIGO_URL": "https://origo.example", "TOPOS_ORIGO_TOKEN_FILE": " /run/origo/token ",
+	}
+	c, err := Load(RoleServe, serve(selfHosted))
+	if err != nil || c.OrigoTokenFile != "/run/origo/token" || c.OrigoURL != "https://origo.example" {
+		t.Fatalf("serve: %+v %v", c, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{
+		"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+		"TOPOS_ORIGO_URL": "https://origo.example", "TOPOS_ORIGO_TOKEN_FILE": "/run/origo/token",
+	}))
+	if err != nil || r.OrigoTokenFile != "/run/origo/token" {
+		t.Fatalf("runner: %+v %v", r, err)
+	}
+	noHost := maps.Clone(selfHosted)
+	delete(noHost, "TOPOS_ORIGO_URL")
+	if _, err := Load(RoleServe, serve(noHost)); err == nil || !strings.Contains(err.Error(), "TOPOS_ORIGO_TOKEN_FILE needs TOPOS_ORIGO_URL") {
+		t.Fatalf("a git credential with no git host: %v", err)
+	}
+	withIdentity := maps.Clone(selfHosted)
+	delete(withIdentity, "TOPOS_CELLA_TOKEN_FILE")
+	maps.Copy(withIdentity, map[string]string{
+		"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a",
+		"TOPOS_IDENTITY_URL": "https://login.example", "TOPOS_IDENTITY_CLIENT_ID": "host", "TOPOS_IDENTITY_SECRET_FILE": "/run/host/secret",
+	})
+	if _, err := Load(RoleServe, serve(withIdentity)); err == nil || !strings.Contains(err.Error(), "TOPOS_ORIGO_TOKEN_FILE is set beside TOPOS_IDENTITY_URL") {
+		t.Fatalf("a git credential beside an identity provider: %v", err)
 	}
 }
 
