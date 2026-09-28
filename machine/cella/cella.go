@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"path"
@@ -106,6 +107,11 @@ type Options struct {
 	// such as the model gateway's URL a sandbox's own model key is for;
 	// it never holds a credential.
 	Env map[string]string
+	// Labels are the installation's labels, TOPOS_CELLA_LABELS, which the
+	// sandbox carries beside the session's and the agent's, such as the
+	// tenant a Cella's authorizer places what a caller creates in. The
+	// session's and the agent's labels win over one of the same key.
+	Labels map[string]string
 	// TTL is the session's remaining age, the sandbox's backstop; zero
 	// leaves Cella's default.
 	TTL time.Duration
@@ -479,7 +485,11 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 	slices.Sort(hosts)
 	hosts = slices.Compact(hosts)
 	hosts = slices.DeleteFunc(hosts, func(h string) bool { return h == "" })
-	labels := map[string]string{LabelSession: m.o.Session}
+	labels := maps.Clone(m.o.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[LabelSession] = m.o.Session
 	if m.o.Agent != "" {
 		labels[LabelAgent] = m.o.Agent
 	}

@@ -87,6 +87,7 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 		o.Egress = []string{"proxy.golang.org", "github.com", " "}
 		o.Secrets = []v1.SecretMount{{Name: "gh", Env: "GITHUB_TOKEN"}}
 		o.Env = map[string]string{"LUX_URL": "https://lux.example/v1/models"}
+		o.Labels = map[string]string{"tenant.example/id": "t-1", LabelSession: "not-the-session"}
 		o.TTL = 2 * time.Hour
 	})
 	if !f.m.Created() {
@@ -100,8 +101,12 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 	if !ok {
 		t.Fatalf("no sandbox named %s", name)
 	}
-	if sb.Metadata.Labels[LabelSession] != f.o.Session || sb.Metadata.Labels[LabelAgent] != "coder" {
+	// The installation's labels join the session's, which win a key they share.
+	if sb.Metadata.Labels[LabelSession] != f.o.Session || sb.Metadata.Labels[LabelAgent] != "coder" || sb.Metadata.Labels["tenant.example/id"] != "t-1" || len(sb.Metadata.Labels) != 3 {
 		t.Errorf("labels = %v", sb.Metadata.Labels)
+	}
+	if f.o.Labels[LabelSession] != "not-the-session" {
+		t.Error("the installation's labels were changed in place")
 	}
 	spec := sb.Spec
 	if spec.Environment != "my-workers" || spec.Image != "golang" || spec.Resources.CPU != "2" || spec.Resources.Memory != "4Gi" {
