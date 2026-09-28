@@ -235,7 +235,8 @@ func TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox(t *testing.T) {
 // identity provider, TOPOS_ORIGO_TOKEN_FILE's credential is the
 // sandbox's git host Secret, scoped to the host of TOPOS_ORIGO_URL and
 // mounted as ORIGO_TOKEN, whether serve's own runner drives the session
-// or a runner role, and the sandbox gets no Lux key.
+// or a runner role, and the sandbox gets no Lux key; the sandbox and its
+// Secret carry TOPOS_CELLA_LABELS beside the session's label.
 func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
 	origo := filepath.Join(t.TempDir(), "origo-token")
 	if err := os.WriteFile(origo, []byte("installation-git\n"), 0o600); err != nil {
@@ -248,6 +249,9 @@ func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
 		if !ok || value != "installation-git" || !slices.Equal(sec.Spec.Scope.Hosts, []string{"origo.example"}) {
 			t.Fatalf("the git host's Secret %+v %v", sec.Spec.Scope, ok)
 		}
+		if !maps.Equal(sec.Metadata.Labels, map[string]string{"tenant.example/id": "t-1"}) {
+			t.Fatalf("the git host's Secret is labeled %v", sec.Metadata.Labels)
+		}
 		if _, _, ok := cella.Secret(name + "-lux"); ok {
 			t.Fatal("the sandbox got a Lux key")
 		}
@@ -255,12 +259,15 @@ func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
 		if !ok || len(sb.Spec.Secrets) != 1 || sb.Spec.Secrets[0].Env != hosted.EnvOrigoToken || !slices.Contains(sb.Spec.Network.Egress.AllowedHosts, "origo.example") {
 			t.Fatalf("the sandbox %+v", sb.Spec)
 		}
+		if sb.Metadata.Labels["tenant.example/id"] != "t-1" || sb.Metadata.Labels[cellamachine.LabelSession] != id {
+			t.Fatalf("the sandbox is labeled %v", sb.Metadata.Labels)
+		}
 	}
 	selfHosted := func(t *testing.T) (map[string]string, *cellastub.Server) {
 		vars, _, cella := hostedStubs(t)
 		maps.Copy(vars, map[string]string{
 			"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(),
-			"TOPOS_ORIGO_URL": "https://origo.example", "TOPOS_ORIGO_TOKEN_FILE": origo,
+			"TOPOS_ORIGO_URL": "https://origo.example", "TOPOS_ORIGO_TOKEN_FILE": origo, "TOPOS_CELLA_LABELS": "tenant.example/id=t-1",
 		})
 		return vars, cella
 	}
@@ -283,7 +290,7 @@ func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
 			"TOPOS_INTERNAL_URL": internalURL, "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_RUNNER_CAPACITY": "1", "TOPOS_RUNNER_TOKEN": "runner-token",
 			"TOPOS_MODELS_URL": vars["TOPOS_MODELS_URL"], "TOPOS_MODELS_KEY": vars["TOPOS_MODELS_KEY"],
 			"TOPOS_CELLA_URL": vars["TOPOS_CELLA_URL"], "TOPOS_CELLA_TOKEN_FILE": vars["TOPOS_CELLA_TOKEN_FILE"],
-			"TOPOS_ORIGO_URL": vars["TOPOS_ORIGO_URL"], "TOPOS_ORIGO_TOKEN_FILE": origo,
+			"TOPOS_ORIGO_URL": vars["TOPOS_ORIGO_URL"], "TOPOS_ORIGO_TOKEN_FILE": origo, "TOPOS_CELLA_LABELS": vars["TOPOS_CELLA_LABELS"],
 			"TOPOS_MACHINE_HELPERS": vars["TOPOS_MACHINE_HELPERS"], "TOPOS_MACHINE_DIR": vars["TOPOS_MACHINE_DIR"],
 		}
 		ctx, cancel := context.WithCancel(t.Context())

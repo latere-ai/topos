@@ -395,7 +395,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		if err != nil {
 			return nil, fmt.Errorf("TOPOS_MACHINE_HELPERS: %w", err)
 		}
-		co := hosted.CellaOptions{URL: cfg.CellaURL, Helpers: helpers, Dir: cfg.MachineDir, ModelsURL: cmp.Or(doors.Root(), cfg.ModelsURL), OrigoURL: cfg.OrigoURL, Log: log}
+		co := hosted.CellaOptions{URL: cfg.CellaURL, Helpers: helpers, Dir: cfg.MachineDir, ModelsURL: cmp.Or(doors.Root(), cfg.ModelsURL), OrigoURL: cfg.OrigoURL, Labels: cfg.CellaLabels, Log: log}
 		if cfg.CellaTokenFile != "" {
 			co.Token = client.TokenFile(cfg.CellaTokenFile)
 		}
