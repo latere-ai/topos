@@ -24,6 +24,14 @@ committed: the commit log already holds that.
   reader of the log sees which checkout the agent started from.
 - A refused repository URL that holds a credential is no longer quoted
   in the error.
+- An installation without an identity provider gives its sandboxes a git
+  credential of its own: `TOPOS_ORIGO_TOKEN_FILE` names the file holding
+  it, and each Cella sandbox's git sends it to the host of
+  `TOPOS_ORIGO_URL` through the `ORIGO_TOKEN` Secret that Cella's egress
+  gateway swaps in, so a session clones and pushes its repositories there
+  without the credential entering the sandbox. The file is read at each
+  sandbox's open. It needs `TOPOS_ORIGO_URL` and is refused beside
+  `TOPOS_IDENTITY_URL`, whose sandboxes push with their agents' tokens.
 
 - **Breaking:** the repository restarts as the Topos core. Every package of
   v0.7.0 is removed: the root `topos` package, `graph`, `billing`, `harness`,

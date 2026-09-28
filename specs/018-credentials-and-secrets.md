@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 003-manifes
 affects: [internal/credentials/, internal/identity/, internal/egressproxy/, session/inputcheck/, runner/, machine/cella/, manifest/, internal/hosted/, internal/runnerapi/, internal/runnerrole/, internal/server/, internal/config/, test/stubs/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-28
 author: changkun
 ---
 
@@ -46,7 +46,9 @@ Built so far, for the hosted path: the identity provider's client
 Lux keys (`internal/credentials`), the `TokenSource` of a drive
 (`runner`), the lease-checked token route (`internal/runnerapi`,
 `internal/runnerrole`), a session's own model key, Cella token and
-sandbox Secrets (`internal/hosted`), the identity's lifecycle at apply,
+sandbox Secrets (`internal/hosted`), the git host credential of an
+installation without an identity provider in the same Secret, the
+identity's lifecycle at apply,
 archive and reconcile (`internal/server`), the variables, and stubs of
 the identity provider and the authorizer's key routes (`test/stubs`).
 The Credential object and its encryption, connections, scrubbing, named
@@ -199,14 +201,23 @@ session's own spend apart from its sandbox's
 ### Without an identity provider
 
 A self-hosted installation with no identity provider acts with its own
-credentials: `TOPOS_MODELS_KEY` for models and the file of
-`TOPOS_CELLA_TOKEN_FILE` for Cella ([[002-scaffold-and-configuration]]).
-Every session acts as the installation, with no per-agent reach and no
+credentials: `TOPOS_MODELS_KEY` for models, the file of
+`TOPOS_CELLA_TOKEN_FILE` for Cella, and the file of
+`TOPOS_ORIGO_TOKEN_FILE` for the git host of `TOPOS_ORIGO_URL`
+([[002-scaffold-and-configuration]]). The git host's credential takes
+the place of the agent's token in the same Cella Secret, named after the
+sandbox with `-origo`, scoped to the git host, mounted as `ORIGO_TOKEN`
+and sent by the sandbox's git, so the sandbox holds a placeholder and
+never the value. The runner reads the file at each sandbox's open and
+does not renew the Secret, since the credential has no expiry it knows
+of; a token the installation mints for the git host is used in its
+place. The installation's model key never reaches a sandbox. Every
+session acts as the installation, with no per-agent reach and no
 per-session binding; the operator's choice of those credentials is the
 bound. An installation whose authorizer creates session keys refuses to
 start with `TOPOS_MODELS_KEY` set, and one with an identity provider
-with `TOPOS_CELLA_TOKEN_FILE` set, so neither installation credential
-is used beside the per-session ones.
+with `TOPOS_CELLA_TOKEN_FILE` or `TOPOS_ORIGO_TOKEN_FILE` set, so no
+installation credential is used beside the per-session ones.
 
 ### Connections
 
@@ -334,6 +345,7 @@ egress swapping a Secret by host and path.
 | A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules`, `internal/server.TestAgentIdentityLifecycle`, `authorizer.TestDecodeLimitsReadsEveryMember` | built |
 | A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `internal/credentials.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestAnInstallationThatMintsNothingActsAsToday`, `internal/config.TestTheCredentialVariables` | built against the stub key routes, with the refusal of the installation's key tied to `TOPOS_SESSION_KEYS_URL` rather than to the authorizer; the swap itself is Cella's egress gateway's, the Secret is scoped by host until Cella scopes one by path, and the run against the real authorizer waits for its deployment |
 | With `TOPOS_MODELS_URL` a Lux root that publishes its doors under another address, the runner's model requests go to the configured root, and the sandbox's `LUX_URL`, its Lux key's host and its egress allowlist are the published one's | `models.TestDoorsMoveUnderTheRootTheyWereDiscoveredAt`, `cmd/toposd.TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox` | built against the stub Lux |
+| Without an identity provider, `TOPOS_ORIGO_TOKEN_FILE`'s credential is the sandbox's `-origo` Secret, scoped to the git host and sent by its git, read at each open and never renewed, with no Lux key in the sandbox; a minted git host token wins over it; the file needs `TOPOS_ORIGO_URL` and is refused beside `TOPOS_IDENTITY_URL` | `internal/hosted.TestAnInstallationGitCredential`, `cmd/toposd.TestASelfHosterPushesWithItsGitCredential`, in `serve` and in the runner role, `internal/config.TestTheOrigoTokenFile` | built against the stub Cella; the swap itself is Cella's egress gateway's |
 | A `person` connection uses the initiator's credential, and fails with `connection_not_connected` when there is none | `TestPersonConnectionUsesInitiatorsCredential` | not built: needs the Credential object |
 | A value the runner holds, and its base64 and percent-encoded forms, are replaced in tool output before the log and the model | `TestScrubbingKnownValues` | not built: comes after the hosted path |
 | On the host, a named secret is substituted only on requests to its hosts, and a request elsewhere carries the placeholder | `TestHostProxySubstitutesOnlyNamedHosts` | not built: comes after the hosted path |
