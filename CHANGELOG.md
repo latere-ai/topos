@@ -32,6 +32,9 @@ committed: the commit log already holds that.
   without the credential entering the sandbox. The file is read at each
   sandbox's open. It needs `TOPOS_ORIGO_URL` and is refused beside
   `TOPOS_IDENTITY_URL`, whose sandboxes push with their agents' tokens.
+- `TOPOS_CELLA_LABELS` names `key=value` labels that every sandbox and
+  every sandbox Secret carries, for a Cella whose authorizer places what
+  a caller creates by labels, such as its tenant.
 
 - **Breaking:** the repository restarts as the Topos core. Every package of
   v0.7.0 is removed: the root `topos` package, `graph`, `billing`, `harness`,
