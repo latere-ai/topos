@@ -107,6 +107,10 @@ type Config struct {
 	CellaURL       string
 	CellaTokenFile string
 	MachineHelpers string
+	// CellaLabels are TOPOS_CELLA_LABELS: labels every sandbox and every
+	// sandbox Secret toposd creates in Cella carries, such as the tenant a
+	// Cella's authorizer requires of what a caller creates.
+	CellaLabels map[string]string
 	// MachineDir is where the helper lives inside each sandbox; empty is
 	// the machine's default under /tmp.
 	MachineDir string
@@ -340,6 +344,9 @@ func (c *Config) readRunner(getenv Getenv) []string {
 	}
 	c.CellaURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_CELLA_URL")), "/")
 	c.CellaTokenFile = strings.TrimSpace(getenv("TOPOS_CELLA_TOKEN_FILE"))
+	var bad []string
+	c.CellaLabels, bad = cellaLabels(getenv("TOPOS_CELLA_LABELS"))
+	problems = append(problems, bad...)
 	c.MachineHelpers = withDefault(getenv("TOPOS_MACHINE_HELPERS"), DefaultMachineHelpers)
 	c.MachineDir = strings.TrimSpace(getenv("TOPOS_MACHINE_DIR"))
 	switch v := strings.TrimSpace(getenv("TOPOS_HOST_SESSIONS")); v {
@@ -420,6 +427,42 @@ func (c *Config) readCredentials(getenv Getenv) []string {
 		}
 	}
 	return problems
+}
+
+// toposLabels is the prefix of the labels Topos sets itself on what it
+// creates in Cella, which the installation's labels cannot name.
+const toposLabels = "topos.latere.ai/"
+
+// cellaLabels reads TOPOS_CELLA_LABELS, key=value pairs separated by
+// commas, each key once, neither side empty or holding white space, and
+// no key under topos.latere.ai/; nil when the variable is empty.
+func cellaLabels(raw string) (map[string]string, []string) {
+	var out map[string]string
+	var problems []string
+	for part := range strings.SplitSeq(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(part, "=")
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		switch {
+		case !ok || k == "" || v == "" || strings.ContainsAny(k+v, " \t\n\r"):
+			problems = append(problems, "TOPOS_CELLA_LABELS has "+strconv.Quote(part)+", not key=value")
+			continue
+		case strings.HasPrefix(k, toposLabels):
+			problems = append(problems, "TOPOS_CELLA_LABELS names "+k+"; the labels under "+toposLabels+" are the ones Topos sets itself")
+			continue
+		case out[k] != "":
+			problems = append(problems, "TOPOS_CELLA_LABELS names "+k+" twice")
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[k] = v
+	}
+	return out, problems
 }
 
 func done(c Config, problems []string) (Config, error) {

@@ -427,6 +427,36 @@ func TestTheOrigoTokenFile(t *testing.T) {
 	}
 }
 
+// TestTheCellaLabels: TOPOS_CELLA_LABELS is read in serve and in the
+// runner role as key=value pairs, and a pair that is not one, a key given
+// twice, or a key under topos.latere.ai/, which Topos sets itself, stops
+// the start; unset, there are none.
+func TestTheCellaLabels(t *testing.T) {
+	c, err := Load(RoleServe, serve(map[string]string{"TOPOS_CELLA_LABELS": " tenant.example/id = t-1 ,, tenant.example/principal=p "}))
+	if err != nil || !maps.Equal(c.CellaLabels, map[string]string{"tenant.example/id": "t-1", "tenant.example/principal": "p"}) {
+		t.Fatalf("serve: %v %v", c.CellaLabels, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example", "TOPOS_CELLA_LABELS": "a=b"}))
+	if err != nil || r.CellaLabels["a"] != "b" {
+		t.Fatalf("runner: %v %v", r.CellaLabels, err)
+	}
+	if c, err := Load(RoleServe, serve(nil)); err != nil || c.CellaLabels != nil {
+		t.Fatalf("unset: %v %v", c.CellaLabels, err)
+	}
+	for raw, want := range map[string]string{
+		"tenant":                    "not key=value",
+		"=v":                        "not key=value",
+		"k=":                        "not key=value",
+		"k=a b":                     "not key=value",
+		"k=1,k=2":                   "twice",
+		"topos.latere.ai/session=x": "the ones Topos sets itself",
+	} {
+		if _, err := Load(RoleServe, serve(map[string]string{"TOPOS_CELLA_LABELS": raw})); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v, want a problem naming %q", raw, err, want)
+		}
+	}
+}
+
 // TestBasePathMustMatchPublicURL is spec 030's one address: the base
 // path is the path of TOPOS_PUBLIC_URL, and with no base path the public
 // URL has none, so every URL toposd writes is one it answers on.
