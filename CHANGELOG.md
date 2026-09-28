@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A Cella sandbox's `HOME` is the machine's own directory,
+  `TOPOS_MACHINE_DIR/home`, made on every open, unless the agent's
+  machine environment names one. Cella mounts the image's root filesystem
+  read-only, so writing git's global configuration into the image's home
+  directory failed and a session's first machine never opened; git,
+  package managers and build caches now write there.
 - An Agent manifest names the repositories its sessions work in as
   `spec.repositories`, a list of `{url, ref}` with `ref` optional, checked
   as a session's are: at most 8, each an `https` URL that names its host

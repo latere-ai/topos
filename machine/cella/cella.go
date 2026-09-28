@@ -268,6 +268,12 @@ func (m *Machine) Roots() []string {
 
 func (m *Machine) SpillDir() string { return path.Join(m.o.Dir, "spill") }
 
+// HomeDir is the sandbox's HOME unless Options.Env names one: Cella
+// mounts the root filesystem read-only, so the image's home directory
+// cannot hold what git, package managers and build caches write there,
+// and the workspace is the person's tree, not a place for them.
+func (m *Machine) HomeDir() string { return path.Join(m.o.Dir, "home") }
+
 // helper is the helper's path inside the sandbox.
 func (m *Machine) helper() string { return path.Join(m.o.Dir, "bin", "topos-machine") }
 
@@ -493,6 +499,13 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 	if m.o.Agent != "" {
 		labels[LabelAgent] = m.o.Agent
 	}
+	env := maps.Clone(m.o.Env)
+	if _, set := env["HOME"]; !set {
+		if env == nil {
+			env = map[string]string{}
+		}
+		env["HOME"] = m.HomeDir()
+	}
 	life := v1.Lifecycle{AutoStop: duration(AutoStop), AutoDelete: autoDelete}
 	if m.o.TTL > 0 {
 		life.TTL = duration(m.o.TTL)
@@ -510,7 +523,7 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 			Image:       m.o.Image,
 			Workdir:     m.o.Workdir,
 			Resources:   m.o.Resources,
-			Env:         m.o.Env,
+			Env:         env,
 			Secrets:     m.o.Secrets,
 			Network:     v1.Network{Egress: v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: hosts}},
 			Lifecycle:   life,
@@ -526,10 +539,10 @@ func duration(d time.Duration) v1.Duration {
 	return v1.Duration(strconv.FormatInt(s, 10) + "s")
 }
 
-// probe makes the spill directory and reads the sandbox's platform and
+// probe makes the spill and home directories, reads the sandbox's platform and
 // the SHA-256 of the helper already in it, which is absent after a create
 // and may be after a start: /tmp does not outlive a stop on every driver.
-const probe = `mkdir -p "$2" && uname -s && uname -m && if [ -x "$1" ]; then "$1" sum; fi`
+const probe = `mkdir -p "$2" "$3" && uname -s && uname -m && if [ -x "$1" ]; then "$1" sum; fi`
 
 // upload writes the helper from the session's input, which carries
 // exactly as many bytes as head reads, because the exec socket cannot
@@ -548,7 +561,7 @@ mv -f "$t" "$1/topos-machine"
 // there, and records the platform.
 func (m *Machine) ensureHelper(ctx context.Context, id string) error {
 	res, _, err := m.c.Exec(ctx, id, client.ExecRequest{
-		Command: []string{shell, "-c", probe, "sh", m.helper(), m.SpillDir()},
+		Command: []string{shell, "-c", probe, "sh", m.helper(), m.SpillDir(), m.HomeDir()},
 		Timeout: "1m",
 	})
 	if err != nil {

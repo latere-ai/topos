@@ -119,8 +119,16 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 	if len(spec.Secrets) != 1 || spec.Secrets[0] != (v1.SecretMount{Name: "gh", Env: "GITHUB_TOKEN"}) {
 		t.Errorf("secrets = %+v", spec.Secrets)
 	}
-	if len(spec.Env) != 1 || spec.Env["LUX_URL"] != "https://lux.example/v1/models" {
+	// HOME is the machine's own writable directory: the image's home sits
+	// on Cella's read-only root filesystem, where git config --global fails.
+	if len(spec.Env) != 2 || spec.Env["LUX_URL"] != "https://lux.example/v1/models" || spec.Env["HOME"] != f.o.Dir+"/home" {
 		t.Errorf("env = %+v", spec.Env)
+	}
+	if st, err := os.Stat(filepath.Join(f.o.Dir, "home")); err != nil || !st.IsDir() {
+		t.Errorf("the home directory was not made: %v", err)
+	}
+	if _, set := f.o.Env["HOME"]; set {
+		t.Error("the options' environment was changed in place")
 	}
 	if spec.Lifecycle != (v1.Lifecycle{AutoStop: "900s", TTL: "7200s", AutoDelete: v1.DurationNever}) {
 		t.Errorf("lifecycle = %+v", spec.Lifecycle)
@@ -144,6 +152,19 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer session-token" {
 			t.Errorf("%s %s carried %q", r.Method, r.Path, r.Header.Get("Authorization"))
 		}
+	}
+}
+
+func TestAHomeTheOptionsNameIsKept(t *testing.T) {
+	f := open(t, func(_ *cellastub.Server, o *Options) {
+		o.Env = map[string]string{"HOME": "/workspace/.home"}
+	})
+	sb, ok := f.stub.Sandbox(f.m.Name())
+	if !ok {
+		t.Fatal("no sandbox")
+	}
+	if len(sb.Spec.Env) != 1 || sb.Spec.Env["HOME"] != "/workspace/.home" {
+		t.Errorf("env = %+v, want the options' HOME alone", sb.Spec.Env)
 	}
 }
 
