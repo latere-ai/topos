@@ -241,6 +241,9 @@ type CellaOptions struct {
 	// server mints no git host token for the session; it is read at each
 	// sandbox's open, and nil sends none.
 	OrigoToken client.TokenSource
+	// Labels are TOPOS_CELLA_LABELS, which every sandbox and every Secret
+	// the runner applies for it carry.
+	Labels map[string]string
 	// Log reports a sandbox credential that could not be renewed.
 	Log *slog.Logger
 	// Helpers are the topos-machine builds by platform.
@@ -291,7 +294,7 @@ func Cella(o CellaOptions) Machines {
 			URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
 			Environment: cmp.Or(s.Machine.Environment, m.Environment), Image: cmp.Or(s.Machine.Image, m.Image),
 			Resources: cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
-			Egress:    append(slices.Clone(m.Egress), repositoryHosts(s)...), Secrets: mounts, Env: env, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
+			Egress:    append(slices.Clone(m.Egress), repositoryHosts(s)...), Secrets: mounts, Env: env, Labels: o.Labels, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
 		})
 		if err != nil {
 			return nil, err

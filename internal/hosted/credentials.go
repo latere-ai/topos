@@ -123,6 +123,7 @@ func cellaToken(ctx context.Context, file client.TokenSource) (client.TokenSourc
 // installation's own credential, which has no expiry to renew before.
 type sandboxSecret struct {
 	name, env, audience, host string
+	labels                    map[string]string
 	value                     string
 	expires                   time.Time
 	installation              bool
@@ -155,14 +156,14 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, sessionID string, c *c
 		if err != nil {
 			return nil, setup(CodeModelUnavailable, fmt.Errorf("TOPOS_MODELS_URL %w", err))
 		}
-		want = append(want, &sandboxSecret{name: name + "-lux", env: EnvLuxKey, audience: runner.AudienceLux, host: host})
+		want = append(want, &sandboxSecret{name: name + "-lux", env: EnvLuxKey, audience: runner.AudienceLux, host: host, labels: o.Labels})
 	}
 	if o.OrigoURL != "" {
 		host, err := hostOf(o.OrigoURL)
 		if err != nil {
 			return nil, setup(CodeMachineUnavailable, fmt.Errorf("TOPOS_ORIGO_URL %w", err))
 		}
-		want = append(want, &sandboxSecret{name: name + "-origo", env: EnvOrigoToken, audience: AudienceOrigo, host: host})
+		want = append(want, &sandboxSecret{name: name + "-origo", env: EnvOrigoToken, audience: AudienceOrigo, host: host, labels: o.Labels})
 	}
 	var out []*sandboxSecret
 	for _, sec := range want {
@@ -191,10 +192,11 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, sessionID string, c *c
 }
 
 // apply writes cred as the secret's value, injected as a bearer in the
-// Authorization header toward the secret's host alone.
+// Authorization header toward the secret's host alone, with the
+// installation's labels, the same at every apply.
 func (s *sandboxSecret) apply(ctx context.Context, c *client.Client, cred runner.Credential) error {
 	body, err := json.Marshal(cellav1.Secret{
-		APIVersion: cellav1.APIVersion, Kind: cellav1.KindSecret, Metadata: cellav1.Metadata{Name: s.name},
+		APIVersion: cellav1.APIVersion, Kind: cellav1.KindSecret, Metadata: cellav1.Metadata{Name: s.name, Labels: s.labels},
 		Spec: cellav1.SecretSpec{
 			Kind: cellav1.SecretStatic, Scope: cellav1.SecretScope{Hosts: []string{s.host}},
 			Inject: cellav1.SecretInject{Header: cellav1.DefaultInjectHeader, Scheme: cellav1.SchemeBearer},

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -398,4 +399,45 @@ func TestAnInstallationGitCredential(t *testing.T) {
 			t.Fatalf("the git host's Secret holds %q, not the session's token", value)
 		}
 	})
+}
+
+// TestTheInstallationsLabels: every sandbox and every Secret the runner
+// applies for it carries TOPOS_CELLA_LABELS, the Secrets at their
+// renewal too, since a Cella's authorizer may hold an object's placing
+// labels fixed.
+func TestTheInstallationsLabels(t *testing.T) {
+	labels := map[string]string{"tenant.example/id": "t-1", "tenant.example/principal": "p"}
+	creds := &issued{life: runner.RefreshBefore + 500*time.Millisecond}
+	f := newCredentialFixture(t, helper(t), creds, nil, func(o *CellaOptions) { o.Labels = labels })
+	ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+	defer cancel()
+	cfg, err := f.h(ctx, f.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := machine.Open(ctx, cfg.Machine); err != nil {
+		t.Fatal(err)
+	}
+	name := cella.SandboxName(f.s.ID)
+	sb, ok := f.cella.Sandbox(name)
+	if !ok || sb.Metadata.Labels["tenant.example/id"] != "t-1" || sb.Metadata.Labels["tenant.example/principal"] != "p" || sb.Metadata.Labels[cella.LabelSession] != f.s.ID {
+		t.Fatalf("the sandbox is labeled %v", sb.Metadata.Labels)
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if sec, _, _ := f.cella.Secret(name + "-origo"); sec.Status.Version >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the git host's token was not renewed")
+		}
+	}
+	for _, secret := range []string{name + "-lux", name + "-origo"} {
+		if sec, _, ok := f.cella.Secret(secret); !ok || !maps.Equal(sec.Metadata.Labels, labels) {
+			t.Fatalf("%s is labeled %v", secret, sec.Metadata.Labels)
+		}
+	}
+	cancel()
+	if err := cfg.Machine.Release(context.WithoutCancel(ctx), true); err != nil {
+		t.Fatal(err)
+	}
 }
