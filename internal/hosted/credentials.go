@@ -119,11 +119,13 @@ func cellaToken(ctx context.Context, file client.TokenSource) (client.TokenSourc
 // sandboxSecret is one credential a sandbox uses and never holds: a
 // Cella Secret named after the sandbox, mounted under env, scoped to
 // host, whose value is the session's credential for audience and the
-// workload sandbox.
+// workload sandbox, or, for an installation marked so, the
+// installation's own credential, which has no expiry to renew before.
 type sandboxSecret struct {
 	name, env, audience, host string
 	value                     string
 	expires                   time.Time
+	installation              bool
 }
 
 // hostOf is the host of an absolute URL, lower case.
@@ -135,14 +137,15 @@ func hostOf(raw string) (string, error) {
 	return strings.ToLower(u.Hostname()), nil
 }
 
-// sandboxSecrets are the secrets of the session's sandbox the
-// installation mints credentials for: its Lux key when it has session
-// keys, and its git host's token when it has an identity provider and a
-// git host. Each is applied to Cella before the sandbox is opened, so its
-// mount resolves.
+// sandboxSecrets are the secrets of the session's sandbox: its Lux key
+// when the installation has session keys, and its git host's token when
+// it has an identity provider and a git host, or else its own git host
+// credential, OrigoToken, when it has one. Each is applied to Cella
+// before the sandbox is opened, so its mount resolves. The installation's
+// model key never reaches a sandbox.
 func (o CellaOptions) sandboxSecrets(ctx context.Context, sessionID string, c *client.Client) ([]*sandboxSecret, error) {
 	src := runner.TokensFrom(ctx)
-	if src == nil {
+	if src == nil && o.OrigoToken == nil {
 		return nil, nil
 	}
 	name := cella.SandboxName(sessionID)
@@ -163,8 +166,17 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, sessionID string, c *c
 	}
 	var out []*sandboxSecret
 	for _, sec := range want {
-		cred, err := src.Token(ctx, sec.audience, runner.WorkloadSandbox)
+		cred, err := runner.Credential{}, runner.ErrNotMinted
+		if src != nil {
+			cred, err = src.Token(ctx, sec.audience, runner.WorkloadSandbox)
+		}
 		switch {
+		case errors.Is(err, runner.ErrNotMinted) && sec.audience == AudienceOrigo && o.OrigoToken != nil:
+			v, ferr := o.OrigoToken.Token(ctx)
+			if ferr != nil {
+				return nil, setup(CodeMachineUnavailable, fmt.Errorf("the git host's credential, TOPOS_ORIGO_TOKEN_FILE: %w", ferr))
+			}
+			cred, sec.installation = runner.Credential{Value: v}, true
 		case errors.Is(err, runner.ErrNotMinted):
 			continue
 		case err != nil:

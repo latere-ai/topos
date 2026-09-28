@@ -236,6 +236,11 @@ type CellaOptions struct {
 	// OrigoURL is TOPOS_ORIGO_URL, the git host whose token the sandbox's
 	// git sends; empty mounts none.
 	OrigoURL string
+	// OrigoToken is the installation's credential for OrigoURL,
+	// TOPOS_ORIGO_TOKEN_FILE's, which the sandbox's git sends when the
+	// server mints no git host token for the session; it is read at each
+	// sandbox's open, and nil sends none.
+	OrigoToken client.TokenSource
 	// Log reports a sandbox credential that could not be renewed.
 	Log *slog.Logger
 	// Helpers are the topos-machine builds by platform.
@@ -250,7 +255,9 @@ type CellaOptions struct {
 // machine_unavailable. The runner's calls carry the agent's token for
 // the session when the installation mints one, and the installation's
 // bearer otherwise; the sandbox's Lux key and git host token are Cella
-// Secrets whose placeholders it holds, renewed until the drive ends.
+// Secrets whose placeholders it holds, renewed until the drive ends. An
+// installation that mints no git host token puts its own, OrigoToken, in
+// the git host's Secret instead, applied again at each open.
 func Cella(o CellaOptions) Machines {
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
@@ -296,8 +303,14 @@ func Cella(o CellaOptions) Machines {
 				}
 			}
 		}
-		if len(secrets) > 0 {
-			keep(ctx, c, runner.TokensFrom(ctx), secrets, o.Log)
+		var minted []*sandboxSecret
+		for _, sec := range secrets {
+			if !sec.installation {
+				minted = append(minted, sec)
+			}
+		}
+		if len(minted) > 0 {
+			keep(ctx, c, runner.TokensFrom(ctx), minted, o.Log)
 		}
 		return mach, nil
 	}

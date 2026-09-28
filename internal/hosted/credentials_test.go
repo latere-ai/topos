@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -69,7 +71,7 @@ type credentialFixture struct {
 	h     func(context.Context, session.Session) (harness.Config, error)
 }
 
-func newCredentialFixture(t *testing.T, helpers map[string][]byte, creds *issued, file client.TokenSource) credentialFixture {
+func newCredentialFixture(t *testing.T, helpers map[string][]byte, creds *issued, file client.TokenSource, opts ...func(*CellaOptions)) credentialFixture {
 	t.Helper()
 	f := credentialFixture{lux: luxstub.New(t), cella: cellastub.New(t), st: session.NewMemoryStore(), creds: creds}
 	f.lux.Script("anthropic/claude-haiku-4.5", luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "ok"}}, StopReason: ir.StopEndTurn}})
@@ -79,7 +81,11 @@ func newCredentialFixture(t *testing.T, helpers map[string][]byte, creds *issued
 	if err != nil {
 		t.Fatal(err)
 	}
-	machines := Cella(CellaOptions{URL: f.cella.URL(), Token: file, Helpers: helpers, Dir: dir, ModelsURL: f.lux.URL(), OrigoURL: "https://origo.example"})
+	co := CellaOptions{URL: f.cella.URL(), Token: file, Helpers: helpers, Dir: dir, ModelsURL: f.lux.URL(), OrigoURL: "https://origo.example"}
+	for _, opt := range opts {
+		opt(&co)
+	}
+	machines := Cella(co)
 	if f.h, err = Harness(Options{Store: f.st, ModelsURL: f.lux.URL() + "/anthropic", ModelsKey: "installation-key", Machines: machines}); err != nil {
 		t.Fatal(err)
 	}
@@ -288,4 +294,108 @@ func TestSessionCredentialFailuresCloseTheTurn(t *testing.T) {
 	if _, err := hostOf("::"); err == nil {
 		t.Fatal("a URL with no host")
 	}
+}
+
+// TestAnInstallationGitCredential: an installation that mints no git
+// host token and has a git host credential of its own,
+// TOPOS_ORIGO_TOKEN_FILE's, puts that credential in the sandbox's git
+// host Secret, scoped to the git host alone, and git in the sandbox
+// sends its placeholder there; the sandbox gets no Lux key, Cella gets
+// the installation's bearer, and the Secret is not renewed, since the
+// credential has no expiry. The file is read at each open, so a rotated
+// value reaches the next sandbox, a file that cannot be read refuses the
+// machine without its contents, and a token the server mints for the
+// git host is used in its place.
+func TestAnInstallationGitCredential(t *testing.T) {
+	helpers := helper(t)
+	path := filepath.Join(t.TempDir(), "origo-token")
+	write := func(v string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(v+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	withFile := func(o *CellaOptions) { o.OrigoToken = client.TokenFile(path) }
+	nothing := &issued{err: map[string]error{runner.AudienceLux: runner.ErrNotMinted, AudienceCella: runner.ErrNotMinted, AudienceOrigo: runner.ErrNotMinted}}
+	for _, c := range []struct {
+		name string
+		ctx  context.Context
+	}{
+		{"no token source", t.Context()},
+		{"nothing minted", runner.WithTokens(t.Context(), runner.NewTokenSource(nothing, nil, nil))},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			write("installation-git-1")
+			f := newCredentialFixture(t, helpers, nothing, client.StaticToken("installation-bearer"), withFile)
+			cfg, err := f.h(c.ctx, f.s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := machine.Open(c.ctx, cfg.Machine); err != nil {
+				t.Fatal(err)
+			}
+			name := cella.SandboxName(f.s.ID)
+			sec, value, ok := f.cella.Secret(name + "-origo")
+			if !ok || value != "installation-git-1" || !slices.Equal(sec.Spec.Scope.Hosts, []string{"origo.example"}) ||
+				sec.Spec.Inject != (cellav1.SecretInject{Header: "Authorization", Scheme: cellav1.SchemeBearer}) {
+				t.Fatalf("the git host's Secret: %+v %v", sec.Spec, ok)
+			}
+			if _, _, ok := f.cella.Secret(name + "-lux"); ok {
+				t.Fatal("the sandbox got a Lux key from an installation that mints none")
+			}
+			sb, ok := f.cella.Sandbox(name)
+			if !ok || len(sb.Spec.Secrets) != 1 || sb.Spec.Secrets[0] != (cellav1.SecretMount{Name: name + "-origo", Env: EnvOrigoToken}) || sb.Spec.Env[EnvLuxURL] != "" {
+				t.Fatalf("the sandbox's secrets %+v, env %v", sb.Spec.Secrets, sb.Spec.Env)
+			}
+			res, err := cfg.Machine.Exec(c.ctx, machine.ExecRequest{Command: "git config --global --get http.https://origo.example/.extraheader; env | grep -c installation-git || true", Timeout: time.Minute})
+			if err != nil || string(res.Output) != "Authorization: Bearer cella-placeholder-"+name+"-origo\n0\n" {
+				t.Fatalf("git in the sandbox: %q %v", res.Output, err)
+			}
+			// A renewal would come within a second of the open; the
+			// installation's credential is applied once.
+			time.Sleep(1500 * time.Millisecond)
+			if sec, _, _ := f.cella.Secret(name + "-origo"); sec.Status.Version != 1 {
+				t.Fatalf("the installation's credential was applied again: version %d", sec.Status.Version)
+			}
+			for _, r := range f.cella.Requests() {
+				if r.Header.Get("Authorization") != "Bearer installation-bearer" {
+					t.Fatalf("%s carried %q", r.Path, r.Header.Get("Authorization"))
+				}
+			}
+			if err := cfg.Machine.Release(context.WithoutCancel(c.ctx), true); err != nil {
+				t.Fatal(err)
+			}
+			write("installation-git-2")
+			next := newSession(t, f.st, reviewer)
+			next.ExpiresAt = time.Now().Add(time.Hour)
+			if err := opened(c.ctx, f.h, next); err != nil {
+				t.Fatal(err)
+			}
+			if _, value, _ := f.cella.Secret(cella.SandboxName(next.ID) + "-origo"); value != "installation-git-2" {
+				t.Fatal("the next sandbox did not get the rotated credential")
+			}
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			last := newSession(t, f.st, reviewer)
+			last.ExpiresAt = time.Now().Add(time.Hour)
+			err = opened(c.ctx, f.h, last)
+			if code(t, err) != CodeMachineUnavailable || !strings.Contains(err.Error(), "TOPOS_ORIGO_TOKEN_FILE") {
+				t.Fatalf("a file that cannot be read: %v", err)
+			}
+		})
+	}
+	t.Run("a minted token wins", func(t *testing.T) {
+		write("installation-git-1")
+		creds := &issued{life: 15 * time.Minute}
+		f := newCredentialFixture(t, helpers, creds, client.StaticToken("installation-bearer"), withFile)
+		ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+		defer cancel()
+		if err := opened(ctx, f.h, f.s); err != nil {
+			t.Fatal(err)
+		}
+		if _, value, _ := f.cella.Secret(cella.SandboxName(f.s.ID) + "-origo"); value != "origo-sandbox-1" {
+			t.Fatalf("the git host's Secret holds %q, not the session's token", value)
+		}
+	})
 }
