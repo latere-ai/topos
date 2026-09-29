@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/ir"
+
 	"latere.ai/x/cella/client"
 	cellav1 "latere.ai/x/cella/manifest/v1"
 	"latere.ai/x/pkg/otel"
@@ -201,10 +203,18 @@ func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.En
 	// model's figures; a model known to neither the catalog nor the
 	// agent is still asked of its door before it is refused.
 	first := b.cat.Overlay(m.Name, overlay)
+	spoken := first.Dialect
 	if m.BaseURL == "" {
-		base = b.o.Doors.Door(base, first.Dialect)
+		if spoken == "" && len(b.o.Doors) > 0 {
+			// A model neither the catalog nor the agent gives a family goes
+			// through Lux's OpenAI door, which serves every model Lux
+			// routes, and whose list gives the model's figures; without a
+			// door it would never be asked, and refused as unknown.
+			spoken = ir.DialectOpenAIChat
+		}
+		base = b.o.Doors.Door(base, spoken)
 	}
-	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: credential, Family: first.Family, Dialect: first.Dialect}
+	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: credential, Family: first.Family, Dialect: spoken}
 	var served models.Entry
 	if models.NamesADoor(base) {
 		var err error
@@ -215,6 +225,9 @@ func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.En
 	entry, err := b.cat.Resolve(m.Name, served, overlay)
 	if err != nil {
 		return nil, models.Connection{}, models.Entry{}, err
+	}
+	if entry.Dialect == "" {
+		entry.Dialect = spoken
 	}
 	conn.Family, conn.Dialect = entry.Family, entry.Dialect
 	return model, conn, entry, nil

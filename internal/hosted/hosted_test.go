@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/ir"
+
 	"latere.ai/x/cella/client"
 	"latere.ai/x/pkg/llmdialect/bridge"
 
@@ -274,6 +276,34 @@ func TestLuxServedFiguresOverlayTheCatalog(t *testing.T) {
 	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
 	if cfg.Entry.InputWindow != embedded.InputWindow {
 		t.Fatalf("a provider's API: %+v", cfg.Entry)
+	}
+}
+
+// TestAModelTheCatalogDoesNotNameIsAskedOfLuxsOpenAIDoor: an agent's model
+// that neither the embedded catalog nor the agent gives a family, such as a
+// provider's model Lux routes, goes through the Lux root's OpenAI door, whose
+// list gives its figures, rather than being refused as unknown unasked.
+func TestAModelTheCatalogDoesNotNameIsAskedOfLuxsOpenAIDoor(t *testing.T) {
+	st := session.NewMemoryStore()
+	stub := luxstub.New(t)
+	stub.Models(bridge.Model{Name: "deepseek/deepseek-v4-flash-0731", ContextWindow: 1_310_720, MaxOutputTokens: 943_718})
+	doors := models.Doors{"anthropic": stub.URL() + "/anthropic", "openai": stub.URL() + "/openai"}
+	var asked v1.Machine
+	h, err := Harness(Options{Store: st, ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := strings.Replace(reviewer, "model: {name: anthropic/claude-haiku-4.5}", "model: {name: deepseek/deepseek-v4-flash-0731}", 1)
+	cfg, err := h(t.Context(), newSession(t, st, agent))
+	if err != nil {
+		t.Fatalf("a model Lux serves with its figures was refused: %v", err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if cfg.Entry.InputWindow != 1_310_720 || cfg.Entry.MaxOutputTokens != 943_718 || cfg.Entry.Dialect != ir.DialectOpenAIChat {
+		t.Fatalf("entry %+v, want the OpenAI door's figures and its dialect", cfg.Entry)
+	}
+	if cfg.Connection.BaseURL != stub.URL()+"/openai" || cfg.Connection.Dialect != ir.DialectOpenAIChat {
+		t.Fatalf("connection %+v, want the OpenAI door", cfg.Connection)
 	}
 }
 

@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A hosted session whose model neither the embedded catalog nor the agent
+  gives a family, such as a provider's model a Lux installation routes,
+  goes through the Lux root's OpenAI door, which serves every model Lux
+  routes, and takes its context window and output limit from that door's
+  model list. It had no door to ask, so it was refused as `model_unknown`
+  though Lux served its figures.
 ## v0.9.1 - 2026-09-29
 
 - An agent's name is unique per owner. It was unique across the whole
