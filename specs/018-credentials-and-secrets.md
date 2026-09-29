@@ -206,6 +206,20 @@ call against the session and its workload, so the ledger keeps a
 session's own spend apart from its sandbox's
 ([[023-events-and-observability]]).
 
+A sandbox's Secrets are the session's, as the sandbox is
+([[009-machines]]), and a Cella Secret has no lifetime of its own, so
+the runner removes them. It renews them only while a drive runs; when a
+session ends in a drive that opened its machine, the runner stops their
+renewal, deletes the sandbox, and then deletes each Secret it applied
+for it, one already gone included, so no sandbox is left mounting a
+Secret that is gone and no renewal applies one again. A delete Cella
+could not do fails the release, and the next release deletes what is
+left. A session that ends while no drive holds its machine, through the
+end route, at its expiry, or when its runner died, leaves its Secrets
+for the installation's host to remove: each names the session in
+`topos.latere.ai/session`, so a sweep finds the Secrets of a session
+that is no longer live.
+
 ### Without an identity provider
 
 A self-hosted installation with no identity provider acts with its own
@@ -356,6 +370,7 @@ egress swapping a Secret by host and path.
 | The identity provider's and the session keys' variables are read; each URL needs its partners and the authorizer, and neither installation credential is accepted beside them | `internal/config.TestTheCredentialVariables` | built |
 | A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules`, `internal/server.TestAgentIdentityLifecycle`, `authorizer.TestDecodeLimitsReadsEveryMember` | built |
 | A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `internal/credentials.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestAnInstallationThatMintsNothingActsAsToday`, `internal/config.TestTheCredentialVariables` | built against the stub key routes, with the refusal of the installation's key tied to `TOPOS_SESSION_KEYS_URL` rather than to the authorizer; the swap itself is Cella's egress gateway's, the Secret is scoped by host until Cella scopes one by path, and the run against the real authorizer waits for its deployment |
+| At a session's end in a drive the runner stops the sandbox's renewals, deletes the sandbox, then each of its Secrets, the installation's git credential's included; a drive's end keeps them; a refused delete fails the release and the next release deletes what is left without deleting the sandbox again | `internal/hosted.TestTheSessionsEndDeletesItsSecrets`, `internal/hosted.TestASecretCellaCouldNotDeleteIsDeletedAtTheNextEnd` | built against the stub Cella, under the session-bound rule written out in the test |
 | Every Secret the runner applies for a sandbox names the session and the agent in their labels, at its create and at each renewal, so an authorizer that admits only what names the session admits the create, the mount and the renewal, and refuses a Secret without the session's label or with a label it reserves | `internal/hosted.TestSessionSecretsNameTheSession`, `test/stubs/cellastub.TestAuthorize` | built against the stub Cella with the rule written out in the test; the hosting platform's own decider is not importable here |
 | With `TOPOS_MODELS_URL` a Lux root that publishes its doors under another address, the runner's model requests go to the configured root, and the sandbox's `LUX_URL`, its Lux key's host and its egress allowlist are the published one's | `models.TestDoorsMoveUnderTheRootTheyWereDiscoveredAt`, `cmd/toposd.TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox` | built against the stub Lux |
 | Without an identity provider, `TOPOS_ORIGO_TOKEN_FILE`'s credential is the sandbox's `-origo` Secret, scoped to the git host and sent by its git, read at each open and never renewed, with no Lux key in the sandbox; a minted git host token wins over it; the file needs `TOPOS_ORIGO_URL` and is refused beside `TOPOS_IDENTITY_URL`; the sandbox and its Secrets carry `TOPOS_CELLA_LABELS` beside the session's and the agent's labels at every apply | `internal/hosted.TestAnInstallationGitCredential`, `internal/hosted.TestTheInstallationsLabels`, `cmd/toposd.TestASelfHosterPushesWithItsGitCredential`, in `serve` and in the runner role, `internal/config.TestTheOrigoTokenFile`, `internal/config.TestTheCellaLabels` | built against the stub Cella; the swap itself is Cella's egress gateway's |

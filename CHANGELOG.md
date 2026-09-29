@@ -58,6 +58,14 @@ committed: the commit log already holds that.
   cannot tell apart, and for agents applied before this release. With
   `TOPOS_HOST_SESSIONS=on`, or without Cella, such an agent keeps the
   host, and an agent that names any other machine field keeps its kind.
+- A hosted session that ends in a drive deletes the Cella Secrets its
+  sandbox mounted, the `-lux` key and the `-origo` git credential, after
+  the sandbox, and stops their renewal first so none is applied again.
+  They had outlived every session, since a Cella Secret has no lifetime of
+  its own. A delete Cella refuses fails the release and is tried again at
+  the next one. A session that ends outside a drive still leaves them;
+  each carries `topos.latere.ai/session`, so the installation's host can
+  sweep them.
 
 ## v0.9.2 - 2026-09-29
 
