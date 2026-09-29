@@ -33,10 +33,14 @@ const (
 )
 
 // Error is a refusal with its code; the API renders the code and the
-// message.
+// message. Reason is, on a forbidden, the authorizer's reason for the
+// deny, which the API returns to the caller; it is empty when the
+// authorizer gave none, gave one that is not a reason token, or when the
+// guard withheld it (Guard.Disclose).
 type Error struct {
 	Code    string
 	Message string
+	Reason  string
 	Err     error
 }
 

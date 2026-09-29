@@ -5,8 +5,10 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -76,21 +78,61 @@ func (g Guard) Ask(ctx context.Context, req authz.Request) (authz.Decision, erro
 	case verb == "read":
 		return authz.Decision{}, refuse(CodeNotFound, nil, "no %s %s", req.Resource.Kind, req.Resource.ID)
 	case verb == "create" || authz.IsList(req.Action) || req.Resource.ID == "":
-		return authz.Decision{}, refuse(CodeForbidden, nil, "%s is denied: %s", req.Action, d.Reason)
+		return authz.Decision{}, forbidden(req, d)
 	}
 	read := req
 	read.Action = req.Resource.Kind + ".read"
 	if !authorizer.Known(read.Action) {
-		return authz.Decision{}, refuse(CodeForbidden, nil, "%s is denied: %s", req.Action, d.Reason)
+		return authz.Decision{}, forbidden(req, d)
 	}
 	rd, err := g.Authorizer.Authorize(ctx, read)
 	switch {
 	case err != nil:
 		return authz.Decision{}, refuse(CodeAuthorizerUnavailable, err, "the authorizer gave no decision on %s", read.Action)
 	case rd.Allow:
-		return authz.Decision{}, refuse(CodeForbidden, nil, "%s is denied: %s", req.Action, d.Reason)
+		return authz.Decision{}, forbidden(req, d)
 	}
 	return authz.Decision{}, refuse(CodeNotFound, nil, "no %s %s", req.Resource.Kind, req.Resource.ID)
+}
+
+// reasonToken is the shape of a reason the API returns: a stable
+// snake_case token, as authz's own reasons and every decider's are, that
+// a client can branch on. A reason of any other shape is prose the
+// decider wrote, which may name what the caller is not shown, and is
+// not returned.
+var reasonToken = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+// forbidden is a deny the API answers as forbidden, carrying the
+// authorizer's reason when it is a reason token. The guard answers
+// forbidden only where the refusal discloses nothing the caller may not
+// see: a create, a list, or a mutation of an object the caller may read.
+func forbidden(req authz.Request, d authz.Decision) *Error {
+	e := refuse(CodeForbidden, nil, "the authorizer denied %s", req.Action)
+	if reasonToken.MatchString(d.Reason) {
+		e.Reason = d.Reason
+	}
+	return e
+}
+
+// Disclose returns err as it is unless it is a forbidden refusal with a
+// reason and the caller may not read the object read asks about; then it
+// returns the refusal without its reason. A create names objects that
+// exist already, as a session create names its agent, and the reason for
+// its deny may be about one of them: whose it is, the organization it
+// belongs to, its budget. The caller learns that only of an object it
+// may read. An authorizer that gives no answer to read withholds the
+// reason too.
+func (g Guard) Disclose(ctx context.Context, err error, read authz.Request) error {
+	e, ok := errors.AsType[*Error](err)
+	if !ok || e.Code != CodeForbidden || e.Reason == "" {
+		return err
+	}
+	if d, rerr := g.Authorizer.Authorize(ctx, read); rerr == nil && d.Allow {
+		return err
+	}
+	withheld := *e
+	withheld.Reason = ""
+	return &withheld
 }
 
 // Create asks session.create and decodes the limits the allow carries.

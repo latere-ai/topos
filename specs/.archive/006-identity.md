@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [authorizer/, internal/auth/, internal/token/, internal/config/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-29
 author: changkun
 ---
 
@@ -67,7 +67,10 @@ at most 600 s; a deny for 5 s), its retry and its failure rule are
 `authorizer_unavailable`, never an allow. A denied read, get or list
 of one object answers `not_found`, so a deny does not disclose that the
 object exists; a denied mutation of an object the caller may read
-answers `forbidden`.
+answers `forbidden`. A `forbidden` carries the deny's reason, when it is
+a snake_case token, in `details.reason` ([[015-api]]); a session
+create's reason is withheld when it names another subject's agent the
+caller may not read.
 
 ### The action vocabulary
 
@@ -193,6 +196,7 @@ authorizer.
 | `pkg/authz/conformance` passes against the shared stub told the vocabulary, and against the owner policy served through `authz/server` | `authorizer.TestAuthorizerConformanceStub`, `internal/auth.TestAuthorizerConformanceOwnerPolicy` | built |
 | The vocabulary table here and `authorizer.Vocabulary()` are the same set, each action with its kind | `authorizer.TestVocabularyMatchesTheSpec` | built |
 | The guard answers a denied read `not_found`, a denied mutation `forbidden` when the caller may read the object and `not_found` when it may not, and no decision `authorizer_unavailable` | `internal/auth.TestGuardAnswers` | built |
+| A `forbidden` carries the authorizer's reason token and none for a deny without one or with prose; a `not_found` carries none; the reason about an object the caller may not read is withheld | `internal/auth.TestAForbiddenCarriesTheReason` | built |
 | A denied read of an existing session answers `not_found` with the same body as an absent one | `internal/server.TestDeniedReadAnswersAsMissing`, `internal/server.TestAnotherSubjectsAgentIsNotThere` | built |
 | With the authorizer down every API action answers `authorizer_unavailable` and nothing is written | `internal/server.TestAuthorizerDownIsRefusal` | built |
 | A token older than the age bound, with a wrong audience, or from an unlisted issuer is refused `unauthenticated` | `internal/auth.TestVerificationRules` | built |

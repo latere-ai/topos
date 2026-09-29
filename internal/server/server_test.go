@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -20,6 +21,7 @@ import (
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/bearer"
 
+	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -360,6 +362,79 @@ func TestErrorTable(t *testing.T) {
 		}
 		if a.header.Get("Content-Type") != "application/json" {
 			t.Errorf("%s %s: Content-Type %q", c.method, c.path, a.header.Get("Content-Type"))
+		}
+	}
+}
+
+// TestARefusalCarriesTheAuthorizersReason: a forbidden answer keeps its
+// code and fixed sentence and carries the authorizer's reason in
+// details.reason when the deny gave one, and no reason when it gave
+// none. A session create's reason reaches the caller only when the
+// caller may read the agent it names; a denied read answers not_found
+// with no details at all.
+func TestARefusalCarriesTheAuthorizersReason(t *testing.T) {
+	f := newFixture(t)
+	mine := f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	var reason string
+	colleague, closed := false, false
+	f.authz.answer = func(r authz.Request) (authz.Decision, error) {
+		switch {
+		case r.Action == authorizer.ActionSessionCreate, r.Action == authorizer.ActionSessionEnd:
+			return authz.Decision{Reason: reason}, nil
+		case closed && r.Action == authorizer.ActionAgentRead:
+			return authz.Decision{Reason: reason}, nil
+		case colleague && r.Action == authorizer.ActionAgentRead:
+			return authz.Decision{Allow: true}, nil
+		}
+		return f.authz.next.Authorize(t.Context(), r)
+	}
+	type envelope struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	refused := func(token, method, path, body string, status int) envelope {
+		t.Helper()
+		a := f.do(method, path, token, body)
+		var e envelope
+		a.decode(t, &e)
+		if a.status != status {
+			t.Fatalf("%s %s as %s: %d %s", method, path, token, a.status, a.body)
+		}
+		return e
+	}
+	create := `{"agent":"` + mine.Status.ID + `"}`
+	for _, c := range []struct {
+		name, token, reason, method, path, body string
+		colleague, closed                       bool
+		want                                    map[string]any
+	}{
+		{"a create with a reason", "alice", "agent_exceeds_initiator", http.MethodPost, "/v1/sessions", create, false, false,
+			map[string]any{"detail": "the authorizer denied session.create", "reason": "agent_exceeds_initiator"}},
+		{"a create without one", "alice", "", http.MethodPost, "/v1/sessions", create, false, false,
+			map[string]any{"detail": "the authorizer denied session.create"}},
+		{"the caller's own agent while every agent action is closed to it", "alice", "agents_not_enabled", http.MethodPost, "/v1/sessions", create, false, true,
+			map[string]any{"detail": "the authorizer denied session.create", "reason": "agents_not_enabled"}},
+		{"a mutation of a readable session", "alice", "plan_suspended", http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`, false, false,
+			map[string]any{"detail": "the authorizer denied session.end", "reason": "plan_suspended"}},
+		{"another subject's agent", "bob", "wrong_context", http.MethodPost, "/v1/sessions", create, false, false,
+			map[string]any{"detail": "the authorizer denied session.create"}},
+		{"another subject's agent the caller may read", "bob", "agent_budget_unassigned", http.MethodPost, "/v1/sessions", create, true, false,
+			map[string]any{"detail": "the authorizer denied session.create", "reason": "agent_budget_unassigned"}},
+	} {
+		reason, colleague, closed = c.reason, c.colleague, c.closed
+		e := refused(c.token, c.method, c.path, c.body, http.StatusForbidden)
+		if e.Error.Code != auth.CodeForbidden || e.Error.Message != codes[auth.CodeForbidden].message || !maps.Equal(e.Error.Details, c.want) {
+			t.Errorf("%s: %+v, want details %v", c.name, e.Error, c.want)
+		}
+	}
+	reason, colleague, closed = "not_owner", false, false
+	for _, path := range []string{"/v1/agents/" + mine.Status.ID, "/v1/sessions/" + s.ID} {
+		if a := f.do(http.MethodGet, path, "bob", ""); a.status != http.StatusNotFound || strings.Contains(string(a.body), "details") {
+			t.Errorf("bob's denied read of %s: %d %s", path, a.status, a.body)
 		}
 	}
 }

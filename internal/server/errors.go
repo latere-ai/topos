@@ -101,7 +101,11 @@ func classify(err error) *apiError {
 			// A denied read answers exactly as a missing object does.
 			return &apiError{code: CodeNotFound, err: err}
 		}
-		return &apiError{code: e.Code, detail: e.Message, err: err}
+		var details map[string]any
+		if e.Code == auth.CodeForbidden && e.Reason != "" {
+			details = map[string]any{"reason": e.Reason}
+		}
+		return &apiError{code: e.Code, detail: e.Message, details: details, err: err}
 	}
 	if e, ok := errors.AsType[*manifest.Error](err); ok {
 		problems := make([]map[string]any, len(e.Problems))

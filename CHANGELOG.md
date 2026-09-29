@@ -28,6 +28,18 @@ committed: the commit log already holds that.
   no version and moves no digest. Such an apply used to answer the new
   metadata and store none of it; now it replaces the latest version's
   metadata, so the next read returns what was applied.
+- A `forbidden` answer says why. It keeps its code and its sentence and
+  now carries the installation's authorizer's reason for the deny in
+  `details.reason`, such as `agents_not_enabled`,
+  `agent_budget_unassigned` or `agent_exceeds_initiator`, so a client
+  can tell the person what to do. A deny without a reason, or whose
+  reason is not a snake_case token, carries none, and `details.detail`
+  reads `the authorizer denied <action>` without it. A session create
+  of another subject's agent passes its reason only when the caller may
+  read that agent, since the reason may be about it; a denied read still
+  answers `not_found` with no details. The authorization wire carries
+  only the reason, so which permission exceeded the initiator's is not
+  yet part of the answer.
 
 ## v0.9.1 - 2026-09-29
 

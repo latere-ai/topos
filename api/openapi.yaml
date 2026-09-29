@@ -377,6 +377,26 @@ components:
               type: string
             details:
               type: object
+              description: What a developer reads about the refusal; message is the sentence a person reads. A not_found carries no details.
+              properties:
+                detail:
+                  type: string
+                  description: What was refused and why, for a log or a verbose view.
+                problems:
+                  type: array
+                  description: A refused manifest's problems, each at its document (from 1) and field path.
+                  items:
+                    type: object
+                    properties:
+                      document:
+                        type: integer
+                      path:
+                        type: string
+                      detail:
+                        type: string
+                reason:
+                  type: string
+                  description: On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read.
   responses:
     Error:
       description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, idempotency_conflict, sequence_conflict; 413: payload_too_large; 422: machine_unavailable; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable."

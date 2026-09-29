@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"latere.ai/x/pkg/authz"
@@ -189,6 +190,89 @@ func TestGuardAnswers(t *testing.T) {
 	}
 	if auth.Code(down) != "" {
 		t.Fatal("a plain error has a code")
+	}
+}
+
+// TestAForbiddenCarriesTheReason: a forbidden refusal carries the
+// authorizer's reason when it is a reason token, and none when the deny
+// gave none or gave prose; a refusal answered not_found carries none,
+// since it discloses nothing. Disclose keeps the reason only when the
+// caller may read the object it asks about.
+func TestAForbiddenCarriesTheReason(t *testing.T) {
+	reasoned := func(reason string) authz.Authorizer {
+		return decider(func(r authz.Request) (authz.Decision, error) {
+			return authz.Decision{Allow: r.Action == authorizer.ActionSessionRead && r.Resource.ID == "ses_1", Reason: reason}, nil
+		})
+	}
+	req := func(action, id string) authz.Request {
+		return authz.Request{Subject: bob, Action: action, Resource: authz.NewResource(authorizer.Kind(action), id, nil)}
+	}
+	refusal := func(a authz.Authorizer, r authz.Request) *auth.Error {
+		t.Helper()
+		_, err := auth.Guard{Authorizer: a}.Ask(t.Context(), r)
+		e, ok := errors.AsType[*auth.Error](err)
+		if !ok {
+			t.Fatalf("%s: %v is not a refusal", r.Action, err)
+		}
+		return e
+	}
+	for _, row := range []struct {
+		name, reason string
+		req          authz.Request
+		code, want   string
+	}{
+		{"a create", "agent_exceeds_initiator", req(authorizer.ActionSessionCreate, ""), auth.CodeForbidden, "agent_exceeds_initiator"},
+		{"a list", "agents_not_enabled", req(authorizer.ActionSessionList, ""), auth.CodeForbidden, "agents_not_enabled"},
+		{"a readable mutation", "plan_suspended", req(authorizer.ActionSessionEnd, "ses_1"), auth.CodeForbidden, "plan_suspended"},
+		{"no reason", "", req(authorizer.ActionSessionCreate, ""), auth.CodeForbidden, ""},
+		{"prose", "Alice's agent holds repo.write", req(authorizer.ActionSessionCreate, ""), auth.CodeForbidden, ""},
+		{"a denied read", "not_owner", req(authorizer.ActionSessionRead, "ses_2"), auth.CodeNotFound, ""},
+		{"an unreadable mutation", "not_owner", req(authorizer.ActionSessionEnd, "ses_2"), auth.CodeNotFound, ""},
+	} {
+		e := refusal(reasoned(row.reason), row.req)
+		if e.Code != row.code || e.Reason != row.want || (row.reason != "" && strings.Contains(e.Message, row.reason)) {
+			t.Errorf("%s: %+v, want %s with reason %q", row.name, e, row.code, row.want)
+		}
+	}
+
+	denied := refusal(reasoned("agent_budget_unassigned"), req(authorizer.ActionSessionCreate, ""))
+	read := req(authorizer.ActionAgentRead, "agent_1")
+	var asked int
+	counting := func(allow bool, err error) authz.Authorizer {
+		return decider(func(authz.Request) (authz.Decision, error) {
+			asked++
+			return authz.Decision{Allow: allow}, err
+		})
+	}
+	for _, row := range []struct {
+		name string
+		a    authz.Authorizer
+		keep bool
+	}{
+		{"a readable object", counting(true, nil), true},
+		{"an unreadable object", counting(false, nil), false},
+		{"no answer", counting(true, errors.New("connection refused")), false},
+	} {
+		got := auth.Guard{Authorizer: row.a}.Disclose(t.Context(), denied, read)
+		e, ok := errors.AsType[*auth.Error](got)
+		if !ok || e.Code != auth.CodeForbidden || e.Message != denied.Message || (e.Reason != "") != row.keep {
+			t.Errorf("%s: %+v", row.name, got)
+		}
+	}
+	if denied.Reason != "agent_budget_unassigned" {
+		t.Fatalf("Disclose changed the refusal it was handed: %+v", denied)
+	}
+	asked = 0
+	bare := &auth.Error{Code: auth.CodeForbidden, Message: "the authorizer denied session.create"}
+	other := errors.New("disk")
+	missing := &auth.Error{Code: auth.CodeNotFound, Reason: "not_owner"}
+	for _, err := range []error{bare, other, missing} {
+		if got := (auth.Guard{Authorizer: counting(false, nil)}).Disclose(t.Context(), err, read); !errors.Is(got, err) {
+			t.Errorf("Disclose(%v) = %v", err, got)
+		}
+	}
+	if asked != 0 {
+		t.Fatalf("Disclose asked %d questions of refusals with no reason to withhold", asked)
 	}
 }
 

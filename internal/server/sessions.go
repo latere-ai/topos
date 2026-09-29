@@ -19,6 +19,7 @@ import (
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
@@ -204,7 +205,13 @@ func (c *call) createSession() error {
 	}
 	limits, err := c.askCreate(ctx, authorizer.ActionSessionCreate, authz.NewResource(authorizer.KindSession, "", fields))
 	if err != nil {
-		return err
+		// The deny's reason may be about the agent. The caller applied
+		// an agent of its own and hears why; another subject's agent,
+		// named by id, the caller hears about only when it may read it.
+		if a.Owner == c.caller.Subject {
+			return err
+		}
+		return c.s.o.Guard.Disclose(ctx, err, auth.Envelope(c.caller, authorizer.ActionAgentRead, agentResource(a), c.r))
 	}
 	if a.ArchivedAt != nil {
 		return refuse(CodeConflict, "the agent %s is archived", a.Name)

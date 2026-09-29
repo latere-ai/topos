@@ -31,6 +31,18 @@
 // policy: toposd passes the initiator of session.create and the sender
 // of session.send in the resource, and decides nothing about either.
 //
+// A deny's reason reaches the caller. toposd answers a deny it may
+// disclose, a create, a list, or a mutation of an object the caller may
+// read, as forbidden with the reason in the error's details.reason, when
+// the reason is a snake_case token of at most 64 characters; text of
+// another shape is not passed. A session create's reason is passed when
+// the agent the create names is the caller's own or one the caller may
+// read, since the reason may be about that agent. A denied read, and a
+// mutation of an object the caller may not read, answer not_found and
+// carry no reason. An endpoint gives a reason a person's client can act
+// on, such as agents_not_enabled, and one that names nothing of another
+// subject's.
+//
 // An action string never changes and never disappears, a kind stays the
 // kind it is, and a limits member keeps its wire name and its meaning.
 // Nothing here dials: the package builds values and decodes them.

@@ -68,7 +68,7 @@ func OpenAPI(server string) ([]byte, error) {
 						{Key: "properties", Value: yaml.MapSlice{
 							{Key: "code", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: errorCodes}}},
 							{Key: "message", Value: yaml.MapSlice{{Key: "type", Value: "string"}}},
-							{Key: "details", Value: yaml.MapSlice{{Key: "type", Value: "object"}}},
+							{Key: "details", Value: errorDetails},
 						}},
 					}}}},
 				}},
@@ -88,6 +88,34 @@ var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 var paramDescriptions = map[string]string{
 	"name": "The name, unique within its owner, the subject that applied it. An apply acts on the caller's own object of the name and creates it when the caller holds none; an object of the name another subject holds is neither read nor changed.",
 	"ref":  "An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.",
+}
+
+// errorDetails is the schema of an error's details: the developer
+// detail, and the fields a code carries beside it. A not_found carries
+// none, so a denied read answers as an absent object does.
+var errorDetails = yaml.MapSlice{
+	{Key: "type", Value: "object"},
+	{Key: "description", Value: "What a developer reads about the refusal; message is the sentence a person reads. A not_found carries no details."},
+	{Key: "properties", Value: yaml.MapSlice{
+		{Key: "detail", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: "What was refused and why, for a log or a verbose view."}}},
+		{Key: "problems", Value: yaml.MapSlice{
+			{Key: "type", Value: "array"},
+			{Key: "description", Value: "A refused manifest's problems, each at its document (from 1) and field path."},
+			{Key: "items", Value: yaml.MapSlice{
+				{Key: "type", Value: "object"},
+				{Key: "properties", Value: yaml.MapSlice{
+					{Key: "document", Value: yaml.MapSlice{{Key: "type", Value: "integer"}}},
+					{Key: "path", Value: yaml.MapSlice{{Key: "type", Value: "string"}}},
+					{Key: "detail", Value: yaml.MapSlice{{Key: "type", Value: "string"}}},
+				}},
+			}},
+		}},
+		{Key: "reason", Value: yaml.MapSlice{
+			{Key: "type", Value: "string"},
+			{Key: "description", Value: "On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. " +
+				"The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read."},
+		}},
+	}},
 }
 
 // opDescriptions say what a route's body holds where a client needs more
