@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"latere.ai/x/topos/harness"
@@ -26,8 +27,10 @@ const (
 	MinCompactAt       = 0.5
 	MaxCompactAt       = 0.95
 	MaxDescription     = 1024
-	maxNameLength      = 63
-	maxToolNameLength  = 64
+	// MaxDisplayName bounds metadata.displayName, in characters.
+	MaxDisplayName    = 200
+	maxNameLength     = 63
+	maxToolNameLength = 64
 )
 
 var (
@@ -82,6 +85,7 @@ func (v *validator) object(o *object) {
 
 func (v *validator) meta(m v1.ObjectMeta) {
 	v.name("metadata.name", m.Name)
+	v.displayName("metadata.displayName", m.DisplayName)
 	for _, set := range []struct {
 		field string
 		m     map[string]string
@@ -102,6 +106,31 @@ func (v *validator) name(at, s string) {
 	case len(s) > maxNameLength || !dnsLabel.MatchString(s):
 		v.add(at, "not a DNS label: lowercase letters, digits and hyphens, at most 63 characters")
 	}
+}
+
+// displayName checks an optional display name: text a person reads on
+// one line, so not blank, at most MaxDisplayName characters, and free of
+// control characters, line and paragraph separators, and the
+// bidirectional controls that would reorder how it renders. Every other
+// character, joiners and emoji included, is accepted.
+func (v *validator) displayName(at, s string) {
+	if s == "" {
+		return
+	}
+	switch n := utf8.RuneCountInString(s); {
+	case strings.TrimSpace(s) == "":
+		v.add(at, "blank; leave it out to show the name")
+	case n > MaxDisplayName:
+		v.add(at, fmt.Sprintf("%d characters, at most %d", n, MaxDisplayName))
+	case strings.ContainsFunc(s, unprintable):
+		v.add(at, "holds a control character, a line break or a bidirectional control")
+	}
+	v.text(at, s)
+}
+
+// unprintable is a character a one-line display name refuses.
+func unprintable(r rune) bool {
+	return unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Bidi_Control)
 }
 
 // ref checks a reference: a name, or an id with the kind's prefix, and

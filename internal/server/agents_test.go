@@ -4,6 +4,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -262,5 +263,101 @@ func TestPaging(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "a1,a2,a3,a4,a5" {
 		t.Fatalf("the pages held %v", names)
+	}
+}
+
+// displayYAML is agentYAML with metadata.displayName.
+func displayYAML(name, display, instructions string) string {
+	return strings.Replace(agentYAML(name, instructions), "  name: "+name+"\n", fmt.Sprintf("  name: %s\n  displayName: %q\n", name, display), 1)
+}
+
+// TestAnAgentsDisplayName: metadata.displayName is optional. An agent
+// applied without one reads without one; applied with one, the name is
+// stored and every read and the list return it; a change to it alone
+// makes no version and is what the next read returns, as is a removal;
+// one past the limit is refused as an invalid manifest at its path.
+func TestAnAgentsDisplayName(t *testing.T) {
+	f := newFixture(t)
+	plain := f.apply("alice", "reviewer", "Review.")
+	if g := f.do(http.MethodGet, "/v1/agents/reviewer", "alice", ""); g.status != http.StatusOK || strings.Contains(string(g.body), "displayName") {
+		t.Fatalf("an agent without a display name: %d %s", g.status, g.body)
+	}
+	read := func(path string) v1.Agent {
+		t.Helper()
+		var a v1.Agent
+		g := f.do(http.MethodGet, path, "alice", "")
+		if g.status != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, g.status, g.body)
+		}
+		g.decode(t, &a)
+		return a
+	}
+	listed := func() []v1.Agent {
+		t.Helper()
+		var page struct {
+			Items []v1.Agent `json:"items"`
+		}
+		f.do(http.MethodGet, "/v1/agents", "alice", "").decode(t, &page)
+		return page.Items
+	}
+	const display = "Code Reviewer 👩‍💻"
+	named := f.do(http.MethodPut, "/v1/agents/reviewer", "alice", displayYAML("reviewer", display, "Review."))
+	var a v1.Agent
+	named.decode(t, &a)
+	if named.status != http.StatusOK || a.Metadata.DisplayName != display || a.Status.Version != 1 || a.Status.Digest != plain.Status.Digest {
+		t.Fatalf("a display name on an unchanged spec: %d %+v %+v", named.status, a.Metadata, a.Status)
+	}
+	for _, path := range []string{"/v1/agents/reviewer", "/v1/agents/" + plain.Status.ID, "/v1/agents/reviewer/versions/1"} {
+		if got := read(path); got.Metadata.DisplayName != display || got.Metadata.Name != "reviewer" || got.Status.Version != 1 {
+			t.Fatalf("GET %s: %+v %+v", path, got.Metadata, got.Status)
+		}
+	}
+	if items := listed(); len(items) != 1 || items[0].Metadata.DisplayName != display {
+		t.Fatalf("the list: %+v", items)
+	}
+	changed := f.apply("alice", "reviewer", "Review closely.")
+	if changed.Status.Version != 2 || changed.Metadata.DisplayName != "" {
+		t.Fatalf("a changed spec without the display name: %+v %+v", changed.Metadata, changed.Status)
+	}
+	f.do(http.MethodPut, "/v1/agents/reviewer", "alice", displayYAML("reviewer", "Reviewer", "Review closely."))
+	if got := read("/v1/agents/reviewer"); got.Metadata.DisplayName != "Reviewer" || got.Status.Version != 2 {
+		t.Fatalf("a renamed version 2: %+v %+v", got.Metadata, got.Status)
+	}
+	if got := read("/v1/agents/reviewer/versions/1"); got.Metadata.DisplayName != display {
+		t.Fatalf("a rename of version 2 reached version 1: %+v", got.Metadata)
+	}
+	var versions struct {
+		Items []agentVersion `json:"items"`
+	}
+	f.do(http.MethodGet, "/v1/agents/reviewer/versions", "alice", "").decode(t, &versions)
+	if len(versions.Items) != 2 {
+		t.Fatalf("renames made versions: %+v", versions.Items)
+	}
+	f.apply("alice", "reviewer", "Review closely.")
+	if got := read("/v1/agents/reviewer"); got.Metadata.DisplayName != "" || got.Status.Version != 2 {
+		t.Fatalf("a removed display name: %+v %+v", got.Metadata, got.Status)
+	}
+	long := f.do(http.MethodPut, "/v1/agents/reviewer", "alice", displayYAML("reviewer", strings.Repeat("x", manifest.MaxDisplayName+1), "Review closely."))
+	var refusal struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Details struct {
+				Problems []struct {
+					Document int    `json:"document"`
+					Path     string `json:"path"`
+					Detail   string `json:"detail"`
+				} `json:"problems"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	long.decode(t, &refusal)
+	want := fmt.Sprintf("%d characters, at most %d", manifest.MaxDisplayName+1, manifest.MaxDisplayName)
+	if e := refusal.Error; long.status != http.StatusBadRequest || e.Code != manifest.CodeInvalidManifest || e.Message != codes[manifest.CodeInvalidManifest].message ||
+		len(e.Details.Problems) != 1 || e.Details.Problems[0].Path != "metadata.displayName" || e.Details.Problems[0].Detail != want || e.Details.Problems[0].Document != 1 {
+		t.Fatalf("a display name past the limit: %d %s", long.status, long.body)
+	}
+	if got := read("/v1/agents/reviewer"); got.Metadata.DisplayName != "" || got.Status.Version != 2 {
+		t.Fatalf("a refused apply changed the agent: %+v %+v", got.Metadata, got.Status)
 	}
 }

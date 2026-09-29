@@ -12,6 +12,7 @@ paths:
     put:
       operationId: applyAgent
       summary: Apply an Agent manifest to the caller's own agent of the name; a changed spec creates a version
+      description: "The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. metadata.displayName, optional, is the name a person reads: text on one line of at most 200 characters, without control characters, line breaks or bidirectional controls; an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: it replaces the latest version's metadata, and every later read returns it."
       x-topos-actions:
         - agent.create
         - agent.update

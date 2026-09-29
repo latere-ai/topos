@@ -74,7 +74,15 @@ log's snake_case JSON is [[004-session-log]]'s, and the two never mix
 in one object. `metadata.name` is a DNS label (lowercase letters,
 digits and hyphens, at most 63 characters), unique within its owner: on
 a server two subjects may each hold an agent of one name ([[015-api]]).
-Labels and annotations
+`metadata.displayName` is optional: the name a person reads, free text
+on one line of at most 200 characters (`manifest.MaxDisplayName`). Any
+script, emoji and joiner is accepted; a blank one, a longer one, and
+one holding a control character, a line or paragraph separator, or a
+bidirectional control are refused with `invalid_manifest` at
+`metadata.displayName`, and a secret in it with
+`manifest_holds_secret`. A client shows an object without one by
+`metadata.name`, which stays the identifier every reference and route
+names. Labels and annotations
 under `topos.latere.ai/` are the core's own, and a manifest that sets
 one is refused. `status` is written by the server or the local resolver
 and ignored on input: `id`, `version`, `digest` (the `sha256:` of the
@@ -224,8 +232,11 @@ byte form of [[004-session-log]]: fields in declaration order, HTML
 escaping off, no trailing newline, fixed defaults written out, every
 optional field without a value left out), its digest, the resolved
 object with its status, and for an Agent the agents its subagents pin,
-down to its `maxDepth`. The digest covers the spec alone: a label or an
-annotation changes no version. The resolver writes `status` itself from
+down to its `maxDepth`. The digest covers the spec alone: a display
+name, a label or an annotation changes no version. Applying an object
+whose spec resolves to the stored latest digest with changed metadata
+replaces the latest version's metadata, so a rename is stored without a
+new version and every later read returns it. The resolver writes `status` itself from
 the `Lookup`'s answer for the object's name: the same digest as the
 stored latest version is that version, a different digest is the next
 version under the same id, and an object the `Lookup` does not hold is
@@ -289,6 +300,8 @@ key on apply ([[018-credentials-and-secrets]]).
 | `threads.maxDepth: 5` and a Connection with `mode: person` and a `credential` are refused | `manifest.TestValidationRules` | built |
 | An agent's repositories resolve into its spec as written, and one that is not `https`, names no host, holds a credential (refused with a detail that does not carry it), has a ref git would read as an option, or is past the limit is refused | `manifest.TestAnAgentNamesItsRepositories`, `manifest.TestValidationRules` | built |
 | A label under `topos.latere.ai/` is refused | `manifest.TestReservedLabelsRefused` | built |
+| `metadata.displayName` takes one line of any script and emoji up to its limit and moves no digest; a blank one, a longer one, and one with a control character, a line break or a bidirectional control are refused at its path, and a secret in it as a secret | `manifest.TestADisplayNameIsOneLineOfText` | built |
+| Through the API an agent applied without a display name reads without one; one applied with it returns it on every read and in the list; a change to the display name alone makes no version and is what the next read returns; one past the limit is `invalid_manifest` naming `metadata.displayName` | `internal/server.TestAnAgentsDisplayName` | built |
 | Another `apiVersion` refuses the file before any other problem, a cycle among one file's documents is refused, and `instructionsFile` is read only through the caller's file system | `manifest.TestTheEnvelopeIsCheckedFirst`, `manifest.TestReferenceCyclesAndLookupFailures`, `manifest.TestInstructionsFile` | built |
 | `AgentConfig` carries a resolved Agent's instructions, tools, policy, model overlay, subagents to `maxDepth` and limits, and the bundle reads back to the same configuration and refuses one whose spec does not hash to its digest | `manifest.TestAgentConfigCarriesTheHarnessPieces`, `manifest.TestBundleRoundTrip` | built |
 

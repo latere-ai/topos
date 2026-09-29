@@ -127,6 +127,21 @@ func (m *Memory) PutVersion(_ context.Context, a Agent, v AgentVersion) error {
 	return nil
 }
 
+func (m *Memory) RewriteLatest(_ context.Context, v AgentVersion) error {
+	if err := CheckRewrite(v); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stored, held := m.agents[v.AgentID]
+	if !held || stored.Latest != v.Version || m.versions[v.AgentID][v.Version-1].Digest != v.Digest {
+		return fmt.Errorf("%w: agent %s version %d digest %s is not the stored latest", ErrConflict, v.AgentID, v.Version, v.Digest)
+	}
+	latest := &m.versions[v.AgentID][v.Version-1]
+	latest.Doc, latest.Bundle = v.Doc, v.Bundle
+	return nil
+}
+
 func (m *Memory) Archive(_ context.Context, id string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -177,13 +192,24 @@ func (m *Memory) Abandon(_ context.Context, subject, key string) error {
 // CheckVersion is the shape every PutVersion refuses before it looks at
 // the stored state.
 func CheckVersion(a Agent, v AgentVersion) error {
+	if err := CheckRewrite(v); err != nil {
+		return err
+	}
+	if v.Version == 1 && (a.ID != v.AgentID || a.Name == "" || a.Owner == "") {
+		return fmt.Errorf("%w: the first version creates the agent, which needs its id, name and owner", session.ErrInvalid)
+	}
+	return nil
+}
+
+// CheckRewrite is the shape every RewriteLatest refuses before it looks
+// at the stored state, and the part of CheckVersion's that does not
+// depend on the agent.
+func CheckRewrite(v AgentVersion) error {
 	switch {
 	case session.CheckID(session.PrefixAgent, v.AgentID) != nil:
 		return fmt.Errorf("%w: %q is not an agent id", session.ErrInvalid, v.AgentID)
 	case v.Version < 1:
 		return fmt.Errorf("%w: version %d", session.ErrInvalid, v.Version)
-	case v.Version == 1 && (a.ID != v.AgentID || a.Name == "" || a.Owner == ""):
-		return fmt.Errorf("%w: the first version creates the agent, which needs its id, name and owner", session.ErrInvalid)
 	case len(v.Doc) == 0 || len(v.Bundle) == 0 || v.Digest == "":
 		return fmt.Errorf("%w: a version holds its document, its bundle and its digest", session.ErrInvalid)
 	case !utf8.Valid(v.Doc) || !utf8.Valid(v.Bundle):

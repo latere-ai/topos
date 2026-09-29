@@ -88,6 +88,14 @@ type Agents interface {
 	// already holds; a later version must follow the stored latest, and
 	// ErrConflict answers any other.
 	PutVersion(ctx context.Context, a Agent, v AgentVersion) error
+	// RewriteLatest replaces the document and the bundle of the agent's
+	// latest version with v's, for an apply that changed the metadata
+	// (the display name, labels, annotations) and left the spec, and so
+	// the digest, as it was: the metadata versions nothing, and the
+	// latest version carries what was last applied. v names the latest
+	// version and its stored digest, and ErrConflict answers any other;
+	// a version's creator and time stay as stored.
+	RewriteLatest(ctx context.Context, v AgentVersion) error
 	// Archive archives an agent; ErrConflict answers an archived one.
 	Archive(ctx context.Context, id string, at time.Time) error
 }

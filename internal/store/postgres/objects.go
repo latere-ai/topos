@@ -181,6 +181,27 @@ func (s *Store) PutVersion(ctx context.Context, a store.Agent, v store.AgentVers
 	})
 }
 
+// RewriteLatest replaces the document and the bundle of the version that
+// is the agent's latest and holds v's digest, in one statement, so a
+// version applied between the caller's read and this write is not
+// rewritten.
+func (s *Store) RewriteLatest(ctx context.Context, v store.AgentVersion) error {
+	if err := store.CheckRewrite(v); err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE agent_versions SET doc = $4, bundle = $5
+		WHERE agent_id = $1 AND version = $2 AND digest = $3
+		AND version = (SELECT latest_version FROM agents WHERE id = $1)`,
+		v.AgentID, v.Version, v.Digest, string(v.Doc), string(v.Bundle))
+	if err != nil {
+		return fmt.Errorf("postgres: rewrite agent %s version %d: %w", v.AgentID, v.Version, err)
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("%w: agent %s version %d digest %s is not the stored latest", store.ErrConflict, v.AgentID, v.Version, v.Digest)
+	}
+	return nil
+}
+
 func (s *Store) Archive(ctx context.Context, id string, at time.Time) error {
 	tag, err := s.pool.Exec(ctx, `UPDATE agents SET archived_at = $2 WHERE id = $1 AND archived_at IS NULL`, id, at.UTC())
 	if err != nil {

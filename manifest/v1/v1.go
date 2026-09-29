@@ -38,10 +38,15 @@ type TypeMeta struct {
 	Kind       string `json:"kind"`
 }
 
-// ObjectMeta names an object. Name is a DNS label: lowercase letters,
-// digits and hyphens, at most 63 characters.
+// ObjectMeta names an object. Name is the object's identifier, a DNS
+// label: lowercase letters, digits and hyphens, at most 63 characters.
+// DisplayName is the name a person reads, free text of at most
+// manifest.MaxDisplayName characters on one line; an object without one
+// is shown by Name. Like the labels and annotations, it is not part of
+// the spec, so it changes no digest and no version.
 type ObjectMeta struct {
 	Name        string            `json:"name"`
+	DisplayName string            `json:"displayName,omitempty"`
 	Labels      map[string]string `json:"labels,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
 }

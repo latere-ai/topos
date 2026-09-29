@@ -16,6 +16,19 @@ committed: the commit log already holds that.
   routes, and takes its context window and output limit from that door's
   model list. It had no door to ask, so it was refused as `model_unknown`
   though Lux served its figures.
+- An agent takes an optional display name, `metadata.displayName`: the
+  name a person reads, one line of any text up to 200 characters, while
+  `metadata.name` stays the identifier routes and references use. It is
+  stored with the agent and returned by the apply, every read by name
+  or id, each version and the list; an agent without one reads exactly
+  as before. A blank one, a longer one, or one holding a control
+  character, a line break or a bidirectional control is refused as
+  `invalid_manifest` at `metadata.displayName`. The display name, like
+  labels and annotations, is not part of the spec: changing it creates
+  no version and moves no digest. Such an apply used to answer the new
+  metadata and store none of it; now it replaces the latest version's
+  metadata, so the next read returns what was applied.
+
 ## v0.9.1 - 2026-09-29
 
 - An agent's name is unique per owner. It was unique across the whole

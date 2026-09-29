@@ -317,6 +317,30 @@ func (s *Store) PutVersion(_ context.Context, a store.Agent, v store.AgentVersio
 	return nil
 }
 
+// RewriteLatest replaces the latest version's file with the new document
+// and bundle, keeping its digest, creator and time. The agent's file does
+// not change: the version it counts is the one rewritten.
+func (s *Store) RewriteLatest(_ context.Context, v store.AgentVersion) error {
+	if err := store.CheckRewrite(v); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stored, held := s.agents[v.AgentID]
+	if !held || stored.Latest != v.Version {
+		return fmt.Errorf("%w: agent %s version %d is not the stored latest", store.ErrConflict, v.AgentID, v.Version)
+	}
+	latest, err := s.readVersion(v.AgentID, v.Version)
+	if err != nil {
+		return err
+	}
+	if latest.Digest != v.Digest {
+		return fmt.Errorf("%w: agent %s version %d has digest %s, not %s", store.ErrConflict, v.AgentID, v.Version, latest.Digest, v.Digest)
+	}
+	f := versionFile{AgentID: v.AgentID, Version: v.Version, Digest: v.Digest, Doc: string(v.Doc), Bundle: string(v.Bundle), CreatedBy: latest.CreatedBy, CreatedAt: latest.CreatedAt}
+	return write(s.versionPath(v.AgentID, v.Version), f)
+}
+
 // versionDir creates the directory of an agent's versions and makes its
 // entry durable before a version is written into it.
 func (s *Store) versionDir(id string) error {

@@ -134,7 +134,7 @@ func (c *call) applyAgent() error {
 			return refuse(CodeConflict, "the agent %s changed while it was applied; apply again", name)
 		}
 		if st.Version == stored.Latest {
-			return c.reply(http.StatusOK, r.Agent)
+			return c.applyMetadata(ctx, r)
 		}
 	default:
 		if allowed, err = c.askCreate(ctx, authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", map[string]any{"name": name})); err != nil {
@@ -162,6 +162,47 @@ func (c *call) applyAgent() error {
 		status = http.StatusCreated
 	}
 	return c.reply(status, r.Agent)
+}
+
+// applyMetadata answers an apply whose spec resolves to the stored
+// latest version's digest. The metadata is not part of the spec, so a
+// changed display name, label or annotation makes no version; it
+// rewrites the latest version's document and bundle, and every later
+// read and every session created from it carries what was last applied.
+// An apply that changes nothing writes nothing.
+func (c *call) applyMetadata(ctx context.Context, r manifest.Resolved) error {
+	st := r.Agent.Status
+	v, err := c.s.o.Objects.Version(ctx, st.ID, st.Version)
+	if err != nil {
+		return err
+	}
+	stored, err := store.DecodeAgent(v.Doc)
+	if err != nil {
+		return err
+	}
+	was, err := session.Marshal(stored.Metadata)
+	if err != nil {
+		return err
+	}
+	now, err := session.Marshal(r.Agent.Metadata)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(was, now) {
+		return c.reply(http.StatusOK, r.Agent)
+	}
+	doc, err := session.Marshal(r.Agent)
+	if err != nil {
+		return err
+	}
+	bundle, err := r.Bundle()
+	if err != nil {
+		return err
+	}
+	if err := c.s.o.Objects.RewriteLatest(ctx, store.AgentVersion{AgentID: st.ID, Version: st.Version, Digest: st.Digest, Doc: doc, Bundle: bundle}); err != nil {
+		return err
+	}
+	return c.reply(http.StatusOK, r.Agent)
 }
 
 // listAgents is GET /agents.

@@ -416,3 +416,54 @@ func TestValidationRules(t *testing.T) {
 		}
 	}
 }
+
+// TestADisplayNameIsOneLineOfText: metadata.displayName takes any text
+// on one line up to MaxDisplayName characters, scripts, emoji and their
+// joiners included, and is outside the spec, so it moves no digest. A
+// blank one, a longer one, and one holding a control character, a line
+// break or a bidirectional control are refused at its path; a secret in
+// it is refused as one.
+func TestADisplayNameIsOneLineOfText(t *testing.T) {
+	named := func(display string) string {
+		return fmt.Sprintf("apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\n  displayName: %q\nspec: {model: {name: m}}\n", display)
+	}
+	bare := one(t, agent("reviewer", "model: {name: m}"), Options{})
+	for _, display := range []string{
+		"Code Reviewer",
+		"代码审查 · Revue de code 👩‍💻",
+		strings.Repeat("é", MaxDisplayName),
+	} {
+		r := one(t, named(display), Options{})
+		if r.Agent.Metadata.DisplayName != display || r.Agent.Metadata.Name != "reviewer" {
+			t.Fatalf("%q resolved to %+v", display, r.Agent.Metadata)
+		}
+		if r.Digest != bare.Digest || string(r.Spec) != string(bare.Spec) {
+			t.Fatalf("%q moved the digest: %s, want %s", display, r.Digest, bare.Digest)
+		}
+		doc, err := session.Marshal(r.Agent)
+		if err != nil || !strings.Contains(string(doc), `"displayName":`) {
+			t.Fatalf("the resolved agent does not carry it: %s %v", doc, err)
+		}
+	}
+	if doc, err := session.Marshal(bare.Agent); err != nil || strings.Contains(string(doc), "displayName") {
+		t.Fatalf("an agent without one writes the field: %s %v", doc, err)
+	}
+	for display, want := range map[string]string{
+		"   ":                                 "blank",
+		strings.Repeat("x", MaxDisplayName+1): fmt.Sprintf("%d characters, at most %d", MaxDisplayName+1, MaxDisplayName),
+		"Code\tReviewer":                      "a control character",
+		"Code\nReviewer":                      "a line break",
+		"Code\u2028Reviewer":                  "a line break",
+		"Reviewer \u202egnp.exe":              "a bidirectional control",
+		strings.Repeat("😀", MaxDisplayName+1): "characters, at most",
+	} {
+		e := refused(t, CodeInvalidManifest, named(display), Options{})
+		if len(e.Problems) != 1 || !hasProblem(e, "metadata.displayName", want) {
+			t.Errorf("%q: want metadata.displayName: %s, got\n%s", display, want, e.Detail())
+		}
+	}
+	e := refused(t, CodeHoldsSecret, named("Reviewer sk-ant-api03-"+strings.Repeat("a1B2", 20)), Options{})
+	if !hasProblem(e, "metadata.displayName", "holds") {
+		t.Fatalf("a secret in the display name: %s", e.Detail())
+	}
+}

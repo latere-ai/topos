@@ -4,6 +4,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -11,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+
+	"latere.ai/x/topos/manifest"
 )
 
 //go:generate go test -run TestOpenAPIIsGenerated -update .
@@ -87,10 +90,23 @@ var paramDescriptions = map[string]string{
 	"ref":  "An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.",
 }
 
+// opDescriptions say what a route's body holds where a client needs more
+// than its summary: an apply's manifest names the agent twice, by the
+// identifier and by the name a person reads, and only the spec versions.
+var opDescriptions = map[string]string{
+	"applyAgent": fmt.Sprintf("The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. "+
+		"metadata.displayName, optional, is the name a person reads: text on one line of at most %d characters, without control characters, line breaks or bidirectional controls; "+
+		"an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: "+
+		"it replaces the latest version's metadata, and every later read returns it.", manifest.MaxDisplayName),
+}
+
 // operation is one route as the document describes it. x-topos-actions
 // names the questions the route asks the authorizer.
 func operation(rt route) yaml.MapSlice {
 	op := yaml.MapSlice{{Key: "operationId", Value: rt.op}, {Key: "summary", Value: rt.summary}}
+	if d, ok := opDescriptions[rt.op]; ok {
+		op = append(op, yaml.MapItem{Key: "description", Value: d})
+	}
 	if len(rt.actions) > 0 {
 		op = append(op, yaml.MapItem{Key: "x-topos-actions", Value: rt.actions})
 	} else {

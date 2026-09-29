@@ -50,6 +50,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("agents", func(t *testing.T) { agents(t, f) })
 	t.Run("names per owner", func(t *testing.T) { namesPerOwner(t, f) })
 	t.Run("versions", func(t *testing.T) { versions(t, f) })
+	t.Run("rewrite latest", func(t *testing.T) { rewriteLatest(t, f) })
 	t.Run("list", func(t *testing.T) { list(t, f) })
 	t.Run("archive", func(t *testing.T) { archive(t, f) })
 	t.Run("lookup", func(t *testing.T) { lookup(t, f) })
@@ -186,6 +187,69 @@ func namesPerOwner(t *testing.T, f Factory) {
 	dup := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "coding-agent", Owner: "bob"}
 	if err := st.PutVersion(t.Context(), dup, store.AgentVersion{AgentID: dup.ID, Version: 1, Digest: v.Digest, Doc: v.Doc, Bundle: v.Bundle}); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("a second agent of bob's name for bob: %v", err)
+	}
+}
+
+// rewriteLatest: the latest version's document and bundle are replaced
+// under its digest, keeping its creator and time; a version that is not
+// the latest, another digest, an unknown agent and a malformed version
+// are refused, and a refused rewrite changes nothing.
+func rewriteLatest(t *testing.T, f Factory) {
+	st := f(t, NewClock().Now)
+	id := Apply(t, st, "alice", "reviewer", "one").Agent.Status.ID
+	v1, err := st.Version(t.Context(), id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := store.DecodeAgent(v1.Doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.Metadata.DisplayName = "Code Reviewer"
+	renamed, err := session.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := v1
+	next.Doc, next.Bundle, next.CreatedBy = renamed, append(slices.Clone(renamed), '\n'), "bob"
+	if err := st.RewriteLatest(t.Context(), next); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Version(t.Context(), id, 1)
+	if err != nil || string(got.Doc) != string(next.Doc) || string(got.Bundle) != string(next.Bundle) || got.Digest != v1.Digest || got.CreatedBy != v1.CreatedBy || !got.CreatedAt.Equal(v1.CreatedAt) {
+		t.Fatalf("rewritten version 1 = %+v, %v", got, err)
+	}
+	if a, err := st.Agent(t.Context(), id); err != nil || a.Latest != 1 {
+		t.Fatalf("a rewrite moved the latest: %+v, %v", a, err)
+	}
+	other := next
+	other.Digest = "sha256:" + strings.Repeat("0", 64)
+	if err := st.RewriteLatest(t.Context(), other); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("another digest: %v", err)
+	}
+	Apply(t, st, "alice", "reviewer", "two")
+	stale := next
+	stale.Doc = v1.Doc
+	if err := st.RewriteLatest(t.Context(), stale); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("a version that is no longer the latest: %v", err)
+	}
+	if got, err := st.Version(t.Context(), id, 1); err != nil || string(got.Doc) != string(next.Doc) {
+		t.Fatalf("a refused rewrite changed version 1: %s, %v", got.Doc, err)
+	}
+	unknown := next
+	unknown.AgentID = session.NewID(session.PrefixAgent)
+	if err := st.RewriteLatest(t.Context(), unknown); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("an unknown agent: %v", err)
+	}
+	for name, bad := range map[string]store.AgentVersion{
+		"no id":      {Version: 1, Digest: v1.Digest, Doc: v1.Doc, Bundle: v1.Bundle},
+		"no version": {AgentID: id, Digest: v1.Digest, Doc: v1.Doc, Bundle: v1.Bundle},
+		"no digest":  {AgentID: id, Version: 2, Doc: v1.Doc, Bundle: v1.Bundle},
+		"not text":   {AgentID: id, Version: 2, Digest: v1.Digest, Doc: []byte{0xff}, Bundle: v1.Bundle},
+	} {
+		if err := st.RewriteLatest(t.Context(), bad); !errors.Is(err, session.ErrInvalid) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
 
