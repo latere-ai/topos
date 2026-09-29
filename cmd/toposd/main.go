@@ -45,6 +45,7 @@ import (
 	"latere.ai/x/topos/internal/store/postgres"
 	"latere.ai/x/topos/internal/token"
 	"latere.ai/x/topos/internal/version"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
@@ -141,9 +142,23 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		}
 	}()
 	queue := runner.NewQueue(st.sessions, 0)
+	// The doors are read once, for the runners and for the API's check of
+	// a model a session switches to; a server that runs no session reads
+	// none and checks models at TOPOS_MODELS_URL as it is.
+	var doors models.Doors
+	if cfg.RunnerCapacity > 0 {
+		if doors, err = discoverDoors(ctx, cfg); err != nil {
+			return fail(stderr, err)
+		}
+	}
+	figures, err := hosted.Figures(hosted.Options{ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL)})
+	if err != nil {
+		return fail(stderr, err)
+	}
 	so := server.Options{
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
 		PublicURL: cfg.PublicURL, BasePath: cfg.BasePath, Log: log, Notify: queue.Notify, HostSessions: cfg.HostSessions,
+		Figures: figures,
 	}
 	minter, identities, err := newMinter(cfg, st)
 	if err != nil {
@@ -166,7 +181,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if minter != nil {
 		local = minter.Local
 	}
-	runners, err := startRunners(runCtx, cfg, getenv, st.sessions, queue, runner.KindServe, local, log)
+	runners, err := startRunners(runCtx, cfg, getenv, doors, st.sessions, queue, runner.KindServe, local, log)
 	if err != nil {
 		stopRunners()
 		return fail(stderr, err)
@@ -372,23 +387,17 @@ var reapInterval = 5 * time.Second
 // A capacity of zero runs none. With TOPOS_HOST_SESSIONS=on the host
 // sandbox is checked first, and a sandbox that does not run or does not
 // confine stops the start.
-func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, log *slog.Logger) (<-chan struct{}, error) {
+func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)
 		return done, nil
 	}
-	// TOPOS_MODELS_URL may name a Lux root, whose discovery document
-	// names each family's door; a URL that does not answer stops the
-	// start, as an issuer that does not answer does. The runners reach
-	// each door under TOPOS_MODELS_URL itself, which may be an address
-	// inside the installation's network, and a sandbox reaches Lux at the
-	// root Lux published its doors under, since a sandbox leaves only
-	// through Cella's egress gateway, toward public hosts.
-	doors, err := dialect.Discover(ctx, &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}, cfg.ModelsURL)
-	if err != nil {
-		return nil, fmt.Errorf("TOPOS_MODELS_URL: %w", err)
-	}
+	// The runners reach each door under TOPOS_MODELS_URL itself, which
+	// may be an address inside the installation's network, and a sandbox
+	// reaches Lux at the root Lux published its doors under, since a
+	// sandbox leaves only through Cella's egress gateway, toward public
+	// hosts.
 	cella := hosted.Cella(hosted.CellaOptions{})
 	if cfg.CellaURL != "" {
 		helpers, err := hosted.ReadHelpers(cfg.MachineHelpers)
@@ -434,6 +443,18 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	return done, nil
 }
 
+// discoverDoors reads the family doors TOPOS_MODELS_URL names when it
+// is a Lux root, whose discovery document names each family's door; a
+// URL that does not answer stops the start, as an issuer that does not
+// answer does.
+func discoverDoors(ctx context.Context, cfg config.Config) (models.Doors, error) {
+	doors, err := dialect.Discover(ctx, &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}, cfg.ModelsURL)
+	if err != nil {
+		return nil, fmt.Errorf("TOPOS_MODELS_URL: %w", err)
+	}
+	return doors, nil
+}
+
 // runnerRole is the runner role (spec 016): it claims hosted sessions
 // from a toposd's internal listener and runs them, and serves only the
 // probes. Every connection is its own; toposd never dials it.
@@ -466,7 +487,11 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 	defer stop()
 	// A claim's lease reaches its session's credentials over the token
 	// route itself, so the runner role builds none.
-	runners, err := startRunners(runCtx, cfg, getenv, client, client, runner.KindRunner, nil, log)
+	doors, err := discoverDoors(ctx, cfg)
+	if err != nil {
+		return fail(stderr, errors.Join(err, ln.Close()))
+	}
+	runners, err := startRunners(runCtx, cfg, getenv, doors, client, client, runner.KindRunner, nil, log)
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}

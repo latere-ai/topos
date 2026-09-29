@@ -277,8 +277,11 @@ func RetryAfter(err error) time.Duration {
 const (
 	CodeCredentialMissing = "model_credential_missing"
 	CodeUnknown           = "model_unknown"
-	CodeUnpriced          = "model_unpriced"
-	CodeMismatch          = "codec_mismatch"
+	// CodeUnavailable is a model whose connection or figures could not be
+	// had: no base URL, or a door that did not answer.
+	CodeUnavailable = "model_unavailable"
+	CodeUnpriced    = "model_unpriced"
+	CodeMismatch    = "codec_mismatch"
 )
 
 // Coded is an error with one of the codes above.

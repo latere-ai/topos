@@ -32,6 +32,7 @@ const (
 	TypeSessionStatus        Type = "session.status"
 	TypeSessionMachine       Type = "session.machine"
 	TypeScopeChanged         Type = "session.scope_changed"
+	TypeModelChanged         Type = "session.model_changed"
 	TypeSessionResumed       Type = "session.resumed"
 	TypeSessionError         Type = "session.error"
 	TypeMemoryAttached       Type = "memory.attached"
@@ -47,7 +48,7 @@ var Known = map[Type]bool{
 	TypeUserToolResult: true, TypeAgentMessage: true, TypeAgentToolUse: true,
 	TypeToolResult: true, TypeThreadStarted: true, TypeThreadEnded: true,
 	TypeThreadMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
-	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeSessionResumed: true,
+	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypeSessionResumed: true,
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true,
 }
@@ -375,6 +376,15 @@ type ScopeChanged struct {
 	New    []json.RawMessage `json:"new"`
 	Reason string            `json:"reason,omitempty"`
 	Until  string            `json:"until,omitempty"`
+}
+
+// ModelChanged is the payload of session.model_changed: the session's
+// owner switched the model its next turn runs (spec 015). Old is the
+// model the session ran, its agent's until a first switch.
+type ModelChanged struct {
+	By  Sender   `json:"by"`
+	Old ModelRef `json:"old"`
+	New ModelRef `json:"new"`
 }
 
 // SessionResumed is the payload of session.resumed: a session idle on its

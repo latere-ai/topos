@@ -126,6 +126,11 @@ var opDescriptions = map[string]string{
 		"metadata.displayName, optional, is the name a person reads: text on one line of at most %d characters, without control characters, line breaks or bidirectional controls; "+
 		"an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: "+
 		"it replaces the latest version's metadata, and every later read returns it.", manifest.MaxDisplayName),
+	"updateSession": `The body is {"model": {"name": "<model>"}}, the model the session's next turn runs; any other member is refused. ` +
+		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. " +
+		"A model no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable; the authorizer is asked session.update with session_id and model after the model resolved, and a deny is forbidden. " +
+		"An allowed switch appends session.model_changed {by, old, new} and answers the Session, whose model is the new one; a switch to the model the session runs appends nothing. " +
+		"A turn already running keeps its model: the switch takes effect at the next turn.",
 }
 
 // operation is one route as the document describes it. x-topos-actions

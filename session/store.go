@@ -284,8 +284,9 @@ func SameEvent(a, b Event) bool {
 
 // ApplyBatch updates the Session header from appended events: the last
 // sequence, the turn, the update time, the status and stop reason of the
-// last session.status event, the budget of the last session.resumed, and
-// the spend, which each model.request's cost adds to as Spent counts it.
+// last session.status event, the budget of the last session.resumed, the
+// model of the last session.model_changed, and the spend, which each
+// model.request's cost adds to as Spent counts it.
 func ApplyBatch(s *Session, events []Event) {
 	for _, e := range events {
 		if e.Seq > s.LastSeq {
@@ -308,6 +309,13 @@ func ApplyBatch(s *Session, events []Event) {
 			var r SessionResumed
 			if e.Decode(&r) == nil {
 				s.Budget.MaxCostUSDMicro = r.MaxCostUSDMicro
+			}
+			continue
+		}
+		if e.Type == TypeModelChanged && !e.Redacted() {
+			var m ModelChanged
+			if e.Decode(&m) == nil {
+				s.Model = &ModelRef{Name: m.New.Name}
 			}
 			continue
 		}

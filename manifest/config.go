@@ -50,6 +50,19 @@ type AgentConfig struct {
 	Machine v1.Machine
 }
 
+// SessionModel is the spec.model and the catalog overlay of a session of
+// the agent that runs the model name (spec 015): for the agent's own
+// model's name, or none, the agent's spec.model as it names it, its base
+// URL, credential and figures included; for any other name, that model
+// alone, reached through the installation's model connection with the
+// catalog's and the door's figures and none of the agent's.
+func (c AgentConfig) SessionModel(name string) (v1.AgentModel, models.Entry) {
+	if name == "" || name == c.Model.Name {
+		return c.Model, c.Overlay
+	}
+	return v1.AgentModel{Name: name}, models.Entry{Name: name}
+}
+
 // Connect gives a subagent its model from its spec.model and overlay:
 // the Model, the Connection and the catalog entry it resolves to. A nil
 // Model or Connection is the parent's.

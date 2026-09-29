@@ -45,8 +45,8 @@ import (
 // The setup error codes of a hosted session.
 const (
 	CodeAgentMissing           = "agent_missing"
-	CodeModelUnavailable       = "model_unavailable"
-	CodeModelCredentialMissing = "model_credential_missing"
+	CodeModelUnavailable       = models.CodeUnavailable
+	CodeModelCredentialMissing = models.CodeCredentialMissing
 	CodeMachineUnavailable     = machine.CodeUnavailable
 )
 
@@ -114,12 +114,28 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	if err != nil {
 		return harness.Config{}, err
 	}
-	model, conn, entry, err := b.connect(ctx, ac.Model, ac.Overlay)
+	// A session that switched its model starts on the one it switched to
+	// (spec 015), and a switch between two turns of the drive connects
+	// the next one the same way, with the drive's credentials.
+	var name string
+	if s.Model != nil {
+		name = s.Model.Name
+	}
+	m, overlay := ac.SessionModel(name)
+	model, conn, entry, err := b.connect(ctx, m, overlay)
 	if err != nil {
 		return harness.Config{}, err
 	}
 	cfg := harness.Config{
 		Model: model, Connection: conn, Entry: entry,
+		Connect: func(_ context.Context, name string) (models.Model, models.Connection, models.Entry, error) {
+			m, overlay := ac.SessionModel(name)
+			model, conn, entry, err := b.connect(ctx, m, overlay)
+			if se, ok := errors.AsType[*runner.SetupError](err); ok {
+				err = &models.Coded{Code: se.Code, Message: se.Err.Error()}
+			}
+			return model, conn, entry, err
+		},
 		Name: ac.Name, Instructions: ac.Instructions, Policy: ac.Policy, Effort: ac.Effort,
 		Subagents: ac.Subagents, MaxDepth: ac.MaxDepth, MaxConcurrent: ac.MaxConcurrent, CompactAt: ac.CompactAt,
 		Prompt: prompts.HarnessOptions{Threads: len(ac.Subagents) > 0},
@@ -199,6 +215,18 @@ func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.En
 	if credential == "" {
 		return nil, models.Connection{}, models.Entry{}, setup(CodeModelCredentialMissing, errors.New("the agent names no credential, the server mints no session key, and TOPOS_MODELS_KEY is unset"))
 	}
+	conn, entry, err := b.resolve(ctx, m, overlay, base, credential)
+	if err != nil {
+		return nil, models.Connection{}, models.Entry{}, err
+	}
+	return model, conn, entry, nil
+}
+
+// resolve is the connection and the figures of one spec.model at base:
+// the embedded catalog's, overlaid by the figures a Lux door serves for
+// the model, read with credential, then by the agent's own. An empty
+// credential reads the door's list without a key.
+func (b builder) resolve(ctx context.Context, m v1.AgentModel, overlay models.Entry, base, credential string) (models.Connection, models.Entry, error) {
 	// The family and the dialect pick the door, whose list may name the
 	// model's figures; a model known to neither the catalog nor the
 	// agent is still asked of its door before it is refused.
@@ -219,18 +247,48 @@ func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.En
 	if models.NamesADoor(base) {
 		var err error
 		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
-			return nil, models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, err)
+			return models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, err)
 		}
 	}
 	entry, err := b.cat.Resolve(m.Name, served, overlay)
 	if err != nil {
-		return nil, models.Connection{}, models.Entry{}, err
+		return models.Connection{}, models.Entry{}, err
 	}
 	if entry.Dialect == "" {
 		entry.Dialect = spoken
 	}
 	conn.Family, conn.Dialect = entry.Family, entry.Dialect
-	return model, conn, entry, nil
+	return conn, entry, nil
+}
+
+// Figures is the check a server makes of a model a session switches to
+// (spec 015): the figures connect would resolve for the spec.model and
+// overlay, read at the installation's model URL with TOPOS_MODELS_KEY,
+// or without a key when it is unset, since a session's own key is its
+// runner's. A model no source gives an input window and an output limit
+// is models.CodeUnknown, and a door that does not answer
+// models.CodeUnavailable.
+func Figures(o Options) (func(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Entry, error), error) {
+	cat, err := models.Embedded()
+	if err != nil {
+		return nil, err
+	}
+	b := builder{o: o, cat: cat}
+	return func(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Entry, error) {
+		base := cmp.Or(m.BaseURL, o.ModelsURL)
+		if base == "" {
+			return models.Entry{}, &models.Coded{Code: models.CodeUnavailable, Message: "the agent names no base URL and TOPOS_MODELS_URL is unset"}
+		}
+		credential := ""
+		if m.BaseURL == "" {
+			credential = o.ModelsKey
+		}
+		_, entry, err := b.resolve(ctx, m, overlay, base, credential)
+		if se, ok := errors.AsType[*runner.SetupError](err); ok {
+			err = &models.Coded{Code: se.Code, Message: se.Err.Error()}
+		}
+		return entry, err
+	}, nil
 }
 
 // CellaOptions configure the Cella machines of hosted sessions.

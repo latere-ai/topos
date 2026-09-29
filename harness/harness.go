@@ -124,12 +124,30 @@ type Config struct {
 	// Sleep waits between attempts; nil waits on a timer.
 	Sleep    func(ctx context.Context, d time.Duration) error
 	Observer Observer
+	// Connect resolves a model the session switched to (spec 015): its
+	// stream, its connection and its figures, the way the agent's own was
+	// resolved. RunTurn asks it when the session names a model other than
+	// the connection's, runs the whole turn on the answer, and keeps it
+	// for the turns after. Nil runs every turn on the configured model.
+	Connect func(ctx context.Context, name string) (models.Model, models.Connection, models.Entry, error)
 }
 
 // Harness runs turns of one agent.
 type Harness struct {
 	c      Config
 	prompt string
+	// switched is the model the session last switched to as Connect
+	// answered it, shared by the copies a turn makes.
+	switched *switchedModel
+}
+
+// switchedModel is one model Connect answered.
+type switchedModel struct {
+	mu    sync.Mutex
+	name  string
+	model models.Model
+	conn  models.Connection
+	entry models.Entry
 }
 
 // The error codes of spec 005.
@@ -172,7 +190,38 @@ func New(c Config) (*Harness, error) {
 	if c.PromptVersion == 0 {
 		c.PromptVersion = prompts.HarnessCurrent
 	}
-	return &Harness{c: c, prompt: p}, nil
+	return &Harness{c: c, prompt: p, switched: &switchedModel{}}, nil
+}
+
+// on points the harness's configuration at the model name, which the
+// session switched to, asking Connect the first time the name is asked.
+// A model that cannot be connected, or that has no input window or
+// output limit, is an error with its code.
+func (h *Harness) on(ctx context.Context, name string) error {
+	sw := h.switched
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	if sw.name != name {
+		if h.c.Connect == nil {
+			return &models.Coded{Code: models.CodeUnavailable, Message: fmt.Sprintf("the session runs %q, and this runner connects %q alone", name, h.c.Connection.Model)}
+		}
+		model, conn, entry, err := h.c.Connect(ctx, name)
+		if err != nil {
+			return err
+		}
+		if err := conn.Validate(); err != nil {
+			return err
+		}
+		if entry.MaxOutputTokens <= 0 || entry.InputWindow <= 0 {
+			return &models.Coded{Code: models.CodeUnknown, Message: fmt.Sprintf("no input window and output limit for %q", name)}
+		}
+		if model == nil {
+			model = h.c.Model
+		}
+		sw.name, sw.model, sw.conn, sw.entry = name, model, conn, entry
+	}
+	h.c.Model, h.c.Connection, h.c.Entry = sw.model, sw.conn, sw.entry
+	return nil
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -208,10 +257,22 @@ func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.
 		scoped.c.Policy = h.c.Policy.Under(*s.Policy)
 		h = &scoped
 	}
+	// A session that switched its model runs the turn on it, from the
+	// turn's first request to its last (spec 015); a switch appended
+	// while the turn runs waits for the next one.
+	var unconnected error
+	if want := s.Model; want != nil && want.Name != h.c.Connection.Model {
+		scoped := *h
+		unconnected = scoped.on(ctx, want.Name)
+		h = &scoped
+	}
 	t := &turn{h: h, s: s, sh: &shared{events: append([]session.Event(nil), log...)}, l: l, root: h.c.Tools, num: s.Turn + 1, start: h.c.Clock()}
 	var err error
 	if t.reg, err = t.registry(h.c.Tools.Names()); err != nil {
 		return Outcome{}, err
+	}
+	if unconnected != nil {
+		return t.unconnected(ctx, unconnected)
 	}
 	if n := len(log); n > 0 {
 		t.startSeq = log[n-1].Seq
@@ -231,6 +292,25 @@ func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.
 		return Outcome{}, err
 	}
 	return out, nil
+}
+
+// unconnected closes a turn whose session's model could not be had with
+// a session.error of the model's code and an idle error, before any
+// request: the session waits for its next switch or message.
+func (t *turn) unconnected(ctx context.Context, cause error) (Outcome, error) {
+	code := models.CodeUnavailable
+	if mc, ok := errors.AsType[*models.Coded](cause); ok {
+		code = mc.Code
+	}
+	se, err := t.sessionError(code, cause.Error(), models.Retryable(cause), "")
+	if err != nil {
+		return Outcome{}, err
+	}
+	var stop *errStop
+	if err := t.finish(ctx, session.StopError, code, se); !errors.As(err, &stop) {
+		return Outcome{}, err
+	}
+	return stop.out, nil
 }
 
 // errStop ends a turn with an outcome that has been appended.

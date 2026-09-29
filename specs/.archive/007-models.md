@@ -111,6 +111,17 @@ otherwise; Lux accepts both). The zero `Connection` is invalid:
 `Connection.Validate` refuses an empty base URL or model, and there is
 no implicit model.
 
+A session's model may change between turns ([[015-api]]). The harness
+takes the connection its configuration names at a turn's start, and
+when the session's `model` names another, it asks its configuration's
+`Connect` for that model's stream, connection and figures, resolved as
+the agent's model is, and runs the whole turn on them; the answer is
+kept for the turns after, and a model that cannot be had closes the
+turn with its code (`model_unknown`, `model_unavailable`) as a
+`session.error` and an idle `error`, so the session waits for the next
+switch or message. Every `model.request` records the model it asked,
+so a replay rebuilds each request with its own.
+
 ### The catalog
 
 Each model has an entry: `name`, `aliases`, `family`, `dialect`,
@@ -354,6 +365,7 @@ with the provider's own SDK ([[025-task-suite]]).
 | `toposd serve` and `toposd runner` exit 1 with one configuration line with no `TOPOS_MODELS_URL` or with a `scripted:` one | `cmd/toposd.TestServeRefusesScriptedModel` | built |
 | A stream that ends before its dialect's terminal frame is an incomplete response and is retried, in every dialect; an error event inside a stream, an unreachable server and a canceled request are classified | `models/dialect.TestErrorsAreClassifiedForRetry` | built |
 | A retry of a stream reuses no partial output: the stored message equals the final attempt's response | `harness.TestRetriedStreamStoresFinalAttempt` | built |
+| A turn starts on the model its session names: a session that switched runs its next turn on the switched model's connection and figures, and a model the configuration cannot connect closes the turn with its code | `harness.TestATurnRunsOnTheSessionsModel`, `runner.TestAModelSwitchAppliesToTheNextTurn` | built |
 | The credential reaches the gateway in its header and never appears in any event or blob of a session, every request's bytes captured | `harness.TestModelCredentialNeverLogged` | built |
 
 ## Outcome

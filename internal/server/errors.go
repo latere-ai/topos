@@ -16,6 +16,7 @@ import (
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 )
 
@@ -58,6 +59,8 @@ var codes = map[string]struct {
 	CodePayloadTooLarge:             {http.StatusRequestEntityTooLarge, "The request body is too large."},
 	CodeRateLimited:                 {http.StatusTooManyRequests, "Too many requests; wait and try again."},
 	CodeMachineUnavailable:          {http.StatusUnprocessableEntity, "The session's machine is not available here."},
+	models.CodeUnknown:              {http.StatusUnprocessableEntity, "This server cannot run that model."},
+	models.CodeUnavailable:          {http.StatusServiceUnavailable, "The model's gateway did not answer; try again."},
 	auth.CodeAuthorizerUnavailable:  {http.StatusServiceUnavailable, "The authorizer did not answer; try again."},
 	CodeIdentityRefused:             {http.StatusForbidden, "The identity provider refused this agent's identity."},
 	CodeIdentityUnavailable:         {http.StatusServiceUnavailable, "The identity provider did not answer; try again."},

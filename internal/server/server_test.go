@@ -203,6 +203,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"createSession":     {http.MethodPost, "/v1/sessions", `{"agent":"reviewer"}`},
 		"listSessions":      {http.MethodGet, "/v1/sessions", ""},
 		"getSession":        {http.MethodGet, "/v1/sessions/" + s.ID, ""},
+		"updateSession":     {http.MethodPatch, "/v1/sessions/" + s.ID, `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`},
 		"endSession":        {http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`},
 		"resumeSession":     {http.MethodPost, "/v1/sessions/" + s.ID + "/resume", `{}`},
 		"deleteSession":     {http.MethodDelete, "/v1/sessions/" + doomed.ID, ""},

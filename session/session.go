@@ -149,6 +149,11 @@ const (
 	DefaultMaxAge      = 168 * time.Hour
 )
 
+// ModelRef names a model a session runs.
+type ModelRef struct {
+	Name string `json:"name"`
+}
+
 // Capture says which raw wire data a session keeps beyond the default.
 type Capture struct {
 	Requests bool `json:"requests,omitempty"`
@@ -179,8 +184,11 @@ type Session struct {
 	Scope      []json.RawMessage `json:"scope,omitempty"`
 	// Policy is the merged approval policy; nil, as on a local session,
 	// leaves the agent's own to the runner.
-	Policy    *Policy           `json:"policy,omitempty"`
-	Budget    Budget            `json:"budget"`
+	Policy *Policy `json:"policy,omitempty"`
+	Budget Budget  `json:"budget"`
+	// Model is the model the session's turns run, the latest
+	// session.model_changed's; nil runs the agent's.
+	Model     *ModelRef         `json:"model,omitempty"`
 	Limits    Limits            `json:"limits"`
 	Capture   Capture           `json:"capture"`
 	EndOnIdle bool              `json:"end_on_idle,omitempty"`

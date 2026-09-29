@@ -346,3 +346,73 @@ func TestReadHelpers(t *testing.T) {
 		t.Fatal("read helpers from a malformed pattern")
 	}
 }
+
+// TestASwitchedSessionConnectsItsModel: a session that switched its model
+// starts its drive on it with the door's figures and none of the agent's,
+// the configuration's Connect gives the agent's own model back as the
+// agent names it, and an unknown model is model_unknown; the server's
+// check of a switch reads the same figures with TOPOS_MODELS_KEY.
+func TestASwitchedSessionConnectsItsModel(t *testing.T) {
+	st := session.NewMemoryStore()
+	stub := luxstub.New(t)
+	stub.Models(
+		bridge.Model{Name: "anthropic/claude-haiku-4.5", ContextWindow: 150_000, MaxOutputTokens: 9_000},
+		bridge.Model{Name: "vendor/door-only", ContextWindow: 32_000, MaxOutputTokens: 4_000},
+	)
+	var asked v1.Machine
+	o := Options{Store: st, ModelsURL: stub.URL() + "/anthropic", ModelsKey: "k", Machines: hostMachines(t, &asked)}
+	h, err := Harness(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := strings.Replace(reviewer, "model: {name: anthropic/claude-haiku-4.5}", "model: {name: anthropic/claude-haiku-4.5, inputWindow: 100000}", 1)
+	s := newSession(t, st, agent)
+	s.Model = &session.ModelRef{Name: "vendor/door-only"}
+	cfg, err := h(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if cfg.Connection.Model != "vendor/door-only" || cfg.Entry.InputWindow != 32_000 || cfg.Entry.MaxOutputTokens != 4_000 {
+		t.Fatalf("a switched session started on %+v %+v", cfg.Connection, cfg.Entry)
+	}
+	_, conn, entry, err := cfg.Connect(t.Context(), "anthropic/claude-haiku-4.5")
+	if err != nil || conn.Model != "anthropic/claude-haiku-4.5" || conn.Credential != "k" || entry.InputWindow != 100_000 {
+		t.Fatalf("the agent's own model back: %+v %+v, %v; want the agent's window over the door's", conn, entry, err)
+	}
+	if _, _, _, err := cfg.Connect(t.Context(), "vendor/nobody"); !isCode(err, models.CodeUnknown) {
+		t.Fatalf("an unknown model: %v", err)
+	}
+
+	figures, err := Figures(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(stub.Listed())
+	e, err := figures(t.Context(), v1.AgentModel{Name: "vendor/door-only"}, models.Entry{Name: "vendor/door-only"})
+	if err != nil || e.InputWindow != 32_000 {
+		t.Fatalf("the figures of a door-only model: %+v, %v", e, err)
+	}
+	if listed := stub.Listed(); len(listed) != before+1 || listed[len(listed)-1].Get("Authorization") != "Bearer k" {
+		t.Fatalf("the door's list was not read with TOPOS_MODELS_KEY: %v", listed)
+	}
+	if _, err := figures(t.Context(), v1.AgentModel{Name: "vendor/nobody"}, models.Entry{Name: "vendor/nobody"}); !isCode(err, models.CodeUnknown) {
+		t.Fatalf("an unknown model's figures: %v", err)
+	}
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	for name, o := range map[string]Options{"no model URL": {}, "a door that does not answer": {ModelsURL: gone.URL + "/anthropic"}} {
+		f, err := Figures(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f(t.Context(), v1.AgentModel{Name: "anthropic/claude-haiku-4.5"}, models.Entry{}); !isCode(err, models.CodeUnavailable) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}
+
+func isCode(err error, code string) bool {
+	mc, ok := errors.AsType[*models.Coded](err)
+	return ok && mc.Code == code
+}
