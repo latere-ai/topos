@@ -384,11 +384,42 @@ func Cella(o CellaOptions) Machines {
 				minted = append(minted, sec)
 			}
 		}
+		stop := func() {}
 		if len(minted) > 0 {
-			keep(ctx, c, runner.TokensFrom(ctx), minted, o.Log)
+			stop = keep(ctx, c, runner.TokensFrom(ctx), minted, o.Log)
 		}
-		return mach, nil
+		if len(secrets) == 0 {
+			return mach, nil
+		}
+		return &sessionMachine{Machine: mach, c: c, secrets: secrets, stop: stop}, nil
 	}
+}
+
+// sessionMachine is a hosted session's sandbox with the Secrets applied
+// for it, which are the session's as the sandbox is (spec 018): at the
+// session's end their renewal stops, the sandbox is deleted, and then
+// the Secrets, since a Cella Secret has no lifetime of its own and would
+// otherwise outlive every session that made one.
+type sessionMachine struct {
+	*cella.Machine
+	c       *client.Client
+	secrets []*sandboxSecret
+	stop    func()
+}
+
+// Release at the session's end deletes the sandbox before its Secrets, so
+// no sandbox is left mounting a Secret that is gone. A delete Cella could
+// not do leaves the machine to be released again, and the next release
+// deletes what is left.
+func (m *sessionMachine) Release(ctx context.Context, end bool) error {
+	if !end {
+		return m.Machine.Release(ctx, false)
+	}
+	m.stop()
+	if err := m.Machine.Release(ctx, true); err != nil {
+		return err
+	}
+	return remove(ctx, m.c, m.secrets)
 }
 
 // repositoryHosts are the git hosts of the session's repositories, which

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"latere.ai/x/cella/client"
@@ -219,13 +220,16 @@ func (s *sandboxSecret) apply(ctx context.Context, c *client.Client, cred runner
 }
 
 // keep renews each secret's value before it expires until ctx ends,
-// which is the drive's end: the source answers a fresh credential
-// RefreshBefore its expiry, and a value that changed is applied again. A
-// lost lease stops it; any other failure is logged and asked again after
-// retryEvery.
-func keep(ctx context.Context, c *client.Client, src *runner.TokenSource, secrets []*sandboxSecret, log *slog.Logger) {
+// which is the drive's end, or until stop is called: the source answers a
+// fresh credential RefreshBefore its expiry, and a value that changed is
+// applied again. A lost lease stops it; any other failure is logged and
+// asked again after retryEvery. stop returns once no renewal is in
+// flight, so a Secret deleted after it is not applied again.
+func keep(ctx context.Context, c *client.Client, src *runner.TokenSource, secrets []*sandboxSecret, log *slog.Logger) (stop func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
 	for _, sec := range secrets {
-		go func() {
+		wg.Go(func() {
 			for {
 				wait := time.Until(sec.expires.Add(-runner.RefreshBefore)) + time.Second
 				t := time.NewTimer(max(wait, time.Second))
@@ -252,8 +256,24 @@ func keep(ctx context.Context, c *client.Client, src *runner.TokenSource, secret
 					sec.expires = time.Now().Add(retryEvery + runner.RefreshBefore)
 				}
 			}
-		}()
+		})
 	}
+	return func() {
+		cancel()
+		wg.Wait()
+	}
+}
+
+// remove deletes the secrets, a Secret already gone included, and answers
+// every delete Cella could not do.
+func remove(ctx context.Context, c *client.Client, secrets []*sandboxSecret) error {
+	var errs []error
+	for _, sec := range secrets {
+		if _, err := c.Delete(ctx, client.KindSecret, sec.name); err != nil && client.CodeOf(err) != "not_found" {
+			errs = append(errs, fmt.Errorf("delete the sandbox's secret %s: %w", sec.name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // gitConfig points git inside the sandbox at its git host's token: every

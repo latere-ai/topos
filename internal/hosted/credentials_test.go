@@ -93,18 +93,29 @@ func newCredentialFixture(t *testing.T, helpers map[string][]byte, creds *issued
 	return f
 }
 
-// opened builds the harness of s and opens its machine, as the first
-// tool that acts on it does, and answers the first failure: a machine
-// that cannot be had answers as the setup error its code names.
+// opened builds the harness of s, opens its machine, as the first tool
+// that acts on it does, and ends the session, answering the first
+// failure: a machine that cannot be had answers as the setup error its
+// code names.
 func opened(ctx context.Context, h func(context.Context, session.Session) (harness.Config, error), s session.Session) error {
-	cfg, err := h(ctx, s)
+	cfg, err := open(ctx, h, s)
 	if err != nil {
 		return err
 	}
-	if oe, ok := errors.AsType[*machine.OpenError](machine.Open(ctx, cfg.Machine)); ok {
-		return &runner.SetupError{Code: oe.Code, Err: oe.Err}
-	}
 	return cfg.Machine.Release(context.WithoutCancel(ctx), true)
+}
+
+// open is opened without the session's end, for a test that reads what
+// the open made before the end removes it.
+func open(ctx context.Context, h func(context.Context, session.Session) (harness.Config, error), s session.Session) (harness.Config, error) {
+	cfg, err := h(ctx, s)
+	if err != nil {
+		return harness.Config{}, err
+	}
+	if oe, ok := errors.AsType[*machine.OpenError](machine.Open(ctx, cfg.Machine)); ok {
+		return harness.Config{}, &runner.SetupError{Code: oe.Code, Err: oe.Err}
+	}
+	return cfg, nil
 }
 
 // TestSessionAndSandboxLuxKeys, the runner's half: a session on an
@@ -369,11 +380,15 @@ func TestAnInstallationGitCredential(t *testing.T) {
 			write("installation-git-2")
 			next := newSession(t, f.st, reviewer)
 			next.ExpiresAt = time.Now().Add(time.Hour)
-			if err := opened(c.ctx, f.h, next); err != nil {
+			ncfg, err := open(c.ctx, f.h, next)
+			if err != nil {
 				t.Fatal(err)
 			}
 			if _, value, _ := f.cella.Secret(cella.SandboxName(next.ID) + "-origo"); value != "installation-git-2" {
 				t.Fatal("the next sandbox did not get the rotated credential")
+			}
+			if err := ncfg.Machine.Release(context.WithoutCancel(c.ctx), true); err != nil {
+				t.Fatal(err)
 			}
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
@@ -392,11 +407,15 @@ func TestAnInstallationGitCredential(t *testing.T) {
 		f := newCredentialFixture(t, helpers, creds, client.StaticToken("installation-bearer"), withFile)
 		ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
 		defer cancel()
-		if err := opened(ctx, f.h, f.s); err != nil {
+		cfg, err := open(ctx, f.h, f.s)
+		if err != nil {
 			t.Fatal(err)
 		}
 		if _, value, _ := f.cella.Secret(cella.SandboxName(f.s.ID) + "-origo"); value != "origo-sandbox-1" {
 			t.Fatalf("the git host's Secret holds %q, not the session's token", value)
+		}
+		if err := cfg.Machine.Release(context.WithoutCancel(ctx), true); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
@@ -542,5 +561,128 @@ func TestSessionSecretsNameTheSession(t *testing.T) {
 		if err := sec.apply(t.Context(), c, runner.Credential{Value: "v"}); client.CodeOf(err) != "forbidden" {
 			t.Errorf("a Secret with %s: %v, want forbidden", label, err)
 		}
+	}
+}
+
+// TestTheSessionsEndDeletesItsSecrets: a drive's end leaves the sandbox's
+// Secrets for the session's next drive, and the session's end deletes the
+// sandbox and then each Secret under an authorizer that admits only what
+// names the session; no renewal applies one again after, a second end
+// finds nothing left, and an installation's own git credential goes the
+// same way, since its Secret is the session's record.
+func TestTheSessionsEndDeletesItsSecrets(t *testing.T) {
+	creds := &issued{life: runner.RefreshBefore + 500*time.Millisecond}
+	f := newCredentialFixture(t, helper(t), creds, nil)
+	f.cella.Authorize(sessionRule(f.s.ID))
+	ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+	defer cancel()
+	name := cella.SandboxName(f.s.ID)
+	secrets := []string{name + "-lux", name + "-origo"}
+	gone := func(t *testing.T) {
+		t.Helper()
+		for _, secret := range secrets {
+			if _, _, ok := f.cella.Secret(secret); ok {
+				t.Fatalf("%s outlived the session", secret)
+			}
+		}
+		if _, ok := f.cella.Sandbox(name); ok {
+			t.Fatal("the sandbox outlived the session")
+		}
+	}
+
+	// Each drive runs under a context of its own, which ends with it, as
+	// the runner's does.
+	drive, ended := context.WithCancel(ctx)
+	first, err := open(drive, f.h, f.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Machine.Release(drive, false); err != nil {
+		t.Fatal(err)
+	}
+	ended()
+	for _, secret := range secrets {
+		if _, _, ok := f.cella.Secret(secret); !ok {
+			t.Fatalf("%s was deleted at a drive's end", secret)
+		}
+	}
+
+	// The next drive opens the machine again, and the session ends while
+	// its renewals are still running.
+	cfg, err := open(ctx, f.h, f.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Machine.Release(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	gone(t)
+	// A renewal would have come within a second of the open.
+	time.Sleep(1500 * time.Millisecond)
+	gone(t)
+	if err := cfg.Machine.Release(ctx, true); err != nil {
+		t.Fatalf("a second end: %v", err)
+	}
+
+	t.Run("an installation's git credential", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "origo-token")
+		if err := os.WriteFile(path, []byte("installation-git\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		nothing := &issued{err: map[string]error{runner.AudienceLux: runner.ErrNotMinted, AudienceCella: runner.ErrNotMinted, AudienceOrigo: runner.ErrNotMinted}}
+		g := newCredentialFixture(t, helper(t), nothing, client.StaticToken("installation-bearer"), func(o *CellaOptions) { o.OrigoToken = client.TokenFile(path) })
+		secret := cella.SandboxName(g.s.ID) + "-origo"
+		cfg, err := open(t.Context(), g.h, g.s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, ok := g.cella.Secret(secret); !ok {
+			t.Fatal("no git host Secret")
+		}
+		if err := cfg.Machine.Release(t.Context(), true); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, ok := g.cella.Secret(secret); ok {
+			t.Fatal("the installation's git Secret outlived the session")
+		}
+	})
+}
+
+// TestASecretCellaCouldNotDeleteIsDeletedAtTheNextEnd: a refused Secret
+// delete fails the release, and releasing again deletes what is left
+// without deleting the sandbox twice.
+func TestASecretCellaCouldNotDeleteIsDeletedAtTheNextEnd(t *testing.T) {
+	creds := &issued{life: 15 * time.Minute}
+	f := newCredentialFixture(t, helper(t), creds, nil)
+	ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+	defer cancel()
+	cfg, err := open(ctx, f.h, f.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := cella.SandboxName(f.s.ID)
+	f.cella.Authorize(func(action string, res cellastub.Resource) string {
+		if action == "secret.delete" && res.Name == name+"-origo" {
+			return "held"
+		}
+		return ""
+	})
+	err = cfg.Machine.Release(ctx, true)
+	if err == nil || !strings.Contains(err.Error(), name+"-origo") {
+		t.Fatalf("a refused Secret delete: %v", err)
+	}
+	if _, _, ok := f.cella.Secret(name + "-lux"); ok {
+		t.Fatal("the Secret Cella could delete was kept")
+	}
+	f.cella.Authorize(nil)
+	deletes := f.cella.Count(cellastub.OpDelete)
+	if err := cfg.Machine.Release(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := f.cella.Secret(name + "-origo"); ok {
+		t.Fatal("the next end left the Secret")
+	}
+	if n := f.cella.Count(cellastub.OpDelete); n != deletes {
+		t.Fatalf("the next end deleted the sandbox again: %d deletes, want %d", n, deletes)
 	}
 }
