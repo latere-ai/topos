@@ -158,7 +158,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	so := server.Options{
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
 		PublicURL: cfg.PublicURL, BasePath: cfg.BasePath, Log: log, Notify: queue.Notify, HostSessions: cfg.HostSessions,
-		Figures: figures,
+		Cella: cfg.CellaURL != "", Figures: figures,
 	}
 	minter, identities, err := newMinter(cfg, st)
 	if err != nil {

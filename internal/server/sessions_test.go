@@ -986,6 +986,61 @@ func TestHostSessionsBehindTheSwitch(t *testing.T) {
 	}
 }
 
+// TestAnAgentWithoutAMachineRunsOnCella: on a server that has Cella and
+// runs no session on its own host, a session of an agent that names no
+// machine runs on a Cella sandbox of the default image, and the
+// authorizer is asked about that machine; an agent that names more of a
+// host machine than its kind is still refused. With host sessions on, or
+// without Cella, the manifest's host default stands.
+func TestAnAgentWithoutAMachineRunsOnCella(t *testing.T) {
+	bare := strings.Replace(agentYAML("bare", "x"), "  machine: {kind: cella}\n", "", 1)
+	egress := strings.Replace(agentYAML("egress", "x"), "  machine: {kind: cella}\n", "  machine: {egress: [proxy.golang.org]}\n", 1)
+	create := func(f *fixture, agent string) answer {
+		t.Helper()
+		return f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"`+agent+`"}`)
+	}
+	for name, c := range map[string]struct {
+		cella, host bool
+		kind, image string
+	}{
+		"cella, host sessions off":    {true, false, session.MachineCella, manifest.DefaultImage},
+		"cella, host sessions on":     {true, true, session.MachineHost, ""},
+		"no cella, host sessions on":  {false, true, session.MachineHost, ""},
+		"no cella, host sessions off": {false, false, "", ""},
+	} {
+		var asked string
+		f := newFixture(t, func(o *Options) { o.Cella, o.HostSessions = c.cella, c.host })
+		f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+			if req.Action == authorizer.ActionSessionCreate {
+				asked = req.Resource.String("machine")
+			}
+			return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+		}
+		for _, doc := range []struct{ name, yaml string }{{"bare", bare}, {"egress", egress}} {
+			if got := f.do(http.MethodPut, "/v1/agents/"+doc.name, "alice", doc.yaml); got.status != http.StatusCreated {
+				t.Fatalf("%s: apply %s: %d %s", name, doc.name, got.status, got.body)
+			}
+		}
+		got := create(f, "bare")
+		if c.kind == "" {
+			if got.code() != CodeMachineUnavailable {
+				t.Fatalf("%s: %d %s", name, got.status, got.body)
+			}
+			continue
+		}
+		var s session.Session
+		got.decode(t, &s)
+		if got.status != http.StatusCreated || s.Machine.Kind != c.kind || s.Machine.Image != c.image || asked != c.kind {
+			t.Fatalf("%s: %d, machine %+v, asked about %q", name, got.status, s.Machine, asked)
+		}
+		// An agent that names a machine, egress alone included, keeps its
+		// kind, which is host by default.
+		if got := create(f, "egress"); c.host != (got.status == http.StatusCreated) {
+			t.Fatalf("%s: an agent that names egress: %d %s", name, got.status, got.body)
+		}
+	}
+}
+
 // TestResumeAfterTheCapIsRaised: a session idle on its budget resumes
 // with a raised cap, which session.resumed carries into the header and
 // makes pending input; any other status, a budget already spent and a

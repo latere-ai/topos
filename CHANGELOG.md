@@ -49,6 +49,15 @@ committed: the commit log already holds that.
   text nor an image, and an image whose bytes are not the format its
   media type names, which were stored as sent, are now
   `invalid_request`.
+- An agent applied without `spec.machine` runs its hosted sessions on a
+  Cella sandbox of the default image when the server has
+  `TOPOS_CELLA_URL` and host sessions are off. The manifest's default
+  machine is the host, which is a local run's, so such a session was
+  refused at create with `machine_unavailable`. The same holds for an
+  agent whose machine is `kind: host` alone, which its resolved spec
+  cannot tell apart, and for agents applied before this release. With
+  `TOPOS_HOST_SESSIONS=on`, or without Cella, such an agent keeps the
+  host, and an agent that names any other machine field keeps its kind.
 
 ## v0.9.2 - 2026-09-29
 

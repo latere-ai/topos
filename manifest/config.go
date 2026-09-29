@@ -189,12 +189,19 @@ func ignoredFields(s v1.AgentSpec) []string {
 	if len(s.Repositories) > 0 {
 		out = append(out, "repositories")
 	}
-	m := s.Machine
-	if (m.Kind != "" && m.Kind != v1.MachineHost) || m.Image != "" || m.Environment != "" || m.Resources != (v1.Resources{}) ||
-		len(m.Egress) > 0 || len(m.Roots) > 0 || len(m.ReadPaths) > 0 {
+	if !DefaultMachine(s.Machine) {
 		out = append(out, "machine")
 	}
 	return out
+}
+
+// DefaultMachine reports whether a spec.machine asks for nothing beyond
+// the default: kind host, or none, and no other field. A resolved spec
+// writes kind host for a manifest that names no machine, so this is also
+// how a resolved agent that named no machine reads.
+func DefaultMachine(m v1.Machine) bool {
+	return (m.Kind == "" || m.Kind == v1.MachineHost) && m.Image == "" && m.Environment == "" && m.Resources == (v1.Resources{}) &&
+		len(m.Egress) == 0 && len(m.Roots) == 0 && len(m.ReadPaths) == 0
 }
 
 // builder builds the subagent tree from the pinned agents.

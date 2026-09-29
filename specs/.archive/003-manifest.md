@@ -118,7 +118,7 @@ at the installation's identity provider ([[018-credentials-and-secrets]]).
 | `memoryStores` | list of `{name, access}`, `name` a reference, `access` `readWrite` or `readOnly` and required | none | [[020-memory-stores]] |
 | `connections` | list of Connection names | none | [[018-credentials-and-secrets]] |
 | `repositories` | list of `{url, ref}`, at most 8: `url` an `https` URL that names its host and holds no credential, `ref` a branch, a tag or a commit | none; `ref` absent is the repository's default branch | the repositories a session of the agent works in when its create names none ([[019-git]], [[015-api]]); a subagent's are not used ([[013-threads-and-subagents]]) |
-| `machine.kind` | `host` or `cella` | `host` | [[009-machines]] |
+| `machine.kind` | `host` or `cella` | `host`; a hosted session of an agent whose machine is this default and nothing more runs on `cella` on a server with Cella and host sessions off ([[015-api]]) | [[009-machines]] |
 | `machine.image`, `machine.environment` | string | Cella's `base`; the installation's default Environment | [[009-machines]] |
 | `machine.resources` | `{cpu, memory, disk}` as Kubernetes quantities | Cella's defaults | [[009-machines]] |
 | `machine.egress` | list of hosts | none | the hosts commands may reach ([[009-machines]], [[012-permissions-and-approvals]]) |

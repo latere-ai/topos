@@ -90,6 +90,10 @@ type Options struct {
 	// for a host machine runs on the server's own host. Off, it is
 	// refused machine_unavailable.
 	HostSessions bool
+	// Cella is TOPOS_CELLA_URL set: the server's runners create Cella
+	// sandboxes, so a session of an agent that names no machine runs on
+	// one when host sessions are off.
+	Cella bool
 	// Deleted is called after a session is deleted, to remove what the
 	// server keeps for it outside the store, such as a host session's
 	// directories. Nil removes nothing.

@@ -165,19 +165,11 @@ func (c *call) createSession() error {
 			resources = append(resources, session.Resource{Type: session.ResourceRepository, URL: repo.URL, Ref: repo.Ref})
 		}
 	}
-	// A hosted session runs on a Cella machine, or on the server's own
-	// host when the operator turned host sessions on; the manifest's host
-	// default is otherwise for a local run. Roots and read paths name
-	// paths of the host itself, which a session on a server never reaches.
-	kind := cfg.Machine.Kind
-	switch {
-	case kind == session.MachineHost && !c.s.o.HostSessions:
-		return refuse(CodeMachineUnavailable, "agent %s runs on machine kind host, and this server runs sessions on its own host only with TOPOS_HOST_SESSIONS=on", a.Name)
-	case kind == session.MachineHost && (len(cfg.Machine.Roots) > 0 || len(cfg.Machine.ReadPaths) > 0):
-		return refuse(CodeMachineUnavailable, "agent %s names machine.roots or machine.readPaths, paths of the server's own host, which a session on it never reaches", a.Name)
-	case kind != session.MachineCella && kind != session.MachineHost:
-		return refuse(CodeMachineUnavailable, "agent %s runs on machine kind %q; a hosted session runs on cella or the host", a.Name, kind)
+	m, err := c.s.sessionMachine(a.Name, cfg.Machine)
+	if err != nil {
+		return err
 	}
+	kind := m.Kind
 	// The session's id is minted before the question, so the authorizer
 	// records the session every later token names, with the agent's
 	// identity those tokens carry as their subject (spec 018).
@@ -222,8 +214,7 @@ func (c *call) createSession() error {
 		return err
 	}
 	now := c.s.o.Now()
-	s := session.New(ref, session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted,
-		session.Machine{Kind: kind, Environment: cfg.Machine.Environment, Image: cfg.Machine.Image}, now)
+	s := session.New(ref, session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
 	s.ID = id
 	s.Title, s.Metadata, s.EndOnIdle, s.Resources = b.Title, b.Metadata, b.EndOnIdle, resources
 	// The session records its approval policy merged from the agent's and
@@ -277,6 +268,30 @@ func (c *call) createSession() error {
 		c.s.o.Notify()
 	}
 	return c.replySession(http.StatusCreated, s)
+}
+
+// sessionMachine is the machine a hosted session of the agent named
+// agent runs on (spec 015), from the agent's spec.machine m. An agent
+// whose machine asks for nothing beyond the default runs on a Cella
+// sandbox of Cella's default image on a server whose runners have Cella
+// and run no session on its own host, since the manifest's host default
+// is for a local run; any other agent runs on the machine it names. A
+// host machine needs TOPOS_HOST_SESSIONS=on, and its roots and read
+// paths name paths of the host itself, which a session on a server never
+// reaches.
+func (s *Server) sessionMachine(agent string, m v1.Machine) (session.Machine, error) {
+	if manifest.DefaultMachine(m) && s.o.Cella && !s.o.HostSessions {
+		return session.Machine{Kind: session.MachineCella, Image: manifest.DefaultImage}, nil
+	}
+	switch {
+	case m.Kind == session.MachineHost && !s.o.HostSessions:
+		return session.Machine{}, refuse(CodeMachineUnavailable, "agent %s runs on machine kind host, and this server runs sessions on its own host only with TOPOS_HOST_SESSIONS=on; an agent that names no machine runs on Cella where TOPOS_CELLA_URL is set", agent)
+	case m.Kind == session.MachineHost && (len(m.Roots) > 0 || len(m.ReadPaths) > 0):
+		return session.Machine{}, refuse(CodeMachineUnavailable, "agent %s names machine.roots or machine.readPaths, paths of the server's own host, which a session on it never reaches", agent)
+	case m.Kind != session.MachineCella && m.Kind != session.MachineHost:
+		return session.Machine{}, refuse(CodeMachineUnavailable, "agent %s runs on machine kind %q; a hosted session runs on cella or the host", agent, m.Kind)
+	}
+	return session.Machine{Kind: m.Kind, Environment: m.Environment, Image: m.Image}, nil
 }
 
 // repositoriesField is the session's repositories as the authorizer reads
