@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.2 - 2026-09-29
+
 - A hosted session's `session.create` question names the session's
   repositories, its own or its agent's, as `repositories: [{type, url,
   ref}]`, so an authorizer that holds the git host's registry can grant the
