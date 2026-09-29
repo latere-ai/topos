@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,8 +28,9 @@ func (f *fixture) sendMessage(id, payload string) answer {
 
 // TestAMessageCarriesImagesAndFiles: an inline image stays in the
 // message's content, and each file is stored as a blob of the session
-// and named by a path under attachments/ unique among the session's
-// files, with its size and media type, and without its data in the log.
+// and named by a path under attachments/ in the directory of its
+// message's event id, with its size and media type, and without its data
+// in the log.
 func TestAMessageCarriesImagesAndFiles(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
@@ -51,8 +53,8 @@ func TestAMessageCarriesImagesAndFiles(t *testing.T) {
 		t.Fatalf("content %+v", p.Content)
 	}
 	want := []session.Attachment{
-		{Name: "sales.csv", MediaType: "text/plain; charset=utf-8", Size: 12, Blob: session.DigestOf([]byte("month,total\n")), Path: "attachments/sales.csv"},
-		{Name: "notes", MediaType: "text/markdown", Size: 8, Blob: session.DigestOf([]byte("# notes\n")), Path: "attachments/notes"},
+		{Name: "sales.csv", MediaType: "text/plain; charset=utf-8", Size: 12, Blob: session.DigestOf([]byte("month,total\n")), Path: "attachments/" + ev.ID + "/sales.csv"},
+		{Name: "notes", MediaType: "text/markdown", Size: 8, Blob: session.DigestOf([]byte("# notes\n")), Path: "attachments/" + ev.ID + "/notes"},
 	}
 	if len(p.Attachments) != 2 || p.Attachments[0] != want[0] || p.Attachments[1] != want[1] {
 		t.Fatalf("attachments %+v, want %+v", p.Attachments, want)
@@ -60,21 +62,22 @@ func TestAMessageCarriesImagesAndFiles(t *testing.T) {
 	if a := f.do(http.MethodGet, "/v1/sessions/"+s.ID+"/blobs/"+string(want[0].Blob), "alice", ""); a.status != http.StatusOK || string(a.body) != "month,total\n" {
 		t.Fatalf("the file's blob: %d %q", a.status, a.body)
 	}
-	// Only files are named twice; a second message's file of a name the
-	// session holds takes the next free path.
-	second := f.sendMessage(s.ID, `{"content":[],"attachments":[{"name":"sales.csv","data":"`+b64("month,total\nmarch,3\n")+`"},{"name":"sales.csv","data":"`+b64("x")+`"}]}`)
+	// A second message's file of a name the first holds is written in the
+	// second message's own directory, so neither overwrites the other.
+	firstPath := p.Attachments[0].Path
+	second := f.sendMessage(s.ID, `{"content":[],"attachments":[{"name":"sales.csv","data":"`+b64("month,total\nmarch,3\n")+`"}]}`)
 	if second.status != http.StatusOK {
 		t.Fatalf("second send: %d %s", second.status, second.body)
 	}
 	second.decode(t, &ev)
-	if err := ev.Decode(&p); err != nil || len(p.Attachments) != 2 || p.Attachments[0].Path != "attachments/sales-2.csv" || p.Attachments[1].Path != "attachments/sales-3.csv" {
-		t.Fatalf("the second message's paths %+v, %v", p.Attachments, err)
+	if err := ev.Decode(&p); err != nil || len(p.Attachments) != 1 || p.Attachments[0].Path != "attachments/"+ev.ID+"/sales.csv" || p.Attachments[0].Path == firstPath {
+		t.Fatalf("the second message's path %+v, %v; the first's is %s", p.Attachments, err, firstPath)
 	}
 }
 
 // TestAMessagesLimits: an image or a file past its limit is
-// attachment_too_large, and more images or files than a message holds, a
-// name that is no plain file name, data that is not base64, an image by
+// attachment_too_large, and more images or files than a message holds,
+// two files of one name, a name that is no plain file name, data that is not base64, an image by
 // URL, an image whose bytes are not its media type, and a block that is
 // neither text nor an image are invalid_request; none reaches the log.
 func TestAMessagesLimits(t *testing.T) {
@@ -90,8 +93,8 @@ func TestAMessagesLimits(t *testing.T) {
 	}
 	files := func(n int) string {
 		var out []string
-		for range n {
-			out = append(out, `{"name":"a.txt","data":"`+b64("a")+`"}`)
+		for i := range n {
+			out = append(out, `{"name":"a`+strconv.Itoa(i)+`.txt","data":"`+b64("a")+`"}`)
 		}
 		return strings.Join(out, ",")
 	}
@@ -114,6 +117,7 @@ func TestAMessagesLimits(t *testing.T) {
 		"a name with a line break":   {`{"content":[],"attachments":[{"name":"a\nb","data":"` + b64("a") + `"}]}`, CodeInvalidRequest},
 		"a bidirectional name":       {`{"content":[],"attachments":[{"name":"a\u202eb","data":"` + b64("a") + `"}]}`, CodeInvalidRequest},
 		"a long name":                {`{"content":[],"attachments":[{"name":"` + strings.Repeat("a", MaxAttachmentName+1) + `","data":"` + b64("a") + `"}]}`, CodeInvalidRequest},
+		"two files of one name":      {`{"content":[],"attachments":[{"name":"a.txt","data":"` + b64("a") + `"},{"name":"a.txt","data":"` + b64("b") + `"}]}`, CodeInvalidRequest},
 		"a dot name":                 {`{"content":[],"attachments":[{"name":"..","data":"` + b64("a") + `"}]}`, CodeInvalidRequest},
 		"a bad media type":           {`{"content":[],"attachments":[{"name":"a","media_type":"not a type","data":"` + b64("a") + `"}]}`, CodeInvalidRequest},
 		"a file not base64":          {`{"content":[],"attachments":[{"name":"a","data":"%%%"}]}`, CodeInvalidRequest},

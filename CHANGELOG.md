@@ -48,8 +48,9 @@ committed: the commit log already holds that.
   it cannot see them otherwise, without failing the turn. Its
   `attachments` take files, `{name, media_type, data}`, at most 8 of at
   most 5 MiB each: the server stores each as a blob of the session and
-  records `{name, media_type, size, blob, path}` with the path under
-  `attachments/`, unique within the session, and the runner writes it
+  records `{name, media_type, size, blob, path}` with the path
+  `attachments/<event id>/<name>`, in a directory of the message's own
+  so that no two messages write one path, and the runner writes it
   there in the working directory when the machine opens, or before the
   next step when it is open, recorded as `attachments.delivered`; the
   model reads the paths after the message's content, and a repository

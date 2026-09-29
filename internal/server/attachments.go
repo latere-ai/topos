@@ -109,7 +109,8 @@ func checkContent(blocks []lux.Block) error {
 
 // checkAttachments decodes a message's files: at most MaxAttachments,
 // each a name that is one path segment of at most MaxAttachmentName
-// bytes without a control or a bidirectional character, base64 data of
+// bytes without a control or a bidirectional character, no two of one
+// name, base64 data of
 // at most MaxAttachmentBytes, and a media type, the one given or the
 // one the bytes give.
 func checkAttachments(in []attachmentBody) ([]file, error) {
@@ -117,10 +118,15 @@ func checkAttachments(in []attachmentBody) ([]file, error) {
 		return nil, refuse(CodeInvalidRequest, "a user.message attaches at most %d files", MaxAttachments)
 	}
 	out := make([]file, 0, len(in))
+	names := map[string]bool{}
 	for i, a := range in {
 		if err := checkName(a.Name); err != nil {
 			return nil, refuse(CodeInvalidRequest, "attachments[%d]: %v", i, err)
 		}
+		if names[a.Name] {
+			return nil, refuse(CodeInvalidRequest, "attachments[%d]: the message attaches another file named %q", i, a.Name)
+		}
+		names[a.Name] = true
 		if limit := base64.StdEncoding.EncodedLen(MaxAttachmentBytes); len(a.Data) > limit {
 			return nil, refuse(CodeAttachmentTooLarge, "attachments[%d] is past %d bytes", i, MaxAttachmentBytes)
 		}
@@ -163,26 +169,16 @@ func checkName(name string) error {
 }
 
 // storeAttachments stores each file as a blob of the session and names
-// the path it is written at, unique among the session's files.
-func (c *call) storeAttachments(ctx context.Context, s session.Session, files []file) ([]session.Attachment, error) {
-	if len(files) == 0 {
-		return nil, nil
-	}
-	evs, err := c.s.o.Sessions.Events(ctx, s.ID, 1, 0)
-	if err != nil {
-		return nil, err
-	}
-	taken := map[string]bool{}
-	for _, a := range session.Attachments(evs) {
-		taken[a.Path] = true
-	}
+// the path it is written at, in the directory of the message whose event
+// id is message.
+func (c *call) storeAttachments(ctx context.Context, s session.Session, message string, files []file) ([]session.Attachment, error) {
 	out := make([]session.Attachment, 0, len(files))
 	for _, f := range files {
 		d, err := c.s.o.Sessions.PutBlob(ctx, s.ID, bytes.NewReader(f.data))
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: d, Path: session.AttachmentPath(f.name, taken)})
+		out = append(out, session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: d, Path: session.AttachmentPath(message, f.name)})
 	}
 	return out, nil
 }

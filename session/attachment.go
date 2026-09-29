@@ -6,8 +6,6 @@ package session
 import (
 	"path"
 	"slices"
-	"strconv"
-	"strings"
 )
 
 // AttachmentDir is the directory under the working directory the files
@@ -15,9 +13,9 @@ import (
 const AttachmentDir = "attachments"
 
 // Attachment is one file a user.message carries (spec 015): its bytes
-// are the session's blob Blob, and the runner writes them at Path, under
-// AttachmentDir and relative to the working directory, which is unique
-// within the session.
+// are the session's blob Blob, and the runner writes them at Path,
+// relative to the working directory, under AttachmentDir in a directory
+// named after the message's event id.
 type Attachment struct {
 	Name      string `json:"name"`
 	MediaType string `json:"media_type"`
@@ -77,19 +75,9 @@ func PendingAttachments(log []Event) []Attachment {
 	return out
 }
 
-// AttachmentPath is the path a file named name is written at: name
-// under AttachmentDir, or, when taken holds that path, name with -2,
-// -3 and on before its extension. The path is added to taken.
-func AttachmentPath(name string, taken map[string]bool) string {
-	p := path.Join(AttachmentDir, name)
-	ext := path.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	if stem == "" {
-		stem, ext = name, ""
-	}
-	for n := 2; taken[p]; n++ {
-		p = path.Join(AttachmentDir, stem+"-"+strconv.Itoa(n)+ext)
-	}
-	taken[p] = true
-	return p
+// AttachmentPath is the path the file named name of the message whose
+// event id is message is written at: under AttachmentDir, in a directory
+// of the message's own, so no two messages write one path.
+func AttachmentPath(message, name string) string {
+	return path.Join(AttachmentDir, message, name)
 }

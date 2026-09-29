@@ -23,15 +23,15 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// attach stores body as a blob of the fixture's session and returns the
-// attachment a message names it by.
-func (f *fixture) attachment(ctx context.Context, name, body string) session.Attachment {
+// attachment stores body as a blob of the fixture's session and returns
+// the attachment the message whose event id is message names it by.
+func (f *fixture) attachment(ctx context.Context, message, name, body string) session.Attachment {
 	f.t.Helper()
 	d, err := f.store.PutBlob(ctx, f.s.ID, bytes.NewReader([]byte(body)))
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return session.Attachment{Name: name, MediaType: "text/plain", Size: int64(len(body)), Blob: d, Path: "attachments/" + name}
+	return session.Attachment{Name: name, MediaType: "text/plain", Size: int64(len(body)), Blob: d, Path: session.AttachmentPath(message, name)}
 }
 
 // poster is a tool that sends a message with a file while the turn runs.
@@ -91,20 +91,22 @@ func TestAMessagesFilesReachTheMachine(t *testing.T) {
 		if err != nil {
 			return c, err
 		}
-		return c, c.Tools.AddBuiltin(poster{f: f, a: func(ctx context.Context) session.Attachment { return f.attachment(ctx, "later.txt", "sent mid-turn\n") }})
+		return c, c.Tools.AddBuiltin(poster{f: f, a: func(ctx context.Context) session.Attachment {
+			return f.attachment(ctx, "evt_later", "later.txt", "sent mid-turn\n")
+		}})
 	}
-	notes := f.attachment(ctx, "notes.txt", "Remember the milk.\n")
+	notes := f.attachment(ctx, "evt_notes", "notes.txt", "Remember the milk.\n")
 	f.send(ctx, session.TypeUserMessage, session.UserMessage{Sender: s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Read my notes."}}, Attachments: []session.Attachment{notes}})
 	f.stub.Script(model,
-		reply(toolUse("toolu_1", "bash", `{"command":"cat attachments/notes.txt"}`)),
+		reply(toolUse("toolu_1", "bash", `{"command":"cat attachments/evt_notes/notes.txt"}`)),
 		reply(toolUse("toolu_2", "post", `{}`)),
-		reply(toolUse("toolu_3", "bash", `{"command":"cat attachments/later.txt && git status --porcelain"}`)),
+		reply(toolUse("toolu_3", "bash", `{"command":"cat attachments/evt_later/later.txt && git status --porcelain"}`)),
 		reply(ir.Block{Type: ir.BlockText, Text: "Read both."}),
 	)
 	if _, err := f.r.Drive(ctx, s.ID); err != nil {
 		t.Fatal(err)
 	}
-	if first := f.stub.Requests()[0].Request.Messages[0]; !strings.Contains(first.Blocks[len(first.Blocks)-1].Text, "- attachments/notes.txt (text/plain, 19 bytes)") {
+	if first := f.stub.Requests()[0].Request.Messages[0]; !strings.Contains(first.Blocks[len(first.Blocks)-1].Text, "- attachments/evt_notes/notes.txt (text/plain, 19 bytes)") {
 		t.Fatalf("the model was not told the file's path: %+v", first.Blocks)
 	}
 	var results []string
@@ -121,7 +123,7 @@ func TestAMessagesFilesReachTheMachine(t *testing.T) {
 	if strings.Contains(results[2], "attachments") {
 		t.Fatalf("git sees the attachments: %q", results[2])
 	}
-	if got := f.delivered(ctx); len(got) != 2 || !slices.Equal(got[0], []string{"attachments/notes.txt"}) || !slices.Equal(got[1], []string{"attachments/later.txt"}) {
+	if got := f.delivered(ctx); len(got) != 2 || !slices.Equal(got[0], []string{"attachments/evt_notes/notes.txt"}) || !slices.Equal(got[1], []string{"attachments/evt_later/later.txt"}) {
 		t.Fatalf("attachments.delivered %v", got)
 	}
 	f.stub.Script(model, reply(toolUse("toolu_4", "bash", `{"command":"ls attachments"}`)), reply(ir.Block{Type: ir.BlockText, Text: "Listed."}))

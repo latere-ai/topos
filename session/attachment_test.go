@@ -10,24 +10,11 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 )
 
-// TestAttachmentPath: a file goes under attachments/ by its name, and a
-// name the session holds takes -2, -3 and on before its extension.
+// TestAttachmentPath: a file goes under attachments/ in its message's
+// own directory, so two messages' files of one name have two paths.
 func TestAttachmentPath(t *testing.T) {
-	taken := map[string]bool{}
-	for _, c := range []struct{ name, want string }{
-		{"sales.csv", "attachments/sales.csv"},
-		{"sales.csv", "attachments/sales-2.csv"},
-		{"sales.csv", "attachments/sales-3.csv"},
-		{"archive.tar.gz", "attachments/archive.tar.gz"},
-		{"archive.tar.gz", "attachments/archive.tar-2.gz"},
-		{".env", "attachments/.env"},
-		{".env", "attachments/.env-2"},
-		{"README", "attachments/README"},
-		{"README", "attachments/README-2"},
-	} {
-		if got := AttachmentPath(c.name, taken); got != c.want {
-			t.Errorf("%s: %q, want %q", c.name, got, c.want)
-		}
+	if a, b := AttachmentPath("evt_1", "sales.csv"), AttachmentPath("evt_2", "sales.csv"); a != "attachments/evt_1/sales.csv" || b != "attachments/evt_2/sales.csv" {
+		t.Fatalf("paths %q and %q", a, b)
 	}
 }
 

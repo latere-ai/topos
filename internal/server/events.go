@@ -167,12 +167,14 @@ func (c *call) sendEvent() error {
 		return err
 	}
 	// A message's files are stored before the event that names them, and
-	// only for a session that takes the message.
+	// only for a session that takes the message, each in a directory named
+	// after the event's id, minted here for it.
+	id := session.NewID(session.PrefixEvent)
 	if message != nil && len(files) > 0 {
 		if s.Status == session.StatusEnded {
 			return refuse(CodeConflict, "the session ended %s", s.StopReason)
 		}
-		if message.Attachments, err = c.storeAttachments(c.r.Context(), s, files); err != nil {
+		if message.Attachments, err = c.storeAttachments(c.r.Context(), s, id, files); err != nil {
 			return err
 		}
 		payload = *message
@@ -181,6 +183,7 @@ func (c *call) sendEvent() error {
 	if err != nil {
 		return err
 	}
+	ev.ID = id
 	appended, err := c.append(s.ID, ev)
 	if err != nil {
 		return err
