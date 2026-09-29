@@ -10,6 +10,26 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- An agent's name is unique per owner. It was unique across the whole
+  installation: once one person applied `coding-agent`, nobody else
+  could, and the refusal told them that someone's agent of that name
+  existed. Now each subject has their own names. An apply creates or
+  updates the caller's own agent of the name; `GET`, `versions` and
+  `archive` by name, a session create's `agent` and a session list's
+  `agent` filter read the name among the caller's own agents, as a
+  manifest's references do. A name only another subject holds answers
+  `not_found`, or `unknown_reference` in a manifest, exactly as a name
+  nobody holds. An `agent_` id still names its agent whoever owns it,
+  and the authorizer decides as before; an administrator reaches
+  another subject's agent by its id, and an administrator's apply by
+  name acts on the administrator's own agent. An organization's agent
+  is named within the subject that applied it. On Postgres, migration
+  0003 replaces the agents table's `UNIQUE (name)` with
+  `UNIQUE (owner, name)`; every stored agent already satisfies it, so
+  the migration keeps every row. A toposd of v0.9.0 refuses to start on
+  the migrated schema; the down migration restores the old constraint
+  while no two owners hold one name.
+
 ## v0.9.0 - 2026-09-29
 
 - A session's `budget.spent_cost_usd_micro` reports what it has spent:
