@@ -402,9 +402,9 @@ func TestAnInstallationGitCredential(t *testing.T) {
 }
 
 // TestTheInstallationsLabels: every sandbox and every Secret the runner
-// applies for it carries TOPOS_CELLA_LABELS, the Secrets at their
-// renewal too, since a Cella's authorizer may hold an object's placing
-// labels fixed.
+// applies for it carries TOPOS_CELLA_LABELS beside the session's and the
+// agent's labels, the Secrets at their renewal too, since a Cella's
+// authorizer may hold an object's placing labels fixed.
 func TestTheInstallationsLabels(t *testing.T) {
 	labels := map[string]string{"tenant.example/id": "t-1", "tenant.example/principal": "p"}
 	creds := &issued{life: runner.RefreshBefore + 500*time.Millisecond}
@@ -431,13 +431,116 @@ func TestTheInstallationsLabels(t *testing.T) {
 			t.Fatal("the git host's token was not renewed")
 		}
 	}
+	want := maps.Clone(labels)
+	want[cella.LabelSession], want[cella.LabelAgent] = f.s.ID, "reviewer"
 	for _, secret := range []string{name + "-lux", name + "-origo"} {
-		if sec, _, ok := f.cella.Secret(secret); !ok || !maps.Equal(sec.Metadata.Labels, labels) {
+		if sec, _, ok := f.cella.Secret(secret); !ok || !maps.Equal(sec.Metadata.Labels, want) {
 			t.Fatalf("%s is labeled %v", secret, sec.Metadata.Labels)
 		}
+	}
+	if !maps.Equal(sb.Metadata.Labels, want) {
+		t.Fatalf("the sandbox is labeled %v", sb.Metadata.Labels)
 	}
 	cancel()
 	if err := cfg.Machine.Release(context.WithoutCancel(ctx), true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// reservedPrefix is the label prefix sessionRule's authorizer reserves for
+// the placing labels it stamps itself.
+const reservedPrefix = "platform.example/"
+
+// sessionRule is the rule of an authorizer that binds a hosted session's
+// Cella token to its session, as a hosting platform's may; that platform's
+// own decider is not importable here, so the rule is written out. What the
+// session creates is its caller's, names the session in LabelSession and
+// carries no label under reservedPrefix, since those would place it in a
+// tenant, which is the session's to hold and not the runner's to claim;
+// what it reads, mounts or updates is what it made: its caller's and
+// labeled with the session. Cella asks an update about the stored object,
+// so a renewal is held to the Secret the create admitted.
+func sessionRule(sessionID string) cellastub.Decider {
+	return func(action string, res cellastub.Resource) string {
+		if !strings.HasSuffix(action, ".create") {
+			if res.Owner != cellastub.Owner || res.Labels[cella.LabelSession] != sessionID {
+				return "not_in_org"
+			}
+			return ""
+		}
+		if res.Owner != cellastub.Owner || res.Labels[cella.LabelSession] != sessionID {
+			return "invalid_tenant_mutation"
+		}
+		for k := range res.Labels {
+			if strings.HasPrefix(k, reservedPrefix) {
+				return "invalid_tenant_mutation"
+			}
+		}
+		return ""
+	}
+}
+
+// TestSessionSecretsNameTheSession: under an authorizer that admits only
+// what names the session, the runner's Lux key and git host token
+// Secrets are admitted at their create, the sandbox mounts them, and each
+// renewal is admitted, because every Secret carries the session's and the
+// agent's labels as the sandbox does; a Secret without the session's
+// label, or with a label the authorizer reserves, is refused.
+func TestSessionSecretsNameTheSession(t *testing.T) {
+	creds := &issued{life: runner.RefreshBefore + 500*time.Millisecond}
+	f := newCredentialFixture(t, helper(t), creds, nil)
+	f.cella.Authorize(sessionRule(f.s.ID))
+	ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+	defer cancel()
+	cfg, err := f.h(ctx, f.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := machine.Open(ctx, cfg.Machine); err != nil {
+		t.Fatal(err)
+	}
+	name := cella.SandboxName(f.s.ID)
+	want := map[string]string{cella.LabelSession: f.s.ID, cella.LabelAgent: "reviewer"}
+	secrets := []string{name + "-lux", name + "-origo"}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		renewed := 0
+		for _, secret := range secrets {
+			if sec, _, _ := f.cella.Secret(secret); sec.Status.Version >= 2 {
+				renewed++
+			}
+		}
+		if renewed == len(secrets) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a sandbox credential was not renewed under the session's authorizer")
+		}
+	}
+	for _, secret := range secrets {
+		if sec, _, ok := f.cella.Secret(secret); !ok || !maps.Equal(sec.Metadata.Labels, want) {
+			t.Fatalf("%s is labeled %v", secret, sec.Metadata.Labels)
+		}
+	}
+	if sb, ok := f.cella.Sandbox(name); !ok || !maps.Equal(sb.Metadata.Labels, want) || len(sb.Spec.Secrets) != 2 {
+		t.Fatalf("the sandbox %v %+v", sb.Metadata.Labels, sb.Spec.Secrets)
+	}
+	cancel()
+	if err := cfg.Machine.Release(context.WithoutCancel(ctx), true); err != nil {
+		t.Fatal(err)
+	}
+	c, err := client.New(client.Config{URL: f.cella.URL(), Token: client.StaticToken("b")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, labels := range map[string]map[string]string{
+		"no labels":                   nil,
+		"the installation's alone":    {"tenant.example/id": "t-1"},
+		"another session's":           {cella.LabelSession: "ses_other"},
+		"a label the authorizer owns": {cella.LabelSession: f.s.ID, reservedPrefix + "tenant": "t-1"},
+	} {
+		sec := &sandboxSecret{name: "unnamed-" + strings.ReplaceAll(strings.ReplaceAll(label, " ", "-"), "'", ""), host: "lux.example", labels: labels}
+		if err := sec.apply(t.Context(), c, runner.Credential{Value: "v"}); client.CodeOf(err) != "forbidden" {
+			t.Errorf("a Secret with %s: %v, want forbidden", label, err)
+		}
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner"
+	"latere.ai/x/topos/session"
 )
 
 // The audiences of the cores a hosted session reaches with its agent's
@@ -142,28 +143,32 @@ func hostOf(raw string) (string, error) {
 // when the installation has session keys, and its git host's token when
 // it has an identity provider and a git host, or else its own git host
 // credential, OrigoToken, when it has one. Each is applied to Cella
-// before the sandbox is opened, so its mount resolves. The installation's
-// model key never reaches a sandbox.
-func (o CellaOptions) sandboxSecrets(ctx context.Context, sessionID string, c *client.Client) ([]*sandboxSecret, error) {
+// before the sandbox is opened, so its mount resolves, and is labeled as
+// the sandbox is, with the session's and the agent's labels beside the
+// installation's, since an authorizer that binds the session's token to
+// the session admits only what names it. The installation's model key
+// never reaches a sandbox.
+func (o CellaOptions) sandboxSecrets(ctx context.Context, s session.Session, c *client.Client) ([]*sandboxSecret, error) {
 	src := runner.TokensFrom(ctx)
 	if src == nil && o.OrigoToken == nil {
 		return nil, nil
 	}
-	name := cella.SandboxName(sessionID)
+	name := cella.SandboxName(s.ID)
+	labels := cella.Labels(o.Labels, s.ID, s.Agent.Name)
 	var want []*sandboxSecret
 	if o.ModelsURL != "" {
 		host, err := hostOf(o.ModelsURL)
 		if err != nil {
 			return nil, setup(CodeModelUnavailable, fmt.Errorf("TOPOS_MODELS_URL %w", err))
 		}
-		want = append(want, &sandboxSecret{name: name + "-lux", env: EnvLuxKey, audience: runner.AudienceLux, host: host, labels: o.Labels})
+		want = append(want, &sandboxSecret{name: name + "-lux", env: EnvLuxKey, audience: runner.AudienceLux, host: host, labels: labels})
 	}
 	if o.OrigoURL != "" {
 		host, err := hostOf(o.OrigoURL)
 		if err != nil {
 			return nil, setup(CodeMachineUnavailable, fmt.Errorf("TOPOS_ORIGO_URL %w", err))
 		}
-		want = append(want, &sandboxSecret{name: name + "-origo", env: EnvOrigoToken, audience: AudienceOrigo, host: host, labels: o.Labels})
+		want = append(want, &sandboxSecret{name: name + "-origo", env: EnvOrigoToken, audience: AudienceOrigo, host: host, labels: labels})
 	}
 	var out []*sandboxSecret
 	for _, sec := range want {
@@ -193,7 +198,7 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, sessionID string, c *c
 
 // apply writes cred as the secret's value, injected as a bearer in the
 // Authorization header toward the secret's host alone, with the
-// installation's labels, the same at every apply.
+// sandbox's labels, the same at every apply.
 func (s *sandboxSecret) apply(ctx context.Context, c *client.Client, cred runner.Credential) error {
 	body, err := json.Marshal(cellav1.Secret{
 		APIVersion: cellav1.APIVersion, Kind: cellav1.KindSecret, Metadata: cellav1.Metadata{Name: s.name, Labels: s.labels},

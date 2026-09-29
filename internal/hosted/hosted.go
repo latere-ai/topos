@@ -242,7 +242,8 @@ type CellaOptions struct {
 	// sandbox's open, and nil sends none.
 	OrigoToken client.TokenSource
 	// Labels are TOPOS_CELLA_LABELS, which every sandbox and every Secret
-	// the runner applies for it carry.
+	// the runner applies for it carry beside the session's and the
+	// agent's labels.
 	Labels map[string]string
 	// Log reports a sandbox credential that could not be renewed.
 	Log *slog.Logger
@@ -277,7 +278,7 @@ func Cella(o CellaOptions) Machines {
 		if err != nil {
 			return nil, setup(CodeMachineUnavailable, err)
 		}
-		secrets, err := o.sandboxSecrets(ctx, s.ID, c)
+		secrets, err := o.sandboxSecrets(ctx, s, c)
 		if err != nil {
 			return nil, err
 		}

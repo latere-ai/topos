@@ -41,11 +41,29 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// The labels every sandbox carries (spec 009).
+// The labels every sandbox and every Secret made for it carry (spec 009,
+// spec 018): an authorizer that binds a session's token to the session
+// reads LabelSession to know what the session made.
 const (
 	LabelSession = "topos.latere.ai/session"
 	LabelAgent   = "topos.latere.ai/agent"
 )
+
+// Labels are the labels of a session's sandbox and of each Secret made
+// for it: the installation's, TOPOS_CELLA_LABELS, and the session's and
+// the agent's, which win over one of the same key. An empty agent adds no
+// agent label. installation is not changed.
+func Labels(installation map[string]string, session, agent string) map[string]string {
+	labels := maps.Clone(installation)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[LabelSession] = session
+	if agent != "" {
+		labels[LabelAgent] = agent
+	}
+	return labels
+}
 
 // The lifecycle of spec 009: Cella stops an idle sandbox after AutoStop
 // and keeps its workspace; a stopped sandbox is never deleted for being
@@ -491,14 +509,7 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 	slices.Sort(hosts)
 	hosts = slices.Compact(hosts)
 	hosts = slices.DeleteFunc(hosts, func(h string) bool { return h == "" })
-	labels := maps.Clone(m.o.Labels)
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	labels[LabelSession] = m.o.Session
-	if m.o.Agent != "" {
-		labels[LabelAgent] = m.o.Agent
-	}
+	labels := Labels(m.o.Labels, m.o.Session, m.o.Agent)
 	env := maps.Clone(m.o.Env)
 	if _, set := env["HOME"]; !set {
 		if env == nil {

@@ -236,7 +236,8 @@ func TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox(t *testing.T) {
 // sandbox's git host Secret, scoped to the host of TOPOS_ORIGO_URL and
 // mounted as ORIGO_TOKEN, whether serve's own runner drives the session
 // or a runner role, and the sandbox gets no Lux key; the sandbox and its
-// Secret carry TOPOS_CELLA_LABELS beside the session's label.
+// Secret carry TOPOS_CELLA_LABELS beside the session's and the agent's
+// labels.
 func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
 	origo := filepath.Join(t.TempDir(), "origo-token")
 	if err := os.WriteFile(origo, []byte("installation-git\n"), 0o600); err != nil {
@@ -249,9 +250,6 @@ func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
 		if !ok || value != "installation-git" || !slices.Equal(sec.Spec.Scope.Hosts, []string{"origo.example"}) {
 			t.Fatalf("the git host's Secret %+v %v", sec.Spec.Scope, ok)
 		}
-		if !maps.Equal(sec.Metadata.Labels, map[string]string{"tenant.example/id": "t-1"}) {
-			t.Fatalf("the git host's Secret is labeled %v", sec.Metadata.Labels)
-		}
 		if _, _, ok := cella.Secret(name + "-lux"); ok {
 			t.Fatal("the sandbox got a Lux key")
 		}
@@ -259,8 +257,11 @@ func TestASelfHosterPushesWithItsGitCredential(t *testing.T) {
 		if !ok || len(sb.Spec.Secrets) != 1 || sb.Spec.Secrets[0].Env != hosted.EnvOrigoToken || !slices.Contains(sb.Spec.Network.Egress.AllowedHosts, "origo.example") {
 			t.Fatalf("the sandbox %+v", sb.Spec)
 		}
-		if sb.Metadata.Labels["tenant.example/id"] != "t-1" || sb.Metadata.Labels[cellamachine.LabelSession] != id {
+		if sb.Metadata.Labels["tenant.example/id"] != "t-1" || sb.Metadata.Labels[cellamachine.LabelSession] != id || sb.Metadata.Labels[cellamachine.LabelAgent] == "" {
 			t.Fatalf("the sandbox is labeled %v", sb.Metadata.Labels)
+		}
+		if !maps.Equal(sec.Metadata.Labels, sb.Metadata.Labels) {
+			t.Fatalf("the git host's Secret is labeled %v, the sandbox %v", sec.Metadata.Labels, sb.Metadata.Labels)
 		}
 	}
 	selfHosted := func(t *testing.T) (map[string]string, *cellastub.Server) {

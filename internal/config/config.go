@@ -108,8 +108,9 @@ type Config struct {
 	CellaTokenFile string
 	MachineHelpers string
 	// CellaLabels are TOPOS_CELLA_LABELS: labels every sandbox and every
-	// sandbox Secret toposd creates in Cella carries, such as the tenant a
-	// Cella's authorizer requires of what a caller creates.
+	// sandbox Secret toposd creates in Cella carries beside the session's
+	// and the agent's, such as the tenant a Cella's authorizer requires of
+	// what a caller creates.
 	CellaLabels map[string]string
 	// MachineDir is where the helper lives inside each sandbox; empty is
 	// the machine's default under /tmp.

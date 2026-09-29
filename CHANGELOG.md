@@ -10,6 +10,13 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- The Cella Secrets a hosted session's sandbox uses, its `-lux` model key
+  and its `-origo` git host token, carry the session's and the agent's
+  labels, `topos.latere.ai/session` and `topos.latere.ai/agent`, as the
+  sandbox does, at their create and at every renewal. An authorizer that
+  binds a session's token to the session refused the first Secret, since
+  it named no session, so no sandbox opened; `TOPOS_CELLA_LABELS` still
+  joins them for a self-hosted installation.
 - A Cella sandbox's `HOME` is the machine's own directory,
   `TOPOS_MACHINE_DIR/home`, made on every open, unless the agent's
   machine environment names one. Cella mounts the image's root filesystem
@@ -39,8 +46,9 @@ committed: the commit log already holds that.
   sandbox's open. It needs `TOPOS_ORIGO_URL` and is refused beside
   `TOPOS_IDENTITY_URL`, whose sandboxes push with their agents' tokens.
 - `TOPOS_CELLA_LABELS` names `key=value` labels that every sandbox and
-  every sandbox Secret carries, for a Cella whose authorizer places what
-  a caller creates by labels, such as its tenant.
+  every sandbox Secret carries beside the session's and the agent's, for
+  a Cella whose authorizer places what a caller creates by labels, such
+  as its tenant.
 
 - **Breaking:** the repository restarts as the Topos core. Every package of
   v0.7.0 is removed: the root `topos` package, `graph`, `billing`, `harness`,
