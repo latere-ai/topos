@@ -70,8 +70,53 @@ func TestCreateASession(t *testing.T) {
 	if got := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"local"}`); got.status != http.StatusUnprocessableEntity || got.code() != CodeMachineUnavailable {
 		t.Fatalf("a hosted session of a host agent: %d %s", got.status, got.body)
 	}
-	if got := f.do(http.MethodPost, "/v1/sessions", "bob", `{"agent":"reviewer"}`); got.code() != auth.CodeForbidden {
-		t.Fatalf("a session of another subject's agent: %d %s", got.status, got.body)
+	// A name is read among the caller's own agents, so another subject's
+	// agent of the name is not found by it; by its id it is, and the
+	// authorizer refuses the session.
+	if got := f.do(http.MethodPost, "/v1/sessions", "bob", `{"agent":"reviewer"}`); got.code() != CodeNotFound {
+		t.Fatalf("a session of another subject's agent by name: %d %s", got.status, got.body)
+	}
+	if got := f.do(http.MethodPost, "/v1/sessions", "bob", `{"agent":"`+a.Status.ID+`"}`); got.code() != auth.CodeForbidden {
+		t.Fatalf("a session of another subject's agent by id: %d %s", got.status, got.body)
+	}
+}
+
+// TestASessionResolvesItsAgentAmongTheCallersOwn: alice and bob each hold
+// an agent named reviewer, and a create by the name, bare or pinned,
+// starts a session of the caller's own; a session list narrowed to the
+// name lists the caller's own agent's sessions.
+func TestASessionResolvesItsAgentAmongTheCallersOwn(t *testing.T) {
+	f := newFixture(t)
+	mine := f.apply("alice", "reviewer", "Alice reviews.")
+	theirs := f.apply("bob", "reviewer", "Bob reviews.")
+	if mine.Status.ID == theirs.Status.ID {
+		t.Fatalf("two subjects share the agent %s", mine.Status.ID)
+	}
+	for _, c := range []struct {
+		token, agent, want string
+	}{
+		{"alice", "reviewer", mine.Status.ID},
+		{"alice", "reviewer@1", mine.Status.ID},
+		{"bob", "reviewer", theirs.Status.ID},
+		{"bob", "reviewer@1", theirs.Status.ID},
+	} {
+		resp := f.do(http.MethodPost, "/v1/sessions", c.token, `{"agent":"`+c.agent+`"}`)
+		var s session.Session
+		resp.decode(t, &s)
+		if resp.status != http.StatusCreated || s.Agent.ID != c.want {
+			t.Fatalf("%s's session of %s: %d, agent %s, want %s", c.token, c.agent, resp.status, s.Agent.ID, c.want)
+		}
+	}
+	var page struct {
+		Items []session.Session `json:"items"`
+	}
+	f.do(http.MethodGet, "/v1/sessions?agent=reviewer", "bob", "").decode(t, &page)
+	if len(page.Items) != 2 || page.Items[0].Agent.ID != theirs.Status.ID || page.Items[1].Agent.ID != theirs.Status.ID {
+		t.Fatalf("bob's sessions of reviewer: %+v", page.Items)
+	}
+	f.do(http.MethodGet, "/v1/sessions?agent=reviewer", "carol", "").decode(t, &page)
+	if len(page.Items) != 0 {
+		t.Fatalf("carol's sessions of another subject's name: %+v", page.Items)
 	}
 }
 
@@ -449,7 +494,7 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 	if err != nil || len(after) != len(before) {
 		t.Fatalf("the log moved: %d events, then %d, %v", len(before), len(after), err)
 	}
-	if a, err := f.objects.Agent(t.Context(), "reviewer"); err != nil || a.Latest != 1 || a.ArchivedAt != nil {
+	if a, err := f.objects.AgentByName(t.Context(), alice, "reviewer"); err != nil || a.Latest != 1 || a.ArchivedAt != nil {
 		t.Fatalf("the agent moved: %+v, %v", a, err)
 	}
 	if _, err := f.sessions.Get(t.Context(), s.ID); err != nil {
@@ -480,8 +525,14 @@ func TestIdempotencyKey(t *testing.T) {
 	if again := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"nobody"}`, "Idempotency-Key", "k2"); bad.status != http.StatusNotFound || string(again.body) != string(bad.body) {
 		t.Fatalf("a refused answer is kept: %d %s, again %s", bad.status, bad.body, again.body)
 	}
-	if a := f.do(http.MethodPost, "/v1/sessions", "bob", body, "Idempotency-Key", "k1"); a.code() != auth.CodeForbidden {
+	// bob's reviewer is his own, and so is his key k1: the same body
+	// under it starts his session, not a replay of alice's.
+	theirs := f.apply("bob", "reviewer", "Review.")
+	var s session.Session
+	if a := f.do(http.MethodPost, "/v1/sessions", "bob", body, "Idempotency-Key", "k1"); a.status != http.StatusCreated || a.header.Get("Idempotent-Replayed") != "" {
 		t.Fatalf("bob's key k1 is bob's: %d %s", a.status, a.body)
+	} else if a.decode(t, &s); s.Agent.ID != theirs.Status.ID || s.Initiator.Subject != bob {
+		t.Fatalf("bob's session %+v", s)
 	}
 }
 

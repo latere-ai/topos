@@ -112,6 +112,17 @@ var databases atomic.Int64
 // fresh creates an empty database and opens a store on it.
 func fresh(t *testing.T, o Options) *Store {
 	t.Helper()
+	st, err := Open(t.Context(), database(t), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	return st
+}
+
+// database creates an empty database and returns its DSN.
+func database(t *testing.T) string {
+	t.Helper()
 	name := fmt.Sprintf("t%d_%d", os.Getpid(), databases.Add(1))
 	conn, err := pgx.Connect(t.Context(), admin)
 	if err != nil {
@@ -127,12 +138,7 @@ func fresh(t *testing.T, o Options) *Store {
 	if !strings.Contains(dsn, "/"+name+"?") {
 		t.Fatalf("cannot derive a database DSN from %q", admin)
 	}
-	st, err := Open(t.Context(), dsn, o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(st.Close)
-	return st
+	return dsn
 }
 
 func TestPostgresStoreConformance(t *testing.T) {
@@ -208,7 +214,7 @@ func TestPutVersionHasOneWinnerAcrossReplicas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := rs[1].Agent(t.Context(), "reviewer")
+	a, err := rs[1].AgentByName(t.Context(), "alice", "reviewer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,8 +227,8 @@ func TestPutVersionHasOneWinnerAcrossReplicas(t *testing.T) {
 			next.Version, next.Digest = 2, fmt.Sprintf("sha256:%d", i)
 			return st.PutVersion(t.Context(), a, next)
 		}},
-		{"a new agent of one name", func(i int, st *Store) error {
-			fresh := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "builder", Owner: fmt.Sprint(i)}
+		{"a new agent of one name for one owner", func(i int, st *Store) error {
+			fresh := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "builder", Owner: "bob"}
 			first := v
 			first.AgentID = fresh.ID
 			return st.PutVersion(t.Context(), fresh, first)
@@ -241,7 +247,7 @@ func TestPutVersionHasOneWinnerAcrossReplicas(t *testing.T) {
 			t.Fatalf("%s was stored %d times", round.name, won)
 		}
 	}
-	if got, err := rs[1].Agent(t.Context(), "reviewer"); err != nil || got.Latest != 2 {
+	if got, err := rs[1].AgentByName(t.Context(), "alice", "reviewer"); err != nil || got.Latest != 2 {
 		t.Fatalf("the agent after the race %+v, %v", got, err)
 	}
 }
@@ -265,16 +271,17 @@ func TestObjectCallsOnAClosedStoreReturnTheirErrors(t *testing.T) {
 	first.AgentID = fresh.ID
 	rec := store.Idempotency{Subject: "alice", Key: "k"}
 	for name, call := range map[string]func() error{
-		"Agent":      func() error { _, err := st.Agent(t.Context(), "reviewer"); return err },
-		"ListAgents": func() error { _, _, err := st.ListAgents(t.Context(), store.AgentList{}); return err },
-		"Version":    func() error { _, err := st.Version(t.Context(), a.ID, 1); return err },
-		"Versions":   func() error { _, _, err := st.Versions(t.Context(), a.ID, 0, ""); return err },
-		"PutVersion": func() error { return st.PutVersion(t.Context(), a, next) },
-		"create":     func() error { return st.PutVersion(t.Context(), fresh, first) },
-		"Archive":    func() error { return st.Archive(t.Context(), a.ID, time.Now()) },
-		"Begin":      func() error { _, _, err := st.Begin(t.Context(), rec); return err },
-		"Finish":     func() error { return st.Finish(t.Context(), rec) },
-		"Abandon":    func() error { return st.Abandon(t.Context(), "alice", "k") },
+		"Agent":       func() error { _, err := st.Agent(t.Context(), a.ID); return err },
+		"AgentByName": func() error { _, err := st.AgentByName(t.Context(), "alice", "reviewer"); return err },
+		"ListAgents":  func() error { _, _, err := st.ListAgents(t.Context(), store.AgentList{}); return err },
+		"Version":     func() error { _, err := st.Version(t.Context(), a.ID, 1); return err },
+		"Versions":    func() error { _, _, err := st.Versions(t.Context(), a.ID, 0, ""); return err },
+		"PutVersion":  func() error { return st.PutVersion(t.Context(), a, next) },
+		"create":      func() error { return st.PutVersion(t.Context(), fresh, first) },
+		"Archive":     func() error { return st.Archive(t.Context(), a.ID, time.Now()) },
+		"Begin":       func() error { _, _, err := st.Begin(t.Context(), rec); return err },
+		"Finish":      func() error { return st.Finish(t.Context(), rec) },
+		"Abandon":     func() error { return st.Abandon(t.Context(), "alice", "k") },
 	} {
 		if err := call(); err == nil || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrConflict) {
 			t.Errorf("%s on a closed store: %v", name, err)

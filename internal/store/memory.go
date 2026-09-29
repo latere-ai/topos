@@ -23,7 +23,7 @@ type Memory struct {
 	mu       sync.Mutex
 	now      func() time.Time
 	agents   map[string]Agent
-	names    map[string]string
+	names    map[ownedName]string
 	versions map[string][]AgentVersion
 	idem     map[[2]string]Idempotency
 }
@@ -33,19 +33,28 @@ func NewMemory(now func() time.Time) *Memory {
 	if now == nil {
 		now = time.Now
 	}
-	return &Memory{now: now, agents: map[string]Agent{}, names: map[string]string{}, versions: map[string][]AgentVersion{}, idem: map[[2]string]Idempotency{}}
+	return &Memory{now: now, agents: map[string]Agent{}, names: map[ownedName]string{}, versions: map[string][]AgentVersion{}, idem: map[[2]string]Idempotency{}}
 }
 
-func (m *Memory) Agent(_ context.Context, ref string) (Agent, error) {
+// ownedName keys the name index: a name is unique within its owner.
+type ownedName struct{ owner, name string }
+
+func (m *Memory) Agent(_ context.Context, id string) (Agent, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := ref
-	if !IsAgentID(ref) {
-		id = m.names[ref]
-	}
 	a, ok := m.agents[id]
 	if !ok {
-		return Agent{}, fmt.Errorf("%w: agent %s", ErrNotFound, ref)
+		return Agent{}, fmt.Errorf("%w: agent %s", ErrNotFound, id)
+	}
+	return a, nil
+}
+
+func (m *Memory) AgentByName(_ context.Context, owner, name string) (Agent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[m.names[ownedName{owner, name}]]
+	if !ok {
+		return Agent{}, fmt.Errorf("%w: agent %s", ErrNotFound, name)
 	}
 	return a, nil
 }
@@ -100,11 +109,12 @@ func (m *Memory) PutVersion(_ context.Context, a Agent, v AgentVersion) error {
 	defer m.mu.Unlock()
 	stored, held := m.agents[v.AgentID]
 	if v.Version == 1 {
-		if held || m.names[a.Name] != "" {
+		key := ownedName{a.Owner, a.Name}
+		if held || m.names[key] != "" {
 			return fmt.Errorf("%w: agent %s exists", ErrConflict, a.Name)
 		}
 		a.Latest = 1
-		m.agents[a.ID], m.names[a.Name] = a, a.ID
+		m.agents[a.ID], m.names[key] = a, a.ID
 		m.versions[a.ID] = []AgentVersion{v}
 		return nil
 	}

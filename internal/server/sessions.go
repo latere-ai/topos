@@ -135,7 +135,7 @@ func (c *call) createSession() error {
 		return err
 	}
 	name, n, pinned := strings.Cut(b.Agent, "@")
-	a, err := c.s.o.Objects.Agent(ctx, name)
+	a, err := store.FindAgent(ctx, c.s.o.Objects, c.caller.Subject, name)
 	if err != nil {
 		return err
 	}
@@ -381,7 +381,7 @@ func (c *call) listSessions() error {
 		o.Owners = d.Filter.Owners
 	}
 	if ref := q.Get("agent"); ref != "" {
-		a, err := c.s.o.Objects.Agent(c.r.Context(), ref)
+		a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, c.caller.Subject, ref)
 		if errors.Is(err, store.ErrNotFound) {
 			return c.replyPage([]session.Session{}, "")
 		}

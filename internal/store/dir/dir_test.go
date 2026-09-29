@@ -76,14 +76,14 @@ func TestReopenReadsEverythingBack(t *testing.T) {
 	}
 
 	again := open(t, root, clock.Now)
-	for _, ref := range []string{"reviewer", id, "builder", other} {
-		before, err := st.Agent(t.Context(), ref)
+	for _, r := range []struct{ owner, ref string }{{"alice", "reviewer"}, {"alice", id}, {"bob", "builder"}, {"bob", other}} {
+		before, err := store.FindAgent(t.Context(), st, r.owner, r.ref)
 		if err != nil {
 			t.Fatal(err)
 		}
-		after, err := again.Agent(t.Context(), ref)
+		after, err := store.FindAgent(t.Context(), again, r.owner, r.ref)
 		if err != nil || !sameAgent(before, after) {
-			t.Fatalf("Agent(%s) after reopening = %+v, %v; before %+v", ref, after, err, before)
+			t.Fatalf("FindAgent(%s, %s) after reopening = %+v, %v; before %+v", r.owner, r.ref, after, err, before)
 		}
 	}
 	listed, next, err := again.ListAgents(t.Context(), store.AgentList{Owners: []string{"bob"}})
@@ -103,13 +103,16 @@ func TestReopenReadsEverythingBack(t *testing.T) {
 			t.Fatalf("version %d after reopening %+v, before %+v", v.Version, v, was)
 		}
 	}
-	a, err := store.Lookup(again).Agent(t.Context(), id+"@1")
+	a, err := store.Lookup(again, "alice").Agent(t.Context(), id+"@1")
 	if err != nil || a.Status.Version != 1 {
 		t.Fatalf("the first version after reopening: %+v, %v", a, err)
 	}
-	dup := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "reviewer", Owner: "carol"}
+	dup := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "reviewer", Owner: "alice"}
 	if err := again.PutVersion(t.Context(), dup, store.AgentVersion{AgentID: dup.ID, Version: 1, Digest: vs[0].Digest, Doc: vs[0].Doc, Bundle: vs[0].Bundle}); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("the name index after reopening: %v", err)
+	}
+	if _, err := again.AgentByName(t.Context(), "bob", "reviewer"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("alice's name read as bob's after reopening: %v", err)
 	}
 	held, fresh, err := again.Begin(t.Context(), done)
 	if err != nil || fresh || !held.Done || held.Status != 201 || held.ContentType != "application/json" || string(held.Body) != `{"id":"ses_1"}` || held.Route != done.Route || held.BodyHash != "h1" || !held.ExpiresAt.Equal(done.ExpiresAt) {
@@ -144,7 +147,7 @@ func TestATornTemporaryFileIsIgnoredAtOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	storetest.Apply(t, again, "alice", "reviewer", "two")
-	if a, err := again.Agent(t.Context(), "reviewer"); err != nil || a.Latest != 2 {
+	if a, err := again.AgentByName(t.Context(), "alice", "reviewer"); err != nil || a.Latest != 2 {
 		t.Fatalf("a write after a torn one: %+v, %v", a, err)
 	}
 }
@@ -191,7 +194,7 @@ func TestAVersionIsVisibleOnlyOnceItsAgentCountsIt(t *testing.T) {
 			if vs, _, err := s.Versions(t.Context(), id, 0, ""); err != nil || len(vs) != 1 {
 				t.Fatalf("versions %+v, %v", vs, err)
 			}
-			if _, err := s.Agent(t.Context(), "builder"); !errors.Is(err, store.ErrNotFound) {
+			if _, err := s.AgentByName(t.Context(), "bob", "builder"); !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("an agent whose file was never written: %v", err)
 			}
 		})
@@ -277,7 +280,7 @@ func TestOpenRefusesACorruptAgent(t *testing.T) {
 			}
 		})
 	}
-	t.Run("one name twice", func(t *testing.T) {
+	t.Run("one name twice for one owner", func(t *testing.T) {
 		root := t.TempDir()
 		open(t, root, nil)
 		for range 2 {
@@ -289,6 +292,28 @@ func TestOpenRefusesACorruptAgent(t *testing.T) {
 		}
 		if _, err := Open(root, nil); !errors.Is(err, session.ErrCorrupt) {
 			t.Fatalf("Open: %v", err)
+		}
+	})
+	t.Run("one name for two owners", func(t *testing.T) {
+		root := t.TempDir()
+		open(t, root, nil)
+		ids := map[string]string{}
+		for _, owner := range []string{"alice", "bob"} {
+			id := session.NewID(session.PrefixAgent)
+			ids[owner] = id
+			body := `{"id":"` + id + `","name":"twice","owner":"` + owner + `","latest_version":1}`
+			if err := os.WriteFile(filepath.Join(root, "objects", kindAgent, id+".json"), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		st, err := Open(root, nil)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		for owner, id := range ids {
+			if a, err := st.AgentByName(t.Context(), owner, "twice"); err != nil || a.ID != id {
+				t.Fatalf("%s's agent twice: %+v, %v", owner, a, err)
+			}
 		}
 	})
 	t.Run("a directory in an agent's place", func(t *testing.T) {
@@ -411,7 +436,7 @@ func TestAVersionDirectoryThatCannotBeMadeIsReturned(t *testing.T) {
 	if err := st.PutVersion(t.Context(), a, store.AgentVersion{AgentID: a.ID, Version: 1, Digest: stored.Digest, Doc: stored.Doc, Bundle: stored.Bundle}); err == nil {
 		t.Fatal("a version written where its directory cannot be")
 	}
-	if _, err := st.Agent(t.Context(), "builder"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.AgentByName(t.Context(), "bob", "builder"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("the agent of a failed write: %v", err)
 	}
 }

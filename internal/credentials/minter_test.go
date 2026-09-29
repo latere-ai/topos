@@ -48,7 +48,7 @@ func newFixture(t *testing.T, withIdentity bool) *fixture {
 	}
 	f := &fixture{idp: idp, keys: keystub.New(t, "keys-token"), now: time.Now()}
 	objects := store.NewMemory(nil)
-	rs, err := manifest.Resolve(ctx, []byte("apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: reviewer}\nspec:\n  model: {name: m}\n  machine: {kind: cella}\n"), manifest.Options{Lookup: store.Lookup(objects)})
+	rs, err := manifest.Resolve(ctx, []byte("apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: reviewer}\nspec:\n  model: {name: m}\n  machine: {kind: cella}\n"), manifest.Options{Lookup: store.Lookup(objects, "alice")})
 	if err != nil {
 		t.Fatal(err)
 	}

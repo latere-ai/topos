@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -47,6 +48,7 @@ type Factory func(t *testing.T, now func() time.Time) store.Store
 // Run runs every case against stores the factory returns.
 func Run(t *testing.T, f Factory) {
 	t.Run("agents", func(t *testing.T) { agents(t, f) })
+	t.Run("names per owner", func(t *testing.T) { namesPerOwner(t, f) })
 	t.Run("versions", func(t *testing.T) { versions(t, f) })
 	t.Run("list", func(t *testing.T) { list(t, f) })
 	t.Run("archive", func(t *testing.T) { archive(t, f) })
@@ -54,18 +56,18 @@ func Run(t *testing.T, f Factory) {
 	t.Run("idempotency", func(t *testing.T) { idempotency(t, f) })
 }
 
-// Apply resolves an Agent manifest against the store and stores the
-// version it resolves to when that version is new, as the API's apply
-// does. It returns the resolved agent.
+// Apply resolves an Agent manifest against owner's agents and stores
+// the version it resolves to when that version is new, as the API's
+// apply does. It returns the resolved agent.
 func Apply(t *testing.T, st store.Store, owner, name, instructions string) manifest.Resolved {
 	t.Helper()
 	doc := fmt.Sprintf("apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: %s\nspec:\n  model: {name: claude-haiku-4-5}\n  instructions: %q\n", name, instructions)
-	rs, err := manifest.Resolve(t.Context(), []byte(doc), manifest.Options{Lookup: store.Lookup(st)})
+	rs, err := manifest.Resolve(t.Context(), []byte(doc), manifest.Options{Lookup: store.Lookup(st, owner)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := rs[0]
-	stored, err := st.Agent(t.Context(), name)
+	stored, err := st.AgentByName(t.Context(), owner, name)
 	switch {
 	case err == nil && stored.Latest == r.Agent.Status.Version:
 		return r
@@ -94,16 +96,19 @@ func agents(t *testing.T, f Factory) {
 	r := Apply(t, st, "alice", "reviewer", "Review.")
 	id := r.Agent.Status.ID
 	for _, ref := range []string{"reviewer", id} {
-		a, err := st.Agent(t.Context(), ref)
+		a, err := store.FindAgent(t.Context(), st, "alice", ref)
 		if err != nil || a.ID != id || a.Name != "reviewer" || a.Owner != "alice" || a.Latest != 1 || a.ArchivedAt != nil {
-			t.Fatalf("Agent(%s) = %+v, %v", ref, a, err)
+			t.Fatalf("FindAgent(%s) = %+v, %v", ref, a, err)
 		}
 	}
-	if _, err := st.Agent(t.Context(), "nobody"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.AgentByName(t.Context(), "alice", "nobody"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("an unknown name: %v", err)
 	}
 	if _, err := st.Agent(t.Context(), session.NewID(session.PrefixAgent)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("an unknown id: %v", err)
+	}
+	if _, err := st.Agent(t.Context(), "reviewer"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a name read as an id: %v", err)
 	}
 	v, err := st.Version(t.Context(), id, 1)
 	if err != nil || v.Digest != r.Digest || len(v.Doc) == 0 || len(v.Bundle) == 0 || v.CreatedBy != "alice" {
@@ -111,9 +116,12 @@ func agents(t *testing.T, f Factory) {
 	}
 	other := r.Agent.Status
 	other.ID = session.NewID(session.PrefixAgent)
-	dup := store.Agent{ID: other.ID, Name: "reviewer", Owner: "bob"}
+	dup := store.Agent{ID: other.ID, Name: "reviewer", Owner: "alice"}
 	if err := st.PutVersion(t.Context(), dup, store.AgentVersion{AgentID: other.ID, Version: 1, Digest: v.Digest, Doc: v.Doc, Bundle: v.Bundle}); !errors.Is(err, store.ErrConflict) {
-		t.Fatalf("a second agent of one name: %v", err)
+		t.Fatalf("a second agent of one name for one owner: %v", err)
+	}
+	if _, err := st.Agent(t.Context(), other.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a refused second agent of the name was stored: %v", err)
 	}
 	if err := st.PutVersion(t.Context(), store.Agent{}, store.AgentVersion{AgentID: "nope", Version: 1}); !errors.Is(err, session.ErrInvalid) {
 		t.Fatalf("a malformed version: %v", err)
@@ -122,8 +130,62 @@ func agents(t *testing.T, f Factory) {
 	if err := st.PutVersion(t.Context(), binary, store.AgentVersion{AgentID: binary.ID, Version: 1, Digest: v.Digest, Doc: []byte{0xff, 0xfe}, Bundle: v.Bundle}); !errors.Is(err, session.ErrInvalid) {
 		t.Fatalf("a document that is not UTF-8 text: %v", err)
 	}
-	if _, err := st.Agent(t.Context(), "binary"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.AgentByName(t.Context(), "alice", "binary"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("a refused version created its agent: %v", err)
+	}
+}
+
+// namesPerOwner: two owners each hold an agent of one name, each reads
+// its own by the name, a third owner reads neither by it, and every id
+// reads its agent whoever asks. A lookup of another owner's name answers
+// as one of a name nobody holds.
+func namesPerOwner(t *testing.T, f Factory) {
+	st := f(t, NewClock().Now)
+	mine := Apply(t, st, "alice", "coding-agent", "Alice's.").Agent.Status
+	theirs := Apply(t, st, "bob", "coding-agent", "Bob's.").Agent.Status
+	if mine.ID == theirs.ID || mine.Version != 1 || theirs.Version != 1 {
+		t.Fatalf("two owners' agents of one name: %+v and %+v", mine, theirs)
+	}
+	for owner, id := range map[string]string{"alice": mine.ID, "bob": theirs.ID} {
+		a, err := st.AgentByName(t.Context(), owner, "coding-agent")
+		if err != nil || a.ID != id || a.Owner != owner {
+			t.Fatalf("%s's coding-agent = %+v, %v", owner, a, err)
+		}
+		for _, reader := range []string{"alice", "bob", "carol"} {
+			if a, err := store.FindAgent(t.Context(), st, reader, id); err != nil || a.Owner != owner {
+				t.Fatalf("%s finds %s's agent by id: %+v, %v", reader, owner, a, err)
+			}
+		}
+	}
+	_, none := st.AgentByName(t.Context(), "carol", "nobody")
+	if _, err := st.AgentByName(t.Context(), "carol", "coding-agent"); !errors.Is(err, store.ErrNotFound) || err.Error() != strings.Replace(none.Error(), "nobody", "coding-agent", 1) {
+		t.Fatalf("another owner's name: %v, a name nobody holds: %v", err, none)
+	}
+	for owner, instructions := range map[string]string{"alice": "Alice's.", "bob": "Bob's."} {
+		a, err := store.Lookup(st, owner).Agent(t.Context(), "coding-agent")
+		if err != nil || a.Spec.Instructions != instructions {
+			t.Fatalf("%s's Lookup of coding-agent = %+v, %v", owner, a, err)
+		}
+	}
+	if _, err := store.Lookup(st, "carol").Agent(t.Context(), "coding-agent"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("carol's Lookup of another owner's name: %v", err)
+	}
+	if a, err := store.Lookup(st, "carol").Agent(t.Context(), theirs.ID+"@1"); err != nil || a.Status.ID != theirs.ID {
+		t.Fatalf("carol's Lookup of a pinned id: %+v, %v", a, err)
+	}
+	if again := Apply(t, st, "bob", "coding-agent", "Bob's, closer."); again.Agent.Status.ID != theirs.ID || again.Agent.Status.Version != 2 {
+		t.Fatalf("bob's second apply: %+v", again.Agent.Status)
+	}
+	if a, err := st.Agent(t.Context(), mine.ID); err != nil || a.Latest != 1 {
+		t.Fatalf("bob's version moved alice's agent: %+v, %v", a, err)
+	}
+	v, err := st.Version(t.Context(), mine.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dup := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "coding-agent", Owner: "bob"}
+	if err := st.PutVersion(t.Context(), dup, store.AgentVersion{AgentID: dup.ID, Version: 1, Digest: v.Digest, Doc: v.Doc, Bundle: v.Bundle}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("a second agent of bob's name for bob: %v", err)
 	}
 }
 
@@ -239,7 +301,7 @@ func lookup(t *testing.T, f Factory) {
 	st := f(t, NewClock().Now)
 	id := Apply(t, st, "alice", "reviewer", "one").Agent.Status.ID
 	Apply(t, st, "alice", "reviewer", "two")
-	l := store.Lookup(st)
+	l := store.Lookup(st, "alice")
 	for ref, version := range map[string]int{"reviewer": 2, id: 2, id + "@1": 1} {
 		a, err := l.Agent(t.Context(), ref)
 		if err != nil || a.Status.Version != version || a.Status.ID != id {

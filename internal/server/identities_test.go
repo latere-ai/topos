@@ -154,7 +154,7 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 		if ar := f.do(http.MethodPut, "/v1/agents/linter", "alice", agentYAML("linter", "Lint.")); ar.code() != c.code {
 			t.Fatalf("%+v: %d %s", c.f, ar.status, ar.body)
 		}
-		if _, err := f.objects.Agent(t.Context(), "linter"); err == nil {
+		if _, err := f.objects.AgentByName(t.Context(), alice, "linter"); err == nil {
 			t.Fatalf("%+v stored the agent", c.f)
 		}
 	}
@@ -164,7 +164,7 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 	if ar := f.do(http.MethodPost, "/v1/agents/linter/archive", "alice", `{"permanent":true}`); ar.code() != CodeIdentityUnavailable {
 		t.Fatalf("an unanswered archive: %d %s", ar.status, ar.body)
 	}
-	if stored, err := f.objects.Agent(t.Context(), "linter"); err != nil || stored.ArchivedAt != nil {
+	if stored, err := f.objects.AgentByName(t.Context(), alice, "linter"); err != nil || stored.ArchivedAt != nil {
 		t.Fatalf("a failed archive archived the agent: %+v %v", stored, err)
 	}
 }

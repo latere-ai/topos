@@ -15,8 +15,9 @@
 // counts it. A crash between the two writes leaves a version file no
 // reader opens, which the next PutVersion of that number replaces, and
 // never an agent whose latest version is missing. The agents and the
-// name index are read from the agent files at Open and kept in the
-// process; versions and idempotency records are read from their files.
+// name index, a name unique within its owner, are read from the agent
+// files at Open and kept in the process; versions and idempotency
+// records are read from their files.
 //
 // The directory holds one process, toposd serve's (spec 014), and a
 // mutex serializes its calls.
@@ -64,8 +65,11 @@ type Store struct {
 
 	mu     sync.Mutex
 	agents map[string]store.Agent
-	names  map[string]string
+	names  map[ownedName]string
 }
+
+// ownedName keys the name index: a name is unique within its owner.
+type ownedName struct{ owner, name string }
 
 // agentFile is an agent's file.
 type agentFile struct {
@@ -123,7 +127,7 @@ func Open(dataDir string, now func() time.Time) (*Store, error) {
 			return nil, err
 		}
 	}
-	s := &Store{root: root, now: now, agents: map[string]store.Agent{}, names: map[string]string{}}
+	s := &Store{root: root, now: now, agents: map[string]store.Agent{}, names: map[ownedName]string{}}
 	entries, err := os.ReadDir(filepath.Join(root, kindAgent))
 	if err != nil {
 		return nil, fmt.Errorf("dir: list agents: %w", err)
@@ -137,13 +141,14 @@ func Open(dataDir string, now func() time.Time) (*Store, error) {
 		if err := readJSON(s.agentPath(id), &f); err != nil {
 			return nil, err
 		}
+		key := ownedName{f.Owner, f.Name}
 		switch {
 		case f.ID != id:
 			return nil, fmt.Errorf("%w: %s holds agent %q", session.ErrCorrupt, e.Name(), f.ID)
-		case s.names[f.Name] != "":
-			return nil, fmt.Errorf("%w: agents %s and %s are both named %q", session.ErrCorrupt, s.names[f.Name], id, f.Name)
+		case s.names[key] != "":
+			return nil, fmt.Errorf("%w: agents %s and %s of one owner are both named %q", session.ErrCorrupt, s.names[key], id, f.Name)
 		}
-		s.agents[id], s.names[f.Name] = f.agent(), id
+		s.agents[id], s.names[key] = f.agent(), id
 	}
 	return s, nil
 }
@@ -172,16 +177,22 @@ func (f agentFile) agent() store.Agent {
 	return a
 }
 
-func (s *Store) Agent(_ context.Context, ref string) (store.Agent, error) {
+func (s *Store) Agent(_ context.Context, id string) (store.Agent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id := ref
-	if !store.IsAgentID(ref) {
-		id = s.names[ref]
-	}
 	a, ok := s.agents[id]
 	if !ok {
-		return store.Agent{}, fmt.Errorf("%w: agent %s", store.ErrNotFound, ref)
+		return store.Agent{}, fmt.Errorf("%w: agent %s", store.ErrNotFound, id)
+	}
+	return a, nil
+}
+
+func (s *Store) AgentByName(_ context.Context, owner, name string) (store.Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.agents[s.names[ownedName{owner, name}]]
+	if !ok {
+		return store.Agent{}, fmt.Errorf("%w: agent %s", store.ErrNotFound, name)
 	}
 	return a, nil
 }
@@ -281,7 +292,7 @@ func (s *Store) PutVersion(_ context.Context, a store.Agent, v store.AgentVersio
 	defer s.mu.Unlock()
 	stored, held := s.agents[v.AgentID]
 	if v.Version == 1 {
-		if held || s.names[a.Name] != "" {
+		if held || s.names[ownedName{a.Owner, a.Name}] != "" {
 			return fmt.Errorf("%w: agent %s exists", store.ErrConflict, a.Name)
 		}
 		stored = a
@@ -302,7 +313,7 @@ func (s *Store) PutVersion(_ context.Context, a store.Agent, v store.AgentVersio
 	if err := s.writeAgent(stored); err != nil {
 		return err
 	}
-	s.agents[stored.ID], s.names[stored.Name] = stored, stored.ID
+	s.agents[stored.ID], s.names[ownedName{stored.Owner, stored.Name}] = stored, stored.ID
 	return nil
 }
 

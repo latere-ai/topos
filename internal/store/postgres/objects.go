@@ -32,17 +32,25 @@ func scanAgent(row pgx.Row) (store.Agent, error) {
 	return a, nil
 }
 
-func (s *Store) Agent(ctx context.Context, ref string) (store.Agent, error) {
-	q := `SELECT ` + agentColumns + ` FROM agents WHERE name = $1`
-	if store.IsAgentID(ref) {
-		q = `SELECT ` + agentColumns + ` FROM agents WHERE id = $1`
-	}
-	a, err := scanAgent(s.pool.QueryRow(ctx, q, ref))
+func (s *Store) Agent(ctx context.Context, id string) (store.Agent, error) {
+	a, err := scanAgent(s.pool.QueryRow(ctx, `SELECT `+agentColumns+` FROM agents WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return store.Agent{}, fmt.Errorf("%w: agent %s", store.ErrNotFound, ref)
+		return store.Agent{}, fmt.Errorf("%w: agent %s", store.ErrNotFound, id)
 	}
 	if err != nil {
-		return store.Agent{}, fmt.Errorf("postgres: read agent %s: %w", ref, err)
+		return store.Agent{}, fmt.Errorf("postgres: read agent %s: %w", id, err)
+	}
+	return a, nil
+}
+
+// AgentByName reads the row the unique (owner, name) constraint keys.
+func (s *Store) AgentByName(ctx context.Context, owner, name string) (store.Agent, error) {
+	a, err := scanAgent(s.pool.QueryRow(ctx, `SELECT `+agentColumns+` FROM agents WHERE owner = $1 AND name = $2`, owner, name))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Agent{}, fmt.Errorf("%w: agent %s", store.ErrNotFound, name)
+	}
+	if err != nil {
+		return store.Agent{}, fmt.Errorf("postgres: read agent %s: %w", name, err)
 	}
 	return a, nil
 }
@@ -131,8 +139,8 @@ func (s *Store) Versions(ctx context.Context, id string, limit int, cursor strin
 }
 
 // PutVersion stores a version in one transaction: version 1 inserts the
-// agent and the version, a unique violation on the id or the name being
-// ErrConflict; a later version locks the agent's row, checks it follows
+// agent and the version, a unique violation on the id or on the owner's
+// name being ErrConflict; a later version locks the agent's row, checks it follows
 // the latest, inserts the version and moves the latest.
 func (s *Store) PutVersion(ctx context.Context, a store.Agent, v store.AgentVersion) error {
 	if err := store.CheckVersion(a, v); err != nil {

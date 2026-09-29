@@ -28,10 +28,12 @@ func agentResource(a store.Agent) authz.Resource {
 	return authz.NewResource(authorizer.KindAgent, a.ID, map[string]any{"name": a.Name, "owner": a.Owner})
 }
 
-// agent finds an agent by name or id and asks action about it. A denied
-// read answers as a missing agent.
+// agent finds an agent by id, or by a name among the caller's own, and
+// asks action about it. A name is unique within its owner, the subject
+// an apply records, so another subject's agent of the name is not found
+// by it. A denied read answers as a missing agent.
 func (c *call) agent(ref, action string) (store.Agent, *v1.Agent, error) {
-	a, err := c.s.o.Objects.Agent(c.r.Context(), ref)
+	a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, c.caller.Subject, ref)
 	if err != nil {
 		return store.Agent{}, nil, err
 	}
@@ -65,8 +67,8 @@ func render(a store.Agent, v store.AgentVersion) (*v1.Agent, error) {
 }
 
 // scopedLookup answers the resolver with the agents the caller may read,
-// so a manifest's references cannot tell another subject's agent from
-// none.
+// a name read among the caller's own, so a manifest's references cannot
+// tell another subject's agent from none.
 type scopedLookup struct {
 	manifest.Lookup
 	c *call
@@ -99,7 +101,7 @@ func (c *call) applyAgent() error {
 	if err != nil {
 		return err
 	}
-	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.Lookup(c.s.o.Objects), c}, Now: c.s.o.Now})
+	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.Lookup(c.s.o.Objects, c.caller.Subject), c}, Now: c.s.o.Now})
 	if err != nil {
 		return err
 	}
@@ -111,7 +113,9 @@ func (c *call) applyAgent() error {
 		return refuse(CodeInvalidRequest, "the manifest names the agent %q and the path %q", r.Name, name)
 	}
 	st := r.Agent.Status
-	stored, err := c.s.o.Objects.Agent(ctx, name)
+	// The name is the caller's own: an agent of it another subject holds
+	// is not this one, and the apply creates the caller's.
+	stored, err := c.s.o.Objects.AgentByName(ctx, c.caller.Subject, name)
 	exists := err == nil
 	var allowed authorizer.Limits
 	switch {

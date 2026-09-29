@@ -27,8 +27,8 @@ var (
 	// as they are.
 	ErrNotFound = manifest.ErrNotFound
 	// ErrConflict is a write the stored state refuses: a version that
-	// does not follow the latest, a second agent of one name, or an
-	// archive of an archived agent.
+	// does not follow the latest, a second agent of one name for one
+	// owner, or an archive of an archived agent.
 	ErrConflict = errors.New("store: the stored state refuses the write")
 )
 
@@ -66,10 +66,15 @@ type AgentList struct {
 	Cursor string
 }
 
-// Agents keeps agents and their versions.
+// Agents keeps agents and their versions. An agent's id is unique in
+// the store, and its name is unique within its owner: two owners may
+// each hold an agent of one name, and neither sees the other's by it.
 type Agents interface {
-	// Agent returns an agent by name or agent_ id.
-	Agent(ctx context.Context, ref string) (Agent, error)
+	// Agent returns an agent by its agent_ id, whoever owns it.
+	Agent(ctx context.Context, id string) (Agent, error)
+	// AgentByName returns the agent owner holds under name; an agent of
+	// the name that another owner holds is ErrNotFound.
+	AgentByName(ctx context.Context, owner, name string) (Agent, error)
 	// ListAgents lists agents oldest first and returns the next page's
 	// cursor, empty on the last page.
 	ListAgents(ctx context.Context, o AgentList) ([]Agent, string, error)
@@ -79,8 +84,9 @@ type Agents interface {
 	// ListAgents.
 	Versions(ctx context.Context, id string, limit int, cursor string) ([]AgentVersion, string, error)
 	// PutVersion stores a version. Version 1 creates the agent a names,
-	// and ErrConflict answers a name or id already held; a later version
-	// must follow the stored latest, and ErrConflict answers any other.
+	// and ErrConflict answers an id already held or a name its owner
+	// already holds; a later version must follow the stored latest, and
+	// ErrConflict answers any other.
 	PutVersion(ctx context.Context, a Agent, v AgentVersion) error
 	// Archive archives an agent; ErrConflict answers an archived one.
 	Archive(ctx context.Context, id string, at time.Time) error
@@ -119,16 +125,29 @@ type Store interface {
 	Idempotencies
 }
 
-// Lookup answers the resolver from the agents a store keeps. A ref of
+// FindAgent returns the agent ref names for owner: an agent_ id whoever
+// owns it, or a name within owner's own agents.
+func FindAgent(ctx context.Context, a Agents, owner, ref string) (Agent, error) {
+	if IsAgentID(ref) {
+		return a.Agent(ctx, ref)
+	}
+	return a.AgentByName(ctx, owner, ref)
+}
+
+// Lookup answers the resolver from the agents a store keeps, a name
+// read within owner's own agents as FindAgent reads it. A ref of
 // agent_<id>@<n> is that version, any other the latest. The kinds whose
 // stores are not built yet hold nothing.
-func Lookup(a Agents) manifest.Lookup { return lookup{a} }
+func Lookup(a Agents, owner string) manifest.Lookup { return lookup{a, owner} }
 
-type lookup struct{ a Agents }
+type lookup struct {
+	a     Agents
+	owner string
+}
 
 func (l lookup) Agent(ctx context.Context, ref string) (*v1.Agent, error) {
 	name, n, pinned := strings.Cut(ref, "@")
-	stored, err := l.a.Agent(ctx, name)
+	stored, err := FindAgent(ctx, l.a, l.owner, name)
 	if err != nil {
 		return nil, err
 	}
