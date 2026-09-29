@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.0 - 2026-09-29
+
 - A session's `budget.spent_cost_usd_micro` reports what it has spent:
   every store adds each `model.request`'s cost to the session as the
   event is appended, and the directory store writes the session when a
