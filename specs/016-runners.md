@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [runner/, internal/queue/, internal/runnerrole/, internal/serve/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-30
 author: changkun
 ---
 
@@ -83,7 +83,12 @@ one (`ErrNotFound`).
    the first tool that acts on it, and does this step then, appending
    `session.machine` beside the running turn through its log, so the
    turn's next request carries the machine's context. A session whose
-   log records a machine has it opened here, by name.
+   log records a machine has it opened here, by name. Once the machine
+   is recorded, the runner writes the files of the session's messages
+   the machine has not been given and appends `attachments.delivered`
+   ([[015-api]]); while a turn runs on an open machine the harness does
+   the same before each step's request, so a file sent during the turn
+   is there before the model reads its path.
 4. Recover the open step, below.
 5. Run turns ([[005-harness-loop]]). A `user.message` that arrives
    during a turn waits for that turn's end: it is appended before the
@@ -245,6 +250,7 @@ columns and migrations ([[014-store]]); credential resolution
 | A `user.message` appended during a turn starts the next turn without a release | `runner.TestDriveContinuesWhileInputIsPending` | built |
 | Driving a session appends `session.status` `running` before anything else, attaches the machine once with its `session.machine`, and a moved machine is recorded with reason `handoff` | `runner.TestDriveAttachesTheMachineAndRunsATurn`, `runner.TestAMovedMachineIsAHandoff` | built |
 | A machine opened on demand is attached when a tool first acts on it, its `session.machine` reaches the turn's next request, and a later drive of the session opens it at once and records it no second time | `runner.TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt`, `internal/hosted.TestARestartedRunnerReattachesTheSandboxByName` | built |
+| A message's files are written into the machine when it is recorded and before each step of a turn on an open machine, once per machine | `runner.TestAMessagesFilesReachTheMachine` | built |
 | An `end_on_idle` session ends and its machine is released for good; a harness configuration that cannot start is reported | `runner.TestAnEndOnIdleSessionEndsAndReleasesTheMachine`, `runner.TestDriveReportsAHarnessThatCannotStart` | built |
 | `Log.Append` reports the store's errors, including a log ahead of the store and a deleted session | `runner.TestLogAppendReportsTheStore` | built |
 | The in-process queue claims a hosted session idle with pending input or running with no live lease, with its lease, and never one another runner holds, an answered one or an external one; `Notify` wakes a waiting claim | `runner.TestQueueClaimsHostedSessionsWithWork`, `runner.TestQueueWakesOnNotify` | built |

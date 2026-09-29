@@ -32,6 +32,23 @@ committed: the commit log already holds that.
   runs on the new one with its own window, output limit and prices. The
   agent's own model's name switches back to the agent's model as it
   names it.
+- A person's message can carry images and files. A `user.message`'s
+  `content` takes inline images, PNG, JPEG, GIF or WebP as base64
+  `data`, at most 8 of at most 5 MiB each, which reach the model as
+  image blocks when its figures say it takes images and as a note that
+  it cannot see them otherwise, without failing the turn. Its
+  `attachments` take files, `{name, media_type, data}`, at most 8 of at
+  most 5 MiB each: the server stores each as a blob of the session and
+  records `{name, media_type, size, blob, path}` with the path under
+  `attachments/`, unique within the session, and the runner writes it
+  there in the working directory when the machine opens, or before the
+  next step when it is open, recorded as `attachments.delivered`; the
+  model reads the paths after the message's content, and a repository
+  excludes the directory from git. An image or a file past its limit is
+  `attachment_too_large` (413). An image by URL, a block that is neither
+  text nor an image, and an image whose bytes are not the format its
+  media type names, which were stored as sent, are now
+  `invalid_request`.
 
 ## v0.9.2 - 2026-09-29
 

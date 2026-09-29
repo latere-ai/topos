@@ -313,16 +313,40 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 // machine it delivers the session's repositories into it, then appends
 // session.machine when the session has none for this machine yet, beside
 // the running turn when the machine opened on demand, naming the
-// repositories delivered. A repository that could not be delivered is
-// reported after the machine is recorded, so the session keeps the
-// machine and learns what is missing.
+// repositories delivered, and then writes the files of the session's
+// messages the machine has not been given (spec 015). A repository that
+// could not be delivered is reported after the machine is recorded, so
+// the session keeps the machine and learns what is missing; a file that
+// could not be written is a session.error, and the call that opened the
+// machine runs.
 func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool) error {
 	var repos []session.DeliveredRepository
 	var delivered error
 	if first && len(session.Repositories(s)) > 0 {
 		repos, delivered = deliver(ctx, s, m)
 	}
-	return errors.Join(r.attach(ctx, m, log, beside, repos), delivered)
+	if err := r.attach(ctx, m, log, beside, repos); err != nil {
+		return errors.Join(err, delivered)
+	}
+	return errors.Join(r.attachments(ctx, m, log, beside), delivered)
+}
+
+// attachments writes the files of the session's messages the machine
+// has not been given, and appends what it wrote and what it could not.
+func (r *Runner) attachments(ctx context.Context, m machine.Machine, log *Log, beside bool) error {
+	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
+	if err != nil {
+		return err
+	}
+	written, _, err := harness.DeliverAttachments(ctx, m, log, evs, nil, r.o.Clock())
+	if err != nil || len(written) == 0 {
+		return err
+	}
+	if beside {
+		return log.appendBeside(ctx, written)
+	}
+	_, err = log.Append(ctx, written)
+	return err
 }
 
 // attach appends session.machine when the session has none for this

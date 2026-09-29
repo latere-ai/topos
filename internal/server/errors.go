@@ -57,6 +57,7 @@ var codes = map[string]struct {
 	CodeSequenceConflict:            {http.StatusConflict, "The session moved on; read it again and retry."},
 	CodeIdempotencyConflict:         {http.StatusConflict, "The idempotency key was used with another request."},
 	CodePayloadTooLarge:             {http.StatusRequestEntityTooLarge, "The request body is too large."},
+	CodeAttachmentTooLarge:          {http.StatusRequestEntityTooLarge, "An image or a file of the message is too large."},
 	CodeRateLimited:                 {http.StatusTooManyRequests, "Too many requests; wait and try again."},
 	CodeMachineUnavailable:          {http.StatusUnprocessableEntity, "The session's machine is not available here."},
 	models.CodeUnknown:              {http.StatusUnprocessableEntity, "This server cannot run that model."},

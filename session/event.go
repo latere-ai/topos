@@ -39,6 +39,7 @@ const (
 	TypeMemorySynced         Type = "memory.synced"
 	TypeEventRedacted        Type = "event.redacted"
 	TypeSessionRewound       Type = "session.rewound"
+	TypeAttachmentsDelivered Type = "attachments.delivered"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -50,7 +51,7 @@ var Known = map[Type]bool{
 	TypeThreadMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
 	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypeSessionResumed: true,
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
-	TypeEventRedacted: true, TypeSessionRewound: true,
+	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 }
 
 // Event is one entry of a session's log.
@@ -100,10 +101,12 @@ func (e Event) Decode(v any) error {
 // fields are spec 004's table; a payload may carry fields a later schema
 // adds, which a reader keeps.
 
-// UserMessage is the payload of user.message.
+// UserMessage is the payload of user.message. Attachments are the files
+// it carries, whose bytes are blobs of the session (spec 015).
 type UserMessage struct {
-	Sender  Sender      `json:"sender"`
-	Content []lux.Block `json:"content"`
+	Sender      Sender       `json:"sender"`
+	Content     []lux.Block  `json:"content"`
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
 // UserInterrupt is the payload of user.interrupt.

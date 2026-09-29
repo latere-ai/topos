@@ -26,6 +26,12 @@ type todo struct{ ID, Content, Status string }
 // repository stands in for the harness's line of a session's repository.
 type repository struct{ URL, Ref, Branch, Dir string }
 
+// attachment stands in for session.Attachment.
+type attachment struct {
+	Path, MediaType string
+	Size            int64
+}
+
 // textCase is one text rendered with representative data. want is the
 // exact text, written as the expression that produced it before the text
 // moved into its file; wantSHA pins a long document by the SHA-256 of
@@ -204,6 +210,9 @@ var textCases = func() []textCase {
 		{name: ContextBlock, data: contextData(true, "", true, nil), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
 			fmt.Sprintf("Machine: %s\n", "Cella sandbox") + fmt.Sprintf("Date: %s\n", "2026-09-27") +
 			fmt.Sprintf("Git: branch %s at %s, %s modified, %s untracked\n", "main", "1a2b3c4", strconv.Itoa(2), strconv.Itoa(1)) + "</context>"},
+		{name: TranscriptAttachments, data: Data{"Attachments": []attachment{{"attachments/sales.csv", "text/csv", 1204}, {"attachments/notes-2.md", "text/markdown", 9}}},
+			want: "Attached files, in the working directory:\n" + "- attachments/sales.csv (text/csv, 1204 bytes)\n" + "- attachments/notes-2.md (text/markdown, 9 bytes)\n"},
+		{name: TranscriptImageUnseen, want: "[An image is attached here, but this model does not take images, so it cannot see it.]"},
 		{name: ContextRepositories, data: Data{"Repositories": []repository{
 			{"https://git.example/acme/web.git", "main", "agents/coder/ses_1", ""},
 			{"https://git.example/acme/api.git", "", "agents/coder/ses_1", "api"},

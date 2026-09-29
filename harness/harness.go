@@ -382,6 +382,10 @@ type shared struct {
 	events []session.Event
 	// running counts the threads running a turn now.
 	running int
+	// delivering serializes the threads' writes of a message's files,
+	// and undeliverable holds the files this turn could not write.
+	delivering    sync.Mutex
+	undeliverable map[string]bool
 }
 
 // events is a snapshot of the log.
@@ -625,6 +629,9 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	if err := t.checkBudget(ctx); err != nil {
 		return err
 	}
+	if err := t.deliverAttachments(ctx); err != nil {
+		return err
+	}
 	req, toolsSHA, err := t.request(ctx, tr)
 	if err != nil {
 		return err
@@ -783,8 +790,12 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 	if err != nil {
 		return ir.Request{}, "", err
 	}
+	messages := tr.Messages
+	if !t.h.c.Entry.Supports.Images {
+		messages = withoutImages(messages)
+	}
 	req, err := buildRequest(requestParts{
-		Model: t.h.c.Connection.Model, System: system, Messages: tr.Messages, Tools: defs,
+		Model: t.h.c.Connection.Model, System: system, Messages: messages, Tools: defs,
 		MaxTokens: t.maxTokens(), Effort: t.h.c.Effort, CacheKey: t.s.ID,
 		ReasoningReplay: t.h.c.Connection.EffectiveDialect() == ir.DialectOpenAIResponses,
 	})

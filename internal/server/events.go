@@ -100,18 +100,32 @@ func (c *call) sendEvent() error {
 	}
 	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
 	var payload any
+	// message is a user.message's payload, which takes its files' blobs
+	// once the session is known to take it.
+	var message *session.UserMessage
+	var files []file
 	action := authorizer.ActionSessionSend
 	switch b.Type {
 	case session.TypeUserMessage:
-		var p session.UserMessage
-		if err := strict(b.Payload, &p); err != nil {
+		var m messageBody
+		if err := strict(b.Payload, &m); err != nil {
 			return err
 		}
-		if len(p.Content) == 0 {
-			return refuse(CodeInvalidRequest, "a user.message holds content")
+		if len(m.Content) == 0 && len(m.Attachments) == 0 {
+			return refuse(CodeInvalidRequest, "a user.message holds content or attachments")
 		}
-		p.Sender = sender
-		payload = p
+		if err := checkContent(m.Content); err != nil {
+			return err
+		}
+		var err error
+		if files, err = checkAttachments(m.Attachments); err != nil {
+			return err
+		}
+		if m.Content == nil {
+			m.Content = []lux.Block{}
+		}
+		message = &session.UserMessage{Sender: sender, Content: m.Content}
+		payload = *message
 	case session.TypeUserInterrupt:
 		var p session.UserInterrupt
 		if err := strict(b.Payload, &p); err != nil {
@@ -151,6 +165,17 @@ func (c *call) sendEvent() error {
 	}
 	if err := c.answers(s.ID, b.Type, payload); err != nil {
 		return err
+	}
+	// A message's files are stored before the event that names them, and
+	// only for a session that takes the message.
+	if message != nil && len(files) > 0 {
+		if s.Status == session.StatusEnded {
+			return refuse(CodeConflict, "the session ended %s", s.StopReason)
+		}
+		if message.Attachments, err = c.storeAttachments(c.r.Context(), s, files); err != nil {
+			return err
+		}
+		payload = *message
 	}
 	ev, err := session.NewEvent(b.Type, payload, c.s.o.Now())
 	if err != nil {

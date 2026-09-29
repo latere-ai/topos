@@ -178,7 +178,7 @@ appending and the session stays `running` until the next runner's claim
 
 | Type | Appended by | Visible | Payload |
 |---|---|---|---|
-| `user.message` | a client | yes | `sender`, `content` (text and image blocks), and `firing_id` when a trigger sent it (added by [[022-triggers]]) |
+| `user.message` | a client | yes | `sender`, `content` (text and image blocks), `attachments` (the files it carries, each `name`, `media_type`, `size`, `blob`, and `path` under `attachments/`, unique within the session, which the fold names after the content; [[015-api]]), and `firing_id` when a trigger sent it (added by [[022-triggers]]) |
 | `user.interrupt` | a client | yes | `sender`; the runner stops at the next step boundary ([[005-harness-loop]]) |
 | `user.tool_confirmation` | a client | no | `sender`, `tool_use_id` or `approval_id` (exactly one), `decision` (`allow` or `deny`), `note`, `remember` (an argument pattern, [[012-permissions-and-approvals]]) |
 | `user.tool_result` | a client | yes | `sender`, `tool_use_id`, `content`, `is_error` |
@@ -201,6 +201,7 @@ appending and the session stays `running` until the next runner's claim
 | `memory.attached` | the runner | yes, as a system part | `memory_store_id`, `name`, `description`, `access` (`read_write` or `read_only`), `sharing` (`initiator` or `shared`), `path`, `version` |
 | `memory.synced` | the runner | no | `memory_store_id`, `pushed`, `pulled`, `deleted`, `conflicts` (paths only), `version` |
 | `event.redacted` | the server | no | `event_id`, `by`, `reason` |
+| `attachments.delivered` | the runner | no | `paths`: the files of messages written into the machine the latest `session.machine` records ([[015-api]]) |
 | `session.rewound` | the runner | yes | `to_turn`, `checkpoint` (`ref`, `commit`), `saved` (the checkpoint of the state it replaced), `by` |
 
 Content blocks are the Lux wire blocks of llmdialect (`text`, `image`,

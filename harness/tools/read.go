@@ -72,7 +72,9 @@ var imageTypes = []struct {
 	}},
 }
 
-func imageType(head []byte) string {
+// ImageType is the media type of an image format read returns as an
+// image block, from the file's leading bytes, or "" for any other file.
+func ImageType(head []byte) string {
 	for _, t := range imageTypes {
 		if t.match(head) {
 			return t.media
@@ -109,7 +111,7 @@ func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
 	if perr != nil && !errors.Is(perr, io.EOF) && !errors.Is(perr, bufio.ErrBufferFull) {
 		return b.fail(ctx, c, p, perr)
 	}
-	if media := imageType(head); media != "" {
+	if media := ImageType(head); media != "" {
 		return readImage(ctx, b, c, p, media, fi.Size, br, h)
 	}
 	if bytes.IndexByte(head, 0) >= 0 {

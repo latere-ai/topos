@@ -159,6 +159,11 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 			if multi {
 				blocks = append([]lux.Block{text(prompts.Render(prompts.TranscriptSender, sender(p.Sender)))}, blocks...)
 			}
+			// The files a message carries are named to the model by the
+			// paths the runner writes them at (spec 015).
+			if len(p.Attachments) > 0 {
+				blocks = append(blocks, text(prompts.Render(prompts.TranscriptAttachments, prompts.Data{"Attachments": p.Attachments})))
+			}
 			user(blocks...)
 		case TypeUserInterrupt:
 			var p UserInterrupt

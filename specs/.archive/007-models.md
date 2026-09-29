@@ -122,6 +122,12 @@ turn with its code (`model_unknown`, `model_unavailable`) as a
 switch or message. Every `model.request` records the model it asked,
 so a replay rebuilds each request with its own.
 
+A model whose figures do not say it takes images (`supports.images`,
+from the door's list or the catalog) gets, in the place of
+each image a message carries, a note that it cannot see it
+([[015-api]]); an image a tool's result carries is the tool's and goes
+as it is.
+
 ### The catalog
 
 Each model has an entry: `name`, `aliases`, `family`, `dialect`,

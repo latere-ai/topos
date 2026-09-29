@@ -262,6 +262,7 @@ paths:
     post:
       operationId: sendEvent
       summary: Send one user event
+      description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation or user.tool_result. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<name>, made unique within the session; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes."
       x-topos-actions:
         - session.send
         - session.interrupt
@@ -375,6 +376,7 @@ components:
               type: string
               enum:
                 - agent_identity_missing
+                - attachment_too_large
                 - authorizer_unavailable
                 - confirmation_required
                 - conflict
@@ -422,7 +424,7 @@ components:
                   description: On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read.
   responses:
     Error:
-      description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, idempotency_conflict, sequence_conflict; 413: payload_too_large; 422: machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable, model_unavailable."
+      description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, idempotency_conflict, sequence_conflict; 413: attachment_too_large, payload_too_large; 422: machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable, model_unavailable."
       content:
         application/json:
           schema:

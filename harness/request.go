@@ -107,6 +107,30 @@ func withRepositories(parts []session.Part, s session.Session) []session.Part {
 	return append([]session.Part{block}, parts...)
 }
 
+// withoutImages are the messages with every image a message carries
+// replaced by a note that the model cannot see it, for a model whose
+// figures say it takes no images (spec 015): the model reads that an
+// image was there rather than the request failing. An image a tool
+// result carries is the tool's and is left as it is.
+func withoutImages(msgs []lux.Message) []lux.Message {
+	out := make([]lux.Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = m
+		if !slices.ContainsFunc(m.Blocks, func(b lux.Block) bool { return b.Type == ir.BlockImage }) {
+			continue
+		}
+		blocks := make([]lux.Block, len(m.Blocks))
+		for j, b := range m.Blocks {
+			if b.Type == ir.BlockImage {
+				b = lux.Block{Type: ir.BlockText, Text: prompts.Text(prompts.TranscriptImageUnseen), CacheHint: b.CacheHint}
+			}
+			blocks[j] = b
+		}
+		out[i].Blocks = blocks
+	}
+	return out
+}
+
 // luxTools are the registry's definitions on the Lux wire.
 func luxTools(defs []tools.Definition) []lux.Tool {
 	out := make([]lux.Tool, len(defs))

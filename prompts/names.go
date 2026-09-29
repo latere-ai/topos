@@ -50,6 +50,12 @@ const (
 	TranscriptThreadMessage Name = "transcript/thread-message-v1"
 	// TranscriptRewound takes Turn.
 	TranscriptRewound Name = "transcript/rewound-v1"
+	// TranscriptAttachments takes Attachments, each with Path, MediaType
+	// and Size: the files a message carries (spec 015).
+	TranscriptAttachments Name = "transcript/attachments-v1"
+	// TranscriptImageUnseen stands in for an image a message carries when
+	// the model does not take images.
+	TranscriptImageUnseen Name = "transcript/image-unseen-v1"
 )
 
 // The results the harness gives a call it does not run, or whose run
