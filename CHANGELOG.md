@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A hosted session's `session.create` question names the session's
+  repositories, its own or its agent's, as `repositories: [{type, url,
+  ref}]`, so an authorizer that holds the git host's registry can grant the
+  session read and write on exactly those, without the agent listing them in
+  its permissions.
 - A toposd or runner shutting down leaves a running hosted session
   running, with nothing appended, for the next runner to claim and
   resume. On a busy machine the stop could reach the turn before the

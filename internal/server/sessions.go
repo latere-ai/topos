@@ -186,6 +186,7 @@ func (c *call) createSession() error {
 		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
 		"runner": session.RunnerHosted, "machine": kind, "initiator": c.caller.Subject,
 		"permissions": permissionsField(r.Agent.Spec.Permissions, agentModels(r)), "session_id": id,
+		"repositories": repositoriesField(resources),
 	}
 	if c.s.o.Identities != nil {
 		st, err := c.s.agentStatus(ctx, a)
@@ -276,6 +277,23 @@ func (c *call) createSession() error {
 		c.s.o.Notify()
 	}
 	return c.replySession(http.StatusCreated, s)
+}
+
+// repositoriesField is the session's repositories as the authorizer reads
+// them, each {type, url, ref}: an authorizer that holds the git host's
+// registry grants the session read, and write where the initiator may
+// write, on exactly these, so a session reaches the repositories it names
+// and no other without the agent listing them in its permissions.
+func repositoriesField(rs []session.Resource) []any {
+	out := make([]any, 0, len(rs))
+	for _, r := range rs {
+		m := map[string]any{"type": r.Type, "url": r.URL}
+		if r.Ref != "" {
+			m["ref"] = r.Ref
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // permissionsField is the pinned agent version's permissions as the

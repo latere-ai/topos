@@ -129,7 +129,11 @@ core forwards the verified claims to the installation's authorizer
 live and applies its scope, the initiator cap and the agent's
 permissions, so a token of an ended session is refused before it
 expires, and a token for a session the authorizer never allowed opens
-nothing.
+nothing. The `session.create` question names the session's repositories,
+`repositories: [{type, url, ref}]`, so an authorizer that holds the git
+host's registry grants the session read, and write where the initiator
+may write, on exactly those, and the agent need not list them in its
+permissions.
 
 toposd speaks to the identity provider through one interface, which
 an installation without one does not configure:

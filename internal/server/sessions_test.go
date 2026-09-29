@@ -287,6 +287,39 @@ func TestSessionCreateCarriesTheAgentsPermissions(t *testing.T) {
 	}
 }
 
+// TestSessionCreateCarriesItsRepositories: session.create names the
+// session's repositories, its own or its agent's, so the authorizer can
+// grant the session exactly these; a session with none names an empty list.
+func TestSessionCreateCarriesItsRepositories(t *testing.T) {
+	f := newFixture(t)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: coder\nspec:\n  model: {name: claude-haiku-4-5}\n  machine: {kind: cella}\n" +
+		"  repositories:\n    - {url: https://code.example/acme/web.git}\n"
+	if a := f.do(http.MethodPut, "/v1/agents/coder", "alice", manifest); a.status != http.StatusCreated && a.status != http.StatusOK {
+		t.Fatalf("apply: %d %s", a.status, a.body)
+	}
+	f.apply("alice", "plain", "Review.")
+	var asked []any
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionCreate {
+			asked = append(asked, req.Resource.Fields["repositories"])
+		}
+		return authz.Decision{Allow: true}, nil
+	}
+	f.create("alice", "coder")
+	if a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"coder","resources":[{"type":"repository","url":"https://code.example/acme/api.git","ref":"dev"}]}`); a.status != http.StatusCreated {
+		t.Fatalf("create with its own repository: %d %s", a.status, a.body)
+	}
+	f.create("alice", "plain")
+	want := []any{
+		[]any{map[string]any{"type": "repository", "url": "https://code.example/acme/web.git"}},
+		[]any{map[string]any{"type": "repository", "url": "https://code.example/acme/api.git", "ref": "dev"}},
+		[]any{},
+	}
+	if !reflect.DeepEqual(asked, want) {
+		t.Fatalf("session.create carried the repositories\n%#v\nwant\n%#v", asked, want)
+	}
+}
+
 // TestLimitListsReachThePolicy: the authorizer's lists and thresholds
 // merge at create with the agent's approvals into the session's policy,
 // neither loosening the other, and a session under an allow with no
