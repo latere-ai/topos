@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A session's first repository is fetched into the working directory as
+  it is instead of cloned into it, so a sandbox whose workspace volume
+  starts with `lost+found` gets its repository; `lost+found` is excluded
+  from git, and a fetch that fails leaves the directory as it found it.
+  A clone refused the non-empty directory, so no Cella session received
+  its repository.
 - The Cella Secrets a hosted session's sandbox uses, its `-lux` model key
   and its `-origo` git host token, carry the session's and the agent's
   labels, `topos.latere.ai/session` and `topos.latere.ai/agent`, as the

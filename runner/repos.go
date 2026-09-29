@@ -167,8 +167,22 @@ func deliveryScript(s session.Session, repo session.Resource, dir string) (strin
 	w("set -e")
 	w("dir=" + quote(dir))
 	w(`mkdir -p "$dir"`)
+	// The repository is fetched into the directory as it is, not cloned: a
+	// clone refuses a directory that is not empty, and a sandbox's
+	// workspace volume starts with lost+found, which git is told to skip.
 	w(`if [ ! -d "$dir/.git" ]; then`)
-	w("  git clone --quiet -- " + quote(repo.URL) + ` "$dir"`)
+	w(`  git init --quiet "$dir"`)
+	w(`  cd "$dir"`)
+	w(`  if [ -d lost+found ]; then printf '/lost+found/\n' >>"$(git rev-parse --git-path info/exclude)"; fi`)
+	// A fetch that fails leaves the directory as it found it, as a failed
+	// clone does, so the machine holds no repository without its commits.
+	w("  if ! { git remote add origin " + quote(repo.URL) + " && git fetch --quiet origin; }; then rm -rf .git; exit 1; fi")
+	w(`  default=$(git ls-remote --symref origin HEAD | sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD$|\1|p')`)
+	w(`  if [ -n "$default" ] && git rev-parse --verify --quiet "refs/remotes/origin/$default" >/dev/null; then`)
+	w(`    git checkout --quiet -B "$default" --track "origin/$default"`)
+	w(`  elif [ -n "$default" ]; then`)
+	w(`    git symbolic-ref HEAD "refs/heads/$default"`)
+	w("  fi")
 	w("fi")
 	w(`cd "$dir"`)
 	w("git config user.name " + quote(agentName(s)))

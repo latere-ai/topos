@@ -202,7 +202,9 @@ func TestTheFirstMachineGetsTheSessionsRepositories(t *testing.T) {
 	ctx := t.Context()
 	app, lib := bareRepo(t, "app"), bareRepo(t, "lib")
 	work := filepath.Join(filepath.Dir(f.work), "fresh")
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	// A sandbox's workspace volume is not empty when it opens: it holds
+	// lost+found, which a git clone into the directory refuses.
+	if err := os.MkdirAll(filepath.Join(work, "lost+found"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	var opens atomic.Int32
@@ -231,6 +233,9 @@ func TestTheFirstMachineGetsTheSessionsRepositories(t *testing.T) {
 	branch := SessionBranch(s)
 	if got := gitRun(t, work, "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
 		t.Fatalf("the working directory is on %q, want %q", got, branch)
+	}
+	if got := gitRun(t, work, "status", "--porcelain", "--untracked-files=all"); strings.Contains(got, "lost+found") {
+		t.Fatalf("the working directory shows %q; lost+found is not git's", got)
 	}
 	if got := gitRun(t, filepath.Join(work, "lib"), "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
 		t.Fatalf("the second repository is on %q", got)
