@@ -54,6 +54,7 @@ const (
 	ActionTriggerList   = "trigger.list"
 	ActionTriggerUpdate = "trigger.update"
 	ActionTriggerDelete = "trigger.delete"
+	ActionTriggerFire   = "trigger.fire"
 
 	ActionCredentialCreate = "credential.create"
 	ActionCredentialRead   = "credential.read"
@@ -97,6 +98,7 @@ var table = []authz.Action{
 	{Name: ActionTriggerList, Kind: KindTrigger},
 	{Name: ActionTriggerUpdate, Kind: KindTrigger},
 	{Name: ActionTriggerDelete, Kind: KindTrigger},
+	{Name: ActionTriggerFire, Kind: KindTrigger},
 
 	{Name: ActionCredentialCreate, Kind: KindCredential},
 	{Name: ActionCredentialRead, Kind: KindCredential},

@@ -177,7 +177,7 @@ appending and the session stays `running` until the next runner's claim
 
 | Type | Appended by | Visible | Payload |
 |---|---|---|---|
-| `user.message` | a client | yes | `sender`, `content` (text and image blocks) |
+| `user.message` | a client | yes | `sender`, `content` (text and image blocks), and `firing_id` when a trigger sent it (added by [[022-triggers]]) |
 | `user.interrupt` | a client | yes | `sender`; the runner stops at the next step boundary ([[005-harness-loop]]) |
 | `user.tool_confirmation` | a client | no | `sender`, `tool_use_id` or `approval_id` (exactly one), `decision` (`allow` or `deny`), `note`, `remember` (an argument pattern, [[012-permissions-and-approvals]]) |
 | `user.tool_result` | a client | yes | `sender`, `tool_use_id`, `content`, `is_error` |

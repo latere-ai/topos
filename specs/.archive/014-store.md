@@ -45,8 +45,9 @@ snapshots are not. Migrations follow the family's shared
 | `sessions` | `id` | the columns a query filters on (`agent_id`, `agent_version`, `owner`, `runner`, `status`, `stop_reason`, `turn`, `last_seq`, `created_at`, `updated_at`, `expires_at`, `ended_at`), the Session object as JSON text, and the queue columns of [[016-runners]]: `wake`, `lease_holder`, `lease_generation`, `lease_expires_at`, `writer_kind`, `writer_subject` |
 | `events` | `(session_id, seq)`, unique `(session_id, id)` | `id`, `type`, `time`, `thread`, `turn`, `step`, `payload` as JSON text, `redacted` |
 | `blobs` | `(session_id, digest)` | `size`, `location` (`db` or `object`), and `body` when `location` is `db` |
-| `triggers` | `id` | `name`, `owner`, `agent_id`, the resolved spec, `next_fire_at`, `last_fired_at`, `last_session_id`, `suspended` ([[022-triggers]]) |
-| `trigger_firings` | `(trigger_id, scheduled_at)` | the replica that claimed the firing, the outcome (`started`, `skipped_active`, `skipped_late`, `refused`) and the session it started, so one firing starts one session across replicas ([[022-triggers]]) |
+| `triggers` | `id` | `name`, `owner`, `agent_id`, the resolved spec, `next_fire_at`, `last_fired_at`, `last_session_id`, `suspended`, the outcome counts ([[022-triggers]]) |
+| `trigger_firings` | `(trigger_id, dedupe)`: the scheduled time of a scheduled firing, the envelope's `product` and `id` for an event, the firing's own id for a manual one (changed by [[022-triggers]]) | `id`, the origin, the replica that claimed the firing, the envelope, the key, the outcome, the reason, the session it started or continued, and the time it arrived, so one firing acts once across replicas and redeliveries ([[022-triggers]]) |
+| `trigger_sessions` (added by [[022-triggers]]) | `(trigger_id, key)` | the open session a key names, claimed with the firing that starts it and cleared when the session ends ([[022-triggers]]) |
 | `credentials` | `id` | `name`, `owner`, `service`, the wrapped data key, the key index, nonce and ciphertext ([[018-credentials-and-secrets]]) |
 | `memory_stores` | `id` | `name`, `owner`, `description`, `created_at`; documents live in the memory backend ([[020-memory-stores]]) |
 | `idempotency_keys` | `(subject, key)` | the route, the body's hash, `done`, the stored answer (`status`, `content_type`, `body` as bytes), `expires_at` ([[015-api]]) |
@@ -250,7 +251,7 @@ against `DATABASE_URL` or a container it starts.
 
 | What it said | What was built | Why |
 |---|---|---|
-| the schema holds `triggers`, `trigger_firings`, `credentials`, `memory_stores` and `sink_outbox` | none of them yet | each joins with the spec that uses it, as the migrations rule says: [[022-triggers]], [[018-credentials-and-secrets]], [[020-memory-stores]], [[023-events-and-observability]] |
+| the schema holds `triggers`, `trigger_firings`, `trigger_sessions`, `credentials`, `memory_stores` and `sink_outbox` | none of them yet | each joins with the spec that uses it, as the migrations rule says: [[022-triggers]], [[018-credentials-and-secrets]], [[020-memory-stores]], [[023-events-and-observability]] |
 | the directory store keeps triggers, credentials and memory stores as object files | it keeps agents, versions and idempotency records | the same specs build the rest |
 | an append checks the writer rule of an external writer | an append through a lease is fenced by its generation; the writer subject of an external writer is not checked | that check is [[017-external-runners-handoff-fork]]'s |
 | the reaper ends `expired` every session past `expires_at` | it ends every idle one, and leaves a running one to a later pass | a running session's runner holds it, and ending it under the runner would fail the runner's next append |

@@ -94,6 +94,7 @@ gains fields.
 | `session.append`, `session.handoff` | `session` | `agent`, `owner`, `runner`, `writer`, and for a handoff `to` and `initiator` | [[017-external-runners-handoff-fork]]; a handoff to `hosted` gets the initiator cap of a create |
 | `session.scope` | `session` | `agent`, `owner`, `old`, `new`, `until` | a scope change; the authorizer holds a widening to the agent's permissions and the widener's own rights |
 | `trigger.create`, `trigger.read`, `trigger.list`, `trigger.update`, `trigger.delete` | `trigger` | `agent`, `owner` | the trigger routes |
+| `trigger.fire` (added by [[022-triggers]]) | `trigger` | `agent`, `owner` | deliver an event to a trigger, or fire it now |
 | `credential.create`, `credential.read`, `credential.list`, `credential.delete` | `credential` | `name`, `owner`, `service` | the credential routes; `read` returns metadata only |
 | `memory_store.create`, `memory_store.read`, `memory_store.list`, `memory_store.update`, `memory_store.delete` | `memory_store` | `name`, `owner`, `sharing`, `audience`, and `partition` on a read of another initiator's documents | the memory store routes; `shared` is allowed, by default, to an organization admin ([[020-memory-stores]]) |
 | `memory_store.write` | `memory_store` | `name`, `owner`, `session`, `initiator`, `partition` | a document write, and a session attaching the store `read_write` ([[020-memory-stores]]) |

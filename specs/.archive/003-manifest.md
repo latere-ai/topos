@@ -132,7 +132,7 @@ at the installation's identity provider ([[018-credentials-and-secrets]]).
 | Field | Type | Default | Behavior in |
 |---|---|---|---|
 | `agent` | reference | required | the agent the trigger's sessions run |
-| `schedule` | a five-field cron expression, or `@hourly`, `@daily`, `@weekly` | required | [[022-triggers]] |
+| `schedule` | a five-field cron expression, or `@hourly`, `@daily`, `@weekly` | one of `schedule` and `on` (changed by [[022-triggers]]) | [[022-triggers]] |
 | `timeZone` | an IANA zone name | `UTC` | [[022-triggers]] |
 | `session.message` | string | required | the first `user.message` of each session |
 | `session.title`, `session.machine`, `session.resources`, `session.budget`, `session.limits` | as the session's fields, camelCase: `machine` `{kind, image, environment}`, each resource `{type, memoryStore, access}` with `type: memoryStore` or `{type, url, ref}` with `type: repository` | the agent's | [[004-session-log]] |
@@ -140,6 +140,7 @@ at the installation's identity provider ([[018-credentials-and-secrets]]).
 | `skipIfActive` | boolean | `true` | [[022-triggers]] |
 | `maxAge` | Go duration | `1h` | [[022-triggers]] |
 | `suspend` | boolean | `false` | [[022-triggers]] |
+| `on`, `session.policy`, `session.key`, `maxActive`, and templates in `session.message`, `session.title` and a repository's `url` and `ref` (added by [[022-triggers]]) | as [[022-triggers]] lists them | as [[022-triggers]] lists them | [[022-triggers]] |
 
 ### MemoryStore
 
