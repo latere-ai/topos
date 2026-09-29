@@ -174,12 +174,18 @@ const (
 )
 
 // The system parts of a request (spec 011): the context block a machine
-// records when it attaches, an instruction file, the skills index and a
-// memory store, and the lines that mark instructions cut at their limits.
+// records when it attaches, the block that names a session's
+// repositories before its first machine does, an instruction file, the
+// skills index and a memory store, and the lines that mark instructions
+// cut at their limits.
 const (
 	// ContextBlock takes Workdir, OS, Arch, Cella, Environment, Date,
 	// Git, Branch, Head, Modified, Untracked and Commits.
 	ContextBlock Name = "context/context-v1"
+	// ContextRepositories takes Repositories, each with URL, Ref, Branch
+	// and Dir, the directory under the working directory, empty for the
+	// working directory itself.
+	ContextRepositories Name = "context/repositories-v1"
 	// ContextInstructions takes Path and Body.
 	ContextInstructions  Name = "context/instructions-v1"
 	InstructionCut       Name = "context/instruction-cut-v1"

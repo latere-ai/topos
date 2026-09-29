@@ -337,7 +337,7 @@ func Cella(o CellaOptions) Machines {
 // the sandbox's egress allowlist includes (spec 009).
 func repositoryHosts(s session.Session) []string {
 	var out []string
-	for _, r := range runner.Repositories(s) {
+	for _, r := range session.Repositories(s) {
 		if u, err := url.Parse(r.URL); err == nil && u.Hostname() != "" {
 			out = append(out, u.Hostname())
 		}

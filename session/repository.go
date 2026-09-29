@@ -7,10 +7,75 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
+
+// ResourceRepository is the type of a session resource that names a
+// repository (spec 019).
+const ResourceRepository = "repository"
+
+// Repositories are the repository resources of a session, in order.
+func Repositories(s Session) []Resource {
+	var out []Resource
+	for _, r := range s.Resources {
+		if r.Type == ResourceRepository {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// Branch is the branch a session works on in each of its repositories
+// (spec 019).
+func Branch(s Session) string {
+	return "agents/" + s.AgentName() + "/" + s.ID
+}
+
+// AgentName is the name of the session's agent, the author of its
+// commits, or "agent" for a session whose agent has none.
+func (s Session) AgentName() string {
+	if s.Agent.Name == "" {
+		return "agent"
+	}
+	return s.Agent.Name
+}
+
+// dirPattern is a directory name a repository's URL may give.
+var dirPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// RepositoryDirs are the directories repos are delivered into, relative
+// to the machine's working directory and in their order: "" for the
+// first, which is the working directory itself, and for each further one
+// the last segment of its URL without .git, or repository-<i> when that
+// is no name, made unique with -<i>.
+func RepositoryDirs(repos []Resource) []string {
+	out := make([]string, len(repos))
+	taken := map[string]bool{}
+	for i, r := range repos {
+		if i > 0 {
+			out[i] = repositoryDir(r.URL, i, taken)
+		}
+	}
+	return out
+}
+
+func repositoryDir(raw string, i int, taken map[string]bool) string {
+	name := "repository-" + strconv.Itoa(i)
+	if u, err := url.Parse(raw); err == nil {
+		if base := strings.TrimSuffix(path.Base(u.Path), ".git"); dirPattern.MatchString(base) {
+			name = base
+		}
+	}
+	for taken[name] {
+		name += "-" + strconv.Itoa(i)
+	}
+	taken[name] = true
+	return name
+}
 
 // MaxRepositories is how many repositories a session names at most, and
 // so how many an agent names for the sessions that take its own (spec

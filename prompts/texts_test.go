@@ -23,6 +23,9 @@ type skill struct{ Name, Description, Path string }
 
 type todo struct{ ID, Content, Status string }
 
+// repository stands in for the harness's line of a session's repository.
+type repository struct{ URL, Ref, Branch, Dir string }
+
 // textCase is one text rendered with representative data. want is the
 // exact text, written as the expression that produced it before the text
 // moved into its file; wantSHA pins a long document by the SHA-256 of
@@ -201,6 +204,12 @@ var textCases = func() []textCase {
 		{name: ContextBlock, data: contextData(true, "", true, nil), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
 			fmt.Sprintf("Machine: %s\n", "Cella sandbox") + fmt.Sprintf("Date: %s\n", "2026-09-27") +
 			fmt.Sprintf("Git: branch %s at %s, %s modified, %s untracked\n", "main", "1a2b3c4", strconv.Itoa(2), strconv.Itoa(1)) + "</context>"},
+		{name: ContextRepositories, data: Data{"Repositories": []repository{
+			{"https://git.example/acme/web.git", "main", "agents/coder/ses_1", ""},
+			{"https://git.example/acme/api.git", "", "agents/coder/ses_1", "api"},
+		}}, want: "<context>\n" + "Repositories, cloned the first time a file or command tool runs:\n" +
+			"- https://git.example/acme/web.git at main, on branch agents/coder/ses_1, into the working directory\n" +
+			"- https://git.example/acme/api.git, on branch agents/coder/ses_1, into api/ in the working directory\n" + "</context>"},
 		{name: ContextInstructions, data: Data{"Path": `/w/AGENTS "x".md`, "Body": "Be terse."}, want: fmt.Sprintf("<instructions path=%q>\n%s\n</instructions>", `/w/AGENTS "x".md`, "Be terse.")},
 		{name: InstructionCut, want: strings.TrimPrefix("\n[the file is longer than 64 KiB and was cut here]", "\n")},
 		{name: InstructionsTotalCut, want: strings.TrimPrefix("\n[the instruction files pass 256 KiB together and were cut here]", "\n")},

@@ -303,7 +303,7 @@ func TestARestartedRunnerReattachesTheSandboxByName(t *testing.T) {
 // repository_unavailable while the sandbox stays.
 func TestTheSandboxReachesItsRepositoriesHosts(t *testing.T) {
 	c := newCloud(t, func(s *session.Session) {
-		s.Resources = []session.Resource{{Type: runner.ResourceRepository, URL: "https://127.0.0.1:1/org/app.git"}}
+		s.Resources = []session.Resource{{Type: session.ResourceRepository, URL: "https://127.0.0.1:1/org/app.git"}}
 	})
 	c.drive("Look.", bash("toolu_1", "ls"), said("No repository."))
 	sb, ok := c.cella.Sandbox(cella.SandboxName(c.s.ID))
@@ -394,7 +394,7 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := newCloud(t, func(s *session.Session) {
-		s.Resources = []session.Resource{{Type: runner.ResourceRepository, URL: host.srv.URL + "/app.git"}}
+		s.Resources = []session.Resource{{Type: session.ResourceRepository, URL: host.srv.URL + "/app.git"}}
 	})
 	name = cella.SandboxName(c.s.ID)
 	// The installation mints the session's token for its git host, and no
@@ -408,7 +408,7 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	commit := `echo change >> README.md && git commit -q -am "Change the readme" && git push -q && git log -1 --format=%B`
 	c.drive("Change the readme and push.", bash("toolu_1", commit), said("Pushed."))
 	got := c.results()
-	branch := runner.SessionBranch(c.s)
+	branch := session.Branch(c.s)
 	for _, want := range []string{"Change the readme", runner.TrailerSession + ": " + c.s.ID, runner.TrailerAgent + ": " + c.s.Agent.ID + "@1"} {
 		if !strings.Contains(got[0], want) {
 			t.Fatalf("the commit lacks %q: %q", want, got[0])

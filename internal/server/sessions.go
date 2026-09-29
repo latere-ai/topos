@@ -90,7 +90,7 @@ func repositories(raw json.RawMessage) ([]session.Resource, error) {
 	}
 	for i, r := range rs {
 		switch {
-		case r.Type != runner.ResourceRepository:
+		case r.Type != session.ResourceRepository:
 			return nil, refuse(CodeInvalidRequest, "resources[%d] is of type %q; a session names repositories, and its memory stores are its agent's", i, r.Type)
 		case r.MemoryStoreID != "" || r.Access != "":
 			return nil, refuse(CodeInvalidRequest, "resources[%d]: a repository has a url and a ref alone", i)
@@ -162,7 +162,7 @@ func (c *call) createSession() error {
 	// which the manifest checked as the API checks a create's (spec 019).
 	if len(resources) == 0 {
 		for _, repo := range r.Agent.Spec.Repositories {
-			resources = append(resources, session.Resource{Type: runner.ResourceRepository, URL: repo.URL, Ref: repo.Ref})
+			resources = append(resources, session.Resource{Type: session.ResourceRepository, URL: repo.URL, Ref: repo.Ref})
 		}
 	}
 	// A hosted session runs on a Cella machine, or on the server's own

@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instruc
 affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-30
 author: changkun
 ---
 
@@ -41,7 +41,7 @@ Nothing is borrowed.
 | 1 | tool definitions: the built-ins in the registry's order, then MCP tools by name, then client tools by name | [[008-tools]], [[021-mcp-servers]] | when the tool set changes |
 | 2 | the harness prompt | [[011-instructions-and-skills]], by `prompt_version` | never within a session |
 | 3 | the agent's instructions | the agent version | never within a session |
-| 4 | the context block | `session.machine` | when a machine attaches |
+| 4 | the context block | `session.machine`; before the first one, the session's repositories ([[011-instructions-and-skills]]) | when a machine attaches |
 | 5 | project instruction files | `session.machine` | when a machine attaches |
 | 6 | the skills index | `session.machine` | when a machine attaches |
 | 7 | memory notes | `memory.attached` | when a store attaches |

@@ -101,8 +101,8 @@ func TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt(t *testing.T) {
 	if opens.Load() != 0 || f.count(ctx, session.TypeSessionMachine) != 0 {
 		t.Fatalf("a turn that only talks opened %d machines", opens.Load())
 	}
-	if strings.Contains(f.systemText(0), "Working directory") {
-		t.Fatal("a session with no machine was told of one")
+	if first := f.systemText(0); strings.Contains(first, "Working directory") || strings.Contains(first, "Repositories") {
+		t.Fatalf("a session with no machine and no repositories was told of one:\n%s", first)
 	}
 	f.stub.Script(model,
 		reply(toolUse("toolu_1", "echo", `{}`)),
@@ -192,11 +192,12 @@ func bareRepo(t *testing.T, name string) string {
 	return bare
 }
 
-// TestTheFirstMachineGetsTheSessionsRepositories: at the first machine
-// the runner clones the session's first repository into the working
-// directory on the session's branch from the ref it names and a second
-// one beside it, and a commit made by a bash call carries the session's
-// author and trailers and pushes to the git host.
+// TestTheFirstMachineGetsTheSessionsRepositories: the first request names
+// the session's repositories before any machine opens; at the first
+// machine the runner clones the session's first repository into the
+// working directory on the session's branch from the ref it names and a
+// second one beside it, and a commit made by a bash call carries the
+// session's author and trailers and pushes to the git host.
 func TestTheFirstMachineGetsTheSessionsRepositories(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
@@ -210,7 +211,7 @@ func TestTheFirstMachineGetsTheSessionsRepositories(t *testing.T) {
 	var opens atomic.Int32
 	f.onDemand(work, &opens)
 	s := session.New(session.AgentRef{ID: session.NewID(session.PrefixAgent), Name: "builder", Version: 3}, f.s.Initiator, session.RunnerHosted, session.Machine{Kind: machine.KindCella}, t0)
-	s.Resources = []session.Resource{{Type: ResourceRepository, URL: "file://" + app, Ref: "dev"}, {Type: ResourceRepository, URL: "file://" + lib}}
+	s.Resources = []session.Resource{{Type: session.ResourceRepository, URL: "file://" + app, Ref: "dev"}, {Type: session.ResourceRepository, URL: "file://" + lib}}
 	if err := f.store.Create(ctx, s, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestTheFirstMachineGetsTheSessionsRepositories(t *testing.T) {
 			t.Fatalf("the bash call failed: %+v %v", res, err)
 		}
 	}
-	branch := SessionBranch(s)
+	branch := session.Branch(s)
 	if got := gitRun(t, work, "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
 		t.Fatalf("the working directory is on %q, want %q", got, branch)
 	}
@@ -249,8 +250,24 @@ func TestTheFirstMachineGetsTheSessionsRepositories(t *testing.T) {
 	if parent := gitRun(t, app, "rev-parse", "refs/heads/"+branch+"^"); parent != gitRun(t, app, "rev-parse", "refs/heads/dev") {
 		t.Fatal("the session's branch did not start at its ref")
 	}
-	if after := f.systemText(1); !strings.Contains(after, "Repository rules for app.") || !strings.Contains(after, "Git: branch "+branch) {
-		t.Fatalf("the request after the delivery lacks the repository's context:\n%s", after)
+	// The first request names the repositories the machine will get,
+	// though it has not opened; the request after the delivery carries the
+	// machine's own context in that block's place.
+	first := f.systemText(0)
+	for _, want := range []string{
+		"Repositories, cloned the first time a file or command tool runs:",
+		"- file://" + app + " at dev, on branch " + branch + ", into the working directory",
+		"- file://" + lib + ", on branch " + branch + ", into lib/ in the working directory",
+	} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("the first request lacks %q:\n%s", want, first)
+		}
+	}
+	if strings.Contains(first, "Working directory") {
+		t.Fatalf("the first request names a machine that has not opened:\n%s", first)
+	}
+	if after := f.systemText(1); !strings.Contains(after, "Repository rules for app.") || !strings.Contains(after, "Git: branch "+branch) || strings.Contains(after, "Repositories, cloned") {
+		t.Fatalf("the request after the delivery lacks the repository's context, or still names the repositories to clone:\n%s", after)
 	}
 	// The attachment names each delivered repository with the commit its
 	// branch started at: the ref's for the first, the default branch's
@@ -287,8 +304,8 @@ func TestARepositoryThatCannotBeDeliveredIsReported(t *testing.T) {
 	empty := filepath.Join(t.TempDir(), "empty.git")
 	gitRun(t, filepath.Dir(empty), "init", "--quiet", "--bare", "-b", "main", empty)
 	s.Resources = []session.Resource{
-		{Type: ResourceRepository, URL: "file://" + filepath.Join(work, "..", "missing.git")},
-		{Type: ResourceRepository, URL: "file://" + empty},
+		{Type: session.ResourceRepository, URL: "file://" + filepath.Join(work, "..", "missing.git")},
+		{Type: session.ResourceRepository, URL: "file://" + empty},
 	}
 	if err := f.store.Create(ctx, s, nil); err != nil {
 		t.Fatal(err)
@@ -319,23 +336,9 @@ func TestARepositoryThatCannotBeDeliveredIsReported(t *testing.T) {
 		t.Fatalf("%d opens, %d session.machine", opens.Load(), f.count(ctx, session.TypeSessionMachine))
 	}
 	var attached session.SessionMachine
-	want := []session.DeliveredRepository{{URL: "file://" + empty, Branch: SessionBranch(s)}}
+	want := []session.DeliveredRepository{{URL: "file://" + empty, Branch: session.Branch(s)}}
 	if err := f.events(ctx, session.TypeSessionMachine)[0].Decode(&attached); err != nil || !slices.Equal(attached.Repositories, want) {
 		t.Fatalf("the attachment names %+v, %v; want %+v", attached.Repositories, err, want)
-	}
-}
-
-func TestRepoDir(t *testing.T) {
-	taken := map[string]bool{}
-	for _, c := range []struct{ url, want string }{
-		{"https://code.example/org/lib.git", "lib"},
-		{"https://code.example/other/lib", "lib-2"},
-		{"https://code.example/", "repository-3"},
-		{"file:///srv/.hidden.git", "repository-4"},
-	} {
-		if got := repoDir(c.url, len(taken)+1, taken); got != c.want {
-			t.Errorf("%s: %q, want %q", c.url, got, c.want)
-		}
 	}
 }
 

@@ -23,7 +23,6 @@ import (
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/manifest"
-	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
 
@@ -180,9 +179,9 @@ func TestASessionTakesItsAgentsRepositories(t *testing.T) {
 	if got := apply("builder", "[{url: 'https://code.example/acme/lib'}]"); got.status != http.StatusOK {
 		t.Fatalf("apply the second version: %d %s", got.status, got.body)
 	}
-	first := []session.Resource{{Type: runner.ResourceRepository, URL: "https://code.example/acme/app.git", Ref: "main"}}
-	latest := []session.Resource{{Type: runner.ResourceRepository, URL: "https://code.example/acme/lib"}}
-	own := []session.Resource{{Type: runner.ResourceRepository, URL: "https://code.example/acme/other", Ref: "dev"}}
+	first := []session.Resource{{Type: session.ResourceRepository, URL: "https://code.example/acme/app.git", Ref: "main"}}
+	latest := []session.Resource{{Type: session.ResourceRepository, URL: "https://code.example/acme/lib"}}
+	own := []session.Resource{{Type: session.ResourceRepository, URL: "https://code.example/acme/other", Ref: "dev"}}
 	for body, want := range map[string][]session.Resource{
 		`{"agent":"builder@1"}`:              first,
 		`{"agent":"builder"}`:                latest,

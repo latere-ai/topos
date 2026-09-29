@@ -201,7 +201,7 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		return harness.Outcome{}, err
 	}
 	git, memory := attached(evs)
-	cfg.Prompt.Git = cfg.Prompt.Git || git || len(Repositories(s)) > 0
+	cfg.Prompt.Git = cfg.Prompt.Git || git || len(session.Repositories(s)) > 0
 	cfg.Prompt.Memory = cfg.Prompt.Memory || memory
 	if cfg.Checkpoint == nil {
 		cp := r.checkpointer(cfg, s)
@@ -319,7 +319,7 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool) error {
 	var repos []session.DeliveredRepository
 	var delivered error
-	if first && len(Repositories(s)) > 0 {
+	if first && len(session.Repositories(s)) > 0 {
 		repos, delivered = deliver(ctx, s, m)
 	}
 	return errors.Join(r.attach(ctx, m, log, beside, repos), delivered)

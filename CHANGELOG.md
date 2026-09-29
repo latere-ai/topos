@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- An agent knows its session's repositories from its first turn. A
+  hosted session's sandbox opens only when a tool first acts on it, and
+  its repositories were named to the model only then, so an agent asked
+  what it works on answered that it had none. Until the session's first
+  machine is recorded, every request's context block now names each
+  repository, the ref it starts from, the session's branch and the
+  directory it is cloned into; the machine's own context block replaces
+  it once the sandbox opens, and the sandbox still opens only when a
+  tool needs it.
+
 ## v0.9.2 - 2026-09-29
 
 - A hosted session's `session.create` question names the session's

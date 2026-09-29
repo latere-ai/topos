@@ -4,6 +4,7 @@
 package session
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -36,5 +37,35 @@ func TestCheckRepository(t *testing.T) {
 		if err != nil && strings.Contains(err.Error(), "pw@") {
 			t.Errorf("%+v: the refusal quotes the credential: %v", c.r, err)
 		}
+	}
+}
+
+// TestRepositoryDirs: the first repository is the working directory and
+// each further one takes its URL's last segment without .git, a numbered
+// name when that is no name, and a suffix when it is taken.
+func TestRepositoryDirs(t *testing.T) {
+	repos := []Resource{
+		{URL: "https://code.example/org/app.git"},
+		{URL: "https://code.example/org/lib.git"},
+		{URL: "https://code.example/other/lib"},
+		{URL: "https://code.example/"},
+		{URL: "file:///srv/.hidden.git"},
+	}
+	want := []string{"", "lib", "lib-2", "repository-3", "repository-4"}
+	if got := RepositoryDirs(repos); !slices.Equal(got, want) {
+		t.Fatalf("RepositoryDirs = %q, want %q", got, want)
+	}
+}
+
+// TestBranch: a session works on agents/<agent>/<session>, and one
+// whose agent has no name on agents/agent/<session>.
+func TestBranch(t *testing.T) {
+	s := Session{ID: "ses_1", Agent: AgentRef{Name: "builder"}}
+	if got := Branch(s); got != "agents/builder/ses_1" {
+		t.Fatalf("Branch = %q", got)
+	}
+	s.Agent.Name = ""
+	if got := Branch(s); got != "agents/agent/ses_1" {
+		t.Fatalf("Branch without a name = %q", got)
 	}
 }

@@ -18,6 +18,7 @@ var released = map[string]string{
 	"context/instructions-total-cut-v1.md":   "95f675e5a3d38244d9390ca99bbf79f83a17ee28c3c5a4cbb2d2d3a5e3fa358d",
 	"context/instructions-v1.md":             "e3d085f6330cbb62b4d62b44268adb204a8053c0c3cfd3dd3ec262d79a4f3abf",
 	"context/memory-v1.md":                   "0e3bc0acc390538267ce79192feda24980ffb8e9b4cad847d6e776350bb236fb",
+	"context/repositories-v1.md":             "836e3ac893852bc2f32c19b54da88b5ce1db2ee67d1d040396e4245a7f68fd74",
 	"context/skills-v1.md":                   "fed18807acaee6ca34b1a700d5b3947ee253325f04e7c9bb9db5e53e1247a034",
 	"harness/git-v1.md":                      "dd3c3b704980017b9586a2e8fa741d7f93dab3140134474f7c488fb441897f11",
 	"harness/harness-v1.md":                  "f98f83b03b8c5047230e742e7842febc6667ac6814bb74bc886191e20218d56a",

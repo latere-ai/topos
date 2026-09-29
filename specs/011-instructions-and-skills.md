@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [harness/, runner/, prompts/, test/tasks/instructions/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-30
 author: changkun
 ---
 
@@ -132,6 +132,32 @@ The block is the template `prompts/context/context-v<N>.md`; the
 instruction wrapper, its cut lines, the skills index and the memory
 note below are templates of `prompts/context/` too.
 
+A machine opened on demand is recorded only when a tool first acts on
+it ([[009-machines]]), so until then the log holds no context block.
+A session that names repositories ([[019-git]]) carries, in the context
+block's place, a block the harness renders from the session's resources
+on every request while no `session.machine` is recorded:
+
+```
+<context>
+Repositories, cloned the first time a file or command tool runs:
+- https://git.example/acme/web.git at main, on branch agents/coder/ses_01J9Z3P9D2F6H8K0M2Q4S6U8W0, into the working directory
+- https://git.example/acme/api.git, on branch agents/coder/ses_01J9Z3P9D2F6H8K0M2Q4S6U8W0, into api/ in the working directory
+</context>
+```
+
+Each line is one repository in the session's order: its URL, `at` its
+`ref` when it names one, the session's branch, and the directory the
+runner delivers it into. The block is the template
+`prompts/context/repositories-v<N>.md`. The first `session.machine`
+replaces it with the machine's own context block, whose `Git` line
+names the branch of the checkout the working directory holds; a
+session without repositories carries neither until its machine
+attaches. The block is rendered from the session header and the log
+alone, so a rebuilt request carries the same bytes; the first requests
+of a session an earlier build ran went without it, and a replay of them
+builds it in and differs there ([[007-models]]).
+
 ### Project instruction files
 
 The harness looks for instruction files in each directory from the
@@ -205,6 +231,7 @@ tree; what memory stores are ([[020-memory-stores]]).
 | The prompt renders only the sections that apply, a version that does not exist is refused, and the compaction prompt renders | `prompts.TestRenderIncludesOnlyTheSectionsThatApply`, `prompts.TestCompact` | built |
 | Every text renders to its pinned bytes, the harness prompt in each of its sixteen combinations of sections; a value a template names and the data lacks fails the render; every call names a text that exists with exactly the keys its template reads; and no text holds an em dash | `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestTheHarnessPromptRendersItsCurrentBytes`, `prompts.TestAMissingKeyFailsLoudly`, `prompts.TestEveryCallNamesAText`, `prompts.TestNoTextHasAnEmDash` | built |
 | The runner sets the git and memory sections from the log, and a later machine outside a repository drops the git section | `runner.TestAttachedSetsThePromptSections` | built |
+| A session with repositories whose machine has not opened names each repository, its ref, the session's branch and its directory from its first request; a session without repositories names none; the first `session.machine` replaces the block with the machine's context | `runner.TestTheFirstMachineGetsTheSessionsRepositories`, `runner.TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | A released prompt file, the harness prompt's among them, is never changed: its hash is pinned in the test | `prompts.TestReleasedPromptsAreImmutable` | built |
 | The context block reports the branch, the git counts and five commits in the documented lines, is recorded once in `session.machine`, and is the same on a second drive | `runner.TestTheContextBlock`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
 | Instruction files are found from the repository root to the working directory, `AGENTS.md` before `CLAUDE.md`, the person's first and the nearest last, cut at 64 KiB each and 256 KiB in all; a Cella machine reads no personal file | `runner.TestDriveAttachesTheMachineAndRunsATurn`, `runner.TestAttachInARepository`, `runner.TestChainAndSkills` | built |

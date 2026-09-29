@@ -7,9 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,10 +20,6 @@ import (
 // runner could not deliver into the machine.
 const CodeRepositoryUnavailable = "repository_unavailable"
 
-// ResourceRepository is the type of a session resource that names a
-// repository (spec 019).
-const ResourceRepository = "repository"
-
 // Trailers every commit of a session carries (spec 019).
 const (
 	TrailerSession = "Topos-Session"
@@ -35,32 +29,6 @@ const (
 // deliverTimeout bounds the delivery of one repository: its clone, its
 // branch and its configuration.
 const deliverTimeout = 15 * time.Minute
-
-// Repositories are the repository resources of a session, in order.
-func Repositories(s session.Session) []session.Resource {
-	var out []session.Resource
-	for _, r := range s.Resources {
-		if r.Type == ResourceRepository {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-// dirPattern is a directory name a repository's URL may give.
-var dirPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-
-// SessionBranch is the branch a session works on (spec 019).
-func SessionBranch(s session.Session) string {
-	return "agents/" + agentName(s) + "/" + s.ID
-}
-
-func agentName(s session.Session) string {
-	if s.Agent.Name == "" {
-		return "agent"
-	}
-	return s.Agent.Name
-}
 
 // deliver clones each of the session's repositories into the machine,
 // the first into the working directory and each further one into a
@@ -72,20 +40,17 @@ func agentName(s session.Session) string {
 // the repositories that were delivered: the machine stays, and the
 // session learns which repository is missing.
 func deliver(ctx context.Context, s session.Session, m machine.Machine) ([]session.DeliveredRepository, error) {
-	repos := Repositories(s)
+	repos := session.Repositories(s)
 	if len(repos) > session.MaxRepositories {
 		return nil, &machine.OpenError{Code: CodeRepositoryUnavailable, Err: fmt.Errorf("the session names %d repositories, at most %d", len(repos), session.MaxRepositories)}
 	}
 	workdir := m.Info().Workdir
-	branch := SessionBranch(s)
-	taken := map[string]bool{}
+	branch := session.Branch(s)
+	dirs := session.RepositoryDirs(repos)
 	var delivered []session.DeliveredRepository
 	var errs []error
 	for i, repo := range repos {
-		dir := workdir
-		if i > 0 {
-			dir = path.Join(workdir, repoDir(repo.URL, i, taken))
-		}
+		dir := path.Join(workdir, dirs[i])
 		commit, err := deliverOne(ctx, s, m, repo, dir)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("deliver %s: %w", repo.URL, err))
@@ -132,22 +97,6 @@ func head(ctx context.Context, m machine.Machine, dir string) (string, error) {
 	return out, nil
 }
 
-// repoDir is the directory of a further repository: the last segment of
-// its URL without .git, or repository-<i> when that is no name.
-func repoDir(raw string, i int, taken map[string]bool) string {
-	name := "repository-" + strconv.Itoa(i)
-	if u, err := url.Parse(raw); err == nil {
-		if base := strings.TrimSuffix(path.Base(u.Path), ".git"); dirPattern.MatchString(base) {
-			name = base
-		}
-	}
-	for taken[name] {
-		name += "-" + strconv.Itoa(i)
-	}
-	taken[name] = true
-	return name
-}
-
 // deliveryScript is the shell script that delivers one repository into
 // dir, every value quoted. git reaches the git host with the machine's
 // own configuration: in a Cella sandbox that sends the placeholder of the
@@ -185,10 +134,10 @@ func deliveryScript(s session.Session, repo session.Resource, dir string) (strin
 	w("  fi")
 	w("fi")
 	w(`cd "$dir"`)
-	w("git config user.name " + quote(agentName(s)))
-	w("git config user.email " + quote(agentName(s)+"@agents.topos.invalid"))
+	w("git config user.name " + quote(s.AgentName()))
+	w("git config user.email " + quote(s.AgentName()+"@agents.topos.invalid"))
 	w("git config push.autoSetupRemote true")
-	w("branch=" + quote(SessionBranch(s)))
+	w("branch=" + quote(session.Branch(s)))
 	w(`if ! git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then`)
 	if repo.Ref != "" {
 		w("  ref=" + quote(repo.Ref))

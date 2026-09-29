@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -81,6 +82,29 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 		}), nil
 	}
 	return "", nil
+}
+
+// repositoryLine is one repository as the repositories block names it.
+type repositoryLine struct{ URL, Ref, Branch, Dir string }
+
+// withRepositories are a request's system parts with the session's
+// repositories named in the context block's place while the session has
+// no machine recorded (spec 011): a machine opened on demand clones them
+// only when a tool first acts on it, and the model knows them from the
+// first request. Once a session.machine is recorded its context block
+// stands there, and a session without repositories has no such block.
+func withRepositories(parts []session.Part, s session.Session) []session.Part {
+	repos := session.Repositories(s)
+	if len(repos) == 0 || slices.ContainsFunc(parts, func(p session.Part) bool { return p.Kind == session.PartContext }) {
+		return parts
+	}
+	dirs := session.RepositoryDirs(repos)
+	lines := make([]repositoryLine, len(repos))
+	for i, r := range repos {
+		lines[i] = repositoryLine{URL: r.URL, Ref: r.Ref, Branch: session.Branch(s), Dir: dirs[i]}
+	}
+	block := session.Part{Kind: session.PartContext, Context: prompts.Render(prompts.ContextRepositories, prompts.Data{"Repositories": lines})}
+	return append([]session.Part{block}, parts...)
 }
 
 // luxTools are the registry's definitions on the Lux wire.
