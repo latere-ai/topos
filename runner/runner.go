@@ -122,11 +122,17 @@ func (r *Runner) holder() session.Holder {
 // lost the session writes nothing more to it. A served drive also fences
 // the log when its context ends: a server shutting down leaves the
 // session running with its lease released, for the next runner to claim
-// and resume, rather than closing the turn as interrupted.
+// and resume, rather than closing the turn as interrupted. The end of a
+// served drive's context therefore does not reach the turn directly: the
+// fence closes first and then cancels the turn, so a harness that sees
+// the cancel finds its closing append refused.
 func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, served bool) (out harness.Outcome, err error) {
 	st := r.o.Store
 	defer func() { err = errors.Join(err, lease.Release()) }()
 	outer := ctx
+	if served {
+		ctx = context.WithoutCancel(ctx)
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	fence := make(chan struct{})

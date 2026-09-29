@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A toposd or runner shutting down leaves a running hosted session
+  running, with nothing appended, for the next runner to claim and
+  resume. On a busy machine the stop could reach the turn before the
+  session's log was closed to further writes, so the turn was recorded
+  as `idle` with stop reason `interrupted` and every rollout interrupted
+  the sessions it was running.
 - A hosted session whose model neither the embedded catalog nor the agent
   gives a family, such as a provider's model a Lux installation routes,
   goes through the Lux root's OpenAI door, which serves every model Lux

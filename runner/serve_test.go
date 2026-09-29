@@ -251,10 +251,15 @@ func TestServeDrivesTheSessionsItClaims(t *testing.T) {
 	}
 }
 
-// blocking is a model whose request waits until its context ends.
-type blocking struct{ started chan struct{} }
+// blocking is a model whose request waits until its context ends; ctx
+// is the request's context, set before started closes.
+type blocking struct {
+	started chan struct{}
+	ctx     context.Context
+}
 
 func (b *blocking) Stream(ctx context.Context, _ models.Request) (models.Stream, error) {
+	b.ctx = ctx
 	close(b.started)
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -290,6 +295,107 @@ func TestAServedDriveLeavesItsSessionToTheNextRunner(t *testing.T) {
 	}
 	if err := release(claims); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// endingFirst is a context whose end reaches the contexts derived from
+// it through context.WithCancel before its own Done channel closes: the
+// order a loaded machine can give a served drive, whose turn would see
+// the cancel while the fence, which waits on Done, is still open.
+type endingFirst struct {
+	context.Context
+	done  chan struct{}
+	mu    sync.Mutex
+	ended bool
+	after []func()
+}
+
+func newEndingFirst() *endingFirst {
+	return &endingFirst{Context: context.Background(), done: make(chan struct{})}
+}
+
+func (c *endingFirst) Done() <-chan struct{} { return c.done }
+
+func (c *endingFirst) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ended {
+		return context.Canceled
+	}
+	return nil
+}
+
+// AfterFunc is how context.WithCancel propagates this context's end to a
+// child.
+func (c *endingFirst) AfterFunc(f func()) func() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	i := len(c.after)
+	c.after = append(c.after, f)
+	return func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		stopped := c.after[i] != nil
+		c.after[i] = nil
+		return stopped
+	}
+}
+
+// end cancels every derived context, with Done still open.
+func (c *endingFirst) end() {
+	c.mu.Lock()
+	c.ended = true
+	after := slices.Clone(c.after)
+	clear(c.after)
+	c.mu.Unlock()
+	for _, f := range after {
+		if f != nil {
+			f()
+		}
+	}
+}
+
+// TestAServedDriveFencesItsLogBeforeTheTurnSeesTheStop: a server's stop
+// that reaches the derived contexts before its Done channel closes still
+// appends nothing. The turn's context ends only after the drive fenced
+// the log, so the stop is never recorded as an interrupt: the session
+// stays running and the drive reports its refused append.
+func TestAServedDriveFencesItsLogBeforeTheTurnSeesTheStop(t *testing.T) {
+	st := session.NewMemoryStore()
+	s := hosted(t, st, "Go.")
+	m := &blocking{started: make(chan struct{})}
+	r := served(t, st, luxstub.New(t), m)
+	lease, err := st.Acquire(t.Context(), s.ID, session.Holder{Runner: "run_serve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := newEndingFirst()
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.drive(stop, s.ID, lease, true)
+		done <- err
+	}()
+	<-m.started
+	before, err := st.Get(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop.end()
+	if m.ctx.Err() != nil {
+		// The turn saw the stop with the log still open: its turn closes
+		// before the fence could run.
+		err = <-done
+		close(stop.done)
+	} else {
+		close(stop.done)
+		err = <-done
+	}
+	if !errors.Is(err, ErrLeaseLost) {
+		t.Errorf("the stopped drive: %v, want its closing append refused", err)
+	}
+	after, err := st.Get(t.Context(), s.ID)
+	if err != nil || after.Status != session.StatusRunning || after.LastSeq != before.LastSeq {
+		t.Fatalf("after the stop %s %s (last %d, %d before), %v", after.Status, after.StopReason, after.LastSeq, before.LastSeq, err)
 	}
 }
 
