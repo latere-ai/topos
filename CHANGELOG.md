@@ -10,6 +10,18 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A model request asks at most 8192 output tokens as its `max_tokens`,
+  or the model's output limit when that is lower, rather than the whole
+  output limit. A gateway that reserves a request's `max_tokens` at the
+  output price against the caller's budget before running it, as Lux
+  does, held back many times what a step spends, so an agent on a small
+  budget was refused with `budget_exhausted` after its first request. A
+  response that stops at 8192 tokens is sent again once at the model's
+  output limit, in its place, and one that stops at the output limit is
+  continued as before. Every `model.request` records the `max_tokens` its
+  request asked; a response that stopped at 8192 tokens leaves a
+  `model.request` with outcome `escalated`, whose cost counts, and no
+  `agent.message`.
 - A session's first repository is fetched into the working directory as
   it is instead of cloned into it, so a sandbox whose workspace volume
   starts with `lost+found` gets its repository; `lost+found` is excluded
