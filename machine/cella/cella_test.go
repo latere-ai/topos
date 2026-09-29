@@ -127,6 +127,11 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 	if st, err := os.Stat(filepath.Join(f.o.Dir, "home")); err != nil || !st.IsDir() {
 		t.Errorf("the home directory was not made: %v", err)
 	}
+	// git works in a workspace whose root another user owns, as a Cella
+	// volume's is, because the open names it safe in the home's config.
+	if cfg, err := os.ReadFile(filepath.Join(f.o.Dir, "home", ".gitconfig")); err != nil || !strings.Contains(string(cfg), "directory = "+sb.Spec.Workspace.Path) {
+		t.Errorf("the home's git config does not name the workspace safe: %q %v", cfg, err)
+	}
 	if _, set := f.o.Env["HOME"]; set {
 		t.Error("the options' environment was changed in place")
 	}
@@ -156,15 +161,19 @@ func TestOpenCreatesTheSandbox(t *testing.T) {
 }
 
 func TestAHomeTheOptionsNameIsKept(t *testing.T) {
+	home := t.TempDir()
 	f := open(t, func(_ *cellastub.Server, o *Options) {
-		o.Env = map[string]string{"HOME": "/workspace/.home"}
+		o.Env = map[string]string{"HOME": home}
 	})
 	sb, ok := f.stub.Sandbox(f.m.Name())
 	if !ok {
 		t.Fatal("no sandbox")
 	}
-	if len(sb.Spec.Env) != 1 || sb.Spec.Env["HOME"] != "/workspace/.home" {
+	if len(sb.Spec.Env) != 1 || sb.Spec.Env["HOME"] != home {
 		t.Errorf("env = %+v, want the options' HOME alone", sb.Spec.Env)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gitconfig")); err != nil {
+		t.Errorf("the options' HOME holds no git config naming the workspace safe: %v", err)
 	}
 }
 

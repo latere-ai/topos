@@ -550,10 +550,18 @@ func duration(d time.Duration) v1.Duration {
 	return v1.Duration(strconv.FormatInt(s, 10) + "s")
 }
 
-// probe makes the spill and home directories, reads the sandbox's platform and
-// the SHA-256 of the helper already in it, which is absent after a create
-// and may be after a start: /tmp does not outlive a stop on every driver.
-const probe = `mkdir -p "$2" "$3" && uname -s && uname -m && if [ -x "$1" ]; then "$1" sum; fi`
+// probe makes the spill and home directories, marks the workspace a safe
+// directory in git's global configuration, and reads the sandbox's
+// platform and the SHA-256 of the helper already in it, which is absent
+// after a create and may be after a start: /tmp does not outlive a stop on
+// every driver, so the home directory and its configuration are made on
+// every open. The workspace volume's root belongs to another user than the
+// sandbox's process, which git refuses to work in unless it is named safe.
+const probe = `mkdir -p "$2" "$3" &&
+if [ -n "$4" ] && command -v git >/dev/null 2>&1; then
+  git config --global --get-all safe.directory | grep -qxF "$4" || git config --global --add safe.directory "$4"
+fi &&
+uname -s && uname -m && if [ -x "$1" ]; then "$1" sum; fi`
 
 // upload writes the helper from the session's input, which carries
 // exactly as many bytes as head reads, because the exec socket cannot
@@ -572,7 +580,7 @@ mv -f "$t" "$1/topos-machine"
 // there, and records the platform.
 func (m *Machine) ensureHelper(ctx context.Context, id string) error {
 	res, _, err := m.c.Exec(ctx, id, client.ExecRequest{
-		Command: []string{shell, "-c", probe, "sh", m.helper(), m.SpillDir(), m.HomeDir()},
+		Command: []string{shell, "-c", probe, "sh", m.helper(), m.SpillDir(), m.HomeDir(), m.workspace},
 		Timeout: "1m",
 	})
 	if err != nil {

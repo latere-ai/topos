@@ -173,7 +173,7 @@ func deliveryScript(s session.Session, repo session.Resource, dir string) (strin
 	w(`if [ ! -d "$dir/.git" ]; then`)
 	w(`  git init --quiet "$dir"`)
 	w(`  cd "$dir"`)
-	w(`  if [ -d lost+found ]; then printf '/lost+found/\n' >>"$(git rev-parse --git-path info/exclude)"; fi`)
+	w(`  if [ -d lost+found ]; then mkdir -p .git/info && printf '/lost+found/\n' >>.git/info/exclude; fi`)
 	// A fetch that fails leaves the directory as it found it, as a failed
 	// clone does, so the machine holds no repository without its commits.
 	w("  if ! { git remote add origin " + quote(repo.URL) + " && git fetch --quiet origin; }; then rm -rf .git; exit 1; fi")
