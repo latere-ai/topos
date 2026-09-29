@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.1 - 2026-09-29
+
 - An agent's name is unique per owner. It was unique across the whole
   installation: once one person applied `coding-agent`, nobody else
   could, and the refusal told them that someone's agent of that name
