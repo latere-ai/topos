@@ -261,6 +261,88 @@ func TestSecret(t *testing.T) {
 	}
 }
 
+// TestAuthorize: the stub asks its authorizer what cellad asks, about the
+// object cellad renders, and answers a refused action forbidden and a
+// refused mount not_found; an update is asked about the stored secret.
+func TestAuthorize(t *testing.T) {
+	s := New(t)
+	var asked []string
+	var updated Resource
+	refuse := map[string]bool{}
+	s.Authorize(func(action string, res Resource) string {
+		asked = append(asked, action+" "+res.Kind+" "+res.Name+" "+res.Owner+" "+res.Labels["team"])
+		if action == "secret.update" {
+			updated = res
+		}
+		if refuse[action] {
+			return "no"
+		}
+		return ""
+	})
+	c := dial(t, s)
+	key := v1.Secret{APIVersion: v1.APIVersion, Kind: v1.KindSecret, Metadata: v1.Metadata{Name: "key", Labels: map[string]string{"team": "a"}},
+		Spec: v1.SecretSpec{Kind: v1.SecretStatic, Scope: v1.SecretScope{Hosts: []string{"lux.example"}}, Value: "one"}}
+	apply := func() error {
+		m, err := client.Encode(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = c.ApplySecret(t.Context(), "key", m)
+		return err
+	}
+	if err := apply(); err != nil {
+		t.Fatal(err)
+	}
+	key.Metadata.Labels = map[string]string{"team": "b"}
+	if err := apply(); err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != v1.SecretIDPrefix+"key" || updated.Labels["team"] != "a" {
+		t.Fatalf("the update was asked about %+v, not the stored secret", updated)
+	}
+	if _, _, err := c.GetSecret(t.Context(), "key"); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = create(t, s, "box", func(sb *v1.Sandbox) {
+		sb.Metadata.Labels = map[string]string{"team": "c"}
+		sb.Spec.Secrets = []v1.SecretMount{{Name: "key", Env: "KEY"}}
+	})
+	want := []string{"secret.create Secret key stub a", "secret.update Secret key stub a", "secret.read Secret key stub b", "sandbox.create Sandbox box stub c", "secret.mount Secret key stub b"}
+	if strings.Join(asked, "|") != strings.Join(want, "|") {
+		t.Fatalf("asked %q, want %q", asked, want)
+	}
+	for _, action := range []string{"secret.update", "secret.read", "sandbox.create", "secret.mount"} {
+		refuse = map[string]bool{action: true}
+		var err error
+		switch action {
+		case "secret.update":
+			err = apply()
+		case "secret.read":
+			_, _, err = c.GetSecret(t.Context(), "key")
+		default:
+			_, _, err = c.CreateSandbox(t.Context(), manifest(t, "box-"+strings.ReplaceAll(action, ".", "-"), func(sb *v1.Sandbox) {
+				sb.Spec.Secrets = []v1.SecretMount{{Name: "key", Env: "KEY"}}
+			}))
+		}
+		want := "forbidden"
+		if action == "secret.mount" {
+			want = "not_found"
+		}
+		code(t, err, want)
+	}
+	refuse = map[string]bool{"secret.create": true}
+	key.Metadata.Name = "fresh"
+	m, err := client.Encode(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.ApplySecret(t.Context(), "fresh", m)
+	code(t, err, "forbidden")
+	if _, _, ok := s.Secret("fresh"); ok {
+		t.Fatal("a refused create was stored")
+	}
+}
+
 func TestExecWait(t *testing.T) {
 	s := New(t)
 	s.AddSecret("gh", "api.github.com")

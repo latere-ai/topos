@@ -9,9 +9,9 @@
 // Each sandbox is a temporary directory with its workspace in it, and a
 // command runs on the machine the test runs on, in that directory, so
 // the workspace path a sandbox reports is a real path and a command and
-// a file route see the same files. It injects refusals, holds a sandbox
-// in Starting, stops one as Cella's idle stop does, and loses one. It is
-// a test artifact.
+// a file route see the same files. It injects refusals, asks a test's
+// authorizer what cellad asks its own, holds a sandbox in Starting, stops
+// one as Cella's idle stop does, and loses one. It is a test artifact.
 package cellastub
 
 import (
@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/cella/authorizer"
 	v1 "latere.ai/x/cella/manifest/v1"
 	"latere.ai/x/pkg/httpjson"
 )
@@ -42,6 +43,10 @@ const DefaultEnvironment = "default"
 
 // DefaultImage is the image a sandbox that names none runs.
 const DefaultImage = "base"
+
+// Owner is the owner of every object the stub holds: the subject of its
+// one caller, whatever bearer it carries.
+const Owner = "stub"
 
 // The operations a Failure is injected on.
 const (
@@ -74,12 +79,27 @@ type Recorded struct {
 	Header http.Header
 }
 
+// Resource is an object as cellad asks its authorizer about it: the kind,
+// the id, and the name, owner and labels cellad renders. An object being
+// created has no id yet and the owner it will have. A secret's update
+// carries the stored secret alone, as cellad v0.9 sends it, and nothing of
+// what the apply writes.
+type Resource struct {
+	Kind, ID, Name, Owner string
+	Labels                map[string]string
+}
+
+// Decider is an authorizer: the reason it refuses action on res, or "" to
+// allow it.
+type Decider func(action string, res Resource) string
+
 // Server is the stub.
 type Server struct {
 	srv  *httptest.Server
 	root string
 
 	mu        sync.Mutex
+	decide    Decider
 	token     string
 	envs      map[string]bool
 	secrets   map[string]v1.Secret
@@ -133,6 +153,32 @@ func (s *Server) RequireToken(token string) {
 	s.token = token
 }
 
+// Authorize asks d what cellad asks its authorizer on the routes that
+// create a sandbox and read and apply a secret: sandbox.create with the
+// manifest's name and labels, secret.mount for each secret it mounts,
+// secret.read, and secret.create or secret.update. A refused action
+// answers forbidden, and a refused mount not_found, as Cella's do. Nil,
+// the default, allows every action.
+func (s *Server) Authorize(d Decider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.decide = d
+}
+
+// refused is the reason the authorizer refuses action on res, or "". The
+// caller holds mu.
+func (s *Server) refused(action string, res Resource) string {
+	if s.decide == nil {
+		return ""
+	}
+	return s.decide(action, res)
+}
+
+// secretResource is a secret as the authorizer is asked about it.
+func secretResource(sec v1.Secret) Resource {
+	return Resource{Kind: authorizer.KindSecret, ID: sec.Status.ID, Name: sec.Metadata.Name, Owner: sec.Status.Owner, Labels: sec.Metadata.Labels}
+}
+
 // AddEnvironment makes an Environment known; a sandbox on an unknown one
 // is refused with not_found, as Cella refuses it.
 func (s *Server) AddEnvironment(name string) {
@@ -148,7 +194,7 @@ func (s *Server) AddSecret(name string, hosts ...string) {
 	s.secrets[name] = v1.Secret{
 		APIVersion: v1.APIVersion, Kind: v1.KindSecret, Metadata: v1.Metadata{Name: name},
 		Spec:   v1.SecretSpec{Kind: v1.SecretStatic, Scope: v1.SecretScope{Hosts: hosts}},
-		Status: v1.SecretStatus{ID: v1.SecretIDPrefix + name, Owner: "stub"},
+		Status: v1.SecretStatus{ID: v1.SecretIDPrefix + name, Owner: Owner},
 	}
 }
 
@@ -396,8 +442,16 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusNotFound, "not_found", "no environment named "+env)
 		return
 	}
+	if reason := s.refused(authorizer.ActionSandboxCreate, Resource{Kind: authorizer.KindSandbox, Name: name, Owner: Owner, Labels: obj.Metadata.Labels}); reason != "" {
+		refuse(w, http.StatusForbidden, "forbidden", authorizer.ActionSandboxCreate+": "+reason)
+		return
+	}
 	for _, m := range obj.Spec.Secrets {
-		if _, ok := s.secrets[m.Name]; !ok {
+		sec, ok := s.secrets[m.Name]
+		if ok && s.refused(authorizer.ActionSecretMount, secretResource(sec)) != "" {
+			ok = false
+		}
+		if !ok {
 			refuse(w, http.StatusNotFound, "not_found", "no secret named "+m.Name)
 			return
 		}
@@ -426,7 +480,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		sb.obj.Spec.Workdir = sb.workspace()
 	}
 	now := time.Now().UTC()
-	sb.obj.Status = v1.SandboxStatus{ID: id, Owner: "stub", Environment: env, Driver: "stub", Isolation: v1.IsolationNone, Phase: "Running", CreatedAt: now, StartedAt: now}
+	sb.obj.Status = v1.SandboxStatus{ID: id, Owner: Owner, Environment: env, Driver: "stub", Isolation: v1.IsolationNone, Phase: "Running", CreatedAt: now, StartedAt: now}
 	if sb.starting > 0 {
 		sb.obj.Status.Phase = "Starting"
 	}
@@ -539,12 +593,17 @@ func (s *Server) secret(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusNotFound, "not_found", "no secret "+r.PathValue("ref"))
 		return
 	}
+	if reason := s.refused(authorizer.ActionSecretRead, secretResource(sec)); reason != "" {
+		refuse(w, http.StatusForbidden, "forbidden", authorizer.ActionSecretRead+": "+reason)
+		return
+	}
 	httpjson.Write(w, http.StatusOK, sec)
 }
 
 // applySecret creates or updates a secret by name, keeping its value
 // and counting value writes in its version, as Cella does; the answer
-// carries no value.
+// carries no value. The authorizer is asked secret.create about the
+// secret the apply makes, and secret.update about the one it replaces.
 func (s *Server) applySecret(w http.ResponseWriter, r *http.Request) {
 	var in v1.Secret
 	dec := json.NewDecoder(r.Body)
@@ -569,7 +628,16 @@ func (s *Server) applySecret(w http.ResponseWriter, r *http.Request) {
 	in.Spec.Value = ""
 	in.Status = prev.Status
 	if !held {
-		in.Status = v1.SecretStatus{ID: v1.SecretIDPrefix + name, Owner: "stub", CreatedAt: time.Now().UTC()}
+		in.Status = v1.SecretStatus{ID: v1.SecretIDPrefix + name, Owner: Owner, CreatedAt: time.Now().UTC()}
+	}
+	action, asked := authorizer.ActionSecretUpdate, prev
+	if !held {
+		action, asked = authorizer.ActionSecretCreate, in
+		asked.Status.ID = ""
+	}
+	if reason := s.refused(action, secretResource(asked)); reason != "" {
+		refuse(w, http.StatusForbidden, "forbidden", action+": "+reason)
+		return
 	}
 	if value != "" {
 		s.values[name] = value
