@@ -400,7 +400,7 @@ func TestAThreadThatStopsOtherwiseIsAnErrorResult(t *testing.T) {
 	e := setup(t, withReviewer(nil))
 	ctx := t.Context()
 	e.stub.Script(model, reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"t"}`)), reply(ir.StopEndTurn, text("noted")))
-	for range 3 {
+	for range MaxContinuations + 2 {
 		e.stub.Script(reviewerModel, reply(ir.StopMaxTokens, text("more")))
 	}
 	e.send(ctx, "Go.")

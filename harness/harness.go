@@ -63,6 +63,14 @@ var DefaultRetry = retry.Policy{MaxAttempts: 6, Base: 2 * time.Second, Max: 60 *
 // continues before it ends with output_limit.
 const MaxContinuations = 2
 
+// OutputCap is the max_tokens a step's request asks first, or the
+// model's output limit when that is lower. A gateway reserves a
+// request's max_tokens at the output price against the caller's budget
+// before it runs, so asking the whole output limit on every request
+// holds back many times what a step spends; a response that stops at the
+// cap is sent again at the model's output limit.
+const OutputCap = 8192
+
 // MaxParallel is how many parallel calls of a step run at once.
 const MaxParallel = 8
 
@@ -70,8 +78,9 @@ const MaxParallel = 8
 type Config struct {
 	Model      models.Model
 	Connection models.Connection
-	// Entry is the model's resolved catalog figures; its output limit is
-	// every request's max_tokens.
+	// Entry is the model's resolved figures, the catalog's overlaid by
+	// the agent's own; its output limit bounds every request's
+	// max_tokens, which asks OutputCap first.
 	Entry   models.Entry
 	Machine machine.Machine
 	Tools   *tools.Registry
@@ -547,16 +556,27 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	t.lastEstimate = tokencount.Estimate(&req)
 	sctx, stop := t.interruptible(ctx)
 	defer stop()
-	sent := t.h.c.Clock()
-	res, attempts, err := t.send(sctx, req)
-	latency := t.h.c.Clock().Sub(sent)
-	if err != nil {
-		if t.cut.Load() {
-			return t.canceledRequest(ctx, attempts, toolsSHA, latency)
+	limit := t.h.c.Entry.MaxOutputTokens
+	for {
+		began := t.h.c.Clock()
+		res, attempts, err := t.send(sctx, req)
+		si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began)}
+		if err != nil {
+			if t.cut.Load() {
+				return t.canceledRequest(ctx, si)
+			}
+			return t.modelFailed(ctx, err, si)
 		}
-		return t.modelFailed(ctx, err, attempts, toolsSHA, latency)
+		if res.StopReason != ir.StopMaxTokens || si.maxTokens >= limit {
+			return t.commitStep(sctx, res, si)
+		}
+		// The response stopped at the cap: the same request goes again
+		// at the model's output limit, once, in its place.
+		if err := t.escalate(sctx, res, si); err != nil {
+			return err
+		}
+		req.MaxTokens = &limit
 	}
-	return t.commitStep(sctx, res, attempts, toolsSHA, latency)
 }
 
 // signaled reports whether the turn's interrupt channel is closed.
@@ -599,12 +619,10 @@ func (t *turn) interruptible(ctx context.Context) (context.Context, func()) {
 // canceledRequest records a request an interrupt cut short: its
 // model.request with outcome canceled and no agent.message, and the turn
 // stops interrupted.
-func (t *turn) canceledRequest(ctx context.Context, attempts int, toolsSHA string, latency time.Duration) error {
-	c := t.h.c.Connection
-	mr, err := t.event(session.TypeModelRequest, session.ModelRequest{
-		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
-		ToolsSHA256: toolsSHA, LatencyMS: latency.Milliseconds(), Attempts: attempts, Outcome: "canceled",
-	})
+func (t *turn) canceledRequest(ctx context.Context, si sendInfo) error {
+	p := t.sentRequest(si)
+	p.Outcome = "canceled"
+	mr, err := t.event(session.TypeModelRequest, p)
 	if err != nil {
 		return err
 	}
@@ -643,6 +661,37 @@ func (t *turn) checkBudget(ctx context.Context) error {
 	return nil
 }
 
+// sendInfo is how one request was sent, as its model.request records
+// it: the max_tokens it asked, the hash of its tool definitions, and the
+// attempts it took and their time.
+type sendInfo struct {
+	maxTokens int64
+	toolsSHA  string
+	attempts  int
+	latency   time.Duration
+}
+
+// sentRequest is the model.request of a sent request, before its
+// response and outcome.
+func (t *turn) sentRequest(si sendInfo) session.ModelRequest {
+	c := t.h.c.Connection
+	return session.ModelRequest{
+		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
+		ToolsSHA256: si.toolsSHA, MaxTokens: si.maxTokens, LatencyMS: si.latency.Milliseconds(), Attempts: si.attempts,
+	}
+}
+
+// maxTokens is the max_tokens the thread's next request asks: OutputCap,
+// or the model's output limit when that is lower, and the output limit
+// while the turn continues a response that stopped at it.
+func (t *turn) maxTokens() int64 {
+	limit := t.h.c.Entry.MaxOutputTokens
+	if t.continuations > 0 {
+		return limit
+	}
+	return min(OutputCap, limit)
+}
+
 // request builds the step's IR request from the fold.
 func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, string, error) {
 	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, tr.System, t.l)
@@ -656,7 +705,7 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 	}
 	req, err := buildRequest(requestParts{
 		Model: t.h.c.Connection.Model, System: system, Messages: tr.Messages, Tools: defs,
-		MaxTokens: t.h.c.Entry.MaxOutputTokens, Effort: t.h.c.Effort, CacheKey: t.s.ID,
+		MaxTokens: t.maxTokens(), Effort: t.h.c.Effort, CacheKey: t.s.ID,
 		ReasoningReplay: t.h.c.Connection.EffectiveDialect() == ir.DialectOpenAIResponses,
 	})
 	return req, sum, err
@@ -709,15 +758,13 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 
 // modelFailed records a request that failed after its attempts and ends
 // the turn with error, keeping every earlier event of the turn.
-func (t *turn) modelFailed(ctx context.Context, err error, attempts int, toolsSHA string, latency time.Duration) error {
+func (t *turn) modelFailed(ctx context.Context, err error, si sendInfo) error {
 	if ctx.Err() != nil {
 		return err
 	}
-	c := t.h.c.Connection
-	mr, eerr := t.event(session.TypeModelRequest, session.ModelRequest{
-		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
-		ToolsSHA256: toolsSHA, LatencyMS: latency.Milliseconds(), Attempts: attempts, Outcome: "error", Error: err.Error(),
-	})
+	p := t.sentRequest(si)
+	p.Outcome, p.Error = "error", err.Error()
+	mr, eerr := t.event(session.TypeModelRequest, p)
 	if eerr != nil {
 		return eerr
 	}
@@ -745,8 +792,8 @@ func (t *turn) modelFailed(ctx context.Context, err error, attempts int, toolsSH
 // commitStep is commit point one and what follows it: model.request,
 // agent.message and the agent.tool_use of every valid call are durable
 // before any call runs.
-func (t *turn) commitStep(ctx context.Context, res models.Result, attempts int, toolsSHA string, latency time.Duration) error {
-	mrEvent, err := t.modelRequest(ctx, res, attempts, toolsSHA, latency)
+func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) error {
+	mrEvent, err := t.modelRequest(ctx, res, si, "ok")
 	if err != nil {
 		return err
 	}
@@ -763,7 +810,7 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, attempts int, 
 	if truncated {
 		t.continuations++
 		if t.continuations > MaxContinuations {
-			se, err := t.sessionError(CodeOutputTruncated, "the response stopped at the output limit three times in a row", true, "")
+			se, err := t.sessionError(CodeOutputTruncated, fmt.Sprintf("the response stopped at the output limit %d times in a row", MaxContinuations+1), true, "")
 			if err != nil {
 				return err
 			}
@@ -808,10 +855,31 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, attempts int, 
 	return nil
 }
 
+// escalate records a response that stopped at a max_tokens below the
+// model's output limit, before its request is sent again at the limit:
+// its model.request with outcome escalated, so its cost is spent, and no
+// agent.message, so the fold never sees the partial response and the
+// request sent again is not a continuation. The Observer discards the
+// step's partial output.
+func (t *turn) escalate(ctx context.Context, res models.Result, si sendInfo) error {
+	mr, err := t.modelRequest(ctx, res, si, "escalated")
+	if err != nil {
+		return err
+	}
+	if err := t.commit(ctx, mr); err != nil {
+		return err
+	}
+	if o := t.h.c.Observer; o != nil {
+		o.OnReset(t.thread, t.num, t.step)
+	}
+	return nil
+}
+
 // modelRequest stores a response's raw body (and its request, while
 // capture is on) and returns the model.request event that records it,
-// with its cost. It also calibrates the next request's estimate.
-func (t *turn) modelRequest(ctx context.Context, res models.Result, attempts int, toolsSHA string, latency time.Duration) (session.Event, error) {
+// with its cost and outcome. It also calibrates the next request's
+// estimate.
+func (t *turn) modelRequest(ctx context.Context, res models.Result, si sendInfo, outcome string) (session.Event, error) {
 	respBlob, err := t.l.PutBlob(ctx, bytes.NewReader(res.RawResponse))
 	if err != nil {
 		return session.Event{}, fmt.Errorf("harness: store the response: %w", err)
@@ -822,14 +890,11 @@ func (t *turn) modelRequest(ctx context.Context, res models.Result, attempts int
 			return session.Event{}, fmt.Errorf("harness: store the request: %w", err)
 		}
 	}
-	c := t.h.c.Connection
-	mr := session.ModelRequest{
-		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), Codec: res.Codec,
-		PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion), ToolsSHA256: toolsSHA,
-		RequestSHA256: res.RequestSHA256, FoldSeq: t.seen, RequestBytes: res.RequestSize, RequestBlob: reqBlob, ResponseBlob: respBlob,
-		Usage: &res.Usage, LatencyMS: latency.Milliseconds(), FirstTokenMS: res.FirstToken.Milliseconds(),
-		StopReason: res.StopReason, Attempts: attempts, Outcome: "ok", Loss: res.Loss,
-	}
+	mr := t.sentRequest(si)
+	mr.Codec, mr.RequestSHA256, mr.RequestBytes = res.Codec, res.RequestSHA256, res.RequestSize
+	mr.FoldSeq, mr.RequestBlob, mr.ResponseBlob = t.seen, reqBlob, respBlob
+	mr.Usage, mr.FirstTokenMS, mr.StopReason, mr.Loss = &res.Usage, res.FirstToken.Milliseconds(), res.StopReason, res.Loss
+	mr.Outcome = outcome
 	if cost, src, err := models.Cost(models.FromLux(res.Usage), t.h.c.Entry); err == nil {
 		mr.CostUSDMicro, mr.CostSource = &cost, src
 	}

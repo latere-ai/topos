@@ -309,7 +309,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 		return false, err
 	}
 	req.ToolChoice = &ir.ToolChoice{Mode: ir.ToolChoiceNone}
-	sent := t.h.c.Clock()
+	began := t.h.c.Clock()
 	res, attempts, err := t.send(ctx, req)
 	if err != nil {
 		se, eerr := t.sessionError(CodeCompactionFailed, err.Error(), models.Retryable(err), "")
@@ -318,7 +318,8 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 		}
 		return false, t.finish(ctx, session.StopError, CodeCompactionFailed, se)
 	}
-	mr, err := t.modelRequest(ctx, res, attempts, toolsSHA, t.h.c.Clock().Sub(sent))
+	si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began)}
+	mr, err := t.modelRequest(ctx, res, si, "ok")
 	if err != nil {
 		return false, err
 	}

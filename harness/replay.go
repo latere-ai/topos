@@ -4,6 +4,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -22,11 +23,12 @@ import (
 // Rebuild is the harness's half of models.Replay (spec 007) for a
 // session this harness's configuration ran: each recorded request built
 // again as its step built it, the fold of the log through the request's
-// fold_seq, on the thread it ran on, with the prompt version, the model
-// and the dialect it recorded. A thread's configuration is its parent's
-// narrowed by its thread.started, as spawn and the advisor built it, and
-// a compaction's summary request is built from the range it summarized.
-// blobs reads the instruction files the fold names.
+// fold_seq, on the thread it ran on, with the prompt version, the
+// model, the dialect and the max_tokens it recorded. A thread's
+// configuration is its parent's narrowed by its thread.started, as spawn
+// and the advisor built it, and a compaction's summary request is built
+// from the range it summarized. blobs reads the instruction files the
+// fold names.
 //
 // A step whose log was redacted after it was sent, and one on a thread
 // whose subagent the configuration no longer names, cannot be built
@@ -63,6 +65,10 @@ func (h *Harness) Rebuild(s session.Session, blobs BlobReader) models.Rebuild {
 		if err != nil {
 			return models.Request{}, err
 		}
+		// A request asked the max_tokens its model.request records, and one
+		// recorded without it asked the model's output limit.
+		asked := cmp.Or(mr.MaxTokens, cfg.Entry.MaxOutputTokens)
+		req.MaxTokens = &asked
 		return models.Request{IR: req, Connection: cfg.Connection}, nil
 	}
 }

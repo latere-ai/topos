@@ -219,3 +219,48 @@ func TestASummaryRequestReplays(t *testing.T) {
 		t.Fatalf("replay %v", got)
 	}
 }
+
+// TestAnEscalatedStepReplays: a request sent at the output cap, the same
+// request sent again at the model's output limit, and a continuation
+// each replay with the max_tokens they recorded; a model.request that
+// records none replays at the output limit, as every request asked it
+// before the cap.
+func TestAnEscalatedStepReplays(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopMaxTokens, text("Part")), reply(ir.StopMaxTokens, text("Partly")), reply(ir.StopEndTurn, text("Done.")))
+	e.send(ctx, "Work.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	log := e.all()
+	if got := outcomes(e.replay(ctx, e.h, log)); !slices.Equal(got, []string{models.ReplayMatch, models.ReplayMatch, models.ReplayMatch}) {
+		t.Fatalf("replay %v", got)
+	}
+	var at []int
+	for i, ev := range log {
+		if ev.Type == session.TypeModelRequest {
+			at = append(at, i)
+		}
+	}
+	unrecorded := func(i int) []session.Event {
+		out := slices.Clone(log)
+		var mr session.ModelRequest
+		if err := out[i].Decode(&mr); err != nil {
+			t.Fatal(err)
+		}
+		mr.MaxTokens = 0
+		b, err := session.Marshal(mr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[i].Payload = b
+		return out
+	}
+	if got := outcomes(e.replay(ctx, e.h, unrecorded(at[1]))); got[1] != models.ReplayMatch {
+		t.Fatalf("a request at the output limit that records no max_tokens: %v", got)
+	}
+	if got := outcomes(e.replay(ctx, e.h, unrecorded(at[0]))); got[0] != models.ReplayMismatch {
+		t.Fatalf("a request at the cap that records no max_tokens: %v", got)
+	}
+}

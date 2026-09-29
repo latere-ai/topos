@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -280,8 +282,8 @@ func TestATurnRunsToolsAndEnds(t *testing.T) {
 		t.Fatalf("header %+v, %v", h, err)
 	}
 	first := e.stub.Requests()[0].Request
-	if first.MaxTokens == nil || *first.MaxTokens != 64_000 {
-		t.Fatalf("max_tokens %v, want the catalog's output limit", first.MaxTokens)
+	if first.MaxTokens == nil || *first.MaxTokens != OutputCap || mr.MaxTokens != OutputCap {
+		t.Fatalf("max_tokens %v, recorded %d, want the output cap %d", first.MaxTokens, mr.MaxTokens, OutputCap)
 	}
 	if len(first.System) == 0 || !strings.Contains(first.System[0].Text, "You are an agent") || !first.System[len(first.System)-1].CacheHint {
 		t.Fatalf("system prompt %+v", first.System)
@@ -305,10 +307,42 @@ func TestNoStepCap(t *testing.T) {
 	}
 }
 
+// asked is the max_tokens of each request the stub received, in order.
+func (e *env) asked() []int64 {
+	var out []int64
+	for _, r := range e.stub.Requests() {
+		var n int64
+		if r.Request.MaxTokens != nil {
+			n = *r.Request.MaxTokens
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// modelRequests are the payloads of the log's model.request events.
+func (e *env) modelRequests(ctx context.Context) []session.ModelRequest {
+	e.t.Helper()
+	var out []session.ModelRequest
+	for _, ev := range e.events(ctx, session.TypeModelRequest) {
+		var mr session.ModelRequest
+		if err := ev.Decode(&mr); err != nil {
+			e.t.Fatal(err)
+		}
+		out = append(out, mr)
+	}
+	return out
+}
+
+// TestATruncatedCallNeverRuns: a response that stops mid call at the
+// output cap is sent again at the model's output limit, and one that
+// stops there too is continued: neither's call runs, and the
+// continuation carries no tool_use of either.
 func TestATruncatedCallNeverRuns(t *testing.T) {
 	e := setup(t, nil)
 	ctx := t.Context()
 	e.stub.Script(model,
+		reply(ir.StopMaxTokens, text("Wri"), call("toolu_capped", "echo", `{"text":"x"}`)),
 		reply(ir.StopMaxTokens, text("Writing"), call("toolu_cut", "echo", `{"text":"x"}`)),
 		luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{text("Continued and done.")}, StopReason: ir.StopEndTurn}, Expect: func(r *ir.Request) error {
 			last := r.Messages[len(r.Messages)-1]
@@ -334,15 +368,101 @@ func TestATruncatedCallNeverRuns(t *testing.T) {
 	}
 	msgs := e.events(ctx, session.TypeAgentMessage)
 	var second session.AgentMessage
-	if err := msgs[1].Decode(&second); err != nil || second.ContinuationOf != msgs[0].ID {
-		t.Fatalf("continuation_of %q, want %s", second.ContinuationOf, msgs[0].ID)
+	if len(msgs) != 2 || msgs[1].Decode(&second) != nil || second.ContinuationOf != msgs[0].ID {
+		t.Fatalf("%d messages, continuation_of %q, want %s", len(msgs), second.ContinuationOf, msgs[0].ID)
+	}
+	// The continuation asks the output limit the truncated response
+	// reached, not the cap again.
+	if got, want := e.asked(), []int64{OutputCap, e.cfg.Entry.MaxOutputTokens, e.cfg.Entry.MaxOutputTokens}; !slices.Equal(got, want) {
+		t.Fatalf("max_tokens %v, want %v", got, want)
 	}
 }
 
+// TestAResponseAtTheCapIsSentAgainAtTheLimit: a response that stops at
+// the output cap is recorded as escalated, with no agent.message, and
+// its request is sent again unchanged but for max_tokens, the model's
+// output limit; the answer is the step's one message, not a
+// continuation, both requests are spent, and the next step asks the cap
+// again.
+func TestAResponseAtTheCapIsSentAgainAtTheLimit(t *testing.T) {
+	rec := &recorder{}
+	e := setup(t, func(c *Config) { c.Observer = rec })
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopMaxTokens, text("The first half")),
+		reply(ir.StopToolUse, text("The whole answer."), call("toolu_1", "echo", `{"text":"a"}`)),
+		reply(ir.StopEndTurn, text("Done.")),
+	)
+	e.send(ctx, "Answer at length.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	limit := e.cfg.Entry.MaxOutputTokens
+	if got, want := e.asked(), []int64{OutputCap, limit, OutputCap}; !slices.Equal(got, want) {
+		t.Fatalf("max_tokens %v, want %v", got, want)
+	}
+	reqs := e.stub.Requests()
+	if !reflect.DeepEqual(reqs[0].Request.Messages, reqs[1].Request.Messages) {
+		t.Fatalf("the request sent again differs from the capped one:\n%+v\n%+v", reqs[0].Request.Messages, reqs[1].Request.Messages)
+	}
+	mrs := e.modelRequests(ctx)
+	if len(mrs) != 3 || mrs[0].Outcome != "escalated" || mrs[0].MaxTokens != OutputCap || mrs[0].StopReason != ir.StopMaxTokens ||
+		mrs[1].Outcome != "ok" || mrs[1].MaxTokens != limit {
+		t.Fatalf("model.requests %+v", mrs)
+	}
+	evs := e.events(ctx, session.TypeModelRequest)
+	if evs[0].Step != evs[1].Step {
+		t.Fatalf("the request sent again is step %d, the capped one step %d", evs[1].Step, evs[0].Step)
+	}
+	msgs := e.events(ctx, session.TypeAgentMessage)
+	var first session.AgentMessage
+	if len(msgs) != 2 || msgs[0].Decode(&first) != nil || first.Request != evs[1].ID || first.Truncated || first.ContinuationOf != "" {
+		t.Fatalf("%d messages, the first %+v", len(msgs), first)
+	}
+	if n := len(e.echo.ran()); n != 1 {
+		t.Fatalf("the answer's call ran %d times", n)
+	}
+	if rec.resets != 1 {
+		t.Fatalf("resets %d, want one for the capped response", rec.resets)
+	}
+	if got := session.Spent(e.all()); got != 3*150 {
+		t.Fatalf("spent %d, want every request's cost", got)
+	}
+}
+
+// TestAModelBelowTheCapAsksItsOwnLimit: a model whose output limit is
+// under the cap asks its limit, and a response that stops there is
+// continued at once, never sent again.
+func TestAModelBelowTheCapAsksItsOwnLimit(t *testing.T) {
+	const limit = OutputCap / 2
+	e := setup(t, func(c *Config) { c.Entry.MaxOutputTokens = limit })
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopMaxTokens, text("Half")), reply(ir.StopEndTurn, text("And the rest.")))
+	e.send(ctx, "Answer at length.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	if got := e.asked(); !slices.Equal(got, []int64{limit, limit}) {
+		t.Fatalf("max_tokens %v, want the model's %d", got, limit)
+	}
+	mrs := e.modelRequests(ctx)
+	if len(mrs) != 2 || mrs[0].Outcome != "ok" || mrs[0].MaxTokens != limit {
+		t.Fatalf("model.requests %+v", mrs)
+	}
+	msgs := e.events(ctx, session.TypeAgentMessage)
+	var second session.AgentMessage
+	if len(msgs) != 2 || msgs[1].Decode(&second) != nil || second.ContinuationOf != msgs[0].ID {
+		t.Fatalf("%d messages, continuation_of %q", len(msgs), second.ContinuationOf)
+	}
+}
+
+// TestThreeTruncationsEndWithOutputLimit: after the capped response is
+// sent again, a turn continues MaxContinuations responses that stop at
+// the output limit and ends at the next.
 func TestThreeTruncationsEndWithOutputLimit(t *testing.T) {
 	e := setup(t, nil)
 	ctx := t.Context()
-	for range 3 {
+	for range MaxContinuations + 2 {
 		e.stub.Script(model, reply(ir.StopMaxTokens, text("more")))
 	}
 	e.send(ctx, "Go.")
@@ -351,8 +471,14 @@ func TestThreeTruncationsEndWithOutputLimit(t *testing.T) {
 	}
 	errs := e.events(ctx, session.TypeSessionError)
 	var se session.SessionError
-	if len(errs) != 1 || errs[0].Decode(&se) != nil || se.Code != CodeOutputTruncated {
+	if len(errs) != 1 || errs[0].Decode(&se) != nil || se.Code != CodeOutputTruncated || !strings.Contains(se.Message, fmt.Sprint(MaxContinuations+1)) {
 		t.Fatalf("session.error %+v", errs)
+	}
+	if n := len(e.events(ctx, session.TypeAgentMessage)); n != MaxContinuations+1 {
+		t.Fatalf("%d messages, want one per response at the output limit", n)
+	}
+	if n := len(e.stub.Requests()); n != MaxContinuations+2 {
+		t.Fatalf("%d requests", n)
 	}
 }
 
@@ -447,7 +573,7 @@ func TestAFailureKeepsEarlierEvents(t *testing.T) {
 	}
 	reqs := e.events(ctx, session.TypeModelRequest)
 	var mr session.ModelRequest
-	if err := reqs[len(reqs)-1].Decode(&mr); err != nil || mr.Outcome != "error" || mr.Attempts != 1 {
+	if err := reqs[len(reqs)-1].Decode(&mr); err != nil || mr.Outcome != "error" || mr.Attempts != 1 || mr.MaxTokens != OutputCap {
 		t.Fatalf("the failed request %+v, %v", mr, err)
 	}
 	var se session.SessionError

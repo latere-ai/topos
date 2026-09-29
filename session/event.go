@@ -263,9 +263,14 @@ type ModelRequest struct {
 	FirstTokenMS  int64         `json:"first_token_ms,omitempty"`
 	StopReason    ir.StopReason `json:"stop_reason,omitempty"`
 	Attempts      int           `json:"attempts,omitempty"`
-	Outcome       string        `json:"outcome"`
-	Error         string        `json:"error,omitempty"`
-	Loss          []string      `json:"loss,omitempty"`
+	// Outcome is ok, error, canceled, or escalated: a response that
+	// stopped at a max_tokens below the model's output limit, whose
+	// request was sent again at the limit (spec 005).
+	Outcome string `json:"outcome"`
+	Error   string `json:"error,omitempty"`
+	// MaxTokens is the max_tokens the request asked.
+	MaxTokens int64    `json:"max_tokens,omitempty"`
+	Loss      []string `json:"loss,omitempty"`
 	// FoldSeq is the log's last sequence when the request was built:
 	// the request is the fold of the events through it, which a replay
 	// folds again (spec 007).
