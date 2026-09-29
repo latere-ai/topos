@@ -78,6 +78,15 @@ func OpenAPI(server string) ([]byte, error) {
 
 var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 
+// paramDescriptions say how the API reads a path parameter where a
+// client needs to know it: a name is unique within its owner, so a name
+// reads among the caller's own objects, and an id reads its object
+// whoever owns it.
+var paramDescriptions = map[string]string{
+	"name": "The name, unique within its owner, the subject that applied it. An apply acts on the caller's own object of the name and creates it when the caller holds none; an object of the name another subject holds is neither read nor changed.",
+	"ref":  "An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.",
+}
+
 // operation is one route as the document describes it. x-topos-actions
 // names the questions the route asks the authorizer.
 func operation(rt route) yaml.MapSlice {
@@ -89,10 +98,11 @@ func operation(rt route) yaml.MapSlice {
 	}
 	var params []yaml.MapSlice
 	for _, m := range pathParam.FindAllStringSubmatch(rt.path, -1) {
-		params = append(params, yaml.MapSlice{
-			{Key: "name", Value: m[1]}, {Key: "in", Value: "path"}, {Key: "required", Value: true},
-			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}},
-		})
+		param := yaml.MapSlice{{Key: "name", Value: m[1]}, {Key: "in", Value: "path"}, {Key: "required", Value: true}}
+		if d, ok := paramDescriptions[m[1]]; ok {
+			param = append(param, yaml.MapItem{Key: "description", Value: d})
+		}
+		params = append(params, append(param, yaml.MapItem{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}))
 	}
 	if len(params) > 0 {
 		op = append(op, yaml.MapItem{Key: "parameters", Value: params})

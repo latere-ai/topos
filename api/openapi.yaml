@@ -11,7 +11,7 @@ paths:
   /agents/{name}:
     put:
       operationId: applyAgent
-      summary: Apply an Agent manifest; a changed spec creates a version
+      summary: Apply an Agent manifest to the caller's own agent of the name; a changed spec creates a version
       x-topos-actions:
         - agent.create
         - agent.update
@@ -20,6 +20,7 @@ paths:
         - name: name
           in: path
           required: true
+          description: The name, unique within its owner, the subject that applied it. An apply acts on the caller's own object of the name and creates it when the caller holds none; an object of the name another subject holds is neither read nor changed.
           schema:
             type: string
       requestBody:
@@ -45,13 +46,14 @@ paths:
   /agents/{ref}:
     get:
       operationId: getAgent
-      summary: Get an agent's latest version by name or id
+      summary: Get an agent's latest version by id, or by name among the caller's own agents
       x-topos-actions:
         - agent.read
       parameters:
         - name: ref
           in: path
           required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
           schema:
             type: string
       responses:
@@ -69,6 +71,7 @@ paths:
         - name: ref
           in: path
           required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
           schema:
             type: string
       responses:
@@ -86,6 +89,7 @@ paths:
         - name: ref
           in: path
           required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
           schema:
             type: string
         - name: "n"
@@ -108,6 +112,7 @@ paths:
         - name: ref
           in: path
           required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
           schema:
             type: string
       requestBody:
@@ -121,7 +126,7 @@ paths:
   /sessions:
     post:
       operationId: createSession
-      summary: Create a session of an agent
+      summary: Create a session of an agent, named by id or by name among the caller's own agents
       x-topos-actions:
         - session.create
       requestBody:

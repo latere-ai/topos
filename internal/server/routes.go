@@ -16,11 +16,11 @@ func table() []route {
 	a := func(actions ...string) []string { return actions }
 	return []route{
 		{method: http.MethodPut, path: "/agents/{name}", actions: a(authorizer.ActionAgentCreate, authorizer.ActionAgentUpdate, authorizer.ActionAgentRead),
-			op: "applyAgent", summary: "Apply an Agent manifest; a changed spec creates a version", status: http.StatusOK, body: MaxBody, handle: (*call).applyAgent},
+			op: "applyAgent", summary: "Apply an Agent manifest to the caller's own agent of the name; a changed spec creates a version", status: http.StatusOK, body: MaxBody, handle: (*call).applyAgent},
 		{method: http.MethodGet, path: "/agents", actions: a(authorizer.ActionAgentList),
 			op: "listAgents", summary: "List agents", status: http.StatusOK, handle: (*call).listAgents},
 		{method: http.MethodGet, path: "/agents/{ref}", actions: a(authorizer.ActionAgentRead),
-			op: "getAgent", summary: "Get an agent's latest version by name or id", status: http.StatusOK, handle: (*call).getAgent},
+			op: "getAgent", summary: "Get an agent's latest version by id, or by name among the caller's own agents", status: http.StatusOK, handle: (*call).getAgent},
 		{method: http.MethodGet, path: "/agents/{ref}/versions", actions: a(authorizer.ActionAgentRead),
 			op: "listAgentVersions", summary: "List an agent's versions", status: http.StatusOK, handle: (*call).listAgentVersions},
 		{method: http.MethodGet, path: "/agents/{ref}/versions/{n}", actions: a(authorizer.ActionAgentRead),
@@ -28,7 +28,7 @@ func table() []route {
 		{method: http.MethodPost, path: "/agents/{ref}/archive", actions: a(authorizer.ActionAgentArchive),
 			op: "archiveAgent", summary: "Archive an agent; running sessions keep their version", status: http.StatusOK, body: MaxBody, handle: (*call).archiveAgent},
 		{method: http.MethodPost, path: "/sessions", actions: a(authorizer.ActionSessionCreate),
-			op: "createSession", summary: "Create a session of an agent", status: http.StatusCreated, body: MaxBody, handle: (*call).createSession},
+			op: "createSession", summary: "Create a session of an agent, named by id or by name among the caller's own agents", status: http.StatusCreated, body: MaxBody, handle: (*call).createSession},
 		{method: http.MethodGet, path: "/sessions", actions: a(authorizer.ActionSessionList),
 			op: "listSessions", summary: "List sessions, filtered by agent, status and runner", status: http.StatusOK, handle: (*call).listSessions},
 		{method: http.MethodGet, path: "/sessions/{id}", actions: a(authorizer.ActionSessionRead),
