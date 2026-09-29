@@ -6,7 +6,7 @@ depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 006-identity
 affects: [internal/store/postgres/, internal/store/dir/, internal/blob/, internal/serve/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-29
 author: changkun
 ---
 
@@ -69,8 +69,11 @@ an index on `(owner, id)` so a list narrowed to its owners
 ### Agents and idempotency on Postgres
 
 `PutVersion` is one transaction. Version 1 inserts the `agents` row
-and the version; a unique violation on the id or the name is
-`ErrConflict`. A later version locks the agent's row with
+and the version; a unique violation on the id or on `(owner, name)` is
+`ErrConflict`. A name is unique within its owner, not across the
+installation ([[015-api]]): the constraint is `UNIQUE (owner, name)`,
+whose index serves a read of an owner's name, and the directory and
+memory stores index names the same way. A later version locks the agent's row with
 `SELECT ... FOR UPDATE`, is `ErrConflict` unless it follows
 `latest_version`, and inserts the version and moves `latest_version`
 before the lock is released, so replicas racing one version store it

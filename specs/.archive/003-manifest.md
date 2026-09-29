@@ -6,7 +6,7 @@ depends_on: [001-architecture.md]
 affects: [manifest/, manifest/v1/, manifest/testdata/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-28
+updated: 2026-09-29
 author: changkun
 ---
 
@@ -72,7 +72,9 @@ spec:
 Field names are camelCase, as the family's manifests are; the session
 log's snake_case JSON is [[004-session-log]]'s, and the two never mix
 in one object. `metadata.name` is a DNS label (lowercase letters,
-digits and hyphens, at most 63 characters). Labels and annotations
+digits and hyphens, at most 63 characters), unique within its owner: on
+a server two subjects may each hold an agent of one name ([[015-api]]).
+Labels and annotations
 under `topos.latere.ai/` are the core's own, and a manifest that sets
 one is refused. `status` is written by the server or the local resolver
 and ignored on input: `id`, `version`, `digest` (the `sha256:` of the
@@ -158,6 +160,9 @@ store as a name or `mem_<ulid>`; a Connection by name only, since it has
 no id. A name resolves first to a document of the same file, then
 through a `Lookup` its caller supplies (the server's store, or the local
 state directory for the CLI); an id resolves through the `Lookup`. The
+server's `Lookup` reads a name among the caller's own agents and an id
+whoever owns it, so a reference to a name only another subject holds is
+`unknown_reference`, as one to a name nobody holds is ([[015-api]]). The
 resolver writes the resolved spec with ids and versions in place of
 names: a subagent as `agent_<ulid>@<n>`, so a resolved Agent pins its
 subagents' versions; a trigger's `agent` as `agent_<ulid>`, so the
@@ -280,6 +285,7 @@ key on apply ([[018-credentials-and-secrets]]).
 | Resolving the same Agent against its stored version keeps that id and version, and changed instructions resolve to the next version under the same id | `manifest.TestAgentVersioning`, `manifest.TestStoredObjectsKeepTheirIDs` | built |
 | Applying the same Agent twice through the API creates one version; changing its instructions creates the next under the same id | `internal/server.TestApplyingAnAgentVersionsItsSpec` | built |
 | A resolved Agent pins each subagent reference to an id and version, and every unknown reference is reported in one `unknown_reference` | `manifest.TestReferencesPinVersions`, `manifest.TestStoredSubagentsArePinnedTransitively` | built |
+| Through the API a subagent reference by name pins the caller's own agent of the name, and a name, id or pinned id of another subject's agent is `unknown_reference` | `internal/server.TestNamesArePerOwner`, `internal/server.TestAnotherSubjectsAgentIsNotThere` | built |
 | `threads.maxDepth: 5` and a Connection with `mode: person` and a `credential` are refused | `manifest.TestValidationRules` | built |
 | An agent's repositories resolve into its spec as written, and one that is not `https`, names no host, holds a credential (refused with a detail that does not carry it), has a ref git would read as an option, or is past the limit is refused | `manifest.TestAnAgentNamesItsRepositories`, `manifest.TestValidationRules` | built |
 | A label under `topos.latere.ai/` is refused | `manifest.TestReservedLabelsRefused` | built |
