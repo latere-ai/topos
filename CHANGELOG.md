@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.3 - 2026-09-30
+
 - An agent knows its session's repositories from its first turn. A
   hosted session's sandbox opens only when a tool first acts on it, and
   its repositories were named to the model only then, so an agent asked
