@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A session's `budget.spent_cost_usd_micro` reports what it has spent:
+  every store adds each `model.request`'s cost to the session as the
+  event is appended, and the directory store writes the session when a
+  request's cost arrives, not only at a status change. It stayed 0 for
+  every session, so the console and the API showed nothing spent, though
+  the budget ceiling itself was enforced from the log.
 - A model request asks at most 8192 output tokens as its `max_tokens`,
   or the model's output limit when that is lower, rather than the whole
   output limit. A gateway that reserves a request's `max_tokens` at the

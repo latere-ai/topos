@@ -39,6 +39,7 @@ func Run(t *testing.T, open Open) {
 		{"AppendRetryIsIdempotent", testAppendRetryIsIdempotent},
 		{"AppendRejectsBadBatch", testAppendRejectsBadBatch},
 		{"AppendMirrorsStatus", testAppendMirrorsStatus},
+		{"AppendMirrorsSpend", testAppendMirrorsSpend},
 		{"AppendedEventIsNeverRewritten", testNeverRewritten},
 		{"EventsWindow", testEventsWindow},
 		{"Watch", testWatch},
@@ -274,6 +275,30 @@ func testAppendMirrorsStatus(t *testing.T, st session.Store) {
 	}
 	if !got.UpdatedAt.Equal(t1.Add(time.Second)) {
 		t.Fatalf("updated_at %s", got.UpdatedAt)
+	}
+}
+
+// testAppendMirrorsSpend: a read of a session reports as spent the sum of
+// its model.requests' costs, as the budget meter counts them, while it
+// runs and with no session.status after them.
+func testAppendMirrorsSpend(t *testing.T, st session.Store) {
+	s := create(t, st)
+	cost := func(c int64, at time.Time) session.Event {
+		e, err := session.NewEvent(session.TypeModelRequest, session.ModelRequest{Model: "m", CostUSDMicro: &c}, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Turn = 1
+		return e
+	}
+	last := appendAll(t, st, s.ID, 0, Status(t, session.StatusRunning, "", t0), cost(4581, t0.Add(time.Second)))
+	appendAll(t, st, s.ID, last, cost(4779, t0.Add(2*time.Second)))
+	got, err := st.Get(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Budget.SpentCostUSDMicro != 4581+4779 {
+		t.Fatalf("spent %d, want %d", got.Budget.SpentCostUSDMicro, 4581+4779)
 	}
 }
 

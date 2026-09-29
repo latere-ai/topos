@@ -265,7 +265,11 @@ func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events [
 			return err
 		}
 		session.ApplyBatch(hdr, events)
-		if slices.ContainsFunc(events, func(e session.Event) bool { return e.Type == session.TypeSessionStatus }) {
+		// The header is written when the batch changes what a read of the
+		// session reports beside its sequence: its status or its spend.
+		if slices.ContainsFunc(events, func(e session.Event) bool {
+			return e.Type == session.TypeSessionStatus || e.Type == session.TypeModelRequest
+		}) {
 			if err := s.writeHeader(id, *hdr); err != nil {
 				return err
 			}
