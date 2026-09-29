@@ -6,15 +6,18 @@ package server
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"latere.ai/x/pkg/authz"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/internal/hosted"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
+	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
 // modelEvents are a session's session.model_changed events.
@@ -38,8 +41,8 @@ func (f *fixture) modelEvents(id string) []session.ModelChanged {
 	return out
 }
 
-// TestASessionSwitchesItsModel: a switch is checked against the figures
-// the runner will connect the model with, asked of the authorizer as
+// TestASessionSwitchesItsModel: a switch is checked by the rule a
+// session's create checks its agent's model by, asked of the authorizer as
 // session.update with the session and the model, and recorded as
 // session.model_changed from the agent's model, which the answer's
 // model carries; a switch back names the switched model as the old one,
@@ -51,9 +54,10 @@ func TestASessionSwitchesItsModel(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		o.Figures = func(_ context.Context, m v1.AgentModel, overlay models.Entry) (models.Entry, error) {
+		o.Runnable = func(_ context.Context, m v1.AgentModel, overlay models.Entry) error {
 			checked = append(checked, m)
-			return cat.Resolve(m.Name, overlay)
+			_, err := cat.Resolve(m.Name, overlay)
+			return err
 		}
 	})
 	f.apply("alice", "reviewer", "Review.")
@@ -78,8 +82,8 @@ func TestASessionSwitchesItsModel(t *testing.T) {
 	if fields["id"] != s.ID || fields["session_id"] != s.ID || fields["model"] != sonnet || fields["owner"] != alice {
 		t.Fatalf("session.update asked about %v", fields)
 	}
-	if len(checked) != 1 || checked[0].Name != sonnet {
-		t.Fatalf("the figures were checked for %+v", checked)
+	if len(checked) != 2 || checked[0].Name != "claude-haiku-4-5" || checked[1].Name != sonnet {
+		t.Fatalf("the create and the switch checked %+v", checked)
 	}
 	changes := f.modelEvents(s.ID)
 	if len(changes) != 1 || changes[0].Old.Name != "claude-haiku-4-5" || changes[0].New.Name != sonnet || changes[0].By.Subject != alice {
@@ -163,5 +167,43 @@ func TestAModelSwitchIsRefused(t *testing.T) {
 	}
 	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`); a.code() != CodeConflict {
 		t.Fatalf("a switch of an ended session: %d %s", a.status, a.body)
+	}
+}
+
+// TestASwitchRunsWhatACreateRuns: on a hosted installation whose runners
+// read Lux's doors with each session's own key, and which holds no
+// TOPOS_MODELS_KEY, a session is created of an agent whose model the
+// embedded catalog does not name, and a session switches to such a
+// model: the one check both ask routes it through Lux's OpenAI door, as
+// the runner does, rather than refusing it unread.
+func TestASwitchRunsWhatACreateRuns(t *testing.T) {
+	stub := luxstub.New(t)
+	runnable, err := hosted.Runnable(hosted.Options{ModelsURL: stub.URL(), Doors: models.Doors{"anthropic": stub.URL() + "/anthropic", "openai": stub.URL() + "/openai"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, func(o *Options) { o.Runnable = runnable })
+	const doorOnly = "deepseek/deepseek-v4-flash-0731"
+	cat, err := models.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, known := cat.Lookup(doorOnly); known {
+		t.Fatalf("the embedded catalog names %s", doorOnly)
+	}
+	doc := strings.Replace(agentYAML("routed", "Route."), "model: {name: claude-haiku-4-5}", "model: {name: "+doorOnly+"}", 1)
+	if a := f.do(http.MethodPut, "/v1/agents/routed", "alice", doc); a.status != http.StatusCreated {
+		t.Fatalf("apply: %d %s", a.status, a.body)
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"routed"}`); a.status != http.StatusCreated {
+		t.Fatalf("a create of an agent whose model only the door names: %d %s", a.status, a.body)
+	}
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"model":{"name":"`+doorOnly+`"}}`); a.status != http.StatusOK {
+		t.Fatalf("a switch to a model only the door names: %d %s", a.status, a.body)
+	}
+	if changes := f.modelEvents(s.ID); len(changes) != 1 || changes[0].New.Name != doorOnly {
+		t.Fatalf("session.model_changed %+v", changes)
 	}
 }

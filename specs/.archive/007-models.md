@@ -122,6 +122,20 @@ turn with its code (`model_unknown`, `model_unavailable`) as a
 switch or message. Every `model.request` records the model it asked,
 so a replay rebuilds each request with its own.
 
+Whether an installation runs a model is one check, which the server
+makes of a session's model at its create and at a switch
+([[015-api]]): the model is routed as the runner routes it, to its
+family's door or, for a model neither the catalog nor the agent gives a
+family, to Lux's OpenAI door, and its figures are resolved as the
+runner resolves them, the door's list read with `TOPOS_MODELS_KEY`. An
+installation without that key has its runners read each door with the
+session's own Lux key, which the server does not hold and without which
+a Lux door lists no model, so there a model that goes through a Lux door
+passes the check and its figures are read at the turn; a model the
+door's list then lacks closes the turn `model_unknown`. A model at a
+provider's own API passes on the catalog's and the agent's figures
+alone.
+
 A model whose figures do not say it takes images (`supports.images`,
 from the door's list or the catalog) gets, in the place of
 each image a message carries, a note that it cannot see it
@@ -371,6 +385,7 @@ with the provider's own SDK ([[025-task-suite]]).
 | `toposd serve` and `toposd runner` exit 1 with one configuration line with no `TOPOS_MODELS_URL` or with a `scripted:` one | `cmd/toposd.TestServeRefusesScriptedModel` | built |
 | A stream that ends before its dialect's terminal frame is an incomplete response and is retried, in every dialect; an error event inside a stream, an unreachable server and a canceled request are classified | `models/dialect.TestErrorsAreClassifiedForRetry` | built |
 | A retry of a stream reuses no partial output: the stored message equals the final attempt's response | `harness.TestRetriedStreamStoresFinalAttempt` | built |
+| The one check of a session's model routes and resolves it as the runner does: with `TOPOS_MODELS_KEY` the door's list decides, without it a model through a Lux door passes and one at a provider's API needs the catalog's figures | `internal/hosted.TestRunnable` | built |
 | A turn starts on the model its session names: a session that switched runs its next turn on the switched model's connection and figures, and a model the configuration cannot connect closes the turn with its code | `harness.TestATurnRunsOnTheSessionsModel`, `runner.TestAModelSwitchAppliesToTheNextTurn` | built |
 | The credential reaches the gateway in its header and never appears in any event or blob of a session, every request's bytes captured | `harness.TestModelCredentialNeverLogged` | built |
 

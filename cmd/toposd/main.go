@@ -143,22 +143,20 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	}()
 	queue := runner.NewQueue(st.sessions, 0)
 	// The doors are read once, for the runners and for the API's check of
-	// a model a session switches to; a server that runs no session reads
-	// none and checks models at TOPOS_MODELS_URL as it is.
-	var doors models.Doors
-	if cfg.RunnerCapacity > 0 {
-		if doors, err = discoverDoors(ctx, cfg); err != nil {
-			return fail(stderr, err)
-		}
+	// a session's model at its create and at a switch, which routes a
+	// model as its runner does whether or not this server runs sessions.
+	doors, err := discoverDoors(ctx, cfg)
+	if err != nil {
+		return fail(stderr, err)
 	}
-	figures, err := hosted.Figures(hosted.Options{ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL)})
+	runnable, err := hosted.Runnable(hosted.Options{ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL)})
 	if err != nil {
 		return fail(stderr, err)
 	}
 	so := server.Options{
 		Sessions: st.sessions, Objects: st.objects, Verifier: id.verifier, Guard: id.guard,
 		PublicURL: cfg.PublicURL, BasePath: cfg.BasePath, Log: log, Notify: queue.Notify, HostSessions: cfg.HostSessions,
-		Cella: cfg.CellaURL != "", Figures: figures,
+		Cella: cfg.CellaURL != "", Runnable: runnable,
 	}
 	minter, identities, err := newMinter(cfg, st)
 	if err != nil {

@@ -21,17 +21,26 @@ committed: the commit log already holds that.
   tool needs it.
 - A session's model can change between turns. `PATCH /v1/sessions/{id}`
   with `{"model": {"name": "..."}}` sets the model the session's next
-  turn runs: the name is resolved as an agent's model is, from the
-  embedded catalog and the Lux door's figures (`model_unknown` for a
-  name no source gives a window and an output limit, `model_unavailable`
-  for a gateway that does not answer), then asked of the authorizer as
-  the new action `session.update` with `session_id` and `model`, whose
-  deny is `forbidden` with its reason. An allowed switch appends
+  turn runs. The name is checked as a session's create checks its
+  agent's model (below), so a switch takes every model a session could
+  have been created with, then asked of the authorizer as the new
+  action `session.update` with `session_id` and `model`, whose deny is
+  `forbidden` with its reason. An allowed switch appends
   `session.model_changed` `{by, old, new}` and the Session carries
   `model`; a turn already running keeps its model, and the next turn
   runs on the new one with its own window, output limit and prices. The
   agent's own model's name switches back to the agent's model as it
   names it.
+- A session's create checks that the installation runs its agent's
+  model, by the rule the runner connects it with: `model_unknown` (422)
+  for a model no source gives an input window and an output limit, and
+  `model_unavailable` (503) for a gateway that does not answer, where
+  such a session was created and failed its first turn. On an
+  installation without `TOPOS_MODELS_KEY`, whose runners read Lux's
+  doors with each session's own key, a model that goes through a Lux
+  door passes and its figures are read at the turn. `toposd serve`
+  reads the Lux root's doors at start whether or not it runs sessions
+  itself.
 - A person's message can carry images and files. A `user.message`'s
   `content` takes inline images, PNG, JPEG, GIF or WebP as base64
   `data`, at most 8 of at most 5 MiB each, which reach the model as

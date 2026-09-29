@@ -169,6 +169,11 @@ func (c *call) createSession() error {
 	if err != nil {
 		return err
 	}
+	// The session runs its agent's model, checked by the rule a switch of
+	// its model is checked by (spec 007).
+	if err := c.s.runnable(ctx, cfg.Model, cfg.Overlay); err != nil {
+		return err
+	}
 	kind := m.Kind
 	// The session's id is minted before the question, so the authorizer
 	// records the session every later token names, with the agent's

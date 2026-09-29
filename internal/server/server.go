@@ -101,12 +101,14 @@ type Options struct {
 	// Identities is the identity provider that hosts the installation's
 	// agents (spec 018); nil gives agents no identity.
 	Identities Identities
-	// Figures resolves the figures of a model a session switches to, as
-	// its runner will connect it (spec 015): a models.Coded model_unknown
-	// for a model no source gives a window and an output limit, and any
-	// other error for figures that could not be read. Nil resolves
-	// against the embedded catalog alone.
-	Figures func(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Entry, error)
+	// Runnable answers whether the installation runs a session's model,
+	// by the rule its runner connects it with (spec 007), at the create
+	// of a session and at a switch of its model (spec 015): nil, a
+	// models.Coded model_unknown for a model no source gives a window and
+	// an output limit, or another error for a model whose figures could
+	// not be read. hosted.Runnable is the one toposd runs; nil answers
+	// from the embedded catalog alone.
+	Runnable func(ctx context.Context, m v1.AgentModel, overlay models.Entry) error
 }
 
 // Server answers the API.
@@ -153,13 +155,14 @@ func New(o Options) (*Server, error) {
 	if o.Notify == nil {
 		o.Notify = func() {}
 	}
-	if o.Figures == nil {
+	if o.Runnable == nil {
 		cat, err := models.Embedded()
 		if err != nil {
 			return nil, err
 		}
-		o.Figures = func(_ context.Context, m v1.AgentModel, overlay models.Entry) (models.Entry, error) {
-			return cat.Resolve(m.Name, overlay)
+		o.Runnable = func(_ context.Context, m v1.AgentModel, overlay models.Entry) error {
+			_, err := cat.Resolve(m.Name, overlay)
+			return err
 		}
 	}
 	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now}), streams: newSlots(o.MaxStreams), root: root, rootURL: rootURL}

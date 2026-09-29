@@ -222,72 +222,95 @@ func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.En
 	return model, conn, entry, nil
 }
 
-// resolve is the connection and the figures of one spec.model at base:
-// the embedded catalog's, overlaid by the figures a Lux door serves for
-// the model, read with credential, then by the agent's own. An empty
-// credential reads the door's list without a key.
+// resolve is the connection and the figures of one spec.model at base,
+// its route's door read with credential.
 func (b builder) resolve(ctx context.Context, m v1.AgentModel, overlay models.Entry, base, credential string) (models.Connection, models.Entry, error) {
-	// The family and the dialect pick the door, whose list may name the
-	// model's figures; a model known to neither the catalog nor the
-	// agent is still asked of its door before it is refused.
-	first := b.cat.Overlay(m.Name, overlay)
-	spoken := first.Dialect
-	if m.BaseURL == "" {
-		if spoken == "" && len(b.o.Doors) > 0 {
-			// A model neither the catalog nor the agent gives a family goes
-			// through Lux's OpenAI door, which serves every model Lux
-			// routes, and whose list gives the model's figures; without a
-			// door it would never be asked, and refused as unknown.
-			spoken = ir.DialectOpenAIChat
-		}
-		base = b.o.Doors.Door(base, spoken)
-	}
-	conn := models.Connection{BaseURL: base, Model: m.Name, Credential: credential, Family: first.Family, Dialect: spoken}
-	var served models.Entry
-	if models.NamesADoor(base) {
-		var err error
-		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
-			return models.Connection{}, models.Entry{}, setup(CodeModelUnavailable, err)
-		}
-	}
-	entry, err := b.cat.Resolve(m.Name, served, overlay)
+	conn := b.route(m, overlay, base)
+	conn.Credential = credential
+	entry, err := b.figures(ctx, conn, m, overlay)
 	if err != nil {
 		return models.Connection{}, models.Entry{}, err
-	}
-	if entry.Dialect == "" {
-		entry.Dialect = spoken
 	}
 	conn.Family, conn.Dialect = entry.Family, entry.Dialect
 	return conn, entry, nil
 }
 
-// Figures is the check a server makes of a model a session switches to
-// (spec 015): the figures connect would resolve for the spec.model and
-// overlay, read at the installation's model URL with TOPOS_MODELS_KEY,
-// or without a key when it is unset, since a session's own key is its
-// runner's. A model no source gives an input window and an output limit
-// is models.CodeUnknown, and a door that does not answer
+// route is the connection of one spec.model at base, without its
+// credential: the family and the dialect the embedded catalog and the
+// agent give pick the door when base is the installation's model URL,
+// and a model neither gives a family goes through Lux's OpenAI door,
+// which serves every model Lux routes and whose list gives the model's
+// figures; without a door it would never be asked, and refused as
+// unknown. An agent's own base URL is used as it is.
+func (b builder) route(m v1.AgentModel, overlay models.Entry, base string) models.Connection {
+	first := b.cat.Overlay(m.Name, overlay)
+	spoken := first.Dialect
+	if m.BaseURL == "" {
+		if spoken == "" && len(b.o.Doors) > 0 {
+			spoken = ir.DialectOpenAIChat
+		}
+		base = b.o.Doors.Door(base, spoken)
+	}
+	return models.Connection{BaseURL: base, Model: m.Name, Family: first.Family, Dialect: spoken}
+}
+
+// figures are the model's figures on conn: the embedded catalog's,
+// overlaid by those a Lux door serves for the model, read with the
+// connection's credential, then by the agent's own. A model no source
+// gives an input window and an output limit is model_unknown.
+func (b builder) figures(ctx context.Context, conn models.Connection, m v1.AgentModel, overlay models.Entry) (models.Entry, error) {
+	var served models.Entry
+	if models.NamesADoor(conn.BaseURL) {
+		var err error
+		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
+			return models.Entry{}, setup(CodeModelUnavailable, err)
+		}
+	}
+	entry, err := b.cat.Resolve(m.Name, served, overlay)
+	if err != nil {
+		return models.Entry{}, err
+	}
+	if entry.Dialect == "" {
+		entry.Dialect = conn.Dialect
+	}
+	return entry, nil
+}
+
+// Runnable is the one answer to whether this installation runs a
+// spec.model (spec 007), which the server asks of a session's model at
+// its create and at a switch (spec 015): the model resolves by the rule
+// its runner connects it with, route and figures. The door's list is
+// read with TOPOS_MODELS_KEY, as the runner reads it without a session
+// key. An installation without that key has each runner read its
+// doors with the session's own Lux key, which the server does not hold
+// and without which a door lists nothing, so a model that goes through
+// a Lux door there runs, and its figures are the runner's to read at the
+// turn. A model no source gives an input window and an output limit is
+// models.CodeUnknown, and a door that does not answer, or no model URL,
 // models.CodeUnavailable.
-func Figures(o Options) (func(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Entry, error), error) {
+func Runnable(o Options) (func(ctx context.Context, m v1.AgentModel, overlay models.Entry) error, error) {
 	cat, err := models.Embedded()
 	if err != nil {
 		return nil, err
 	}
 	b := builder{o: o, cat: cat}
-	return func(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Entry, error) {
+	return func(ctx context.Context, m v1.AgentModel, overlay models.Entry) error {
 		base := cmp.Or(m.BaseURL, o.ModelsURL)
 		if base == "" {
-			return models.Entry{}, &models.Coded{Code: models.CodeUnavailable, Message: "the agent names no base URL and TOPOS_MODELS_URL is unset"}
+			return &models.Coded{Code: models.CodeUnavailable, Message: "the agent names no base URL and TOPOS_MODELS_URL is unset"}
 		}
-		credential := ""
+		conn := b.route(m, overlay, base)
 		if m.BaseURL == "" {
-			credential = o.ModelsKey
+			if o.ModelsKey == "" && models.NamesADoor(conn.BaseURL) {
+				return nil
+			}
+			conn.Credential = o.ModelsKey
 		}
-		_, entry, err := b.resolve(ctx, m, overlay, base, credential)
+		_, err := b.figures(ctx, conn, m, overlay)
 		if se, ok := errors.AsType[*runner.SetupError](err); ok {
 			err = &models.Coded{Code: se.Code, Message: se.Err.Error()}
 		}
-		return entry, err
+		return err
 	}, nil
 }
 

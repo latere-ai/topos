@@ -4,12 +4,14 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/manifest"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 )
@@ -22,8 +24,8 @@ type updateBody struct {
 
 // updateSession is PATCH /sessions/{id}: the model the session's next
 // turn runs (spec 015). A caller who may not read the session hears
-// not_found first; the model is resolved as its runner will connect it
-// before session.update is asked, so the authorizer decides on a model
+// not_found first; the model is checked by the rule a session's create
+// checks its agent's by before session.update is asked, so the authorizer decides on a model
 // that exists and may widen the session's model key to it. An allowed
 // switch appends session.model_changed, which the header takes; a
 // switch to the model the session runs appends nothing.
@@ -60,11 +62,8 @@ func (c *call) updateSession() error {
 		return err
 	}
 	m, overlay := cfg.SessionModel(name)
-	if _, err := c.s.o.Figures(ctx, m, overlay); err != nil {
-		if mc, ok := errors.AsType[*models.Coded](err); ok && mc.Code == models.CodeUnknown {
-			return &apiError{code: models.CodeUnknown, detail: mc.Message, err: err}
-		}
-		return &apiError{code: models.CodeUnavailable, detail: "the figures of " + name + " could not be read", err: err}
+	if err := c.s.runnable(ctx, m, overlay); err != nil {
+		return err
 	}
 	if _, err := c.ask(ctx, authorizer.ActionSessionUpdate, sessionResource(s, map[string]any{"session_id": s.ID, "model": name})); err != nil {
 		return err
@@ -88,4 +87,18 @@ func (c *call) updateSession() error {
 		return err
 	}
 	return c.replySession(http.StatusOK, s)
+}
+
+// runnable refuses a session's model the installation does not run
+// (spec 007): model_unknown for one no source gives figures, and
+// model_unavailable for one whose figures could not be read.
+func (s *Server) runnable(ctx context.Context, m v1.AgentModel, overlay models.Entry) error {
+	err := s.o.Runnable(ctx, m, overlay)
+	if err == nil {
+		return nil
+	}
+	if mc, ok := errors.AsType[*models.Coded](err); ok && mc.Code == models.CodeUnknown {
+		return &apiError{code: models.CodeUnknown, detail: mc.Message, err: err}
+	}
+	return &apiError{code: models.CodeUnavailable, detail: "the figures of " + m.Name + " could not be read", err: err}
 }

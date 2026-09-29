@@ -384,30 +384,57 @@ func TestASwitchedSessionConnectsItsModel(t *testing.T) {
 		t.Fatalf("an unknown model: %v", err)
 	}
 
-	figures, err := Figures(o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := len(stub.Listed())
-	e, err := figures(t.Context(), v1.AgentModel{Name: "vendor/door-only"}, models.Entry{Name: "vendor/door-only"})
-	if err != nil || e.InputWindow != 32_000 {
-		t.Fatalf("the figures of a door-only model: %+v, %v", e, err)
-	}
-	if listed := stub.Listed(); len(listed) != before+1 || listed[len(listed)-1].Get("Authorization") != "Bearer k" {
-		t.Fatalf("the door's list was not read with TOPOS_MODELS_KEY: %v", listed)
-	}
-	if _, err := figures(t.Context(), v1.AgentModel{Name: "vendor/nobody"}, models.Entry{Name: "vendor/nobody"}); !isCode(err, models.CodeUnknown) {
-		t.Fatalf("an unknown model's figures: %v", err)
-	}
+}
+
+// TestRunnable: the check of a session's model at its create and at a
+// switch routes it as its runner does. With TOPOS_MODELS_KEY the door's
+// list is read with it, so a model only the door serves runs and one it
+// does not is model_unknown; without it a model that goes through a Lux
+// door runs, a model the catalog does not name included, since the
+// runner reads the door with the session's own key; a model at a
+// provider's API runs on the catalog's figures alone; no model URL and a
+// door that does not answer are model_unavailable.
+func TestRunnable(t *testing.T) {
+	stub := luxstub.New(t)
+	stub.Models(bridge.Model{Name: "deepseek/deepseek-v4-flash-0731", ContextWindow: 1_310_720, MaxOutputTokens: 943_718})
+	doors := models.Doors{"anthropic": stub.URL() + "/anthropic", "openai": stub.URL() + "/openai"}
 	gone := httptest.NewServer(http.NotFoundHandler())
 	gone.Close()
-	for name, o := range map[string]Options{"no model URL": {}, "a door that does not answer": {ModelsURL: gone.URL + "/anthropic"}} {
-		f, err := Figures(o)
+	model := func(name string) v1.AgentModel { return v1.AgentModel{Name: name} }
+	for _, c := range []struct {
+		name  string
+		o     Options
+		model string
+		code  string
+	}{
+		{"a door-only model with a key", Options{ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k"}, "deepseek/deepseek-v4-flash-0731", ""},
+		{"a model the door does not serve, with a key", Options{ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k"}, "vendor/nobody", models.CodeUnknown},
+		{"a catalog model with a key", Options{ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k"}, "anthropic/claude-haiku-4.5", ""},
+		{"a model absent from the catalog, without a key", Options{ModelsURL: stub.URL(), Doors: doors}, "deepseek/deepseek-v4-flash-0731", ""},
+		{"any model through a door, without a key", Options{ModelsURL: stub.URL(), Doors: doors}, "vendor/nobody", ""},
+		{"a catalog model at a provider's API", Options{ModelsURL: gone.URL}, "anthropic/claude-haiku-4.5", ""},
+		{"an unknown model at a provider's API", Options{ModelsURL: gone.URL}, "vendor/nobody", models.CodeUnknown},
+		{"no model URL", Options{}, "anthropic/claude-haiku-4.5", models.CodeUnavailable},
+		{"a door that does not answer", Options{ModelsURL: gone.URL + "/anthropic", ModelsKey: "k"}, "anthropic/claude-haiku-4.5", models.CodeUnavailable},
+	} {
+		runnable, err := Runnable(c.o)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := f(t.Context(), v1.AgentModel{Name: "anthropic/claude-haiku-4.5"}, models.Entry{}); !isCode(err, models.CodeUnavailable) {
-			t.Fatalf("%s: %v", name, err)
+		err = runnable(t.Context(), model(c.model), models.Entry{Name: c.model})
+		if c.code == "" && err != nil || c.code != "" && !isCode(err, c.code) {
+			t.Errorf("%s: %v, want %q", c.name, err, c.code)
+		}
+	}
+	// The three checks with a key read their door with it, and the
+	// checks without one read no door.
+	listed := stub.Listed()
+	if len(listed) != 3 {
+		t.Fatalf("the door's list was read %d times: %v", len(listed), listed)
+	}
+	for _, h := range listed {
+		if h.Get("Authorization") != "Bearer k" && h.Get("X-Api-Key") != "k" {
+			t.Fatalf("a door's list was read without TOPOS_MODELS_KEY: %v", h)
 		}
 	}
 }
