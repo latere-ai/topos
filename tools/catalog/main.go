@@ -3,12 +3,13 @@
 
 // Command catalog writes models/catalog.json, the model figures built
 // into Topos (spec 007). Prices and names come from a Lux model catalog
-// directory, one Model manifest per file; input windows and output
-// limits come from OpenRouter's model list, saved from its public
-// /api/v1/models endpoint, matched by name. OpenRouter's free models
+// directory, one Model manifest per file; input windows, output limits
+// and what a model supports, images among them, come from OpenRouter's
+// model list, saved from its public /api/v1/models endpoint, matched by
+// name. OpenRouter's free models
 // that take tools are added at price zero, for development runs.
 //
-//	go run ./tools/catalog -lux ../lux/deploy/catalog/models -openrouter models.json -date 2026-09-27
+//	go run ./tools/catalog -lux ../lux/deploy/catalog/models -openrouter models.json -date 2026-09-30
 package main
 
 import (
@@ -45,9 +46,6 @@ type luxModel struct {
 			CachedInput string `yaml:"cachedInput"`
 			CacheWrite  string `yaml:"cacheWrite"`
 		} `yaml:"pricing"`
-		Modalities struct {
-			Input []string `yaml:"input"`
-		} `yaml:"modalities"`
 	} `yaml:"spec"`
 }
 
@@ -158,6 +156,10 @@ func supports(m openRouterModel) models.Supports {
 	}
 }
 
+// openRouterVendor is the vendor OpenRouter names a Lux provider's
+// models under, where it is not the provider's own name.
+var openRouterVendor = map[string]string{"gemini": "google"}
+
 // normalize makes a Lux name and an OpenRouter id comparable: Lux writes
 // a version with hyphens where OpenRouter writes dots.
 func normalize(id string) string { return strings.ReplaceAll(strings.ToLower(id), ".", "-") }
@@ -179,17 +181,17 @@ func fromLux(path string, windows map[string]openRouterModel) (models.Entry, boo
 	if t.Model != "" && t.Model != e.Name {
 		e.Aliases = []string{t.Model}
 	}
+	// A provider Topos has no family of, Gemini's among them, is spoken
+	// to on the OpenAI Chat dialect, the one Lux's OpenAI door takes for
+	// every model it routes.
 	switch t.Provider {
 	case "anthropic":
 		e.Family, e.Dialect = models.FamilyAnthropic, ir.DialectAnthropicMessages
 	case "openai":
 		e.Family, e.Dialect = models.FamilyOpenAI, ir.DialectOpenAIResponses
-	case "gemini":
-		return models.Entry{}, false, nil
 	default:
 		e.Family, e.Dialect = models.FamilyOther, ir.DialectOpenAIChat
 	}
-	e.Supports.Images = slices.Contains(m.Spec.Modalities.Input, "image")
 	if p := m.Spec.Pricing; p != nil {
 		if p.Per != 1_000_000 {
 			return models.Entry{}, false, fmt.Errorf("%s: prices per %d tokens, not per million", path, p.Per)
@@ -209,11 +211,23 @@ func fromLux(path string, windows map[string]openRouterModel) (models.Entry, boo
 			*f.dst = &v
 		}
 	}
-	for _, id := range []string{t.Provider + "/" + t.Model, t.Model, e.Name} {
+	ids := []string{t.Provider + "/" + t.Model, t.Model, e.Name}
+	if vendor, ok := openRouterVendor[t.Provider]; ok {
+		ids = append([]string{vendor + "/" + t.Model}, ids...)
+	}
+	// OpenRouter lists a model still in preview under the name with
+	// -preview after it, which only a name without an exact match takes.
+	for _, id := range slices.Clone(ids) {
+		ids = append(ids, id+"-preview")
+	}
+	for _, id := range ids {
 		if w, ok := windows[normalize(id)]; ok {
+			// What the model takes and gives, its window, its output limit
+			// and whether it takes images, reasons and calls tools in
+			// parallel, is OpenRouter's, the one source of what a model is;
+			// Lux's catalog is the source of what the gateway sells it as.
 			e.InputWindow, e.MaxOutputTokens = w.ContextLength, w.TopProvider.MaxCompletionTokens
-			s := supports(w)
-			e.Supports.Thinking, e.Supports.ParallelTools = s.Thinking, s.ParallelTools
+			e.Supports = supports(w)
 			// The hosted Lux names its models as OpenRouter does, with
 			// dots in a version, so that spelling resolves too.
 			if w.ID != e.Name && !slices.Contains(e.Aliases, w.ID) {

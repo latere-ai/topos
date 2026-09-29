@@ -58,6 +58,12 @@ committed: the commit log already holds that.
   text nor an image, and an image whose bytes are not the format its
   media type names, which were stored as sent, are now
   `invalid_request`.
+- The embedded model catalog knows which models take images, from
+  OpenRouter's model list, the source of every figure of what a model
+  is, and holds Gemini's models, on the OpenAI Chat dialect Lux's OpenAI
+  door takes, so a message's image reaches the Claude, GPT and Gemini
+  models that take images on any gateway, a Lux that lists its Models
+  without their modalities included.
 - An agent applied without `spec.machine` runs its hosted sessions on a
   Cella sandbox of the default image when the server has
   `TOPOS_CELLA_URL` and host sessions are off. The manifest's default

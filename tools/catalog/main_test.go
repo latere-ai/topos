@@ -21,7 +21,8 @@ func write(t *testing.T, path, body string) {
 }
 
 const openRouter = `{"data":[
- {"id":"anthropic/claude-opus-5","context_length":1000000,"top_provider":{"max_completion_tokens":128000},"supported_parameters":["tools","reasoning"]},
+ {"id":"anthropic/claude-opus-5","context_length":1000000,"top_provider":{"max_completion_tokens":128000},"architecture":{"input_modalities":["text","image"]},"supported_parameters":["tools","reasoning"]},
+ {"id":"google/flash-preview","context_length":1048576,"top_provider":{"max_completion_tokens":65536},"architecture":{"input_modalities":["text","image","audio"]},"supported_parameters":["tools"]},
  {"id":"anthropic/claude-opus-5:batch","context_length":1,"top_provider":{"max_completion_tokens":1}},
  {"id":"openai/gpt-5.6","context_length":400000,"top_provider":{"max_completion_tokens":128000},"supported_parameters":["tools","parallel_tool_calls"]},
  {"id":"vendor/small:free","context_length":65536,"top_provider":{"max_completion_tokens":8192},"architecture":{"input_modalities":["text","image"]},"supported_parameters":["tools"]},
@@ -40,7 +41,7 @@ func TestRunMergesPricesAndWindows(t *testing.T) {
 	}
 	write(t, filepath.Join(lux, "anthropic__claude-opus-5.yaml"), model("anthropic/claude-opus-5", "anthropic", "claude-opus-5",
 		"  pricing:\n    per: 1000000\n    input: \"5\"\n    output: \"25\"\n    cachedInput: \"0.5\"\n  modalities:\n    input: [text, image]\n"))
-	write(t, filepath.Join(lux, "openai__gpt-5-6.yaml"), model("openai/gpt-5-6", "openai", "gpt-5.6", ""))
+	write(t, filepath.Join(lux, "openai__gpt-5-6.yaml"), model("openai/gpt-5-6", "openai", "gpt-5.6", "  modalities:\n    input: [text, image]\n"))
 	write(t, filepath.Join(lux, "gemini__flash.yaml"), model("gemini/flash", "gemini", "flash", ""))
 	write(t, filepath.Join(lux, "zhipu__glm.yaml"), model("zhipu/glm", "zhipu", "glm", ""))
 	or := filepath.Join(dir, "openrouter.json")
@@ -57,7 +58,7 @@ func TestRunMergesPricesAndWindows(t *testing.T) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(c.Source, "2026-09-27") || len(c.Models) != 4 {
+	if !strings.Contains(c.Source, "2026-09-27") || len(c.Models) != 5 {
 		t.Fatalf("catalog %+v", c)
 	}
 	opus, ok := c.Lookup("claude-opus-5")
@@ -75,8 +76,17 @@ func TestRunMergesPricesAndWindows(t *testing.T) {
 	if opus.Aliases[len(opus.Aliases)-1] == "anthropic/claude-opus-5" {
 		t.Fatalf("an alias repeats the name: %v", opus.Aliases)
 	}
-	if _, ok := c.Lookup("gemini/flash"); ok {
-		t.Fatal("a Gemini model, which no codec speaks, is in the catalog")
+	// A Gemini model is spoken to through Lux's OpenAI door, and OpenRouter
+	// names it under google, in preview.
+	flash, ok := c.Lookup("gemini/flash")
+	if !ok || flash.Family != models.FamilyOther || flash.Dialect != "openai-chat" || flash.InputWindow != 1_048_576 || !flash.Supports.Images {
+		t.Fatalf("flash %+v", flash)
+	}
+	// Whether a model takes images is OpenRouter's alone: a Lux manifest
+	// that declares images for a model OpenRouter lists without them does
+	// not make it take them.
+	if gpt.Supports.Images {
+		t.Fatalf("gpt takes images though OpenRouter lists none: %+v", gpt)
 	}
 	glm, ok := c.Lookup("zhipu/glm")
 	if !ok || glm.Dialect != "openai-chat" || glm.InputWindow != 0 {
