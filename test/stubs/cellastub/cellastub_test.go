@@ -259,11 +259,20 @@ func TestSecret(t *testing.T) {
 	if _, _, ok := s.Secret("none"); ok {
 		t.Fatal("a secret nobody applied")
 	}
+	if _, err := c.Delete(t.Context(), client.KindSecret, "key"); err != nil {
+		t.Fatal(err)
+	}
+	if _, value, ok := s.Secret("key"); ok || value != "" {
+		t.Fatalf("a deleted secret is held with %q", value)
+	}
+	_, err = c.Delete(t.Context(), client.KindSecret, "key")
+	code(t, err, "not_found")
 }
 
 // TestAuthorize: the stub asks its authorizer what cellad asks, about the
 // object cellad renders, and answers a refused action forbidden and a
-// refused mount not_found; an update is asked about the stored secret.
+// refused mount not_found; an update and a delete are asked about the
+// stored secret.
 func TestAuthorize(t *testing.T) {
 	s := New(t)
 	var asked []string
@@ -329,6 +338,15 @@ func TestAuthorize(t *testing.T) {
 			want = "not_found"
 		}
 		code(t, err, want)
+	}
+	refuse = map[string]bool{"secret.delete": true}
+	_, err := c.Delete(t.Context(), client.KindSecret, "key")
+	code(t, err, "forbidden")
+	if _, _, ok := s.Secret("key"); !ok {
+		t.Fatal("a refused delete removed the secret")
+	}
+	if last := asked[len(asked)-1]; last != "secret.delete Secret key stub b" {
+		t.Fatalf("the delete was asked %q, not about the stored secret", last)
 	}
 	refuse = map[string]bool{"secret.create": true}
 	key.Metadata.Name = "fresh"

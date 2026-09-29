@@ -348,6 +348,7 @@ func (s *Server) routes() http.Handler {
 	handle("POST /v1/sandboxes/{ref}/files/move", OpFiles, s.fileMove)
 	handle("GET /v1/secrets/{ref}", OpSecret, s.secret)
 	handle("PUT /v1/secrets/{ref}", OpSecret, s.applySecret)
+	handle("DELETE /v1/secrets/{ref}", OpSecret, s.removeSecret)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusNotFound, "not_found", "the stub serves no "+r.Method+" "+r.URL.Path)
 	})
@@ -649,6 +650,26 @@ func (s *Server) applySecret(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	httpjson.Write(w, status, in)
+}
+
+// removeSecret deletes a secret by name and its value, asking the
+// authorizer secret.delete about the stored secret, as Cella does.
+func (s *Server) removeSecret(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name := r.PathValue("ref")
+	sec, ok := s.secrets[name]
+	if !ok {
+		refuse(w, http.StatusNotFound, "not_found", "no secret "+name)
+		return
+	}
+	if reason := s.refused(authorizer.ActionSecretDelete, secretResource(sec)); reason != "" {
+		refuse(w, http.StatusForbidden, "forbidden", authorizer.ActionSecretDelete+": "+reason)
+		return
+	}
+	delete(s.secrets, name)
+	delete(s.values, name)
+	httpjson.Write(w, http.StatusOK, sec)
 }
 
 // sandboxPath is the PATH of every command, as an image's would be.
