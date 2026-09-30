@@ -45,9 +45,9 @@ snapshots are not. Migrations follow the family's shared
 | `sessions` | `id` | the columns a query filters on (`agent_id`, `agent_version`, `owner`, `runner`, `status`, `stop_reason`, `turn`, `last_seq`, `created_at`, `updated_at`, `expires_at`, `ended_at`), the Session object as JSON text, and the queue columns of [[016-runners]]: `wake`, `lease_holder`, `lease_generation`, `lease_expires_at`, `writer_kind`, `writer_subject` |
 | `events` | `(session_id, seq)`, unique `(session_id, id)` | `id`, `type`, `time`, `thread`, `turn`, `step`, `payload` as JSON text, `redacted` |
 | `blobs` | `(session_id, digest)` | `size`, `location` (`db` or `object`), and `body` when `location` is `db` |
-| `triggers` | `id` | `name`, `owner`, `agent_id`, the resolved spec, `next_fire_at`, `last_fired_at`, `last_session_id`, `suspended`, the outcome counts ([[022-triggers]]) |
-| `trigger_firings` | `(trigger_id, dedupe)`: the scheduled time of a scheduled firing, the envelope's `product` and `id` for an event, the firing's own id for a manual one (changed by [[022-triggers]]) | `id`, the origin, the replica that claimed the firing, the envelope, the key, the outcome, the reason, the session it started or continued, and the time it arrived, so one firing acts once across replicas and redeliveries ([[022-triggers]]) |
-| `trigger_sessions` (added by [[022-triggers]]) | `(trigger_id, key)` | the open session a key names, claimed with the firing that starts it and cleared when the session ends ([[022-triggers]]) |
+| `triggers` | `id` | `name`, `owner`, `org_id` (the context the owner applied it in), `agent_id`, `version`, `digest`, the resolved spec, `next_fire_at`, `last_fired_at`, `last_session_id`, `suspended`, the outcome counts, and the lease that serializes its firings across replicas, `lease_holder` and `lease_expires_at` (changed by [[022-triggers]]) |
+| `trigger_firings` | `(trigger_id, dedupe)`: the scheduled time of a scheduled firing, the envelope's `product` and `id` for an event, the firing's own id for a manual one (changed by [[022-triggers]]) | `id`, the origin, the replica that claimed the firing, the envelope, the key, the outcome, the reason, the session it started or continued, whether that session may still be active (`session_open`, from which a trigger's active sessions are counted), the firing's time and the time it arrived, so one firing acts once across replicas and redeliveries ([[022-triggers]]) |
+| `trigger_sessions` (added by [[022-triggers]]) | `(trigger_id, key)` | the session a key's last start began, written under the trigger's lease with the firing that starts it and cleared once the session is seen ended ([[022-triggers]]) |
 | `credentials` | `id` | `name`, `owner`, `service`, the wrapped data key, the key index, nonce and ciphertext ([[018-credentials-and-secrets]]) |
 | `memory_stores` | `id` | `name`, `owner`, `description`, `created_at`; documents live in the memory backend ([[020-memory-stores]]) |
 | `idempotency_keys` | `(subject, key)` | the route, the body's hash, `done`, the stored answer (`status`, `content_type`, `body` as bytes), `expires_at` ([[015-api]]) |
@@ -143,6 +143,9 @@ atomically (write, fsync, rename, fsync the directory):
 objects/agent/<agent_id>.json              the agent: name, owner, latest version, archive time
 objects/agent_version/<agent_id>/<n>.json  version n: digest, the resolved document and the bundle as text
 objects/idempotency/<hex>.json             an idempotency record; hex is the SHA-256 of its subject and key
+objects/trigger/<trg_id>.json              a trigger and its firing record
+objects/trigger_firing/<trg_id>/<frg_id>.json  one of its firings
+objects/trigger_key/<trg_id>/<hex>.json    the session one of its keys names; hex is the SHA-256 of the key
 ```
 
 An agent's file is the commit record of its versions: a version's
@@ -159,7 +162,11 @@ the leases of [[016-runners]] live in the process. The mode is one
 replica: `toposd serve` holds `flock` on `$TOPOS_DATA_DIR/serve.lock`,
 and a second `serve` on the same directory refuses to start with
 `data directory in use by pid <n>`. The start-up log says the store is
-a directory and names it.
+a directory and names it. A trigger's files, with its firings and
+keys, are read into the process when the store opens, and each is
+written before the process takes the change ([[022-triggers]]); a
+trigger's delete removes its firings and keys before its own file, so
+a crash leaves no firing of a trigger that is gone.
 
 ### The blob store
 
@@ -251,8 +258,8 @@ against `DATABASE_URL` or a container it starts.
 
 | What it said | What was built | Why |
 |---|---|---|
-| the schema holds `triggers`, `trigger_firings`, `trigger_sessions`, `credentials`, `memory_stores` and `sink_outbox` | none of them yet | each joins with the spec that uses it, as the migrations rule says: [[022-triggers]], [[018-credentials-and-secrets]], [[020-memory-stores]], [[023-events-and-observability]] |
-| the directory store keeps triggers, credentials and memory stores as object files | it keeps agents, versions and idempotency records | the same specs build the rest |
+| the schema holds `triggers`, `trigger_firings`, `trigger_sessions`, `credentials`, `memory_stores` and `sink_outbox` | the trigger tables, which joined with [[022-triggers]]; none of the others yet | each joins with the spec that uses it, as the migrations rule says: [[018-credentials-and-secrets]], [[020-memory-stores]], [[023-events-and-observability]] |
+| the directory store keeps triggers, credentials and memory stores as object files | it keeps agents, versions, idempotency records, and the triggers of [[022-triggers]] | the same specs build the rest |
 | an append checks the writer rule of an external writer | an append through a lease is fenced by its generation; the writer subject of an external writer is not checked | that check is [[017-external-runners-handoff-fork]]'s |
 | the reaper ends `expired` every session past `expires_at` | it ends every idle one, and leaves a running one to a later pass | a running session's runner holds it, and ending it under the runner would fail the runner's next append |
 | the reaper removes the blobs a crashed delete left | it removes them once the session's id is an hour old | a session being created puts its blobs before it appears, so a sweep with no grace could remove a new session's blobs |
@@ -262,5 +269,5 @@ against `DATABASE_URL` or a container it starts.
 
 | Open | Why |
 |---|---|
-| the tables and object files of triggers, credentials, memory stores and the sink's outbox | their specs |
+| the tables and object files of credentials, memory stores and the sink's outbox | their specs |
 | the writer subject of an external writer on append | [[017-external-runners-handoff-fork]] |

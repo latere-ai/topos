@@ -77,7 +77,7 @@ another spec.
 | [019](019-git.md) | Git in a session: repositories as inputs, plain git in the sandbox, the token at the egress gateway, ref rules, attribution, the git cache | medium | drafted | 001, 002, 004, 009, 018 |
 | [020](020-memory-stores.md) | Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts | medium | drafted | 002, 003, 004, 008, 009, 018 |
 | [021](021-mcp-servers.md) | MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials | medium | drafted | 003, 008, 009, 012, 018 |
-| [022](022-triggers.md) | Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, the limits | medium | in-progress | 003, 004, 006, 014 |
+| [022](022-triggers.md) | Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, the limits | medium | testing | 003, 004, 006, 014 |
 | [023](023-events-and-observability.md) | Events and observability: the content-free sink, spans derived from the log, metrics | medium | drafted | 002, 004, 006, 014, 015 |
 | [024](024-client-cli-skill.md) | The client, the topos command and the agent skill: the API client, print mode, the supported import set | medium | drafted | 002, 004, 005, 016 |
 | [025](025-task-suite.md) | The task suite and the release bar: tasks and checkers, the pinned model, the threshold, spend, replays, IR against SDK | large | drafted | 005, 007, 008, 024, 026 |

@@ -84,7 +84,7 @@ gains fields.
 | Action | Kind | Resource fields | Asked at |
 |---|---|---|---|
 | `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner` | the agent routes of [[015-api]] |
-| `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent whose identity the authorizer created for the organization), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity` | session create; the authorizer applies the initiator cap here |
+| `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent whose identity the authorizer created for the organization), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity`, and `trigger_id` and `firing_id` for a trigger's session, asked as the trigger's owner (added by [[022-triggers]]) | session create, and a trigger's firing; the authorizer applies the initiator cap here |
 | `session.read`, `session.list` | `session` | `agent`, `owner`, `runner` | session get, list, events list, stream |
 | `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
@@ -94,8 +94,8 @@ gains fields.
 | `session.append`, `session.handoff` | `session` | `agent`, `owner`, `runner`, `writer`, and for a handoff `to` and `initiator` | [[017-external-runners-handoff-fork]]; a handoff to `hosted` gets the initiator cap of a create |
 | `session.scope` | `session` | `agent`, `owner`, `old`, `new`, `until` | a scope change; the authorizer holds a widening to the agent's permissions and the widener's own rights |
 | `session.update` | `session` | `agent`, `owner`, `runner`, `session_id`, `model` (the name of the model the session's next turn runs) | a switch of the session's model ([[015-api]]); asked after the model resolved, so the authorizer decides whether the session may use a model that exists, and may widen the session's model key to it |
-| `trigger.create`, `trigger.read`, `trigger.list`, `trigger.update`, `trigger.delete` | `trigger` | `agent`, `owner` | the trigger routes |
-| `trigger.fire` (added by [[022-triggers]]) | `trigger` | `agent`, `owner` | deliver an event to a trigger, or fire it now |
+| `trigger.create`, `trigger.read`, `trigger.list`, `trigger.update`, `trigger.delete` | `trigger` | `name`, `agent`, `owner`, and on a create and an update the filter applied as `on` (changed by [[022-triggers]]) | the trigger routes |
+| `trigger.fire` (added by [[022-triggers]]) | `trigger` | `name`, `agent`, `owner` | deliver an event to a trigger, or fire it now |
 | `credential.create`, `credential.read`, `credential.list`, `credential.delete` | `credential` | `name`, `owner`, `service` | the credential routes; `read` returns metadata only |
 | `memory_store.create`, `memory_store.read`, `memory_store.list`, `memory_store.update`, `memory_store.delete` | `memory_store` | `name`, `owner`, `sharing`, `audience`, and `partition` on a read of another initiator's documents | the memory store routes; `shared` is allowed, by default, to an organization admin ([[020-memory-stores]]) |
 | `memory_store.write` | `memory_store` | `name`, `owner`, `session`, `initiator`, `partition` | a document write, and a session attaching the store `read_write` ([[020-memory-stores]]) |

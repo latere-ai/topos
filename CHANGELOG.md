@@ -10,6 +10,52 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- Triggers start and continue an agent's sessions with no person
+  present. `PUT /v1/triggers/{name}` applies a Trigger manifest that
+  fires on `spec.schedule`, a five-field cron expression or `@hourly`,
+  `@daily`, `@weekly` read in `spec.timeZone` (a local time a change
+  to daylight saving time skips fires at the next valid minute, and
+  one it repeats fires once), or on the events delivered to
+  `POST /v1/triggers/{ref}/fire` that `spec.on` selects by product,
+  verbs, resources and payload values. An event is one envelope
+  `{id, product, verb, resource, actor, subject, time, payload}`; the
+  core verifies no provider's signature and polls nothing, so whatever
+  produces an installation's events calls the route.
+- A trigger's `session.message`, `title` and `key`, and a repository's
+  `url` and `ref`, are templates of `{{event.*}}`, `{{trigger.id}}`,
+  `{{trigger.name}}`, `{{firing.id}}` and `{{firing.time}}`: path
+  lookup and nothing else. Each value is cut at 16 KiB and marked
+  `[cut]`, and a message past 64 KiB refuses its firing. An unknown
+  root, a `{{` that opens no placeholder, and an event path in a
+  schedule trigger are refused at apply as `invalid_manifest` with the
+  field's path.
+- `session.policy: new`, the default, starts a session per firing and,
+  under `skipIfActive`, skips a firing while its key's session is
+  active; `continue` sends each firing to the open session its key
+  names, and holds it while that session waits on a confirmation or
+  on its budget, sending it once the session runs on. `maxActive` (5
+  by default, at most 100) bounds the trigger's active sessions, and
+  `maxAge` skips a firing more than that late. A redelivered event
+  answers its first firing and starts nothing; a failed one answers
+  503 and runs again when it is delivered again. `GET
+  /v1/triggers/{ref}/firings` lists the firings newest first, and a
+  trigger's `status` carries `lastFiredAt`, `lastSessionId`,
+  `nextFireAt` and one count per outcome.
+- A firing's session is created by the code of `POST /v1/sessions`,
+  with the trigger's owner, the person who applied it, as its
+  initiator and `trigger:<trg_id>` as the sender of its messages, each
+  of which names the firing as `firing_id`. Its `session.create`, and
+  a continued message's `session.send`, are asked of the authorizer as
+  the owner in the context the owner's token named at apply
+  (`org_id`), with `trigger_id` and `firing_id` in the create; the
+  fire route asks the new action `trigger.fire` of its caller. A
+  trigger's firings act one at a time across replicas, so two
+  deliveries of one key never start two sessions.
+- `toposd serve` runs the minute loop that fires the schedules due and
+  sends the held firings. On Postgres the store's migration 0004 adds
+  the `triggers`, `trigger_firings` and `trigger_sessions` tables; the
+  directory store keeps triggers under `objects/trigger*`.
+
 ## v0.9.3 - 2026-09-30
 
 - An agent knows its session's repositories from its first turn. A
