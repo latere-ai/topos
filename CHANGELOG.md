@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.5 - 2026-09-30
+
 - A trigger's `trigger.create` question carries the `trg_` id the
   trigger is stored under as its resource id, where it carried none, so
   an authorizer that delivers events to triggers knows a new trigger by
