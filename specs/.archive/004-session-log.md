@@ -58,6 +58,7 @@ behind a kind prefix. A name may be reused after delete; an id never.
 | `ses_` | a session | the server; a local session's id is chosen by its local runner and accepted by toposd on first sync ([[017-external-runners-handoff-fork]]) |
 | `evt_` | an event | the appender |
 | `trg_` | a trigger | the server |
+| `frg_` | a trigger's firing (added by [[022-triggers]]) | the server |
 | `cred_` | a credential | the server |
 | `mem_` | a memory store | the server |
 | `apr_` | an approval of a step-up ([[012-permissions-and-approvals]]) | the runner |

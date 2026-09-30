@@ -102,11 +102,13 @@ func (e Event) Decode(v any) error {
 // adds, which a reader keeps.
 
 // UserMessage is the payload of user.message. Attachments are the files
-// it carries, whose bytes are blobs of the session (spec 015).
+// it carries, whose bytes are blobs of the session (spec 015). FiringID
+// names the trigger's firing that sent it (spec 022).
 type UserMessage struct {
 	Sender      Sender       `json:"sender"`
 	Content     []lux.Block  `json:"content"`
 	Attachments []Attachment `json:"attachments,omitempty"`
+	FiringID    string       `json:"firing_id,omitempty"`
 }
 
 // UserInterrupt is the payload of user.interrupt.

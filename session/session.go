@@ -67,6 +67,10 @@ const (
 	SenderService = "service"
 )
 
+// TriggerSubjectPrefix begins the subject of a trigger's messages,
+// trigger:<trg_id> (spec 004).
+const TriggerSubjectPrefix = "trigger:"
+
 // AgentRef names the agent version a session runs.
 type AgentRef struct {
 	ID      string `json:"id"`
