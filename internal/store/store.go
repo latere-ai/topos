@@ -144,6 +144,15 @@ func FindAgent(ctx context.Context, a Agents, owner, ref string) (Agent, error) 
 	return a.AgentByName(ctx, owner, ref)
 }
 
+// FindTrigger returns the trigger ref names for owner: a trg_ id whoever
+// owns it, or a name within owner's own triggers.
+func FindTrigger(ctx context.Context, t Triggers, owner, ref string) (Trigger, error) {
+	if session.CheckID(session.PrefixTrigger, ref) == nil {
+		return t.Trigger(ctx, ref)
+	}
+	return t.TriggerByName(ctx, owner, ref)
+}
+
 // Lookup answers the resolver from the agents and triggers a store
 // keeps, a name read within owner's own objects as FindAgent reads it. A
 // ref of agent_<id>@<n> is that version, any other the latest. The kinds

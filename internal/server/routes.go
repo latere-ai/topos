@@ -51,6 +51,20 @@ func table() []route {
 			op: "getBlob", summary: "Get a blob of a session", status: http.StatusOK, handle: (*call).blob},
 		{method: http.MethodPost, path: "/sessions/{id}/events/{event_id}/redact", actions: a(authorizer.ActionSessionRedact),
 			op: "redactEvent", summary: "Replace one event's content with a tombstone", status: http.StatusNoContent, body: MaxBody, handle: (*call).redact},
+		{method: http.MethodPut, path: "/triggers/{name}", actions: a(authorizer.ActionTriggerCreate, authorizer.ActionTriggerUpdate, authorizer.ActionAgentRead),
+			op: "applyTrigger", summary: "Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner", status: http.StatusOK, body: MaxBody, handle: (*call).applyTrigger},
+		{method: http.MethodGet, path: "/triggers", actions: a(authorizer.ActionTriggerList),
+			op: "listTriggers", summary: "List triggers", status: http.StatusOK, handle: (*call).listTriggers},
+		{method: http.MethodGet, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerRead),
+			op: "getTrigger", summary: "Get a trigger by id, or by name among the caller's own triggers, with its firing record", status: http.StatusOK, handle: (*call).getTrigger},
+		{method: http.MethodDelete, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerDelete),
+			op: "deleteTrigger", summary: "Delete a trigger with its firings; the sessions it started keep running", status: http.StatusNoContent, handle: (*call).deleteTrigger},
+		// A firing asks session.create and session.send as the trigger's
+		// owner, not as the caller (spec 022).
+		{method: http.MethodPost, path: "/triggers/{ref}/fire", actions: a(authorizer.ActionTriggerFire, authorizer.ActionSessionCreate, authorizer.ActionSessionSend),
+			op: "fireTrigger", summary: "Deliver one event to an event trigger, or fire a schedule trigger now; answers the firing", status: http.StatusOK, body: MaxBody, handle: (*call).fireTrigger},
+		{method: http.MethodGet, path: "/triggers/{ref}/firings", actions: a(authorizer.ActionTriggerRead),
+			op: "listFirings", summary: "List a trigger's firings, newest first", status: http.StatusOK, handle: (*call).listFirings},
 		{method: http.MethodGet, path: "/openapi.yaml", public: true,
 			op: "getOpenAPI", summary: "This document", status: http.StatusOK, handle: (*call).openAPI},
 	}

@@ -502,6 +502,9 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
 	s := f.create("alice", "reviewer")
+	if a := f.do(http.MethodPut, "/v1/triggers/reviewer", "alice", triggerYAML("reviewer", "schedule: '@daily', session: {message: x}")); a.status != http.StatusCreated {
+		t.Fatalf("apply the trigger: %d %s", a.status, a.body)
+	}
 	before, err := f.sessions.Events(t.Context(), s.ID, 1, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -517,6 +520,7 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 		body := map[string]string{
 			"applyAgent": agentYAML("reviewer", "Changed."), "createSession": `{"agent":"reviewer"}`, "endSession": `{"reason":"canceled"}`, "archiveAgent": `{"permanent":true}`,
 			"sendEvent": `{"type":"user.interrupt"}`, "redactEvent": `{"reason":"x"}`, "resumeSession": `{}`, "updateSession": `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`,
+			"applyTrigger": triggerYAML("reviewer", "schedule: '@hourly', session: {message: y}"),
 		}[rt.op]
 		if a := f.do(rt.method, "/v1"+path, "alice", body); a.status != http.StatusServiceUnavailable || a.code() != auth.CodeAuthorizerUnavailable {
 			t.Errorf("%s: %d %s", rt.op, a.status, a.body)

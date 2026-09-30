@@ -31,6 +31,7 @@ import (
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
+	"latere.ai/x/topos/internal/triggers"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
@@ -117,6 +118,8 @@ type Server struct {
 	limits  *ratelimit.Buckets
 	streams *slots
 	routes  []route
+	// triggers fires the installation's triggers (spec 022).
+	triggers *triggers.Engine
 	// root is the path every route is served under, and rootURL the
 	// absolute URL of that path, the base of every URL an answer writes.
 	root, rootURL string
@@ -167,6 +170,9 @@ func New(o Options) (*Server, error) {
 	}
 	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now}), streams: newSlots(o.MaxStreams), root: root, rootURL: rootURL}
 	s.routes = table()
+	if s.triggers, err = triggers.New(triggers.Options{Store: o.Objects, Sessions: o.Sessions, Actor: actor{s}, Now: o.Now, Log: o.Log}); err != nil {
+		return nil, err
+	}
 	for _, rt := range s.routes {
 		if len(rt.actions) == 0 && !rt.public {
 			return nil, fmt.Errorf("server: %s %s asks no action", rt.method, rt.path)

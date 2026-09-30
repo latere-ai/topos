@@ -5,6 +5,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -36,17 +37,38 @@ func sessionResource(s session.Session, fields map[string]any) authz.Resource {
 	return authz.NewResource(authorizer.KindSession, s.ID, all)
 }
 
-// session reads a session and asks action about it; a denied read
-// answers as a missing session.
+// session reads the route's session and asks action about it; a denied
+// read answers as a missing session.
 func (c *call) session(action string, fields map[string]any) (session.Session, error) {
-	s, err := c.s.o.Sessions.Get(c.r.Context(), c.r.PathValue("id"))
+	return c.s.sessionAs(c.r.Context(), c.asker(), c.r.PathValue("id"), action, fields)
+}
+
+// sessionAs reads a session and asks q's caller action about it.
+func (s *Server) sessionAs(ctx context.Context, q asker, id, action string, fields map[string]any) (session.Session, error) {
+	sess, err := s.o.Sessions.Get(ctx, id)
 	if err != nil {
 		return session.Session{}, err
 	}
-	if _, err := c.ask(c.r.Context(), action, sessionResource(s, fields)); err != nil {
+	if _, err := q.ask(ctx, action, sessionResource(sess, fields)); err != nil {
 		return session.Session{}, err
 	}
-	return s, nil
+	return sess, nil
+}
+
+// asker asks the authorizer as one caller: a route's, held to the
+// actions its row names, or a trigger's owner, whose firing asks
+// session.create and session.send (spec 022). r is the request the
+// question carries the id, address and agent of, nil for a firing.
+type asker struct {
+	caller auth.Caller
+	r      *http.Request
+	ask    func(ctx context.Context, action string, res authz.Resource) (authz.Decision, error)
+	create func(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error)
+}
+
+// asker is the route's caller as an asker.
+func (c *call) asker() asker {
+	return asker{caller: c.caller, r: c.r, ask: c.ask, create: c.askCreate}
 }
 
 // replySession answers a session with its stream's URL.
@@ -71,10 +93,7 @@ type createBody struct {
 	Resources json.RawMessage   `json:"resources,omitempty"`
 }
 
-// repositories reads a create's resources: repositories alone, at most
-// session.MaxRepositories, each an https URL with no credential in it and
-// a ref git reads as a name (spec 019). A memory store is its agent's
-// (spec 020).
+// repositories reads a create's resources and checks them.
 func repositories(raw json.RawMessage) ([]session.Resource, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -85,21 +104,29 @@ func repositories(raw json.RawMessage) ([]session.Resource, error) {
 	if err := dec.Decode(&rs); err != nil {
 		return nil, refuse(CodeInvalidRequest, "resources is a list of {type, url, ref}: %v", err)
 	}
+	return rs, checkRepositories(rs)
+}
+
+// checkRepositories checks a create's resources: repositories alone, at
+// most session.MaxRepositories, each an https URL with no credential in
+// it and a ref git reads as a name (spec 019). A memory store is its
+// agent's (spec 020).
+func checkRepositories(rs []session.Resource) error {
 	if len(rs) > session.MaxRepositories {
-		return nil, refuse(CodeInvalidRequest, "%d resources, at most %d repositories", len(rs), session.MaxRepositories)
+		return refuse(CodeInvalidRequest, "%d resources, at most %d repositories", len(rs), session.MaxRepositories)
 	}
 	for i, r := range rs {
 		switch {
 		case r.Type != session.ResourceRepository:
-			return nil, refuse(CodeInvalidRequest, "resources[%d] is of type %q; a session names repositories, and its memory stores are its agent's", i, r.Type)
+			return refuse(CodeInvalidRequest, "resources[%d] is of type %q; a session names repositories, and its memory stores are its agent's", i, r.Type)
 		case r.MemoryStoreID != "" || r.Access != "":
-			return nil, refuse(CodeInvalidRequest, "resources[%d]: a repository has a url and a ref alone", i)
+			return refuse(CodeInvalidRequest, "resources[%d]: a repository has a url and a ref alone", i)
 		}
 		if err := session.CheckRepository(r, "https"); err != nil {
-			return nil, refuse(CodeInvalidRequest, "resources[%d]: %v", i, err)
+			return refuse(CodeInvalidRequest, "resources[%d]: %v", i, err)
 		}
 	}
-	return rs, nil
+	return nil
 }
 
 type createBudget struct {
@@ -114,7 +141,6 @@ type createLimits struct {
 // createSession is POST /sessions: a session of an agent's version,
 // capped by the agent, the request and the authorizer's limits.
 func (c *call) createSession() error {
-	ctx := c.r.Context()
 	var b createBody
 	if err := c.decode(&b); err != nil {
 		return err
@@ -135,63 +161,110 @@ func (c *call) createSession() error {
 	if err != nil {
 		return err
 	}
-	name, n, pinned := strings.Cut(b.Agent, "@")
-	a, err := store.FindAgent(ctx, c.s.o.Objects, c.caller.Subject, name)
+	in := creation{agent: b.Agent, title: b.Title, message: b.Message, metadata: b.Metadata, endOnIdle: b.EndOnIdle, resources: resources,
+		capture: b.Capture, sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}}
+	if b.Budget != nil {
+		in.budget = b.Budget.MaxCostUSDMicro
+	}
+	if b.Limits != nil {
+		in.limits = *b.Limits
+	}
+	s, err := c.s.create(c.r.Context(), c.asker(), in)
 	if err != nil {
 		return err
+	}
+	return c.replySession(http.StatusCreated, s)
+}
+
+// creation is what a session's create takes: from the create route's
+// body, or from a trigger's firing, whose first message is the
+// trigger's.
+type creation struct {
+	agent     string
+	title     string
+	message   string
+	metadata  map[string]string
+	endOnIdle bool
+	// resources are checked repositories; none takes the agent's.
+	resources []session.Resource
+	// budget is the requested spend ceiling, nil for none.
+	budget  *int64
+	limits  createLimits
+	capture *session.Capture
+	// sender is who the first message is from: the initiator, or a
+	// trigger.
+	sender session.Sender
+	// triggerID and firingID name the trigger and the firing that start
+	// the session, empty for any other.
+	triggerID, firingID string
+}
+
+// create creates a session of in's agent with q's caller as its
+// initiator: the one code the create route and a trigger's firing
+// start a session by, asked of the authorizer as session.create.
+func (s *Server) create(ctx context.Context, q asker, in creation) (session.Session, error) {
+	name, n, pinned := strings.Cut(in.agent, "@")
+	a, err := store.FindAgent(ctx, s.o.Objects, q.caller.Subject, name)
+	if err != nil {
+		return session.Session{}, err
 	}
 	version := a.Latest
 	if pinned {
 		if version, err = strconv.Atoi(n); err != nil || strconv.Itoa(version) != n {
-			return refuse(CodeInvalidRequest, "agent %q names no version", b.Agent)
+			return session.Session{}, refuse(CodeInvalidRequest, "agent %q names no version", in.agent)
 		}
 	}
-	v, err := c.s.o.Objects.Version(ctx, a.ID, version)
+	v, err := s.o.Objects.Version(ctx, a.ID, version)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
 	r, err := manifest.ReadBundle(v.Bundle)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
 	cfg, err := r.AgentConfig(nil)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
 	// A session that names no repositories works in its agent version's,
 	// which the manifest checked as the API checks a create's (spec 019).
+	resources := in.resources
 	if len(resources) == 0 {
 		for _, repo := range r.Agent.Spec.Repositories {
 			resources = append(resources, session.Resource{Type: session.ResourceRepository, URL: repo.URL, Ref: repo.Ref})
 		}
 	}
-	m, err := c.s.sessionMachine(a.Name, cfg.Machine)
+	m, err := s.sessionMachine(a.Name, cfg.Machine)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
 	// The session runs its agent's model, checked by the rule a switch of
 	// its model is checked by (spec 007).
-	if err := c.s.runnable(ctx, cfg.Model, cfg.Overlay); err != nil {
-		return err
+	if err := s.runnable(ctx, cfg.Model, cfg.Overlay); err != nil {
+		return session.Session{}, err
 	}
-	kind := m.Kind
 	// The session's id is minted before the question, so the authorizer
 	// records the session every later token names, with the agent's
 	// identity those tokens carry as their subject (spec 018).
 	id := session.NewID(session.PrefixSession)
 	fields := map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
-		"runner": session.RunnerHosted, "machine": kind, "initiator": c.caller.Subject,
+		"runner": session.RunnerHosted, "machine": m.Kind, "initiator": q.caller.Subject,
 		"permissions": permissionsField(r.Agent.Spec.Permissions, agentModels(r)), "session_id": id,
 		"repositories": repositoriesField(resources),
 	}
-	if c.s.o.Identities != nil {
-		st, err := c.s.agentStatus(ctx, a)
+	// A trigger's session names the trigger and the firing that start it
+	// (spec 022).
+	if in.triggerID != "" {
+		fields["trigger_id"], fields["firing_id"] = in.triggerID, in.firingID
+	}
+	if s.o.Identities != nil {
+		st, err := s.agentStatus(ctx, a)
 		if err != nil {
-			return err
+			return session.Session{}, err
 		}
 		if st.Identity == "" {
-			return refuse(CodeAgentIdentityMissing, "agent %s was applied before this server had an identity provider", a.Name)
+			return session.Session{}, refuse(CodeAgentIdentityMissing, "agent %s was applied before this server had an identity provider", a.Name)
 		}
 		fields["agent_identity"] = st.Identity
 		// An organization's agent belongs to the organization its identity
@@ -201,27 +274,27 @@ func (c *call) createSession() error {
 			fields["agent_owner"] = map[string]any{"type": st.Owner.Type, "id": st.Owner.ID}
 		}
 	}
-	limits, err := c.askCreate(ctx, authorizer.ActionSessionCreate, authz.NewResource(authorizer.KindSession, "", fields))
+	limits, err := q.create(ctx, authorizer.ActionSessionCreate, authz.NewResource(authorizer.KindSession, "", fields))
 	if err != nil {
 		// The deny's reason may be about the agent. The caller applied
 		// an agent of its own and hears why; another subject's agent,
 		// named by id, the caller hears about only when it may read it.
-		if a.Owner == c.caller.Subject {
-			return err
+		if a.Owner == q.caller.Subject {
+			return session.Session{}, err
 		}
-		return c.s.o.Guard.Disclose(ctx, err, auth.Envelope(c.caller, authorizer.ActionAgentRead, agentResource(a), c.r))
+		return session.Session{}, s.o.Guard.Disclose(ctx, err, auth.Envelope(q.caller, authorizer.ActionAgentRead, agentResource(a), q.r))
 	}
 	if a.ArchivedAt != nil {
-		return refuse(CodeConflict, "the agent %s is archived", a.Name)
+		return session.Session{}, refuse(CodeConflict, "the agent %s is archived", a.Name)
 	}
 	ref, blobs, err := runner.AgentRef(r)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
-	now := c.s.o.Now()
-	s := session.New(ref, session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
-	s.ID = id
-	s.Title, s.Metadata, s.EndOnIdle, s.Resources = b.Title, b.Metadata, b.EndOnIdle, resources
+	now := s.o.Now()
+	sess := session.New(ref, session.Sender{Subject: q.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
+	sess.ID = id
+	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
 	// The session records its approval policy merged from the agent's and
 	// the organization's limits, so every runner applies the same one.
 	var thresholds *harness.Thresholds
@@ -229,50 +302,44 @@ func (c *call) createSession() error {
 		thresholds = &harness.Thresholds{FlagAt: t.FlagAt, AskAt: t.AskAt, BlockAt: t.BlockAt}
 	}
 	policy := cfg.Policy.Merge(limits.AlwaysConfirm, limits.AlwaysAllow, thresholds).Session()
-	s.Policy = &policy
-	if b.Capture != nil {
-		s.Capture = *b.Capture
+	sess.Policy = &policy
+	if in.capture != nil {
+		sess.Capture = *in.capture
 	}
-	var asked *int64
-	if b.Budget != nil {
-		asked = b.Budget.MaxCostUSDMicro
-	}
-	s.Budget.MaxCostUSDMicro = lowestCost(asked, cfg.MaxCostUSDMicro, limits.BudgetUSDMicro)
-	var req createLimits
-	if b.Limits != nil {
-		req = *b.Limits
-	}
-	turn, err := lowest("limits.turn_timeout", req.TurnTimeout, cfg.TurnTimeout, limits.TurnTimeout)
+	sess.Budget.MaxCostUSDMicro = lowestCost(in.budget, cfg.MaxCostUSDMicro, limits.BudgetUSDMicro)
+	turn, err := lowest("limits.turn_timeout", in.limits.TurnTimeout, cfg.TurnTimeout, limits.TurnTimeout)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
-	age, err := lowest("limits.max_age", req.MaxAge, cfg.MaxAge, limits.MaxAge)
+	age, err := lowest("limits.max_age", in.limits.MaxAge, cfg.MaxAge, limits.MaxAge)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
-	s.Limits = session.Limits{TurnTimeout: turn.String(), MaxAge: age.String()}
+	sess.Limits = session.Limits{TurnTimeout: turn.String(), MaxAge: age.String()}
 	if limits.Retention > 0 {
-		s.Limits.Retention = limits.Retention.String()
+		sess.Limits.Retention = limits.Retention.String()
 	}
-	s.ExpiresAt = s.CreatedAt.Add(age)
-	s.Scope = limits.Scope
-	if err := c.s.o.Sessions.Create(ctx, s, blobs); err != nil {
-		return err
+	sess.ExpiresAt = sess.CreatedAt.Add(age)
+	sess.Scope = limits.Scope
+	if err := s.o.Sessions.Create(ctx, sess, blobs); err != nil {
+		return session.Session{}, err
 	}
-	if b.Message != "" {
-		ev, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: b.Message}}}, now)
-		if err != nil {
-			return err
-		}
-		if _, err := c.append(s.ID, ev); err != nil {
-			return err
-		}
-		if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
-			return err
-		}
-		c.s.o.Notify()
+	if in.message == "" {
+		return sess, nil
 	}
-	return c.replySession(http.StatusCreated, s)
+	msg := session.UserMessage{Sender: in.sender, Content: []lux.Block{{Type: ir.BlockText, Text: in.message}}, FiringID: in.firingID}
+	ev, err := session.NewEvent(session.TypeUserMessage, msg, now)
+	if err != nil {
+		return session.Session{}, err
+	}
+	if _, err := s.append(ctx, sess.ID, ev); err != nil {
+		return session.Session{}, err
+	}
+	if sess, err = s.o.Sessions.Get(ctx, sess.ID); err != nil {
+		return session.Session{}, err
+	}
+	s.o.Notify()
+	return sess, nil
 }
 
 // sessionMachine is the machine a hosted session of the agent named
@@ -483,7 +550,7 @@ func (c *call) endSession() error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.append(s.ID, ev); err != nil {
+	if _, err := c.s.append(c.r.Context(), s.ID, ev); err != nil {
 		return err
 	}
 	if s, err = c.s.o.Sessions.Get(c.r.Context(), s.ID); err != nil {
@@ -517,22 +584,27 @@ func (c *call) deleteSession() error {
 // on under it.
 const appendRetries = 8
 
+// errEnded is what an append to an ended session wraps, so a trigger's
+// firing tells it from any other conflict.
+var errEnded = errors.New("the session ended")
+
 // append appends one event after the session's last, following the log
 // when another writer appended first.
-func (c *call) append(id string, ev session.Event) (session.Event, error) {
-	ctx := c.r.Context()
+func (s *Server) append(ctx context.Context, id string, ev session.Event) (session.Event, error) {
 	var err error
 	for range appendRetries {
-		var s session.Session
-		if s, err = c.s.o.Sessions.Get(ctx, id); err != nil {
+		var sess session.Session
+		if sess, err = s.o.Sessions.Get(ctx, id); err != nil {
 			return session.Event{}, err
 		}
-		if s.Status == session.StatusEnded {
-			return session.Event{}, refuse(CodeConflict, "the session ended %s", s.StopReason)
+		if sess.Status == session.StatusEnded {
+			e := refuse(CodeConflict, "the session ended %s", sess.StopReason)
+			e.err = errEnded
+			return session.Event{}, e
 		}
 		batch := []session.Event{ev}
-		session.Stamp(id, s.LastSeq, batch)
-		if _, err = c.s.o.Sessions.Append(ctx, id, s.LastSeq, batch); err == nil {
+		session.Stamp(id, sess.LastSeq, batch)
+		if _, err = s.o.Sessions.Append(ctx, id, sess.LastSeq, batch); err == nil {
 			return batch[0], nil
 		}
 		if !errors.Is(err, session.ErrSequenceConflict) {

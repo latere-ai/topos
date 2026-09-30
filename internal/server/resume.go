@@ -72,7 +72,7 @@ func (c *call) resumeSession() error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.append(s.ID, ev); err != nil {
+	if _, err := c.s.append(c.r.Context(), s.ID, ev); err != nil {
 		return err
 	}
 	c.s.o.Notify()

@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Topos API
   version: v1
-  description: Agents, their versions, and the sessions people have with them. Every route is verified and asked of the installation's authorizer; every error is one envelope with a code of the table under components.schemas.Error.
+  description: Agents, their versions, the sessions people have with them, and the triggers that start and continue sessions on a schedule or on delivered events. Every route is verified and asked of the installation's authorizer; every error is one envelope with a code of the table under components.schemas.Error.
 servers:
   - url: /v1
 security:
@@ -342,6 +342,119 @@ paths:
       responses:
         "204":
           description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /triggers/{name}:
+    put:
+      operationId: applyTrigger
+      summary: Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner
+      description: "The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; each value is cut at 16384 bytes and a message past 65536 bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, 5 by default and 100 at most, are active at once. The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names."
+      x-topos-actions:
+        - trigger.create
+        - trigger.update
+        - agent.read
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name, unique within its owner, the subject that applied it. An apply acts on the caller's own object of the name and creates it when the caller holds none; an object of the name another subject holds is neither read nor changed.
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+          application/yaml: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /triggers:
+    get:
+      operationId: listTriggers
+      summary: List triggers
+      x-topos-actions:
+        - trigger.list
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /triggers/{ref}:
+    get:
+      operationId: getTrigger
+      summary: Get a trigger by id, or by name among the caller's own triggers, with its firing record
+      x-topos-actions:
+        - trigger.read
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTrigger
+      summary: Delete a trigger with its firings; the sessions it started keep running
+      x-topos-actions:
+        - trigger.delete
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /triggers/{ref}/fire:
+    post:
+      operationId: fireTrigger
+      summary: Deliver one event to an event trigger, or fire a schedule trigger now; answers the firing
+      description: "An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most 200 characters, unique per product, product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, refused or failed. A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner."
+      x-topos-actions:
+        - trigger.fire
+        - session.create
+        - session.send
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /triggers/{ref}/firings:
+    get:
+      operationId: listFirings
+      summary: List a trigger's firings, newest first
+      x-topos-actions:
+        - trigger.read
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
         default:
           $ref: "#/components/responses/Error"
   /openapi.yaml:

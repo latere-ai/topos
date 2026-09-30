@@ -184,7 +184,7 @@ func (c *call) sendEvent() error {
 		return err
 	}
 	ev.ID = id
-	appended, err := c.append(s.ID, ev)
+	appended, err := c.s.append(c.r.Context(), s.ID, ev)
 	if err != nil {
 		return err
 	}

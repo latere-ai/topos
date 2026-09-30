@@ -80,7 +80,7 @@ func (c *call) updateSession() error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.append(s.ID, ev); err != nil {
+	if _, err := c.s.append(c.r.Context(), s.ID, ev); err != nil {
 		return err
 	}
 	if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {

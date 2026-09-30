@@ -14,6 +14,7 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"latere.ai/x/topos/manifest"
+	"latere.ai/x/topos/manifest/trigger"
 )
 
 //go:generate go test -run TestOpenAPIIsGenerated -update .
@@ -49,7 +50,7 @@ func OpenAPI(server string) ([]byte, error) {
 		{Key: "info", Value: yaml.MapSlice{
 			{Key: "title", Value: "Topos API"},
 			{Key: "version", Value: "v1"},
-			{Key: "description", Value: "Agents, their versions, and the sessions people have with them. Every route is verified and asked of the installation's authorizer; every error is one envelope with a code of the table under components.schemas.Error."},
+			{Key: "description", Value: "Agents, their versions, the sessions people have with them, and the triggers that start and continue sessions on a schedule or on delivered events. Every route is verified and asked of the installation's authorizer; every error is one envelope with a code of the table under components.schemas.Error."},
 		}},
 		{Key: "servers", Value: []yaml.MapSlice{{{Key: "url", Value: server}}}},
 		{Key: "security", Value: []yaml.MapSlice{{{Key: "bearer", Value: []string{}}}}},
@@ -133,6 +134,18 @@ var opDescriptions = map[string]string{
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes.",
 		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody),
+	"applyTrigger": fmt.Sprintf("The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
+		"or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. "+
+		"spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; "+
+		"each value is cut at %d bytes and a message past %d bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; "+
+		"continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, %d by default and %d at most, are active at once. "+
+		"The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names.",
+		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling),
+	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+
+		"product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. "+
+		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, refused or failed. "+
+		"A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. "+
+		"A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner.", trigger.MaxEventID),
 	"updateSession": `The body is {"model": {"name": "<model>"}}, the model the session's next turn runs; any other member is refused. ` +
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. " +
 		"A model no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable; the authorizer is asked session.update with session_id and model after the model resolved, and a deny is forbidden. " +
@@ -165,7 +178,7 @@ func operation(rt route) yaml.MapSlice {
 	}
 	if rt.body > 0 {
 		media := yaml.MapSlice{{Key: "application/json", Value: yaml.MapSlice{}}}
-		if rt.op == "applyAgent" {
+		if rt.op == "applyAgent" || rt.op == "applyTrigger" {
 			media = append(media, yaml.MapItem{Key: "application/yaml", Value: yaml.MapSlice{}})
 		}
 		op = append(op, yaml.MapItem{Key: "requestBody", Value: yaml.MapSlice{{Key: "content", Value: media}}})

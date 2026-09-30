@@ -38,12 +38,19 @@ const (
 // tokens verifies a bearer that is the sub of the login.example issuer.
 type tokens struct{}
 
+// A bearer of sub@org carries the org_id claim org, the context a token
+// of an organization's member names.
 func (tokens) Authenticate(r *http.Request) (auth.Caller, error) {
-	sub, ok := bearer.FromRequest(r)
+	tok, ok := bearer.FromRequest(r)
+	sub, org, _ := strings.Cut(tok, "@")
 	if !ok || sub == "" || sub == "forged" {
 		return auth.Caller{}, &auth.Error{Code: auth.CodeUnauthenticated, Message: "no bearer"}
 	}
-	return auth.Caller{Subject: authz.Subject(issuer, sub), Issuer: issuer, Sub: sub, Claims: map[string]any{"sub": sub}}, nil
+	claims := map[string]any{"sub": sub}
+	if org != "" {
+		claims[OrgClaim] = org
+	}
+	return auth.Caller{Subject: authz.Subject(issuer, sub), Issuer: issuer, Sub: sub, Claims: claims}, nil
 }
 
 // recording is the owner policy with every question it was asked kept.
@@ -88,6 +95,9 @@ func newFixture(t *testing.T, mut ...func(*Options)) *fixture {
 	o := Options{Sessions: f.sessions, Objects: f.objects, Verifier: tokens{}, Guard: auth.Guard{Authorizer: f.authz}, PublicURL: "https://topos.example/", Heartbeat: 20 * time.Millisecond}
 	for _, m := range mut {
 		m(&o)
+	}
+	if m, ok := o.Objects.(*store.Memory); ok {
+		f.objects = m
 	}
 	s, err := New(o)
 	if err != nil {
@@ -189,6 +199,11 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		t.Fatalf("end: %d %s", a.status, a.body)
 	}
 	doomed := f.create("alice", "reviewer")
+	for _, name := range []string{"nightly", "retired"} {
+		if a := f.do(http.MethodPut, "/v1/triggers/"+name, "alice", triggerYAML(name, "schedule: '@daily', session: {message: x}")); a.status != http.StatusCreated {
+			t.Fatalf("apply trigger %s: %d %s", name, a.status, a.body)
+		}
+	}
 	evs, err := f.sessions.Events(t.Context(), s.ID, 1, 0)
 	if err != nil || len(evs) == 0 {
 		t.Fatalf("events %v, %v", evs, err)
@@ -213,6 +228,12 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"getBlob":           {http.MethodGet, "/v1/sessions/" + ended.ID + "/blobs/" + string(ended.Agent.Digest), ""},
 		"redactEvent":       {http.MethodPost, "/v1/sessions/" + ended.ID + "/events/" + evs[0].ID + "/redact", `{"reason":"a token"}`},
 		"getOpenAPI":        {http.MethodGet, "/v1/openapi.yaml", ""},
+		"applyTrigger":      {http.MethodPut, "/v1/triggers/fresh", triggerYAML("fresh", "schedule: '@daily', session: {message: x}")},
+		"listTriggers":      {http.MethodGet, "/v1/triggers", ""},
+		"getTrigger":        {http.MethodGet, "/v1/triggers/nightly", ""},
+		"deleteTrigger":     {http.MethodDelete, "/v1/triggers/retired", ""},
+		"fireTrigger":       {http.MethodPost, "/v1/triggers/nightly/fire", ""},
+		"listFirings":       {http.MethodGet, "/v1/triggers/nightly/firings", ""},
 	}
 	var ops []string
 	for _, rt := range table() {
