@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package store keeps toposd's objects other than sessions (spec 014):
-// agents with their versions, and the idempotency records of the API's
-// POST routes (spec 015). Sessions are session.Store's. NewMemory keeps
+// agents with their versions, triggers with their firings and keys
+// (spec 022), and the idempotency records of the API's POST routes
+// (spec 015). Sessions are session.Store's. NewMemory keeps
 // them in the process; the directory and Postgres stores keep them on
 // disk, and storetest is the suite every implementation passes.
 package store
@@ -130,6 +131,7 @@ type Idempotencies interface {
 // Store is every object store toposd needs beside session.Store.
 type Store interface {
 	Agents
+	Triggers
 	Idempotencies
 }
 
@@ -142,14 +144,15 @@ func FindAgent(ctx context.Context, a Agents, owner, ref string) (Agent, error) 
 	return a.AgentByName(ctx, owner, ref)
 }
 
-// Lookup answers the resolver from the agents a store keeps, a name
-// read within owner's own agents as FindAgent reads it. A ref of
-// agent_<id>@<n> is that version, any other the latest. The kinds whose
-// stores are not built yet hold nothing.
-func Lookup(a Agents, owner string) manifest.Lookup { return lookup{a, owner} }
+// Lookup answers the resolver from the agents and triggers a store
+// keeps, a name read within owner's own objects as FindAgent reads it. A
+// ref of agent_<id>@<n> is that version, any other the latest. The kinds
+// whose stores are not built yet hold nothing.
+func Lookup(st Store, owner string) manifest.Lookup { return lookup{st, st, owner} }
 
 type lookup struct {
 	a     Agents
+	t     Triggers
 	owner string
 }
 
@@ -172,7 +175,14 @@ func (l lookup) Agent(ctx context.Context, ref string) (*v1.Agent, error) {
 	return DecodeAgent(v.Doc)
 }
 
-func (lookup) Trigger(context.Context, string) (*v1.Trigger, error) { return nil, ErrNotFound }
+// Trigger is owner's trigger of the name, as last applied.
+func (l lookup) Trigger(ctx context.Context, name string) (*v1.Trigger, error) {
+	t, err := l.t.TriggerByName(ctx, l.owner, name)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeTrigger(t.Doc)
+}
 
 func (lookup) MemoryStore(context.Context, string) (*v1.MemoryStore, error) {
 	return nil, ErrNotFound

@@ -20,6 +20,7 @@ import (
 // Memory keeps the objects in the process, for tests and for a toposd
 // whose sessions are also in memory.
 type Memory struct {
+	*TriggerBook
 	mu       sync.Mutex
 	now      func() time.Time
 	agents   map[string]Agent
@@ -33,7 +34,7 @@ func NewMemory(now func() time.Time) *Memory {
 	if now == nil {
 		now = time.Now
 	}
-	return &Memory{now: now, agents: map[string]Agent{}, names: map[ownedName]string{}, versions: map[string][]AgentVersion{}, idem: map[[2]string]Idempotency{}}
+	return &Memory{TriggerBook: NewTriggerBook(now, nil), now: now, agents: map[string]Agent{}, names: map[ownedName]string{}, versions: map[string][]AgentVersion{}, idem: map[[2]string]Idempotency{}}
 }
 
 // ownedName keys the name index: a name is unique within its owner.

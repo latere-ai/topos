@@ -9,6 +9,9 @@
 //	objects/agent/<agent_id>.json              an agent: name, owner, latest version, archive time
 //	objects/agent_version/<agent_id>/<n>.json  version n of the agent: digest, document, bundle
 //	objects/idempotency/<hex>.json             an idempotency record; hex is the SHA-256 of its subject and key
+//	objects/trigger/<trg_id>.json              a trigger: its document and its firing record
+//	objects/trigger_firing/<trg_id>/<frg_id>.json  one of its firings
+//	objects/trigger_key/<trg_id>/<hex>.json    the session one of its keys names; hex is the SHA-256 of the key
 //
 // An agent's file is the commit record of its versions: a version's file
 // is written first, and it is visible once the agent's latest version
@@ -17,7 +20,9 @@
 // never an agent whose latest version is missing. The agents and the
 // name index, a name unique within its owner, are read from the agent
 // files at Open and kept in the process; versions and idempotency
-// records are read from their files.
+// records are read from their files. Triggers, their firings and their
+// keys are read at Open into a store.TriggerBook, which writes each
+// file before it changes.
 //
 // The directory holds one process, toposd serve's (spec 014), and a
 // mutex serializes its calls.
@@ -60,6 +65,7 @@ var writeFile = atomicfile.WriteSync
 // Store is the directory store of agents, their versions and
 // idempotency records.
 type Store struct {
+	*store.TriggerBook
 	root string
 	now  func() time.Time
 
@@ -117,7 +123,7 @@ func Open(dataDir string, now func() time.Time) (*Store, error) {
 		now = time.Now
 	}
 	root := filepath.Join(dataDir, "objects")
-	for _, kind := range []string{kindAgent, kindVersion, kindIdempotency} {
+	for _, kind := range []string{kindAgent, kindVersion, kindIdempotency, kindTrigger, kindTriggerFiring, kindTriggerKey} {
 		if err := os.MkdirAll(filepath.Join(root, kind), 0o700); err != nil {
 			return nil, fmt.Errorf("dir: create %s: %w", kind, err)
 		}
@@ -127,7 +133,10 @@ func Open(dataDir string, now func() time.Time) (*Store, error) {
 			return nil, err
 		}
 	}
-	s := &Store{root: root, now: now, agents: map[string]store.Agent{}, names: map[ownedName]string{}}
+	s := &Store{TriggerBook: store.NewTriggerBook(now, triggerFiles{root: root}), root: root, now: now, agents: map[string]store.Agent{}, names: map[ownedName]string{}}
+	if err := loadTriggers(root, s.TriggerBook); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(filepath.Join(root, kindAgent))
 	if err != nil {
 		return nil, fmt.Errorf("dir: list agents: %w", err)

@@ -19,6 +19,7 @@ const (
 	PrefixSession    = "ses_"
 	PrefixEvent      = "evt_"
 	PrefixTrigger    = "trg_"
+	PrefixFiring     = "frg_"
 	PrefixCredential = "cred_"
 	PrefixMemory     = "mem_"
 )

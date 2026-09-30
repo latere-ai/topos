@@ -55,6 +55,11 @@ func Run(t *testing.T, f Factory) {
 	t.Run("archive", func(t *testing.T) { archive(t, f) })
 	t.Run("lookup", func(t *testing.T) { lookup(t, f) })
 	t.Run("idempotency", func(t *testing.T) { idempotency(t, f) })
+	t.Run("triggers", func(t *testing.T) { triggers(t, f) })
+	t.Run("trigger schedules", func(t *testing.T) { triggerSchedules(t, f) })
+	t.Run("trigger leases", func(t *testing.T) { triggerLeases(t, f) })
+	t.Run("trigger firings", func(t *testing.T) { triggerFirings(t, f) })
+	t.Run("trigger held and open firings", func(t *testing.T) { triggerHeldAndOpen(t, f) })
 }
 
 // Apply resolves an Agent manifest against owner's agents and stores
