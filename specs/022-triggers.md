@@ -300,9 +300,10 @@ that carries one, `message_too_large` for a message past the cap, and
 otherwise the code the create or the send would have answered
 ([[015-api]]).
 
-Every `trigger.*` question names the trigger as its resource, with
-`name`, `owner` (the rendered subject of the person who applied it,
-as an agent's `owner` is) and `agent` (the agent's id); a
+Every `trigger.*` question of one trigger names it as its resource,
+with `name`, `owner` (the rendered subject of the person who applied
+it, as an agent's `owner` is) and `agent` (the agent's id), and a
+`trigger.list` names none, as an `agent.list` does; a
 `trigger.create`, of a trigger that does not exist yet, carries
 `name` and `agent` alone, as an agent's create carries its name. A
 `trigger.create` and a `trigger.update` also carry the filter being
