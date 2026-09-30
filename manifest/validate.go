@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
@@ -480,19 +481,32 @@ func (v *validator) machine(at string, m v1.Machine) {
 
 func (v *validator) trigger(s v1.TriggerSpec) {
 	v.ref("spec.agent", s.Agent, session.PrefixAgent)
-	if s.Schedule == "" {
-		v.add("spec.schedule", "required")
-	} else if !validSchedule(s.Schedule) {
-		v.add("spec.schedule", "not a five-field cron expression or @hourly, @daily, @weekly")
+	switch {
+	case s.Schedule == "" && s.On == nil:
+		v.add("spec.schedule", "required: set schedule, or on for delivered events")
+	case s.Schedule != "" && s.On != nil:
+		v.add("spec", "set schedule or on, not both")
+	case s.Schedule != "":
+		v.schedule("spec.schedule", s.Schedule)
+	default:
+		v.on("spec.on", *s.On)
 	}
 	if s.TimeZone != "UTC" && !timeZone.MatchString(s.TimeZone) {
 		v.add("spec.timeZone", "not an IANA time zone name")
 	}
+	// A schedule fires with no event, so a path into one names nothing.
+	scheduled := s.On == nil
 	ss := s.Session
 	if ss.Message == "" {
 		v.add("spec.session.message", "required")
 	}
+	v.template("spec.session.message", ss.Message, scheduled)
 	v.text("spec.session.message", ss.Message)
+	v.template("spec.session.title", ss.Title, scheduled)
+	v.template("spec.session.key", ss.Key, scheduled)
+	if ss.Policy != "" {
+		v.oneOf("spec.session.policy", ss.Policy, v1.PolicyNew, v1.PolicyContinue)
+	}
 	if m := ss.Machine; m != nil && m.Kind != "" {
 		v.oneOf("spec.session.machine.kind", m.Kind, v1.MachineHost, v1.MachineCella)
 	}
@@ -506,12 +520,7 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 				v.add(rp, "url and ref are for a repository")
 			}
 		case v1.ResourceRepository:
-			if r.URL == "" {
-				v.add(rp+".url", "required")
-			}
-			if r.MemoryStore != "" || r.Access != "" {
-				v.add(rp, "memoryStore and access are for a memory store")
-			}
+			v.triggerRepository(rp, r, scheduled)
 		default:
 			v.oneOf(rp+".type", r.Type, v1.ResourceMemoryStore, v1.ResourceRepository)
 		}
@@ -523,7 +532,103 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 		v.duration("spec.session.limits.turnTimeout", l.TurnTimeout)
 		v.duration("spec.session.limits.maxAge", l.MaxAge)
 	}
+	if n := s.MaxActive; n != nil && (*n < 1 || *n > trigger.MaxActiveCeiling) {
+		v.add("spec.maxActive", fmt.Sprintf("%d is outside 1 to %d", *n, trigger.MaxActiveCeiling))
+	}
 	v.duration("spec.maxAge", s.MaxAge)
+}
+
+// schedule checks a cron expression, and that it fires at all: a
+// schedule of a day no calendar has, such as the 30th of February, is
+// refused.
+func (v *validator) schedule(at, s string) {
+	sc, err := trigger.ParseSchedule(s)
+	if err != nil {
+		v.add(at, err.Error())
+		return
+	}
+	if sc.Next(time.Unix(0, 0), time.UTC).IsZero() {
+		v.add(at, "matches no day of the calendar, so it never fires")
+	}
+}
+
+// on checks an event filter: a product, at least one verb, and each
+// match rule a path into the payload with at least one entry.
+func (v *validator) on(at string, on v1.TriggerOn) {
+	if on.Product == "" {
+		v.add(at+".product", "required")
+	} else if on.Product != strings.ToLower(on.Product) {
+		v.add(at+".product", "a product is lowercase, such as github")
+	}
+	if len(on.Verbs) == 0 {
+		v.add(at+".verbs", "required: at least one verb, or * for every verb")
+	}
+	v.patterns(at+".verbs", on.Verbs)
+	v.patterns(at+".resources", on.Resources)
+	for i, m := range on.Match {
+		mp := indexed(at+".match", i)
+		if err := trigger.CheckMatchPath(m.Path); err != nil {
+			v.add(mp+".path", err.Error())
+		}
+		if len(m.In) == 0 {
+			v.add(mp+".in", "required: at least one value the path's value may take")
+		}
+		v.patterns(mp+".in", m.In)
+	}
+}
+
+// patterns checks the entries of a filter list: each is a string, and a
+// * may only end one.
+func (v *validator) patterns(at string, entries []string) {
+	for i, e := range entries {
+		switch {
+		case e == "":
+			v.add(indexed(at, i), "empty; an entry is a value, or a prefix and *")
+		case strings.Contains(strings.TrimSuffix(e, "*"), "*"):
+			v.add(indexed(at, i), "a * may only end an entry, where it matches the prefix before it")
+		}
+	}
+}
+
+// template checks a template field: every {{ opens a placeholder of a
+// known root, and a schedule's names no event.
+func (v *validator) template(at, s string, scheduled bool) {
+	if s == "" {
+		return
+	}
+	t, err := trigger.Parse(s)
+	switch {
+	case err != nil:
+		v.add(at, err.Error())
+	case scheduled && t.Uses(trigger.RootEvent):
+		v.add(at, "a schedule trigger fires with no event, so an event path names nothing; use trigger or firing")
+	}
+}
+
+// triggerRepository checks a triggered session's repository. The url and
+// the ref are templates; one that holds no placeholder is checked as the
+// API checks a session's repository, and a rendered one where the
+// firing starts its session.
+func (v *validator) triggerRepository(at string, r v1.SessionResource, scheduled bool) {
+	if r.MemoryStore != "" || r.Access != "" {
+		v.add(at, "memoryStore and access are for a memory store")
+	}
+	if r.URL == "" {
+		v.add(at+".url", "required")
+		return
+	}
+	v.text(at+".url", r.URL)
+	v.template(at+".url", r.URL, scheduled)
+	v.template(at+".ref", r.Ref, scheduled)
+	u, uerr := trigger.Parse(r.URL)
+	ref, rerr := trigger.Parse(r.Ref)
+	if uerr != nil || rerr != nil || !u.Literal() || !ref.Literal() {
+		return
+	}
+	lit := session.Resource{URL: u.Render(nil), Ref: ref.Render(nil)}
+	if err := session.CheckRepository(lit, "https"); err != nil {
+		v.add(at, err.Error())
+	}
 }
 
 func (v *validator) memoryStore(s v1.MemoryStoreSpec) {
@@ -559,55 +664,6 @@ func (v *validator) connection(s v1.ConnectionSpec) {
 	if !strings.Contains(s.Inject.Format, "{value}") {
 		v.add("spec.inject.format", "must contain {value}")
 	}
-}
-
-// cronFields are the bounds of the five cron fields: minute, hour, day
-// of month, month, day of week (0 and 7 are Sunday).
-var cronFields = [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
-
-// validSchedule checks a cron expression: five fields of *, numbers,
-// ranges and lists, each with an optional /step, or one of the three
-// macros.
-func validSchedule(s string) bool {
-	switch s {
-	case "@hourly", "@daily", "@weekly":
-		return true
-	}
-	fields := strings.Fields(s)
-	if len(fields) != len(cronFields) {
-		return false
-	}
-	for i, f := range fields {
-		for item := range strings.SplitSeq(f, ",") {
-			if !cronItem(item, cronFields[i][0], cronFields[i][1]) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func cronItem(item string, lo, hi int) bool {
-	base, step, stepped := strings.Cut(item, "/")
-	if stepped {
-		n, err := strconv.Atoi(step)
-		if err != nil || n < 1 {
-			return false
-		}
-	}
-	if base == "*" {
-		return true
-	}
-	from, to, ranged := strings.Cut(base, "-")
-	a, err := strconv.Atoi(from)
-	if err != nil || a < lo || a > hi {
-		return false
-	}
-	if !ranged {
-		return true
-	}
-	b, err := strconv.Atoi(to)
-	return err == nil && b >= a && b <= hi
 }
 
 func indexed(at string, i int) string { return fmt.Sprintf("%s[%d]", at, i) }

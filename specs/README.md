@@ -77,7 +77,7 @@ another spec.
 | [019](019-git.md) | Git in a session: repositories as inputs, plain git in the sandbox, the token at the egress gateway, ref rules, attribution, the git cache | medium | drafted | 001, 002, 004, 009, 018 |
 | [020](020-memory-stores.md) | Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts | medium | drafted | 002, 003, 004, 008, 009, 018 |
 | [021](021-mcp-servers.md) | MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials | medium | drafted | 003, 008, 009, 012, 018 |
-| [022](022-triggers.md) | Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, the limits | medium | drafted | 003, 004, 006, 014, 015 |
+| [022](022-triggers.md) | Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, the limits | medium | in-progress | 003, 004, 006, 014 |
 | [023](023-events-and-observability.md) | Events and observability: the content-free sink, spans derived from the log, metrics | medium | drafted | 002, 004, 006, 014, 015 |
 | [024](024-client-cli-skill.md) | The client, the topos command and the agent skill: the API client, print mode, the supported import set | medium | drafted | 002, 004, 005, 016 |
 | [025](025-task-suite.md) | The task suite and the release bar: tasks and checkers, the pinned model, the threshold, spend, replays, IR against SDK | large | drafted | 005, 007, 008, 024, 026 |
@@ -161,7 +161,8 @@ flowchart BT
   S020 --> S018
   S021 --> S012
   S021 --> S018
-  S022 --> S015
+  S022 --> S003
+  S022 --> S014
   S023 --> S015
   S024 --> S016
   S025 --> S024
@@ -229,7 +230,7 @@ the phase that proves them.
 | toposd verifies and asks: the installation's authorizer decides, an unavailable one is a refusal, and the owner policy applies only when none is configured | 006 | the core decides nothing about a person |
 | git is optional and plain inside the sandbox; the git host's ref rules keep an agent on its own branches | 019 | the boundary is at the git host, so no push tool is needed |
 | memory stores are an API resource whose bytes live in a directory or under Arca's files plane, synced by the runner into the machine | 020 | the model reads and writes memory with the file tools, and no machine holds a storage credential |
-| triggers are schedules only; an event that should start a session calls the create route | 022 | the core is not an event bus |
+| a trigger fires on a schedule or on an event delivered to its fire route, and the core keeps no listener, verifies no provider's signature and polls nothing | 022 | the core is not an event bus: whatever produces an installation's events delivers them, and a filter, a template and a session policy are all the core adds |
 | every mutation emits one content-free event to the operator's sink | 023 | usage and audit need events; content in a sink is a second copy of every secret |
 | manifests are declarative and never hold a secret; one resolver serves the CLI and the server | 003 | everything a console does is scriptable, and a file in a repository is not a vault |
 | no interactive terminal in the core; `topos` is a scripting and test client | 024 | the interactive client is built on `client` and `runner` outside this module |

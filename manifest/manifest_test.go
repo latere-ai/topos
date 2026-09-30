@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 )
@@ -465,5 +466,100 @@ func TestADisplayNameIsOneLineOfText(t *testing.T) {
 	e := refused(t, CodeHoldsSecret, named("Reviewer sk-ant-api03-"+strings.Repeat("a1B2", 20)), Options{})
 	if !hasProblem(e, "metadata.displayName", "holds") {
 		t.Fatalf("a secret in the display name: %s", e.Detail())
+	}
+}
+
+// eventTrigger is a Trigger document on delivered events, its spec's
+// fields after the agent.
+func eventTrigger(spec string) string {
+	return "apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: t}\nspec: {agent: a, " + spec + "}\n"
+}
+
+// storedA are options whose lookup holds the agent a, the one every
+// trigger of these tests runs, stored as agent_<1>.
+func storedA(t *testing.T) Options {
+	t.Helper()
+	s := newStore()
+	rs, err := Resolve(t.Context(), []byte(agent("a")), fixed(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.apply(rs)
+	return fixed(s)
+}
+
+// TestApplyRefusesABadTemplate: a template of an unknown root, a {{ that
+// opens no placeholder, and an event path in a schedule trigger are each
+// refused as invalid_manifest at the field's path, in the message, the
+// title, the key and a repository's url and ref alike; an event trigger
+// takes event paths.
+func TestApplyRefusesABadTemplate(t *testing.T) {
+	schedule := func(session string) string {
+		return "apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: t}\nspec: {agent: a, schedule: '@daily', session: " + session + "}\n"
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{schedule("{message: 'Look at {{env.HOME}}.'}"), "spec.session.message", `unknown root "env"`},
+		{schedule("{message: 'Fix {{event.resource'}"), "spec.session.message", "opens no placeholder"},
+		{schedule("{message: 'Fix {{ not a path }}'}"), "spec.session.message", "opens no placeholder"},
+		{schedule("{message: 'Fix {{event.resource}}.'}"), "spec.session.message", "fires with no event"},
+		{schedule("{message: x, title: '{{event.verb}}'}"), "spec.session.title", "fires with no event"},
+		{schedule("{message: x, key: '{{secrets.key}}'}"), "spec.session.key", "unknown root"},
+		{schedule("{message: x, resources: [{type: repository, url: 'https://git.example/{{event.resource}}.git'}]}"), "spec.session.resources[0].url", "fires with no event"},
+		{schedule("{message: x, resources: [{type: repository, url: 'https://git.example/r.git', ref: '{{firing.id'}]}"), "spec.session.resources[0].ref", "opens no placeholder"},
+		{eventTrigger("on: {product: github, verbs: [push]}, session: {message: '{{payload.ref}}'}"), "spec.session.message", `unknown root "payload"`},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, Options{})
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: want %s: %s, got\n%s", strings.ReplaceAll(c.body, "\n", " "), c.path, c.detail, e.Detail())
+		}
+	}
+	// A schedule takes the trigger and firing roots and a literal {{; an
+	// event trigger takes event paths everywhere a template is.
+	for _, body := range []string{
+		schedule(`{message: 'Nightly {{trigger.name}} at {{ firing.time }}; \{{literal}}', title: '{{firing.id}}', key: nightly}`),
+		eventTrigger("on: {product: github, verbs: ['issue.*']}, session: {message: 'Triage {{event.resource}}: {{event.payload.issue.title}}', title: '{{event.verb}}', key: '{{event.subject}}', " +
+			"resources: [{type: repository, url: 'https://git.example/{{event.payload.repo}}.git', ref: '{{event.payload.ref}}'}]}"),
+	} {
+		one(t, body, storedA(t))
+	}
+}
+
+// TestTheTriggerFieldsOfSpec022: an event trigger resolves with its
+// filter; the fields spec 022 added are left out of a trigger that does
+// not set them, so its resolved spec is as it was; continue turns
+// endOnIdle's default off; and the new fields' rules are checked.
+func TestTheTriggerFieldsOfSpec022(t *testing.T) {
+	r := one(t, eventTrigger("on: {product: github, verbs: ['pull_request.*'], resources: ['o/r#*'], match: [{path: payload.action, in: [opened]}]}, "+
+		"session: {message: 'Review {{event.resource}}', policy: continue, key: '{{event.resource}}'}, maxActive: 3"), storedA(t))
+	want := `{"agent":"agent_00000000000000000000000001","timeZone":"UTC","on":{"product":"github","verbs":["pull_request.*"],"resources":["o/r#*"],"match":[{"path":"payload.action","in":["opened"]}]},` +
+		`"session":{"message":"Review {{event.resource}}","policy":"continue","key":"{{event.resource}}","endOnIdle":false},"skipIfActive":true,"maxActive":3,"maxAge":"1h","suspend":false}`
+	if string(r.Spec) != want {
+		t.Fatalf("the resolved event trigger:\n%s\nwant\n%s", r.Spec, want)
+	}
+	plain := one(t, "apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: t}\nspec: {agent: a, schedule: '@daily', session: {message: x}}\n", storedA(t))
+	if s := string(plain.Spec); strings.Contains(s, "policy") || strings.Contains(s, "maxActive") || strings.Contains(s, `"on"`) || strings.Contains(s, `"key"`) || !strings.Contains(s, `"endOnIdle":true`) {
+		t.Fatalf("a schedule trigger writes a field it does not set: %s", s)
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{eventTrigger("schedule: '@daily', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set schedule or on, not both"},
+		{eventTrigger("on: {verbs: [push]}, session: {message: x}"), "spec.on.product", "required"},
+		{eventTrigger("on: {product: GitHub, verbs: [push]}, session: {message: x}"), "spec.on.product", "lowercase"},
+		{eventTrigger("on: {product: github}, session: {message: x}"), "spec.on.verbs", "required"},
+		{eventTrigger("on: {product: github, verbs: ['']}, session: {message: x}"), "spec.on.verbs[0]", "empty"},
+		{eventTrigger("on: {product: github, verbs: ['pull*request']}, session: {message: x}"), "spec.on.verbs[0]", "may only end an entry"},
+		{eventTrigger("on: {product: github, verbs: [push], resources: ['*a*']}, session: {message: x}"), "spec.on.resources[0]", "may only end an entry"},
+		{eventTrigger("on: {product: github, verbs: [push], match: [{path: action, in: [x]}]}, session: {message: x}"), "spec.on.match[0].path", "a path into the payload"},
+		{eventTrigger("on: {product: github, verbs: [push], match: [{path: payload.action}]}, session: {message: x}"), "spec.on.match[0].in", "required"},
+		{eventTrigger("on: {product: github, verbs: [push], extra: 1}, session: {message: x}"), "spec.on.extra", "unknown field"},
+		{eventTrigger("on: {product: github, verbs: [push]}, session: {message: x, policy: always}"), "spec.session.policy", "not one of new, continue"},
+		{eventTrigger("on: {product: github, verbs: [push]}, maxActive: 0, session: {message: x}"), "spec.maxActive", fmt.Sprintf("0 is outside 1 to %d", trigger.MaxActiveCeiling)},
+		{eventTrigger(fmt.Sprintf("on: {product: github, verbs: [push]}, maxActive: %d, session: {message: x}", trigger.MaxActiveCeiling+1)), "spec.maxActive", "is outside 1 to"},
+		{eventTrigger("schedule: '0 0 30 2 *', session: {message: x}"), "spec.schedule", "never fires"},
+		{eventTrigger("on: {product: github, verbs: [push]}, session: {message: x, resources: [{type: repository, url: 'http://git.example/r.git'}]}"), "spec.session.resources[0]", "https"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, Options{})
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: want %s: %s, got\n%s", strings.ReplaceAll(c.body, "\n", " "), c.path, c.detail, e.Detail())
+		}
 	}
 }

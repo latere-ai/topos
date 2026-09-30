@@ -136,7 +136,7 @@ at the installation's identity provider ([[018-credentials-and-secrets]]).
 | `timeZone` | an IANA zone name | `UTC` | [[022-triggers]] |
 | `session.message` | string | required | the first `user.message` of each session |
 | `session.title`, `session.machine`, `session.resources`, `session.budget`, `session.limits` | as the session's fields, camelCase: `machine` `{kind, image, environment}`, each resource `{type, memoryStore, access}` with `type: memoryStore` or `{type, url, ref}` with `type: repository` | the agent's | [[004-session-log]] |
-| `session.endOnIdle` | boolean | `true` | [[004-session-log]] |
+| `session.endOnIdle` | boolean | `true`; `false` under `session.policy: continue` (changed by [[022-triggers]]) | [[004-session-log]] |
 | `skipIfActive` | boolean | `true` | [[022-triggers]] |
 | `maxAge` | Go duration | `1h` | [[022-triggers]] |
 | `suspend` | boolean | `false` | [[022-triggers]] |

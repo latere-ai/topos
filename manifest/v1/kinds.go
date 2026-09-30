@@ -15,27 +15,65 @@ const (
 	ResourceRepository  = "repository"
 )
 
-// TriggerSpec is a schedule and the session each firing starts (spec
-// 022).
+// Values of TriggerSession.Policy (spec 022).
+const (
+	PolicyNew      = "new"
+	PolicyContinue = "continue"
+)
+
+// TriggerSpec is what a trigger fires on, a schedule or delivered
+// events, and the session each firing starts or continues (spec 022).
+// The fields spec 022 added (On, MaxActive, and the session's Policy and
+// Key) are omitted when unset and take their defaults where the trigger
+// fires, so a trigger that sets none of them keeps its digest.
 type TriggerSpec struct {
 	// Agent references the agent the sessions run; the resolved spec
 	// holds its id, so the trigger runs the agent's latest version.
 	Agent string `json:"agent"`
 	// Schedule is a five-field cron expression, or @hourly, @daily or
-	// @weekly.
-	Schedule     string         `json:"schedule"`
-	TimeZone     string         `json:"timeZone"`
+	// @weekly. A trigger sets Schedule or On, never both.
+	Schedule string `json:"schedule,omitempty"`
+	TimeZone string `json:"timeZone"`
+	// On selects the delivered events the trigger fires on.
+	On           *TriggerOn     `json:"on,omitempty"`
 	Session      TriggerSession `json:"session"`
 	SkipIfActive *bool          `json:"skipIfActive"`
-	MaxAge       string         `json:"maxAge"`
-	Suspend      bool           `json:"suspend"`
+	// MaxActive bounds the trigger's sessions active at once;
+	// trigger.DefaultMaxActive when unset.
+	MaxActive *int   `json:"maxActive,omitempty"`
+	MaxAge    string `json:"maxAge"`
+	Suspend   bool   `json:"suspend"`
 }
 
-// TriggerSession is the session a firing creates. A field left out is
-// the agent's.
+// TriggerOn is an event filter: every field given must match, and a
+// list matches when any of its entries does. An entry of Verbs or
+// Resources is exact, or ends in * and matches the prefix before it.
+type TriggerOn struct {
+	Product   string         `json:"product"`
+	Verbs     []string       `json:"verbs"`
+	Resources []string       `json:"resources,omitempty"`
+	Match     []TriggerMatch `json:"match,omitempty"`
+}
+
+// TriggerMatch matches the value at Path, a path into the event's
+// payload such as payload.action, against the entries of In.
+type TriggerMatch struct {
+	Path string   `json:"path"`
+	In   []string `json:"in"`
+}
+
+// TriggerSession is the session a firing starts, or the message it sends
+// to the open session its key names. Message, Title, Key and a
+// repository resource's URL and Ref are templates (spec 022). A field
+// left out is the agent's.
 type TriggerSession struct {
-	Message   string            `json:"message"`
-	Title     string            `json:"title,omitempty"`
+	Message string `json:"message"`
+	Title   string `json:"title,omitempty"`
+	// Policy is PolicyNew or PolicyContinue; PolicyNew when unset.
+	Policy string `json:"policy,omitempty"`
+	// Key is the name a firing's session goes by: "" on a schedule and
+	// {{event.resource}} on an event when unset.
+	Key       string            `json:"key,omitempty"`
 	Machine   *SessionMachine   `json:"machine,omitempty"`
 	Resources []SessionResource `json:"resources,omitempty"`
 	Budget    *Budget           `json:"budget,omitempty"`

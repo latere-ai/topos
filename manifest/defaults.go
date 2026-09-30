@@ -55,7 +55,7 @@ func (d *defaulter) object(o *object) {
 	case o.agent != nil:
 		d.agent("spec", &o.agent.Spec)
 	case o.trig != nil:
-		trigger(&o.trig.Spec)
+		triggerDefaults(&o.trig.Spec)
 	case o.conn != nil:
 		connection(&o.conn.Spec)
 	}
@@ -122,11 +122,16 @@ func (d *defaulter) instructionsFile(path string, s *v1.AgentSpec) {
 	s.Instructions, s.InstructionsFile = string(b), ""
 }
 
-func trigger(s *v1.TriggerSpec) {
+// triggerDefaults writes a trigger's fixed defaults. The fields spec 022
+// added take theirs where the trigger fires (package trigger), so a
+// trigger that sets none of them keeps its digest; endOnIdle's default
+// follows the policy, false under continue, whose sessions take the
+// next firing's message.
+func triggerDefaults(s *v1.TriggerSpec) {
 	if s.TimeZone == "" {
 		s.TimeZone = DefaultTimeZone
 	}
-	setBool(&s.Session.EndOnIdle, true)
+	setBool(&s.Session.EndOnIdle, s.Session.Policy != v1.PolicyContinue)
 	setBool(&s.SkipIfActive, true)
 	if s.MaxAge == "" {
 		s.MaxAge = DefaultTriggerMaxAge

@@ -1,9 +1,9 @@
 ---
 title: "Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, and the limits"
-status: drafted
+status: in-progress
 track: core
-depends_on: [003-manifest.md, 004-session-log.md, 006-identity.md, 014-store.md, 015-api.md]
-affects: [internal/triggers/, internal/serve/, internal/server/, manifest/v1/, authorizer/, internal/store/]
+depends_on: [003-manifest.md, 004-session-log.md, 006-identity.md, 014-store.md]
+affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, session/, cmd/toposd/, api/]
 effort: medium
 created: 2026-09-27
 updated: 2026-09-30
@@ -65,9 +65,19 @@ below.
 | `session.resources` | as the session's field; a repository's `url` and `ref` may be templates (added) | the agent's | the session a firing starts |
 | `session.endOnIdle` | boolean | `true` under `new`, `false` under `continue` | [[004-session-log]]'s `end_on_idle` |
 | `skipIfActive` | boolean | `true` | under `new`, skip a firing while a session of its key is active |
-| `maxActive` (added) | integer, 1 to `triggers.MaxActiveCeiling` | `triggers.DefaultMaxActive` | the most sessions of this trigger active at once |
+| `maxActive` (added) | integer, 1 to `trigger.MaxActiveCeiling` | `trigger.DefaultMaxActive` | the most sessions of this trigger active at once |
 | `maxAge` | Go duration | `1h` | skip a firing more than this late |
 | `suspend` | boolean | `false` | fire nothing |
+
+The defaults of the added fields are applied where the trigger fires
+and are not written into the resolved spec, so a trigger that sets none
+of them resolves to the digest it had before them, as [[003-manifest]]'s
+versioning rule requires; `session.endOnIdle`'s default, which is
+written, follows `session.policy`. The grammar of the template, the
+schedule and the filter, the defaults of the added fields and the
+limits below are the package `manifest/trigger`, which the resolver
+checks a trigger with at apply and the server fires it with, so the two
+read one grammar.
 
 `on` selects events by the envelope's fields (below). Every field given
 must match; a list matches when any of its entries does.
@@ -91,7 +101,7 @@ carries, so the plane can deliver to a trigger without translating.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string, 1 to 200 characters, required | the producer's id for this delivery; unique per `product`; the core deduplicates on it |
+| `id` | string, 1 to `trigger.MaxEventID` characters, required | the producer's id for this delivery; unique per `product`; the core deduplicates on it |
 | `product` | string, required | where the event happened, lowercase: `origo`, `github`, `jira` |
 | `verb` | string, required | what happened, dotted: `push`, `pull_request.opened`, `issue.created` |
 | `resource` | string, required | what it happened to, as the producer names it: `changkun/topos-e2e#42`, `PROJ-7` |
@@ -121,9 +131,9 @@ literal `{{`. A path is a root and dotted segments of letters, digits,
 A string renders as itself, a number or a boolean as its JSON, an
 object or a list as compact JSON, and a path that names nothing or
 `null` as nothing. Each placeholder's value is cut to
-`triggers.MaxValueBytes` at a character boundary, with `[cut]` after
+`trigger.MaxValueBytes` at a character boundary, with `[cut]` after
 it, so one long issue body cannot crowd out the rest. A rendered
-message longer than `triggers.MaxMessageBytes` refuses the firing
+message longer than `trigger.MaxMessageBytes` refuses the firing
 (`refused`, reason `message_too_large`).
 
 Apply refuses a template with an unknown root, a `{{` that opens no
@@ -285,10 +295,11 @@ one not at all.
 
 | Constant | Value |
 |---|---|
-| `triggers.DefaultMaxActive` | 5 |
-| `triggers.MaxActiveCeiling` | 100 |
-| `triggers.MaxValueBytes` | 16 KiB |
-| `triggers.MaxMessageBytes` | 64 KiB |
+| `trigger.DefaultMaxActive` | 5 |
+| `trigger.MaxActiveCeiling` | 100 |
+| `trigger.MaxValueBytes` | 16 KiB |
+| `trigger.MaxMessageBytes` | 64 KiB |
+| `trigger.MaxEventID` | 200 characters |
 
 Every check, schema and message that names one of these reads the
 constant.

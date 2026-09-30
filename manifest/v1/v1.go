@@ -72,6 +72,28 @@ type Status struct {
 	// ArchivedAt is when the object was archived; a server writes it
 	// when it answers, and a stored version never carries it.
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	// LastFiredAt, LastSessionID, NextFireAt and Counts are a Trigger's
+	// firing record (spec 022), which a server writes when it answers:
+	// when it last started or continued a session and which, when a
+	// schedule next fires, and how many firings came to each outcome.
+	LastFiredAt   *time.Time     `json:"lastFiredAt,omitempty"`
+	LastSessionID string         `json:"lastSessionId,omitempty"`
+	NextFireAt    *time.Time     `json:"nextFireAt,omitempty"`
+	Counts        *TriggerCounts `json:"counts,omitempty"`
+}
+
+// TriggerCounts is the number of a trigger's firings that came to each
+// outcome of spec 022.
+type TriggerCounts struct {
+	Started       int64 `json:"started"`
+	Continued     int64 `json:"continued"`
+	Held          int64 `json:"held"`
+	Filtered      int64 `json:"filtered"`
+	SkippedActive int64 `json:"skippedActive"`
+	SkippedBusy   int64 `json:"skippedBusy"`
+	SkippedLate   int64 `json:"skippedLate"`
+	Refused       int64 `json:"refused"`
+	Failed        int64 `json:"failed"`
 }
 
 // Owner is an agent's owner: Type is "user" or "organization".
@@ -88,7 +110,8 @@ type Agent struct {
 	Status   Status     `json:"status,omitzero"`
 }
 
-// Trigger is a schedule that starts sessions of an agent.
+// Trigger starts or continues sessions of an agent on a schedule or on
+// delivered events.
 type Trigger struct {
 	TypeMeta
 	Metadata ObjectMeta  `json:"metadata"`
