@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.4 - 2026-09-30
+
 - Triggers start and continue an agent's sessions with no person
   present. `PUT /v1/triggers/{name}` applies a Trigger manifest that
   fires on `spec.schedule`, a five-field cron expression or `@hourly`,
