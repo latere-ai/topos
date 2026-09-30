@@ -848,7 +848,7 @@ func TestTheTriggerQuestionsNameTheTrigger(t *testing.T) {
 		return string(b)
 	}
 	creates := asked[authorizer.ActionTriggerCreate]
-	if len(creates) != 2 || creates[0].String("name") != "triage" || creates[0].String("agent") != ag.Status.ID || creates[0].String("owner") != "" ||
+	if len(creates) != 2 || creates[0].ID != tr.Status.ID || !strings.HasPrefix(creates[0].ID, "trg_") || creates[0].String("name") != "triage" || creates[0].String("agent") != ag.Status.ID || creates[0].String("owner") != "" ||
 		on(creates[0]) != `{"product":"github","resources":["o/r#*"],"verbs":["issue.*"]}` || creates[1].Fields["on"] != nil {
 		t.Fatalf("the creates: %+v", creates)
 	}

@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A trigger's `trigger.create` question carries the `trg_` id the
+  trigger is stored under as its resource id, where it carried none, so
+  an authorizer that delivers events to triggers knows a new trigger by
+  the id `POST /v1/triggers/{ref}/fire` takes from its first apply.
+
 ## v0.9.4 - 2026-09-30
 
 - Triggers start and continue an agent's sessions with no person

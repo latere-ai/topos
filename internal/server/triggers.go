@@ -141,7 +141,11 @@ func (c *call) applyTrigger() error {
 		if on := onField(spec); on != nil {
 			fields["on"] = on
 		}
-		if _, err := c.ask(ctx, authorizer.ActionTriggerCreate, authz.NewResource(authorizer.KindTrigger, "", fields)); err != nil {
+		// The id the resolver minted names the trigger from its first
+		// question, so an authorizer that keeps state per trigger, such as
+		// the events it delivers to it, can key that state by the id the
+		// fire route takes.
+		if _, err := c.ask(ctx, authorizer.ActionTriggerCreate, authz.NewResource(authorizer.KindTrigger, st.ID, fields)); err != nil {
 			return err
 		}
 	}

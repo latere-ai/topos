@@ -305,7 +305,10 @@ with `name`, `owner` (the rendered subject of the person who applied
 it, as an agent's `owner` is) and `agent` (the agent's id), and a
 `trigger.list` names none, as an `agent.list` does; a
 `trigger.create`, of a trigger that does not exist yet, carries
-`name` and `agent` alone, as an agent's create carries its name. A
+`name` and `agent` alone, with the `trg_` id the trigger will be
+stored under as its resource id, so an authorizer that keeps state per
+trigger keys it from the first question by the id the fire route
+takes. A
 `trigger.create` and a `trigger.update` also carry the filter being
 applied as `on`, `{product, verbs, resources}` as the manifest
 resolves it, `resources` absent when it names none, and no `on` for a
