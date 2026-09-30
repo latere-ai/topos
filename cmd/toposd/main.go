@@ -189,8 +189,10 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		<-runners
 	}()
 	// The reaper of spec 014 ends expired sessions and deletes the ones
-	// past their retention, until the process stops.
-	go reapEvery(runCtx, server.ReapInterval, api.Reap, log)
+	// past their retention, and the minute loop of spec 022 fires the
+	// schedules due and sends the held firings, until the process stops.
+	go every(runCtx, server.ReapInterval, "reap sessions", api.Reap, log)
+	go every(runCtx, server.TickInterval, "fire triggers", api.Tick, log)
 	// The identities a crash left archived and undisabled are caught up
 	// at start as well as on every reaper pass (spec 018).
 	go func() {
@@ -288,9 +290,9 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	return 0
 }
 
-// reapEvery runs reap every interval until ctx ends, logging what it
-// could not do.
-func reapEvery(ctx context.Context, interval time.Duration, reap func(context.Context) error, log *slog.Logger) {
+// every runs pass every interval until ctx ends, logging what it could
+// not do under what.
+func every(ctx context.Context, interval time.Duration, what string, pass func(context.Context) error, log *slog.Logger) {
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
@@ -298,8 +300,8 @@ func reapEvery(ctx context.Context, interval time.Duration, reap func(context.Co
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			if err := reap(ctx); err != nil {
-				log.ErrorContext(ctx, "reap sessions", "err", err)
+			if err := pass(ctx); err != nil {
+				log.ErrorContext(ctx, what, "err", err)
 			}
 		}
 	}

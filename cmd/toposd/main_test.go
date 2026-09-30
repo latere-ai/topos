@@ -1034,16 +1034,17 @@ func TestServeKeepsBlobsWhereTheURLSays(t *testing.T) {
 	}
 }
 
-// TestReapEveryRunsUntilTheContextEnds: the reaper runs on each tick,
-// logs what it could not do, and stops with its context.
-func TestReapEveryRunsUntilTheContextEnds(t *testing.T) {
+// TestEveryRunsUntilTheContextEnds: a pass of the reaper or of the
+// minute loop runs on each tick, logs what it could not do under its
+// name, and stops with its context.
+func TestEveryRunsUntilTheContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var logged syncBuffer
 	ran := make(chan struct{}, 8)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		reapEvery(ctx, time.Millisecond, func(context.Context) error {
+		every(ctx, time.Millisecond, "fire triggers", func(context.Context) error {
 			ran <- struct{}{}
 			return errors.New("the store is down")
 		}, slog.New(slog.NewTextHandler(&logged, nil)))
@@ -1057,7 +1058,7 @@ func TestReapEveryRunsUntilTheContextEnds(t *testing.T) {
 	}
 	cancel()
 	<-done
-	if !strings.Contains(logged.String(), "the store is down") {
+	if !strings.Contains(logged.String(), "the store is down") || !strings.Contains(logged.String(), "fire triggers") {
 		t.Fatalf("the log %q", logged.String())
 	}
 }
