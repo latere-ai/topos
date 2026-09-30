@@ -36,7 +36,7 @@ type triggerFile struct {
 	ID            string           `json:"id"`
 	Name          string           `json:"name"`
 	Owner         string           `json:"owner"`
-	OrgID         string           `json:"org_id,omitempty"`
+	Claims        map[string]any   `json:"claims,omitempty"`
 	AgentID       string           `json:"agent_id"`
 	Version       int              `json:"version"`
 	Digest        string           `json:"digest"`
@@ -75,7 +75,7 @@ type keyFile struct {
 }
 
 func toTriggerFile(t store.Trigger) triggerFile {
-	return triggerFile{ID: t.ID, Name: t.Name, Owner: t.Owner, OrgID: t.OrgID, AgentID: t.AgentID, Version: t.Version, Digest: t.Digest,
+	return triggerFile{ID: t.ID, Name: t.Name, Owner: t.Owner, Claims: t.Claims, AgentID: t.AgentID, Version: t.Version, Digest: t.Digest,
 		Doc: string(t.Doc), Suspended: t.Suspended, NextFireAt: t.NextFireAt, LastFiredAt: t.LastFiredAt, LastSessionID: t.LastSessionID,
 		Counts: t.Counts, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}
 }
@@ -88,7 +88,7 @@ func (f triggerFile) trigger() store.Trigger {
 		u := t.UTC()
 		return &u
 	}
-	return store.Trigger{ID: f.ID, Name: f.Name, Owner: f.Owner, OrgID: f.OrgID, AgentID: f.AgentID, Version: f.Version, Digest: f.Digest,
+	return store.Trigger{ID: f.ID, Name: f.Name, Owner: f.Owner, Claims: f.Claims, AgentID: f.AgentID, Version: f.Version, Digest: f.Digest,
 		Doc: []byte(f.Doc), Suspended: f.Suspended, NextFireAt: utc(f.NextFireAt), LastFiredAt: utc(f.LastFiredAt), LastSessionID: f.LastSessionID,
 		Counts: f.Counts, CreatedAt: f.CreatedAt.UTC(), UpdatedAt: f.UpdatedAt.UTC()}
 }
@@ -188,7 +188,7 @@ func loadTriggers(root string, book *store.TriggerBook) error {
 	held := map[string]bool{}
 	for _, e := range entries {
 		id, ok := strings.CutSuffix(e.Name(), ".json")
-		if !ok || session.CheckID(session.PrefixTrigger, id) != nil {
+		if !ok || !isID(session.PrefixTrigger, id) {
 			continue
 		}
 		var f triggerFile
@@ -204,7 +204,7 @@ func loadTriggers(root string, book *store.TriggerBook) error {
 	var fs []store.Firing
 	err = eachChild(filepath.Join(root, kindTriggerFiring), held, func(triggerID, name, path string) error {
 		id, ok := strings.CutSuffix(name, ".json")
-		if !ok || session.CheckID(session.PrefixFiring, id) != nil {
+		if !ok || !isID(session.PrefixFiring, id) {
 			return nil
 		}
 		var f firingFile
@@ -243,6 +243,10 @@ func loadTriggers(root string, book *store.TriggerBook) error {
 	}
 	return nil
 }
+
+// isID reports whether name is an id of prefix, the name of an object's
+// file; any other name is not an object's and is skipped.
+func isID(prefix, name string) bool { return session.CheckID(prefix, name) == nil }
 
 // eachChild calls fn with every file in the directory of each trigger
 // held under dir.

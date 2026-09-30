@@ -21,6 +21,7 @@ import (
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/internal/store/storetest"
+	"latere.ai/x/topos/internal/triggers"
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
@@ -213,7 +214,7 @@ func TestApplyingATrigger(t *testing.T) {
 	var tr v1.Trigger
 	a.decode(t, &tr)
 	stored, err := f.objects.TriggerByName(t.Context(), alice, "nightly")
-	if err != nil || stored.OrgID != "org_7" || stored.Owner != alice || stored.ID != tr.Status.ID {
+	if err != nil || fmt.Sprint(stored.Claims) != "map[org_id:org_7]" || stored.Owner != alice || stored.ID != tr.Status.ID {
 		t.Fatalf("the stored trigger: %+v, %v", stored, err)
 	}
 	// 2026-09-27 12:00 UTC is 14:00 in Berlin, so 09:00 there is the
@@ -864,5 +865,162 @@ func TestTheTriggerQuestionsNameTheTrigger(t *testing.T) {
 		if len(asked[action]) == 0 {
 			t.Fatalf("%s was not asked", action)
 		}
+	}
+}
+
+// TestTheActorStartsAndSendsAsTheRouteDoes: a firing's session takes the
+// trigger's budget, limits and rendered repositories as a create's body
+// would, and is refused as a create is for a budget or a repository the
+// create refuses; a send to an ended session is ErrEnded, and a refusal
+// is named as the API names it.
+func TestTheActorStartsAndSendsAsTheRouteDoes(t *testing.T) {
+	f := newTriggerFixture(t)
+	tr := f.applyTrigger("alice", "triage", "on: {product: github, verbs: ['*']}, session: {message: x, budget: {maxCost: '0.5'}, limits: {turnTimeout: 10m, maxAge: 1h}, "+
+		"resources: [{type: repository, url: 'https://git.example/{{event.resource}}.git', ref: main}]}")
+	out := f.fired("alice", "triage", `{"id":"1","product":"github","verb":"push","resource":"o/r","time":"2026-09-27T12:00:00Z"}`, store.OutcomeStarted)
+	s, err := f.sessions.Get(t.Context(), out.SessionID)
+	if err != nil || s.Budget.MaxCostUSDMicro == nil || *s.Budget.MaxCostUSDMicro != 500000 || s.Limits.TurnTimeout != "10m0s" || s.Limits.MaxAge != "1h0m0s" ||
+		len(s.Resources) != 1 || s.Resources[0].URL != "https://git.example/o/r.git" || s.Resources[0].Ref != "main" {
+		t.Fatalf("the firing's session: %+v, %v", s, err)
+	}
+	a := actor{f.api}
+	stored, err := f.objects.Trigger(t.Context(), tr.Status.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := tr.Spec
+	spec.Session.Budget = &v1.Budget{MaxCost: "a lot"}
+	if _, err := a.Start(t.Context(), triggers.Start{Trigger: stored, Spec: spec, FiringID: session.NewID(session.PrefixFiring), Message: "x"}); classify(err).code != CodeInvalidRequest {
+		t.Fatalf("a budget that does not parse: %v", err)
+	}
+	if _, err := a.Start(t.Context(), triggers.Start{Trigger: stored, Spec: tr.Spec, Message: "x",
+		Resources: []session.Resource{{Type: session.ResourceRepository, URL: "http://git.example/r.git"}}}); classify(err).code != CodeInvalidRequest {
+		t.Fatalf("a rendered repository that is not https: %v", err)
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+out.SessionID+"/end", "alice", `{"reason":"completed"}`); a.status != http.StatusOK {
+		t.Fatalf("end: %d %s", a.status, a.body)
+	}
+	if err := a.Send(t.Context(), triggers.Send{Trigger: stored, SessionID: out.SessionID, Message: "x"}); !errors.Is(err, triggers.ErrEnded) {
+		t.Fatalf("a send to an ended session: %v", err)
+	}
+	if err := a.Send(t.Context(), triggers.Send{Trigger: stored, SessionID: session.NewID(session.PrefixSession), Message: "x"}); classify(err).code != CodeNotFound {
+		t.Fatalf("a send to no session: %v", err)
+	}
+	for err, want := range map[error]struct {
+		reason    string
+		transient bool
+	}{
+		&auth.Error{Code: auth.CodeForbidden, Reason: "not_owner"}: {"not_owner", false},
+		&auth.Error{Code: auth.CodeForbidden}:                      {auth.CodeForbidden, false},
+		&auth.Error{Code: auth.CodeAuthorizerUnavailable}:          {auth.CodeAuthorizerUnavailable, true},
+		refuse(CodeMachineUnavailable, "no machine"):               {CodeMachineUnavailable, false},
+		errors.New("the disk is gone"):                             {CodeInternal, true},
+	} {
+		if reason, transient := a.Refusal(err); reason != want.reason || transient != want.transient {
+			t.Errorf("%v: %s %v, want %s %v", err, reason, transient, want.reason, want.transient)
+		}
+	}
+}
+
+// TestATriggerRouteTheAuthorizerRefuses: an update, a delete, a read and
+// a fire the authorizer denies change nothing, and one of a trigger the
+// caller may read answers forbidden.
+func TestATriggerRouteTheAuthorizerRefuses(t *testing.T) {
+	f := newTriggerFixture(t)
+	f.applyTrigger("alice", "nightly", "schedule: '@daily', session: {message: x}")
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		switch req.Action {
+		case authorizer.ActionTriggerUpdate, authorizer.ActionTriggerDelete, authorizer.ActionTriggerFire:
+			return authz.Decision{Reason: "frozen"}, nil
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	for _, c := range []struct{ method, path, body string }{
+		{http.MethodPut, "/v1/triggers/nightly", triggerYAML("nightly", "schedule: '@hourly', session: {message: y}")},
+		{http.MethodDelete, "/v1/triggers/nightly", ""},
+		{http.MethodPost, "/v1/triggers/nightly/fire", ""},
+	} {
+		if a := f.do(c.method, c.path, "alice", c.body); a.code() != auth.CodeForbidden || !strings.Contains(string(a.body), "frozen") {
+			t.Errorf("%s %s: %d %s", c.method, c.path, a.status, a.body)
+		}
+	}
+	got := f.get("alice", "nightly")
+	if got.Spec.Schedule != "@daily" || len(f.firings("alice", "nightly")) != 0 {
+		t.Fatalf("a refused route changed the trigger: %+v", got.Spec)
+	}
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionTriggerList || req.Action == authorizer.ActionTriggerRead {
+			return authz.Decision{}, &authz.Unavailable{URL: "http://authz", Err: errors.New("connection refused")}
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	for _, path := range []string{"/v1/triggers", "/v1/triggers/nightly", "/v1/triggers/nightly/firings"} {
+		if a := f.do(http.MethodGet, path, "alice", ""); a.code() != auth.CodeAuthorizerUnavailable {
+			t.Errorf("%s: %d %s", path, a.status, a.body)
+		}
+	}
+	// The admin reads and lists every owner's triggers.
+	f.authz.answer = nil
+	var p struct {
+		Items []v1.Trigger `json:"items"`
+	}
+	f.do(http.MethodGet, "/v1/triggers", "root", "").decode(t, &p)
+	if len(p.Items) != 1 {
+		t.Fatalf("the admin lists %d triggers", len(p.Items))
+	}
+}
+
+// TestAStoredTriggerThatDoesNotReadIsInternal: a trigger whose stored
+// document no longer reads answers internal on every route that renders
+// or fires it, and fires nothing.
+func TestAStoredTriggerThatDoesNotReadIsInternal(t *testing.T) {
+	f := newTriggerFixture(t)
+	bad := storetest.NewTrigger(alice, "broken", f.clock.Now())
+	bad.Doc = []byte(`{"spec":`)
+	if err := f.objects.PutTrigger(t.Context(), bad); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/v1/triggers"},
+		{http.MethodGet, "/v1/triggers/broken"},
+		{http.MethodPost, "/v1/triggers/broken/fire"},
+		{http.MethodPut, "/v1/triggers/broken"},
+	} {
+		body := ""
+		if c.method == http.MethodPut {
+			body = triggerYAML("broken", "schedule: '@daily', session: {message: x}")
+		}
+		if a := f.do(c.method, c.path, "alice", body); a.code() != CodeInternal {
+			t.Errorf("%s %s: %d %s", c.method, c.path, a.status, a.body)
+		}
+	}
+}
+
+// TestAnOwnerOfNoIssuerIsAskedAsItsSubject: a trigger whose owner's
+// subject names no issuer, as a subject the core minted does not, asks
+// its firing's create with the subject as its sub; the owner policy
+// refuses a create of an agent the owner does not own, and the reason is
+// withheld, since the owner may not read that agent.
+func TestAnOwnerOfNoIssuerIsAskedAsItsSubject(t *testing.T) {
+	f := newTriggerFixture(t)
+	a := f.do(http.MethodGet, "/v1/agents/reviewer", "alice", "")
+	var ag v1.Agent
+	a.decode(t, &ag)
+	tr := storetest.NewTrigger("service-account", "nightly", f.clock.Now())
+	tr.Doc = []byte(strings.Replace(string(tr.Doc), "agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C", ag.Status.ID, 1))
+	tr.AgentID = ag.Status.ID
+	if err := f.objects.PutTrigger(t.Context(), tr); err != nil {
+		t.Fatal(err)
+	}
+	var creates []authz.Request
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionCreate {
+			creates = append(creates, req)
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	out := f.fired("root", tr.ID, "", store.OutcomeRefused)
+	if out.Reason != auth.CodeForbidden || len(creates) != 1 || creates[0].Sub != "service-account" || creates[0].Issuer != "" {
+		t.Fatalf("the firing %+v, asked %+v", out, creates)
 	}
 }

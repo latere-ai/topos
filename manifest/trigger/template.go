@@ -120,7 +120,7 @@ func ParsePath(raw string) ([]string, *Error) {
 }
 
 func notPathChar(r rune) bool {
-	return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-')
+	return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-'
 }
 
 // Uses reports whether a placeholder of t starts from root.

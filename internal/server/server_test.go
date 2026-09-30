@@ -48,7 +48,7 @@ func (tokens) Authenticate(r *http.Request) (auth.Caller, error) {
 	}
 	claims := map[string]any{"sub": sub}
 	if org != "" {
-		claims[OrgClaim] = org
+		claims["org_id"] = org
 	}
 	return auth.Caller{Subject: authz.Subject(issuer, sub), Issuer: issuer, Sub: sub, Claims: claims}, nil
 }

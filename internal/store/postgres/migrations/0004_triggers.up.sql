@@ -1,6 +1,7 @@
 -- Triggers, their firings and the open session each key names (spec 014,
 -- spec 022). A trigger's row holds its latest resolved document as JSON
--- text, read and written whole, its schedule's next fire time, its
+-- text, read and written whole, the claims of its apply that its
+-- firings forward as JSON text, its schedule's next fire time, its
 -- firing record and the lease that serializes its firings across
 -- replicas; counts is the JSON object of one count per outcome. A firing
 -- is keyed by its trigger and its dedupe string, so one firing acts once
@@ -9,7 +10,7 @@ CREATE TABLE triggers (
     id                text PRIMARY KEY,
     name              text NOT NULL,
     owner             text NOT NULL,
-    org_id            text NOT NULL DEFAULT '',
+    claims            text NOT NULL DEFAULT '{}',
     agent_id          text NOT NULL,
     version           integer NOT NULL,
     digest            text NOT NULL,

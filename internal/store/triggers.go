@@ -43,9 +43,9 @@ type Trigger struct {
 	// Owner is the rendered subject of the person who last applied the
 	// trigger, the initiator of every session it starts.
 	Owner string
-	// OrgID is the org_id claim of that apply, the context the trigger
-	// was applied in, and "" for a personal one.
-	OrgID string
+	// Claims are the claims of that apply that the trigger's firings
+	// forward to the authorizer as the owner's (auth.TriggerClaims).
+	Claims map[string]any
 	// AgentID is the agent_ id the trigger's spec runs, without a
 	// version.
 	AgentID string

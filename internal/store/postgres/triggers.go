@@ -17,17 +17,20 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-const triggerColumns = `id, name, owner, org_id, agent_id, version, digest, doc, suspended, next_fire_at, last_fired_at, last_session_id, counts, created_at, updated_at`
+const triggerColumns = `id, name, owner, claims, agent_id, version, digest, doc, suspended, next_fire_at, last_fired_at, last_session_id, counts, created_at, updated_at`
 
 func scanTrigger(row pgx.Row) (store.Trigger, error) {
 	var t store.Trigger
-	var doc, counts string
-	if err := row.Scan(&t.ID, &t.Name, &t.Owner, &t.OrgID, &t.AgentID, &t.Version, &t.Digest, &doc, &t.Suspended,
+	var doc, counts, claims string
+	if err := row.Scan(&t.ID, &t.Name, &t.Owner, &claims, &t.AgentID, &t.Version, &t.Digest, &doc, &t.Suspended,
 		&t.NextFireAt, &t.LastFiredAt, &t.LastSessionID, &counts, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return store.Trigger{}, err
 	}
 	if err := json.Unmarshal([]byte(counts), &t.Counts); err != nil {
 		return store.Trigger{}, fmt.Errorf("%w: trigger %s's counts: %w", session.ErrCorrupt, t.ID, err)
+	}
+	if err := json.Unmarshal([]byte(claims), &t.Claims); err != nil {
+		return store.Trigger{}, fmt.Errorf("%w: trigger %s's claims: %w", session.ErrCorrupt, t.ID, err)
 	}
 	t.Doc, t.CreatedAt, t.UpdatedAt = []byte(doc), t.CreatedAt.UTC(), t.UpdatedAt.UTC()
 	t.NextFireAt, t.LastFiredAt = utc(t.NextFireAt), utc(t.LastFiredAt)
@@ -110,9 +113,13 @@ func (s *Store) PutTrigger(ctx context.Context, t store.Trigger) error {
 	if err != nil {
 		return err
 	}
-	tag, err := s.pool.Exec(ctx, `UPDATE triggers SET name = $2, owner = $3, org_id = $4, agent_id = $5, version = $6, digest = $7, doc = $8,
+	claims, err := json.Marshal(t.Claims)
+	if err != nil {
+		return fmt.Errorf("postgres: encode a trigger's claims: %w", err)
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE triggers SET name = $2, owner = $3, claims = $4, agent_id = $5, version = $6, digest = $7, doc = $8,
 		suspended = $9, next_fire_at = $10, updated_at = $11 WHERE id = $1 AND (version = $6 OR version = $6 - 1)`,
-		t.ID, t.Name, t.Owner, t.OrgID, t.AgentID, t.Version, t.Digest, string(t.Doc), t.Suspended, utc(t.NextFireAt), t.UpdatedAt.UTC())
+		t.ID, t.Name, t.Owner, string(claims), t.AgentID, t.Version, t.Digest, string(t.Doc), t.Suspended, utc(t.NextFireAt), t.UpdatedAt.UTC())
 	switch {
 	case isUnique(err):
 		return fmt.Errorf("%w: trigger %s exists", store.ErrConflict, t.Name)
@@ -124,7 +131,7 @@ func (s *Store) PutTrigger(ctx context.Context, t store.Trigger) error {
 		return fmt.Errorf("%w: trigger %s version %d does not follow the stored version", store.ErrConflict, t.ID, t.Version)
 	}
 	_, err = s.pool.Exec(ctx, `INSERT INTO triggers (`+triggerColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, '', $11, $12, $13)`,
-		t.ID, t.Name, t.Owner, t.OrgID, t.AgentID, t.Version, t.Digest, string(t.Doc), t.Suspended, utc(t.NextFireAt), counts, t.CreatedAt.UTC(), t.UpdatedAt.UTC())
+		t.ID, t.Name, t.Owner, string(claims), t.AgentID, t.Version, t.Digest, string(t.Doc), t.Suspended, utc(t.NextFireAt), counts, t.CreatedAt.UTC(), t.UpdatedAt.UTC())
 	if isUnique(err) {
 		return fmt.Errorf("%w: trigger %s exists", store.ErrConflict, t.Name)
 	}

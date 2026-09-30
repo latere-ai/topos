@@ -5,6 +5,7 @@ package dir
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,7 +52,7 @@ func TestReopenReadsTriggersBack(t *testing.T) {
 
 	again := open(t, root, clock.Now)
 	got, err := again.Trigger(t.Context(), tr.ID)
-	if err != nil || got.Name != "nightly" || got.OrgID != "org_1" || got.Counts.Started != 1 || got.LastSessionID != "ses_1" ||
+	if err != nil || got.Name != "nightly" || fmt.Sprint(got.Claims) != "map[context:c1]" || got.Counts.Started != 1 || got.LastSessionID != "ses_1" ||
 		got.NextFireAt == nil || !got.NextFireAt.Equal(*tr.NextFireAt) || string(got.Doc) != string(tr.Doc) {
 		t.Fatalf("the trigger after a restart: %+v, %v", got, err)
 	}

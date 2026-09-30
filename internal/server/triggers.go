@@ -31,10 +31,6 @@ import (
 // 022.
 const TickInterval = time.Minute
 
-// OrgClaim is the claim of an apply's token that names the context the
-// trigger is applied in; a firing asks as the owner with it (spec 022).
-const OrgClaim = "org_id"
-
 // triggerResource is an existing trigger as the authorizer reads it: its
 // name, its owner, the person who applied it, and the agent it runs.
 func triggerResource(t store.Trigger) authz.Resource {
@@ -79,13 +75,6 @@ func renderTrigger(t store.Trigger) (*v1.Trigger, error) {
 	counts := t.Counts
 	doc.Status.LastFiredAt, doc.Status.LastSessionID, doc.Status.NextFireAt, doc.Status.Counts = t.LastFiredAt, t.LastSessionID, t.NextFireAt, &counts
 	return doc, nil
-}
-
-// orgOf is the context a caller applies a trigger in: the org_id claim
-// of its token, empty for a personal one.
-func orgOf(c auth.Caller) string {
-	org, _ := c.Claims[OrgClaim].(string)
-	return org
 }
 
 // applyTrigger is PUT /triggers/{name}: resolve one Trigger manifest and
@@ -163,7 +152,7 @@ func (c *call) applyTrigger() error {
 	if err != nil {
 		return err
 	}
-	t := store.Trigger{ID: st.ID, Name: name, Owner: c.caller.Subject, OrgID: orgOf(c.caller), AgentID: agentID, Version: st.Version, Digest: st.Digest,
+	t := store.Trigger{ID: st.ID, Name: name, Owner: c.caller.Subject, Claims: auth.TriggerClaims(c.caller), AgentID: agentID, Version: st.Version, Digest: st.Digest,
 		Doc: doc, Suspended: spec.Suspend, NextFireAt: next, CreatedAt: st.CreatedAt, UpdatedAt: now}
 	if err := c.s.o.Objects.PutTrigger(ctx, t); err != nil {
 		return err
@@ -183,15 +172,11 @@ func (c *call) applyTrigger() error {
 }
 
 // checkTriggerSession refuses what a session's create cannot take yet: a
-// machine, and a memory store, which is its agent's (spec 015).
+// machine (spec 015). A memory store the resolver refuses already, as a
+// reference the API holds nothing for.
 func checkTriggerSession(s v1.TriggerSession) error {
 	if s.Machine != nil {
 		return refuse(CodeInvalidRequest, "spec.session.machine: a session's machine is its agent's; a create cannot set it yet")
-	}
-	for i, r := range s.Resources {
-		if r.Type != v1.ResourceRepository {
-			return refuse(CodeInvalidRequest, "spec.session.resources[%d]: a session names repositories, and its memory stores are its agent's", i)
-		}
 	}
 	return nil
 }
@@ -374,15 +359,15 @@ func (s *Server) Tick(ctx context.Context) error { return s.triggers.Tick(ctx) }
 type actor struct{ s *Server }
 
 // owner is the trigger's owner as the asker of its firings: the subject
-// stored at apply, with the context it was applied in as its one claim,
-// so the authorizer decides a firing as it would the owner's own
-// request in that context (spec 022).
+// stored at apply, with the claims the apply kept to forward, so the
+// authorizer decides a firing as it would the owner's own request in the
+// context it was applied in (spec 022).
 func (s *Server) owner(t store.Trigger) asker {
 	issuer, sub, ok := authz.SplitSubject(t.Owner)
 	if !ok {
 		sub = t.Owner
 	}
-	q := asker{caller: auth.Caller{Subject: t.Owner, Issuer: issuer, Sub: sub, Claims: map[string]any{OrgClaim: t.OrgID}}}
+	q := asker{caller: auth.Caller{Subject: t.Owner, Issuer: issuer, Sub: sub, Claims: t.Claims}}
 	q.ask = func(ctx context.Context, action string, res authz.Resource) (authz.Decision, error) {
 		return s.o.Guard.Ask(ctx, auth.Envelope(q.caller, action, res, nil))
 	}

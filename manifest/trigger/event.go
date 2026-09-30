@@ -101,7 +101,7 @@ func Matches(on v1.TriggerOn, e Envelope) (bool, error) {
 	for _, m := range on.Match {
 		path, perr := ParsePath(RootEvent + "." + m.Path)
 		if perr != nil {
-			return false, nil
+			return false, fmt.Errorf("the match path %q: %w", m.Path, perr)
 		}
 		v, scalar := Lookup(values, path)
 		if !scalar || !anyPattern(m.In, v) {

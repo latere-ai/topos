@@ -163,6 +163,11 @@ identity:
   # resource} in the grammar of specs 003 and 018, and not the
   # authorizer's question, which toposd asks through latere.ai/x/pkg/authz.
   envelope_exempt: [manifest/v1/permission.go]
+  # A trigger's firing asks the authorizer as the trigger's owner, whose
+  # token is not at hand when it fires, so the apply keeps the claims a
+  # firing forwards (spec 022). This file names them, and nothing reads
+  # meaning from them.
+  claims_passthrough: [internal/auth/claims.go]
 
 # Serving queries read the pooled URL when it is set; the migrations and
 # LISTEN keep the direct one (spec 014).

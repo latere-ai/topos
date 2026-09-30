@@ -22,7 +22,7 @@ import (
 func NewTrigger(owner, name string, created time.Time) store.Trigger {
 	id := session.NewID(session.PrefixTrigger)
 	doc := fmt.Sprintf(`{"apiVersion":"topos.latere.ai/v1","kind":"Trigger","metadata":{"name":%q},"spec":{"agent":"agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C","schedule":"@hourly","timeZone":"UTC","session":{"message":"Go.","endOnIdle":true},"skipIfActive":true,"maxAge":"1h","suspend":false},"status":{"id":%q,"version":1,"digest":"sha256:1"}}`, name, id)
-	return store.Trigger{ID: id, Name: name, Owner: owner, OrgID: "org_1", AgentID: "agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C",
+	return store.Trigger{ID: id, Name: name, Owner: owner, Claims: map[string]any{"context": "c1"}, AgentID: "agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C",
 		Version: 1, Digest: "sha256:1", Doc: []byte(doc), CreatedAt: created, UpdatedAt: created}
 }
 
@@ -49,7 +49,7 @@ func triggers(t *testing.T, f Factory) {
 		func() (store.Trigger, error) { return st.TriggerByName(ctx, "alice", "nightly") },
 	} {
 		got, err := read()
-		if err != nil || got.ID != tr.ID || got.Owner != "alice" || got.OrgID != "org_1" || got.AgentID != tr.AgentID || got.Version != 1 ||
+		if err != nil || got.ID != tr.ID || got.Owner != "alice" || fmt.Sprint(got.Claims) != "map[context:c1]" || got.AgentID != tr.AgentID || got.Version != 1 ||
 			string(got.Doc) != string(tr.Doc) || got.NextFireAt == nil || !got.NextFireAt.Equal(next) || !got.CreatedAt.Equal(tr.CreatedAt) {
 			t.Fatalf("the stored trigger = %+v, %v", got, err)
 		}
@@ -82,12 +82,12 @@ func triggers(t *testing.T, f Factory) {
 		t.Fatal(err)
 	}
 	v2 := tr
-	v2.Version, v2.Digest, v2.Suspended, v2.NextFireAt, v2.OrgID = 2, "sha256:2", true, nil, ""
+	v2.Version, v2.Digest, v2.Suspended, v2.NextFireAt, v2.Claims = 2, "sha256:2", true, nil, map[string]any{"context": ""}
 	if err := st.PutTrigger(ctx, v2); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.Trigger(ctx, tr.ID)
-	if err != nil || got.Version != 2 || !got.Suspended || got.NextFireAt != nil || got.OrgID != "" || got.Counts.Started != 1 || got.LastSessionID != "ses_1" || got.LastFiredAt == nil || !got.CreatedAt.Equal(tr.CreatedAt) {
+	if err != nil || got.Version != 2 || !got.Suspended || got.NextFireAt != nil || fmt.Sprint(got.Claims) != "map[context:]" || got.Counts.Started != 1 || got.LastSessionID != "ses_1" || got.LastFiredAt == nil || !got.CreatedAt.Equal(tr.CreatedAt) {
 		t.Fatalf("after the second apply: %+v, %v", got, err)
 	}
 	same := v2
