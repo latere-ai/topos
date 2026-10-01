@@ -104,12 +104,14 @@ type Fence interface {
 // ListOptions filter and page List. Sessions list newest first; Cursor
 // is the value a previous page returned. Owners, when set, keeps the
 // sessions whose initiator's subject is one of them, the narrowing an
-// authorizer's list decision carries; Runner, when set, keeps the
-// sessions of that runner kind. A store filters before it pages, so a
-// page holds only matching sessions.
+// authorizer's list decision carries; Agents, when set, keeps the
+// sessions of those agents, the ones a context owns; Runner, when set,
+// keeps the sessions of that runner kind. A store filters before it
+// pages, so a page holds only matching sessions.
 type ListOptions struct {
 	Status  Status
 	AgentID string
+	Agents  []string
 	Owners  []string
 	Runner  string
 	// Archived keeps sessions by whether they are archived; the zero
@@ -212,6 +214,7 @@ func (sum *Summary) Count(s Session) {
 func (o ListOptions) keeps(s Session) bool {
 	return (o.Status == "" || s.Status == o.Status) &&
 		(o.AgentID == "" || s.Agent.ID == o.AgentID) &&
+		(len(o.Agents) == 0 || slices.Contains(o.Agents, s.Agent.ID)) &&
 		(len(o.Owners) == 0 || slices.Contains(o.Owners, s.Initiator.Subject)) &&
 		(o.Runner == "" || s.Runner == o.Runner) &&
 		o.Archived.Keeps(s)

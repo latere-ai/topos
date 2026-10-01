@@ -261,11 +261,16 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 	if owners == nil {
 		owners = []string{}
 	}
+	agents := o.Agents
+	if agents == nil {
+		agents = []string{}
+	}
 	rows, err := s.pool.Query(ctx, `SELECT body FROM sessions
 		WHERE ($1 = '' OR status = $1) AND ($2 = '' OR agent_id = $2) AND ($3 = '' OR id < $3)
 		AND (cardinality($5::text[]) = 0 OR owner = ANY($5::text[])) AND ($6 = '' OR runner = $6)
 		AND ($7 = '' OR ($7 = 'exclude' AND archived_at IS NULL) OR ($7 = 'only' AND archived_at IS NOT NULL))
-		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1, owners, o.Runner, string(o.Archived))
+		AND (cardinality($8::text[]) = 0 OR agent_id = ANY($8::text[]))
+		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1, owners, o.Runner, string(o.Archived), agents)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: list sessions: %w", err)
 	}
@@ -294,6 +299,10 @@ func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.S
 	if owners == nil {
 		owners = []string{}
 	}
+	ids := o.Agents
+	if ids == nil {
+		ids = []string{}
+	}
 	var running, waiting, idle, ended, agents int64
 	err := s.pool.QueryRow(ctx, `SELECT
 		count(*) FILTER (WHERE status = $5),
@@ -303,9 +312,10 @@ func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.S
 		count(DISTINCT agent_id)
 		FROM sessions
 		WHERE ($1 = '' OR agent_id = $1) AND (cardinality($2::text[]) = 0 OR owner = ANY($2::text[])) AND ($3 = '' OR runner = $3)
-		AND ($4 = '' OR ($4 = 'exclude' AND archived_at IS NULL) OR ($4 = 'only' AND archived_at IS NOT NULL))`,
+		AND ($4 = '' OR ($4 = 'exclude' AND archived_at IS NULL) OR ($4 = 'only' AND archived_at IS NOT NULL))
+		AND (cardinality($9::text[]) = 0 OR agent_id = ANY($9::text[]))`,
 		o.AgentID, owners, o.Runner, string(o.Archived),
-		string(session.StatusRunning), string(session.StatusIdle), string(session.StatusEnded), string(session.StopToolConfirmation),
+		string(session.StatusRunning), string(session.StatusIdle), string(session.StatusEnded), string(session.StopToolConfirmation), ids,
 	).Scan(&running, &waiting, &idle, &ended, &agents)
 	if err != nil {
 		return session.Summary{}, fmt.Errorf("postgres: summarize sessions: %w", err)

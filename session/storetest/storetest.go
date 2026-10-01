@@ -663,16 +663,17 @@ func testList(t *testing.T, st session.Store) {
 
 func testListFilters(t *testing.T, st session.Store) {
 	// Newest first, the order List answers in, each with its initiator
-	// and runner kind.
+	// and runner kind, and of one of three agents in turn.
 	var all []session.Session
 	archiver, archives := st.(session.Archiver)
+	agents := []string{session.NewID(session.PrefixAgent), session.NewID(session.PrefixAgent), session.NewID(session.PrefixAgent)}
 	for i, c := range []struct{ owner, runner string }{
 		{"usr_a", session.RunnerHosted}, {"usr_b", session.RunnerExternal}, {"usr_a", session.RunnerExternal},
 		{"usr_c", session.RunnerHosted}, {"usr_a", session.RunnerHosted}, {"usr_b", session.RunnerHosted},
 		{"usr_a", session.RunnerHosted}, {"usr_c", session.RunnerExternal},
 	} {
 		s := NewSession()
-		s.Initiator.Subject, s.Runner = c.owner, c.runner
+		s.Initiator.Subject, s.Runner, s.Agent.ID = c.owner, c.runner, agents[i%len(agents)]
 		if err := st.Create(t.Context(), s, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -698,11 +699,15 @@ func testListFilters(t *testing.T, st session.Store) {
 		{"not archived", session.ListOptions{Archived: session.ArchivedExclude}},
 		{"archived", session.ListOptions{Archived: session.ArchivedOnly}},
 		{"owner and archived", session.ListOptions{Owners: []string{"usr_a"}, Archived: session.ArchivedOnly}},
+		{"one agent", session.ListOptions{Agents: agents[:1]}},
+		{"two agents and an owner", session.ListOptions{Agents: agents[1:], Owners: []string{"usr_a"}}},
+		{"no such agent", session.ListOptions{Agents: []string{session.NewID(session.PrefixAgent)}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var want []string
 			for _, s := range all {
-				if (len(c.o.Owners) == 0 || slices.Contains(c.o.Owners, s.Initiator.Subject)) && (c.o.Runner == "" || s.Runner == c.o.Runner) && c.o.Archived.Keeps(s) {
+				if (len(c.o.Owners) == 0 || slices.Contains(c.o.Owners, s.Initiator.Subject)) && (c.o.Runner == "" || s.Runner == c.o.Runner) && c.o.Archived.Keeps(s) &&
+					(len(c.o.Agents) == 0 || slices.Contains(c.o.Agents, s.Agent.ID)) {
 					want = append(want, s.ID)
 				}
 			}
@@ -849,6 +854,8 @@ func testSummary(t *testing.T, st session.Store) {
 		{"not archived", session.ListOptions{Archived: session.ArchivedExclude}},
 		{"archived", session.ListOptions{Archived: session.ArchivedOnly}},
 		{"owner, runner and not archived", session.ListOptions{Owners: []string{"usr_a"}, Runner: session.RunnerHosted, Archived: session.ArchivedExclude}},
+		{"two agents", session.ListOptions{Agents: []string{agents[1].ID, agents[2].ID}}},
+		{"an agent and an owner", session.ListOptions{Agents: []string{agents[0].ID}, Owners: []string{"usr_a"}}},
 		{"a status, which does not narrow", session.ListOptions{Status: session.StatusRunning, Limit: 1, Cursor: every[0].ID}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -856,6 +863,7 @@ func testSummary(t *testing.T, st session.Store) {
 			seen := map[string]bool{}
 			for _, s := range every {
 				if (c.o.AgentID != "" && s.Agent.ID != c.o.AgentID) || (len(c.o.Owners) > 0 && !slices.Contains(c.o.Owners, s.Initiator.Subject)) ||
+					(len(c.o.Agents) > 0 && !slices.Contains(c.o.Agents, s.Agent.ID)) ||
 					(c.o.Runner != "" && s.Runner != c.o.Runner) || !c.o.Archived.Keeps(s) {
 					continue
 				}
