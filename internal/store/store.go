@@ -177,17 +177,25 @@ func FindTrigger(ctx context.Context, t Triggers, owner, ref string) (Trigger, e
 // keeps, a name read within owner's own objects as FindAgent reads it. A
 // ref of agent_<id>@<n> is that version, any other the latest. The kinds
 // whose stores are not built yet hold nothing.
-func Lookup(st Store, owner string) manifest.Lookup { return lookup{st, st, owner} }
+func Lookup(st Store, owner string) manifest.Lookup { return LookupIn(st, owner, owner) }
+
+// LookupIn is Lookup with an agent name read within agents' objects and a
+// trigger name within triggers': an agent's names are its context's, a
+// trigger's its person's (spec 035).
+func LookupIn(st Store, agents, triggers string) manifest.Lookup {
+	return lookup{a: st, t: st, agents: agents, triggers: triggers}
+}
 
 type lookup struct {
-	a     Agents
-	t     Triggers
-	owner string
+	a        Agents
+	t        Triggers
+	agents   string
+	triggers string
 }
 
 func (l lookup) Agent(ctx context.Context, ref string) (*v1.Agent, error) {
 	name, n, pinned := strings.Cut(ref, "@")
-	stored, err := FindAgent(ctx, l.a, l.owner, name)
+	stored, err := FindAgent(ctx, l.a, l.agents, name)
 	if err != nil {
 		return nil, err
 	}
@@ -204,9 +212,9 @@ func (l lookup) Agent(ctx context.Context, ref string) (*v1.Agent, error) {
 	return DecodeAgent(v.Doc)
 }
 
-// Trigger is owner's trigger of the name, as last applied.
+// Trigger is the trigger of the name, as last applied.
 func (l lookup) Trigger(ctx context.Context, name string) (*v1.Trigger, error) {
-	t, err := l.t.TriggerByName(ctx, l.owner, name)
+	t, err := l.t.TriggerByName(ctx, l.triggers, name)
 	if err != nil {
 		return nil, err
 	}
