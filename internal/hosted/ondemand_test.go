@@ -99,6 +99,10 @@ type cloud struct {
 	// creds are the session's credentials the runner reaches; nil acts
 	// with the installation's own.
 	creds runner.Credentials
+	// checkpointHost is the runner's CheckpointHost.
+	checkpointHost string
+	// blobs are the agent's, which a fork of the session carries.
+	blobs map[session.Digest][]byte
 }
 
 // newCloud is a cloud whose sessions run the builder agent, with its
@@ -127,6 +131,7 @@ func newCloud(t *testing.T, mut func(*session.Session)) *cloud {
 	if err := c.st.Create(t.Context(), c.s, blobs); err != nil {
 		t.Fatal(err)
 	}
+	c.blobs = blobs
 	return c
 }
 
@@ -153,7 +158,7 @@ func (c *cloud) drive(text string, replies ...luxstub.Reply) {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	o := runner.Options{Store: c.st, Harness: h, ID: "run_" + session.NewID("x"), Kind: runner.KindServe}
+	o := runner.Options{Store: c.st, Harness: h, ID: "run_" + session.NewID("x"), Kind: runner.KindServe, CheckpointHost: c.checkpointHost}
 	if c.creds != nil {
 		o.Credentials = func(string, session.Lease) runner.Credentials { return c.creds }
 	}
@@ -448,4 +453,174 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 	if !slices.Equal(attached.Repositories, want) {
 		t.Fatalf("the attachment names %+v, want %+v", attached.Repositories, want)
 	}
+}
+
+// TestAHostedSessionKeepsItsCheckpointsAtTheGitHost: a hosted session
+// that works in a repository on the git host pushes each turn's
+// checkpoint there from its sandbox, sending the git host the
+// placeholder of its Secret and nothing else; once the sandbox is gone,
+// a fork of the session restores the file at its first call, in a
+// sandbox of its own, and a fork whose checkpoint the git host lost runs
+// that call on its repository with checkpoint_missing beside it.
+func TestAHostedSessionKeepsItsCheckpointsAtTheGitHost(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare := filepath.Join(root, "app.git")
+	gitIn(t, root, "init", "--quiet", "--bare", "-b", "main", bare)
+	gitIn(t, bare, "config", "http.receivepack", "true")
+	seed := filepath.Join(root, "seed")
+	gitIn(t, root, "clone", "--quiet", bare, seed)
+	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("app\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, seed, "add", ".")
+	gitIn(t, seed, "commit", "--quiet", "-m", "Start")
+	gitIn(t, seed, "push", "--quiet", "origin", "HEAD:main")
+
+	var mu sync.Mutex
+	sandboxes := map[string]bool{}
+	host := &gitHost{}
+	host.srv = httptest.NewServer(placeholders(t, host, root, func(name string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return sandboxes[name]
+	}))
+	t.Cleanup(host.srv.Close)
+	repo := host.srv.URL + "/app.git"
+	c := newCloud(t, func(s *session.Session) {
+		s.Resources = []session.Resource{{Type: session.ResourceRepository, URL: repo}}
+	})
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.o.Machines = Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir, OrigoURL: host.srv.URL})
+	c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	c.checkpointHost = host.srv.URL
+	parent := c.s
+	mu.Lock()
+	sandboxes[cella.SandboxName(parent.ID)] = true
+	mu.Unlock()
+	c.drive("Write a draft.", bash("toolu_1", "echo draft > notes.txt"), said("Drafted."))
+	var status session.SessionStatus
+	statuses := c.events(session.TypeSessionStatus)
+	if err := statuses[len(statuses)-1].Decode(&status); err != nil || status.Checkpoint == nil || status.Checkpoint.Remote != repo {
+		t.Fatalf("the turn's checkpoint %+v, %v; want it kept at %s", status.Checkpoint, err, repo)
+	}
+	if got := gitIn(t, bare, "rev-parse", "refs/topos/checkpoints/"+parent.ID+"/latest"); got != status.Checkpoint.Commit {
+		t.Fatalf("the git host's latest is %s, want %s", got, status.Checkpoint.Commit)
+	}
+	if files := gitIn(t, bare, "ls-tree", "-r", "--name-only", status.Checkpoint.Commit); !strings.Contains(files, "notes.txt") {
+		t.Fatalf("the kept checkpoint holds %q", files)
+	}
+	host.mu.Lock()
+	seen := slices.Clone(host.seen)
+	host.mu.Unlock()
+	if len(seen) == 0 || slices.ContainsFunc(seen, func(a string) bool { return a != "Bearer cella-placeholder-"+cella.SandboxName(parent.ID)+"-origo" }) {
+		t.Fatalf("the git host saw %q, want the sandbox's placeholder alone", seen)
+	}
+	if !c.cella.Remove(cella.SandboxName(parent.ID)) {
+		t.Fatal("the parent has no sandbox to delete")
+	}
+	end, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: session.StopCompleted}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended, err := c.st.Get(t.Context(), parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := []session.Event{end}
+	session.Stamp(parent.ID, ended.LastSeq, evs)
+	if _, err := c.st.Append(t.Context(), parent.ID, ended.LastSeq, evs); err != nil {
+		t.Fatal(err)
+	}
+
+	fork := func() session.Session {
+		evs, err := c.st.Events(t.Context(), parent.ID, 1, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq, err := session.ForkPoint(evs, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		child := session.New(parent.Agent, parent.Initiator, session.RunnerHosted, parent.Machine, time.Now())
+		child.Resources = parent.Resources
+		if child, err = session.Fork(t.Context(), c.st, child, c.blobs, parent.ID, evs[:seq]); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		sandboxes[cella.SandboxName(child.ID)] = true
+		mu.Unlock()
+		c.s = child
+		return child
+	}
+	child := fork()
+	c.drive("Read the draft.", bash("toolu_2", "cat notes.txt"), said("Read."))
+	// The fork's log starts with its parent's call; its own is the last.
+	if got := c.results(); len(got) != 2 || !strings.Contains(got[1], "draft") {
+		t.Fatalf("the fork's call read %q, want the parent's draft", got)
+	}
+	var m session.SessionMachine
+	if ms := c.events(session.TypeSessionMachine); len(ms) == 0 || ms[len(ms)-1].Decode(&m) != nil || m.Reason != "restored" || m.Checkpoint == nil || m.Checkpoint.Commit != status.Checkpoint.Commit {
+		t.Fatalf("the fork's machine %+v, want restored at %s", m, status.Checkpoint.Commit)
+	}
+	if n := len(c.events(session.TypeSessionError)); n != 0 {
+		t.Fatalf("%d session errors\n%s", n, c.dump())
+	}
+	// The file is in the fork's own sandbox, where its call ran.
+	if b, err := os.ReadFile(filepath.Join(c.cella.Workspace(cella.SandboxName(child.ID)), "notes.txt")); err != nil || string(b) != "draft\n" {
+		t.Fatalf("the fork's sandbox holds notes.txt %q, %v", b, err)
+	}
+	if !c.cella.Remove(cella.SandboxName(child.ID)) {
+		t.Fatal("the fork has no sandbox")
+	}
+
+	// The git host loses the parent's checkpoint.
+	gitIn(t, bare, "update-ref", "-d", "refs/topos/checkpoints/"+parent.ID+"/latest")
+	gitIn(t, bare, "update-ref", "-d", "refs/topos/checkpoints/"+child.ID+"/latest")
+	gitIn(t, bare, "-c", "gc.reflogExpireUnreachable=now", "gc", "--quiet", "--prune=now")
+	fork()
+	c.drive("Read the draft.", bash("toolu_3", "cat README.md && test ! -e notes.txt && echo no-notes"), said("No draft."))
+	if got := c.results(); len(got) != 2 || !strings.Contains(got[1], "app") || !strings.Contains(got[1], "no-notes") {
+		t.Fatalf("the fork's call answered %q, want its repository and no draft", got)
+	}
+	var missing session.SessionError
+	errs := c.events(session.TypeSessionError)
+	if len(errs) != 1 || errs[0].Decode(&missing) != nil || missing.Code != "checkpoint_missing" || !strings.Contains(missing.Detail, status.Checkpoint.Commit) {
+		t.Fatalf("session errors %s, want one checkpoint_missing", c.dump())
+	}
+	var again session.SessionMachine
+	if ms := c.events(session.TypeSessionMachine); len(ms) == 0 || ms[len(ms)-1].Decode(&again) != nil || again.Reason != "attached" || again.Checkpoint != nil {
+		t.Fatalf("the fork's machine %+v, want attached", again)
+	}
+}
+
+// placeholders serves the git host's repositories under root to a
+// request that carries the placeholder of the git host's Secret of a
+// sandbox ok names, and records every Authorization it saw on host.
+func placeholders(t *testing.T, host *gitHost, root string, ok func(name string) bool) http.Handler {
+	t.Helper()
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	backend := &cgi.Handler{Path: git, Args: []string{"http-backend"}, Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		host.mu.Lock()
+		host.seen = append(host.seen, auth)
+		host.mu.Unlock()
+		name, found := strings.CutPrefix(auth, "Bearer cella-placeholder-")
+		name, suffixed := strings.CutSuffix(name, "-origo")
+		if !found || !suffixed || !ok(name) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		backend.ServeHTTP(w, r)
+	})
 }
