@@ -102,6 +102,27 @@ func TestOwnerPolicyRows(t *testing.T) {
 	if !fork(alice, alice, alice).Allow || !fork(root, alice, alice).Allow || fork(bob, alice, alice).Allow || fork(bob, alice, bob).Allow || fork(alice, alice, bob).Allow {
 		t.Fatal("a session is forked by the agent's owner from a session of their own, or by an admin")
 	}
+	// An organization's agent is its admins' alone: the policy knows no
+	// organization's members (spec 035).
+	org := map[string]any{"type": "organization", "id": "org_1"}
+	for _, action := range []string{authorizer.ActionAgentCreate, authorizer.ActionAgentRead, authorizer.ActionAgentUpdate, authorizer.ActionAgentArchive} {
+		id := "agt_1"
+		if action == authorizer.ActionAgentCreate {
+			id = ""
+		}
+		res := authz.NewResource(authorizer.KindAgent, id, map[string]any{"owner": org})
+		for _, subject := range []string{alice, root} {
+			d, err := p.Authorize(t.Context(), authz.Request{Subject: subject, Action: action, Resource: res})
+			if err != nil || d.Allow != (subject == root) || (subject != root && d.Reason != authz.ReasonNotOwner) {
+				t.Errorf("%s of an organization's agent by %s: %+v, %v", action, subject, d, err)
+			}
+		}
+	}
+	orgCreate, err := p.Authorize(t.Context(), authz.Request{Subject: alice, Action: authorizer.ActionSessionCreate,
+		Resource: authz.NewResource(authorizer.KindSession, "", map[string]any{"agent_owner": org})})
+	if err != nil || orgCreate.Allow {
+		t.Fatalf("a session of an organization's agent: %+v, %v", orgCreate, err)
+	}
 	if d := ask(t, p, alice, authorizer.ActionSessionList, "", "", nil); !d.Allow || d.Filter == nil || d.Filter.Owners[0] != alice {
 		t.Fatalf("a list: %+v", d)
 	}
