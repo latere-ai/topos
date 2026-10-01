@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- toposd builds with OpenTelemetry Go v1.45.0 and its log modules
+  v0.21.0, past GO-2026-6615 (the log batch processor could spin when
+  its export buffer was full) and GO-2026-6505 (exporter configuration
+  logging could carry endpoint URLs).
 - An agent can belong to an organization. An agent applied with a token
   that names an organization in its `org_id` claim is the
   organization's, held under the organization's subject, and its name is
