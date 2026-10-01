@@ -26,15 +26,20 @@ committed: the commit log already holds that.
   the admins' alone, and an admin lists their own context's objects.
   Every agent stored before is its person's; a Postgres database
   migrates with each row kept.
-- A hosted session that works in a repository on the git host of
-  `TOPOS_ORIGO_URL` keeps each turn's checkpoint at that repository,
+- A hosted session that works in a private repository on the git host
+  of `TOPOS_ORIGO_URL` keeps each turn's checkpoint at that repository,
   under `refs/topos/checkpoints/<session>/latest`, pushed from its
   sandbox with the session's git credential and the push option
   `origo.event=off`, so a fork of the session restores the files it
   left, committed or not, after its sandbox is gone. A turn's checkpoint
-  names that repository as `remote` once it is there. Whoever may read
-  the repository may read these refs; they stay until the repository or
-  the ref is deleted, and deleting the session leaves them.
+  names that repository as `remote` once it is there. Before each push
+  the runner reads the repository with no credential: only a refusal
+  for want of one counts as private. A public repository, and one whose
+  answer says anything else, never gets a checkpoint, since whoever
+  reads a repository reads these refs; its fork starts from its
+  repositories. The refs stay until the repository or the ref is
+  deleted, deleting the session leaves them, and a repository made
+  public later exposes the ones already there.
 - A fork whose fork point's files the runner cannot restore starts from
   its repositories and records a `session.error` `checkpoint_missing`
   beside its first machine, naming the checkpoint and why; the call that
