@@ -297,7 +297,10 @@ while a response arrives. They go to the `Observer` (`OnDelta`,
 `OnReset`), carry the thread, turn, step and block index, and are never
 appended: they have no sequence and a client that misses one loses
 nothing, because the `agent.message` that follows is the record. The
-runner forwards deltas to attached clients ([[015-api]]).
+Observer is called inside the stream loop, from every thread of a turn
+at once, so it must not block and must be safe for concurrent use. The
+runner joins the fragments into deltas and publishes them to the
+streams of attached clients ([[016-runners]], [[015-api]]).
 
 ### Limits
 
@@ -365,6 +368,6 @@ hooks ([[012-permissions-and-approvals]]); context management
 | Input a person appends after the turn's last request was built is reported as `Outcome.Pending`, and the runner starts the next turn from it | `runner.TestDriveContinuesWhileInputIsPending` | built |
 | A fresh harness given the log of a turn stopped after any commit point continues it with the same next request bytes as the original harness | `TestResumeFromLogOnFreshHarness` | not built |
 | Deltas reach the Observer, and a retried request sends one reset | `harness.TestObserverSeesDeltasAndResets` | built |
-| Deltas never appear in the log | `TestDeltasAreNotAppended` | not built |
+| Deltas never appear in the log | `runner.TestDeltasAreNotAppended` | built |
 | A turn past its wall-clock limit ends `turn_limit` at the next boundary | `harness.TestTheTurnDeadline` | built |
 | The turn wall clock takes the lowest of agent, session and authorizer limits | `TestTurnLimitTakesTheLowest` | not built |

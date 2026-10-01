@@ -3,10 +3,10 @@ title: "Runners: driving a session, recovery of a step without results, the queu
 status: drafted
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session-log.md, 005-harness-loop.md, 008-tools.md, 009-machines.md]
-affects: [runner/, internal/queue/, internal/runnerrole/, internal/serve/]
+affects: [runner/, internal/queue/, internal/runnerrole/, internal/runnerapi/, internal/serve/, internal/store/postgres/, session/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-30
+updated: 2026-10-01
 author: changkun
 ---
 
@@ -206,6 +206,7 @@ hash to.
 | `GET /internal/v1/sessions/{session}` and `.../events?from_seq=` and `.../stream` | none | the Session, a page of events, replay then live |
 | `PUT` and `GET /internal/v1/sessions/{session}/blobs/{digest}` | bytes | the blob |
 | `POST /internal/v1/sessions/{session}/connections/{name}` | `generation` | the value of one connection's credential for a runner-held call, held in memory and never appended; 409 `lease_lost` for any other generation |
+| `POST /internal/v1/deltas` | `deltas`: a list of `{session_id, generation, delta}` | 204; each delta under its session's live claim is published to the server's store, and one under any other generation is dropped; a delta a runner could not have sent is `invalid_request` |
 
 `internal/runnerrole` implements `session.Store` and `Claimer` over
 these routes, so the `runner` package is the same in every role. A
@@ -213,6 +214,34 @@ session's credentials reach a runner only through the tokens route and
 the connections route, only for the current lease holder, and never
 through the log; no agent has a long-lived key, and the `runner` role
 holds only the tokens and keys toposd obtained for its lease.
+
+### Live deltas
+
+A drive over a store that carries live deltas
+(`session.DeltaPublisher`) gives the harness an Observer
+([[005-harness-loop]]) that turns its fragments into the deltas of
+[[015-api]]'s stream and publishes them; an Observer the harness
+configuration names still receives every fragment. Text, thinking and
+tool input fragments are held, one pending delta per thread, turn,
+step, block and kind, and published every 50 ms (`DeltaInterval`), when
+a pending delta reaches 1024 bytes (`session.MaxDeltaText`; a longer
+run is cut between runes into several), at the end of a block, and at
+the end of the response, so a step's last text goes out before its
+`agent.message` is appended. A reset drops the step's held fragments
+and publishes the reset. A signature, a block's header and the
+response's own events are not published. When the drive ends, what is
+held is published and the Observer stops.
+
+Publishing never waits and reports nothing: a delta that cannot be
+delivered is dropped, counted (`DroppedDeltas`) and logged at debug
+level. A subscriber holds 256 deltas (`session.DeltaBuffer`) and loses
+the next until it reads. The carrier is the store's:
+
+| Store | Carrier |
+|---|---|
+| directory, memory | in process (`session.DeltaHub`): one `toposd serve` holds a data directory alone, so its runners and its streams share the store |
+| Postgres | notifications on the channel `topos_deltas`, received by the store's one listener connection, which listens on it beside `topos_events` ([[014-store]]), and handed to the subscribers in that process; a payload is decoded only where a stream subscribes. A replica's deltas wait in a queue of 1024 for one sender, which sends everything waiting in one statement, `SELECT pg_notify('topos_deltas', p) FROM unnest($2::text[]) AS p`, from the serving pool, packed in order into payloads under Postgres's 8000 byte limit, with a 2 second timeout. Deltas therefore hold at most one pooled connection at a time, only while they flow, and no connection of their own |
+| runner role | the internal listener's `POST /internal/v1/deltas`: a queue of 1024 and one sender, which sends everything waiting in one request with a 5 second timeout, each delta under its session's claim generation; the server publishes those of a live claim to its own store, which carries them on |
 
 ### Capacity
 
@@ -261,6 +290,10 @@ columns and migrations ([[014-store]]); credential resolution
 | The internal routes refuse a request without the runner token, and accept every token `TOPOS_RUNNER_TOKEN` lists | `internal/runnerrole.TestTheRoutesNeedTheRunnerToken` | built |
 | A remote claim holds the store's lease while its runner renews it; a renew or an append at another generation is `lease_lost`; the reaper frees a claim whose runner stopped renewing; a store that fences carries the runner's appends | `internal/runnerrole.TestTheProtocolsLeases`, `internal/runnerrole.TestTheServerFollowsTheStoresLease`, `internal/runnerrole.TestALeaseRenewsItself` | built |
 | The runner role claims from a toposd's internal listener and runs a session created over the API, writing only through its claims | `internal/runnerrole.TestARemoteRunnerRunsASession`, `cmd/toposd.TestTheRunnerRoleRunsAHostedSession` | built |
+| A drive joins the fragments of each block into deltas published every 50 ms, at the end of a block and of the response, and when one reaches 1024 bytes, cut between runes; a retried request publishes a reset between the cut stream's deltas and the next attempt's | `runner.TestTheForwarderJoinsFragments`, `runner.TestTheForwarderPublishesEachInterval`, `runner.TestTheForwarderCutsLongTextBetweenRunes`, `runner.TestTheForwarderResetsAStep`, `runner.TestAResetFollowsARetriedRequest` | built |
+| A subscriber that does not read loses the deltas past its buffer, counted, and neither it nor the absence of one delays the turn; on Postgres a full send queue, a failed send, a closed store and a notification that does not decode drop and count | `runner.TestASlowSubscriberNeverDelaysTheTurn`, `session.TestAFullSubscriberDropsAndCounts`, `internal/store/postgres.TestADeltaNeverWaitsOnTheDatabase` (postgres tier) | built |
+| A runner's deltas on one replica reach a stream with `deltas=1` on another through Postgres, in the order published, packed into notifications under 8000 bytes; every store that carries deltas passes the conformance suite's deltas | `internal/store/postgres.TestARunnersDeltasReachAStreamOnAnotherReplica`, `internal/store/postgres.TestDeltasCrossReplicas`, `internal/store/postgres.TestDeltasPackIntoNotifications` (postgres tier), `session/storetest` `Deltas` | built |
+| The runner role's deltas reach the server's streams over the internal listener under a live claim only; a delta without a claim, past the queue or of a failed send is dropped and counted | `internal/runnerrole.TestARemoteRunnersDeltasReachTheServersStreams`, `internal/runnerrole.TestTheDeltasRoute` | built |
 | toposd opens no connection to a runner: every runner connection is outbound from the runner | `TestServerOpensNoConnectionToARunner` | not built |
 | A runner that finds its session's sandbox gone, with no checkpoint to restore, creates a new one and appends `session.machine` with reason `replaced` and a `session.error` `machine_lost` ([[009-machines]]) | `TestALostSandboxIsReplaced` | not built |
 | The `topos` CLI drives a local session over the directory store with no server | `internal/toposcli.TestRunATurnInTheWorkingDirectory`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
