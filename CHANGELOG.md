@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.10.0 - 2026-10-02
+
 - toposd builds with OpenTelemetry Go v1.46.0 and its log modules
   v0.22.0, past GO-2026-6615 (the log batch processor could spin when
   its export buffer was full) and GO-2026-6505 (exporter configuration
