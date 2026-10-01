@@ -22,6 +22,9 @@ committed: the commit log already holds that.
   arguments instead of failing the stream, and a call the stream never
   closed is closed when the message ends with the arguments it
   received, where it ran with an empty input.
+- A model request that fails part way through its stream keeps the
+  bytes it received as the `response_blob` of its `model.request`, so a
+  failed step can be read back as the model sent it.
 
 ## v0.9.5 - 2026-09-30
 
