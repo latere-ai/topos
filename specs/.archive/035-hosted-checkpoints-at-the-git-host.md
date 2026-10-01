@@ -1,9 +1,9 @@
 ---
 title: "Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its repository, and a fork restores its files after the sandbox is gone"
-status: drafted
+status: complete
 track: core
 depends_on: [004-session-log.md, 009-machines.md]
-affects: [runner/checkpoint/, runner/, session/, cmd/toposd/, internal/server/, api/]
+affects: [runner/checkpoint/, runner/, session/, harness/, cmd/toposd/, internal/config/, internal/server/, api/, docs/]
 effort: medium
 created: 2026-10-01
 updated: 2026-10-01
@@ -227,10 +227,44 @@ restore.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A checkpoint taken in a checkout that keeps its checkpoints at a repository is pushed there under the session's `latest` ref, with `origo.event=off` where the repository takes push options and without where it does not, and records the repository as `remote`; a fresh clone fetches it by id, adopts it and restores its files | `runner/checkpoint.TestACheckpointIsKeptAtItsRepository`, `runner/checkpoint.TestAKeptCheckpointIsFetchedByID` | not built |
-| A push the repository refuses leaves `remote` out and the checkpoint still taken; a commit the repository does not have is not adopted | `runner/checkpoint.TestAPushTheRepositoryRefusesKeepsTheCheckpointLocal`, `runner/checkpoint.TestAKeptCheckpointIsFetchedByID` | not built |
-| A fork whose parent's machine is gone restores the fork point's files from the repository, records `restored`, chains its next checkpoint to it and keeps its own `latest` | `runner.TestAForkRestoresFromTheRepository` | not built |
-| A fork whose checkpoint is not at the repository is `attached`, gets `session.error` `checkpoint_missing` beside it, and the call that opened the machine runs; a remote that is not the fork's own repository is not fetched from | `runner.TestAForkWithoutItsKeptCheckpointSaysSo` | not built |
-| Over the stub Cella and git's own http backend, a hosted session's checkpoint reaches the git host with the sandbox's placeholder credential | `internal/hosted.TestAHostedSessionKeepsItsCheckpointsAtTheGitHost` | not built |
-| Through toposd: a hosted session that works in a repository on the git host writes a file and ends, its sandbox is deleted, and the session `POST /v1/sessions/{id}/fork` starts, sent a message, has the file at its first tool call, recorded `restored` | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | not built |
-| The fork route's description states that a hosted fork's files are restored from the git host | `internal/server.TestTheForkRouteStatesWhatItRestores` | not built |
+| A checkpoint taken in a checkout that keeps its checkpoints at a repository is pushed there under the session's `latest` ref, with `origo.event=off` where the repository takes push options and without where it does not, and records the repository as `remote`; a thread's checkpoint is not pushed; a fresh clone fetches a kept checkpoint by id, or through `latest` over protocol v0, adopts it and restores its files | `runner/checkpoint.TestACheckpointIsKeptAtItsRepository`, `runner/checkpoint.TestAKeptCheckpointIsFetchedByID` | built |
+| A push the repository refuses, or one to a repository that is not there, leaves `remote` out and the checkpoint taken with its ref on the machine; a commit the repository does not have is `ErrNotKept` with git's account | `runner/checkpoint.TestAPushTheRepositoryRefusesKeepsTheCheckpointLocal`, `runner/checkpoint.TestAKeptCheckpointIsFetchedByID` | built |
+| A fork whose parent's machine is gone restores the fork point's files from the repository into a fresh clone, records `restored`, chains its next checkpoint to it and keeps its own `latest` | `runner.TestAForkRestoresFromTheRepository` | built |
+| A fork whose checkpoint was kept on the parent's machine alone, whose copied checkpoint names another repository than its own, or whose repository lost the checkpoint, is `attached` with a `session.error` `checkpoint_missing` beside it that names the commit and why, and its turn runs; on a machine opened on demand, the call that opened it runs and answers | `runner.TestAForkWithoutItsKeptCheckpointSaysSo`, `internal/hosted.TestAHostedSessionKeepsItsCheckpointsAtTheGitHost` | built |
+| Over the stub Cella and git's own http backend, a hosted session's checkpoint reaches the git host with the sandbox's placeholder credential, and a fork restores the file into its own sandbox at its first call | `internal/hosted.TestAHostedSessionKeepsItsCheckpointsAtTheGitHost` | built |
+| Through toposd: a hosted session that works in a repository on the git host writes a file it never commits and ends, its sandbox is deleted, and the session `POST /v1/sessions/{id}/fork` starts, sent a message, reads the file at its first call in a sandbox of its own, recorded `restored`, and keeps its own checkpoint chained to it | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | built |
+| The fork route's description states that a hosted fork's files are restored from the git host | `internal/server.TestTheForkRouteStatesWhatItRestores` | built |
+| A fork's bash starts in its own working directory, not in the directory its copied log reported on the parent's machine | `harness.TestAForkDoesNotStartBashInItsParentsDirectory` | built |
+
+## Outcome
+
+Built on 2026-10-01 as designed: `runner/checkpoint` pushes and
+fetches (`Checkpointer.Remote`, `KeptRef`, `Fetch`), the runner keeps a
+session's checkpoints at its first repository when that is under
+`runner.Options.CheckpointHost`, which toposd sets from
+`TOPOS_ORIGO_URL`, and a fork restores from there (`runner/fork.go`).
+`session.CheckpointRef` carries `remote`, and the fork route's
+description carries the sentence a client reads, `server.ForkKeptFiles`.
+
+Divergences and additions:
+
+- Any fork point's checkpoint the runner cannot restore is
+  `checkpoint_missing` beside the machine and stops nothing, a failed
+  checkout and a store read included. Before, a restore that failed
+  after the commit was found answered the call that opened the machine
+  with `checkpoint_missing` as an open error, and a checkpoint not found
+  was recorded nowhere.
+- Not specified and fixed: a fork's first `bash` call started in the
+  directory its copied log's last call ended in, a directory of the
+  parent's machine, which on a host or a Cella driver with per-sandbox
+  paths is another directory or none. The harness now drops a bash
+  directory that a copied result reported (`turn.toolState`).
+- The core reports a failed push only by the missing `remote`; a session
+  that may read and not write its repository would otherwise carry an
+  error at every turn's end.
+
+Not built, each owned elsewhere: the Cella tier's run against a real
+Cella and git host ([[017-external-runners-handoff-fork]]'s
+`TestCloudForkRestoresFiles`); the git host hiding `refs/topos/`;
+pruning a deleted session's ref; the checkpoints of a hosted session
+with no repository ([[034-checkpoints-and-rewind]]).

@@ -243,7 +243,8 @@ presents ([[006-identity]]).
 | A local fork at a turn boundary copies the log to that sequence, restores that turn's files, and the new session's fold equals the old one's at that sequence | `TestLocalForkRestoresTurnFiles` | not built |
 | A fork at a sequence that is not a turn boundary is refused with `invalid_fork_point` | `internal/server.TestForkPointMustBeATurnBoundary` | built |
 | After a fork, events the old writer appends to the old session never appear in the new one | `internal/server.TestForkNeverMerges` | built |
-| A fork of a hosted session on a Cella sandbox restores the fork point's files from the git host, through toposd over the stub Cella ([[035-hosted-checkpoints-at-the-git-host]]) | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | not built |
+| A fork of a hosted session on a Cella sandbox restores the fork point's files from the git host, through toposd over the stub Cella ([[035-hosted-checkpoints-at-the-git-host]]) | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | built |
+| A fork's bash starts in its own working directory, not in one its copied log reported on the parent's machine | `harness.TestAForkDoesNotStartBashInItsParentsDirectory` | built |
 | The same against a real Cella and git host | `TestCloudForkRestoresFiles` in the Cella tier | not built |
 | A program using only `client` and a key runs a session as an external runner: it syncs a local session, appends its turns, and receives a message sent through the send route by way of the inbox | `TestExternalRunnerWithClientOnly` in the e2e tier | not built |
 | An append from a subject other than the writer is `not_writer`; one the authorizer refuses is `append_refused` and leaves the local session intact | `TestAppendWriterRule` | not built |
