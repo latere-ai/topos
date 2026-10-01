@@ -238,6 +238,13 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		}
 		defer stop()
 	}
+	// A store that carries live deltas gets the drive's, for the streams
+	// that follow the session on any replica the store reaches.
+	if pub, ok := st.(session.DeltaPublisher); ok {
+		fw := newForwarder(id, pub, cfg.Observer)
+		cfg.Observer = fw
+		defer fw.close()
+	}
 	h, err := harness.New(cfg)
 	if err != nil {
 		return harness.Outcome{}, err
