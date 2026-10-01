@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.6 - 2026-10-01
+
 - `POST /v1/sessions/{id}/fork` continues a session, an ended or
   expired one included, as a new session of the same agent version: its
   log starts as a copy of the old one's up to a turn boundary, the last
