@@ -108,8 +108,8 @@ carries, so the plane can deliver to a trigger without translating.
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string, 1 to `trigger.MaxEventID` characters, required | the producer's id for this delivery; unique per `product`; the core deduplicates on it |
-| `product` | string, required | where the event happened, lowercase: `origo`, `github`, `jira` |
-| `verb` | string, required | what happened, dotted: `push`, `pull_request.opened`, `issue.created` |
+| `product` | string, required | where the event happened, lowercase, as the producer names it: `origo` for a Latere Code repository |
+| `verb` | string, required | what happened, dotted: `push`, `tag.created` |
 | `resource` | string, required | what it happened to, as the producer names it: `changkun/topos-e2e#42`, `PROJ-7` |
 | `actor` | string | who caused it at the source, for display |
 | `subject` | string | the person or organization the event belongs to, for display |
@@ -370,7 +370,7 @@ constant.
 ## Not in this spec
 
 The producers: the integrations that receive a provider's webhooks
-(Latere Code, GitHub, Jira), verify their signatures, decide which
+(such as Latere Code's), verify their signatures, decide which
 triggers may see which events, and call the fire route, and the
 signals plane that will carry them; a webhook route in the core that
 verifies a provider's signature, since each provider signs
