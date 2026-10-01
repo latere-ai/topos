@@ -33,6 +33,11 @@ committed: the commit log already holds that.
   reached and the start of its arguments, asking for shorter arguments,
   and the next step asks the usual cap. A response cut in text or
   thinking is still sent again at the output limit and then continued.
+- Over Chat Completions, a response a provider reports as `tool_calls`
+  while its native finish reason names the output limit, as OpenRouter
+  does, is read as stopped at the output limit, and parallel tool calls
+  whose arguments interleave are decoded one call after another
+  (`latere.ai/x/pkg` v0.90.1).
 - `GET /v1/sessions/{id}/stream?deltas=1` carries a session's live
   output while a response arrives, so a client shows thinking and text
   as the model writes them instead of waiting for the whole

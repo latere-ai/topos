@@ -148,5 +148,5 @@ latere.ai/x/cella v0.8.0 h1:hsRl1t4i/kTyH7I40vq8xhfDx9NtOoP8ruXWHpkLLlc=
 latere.ai/x/cella v0.8.0/go.mod h1:ULWTpOJb6u0hVTyGriVN4Jqy3Y+lmDhOp/yz3svXZt4=
 latere.ai/x/ci-gate v0.50.2 h1:C+Tm8Q+AQp4cPc1RiFiu4BPqvQNxW3ADutLevMN8XzI=
 latere.ai/x/ci-gate v0.50.2/go.mod h1:kg1CjxG++fy21VRkwTQSzW4JgGwjOFSeisERzZfarWo=
-latere.ai/x/pkg v0.90.0 h1:elW9iG35ZBY+4xJdf8ynNYw68wJ60KyofwAYp0KRB0Q=
-latere.ai/x/pkg v0.90.0/go.mod h1:L4Z/J7iyc6tY79/sphRmmbtA9/RKZt1Dc08lMa/ETso=
+latere.ai/x/pkg v0.90.1 h1:2DqoK7E13b1qHcR4MVJe2Eb62CwJliKGJB/teStryuk=
+latere.ai/x/pkg v0.90.1/go.mod h1:L4Z/J7iyc6tY79/sphRmmbtA9/RKZt1Dc08lMa/ETso=
