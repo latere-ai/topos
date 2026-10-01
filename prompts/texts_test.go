@@ -136,6 +136,7 @@ var textCases = func() []textCase {
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": "read, write"}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "read, write")},
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": ""}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "")},
 		{name: RegistryInvalidInput, data: Data{"Tool": "read", "Problems": "/path: expected string, got number"}, want: fmt.Sprintf("The input does not match the schema of %s:\n%s", "read", "/path: expected string, got number")},
+		{name: RegistryInvalidJSON, data: Data{"Tool": "bash", "Problem": "unexpected EOF", "Excerpt": `{"command":"rm a`}, want: fmt.Sprintf("The arguments of %s were not valid JSON (%s). They began:\n%s\nCall %s again with its arguments as one JSON object that matches its schema.", "bash", "unexpected EOF", `{"command":"rm a`, "bash")},
 		{name: OutputSpilled, data: Data{"Omitted": 73182, "Path": "/spill/tool-toolu_1.txt"}, want: strings.Trim(fmt.Sprintf("\n[... %d bytes omitted; the full output is in %s ...]\n", 73182, "/spill/tool-toolu_1.txt"), "\n")},
 
 		{name: FileChanged, data: Data{"Path": p}, want: p + " changed since it was last read; read it again before writing."},

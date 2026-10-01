@@ -85,13 +85,21 @@ func TestValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := "The input does not match the schema of read:\n"
+	notJSON := func(problem, excerpt string) string {
+		return "The arguments of read were not valid JSON (" + problem + "). They began:\n" + excerpt +
+			"\nCall read again with its arguments as one JSON object that matches its schema."
+	}
+	long := `{"path":"` + strings.Repeat("é", 2*InvalidJSONExcerpt)
 	for _, c := range []struct {
 		name, tool, input, outcome, want string
 	}{
 		{"unknown", "nope", `{}`, OutcomeUnknownTool, "No tool named nope. Available tools: read, write, edit, bash, grep, glob, web_fetch, todo, free."},
-		{"not json", "read", `{"path":`, OutcomeInvalidInput, prefix + "/: not valid JSON"},
-		{"trailing data", "read", `{"path":"a"} {"path":"b"}`, OutcomeInvalidInput, prefix + "/: not valid JSON"},
-		{"trailing brace", "read", `{"path":"a"}}`, OutcomeInvalidInput, prefix + "/: not valid JSON"},
+		{"not json", "read", `{"path":`, OutcomeInvalidInput, notJSON("the text ends before the JSON value does", `{"path":`)},
+		{"trailing data", "read", `{"path":"a"} {"path":"b"}`, OutcomeInvalidInput, notJSON("there is more text after the first JSON value", `{"path":"a"} {"path":"b"}`)},
+		{"trailing brace", "read", `{"path":"a"}}`, OutcomeInvalidInput, notJSON("there is more text after the first JSON value", `{"path":"a"}}`)},
+		{"bad token", "read", `{"path":}`, OutcomeInvalidInput, notJSON("invalid character '}' looking for beginning of value", `{"path":}`)},
+		// Text past the excerpt is cut on a character boundary.
+		{"long", "read", long, OutcomeInvalidInput, notJSON("the text ends before the JSON value does", string([]rune(long)[:InvalidJSONExcerpt]))},
 		{"not an object", "read", `["a"]`, OutcomeInvalidInput, prefix + "/: the input is not an object"},
 		{"null", "read", `null`, OutcomeInvalidInput, prefix + "/: the input is not an object"},
 		{"missing", "read", ``, OutcomeInvalidInput, prefix + `/: missing required property "path"`},

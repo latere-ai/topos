@@ -342,7 +342,7 @@ func (r *Registry) Validate(name string, input json.RawMessage) (Tool, *Result) 
 	if len(bytes.TrimSpace(input)) == 0 {
 		v = map[string]any{}
 	} else if err := dec.Decode(&v); err != nil || !atEOF(dec) {
-		res := Text(OutcomeInvalidInput, invalidInput(name, "/: not valid JSON"))
+		res := Text(OutcomeInvalidInput, invalidJSON(name, input, err))
 		return nil, &res
 	}
 	if _, isObj := v.(map[string]any); !isObj {
@@ -360,6 +360,31 @@ func (r *Registry) Validate(name string, input json.RawMessage) (Tool, *Result) 
 // schema of tool: problems are the validator's lines, one per problem.
 func invalidInput(tool, problems string) string {
 	return prompts.Render(prompts.RegistryInvalidInput, prompts.Data{"Tool": tool, "Problems": problems})
+}
+
+// InvalidJSONExcerpt is how many characters of arguments that are not
+// valid JSON the call's result quotes: enough for the model to see where
+// its text went wrong, bounded because such text can run to the model's
+// whole output limit.
+const InvalidJSONExcerpt = 200
+
+// invalidJSON is the result text of a call whose arguments are not one
+// JSON value: what is wrong, and the start of the text the model sent,
+// so the model can send the call again. err is the decoder's error, nil
+// when the text holds more after its first value.
+func invalidJSON(tool string, input []byte, err error) string {
+	problem := "there is more text after the first JSON value"
+	switch {
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		problem = "the text ends before the JSON value does"
+	case err != nil:
+		problem = err.Error()
+	}
+	excerpt := string(input)
+	if utf8.RuneCountInString(excerpt) > InvalidJSONExcerpt {
+		excerpt = string([]rune(excerpt)[:InvalidJSONExcerpt])
+	}
+	return prompts.Render(prompts.RegistryInvalidJSON, prompts.Data{"Tool": tool, "Problem": problem, "Excerpt": excerpt})
 }
 
 // atEOF reports whether dec has nothing left but whitespace, so an input

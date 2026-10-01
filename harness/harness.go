@@ -1026,7 +1026,9 @@ type stepPlan struct {
 
 // plan validates, scores and decides each call of the response. Valid
 // calls get an agent.tool_use for the batch; invalid and blocked ones an
-// answer appended after it.
+// answer appended after it. A call whose arguments were not JSON is
+// validated against the text the model sent, not the {} the log holds
+// for it, so its answer names what was wrong.
 func (t *turn) plan(res models.Result) (stepPlan, []answeredCall, []session.Event, error) {
 	var p stepPlan
 	var answered []answeredCall
@@ -1038,6 +1040,9 @@ func (t *turn) plan(res models.Result) (stepPlan, []answeredCall, []session.Even
 			continue
 		}
 		id, name, input := b.ToolUse.ID, b.ToolUse.Name, []byte(b.ToolUse.Args)
+		if raw, broken := res.InvalidArgs[id]; broken {
+			input = []byte(raw)
+		}
 		tool, bad := t.reg.Validate(name, input)
 		if bad != nil {
 			answered = append(answered, answeredCall{id, *bad})

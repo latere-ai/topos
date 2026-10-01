@@ -69,6 +69,7 @@ var released = map[string]string{
 	"results/read/more-lines-v1.md":          "bfd5b3ee3d0243714d0a13592309022c15b55a8f1c4748292d3fe5ceb33e2bc6",
 	"results/read/past-end-v1.md":            "8bfbea51622e726107d0c9b84e3afec3dd073a89a018fa75e7fcfbcfa6b3119d",
 	"results/registry/invalid-input-v1.md":   "44f47a5cf493d5387de802300b094fad9ef73aa41854b89d5e87680233560dea",
+	"results/registry/invalid-json-v1.md":    "faa1f5d6ae251a32853671151f778e8bf7a64703b57d966d6faa52ce82a78f06",
 	"results/registry/unknown-tool-v1.md":    "ff09038ddf4a1d374688322c3294b8da94a9a9d9e02f544e364916e6fa15c56a",
 	"results/search/failed-v1.md":            "7217217b1c9005218523ba9a66868086134d22177c9f1a137056875223ebc192",
 	"results/spill-v1.md":                    "2ef4599f37fe74266e6ac1e2a8172e4d2b0c540ab082ff28d5053dc88a0684bb",
