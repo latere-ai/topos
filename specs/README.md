@@ -91,6 +91,7 @@ another spec.
 | [033](033-peers-and-authored-graphs.md) | Peers and authored graphs: declared message edges between siblings, and graphs declared up front | large | vague | 003, 013, 025 |
 | [034](034-checkpoints-and-rewind.md) | Checkpoints and rewind: each turn's working directory committed, the session repository, rewind, what fork and handoff restore | medium | drafted | 004, 005, 009 |
 | [035](.archive/035-hosted-checkpoints-at-the-git-host.md) | Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its repository, and a fork restores its files after the sandbox is gone | medium | complete | 004, 009 |
+| [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
 
 ## Dependency graph
 
@@ -136,6 +137,7 @@ flowchart BT
   S033[033 peers + authored graphs]
   S034[034 checkpoints + rewind]
   S035[035 hosted checkpoints at the git host]
+  S036[036 organization owners]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -187,6 +189,9 @@ flowchart BT
   S033 --> S025
   S034 --> S005
   S035 --> S009
+  S036 --> S015
+  S036 --> S018
+  S036 --> S022
 ```
 
 ## Build order

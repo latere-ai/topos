@@ -145,10 +145,10 @@ an installation without one does not configure:
 | disable | once the archived agent has no session that has not ended: at the archive itself, and in a pass at start and on every reaper pass ([[014-store]]) over the provider's list of archived identities | the agent's id and subject, with `permanent: true` |
 | mint | a runner's token request, above | the subject, the audience and the `session` claim |
 
-The owner is the authorizer's to name, because a core decides from no
-claim of a token ([[006-identity]]): the allow of the apply carries it
-as the limits member `owner`, and an allow that names none makes the
-applier, as a person, the owner. toposd holds
+The owner is the agent's own, the context it was first applied in
+([[036-organization-owners]]): an allow of the apply that names an
+owner as the limits member `owner` names that one, and one that names
+another refuses the apply `authorizer_unavailable`. toposd holds
 its own token from the identity provider until 2 minutes before its
 expiry and reads its client secret from a file at each fetch, so the
 secret rotates in place. The variables are [[002-scaffold-and-configuration]]'s;

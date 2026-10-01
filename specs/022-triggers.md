@@ -285,7 +285,7 @@ firing row.
 
 | Route | Action | Behavior |
 |---|---|---|
-| `PUT /v1/triggers/{name}` | `trigger.create`, or `trigger.update` for the caller's own trigger of the name, and `agent.read` of the agent it names | apply a Trigger manifest; the caller becomes its owner, in the context its token's `org_id` names; a schedule whose `timeZone` this build does not know is `invalid_request` |
+| `PUT /v1/triggers/{name}` | `trigger.create`, or `trigger.update` for the caller's own trigger of the name, and `agent.read` of the agent it names | apply a Trigger manifest; the caller becomes its owner, in the context its token's `org_id` names, and an agent it names by name is read among that context's agents ([[036-organization-owners]]); a schedule whose `timeZone` this build does not know is `invalid_request` |
 | `GET /v1/triggers`, `GET /v1/triggers/{ref}`, `DELETE /v1/triggers/{ref}` | `trigger.list`, `trigger.read`, `trigger.delete` | list, get by `trg_` id or by name among the caller's own, delete with its firings; the sessions it started keep running |
 | `POST /v1/triggers/{ref}/fire` | `trigger.fire` | an event trigger takes one envelope; a schedule trigger takes an empty body and fires now, outside its schedule, deduplicated only by an `Idempotency-Key` ([[015-api]]). Answers `200` with the firing, for a new firing and for a redelivery alike; `503` with the firing when its outcome is `failed`, so the producer retries; `conflict` for a suspended trigger, which fires nothing. The row also names `session.create` and `session.send`, which the firing asks as the owner |
 | `GET /v1/triggers/{ref}/firings` | `trigger.read` | the trigger's firings, newest first, paged as every list is |

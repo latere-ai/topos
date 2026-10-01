@@ -83,9 +83,9 @@ gains fields.
 
 | Action | Kind | Resource fields | Asked at |
 |---|---|---|---|
-| `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner` | the agent routes of [[015-api]] |
-| `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent whose identity the authorizer created for the organization), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity`, and `trigger_id` and `firing_id` for a trigger's session, asked as the trigger's owner (added by [[022-triggers]]) | session create, and a trigger's firing; the authorizer applies the initiator cap here |
-| `session.read`, `session.list` | `session` | `agent`, `owner`, `runner` | session get, list, the sessions' summary (added by [[015-api]]), events list, stream |
+| `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner` (a person's subject, or `{type, id}` for an organization's agent; on `agent.create` only in an organization's context, changed by [[036-organization-owners]]) | the agent routes of [[015-api]] |
+| `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent, changed by [[036-organization-owners]]), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity`, and `trigger_id` and `firing_id` for a trigger's session, asked as the trigger's owner (added by [[022-triggers]]) | session create, and a trigger's firing; the authorizer applies the initiator cap here |
+| `session.read`, `session.list` | `session` | `agent`, `owner`, `runner`; a list `status`, `runner` and `agent_owner`, the context it lists (added by [[036-organization-owners]]) | session get, list, the sessions' summary (added by [[015-api]]), events list, stream |
 | `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
 | `session.fork` | `session` | the fields of `session.create` for the new session (its `session_id`, the forker as `initiator`, the agent version's `permissions`, the `repositories`), and `owner`, `parent` and `seq` of the session forked, which is the resource's id (changed by [[017-external-runners-handoff-fork]]) | a fork; the authorizer decides it as a create of its initiator, initiator cap included |
@@ -125,7 +125,7 @@ agent's so neither loosens the other ([[012-permissions-and-approvals]]).
 | `turn_timeout`, `max_age` | Go durations, ceilings | [[005-harness-loop]], [[004-session-log]] |
 | `scope` | the session's starting scope, a list of grants | [[018-credentials-and-secrets]] |
 | `retention` | a Go duration: how long the session is kept after it ends; absent, it is kept until deleted | [[014-store]] |
-| `owner` | `{type, id}`, `type` `user` or `organization`: on an agent's apply, the owner of an agent that gets its identity at the identity provider; absent, the applier as a person | [[018-credentials-and-secrets]] |
+| `owner` | `{type, id}`, `type` `user` or `organization`: on an agent's apply, the owner of an agent that gets its identity at the identity provider, which must be the agent's own; absent, the agent's owner (changed by [[036-organization-owners]]) | [[018-credentials-and-secrets]] |
 
 A member toposd does not know is ignored; a member it knows that does
 not decode refuses the create with `authorizer_unavailable`, because a
@@ -150,8 +150,10 @@ With `TOPOS_AUTHORIZER_URL` unset, toposd decides with `authz.Policy`:
 that created an object owns it and may take every action on it;
 `Create` is allowed on an object that does not exist, and a session is
 created only on an agent whose owner is the caller (`agent_owner`);
-everything else is denied as `not_owner`, and a denied read answers
-`not_found`. The
+an organization's agent, and a create naming an organization as its
+owner, are the admins' alone, since the policy knows no organization's
+members ([[036-organization-owners]]); everything else is denied as
+`not_owner`, and a denied read answers `not_found`. The
 owner policy carries no limits, so a session on it has the core's
 defaults. The policy calls `authz.Restrict` on its own answer, so a
 narrowed key is narrowed without an authorizer too.
