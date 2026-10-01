@@ -5,6 +5,8 @@ package server
 
 import (
 	"net/http"
+	"regexp"
+	"strconv"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/session"
@@ -13,6 +15,29 @@ import (
 // CodeInvalidForkPoint is spec 017's code for a fork at a sequence that
 // is not a turn boundary, or of a session that has none.
 const CodeInvalidForkPoint = "invalid_fork_point"
+
+// continuedMark matches the mark continuedTitle puts at the end of a
+// fork's title: " (continued)" or " (continued N)".
+var continuedMark = regexp.MustCompile(`^(.*) \(continued(?: ([0-9]+))?\)$`)
+
+// continuedTitle is a fork's title: the forked session's, marked as its
+// continuation so the two read apart in a list, "Notes (continued)",
+// then "Notes (continued 2)" for a fork of that fork. A session without
+// a title gives a fork without one.
+func continuedTitle(title string) string {
+	if title == "" {
+		return ""
+	}
+	m := continuedMark.FindStringSubmatch(title)
+	if m == nil {
+		return title + " (continued)"
+	}
+	n := 1
+	if m[2] != "" {
+		n, _ = strconv.Atoi(m[2])
+	}
+	return m[1] + " (continued " + strconv.Itoa(n+1) + ")"
+}
 
 // forkBody is the body of POST /sessions/{id}/fork; an empty body forks
 // at the last turn boundary.

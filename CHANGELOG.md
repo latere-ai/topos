@@ -15,7 +15,9 @@ committed: the commit log already holds that.
   log starts as a copy of the old one's up to a turn boundary, the last
   one unless `at_seq` names another, so its first turn has the whole
   conversation, and it has a lifetime, a budget and credentials of its
-  own, with `parent` naming where it came from. It is asked of the
+  own, with `parent` naming where it came from. Its title is the old
+  session's marked as its continuation, "Notes (continued)" and then
+  "Notes (continued 2)", so the two read apart in a list. It is asked of the
   authorizer as `session.fork` with a create's fields and the forked
   session's. The fork point's files are restored into the new session's
   working directory when the runner can reach that turn's checkpoint;

@@ -145,7 +145,7 @@ func TestForkContinuesAnEndedSession(t *testing.T) {
 		t.Fatalf("agent %+v, want the parent's %+v", child.Agent, parent.Agent)
 	case child.Status != session.StatusIdle || child.StopReason != session.StopEndTurn || child.LastSeq != boundary || child.Turn != 2:
 		t.Fatalf("the fork is %s %s at %d, turn %d", child.Status, child.StopReason, child.LastSeq, child.Turn)
-	case child.Initiator.Subject != alice || child.Title != parent.Title || !slices.Equal(child.Resources, parent.Resources):
+	case child.Initiator.Subject != alice || child.Title != continuedTitle(parent.Title) || !slices.Equal(child.Resources, parent.Resources):
 		t.Fatalf("initiator %+v, title %q, resources %+v", child.Initiator, child.Title, child.Resources)
 	case !child.CreatedAt.Equal(clock) || !child.ExpiresAt.After(clock) || !child.ExpiresAt.After(parent.ExpiresAt):
 		t.Fatalf("created %v, expires %v; a fork's lifetime runs from now", child.CreatedAt, child.ExpiresAt)
@@ -369,5 +369,51 @@ func TestAForkIsRefused(t *testing.T) {
 	}
 	if n := count(); n != 1 {
 		t.Fatalf("refused forks left %d sessions", n)
+	}
+}
+
+func TestContinuedTitle(t *testing.T) {
+	for _, c := range []struct{ title, want string }{
+		{"", ""},
+		{"Review main.go", "Review main.go (continued)"},
+		{"Review main.go (continued)", "Review main.go (continued 2)"},
+		{"Review main.go (continued 2)", "Review main.go (continued 3)"},
+		{"Review main.go (continued 41)", "Review main.go (continued 42)"},
+		// Only the mark a fork adds counts; other parentheses stay.
+		{"Notes (draft)", "Notes (draft) (continued)"},
+		{"(continued)", "(continued) (continued)"},
+	} {
+		if got := continuedTitle(c.title); got != c.want {
+			t.Errorf("continuedTitle(%q) = %q, want %q", c.title, got, c.want)
+		}
+	}
+}
+
+// TestAForkIsTitledAsAContinuation forks a titled session and then the
+// fork, and reads each title back: a list of sessions tells the three
+// apart by title alone.
+func TestAForkIsTitledAsAContinuation(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer","title":"Review main.go","message":"Review main.go."}`)
+	if a.status != http.StatusCreated {
+		t.Fatalf("create: %d %s", a.status, a.body)
+	}
+	var parent session.Session
+	a.decode(t, &parent)
+	f.turn(parent.ID, 1, "One finding.", 1200)
+	want := []string{"Review main.go (continued)", "Review main.go (continued 2)"}
+	from := parent.ID
+	for i, title := range want {
+		r := f.do(http.MethodPost, "/v1/sessions/"+from+"/fork", "alice", "")
+		if r.status != http.StatusCreated {
+			t.Fatalf("fork %d: %d %s", i+1, r.status, r.body)
+		}
+		var child session.Session
+		r.decode(t, &child)
+		if child.Title != title {
+			t.Fatalf("fork %d is titled %q, want %q", i+1, child.Title, title)
+		}
+		from = child.ID
 	}
 }

@@ -219,7 +219,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if in.fork != nil {
 		p := in.fork.parent
 		in.agent = p.Agent.ID + "@" + strconv.Itoa(p.Agent.Version)
-		in.resources, in.title, in.metadata, in.capture = p.Resources, p.Title, p.Metadata, &p.Capture
+		in.resources, in.title, in.metadata, in.capture = p.Resources, continuedTitle(p.Title), p.Metadata, &p.Capture
 	}
 	name, n, pinned := strings.Cut(in.agent, "@")
 	a, err := store.FindAgent(ctx, s.o.Objects, q.caller.Subject, name)
