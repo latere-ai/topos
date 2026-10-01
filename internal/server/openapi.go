@@ -88,7 +88,7 @@ var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 // OwnerRule is the sentence the document states an agent's owner by
 // (spec 036), the one a client reads to know the core keeps an
 // organization's agents.
-const OwnerRule = "An agent belongs to the organization the caller's token names in its org_id claim, or to the caller as a person when it names none."
+const OwnerRule = "An agent belongs to the organization the caller's token names, or to the caller as a person when it names none."
 
 // paramDescriptions say how the API reads a path parameter where a
 // client needs to know it: a name is unique within its owner, so an

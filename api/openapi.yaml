@@ -21,7 +21,7 @@ paths:
         - name: name
           in: path
           required: true
-          description: The name, unique within its owner. An agent belongs to the organization the caller's token names in its org_id claim, or to the caller as a person when it names none. An agent's name is read among that owner's agents, a trigger's among the caller's own triggers. An apply acts on the object of the name and creates it when there is none; an object of the name another owner holds is neither read nor changed.
+          description: The name, unique within its owner. An agent belongs to the organization the caller's token names, or to the caller as a person when it names none. An agent's name is read among that owner's agents, a trigger's among the caller's own triggers. An apply acts on the object of the name and creates it when there is none; an object of the name another owner holds is neither read nor changed.
           schema:
             type: string
       requestBody:
@@ -507,7 +507,7 @@ paths:
         - name: name
           in: path
           required: true
-          description: The name, unique within its owner. An agent belongs to the organization the caller's token names in its org_id claim, or to the caller as a person when it names none. An agent's name is read among that owner's agents, a trigger's among the caller's own triggers. An apply acts on the object of the name and creates it when there is none; an object of the name another owner holds is neither read nor changed.
+          description: The name, unique within its owner. An agent belongs to the organization the caller's token names, or to the caller as a person when it names none. An agent's name is read among that owner's agents, a trigger's among the caller's own triggers. An apply acts on the object of the name and creates it when there is none; an object of the name another owner holds is neither read nor changed.
           schema:
             type: string
       requestBody:
