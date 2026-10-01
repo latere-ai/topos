@@ -284,6 +284,7 @@ paths:
     get:
       operationId: streamEvents
       summary: Stream a session's events as Server-Sent Events
+      description: "Server-Sent Events: every event of the log from from_seq, or after the sequence a Last-Event-ID header names, then each new one as it is appended, from any replica, each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every 15 seconds, and the stream closes after the event that ends the session. With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most 16 streams open at once on one replica; the next is rate_limited."
       x-topos-actions:
         - session.read
       parameters:
@@ -292,9 +293,28 @@ paths:
           required: true
           schema:
             type: string
+        - name: from_seq
+          in: query
+          description: The sequence the replay starts at; 1 when absent. A Last-Event-ID header starts it after the sequence the header names instead.
+          schema:
+            type: integer
+            minimum: 1
+        - name: deltas
+          in: query
+          description: "1 also carries the session's live deltas, each an event: delta frame with no id; 0 or absent carries the log's events alone."
+          schema:
+            type: string
+            enum:
+              - "0"
+              - "1"
       responses:
         "200":
           description: OK
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: "Frames of `id: <seq>`, `event: <type>` and `data: <the event's JSON>`, a `: keepalive` comment line between them, and with deltas=1 frames of `event: delta` and `data: <a Delta>` with no id."
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/blobs/{digest}:
@@ -474,6 +494,40 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Delta:
+      type: object
+      description: "One live frame of a session's response as it arrives, the data of an event: delta frame. A frame of text is {thread, turn, step, block, kind, text}: text is the next run of the content block's text, thinking or tool input, to append to what the step's earlier deltas carried for that block. A reset is {thread, turn, step, reset}: the step's request is sent again, so what its deltas carried is discarded. Deltas are best effort: never appended, never replayed, and dropped rather than slowing the turn; the step's agent.message is the record, so a client that misses deltas loses nothing, and a delta of a step whose agent.message the client holds is stale."
+      required:
+        - turn
+        - step
+      properties:
+        thread:
+          type: string
+          description: The thread whose response it is; absent for the session's own thread, as on events.
+        turn:
+          type: integer
+          minimum: 1
+        step:
+          type: integer
+          minimum: 1
+        block:
+          type: integer
+          minimum: 0
+          description: The index of the response's content block the text belongs to.
+        kind:
+          type: string
+          enum:
+            - text
+            - thinking
+            - tool_input
+          description: "What the text is part of: a text block, a thinking block, or a tool call's arguments as the model writes them."
+        text:
+          type: string
+          description: At most 1024 bytes; a longer run arrives as several deltas.
+        reset:
+          type: boolean
+          const: true
+          description: Present only on a reset.
     Error:
       type: object
       required:

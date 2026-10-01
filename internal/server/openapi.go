@@ -15,6 +15,7 @@ import (
 
 	"latere.ai/x/topos/manifest"
 	"latere.ai/x/topos/manifest/trigger"
+	"latere.ai/x/topos/session"
 )
 
 //go:generate go test -run TestOpenAPIIsGenerated -update .
@@ -60,6 +61,7 @@ func OpenAPI(server string) ([]byte, error) {
 				{Key: "bearer", Value: yaml.MapSlice{{Key: "type", Value: "http"}, {Key: "scheme", Value: "bearer"}, {Key: "bearerFormat", Value: "JWT"}}},
 			}},
 			{Key: "schemas", Value: yaml.MapSlice{
+				{Key: "Delta", Value: deltaSchema},
 				{Key: "Error", Value: yaml.MapSlice{
 					{Key: "type", Value: "object"},
 					{Key: "required", Value: []string{"error"}},
@@ -89,6 +91,40 @@ var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 var paramDescriptions = map[string]string{
 	"name": "The name, unique within its owner, the subject that applied it. An apply acts on the caller's own object of the name and creates it when the caller holds none; an object of the name another subject holds is neither read nor changed.",
 	"ref":  "An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.",
+}
+
+// queryParams are the query parameters of the routes that read any.
+var queryParams = map[string][]yaml.MapSlice{
+	"streamEvents": {
+		{{Key: "name", Value: "from_seq"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The sequence the replay starts at; 1 when absent. A Last-Event-ID header starts it after the sequence the header names instead."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}}},
+		{{Key: "name", Value: "deltas"}, {Key: "in", Value: "query"}, {Key: "description", Value: "1 also carries the session's live deltas, each an event: delta frame with no id; 0 or absent carries the log's events alone."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{"0", "1"}}}}},
+	},
+}
+
+// eventStreams are the routes that answer Server-Sent Events.
+var eventStreams = map[string]string{
+	"streamEvents": "Frames of `id: <seq>`, `event: <type>` and `data: <the event's JSON>`, a `: keepalive` comment line between them, and with deltas=1 frames of `event: delta` and `data: <a Delta>` with no id.",
+}
+
+// deltaSchema is the data of a stream's event: delta frame (spec 015).
+var deltaSchema = yaml.MapSlice{
+	{Key: "type", Value: "object"},
+	{Key: "description", Value: "One live frame of a session's response as it arrives, the data of an event: delta frame. A frame of text is {thread, turn, step, block, kind, text}: text is the next run of the content block's text, thinking or tool input, " +
+		"to append to what the step's earlier deltas carried for that block. A reset is {thread, turn, step, reset}: the step's request is sent again, so what its deltas carried is discarded. " +
+		"Deltas are best effort: never appended, never replayed, and dropped rather than slowing the turn; the step's agent.message is the record, so a client that misses deltas loses nothing, and a delta of a step whose agent.message the client holds is stale."},
+	{Key: "required", Value: []string{"turn", "step"}},
+	{Key: "properties", Value: yaml.MapSlice{
+		{Key: "thread", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: "The thread whose response it is; absent for the session's own thread, as on events."}}},
+		{Key: "turn", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}},
+		{Key: "step", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}},
+		{Key: "block", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 0}, {Key: "description", Value: "The index of the response's content block the text belongs to."}}},
+		{Key: "kind", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{string(session.DeltaText), string(session.DeltaThinking), string(session.DeltaToolInput)}},
+			{Key: "description", Value: "What the text is part of: a text block, a thinking block, or a tool call's arguments as the model writes them."}}},
+		{Key: "text", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: fmt.Sprintf("At most %d bytes; a longer run arrives as several deltas.", session.MaxDeltaText)}}},
+		{Key: "reset", Value: yaml.MapSlice{{Key: "type", Value: "boolean"}, {Key: "const", Value: true}, {Key: "description", Value: "Present only on a reset."}}},
+	}},
 }
 
 // errorDetails is the schema of an error's details: the developer
@@ -146,6 +182,11 @@ var opDescriptions = map[string]string{
 		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, refused or failed. "+
 		"A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. "+
 		"A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner.", trigger.MaxEventID),
+	"streamEvents": fmt.Sprintf("Server-Sent Events: every event of the log from from_seq, or after the sequence a Last-Event-ID header names, then each new one as it is appended, from any replica, "+
+		"each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every %d seconds, and the stream closes after the event that ends the session. "+
+		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
+		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
+		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
 	"updateSession": `The body is {"model": {"name": "<model>"}}, the model the session's next turn runs; any other member is refused. ` +
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. " +
 		"A model no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable; the authorizer is asked session.update with session_id and model after the model resolved, and a deny is forbidden. " +
@@ -173,6 +214,7 @@ func operation(rt route) yaml.MapSlice {
 		}
 		params = append(params, append(param, yaml.MapItem{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}))
 	}
+	params = append(params, queryParams[rt.op]...)
 	if len(params) > 0 {
 		op = append(op, yaml.MapItem{Key: "parameters", Value: params})
 	}
@@ -183,7 +225,13 @@ func operation(rt route) yaml.MapSlice {
 		}
 		op = append(op, yaml.MapItem{Key: "requestBody", Value: yaml.MapSlice{{Key: "content", Value: media}}})
 	}
-	responses := yaml.MapSlice{{Key: strconv.Itoa(rt.status), Value: yaml.MapSlice{{Key: "description", Value: http.StatusText(rt.status)}}}}
+	ok := yaml.MapSlice{{Key: "description", Value: http.StatusText(rt.status)}}
+	if d, stream := eventStreams[rt.op]; stream {
+		ok = append(ok, yaml.MapItem{Key: "content", Value: yaml.MapSlice{{Key: "text/event-stream", Value: yaml.MapSlice{
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: d}}},
+		}}}})
+	}
+	responses := yaml.MapSlice{{Key: strconv.Itoa(rt.status), Value: ok}}
 	responses = append(responses, yaml.MapItem{Key: "default", Value: yaml.MapSlice{{Key: "$ref", Value: "#/components/responses/Error"}}})
 	return append(op, yaml.MapItem{Key: "responses", Value: responses})
 }
