@@ -63,7 +63,11 @@ restores the session's own working directory.
 
 A session with no repository, one whose first repository is on another
 host, and every session of a runner without `TOPOS_ORIGO_URL` keep their
-checkpoints in the machine alone, as before.
+checkpoints in the machine alone, as before. A session's further
+repositories, cloned into directories of their own inside the working
+directory, are in its checkpoint only as the commits they were at, as
+git records a repository inside another, so their uncommitted files are
+not kept and a fork has them at the refs the session names.
 
 ### Pushing it
 
