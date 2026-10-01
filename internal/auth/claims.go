@@ -10,6 +10,14 @@ package auth
 // was applied in, "" for a personal one. The core reads no meaning from
 // them; the authorizer decides.
 func TriggerClaims(c Caller) map[string]any {
+	return map[string]any{"org_id": c.Organization()}
+}
+
+// Organization is the organization the caller's token names in its
+// org_id claim, the context the caller acts in, "" for the caller's own
+// (spec 035). The core reads it to address what it holds, an agent's
+// owner and the namespace its names are read in, never to decide.
+func (c Caller) Organization() string {
 	org, _ := c.Claims["org_id"].(string)
-	return map[string]any{"org_id": org}
+	return org
 }
