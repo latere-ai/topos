@@ -85,7 +85,8 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 }
 
 // TestAContinuedHostedSessionHasItsFiles: through toposd, a hosted session
-// that works in a repository on the git host writes a file it never
+// that works in a private repository on the git host, one that refuses a
+// read with no credential, writes a file it never
 // commits, its checkpoint goes to the git host, and the session ends and
 // loses its sandbox. The session POST /v1/sessions/{id}/fork starts is
 // sent a message, and its first call, in a sandbox of its own, reads the

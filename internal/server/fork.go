@@ -17,12 +17,14 @@ import (
 const CodeInvalidForkPoint = "invalid_fork_point"
 
 // ForkKeptFiles is the fork route's sentence on a hosted session's files
-// (spec 035): its checkpoints are kept at its repository on the git host,
-// so its fork restores them after the sandbox is gone. A client reads it
-// to promise a continued session its files only where the core restores
-// them.
-const ForkKeptFiles = "A hosted session that works in a repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, " +
-	"so its fork restores the fork point's files after the session's sandbox is gone; a checkpoint the runner cannot have leaves the fork with its conversation and its repositories, " +
+// (spec 035): a session that works in a private repository on the git
+// host keeps its checkpoints there, so its fork restores them after the
+// sandbox is gone, and no other session keeps them past its sandbox. A
+// client reads it to promise a continued session its files only where
+// the core restores them.
+const ForkKeptFiles = "A hosted session that works in a private repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, " +
+	"so its fork restores the fork point's files after the session's sandbox is gone. A repository that a reader with no credential can read, and one whose answer to such a read is not a refusal for want of a credential, is not known private and gets no checkpoint, " +
+	"since whoever reads a repository reads its checkpoints, uncommitted files included. A checkpoint the runner cannot have leaves the fork with its conversation and its repositories, " +
 	"recorded beside its first session.machine as session.error checkpoint_missing."
 
 // continuedMark matches the mark continuedTitle puts at the end of a
