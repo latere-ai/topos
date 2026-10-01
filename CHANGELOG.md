@@ -25,6 +25,31 @@ committed: the commit log already holds that.
 - A model request that fails part way through its stream keeps the
   bytes it received as the `response_blob` of its `model.request`, so a
   failed step can be read back as the model sent it.
+- `GET /v1/sessions/{id}/stream?deltas=1` carries a session's live
+  output while a response arrives, so a client shows thinking and text
+  as the model writes them instead of waiting for the whole
+  `agent.message`. Each is a frame of `event: delta` with no `id`, whose
+  data is `{thread, turn, step, block, kind, text}`: `kind` is `text`,
+  `thinking` or `tool_input`, and `text` is the next run of the content
+  block `block`, to append to what the step's earlier deltas carried for
+  it, at most 1024 bytes. `{thread, turn, step, reset: true}` says the
+  step's request is sent again and what its deltas carried is
+  discarded. `thread` is absent for the session's own thread, as on
+  events. A frame without an `id` leaves a browser's last event id as it
+  was, so a reconnect resumes the log where it was.
+- Deltas are best effort. They reach a stream on any replica, whichever
+  replica or runner process drives the session, joined per content
+  block every 50 ms. They are never appended and never replayed, and a
+  stream that falls behind loses deltas rather than slowing the turn.
+  The step's `agent.message` stays the record: show a step's deltas
+  until its `agent.message` arrives, and ignore a delta of a step whose
+  message is already there.
+- On Postgres, deltas cross replicas as notifications on the channel
+  `topos_deltas`, which each replica's existing listener connection also
+  listens on; a replica sends them from its serving pool one statement
+  at a time, and opens no connection for them.
+- The OpenAPI document describes the stream's frames, its `from_seq`
+  and `deltas` parameters, and the `Delta` schema.
 
 ## v0.9.5 - 2026-09-30
 
