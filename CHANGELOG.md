@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.7 - 2026-10-01
+
 - Ships the changes listed under v0.9.6, which was tagged but never
   released: its release pipeline refused the tag because the tagged
   commit never ran verify on a push. No image or binary of v0.9.6 exists.
