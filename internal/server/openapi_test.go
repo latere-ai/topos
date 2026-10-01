@@ -110,3 +110,24 @@ func TestARouteAsksOnlyItsActions(t *testing.T) {
 		t.Fatal("the authorizer was asked")
 	}
 }
+
+// TestTheForkRouteStatesWhatItRestores: the fork route's description
+// says that a hosted fork restores its files from the git host, the
+// sentence a client reads before it promises them (spec 035).
+func TestTheForkRouteStatesWhatItRestores(t *testing.T) {
+	raw, err := os.ReadFile(committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Description string `yaml:"description"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.Paths["/sessions/{id}/fork"]["post"].Description; !strings.Contains(got, ForkKeptFiles) {
+		t.Fatalf("the fork route says %q", got)
+	}
+}

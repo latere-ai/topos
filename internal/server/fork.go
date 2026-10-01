@@ -16,6 +16,15 @@ import (
 // is not a turn boundary, or of a session that has none.
 const CodeInvalidForkPoint = "invalid_fork_point"
 
+// ForkKeptFiles is the fork route's sentence on a hosted session's files
+// (spec 035): its checkpoints are kept at its repository on the git host,
+// so its fork restores them after the sandbox is gone. A client reads it
+// to promise a continued session its files only where the core restores
+// them.
+const ForkKeptFiles = "A hosted session that works in a repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, " +
+	"so its fork restores the fork point's files after the session's sandbox is gone; a checkpoint the runner cannot have leaves the fork with its conversation and its repositories, " +
+	"recorded beside its first session.machine as session.error checkpoint_missing."
+
 // continuedMark matches the mark continuedTitle puts at the end of a
 // fork's title: " (continued)" or " (continued N)".
 var continuedMark = regexp.MustCompile(`^(.*) \(continued(?: ([0-9]+))?\)$`)
