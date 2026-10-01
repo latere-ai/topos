@@ -96,6 +96,16 @@ var paramDescriptions = map[string]string{
 
 // queryParams are the query parameters of the routes that read any.
 var queryParams = map[string][]yaml.MapSlice{
+	"listSessions": {
+		{{Key: "name", Value: "agent"}, {Key: "in", Value: "query"}, {Key: "description", Value: "An agent's id, or a name among the caller's own agents."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}},
+		{{Key: "name", Value: "status"}, {Key: "in", Value: "query"},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{string(session.StatusIdle), string(session.StatusRunning), string(session.StatusEnded)}}}}},
+		{{Key: "name", Value: "runner"}, {Key: "in", Value: "query"},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{session.RunnerHosted, session.RunnerExternal}}}}},
+		{{Key: "name", Value: "archived"}, {Key: "in", Value: "query"}, {Key: "description", Value: "false or absent leaves archived sessions out, true lists only them, any lists both."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{"false", "true", "any"}}}}},
+	},
 	"streamEvents": {
 		{{Key: "name", Value: "from_seq"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The sequence the replay starts at; 1 when absent. A Last-Event-ID header starts it after the sequence the header names instead."},
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}}},
@@ -188,6 +198,15 @@ var opDescriptions = map[string]string{
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
 		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
+	"forkSession": "The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a session.status idle of the session's own thread, the end of a turn; absent, the last one, which for an ended or expired session is the one before its end. " +
+		"Another sequence, or a session that never finished a turn, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, title, repositories and capture, " +
+		"status idle with the stop reason at the fork point, a lifetime and a budget of its own from now, and the caller as initiator. Its log starts as a copy of events 1 to seq, ids included, with every blob they name, " +
+		"so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
+		"recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. " +
+		"A session of an archived agent is conflict.",
+	"archiveSession": "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. " +
+		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then session.update with session_id and archived true; a deny is forbidden.",
+	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",
 	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "effort": "<effort>"}}, the model the session's next turn runs and its reasoning effort, either member or both; any other member is refused. `+
 		"A member left out keeps what the session runs. effort is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. "+
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+

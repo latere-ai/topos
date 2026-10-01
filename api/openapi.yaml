@@ -140,9 +140,39 @@ paths:
           $ref: "#/components/responses/Error"
     get:
       operationId: listSessions
-      summary: List sessions, filtered by agent, status and runner
+      summary: List sessions, filtered by agent, status, runner and archived
       x-topos-actions:
         - session.list
+      parameters:
+        - name: agent
+          in: query
+          description: An agent's id, or a name among the caller's own agents.
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - idle
+              - running
+              - ended
+        - name: runner
+          in: query
+          schema:
+            type: string
+            enum:
+              - hosted
+              - external
+        - name: archived
+          in: query
+          description: false or absent leaves archived sessions out, true lists only them, any lists both.
+          schema:
+            type: string
+            enum:
+              - "false"
+              - "true"
+              - any
       responses:
         "200":
           description: OK
@@ -208,6 +238,72 @@ paths:
       summary: End an idle session completed or canceled
       x-topos-actions:
         - session.end
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/fork:
+    post:
+      operationId: forkSession
+      summary: Start a new session from a session's log at a turn boundary, an ended or expired session included
+      description: "The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a session.status idle of the session's own thread, the end of a turn; absent, the last one, which for an ended or expired session is the one before its end. Another sequence, or a session that never finished a turn, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, title, repositories and capture, status idle with the stop reason at the fork point, a lifetime and a budget of its own from now, and the caller as initiator. Its log starts as a copy of events 1 to seq, ids included, with every blob they name, so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. A session of an archived agent is conflict."
+      x-topos-actions:
+        - session.read
+        - session.fork
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "201":
+          description: Created
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/archive:
+    post:
+      operationId: archiveSession
+      summary: Archive an ended session, leaving it out of the lists
+      description: "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then session.update with session_id and archived true; a deny is forbidden."
+      x-topos-actions:
+        - session.read
+        - session.update
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/unarchive:
+    post:
+      operationId: unarchiveSession
+      summary: Unarchive a session, returning it to the lists
+      description: The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.
+      x-topos-actions:
+        - session.read
+        - session.update
       parameters:
         - name: id
           in: path
@@ -552,6 +648,7 @@ components:
                 - identity_refused
                 - identity_unavailable
                 - internal
+                - invalid_fork_point
                 - invalid_manifest
                 - invalid_request
                 - machine_unavailable
@@ -591,7 +688,7 @@ components:
                   description: On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read.
   responses:
     Error:
-      description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, idempotency_conflict, sequence_conflict; 413: attachment_too_large, payload_too_large; 422: machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable, model_unavailable."
+      description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, idempotency_conflict, sequence_conflict; 413: attachment_too_large, payload_too_large; 422: invalid_fork_point, machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable, model_unavailable."
       content:
         application/json:
           schema:

@@ -81,8 +81,9 @@ func (p *OwnerPolicy) decide(req authz.Request) authz.Decision {
 		return authz.Decision{Allow: true, Filter: &authz.Filter{Owners: []string{req.Subject}}}
 	}
 	// A session runs an agent, so starting one is the agent owner's to
-	// do, the way every other action on the agent is.
-	if req.Action == authorizer.ActionSessionCreate && !admin && req.Resource.String("agent_owner") != req.Subject {
+	// do, the way every other action on the agent is; a fork starts one
+	// too, and is then the forked session's owner's.
+	if (req.Action == authorizer.ActionSessionCreate || req.Action == authorizer.ActionSessionFork) && !admin && req.Resource.String("agent_owner") != req.Subject {
 		return authz.Decision{Reason: authz.ReasonNotOwner}
 	}
 	owner := req.Resource.String("owner")

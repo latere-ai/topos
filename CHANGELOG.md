@@ -10,6 +10,23 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- `POST /v1/sessions/{id}/fork` continues a session, an ended or
+  expired one included, as a new session of the same agent version: its
+  log starts as a copy of the old one's up to a turn boundary, the last
+  one unless `at_seq` names another, so its first turn has the whole
+  conversation, and it has a lifetime, a budget and credentials of its
+  own, with `parent` naming where it came from. It is asked of the
+  authorizer as `session.fork` with a create's fields and the forked
+  session's. The fork point's files are restored into the new session's
+  working directory when the runner can reach that turn's checkpoint;
+  a hosted session on Cella does not keep its checkpoints past its
+  sandbox yet, so its fork starts from its repositories.
+- `POST /v1/sessions/{id}/archive` and `/unarchive` file an ended
+  session away from the lists and back, asked of the authorizer as
+  `session.update` with `archived`. `GET /v1/sessions` leaves archived
+  sessions out unless `archived=true` or `archived=any`; an archived
+  session stays readable, streamable and forkable by id. The Postgres
+  store adds the `archived_at` column.
 - A tool call whose arguments are not valid JSON no longer ends the turn
   with `model_error`. A model can break off inside a string argument at
   its output limit, and a provider can report that stop as a tool call;

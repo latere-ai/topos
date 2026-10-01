@@ -302,6 +302,21 @@ func (c *call) decode(v any) error {
 	if len(strings.TrimSpace(string(b))) == 0 {
 		return refuse(CodeInvalidRequest, "the body is empty")
 	}
+	return decodeBody(b, v)
+}
+
+// decodeOptional is decode for a route whose body may be left out, which
+// leaves v as it is.
+func (c *call) decodeOptional(v any) error {
+	b, err := c.body()
+	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
+		return err
+	}
+	return decodeBody(b, v)
+}
+
+// decodeBody reads one JSON value into v, refusing unknown fields.
+func decodeBody(b []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {

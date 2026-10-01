@@ -89,6 +89,19 @@ func TestOwnerPolicyRows(t *testing.T) {
 	if !create(alice, alice).Allow || !create(root, alice).Allow || create(bob, alice).Allow {
 		t.Fatal("a session is created on the caller's own agent, or by an admin")
 	}
+	// A fork starts a session of the agent from a session: the agent's
+	// owner forks a session of their own.
+	fork := func(subject, agentOwner, owner string) authz.Decision {
+		d, err := p.Authorize(t.Context(), authz.Request{Subject: subject, Action: authorizer.ActionSessionFork,
+			Resource: authz.NewResource(authorizer.KindSession, "ses_1", map[string]any{"agent_owner": agentOwner, "owner": owner})})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	if !fork(alice, alice, alice).Allow || !fork(root, alice, alice).Allow || fork(bob, alice, alice).Allow || fork(bob, alice, bob).Allow || fork(alice, alice, bob).Allow {
+		t.Fatal("a session is forked by the agent's owner from a session of their own, or by an admin")
+	}
 	if d := ask(t, p, alice, authorizer.ActionSessionList, "", "", nil); !d.Allow || d.Filter == nil || d.Filter.Owners[0] != alice {
 		t.Fatalf("a list: %+v", d)
 	}

@@ -197,12 +197,30 @@ type creation struct {
 	// triggerID and firingID name the trigger and the firing that start
 	// the session, empty for any other.
 	triggerID, firingID string
+	// fork is the session and the log a fork continues, nil for any
+	// other create (spec 017).
+	fork *forkOrigin
+}
+
+// forkOrigin is what a fork starts from: the session forked, the fork
+// point, and its log up to that point, which the new session copies.
+type forkOrigin struct {
+	parent session.Session
+	seq    uint64
+	events []session.Event
 }
 
 // create creates a session of in's agent with q's caller as its
-// initiator: the one code the create route and a trigger's firing
-// start a session by, asked of the authorizer as session.create.
+// initiator: the one code the create route, a trigger's firing and a
+// fork start a session by, asked of the authorizer as session.create, or
+// as session.fork for a fork, which runs the parent's agent version and
+// copies its log to the fork point.
 func (s *Server) create(ctx context.Context, q asker, in creation) (session.Session, error) {
+	if in.fork != nil {
+		p := in.fork.parent
+		in.agent = p.Agent.ID + "@" + strconv.Itoa(p.Agent.Version)
+		in.resources, in.title, in.metadata, in.capture = p.Resources, p.Title, p.Metadata, &p.Capture
+	}
 	name, n, pinned := strings.Cut(in.agent, "@")
 	a, err := store.FindAgent(ctx, s.o.Objects, q.caller.Subject, name)
 	if err != nil {
@@ -258,6 +276,13 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if in.triggerID != "" {
 		fields["trigger_id"], fields["firing_id"] = in.triggerID, in.firingID
 	}
+	// A fork is asked about the session it forks, with that session's
+	// owner and the fork point beside the new session's fields.
+	action, resourceID := authorizer.ActionSessionCreate, ""
+	if f := in.fork; f != nil {
+		action, resourceID = authorizer.ActionSessionFork, f.parent.ID
+		fields["owner"], fields["parent"], fields["seq"] = f.parent.Initiator.Subject, f.parent.ID, f.seq
+	}
 	if s.o.Identities != nil {
 		st, err := s.agentStatus(ctx, a)
 		if err != nil {
@@ -274,7 +299,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 			fields["agent_owner"] = map[string]any{"type": st.Owner.Type, "id": st.Owner.ID}
 		}
 	}
-	limits, err := q.create(ctx, authorizer.ActionSessionCreate, authz.NewResource(authorizer.KindSession, "", fields))
+	limits, err := q.create(ctx, action, authz.NewResource(authorizer.KindSession, resourceID, fields))
 	if err != nil {
 		// The deny's reason may be about the agent. The caller applied
 		// an agent of its own and hears why; another subject's agent,
@@ -321,6 +346,9 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	}
 	sess.ExpiresAt = sess.CreatedAt.Add(age)
 	sess.Scope = limits.Scope
+	if f := in.fork; f != nil {
+		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent.ID, f.events)
+	}
 	if err := s.o.Sessions.Create(ctx, sess, blobs); err != nil {
 		return session.Session{}, err
 	}
@@ -468,7 +496,8 @@ func lowest(field, requested string, agent, authorizer time.Duration) (time.Dura
 	return out, nil
 }
 
-// listSessions is GET /sessions, filtered by agent, status and runner,
+// listSessions is GET /sessions, filtered by agent, status, runner and
+// whether a session is archived, leaving archived ones out unless asked,
 // and narrowed to the owners the authorizer's allow names.
 func (c *call) listSessions() error {
 	limit, cursor, err := c.pageParams()
@@ -477,6 +506,16 @@ func (c *call) listSessions() error {
 	}
 	q := c.r.URL.Query()
 	o := session.ListOptions{Status: session.Status(q.Get("status")), Runner: q.Get("runner"), Limit: limit, Cursor: cursor}
+	switch a := q.Get("archived"); a {
+	case "", "false":
+		o.Archived = session.ArchivedExclude
+	case "true":
+		o.Archived = session.ArchivedOnly
+	case "any":
+		o.Archived = session.ArchivedAny
+	default:
+		return refuse(CodeInvalidRequest, "archived is %q, not true, false or any", a)
+	}
 	switch o.Status {
 	case "", session.StatusIdle, session.StatusRunning, session.StatusEnded:
 	default:

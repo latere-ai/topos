@@ -195,6 +195,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 	f.apply("alice", "archivist", "Keep.")
 	s := f.create("alice", "reviewer")
 	ended := f.create("alice", "reviewer")
+	f.turn(ended.ID, 1, "Done.", 1)
 	if a := f.do(http.MethodPost, "/v1/sessions/"+ended.ID+"/end", "alice", `{"reason":"completed"}`); a.status != http.StatusOK {
 		t.Fatalf("end: %d %s", a.status, a.body)
 	}
@@ -221,6 +222,9 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"updateSession":     {http.MethodPatch, "/v1/sessions/" + s.ID, `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`},
 		"endSession":        {http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`},
 		"resumeSession":     {http.MethodPost, "/v1/sessions/" + s.ID + "/resume", `{}`},
+		"forkSession":       {http.MethodPost, "/v1/sessions/" + ended.ID + "/fork", ""},
+		"archiveSession":    {http.MethodPost, "/v1/sessions/" + ended.ID + "/archive", ""},
+		"unarchiveSession":  {http.MethodPost, "/v1/sessions/" + ended.ID + "/unarchive", ""},
 		"deleteSession":     {http.MethodDelete, "/v1/sessions/" + doomed.ID, ""},
 		"listEvents":        {http.MethodGet, "/v1/sessions/" + ended.ID + "/events", ""},
 		"sendEvent":         {http.MethodPost, "/v1/sessions/" + ended.ID + "/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"x"}]}}`},

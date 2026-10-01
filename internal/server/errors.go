@@ -60,6 +60,7 @@ var codes = map[string]struct {
 	CodeAttachmentTooLarge:          {http.StatusRequestEntityTooLarge, "An image or a file of the message is too large."},
 	CodeRateLimited:                 {http.StatusTooManyRequests, "Too many requests; wait and try again."},
 	CodeMachineUnavailable:          {http.StatusUnprocessableEntity, "The session's machine is not available here."},
+	CodeInvalidForkPoint:            {http.StatusUnprocessableEntity, "A session is forked only at the end of a turn."},
 	models.CodeUnknown:              {http.StatusUnprocessableEntity, "This server cannot run that model."},
 	models.CodeUnavailable:          {http.StatusServiceUnavailable, "The model's gateway did not answer; try again."},
 	auth.CodeAuthorizerUnavailable:  {http.StatusServiceUnavailable, "The authorizer did not answer; try again."},
@@ -128,6 +129,8 @@ func classify(err error) *apiError {
 		return &apiError{code: CodeSequenceConflict, err: err}
 	case errors.Is(err, session.ErrLocked), errors.Is(err, session.ErrExists), errors.Is(err, store.ErrConflict):
 		return &apiError{code: CodeConflict, detail: err.Error(), err: err}
+	case errors.Is(err, session.ErrInvalidForkPoint):
+		return &apiError{code: CodeInvalidForkPoint, detail: err.Error(), err: err}
 	case errors.Is(err, session.ErrInvalid):
 		return &apiError{code: CodeInvalidRequest, detail: err.Error(), err: err}
 	}
