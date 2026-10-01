@@ -128,7 +128,8 @@ type Config struct {
 	// DataDir. Off, such a session is refused machine_unavailable.
 	HostSessions bool
 	// OrigoURL is the git host a hosted session's sandbox pushes to with
-	// its agent's token (spec 018).
+	// its agent's token (spec 018), and where a session that works in a
+	// repository there keeps its checkpoints (spec 035).
 	OrigoURL string
 	// OrigoTokenFile is the file holding the git host's credential of an
 	// installation without an identity provider, which each sandbox's git
