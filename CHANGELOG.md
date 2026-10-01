@@ -25,6 +25,14 @@ committed: the commit log already holds that.
 - A model request that fails part way through its stream keeps the
   bytes it received as the `response_blob` of its `model.request`, so a
   failed step can be read back as the model sent it.
+- A response that stops at its output limit inside a tool call's
+  arguments is no longer sent again at the model's full output limit or
+  continued: a model that runs away inside an argument only runs further
+  with more room. The step keeps the response, runs the calls before the
+  cut one, and answers the cut call `invalid_input` with the limit it
+  reached and the start of its arguments, asking for shorter arguments,
+  and the next step asks the usual cap. A response cut in text or
+  thinking is still sent again at the output limit and then continued.
 - `GET /v1/sessions/{id}/stream?deltas=1` carries a session's live
   output while a response arrives, so a client shows thinking and text
   as the model writes them instead of waiting for the whole
