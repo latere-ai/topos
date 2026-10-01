@@ -283,10 +283,14 @@ type ModelRequest struct {
 	FoldSeq uint64 `json:"fold_seq,omitempty"`
 }
 
-// CheckpointRef names a checkpoint (spec 034).
+// CheckpointRef names a checkpoint (spec 034). Remote is the URL of the
+// repository that keeps it past the machine, as the session names the
+// repository, when the runner pushed it there (spec 035); empty, the
+// checkpoint lives on the machine alone.
 type CheckpointRef struct {
 	Ref    string `json:"ref"`
 	Commit string `json:"commit"`
+	Remote string `json:"remote,omitempty"`
 }
 
 // RunnerRef names the runner that claimed a session.
