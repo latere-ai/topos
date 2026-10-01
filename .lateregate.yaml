@@ -165,8 +165,10 @@ identity:
   envelope_exempt: [manifest/v1/permission.go]
   # A trigger's firing asks the authorizer as the trigger's owner, whose
   # token is not at hand when it fires, so the apply keeps the claims a
-  # firing forwards (spec 022). This file names them, and nothing reads
-  # meaning from them.
+  # firing forwards (spec 022). The same claim names the context whose
+  # agents a name is read among (spec 036), which addresses an object and
+  # decides nothing: every action on it is still the authorizer's. This
+  # file is the one that reads it.
   claims_passthrough: [internal/auth/claims.go]
 
 # Serving queries read the pooled URL when it is set; the migrations and
