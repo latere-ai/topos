@@ -298,3 +298,104 @@ func TestAnUnwritableIndexFailsTheCheckpoint(t *testing.T) {
 		t.Fatal("a restore whose index cannot be written succeeded")
 	}
 }
+
+// TestAdoptAnotherSessionsCheckpoint: a fork adopts the checkpoint it
+// forked at from its own repository when that holds the commit, from the
+// parent's session repository otherwise, under its own ref of the turn;
+// a commit neither holds is adopted nowhere and recorded nowhere.
+func TestAdoptAnotherSessionsCheckpoint(t *testing.T) {
+	needGit(t)
+	h, work := open(t, nil)
+	repos := filepath.Join(filepath.Dir(work), "repos")
+	parent := &Checkpointer{Machine: h, SessionID: "ses_p", SessionRepo: filepath.Join(repos, "ses_p.git")}
+	write(t, filepath.Join(work, "a.txt"), "the parent's")
+	cp, err := parent.Take(t.Context(), 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if have, err := parent.Has(t.Context(), cp.Commit); err != nil || !have {
+		t.Fatalf("the parent's own checkpoint: %v, %v", have, err)
+	}
+
+	child := &Checkpointer{Machine: h, SessionID: "ses_c", SessionRepo: filepath.Join(repos, "ses_c.git")}
+	if have, err := child.Has(t.Context(), cp.Commit); err != nil || have {
+		t.Fatalf("the child holds the parent's checkpoint before adopting it: %v, %v", have, err)
+	}
+	if _, ok, err := child.Adopt(t.Context(), 2, cp.Commit, "", cp.Ref); err != nil || ok {
+		t.Fatalf("adopted with nowhere to take it from: %v, %v", ok, err)
+	}
+	if _, ok, err := child.Adopt(t.Context(), 2, cp.Commit, filepath.Join(repos, "ses_none.git"), cp.Ref); err != nil || ok {
+		t.Fatalf("adopted from a repository that does not exist: %v, %v", ok, err)
+	}
+	got, ok, err := child.Adopt(t.Context(), 2, cp.Commit, parent.SessionRepo, cp.Ref)
+	if err != nil || !ok || got.Ref != "refs/topos/checkpoints/ses_c/2" || got.Commit != cp.Commit {
+		t.Fatalf("adopt from the parent's repository: %+v, %v, %v", got, ok, err)
+	}
+	if have, err := child.Has(t.Context(), cp.Commit); err != nil || !have {
+		t.Fatalf("the child after adopting: %v, %v", have, err)
+	}
+	// Held already, the commit is adopted under the child's own ref alone.
+	again := &Checkpointer{Machine: h, SessionID: "ses_d", SessionRepo: child.SessionRepo}
+	got, ok, err = again.Adopt(t.Context(), 2, cp.Commit, "", "")
+	if err != nil || !ok || got.Ref != "refs/topos/checkpoints/ses_d/2" {
+		t.Fatalf("adopt a held commit: %+v, %v, %v", got, ok, err)
+	}
+	if ref := git(t, h, map[string]string{"GIT_DIR": child.SessionRepo}, "rev-parse "+got.Ref); ref != cp.Commit {
+		t.Fatalf("the adopted ref points at %s, want %s", ref, cp.Commit)
+	}
+	write(t, filepath.Join(work, "a.txt"), "changed since")
+	if err := child.Restore(t.Context(), cp.Commit, ""); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, filepath.Join(work, "a.txt")) != "the parent's" {
+		t.Fatal("the adopted checkpoint was not restored")
+	}
+	// The parent's ref there names another commit than the one asked.
+	other := filepath.Join(repos, "ses_q.git")
+	git(t, h, nil, "init --quiet --bare "+other)
+	git(t, h, map[string]string{"GIT_DIR": other}, "fetch --quiet "+parent.SessionRepo+" "+cp.Ref+":"+cp.Ref)
+	moved := &Checkpointer{Machine: h, SessionID: "ses_p", SessionRepo: other}
+	write(t, filepath.Join(work, "a.txt"), "a later turn")
+	later, err := moved.Take(t.Context(), 2, cp.Commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if later.Ref != cp.Ref {
+		t.Fatalf("the later turn's ref %s", later.Ref)
+	}
+	fresh := &Checkpointer{Machine: h, SessionID: "ses_e", SessionRepo: filepath.Join(repos, "ses_e.git")}
+	if _, ok, err := fresh.Adopt(t.Context(), 2, strings.Repeat("0", 40), other, cp.Ref); err != nil || ok {
+		t.Fatalf("adopted a commit the other repository lacks: %v, %v", ok, err)
+	}
+	if _, ok, err := fresh.Adopt(t.Context(), 2, cp.Commit, parent.SessionRepo, "refs/topos/checkpoints/ses_p/9"); err == nil || ok {
+		t.Fatalf("adopted through a ref the parent lacks: %v, %v", ok, err)
+	}
+	// A ref of the other repository that names an unrelated commit brings
+	// nothing of the one asked.
+	unrelated, err := moved.Take(t.Context(), 5, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := fresh.Adopt(t.Context(), 2, cp.Commit, other, unrelated.Ref); err != nil || ok {
+		t.Fatalf("adopted through a ref that does not reach the commit: %v, %v", ok, err)
+	}
+
+	gone, _ := open(t, nil)
+	if err := gone.Release(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&Checkpointer{Machine: gone, SessionID: "ses_g"}).exists(t.Context(), nil, cp.Commit); err == nil {
+		t.Fatal("a released machine answered whether it holds a commit")
+	}
+	bare, _ := open(t, []string{"PATH=/nonexistent"})
+	none := &Checkpointer{Machine: bare, SessionID: "ses_n", SessionRepo: "/tmp/never"}
+	if _, err := none.Has(t.Context(), cp.Commit); !errors.Is(err, ErrNoGit) {
+		t.Fatalf("has without git: %v", err)
+	}
+	if _, _, err := none.Adopt(t.Context(), 2, cp.Commit, "", ""); !errors.Is(err, ErrNoGit) {
+		t.Fatalf("adopt without git: %v", err)
+	}
+	if _, _, err := (&Checkpointer{Machine: h, SessionID: "x"}).Adopt(t.Context(), 1, cp.Commit, "", ""); !errors.Is(err, ErrNoRepository) {
+		t.Fatalf("adopt with nowhere to keep it: %v", err)
+	}
+}

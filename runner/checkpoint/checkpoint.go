@@ -251,9 +251,6 @@ func (c *Checkpointer) exists(ctx context.Context, env map[string]string, commit
 	if err != nil {
 		return false, fmt.Errorf("checkpoint: git cat-file: %w", err)
 	}
-	if res.ExitCode == 127 {
-		return false, ErrNoGit
-	}
 	return res.ExitCode == 0, nil
 }
 
@@ -261,39 +258,36 @@ func (c *Checkpointer) exists(ctx context.Context, env map[string]string, commit
 // working directory's checkpoint of turn, as a fork does with the turn it
 // forks at (spec 017). The commit is taken from this directory's own
 // repository, or else fetched from the bare repository from, the other
-// session's, under its ref there. It reports false, recording nothing,
-// when neither holds the commit.
+// session's, by its ref there. It reports false, recording nothing, when
+// neither holds the commit.
 func (c *Checkpointer) Adopt(ctx context.Context, turn int, commit, from, ref string) (session.CheckpointRef, bool, error) {
 	env, err := c.repo(ctx)
 	if err != nil {
 		return session.CheckpointRef{}, false, err
 	}
-	own := c.Ref(turn)
 	have, err := c.exists(ctx, env, commit)
 	if err != nil {
 		return session.CheckpointRef{}, false, err
 	}
-	switch {
-	case have:
-		if _, err := c.git(ctx, env, "update-ref "+own+" "+commit); err != nil {
-			return session.CheckpointRef{}, false, err
-		}
-	case from == "":
-		return session.CheckpointRef{}, false, nil
-	default:
+	if !have && from != "" {
 		if there, err := c.exists(ctx, map[string]string{"GIT_DIR": from}, commit); err != nil || !there {
 			return session.CheckpointRef{}, false, err
 		}
-		if _, err := c.git(ctx, env, "fetch --no-tags --quiet "+quote(from)+" "+quote("+"+ref+":"+own)); err != nil {
+		if _, err := c.git(ctx, env, "fetch --no-tags --quiet "+quote(from)+" "+quote(ref)); err != nil {
 			return session.CheckpointRef{}, false, err
 		}
-		got, err := c.git(ctx, env, "rev-parse "+own)
-		if err != nil {
+		// The ref may have moved past the commit since; then the commit
+		// is not had.
+		if have, err = c.exists(ctx, env, commit); err != nil {
 			return session.CheckpointRef{}, false, err
 		}
-		if got != commit {
-			return session.CheckpointRef{}, false, fmt.Errorf("checkpoint: %s in %s is %s, not the checkpoint %s", ref, from, got, commit)
-		}
+	}
+	if !have {
+		return session.CheckpointRef{}, false, nil
+	}
+	own := c.Ref(turn)
+	if _, err := c.git(ctx, env, "update-ref "+own+" "+commit); err != nil {
+		return session.CheckpointRef{}, false, err
 	}
 	return session.CheckpointRef{Ref: own, Commit: commit}, true, nil
 }
