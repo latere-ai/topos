@@ -10,6 +10,9 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- Ships the changes listed under v0.9.6, which was tagged but never
+  released: its release pipeline refused the tag because the tagged
+  commit never ran verify on a push. No image or binary of v0.9.6 exists.
 - `GET /v1/sessions/summary` counts the sessions `GET /v1/sessions`
   would list for the caller, in one read: how many are running, waiting
   for approval (idle on `tool_confirmation`), otherwise idle, and ended,
@@ -21,6 +24,8 @@ committed: the commit log already holds that.
   not is counted through its list.
 
 ## v0.9.6 - 2026-10-01
+
+Tagged but never released; v0.9.7 ships these changes.
 
 - `POST /v1/sessions/{id}/fork` continues a session, an ended or
   expired one included, as a new session of the same agent version: its
