@@ -131,3 +131,17 @@ func TestTheForkRouteStatesWhatItRestores(t *testing.T) {
 		t.Fatalf("the fork route says %q", got)
 	}
 }
+
+// TestOpenAPIStatesTheOwner: the served document states the owner rule
+// of spec 036 in the words a client reads it by, on the agent routes'
+// name and on the PUT that creates an agent.
+func TestOpenAPIStatesTheOwner(t *testing.T) {
+	f := newFixture(t)
+	served := f.do(http.MethodGet, "/v1/openapi.yaml", "", "")
+	if served.status != http.StatusOK {
+		t.Fatalf("the document: %d %s", served.status, served.body)
+	}
+	if !strings.Contains(string(served.body), OwnerRule) {
+		t.Fatalf("the document does not state %q", OwnerRule)
+	}
+}

@@ -85,19 +85,25 @@ func OpenAPI(server string) ([]byte, error) {
 
 var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 
+// OwnerRule is the sentence the document states an agent's owner by
+// (spec 036), the one a client reads to know the core keeps an
+// organization's agents.
+const OwnerRule = "An agent belongs to the organization the caller's token names in its org_id claim, or to the caller as a person when it names none."
+
 // paramDescriptions say how the API reads a path parameter where a
-// client needs to know it: a name is unique within its owner, so a name
-// reads among the caller's own objects, and an id reads its object
-// whoever owns it.
+// client needs to know it: a name is unique within its owner, so an
+// agent's name reads among the agents of the caller's context and a
+// trigger's among the caller's own, and an id reads its object whoever
+// owns it.
 var paramDescriptions = map[string]string{
-	"name": "The name, unique within its owner, the subject that applied it. An apply acts on the caller's own object of the name and creates it when the caller holds none; an object of the name another subject holds is neither read nor changed.",
-	"ref":  "An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.",
+	"name": "The name, unique within its owner. " + OwnerRule + " An agent's name is read among that owner's agents, a trigger's among the caller's own triggers. An apply acts on the object of the name and creates it when there is none; an object of the name another owner holds is neither read nor changed.",
+	"ref":  "An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the agents of the caller's context or the caller's own triggers. A name only another owner holds answers not_found, as one nobody holds does.",
 }
 
 // agentParam, runnerParam and archivedParam scope the sessions a list
 // pages through and a summary counts; status is the list's alone.
 var (
-	agentParam = yaml.MapSlice{{Key: "name", Value: "agent"}, {Key: "in", Value: "query"}, {Key: "description", Value: "An agent's id, or a name among the caller's own agents."},
+	agentParam = yaml.MapSlice{{Key: "name", Value: "agent"}, {Key: "in", Value: "query"}, {Key: "description", Value: "An agent's id, or a name among the agents of the caller's context."},
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
 	runnerParam = yaml.MapSlice{{Key: "name", Value: "runner"}, {Key: "in", Value: "query"},
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{session.RunnerHosted, session.RunnerExternal}}}}}
