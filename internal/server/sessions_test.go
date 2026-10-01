@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -637,6 +638,105 @@ func TestStreamReplayThenLive(t *testing.T) {
 	}
 }
 
+// openSSE opens path on srv as token and hands its frames to the
+// returned channel, which closes when the stream does.
+func openSSE(t *testing.T, srv *httptest.Server, path, token string) <-chan sseFrame {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream %s: %d", path, resp.StatusCode)
+	}
+	frames := make(chan sseFrame, 64)
+	go readFrames(resp.Body, frames)
+	return frames
+}
+
+// next is the stream's next frame, failing after ten seconds.
+func next(t *testing.T, frames <-chan sseFrame, what string) sseFrame {
+	t.Helper()
+	select {
+	case fr, open := <-frames:
+		if !open {
+			t.Fatalf("the stream closed before %s", what)
+		}
+		return fr
+	case <-time.After(10 * time.Second):
+		t.Fatalf("no %s", what)
+	}
+	return sseFrame{}
+}
+
+// TestStreamDeltas: with deltas=1 a stream on a replica other than the
+// runner's carries the session's live deltas as event: delta frames with
+// no id, a reset among them, in the order they were published; a stream
+// without it carries none; and a replay of the log, deltas=1 or not,
+// holds no delta.
+func TestStreamDeltas(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	other, err := New(Options{Sessions: f.sessions, Objects: f.objects, Verifier: tokens{}, Guard: auth.Guard{Authorizer: &auth.OwnerPolicy{}}, PublicURL: "https://topos.example", Heartbeat: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replica := httptest.NewServer(other.Handler())
+	t.Cleanup(replica.Close)
+	live := openSSE(t, replica, "/v1/sessions/"+s.ID+"/stream?deltas=1", "alice")
+	quiet := openSSE(t, replica, "/v1/sessions/"+s.ID+"/stream?deltas=0", "alice")
+	// The first replayed event says the stream follows the deltas: it
+	// subscribes before it watches the log.
+	for _, frames := range []<-chan sseFrame{live, quiet} {
+		if fr := next(t, frames, "the replay"); fr.id != "1" {
+			t.Fatalf("the replay began with %+v", fr)
+		}
+	}
+	pub := f.sessions.(session.DeltaPublisher)
+	published := []session.Delta{
+		{Turn: 1, Step: 1, Block: 0, Kind: session.DeltaThinking, Text: "Reading main.go."},
+		{Turn: 1, Step: 1, Reset: true},
+		{Thread: "evt_t", Turn: 1, Step: 1, Block: 1, Kind: session.DeltaText, Text: "<ok> \"done\"\n"},
+	}
+	for _, d := range published {
+		pub.PublishDelta(s.ID, d)
+	}
+	pub.PublishDelta(session.NewID(session.PrefixSession), session.Delta{Turn: 1, Step: 1, Kind: session.DeltaText, Text: "another session's"})
+	for i, d := range published {
+		fr := next(t, live, "a delta")
+		want, err := session.Marshal(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fr.id != "" || fr.event != "delta" || fr.data != string(want) {
+			t.Fatalf("delta %d is the frame %+v, want data %s", i, fr, want)
+		}
+	}
+	f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/end", "alice", `{"reason":"completed"}`)
+	for _, frames := range []<-chan sseFrame{live, quiet} {
+		if fr := next(t, frames, "the ending event"); fr.id != "2" || fr.event != string(session.TypeSessionStatus) {
+			t.Fatalf("after the deltas: %+v", fr)
+		}
+		if fr, open := <-frames; open {
+			t.Fatalf("the stream went on after the session ended: %+v", fr)
+		}
+	}
+	for _, q := range []string{"?deltas=1", "?from_seq=1&deltas=1", ""} {
+		a := f.do(http.MethodGet, "/v1/sessions/"+s.ID+"/stream"+q, "alice", "")
+		frames := parseFrames(string(a.body))
+		if len(frames) != 2 || slices.ContainsFunc(frames, func(fr sseFrame) bool { return fr.id == "" || fr.event == "delta" }) {
+			t.Fatalf("the replay %s held %+v", q, frames)
+		}
+	}
+}
+
 // TestStreamKeepsAlive: an idle stream carries a comment line.
 func TestStreamKeepsAlive(t *testing.T) {
 	f := newFixture(t)
@@ -779,7 +879,7 @@ func readFrames(r interface{ Read([]byte) (int, error) }, out chan<- sseFrame) {
 		line := sc.Text()
 		switch {
 		case line == "":
-			if fr.id != "" {
+			if fr.id != "" || fr.event != "" {
 				out <- fr
 			}
 			fr = sseFrame{}

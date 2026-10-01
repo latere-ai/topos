@@ -231,7 +231,9 @@ func strict(raw json.RawMessage, v any) error {
 
 // stream is GET /sessions/{id}/stream: every event from from_seq, or
 // after Last-Event-ID, then each new one as it is appended, as
-// Server-Sent Events, until the event that ends the session.
+// Server-Sent Events, until the event that ends the session. With
+// deltas=1 it also carries the session's live deltas as they are
+// published, on a store that carries them, each a frame with no id.
 func (c *call) stream() error {
 	from, err := c.seqParam("from_seq", 1)
 	if err != nil {
@@ -244,8 +246,9 @@ func (c *call) stream() error {
 		}
 		from = n + 1
 	}
-	if v := c.r.URL.Query().Get("deltas"); v != "" && v != "0" && v != "1" {
-		return refuse(CodeInvalidRequest, "deltas is %q, not 0 or 1", v)
+	withDeltas := c.r.URL.Query().Get("deltas")
+	if withDeltas != "" && withDeltas != "0" && withDeltas != "1" {
+		return refuse(CodeInvalidRequest, "deltas is %q, not 0 or 1", withDeltas)
 	}
 	s, err := c.session(authorizer.ActionSessionRead, nil)
 	if err != nil {
@@ -261,6 +264,13 @@ func (c *call) stream() error {
 		return errors.New("server: the response writer cannot flush")
 	}
 	ctx := c.r.Context()
+	// The deltas are followed before the log is, so none published while
+	// the watch starts is missed; a delta is never replayed, and one that
+	// arrives while the replay runs goes out between replayed events.
+	var deltas <-chan session.Delta
+	if sub, ok := c.s.o.Sessions.(session.DeltaSubscriber); ok && withDeltas == "1" {
+		deltas = sub.SubscribeDeltas(ctx, s.ID)
+	}
 	events, err := c.s.o.Sessions.Watch(ctx, s.ID, from)
 	if err != nil {
 		return err
@@ -293,6 +303,15 @@ func (c *call) stream() error {
 			if ends(ev) {
 				return nil
 			}
+		case d, open := <-deltas:
+			if !open {
+				deltas = nil
+				continue
+			}
+			if err := deltaFrame(c.w, d); err != nil {
+				return nil
+			}
+			flusher.Flush()
 		}
 	}
 }
@@ -338,6 +357,18 @@ func frame(w io.Writer, ev session.Event) error {
 		return err
 	}
 	_, err = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", ev.Seq, ev.Type, b)
+	return err
+}
+
+// deltaFrame writes one live delta as a Server-Sent Events frame with no
+// id, so a browser's last event id stays the last event's and a
+// reconnect resumes the log where it was.
+func deltaFrame(w io.Writer, d session.Delta) error {
+	b, err := session.Marshal(d)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "event: delta\ndata: %s\n\n", b)
 	return err
 }
 
