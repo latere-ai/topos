@@ -10,6 +10,25 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A hosted session that works in a repository on the git host of
+  `TOPOS_ORIGO_URL` keeps each turn's checkpoint at that repository,
+  under `refs/topos/checkpoints/<session>/latest`, pushed from its
+  sandbox with the session's git credential and the push option
+  `origo.event=off`, so a fork of the session restores the files it
+  left, committed or not, after its sandbox is gone. A turn's checkpoint
+  names that repository as `remote` once it is there. Whoever may read
+  the repository may read these refs; they stay until the repository or
+  the ref is deleted, and deleting the session leaves them.
+- A fork whose fork point's files the runner cannot restore starts from
+  its repositories and records a `session.error` `checkpoint_missing`
+  beside its first machine, naming the checkpoint and why; the call that
+  opened the machine runs as it would have. Before, a checkpoint the
+  runner did not find was recorded nowhere, and one it found and could
+  not check out failed that call.
+- A fork's first `bash` call starts in the fork's own working directory.
+  It started in the directory its parent's last call ended in, which
+  belonged to the parent's machine.
+
 ## v0.9.7 - 2026-10-01
 
 - Ships the changes listed under v0.9.6, which was tagged but never
