@@ -14,6 +14,8 @@ import (
 
 	"latere.ai/x/pkg/retry"
 	"latere.ai/x/pkg/wait"
+
+	"latere.ai/x/topos/session"
 )
 
 // reconnect is the backoff between attempts to bring the listener's
@@ -27,9 +29,11 @@ var reconnect = retry.Policy{Base: 200 * time.Millisecond, Max: 10 * time.Second
 const closeTimeout = 5 * time.Second
 
 // listener is a store's one LISTEN connection and the watchers it
-// wakes. A notification carries the id of the session that changed, and
-// only that session's watchers wake; each then reads the log itself, so
-// a notification is a hint and never the data.
+// wakes. A notification on channel carries the id of the session that
+// changed, and only that session's watchers wake; each then reads the
+// log itself, so a notification is a hint and never the data. One on
+// deltaChannel carries live deltas, which are never in the log, to the
+// store's subscribers in this process.
 //
 // The connection is on the direct DSN, since a transaction-pooling
 // proxy does not keep a LISTEN across transactions. It opens with the
@@ -40,6 +44,9 @@ type listener struct {
 	cfg     *pgx.ConnConfig
 	log     *slog.Logger
 	backoff retry.Policy
+	// hub receives the live deltas notified on deltaChannel, for this
+	// process's subscribers.
+	hub *session.DeltaHub
 
 	mu       sync.Mutex
 	watchers map[string]map[*watcher]struct{}
@@ -64,14 +71,13 @@ type watcher struct {
 	wakes int
 }
 
-func newListener(cfg *pgx.ConnConfig, log *slog.Logger) *listener {
-	return &listener{cfg: cfg, log: log, backoff: reconnect, watchers: map[string]map[*watcher]struct{}{}}
+func newListener(cfg *pgx.ConnConfig, log *slog.Logger, hub *session.DeltaHub) *listener {
+	return &listener{cfg: cfg, log: log, backoff: reconnect, hub: hub, watchers: map[string]map[*watcher]struct{}{}}
 }
 
 // subscribe registers a watcher of session id and starts the connection
-// when it is the first; the connection outlives ctx, whose values it
-// keeps. A subscription after stop registers a watcher that no
-// notification wakes; its poll finds the store closed.
+// when it is the first. A subscription after stop registers a watcher
+// that no notification wakes; its poll finds the store closed.
 func (l *listener) subscribe(ctx context.Context, id string) *watcher {
 	w := &watcher{wake: make(chan struct{}, 1)}
 	l.mu.Lock()
@@ -80,12 +86,26 @@ func (l *listener) subscribe(ctx context.Context, id string) *watcher {
 		l.watchers[id] = map[*watcher]struct{}{}
 	}
 	l.watchers[id][w] = struct{}{}
-	if l.cancel == nil && !l.stopped {
-		ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-		l.cancel, l.done = cancel, make(chan struct{})
-		go l.run(ctx)
-	}
+	l.startLocked(ctx)
 	return w
+}
+
+// start starts the connection unless it runs or the store stopped.
+func (l *listener) start(ctx context.Context) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.startLocked(ctx)
+}
+
+// startLocked is start with l.mu held. The connection outlives ctx,
+// whose values it keeps.
+func (l *listener) startLocked(ctx context.Context) {
+	if l.cancel != nil || l.stopped {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	l.cancel, l.done = cancel, make(chan struct{})
+	go l.run(ctx)
 }
 
 // unsubscribe removes a watcher of session id.
@@ -182,8 +202,10 @@ func (l *listener) listen(ctx context.Context) (bool, error) {
 			l.log.WarnContext(ctx, "postgres: close the listener connection", "err", err)
 		}
 	}()
-	if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
-		return false, fmt.Errorf("postgres: listen: %w", err)
+	for _, ch := range []string{channel, deltaChannel} {
+		if _, err := conn.Exec(ctx, "LISTEN "+ch); err != nil {
+			return false, fmt.Errorf("postgres: listen on %s: %w", ch, err)
+		}
 	}
 	l.up(conn.PgConn().PID())
 	defer l.down()
@@ -191,6 +213,10 @@ func (l *listener) listen(ctx context.Context) (bool, error) {
 		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
 			return true, fmt.Errorf("postgres: wait for a notification: %w", err)
+		}
+		if n.Channel == deltaChannel {
+			l.deliver(n.Payload)
+			continue
 		}
 		l.route(n.Payload)
 	}

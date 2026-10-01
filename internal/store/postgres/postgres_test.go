@@ -543,7 +543,7 @@ func backends(t *testing.T, st *Store) (all, listening int) {
 			t.Error(err)
 		}
 	}()
-	err = conn.QueryRow(t.Context(), `SELECT count(*), count(*) FILTER (WHERE query = 'LISTEN `+channel+`')
+	err = conn.QueryRow(t.Context(), `SELECT count(*), count(*) FILTER (WHERE query LIKE 'LISTEN %')
 		FROM pg_stat_activity WHERE datname = $1 AND backend_type = 'client backend'`, st.listen.Database).Scan(&all, &listening)
 	if err != nil {
 		t.Fatal(err)

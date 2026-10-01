@@ -5,9 +5,10 @@
 // session.Store it keeps sessions, their logs and their blobs in three
 // tables, an append as one transaction under the session row's lock,
 // Watch over the store's one LISTEN connection with a poll as the
-// fallback, and the one-writer lease on the row's lease columns. As a store.Store it keeps agents,
-// their versions and idempotency records, each write one transaction
-// that any number of replicas may race.
+// fallback, live deltas between replicas as notifications on that same
+// connection, and the one-writer lease on the row's lease columns. As a
+// store.Store it keeps agents, their versions and idempotency records,
+// each write one transaction that any number of replicas may race.
 package postgres
 
 import (
@@ -53,7 +54,8 @@ type Options struct {
 	// Now is the clock idempotency records expire on: time.Now by
 	// default.
 	Now func() time.Time
-	// Log receives the listener connection's failures; none by default.
+	// Log receives the listener connection's failures, and the dropped
+	// live deltas at debug level; none by default.
 	Log *slog.Logger
 	// Blobs keeps the blob bodies outside the database (spec 014), each
 	// with a blobs row of location object; nil keeps them in blobs.body.
@@ -65,10 +67,14 @@ type Store struct {
 	pool     *pgxpool.Pool
 	listen   *pgx.ConnConfig
 	listener *listener
-	poll     time.Duration
-	ttl      time.Duration
-	now      func() time.Time
-	blobs    session.Blobs
+	// hub hands live deltas to this process's subscribers, and sender
+	// sends the ones this process publishes to every replica.
+	hub    *session.DeltaHub
+	sender *sender
+	poll   time.Duration
+	ttl    time.Duration
+	now    func() time.Time
+	blobs  session.Blobs
 }
 
 // Open applies the migrations on dsn and connects.
@@ -101,7 +107,9 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	s := &Store{pool: pool, listen: listen, listener: newListener(listen, log), poll: o.Poll, ttl: o.LeaseTTL, now: o.Now, blobs: o.Blobs}
+	hub := &session.DeltaHub{Log: log}
+	s := &Store{pool: pool, listen: listen, listener: newListener(listen, log, hub), hub: hub, sender: &sender{pool: pool, hub: hub},
+		poll: o.Poll, ttl: o.LeaseTTL, now: o.Now, blobs: o.Blobs}
 	if s.poll <= 0 {
 		s.poll = 2 * time.Second
 	}
@@ -114,9 +122,11 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	return s, nil
 }
 
-// Close closes the listener connection and the pool. A watcher still
-// open wakes, finds the pool closed, and closes its channel.
+// Close sends the deltas already queued, then closes the listener
+// connection and the pool. A watcher still open wakes, finds the pool
+// closed, and closes its channel.
 func (s *Store) Close() {
+	s.sender.close()
 	s.listener.stop()
 	s.pool.Close()
 	s.listener.wakeAll()
