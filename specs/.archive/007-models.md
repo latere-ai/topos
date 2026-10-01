@@ -280,7 +280,8 @@ them; the codec expresses them: `cache_control` blocks for Messages
 Responses, and nothing for Chat, which reports the hint as loss. The
 agent's `spec.model.effort` is one of `minimal`, `low`, `medium` or
 `high`, set as the IR's `Reasoning.Effort`, which each codec maps to
-its dialect.
+its dialect. A session's change of its effort replaces the agent's from
+its next turn on ([[015-api]]).
 
 ### Usage and cost
 
