@@ -306,9 +306,10 @@ func TestACallNeverStoppedIsClosedAtTheMessagesEnd(t *testing.T) {
 // TestTheCapturedRunawayNeverFailsTheTurn replays the stream a provider
 // sent for the bug: a model that ran to its output limit inside a
 // string argument, reported as finish_reason tool_calls with the native
-// reason max_output_tokens. Whether the codec reads that as a call to
-// answer or as a stop at the output limit to send again, the turn goes
-// on to the model's next call and never fails.
+// reason max_output_tokens. Whether the codec reads that as a call or as
+// a stop at the output limit, the broken call is answered, nothing is
+// sent again at the output limit, and the turn goes on at the cap to
+// the model's next call and never fails.
 func TestTheCapturedRunawayNeverFailsTheTurn(t *testing.T) {
 	raw, err := os.ReadFile("testdata/runaway-arguments.sse")
 	if err != nil {
@@ -333,6 +334,9 @@ func TestTheCapturedRunawayNeverFailsTheTurn(t *testing.T) {
 	}
 	if got := e.echo.ran(); len(got) != 1 || got[0] != "call_fixed" {
 		t.Fatalf("echo ran %v, want the next call", got)
+	}
+	if got := e.asked(); !slices.Equal(got, []int64{OutputCap, OutputCap, OutputCap}) {
+		t.Fatalf("max_tokens %v, want the cap every step", got)
 	}
 	for _, ev := range e.events(ctx, session.TypeModelRequest) {
 		var mr session.ModelRequest
