@@ -48,6 +48,10 @@ type Store struct {
 
 	mu     sync.Mutex
 	states map[string]*state
+	// deltas carries live deltas to the subscribers in this process. One
+	// toposd serves a data directory alone, so its runners and its
+	// streams share this store.
+	deltas session.DeltaHub
 }
 
 // state is this process's view of one session: the mutex that
@@ -324,6 +328,20 @@ func window(events []session.Event, fromSeq uint64, limit int) []session.Event {
 	}
 	return slices.Clone(out)
 }
+
+// PublishDelta hands a live delta to this process's subscribers of its
+// session; another process sharing the directory sees none, since
+// deltas are never written.
+func (s *Store) PublishDelta(id string, d session.Delta) { s.deltas.PublishDelta(id, d) }
+
+// SubscribeDeltas follows a session's live deltas published in this
+// process until ctx ends.
+func (s *Store) SubscribeDeltas(ctx context.Context, id string) <-chan session.Delta {
+	return s.deltas.SubscribeDeltas(ctx, id)
+}
+
+// DroppedDeltas is how many deltas a subscriber did not take.
+func (s *Store) DroppedDeltas() uint64 { return s.deltas.DroppedDeltas() }
 
 // Watch replays the events from fromSeq, then sends each new one. A
 // write in this process wakes the watcher at once; another process's is

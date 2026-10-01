@@ -43,6 +43,7 @@ func Run(t *testing.T, open Open) {
 		{"AppendedEventIsNeverRewritten", testNeverRewritten},
 		{"EventsWindow", testEventsWindow},
 		{"Watch", testWatch},
+		{"Deltas", testDeltas},
 		{"Blobs", testBlobs},
 		{"Redact", testRedact},
 		{"Lease", testLease},
@@ -380,6 +381,79 @@ func testWatch(t *testing.T, st session.Store) {
 	}
 	if _, err := st.Watch(t.Context(), session.NewID(session.PrefixSession), 1); !errors.Is(err, session.ErrNotFound) {
 		t.Fatalf("Watch of a missing session: %v", err)
+	}
+}
+
+// testDeltas holds a store that carries live deltas to its contract: a
+// subscriber of a session receives the deltas published for it in order,
+// a subscriber of another session receives none, and the channel closes
+// when its context ends. A store that carries none has nothing to prove.
+func testDeltas(t *testing.T, st session.Store) {
+	pub, ok := st.(session.DeltaPublisher)
+	sub, ok2 := st.(session.DeltaSubscriber)
+	if !ok && !ok2 {
+		return
+	}
+	if !ok || !ok2 {
+		t.Fatalf("the store publishes deltas (%v) or subscribes to them (%v), not both", ok, ok2)
+	}
+	s, other := create(t, st), create(t, st)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	ch := sub.SubscribeDeltas(ctx, s.ID)
+	otherCtx, otherCancel := context.WithCancel(ctx)
+	defer otherCancel()
+	elsewhere := sub.SubscribeDeltas(otherCtx, other.ID)
+	// A store whose deltas cross processes may take a moment to listen,
+	// and a delta published before it does is lost by design, so the
+	// first is published until one arrives.
+	probe := session.Delta{Turn: 1, Step: 1, Kind: session.DeltaText, Text: "probe"}
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	pub.PublishDelta(s.ID, probe)
+wait:
+	for {
+		select {
+		case d := <-ch:
+			if d != probe {
+				t.Fatalf("the probe arrived as %+v", d)
+			}
+			break wait
+		case <-tick.C:
+			pub.PublishDelta(s.ID, probe)
+		case <-ctx.Done():
+			t.Fatal("no delta reached the subscriber")
+		}
+	}
+	want := []session.Delta{
+		{Turn: 1, Step: 2, Block: 0, Kind: session.DeltaThinking, Text: "Let me see."},
+		{Thread: "evt_thread", Turn: 1, Step: 2, Block: 1, Kind: session.DeltaToolInput, Text: `{"path":`},
+		{Turn: 1, Step: 2, Reset: true},
+		{Turn: 1, Step: 2, Block: 0, Kind: session.DeltaText, Text: "Hello <there> & \u2028 \"you\"."},
+	}
+	for _, d := range want {
+		pub.PublishDelta(s.ID, d)
+	}
+	for i := 0; i < len(want); {
+		select {
+		case d := <-ch:
+			if d == probe {
+				continue
+			}
+			if d != want[i] {
+				t.Fatalf("delta %d is %+v, want %+v", i, d, want[i])
+			}
+			i++
+		case <-ctx.Done():
+			t.Fatalf("delta %d did not arrive", i)
+		}
+	}
+	otherCancel()
+	for d := range elsewhere {
+		t.Fatalf("a subscriber of another session received %+v", d)
+	}
+	cancel()
+	for range ch {
 	}
 }
 

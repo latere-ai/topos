@@ -25,6 +25,9 @@ type memoryStore struct {
 	mu       sync.Mutex
 	sessions map[string]*memSession
 	now      func() time.Time
+	// deltas carries live deltas to the subscribers in this process,
+	// which holds the whole store.
+	deltas DeltaHub
 }
 
 type memSession struct {
@@ -166,6 +169,17 @@ func window(events []Event, fromSeq uint64, limit int) []Event {
 	}
 	return cloneEvents(out)
 }
+
+// PublishDelta hands a delta to the subscribers of its session.
+func (m *memoryStore) PublishDelta(id string, d Delta) { m.deltas.PublishDelta(id, d) }
+
+// SubscribeDeltas follows a session's deltas until ctx ends.
+func (m *memoryStore) SubscribeDeltas(ctx context.Context, id string) <-chan Delta {
+	return m.deltas.SubscribeDeltas(ctx, id)
+}
+
+// DroppedDeltas is how many deltas a subscriber did not take.
+func (m *memoryStore) DroppedDeltas() uint64 { return m.deltas.DroppedDeltas() }
 
 func (m *memoryStore) Watch(ctx context.Context, id string, fromSeq uint64) (<-chan Event, error) {
 	m.mu.Lock()
