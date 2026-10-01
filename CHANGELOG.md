@@ -10,6 +10,22 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- An agent can belong to an organization. An agent applied with a token
+  that names an organization in its `org_id` claim is the
+  organization's, held under the organization's subject, and its name is
+  unique within the organization: every member's apply of the name
+  changes the one agent, and every name the API reads is read among the
+  agents of the caller's context. A list of agents holds the context's,
+  and a list of sessions, and the sessions' summary, the sessions of the
+  context's agents, narrowed further by the authorizer. Every question
+  names an organization's agent as `{type: "organization", id}`,
+  `agent.create` names the organization in its context, and
+  `session.list` names the context it lists as `agent_owner`. The
+  agent's identity is created for its owner, and an allow naming another
+  refuses the apply. Without an authorizer, an organization's agent is
+  the admins' alone, and an admin lists their own context's objects.
+  Every agent stored before is its person's; a Postgres database
+  migrates with each row kept.
 - A hosted session that works in a repository on the git host of
   `TOPOS_ORIGO_URL` keeps each turn's checkpoint at that repository,
   under `refs/topos/checkpoints/<session>/latest`, pushed from its
