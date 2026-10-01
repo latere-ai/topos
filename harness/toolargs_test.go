@@ -6,6 +6,7 @@ package harness
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -336,5 +337,37 @@ func TestTheCapturedRunawayNeverFailsTheTurn(t *testing.T) {
 		if mr.ResponseBlob == "" {
 			t.Fatalf("model.request %d keeps no response", ev.Seq)
 		}
+	}
+}
+
+// TestAFailedStreamKeepsWhatItReceived: a stream that fails part way,
+// here on a chunk that is not JSON, ends the turn with model_error, and
+// its model.request keeps the bytes received as its response blob.
+func TestAFailedStreamKeepsWhatItReceived(t *testing.T) {
+	e, _ := chatSetup(t)
+	ctx := t.Context()
+	raw := chatChunk(t, chatCall{index: 0, id: "call_1", name: "echo", args: `{"text":"a"}`}) + "data: {not json\n\n"
+	e.stub.Script(model, luxstub.Reply{Raw: raw})
+	e.send(ctx, "Echo a.")
+	if out := e.turn(ctx); out.StopReason != session.StopError || out.Detail != CodeModelError {
+		t.Fatalf("outcome %+v", out)
+	}
+	var mr session.ModelRequest
+	if err := e.events(ctx, session.TypeModelRequest)[0].Decode(&mr); err != nil {
+		t.Fatal(err)
+	}
+	if mr.Outcome != "error" || mr.ResponseBlob == "" {
+		t.Fatalf("model.request %+v", mr)
+	}
+	rc, err := e.store.Blob(ctx, e.s.ID, mr.ResponseBlob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(rc)
+	if cerr := rc.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil || string(got) != raw {
+		t.Fatalf("response blob %q, %v", got, err)
 	}
 }

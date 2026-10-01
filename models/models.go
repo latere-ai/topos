@@ -117,7 +117,9 @@ type Request struct {
 }
 
 // Stream is one response as it arrives. Next returns io.EOF after the
-// terminal event, and Result is valid after that.
+// terminal event, and Result is valid after that. After Next fails,
+// Result holds the bytes received in RawResponse, and no message, usage
+// or stop reason.
 type Stream interface {
 	Next() (ir.Event, error)
 	Result() Result

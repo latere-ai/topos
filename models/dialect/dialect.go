@@ -283,15 +283,13 @@ func (s *stream) Next() (ir.Event, error) {
 	ev, err := s.dec.Next()
 	if errors.Is(err, io.EOF) {
 		if !s.acc.Stopped() || !terminated(s.dialect, s.raw.Bytes()) {
-			s.failed = models.ErrIncomplete
 			if s.reader.err != nil {
-				s.failed = &models.TransportError{Err: s.reader.err}
+				return ir.Event{}, s.fail(&models.TransportError{Err: s.reader.err})
 			}
-			return ir.Event{}, s.failed
+			return ir.Event{}, s.fail(models.ErrIncomplete)
 		}
 		if err := s.finish(); err != nil {
-			s.failed = err
-			return ir.Event{}, err
+			return ir.Event{}, s.fail(err)
 		}
 		s.done = true
 		return ir.Event{}, io.EOF
@@ -299,22 +297,27 @@ func (s *stream) Next() (ir.Event, error) {
 	if err != nil {
 		switch {
 		case s.reader.err != nil:
-			s.failed = &models.TransportError{Err: s.reader.err}
+			return ir.Event{}, s.fail(&models.TransportError{Err: s.reader.err})
 		case errors.Is(err, io.ErrUnexpectedEOF):
-			s.failed = models.ErrIncomplete
-		default:
-			s.failed = &models.StreamError{Err: err}
+			return ir.Event{}, s.fail(models.ErrIncomplete)
 		}
-		return ir.Event{}, s.failed
+		return ir.Event{}, s.fail(&models.StreamError{Err: err})
 	}
 	if s.result.FirstToken == 0 && content(ev.Type) {
 		s.result.FirstToken = s.now().Sub(s.sent)
 	}
 	if err := s.acc.Add(ev); err != nil {
-		s.failed = &models.StreamError{Err: err}
-		return ir.Event{}, s.failed
+		return ir.Event{}, s.fail(&models.StreamError{Err: err})
 	}
 	return ev, nil
+}
+
+// fail ends the stream with err and keeps the bytes received in the
+// result, so a failed request still records what the model sent.
+func (s *stream) fail(err error) error {
+	s.failed = err
+	s.result.RawResponse = bytes.Clone(s.raw.Bytes())
+	return err
 }
 
 // terminal are the frames that end a stream, per dialect. The decoders

@@ -652,7 +652,7 @@ func (t *turn) stepOnce(ctx context.Context) error {
 			if t.cut.Load() {
 				return t.canceledRequest(ctx, si)
 			}
-			return t.modelFailed(ctx, err, si)
+			return t.modelFailed(ctx, err, si, res.RawResponse)
 		}
 		if res.StopReason != ir.StopMaxTokens || si.maxTokens >= limit {
 			return t.commitStep(sctx, res, si)
@@ -804,7 +804,8 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 
 // send streams the request with retry: a retryable failure waits the
 // policy's delay, raised to the server's Retry-After, and a wait that
-// would pass the turn deadline ends the attempts.
+// would pass the turn deadline ends the attempts. A failure returns the
+// last attempt's result, which holds the bytes it received.
 func (t *turn) send(ctx context.Context, req ir.Request) (models.Result, int, error) {
 	policy := t.h.c.Retry
 	for attempt := 1; ; attempt++ {
@@ -813,17 +814,17 @@ func (t *turn) send(ctx context.Context, req ir.Request) (models.Result, int, er
 			return res, attempt, nil
 		}
 		if !models.Retryable(err) || attempt >= policy.Attempts() {
-			return models.Result{}, attempt, err
+			return res, attempt, err
 		}
 		if o := t.h.c.Observer; o != nil {
 			o.OnReset(t.thread, t.num, t.step)
 		}
 		d := max(policy.Delay(attempt), models.RetryAfter(err))
 		if !t.h.c.Clock().Add(d).Before(t.deadline) {
-			return models.Result{}, attempt, err
+			return res, attempt, err
 		}
 		if err := t.h.c.Sleep(ctx, d); err != nil {
-			return models.Result{}, attempt, err
+			return res, attempt, err
 		}
 	}
 }
@@ -839,7 +840,7 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 			return s.Result(), s.Close()
 		}
 		if err != nil {
-			return models.Result{}, errors.Join(err, s.Close())
+			return s.Result(), errors.Join(err, s.Close())
 		}
 		if o := t.h.c.Observer; o != nil {
 			o.OnDelta(Delta{Thread: t.thread, Turn: t.num, Step: t.step, Event: ev})
@@ -848,13 +849,22 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 }
 
 // modelFailed records a request that failed after its attempts and ends
-// the turn with error, keeping every earlier event of the turn.
-func (t *turn) modelFailed(ctx context.Context, err error, si sendInfo) error {
+// the turn with error, keeping every earlier event of the turn. The
+// bytes the last attempt received, raw, are its response blob, so a
+// stream that failed part way keeps what the model sent.
+func (t *turn) modelFailed(ctx context.Context, err error, si sendInfo, raw []byte) error {
 	if ctx.Err() != nil {
 		return err
 	}
 	p := t.sentRequest(si)
 	p.Outcome, p.Error = "error", err.Error()
+	if len(raw) > 0 {
+		blob, perr := t.l.PutBlob(ctx, bytes.NewReader(raw))
+		if perr != nil {
+			return errors.Join(err, fmt.Errorf("harness: store the failed response: %w", perr))
+		}
+		p.ResponseBlob = blob
+	}
 	mr, eerr := t.event(session.TypeModelRequest, p)
 	if eerr != nil {
 		return eerr
