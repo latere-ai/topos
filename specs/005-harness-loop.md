@@ -156,6 +156,7 @@ There is no limit on the number of steps.
 | IR `tool_use`, every call answered | next step | the `tool.result` events |
 | a call's verdict is ask | `tool_confirmation` | the step's other results |
 | a client-executed call | `tool_result` | the step's other results |
+| IR `max_tokens` inside a call's arguments, at the cap or at the output limit | next step | the cut call's `tool.result` `invalid_input`, and the results of the calls before it |
 | IR `max_tokens` at the output cap, below the model's output limit | the same step, its request sent again at the output limit | `model.request` with outcome `escalated`, no `agent.message` |
 | IR `max_tokens` at the output limit, continued fewer than twice in a row | next step, a continuation | nothing |
 | IR `max_tokens` at the output limit a third time in a row | `output_limit` | `session.error` `output_truncated` |
@@ -185,6 +186,20 @@ it, the Observer receives a reset for the step, and the same request,
 built from the same fold, is sent again at the output limit, once. A
 response cut mid call is dropped whole this way, so its partial
 `tool_use` is never continued.
+
+A response cut inside a call's arguments is the exception, at the cap
+and at the output limit alike: its last block is a call whose
+arguments are not one JSON value. It is neither sent again nor
+continued, since a model that runs away inside an argument runs on to
+any limit, and more room only costs more. The step keeps it as a
+response that is not truncated: the `agent.message` holds the cut call
+with the input `{}`, the calls before it are planned and run as in any
+step, and the cut call is answered `invalid_input` with the limit it
+reached and the first 200 characters of its arguments, asking for the
+call again with shorter arguments, split over several calls when the
+content is long. The next step asks the cap. Escalation and
+continuation stay for a response cut in text or thinking, and for one
+whose last call's arguments were complete.
 
 A response that stops at the output limit is appended as an
 `agent.message` with `truncated` true and no `agent.tool_use` for any
@@ -324,7 +339,7 @@ streams of attached clients ([[016-runners]], [[015-api]]).
 | # | v0.7.0 behavior | Now | Test |
 |---|---|---|---|
 | 1 | a turn stopped after 16 model calls and reported success with the last preamble as the answer | no step cap; a turn ends only as the stop table says | `harness.TestNoStepCap`: 200 tool steps against the stub Lux, the turn ends `end_turn` after all 200 calls ran |
-| 2 | output capped at 4096 tokens; a `max_tokens` stop treated as a normal stop, leaving a `tool_use` with no result | a request asks the output cap, and a response that stops there is sent again at the model's output limit; a `max_tokens` stop at the limit continues or fails with `output_limit` and never runs a call | `harness.TestATurnRunsToolsAndEnds` (`max_tokens` is the cap), `harness.TestAResponseAtTheCapIsSentAgainAtTheLimit`, `harness.TestATruncatedCallNeverRuns`, `harness.TestThreeTruncationsEndWithOutputLimit` |
+| 2 | output capped at 4096 tokens; a `max_tokens` stop treated as a normal stop, leaving a `tool_use` with no result | a request asks the output cap, and a response that stops there is sent again at the model's output limit; a `max_tokens` stop at the limit continues or fails with `output_limit` and never runs a call; a stop inside a call's arguments answers that call `invalid_input` instead, so no `tool_use` is left without a result | `harness.TestATurnRunsToolsAndEnds` (`max_tokens` is the cap), `harness.TestAResponseAtTheCapIsSentAgainAtTheLimit`, `harness.TestATruncatedCallNeverRuns`, `harness.TestThreeTruncationsEndWithOutputLimit` |
 | 3 | one transient model error returned an empty turn and discarded every tool call already run | retry with backoff; a failure after retries keeps every earlier event and ends `error` | `harness.TestTransientErrorsAreRetried`, `harness.TestAFailureKeepsEarlierEvents` |
 | 4 | no system prompt: the model was never told its working directory, platform, date or path rules | the harness prompt and the context block on every request | `harness.TestATurnRunsToolsAndEnds`, `runner.TestDriveAttachesTheMachineAndRunsATurn` ([[011-instructions-and-skills]]) |
 | 5 | a delegated agent ran in a fresh, empty sandbox and could not read the file its parent wrote | threads share the session's machine | not built ([[013-threads-and-subagents]]) |
@@ -351,7 +366,7 @@ hooks ([[012-permissions-and-approvals]]); context management
 | Failures 1 to 4 and 6 to 8 of v0.7.0 each have a test that fails the old behavior and passes the new | the tests of the failures table | built |
 | Failure 5 has a test: a subagent reads the file its parent wrote | the task `threads/readparent` under `test/tasks.TestScriptedSolutions` ([[025-task-suite]]) | built |
 | A grep for a numeric step cap in `harness/` returns nothing | `TestNoFixedLimitsInHarness` | not built |
-| A step's request asks the output cap, or the model's output limit when that is lower; a response at the cap is sent again at the limit in its place, recorded `escalated` with no `agent.message`, both requests spent and one reset sent; a response at the limit is continued at the limit; the step after asks the cap again | `harness.TestAResponseAtTheCapIsSentAgainAtTheLimit`, `harness.TestAModelBelowTheCapAsksItsOwnLimit`, `harness.TestATruncatedCallNeverRuns`, `harness.TestThreeTruncationsEndWithOutputLimit` | built |
+| A step's request asks the output cap, or the model's output limit when that is lower; a response at the cap is sent again at the limit in its place, recorded `escalated` with no `agent.message`, both requests spent and one reset sent; a response at the limit is continued at the limit; the step after asks the cap again; a response cut inside a call's arguments takes neither path (the row on cuts inside a call) | `harness.TestAResponseAtTheCapIsSentAgainAtTheLimit`, `harness.TestAModelBelowTheCapAsksItsOwnLimit`, `harness.TestATruncatedCallNeverRuns`, `harness.TestThreeTruncationsEndWithOutputLimit` | built |
 | A replay builds each request again with the `max_tokens` its `model.request` recorded, and one that records none at the output limit | `harness.TestAnEscalatedStepReplays` | built |
 | Each row of the stop table ends the turn with its stop reason and appends what the row names | `harness.TestATurnRunsToolsAndEnds` (end_turn), `harness.TestEndOnIdleAndRefusal` (refusal, and `end_on_idle` ending `completed`), `harness.TestConfirmationsAndDenials` (tool_confirmation), `harness.TestClientToolsWaitForTheirResult` (tool_result), `harness.TestAResponseAtTheCapIsSentAgainAtTheLimit` (the cap), `harness.TestATruncatedCallNeverRuns` (a continuation), `harness.TestThreeTruncationsEndWithOutputLimit` (output_limit and `output_truncated`), `harness.TestTheTurnDeadline` (turn_limit), `harness.TestTheBudgetStopsTheTurn` (budget), `harness.TestAnInterruptStopsAtTheNextStep` (interrupted), `harness.TestAFailureKeepsEarlierEvents` (error and `model_error`), `harness.TestAHarnessFailureClosesTheTurn` (error and `internal`) | built |
 | A failure inside the harness or a fold that refuses the log closes the turn idle `error` with its `session.error`, and a cancel closes it idle `interrupted` with `detail` `canceled`; only a failed append returns an error | `harness.TestAHarnessFailureClosesTheTurn`, `harness.TestATurnRefusesALogItCannotFold`, `harness.TestACancelDuringACallIsCanceled`, `harness.TestALostLeaseStopsTheTurn` | built |
@@ -359,6 +374,7 @@ hooks ([[012-permissions-and-approvals]]); context management
 | A stream that fails part way keeps the bytes it received as the `response_blob` of its `model.request` with `outcome` `error` | `harness.TestAFailedStreamKeepsWhatItReceived` | built |
 | A 529 twice then a response is one step with `attempts` 3; a 400 is not retried and its `session.error` is not retryable; `Retry-After` is read as seconds and as a date; a retry wait that would pass the turn deadline ends the attempts | `harness.TestTransientErrorsAreRetried`, `harness.TestAFailureKeepsEarlierEvents`, `models/dialect.TestErrorsAreClassifiedForRetry`, `harness.TestTheTurnDeadline` | built |
 | An unknown tool and an input failing its schema are answered with `unknown_tool` and `invalid_input`, get no `agent.tool_use`, and nothing runs | `harness.TestInvalidCallsAreAnsweredWithoutRunning`, `harness/tools.TestSchemaValidates`, `harness/tools.TestCompileSchemaRefuses` | built |
+| A response that stops at `max_tokens` inside a call's arguments, at the cap or at a model limit below it, is neither sent again nor continued: the cut call is answered `invalid_input` naming the limit, the calls before it run, and the next step asks the cap; a response cut in text or in thinking is sent again at the output limit | `harness.TestACutInsideACallIsAnsweredNotSentAgain`, `harness/tools.TestCutInputQuotesTheStartOfTheArguments` | built |
 | A call whose arguments are not one JSON value never fails the step: the `agent.message` holds it with the input `{}`, the `model.request` keeps the raw response, the call is answered `invalid_input` with the problem and the first 200 characters of its text, and the next step runs; empty arguments are `{}`; a call never stopped is closed at the message's end and interleaved arguments are reassembled | `harness.TestBrokenArgumentsAreAnsweredAndTheModelRetries`, `harness.TestEmptyArgumentsAreTheEmptyObject`, `harness.TestInterleavedParallelCallsAreReassembled`, `harness.TestACallNeverStoppedIsClosedAtTheMessagesEnd`, `harness.TestTheCapturedRunawayNeverFailsTheTurn`, `models.TestAccumulatorSettlesEveryCallsArguments`, `harness/tools.TestValidate` | built |
 | A step with three parallel calls and one serial call runs the three concurrently and the serial one alone | `TestParallelCallsGroupedAndOrdered` | not built |
 | The results of a step's calls reach the next request in the model's `tool_use` order | `harness.TestATurnRunsToolsAndEnds` | built |
