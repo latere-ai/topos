@@ -94,18 +94,27 @@ var paramDescriptions = map[string]string{
 	"ref":  "An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the caller's own objects. A name only another subject holds answers not_found, as one nobody holds does.",
 }
 
+// agentParam, runnerParam and archivedParam scope the sessions a list
+// pages through and a summary counts; status is the list's alone.
+var (
+	agentParam = yaml.MapSlice{{Key: "name", Value: "agent"}, {Key: "in", Value: "query"}, {Key: "description", Value: "An agent's id, or a name among the caller's own agents."},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
+	runnerParam = yaml.MapSlice{{Key: "name", Value: "runner"}, {Key: "in", Value: "query"},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{session.RunnerHosted, session.RunnerExternal}}}}}
+	archivedParam = yaml.MapSlice{{Key: "name", Value: "archived"}, {Key: "in", Value: "query"}, {Key: "description", Value: "false or absent leaves archived sessions out, true lists only them, any lists both."},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{"false", "true", "any"}}}}}
+)
+
 // queryParams are the query parameters of the routes that read any.
 var queryParams = map[string][]yaml.MapSlice{
 	"listSessions": {
-		{{Key: "name", Value: "agent"}, {Key: "in", Value: "query"}, {Key: "description", Value: "An agent's id, or a name among the caller's own agents."},
-			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}},
+		agentParam,
 		{{Key: "name", Value: "status"}, {Key: "in", Value: "query"},
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{string(session.StatusIdle), string(session.StatusRunning), string(session.StatusEnded)}}}}},
-		{{Key: "name", Value: "runner"}, {Key: "in", Value: "query"},
-			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{session.RunnerHosted, session.RunnerExternal}}}}},
-		{{Key: "name", Value: "archived"}, {Key: "in", Value: "query"}, {Key: "description", Value: "false or absent leaves archived sessions out, true lists only them, any lists both."},
-			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{"false", "true", "any"}}}}},
+		runnerParam,
+		archivedParam,
 	},
+	"getSessionSummary": {agentParam, runnerParam, archivedParam},
 	"streamEvents": {
 		{{Key: "name", Value: "from_seq"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The sequence the replay starts at; 1 when absent. A Last-Event-ID header starts it after the sequence the header names instead."},
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}}},
@@ -205,6 +214,9 @@ var opDescriptions = map[string]string{
 		"so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
 		"recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. " +
 		"A session of an archived agent is conflict.",
+	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. ` +
+		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session; " +
+		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",
 	"archiveSession": "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. " +
 		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then session.update with session_id and archived true; a deny is forbidden.",
 	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",

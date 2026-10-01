@@ -85,7 +85,7 @@ gains fields.
 |---|---|---|---|
 | `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner` | the agent routes of [[015-api]] |
 | `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent whose identity the authorizer created for the organization), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity`, and `trigger_id` and `firing_id` for a trigger's session, asked as the trigger's owner (added by [[022-triggers]]) | session create, and a trigger's firing; the authorizer applies the initiator cap here |
-| `session.read`, `session.list` | `session` | `agent`, `owner`, `runner` | session get, list, events list, stream |
+| `session.read`, `session.list` | `session` | `agent`, `owner`, `runner` | session get, list, the sessions' summary (added by [[015-api]]), events list, stream |
 | `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
 | `session.fork` | `session` | the fields of `session.create` for the new session (its `session_id`, the forker as `initiator`, the agent version's `permissions`, the `repositories`), and `owner`, `parent` and `seq` of the session forked, which is the resource's id (changed by [[017-external-runners-handoff-fork]]) | a fork; the authorizer decides it as a create of its initiator, initiator cap included |

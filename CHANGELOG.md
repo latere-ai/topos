@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- `GET /v1/sessions/summary` counts the sessions `GET /v1/sessions`
+  would list for the caller, in one read: how many are running, waiting
+  for approval (idle on `tool_confirmation`), otherwise idle, and ended,
+  and how many distinct agents they belong to. It takes the list's
+  `agent`, `runner` and `archived` filters and is asked of the
+  authorizer as `session.list`, so it counts exactly what the caller
+  may list. The Postgres store counts in one query; a session store
+  that implements `session.Summarizer` counts itself, and one that does
+  not is counted through its list.
+
 ## v0.9.6 - 2026-10-01
 
 - `POST /v1/sessions/{id}/fork` continues a session, an ended or

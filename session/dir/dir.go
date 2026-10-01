@@ -225,9 +225,29 @@ func (s *Store) Get(ctx context.Context, id string) (session.Session, error) {
 }
 
 func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Session, string, error) {
+	all, err := s.headers(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	page, next := session.ListPage(all, o)
+	return page, next, nil
+}
+
+// Summarize counts the headers a List reads.
+func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.Summary, error) {
+	all, err := s.headers(ctx)
+	if err != nil {
+		return session.Summary{}, err
+	}
+	return session.Summarize(all, o), nil
+}
+
+// headers reads every session's header; a session deleted while they
+// are read is left out.
+func (s *Store) headers(ctx context.Context) ([]session.Session, error) {
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
-		return nil, "", fmt.Errorf("dir: list sessions: %w", err)
+		return nil, fmt.Errorf("dir: list sessions: %w", err)
 	}
 	var all []session.Session
 	for _, e := range entries {
@@ -240,12 +260,11 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 			continue
 		}
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		all = append(all, sess)
 	}
-	page, next := session.ListPage(all, o)
-	return page, next, nil
+	return all, nil
 }
 
 func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events []session.Event) (uint64, error) {

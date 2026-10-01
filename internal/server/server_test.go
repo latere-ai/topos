@@ -218,6 +218,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"archiveAgent":      {http.MethodPost, "/v1/agents/archivist/archive", `{"permanent":true}`},
 		"createSession":     {http.MethodPost, "/v1/sessions", `{"agent":"reviewer"}`},
 		"listSessions":      {http.MethodGet, "/v1/sessions", ""},
+		"getSessionSummary": {http.MethodGet, "/v1/sessions/summary", ""},
 		"getSession":        {http.MethodGet, "/v1/sessions/" + s.ID, ""},
 		"updateSession":     {http.MethodPatch, "/v1/sessions/" + s.ID, `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`},
 		"endSession":        {http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`},

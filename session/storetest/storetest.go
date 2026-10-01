@@ -51,6 +51,7 @@ func Run(t *testing.T, open Open) {
 		{"List", testList},
 		{"ListFilters", testListFilters},
 		{"Archive", testArchive},
+		{"Summary", testSummary},
 		{"UnknownTypeIsKept", testUnknownType},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open(t)) })
@@ -781,6 +782,104 @@ func testArchive(t *testing.T, st session.Store) {
 	}
 	if _, err := a.SetArchived(t.Context(), session.NewID(session.PrefixSession), &t0); !errors.Is(err, session.ErrNotFound) {
 		t.Fatalf("archive of a missing session: %v, want not found", err)
+	}
+}
+
+// testSummary holds a store that counts to spec 015: each count is of
+// the sessions its List filters to, before any paging, by status with
+// the idle sessions waiting for a person apart, and Agents is the
+// number of distinct agents among them. A status filter does not narrow
+// a summary.
+func testSummary(t *testing.T, st session.Store) {
+	summarizer, ok := st.(session.Summarizer)
+	if !ok {
+		t.Skip("the store does not count")
+	}
+	archiver, archives := st.(session.Archiver)
+	agents := []session.AgentRef{
+		{ID: session.NewID(session.PrefixAgent), Name: "builder", Version: 1},
+		{ID: session.NewID(session.PrefixAgent), Name: "reviewer", Version: 1},
+		{ID: session.NewID(session.PrefixAgent), Name: "writer", Version: 2},
+	}
+	for _, c := range []struct {
+		owner, runner string
+		agent         int
+		status        session.Status
+		reason        session.StopReason
+		archived      bool
+	}{
+		{"usr_a", session.RunnerHosted, 0, session.StatusRunning, "", false},
+		{"usr_a", session.RunnerHosted, 0, session.StatusIdle, session.StopToolConfirmation, false},
+		{"usr_a", session.RunnerExternal, 1, session.StatusIdle, session.StopEndTurn, false},
+		{"usr_b", session.RunnerHosted, 1, session.StatusRunning, "", false},
+		{"usr_b", session.RunnerHosted, 2, session.StatusEnded, session.StopCompleted, false},
+		{"usr_a", session.RunnerHosted, 2, session.StatusEnded, session.StopFailed, true},
+		{"usr_c", session.RunnerExternal, 0, session.StatusIdle, session.StopToolConfirmation, false},
+		{"usr_a", session.RunnerHosted, 0, session.StatusIdle, "", false},
+	} {
+		s := NewSession()
+		s.Agent, s.Initiator.Subject, s.Runner = agents[c.agent], c.owner, c.runner
+		if err := st.Create(t.Context(), s, nil); err != nil {
+			t.Fatal(err)
+		}
+		if c.status != session.StatusIdle || c.reason != "" {
+			appendAll(t, st, s.ID, 0, Status(t, c.status, c.reason, t0))
+		}
+		if c.archived && archives {
+			if _, err := archiver.SetArchived(t.Context(), s.ID, &t0); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	every, _, err := st.List(t.Context(), session.ListOptions{Limit: 100})
+	if err != nil || len(every) != 8 {
+		t.Fatalf("list: %d sessions, %v", len(every), err)
+	}
+	for _, c := range []struct {
+		name string
+		o    session.ListOptions
+	}{
+		{"every session", session.ListOptions{}},
+		{"one owner", session.ListOptions{Owners: []string{"usr_a"}}},
+		{"two owners", session.ListOptions{Owners: []string{"usr_b", "usr_c"}}},
+		{"no such owner", session.ListOptions{Owners: []string{"usr_z"}}},
+		{"runner", session.ListOptions{Runner: session.RunnerExternal}},
+		{"agent", session.ListOptions{AgentID: agents[0].ID}},
+		{"no such agent", session.ListOptions{AgentID: "agent_none"}},
+		{"not archived", session.ListOptions{Archived: session.ArchivedExclude}},
+		{"archived", session.ListOptions{Archived: session.ArchivedOnly}},
+		{"owner, runner and not archived", session.ListOptions{Owners: []string{"usr_a"}, Runner: session.RunnerHosted, Archived: session.ArchivedExclude}},
+		{"a status, which does not narrow", session.ListOptions{Status: session.StatusRunning, Limit: 1, Cursor: every[0].ID}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var want session.Summary
+			seen := map[string]bool{}
+			for _, s := range every {
+				if (c.o.AgentID != "" && s.Agent.ID != c.o.AgentID) || (len(c.o.Owners) > 0 && !slices.Contains(c.o.Owners, s.Initiator.Subject)) ||
+					(c.o.Runner != "" && s.Runner != c.o.Runner) || !c.o.Archived.Keeps(s) {
+					continue
+				}
+				switch {
+				case s.Status == session.StatusRunning:
+					want.Sessions.Running++
+				case s.Status == session.StatusIdle && s.StopReason == session.StopToolConfirmation:
+					want.Sessions.WaitingForApproval++
+				case s.Status == session.StatusIdle:
+					want.Sessions.Idle++
+				case s.Status == session.StatusEnded:
+					want.Sessions.Ended++
+				}
+				seen[s.Agent.ID] = true
+			}
+			want.Agents = len(seen)
+			got, err := summarizer.Summarize(t.Context(), c.o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("summary %+v, want %+v", got, want)
+			}
+		})
 	}
 }
 

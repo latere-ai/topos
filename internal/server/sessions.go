@@ -504,43 +504,14 @@ func (c *call) listSessions() error {
 	if err != nil {
 		return err
 	}
-	q := c.r.URL.Query()
-	o := session.ListOptions{Status: session.Status(q.Get("status")), Runner: q.Get("runner"), Limit: limit, Cursor: cursor}
-	switch a := q.Get("archived"); a {
-	case "", "false":
-		o.Archived = session.ArchivedExclude
-	case "true":
-		o.Archived = session.ArchivedOnly
-	case "any":
-		o.Archived = session.ArchivedAny
-	default:
-		return refuse(CodeInvalidRequest, "archived is %q, not true, false or any", a)
-	}
-	switch o.Status {
-	case "", session.StatusIdle, session.StatusRunning, session.StatusEnded:
-	default:
-		return refuse(CodeInvalidRequest, "status is %q, not idle, running or ended", o.Status)
-	}
-	if o.Runner != "" && o.Runner != session.RunnerHosted && o.Runner != session.RunnerExternal {
-		return refuse(CodeInvalidRequest, "runner is %q, not hosted or external", o.Runner)
-	}
-	d, err := c.ask(c.r.Context(), authorizer.ActionSessionList, authz.NewResource(authorizer.KindSession, "", map[string]any{"status": string(o.Status), "runner": o.Runner}))
+	o, none, err := c.sessionScope(session.Status(c.r.URL.Query().Get("status")))
 	if err != nil {
 		return err
 	}
-	if d.Filter != nil {
-		o.Owners = d.Filter.Owners
+	if none {
+		return c.replyPage([]session.Session{}, "")
 	}
-	if ref := q.Get("agent"); ref != "" {
-		a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, c.caller.Subject, ref)
-		if errors.Is(err, store.ErrNotFound) {
-			return c.replyPage([]session.Session{}, "")
-		}
-		if err != nil {
-			return err
-		}
-		o.AgentID = a.ID
-	}
+	o.Limit, o.Cursor = limit, cursor
 	all, next, err := c.s.o.Sessions.List(c.r.Context(), o)
 	if err != nil {
 		return err
@@ -549,6 +520,102 @@ func (c *call) listSessions() error {
 		all = []session.Session{}
 	}
 	return c.replyPage(all, next)
+}
+
+// getSessionSummary is GET /sessions/summary: how many sessions
+// GET /sessions would list for the caller under the same filters, by
+// status, and how many agents they belong to (spec 015). It is scoped by
+// the list's own scope, so a count reveals nothing the list would not.
+func (c *call) getSessionSummary() error {
+	o, none, err := c.sessionScope("")
+	if err != nil {
+		return err
+	}
+	if none {
+		return c.reply(http.StatusOK, session.Summary{})
+	}
+	sum, err := summarize(c.r.Context(), c.s.o.Sessions, o)
+	if err != nil {
+		return err
+	}
+	return c.reply(http.StatusOK, sum)
+}
+
+// summarizePage is the page a summary reads a store without counts in.
+const summarizePage = MaxLimit
+
+// summarize counts the sessions o keeps: the store's own count where it
+// has one, and otherwise its list, read a page at a time.
+func summarize(ctx context.Context, st session.Store, o session.ListOptions) (session.Summary, error) {
+	if s, ok := st.(session.Summarizer); ok {
+		return s.Summarize(ctx, o)
+	}
+	o.Status, o.Limit, o.Cursor = "", summarizePage, ""
+	var sum session.Summary
+	agents := map[string]struct{}{}
+	for {
+		page, next, err := st.List(ctx, o)
+		if err != nil {
+			return session.Summary{}, err
+		}
+		for _, s := range page {
+			sum.Count(s)
+			agents[s.Agent.ID] = struct{}{}
+		}
+		if next == "" {
+			break
+		}
+		o.Cursor = next
+	}
+	sum.Agents = len(agents)
+	return sum, nil
+}
+
+// sessionScope is the caller's view of the sessions, read from the
+// request's filters and narrowed by the authorizer's session.list
+// decision: what GET /sessions pages through and GET /sessions/summary
+// counts. status is the list's status filter, empty for a summary. none
+// reports an agent name the caller holds no agent of, whose list is
+// empty.
+func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, error) {
+	q := c.r.URL.Query()
+	o := session.ListOptions{Status: status, Runner: q.Get("runner")}
+	switch a := q.Get("archived"); a {
+	case "", "false":
+		o.Archived = session.ArchivedExclude
+	case "true":
+		o.Archived = session.ArchivedOnly
+	case "any":
+		o.Archived = session.ArchivedAny
+	default:
+		return o, false, refuse(CodeInvalidRequest, "archived is %q, not true, false or any", a)
+	}
+	switch o.Status {
+	case "", session.StatusIdle, session.StatusRunning, session.StatusEnded:
+	default:
+		return o, false, refuse(CodeInvalidRequest, "status is %q, not idle, running or ended", o.Status)
+	}
+	if o.Runner != "" && o.Runner != session.RunnerHosted && o.Runner != session.RunnerExternal {
+		return o, false, refuse(CodeInvalidRequest, "runner is %q, not hosted or external", o.Runner)
+	}
+	d, err := c.ask(c.r.Context(), authorizer.ActionSessionList, authz.NewResource(authorizer.KindSession, "", map[string]any{"status": string(o.Status), "runner": o.Runner}))
+	if err != nil {
+		return o, false, err
+	}
+	if d.Filter != nil {
+		o.Owners = d.Filter.Owners
+	}
+	if ref := q.Get("agent"); ref != "" {
+		a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, c.caller.Subject, ref)
+		if errors.Is(err, store.ErrNotFound) {
+			return o, true, nil
+		}
+		if err != nil {
+			return o, false, err
+		}
+		o.AgentID = a.ID
+	}
+	return o, false, nil
 }
 
 // getSession is GET /sessions/{id}.

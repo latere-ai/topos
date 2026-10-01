@@ -461,6 +461,14 @@ func TestServeAnswersTheAPIAsASelfHoster(t *testing.T) {
 	if code, body := get(t, internalURL+"/readyz"); code != 200 || body != "ok\n" {
 		t.Fatalf("readiness with the store: %d %q", code, body)
 	}
+	// The summary counts the one session, whatever its runner made of it,
+	// from the data directory.
+	code, body = send(http.MethodGet, "/v1/sessions/summary", "")
+	var sum session.Summary
+	if err := json.Unmarshal([]byte(body), &sum); code != http.StatusOK || err != nil ||
+		sum.Sessions.Running+sum.Sessions.WaitingForApproval+sum.Sessions.Idle+sum.Sessions.Ended != 1 || sum.Agents != 1 {
+		t.Fatalf("summary: %d %s (%v)", code, body, err)
+	}
 	if code, _ := get(t, publicURL+"/v1/openapi.yaml"); code != 200 {
 		t.Fatalf("openapi: %d", code)
 	}

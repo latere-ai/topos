@@ -287,6 +287,35 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 	return out, "", nil
 }
 
+// Summarize counts in one query over the columns List filters on, so no
+// session's body is read.
+func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.Summary, error) {
+	owners := o.Owners
+	if owners == nil {
+		owners = []string{}
+	}
+	var running, waiting, idle, ended, agents int64
+	err := s.pool.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE status = $5),
+		count(*) FILTER (WHERE status = $6 AND stop_reason = $8),
+		count(*) FILTER (WHERE status = $6 AND stop_reason <> $8),
+		count(*) FILTER (WHERE status = $7),
+		count(DISTINCT agent_id)
+		FROM sessions
+		WHERE ($1 = '' OR agent_id = $1) AND (cardinality($2::text[]) = 0 OR owner = ANY($2::text[])) AND ($3 = '' OR runner = $3)
+		AND ($4 = '' OR ($4 = 'exclude' AND archived_at IS NULL) OR ($4 = 'only' AND archived_at IS NOT NULL))`,
+		o.AgentID, owners, o.Runner, string(o.Archived),
+		string(session.StatusRunning), string(session.StatusIdle), string(session.StatusEnded), string(session.StopToolConfirmation),
+	).Scan(&running, &waiting, &idle, &ended, &agents)
+	if err != nil {
+		return session.Summary{}, fmt.Errorf("postgres: summarize sessions: %w", err)
+	}
+	return session.Summary{
+		Sessions: session.Counts{Running: int(running), WaitingForApproval: int(waiting), Idle: int(idle), Ended: int(ended)},
+		Agents:   int(agents),
+	}, nil
+}
+
 // locked reads a session under its row lock for the rest of tx.
 func locked(ctx context.Context, tx pgx.Tx, id string) (session.Session, error) {
 	var body string
