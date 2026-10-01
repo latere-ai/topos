@@ -57,6 +57,8 @@ type fixture struct {
 	works map[string]string
 	r     *Runner
 	s     session.Session
+	// environ is added to every machine's environment.
+	environ []string
 }
 
 func write(t *testing.T, path, body string) {
@@ -94,7 +96,7 @@ func setup(t *testing.T) *fixture {
 			if w, ok := f.works[s.ID]; ok {
 				work = w
 			}
-			m, err := host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
+			m, err := host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: append([]string{"PATH=" + os.Getenv("PATH")}, f.environ...)})
 			if err != nil {
 				return harness.Config{}, err
 			}

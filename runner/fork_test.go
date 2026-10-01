@@ -6,9 +6,13 @@ package runner
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/cgi"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -203,14 +207,49 @@ func (f *fixture) errorsIn(ctx context.Context, id string) []session.SessionErro
 	return out
 }
 
+// gitHostToken is the credential the test's git host takes, sent by the
+// machines' git as a sandbox's sends its placeholder.
+const gitHostToken = "Bearer runner-test"
+
+// gitHost serves the bare repositories under base/host over git's own
+// http backend, a request with gitHostToken reading and writing, one with
+// no credential refused 401 as a private repository's is, but reading a
+// repository public names, and points every machine of f at it with the
+// header in their git configuration. It answers the host's URL.
+func gitHost(t *testing.T, f *fixture, base string, public ...string) string {
+	t.Helper()
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not on PATH")
+	}
+	backend := &cgi.Handler{Path: bin, Args: []string{"http-backend"}, Env: []string{"GIT_PROJECT_ROOT=" + filepath.Join(base, "host"), "GIT_HTTP_EXPORT_ALL=1"}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+		read := r.URL.Query().Get("service") == "git-upload-pack" || strings.HasSuffix(r.URL.Path, "/git-upload-pack")
+		if r.Header.Get("Authorization") == gitHostToken || (read && slices.Contains(public, name)) {
+			backend.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	home := filepath.Join(base, "home")
+	write(t, filepath.Join(home, ".gitconfig"), "[http \""+srv.URL+"/\"]\n\textraHeader = Authorization: "+gitHostToken+"\n")
+	f.environ = append(f.environ, "HOME="+home)
+	return srv.URL
+}
+
 // gitHostRepo makes a bare repository with one commit on main under
-// base/host, the git host of a test, and answers its file URL and path.
-func gitHostRepo(t *testing.T, base, name string) (string, string) {
+// base/host, the git host of a test, and answers its URL on host and its
+// path.
+func gitHostRepo(t *testing.T, base, host, name string) (string, string) {
 	t.Helper()
 	bare := filepath.Join(base, "host", name)
 	seed := filepath.Join(base, "seed-"+name)
 	for _, args := range [][]string{
 		{"init", "--quiet", "--bare", "-b", "main", bare},
+		{"-C", bare, "config", "http.receivepack", "true"},
 		{"init", "--quiet", "-b", "main", seed},
 		{"-C", seed, "commit", "--quiet", "--allow-empty", "-m", "start"},
 		{"-C", seed, "push", "--quiet", bare, "HEAD:main"},
@@ -221,7 +260,7 @@ func gitHostRepo(t *testing.T, base, name string) (string, string) {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	return "file://" + bare, bare
+	return host + "/" + name, bare
 }
 
 // forkFromRepository runs one turn of a session that works in the
@@ -286,8 +325,9 @@ func TestAForkRestoresFromTheRepository(t *testing.T) {
 	}
 	f := setup(t)
 	base := filepath.Dir(f.work)
-	url, bare := gitHostRepo(t, base, "app.git")
-	f.r.o.CheckpointHost = "file://" + filepath.Join(base, "host") + "/"
+	host := gitHost(t, f, base)
+	url, bare := gitHostRepo(t, base, host, "app.git")
+	f.r.o.CheckpointHost = host + "/"
 	child, work, cp := forkFromRepository(t, f, url, url)
 	if cp.Remote != url {
 		t.Fatalf("the parent's checkpoint %+v, want it kept at %s", cp, url)
@@ -320,7 +360,8 @@ func TestAForkRestoresFromTheRepository(t *testing.T) {
 }
 
 // TestAForkWithoutItsKeptCheckpointSaysSo: a fork whose parent kept its
-// checkpoint on its machine alone, one whose copied checkpoint names a
+// checkpoint on its machine alone, off the checkpoint host or in a public
+// repository, which never gets one, one whose copied checkpoint names a
 // repository that is not the fork's own, and one whose repository lost
 // the checkpoint, each start on their repository, recorded attached with
 // a checkpoint_missing beside the machine that says why, and run their
@@ -332,25 +373,35 @@ func TestAForkWithoutItsKeptCheckpointSaysSo(t *testing.T) {
 	for _, c := range []struct {
 		name, why string
 		host      bool
+		public    bool
 		other     bool
 		lose      bool
 	}{
-		{name: "kept on the machine", why: "kept on the machine of that session alone"},
+		{name: "off the checkpoint host", why: "kept on the machine of that session alone"},
+		{name: "a public repository", why: "kept on the machine of that session alone", host: true, public: true},
 		{name: "another repository", why: "not this session's own repository", host: true, other: true},
 		{name: "lost at the repository", why: "does not give the checkpoint", host: true, lose: true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := setup(t)
 			base := filepath.Dir(f.work)
-			url, bare := gitHostRepo(t, base, "app.git")
+			var public []string
+			if c.public {
+				public = []string{"app.git"}
+			}
+			host := gitHost(t, f, base, public...)
+			url, bare := gitHostRepo(t, base, host, "app.git")
 			fork := url
 			if c.other {
-				fork, _ = gitHostRepo(t, base, "other.git")
+				fork, _ = gitHostRepo(t, base, host, "other.git")
 			}
 			if c.host {
-				f.r.o.CheckpointHost = "file://" + filepath.Join(base, "host")
+				f.r.o.CheckpointHost = host
 			}
 			child, work, cp := forkFromRepository(t, f, url, fork)
+			if refs, err := gitIn(t, bare, "for-each-ref", "--format=%(refname)", "refs/topos"); c.public && (err != nil || refs != "") {
+				t.Fatalf("the public repository holds %q (%v)", refs, err)
+			}
 			if c.lose {
 				if _, err := gitIn(t, bare, "update-ref", "-d", "refs/topos/checkpoints/"+child.Parent.SessionID+"/latest"); err != nil {
 					t.Fatal(err)

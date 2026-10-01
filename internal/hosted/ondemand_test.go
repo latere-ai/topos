@@ -456,9 +456,10 @@ func TestASessionClonesCommitsAndPushesThroughItsSandbox(t *testing.T) {
 }
 
 // TestAHostedSessionKeepsItsCheckpointsAtTheGitHost: a hosted session
-// that works in a repository on the git host pushes each turn's
+// that works in a private repository on the git host pushes each turn's
 // checkpoint there from its sandbox, sending the git host the
-// placeholder of its Secret and nothing else; once the sandbox is gone,
+// placeholder of its Secret, and nothing at all on the read that finds
+// the repository private; once the sandbox is gone,
 // a fork of the session restores the file at its first call, in a
 // sandbox of its own, and a fork whose checkpoint the git host lost runs
 // that call on its repository with checkpoint_missing beside it.
@@ -518,8 +519,12 @@ func TestAHostedSessionKeepsItsCheckpointsAtTheGitHost(t *testing.T) {
 	host.mu.Lock()
 	seen := slices.Clone(host.seen)
 	host.mu.Unlock()
-	if len(seen) == 0 || slices.ContainsFunc(seen, func(a string) bool { return a != "Bearer cella-placeholder-"+cella.SandboxName(parent.ID)+"-origo" }) {
-		t.Fatalf("the git host saw %q, want the sandbox's placeholder alone", seen)
+	// Every request carries the sandbox's placeholder but the one that
+	// asks, with no credential, whether the repository is private, which
+	// the git host refused, so the checkpoint went there.
+	placeholder := "Bearer cella-placeholder-" + cella.SandboxName(parent.ID) + "-origo"
+	if len(seen) == 0 || slices.ContainsFunc(seen, func(a string) bool { return a != placeholder && a != "" }) || !slices.Contains(seen, "") {
+		t.Fatalf("the git host saw %q, want the sandbox's placeholder and one request with none", seen)
 	}
 	if !c.cella.Remove(cella.SandboxName(parent.ID)) {
 		t.Fatal("the parent has no sandbox to delete")

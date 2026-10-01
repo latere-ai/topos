@@ -5,10 +5,14 @@ package checkpoint
 
 import (
 	"errors"
+	"net/http"
+	"net/http/cgi"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"latere.ai/x/topos/machine"
@@ -400,13 +404,68 @@ func TestAdoptAnotherSessionsCheckpoint(t *testing.T) {
 	}
 }
 
-// remote makes a bare repository with one commit on main, and answers
-// its file URL and its path. With options it takes push options, and a
-// pre-receive hook writes each push's first option to pushed-option.
-func remote(t *testing.T, h machine.Machine, base, name string, options bool) (string, string) {
+// hostToken is the credential the test's git host takes, sent by the
+// machines' git as the git host's header, as a sandbox's git sends its
+// placeholder.
+const hostToken = "Bearer checkpoint-test"
+
+// gitHost serves the bare repositories under root over git's own http
+// backend and decides by repository, as a git host that asks an
+// authorizer does: a request with hostToken reads and writes, and one with
+// no credential gets what anonymous names for the repository, 0 the 401 a
+// private repository answers, http.StatusOK the reads of a public one,
+// and any other status that status.
+type gitHost struct {
+	srv       *httptest.Server
+	root      string
+	mu        sync.Mutex
+	anonymous map[string]int
+}
+
+func newGitHost(t *testing.T) *gitHost {
 	t.Helper()
-	bare := filepath.Join(base, name)
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not on PATH")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &gitHost{root: root, anonymous: map[string]int{}}
+	backend := &cgi.Handler{Path: bin, Args: []string{"http-backend"}, Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}}
+	g.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == hostToken {
+			backend.ServeHTTP(w, r)
+			return
+		}
+		name, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+		g.mu.Lock()
+		status := g.anonymous[name]
+		g.mu.Unlock()
+		read := r.URL.Query().Get("service") == "git-upload-pack" || strings.HasSuffix(r.URL.Path, "/git-upload-pack")
+		switch {
+		case status == http.StatusOK && read:
+			backend.ServeHTTP(w, r)
+		case status == 0 || status == http.StatusOK:
+			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		default:
+			http.Error(w, http.StatusText(status), status)
+		}
+	}))
+	t.Cleanup(g.srv.Close)
+	return g
+}
+
+// repo makes a bare repository on the host and answers its URL and its
+// path. With options it takes push options, and a pre-receive hook
+// writes each push's first option to pushed-option.
+func (g *gitHost) repo(t *testing.T, h machine.Machine, name string, options bool) (string, string) {
+	t.Helper()
+	bare := filepath.Join(g.root, name)
 	git(t, h, nil, "init --quiet --bare -b main "+bare)
+	git(t, h, map[string]string{"GIT_DIR": bare}, "config http.receivepack true")
 	if options {
 		git(t, h, map[string]string{"GIT_DIR": bare}, "config receive.advertisePushOptions true")
 		write(t, filepath.Join(bare, "hooks", "pre-receive"), "#!/bin/sh\nprintf '%s' \"$GIT_PUSH_OPTION_0\" > \""+filepath.Join(bare, "pushed-option")+"\"\n")
@@ -414,7 +473,25 @@ func remote(t *testing.T, h machine.Machine, base, name string, options bool) (s
 			t.Fatal(err)
 		}
 	}
-	return "file://" + bare, bare
+	return g.srv.URL + "/" + name, bare
+}
+
+// public answers a credential-less request to the repository name with
+// status, http.StatusOK serving its reads.
+func (g *gitHost) public(name string, status int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.anonymous[name] = status
+}
+
+// trust writes home's git configuration as a sandbox's is written: the
+// host's header on every request to it, and a credential helper holding
+// a password for it, which a read with no credential must not send.
+func (g *gitHost) trust(t *testing.T, home string) {
+	t.Helper()
+	write(t, filepath.Join(home, ".gitconfig"), "[http \""+g.srv.URL+"/\"]\n\textraHeader = Authorization: "+hostToken+"\n[credential]\n\thelper = store\n")
+	u := strings.Replace(g.srv.URL, "http://", "http://user:password@", 1)
+	write(t, filepath.Join(home, ".git-credentials"), u+"\n")
 }
 
 // checkout clones url into the machine's working directory, as a
@@ -435,16 +512,18 @@ func checkout(t *testing.T, h machine.Machine, url string) {
 	git(t, h, nil, "checkout --quiet -B main origin/main")
 }
 
-// TestACheckpointIsKeptAtItsRepository: a checkpointer with a repository
-// to keep its checkpoints at pushes each of the session's own there under
-// the session's latest ref, with origo.event=off where the repository
-// takes push options and without it where it does not, and names the
-// repository on the checkpoint; a thread's checkpoint is not pushed.
+// TestACheckpointIsKeptAtItsRepository: a checkpointer with a private
+// repository to keep its checkpoints at pushes each of the session's own
+// there under the session's latest ref, with origo.event=off where the
+// repository takes push options and without it where it does not, and
+// names the repository on the checkpoint; a thread's checkpoint is not
+// pushed.
 func TestACheckpointIsKeptAtItsRepository(t *testing.T) {
 	needGit(t)
+	g := newGitHost(t)
 	h, work := open(t, nil)
-	base := filepath.Dir(work)
-	url, bare := remote(t, h, base, "app.git", true)
+	g.trust(t, filepath.Dir(work))
+	url, bare := g.repo(t, h, "app.git", true)
 	checkout(t, h, url)
 	c := &Checkpointer{Machine: h, SessionID: "ses_k", AgentID: "agent_1", Remote: url}
 	write(t, filepath.Join(work, "notes.txt"), "draft\n")
@@ -474,7 +553,7 @@ func TestACheckpointIsKeptAtItsRepository(t *testing.T) {
 		t.Fatalf("the repository holds %q; a session keeps one ref there", refs)
 	}
 
-	plain, plainBare := remote(t, h, base, "plain.git", false)
+	plain, plainBare := g.repo(t, h, "plain.git", false)
 	git(t, h, nil, "remote set-url origin "+plain)
 	git(t, h, nil, "push --quiet origin HEAD:main")
 	c.Remote = plain
@@ -492,20 +571,77 @@ func TestACheckpointIsKeptAtItsRepository(t *testing.T) {
 	}
 }
 
-// TestAPushTheRepositoryRefusesKeepsTheCheckpointLocal: a repository that
-// cannot be reached, and one whose hook refuses the push, leave the
-// checkpoint taken, its ref on the machine, and no repository named.
+// TestOnlyAPrivateRepositoryKeepsCheckpoints: whoever reads a repository
+// reads its checkpoint refs, so a checkpoint goes only to a repository
+// that refuses a read with no credential for want of one. One that a
+// reader with no credential reads is public and never gets one, and so is
+// one whose answer to such a read is anything else, a refusal for another
+// reason, an error, a limit or no answer at all: its visibility is not
+// known. The machine's own credentials, the git host's header and a
+// credential helper's, never reach that read.
+func TestOnlyAPrivateRepositoryKeepsCheckpoints(t *testing.T) {
+	needGit(t)
+	g := newGitHost(t)
+	h, work := open(t, nil)
+	g.trust(t, filepath.Dir(work))
+	private, privateBare := g.repo(t, h, "private.git", false)
+	checkout(t, h, private)
+	write(t, filepath.Join(work, "notes.txt"), "uncommitted\n")
+	c := &Checkpointer{Machine: h, SessionID: "ses_v", Remote: private}
+	if cp, err := c.Take(t.Context(), 1, ""); err != nil || cp.Remote != private {
+		t.Fatalf("a private repository: %+v, %v; want the checkpoint kept there", cp, err)
+	}
+	if git(t, h, map[string]string{"GIT_DIR": privateBare}, "for-each-ref '--format=%(refname)' refs/topos") != KeptRef("ses_v") {
+		t.Fatal("the private repository holds no checkpoint")
+	}
+	for _, r := range []struct {
+		name   string
+		status int
+	}{
+		{"public.git", http.StatusOK},
+		{"forbidden.git", http.StatusForbidden},
+		{"missing.git", http.StatusNotFound},
+		{"limited.git", http.StatusTooManyRequests},
+		{"failing.git", http.StatusInternalServerError},
+	} {
+		url, bare := g.repo(t, h, r.name, false)
+		g.public(r.name, r.status)
+		c := &Checkpointer{Machine: h, SessionID: "ses_v", Remote: url}
+		cp, err := c.Take(t.Context(), 2, "")
+		if err != nil || cp.Remote != "" || cp.Commit == "" {
+			t.Fatalf("%s answering %d with no credential: %+v, %v; want the checkpoint kept on the machine alone", r.name, r.status, cp, err)
+		}
+		if refs := git(t, h, map[string]string{"GIT_DIR": bare}, "for-each-ref '--format=%(refname)' refs/topos"); refs != "" {
+			t.Fatalf("%s answering %d with no credential holds %q", r.name, r.status, refs)
+		}
+	}
+	unreachable := &Checkpointer{Machine: h, SessionID: "ses_v", Remote: "http://127.0.0.1:1/app.git"}
+	if cp, err := unreachable.Take(t.Context(), 3, ""); err != nil || cp.Remote != "" {
+		t.Fatalf("a repository that does not answer: %+v, %v; want the checkpoint kept on the machine alone", cp, err)
+	}
+	// A repository on disk is read by anyone who can read the disk.
+	local := &Checkpointer{Machine: h, SessionID: "ses_v", Remote: "file://" + privateBare}
+	if cp, err := local.Take(t.Context(), 4, ""); err != nil || cp.Remote != "" {
+		t.Fatalf("a repository read with no credential at all: %+v, %v", cp, err)
+	}
+}
+
+// TestAPushTheRepositoryRefusesKeepsTheCheckpointLocal: a private
+// repository whose hook refuses the push, and one the git host does not
+// have, leave the checkpoint taken, its ref on the machine, and no
+// repository named.
 func TestAPushTheRepositoryRefusesKeepsTheCheckpointLocal(t *testing.T) {
 	needGit(t)
+	g := newGitHost(t)
 	h, work := open(t, nil)
-	base := filepath.Dir(work)
-	url, bare := remote(t, h, base, "app.git", false)
+	g.trust(t, filepath.Dir(work))
+	url, bare := g.repo(t, h, "app.git", false)
 	checkout(t, h, url)
 	write(t, filepath.Join(bare, "hooks", "pre-receive"), "#!/bin/sh\necho over quota >&2\nexit 1\n")
 	if err := os.Chmod(filepath.Join(bare, "hooks", "pre-receive"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, at := range []string{url, "file://" + filepath.Join(base, "missing.git")} {
+	for _, at := range []string{url, g.srv.URL + "/missing.git"} {
 		c := &Checkpointer{Machine: h, SessionID: "ses_r", Remote: at}
 		cp, err := c.Take(t.Context(), 1, "")
 		if err != nil || cp.Remote != "" || cp.Commit == "" {
@@ -531,45 +667,55 @@ func TestAPushTheRepositoryRefusesKeepsTheCheckpointLocal(t *testing.T) {
 // does not have is ErrNotKept.
 func TestAKeptCheckpointIsFetchedByID(t *testing.T) {
 	needGit(t)
+	g := newGitHost(t)
 	h, work := open(t, nil)
-	url, _ := remote(t, h, filepath.Dir(work), "app.git", false)
+	g.trust(t, filepath.Dir(work))
+	url, bare := g.repo(t, h, "app.git", false)
 	checkout(t, h, url)
 	parent := &Checkpointer{Machine: h, SessionID: "ses_p", Remote: url}
 	write(t, filepath.Join(work, "notes.txt"), "the parent's\n")
 	first, err := parent.Take(t.Context(), 1, "")
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || first.Remote != url {
+		t.Fatalf("the parent's checkpoint %+v, %v", first, err)
 	}
 	write(t, filepath.Join(work, "notes.txt"), "later\n")
 	if _, err := parent.Take(t.Context(), 2, first.Commit); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, v := range []string{"2", "0"} {
+	// The same repository over the git host and on disk, the latter with
+	// protocol v2, which serves an object by its id, and v0, which does
+	// not.
+	for _, f := range []struct{ name, remote, protocol string }{
+		{"the git host", url, "2"},
+		{"protocol v2", "file://" + bare, "2"},
+		{"protocol v0", "file://" + bare, "0"},
+	} {
 		home := t.TempDir()
-		env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=protocol.version", "GIT_CONFIG_VALUE_0=" + v}
+		g.trust(t, home)
+		env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=protocol.version", "GIT_CONFIG_VALUE_0=" + f.protocol}
 		fork, forkWork := open(t, env)
 		checkout(t, fork, url)
-		c := &Checkpointer{Machine: fork, SessionID: "ses_c", Remote: url}
+		c := &Checkpointer{Machine: fork, SessionID: "ses_c", Remote: f.remote}
 		if have, err := c.Has(t.Context(), first.Commit); err != nil || have {
-			t.Fatalf("protocol %s: a fresh clone holds the checkpoint: %v, %v", v, have, err)
+			t.Fatalf("%s: a fresh clone holds the checkpoint: %v, %v", f.name, have, err)
 		}
 		if err := c.Fetch(t.Context(), first.Commit, "ses_p"); err != nil {
-			t.Fatalf("protocol %s: fetch: %v", v, err)
+			t.Fatalf("%s: fetch: %v", f.name, err)
 		}
 		cp, ok, err := c.Adopt(t.Context(), 1, first.Commit, "", "")
 		if err != nil || !ok || cp.Ref != "refs/topos/checkpoints/ses_c/1" {
-			t.Fatalf("protocol %s: adopt %+v, %v, %v", v, cp, ok, err)
+			t.Fatalf("%s: adopt %+v, %v, %v", f.name, cp, ok, err)
 		}
 		if err := c.Restore(t.Context(), cp.Commit, ""); err != nil {
 			t.Fatal(err)
 		}
 		if got := read(t, filepath.Join(forkWork, "notes.txt")); got != "the parent's\n" {
-			t.Fatalf("protocol %s: notes.txt is %q", v, got)
+			t.Fatalf("%s: notes.txt is %q", f.name, got)
 		}
 		err = c.Fetch(t.Context(), strings.Repeat("0", 40), "ses_p")
-		if !errors.Is(err, ErrNotKept) || !strings.Contains(err.Error(), url) {
-			t.Fatalf("protocol %s: a commit the repository lacks: %v", v, err)
+		if !errors.Is(err, ErrNotKept) || !strings.Contains(err.Error(), f.remote) {
+			t.Fatalf("%s: a commit the repository lacks: %v", f.name, err)
 		}
 	}
 	if err := (&Checkpointer{Machine: h, SessionID: "ses_c"}).Fetch(t.Context(), first.Commit, "ses_p"); !errors.Is(err, ErrNotKept) {
