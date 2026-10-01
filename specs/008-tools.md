@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-01
 author: changkun
 ---
 
@@ -149,7 +149,7 @@ full size.
 | `error` | yes | the tool ran and failed |
 | `timeout` | yes | the call passed its timeout and was killed |
 | `unknown_tool` | yes | no such tool ([[005-harness-loop]]) |
-| `invalid_input` | yes | the input did not match the schema ([[005-harness-loop]]) |
+| `invalid_input` | yes | the arguments were not JSON, or the input did not match the schema ([[005-harness-loop]]) |
 | `denied` | yes | a person denied the call; the note is in the text |
 | `blocked` | yes | the verdict was block; the reason is in the text |
 | `canceled` | yes | an interrupt or a shutdown canceled the call while it ran |
