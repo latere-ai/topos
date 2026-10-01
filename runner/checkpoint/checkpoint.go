@@ -4,7 +4,9 @@
 // Package checkpoint takes and restores the per-turn checkpoints of spec
 // 034: a git commit of the working directory's tree, written through a
 // temporary index so the person's index, HEAD and branches are never
-// touched. Every git command runs on the session's machine.
+// touched. A checkpointer given a repository to keep its checkpoints at
+// pushes each one there and fetches one back by its id (spec 035). Every
+// git command runs on the session's machine.
 package checkpoint
 
 import (
@@ -50,6 +52,26 @@ var ErrNoGit = errors.New("checkpoint: git is not available on the machine")
 // session repository to keep its checkpoints in.
 var ErrNoRepository = errors.New("checkpoint: the working directory is not a checkout and no session repository is set")
 
+// ErrNotKept is a checkpoint the repository that keeps a session's
+// checkpoints did not give (spec 035).
+var ErrNotKept = errors.New("checkpoint: the repository does not give the checkpoint")
+
+// transferTimeout bounds one push or fetch of a checkpoint, as the
+// delivery of a repository is bounded: a turn's end waits for the push.
+const transferTimeout = 15 * time.Minute
+
+// eventOff is the push option that keeps a push out of Origo's push
+// events (Origo spec 008), so a checkpoint fires no trigger subscribed to
+// the repository's pushes.
+const eventOff = "origo.event=off"
+
+// KeptRef is the one ref at the repository that keeps a session's
+// checkpoints past its machine: the session's latest checkpoint, from
+// which every earlier turn's is reachable along the chain (spec 035).
+func KeptRef(sessionID string) string {
+	return "refs/topos/checkpoints/" + sessionID + "/latest"
+}
+
 // The error codes of spec 034.
 const (
 	CodeRewindNotIdle = "rewind_not_idle"
@@ -67,6 +89,11 @@ type Checkpointer struct {
 	// SessionRepo is the bare repository that holds the objects when the
 	// working directory is not a checkout.
 	SessionRepo string
+	// Remote is the URL of the repository that keeps the session's
+	// checkpoints past the machine (spec 035): Take pushes each checkpoint
+	// of the session's own working directory there under KeptRef, and
+	// Fetch takes a commit from there. Empty keeps them on the machine.
+	Remote string
 }
 
 // Ref is the ref of a turn's checkpoint.
@@ -132,14 +159,93 @@ func (c *Checkpointer) index() (string, error) {
 
 // Take commits the working directory's tree as the checkpoint of turn,
 // chained to previous (empty for the first), and points the turn's ref
-// at it. A turn that changed nothing reuses the previous tree.
+// at it. A turn that changed nothing reuses the previous tree. With a
+// Remote, the session's own checkpoint is then pushed there, and names
+// the Remote when the push took; a push that did not take keeps the
+// checkpoint on the machine alone and is no error of the checkpoint.
 func (c *Checkpointer) Take(ctx context.Context, turn int, previous string) (session.CheckpointRef, error) {
 	ref := c.Ref(turn)
 	commit, _, err := c.commit(ctx, ref, fmt.Sprintf("topos checkpoint %s turn %d", c.SessionID, turn), previous, false)
 	if err != nil {
 		return session.CheckpointRef{}, err
 	}
-	return session.CheckpointRef{Ref: ref, Commit: commit}, nil
+	cp := session.CheckpointRef{Ref: ref, Commit: commit}
+	if c.Remote != "" && c.Thread == "" && c.keep(ctx, commit) {
+		cp.Remote = c.Remote
+	}
+	return cp, nil
+}
+
+// keep pushes commit to Remote as the session's KeptRef, forced, since
+// the session's log and not the ref records which commit each turn kept,
+// and reports whether the repository took it. The push carries eventOff,
+// and goes again without it to a repository that takes no push options.
+func (c *Checkpointer) keep(ctx context.Context, commit string) bool {
+	env, err := c.repo(ctx)
+	if err != nil {
+		return false
+	}
+	target := quote(c.Remote) + " " + quote("+"+commit+":"+KeptRef(c.SessionID))
+	res, err := c.transfer(ctx, env, "push --quiet --no-verify -o "+eventOff+" "+target)
+	if err == nil && res.ExitCode != 0 && strings.Contains(string(res.Output), "push options") {
+		res, err = c.transfer(ctx, env, "push --quiet --no-verify "+target)
+	}
+	return err == nil && res.ExitCode == 0 && !res.TimedOut
+}
+
+// transfer runs a git command that reaches the Remote, with env, the
+// repository's from repo: under transferTimeout, and with git's prompt
+// for a credential off, so a machine with none for the repository fails
+// at once.
+func (c *Checkpointer) transfer(ctx context.Context, env map[string]string, args string) (machine.ExecResult, error) {
+	env = maps.Clone(env)
+	env["GIT_TERMINAL_PROMPT"] = "0"
+	return c.Machine.Exec(ctx, machine.ExecRequest{Command: "git " + args, Env: env, Timeout: transferTimeout})
+}
+
+// Fetch brings commit, a checkpoint the session sessionID kept at Remote,
+// into this working directory's repository: by its id, or, from a
+// repository that serves no object by its id, through the session's
+// KeptRef, from which the commit is had when it is reachable. A commit
+// neither fetch gives is ErrNotKept, with git's account of each.
+func (c *Checkpointer) Fetch(ctx context.Context, commit, sessionID string) error {
+	if c.Remote == "" {
+		return fmt.Errorf("%w: no repository keeps the checkpoints", ErrNotKept)
+	}
+	env, err := c.repo(ctx)
+	if err != nil {
+		return err
+	}
+	var why []string
+	for _, want := range []string{commit, KeptRef(sessionID)} {
+		res, err := c.transfer(ctx, env, "fetch --quiet --no-tags "+quote(c.Remote)+" "+quote(want))
+		switch {
+		case err != nil:
+			return fmt.Errorf("checkpoint: git fetch: %w", err)
+		case res.TimedOut:
+			why = append(why, "fetch "+want+": timed out after "+transferTimeout.String())
+			continue
+		case res.ExitCode != 0:
+			why = append(why, "fetch "+want+": "+firstLine(string(res.Output)))
+			continue
+		}
+		if have, err := c.exists(ctx, env, commit); err != nil || have {
+			return err
+		}
+		why = append(why, want+" does not reach it")
+	}
+	return fmt.Errorf("%w: %s from %s: %s", ErrNotKept, commit, c.Remote, strings.Join(why, "; "))
+}
+
+// firstLine is the first non-empty line of git's output, or a note that
+// it said nothing.
+func firstLine(out string) string {
+	for line := range strings.SplitSeq(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return "git said nothing"
 }
 
 // Save checkpoints the working directory before a rewind replaces it,
