@@ -24,6 +24,10 @@ const (
 	EffortHigh    = "high"
 )
 
+// Efforts are the values of AgentModel.Effort, least reasoning first. A
+// session's change of its effort takes the same values (spec 015).
+var Efforts = []string{EffortMinimal, EffortLow, EffortMedium, EffortHigh}
+
 // Values of Machine.Kind.
 const (
 	MachineHost  = "host"

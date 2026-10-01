@@ -315,7 +315,7 @@ func ApplyBatch(s *Session, events []Event) {
 		if e.Type == TypeModelChanged && !e.Redacted() {
 			var m ModelChanged
 			if e.Decode(&m) == nil {
-				s.Model = &ModelRef{Name: m.New.Name}
+				s.Model = &ModelRef{Name: m.New.Name, Effort: m.New.Effort}
 			}
 			continue
 		}

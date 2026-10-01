@@ -50,6 +50,20 @@ committed: the commit log already holds that.
   at a time, and opens no connection for them.
 - The OpenAPI document describes the stream's frames, its `from_seq`
   and `deltas` parameters, and the `Delta` schema.
+- `PATCH /v1/sessions/{id}` changes a session's reasoning effort as
+  well as its model: `{"model": {"effort": "high"}}` keeps the model,
+  `{"model": {"name": "...", "effort": "low"}}` changes both, and
+  `"effort": ""` returns to the agent's own `spec.model.effort`. The
+  effort is `minimal`, `low`, `medium` or `high`, holds across a change
+  of the model, and takes effect at the next turn, in which a thread
+  whose agent names no effort runs at it too. `session.model_changed`
+  records it in `old` and `new`, each now `{name, effort}`, and the
+  session's `model` carries the effort the next turn runs at.
+- The authorizer's `session.update` question carries what the change
+  names: `model` when the body names a model, and `effort`, the effort
+  the next turn runs at, when it names an effort. An effort change alone
+  carries no `model`, so an authorizer that requires one refuses it
+  until it decides effort changes.
 
 ## v0.9.5 - 2026-09-30
 

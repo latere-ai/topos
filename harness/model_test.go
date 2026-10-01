@@ -5,6 +5,7 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -80,5 +81,58 @@ func TestATurnRunsOnTheSessionsModel(t *testing.T) {
 	}
 	if n := len(e.stub.Requests()); n != 2 {
 		t.Fatalf("a turn on a model that cannot be had sent a request: %d", n)
+	}
+}
+
+// TestASessionsEffortReachesItsRequests: a turn runs at the effort its
+// session's latest session.model_changed names, the agent's until one
+// names any, and a thread whose agent names no effort runs at the
+// session's; a header from before a change carried an effort runs at the
+// agent's.
+func TestASessionsEffortReachesItsRequests(t *testing.T) {
+	e := setup(t, func(c *Config) {
+		withReviewer(func(s *Subagent) { s.Effort = "" })(c)
+		c.Effort = "medium"
+	})
+	ctx := t.Context()
+	at := func(want string, r luxstub.Reply) luxstub.Reply {
+		r.Expect = func(req *ir.Request) error {
+			if req.Reasoning == nil || string(req.Reasoning.Effort) != want {
+				return fmt.Errorf("the request's effort is %+v, want %s", req.Reasoning, want)
+			}
+			return nil
+		}
+		return r
+	}
+	change := func(effort string) {
+		ev, err := session.NewEvent(session.TypeModelChanged, session.ModelChanged{By: e.s.Initiator, Old: session.ModelRef{Name: model}, New: session.ModelRef{Name: model, Effort: effort}}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.appendEvents(ctx, ev)
+	}
+	e.stub.Script(model,
+		at("medium", reply(ir.StopEndTurn, text("One."))),
+		at("high", reply(ir.StopToolUse, spawnCall("toolu_s", `{"agent":"reviewer","task":"Review."}`))),
+		at("high", reply(ir.StopEndTurn, text("Two."))),
+		at("medium", reply(ir.StopEndTurn, text("Three."))),
+	)
+	e.stub.Script(reviewerModel, at("high", luxstub.Reply{Response: ir.Response{Model: reviewerModel, Blocks: []ir.Block{text("Fine.")}, StopReason: ir.StopEndTurn}}))
+	e.send(ctx, "One.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("the agent's effort: %+v", out)
+	}
+	change("high")
+	e.send(ctx, "Two.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("the session's effort: %+v", out)
+	}
+	change("")
+	e.send(ctx, "Three.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("a header without an effort: %+v", out)
+	}
+	if n := len(e.stub.Requests()); n != 5 {
+		t.Fatalf("%d requests, want 5", n)
 	}
 }

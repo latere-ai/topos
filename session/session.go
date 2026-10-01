@@ -153,9 +153,12 @@ const (
 	DefaultMaxAge      = 168 * time.Hour
 )
 
-// ModelRef names a model a session runs.
+// ModelRef names a model a session runs and the reasoning effort it runs
+// at: one of manifest/v1's Effort values, or empty for the model's own
+// default (spec 015).
 type ModelRef struct {
-	Name string `json:"name"`
+	Name   string `json:"name"`
+	Effort string `json:"effort,omitempty"`
 }
 
 // Capture says which raw wire data a session keeps beyond the default.

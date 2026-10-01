@@ -384,8 +384,9 @@ type ScopeChanged struct {
 }
 
 // ModelChanged is the payload of session.model_changed: the session's
-// owner switched the model its next turn runs (spec 015). Old is the
-// model the session ran, its agent's until a first switch.
+// owner changed the model its next turn runs, its reasoning effort, or
+// both (spec 015). Old is the model and the effort the session ran, its
+// agent's until a first change.
 type ModelChanged struct {
 	By  Sender   `json:"by"`
 	Old ModelRef `json:"old"`

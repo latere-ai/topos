@@ -207,3 +207,117 @@ func TestASwitchRunsWhatACreateRuns(t *testing.T) {
 		t.Fatalf("session.model_changed %+v", changes)
 	}
 }
+
+// TestASessionChangesItsEffort: an effort change alone keeps the model,
+// is asked of the authorizer with effort and without model, and records
+// the old and the new effort, which the header carries; a switch of the
+// model alone keeps the effort, "" returns to the agent's own, and a
+// change to what the session runs appends nothing.
+func TestASessionChangesItsEffort(t *testing.T) {
+	f := newFixture(t)
+	doc := strings.Replace(agentYAML("thinker", "Think."), "model: {name: claude-haiku-4-5}", "model: {name: claude-haiku-4-5, effort: low}", 1)
+	if a := f.do(http.MethodPut, "/v1/agents/thinker", "alice", doc); a.status != http.StatusCreated {
+		t.Fatalf("apply: %d %s", a.status, a.body)
+	}
+	s := f.create("alice", "thinker")
+	var asked []map[string]any
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			asked = append(asked, req.Resource.Fields)
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	patch := func(body string) session.Session {
+		t.Helper()
+		a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", body)
+		if a.status != http.StatusOK {
+			t.Fatalf("%s: %d %s", body, a.status, a.body)
+		}
+		var got session.Session
+		a.decode(t, &got)
+		return got
+	}
+	const sonnet = "anthropic/claude-sonnet-4-5"
+	ref := func(name, effort string) session.ModelRef { return session.ModelRef{Name: name, Effort: effort} }
+
+	got := patch(`{"model":{"effort":"high"}}`)
+	if got.Model == nil || *got.Model != ref("claude-haiku-4-5", "high") {
+		t.Fatalf("an effort change answers the model %+v", got.Model)
+	}
+	if len(asked) != 1 || asked[0]["effort"] != "high" || asked[0]["session_id"] != s.ID {
+		t.Fatalf("session.update asked about %v", asked)
+	}
+	if _, named := asked[0]["model"]; named {
+		t.Fatalf("an effort change named the model: %v", asked[0])
+	}
+	got = patch(`{"model":{"name":"` + sonnet + `"}}`)
+	if *got.Model != ref(sonnet, "high") {
+		t.Fatalf("a switch of the model alone answers %+v", got.Model)
+	}
+	if _, named := asked[1]["effort"]; named || asked[1]["model"] != sonnet {
+		t.Fatalf("a switch of the model asked about %v", asked[1])
+	}
+	got = patch(`{"model":{"effort":""}}`)
+	if *got.Model != ref(sonnet, "low") || asked[2]["effort"] != "low" {
+		t.Fatalf("a return to the agent's effort answers %+v, asked %v", got.Model, asked[2])
+	}
+	got = patch(`{"model":{"name":"claude-haiku-4-5","effort":"minimal"}}`)
+	if *got.Model != ref("claude-haiku-4-5", "minimal") {
+		t.Fatalf("a change of both answers %+v", got.Model)
+	}
+	changes := f.modelEvents(s.ID)
+	want := []session.ModelChanged{
+		{Old: ref("claude-haiku-4-5", "low"), New: ref("claude-haiku-4-5", "high")},
+		{Old: ref("claude-haiku-4-5", "high"), New: ref(sonnet, "high")},
+		{Old: ref(sonnet, "high"), New: ref(sonnet, "low")},
+		{Old: ref(sonnet, "low"), New: ref("claude-haiku-4-5", "minimal")},
+	}
+	if len(changes) != len(want) {
+		t.Fatalf("session.model_changed %+v", changes)
+	}
+	for i, c := range changes {
+		if c.Old != want[i].Old || c.New != want[i].New || c.By.Subject != alice {
+			t.Fatalf("change %d is %+v, want %+v", i, c, want[i])
+		}
+	}
+	patch(`{"model":{"effort":"minimal"}}`)
+	patch(`{"model":{"name":"claude-haiku-4-5","effort":"minimal"}}`)
+	if n := len(f.modelEvents(s.ID)); n != len(want) {
+		t.Fatalf("a change to what the session runs appended: %d events", n)
+	}
+	if stored, err := f.sessions.Get(t.Context(), s.ID); err != nil || stored.Model == nil || *stored.Model != ref("claude-haiku-4-5", "minimal") {
+		t.Fatalf("the stored header's model is %+v, %v", stored.Model, err)
+	}
+}
+
+// TestAnEffortChangeIsRefused: an effort outside the four values, a model
+// that names nothing, and a member it does not take are invalid_request,
+// and a denied effort change is forbidden; none changes the session.
+func TestAnEffortChangeIsRefused(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	unchanged := func(what string) {
+		t.Helper()
+		after, err := f.sessions.Get(t.Context(), s.ID)
+		if err != nil || after.Model != nil || len(f.modelEvents(s.ID)) != 0 {
+			t.Fatalf("%s changed the session: model %+v, %v", what, after.Model, err)
+		}
+	}
+	for _, body := range []string{`{"model":{}}`, `{"model":{"effort":"max"}}`, `{"model":{"effort":"High"}}`, `{"model":{"effort":"high","speed":"fast"}}`, `{"model":{"effort":null}}`} {
+		if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", body); a.code() != CodeInvalidRequest {
+			t.Fatalf("%s: %d %s", body, a.status, a.body)
+		}
+	}
+	unchanged("an invalid body")
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			return authz.Decision{Reason: "role_insufficient"}, nil
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"model":{"effort":"high"}}`); a.status != http.StatusForbidden {
+		t.Fatalf("a denied effort change: %d %s", a.status, a.body)
+	}
+	unchanged("a denied effort change")
+}

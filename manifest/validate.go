@@ -297,7 +297,7 @@ func (v *validator) model(at string, m v1.AgentModel) {
 		v.text(at+".credential", m.Credential)
 	}
 	if m.Effort != "" {
-		v.oneOf(at+".effort", m.Effort, v1.EffortMinimal, v1.EffortLow, v1.EffortMedium, v1.EffortHigh)
+		v.oneOf(at+".effort", m.Effort, v1.Efforts...)
 	}
 	if m.InputWindow < 0 {
 		v.add(at+".inputWindow", "negative")

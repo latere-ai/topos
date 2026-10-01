@@ -34,7 +34,7 @@ func table() []route {
 		{method: http.MethodGet, path: "/sessions/{id}", actions: a(authorizer.ActionSessionRead),
 			op: "getSession", summary: "Get a session", status: http.StatusOK, handle: (*call).getSession},
 		{method: http.MethodPatch, path: "/sessions/{id}", actions: a(authorizer.ActionSessionUpdate, authorizer.ActionSessionRead),
-			op: "updateSession", summary: "Change the model the session's next turn runs", status: http.StatusOK, body: MaxBody, handle: (*call).updateSession},
+			op: "updateSession", summary: "Change the model the session's next turn runs, or its reasoning effort", status: http.StatusOK, body: MaxBody, handle: (*call).updateSession},
 		{method: http.MethodPost, path: "/sessions/{id}/end", actions: a(authorizer.ActionSessionEnd),
 			op: "endSession", summary: "End an idle session completed or canceled", status: http.StatusOK, body: MaxBody, handle: (*call).endSession},
 		{method: http.MethodPost, path: "/sessions/{id}/resume", actions: a(authorizer.ActionSessionResume),

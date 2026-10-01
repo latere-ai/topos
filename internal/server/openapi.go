@@ -15,6 +15,7 @@ import (
 
 	"latere.ai/x/topos/manifest"
 	"latere.ai/x/topos/manifest/trigger"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 )
 
@@ -187,11 +188,13 @@ var opDescriptions = map[string]string{
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
 		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
-	"updateSession": `The body is {"model": {"name": "<model>"}}, the model the session's next turn runs; any other member is refused. ` +
-		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. " +
-		"A model no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable; the authorizer is asked session.update with session_id and model after the model resolved, and a deny is forbidden. " +
-		"An allowed switch appends session.model_changed {by, old, new} and answers the Session, whose model is the new one; a switch to the model the session runs appends nothing. " +
-		"A turn already running keeps its model: the switch takes effect at the next turn.",
+	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "effort": "<effort>"}}, the model the session's next turn runs and its reasoning effort, either member or both; any other member is refused. `+
+		"A member left out keeps what the session runs. effort is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. "+
+		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+
+		"A model no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable; the authorizer is asked session.update with session_id, model when the body names one, after the model resolved, "+
+		"and effort, the effort the next turn runs at, when the body names one, and a deny is forbidden. "+
+		"An allowed change appends session.model_changed {by, old, new}, each {name, effort}, and answers the Session, whose model is the new one; a change to the model and the effort the session runs appends nothing. "+
+		"A turn already running keeps its model and its effort: the change takes effect at the next turn.", strings.Join(v1.Efforts, ", ")),
 }
 
 // operation is one route as the document describes it. x-topos-actions
