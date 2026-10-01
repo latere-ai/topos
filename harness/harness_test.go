@@ -1484,3 +1484,50 @@ func TestAResumedSessionContinuesTheTurn(t *testing.T) {
 		t.Fatalf("%d requests, want the one refused before the stop to be sent after the resume", n)
 	}
 }
+
+// TestAForkDoesNotStartBashInItsParentsDirectory: bash's directory in a
+// fork's copied log was reported on its parent's machine, so a fork's
+// call starts in its own working directory, while a session's own
+// directory, one it reported itself, is kept.
+func TestAForkDoesNotStartBashInItsParentsDirectory(t *testing.T) {
+	var dirs []string
+	e := setup(t, nil)
+	e.write.run = func(c tools.Call) (tools.Result, error) {
+		dirs = append(dirs, c.State.Dir)
+		return tools.Text(tools.OutcomeOK, "ran"), nil
+	}
+	ctx := t.Context()
+	meta, err := json.Marshal(tools.Meta{Dir: "/parent/sub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := session.NewEvent(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_p", Outcome: tools.OutcomeOK, Meta: meta}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.appendEvents(ctx, moved)
+	copied := e.events(ctx, session.TypeToolResult)[0].Seq
+	run := func(id string, fork bool) {
+		e.send(ctx, "Run it.")
+		e.stub.Script(model, reply(ir.StopToolUse, call(id, "bash", `{"command":"pwd"}`)), reply(ir.StopEndTurn, text("Ran.")))
+		s, err := e.store.Get(ctx, e.s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fork {
+			s.Parent = &session.Parent{SessionID: "ses_parent", Seq: copied}
+		}
+		evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.h.RunTurn(ctx, s, evs, e.log); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("toolu_fork", true)
+	run("toolu_own", false)
+	if len(dirs) != 2 || dirs[0] != "" || dirs[1] != "/parent/sub" {
+		t.Fatalf("bash started in %q; want the fork's own working directory, then the session's own directory", dirs)
+	}
+}

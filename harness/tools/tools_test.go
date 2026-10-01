@@ -169,7 +169,13 @@ func TestStateOfFoldsMetas(t *testing.T) {
 		other, redacted, broken, badMeta,
 		ev(t, "thr_a", Meta{Path: "/w/a", SHA256: "a2", Dir: "/w"}),
 	}
+	for i := range events {
+		events[i].Seq = uint64(i + 1)
+	}
 	st := StateOf(events, "thr_a")
+	if st.DirSeq != uint64(len(events)) {
+		t.Fatalf("the directory came from %d, want the last result", st.DirSeq)
+	}
 	want := map[string]string{"/w/a": "a2", "/w/b": ""}
 	if len(st.Hashes) != len(want) || st.Hashes["/w/a"] != "a2" || st.Hashes["/w/b"] != "" || st.Dir != "/w" || !slices.Equal(st.Todos, todos) {
 		t.Fatalf("state %+v", st)

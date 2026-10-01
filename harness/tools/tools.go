@@ -131,8 +131,12 @@ type State struct {
 	// seen absent.
 	Hashes map[string]string
 	// Dir is bash's persistent directory; empty is the working directory.
-	Dir   string
-	Todos []Todo
+	Dir string
+	// DirSeq is the sequence of the result that reported Dir, which
+	// tells a fork's directory from the one its copied log names, a
+	// directory of its parent's machine.
+	DirSeq uint64
+	Todos  []Todo
 }
 
 // StateOf folds the tool.result metas of one thread, in sequence order.
@@ -154,7 +158,7 @@ func StateOf(events []session.Event, thread string) State {
 			st.Hashes[m.Path] = m.SHA256
 		}
 		if m.Dir != "" {
-			st.Dir = m.Dir
+			st.Dir, st.DirSeq = m.Dir, e.Seq
 		}
 		if m.Todos != nil {
 			st.Todos = m.Todos

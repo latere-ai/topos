@@ -1224,7 +1224,7 @@ func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
 	}
 	results := make(chan done, len(calls))
 	sem := make(chan struct{}, MaxParallel)
-	state := tools.StateOf(t.events(), t.thread)
+	state := t.toolState()
 	for _, c := range calls {
 		go func() {
 			sem <- struct{}{}
@@ -1261,9 +1261,20 @@ func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
 	return paused
 }
 
+// toolState is what the thread's tools know from the log. A fork's first
+// machine is its own (spec 017), so bash does not start in a directory
+// its copied log names: that one was reported on its parent's machine.
+func (t *turn) toolState() tools.State {
+	st := tools.StateOf(t.events(), t.thread)
+	if st.Dir != "" && t.s.Parent != nil && st.DirSeq <= t.s.Parent.Seq {
+		st.Dir = ""
+	}
+	return st
+}
+
 func (t *turn) call(ctx context.Context, c plannedCall) error {
 	start := t.h.c.Clock()
-	res, err := t.execute(ctx, c, tools.StateOf(t.events(), t.thread))
+	res, err := t.execute(ctx, c, t.toolState())
 	if err != nil && !isSpent(err) {
 		return err
 	}
