@@ -1,5 +1,5 @@
 ---
-title: "Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its repository, and a fork restores its files after the sandbox is gone"
+title: "Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its private repository, and a fork restores its files after the sandbox is gone"
 status: complete
 track: core
 depends_on: [004-session-log.md, 009-machines.md]
@@ -43,9 +43,10 @@ built, and toposd's image carries no `git` to push with.
 ### Where a hosted checkpoint lives
 
 When the session's working directory is a checkout of the session's
-first repository, and that repository is on the installation's git host
-(its URL under `TOPOS_ORIGO_URL`), the runner keeps the session's
-checkpoints at that repository under one ref:
+first repository, that repository is on the installation's git host (its
+URL under `TOPOS_ORIGO_URL`), and it is known private ("Only a private
+repository"), the runner keeps the session's checkpoints at that
+repository under one ref:
 
 | Ref at the git host | Points at |
 |---|---|
@@ -62,18 +63,58 @@ clashes with them. A thread's worktree chain is not kept: a fork
 restores the session's own working directory.
 
 A session with no repository, one whose first repository is on another
-host, and every session of a runner without `TOPOS_ORIGO_URL` keep their
-checkpoints in the machine alone, as before. A session's further
+host or is not known private, and every session of a runner without
+`TOPOS_ORIGO_URL` keep their checkpoints in the machine alone, as
+before. A session's further
 repositories, cloned into directories of their own inside the working
 directory, are in its checkpoint only as the commits they were at, as
 git records a repository inside another, so their uncommitted files are
 not kept and a fork has them at the refs the session names.
 
+### Only a private repository
+
+Whoever may read a repository may read every ref in it, the checkpoint
+refs included, and a checkpoint holds the session's working files,
+uncommitted ones included. So a checkpoint goes only to a repository
+known private, asked anew before every push, since a repository can be
+made public during a session.
+
+The git host stores no visibility (Origo spec 027: whether a repository
+is public is its authorizer's answer to a reader with no credential), so
+the runner asks the git host as such a reader, from the machine:
+
+```
+git -c http.<repository URL>.extraHeader= -c http.extraHeader= -c credential.helper= -c core.askPass= ls-remote --quiet <repository URL> HEAD
+```
+
+with `GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS` and `SSH_ASKPASS` empty and
+`LC_ALL=C`, so neither the git host's header, nor a credential helper,
+nor an askpass program sends a credential, and git's account is in
+English. The answer decides:
+
+| The read | The repository is | A checkpoint |
+|---|---|---|
+| refused for want of a credential: git, with nothing to answer the 401 with, says `could not read Username` | private | is pushed |
+| answered | public | is never pushed |
+| anything else: a refusal for another reason (403, 404), a limit (429), an error, a timeout after one minute, no answer, a repository on disk that any reader of the disk reads | not known private, treated as public | is never pushed |
+
+An installation whose git host admits no reader without a credential
+(Origo with `ORIGO_ANONYMOUS_READ` unset) answers every such read with
+401, so every repository there is private in this sense: its readers are
+the people the authorizer gives a role, and the checkpoint is exactly as
+exposed as the repository.
+
+The session's own credential could not answer the question: the git host
+holds no visibility to return, and the installation's record of it is
+read with a credential for another audience and by a repository id the
+session does not have.
+
 ### Pushing it
 
 At the end of every turn of the session's own thread, once the
-checkpoint is committed and before the `session.status` that ends the
-turn is appended, the runner pushes it from the machine:
+checkpoint is committed and the repository is known private, and before
+the `session.status` that ends the turn is appended, the runner pushes
+the checkpoint from the machine:
 
 ```
 git push --quiet --no-verify -o origo.event=off <repository URL> +<commit>:refs/topos/checkpoints/<session>/latest
@@ -91,11 +132,12 @@ git push --quiet --no-verify -o origo.event=off <repository URL> +<commit>:refs/
 When the push succeeds, the checkpoint the `session.status` carries
 names the repository that holds it: `{"ref", "commit", "remote"}`, where
 `remote` is the repository's URL as the session names it
-([[004-session-log]]). A push that fails leaves `remote` out and is no
-error of the turn: the session may read the repository and not write
-it, the git host may refuse the size, or the network may fail. The
-checkpoint is still taken, rewind still works while the sandbox lasts,
-and a later fork says what it could not restore.
+([[004-session-log]]). A repository not known private, and a push that
+fails, leave `remote` out and are no error of the turn: the repository
+may be public, the session may read it and not write it, the git host
+may refuse the size, or the network may fail. The checkpoint is still
+taken, rewind still works while the sandbox lasts, and a later fork
+says what it could not restore.
 
 This replaces two lines of the drafted design: spec 034's "in the cloud
 the runner pushes, never the sandbox", from a bundle with the runner's
@@ -142,8 +184,9 @@ show as changes on it.
 ### When it is missing or too large
 
 The fork point's checkpoint is missing for the fork when the parent
-kept it in its sandbox alone (no `remote`), when the fetch fails, and
-when the commit is not where the checkpoint says. The fork still
+kept it in its sandbox alone (no `remote`), as a session in a public
+repository does, when the fetch fails, and when the commit is not where
+the checkpoint says. The fork still
 starts: it has the conversation and its repositories, its machine is
 recorded with reason `attached`, and beside it the runner appends a
 `session.error` with code `checkpoint_missing`, not retryable, whose
@@ -161,7 +204,7 @@ A fork point with no checkpoint at all, as in a hosted session with no
 repository, restores nothing and appends nothing: there were no files
 kept.
 
-### Authorization
+### Authorization and exposure
 
 The git host decides both directions. On an installation whose git host
 asks an authorizer, that authorizer decides with the scope it put on
@@ -172,16 +215,27 @@ each session's token at its create ([[018-credentials-and-secrets]]):
 | the session, pushing its checkpoint | `repo.write` on the repository in the session's scope | any push of the session's; a session whose initiator may only read the repository pushes none, and its forks say `checkpoint_missing` |
 | a fork, fetching it | `repo.read` on the repository in the fork's own scope | any fetch of the fork's; the fork is decided as a create of the forker with the parent's repositories, so its scope reads the repository only when the forker may, and the fork is allowed only to a caller who may read the parent (`session.read`, then `session.fork`) |
 
-No decision of the authorizer changes. What does change is who can read
-a session's working files after it ends: the git host authorizes per
-repository, not per ref, so anyone who may read the repository may list
-`refs/topos/checkpoints/` and fetch what they point at, as they may
-fetch the session's branch. A session that works in a public repository
-publishes each turn's working files, uncommitted ones included, without
-its ignored and deny-listed ones. Narrowing that to the people who may
-also read the session takes the git host hiding `refs/topos/` from its
-ref advertisement while it still serves a commit by its id, which only
-the session's log names; that is the git host's change and not built.
+No decision of the authorizer changes. The git host authorizes per
+repository, not per ref, so whoever may read the repository may list
+`refs/topos/checkpoints/` and fetch what they point at, uncommitted
+files included, minus ignored and deny-listed ones. That is why a
+checkpoint goes only to a repository known private ("Only a private
+repository"): a public repository, and one whose visibility the runner
+cannot tell, never gets one, so its fork starts with its conversation
+and its repositories and records `checkpoint_missing`. What remains:
+
+- A private repository's readers, the people and services the
+  authorizer gives a role on it, read its sessions' checkpoints, as they
+  read the sessions' branches.
+- A repository made public after a push exposes the checkpoint refs
+  already in it. The runner stops pushing at the next turn, and only
+  someone who may write the repository removes the old refs (`git push
+  <repository URL> --delete refs/topos/checkpoints/<session>/latest`).
+
+Narrowing the readers to the people who may also read the session takes
+the git host hiding `refs/topos/` from its ref advertisement while it
+still serves a commit by its id, which only the session's log names;
+that is the git host's change and not built.
 
 ### Cost and retention
 
@@ -190,6 +244,7 @@ the session's log names; that is the git host's change and not built.
 | refs | one per session that works in a repository on the git host; Origo holds up to 100 000 refs per repository |
 | objects | what the session changed, compressed and shared with the repository's own history, counted against the repository's quota at the git host |
 | transfer | one push per turn of what changed since the previous checkpoint, and one fetch per fork that opens a machine |
+| the visibility read | one credential-less ref read per turn, counted against the git host's limit on readers with no credential (Origo's is one bucket per node, shared with every anonymous clone); a read the limit refuses keeps that turn's checkpoint local. Reading once per drive instead is the lever if that limit binds, at the price of noticing a repository made public a drive later |
 | latency | the push is part of each turn's end |
 
 The ref stays at the git host until the repository is deleted or
@@ -205,11 +260,11 @@ checkpoints on a host and in a sandbox, not for these.
 ### What the API states
 
 The fork route's description in the OpenAPI document says that a
-hosted session working in a repository on the git host keeps its
-checkpoints there and that a fork restores the fork point's files from
-there, so a client can tell a core that restores a hosted fork's files
-from one that does not, and promise the files only where they are
-restored.
+hosted session working in a private repository on the git host keeps
+its checkpoints there and that a fork restores the fork point's files
+from there, and that no other repository gets them, so a client can
+tell a core that restores a hosted fork's files from one that does not,
+and promise the files only where they are restored.
 
 ### Error codes
 
@@ -233,11 +288,13 @@ restore.
 |---|---|---|
 | A checkpoint taken in a checkout that keeps its checkpoints at a repository is pushed there under the session's `latest` ref, with `origo.event=off` where the repository takes push options and without where it does not, and records the repository as `remote`; a thread's checkpoint is not pushed; a fresh clone fetches a kept checkpoint by id, or through `latest` over protocol v0, adopts it and restores its files | `runner/checkpoint.TestACheckpointIsKeptAtItsRepository`, `runner/checkpoint.TestAKeptCheckpointIsFetchedByID` | built |
 | A push the repository refuses, or one to a repository that is not there, leaves `remote` out and the checkpoint taken with its ref on the machine; a commit the repository does not have is `ErrNotKept` with git's account | `runner/checkpoint.TestAPushTheRepositoryRefusesKeepsTheCheckpointLocal`, `runner/checkpoint.TestAKeptCheckpointIsFetchedByID` | built |
+| A checkpoint goes to a repository that refuses a read with no credential for want of one, even with the git host's header and a credential helper configured on the machine; a public repository, one answering 403, 404, 429 or 500 to such a read, one that does not answer, and one on disk never get one and keep the checkpoint local | `runner/checkpoint.TestOnlyAPrivateRepositoryKeepsCheckpoints` | built |
+| A fork of a session in a public repository is `attached` with `checkpoint_missing`, and the repository holds no checkpoint ref | `runner.TestAForkWithoutItsKeptCheckpointSaysSo` | built |
 | A fork whose parent's machine is gone restores the fork point's files from the repository into a fresh clone, records `restored`, chains its next checkpoint to it and keeps its own `latest` | `runner.TestAForkRestoresFromTheRepository` | built |
 | A fork whose checkpoint was kept on the parent's machine alone, whose copied checkpoint names another repository than its own, or whose repository lost the checkpoint, is `attached` with a `session.error` `checkpoint_missing` beside it that names the commit and why, and its turn runs; on a machine opened on demand, the call that opened it runs and answers | `runner.TestAForkWithoutItsKeptCheckpointSaysSo`, `internal/hosted.TestAHostedSessionKeepsItsCheckpointsAtTheGitHost` | built |
-| Over the stub Cella and git's own http backend, a hosted session's checkpoint reaches the git host with the sandbox's placeholder credential, and a fork restores the file into its own sandbox at its first call | `internal/hosted.TestAHostedSessionKeepsItsCheckpointsAtTheGitHost` | built |
+| Over the stub Cella and git's own http backend, a hosted session's visibility read reaches the git host with no credential and its checkpoint with the sandbox's placeholder, and a fork restores the file into its own sandbox at its first call | `internal/hosted.TestAHostedSessionKeepsItsCheckpointsAtTheGitHost` | built |
 | Through toposd: a hosted session that works in a repository on the git host writes a file it never commits and ends, its sandbox is deleted, and the session `POST /v1/sessions/{id}/fork` starts, sent a message, reads the file at its first call in a sandbox of its own, recorded `restored`, and keeps its own checkpoint chained to it | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | built |
-| The fork route's description states that a hosted fork's files are restored from the git host | `internal/server.TestTheForkRouteStatesWhatItRestores` | built |
+| The fork route's description states that a hosted fork's files are restored from the git host, for a session in a private repository alone | `internal/server.TestTheForkRouteStatesWhatItRestores` | built |
 | A fork's bash starts in its own working directory, not in the directory its copied log reported on the parent's machine | `harness.TestAForkDoesNotStartBashInItsParentsDirectory` | built |
 
 ## Outcome
@@ -266,6 +323,14 @@ Divergences and additions:
 - The core reports a failed push only by the missing `remote`; a session
   that may read and not write its repository would otherwise carry an
   error at every turn's end.
+
+Amended on 2026-10-01, before any release carried the push: a checkpoint
+goes only to a repository known private ("Only a private repository"),
+since the git host decides per repository and every reader of a public
+one would read its sessions' working files. Visibility is read as a
+reader with no credential, the git host's own definition of public,
+because the git host stores none and the session's credential reaches
+no record of it.
 
 Not built, each owned elsewhere: the Cella tier's run against a real
 Cella and git host ([[017-external-runners-handoff-fork]]'s
