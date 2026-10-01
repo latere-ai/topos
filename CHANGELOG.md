@@ -10,6 +10,19 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A tool call whose arguments are not valid JSON no longer ends the turn
+  with `model_error`. A model can break off inside a string argument at
+  its output limit, and a provider can report that stop as a tool call;
+  the step is now logged as it came, with the call's input recorded as
+  `{}` and the raw response kept, and the call is answered
+  `invalid_input` with what was wrong and the first 200 characters of
+  the arguments, so the model sends the call again on its next step.
+- A tool call whose arguments arrive after its block closed, as
+  interleaved parallel calls can over Chat Completions, gets its whole
+  arguments instead of failing the stream, and a call the stream never
+  closed is closed when the message ends with the arguments it
+  received, where it ran with an empty input.
+
 ## v0.9.5 - 2026-09-30
 
 - A trigger's `trigger.create` question carries the `trg_` id the
