@@ -73,6 +73,17 @@ func TestTheStubAnswersAsScripted(t *testing.T) {
 	}
 }
 
+// TestARawReplyIsServedByteForByte: a reply's raw body reaches the
+// client as written, after the request passed its expectation.
+func TestARawReplyIsServedByteForByte(t *testing.T) {
+	s := New(t)
+	const raw = "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"a\"}}]}}]}\n\ndata: [DONE]\n\n"
+	s.Script("m", Reply{Raw: raw})
+	if code, body := post(t, s.URL()+PathChat, chatBody); code != http.StatusOK || body != raw {
+		t.Fatalf("raw reply: %d %q", code, body)
+	}
+}
+
 func TestEventsFollowTheGrammar(t *testing.T) {
 	evs := Events(ir.Response{Blocks: []ir.Block{
 		{Type: ir.BlockThinking, Text: "t", Signature: "s"},

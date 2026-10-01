@@ -65,6 +65,11 @@ type Reply struct {
 	// Respond edits the response when it is served, for a reply that
 	// depends on what the session has done by then.
 	Respond func(*ir.Request, *ir.Response)
+	// Raw is a stream body served byte for byte in place of Response:
+	// the SSE a provider sent that the frontend encoders cannot write,
+	// such as tool call arguments that are not JSON or parallel calls
+	// whose arguments interleave.
+	Raw string
 }
 
 // Recorded is one request the stub received.
@@ -200,6 +205,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "expectation_failed", err.Error())
 			return
 		}
+	}
+	if reply.Raw != "" {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if _, err := io.WriteString(w, reply.Raw); err != nil {
+			return
+		}
+		return
 	}
 	resp := reply.Response
 	if reply.Respond != nil {
