@@ -195,16 +195,28 @@ type Session struct {
 	Budget Budget  `json:"budget"`
 	// Model is the model the session's turns run, the latest
 	// session.model_changed's; nil runs the agent's.
-	Model     *ModelRef         `json:"model,omitempty"`
-	Limits    Limits            `json:"limits"`
-	Capture   Capture           `json:"capture"`
-	EndOnIdle bool              `json:"end_on_idle,omitempty"`
-	Parent    *Parent           `json:"parent,omitempty"`
-	TriggerID string            `json:"trigger_id,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
-	ExpiresAt time.Time         `json:"expires_at"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
+	Model     *ModelRef `json:"model,omitempty"`
+	Limits    Limits    `json:"limits"`
+	Capture   Capture   `json:"capture"`
+	EndOnIdle bool      `json:"end_on_idle,omitempty"`
+	Parent    *Parent   `json:"parent,omitempty"`
+	TriggerID string    `json:"trigger_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	// ArchivedAt is when the session was filed away from the lists, nil
+	// while it is not. Only a store's SetArchived writes it; no event
+	// does, so an ended session's log stays closed (spec 015).
+	ArchivedAt *time.Time        `json:"archived_at,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+// Copied reports whether e is one of the events a fork copied from the
+// session's parent, which the session reads as history: its machines,
+// its checkpoints and its budget are the parent's, not this session's
+// (spec 017).
+func (s Session) Copied(e Event) bool {
+	return s.Parent != nil && e.Seq <= s.Parent.Seq
 }
 
 // MaxMetadata is the most entries a session's metadata holds.

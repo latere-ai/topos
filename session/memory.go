@@ -89,6 +89,19 @@ func (m *memoryStore) List(ctx context.Context, o ListOptions) ([]Session, strin
 	return page, next, nil
 }
 
+func (m *memoryStore) SetArchived(ctx context.Context, id string, at *time.Time) (Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ms, err := m.get(id)
+	if err != nil {
+		return Session{}, err
+	}
+	if Archive(&ms.s, at) {
+		ms.notify()
+	}
+	return cloneSession(ms.s), nil
+}
+
 // ListPage filters sessions by o and returns one page, newest first, and
 // the cursor of the next page ("" on the last). Stores that list by
 // reading every header share it.
@@ -113,6 +126,9 @@ func ListPage(all []Session, o ListOptions) ([]Session, string) {
 			continue
 		}
 		if o.Runner != "" && s.Runner != o.Runner {
+			continue
+		}
+		if !o.Archived.Keeps(s) {
 			continue
 		}
 		if len(page) == limit {
@@ -364,6 +380,10 @@ func cloneSession(s Session) Session {
 	if s.Parent != nil {
 		p := *s.Parent
 		s.Parent = &p
+	}
+	if s.ArchivedAt != nil {
+		t := *s.ArchivedAt
+		s.ArchivedAt = &t
 	}
 	if s.Budget.MaxCostUSDMicro != nil {
 		v := *s.Budget.MaxCostUSDMicro

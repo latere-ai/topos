@@ -287,6 +287,30 @@ func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events [
 	return last, nil
 }
 
+// SetArchived sets or clears the session's archived_at under its lock
+// and rewrites session.json; the log is untouched.
+func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (session.Session, error) {
+	if err := s.exists(id); err != nil {
+		return session.Session{}, err
+	}
+	st := s.state(id)
+	var out session.Session
+	err := s.locked(id, st, func(hdr *session.Session) error {
+		if session.Archive(hdr, at) {
+			if err := s.writeHeader(id, *hdr); err != nil {
+				return err
+			}
+			st.notify()
+		}
+		out = *hdr
+		return nil
+	})
+	if err != nil {
+		return session.Session{}, err
+	}
+	return out, nil
+}
+
 func (s *Store) writeHeader(id string, hdr session.Session) error {
 	b, err := session.Marshal(hdr)
 	if err != nil {

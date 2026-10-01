@@ -50,6 +50,7 @@ func Run(t *testing.T, open Open) {
 		{"Delete", testDelete},
 		{"List", testList},
 		{"ListFilters", testListFilters},
+		{"Archive", testArchive},
 		{"UnknownTypeIsKept", testUnknownType},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open(t)) })
@@ -663,7 +664,8 @@ func testListFilters(t *testing.T, st session.Store) {
 	// Newest first, the order List answers in, each with its initiator
 	// and runner kind.
 	var all []session.Session
-	for _, c := range []struct{ owner, runner string }{
+	archiver, archives := st.(session.Archiver)
+	for i, c := range []struct{ owner, runner string }{
 		{"usr_a", session.RunnerHosted}, {"usr_b", session.RunnerExternal}, {"usr_a", session.RunnerExternal},
 		{"usr_c", session.RunnerHosted}, {"usr_a", session.RunnerHosted}, {"usr_b", session.RunnerHosted},
 		{"usr_a", session.RunnerHosted}, {"usr_c", session.RunnerExternal},
@@ -672,6 +674,13 @@ func testListFilters(t *testing.T, st session.Store) {
 		s.Initiator.Subject, s.Runner = c.owner, c.runner
 		if err := st.Create(t.Context(), s, nil); err != nil {
 			t.Fatal(err)
+		}
+		// Every third session is archived where the store archives.
+		if archives && i%3 == 1 {
+			var err error
+			if s, err = archiver.SetArchived(t.Context(), s.ID, &t0); err != nil {
+				t.Fatal(err)
+			}
 		}
 		all = append([]session.Session{s}, all...)
 	}
@@ -685,11 +694,14 @@ func testListFilters(t *testing.T, st session.Store) {
 		{"runner", session.ListOptions{Runner: session.RunnerExternal}},
 		{"owner and runner", session.ListOptions{Owners: []string{"usr_a"}, Runner: session.RunnerHosted}},
 		{"owners and runner", session.ListOptions{Owners: []string{"usr_a", "usr_b"}, Runner: session.RunnerHosted}},
+		{"not archived", session.ListOptions{Archived: session.ArchivedExclude}},
+		{"archived", session.ListOptions{Archived: session.ArchivedOnly}},
+		{"owner and archived", session.ListOptions{Owners: []string{"usr_a"}, Archived: session.ArchivedOnly}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var want []string
 			for _, s := range all {
-				if (len(c.o.Owners) == 0 || slices.Contains(c.o.Owners, s.Initiator.Subject)) && (c.o.Runner == "" || s.Runner == c.o.Runner) {
+				if (len(c.o.Owners) == 0 || slices.Contains(c.o.Owners, s.Initiator.Subject)) && (c.o.Runner == "" || s.Runner == c.o.Runner) && c.o.Archived.Keeps(s) {
 					want = append(want, s.ID)
 				}
 			}
@@ -724,6 +736,51 @@ func testListFilters(t *testing.T, st session.Store) {
 				}
 			}
 		})
+	}
+}
+
+// testArchive holds a store that archives to spec 015: archived_at is set
+// and cleared without an event, a repeat keeps the first time, and it
+// survives the header's rewrite by a later batch.
+func testArchive(t *testing.T, st session.Store) {
+	a, ok := st.(session.Archiver)
+	if !ok {
+		t.Skip("the store does not archive")
+	}
+	s := create(t, st)
+	last := appendAll(t, st, s.ID, 0, Status(t, session.StatusEnded, session.StopCompleted, t0))
+	got, err := a.SetArchived(t.Context(), s.ID, &t0)
+	if err != nil || got.ArchivedAt == nil || !got.ArchivedAt.Equal(t0) {
+		t.Fatalf("archive: %v, %v", got.ArchivedAt, err)
+	}
+	if got, err = a.SetArchived(t.Context(), s.ID, new(t0.Add(time.Hour))); err != nil || !got.ArchivedAt.Equal(t0) {
+		t.Fatalf("a second archive moved archived_at to %v (%v); it keeps the first", got.ArchivedAt, err)
+	}
+	read, err := st.Get(t.Context(), s.ID)
+	if err != nil || read.ArchivedAt == nil || !read.ArchivedAt.Equal(t0) || read.LastSeq != last {
+		t.Fatalf("read after archive: %+v, %v", read, err)
+	}
+	evs, err := st.Events(t.Context(), s.ID, 1, 0)
+	if err != nil || len(evs) != int(last) {
+		t.Fatalf("archiving appended to the log: %d events, %v", len(evs), err)
+	}
+	if got, err = a.SetArchived(t.Context(), s.ID, nil); err != nil || got.ArchivedAt != nil {
+		t.Fatalf("unarchive: %v, %v", got.ArchivedAt, err)
+	}
+	if read, err = st.Get(t.Context(), s.ID); err != nil || read.ArchivedAt != nil {
+		t.Fatalf("read after unarchive: %v, %v", read.ArchivedAt, err)
+	}
+	// A batch that rewrites the header keeps what archiving set.
+	other := create(t, st)
+	if _, err := a.SetArchived(t.Context(), other.ID, &t0); err != nil {
+		t.Fatal(err)
+	}
+	appendAll(t, st, other.ID, 0, Status(t, session.StatusEnded, session.StopCompleted, t0))
+	if read, err = st.Get(t.Context(), other.ID); err != nil || read.ArchivedAt == nil {
+		t.Fatalf("archived_at after an append: %v, %v", read.ArchivedAt, err)
+	}
+	if _, err := a.SetArchived(t.Context(), session.NewID(session.PrefixSession), &t0); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("archive of a missing session: %v, want not found", err)
 	}
 }
 

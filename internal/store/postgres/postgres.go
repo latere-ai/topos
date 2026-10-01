@@ -264,7 +264,8 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 	rows, err := s.pool.Query(ctx, `SELECT body FROM sessions
 		WHERE ($1 = '' OR status = $1) AND ($2 = '' OR agent_id = $2) AND ($3 = '' OR id < $3)
 		AND (cardinality($5::text[]) = 0 OR owner = ANY($5::text[])) AND ($6 = '' OR runner = $6)
-		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1, owners, o.Runner)
+		AND ($7 = '' OR ($7 = 'exclude' AND archived_at IS NULL) OR ($7 = 'only' AND archived_at IS NOT NULL))
+		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1, owners, o.Runner, string(o.Archived))
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: list sessions: %w", err)
 	}
@@ -316,6 +317,37 @@ func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 		return fmt.Errorf("postgres: save session %s: %w", sess.ID, err)
 	}
 	return nil
+}
+
+// SetArchived sets or clears a session's archived_at, in its body and its
+// filter column, under the row lock; the log is untouched.
+func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (session.Session, error) {
+	if err := session.CheckID(session.PrefixSession, id); err != nil {
+		return session.Session{}, err
+	}
+	var out session.Session
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		sess, err := locked(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		out = sess
+		if !session.Archive(&out, at) {
+			return nil
+		}
+		body, err := encode(out)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE sessions SET body = $2, archived_at = $3 WHERE id = $1`, id, body, out.ArchivedAt); err != nil {
+			return fmt.Errorf("postgres: archive session %s: %w", id, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return session.Session{}, err
+	}
+	return out, nil
 }
 
 func insertEvents(ctx context.Context, tx pgx.Tx, events []session.Event) error {

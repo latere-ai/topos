@@ -112,8 +112,57 @@ type ListOptions struct {
 	AgentID string
 	Owners  []string
 	Runner  string
-	Limit   int
-	Cursor  string
+	// Archived keeps sessions by whether they are archived; the zero
+	// value keeps both, as every caller inside the server lists.
+	Archived Archived
+	Limit    int
+	Cursor   string
+}
+
+// Archived selects sessions by their archived_at.
+type Archived string
+
+// The archived filters of a List.
+const (
+	ArchivedAny     Archived = ""
+	ArchivedExclude Archived = "exclude"
+	ArchivedOnly    Archived = "only"
+)
+
+// Keeps reports whether s passes the filter.
+func (a Archived) Keeps(s Session) bool {
+	switch a {
+	case ArchivedExclude:
+		return s.ArchivedAt == nil
+	case ArchivedOnly:
+		return s.ArchivedAt != nil
+	}
+	return true
+}
+
+// Archiver is the optional interface of a store that files sessions
+// away from the lists (spec 015): SetArchived sets a session's
+// archived_at to at, or clears it for nil, without an event, and answers
+// the session as it is after. Setting what is already set leaves the
+// time it was set.
+type Archiver interface {
+	SetArchived(ctx context.Context, id string, at *time.Time) (Session, error)
+}
+
+// Archive sets s's archived_at to at, or clears it for nil, and reports
+// whether that changed anything; an archived session keeps the time it
+// was first archived.
+func Archive(s *Session, at *time.Time) bool {
+	switch {
+	case at == nil && s.ArchivedAt == nil, at != nil && s.ArchivedAt != nil:
+		return false
+	case at == nil:
+		s.ArchivedAt = nil
+	default:
+		t := at.UTC()
+		s.ArchivedAt = &t
+	}
+	return true
 }
 
 // DefaultListLimit is the page size of a List with no limit.
@@ -305,7 +354,9 @@ func ApplyBatch(s *Session, events []Event) {
 			}
 			continue
 		}
-		if e.Type == TypeSessionResumed && !e.Redacted() {
+		// A fork's copied session.resumed raised its parent's budget; the
+		// fork's own budget is the one it was created with (spec 017).
+		if e.Type == TypeSessionResumed && !e.Redacted() && !s.Copied(e) {
 			var r SessionResumed
 			if e.Decode(&r) == nil {
 				s.Budget.MaxCostUSDMicro = r.MaxCostUSDMicro
