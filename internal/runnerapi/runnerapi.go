@@ -108,6 +108,22 @@ type Appended struct {
 	LastSeq uint64 `json:"last_seq"`
 }
 
+// DeltasRequest carries live deltas of the sessions a runner holds
+// (spec 016), in the order the runner published them. Deltas are best
+// effort: the server publishes each one whose generation is its
+// session's live claim and drops the rest, and answers 204 either way.
+type DeltasRequest struct {
+	Deltas []RunnerDelta `json:"deltas"`
+}
+
+// RunnerDelta is one live delta of a session, under the claim of its
+// generation.
+type RunnerDelta struct {
+	SessionID  string        `json:"session_id"`
+	Generation int64         `json:"generation"`
+	Delta      session.Delta `json:"delta"`
+}
+
 // Options configure the server side.
 type Options struct {
 	Store session.Store
@@ -189,6 +205,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET "+Root+"/sessions/{session}", s.get)
 	route("GET "+Root+"/sessions/{session}/events", s.events)
 	route("GET "+Root+"/sessions/{session}/stream", s.stream)
+	route("POST "+Root+"/deltas", s.deltas)
 	route("PUT "+Root+"/sessions/{session}/blobs/{digest}", s.putBlob)
 	route("GET "+Root+"/sessions/{session}/blobs/{digest}", s.blob)
 	return mux
@@ -388,6 +405,41 @@ func (s *Server) append(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return reply(w, http.StatusOK, Appended{LastSeq: last})
+}
+
+// deltas publishes a runner's live deltas to the streams that follow
+// their sessions, through the store when it carries them. A delta of a
+// claim that is not its session's live one is dropped, as a lost lease
+// stops the runner's appends; a delta a runner could not have sent is
+// invalid_request.
+func (s *Server) deltas(w http.ResponseWriter, r *http.Request) error {
+	var req DeltasRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	for i, d := range req.Deltas {
+		if !d.Delta.Valid() {
+			return &wireError{CodeInvalidRequest, http.StatusBadRequest, fmt.Sprintf("delta %d is neither a reset nor text of a known kind of at most %d bytes", i, session.MaxDeltaText)}
+		}
+	}
+	pub, ok := s.o.Store.(session.DeltaPublisher)
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	}
+	dropped := 0
+	for _, d := range req.Deltas {
+		if _, err := s.held(d.SessionID, d.Generation); err != nil {
+			dropped++
+			continue
+		}
+		pub.PublishDelta(d.SessionID, d.Delta)
+	}
+	if dropped > 0 {
+		s.o.Log.DebugContext(r.Context(), "dropped live deltas of a claim that is not the session's live one", "deltas", dropped)
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) error {

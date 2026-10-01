@@ -18,11 +18,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"latere.ai/x/pkg/httpjson"
@@ -44,7 +46,26 @@ type Client struct {
 	// renew is how often a claim's lease is renewed; a quarter of the
 	// server's lifetime.
 	renew time.Duration
+	log   *slog.Logger
+
+	mu sync.Mutex
+	// leases are the live claims by session, whose generation a delta of
+	// the session is sent under.
+	leases map[string]*lease
+	// deltas wait for the one goroutine that sends them, which runs while
+	// any wait.
+	deltas  []runnerapi.RunnerDelta
+	sending bool
+	dropped atomic.Uint64
 }
+
+// deltaQueue is how many live deltas wait to be sent at most; the next
+// one is dropped until the sender catches up.
+const deltaQueue = 1024
+
+// deltaTimeout bounds one send of deltas, so a server that does not
+// answer drops them instead of holding the ones behind them.
+const deltaTimeout = 5 * time.Second
 
 // New returns the client of the internal listener at base, TOPOS_INTERNAL_URL,
 // presenting token, the first of TOPOS_RUNNER_TOKEN.
@@ -55,11 +76,89 @@ func New(base, token string, hc *http.Client) (*Client, error) {
 	if hc == nil {
 		hc = otel.HTTPClient()
 	}
-	return &Client{base: strings.TrimRight(base, "/") + runnerapi.Root, token: token, http: hc, renew: runnerapi.DefaultTTL / 4}, nil
+	return &Client{base: strings.TrimRight(base, "/") + runnerapi.Root, token: token, http: hc, renew: runnerapi.DefaultTTL / 4,
+		log: slog.New(slog.DiscardHandler), leases: map[string]*lease{}}, nil
 }
 
 // SetRenewInterval sets how often a claim's lease is renewed.
 func (c *Client) SetRenewInterval(d time.Duration) { c.renew = d }
+
+// SetLog sets where dropped live deltas are logged, at debug level.
+func (c *Client) SetLog(l *slog.Logger) { c.log = l }
+
+// PublishDelta sends a live delta of a session the runner holds to the
+// server, which publishes it to the streams that follow the session
+// (spec 016). It never waits: deltas queue for one sender, which sends
+// all that wait in one request, and a delta of a session the runner
+// holds no claim on, past the queue, or of a send that failed is
+// dropped, counted and logged.
+func (c *Client) PublishDelta(id string, d session.Delta) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	l, ok := c.leases[id]
+	switch {
+	case !ok:
+		c.drop(1, "the runner holds no claim on the session", nil)
+		return
+	case len(c.deltas) >= deltaQueue:
+		c.drop(1, "the send queue is full", nil)
+		return
+	}
+	c.deltas = append(c.deltas, runnerapi.RunnerDelta{SessionID: id, Generation: l.gen, Delta: d})
+	if !c.sending {
+		c.sending = true
+		go c.sendDeltas()
+	}
+}
+
+// sendDeltas sends what waits until nothing does.
+func (c *Client) sendDeltas() {
+	for {
+		c.mu.Lock()
+		batch := c.deltas
+		c.deltas = nil
+		if len(batch) == 0 {
+			c.sending = false
+			c.mu.Unlock()
+			return
+		}
+		c.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), deltaTimeout)
+		err := c.json(ctx, http.MethodPost, "/deltas", runnerapi.DeltasRequest{Deltas: batch}, nil)
+		cancel()
+		if err != nil {
+			c.drop(len(batch), "the send failed", err)
+		}
+	}
+}
+
+// drop counts n deltas that were not sent and logs why.
+func (c *Client) drop(n int, why string, err error) {
+	c.dropped.Add(uint64(n))
+	c.log.Debug("dropped live deltas", "deltas", n, "reason", why, "err", err)
+}
+
+// DroppedDeltas is how many live deltas the client did not send.
+func (c *Client) DroppedDeltas() uint64 { return c.dropped.Load() }
+
+var _ session.DeltaPublisher = (*Client)(nil)
+
+// hold records a live claim, which a later claim of its session
+// replaces.
+func (c *Client) hold(l *lease) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.leases[l.id] = l
+}
+
+// forget removes a claim that ended, unless a later one replaced it.
+func (c *Client) forget(l *lease) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.leases[l.id] == l {
+		delete(c.leases, l.id)
+	}
+}
 
 // do sends one request and hands the answer's body to read, or turns
 // an error envelope into the error the runner package reads. The body is
@@ -264,6 +363,7 @@ func (c *Client) Claim(ctx context.Context, holder session.Holder, n int, wait t
 	out := make([]runner.Claim, len(got))
 	for i, g := range got {
 		l := &lease{c: c, id: g.SessionID, gen: g.Generation, lost: make(chan struct{}), stop: make(chan struct{})}
+		c.hold(l)
 		// The lease outlives the claim's call; its renewals end with it.
 		go l.keep(context.WithoutCancel(ctx))
 		out[i] = runner.Claim{ID: g.SessionID, Lease: l}
@@ -301,7 +401,12 @@ func (l *lease) keep(ctx context.Context) {
 	}
 }
 
-func (l *lease) end() { l.once.Do(func() { close(l.lost) }) }
+func (l *lease) end() {
+	l.once.Do(func() {
+		l.c.forget(l)
+		close(l.lost)
+	})
+}
 
 // Renew extends the lease; lease_lost ends it.
 func (l *lease) Renew(ctx context.Context) error {

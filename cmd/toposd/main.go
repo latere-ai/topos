@@ -473,6 +473,7 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 		return fail(stderr, err)
 	}
 	log := slog.New(slog.NewTextHandler(stderr, nil))
+	client.SetLog(log)
 	draining := make(chan struct{})
 	probes := health.Handler(health.Options{
 		Ready:   health.Checks(health.Check{Name: "draining", Run: notDraining(draining)}),
