@@ -114,7 +114,7 @@ func (m *Memory) PutVersion(_ context.Context, a Agent, v AgentVersion) error {
 		if held || m.names[key] != "" {
 			return fmt.Errorf("%w: agent %s exists", ErrConflict, a.Name)
 		}
-		a.Latest = 1
+		a.Latest, a.OwnerType = 1, OwnerTypeOf(a.OwnerType)
 		m.agents[a.ID], m.names[key] = a, a.ID
 		m.versions[a.ID] = []AgentVersion{v}
 		return nil
@@ -198,6 +198,9 @@ func CheckVersion(a Agent, v AgentVersion) error {
 	}
 	if v.Version == 1 && (a.ID != v.AgentID || a.Name == "" || a.Owner == "") {
 		return fmt.Errorf("%w: the first version creates the agent, which needs its id, name and owner", session.ErrInvalid)
+	}
+	if v.Version == 1 && a.OwnerType != "" && a.OwnerType != OwnerUser && a.OwnerType != OwnerOrganization {
+		return fmt.Errorf("%w: owner type %q is neither %s nor %s", session.ErrInvalid, a.OwnerType, OwnerUser, OwnerOrganization)
 	}
 	return nil
 }

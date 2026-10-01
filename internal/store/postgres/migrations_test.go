@@ -136,3 +136,53 @@ func TestNamesPerOwnerMigrateATableThatHoldsAgents(t *testing.T) {
 		t.Fatalf("alice holds one name twice: %v", err)
 	}
 }
+
+// TestOwnerTypeMigratesATableThatHoldsAgents: a database at migration
+// 0005 holds agents with no owner type; after the migration each reads
+// as a person's, with its row and its version kept, an organization's
+// agent is stored beside them, and a type that is neither is refused by
+// the table itself.
+func TestOwnerTypeMigratesATableThatHoldsAgents(t *testing.T) {
+	dsn := database(t)
+	migrateTo(t, dsn, "0005")
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	created := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	held := session.NewID(session.PrefixAgent)
+	if _, err := conn.Exec(t.Context(), `INSERT INTO agents (id, name, owner, latest_version, created_at) VALUES ($1, 'reviewer', 'alice', 1, $2)`, held, created); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(t.Context(), `INSERT INTO agent_versions (agent_id, version, digest, doc, bundle, created_by, created_at) VALUES ($1, 1, 'sha256:one', '{}', '{}', 'alice', $2)`, held, created); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	a, err := st.AgentByName(t.Context(), "alice", "reviewer")
+	if err != nil || a.ID != held || a.OwnerType != store.OwnerUser || a.Latest != 1 {
+		t.Fatalf("alice's reviewer after the migration: %+v, %v", a, err)
+	}
+	if v, err := st.Version(t.Context(), held, 1); err != nil || v.Digest != "sha256:one" {
+		t.Fatalf("its version after the migration: %+v, %v", v, err)
+	}
+	ours := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "reviewer", Owner: "https://issuer.test|org_1", OwnerType: store.OwnerOrganization, CreatedAt: created}
+	if err := st.PutVersion(t.Context(), ours, store.AgentVersion{AgentID: ours.ID, Version: 1, Digest: "sha256:two", Doc: []byte(`{}`), Bundle: []byte(`{}`), CreatedBy: "alice", CreatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Agent(t.Context(), ours.ID); err != nil || got.OwnerType != store.OwnerOrganization {
+		t.Fatalf("the organization's reviewer: %+v, %v", got, err)
+	}
+	if _, err := conn.Exec(t.Context(), `UPDATE agents SET owner_type = 'team' WHERE id = $1`, held); err == nil {
+		t.Fatal("the table took an owner type that is neither a person nor an organization")
+	}
+}

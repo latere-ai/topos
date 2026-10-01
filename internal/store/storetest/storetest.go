@@ -49,6 +49,7 @@ type Factory func(t *testing.T, now func() time.Time) store.Store
 func Run(t *testing.T, f Factory) {
 	t.Run("agents", func(t *testing.T) { agents(t, f) })
 	t.Run("names per owner", func(t *testing.T) { namesPerOwner(t, f) })
+	t.Run("owner type", func(t *testing.T) { ownerType(t, f) })
 	t.Run("versions", func(t *testing.T) { versions(t, f) })
 	t.Run("rewrite latest", func(t *testing.T) { rewriteLatest(t, f) })
 	t.Run("list", func(t *testing.T) { list(t, f) })
@@ -192,6 +193,44 @@ func namesPerOwner(t *testing.T, f Factory) {
 	dup := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "coding-agent", Owner: "bob"}
 	if err := st.PutVersion(t.Context(), dup, store.AgentVersion{AgentID: dup.ID, Version: 1, Digest: v.Digest, Doc: v.Doc, Bundle: v.Bundle}); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("a second agent of bob's name for bob: %v", err)
+	}
+}
+
+// ownerType: an agent stored with no owner type reads as a person's, an
+// organization's reads as the organization's by id, by name and in a
+// list of its owner, and a type that is neither is refused.
+func ownerType(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	t0 := clock.Now()
+	mine := Apply(t, st, "alice", "coding-agent", "Alice's.").Agent.Status
+	if a, err := st.Agent(t.Context(), mine.ID); err != nil || a.OwnerType != store.OwnerUser {
+		t.Fatalf("a person's agent = %+v, %v", a, err)
+	}
+	v, err := st.Version(t.Context(), mine.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const org = "https://issuer.test|org_1"
+	ours := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "coding-agent", Owner: org, OwnerType: store.OwnerOrganization, CreatedAt: t0}
+	if err := st.PutVersion(t.Context(), ours, store.AgentVersion{AgentID: ours.ID, Version: 1, Digest: v.Digest, Doc: v.Doc, Bundle: v.Bundle, CreatedBy: "alice", CreatedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	for name, read := range map[string]func() (store.Agent, error){
+		"by id":   func() (store.Agent, error) { return st.Agent(t.Context(), ours.ID) },
+		"by name": func() (store.Agent, error) { return st.AgentByName(t.Context(), org, "coding-agent") },
+	} {
+		if a, err := read(); err != nil || a.ID != ours.ID || a.Owner != org || a.OwnerType != store.OwnerOrganization {
+			t.Fatalf("the organization's agent %s = %+v, %v", name, a, err)
+		}
+	}
+	listed, _, err := st.ListAgents(t.Context(), store.AgentList{Owners: []string{org}})
+	if err != nil || len(listed) != 1 || listed[0].ID != ours.ID || listed[0].OwnerType != store.OwnerOrganization {
+		t.Fatalf("the organization's list = %+v, %v", listed, err)
+	}
+	team := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "other", Owner: org, OwnerType: "team"}
+	if err := st.PutVersion(t.Context(), team, store.AgentVersion{AgentID: team.ID, Version: 1, Digest: v.Digest, Doc: v.Doc, Bundle: v.Bundle}); !errors.Is(err, session.ErrInvalid) {
+		t.Fatalf("an owner type that is neither: %v", err)
 	}
 }
 

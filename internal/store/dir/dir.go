@@ -79,9 +79,12 @@ type ownedName struct{ owner, name string }
 
 // agentFile is an agent's file.
 type agentFile struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	Owner      string     `json:"owner"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Owner string `json:"owner"`
+	// OwnerType is absent in a file written before an organization could
+	// own an agent, which is a person's.
+	OwnerType  string     `json:"owner_type,omitempty"`
 	Latest     int        `json:"latest_version"`
 	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -178,7 +181,7 @@ func (s *Store) idempotencyPath(subject, key string) string {
 }
 
 func (f agentFile) agent() store.Agent {
-	a := store.Agent{ID: f.ID, Name: f.Name, Owner: f.Owner, Latest: f.Latest, CreatedAt: f.CreatedAt.UTC()}
+	a := store.Agent{ID: f.ID, Name: f.Name, Owner: f.Owner, OwnerType: store.OwnerTypeOf(f.OwnerType), Latest: f.Latest, CreatedAt: f.CreatedAt.UTC()}
 	if f.ArchivedAt != nil {
 		at := f.ArchivedAt.UTC()
 		a.ArchivedAt = &at
@@ -305,7 +308,7 @@ func (s *Store) PutVersion(_ context.Context, a store.Agent, v store.AgentVersio
 			return fmt.Errorf("%w: agent %s exists", store.ErrConflict, a.Name)
 		}
 		stored = a
-		stored.Latest = 1
+		stored.Latest, stored.OwnerType = 1, store.OwnerTypeOf(a.OwnerType)
 		if err := s.versionDir(a.ID); err != nil {
 			return err
 		}
@@ -361,7 +364,7 @@ func (s *Store) versionDir(id string) error {
 }
 
 func (s *Store) writeAgent(a store.Agent) error {
-	return write(s.agentPath(a.ID), agentFile{ID: a.ID, Name: a.Name, Owner: a.Owner, Latest: a.Latest, ArchivedAt: a.ArchivedAt, CreatedAt: a.CreatedAt})
+	return write(s.agentPath(a.ID), agentFile{ID: a.ID, Name: a.Name, Owner: a.Owner, OwnerType: a.OwnerType, Latest: a.Latest, ArchivedAt: a.ArchivedAt, CreatedAt: a.CreatedAt})
 }
 
 func (s *Store) Archive(_ context.Context, id string, at time.Time) error {

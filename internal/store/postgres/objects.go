@@ -16,12 +16,12 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-const agentColumns = `id, name, owner, latest_version, archived_at, created_at`
+const agentColumns = `id, name, owner, owner_type, latest_version, archived_at, created_at`
 
 func scanAgent(row pgx.Row) (store.Agent, error) {
 	var a store.Agent
 	var archived *time.Time
-	if err := row.Scan(&a.ID, &a.Name, &a.Owner, &a.Latest, &archived, &a.CreatedAt); err != nil {
+	if err := row.Scan(&a.ID, &a.Name, &a.Owner, &a.OwnerType, &a.Latest, &archived, &a.CreatedAt); err != nil {
 		return store.Agent{}, err
 	}
 	a.CreatedAt = a.CreatedAt.UTC()
@@ -148,8 +148,8 @@ func (s *Store) PutVersion(ctx context.Context, a store.Agent, v store.AgentVers
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if v.Version == 1 {
-			_, err := tx.Exec(ctx, `INSERT INTO agents (`+agentColumns+`) VALUES ($1, $2, $3, 1, $4, $5)`,
-				a.ID, a.Name, a.Owner, a.ArchivedAt, a.CreatedAt)
+			_, err := tx.Exec(ctx, `INSERT INTO agents (`+agentColumns+`) VALUES ($1, $2, $3, $4, 1, $5, $6)`,
+				a.ID, a.Name, a.Owner, store.OwnerTypeOf(a.OwnerType), a.ArchivedAt, a.CreatedAt)
 			if isUnique(err) {
 				return fmt.Errorf("%w: agent %s exists", store.ErrConflict, a.Name)
 			}

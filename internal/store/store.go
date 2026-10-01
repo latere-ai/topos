@@ -33,11 +33,21 @@ var (
 	ErrConflict = errors.New("store: the stored state refuses the write")
 )
 
+// The owner types an agent's OwnerType names (spec 035).
+const (
+	OwnerUser         = "user"
+	OwnerOrganization = "organization"
+)
+
 // Agent is one stored agent.
 type Agent struct {
-	ID         string
-	Name       string
+	ID   string
+	Name string
+	// Owner is the rendered subject the agent belongs to, a person's or
+	// an organization's, and OwnerType which of the two, OwnerUser when
+	// empty. The name is unique within the owner.
 	Owner      string
+	OwnerType  string
 	Latest     int
 	ArchivedAt *time.Time
 	CreatedAt  time.Time
@@ -133,6 +143,16 @@ type Store interface {
 	Agents
 	Triggers
 	Idempotencies
+}
+
+// OwnerTypeOf is an owner type as every store keeps it: OwnerUser for
+// the empty type a person's agent was stored with before an organization
+// could own one.
+func OwnerTypeOf(t string) string {
+	if t == "" {
+		return OwnerUser
+	}
+	return t
 }
 
 // FindAgent returns the agent ref names for owner: an agent_ id whoever
