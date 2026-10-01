@@ -136,6 +136,7 @@ var textCases = func() []textCase {
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": "read, write"}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "read, write")},
 		{name: RegistryUnknownTool, data: Data{"Name": "nope", "Available": ""}, want: fmt.Sprintf("No tool named %s. Available tools: %s.", "nope", "")},
 		{name: RegistryInvalidInput, data: Data{"Tool": "read", "Problems": "/path: expected string, got number"}, want: fmt.Sprintf("The input does not match the schema of %s:\n%s", "read", "/path: expected string, got number")},
+		{name: RegistryCutInput, data: Data{"Tool": "write", "Limit": 8192, "Excerpt": `{"content":"a`}, want: fmt.Sprintf("The response reached its output limit of %d tokens inside the arguments of %s, so the call did not run. They began:\n%s\nCall %s again with shorter arguments, splitting long content over several calls.", 8192, "write", `{"content":"a`, "write")},
 		{name: RegistryInvalidJSON, data: Data{"Tool": "bash", "Problem": "unexpected EOF", "Excerpt": `{"command":"rm a`}, want: fmt.Sprintf("The arguments of %s were not valid JSON (%s). They began:\n%s\nCall %s again with its arguments as one JSON object that matches its schema.", "bash", "unexpected EOF", `{"command":"rm a`, "bash")},
 		{name: OutputSpilled, data: Data{"Omitted": 73182, "Path": "/spill/tool-toolu_1.txt"}, want: strings.Trim(fmt.Sprintf("\n[... %d bytes omitted; the full output is in %s ...]\n", 73182, "/spill/tool-toolu_1.txt"), "\n")},
 

@@ -380,11 +380,25 @@ func invalidJSON(tool string, input []byte, err error) string {
 	case err != nil:
 		problem = err.Error()
 	}
-	excerpt := string(input)
-	if utf8.RuneCountInString(excerpt) > InvalidJSONExcerpt {
-		excerpt = string([]rune(excerpt)[:InvalidJSONExcerpt])
+	return prompts.Render(prompts.RegistryInvalidJSON, prompts.Data{"Tool": tool, "Problem": problem, "Excerpt": excerpt(input)})
+}
+
+// CutInput is the answer to a call whose arguments the response's output
+// limit, limit tokens, cut off before they ended: the call did not run,
+// and the model is asked for shorter arguments, since more room only
+// lets a call that runs away inside an argument run further.
+func CutInput(tool string, input []byte, limit int64) Result {
+	return Text(OutcomeInvalidInput, prompts.Render(prompts.RegistryCutInput, prompts.Data{"Tool": tool, "Limit": limit, "Excerpt": excerpt(input)}))
+}
+
+// excerpt is the start of a call's arguments a result quotes, at most
+// InvalidJSONExcerpt characters.
+func excerpt(input []byte) string {
+	s := string(input)
+	if utf8.RuneCountInString(s) > InvalidJSONExcerpt {
+		s = string([]rune(s)[:InvalidJSONExcerpt])
 	}
-	return prompts.Render(prompts.RegistryInvalidJSON, prompts.Data{"Tool": tool, "Problem": problem, "Excerpt": excerpt})
+	return s
 }
 
 // atEOF reports whether dec has nothing left but whitespace, so an input

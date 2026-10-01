@@ -5,9 +5,11 @@ package harness
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,7 +74,7 @@ func chatEnd(t *testing.T, finish string) string {
 // chatSetup is the harness over Lux's OpenAI door speaking Chat
 // Completions, with need, a tool whose command is required, beside the
 // usual echo and bash.
-func chatSetup(t *testing.T) (*env, *fakeTool) {
+func chatSetup(t *testing.T, muts ...func(*Config)) (*env, *fakeTool) {
 	t.Helper()
 	need := &fakeTool{name: "need", props: tools.Properties{Effect: tools.EffectRead},
 		schema: `{"type":"object","properties":{"command":{"type":"string"}},"required":["command"],"additionalProperties":false}`}
@@ -80,6 +82,9 @@ func chatSetup(t *testing.T) (*env, *fakeTool) {
 		c.Connection = models.Connection{BaseURL: strings.TrimSuffix(c.Connection.BaseURL, "/anthropic") + "/openai", Model: model, Family: models.FamilyOther, Dialect: ir.DialectOpenAIChat}
 		if err := c.Tools.AddBuiltin(need); err != nil {
 			t.Fatal(err)
+		}
+		for _, m := range muts {
+			m(c)
 		}
 	})
 	return e, need
@@ -369,5 +374,101 @@ func TestAFailedStreamKeepsWhatItReceived(t *testing.T) {
 	}
 	if err != nil || string(got) != raw {
 		t.Fatalf("response blob %q, %v", got, err)
+	}
+}
+
+// TestACutInsideACallIsAnsweredNotSentAgain: a response that stops at
+// max_tokens inside a call's arguments is neither sent again at the
+// output limit nor continued, whether it stopped at the cap or at the
+// model's own limit. The step keeps the response, runs the calls before
+// the cut one, answers the cut one invalid_input with the limit it hit,
+// and the next step asks the cap. A response cut in text or in thinking
+// is sent again at the output limit as before.
+func TestACutInsideACallIsAnsweredNotSentAgain(t *testing.T) {
+	const runaway = `{"text":"rm hello.cc'} }]}]} }]}>}?  I will run the command now.`
+	cutCall := func(t *testing.T) string {
+		return chatChunk(t, chatCall{index: 0, id: "call_a", name: "echo", args: `{"text":"a"}`}) +
+			chatChunk(t, chatCall{index: 1, id: "call_cut", name: "echo"}) +
+			chatChunk(t, chatCall{index: 1, args: runaway}) + chatEnd(t, "length")
+	}
+	done := func(t *testing.T) luxstub.Reply {
+		return luxstub.Reply{Raw: chatFrame(t, map[string]any{"role": "assistant", "content": "Done."}, nil) + chatEnd(t, "stop")}
+	}
+	for _, c := range []struct {
+		name  string
+		limit int64 // the model's output limit; the setup's when 0
+	}{
+		{"at the cap", 0},
+		{"at a model limit below the cap", OutputCap / 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e, _ := chatSetup(t, func(cfg *Config) {
+				if c.limit > 0 {
+					cfg.Entry.MaxOutputTokens = c.limit
+				}
+			})
+			ctx := t.Context()
+			asked := min(OutputCap, e.cfg.Entry.MaxOutputTokens)
+			want := fmt.Sprintf("The response reached its output limit of %d tokens inside the arguments of echo, so the call did not run. They began:\n%s", asked, runaway)
+			e.stub.Script(model,
+				luxstub.Reply{Raw: cutCall(t)},
+				luxstub.Reply{Expect: func(r *ir.Request) error {
+					if err := sawTheError("call_cut", want)(r); err != nil {
+						return err
+					}
+					for _, m := range r.Messages {
+						for _, b := range m.Blocks {
+							if strings.Contains(b.Text, "cut off at the output limit") {
+								return errors.New("the cut response was continued")
+							}
+						}
+					}
+					return nil
+				}, Raw: chatChunk(t, chatCall{index: 0, id: "call_fixed", name: "echo", args: `{"text":"rm hello.cc"}`}) + chatEnd(t, "tool_calls")},
+				done(t),
+			)
+			e.send(ctx, "can you remove all the files except readme and hello.c?")
+			answeredWithAnError(t, e, e.turn(ctx), "call_cut", want)
+			if got := e.asked(); !slices.Equal(got, []int64{asked, asked, asked}) {
+				t.Fatalf("max_tokens %v, want %d every step", got, asked)
+			}
+			for _, mr := range e.modelRequests(ctx) {
+				if mr.Outcome != "ok" {
+					t.Fatalf("model.request outcome %q, want ok: none is sent again", mr.Outcome)
+				}
+			}
+			var first session.AgentMessage
+			if err := e.events(ctx, session.TypeAgentMessage)[0].Decode(&first); err != nil {
+				t.Fatal(err)
+			}
+			if first.Truncated || first.StopReason != ir.StopMaxTokens {
+				t.Fatalf("message truncated %v, stop %s", first.Truncated, first.StopReason)
+			}
+			if got := e.echo.ran(); !slices.Equal(got, []string{"call_a", "call_fixed"}) {
+				t.Fatalf("echo ran %v, want the complete call and the fixed one", got)
+			}
+		})
+	}
+	// A cut in text or thinking, below the output limit, still goes
+	// again at the limit.
+	for name, cut := range map[string]map[string]any{
+		"text":     {"role": "assistant", "content": "The first half"},
+		"thinking": {"role": "assistant", "reasoning_content": "weighing the files"},
+	} {
+		t.Run("in "+name, func(t *testing.T) {
+			e, _ := chatSetup(t)
+			ctx := t.Context()
+			e.stub.Script(model, luxstub.Reply{Raw: chatFrame(t, cut, nil) + chatEnd(t, "length")}, done(t))
+			e.send(ctx, "Answer at length.")
+			if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+				t.Fatalf("outcome %+v", out)
+			}
+			if got, want := e.asked(), []int64{OutputCap, e.cfg.Entry.MaxOutputTokens}; !slices.Equal(got, want) {
+				t.Fatalf("max_tokens %v, want %v", got, want)
+			}
+			if mrs := e.modelRequests(ctx); len(mrs) != 2 || mrs[0].Outcome != "escalated" {
+				t.Fatalf("model.requests %+v", mrs)
+			}
+		})
 	}
 }

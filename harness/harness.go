@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
+	"latere.ai/x/pkg/llmdialect/lux"
 	"latere.ai/x/pkg/llmdialect/tokencount"
 	"latere.ai/x/pkg/retry"
 
@@ -663,7 +664,7 @@ func (t *turn) stepOnce(ctx context.Context) error {
 			}
 			return t.modelFailed(ctx, err, si, res.RawResponse)
 		}
-		if res.StopReason != ir.StopMaxTokens || si.maxTokens >= limit {
+		if res.StopReason != ir.StopMaxTokens || si.maxTokens >= limit || cutCall(res) != nil {
 			return t.commitStep(sctx, res, si)
 		}
 		// The response stopped at the cap: the same request goes again
@@ -907,7 +908,9 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 	if err != nil {
 		return err
 	}
-	truncated := res.StopReason == ir.StopMaxTokens
+	// A response cut inside a call's arguments is not continued: the
+	// step ends with the call answered, as cutCall says.
+	truncated := res.StopReason == ir.StopMaxTokens && cutCall(res) == nil
 	msg := session.AgentMessage{Message: res.Message, StopReason: res.StopReason, Request: mrEvent.ID, Truncated: truncated}
 	if t.continuations > 0 {
 		msg.ContinuationOf = t.lastMessage()
@@ -930,7 +933,7 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 	}
 	t.continuations = 0
 
-	planned, answered, extra, err := t.plan(res)
+	planned, answered, extra, err := t.plan(res, si.maxTokens)
 	if err != nil {
 		return err
 	}
@@ -963,6 +966,28 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 		return t.finish(ctx, session.StopToolResult, "")
 	}
 	return nil
+}
+
+// cutCall is the call a response that stopped at max_tokens was cut
+// inside: its last block, when that is a call whose arguments are not
+// one JSON value. Such a response is neither sent again at the output
+// limit nor continued, as a model that runs away inside an argument
+// runs on to any limit; the step ends as one with an invalid call, the
+// call answered and the model asked to send it again at the cap. A
+// response cut in text or thinking, or between calls, has no cut call.
+func cutCall(res models.Result) *lux.ToolUse {
+	n := len(res.Message.Blocks)
+	if res.StopReason != ir.StopMaxTokens || n == 0 {
+		return nil
+	}
+	last := res.Message.Blocks[n-1]
+	if last.Type != ir.BlockToolUse || last.ToolUse == nil {
+		return nil
+	}
+	if _, broken := res.InvalidArgs[last.ToolUse.ID]; !broken {
+		return nil
+	}
+	return last.ToolUse
 }
 
 // escalate records a response that stopped at a max_tokens below the
@@ -1047,8 +1072,9 @@ type stepPlan struct {
 // calls get an agent.tool_use for the batch; invalid and blocked ones an
 // answer appended after it. A call whose arguments were not JSON is
 // validated against the text the model sent, not the {} the log holds
-// for it, so its answer names what was wrong.
-func (t *turn) plan(res models.Result) (stepPlan, []answeredCall, []session.Event, error) {
+// for it, so its answer names what was wrong, and the call the output
+// limit, limit tokens, cut off is answered as cut.
+func (t *turn) plan(res models.Result, limit int64) (stepPlan, []answeredCall, []session.Event, error) {
 	var p stepPlan
 	var answered []answeredCall
 	var uses []session.Event
@@ -1061,6 +1087,10 @@ func (t *turn) plan(res models.Result) (stepPlan, []answeredCall, []session.Even
 		id, name, input := b.ToolUse.ID, b.ToolUse.Name, []byte(b.ToolUse.Args)
 		if raw, broken := res.InvalidArgs[id]; broken {
 			input = []byte(raw)
+		}
+		if cut := cutCall(res); cut != nil && cut.ID == id {
+			answered = append(answered, answeredCall{id, tools.CutInput(name, input, limit)})
+			continue
 		}
 		tool, bad := t.reg.Validate(name, input)
 		if bad != nil {

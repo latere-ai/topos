@@ -103,7 +103,9 @@ const (
 	RegistryInvalidInput Name = "results/registry/invalid-input-v1"
 	// RegistryInvalidJSON takes Tool, Problem and Excerpt.
 	RegistryInvalidJSON Name = "results/registry/invalid-json-v1"
-	OutputSpilled       Name = "results/spill-v1"
+	// RegistryCutInput takes Tool, Limit and Excerpt.
+	RegistryCutInput Name = "results/registry/cut-input-v1"
+	OutputSpilled    Name = "results/spill-v1"
 )
 
 // The results the file tools share (spec 008).

@@ -256,3 +256,15 @@ func TestSubsetKeepsOrderAndSchemas(t *testing.T) {
 		t.Fatal("a tool outside the subset validated")
 	}
 }
+
+// TestCutInputQuotesTheStartOfTheArguments: the answer to a call the
+// output limit cut names the limit and quotes at most the excerpt.
+func TestCutInputQuotesTheStartOfTheArguments(t *testing.T) {
+	long := `{"content":"` + strings.Repeat("é", 2*InvalidJSONExcerpt)
+	res := CutInput("write", []byte(long), 8192)
+	want := "The response reached its output limit of 8192 tokens inside the arguments of write, so the call did not run. They began:\n" +
+		string([]rune(long)[:InvalidJSONExcerpt]) + "\nCall write again with shorter arguments, splitting long content over several calls."
+	if res.Outcome != OutcomeInvalidInput || !res.IsError() || text(res) != want {
+		t.Fatalf("%+v\n%q", res, text(res))
+	}
+}
