@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,17 +24,18 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// agentResource is an existing agent as the authorizer reads it.
+// agentResource is an existing agent as the authorizer reads it, its
+// owner a person's subject or an organization's {type, id} (spec 036).
 func agentResource(a store.Agent) authz.Resource {
-	return authz.NewResource(authorizer.KindAgent, a.ID, map[string]any{"name": a.Name, "owner": a.Owner})
+	return authz.NewResource(authorizer.KindAgent, a.ID, map[string]any{"name": a.Name, "owner": ownerOf(a).field()})
 }
 
-// agent finds an agent by id, or by a name among the caller's own, and
-// asks action about it. A name is unique within its owner, the subject
-// an apply records, so another subject's agent of the name is not found
-// by it. A denied read answers as a missing agent.
+// agent finds an agent by id, or by a name among the agents of the
+// caller's context, and asks action about it. A name is unique within
+// its owner, so another owner's agent of the name is not found by it. A
+// denied read answers as a missing agent.
 func (c *call) agent(ref, action string) (store.Agent, *v1.Agent, error) {
-	a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, c.caller.Subject, ref)
+	a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, c.here().subject, ref)
 	if err != nil {
 		return store.Agent{}, nil, err
 	}
@@ -67,8 +69,8 @@ func render(a store.Agent, v store.AgentVersion) (*v1.Agent, error) {
 }
 
 // scopedLookup answers the resolver with the agents the caller may read,
-// a name read among the caller's own, so a manifest's references cannot
-// tell another subject's agent from none.
+// a name read among the agents of the caller's context, so a manifest's
+// references cannot tell another owner's agent from none.
 type scopedLookup struct {
 	manifest.Lookup
 	c *call
@@ -101,7 +103,8 @@ func (c *call) applyAgent() error {
 	if err != nil {
 		return err
 	}
-	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.Lookup(c.s.o.Objects, c.caller.Subject), c}, Now: c.s.o.Now})
+	here := c.here()
+	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.LookupIn(c.s.o.Objects, here.subject, c.caller.Subject), c}, Now: c.s.o.Now})
 	if err != nil {
 		return err
 	}
@@ -113,9 +116,9 @@ func (c *call) applyAgent() error {
 		return refuse(CodeInvalidRequest, "the manifest names the agent %q and the path %q", r.Name, name)
 	}
 	st := r.Agent.Status
-	// The name is the caller's own: an agent of it another subject holds
-	// is not this one, and the apply creates the caller's.
-	stored, err := c.s.o.Objects.AgentByName(ctx, c.caller.Subject, name)
+	// The name is the context's: an agent of it another owner holds is
+	// not this one, and the apply creates the context's.
+	stored, err := c.s.o.Objects.AgentByName(ctx, here.subject, name)
 	exists := err == nil
 	var allowed authorizer.Limits
 	switch {
@@ -137,11 +140,22 @@ func (c *call) applyAgent() error {
 			return c.applyMetadata(ctx, r)
 		}
 	default:
-		if allowed, err = c.askCreate(ctx, authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", map[string]any{"name": name})); err != nil {
+		// A create in an organization's context names the organization
+		// the agent will belong to; a person's names none, the creator
+		// becoming the owner.
+		fields := map[string]any{"name": name}
+		if _, ok := here.organization(); ok {
+			fields["owner"] = here.field()
+		}
+		if allowed, err = c.askCreate(ctx, authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", fields)); err != nil {
 			return err
 		}
 	}
-	if err := c.ensureIdentity(ctx, r.Agent, allowed.Owner); err != nil {
+	held := here
+	if exists {
+		held = ownerOf(stored)
+	}
+	if err := c.ensureIdentity(ctx, r.Agent, allowed.Owner, held); err != nil {
 		return err
 	}
 	doc, err := session.Marshal(r.Agent)
@@ -152,7 +166,7 @@ func (c *call) applyAgent() error {
 	if err != nil {
 		return err
 	}
-	a := store.Agent{ID: st.ID, Name: name, Owner: c.caller.Subject, CreatedAt: st.CreatedAt}
+	a := store.Agent{ID: st.ID, Name: name, Owner: here.subject, OwnerType: here.kind, CreatedAt: st.CreatedAt}
 	v := store.AgentVersion{AgentID: st.ID, Version: st.Version, Digest: st.Digest, Doc: doc, Bundle: bundle, CreatedBy: c.caller.Subject, CreatedAt: st.CreatedAt}
 	if err := c.s.o.Objects.PutVersion(ctx, a, v); err != nil {
 		return err
@@ -215,9 +229,13 @@ func (c *call) listAgents() error {
 	if err != nil {
 		return err
 	}
-	o := store.AgentList{Limit: limit, Cursor: cursor}
-	if d.Filter != nil {
-		o.Owners = d.Filter.Owners
+	// The list holds the context's agents, and the authorizer's owners
+	// narrow it further: one that names others than the context lists
+	// none of them.
+	here := c.here()
+	o := store.AgentList{Limit: limit, Cursor: cursor, Owners: []string{here.subject}}
+	if d.Filter != nil && !slices.Contains(d.Filter.Owners, here.subject) {
+		return c.replyPage([]*v1.Agent{}, "")
 	}
 	agents, next, err := c.s.o.Objects.ListAgents(c.r.Context(), o)
 	if err != nil {

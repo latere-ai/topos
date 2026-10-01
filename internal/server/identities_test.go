@@ -52,14 +52,17 @@ func newIdentityFixture(t *testing.T) *identityFixture {
 			f.creates = append(f.creates, req.Resource)
 			f.mu.Unlock()
 		}
-		d, err := policy.Authorize(context.Background(), req)
-		// The authorizer names the organization as the owner of an agent
-		// its member applies in the organization's context, here every
-		// subject that starts acme-.
-		if err == nil && d.Allow && req.Action == authorizer.ActionAgentCreate && strings.HasPrefix(req.Sub, "acme-") {
-			d.Limits = json.RawMessage(`{"owner":{"type":"organization","id":"acme"}}`)
+		// The authorizer knows acme's members: it lets them act in acme's
+		// context, and names the organization as the owner of an agent
+		// applied there. Every other question is the owner policy's.
+		if org, _ := req.Claims["org_id"].(string); org == "acme" {
+			d := authz.Decision{Allow: true}
+			if req.Action == authorizer.ActionAgentCreate {
+				d.Limits = json.RawMessage(`{"owner":{"type":"organization","id":"acme"}}`)
+			}
+			return d, nil
 		}
-		return d, err
+		return policy.Authorize(context.Background(), req)
 	}
 	return f
 }
@@ -73,9 +76,9 @@ func (f *identityFixture) end(token, id string) {
 }
 
 // TestAgentIdentityLifecycle: an agent first applied gets its identity,
-// owned by the applier, or by the organization the authorizer's allow
-// names,
-// and keeps the subject as status.identity through its versions; a
+// owned by the person who applied it, or by the organization in whose
+// context it was applied, and keeps the subject as status.identity
+// through its versions, whoever of the organization applies them; a
 // session's create asks the authorizer with its id and that identity; an
 // archive archives the identity before the agent, and the identity is
 // disabled with the confirmation once no session of the agent is left,
@@ -92,8 +95,8 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 	if v2 := f.apply("alice", "reviewer", "Review twice."); v2.Status.Version != 2 || v2.Status.Identity != a.Status.Identity || f.idp.Count(idpstub.OpPut) != 1 {
 		t.Fatalf("a second version %+v, %d creates", v2.Status, f.idp.Count(idpstub.OpPut))
 	}
-	org := f.apply("acme-carol", "triager", "Triage.")
-	if got := f.idp.Agents()[1]; got.Subject != org.Status.Identity || got.Owner != (idpstub.Owner{Type: "organization", ID: "acme"}) || got.AppliedBy != "acme-carol" {
+	org := f.apply("carol@acme", "triager", "Triage.")
+	if got := f.idp.Agents()[1]; got.Subject != org.Status.Identity || got.Owner != (idpstub.Owner{Type: "organization", ID: "acme"}) || got.AppliedBy != "carol" {
 		t.Fatalf("an organization's agent %+v", got)
 	}
 	// The status keeps the owner, carried to later versions, so a session
@@ -101,8 +104,8 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 	if org.Status.Owner == nil || *org.Status.Owner != (v1.Owner{Type: "organization", ID: "acme"}) {
 		t.Fatalf("the organization's agent's status owner %+v", org.Status.Owner)
 	}
-	if v2 := f.apply("acme-carol", "triager", "Triage twice."); v2.Status.Owner == nil || v2.Status.Owner.ID != "acme" {
-		t.Fatalf("a later version lost the owner: %+v", v2.Status.Owner)
+	if v2 := f.apply("dave@acme", "triager", "Triage twice."); v2.Status.ID != org.Status.ID || v2.Status.Owner == nil || v2.Status.Owner.ID != "acme" || f.idp.Count(idpstub.OpPut) != 2 {
+		t.Fatalf("another member's version %+v, %d creates", v2.Status, f.idp.Count(idpstub.OpPut))
 	}
 	s := f.create("alice", "reviewer")
 	f.mu.Lock()
@@ -136,7 +139,7 @@ func TestAgentIdentityLifecycle(t *testing.T) {
 		}
 	}
 	// An agent with no session is disabled at its archive.
-	if ar := f.do(http.MethodPost, "/v1/agents/triager/archive", "acme-carol", `{"permanent":true}`); ar.status != http.StatusOK {
+	if ar := f.do(http.MethodPost, "/v1/agents/triager/archive", "carol@acme", `{"permanent":true}`); ar.status != http.StatusOK {
 		t.Fatalf("archive: %d %s", ar.status, ar.body)
 	}
 	if got := f.idp.Agents()[1]; got.Status != idpstub.StatusDisabled {
@@ -216,5 +219,31 @@ func TestReconcileCatchesUp(t *testing.T) {
 	}
 	if _, _, err := late.sessions.List(ctx, session.ListOptions{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestAnAllowNamingAnotherOwnerRefuses: an allow of an apply that names
+// an owner other than the context the agent is created in refuses the
+// apply as authorizer_unavailable and creates no identity and no agent,
+// since an identity owned by one party for an agent held by another
+// would act for neither (spec 036).
+func TestAnAllowNamingAnotherOwnerRefuses(t *testing.T) {
+	f := newIdentityFixture(t)
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		d := authz.Decision{Allow: true}
+		if req.Action == authorizer.ActionAgentCreate {
+			d.Limits = json.RawMessage(`{"owner":{"type":"organization","id":"acme"}}`)
+		}
+		return d, nil
+	}
+	a := f.do(http.MethodPut, "/v1/agents/reviewer", "alice", agentYAML("reviewer", "Review."))
+	if a.status != http.StatusServiceUnavailable || a.code() != "authorizer_unavailable" {
+		t.Fatalf("an allow naming another owner: %d %s", a.status, a.body)
+	}
+	if n := len(f.idp.Agents()); n != 0 {
+		t.Fatalf("%d identities were created", n)
+	}
+	if _, err := f.objects.AgentByName(t.Context(), alice, "reviewer"); err == nil {
+		t.Fatal("the agent was stored")
 	}
 }

@@ -1011,7 +1011,9 @@ func TestListSessions(t *testing.T) {
 	if got := list("alice", ""); len(got) != 3 || got[0] != mine[2] {
 		t.Fatalf("alice lists %v", got)
 	}
-	if got := list("root", ""); len(got) != 4 {
+	// A list holds the sessions of its context's agents: the admin's
+	// context holds none (spec 036).
+	if got := list("root", ""); len(got) != 0 {
 		t.Fatalf("the admin lists %v", got)
 	}
 	if got := list("alice", "?agent=reviewer"); len(got) != 2 || got[1] != mine[0] {

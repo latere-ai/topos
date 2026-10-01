@@ -15,7 +15,7 @@ func TriggerClaims(c Caller) map[string]any {
 
 // Organization is the organization the caller's token names in its
 // org_id claim, the context the caller acts in, "" for the caller's own
-// (spec 035). The core reads it to address what it holds, an agent's
+// (spec 036). The core reads it to address what it holds, an agent's
 // owner and the namespace its names are read in, never to decide.
 func (c Caller) Organization() string {
 	org, _ := c.Claims["org_id"].(string)

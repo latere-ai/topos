@@ -88,7 +88,9 @@ func (c *call) applyTrigger() error {
 	if err != nil {
 		return err
 	}
-	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.Lookup(c.s.o.Objects, c.caller.Subject), c}, Now: c.s.o.Now})
+	// The agent a trigger names is read in the caller's context, the
+	// trigger's own name among the caller's triggers (spec 036).
+	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.LookupIn(c.s.o.Objects, c.here().subject, c.caller.Subject), c}, Now: c.s.o.Now})
 	if err != nil {
 		return err
 	}

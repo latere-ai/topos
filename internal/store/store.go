@@ -33,7 +33,7 @@ var (
 	ErrConflict = errors.New("store: the stored state refuses the write")
 )
 
-// The owner types an agent's OwnerType names (spec 035).
+// The owner types an agent's OwnerType names (spec 036).
 const (
 	OwnerUser         = "user"
 	OwnerOrganization = "organization"
@@ -181,7 +181,7 @@ func Lookup(st Store, owner string) manifest.Lookup { return LookupIn(st, owner,
 
 // LookupIn is Lookup with an agent name read within agents' objects and a
 // trigger name within triggers': an agent's names are its context's, a
-// trigger's its person's (spec 035).
+// trigger's its person's (spec 036).
 func LookupIn(st Store, agents, triggers string) manifest.Lookup {
 	return lookup{a: st, t: st, agents: agents, triggers: triggers}
 }

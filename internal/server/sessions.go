@@ -10,6 +10,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -222,7 +223,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		in.resources, in.title, in.metadata, in.capture = p.Resources, continuedTitle(p.Title), p.Metadata, &p.Capture
 	}
 	name, n, pinned := strings.Cut(in.agent, "@")
-	a, err := store.FindAgent(ctx, s.o.Objects, q.caller.Subject, name)
+	a, err := store.FindAgent(ctx, s.o.Objects, contextOf(q.caller).subject, name)
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -266,7 +267,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// identity those tokens carry as their subject (spec 018).
 	id := session.NewID(session.PrefixSession)
 	fields := map[string]any{
-		"agent": a.ID, "agent_version": version, "agent_owner": a.Owner,
+		"agent": a.ID, "agent_version": version, "agent_owner": ownerOf(a).field(),
 		"runner": session.RunnerHosted, "machine": m.Kind, "initiator": q.caller.Subject,
 		"permissions": permissionsField(r.Agent.Spec.Permissions, agentModels(r)), "session_id": id,
 		"repositories": repositoriesField(resources),
@@ -292,9 +293,10 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 			return session.Session{}, refuse(CodeAgentIdentityMissing, "agent %s was applied before this server had an identity provider", a.Name)
 		}
 		fields["agent_identity"] = st.Identity
-		// An organization's agent belongs to the organization its identity
-		// was created for, not to whoever applied it. A person's agent
-		// keeps the person's subject, which every authorizer reads.
+		// An agent a person applied in an organization's context before
+		// an organization could own one is the person's, while its
+		// identity was created for the organization, which its sessions
+		// name as they always did.
 		if st.Owner != nil && st.Owner.Type == identity.OwnerOrganization {
 			fields["agent_owner"] = map[string]any{"type": st.Owner.Type, "id": st.Owner.ID}
 		}
@@ -598,15 +600,23 @@ func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, e
 	if o.Runner != "" && o.Runner != session.RunnerHosted && o.Runner != session.RunnerExternal {
 		return o, false, refuse(CodeInvalidRequest, "runner is %q, not hosted or external", o.Runner)
 	}
-	d, err := c.ask(c.r.Context(), authorizer.ActionSessionList, authz.NewResource(authorizer.KindSession, "", map[string]any{"status": string(o.Status), "runner": o.Runner}))
+	// The scope holds the sessions of the agents the context owns, which
+	// the question names, and the authorizer's owners narrow it by
+	// initiator within them (spec 036).
+	here := c.here()
+	d, err := c.ask(c.r.Context(), authorizer.ActionSessionList, authz.NewResource(authorizer.KindSession, "",
+		map[string]any{"status": string(o.Status), "runner": o.Runner, "agent_owner": here.field()}))
 	if err != nil {
 		return o, false, err
 	}
 	if d.Filter != nil {
 		o.Owners = d.Filter.Owners
 	}
+	if o.Agents, err = c.s.agentsOf(c.r.Context(), here); err != nil {
+		return o, false, err
+	}
 	if ref := q.Get("agent"); ref != "" {
-		a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, c.caller.Subject, ref)
+		a, err := store.FindAgent(c.r.Context(), c.s.o.Objects, here.subject, ref)
 		if errors.Is(err, store.ErrNotFound) {
 			return o, true, nil
 		}
@@ -615,7 +625,7 @@ func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, e
 		}
 		o.AgentID = a.ID
 	}
-	return o, false, nil
+	return o, len(o.Agents) == 0 || (o.AgentID != "" && !slices.Contains(o.Agents, o.AgentID)), nil
 }
 
 // getSession is GET /sessions/{id}.

@@ -97,7 +97,8 @@ func TestApplyRefusesAWrongManifest(t *testing.T) {
 
 // TestAnotherSubjectsAgentIsNotThere: bob cannot read, list, change or
 // reference alice's agent, by its name or its id, and every refusal
-// answers as if it did not exist; an admin acts on it by its id.
+// answers as if it did not exist; an admin acts on it by its id, and
+// lists only their own context's agents (spec 036).
 func TestAnotherSubjectsAgentIsNotThere(t *testing.T) {
 	f := newFixture(t)
 	id := f.apply("alice", "reviewer", "Review.").Status.ID
@@ -121,8 +122,8 @@ func TestAnotherSubjectsAgentIsNotThere(t *testing.T) {
 		t.Fatalf("bob lists %d agents", len(page.Items))
 	}
 	f.do(http.MethodGet, "/v1/agents", "root", "").decode(t, &page)
-	if len(page.Items) != 1 {
-		t.Fatalf("the admin lists %d agents", len(page.Items))
+	if len(page.Items) != 0 {
+		t.Fatalf("the admin lists %d agents of another context", len(page.Items))
 	}
 	for _, ref := range []string{"reviewer", id} {
 		if a := f.do(http.MethodPost, "/v1/agents/"+ref+"/archive", "bob", `{"permanent":true}`); a.status != http.StatusNotFound || string(a.body) != string(missing.body) {

@@ -45,8 +45,23 @@ func newTriggerFixture(t *testing.T, mut ...func(*Options)) *triggerFixture {
 
 // triggerYAML is a Trigger manifest of the agent reviewer with the given
 // spec fields after the agent.
-func triggerYAML(name, spec string) string {
-	return "apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: " + name + "}\nspec: {agent: reviewer, " + spec + "}\n"
+func triggerYAML(name, spec string) string { return triggerOf("reviewer", name, spec) }
+
+// triggerOf is a Trigger manifest of the agent ref names.
+func triggerOf(agent, name, spec string) string {
+	return "apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: " + name + "}\nspec: {agent: " + agent + ", " + spec + "}\n"
+}
+
+// reviewer is the id of alice's agent reviewer, which a trigger applied
+// in another context than hers names by id, a name being read in the
+// context it is applied in (spec 036).
+func (f *triggerFixture) reviewer() string {
+	f.t.Helper()
+	a, err := f.objects.AgentByName(f.t.Context(), alice, "reviewer")
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return a.ID
 }
 
 // eventSpec is an event trigger on github issues with the given message
@@ -207,7 +222,7 @@ func (f *triggerFixture) tick() {
 // zone the build does not know are refused at apply.
 func TestApplyingATrigger(t *testing.T) {
 	f := newTriggerFixture(t)
-	a := f.do(http.MethodPut, "/v1/triggers/nightly", "alice@org_7", triggerYAML("nightly", "schedule: '0 9 * * *', timeZone: Europe/Berlin, session: {message: 'Review {{trigger.name}}.'}"))
+	a := f.do(http.MethodPut, "/v1/triggers/nightly", "alice@org_7", triggerOf(f.reviewer(), "nightly", "schedule: '0 9 * * *', timeZone: Europe/Berlin, session: {message: 'Review {{trigger.name}}.'}"))
 	if a.status != http.StatusCreated {
 		t.Fatalf("apply: %d %s", a.status, a.body)
 	}
@@ -632,7 +647,7 @@ func TestMaxActive(t *testing.T) {
 // session has the owner as initiator and the trigger as sender.
 func TestFireIsAskedOfTheAuthorizer(t *testing.T) {
 	f := newTriggerFixture(t)
-	a := f.do(http.MethodPut, "/v1/triggers/triage", "alice@org_7", triggerYAML("triage", eventSpec("")))
+	a := f.do(http.MethodPut, "/v1/triggers/triage", "alice@org_7", triggerOf(f.reviewer(), "triage", eventSpec("")))
 	if a.status != http.StatusCreated {
 		t.Fatalf("apply: %d %s", a.status, a.body)
 	}

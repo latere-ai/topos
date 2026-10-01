@@ -6,8 +6,12 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+
+	"latere.ai/x/pkg/authz"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -45,17 +49,24 @@ func identityRefusal(err error) error {
 
 // ensureIdentity gives an agent being applied its identity at the
 // identity provider when it has none, after the authorizer allowed the
-// apply: the owner is the one the allow names, since the authorizer and
-// not the core reads the applier's claims, and the applier as a person
-// when it names none. The subject becomes the agent's status.identity,
-// which every later version carries.
-func (c *call) ensureIdentity(ctx context.Context, a *v1.Agent, named *authorizer.Owner) error {
+// apply: the owner is the one that holds the agent, a person or an
+// organization (spec 036). An allow that names an owner names that one;
+// one naming another refuses the apply, since an identity owned by one
+// party for an agent held by another would act for neither. The subject
+// becomes the agent's status.identity, which every later version
+// carries.
+func (c *call) ensureIdentity(ctx context.Context, a *v1.Agent, named *authorizer.Owner, held owner) error {
 	if c.s.o.Identities == nil || a.Status.Identity != "" {
 		return nil
 	}
-	owner := identity.Owner{Type: identity.OwnerUser, ID: c.caller.Sub}
-	if named != nil {
-		owner = identity.Owner{Type: named.Type, ID: named.ID}
+	owner := identity.Owner{Type: identity.OwnerUser}
+	if id, ok := held.organization(); ok {
+		owner = identity.Owner{Type: identity.OwnerOrganization, ID: id}
+	} else {
+		_, owner.ID, _ = authz.SplitSubject(held.subject)
+	}
+	if named != nil && (named.Type != owner.Type || named.ID != owner.ID) {
+		return &apiError{code: auth.CodeAuthorizerUnavailable, detail: fmt.Sprintf("the authorizer named the owner %s %s for an agent of %s %s", named.Type, named.ID, owner.Type, owner.ID)}
 	}
 	subject, err := c.s.o.Identities.Create(ctx, a.Status.ID, a.Metadata.Name, owner, c.caller.Sub)
 	if err != nil {

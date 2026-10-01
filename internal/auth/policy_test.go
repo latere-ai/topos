@@ -103,7 +103,7 @@ func TestOwnerPolicyRows(t *testing.T) {
 		t.Fatal("a session is forked by the agent's owner from a session of their own, or by an admin")
 	}
 	// An organization's agent is its admins' alone: the policy knows no
-	// organization's members (spec 035).
+	// organization's members (spec 036).
 	org := map[string]any{"type": "organization", "id": "org_1"}
 	for _, action := range []string{authorizer.ActionAgentCreate, authorizer.ActionAgentRead, authorizer.ActionAgentUpdate, authorizer.ActionAgentArchive} {
 		id := "agt_1"

@@ -81,7 +81,7 @@ func (p *OwnerPolicy) decide(req authz.Request) authz.Decision {
 		return authz.Decision{Allow: true, Filter: &authz.Filter{Owners: []string{req.Subject}}}
 	}
 	// An organization owns nothing this policy can decide, since it knows
-	// no organization's members (spec 035): a create naming one as the
+	// no organization's members (spec 036): a create naming one as the
 	// owner, and every action on an agent one owns, are the admins'.
 	if _, organization := req.Resource.Fields["owner"].(map[string]any); organization && !admin {
 		return authz.Decision{Reason: authz.ReasonNotOwner}

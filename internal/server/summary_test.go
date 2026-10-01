@@ -102,7 +102,9 @@ func TestSummarizeSessions(t *testing.T) {
 	if got, want := f.summary("bob", ""), counts(1, 0, 0, 0, 1); got != want {
 		t.Errorf("bob's summary: %+v, want %+v", got, want)
 	}
-	if got, want := f.summary("root", ""), counts(2, 1, 2, 1, 3); got != want {
+	// A summary counts what the list holds, the sessions of its context's
+	// agents: the admin's context holds none (spec 036).
+	if got, want := f.summary("root", ""), counts(0, 0, 0, 0, 0); got != want {
 		t.Errorf("the admin's summary: %+v, want %+v", got, want)
 	}
 	for _, q := range []string{"?runner=elsewhere", "?archived=maybe"} {
@@ -126,13 +128,17 @@ func TestSummarizeSessions(t *testing.T) {
 // same filters, and is refused where the list is.
 func TestASummaryIsScopedAsTheList(t *testing.T) {
 	f := newFixture(t)
-	f.apply("alice", "reviewer", "Review.")
+	reviewer := f.apply("alice", "reviewer", "Review.").Status.ID
 	f.apply("bob", "helper", "Help.")
 	for range 3 {
 		f.create("alice", "reviewer")
 	}
 	f.ended("alice", "reviewer")
-	bobs := f.create("bob", "helper")
+	f.create("bob", "helper")
+	// An authorizer that lets bob start a session of alice's agent, which
+	// the summary of alice's context counts; bob's own agent's is not.
+	f.authz.answer = func(authz.Request) (authz.Decision, error) { return authz.Decision{Allow: true}, nil }
+	bobs := f.create("bob", reviewer)
 	f.setStatus(bobs.ID, session.StatusIdle, session.StopToolConfirmation)
 
 	var asked []authz.Request
@@ -145,7 +151,7 @@ func TestASummaryIsScopedAsTheList(t *testing.T) {
 		t.Fatalf("the narrowed summary: %+v, want %+v", got, want)
 	}
 	if len(asked) != 1 || asked[0].Action != authorizer.ActionSessionList || asked[0].Resource.Kind != authorizer.KindSession ||
-		asked[0].Resource.String("status") != "" || asked[0].Resource.String("runner") != session.RunnerHosted {
+		asked[0].Resource.String("status") != "" || asked[0].Resource.String("runner") != session.RunnerHosted || asked[0].Resource.String("agent_owner") != alice {
 		t.Fatalf("the summary asked %+v", asked)
 	}
 	f.listIDs("alice", "?runner=hosted")
@@ -275,6 +281,7 @@ func TestASummaryPagesAStoreWithoutCounts(t *testing.T) {
 		t.Fatalf("the route over a store without counts: %+v, want %+v", got, want)
 	}
 	gone := newFixture(t, func(o *Options) { o.Sessions = &failing{Store: listOnly{session.NewMemoryStore()}, pages: 1} })
+	gone.apply("alice", "reviewer", "Review.")
 	if a := gone.do(http.MethodGet, "/v1/sessions/summary", "alice", ""); a.status != http.StatusInternalServerError {
 		t.Fatalf("the route over a failing store: %d %s", a.status, a.body)
 	}
