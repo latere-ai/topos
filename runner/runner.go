@@ -180,7 +180,7 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	// machine opened on demand is recorded when a tool first acts on
 	// it, beside the running turn; one the session already had is opened
 	// at once, since its sandbox exists.
-	first := !hasMachine(evs)
+	first := !hasMachine(s, evs)
 	deferred, onDemand := cfg.Machine.(*machine.Deferred)
 	switch {
 	case onDemand:
@@ -210,6 +210,10 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 			// checkpoint must not open it.
 			if onDemand && deferred.Opened() == nil {
 				return nil, nil
+			}
+			previous, err := r.chainable(ctx, cp, s, evs, previous)
+			if err != nil {
+				return nil, err
 			}
 			ref, err := cp.Take(ctx, turn, previous)
 			if errors.Is(err, checkpoint.ErrNoGit) || errors.Is(err, checkpoint.ErrNoRepository) {
@@ -332,7 +336,16 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 	if first && len(session.Repositories(s)) > 0 {
 		repos, delivered = deliver(ctx, s, m)
 	}
-	if err := r.attach(ctx, m, log, beside, repos); err != nil {
+	// A fork's first machine gets the files of the turn it forked at,
+	// over the repositories it was given (spec 017).
+	var restored *session.CheckpointRef
+	if first && s.Parent != nil {
+		var err error
+		if restored, err = r.restoreFork(ctx, s, m); err != nil {
+			delivered = errors.Join(delivered, err)
+		}
+	}
+	if err := r.attach(ctx, s, m, log, beside, repos, restored); err != nil {
 		return errors.Join(err, delivered)
 	}
 	return errors.Join(r.attachments(ctx, m, log, beside), delivered)
@@ -359,15 +372,23 @@ func (r *Runner) attachments(ctx context.Context, m machine.Machine, log *Log, b
 // attach appends session.machine when the session has none for this
 // machine yet: a first attachment, or a machine other than the last one.
 // repos are the repositories delivered into the machine, set only at the
-// session's first.
-func (r *Runner) attach(ctx context.Context, m machine.Machine, log *Log, beside bool, repos []session.DeliveredRepository) error {
+// session's first, and restored the checkpoint a fork's first machine was
+// given, recorded with reason restored. A fork's copied machines are its
+// parent's, so its first machine is a first attachment.
+func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machine, log *Log, beside bool, repos []session.DeliveredRepository, restored *session.CheckpointRef) error {
 	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
 	if err != nil {
 		return err
 	}
 	info := m.Info()
 	reason := "attached"
+	if restored != nil {
+		reason = "restored"
+	}
 	for _, ev := range slices.Backward(evs) {
+		if s.Copied(ev) {
+			break
+		}
 		if ev.Type != session.TypeSessionMachine || ev.Redacted() {
 			continue
 		}
@@ -386,7 +407,7 @@ func (r *Runner) attach(ctx context.Context, m machine.Machine, log *Log, beside
 		return err
 	}
 	e, err := session.NewEvent(session.TypeSessionMachine, session.SessionMachine{
-		Machine: a.Machine, Reason: reason, Context: a.Context, Instructions: a.Instructions, Skills: a.Skills, Repositories: repos,
+		Machine: a.Machine, Reason: reason, Context: a.Context, Instructions: a.Instructions, Skills: a.Skills, Repositories: repos, Checkpoint: restored,
 	}, r.o.Clock())
 	if err != nil {
 		return err
@@ -398,10 +419,11 @@ func (r *Runner) attach(ctx context.Context, m machine.Machine, log *Log, beside
 	return err
 }
 
-// hasMachine reports whether the log records a machine the session had.
-func hasMachine(evs []session.Event) bool {
+// hasMachine reports whether the log records a machine the session had;
+// a fork's copied machines were its parent's.
+func hasMachine(s session.Session, evs []session.Event) bool {
 	for _, e := range evs {
-		if e.Type == session.TypeSessionMachine && !e.Redacted() {
+		if e.Type == session.TypeSessionMachine && !e.Redacted() && !s.Copied(e) {
 			return true
 		}
 	}
@@ -409,11 +431,22 @@ func hasMachine(evs []session.Event) bool {
 }
 
 func (r *Runner) checkpointer(cfg harness.Config, s session.Session) *checkpoint.Checkpointer {
-	cp := &checkpoint.Checkpointer{Machine: cfg.Machine, SessionID: s.ID, AgentID: s.Agent.ID}
+	return r.checkpointerOn(cfg.Machine, s)
+}
+
+// checkpointerOn takes the checkpoints of s's working directory on m.
+func (r *Runner) checkpointerOn(m machine.Machine, s session.Session) *checkpoint.Checkpointer {
+	cp := &checkpoint.Checkpointer{Machine: m, SessionID: s.ID, AgentID: s.Agent.ID}
 	if r.o.CheckpointDir != "" {
-		cp.SessionRepo = filepath.Join(r.o.CheckpointDir, s.ID+".git")
+		cp.SessionRepo = r.sessionRepo(s.ID)
 	}
 	return cp
+}
+
+// sessionRepo is the session repository of a working directory that is
+// not a checkout, under CheckpointDir (spec 034).
+func (r *Runner) sessionRepo(id string) string {
+	return filepath.Join(r.o.CheckpointDir, id+".git")
 }
 
 // Rewind restores the working directory of an idle session to the files

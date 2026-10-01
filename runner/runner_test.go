@@ -52,6 +52,9 @@ type fixture struct {
 	stub  *luxstub.Server
 	store *dir.Store
 	work  string
+	// works are the working directories of sessions other than s, by id;
+	// every other session works in work.
+	works map[string]string
 	r     *Runner
 	s     session.Session
 }
@@ -72,7 +75,7 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, stub: luxstub.New(t), work: filepath.Join(base, "work")}
+	f := &fixture{t: t, stub: luxstub.New(t), work: filepath.Join(base, "work"), works: map[string]string{}}
 	write(t, filepath.Join(f.work, "AGENTS.md"), "Run make check before a commit.\n")
 	write(t, filepath.Join(f.work, "CLAUDE.md"), "Nested rules.\n")
 	write(t, filepath.Join(f.work, ".agents", "skills", "release", "SKILL.md"), "---\nname: release\ndescription: Cut a release.\n---\nSteps.\n")
@@ -87,7 +90,11 @@ func setup(t *testing.T) *fixture {
 		Store: f.store, ID: "run_local", PersonalInstructions: personal, PersonalSkills: filepath.Join(base, "config", "skills"),
 		Clock: func() time.Time { return t0 },
 		Harness: func(ctx context.Context, s session.Session) (harness.Config, error) {
-			m, err := host.Open(host.Options{Workdir: f.work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
+			work := f.work
+			if w, ok := f.works[s.ID]; ok {
+				work = w
+			}
+			m, err := host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
 			if err != nil {
 				return harness.Config{}, err
 			}
@@ -115,17 +122,23 @@ func setup(t *testing.T) *fixture {
 
 func (f *fixture) send(ctx context.Context, typ session.Type, payload any) {
 	f.t.Helper()
+	f.sendTo(ctx, f.s.ID, typ, payload)
+}
+
+// sendTo appends one event to the session id.
+func (f *fixture) sendTo(ctx context.Context, id string, typ session.Type, payload any) {
+	f.t.Helper()
 	e, err := session.NewEvent(typ, payload, t0)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	s, err := f.store.Get(ctx, f.s.ID)
+	s, err := f.store.Get(ctx, id)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	evs := []session.Event{e}
-	session.Stamp(f.s.ID, s.LastSeq, evs)
-	if _, err := f.store.Append(ctx, f.s.ID, s.LastSeq, evs); err != nil {
+	session.Stamp(id, s.LastSeq, evs)
+	if _, err := f.store.Append(ctx, id, s.LastSeq, evs); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -137,17 +150,7 @@ func (f *fixture) message(ctx context.Context, text string) {
 
 func (f *fixture) count(ctx context.Context, typ session.Type) int {
 	f.t.Helper()
-	evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	n := 0
-	for _, e := range evs {
-		if e.Type == typ {
-			n++
-		}
-	}
-	return n
+	return f.countIn(ctx, f.s.ID, typ)
 }
 
 func reply(blocks ...ir.Block) luxstub.Reply {

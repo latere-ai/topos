@@ -234,6 +234,70 @@ func (c *Checkpointer) large(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
+// Has reports whether the checkpoints of this working directory hold
+// commit. A machine without git, or a directory with no repository to
+// hold checkpoints, holds none and answers that error.
+func (c *Checkpointer) Has(ctx context.Context, commit string) (bool, error) {
+	env, err := c.repo(ctx)
+	if err != nil {
+		return false, err
+	}
+	return c.exists(ctx, env, commit)
+}
+
+// exists reports whether the repository env points at holds commit.
+func (c *Checkpointer) exists(ctx context.Context, env map[string]string, commit string) (bool, error) {
+	res, err := c.Machine.Exec(ctx, machine.ExecRequest{Command: "git cat-file -e " + quote(commit+"^{commit}"), Env: env, Timeout: time.Minute})
+	if err != nil {
+		return false, fmt.Errorf("checkpoint: git cat-file: %w", err)
+	}
+	if res.ExitCode == 127 {
+		return false, ErrNoGit
+	}
+	return res.ExitCode == 0, nil
+}
+
+// Adopt records commit, a checkpoint another session took, as this
+// working directory's checkpoint of turn, as a fork does with the turn it
+// forks at (spec 017). The commit is taken from this directory's own
+// repository, or else fetched from the bare repository from, the other
+// session's, under its ref there. It reports false, recording nothing,
+// when neither holds the commit.
+func (c *Checkpointer) Adopt(ctx context.Context, turn int, commit, from, ref string) (session.CheckpointRef, bool, error) {
+	env, err := c.repo(ctx)
+	if err != nil {
+		return session.CheckpointRef{}, false, err
+	}
+	own := c.Ref(turn)
+	have, err := c.exists(ctx, env, commit)
+	if err != nil {
+		return session.CheckpointRef{}, false, err
+	}
+	switch {
+	case have:
+		if _, err := c.git(ctx, env, "update-ref "+own+" "+commit); err != nil {
+			return session.CheckpointRef{}, false, err
+		}
+	case from == "":
+		return session.CheckpointRef{}, false, nil
+	default:
+		if there, err := c.exists(ctx, map[string]string{"GIT_DIR": from}, commit); err != nil || !there {
+			return session.CheckpointRef{}, false, err
+		}
+		if _, err := c.git(ctx, env, "fetch --no-tags --quiet "+quote(from)+" "+quote("+"+ref+":"+own)); err != nil {
+			return session.CheckpointRef{}, false, err
+		}
+		got, err := c.git(ctx, env, "rev-parse "+own)
+		if err != nil {
+			return session.CheckpointRef{}, false, err
+		}
+		if got != commit {
+			return session.CheckpointRef{}, false, fmt.Errorf("checkpoint: %s in %s is %s, not the checkpoint %s", ref, from, got, commit)
+		}
+	}
+	return session.CheckpointRef{Ref: own, Commit: commit}, true, nil
+}
+
 // Restore makes the working directory hold the files of commit: files
 // the commit lacks that the saved state had are removed, the commit's
 // files are written, and ignored and deny-listed files are untouched
