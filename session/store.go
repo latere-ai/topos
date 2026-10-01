@@ -149,6 +149,74 @@ type Archiver interface {
 	SetArchived(ctx context.Context, id string, at *time.Time) (Session, error)
 }
 
+// Counts are the sessions of a summary by status (spec 015). They are
+// disjoint: an idle session waiting for a person is counted in
+// WaitingForApproval and not in Idle, and a session of a status this
+// version does not know is in none of them.
+type Counts struct {
+	Running            int `json:"running"`
+	WaitingForApproval int `json:"waiting_for_approval"`
+	Idle               int `json:"idle"`
+	Ended              int `json:"ended"`
+}
+
+// Summary is how many sessions a list would page through, by status,
+// and how many distinct agents they belong to.
+type Summary struct {
+	Sessions Counts `json:"sessions"`
+	Agents   int    `json:"agents"`
+}
+
+// Summarizer is the optional interface of a store that counts the
+// sessions a List filters to without reading them a page at a time
+// (spec 015). It applies o's AgentID, Owners, Runner and Archived as
+// List does; Status, Limit and Cursor do not apply.
+type Summarizer interface {
+	Summarize(ctx context.Context, o ListOptions) (Summary, error)
+}
+
+// Summarize counts the sessions of all that o keeps, as Summarizer does:
+// the summary of a store that lists by reading every header.
+func Summarize(all []Session, o ListOptions) Summary {
+	o.Status, o.Cursor = "", ""
+	var sum Summary
+	agents := map[string]struct{}{}
+	for _, s := range all {
+		if !o.keeps(s) {
+			continue
+		}
+		sum.Count(s)
+		agents[s.Agent.ID] = struct{}{}
+	}
+	sum.Agents = len(agents)
+	return sum
+}
+
+// Count adds s to the count of its status. It leaves Agents alone,
+// which counts distinct agents and so is the caller's to keep.
+func (sum *Summary) Count(s Session) {
+	switch {
+	case s.Status == StatusRunning:
+		sum.Sessions.Running++
+	case s.Status == StatusIdle && s.StopReason == StopToolConfirmation:
+		sum.Sessions.WaitingForApproval++
+	case s.Status == StatusIdle:
+		sum.Sessions.Idle++
+	case s.Status == StatusEnded:
+		sum.Sessions.Ended++
+	}
+}
+
+// keeps reports whether s passes every filter of o; the cursor, which
+// pages rather than filters, is ListPage's.
+func (o ListOptions) keeps(s Session) bool {
+	return (o.Status == "" || s.Status == o.Status) &&
+		(o.AgentID == "" || s.Agent.ID == o.AgentID) &&
+		(len(o.Owners) == 0 || slices.Contains(o.Owners, s.Initiator.Subject)) &&
+		(o.Runner == "" || s.Runner == o.Runner) &&
+		o.Archived.Keeps(s)
+}
+
 // Archive sets s's archived_at to at, or clears it for nil, and reports
 // whether that changed anything; an archived session keeps the time it
 // was first archived.

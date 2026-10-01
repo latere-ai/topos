@@ -89,6 +89,17 @@ func (m *memoryStore) List(ctx context.Context, o ListOptions) ([]Session, strin
 	return page, next, nil
 }
 
+func (m *memoryStore) Summarize(ctx context.Context, o ListOptions) (Summary, error) {
+	m.mu.Lock()
+	all := make([]Session, 0, len(m.sessions))
+	for _, ms := range m.sessions {
+		all = append(all, ms.s)
+	}
+	sum := Summarize(all, o)
+	m.mu.Unlock()
+	return sum, nil
+}
+
 func (m *memoryStore) SetArchived(ctx context.Context, id string, at *time.Time) (Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -116,19 +127,7 @@ func ListPage(all []Session, o ListOptions) ([]Session, string) {
 		if o.Cursor != "" && s.ID >= o.Cursor {
 			continue
 		}
-		if o.Status != "" && s.Status != o.Status {
-			continue
-		}
-		if o.AgentID != "" && s.Agent.ID != o.AgentID {
-			continue
-		}
-		if len(o.Owners) > 0 && !slices.Contains(o.Owners, s.Initiator.Subject) {
-			continue
-		}
-		if o.Runner != "" && s.Runner != o.Runner {
-			continue
-		}
-		if !o.Archived.Keeps(s) {
+		if !o.keeps(s) {
 			continue
 		}
 		if len(page) == limit {
