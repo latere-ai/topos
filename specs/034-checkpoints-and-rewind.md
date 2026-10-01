@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [runner/checkpoint/, machine/host/, machine/cella/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-01
 author: changkun
 ---
 
@@ -115,7 +115,7 @@ server `POST /v1/sessions/{id}/rewind` ([[015-api]]).
 
 | Operation | Restores |
 |---|---|
-| fork at a sequence | the checkpoint named by the `session.status` at that sequence ([[017-external-runners-handoff-fork]]) |
+| fork at a sequence | the checkpoint named by the `session.status` at that sequence ([[017-external-runners-handoff-fork]]), when the new session's machine reaches it: from the working directory's repository, or from the old session's repository under the runner's checkpoint directory; a hosted fork on Cella reaches it only once the runner pushes checkpoints to the git host, so until then it restores nothing |
 | handoff | the latest checkpoint, pushed by the writer that hands off and fetched by the one that takes over |
 | a lost sandbox | the latest checkpoint ([[009-machines]]) |
 

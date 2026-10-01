@@ -107,7 +107,8 @@ and writes them back unchanged.
 | `limits` | object | `turn_timeout` (default `2h`) and `max_age` (default `168h`), Go durations ([[005-harness-loop]]), and `retention`, how long the session is kept after it ends, absent to keep it until it is deleted ([[014-store]]) |
 | `capture` | object | `requests`: when true every model request's bytes are kept as a blob ([[007-models]]) |
 | `end_on_idle` | boolean | end `completed` when the first turn goes idle `end_turn`; set by triggers ([[022-triggers]]) |
-| `parent` | object | `session_id` and `seq` of the session this one was forked from |
+| `parent` | object | `session_id` and `seq` of the session this one was forked from; events 1 to `seq` are that session's, copied ([[017-external-runners-handoff-fork]]) |
+| `archived_at` | time | when the session was archived, absent when it is not; set and cleared by the server alone, never by an event ([[015-api]]) |
 | `trigger_id` | string | `trg_…` when a trigger started it |
 | `created_at`, `updated_at`, `expires_at` | time | `expires_at` is `created_at` plus `limits.max_age` |
 | `metadata` | object | string keys to string values, at most 32 entries |
@@ -193,7 +194,7 @@ appending and the session stays `running` until the next runner's claim
 | `model.request` | the runner | no | `model`, `family`, `dialect`, `codec`, `prompt_version`, `tools_sha256`, `request_sha256`, `fold_seq`, `request_bytes`, `request_blob`, `response_blob`, `usage` (the Lux wire usage), `cost_usd_micro`, `cost_source`, `latency_ms`, `first_token_ms`, `stop_reason`, `attempts`, `outcome` (`ok`, `error`, `canceled`), `error`, `loss` ([[007-models]]) |
 | `session.status` | the runner or the server | no | `status`, `stop_reason`, `detail`, `runner` (on `running`: `id`, `kind`), `checkpoint` (on a turn end: `ref`, `commit`) |
 | `session.machine` | the runner | yes, as system parts | `machine` (`kind`, `id`, `workdir`, `os`, `arch`, `environment`), `reason` (`attached`, `handoff`, `restored`, `replaced`), `context`, `instructions` (`path`, `sha256`, `blob`), `skills` (`name`, `description`, `path`), `repositories` (on the `attached` of the session's first machine: one `url`, `branch`, `commit` per repository delivered into it, `commit` the branch's HEAD once the delivery finished, absent for a repository with no commit yet) ([[019-git]]), `checkpoint` ([[009-machines]], [[011-instructions-and-skills]]) |
-| `session.resumed` | the server | no | `by` (a Sender), `reason` (`budget_raised`, `credit_restored`, or a client's text), `max_cost_usd_micro` (the session's budget from here on, which the header takes; absent for none) ([[007-models]]) |
+| `session.resumed` | the server | no | `by` (a Sender), `reason` (`budget_raised`, `credit_restored`, or a client's text), `max_cost_usd_micro` (the session's budget from here on, which the header takes, except in a fork's copied events; absent for none) ([[007-models]]) |
 | `session.model_changed` | the server | no | `by` (a Sender), `old` and `new`, each `{name, effort}`: the model and the reasoning effort the session ran and the ones its next turn runs, `effort` absent for the model's own default, which the header takes as `model` ([[015-api]]) |
 | `session.scope_changed` | the server | no | `by`, `old`, `new`, `reason`, `until` (a time, `end_of_turn`, or absent for standing) |
 | `approval.requested` | the runner | yes, as a system part | `approval_id`, `tool_use_id` (the call that caused it), `source` (`egress`), `destination` (`host`, and `core`, `action`, `resource` for a flagged action, or `method`, `path` for an egress pattern), `risk`, `verdict`, `reason` ([[012-permissions-and-approvals]]) |
