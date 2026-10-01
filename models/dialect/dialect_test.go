@@ -136,6 +136,42 @@ func TestEveryDialectRoundTripsThroughTheStub(t *testing.T) {
 	}
 }
 
+// TestABrokenCallStillEndsTheStream: a Chat Completions stream whose
+// call's arguments break off inside a string, reported as tool_calls,
+// ends as a result: the call holds the input {}, its text is in
+// InvalidArgs, and the raw stream is kept.
+func TestABrokenCallStillEndsTheStream(t *testing.T) {
+	const broken = `{"command":"rm hello.cc hello.ccc'} }]}`
+	chunk := func(delta string) string {
+		return `data: {"id":"c1","model":"m","choices":[{"index":0,"delta":` + delta + `,"finish_reason":null}]}` + "\n\n"
+	}
+	args, err := json.Marshal(broken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := chunk(`{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"bash","arguments":""}}]}`) +
+		chunk(`{"tool_calls":[{"index":0,"function":{"arguments":`+string(args)+`}}]}`) +
+		`data: {"id":"c1","model":"m","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}` + "\n\n" +
+		"data: [DONE]\n\n"
+	stub := luxstub.New(t)
+	stub.Script("m", luxstub.Reply{Raw: raw})
+	s, err := (&Model{}).Stream(t.Context(), models.Request{IR: request("m"), Connection: models.Connection{BaseURL: stub.URL() + "/openai", Model: "m", Dialect: ir.DialectOpenAIChat}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	res, _, err := drain(t, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Message.Blocks) != 1 || string(res.Message.Blocks[0].ToolUse.Args) != `{}` || res.StopReason != ir.StopToolUse {
+		t.Fatalf("message %+v, stop %s", res.Message.Blocks, res.StopReason)
+	}
+	if res.InvalidArgs["call_1"] != broken || string(res.RawResponse) != raw {
+		t.Fatalf("invalid %q, raw %d bytes", res.InvalidArgs, len(res.RawResponse))
+	}
+}
+
 func TestErrorsAreClassifiedForRetry(t *testing.T) {
 	conn := func(stub *luxstub.Server) models.Connection {
 		return models.Connection{BaseURL: stub.URL() + "/anthropic", Model: "m", Dialect: ir.DialectAnthropicMessages}

@@ -4,6 +4,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,12 +70,16 @@ type fakeTool struct {
 	name  string
 	props tools.Properties
 	run   func(c tools.Call) (tools.Result, error)
-	mu    sync.Mutex
-	calls []string
+	// schema replaces the default input schema, whose properties are
+	// all optional.
+	schema string
+	mu     sync.Mutex
+	calls  []string
 }
 
 func (f *fakeTool) Definition() tools.Definition {
-	return tools.Definition{Name: f.name, Description: "a test tool", InputSchema: json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"},"command":{"type":"string"}},"additionalProperties":false}`)}
+	schema := cmp.Or(f.schema, `{"type":"object","properties":{"text":{"type":"string"},"command":{"type":"string"}},"additionalProperties":false}`)
+	return tools.Definition{Name: f.name, Description: "a test tool", InputSchema: json.RawMessage(schema)}
 }
 func (f *fakeTool) Properties() tools.Properties { return f.props }
 func (f *fakeTool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
