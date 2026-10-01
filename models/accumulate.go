@@ -4,8 +4,10 @@
 package models
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -13,10 +15,21 @@ import (
 )
 
 // Accumulator builds the IR response a stream of IR events describes.
+//
+// A tool_use block's arguments are the concatenation of its args
+// deltas, settled into ToolUse.Args when the block stops and again when
+// the message stops. Settling keeps the response encodable whatever the
+// model sent: no arguments are the empty object, and text that is not
+// one JSON value becomes the empty object too, with the text kept by
+// tool use ID in InvalidArgs. A model can break off inside a string
+// argument at its output limit, and a provider can report that stop as
+// tool_calls, so such text reaches here as an ordinary tool call.
 type Accumulator struct {
 	resp    ir.Response
 	args    map[int]*strings.Builder
+	head    map[int]json.RawMessage
 	open    map[int]bool
+	invalid map[string]string
 	stopped bool
 }
 
@@ -26,8 +39,19 @@ func (a *Accumulator) Stopped() bool { return a.stopped }
 // Response is the response so far.
 func (a *Accumulator) Response() *ir.Response { return &a.resp }
 
+// InvalidArgs is the argument text of each settled tool call that was
+// not one JSON value, by tool use ID; the response holds such a call
+// with the input {}. It is nil when every call's arguments were JSON.
+func (a *Accumulator) InvalidArgs() map[string]string {
+	if len(a.invalid) == 0 {
+		return nil
+	}
+	return maps.Clone(a.invalid)
+}
+
 // Add folds one event into the response. It refuses an event the stream
-// grammar does not allow at that point.
+// grammar does not allow at that point, with one exception: arguments
+// for a tool_use block that already stopped are appended to it.
 func (a *Accumulator) Add(ev ir.Event) error {
 	if a.stopped {
 		return fmt.Errorf("models: event %s after message_stop", ev.Type)
@@ -47,6 +71,12 @@ func (a *Accumulator) Add(ev ir.Event) error {
 		if b.ToolUse != nil {
 			tu := *b.ToolUse
 			b.ToolUse = &tu
+			if len(tu.Args) > 0 {
+				if a.head == nil {
+					a.head = map[int]json.RawMessage{}
+				}
+				a.head[ev.Index] = tu.Args
+			}
 		}
 		a.resp.Blocks[ev.Index] = b
 		if a.open == nil {
@@ -54,7 +84,11 @@ func (a *Accumulator) Add(ev ir.Event) error {
 		}
 		a.open[ev.Index] = true
 	case ir.EventTextDelta, ir.EventThinkingDelta, ir.EventSignatureDelta, ir.EventArgsDelta:
-		if !a.open[ev.Index] {
+		// Arguments for a tool_use block that already stopped are taken:
+		// a decoder that closes a call's block when the next call begins
+		// sends the rest of interleaved parallel calls that way, and the
+		// message's stop settles them.
+		if !a.open[ev.Index] && (ev.Type != ir.EventArgsDelta || !a.toolUse(ev.Index)) {
 			return fmt.Errorf("models: %s for block %d, which is not open", ev.Type, ev.Index)
 		}
 		b := &a.resp.Blocks[ev.Index]
@@ -77,14 +111,7 @@ func (a *Accumulator) Add(ev ir.Event) error {
 			return fmt.Errorf("models: block_stop for block %d, which is not open", ev.Index)
 		}
 		delete(a.open, ev.Index)
-		b := &a.resp.Blocks[ev.Index]
-		if b.Type == ir.BlockToolUse && b.ToolUse != nil {
-			if sb := a.args[ev.Index]; sb != nil && sb.Len() > 0 {
-				b.ToolUse.Args = json.RawMessage(sb.String())
-			} else if len(b.ToolUse.Args) == 0 {
-				b.ToolUse.Args = json.RawMessage(`{}`)
-			}
-		}
+		a.settle(ev.Index)
 	case ir.EventMessageDelta:
 		if ev.StopReason != "" {
 			a.resp.StopReason = ev.StopReason
@@ -94,11 +121,51 @@ func (a *Accumulator) Add(ev ir.Event) error {
 		}
 		mergeUsage(&a.resp.Usage, ev.Usage)
 	case ir.EventMessageStop:
+		// The message's end closes every block still open, and settles
+		// every call again with the arguments that arrived after its
+		// block stopped.
+		clear(a.open)
+		for i := range a.resp.Blocks {
+			a.settle(i)
+		}
 		a.stopped = true
 	default:
 		return fmt.Errorf("models: unknown stream event %q", ev.Type)
 	}
 	return nil
+}
+
+// toolUse reports whether block i is a tool_use block.
+func (a *Accumulator) toolUse(i int) bool {
+	return i >= 0 && i < len(a.resp.Blocks) && a.resp.Blocks[i].Type == ir.BlockToolUse && a.resp.Blocks[i].ToolUse != nil
+}
+
+// settle sets a tool_use block's Args from the deltas it received, or
+// from its start when none arrived: no arguments are {}, one JSON value
+// is kept as it is, and any other text is {} with the text recorded in
+// invalid.
+func (a *Accumulator) settle(i int) {
+	if !a.toolUse(i) {
+		return
+	}
+	tu := a.resp.Blocks[i].ToolUse
+	raw := []byte(a.head[i])
+	if sb := a.args[i]; sb != nil && sb.Len() > 0 {
+		raw = []byte(sb.String())
+	}
+	delete(a.invalid, tu.ID)
+	switch {
+	case len(bytes.TrimSpace(raw)) == 0:
+		tu.Args = json.RawMessage(`{}`)
+	case json.Valid(raw):
+		tu.Args = json.RawMessage(raw)
+	default:
+		tu.Args = json.RawMessage(`{}`)
+		if a.invalid == nil {
+			a.invalid = map[string]string{}
+		}
+		a.invalid[tu.ID] = string(raw)
+	}
 }
 
 // mergeUsage keeps the latest figure of each count a stream reports.

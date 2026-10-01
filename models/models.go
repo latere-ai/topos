@@ -127,10 +127,15 @@ type Stream interface {
 // Result is what a finished stream leaves for the log.
 type Result struct {
 	// Message is the assistant message as the Lux wire message, every
-	// block verbatim.
-	Message    lux.Message
-	StopReason ir.StopReason
-	Usage      lux.Usage
+	// block verbatim but for the input of a call in InvalidArgs.
+	Message lux.Message
+	// InvalidArgs is the argument text of each tool call whose arguments
+	// were not one JSON value, by tool use ID. Message holds such a call
+	// with the input {}, so the log stays valid JSON; the harness answers
+	// the call from this text instead of running it.
+	InvalidArgs map[string]string
+	StopReason  ir.StopReason
+	Usage       lux.Usage
 	// RawResponse is the response body as received.
 	RawResponse []byte
 	// RequestBytes is the exact request body, kept only when the

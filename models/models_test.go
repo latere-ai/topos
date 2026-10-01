@@ -291,6 +291,92 @@ func TestAccumulator(t *testing.T) {
 	}
 }
 
+// TestAccumulatorSettlesEveryCallsArguments: whatever a stream sends as
+// a call's arguments, the response encodes as Lux wire. Arguments that
+// are not one JSON value are the input {} with their text kept by tool
+// use ID; arguments for a block that already stopped are appended to it;
+// a block the stream never stopped is closed at the message's end with
+// what it received.
+func TestAccumulatorSettlesEveryCallsArguments(t *testing.T) {
+	start := func(i int, id string, head string) ir.Event {
+		tu := &ir.ToolUse{ID: id, Name: "bash"}
+		if head != "" {
+			tu.Args = json.RawMessage(head)
+		}
+		return ir.Event{Type: ir.EventBlockStart, Index: i, Block: &ir.Block{Type: ir.BlockToolUse, ToolUse: tu}}
+	}
+	args := func(i int, d string) ir.Event { return ir.Event{Type: ir.EventArgsDelta, Index: i, Delta: d} }
+	stop := func(i int) ir.Event { return ir.Event{Type: ir.EventBlockStop, Index: i} }
+	end := []ir.Event{{Type: ir.EventMessageDelta, StopReason: ir.StopToolUse}, {Type: ir.EventMessageStop}}
+	truncated := `{"command":"rm hello.cc hello.ccc'} }]}]} }]}>}?  the files have been removed`
+	for _, c := range []struct {
+		name    string
+		events  []ir.Event
+		want    []string
+		invalid map[string]string
+	}{
+		{"empty", []ir.Event{start(0, "t1", ""), args(0, ""), stop(0)}, []string{`{}`}, nil},
+		{"whitespace", []ir.Event{start(0, "t1", ""), args(0, " \n"), stop(0)}, []string{`{}`}, nil},
+		{"truncated", []ir.Event{start(0, "t1", ""), args(0, truncated[:20]), args(0, truncated[20:]), stop(0)}, []string{`{}`}, map[string]string{"t1": truncated}},
+		{"two values", []ir.Event{start(0, "t1", ""), args(0, `{"command":"ls"}{"command":"pwd"}`), stop(0)}, []string{`{}`}, map[string]string{"t1": `{"command":"ls"}{"command":"pwd"}`}},
+		{"interleaved", []ir.Event{
+			start(0, "t1", ""), stop(0), start(1, "t2", ""),
+			args(0, `{"command":`), args(1, `{"command":`), args(0, `"ls"}`), args(1, `"pwd"}`), stop(1),
+		}, []string{`{"command":"ls"}`, `{"command":"pwd"}`}, nil},
+		{"interleaved past a truncation", []ir.Event{
+			start(0, "t1", ""), args(0, `{"command":`), stop(0), start(1, "t2", ""), args(1, `{}`), args(0, `"ls"}`), stop(1),
+		}, []string{`{"command":"ls"}`, `{}`}, nil},
+		{"never stopped", []ir.Event{start(0, "t1", ""), args(0, `{"command":"ls"}`)}, []string{`{"command":"ls"}`}, nil},
+		{"never stopped and truncated", []ir.Event{start(0, "t1", ""), args(0, `{"command":"l`)}, []string{`{}`}, map[string]string{"t1": `{"command":"l`}},
+		{"arguments in the start", []ir.Event{start(0, "t1", `{"command":"ls"}`), stop(0)}, []string{`{"command":"ls"}`}, nil},
+		{"deltas after an empty start", []ir.Event{start(0, "t1", `{}`), args(0, `{"command":"ls"}`), stop(0)}, []string{`{"command":"ls"}`}, nil},
+		{"broken start", []ir.Event{start(0, "t1", `{"command`), stop(0)}, []string{`{}`}, map[string]string{"t1": `{"command`}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var a Accumulator
+			for _, ev := range append(append([]ir.Event{{Type: ir.EventMessageStart, ID: "msg_1"}}, c.events...), end...) {
+				if err := a.Add(ev); err != nil {
+					t.Fatalf("%s %d: %v", ev.Type, ev.Index, err)
+				}
+			}
+			r := a.Response()
+			var got []string
+			for _, b := range r.Blocks {
+				got = append(got, string(b.ToolUse.Args))
+			}
+			if fmt.Sprint(got) != fmt.Sprint(c.want) {
+				t.Fatalf("args %q, want %q", got, c.want)
+			}
+			if inv := a.InvalidArgs(); fmt.Sprint(inv) != fmt.Sprint(c.invalid) {
+				t.Fatalf("invalid %q, want %q", inv, c.invalid)
+			}
+			msg, _, err := LuxMessage(r)
+			if err != nil || len(msg.Blocks) != len(c.want) {
+				t.Fatalf("lux message %+v: %v", msg, err)
+			}
+		})
+	}
+	// Only arguments reach a block that stopped: text for a stopped text
+	// block, and arguments for a block never started, are still refused.
+	for name, evs := range map[string][]ir.Event{
+		"text after its stop":    {{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockText}}, {Type: ir.EventBlockStop, Index: 0}, {Type: ir.EventTextDelta, Index: 0, Delta: "late"}},
+		"arguments for a text":   {{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockText}}, {Type: ir.EventBlockStop, Index: 0}, args(0, `{}`)},
+		"arguments for no block": {args(3, `{}`)},
+		"a call stopped twice":   {start(0, "t1", ""), stop(0), stop(0)},
+	} {
+		var a Accumulator
+		var err error
+		for _, ev := range evs {
+			if err = a.Add(ev); err != nil {
+				break
+			}
+		}
+		if err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+}
+
 func TestSpendRefusalsAreNotRetried(t *testing.T) {
 	for typ, spent := range map[string]bool{"budget_exhausted": true, "spend_exceeded": true, "rate_limit_error": false} {
 		err := fmt.Errorf("wrapped: %w", &HTTPError{Status: 429, Type: typ})

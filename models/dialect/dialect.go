@@ -343,7 +343,11 @@ func content(t ir.EventType) bool {
 	return false
 }
 
+// finish settles the result of a stream that ended. The raw bytes are
+// kept first, so a response the log cannot encode still leaves what the
+// model sent.
 func (s *stream) finish() error {
+	s.result.RawResponse = bytes.Clone(s.raw.Bytes())
 	msg, usage, err := models.LuxMessage(s.acc.Response())
 	if err != nil {
 		return err
@@ -351,7 +355,7 @@ func (s *stream) finish() error {
 	s.result.Message = msg
 	s.result.Usage = usage
 	s.result.StopReason = s.acc.Response().StopReason
-	s.result.RawResponse = bytes.Clone(s.raw.Bytes())
+	s.result.InvalidArgs = s.acc.InvalidArgs()
 	return nil
 }
 

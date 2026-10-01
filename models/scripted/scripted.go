@@ -332,6 +332,7 @@ func (s *stream) Next() (ir.Event, error) {
 			return ir.Event{}, fmt.Errorf("scripted: encode the response: %w", err)
 		}
 		s.res.Message, s.res.Usage, s.res.StopReason, s.res.RawResponse = msg, usage, s.resp.StopReason, raw
+		s.res.InvalidArgs = s.acc.InvalidArgs()
 		s.done = true
 		return ir.Event{}, io.EOF
 	}
