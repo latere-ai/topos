@@ -178,6 +178,40 @@ paths:
           description: OK
         default:
           $ref: "#/components/responses/Error"
+  /sessions/summary:
+    get:
+      operationId: getSessionSummary
+      summary: Count the sessions the list would answer under the same filters, by status, and the agents they belong to
+      description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
+      x-topos-actions:
+        - session.list
+      parameters:
+        - name: agent
+          in: query
+          description: An agent's id, or a name among the caller's own agents.
+          schema:
+            type: string
+        - name: runner
+          in: query
+          schema:
+            type: string
+            enum:
+              - hosted
+              - external
+        - name: archived
+          in: query
+          description: false or absent leaves archived sessions out, true lists only them, any lists both.
+          schema:
+            type: string
+            enum:
+              - "false"
+              - "true"
+              - any
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: "#/components/responses/Error"
   /sessions/{id}:
     get:
       operationId: getSession

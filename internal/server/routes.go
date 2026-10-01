@@ -31,6 +31,8 @@ func table() []route {
 			op: "createSession", summary: "Create a session of an agent, named by id or by name among the caller's own agents", status: http.StatusCreated, body: MaxBody, handle: (*call).createSession},
 		{method: http.MethodGet, path: "/sessions", actions: a(authorizer.ActionSessionList),
 			op: "listSessions", summary: "List sessions, filtered by agent, status, runner and archived", status: http.StatusOK, handle: (*call).listSessions},
+		{method: http.MethodGet, path: "/sessions/summary", actions: a(authorizer.ActionSessionList),
+			op: "getSessionSummary", summary: "Count the sessions the list would answer under the same filters, by status, and the agents they belong to", status: http.StatusOK, handle: (*call).getSessionSummary},
 		{method: http.MethodGet, path: "/sessions/{id}", actions: a(authorizer.ActionSessionRead),
 			op: "getSession", summary: "Get a session", status: http.StatusOK, handle: (*call).getSession},
 		{method: http.MethodPatch, path: "/sessions/{id}", actions: a(authorizer.ActionSessionUpdate, authorizer.ActionSessionRead),
