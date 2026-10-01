@@ -6,6 +6,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"latere.ai/x/topos/machine"
@@ -34,14 +35,14 @@ func forkCheckpoint(s session.Session, evs []session.Event) (*session.Checkpoint
 
 // restoreFork puts the files of the turn a fork forked at into its first
 // machine (spec 017): the fork point's checkpoint, taken from the working
-// directory's own repository, or fetched from the parent's session
-// repository under CheckpointDir, recorded as the fork's checkpoint of
-// that turn and checked out into the working directory. A checkpoint
-// neither holds, a machine without git and a directory with no
-// repository restore nothing and answer nil, so the fork starts on the
-// files its repositories give it; a hosted sandbox's checkpoints left
-// with its sandbox until the runner pushes them to the git host
-// (spec 034).
+// directory's own repository, from the parent's session repository under
+// CheckpointDir, or fetched by its id from the repository that kept it
+// past the parent's machine when that repository is the fork's own
+// (spec 035), recorded as the fork's checkpoint of that turn and checked
+// out into the working directory. A fork point that kept no checkpoint
+// restores nothing and answers nil; one whose checkpoint the runner cannot
+// have or cannot check out answers why, and the fork starts on the files
+// its repositories give it.
 func (r *Runner) restoreFork(ctx context.Context, s session.Session, m machine.Machine) (*session.CheckpointRef, error) {
 	evs, err := r.o.Store.Events(ctx, s.ID, 1, int(s.Parent.Seq))
 	if err != nil {
@@ -51,20 +52,38 @@ func (r *Runner) restoreFork(ctx context.Context, s session.Session, m machine.M
 	if target == nil {
 		return nil, nil
 	}
+	missing := func(err error) error {
+		return fmt.Errorf("the checkpoint %s of turn %d of %s: %w", target.Commit, turn, s.Parent.SessionID, err)
+	}
 	cp := r.checkpointerOn(m, s)
 	from := ""
 	if r.o.CheckpointDir != "" {
 		from = r.sessionRepo(s.Parent.SessionID)
 	}
 	ref, ok, err := cp.Adopt(ctx, turn, target.Commit, from, target.Ref)
+	if err == nil && !ok {
+		// The copied log names the repository that kept the checkpoint;
+		// only the fork's own repository is fetched from, so the log
+		// cannot point the machine at another.
+		switch {
+		case target.Remote == "":
+			return nil, missing(errors.New("it was kept on the machine of that session alone"))
+		case target.Remote != cp.Remote:
+			return nil, missing(fmt.Errorf("it was kept at %s, which is not this session's own repository", target.Remote))
+		}
+		if err := cp.Fetch(ctx, target.Commit, s.Parent.SessionID); err != nil {
+			return nil, missing(err)
+		}
+		ref, ok, err = cp.Adopt(ctx, turn, target.Commit, "", "")
+	}
 	switch {
-	case errors.Is(err, checkpoint.ErrNoGit), errors.Is(err, checkpoint.ErrNoRepository), err == nil && !ok:
-		return nil, nil
 	case err != nil:
-		return nil, &machine.OpenError{Code: checkpoint.CodeMissing, Err: err}
+		return nil, missing(err)
+	case !ok:
+		return nil, missing(checkpoint.ErrNotKept)
 	}
 	if err := cp.Restore(ctx, ref.Commit, ""); err != nil {
-		return nil, &machine.OpenError{Code: checkpoint.CodeMissing, Err: err}
+		return nil, missing(err)
 	}
 	return &ref, nil
 }

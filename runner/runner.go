@@ -48,6 +48,12 @@ type Options struct {
 	// directories that are not checkouts (spec 034); empty takes no
 	// checkpoints outside a repository.
 	CheckpointDir string
+	// CheckpointHost is the URL of the git host whose repositories keep
+	// the checkpoints of the sessions that work in them past their
+	// machines (spec 035): a session whose first repository's URL is
+	// under it pushes each checkpoint there. Empty keeps every checkpoint
+	// on its machine.
+	CheckpointHost string
 	// Credentials reaches the session's credentials for a lease that
 	// does not reach them itself (spec 018): toposd's minter for the
 	// leases of its own runners. Nil, and with such a lease, a drive
@@ -337,18 +343,40 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 		repos, delivered = deliver(ctx, s, m)
 	}
 	// A fork's first machine gets the files of the turn it forked at,
-	// over the repositories it was given (spec 017).
+	// over the repositories it was given (spec 017). Files it cannot get
+	// leave the fork on its repositories, recorded beside the machine.
 	var restored *session.CheckpointRef
+	var missing error
 	if first && s.Parent != nil {
-		var err error
-		if restored, err = r.restoreFork(ctx, s, m); err != nil {
-			delivered = errors.Join(delivered, err)
-		}
+		restored, missing = r.restoreFork(ctx, s, m)
 	}
 	if err := r.attach(ctx, s, m, log, beside, repos, restored); err != nil {
 		return errors.Join(err, delivered)
 	}
+	if missing != nil {
+		if err := r.checkpointMissing(ctx, log, beside, missing); err != nil {
+			return errors.Join(err, delivered)
+		}
+	}
 	return errors.Join(r.attachments(ctx, m, log, beside), delivered)
+}
+
+// checkpointMissing appends the session.error of a fork whose fork
+// point's files could not be restored (spec 035): the fork goes on with
+// its conversation and its repositories, so the error is not retryable
+// and stops nothing.
+func (r *Runner) checkpointMissing(ctx context.Context, log *Log, beside bool, why error) error {
+	e, err := session.NewEvent(session.TypeSessionError, session.SessionError{
+		Code: checkpoint.CodeMissing, Message: "The files of the session this one continues could not be restored; it starts from its repositories.", Detail: why.Error(),
+	}, r.o.Clock())
+	if err != nil {
+		return err
+	}
+	if beside {
+		return log.appendBeside(ctx, []session.Event{e})
+	}
+	_, err = log.Append(ctx, []session.Event{e})
+	return err
 }
 
 // attachments writes the files of the session's messages the machine
@@ -434,13 +462,28 @@ func (r *Runner) checkpointer(cfg harness.Config, s session.Session) *checkpoint
 	return r.checkpointerOn(cfg.Machine, s)
 }
 
-// checkpointerOn takes the checkpoints of s's working directory on m.
+// checkpointerOn takes the checkpoints of s's working directory on m,
+// kept at the session's first repository when that is on the
+// checkpoint host.
 func (r *Runner) checkpointerOn(m machine.Machine, s session.Session) *checkpoint.Checkpointer {
-	cp := &checkpoint.Checkpointer{Machine: m, SessionID: s.ID, AgentID: s.Agent.ID}
+	cp := &checkpoint.Checkpointer{Machine: m, SessionID: s.ID, AgentID: s.Agent.ID, Remote: r.keptAt(s)}
 	if r.o.CheckpointDir != "" {
 		cp.SessionRepo = r.sessionRepo(s.ID)
 	}
 	return cp
+}
+
+// keptAt is the repository that keeps s's checkpoints past its machine:
+// the session's first repository, the one delivered into its working
+// directory, when its URL is under CheckpointHost; empty otherwise
+// (spec 035).
+func (r *Runner) keptAt(s session.Session) string {
+	repos := session.Repositories(s)
+	host := strings.TrimRight(r.o.CheckpointHost, "/")
+	if host == "" || len(repos) == 0 || !strings.HasPrefix(repos[0].URL, host+"/") {
+		return ""
+	}
+	return repos[0].URL
 }
 
 // sessionRepo is the session repository of a working directory that is

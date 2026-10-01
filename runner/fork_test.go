@@ -176,8 +176,204 @@ func TestAForkWithoutItsCheckpointStartsFresh(t *testing.T) {
 	if parent, err := gitIn(t, repo, "rev-parse", "--verify", "--quiet", next.Commit+"^"); err == nil {
 		t.Fatalf("the fork's first checkpoint chains to %s, which its repository never held", parent)
 	}
-	if n := f.countIn(t.Context(), child.ID, session.TypeSessionError); n != 0 {
-		t.Fatalf("%d session errors", n)
+	missing := f.errorsIn(t.Context(), child.ID)
+	if len(missing) != 1 || missing[0].Code != "checkpoint_missing" || missing[0].Retryable || !strings.Contains(missing[0].Detail, "kept on the machine of that session alone") {
+		t.Fatalf("session errors %+v, want one checkpoint_missing saying why", missing)
+	}
+}
+
+// errorsIn are the session.error payloads of the session id's log.
+func (f *fixture) errorsIn(ctx context.Context, id string) []session.SessionError {
+	f.t.Helper()
+	evs, err := f.store.Events(ctx, id, 1, 0)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var out []session.SessionError
+	for _, e := range evs {
+		if e.Type != session.TypeSessionError {
+			continue
+		}
+		var p session.SessionError
+		if err := e.Decode(&p); err != nil {
+			f.t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// gitHostRepo makes a bare repository with one commit on main under
+// base/host, the git host of a test, and answers its file URL and path.
+func gitHostRepo(t *testing.T, base, name string) (string, string) {
+	t.Helper()
+	bare := filepath.Join(base, "host", name)
+	seed := filepath.Join(base, "seed-"+name)
+	for _, args := range [][]string{
+		{"init", "--quiet", "--bare", "-b", "main", bare},
+		{"init", "--quiet", "-b", "main", seed},
+		{"-C", seed, "commit", "--quiet", "--allow-empty", "-m", "start"},
+		{"-C", seed, "push", "--quiet", bare, "HEAD:main"},
+	} {
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=p", "GIT_AUTHOR_EMAIL=p@example.com", "GIT_COMMITTER_NAME=p", "GIT_COMMITTER_EMAIL=p@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return "file://" + bare, bare
+}
+
+// forkFromRepository runs one turn of a session that works in the
+// repository url and writes notes.txt in its working directory, ends it
+// expired, deletes its working directory as a sandbox goes at a hosted
+// session's end, and forks it at that turn into a session that works in
+// the repository fork in a directory of its own.
+func forkFromRepository(t *testing.T, f *fixture, url, fork string) (session.Session, string, session.CheckpointRef) {
+	t.Helper()
+	ctx := t.Context()
+	parent := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
+	parent.Resources = []session.Resource{{Type: session.ResourceRepository, URL: url}}
+	if err := f.store.Create(ctx, parent, nil); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Dir(f.work)
+	work := filepath.Join(base, "parent")
+	f.works[parent.ID] = work
+	write(t, filepath.Join(work, "notes.txt"), "draft one\n")
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Noted the first draft."}))
+	f.sendTo(ctx, parent.ID, session.TypeUserMessage, session.UserMessage{Sender: parent.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Turn one."}}})
+	if _, err := f.r.Drive(ctx, parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.sendTo(ctx, parent.ID, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: session.StopExpired})
+	if err := os.RemoveAll(work); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := f.store.Events(ctx, parent.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, _ := checkpointOf(evs, 1)
+	if cp == nil {
+		t.Fatal("the parent's turn kept no checkpoint")
+	}
+	seq, err := session.ForkPoint(evs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
+	child.Resources = []session.Resource{{Type: session.ResourceRepository, URL: fork}}
+	if child, err = session.Fork(ctx, f.store, child, nil, parent.ID, evs[:seq]); err != nil {
+		t.Fatal(err)
+	}
+	f.works[child.ID] = filepath.Join(base, "fork-"+child.ID)
+	if err := os.MkdirAll(f.works[child.ID], 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return child, f.works[child.ID], *cp
+}
+
+// TestAForkRestoresFromTheRepository: a session that works in a
+// repository on the checkpoint host keeps its checkpoint there, so a fork
+// whose parent's working directory is gone fetches the fork point's
+// checkpoint by its id into a fresh clone, restores its files, records
+// the machine restored, chains its next checkpoint to it and keeps that
+// one at the repository as its own latest.
+func TestAForkRestoresFromTheRepository(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	f := setup(t)
+	base := filepath.Dir(f.work)
+	url, bare := gitHostRepo(t, base, "app.git")
+	f.r.o.CheckpointHost = "file://" + filepath.Join(base, "host") + "/"
+	child, work, cp := forkFromRepository(t, f, url, url)
+	if cp.Remote != url {
+		t.Fatalf("the parent's checkpoint %+v, want it kept at %s", cp, url)
+	}
+	parent := child.Parent.SessionID
+	if got, err := gitIn(t, bare, "rev-parse", "refs/topos/checkpoints/"+parent+"/latest"); err != nil || got != cp.Commit {
+		t.Fatalf("the repository's latest of the parent is %q (%v), want %s", got, err, cp.Commit)
+	}
+	evs := continueFork(t, f, child)
+	if b, err := os.ReadFile(filepath.Join(work, "notes.txt")); err != nil || string(b) != "draft one\n" {
+		t.Fatalf("the fork's notes.txt is %q, %v; want the fork point's", b, err)
+	}
+	m := ownMachine(t, child, evs)
+	if m.Reason != "restored" || m.Checkpoint == nil || m.Checkpoint.Commit != cp.Commit || len(m.Repositories) != 1 {
+		t.Fatalf("the fork's machine: reason %q, checkpoint %+v, repositories %+v; want restored at %s over its repository", m.Reason, m.Checkpoint, m.Repositories, cp.Commit)
+	}
+	next, _ := checkpointOf(evs, 2)
+	if next == nil || next.Remote != url {
+		t.Fatalf("the fork's checkpoint %+v, want it kept at %s", next, url)
+	}
+	if got, err := gitIn(t, bare, "rev-parse", next.Commit+"^"); err != nil || got != cp.Commit {
+		t.Fatalf("the fork's checkpoint chains to %q (%v), want the restored %s", got, err, cp.Commit)
+	}
+	if got, err := gitIn(t, bare, "rev-parse", "refs/topos/checkpoints/"+child.ID+"/latest"); err != nil || got != next.Commit {
+		t.Fatalf("the repository's latest of the fork is %q (%v), want %s", got, err, next.Commit)
+	}
+	if errs := f.errorsIn(t.Context(), child.ID); len(errs) != 0 {
+		t.Fatalf("session errors %+v", errs)
+	}
+}
+
+// TestAForkWithoutItsKeptCheckpointSaysSo: a fork whose parent kept its
+// checkpoint on its machine alone, one whose copied checkpoint names a
+// repository that is not the fork's own, and one whose repository lost
+// the checkpoint, each start on their repository, recorded attached with
+// a checkpoint_missing beside the machine that says why, and run their
+// turn.
+func TestAForkWithoutItsKeptCheckpointSaysSo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	for _, c := range []struct {
+		name, why string
+		host      bool
+		other     bool
+		lose      bool
+	}{
+		{name: "kept on the machine", why: "kept on the machine of that session alone"},
+		{name: "another repository", why: "not this session's own repository", host: true, other: true},
+		{name: "lost at the repository", why: "does not give the checkpoint", host: true, lose: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := setup(t)
+			base := filepath.Dir(f.work)
+			url, bare := gitHostRepo(t, base, "app.git")
+			fork := url
+			if c.other {
+				fork, _ = gitHostRepo(t, base, "other.git")
+			}
+			if c.host {
+				f.r.o.CheckpointHost = "file://" + filepath.Join(base, "host")
+			}
+			child, work, cp := forkFromRepository(t, f, url, fork)
+			if c.lose {
+				if _, err := gitIn(t, bare, "update-ref", "-d", "refs/topos/checkpoints/"+child.Parent.SessionID+"/latest"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := gitIn(t, bare, "-c", "gc.reflogExpireUnreachable=now", "gc", "--quiet", "--prune=now"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			evs := continueFork(t, f, child)
+			if _, err := os.Stat(filepath.Join(work, "notes.txt")); !os.IsNotExist(err) {
+				t.Fatalf("notes.txt appeared without its checkpoint: %v", err)
+			}
+			if m := ownMachine(t, child, evs); m.Reason != "attached" || m.Checkpoint != nil || len(m.Repositories) != 1 {
+				t.Fatalf("the fork's machine: %+v; want attached over its repository", m)
+			}
+			missing := f.errorsIn(t.Context(), child.ID)
+			if len(missing) != 1 || missing[0].Code != "checkpoint_missing" || !strings.Contains(missing[0].Detail, cp.Commit) || !strings.Contains(missing[0].Detail, c.why) {
+				t.Fatalf("session errors %+v, want one checkpoint_missing naming %s and saying %q", missing, cp.Commit, c.why)
+			}
+			if next, _ := checkpointOf(evs, 2); next == nil {
+				t.Fatal("the fork's turn kept no checkpoint")
+			}
+		})
 	}
 }
 
