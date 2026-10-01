@@ -87,16 +87,16 @@ its writer appends when it returns. Nothing merges two writers' events.
 
 Restoring the files needs the fork point's checkpoint where the new
 session's machine can read it. A runner restores it from the working
-directory's own repository when that holds the commit, and from the
-old session's repository under the runner's checkpoint directory
-otherwise. A hosted session on a Cella sandbox keeps its checkpoints
-inside the sandbox, which is deleted at the session's end, until the
-runner pushes each one to the git host ([[034-checkpoints-and-rewind]],
-"Where the objects live", not built); until then its fork opens a fresh
-sandbox with the session's repositories cloned at their refs and
-records `attached`, and files the old session wrote and did not push
-are not restored. Its repositories start at the refs the session names,
-not at the old session's branch.
+directory's own repository when that holds the commit, from the old
+session's repository under the runner's checkpoint directory, and, for
+a hosted session that works in a repository on the git host, from that
+repository, where the runner keeps each session's checkpoints past its
+sandbox ([[035-hosted-checkpoints-at-the-git-host]]). A checkpoint none
+of them holds leaves the fork with its conversation and its
+repositories, recorded `attached` with a `session.error`
+`checkpoint_missing` beside it; a hosted session with no repository
+keeps no checkpoint, and its fork restores nothing. Its repositories
+start at the refs the session names, not at the old session's branch.
 
 ### The writer
 
@@ -239,11 +239,12 @@ presents ([[006-identity]]).
 | A fork on a server copies the log to the fork point, the last turn boundary by default and the one before an expired session's end, with the parent link, the same agent version, a fresh lifetime, the forker as initiator, the copied spend and the new session's own budget; it asks `session.read` and then `session.fork` with the create's fields and the parent's, a denied fork creates nothing, and a caller who may not read the session hears `not_found` | `internal/server.TestForkContinuesAnEndedSession`, `internal/server.TestAForkIsRefused` | built |
 | The new session's first turn sees the old session's history: its fold at the fork point equals the old one's | `internal/server.TestAForksFirstTurnSeesTheHistory` | built |
 | A fork's first machine is opened afresh, restores the fork point's checkpoint where the runner can read it, records `restored` with the checkpoint, and its next checkpoint chains to it | `runner.TestAForkRestoresTheForkPointsFiles` | built |
-| A fork's first machine without a reachable checkpoint is recorded `attached`, gets the session's repositories, and its first checkpoint starts a new chain | `runner.TestAForkWithoutItsCheckpointStartsFresh` | built |
+| A fork's first machine without a reachable checkpoint is recorded `attached` with `session.error` `checkpoint_missing` beside it, gets the session's repositories, and its first checkpoint starts a new chain | `runner.TestAForkWithoutItsCheckpointStartsFresh` | built |
 | A local fork at a turn boundary copies the log to that sequence, restores that turn's files, and the new session's fold equals the old one's at that sequence | `TestLocalForkRestoresTurnFiles` | not built |
 | A fork at a sequence that is not a turn boundary is refused with `invalid_fork_point` | `internal/server.TestForkPointMustBeATurnBoundary` | built |
 | After a fork, events the old writer appends to the old session never appear in the new one | `internal/server.TestForkNeverMerges` | built |
-| A fork of a hosted session on a Cella sandbox restores the fork point's files from the git host | `TestCloudForkRestoresFiles` in the Cella tier | not built ([[034-checkpoints-and-rewind]]'s push to the git host) |
+| A fork of a hosted session on a Cella sandbox restores the fork point's files from the git host, through toposd over the stub Cella ([[035-hosted-checkpoints-at-the-git-host]]) | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | not built |
+| The same against a real Cella and git host | `TestCloudForkRestoresFiles` in the Cella tier | not built |
 | A program using only `client` and a key runs a session as an external runner: it syncs a local session, appends its turns, and receives a message sent through the send route by way of the inbox | `TestExternalRunnerWithClientOnly` in the e2e tier | not built |
 | An append from a subject other than the writer is `not_writer`; one the authorizer refuses is `append_refused` and leaves the local session intact | `TestAppendWriterRule` | not built |
 | A retried append batch succeeds once and never duplicates an event | `TestAppendRouteRetryIsIdempotent` | not built |

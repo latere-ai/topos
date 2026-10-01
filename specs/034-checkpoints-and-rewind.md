@@ -79,15 +79,17 @@ its ref, so every turn has one.
 | a checkout of a repository | that repository; the refs are not reachable from HEAD, a branch or a tag, and git's default fetch and push refspecs carry none of them |
 | not a checkout, on the host | a bare session repository, `$TOPOS_DATA_DIR/checkpoints/<session>.git`, used as `GIT_DIR` with the directory as the work tree |
 | not a checkout, in a Cella sandbox | a bare session repository at `/topos/checkpoints.git` inside the sandbox, outside the working directory; the runner copies each turn's checkpoint out and pushes it to a repository the git host at `TOPOS_ORIGO_URL` holds for the session's owner and names by the session id |
-| a checkout in a Cella sandbox | the checkout's repository; the runner copies each turn's checkpoint out and pushes it to the checkout's remote under `refs/topos/checkpoints/<session>/` ([[019-git]]) |
+| a checkout in a Cella sandbox | the checkout's repository; when the checkout is the session's first repository and that repository is on the git host at `TOPOS_ORIGO_URL`, the runner also pushes each turn's checkpoint there, to the one ref `refs/topos/checkpoints/<session>/latest` ([[035-hosted-checkpoints-at-the-git-host]]) |
 
-In the cloud the runner pushes, never the sandbox: the helper writes
-the turn's checkpoint as a `git bundle` of the one new commit, the
-runner reads the bundle out through the helper's file routes and
-pushes it with its own token, and the git host lets only that token
-create a checkpoint ref and none update one ([[019-git]]). A workload
+In the cloud the push to the git host runs in the sandbox, with the
+session's git host credential that the egress gateway puts on the
+request ([[035-hosted-checkpoints-at-the-git-host]]): toposd's image
+carries no `git` to push with, and the sandbox's token reaches every ref
+of the repository until the git host decides pushes by ref. A workload
 can shape the files a checkpoint records, as it shapes the working
-directory, but cannot rewrite an earlier turn's checkpoint. A cloud
+directory, and can move the ref at the git host, but cannot make a fork
+restore other files than the checkpoint recorded: a fork restores the
+commit its copied log names, by id, or nothing. A cloud
 checkpoint restored onto a host runs there under the host sandbox, or
 in `plan` or `confirm` where the host has none
 ([[012-permissions-and-approvals]]). Without `TOPOS_ORIGO_URL` a cloud
@@ -115,7 +117,7 @@ server `POST /v1/sessions/{id}/rewind` ([[015-api]]).
 
 | Operation | Restores |
 |---|---|
-| fork at a sequence | the checkpoint named by the `session.status` at that sequence ([[017-external-runners-handoff-fork]]), when the new session's machine reaches it: from the working directory's repository, or from the old session's repository under the runner's checkpoint directory; a hosted fork on Cella reaches it only once the runner pushes checkpoints to the git host, so until then it restores nothing |
+| fork at a sequence | the checkpoint named by the `session.status` at that sequence ([[017-external-runners-handoff-fork]]), when the new session's machine reaches it: from the working directory's repository, from the old session's repository under the runner's checkpoint directory, or, for a hosted session, by its id from the repository on the git host that kept it ([[035-hosted-checkpoints-at-the-git-host]]); one it reaches nowhere leaves the fork `attached` with `session.error` `checkpoint_missing` |
 | handoff | the latest checkpoint, pushed by the writer that hands off and fetched by the one that takes over |
 | a lost sandbox | the latest checkpoint ([[009-machines]]) |
 
@@ -129,14 +131,17 @@ image has no `git`.
 A session's checkpoint refs and its session repository are deleted with
 the session. An installation may prune the refs of ended sessions
 after a retention it sets; the core's default keeps them until the
-session is deleted.
+session is deleted. A hosted session's `latest` ref at the git host is
+the exception: no credential of the session outlives it, so it stays
+until the repository is deleted or the ref is deleted
+([[035-hosted-checkpoints-at-the-git-host]]).
 
 ### Error codes
 
 | Code | Meaning |
 |---|---|
 | `rewind_not_idle` | rewind asked for while the session runs |
-| `checkpoint_missing` | the turn has no checkpoint to restore |
+| `checkpoint_missing` | the turn has no checkpoint to restore, or a fork's first machine could not have the fork point's |
 
 ## Not in this spec
 
