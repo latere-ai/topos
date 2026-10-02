@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- A verdict outside allow, flag, ask and block now composes as block. The
+  harness's verdicts are the shared vocabulary of `latere.ai/x/pkg/verdict`
+  (v0.91.0), and `harness.Stricter` is its `Least`: ranked by its index in
+  a list, an unknown verdict was the most permissive, so composing one
+  with allow allowed. No caller in this release composed verdicts, so no
+  call was affected.
+
 ## v0.10.1 - 2026-10-02
 
 ### Fixed
