@@ -4,6 +4,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -35,19 +36,9 @@ func OpenAPI(server string) ([]byte, error) {
 	}
 	slices.Sort(errorCodes)
 
-	paths := yaml.MapSlice{}
-	byPath := map[string]yaml.MapSlice{}
-	var order []string
-	for _, rt := range table() {
-		if _, ok := byPath[rt.path]; !ok {
-			order = append(order, rt.path)
-		}
-		byPath[rt.path] = append(byPath[rt.path], yaml.MapItem{Key: strings.ToLower(rt.method), Value: operation(rt)})
-	}
-	for _, p := range order {
-		paths = append(paths, yaml.MapItem{Key: p, Value: byPath[p]})
-	}
-	doc := yaml.MapSlice{
+	// head is the document's first members, which the route that serves
+	// the document shows as its example.
+	head := yaml.MapSlice{
 		{Key: "openapi", Value: "3.1.0"},
 		{Key: "info", Value: yaml.MapSlice{
 			{Key: "title", Value: "Topos API"},
@@ -55,6 +46,34 @@ func OpenAPI(server string) ([]byte, error) {
 			{Key: "description", Value: "Agents, their versions, the sessions people have with them, and the triggers that start and continue sessions on a schedule or on delivered events. Every route is verified and asked of the installation's authorizer; every error is one envelope with a code of the table under components.schemas.Error."},
 		}},
 		{Key: "servers", Value: []yaml.MapSlice{{{Key: "url", Value: server}}}},
+	}
+	first, err := asYAML(head)
+	if err != nil {
+		return nil, err
+	}
+	shown, err := examples()
+	if err != nil {
+		return nil, err
+	}
+	shown["getOpenAPI"] = example{response: string(first)}
+
+	paths := yaml.MapSlice{}
+	byPath := map[string]yaml.MapSlice{}
+	var order []string
+	for _, rt := range table() {
+		if _, ok := byPath[rt.path]; !ok {
+			order = append(order, rt.path)
+		}
+		op, err := operation(rt, shown[rt.op])
+		if err != nil {
+			return nil, fmt.Errorf("server: the example of %s: %w", rt.op, err)
+		}
+		byPath[rt.path] = append(byPath[rt.path], yaml.MapItem{Key: strings.ToLower(rt.method), Value: op})
+	}
+	for _, p := range order {
+		paths = append(paths, yaml.MapItem{Key: p, Value: byPath[p]})
+	}
+	doc := slices.Concat(head, yaml.MapSlice{
 		{Key: "security", Value: []yaml.MapSlice{{{Key: "bearer", Value: []string{}}}}},
 		{Key: "paths", Value: paths},
 		{Key: "components", Value: yaml.MapSlice{
@@ -79,9 +98,22 @@ func OpenAPI(server string) ([]byte, error) {
 			}},
 			{Key: "responses", Value: errorResponses(statuses)},
 		}},
-	}
-	return yaml.MarshalWithOptions(doc, yaml.Indent(2), yaml.IndentSequence(true))
+	})
+	return asYAML(doc)
 }
+
+// asYAML writes a part of the document as YAML, a string of several
+// lines as a block. The encoder indents a block's empty lines, which
+// read the same written empty, so the document ends no line in a space.
+func asYAML(v any) ([]byte, error) {
+	b, err := yaml.MarshalWithOptions(v, yaml.Indent(2), yaml.IndentSequence(true), yaml.UseLiteralStyleIfMultiline(true))
+	if err != nil {
+		return nil, err
+	}
+	return indentOnly.ReplaceAll(b, nil), nil
+}
+
+var indentOnly = regexp.MustCompile(`(?m)^ +$`)
 
 var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 
@@ -133,6 +165,18 @@ var queryParams = map[string][]yaml.MapSlice{
 var eventStreams = map[string]string{
 	"streamEvents": "Frames of `id: <seq>`, `event: <type>` and `data: <the event's JSON>`, a `: keepalive` comment line between them, and with deltas=1 frames of `event: delta` and `data: <a Delta>` with no id.",
 }
+
+// The media types of the bodies the document describes.
+const (
+	mediaJSON   = "application/json"
+	mediaYAML   = "application/yaml"
+	mediaStream = "text/event-stream"
+	mediaBytes  = "application/octet-stream"
+)
+
+// answerMedia are the routes whose answer is not JSON: a stream's
+// frames, a blob's bytes and the document itself.
+var answerMedia = map[string]string{"streamEvents": mediaStream, "getBlob": mediaBytes, "getOpenAPI": mediaYAML}
 
 // deltaSchema is the data of a stream's event: delta frame (spec 015).
 var deltaSchema = yaml.MapSlice{
@@ -266,9 +310,10 @@ var opDescriptions = map[string]string{
 		"A turn already running keeps its model and its effort: the change takes effect at the next turn.", strings.Join(v1.Efforts, ", ")),
 }
 
-// operation is one route as the document describes it. x-topos-actions
-// names the questions the route asks the authorizer.
-func operation(rt route) yaml.MapSlice {
+// operation is one route as the document describes it, with shown as
+// the example of its bodies. x-topos-actions names the questions the
+// route asks the authorizer.
+func operation(rt route, shown example) (yaml.MapSlice, error) {
 	op := yaml.MapSlice{{Key: "operationId", Value: rt.op}, {Key: "summary", Value: rt.summary}, {Key: "description", Value: opDescriptions[rt.op]}}
 	if len(rt.actions) > 0 {
 		op = append(op, yaml.MapItem{Key: "x-topos-actions", Value: rt.actions})
@@ -288,21 +333,71 @@ func operation(rt route) yaml.MapSlice {
 		op = append(op, yaml.MapItem{Key: "parameters", Value: params})
 	}
 	if rt.body > 0 {
-		media := yaml.MapSlice{{Key: "application/json", Value: yaml.MapSlice{}}}
-		if rt.op == "applyAgent" || rt.op == "applyTrigger" {
-			media = append(media, yaml.MapItem{Key: "application/yaml", Value: yaml.MapSlice{}})
+		sent := yaml.MapSlice{}
+		if shown.request != "" {
+			v, err := jsonExample(shown.request)
+			if err != nil {
+				return nil, err
+			}
+			sent = yaml.MapSlice{{Key: "example", Value: v}}
+		}
+		media := yaml.MapSlice{{Key: mediaJSON, Value: sent}}
+		if shown.manifest != "" {
+			media = append(media, yaml.MapItem{Key: mediaYAML, Value: yaml.MapSlice{{Key: "example", Value: shown.manifest}}})
 		}
 		op = append(op, yaml.MapItem{Key: "requestBody", Value: yaml.MapSlice{{Key: "content", Value: media}}})
 	}
 	ok := yaml.MapSlice{{Key: "description", Value: http.StatusText(rt.status)}}
-	if d, stream := eventStreams[rt.op]; stream {
-		ok = append(ok, yaml.MapItem{Key: "content", Value: yaml.MapSlice{{Key: "text/event-stream", Value: yaml.MapSlice{
-			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: d}}},
-		}}}})
+	if rt.status != http.StatusNoContent {
+		content, err := answered(rt, shown)
+		if err != nil {
+			return nil, err
+		}
+		ok = append(ok, yaml.MapItem{Key: "content", Value: content})
 	}
 	responses := yaml.MapSlice{{Key: strconv.Itoa(rt.status), Value: ok}}
 	responses = append(responses, yaml.MapItem{Key: "default", Value: yaml.MapSlice{{Key: "$ref", Value: "#/components/responses/Error"}}})
-	return append(op, yaml.MapItem{Key: "responses", Value: responses})
+	return append(op, yaml.MapItem{Key: "responses", Value: responses}), nil
+}
+
+// answered is the content of a route's success answer: JSON with its
+// example as a value, and for the answers of another media type a
+// string, its example the text as it is on the wire, or a blob's bytes,
+// which have no example.
+func answered(rt route, shown example) (yaml.MapSlice, error) {
+	switch media := answerMedia[rt.op]; media {
+	case "":
+		v, err := jsonExample(shown.response)
+		if err != nil {
+			return nil, err
+		}
+		return yaml.MapSlice{{Key: mediaJSON, Value: yaml.MapSlice{{Key: "example", Value: v}}}}, nil
+	case mediaBytes:
+		return yaml.MapSlice{{Key: media, Value: yaml.MapSlice{{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "format", Value: "binary"}}}}}}, nil
+	case mediaStream:
+		return yaml.MapSlice{{Key: media, Value: yaml.MapSlice{
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: eventStreams[rt.op]}}},
+			{Key: "example", Value: shown.response},
+		}}}, nil
+	default:
+		return yaml.MapSlice{{Key: media, Value: yaml.MapSlice{
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: "The document. The example is its first lines."}}},
+			{Key: "example", Value: shown.response},
+		}}}, nil
+	}
+}
+
+// jsonExample reads a JSON body as the value the document shows, its
+// members in the order the body has them.
+func jsonExample(body string) (any, error) {
+	if body == "" {
+		return nil, errors.New("no example")
+	}
+	var v any
+	if err := yaml.UnmarshalWithOptions([]byte(body), &v, yaml.UseOrderedMap()); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
 // errorResponses is the one error response every route may answer, with

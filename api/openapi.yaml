@@ -26,11 +26,78 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
-          application/yaml: {}
+          application/json:
+            example:
+              apiVersion: topos.latere.ai/v1
+              kind: Agent
+              metadata:
+                name: release-notes
+                displayName: Release notes
+              spec:
+                model:
+                  name: claude-haiku-4-5
+                instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                machine:
+                  kind: cella
+          application/yaml:
+            example: |
+              apiVersion: topos.latere.ai/v1
+              kind: Agent
+              metadata:
+                name: release-notes
+                displayName: Release notes
+              spec:
+                model:
+                  name: claude-haiku-4-5
+                instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                machine:
+                  kind: cella
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Agent
+                metadata:
+                  name: release-notes
+                  displayName: Release notes
+                spec:
+                  model:
+                    name: claude-haiku-4-5
+                  instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                  tools:
+                    - read
+                    - write
+                    - edit
+                    - bash
+                    - grep
+                    - glob
+                    - web_fetch
+                    - todo
+                  approvals:
+                    mode: confirm
+                    thresholds:
+                      flagAt: 0.3
+                      askAt: 0.5
+                      blockAt: 0.9
+                  threads:
+                    maxDepth: 2
+                    maxConcurrent: 8
+                  machine:
+                    kind: cella
+                    image: base
+                  limits:
+                    turnTimeout: 2h
+                    maxAge: 168h
+                  context:
+                    compactAt: 0.8
+                status:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  createdAt: "2026-09-22T12:02:00Z"
         default:
           $ref: "#/components/responses/Error"
   /agents:
@@ -43,6 +110,51 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                items:
+                  - apiVersion: topos.latere.ai/v1
+                    kind: Agent
+                    metadata:
+                      name: release-notes
+                      displayName: Release notes
+                    spec:
+                      model:
+                        name: claude-haiku-4-5
+                      instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                      tools:
+                        - read
+                        - write
+                        - edit
+                        - bash
+                        - grep
+                        - glob
+                        - web_fetch
+                        - todo
+                      approvals:
+                        mode: confirm
+                        thresholds:
+                          flagAt: 0.3
+                          askAt: 0.5
+                          blockAt: 0.9
+                      threads:
+                        maxDepth: 2
+                        maxConcurrent: 8
+                      machine:
+                        kind: cella
+                        image: base
+                      limits:
+                        turnTimeout: 2h
+                        maxAge: 168h
+                      context:
+                        compactAt: 0.8
+                    status:
+                      id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                      version: 2
+                      digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                      createdAt: "2026-09-22T12:02:00Z"
+                next_cursor: YWdlbnRfMDFNMzRGU0RHMFE2MDQyNFhUM0Q5NkRSQUo
         default:
           $ref: "#/components/responses/Error"
   /agents/{ref}:
@@ -62,6 +174,49 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Agent
+                metadata:
+                  name: release-notes
+                  displayName: Release notes
+                spec:
+                  model:
+                    name: claude-haiku-4-5
+                  instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                  tools:
+                    - read
+                    - write
+                    - edit
+                    - bash
+                    - grep
+                    - glob
+                    - web_fetch
+                    - todo
+                  approvals:
+                    mode: confirm
+                    thresholds:
+                      flagAt: 0.3
+                      askAt: 0.5
+                      blockAt: 0.9
+                  threads:
+                    maxDepth: 2
+                    maxConcurrent: 8
+                  machine:
+                    kind: cella
+                    image: base
+                  limits:
+                    turnTimeout: 2h
+                    maxAge: 168h
+                  context:
+                    compactAt: 0.8
+                status:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  createdAt: "2026-09-22T12:02:00Z"
         default:
           $ref: "#/components/responses/Error"
   /agents/{ref}/versions:
@@ -81,6 +236,15 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                items:
+                  - version: 1
+                    digest: sha256:5cdca0a8167efffd9c058b14bffaaa39ad4473ed001e29f8fbd160e951e80681
+                    created_by: https://login.example|alice
+                    created_at: "2026-09-22T12:00:00Z"
+                next_cursor: MQ
         default:
           $ref: "#/components/responses/Error"
   /agents/{ref}/versions/{n}:
@@ -105,6 +269,49 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Agent
+                metadata:
+                  name: release-notes
+                  displayName: Release notes
+                spec:
+                  model:
+                    name: claude-haiku-4-5
+                  instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                  tools:
+                    - read
+                    - write
+                    - edit
+                    - bash
+                    - grep
+                    - glob
+                    - web_fetch
+                    - todo
+                  approvals:
+                    mode: confirm
+                    thresholds:
+                      flagAt: 0.3
+                      askAt: 0.5
+                      blockAt: 0.9
+                  threads:
+                    maxDepth: 2
+                    maxConcurrent: 8
+                  machine:
+                    kind: cella
+                    image: base
+                  limits:
+                    turnTimeout: 2h
+                    maxAge: 168h
+                  context:
+                    compactAt: 0.8
+                status:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  createdAt: "2026-09-22T12:02:00Z"
         default:
           $ref: "#/components/responses/Error"
   /agents/{ref}/archive:
@@ -123,10 +330,56 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              permanent: true
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Agent
+                metadata:
+                  name: release-notes
+                  displayName: Release notes
+                spec:
+                  model:
+                    name: claude-haiku-4-5
+                  instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                  tools:
+                    - read
+                    - write
+                    - edit
+                    - bash
+                    - grep
+                    - glob
+                    - web_fetch
+                    - todo
+                  approvals:
+                    mode: confirm
+                    thresholds:
+                      flagAt: 0.3
+                      askAt: 0.5
+                      blockAt: 0.9
+                  threads:
+                    maxDepth: 2
+                    maxConcurrent: 8
+                  machine:
+                    kind: cella
+                    image: base
+                  limits:
+                    turnTimeout: 2h
+                    maxAge: 168h
+                  context:
+                    compactAt: 0.8
+                status:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  createdAt: "2026-09-22T12:02:00Z"
+                  archivedAt: "2026-09-22T13:00:00Z"
         default:
           $ref: "#/components/responses/Error"
   /sessions:
@@ -138,10 +391,51 @@ paths:
         - session.create
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              agent: release-notes
+              message: Write the release notes for v1.4.0.
+              title: Notes for v1.4.0
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34G2JF01B91B8399CD1G6YP
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                title: Notes for v1.4.0
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: idle
+                turn: 0
+                last_seq: 1
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  spent_cost_usd_micro: 0
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                created_at: "2026-09-22T12:05:00Z"
+                updated_at: "2026-09-22T12:05:00Z"
+                expires_at: "2026-09-29T12:05:00Z"
         default:
           $ref: "#/components/responses/Error"
     get:
@@ -183,6 +477,46 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                items:
+                  - schema: 1
+                    id: ses_01M34G2JF01B91B8399CD1G6YP
+                    agent:
+                      id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                      name: release-notes
+                      version: 2
+                      digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                      bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                    title: Notes for v1.4.0
+                    initiator:
+                      subject: https://login.example|alice
+                      kind: person
+                    runner: hosted
+                    status: idle
+                    stop_reason: end_turn
+                    turn: 1
+                    last_seq: 5
+                    machine:
+                      kind: cella
+                      image: base
+                    policy:
+                      mode: confirm
+                      thresholds:
+                        flag_at: 0.3
+                        ask_at: 0.5
+                        block_at: 0.9
+                    budget:
+                      spent_cost_usd_micro: 1200
+                    limits:
+                      turn_timeout: 2h0m0s
+                      max_age: 168h0m0s
+                    capture: {}
+                    created_at: "2026-09-22T12:05:00Z"
+                    updated_at: "2026-09-22T12:05:41Z"
+                    expires_at: "2026-09-29T12:05:00Z"
+                next_cursor: ses_01M34G2JF01B91B8399CD1G6YP
         default:
           $ref: "#/components/responses/Error"
   /sessions/summary:
@@ -217,6 +551,15 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                sessions:
+                  running: 0
+                  waiting_for_approval: 0
+                  idle: 2
+                  ended: 0
+                agents: 1
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}:
@@ -235,6 +578,44 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34G2JF01B91B8399CD1G6YP
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                title: Notes for v1.4.0
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: idle
+                stop_reason: end_turn
+                turn: 1
+                last_seq: 5
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  spent_cost_usd_micro: 1200
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                created_at: "2026-09-22T12:05:00Z"
+                updated_at: "2026-09-22T12:05:41Z"
+                expires_at: "2026-09-29T12:05:00Z"
         default:
           $ref: "#/components/responses/Error"
     patch:
@@ -252,10 +633,55 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              model:
+                name: claude-sonnet-4-5
+                effort: high
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34G2JF01B91B8399CD1G6YP
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                title: Notes for v1.4.0
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: idle
+                stop_reason: end_turn
+                turn: 1
+                last_seq: 6
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  spent_cost_usd_micro: 1200
+                model:
+                  name: claude-sonnet-4-5
+                  effort: high
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                created_at: "2026-09-22T12:05:00Z"
+                updated_at: "2026-09-22T12:10:00Z"
+                expires_at: "2026-09-29T12:05:00Z"
         default:
           $ref: "#/components/responses/Error"
     delete:
@@ -290,10 +716,53 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              reason: completed
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34G2JF01B91B8399CD1G6YP
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                title: Notes for v1.4.0
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: ended
+                stop_reason: completed
+                turn: 1
+                last_seq: 8
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  spent_cost_usd_micro: 1200
+                model:
+                  name: claude-sonnet-4-5
+                  effort: high
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                created_at: "2026-09-22T12:05:00Z"
+                updated_at: "2026-09-22T12:20:00Z"
+                expires_at: "2026-09-29T12:05:00Z"
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/fork:
@@ -312,10 +781,53 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              at_seq: 5
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34GMWD03E3B7MERD1RGEM7S
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                title: Notes for v1.4.0 (continued)
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: idle
+                stop_reason: end_turn
+                turn: 1
+                last_seq: 5
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  spent_cost_usd_micro: 1200
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                parent:
+                  session_id: ses_01M34G2JF01B91B8399CD1G6YP
+                  seq: 5
+                created_at: "2026-09-22T12:15:00Z"
+                updated_at: "2026-09-22T12:15:00Z"
+                expires_at: "2026-09-29T12:15:00Z"
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/archive:
@@ -338,6 +850,48 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34G2JF01B91B8399CD1G6YP
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                title: Notes for v1.4.0
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: ended
+                stop_reason: completed
+                turn: 1
+                last_seq: 8
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  spent_cost_usd_micro: 1200
+                model:
+                  name: claude-sonnet-4-5
+                  effort: high
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                created_at: "2026-09-22T12:05:00Z"
+                updated_at: "2026-09-22T12:20:00Z"
+                expires_at: "2026-09-29T12:05:00Z"
+                archived_at: "2026-09-22T12:25:00Z"
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/unarchive:
@@ -360,6 +914,47 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34G2JF01B91B8399CD1G6YP
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                title: Notes for v1.4.0
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: ended
+                stop_reason: completed
+                turn: 1
+                last_seq: 8
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  spent_cost_usd_micro: 1200
+                model:
+                  name: claude-sonnet-4-5
+                  effort: high
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                created_at: "2026-09-22T12:05:00Z"
+                updated_at: "2026-09-22T12:20:00Z"
+                expires_at: "2026-09-29T12:05:00Z"
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/resume:
@@ -377,10 +972,51 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              reason: budget_raised
+              max_cost_usd_micro: 5000000
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                schema: 1
+                id: ses_01M34FYX90GK6SQ477TKZDF4MH
+                agent:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  name: release-notes
+                  version: 2
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                initiator:
+                  subject: https://login.example|alice
+                  kind: person
+                runner: hosted
+                status: idle
+                stop_reason: budget
+                turn: 1
+                last_seq: 5
+                machine:
+                  kind: cella
+                  image: base
+                policy:
+                  mode: confirm
+                  thresholds:
+                    flag_at: 0.3
+                    ask_at: 0.5
+                    block_at: 0.9
+                budget:
+                  max_cost_usd_micro: 5000000
+                  spent_cost_usd_micro: 1200
+                limits:
+                  turn_timeout: 2h0m0s
+                  max_age: 168h0m0s
+                capture: {}
+                created_at: "2026-09-22T12:03:00Z"
+                updated_at: "2026-09-22T12:28:00Z"
+                expires_at: "2026-09-29T12:03:00Z"
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/events:
@@ -399,6 +1035,23 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                items:
+                  - id: evt_01M34G2JF1P53NNG7DN08D5QAG
+                    seq: 1
+                    session_id: ses_01M34G2JF01B91B8399CD1G6YP
+                    type: user.message
+                    time: "2026-09-22T12:05:00Z"
+                    payload:
+                      sender:
+                        subject: https://login.example|alice
+                        kind: person
+                      content:
+                        - type: text
+                          text: Write the release notes for v1.4.0.
+                next_cursor: MQ
         default:
           $ref: "#/components/responses/Error"
     post:
@@ -416,10 +1069,31 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              type: user.message
+              payload:
+                content:
+                  - type: text
+                    text: Add a section for the breaking changes.
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                id: evt_01M34GFCM0MP2SWWWVFVJH1PW2
+                seq: 7
+                session_id: ses_01M34G2JF01B91B8399CD1G6YP
+                type: user.message
+                time: "2026-09-22T12:12:00Z"
+                payload:
+                  sender:
+                    subject: https://login.example|alice
+                    kind: person
+                  content:
+                    - type: text
+                      text: Add a section for the breaking changes.
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/stream:
@@ -457,6 +1131,19 @@ paths:
               schema:
                 type: string
                 description: "Frames of `id: <seq>`, `event: <type>` and `data: <the event's JSON>`, a `: keepalive` comment line between them, and with deltas=1 frames of `event: delta` and `data: <a Delta>` with no id."
+              example: |+
+                id: 1
+                event: user.message
+                data: {"id":"evt_01M34G2JF1P53NNG7DN08D5QAG","seq":1,"session_id":"ses_01M34G2JF01B91B8399CD1G6YP","type":"user.message","time":"2026-09-22T12:05:00Z","payload":{"sender":{"subject":"https://login.example|alice","kind":"person"},"content":[{"type":"text","text":"Write the release notes for v1.4.0."}]}}
+
+                id: 2
+                event: session.status
+                data: {"id":"evt_01M34G2KE8DR262Y3P678HNPM2","seq":2,"session_id":"ses_01M34G2JF01B91B8399CD1G6YP","type":"session.status","time":"2026-09-22T12:05:01Z","turn":1,"payload":{"status":"running"}}
+
+                id: 3
+                event: agent.message
+                data: {"id":"evt_01M34G3SH0V6283G9W516VXR87","seq":3,"session_id":"ses_01M34G2JF01B91B8399CD1G6YP","type":"agent.message","time":"2026-09-22T12:05:40Z","turn":1,"payload":{"message":{"role":"assistant","blocks":[{"type":"text","text":"The release notes for v1.4.0 are in NOTES.md."}]},"stop_reason":"end_turn"}}
+
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/blobs/{digest}:
@@ -480,6 +1167,11 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
         default:
           $ref: "#/components/responses/Error"
   /sessions/{id}/events/{event_id}/redact:
@@ -502,7 +1194,9 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              reason: The message held an access token.
       responses:
         "204":
           description: No Content
@@ -526,11 +1220,71 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
-          application/yaml: {}
+          application/json:
+            example:
+              apiVersion: topos.latere.ai/v1
+              kind: Trigger
+              metadata:
+                name: on-release
+              spec:
+                agent: release-notes
+                "on":
+                  product: github
+                  verbs:
+                    - release.published
+                session:
+                  message: Write the release notes for {{event.resource}}.
+          application/yaml:
+            example: |
+              apiVersion: topos.latere.ai/v1
+              kind: Trigger
+              metadata:
+                name: on-release
+              spec:
+                agent: release-notes
+                on:
+                  product: github
+                  verbs: [release.published]
+                session:
+                  message: Write the release notes for {{event.resource}}.
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Trigger
+                metadata:
+                  name: on-release
+                spec:
+                  agent: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  timeZone: UTC
+                  "on":
+                    product: github
+                    verbs:
+                      - release.published
+                  session:
+                    message: Write the release notes for {{event.resource}}.
+                    endOnIdle: true
+                  skipIfActive: true
+                  maxAge: 1h
+                  suspend: false
+                status:
+                  id: trg_01M34HGBA0JR98WKKXWZGAX6VA
+                  version: 1
+                  digest: sha256:cd61c91df8739587137a731afc9dbd615baa74b314f2e8ece6854065790db151
+                  createdAt: "2026-09-22T12:30:00Z"
+                  counts:
+                    started: 0
+                    continued: 0
+                    held: 0
+                    filtered: 0
+                    skippedActive: 0
+                    skippedBusy: 0
+                    skippedLate: 0
+                    refused: 0
+                    failed: 0
         default:
           $ref: "#/components/responses/Error"
   /triggers:
@@ -543,6 +1297,43 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                items:
+                  - apiVersion: topos.latere.ai/v1
+                    kind: Trigger
+                    metadata:
+                      name: on-release
+                    spec:
+                      agent: agent_01M34FSDG0Q60424XT3D96DRAJ
+                      timeZone: UTC
+                      "on":
+                        product: github
+                        verbs:
+                          - release.published
+                      session:
+                        message: Write the release notes for {{event.resource}}.
+                        endOnIdle: true
+                      skipIfActive: true
+                      maxAge: 1h
+                      suspend: false
+                    status:
+                      id: trg_01M34HGBA0JR98WKKXWZGAX6VA
+                      version: 1
+                      digest: sha256:cd61c91df8739587137a731afc9dbd615baa74b314f2e8ece6854065790db151
+                      createdAt: "2026-09-22T12:30:00Z"
+                      counts:
+                        started: 0
+                        continued: 0
+                        held: 0
+                        filtered: 0
+                        skippedActive: 0
+                        skippedBusy: 0
+                        skippedLate: 0
+                        refused: 0
+                        failed: 0
+                next_cursor: dHJnXzAxTTM0SEdCQTBKUjk4V0tLWFdaR0FYNlZB
         default:
           $ref: "#/components/responses/Error"
   /triggers/{ref}:
@@ -562,6 +1353,43 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Trigger
+                metadata:
+                  name: on-release
+                spec:
+                  agent: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  timeZone: UTC
+                  "on":
+                    product: github
+                    verbs:
+                      - release.published
+                  session:
+                    message: Write the release notes for {{event.resource}}.
+                    endOnIdle: true
+                  skipIfActive: true
+                  maxAge: 1h
+                  suspend: false
+                status:
+                  id: trg_01M34HGBA0JR98WKKXWZGAX6VA
+                  version: 1
+                  digest: sha256:cd61c91df8739587137a731afc9dbd615baa74b314f2e8ece6854065790db151
+                  createdAt: "2026-09-22T12:30:00Z"
+                  lastFiredAt: "2026-09-22T12:40:00Z"
+                  lastSessionId: ses_01M34J2N81KBW8FS0WCBFSJCGZ
+                  counts:
+                    started: 2
+                    continued: 0
+                    held: 0
+                    filtered: 0
+                    skippedActive: 0
+                    skippedBusy: 0
+                    skippedLate: 0
+                    refused: 0
+                    failed: 0
         default:
           $ref: "#/components/responses/Error"
     delete:
@@ -600,10 +1428,34 @@ paths:
             type: string
       requestBody:
         content:
-          application/json: {}
+          application/json:
+            example:
+              id: 123e4567-e89b-12d3-a456-426614174000
+              product: github
+              verb: release.published
+              resource: example/widgets@v1.4.0
+              actor: ann
+              time: "2026-09-22T12:40:00Z"
+              payload:
+                tag: v1.4.0
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                id: frg_01M34J2N80QKPCFHVXPHHQRHGQ
+                trigger_id: trg_01M34HGBA0JR98WKKXWZGAX6VA
+                origin: event
+                event:
+                  product: github
+                  verb: release.published
+                  resource: example/widgets@v1.4.0
+                  id: 123e4567-e89b-12d3-a456-426614174000
+                key: example/widgets@v1.4.0
+                outcome: started
+                session_id: ses_01M34J2N81KBW8FS0WCBFSJCGZ
+                received_at: "2026-09-22T12:40:00Z"
         default:
           $ref: "#/components/responses/Error"
   /triggers/{ref}/firings:
@@ -623,6 +1475,23 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              example:
+                items:
+                  - id: frg_01M34J2N80QKPCFHVXPHHQRHGQ
+                    trigger_id: trg_01M34HGBA0JR98WKKXWZGAX6VA
+                    origin: event
+                    event:
+                      product: github
+                      verb: release.published
+                      resource: example/widgets@v1.4.0
+                      id: 123e4567-e89b-12d3-a456-426614174000
+                    key: example/widgets@v1.4.0
+                    outcome: started
+                    session_id: ses_01M34J2N81KBW8FS0WCBFSJCGZ
+                    received_at: "2026-09-22T12:40:00Z"
+                next_cursor: ZnJnXzAxTTM0SjJOODBRS1BDRkhWWFBISFFSSEdR
         default:
           $ref: "#/components/responses/Error"
   /openapi.yaml:
@@ -634,6 +1503,19 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/yaml:
+              schema:
+                type: string
+                description: The document. The example is its first lines.
+              example: |
+                openapi: 3.1.0
+                info:
+                  title: Topos API
+                  version: v1
+                  description: Agents, their versions, the sessions people have with them, and the triggers that start and continue sessions on a schedule or on delivered events. Every route is verified and asked of the installation's authorizer; every error is one envelope with a code of the table under components.schemas.Error.
+                servers:
+                  - url: /v1
         default:
           $ref: "#/components/responses/Error"
 components:
