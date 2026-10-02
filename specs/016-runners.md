@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [runner/, internal/queue/, internal/runnerrole/, internal/runnerapi/, internal/serve/, internal/store/postgres/, session/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-01
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -297,3 +297,22 @@ columns and migrations ([[014-store]]); credential resolution
 | toposd opens no connection to a runner: every runner connection is outbound from the runner | `TestServerOpensNoConnectionToARunner` | not built |
 | A runner that finds its session's sandbox gone, with no checkpoint to restore, creates a new one and appends `session.machine` with reason `replaced` and a `session.error` `machine_lost` ([[009-machines]]) | `TestALostSandboxIsReplaced` | not built |
 | The `topos` CLI drives a local session over the directory store with no server | `internal/toposcli.TestRunATurnInTheWorkingDirectory`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): `Drive` in process under the directory
+store's lock, the queue and `Serve` of `toposd serve` up to
+`TOPOS_RUNNER_CAPACITY`, the `toposd runner` role that claims over the
+internal listener and writes only through its lease, `lease_lost`, the
+recovery of a step without results, and machines opened when a tool
+first acts on them. v0.9.2 (2026-09-29) leaves a running session to the
+next claim when a server or runner stops. v0.9.7 (2026-10-01) publishes
+a drive's deltas to streams on any replica.
+
+Open: the kill test at each commit point, the lease's timing under a
+fake clock, exclusive and bounded claims on Postgres, the test that
+toposd opens no connection to a runner, and a lost sandbox replaced with
+`machine_lost`.
+
+The status stays `drafted` while [[005-harness-loop]] and [[008-tools]]
+are open, since the gate starts no spec before its dependencies close.

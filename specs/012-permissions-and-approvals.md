@@ -301,3 +301,21 @@ authorizer's one-shot grant.
 | The authorizer's and the agent's lists merge so neither loosens the other: confirm is the union, allow the intersection, thresholds the lower, and the merged policy is in the Session | `harness.TestPolicyMergeNeverLoosens`, `internal/server.TestLimitListsReachThePolicy`, `harness.TestTheSessionsPolicyDecides` | built |
 | A sandbox command refused `confirmation_required` yields one `approval.requested` scored 0.9; an allow grants a one-shot scope the retried request uses once, a deny leaves it refused, and a restart between the two keeps the approval pending | `TestEgressStepUp` over the stub Cella and a stub authorizer | not built |
 | `bash` in a sandbox holding a swapped-in credential scores 0.4 | `harness.TestScoreFollowsTheRuleFeatures` | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): the rule-feature score `rules/1`, the
+four verdicts under `plan`, `confirm` and `progressive`, the lists and
+thresholds merged with the authorizer's, confirmations that survive a
+restart, and `remember`. A Windows host records `sandbox: none` and
+refuses `progressive`. v0.11.0 (2026-10-02) decides every call through
+the `Decider` of [[037-decision-services]], and the verdicts are those
+of `latere.ai/x/pkg/verdict`.
+
+Open: the operating-system sandbox on a macOS or Linux host (its driver
+is in `machine/host`, and `topos` does not apply it yet), hooks, an ask
+that holds no lease, the egress step-up, and the score of a sandbox that
+holds a swapped-in credential.
+
+The status stays `drafted` while [[005-harness-loop]] and [[008-tools]]
+are open, since the gate starts no spec before its dependencies close.

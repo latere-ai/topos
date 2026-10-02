@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [harness/, runner/, prompts/, test/tasks/instructions/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-30
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -238,3 +238,17 @@ tree; what memory stores are ([[020-memory-stores]]).
 | The skills index lists each source's skills with the first source winning a name, refuses a skill without valid frontmatter, and holds at most 100 | `runner.TestAttachInARepository`, `runner.TestChainAndSkills`, `runner.TestLocalSkillsReportsAnUnreadableFolder` | built |
 | The model can read a listed `SKILL.md` through a read-only root | `TestSkillFoldersAreReadOnlyRoots` | not built |
 | A project `AGENTS.md` that requires a changelog line, and a skill that defines a release-notes format, each change the agent's output in an instruction test against a real model | `test/tasks/instructions/agents-md` and `test/tasks/instructions/skill` in the instruction tier | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): every text a model reads as a versioned
+file under `prompts/`, the harness prompt's sections, the context block,
+`AGENTS.md` and `CLAUDE.md` from the repository root to the working
+directory, and the skills index. v0.9.3 (2026-09-30) names a session's
+repositories from its first request, before its machine opens.
+
+Open: skill folders as read-only roots, and the two instruction tests
+against a real model.
+
+The status stays `drafted` while [[005-harness-loop]] is open, since the
+gate starts no spec before its dependencies close.

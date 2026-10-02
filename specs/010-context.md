@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instruc
 affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-30
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -164,3 +164,17 @@ encoding and pricing ([[007-models]]).
 | A runner restarted after a compaction rebuilds the same request as the one that would have followed it | `TestCompactionSurvivesRestart` | not built |
 | A turn of twenty steps against the stub Lux has a cache hit rate of at least 0.8 from its second request | `TestCacheHitRate` | not built |
 | A redaction forces a compaction covering the redacted event before the next request, from a fold without the redacted content, and the value reaches no request | `harness.TestATurnRefusesALogItCannotFold`, `harness.TestARedactionSummaryStopsAtItsStep`, `session.TestFoldOmittingRedactedAndUncompacted` | built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): the system prompt's parts in order, the
+cache breakpoints, clearing old tool results before compacting near the
+threshold, `context_exhausted`, a failed compaction that replaces
+nothing, and the compaction a redaction forces.
+
+Open: a summary range that keeps whole steps and the last three, a
+restart after a compaction, and the cache hit rate against the stub Lux.
+
+The status stays `drafted` while [[005-harness-loop]] and
+[[011-instructions-and-skills]] are open, since the gate starts no spec
+before its dependencies close.

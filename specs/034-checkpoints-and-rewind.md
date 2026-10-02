@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [runner/checkpoint/, machine/host/, machine/cella/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-01
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -153,11 +153,31 @@ attribution ([[019-git]]); the fork and handoff procedures
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A session with no repository rewinds to an earlier turn and gets that turn's files back, and a second rewind to the saved checkpoint restores the later state | `TestRewindWithoutARepository` | not built |
-| In a checkout, a session's checkpoints are never visible in the agent's own git history: `git log`, `git log --branches --tags --remotes`, `git branch -a`, `git status` and a default clone and push show none of them | `TestCheckpointsInvisibleToGitHistory` | not built |
-| Taking a checkpoint leaves the index, HEAD and every branch unchanged, and excludes ignored files and every deny-list entry | `TestCheckpointTouchesNothingElse` | not built |
-| Every turn end carries a checkpoint ref and commit, including a turn that changed nothing | `TestEveryTurnHasACheckpoint` | not built |
+| A session with no repository rewinds to an earlier turn and gets that turn's files back, and a second rewind to the saved checkpoint restores the later state | `runner.TestCheckpointsAndRewind`, `runner/checkpoint.TestCheckpointsOutsideARepository`, `internal/toposcli.TestRewindFromTheCommand`; `TestRewindWithoutARepository` for the second rewind | partly built: a second rewind to the saved checkpoint is not tested |
+| In a checkout, a session's checkpoints are never visible in the agent's own git history: `git log`, `git log --branches --tags --remotes`, `git branch -a`, `git status` and a default clone and push show none of them | `runner/checkpoint.TestCheckpointsInACheckoutLeaveHeadAndIndexAlone`; `TestCheckpointsInvisibleToGitHistory` for the rest | partly built: no branch or tag holds a checkpoint; `git log`, `git status`, a clone and a push are not tested |
+| Taking a checkpoint leaves the index, HEAD and every branch unchanged, and excludes ignored files and every deny-list entry | `runner/checkpoint.TestCheckpointsInACheckoutLeaveHeadAndIndexAlone`, `runner/checkpoint.TestCheckpointsOutsideARepository` | built |
+| Every turn end carries a checkpoint ref and commit, including a turn that changed nothing | `harness.TestTheHarnessTakesAndChainsCheckpoints`, `runner.TestCheckpointsAndRewind`, `runner/checkpoint.TestCheckpointsOutsideARepository` | built |
 | An isolated thread's worktree has its own chain under `threads/<thread>/` | `TestThreadCheckpointChain` | not built |
-| Rewind is refused while the session runs, with `rewind_not_idle` | `TestRewindOnlyWhenIdle` | not built |
+| Rewind is refused while the session runs, with `rewind_not_idle` | `runner.TestCheckpointsAndRewind` | built |
 | A cloud session with no repository pushes each checkpoint to its session repository, and a new sandbox restores the latest one | `TestCloudCheckpointRestore` in the Cella tier | not built |
 | A session whose sandbox was deleted gets a new one restored from its latest checkpoint, recorded as `session.machine` reason `restored` | `TestCellaMachineRestoredFromCheckpoint` | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): every turn ends with a checkpoint under
+`refs/topos/checkpoints/<session>/<turn>`, written through a temporary
+index, leaving out credential files and files over 100 MiB, kept in a
+session repository under the data directory outside a checkout; `topos
+rewind` saves the current state, restores a turn's files and tells the
+model. A fork restores its fork point's checkpoint (v0.9.7, 2026-10-01,
+[[017-external-runners-handoff-fork]]), and a hosted session in a
+private repository keeps its checkpoints at the git host (v0.10.0,
+2026-10-02, [[035-hosted-checkpoints-at-the-git-host]]).
+
+Open: the API's rewind route, an isolated thread's own chain, the
+session repository of a cloud session with no repository, a deleted
+sandbox restored from its checkpoint, and the tests the partly built
+rows name.
+
+The status stays `drafted` while [[005-harness-loop]] is open, since the
+gate starts no spec before its dependencies close.

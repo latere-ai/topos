@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, harness/tools/, prompts/advisor/, prompts/results/threads/, prompts/tools/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-28
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -215,7 +215,7 @@ each stage ([[025-task-suite]]); what the model is told about spawning
 | A child's mode, lists, thresholds and budget are never looser than its parent's | `TestNarrowingAlongSpawnEdges` as a table test | not built |
 | A subagent that names an agent with its own identity and permissions acts with the session's credentials, and its `thread.started` lists them in `ignored` | `harness.TestASubagentActsWithTheSessionsCredentials`, `manifest.TestIgnoredFieldsNameWhatAThreadDoesNotUse` | built |
 | A thread at the depth limit is not offered `spawn` or `message`, and a spawn's `tools` narrows the child's set | `harness.TestTheDepthLimitWithholdsSpawn` | built |
-| A forced `spawn` past the limit is refused with `depth_exceeded`, and a manifest asking depth 5 is refused at resolve | `TestDepthGates` | not built |
+| A forced `spawn` past the limit is refused with `depth_exceeded`, and a manifest asking depth 5 is refused at resolve | `harness.TestSpawnRefusesAnUnknownSubagentAndTheDepthLimit`, `manifest.TestStrictDecodingCollectsEveryProblem` | built |
 | Several `spawn` calls in one step run concurrently, at most `maxConcurrent` at once, and each thread's fold contains only its own conversation | `harness.TestParallelSpawnsAndTheConcurrencyCap`, `harness.TestSpawnRunsASubagentAndMessageContinuesIt` | built |
 | A thread spawned with `isolation: worktree` works in its own worktree on `agents/<agent>/<session>.<thread>`, each of its turns is a commit on that branch, the parent's checkout is untouched and told of its uncommitted changes, and a machine without worktrees refuses with `isolation_unavailable` | `harness.TestAnIsolatedThreadWorksOnItsOwnBranch`, `harness.TestWorktreeIsolationNeedsAMachineThatKeepsThem`, `machine/host.TestWorktrees` | built |
 | Two threads spawned with `isolation: worktree` write the same file on two branches, and the parent merges both | `TestIsolatedThreadsReturnBranches` | not built |
@@ -223,3 +223,19 @@ each stage ([[025-task-suite]]); what the model is told about spawning
 | The advisor thread gets the caller's transcript, has no tools, runs on the configured model, keeps one thread across calls, and its requests count in the meter every thread shares | `harness.TestTheAdvisorSeesTheConversationAndActsOnNothing`, `harness.TestAnAdvisorCallResumes`, `harness.TestSubagentsDoNotInheritTheAdvisor` | built |
 | A spawn whose thread finished before the runner stopped yields its final text without running it again, and a spawn that started no thread is closed `unknown_effect` | `harness.TestAThreadThatFinishedBeforeACrashIsNotRunAgain` | built |
 | A session killed while two threads run resumes both from the log on another runner | `TestThreadsResumeAfterRunnerLoss` | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): `spawn` and `message`, subagents with
+their own model, instructions, effort and narrowed tools, concurrent
+spawns under `maxConcurrent`, the depth limit, `isolation: worktree` on
+a branch of its own, a thread's ask that pauses the session, and the
+advisor.
+
+Open: the table test of narrowing along spawn edges, the refusal of a
+tool the parent lacks, two isolated threads merged by their parent, and
+threads resumed after a runner is lost.
+
+The status stays `drafted` while [[005-harness-loop]], [[008-tools]] and
+[[012-permissions-and-approvals]] are open, since the gate starts no
+spec before its dependencies close.

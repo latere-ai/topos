@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 007-models.md, 008-tools.m
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-01
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -379,7 +379,7 @@ hooks ([[012-permissions-and-approvals]]); context management
 | A step with three parallel calls and one serial call runs the three concurrently and the serial one alone | `TestParallelCallsGroupedAndOrdered` | not built |
 | The results of a step's calls reach the next request in the model's `tool_use` order | `harness.TestATurnRunsToolsAndEnds` | built |
 | An interrupt appended while a step runs ends the turn `interrupted` at the next boundary, and no further request is sent | `harness.TestAnInterruptStopsAtTheNextStep` | built |
-| An interrupt during a streaming response cancels it, appends no `agent.message`, and ends `interrupted`; an interrupt during a 60 second `bash` ends within 6 seconds with a `canceled` result | `TestInterruptCancelsStream`, `TestInterruptCancelsRunningCall` | not built |
+| An interrupt during a streaming response cancels it, appends no `agent.message`, and ends `interrupted`; an interrupt during a 60 second `bash` ends within 6 seconds with a `canceled` result | `harness.TestAnInterruptCancelsAnInFlightRequest`, `harness.TestAnInterruptCancelsRunningCalls`, `runner.TestAnInterruptCancelsARunningCall` | built; the running call is a 10 second tool the runner's test holds to 8 seconds, not a 60 second `bash` to 6 |
 | A call whose tool returned before a cancel keeps its result | `harness.TestACancelDuringACallIsCanceled` | built |
 | Input a person appends after the turn's last request was built is reported as `Outcome.Pending`, and the runner starts the next turn from it | `runner.TestDriveContinuesWhileInputIsPending` | built |
 | A fresh harness given the log of a turn stopped after any commit point continues it with the same next request bytes as the original harness | `TestResumeFromLogOnFreshHarness` | not built |
@@ -387,3 +387,24 @@ hooks ([[012-permissions-and-approvals]]); context management
 | Deltas never appear in the log | `runner.TestDeltasAreNotAppended` | built |
 | A turn past its wall-clock limit ends `turn_limit` at the next boundary | `harness.TestTheTurnDeadline` | built |
 | The turn wall clock takes the lowest of agent, session and authorizer limits | `TestTurnLimitTakesTheLowest` | not built |
+
+## Outcome
+
+The loop shipped in v0.9.0 (2026-09-29): turns and steps with no step
+cap, every stop with its named reason, the output cap sent again at the
+model's limit and then continued, retries with backoff that honor
+`Retry-After`, the turn deadline and the budget, a schema check of every
+call, and an interrupt that cancels the request and the calls in flight.
+v0.9.7 (2026-10-01) answers a call whose arguments are not valid JSON,
+or are cut at the output limit, with `invalid_input` so the model sends
+it again, keeps the bytes of a stream that fails part way, and publishes
+the deltas of a response as it arrives.
+
+Open: the check that `harness/` holds no numeric step cap, the test that
+no call runs before its `agent.tool_use` is durable, a test of the
+grouping of parallel calls (the harness runs each run of consecutive
+parallel calls at most 8 at once), a fresh harness's resume to the same
+request bytes, and the turn limit as the lowest of three.
+
+The status stays `drafted` while [[008-tools]] is open, since the gate
+starts no spec before its dependencies close.
