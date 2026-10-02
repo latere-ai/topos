@@ -74,15 +74,22 @@ git clone https://github.com/latere-ai/topos.git
 cd topos
 make build
 ./out/toposd -version
-make run   # serves /livez, /readyz and /version on 127.0.0.1:8080
+export TOPOS_MODELS_URL=https://lux.example/v1/models   # a Lux gateway's root, or a provider's API
+export TOPOS_MODELS_KEY=...                             # its credential, for sessions that name none
+make run     # the API on 127.0.0.1:8080, with a local issuer and the owner policy
+make token   # in another shell: a token for that server's admin
 ```
+
+`toposd` refuses to start without a model connection, and reads the
+discovery document of a Lux root at start.
+[docs/configuration.md](docs/configuration.md) lists every variable.
 
 ## Identity
 
 `toposd` verifies a caller's token against the OIDC issuers an operator
 lists and asks one authorizer for every action; with no authorizer
 configured, a built-in owner policy decides. It decides nothing about a
-person itself. Spec [006](specs/006-identity.md) is the contract.
+person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 
 ## Documentation
 
