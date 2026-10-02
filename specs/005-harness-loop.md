@@ -390,15 +390,15 @@ hooks ([[012-permissions-and-approvals]]); context management
 
 ## Outcome
 
-The loop shipped in v0.9.0 (2026-09-29): turns and steps with no step
-cap, every stop with its named reason, the output cap sent again at the
-model's limit and then continued, retries with backoff that honor
-`Retry-After`, the turn deadline and the budget, a schema check of every
-call, and an interrupt that cancels the request and the calls in flight.
-v0.9.7 (2026-10-01) answers a call whose arguments are not valid JSON,
-or are cut at the output limit, with `invalid_input` so the model sends
-it again, keeps the bytes of a stream that fails part way, and publishes
-the deltas of a response as it arrives.
+The loop shipped as designed in v0.9.0 (2026-09-29): turns and steps
+with no step cap, every stop with its named reason, the output cap sent
+again at the model's limit and then continued, retries with backoff that
+honor `Retry-After`, the turn deadline and the budget, a schema check of
+every call, and an interrupt that cancels the request and the calls in
+flight. v0.9.7 (2026-10-01) answers a call whose arguments are not valid
+JSON, or are cut at the output limit, with `invalid_input` so the model
+sends it again, keeps the bytes of a stream that fails part way, and
+publishes the deltas of a response as it arrives.
 
 Open: the check that `harness/` holds no numeric step cap, the test that
 no call runs before its `agent.tool_use` is durable, a test of the

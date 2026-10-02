@@ -300,8 +300,8 @@ columns and migrations ([[014-store]]); credential resolution
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): `Drive` in process under the directory
-store's lock, the queue and `Serve` of `toposd serve` up to
+Shipped as designed in v0.9.0 (2026-09-29): `Drive` in process under the
+directory store's lock, the queue and `Serve` of `toposd serve` up to
 `TOPOS_RUNNER_CAPACITY`, the `toposd runner` role that claims over the
 internal listener and writes only through its lease, `lease_lost`, the
 recovery of a step without results, and machines opened when a tool

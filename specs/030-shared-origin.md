@@ -110,8 +110,8 @@ in front.
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): `TOPOS_BASE_PATH`, which must equal the
-public URL's path, and every URL toposd writes built from
+Shipped as designed in v0.9.0 (2026-09-29): `TOPOS_BASE_PATH`, which
+must equal the public URL's path, and every URL toposd writes built from
 `TOPOS_PUBLIC_URL`.
 
 Open: forwarded headers believed only from a trusted range, the client

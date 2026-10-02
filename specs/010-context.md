@@ -167,10 +167,10 @@ encoding and pricing ([[007-models]]).
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): the system prompt's parts in order, the
-cache breakpoints, clearing old tool results before compacting near the
-threshold, `context_exhausted`, a failed compaction that replaces
-nothing, and the compaction a redaction forces.
+Shipped as designed in v0.9.0 (2026-09-29): the system prompt's parts in
+order, the cache breakpoints, clearing old tool results before
+compacting near the threshold, `context_exhausted`, a failed compaction
+that replaces nothing, and the compaction a redaction forces.
 
 Open: a summary range that keeps whole steps and the last three, a
 restart after a compaction, and the cache hit rate against the stub Lux.

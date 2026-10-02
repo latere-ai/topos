@@ -164,15 +164,15 @@ attribution ([[019-git]]); the fork and handoff procedures
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): every turn ends with a checkpoint under
-`refs/topos/checkpoints/<session>/<turn>`, written through a temporary
-index, leaving out credential files and files over 100 MiB, kept in a
-session repository under the data directory outside a checkout; `topos
-rewind` saves the current state, restores a turn's files and tells the
-model. A fork restores its fork point's checkpoint (v0.9.7, 2026-10-01,
-[[017-external-runners-handoff-fork]]), and a hosted session in a
-private repository keeps its checkpoints at the git host (v0.10.0,
-2026-10-02, [[035-hosted-checkpoints-at-the-git-host]]).
+Shipped as designed in v0.9.0 (2026-09-29): every turn ends with a
+checkpoint under `refs/topos/checkpoints/<session>/<turn>`, written
+through a temporary index, leaving out credential files and files over
+100 MiB, kept in a session repository under the data directory outside a
+checkout; `topos rewind` saves the current state, restores a turn's
+files and tells the model. A fork restores its fork point's checkpoint
+(v0.9.7, 2026-10-01, [[017-external-runners-handoff-fork]]), and a
+hosted session in a private repository keeps its checkpoints at the git
+host (v0.10.0, 2026-10-02, [[035-hosted-checkpoints-at-the-git-host]]).
 
 Open: the API's rewind route, an isolated thread's own chain, the
 session repository of a cloud session with no repository, a deleted

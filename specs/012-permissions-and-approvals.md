@@ -304,13 +304,13 @@ authorizer's one-shot grant.
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): the rule-feature score `rules/1`, the
-four verdicts under `plan`, `confirm` and `progressive`, the lists and
-thresholds merged with the authorizer's, confirmations that survive a
-restart, and `remember`. A Windows host records `sandbox: none` and
-refuses `progressive`. v0.11.0 (2026-10-02) decides every call through
-the `Decider` of [[037-decision-services]], and the verdicts are those
-of `latere.ai/x/pkg/verdict`.
+Shipped as designed in v0.9.0 (2026-09-29): the rule-feature score
+`rules/1`, the four verdicts under `plan`, `confirm` and `progressive`,
+the lists and thresholds merged with the authorizer's, confirmations
+that survive a restart, and `remember`. A Windows host records `sandbox:
+none` and refuses `progressive`. v0.11.0 (2026-10-02) decides every call
+through the `Decider` of [[037-decision-services]], and the verdicts are
+those of `latere.ai/x/pkg/verdict`.
 
 Open: the operating-system sandbox on a macOS or Linux host (its driver
 is in `machine/host`, and `topos` does not apply it yet), hooks, an ask

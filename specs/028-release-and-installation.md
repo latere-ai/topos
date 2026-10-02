@@ -122,9 +122,9 @@ deployment, which lives in the operator's overlay.
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): a `v*` tag publishes the image
-`ghcr.io/<owner>/topos` for `linux/amd64` and `linux/arm64` under the
-namespace of the account that pushed it, signed, with its bill of
+Shipped as designed in v0.9.0 (2026-09-29): a `v*` tag publishes the
+image `ghcr.io/<owner>/topos` for `linux/amd64` and `linux/arm64` under
+the namespace of the account that pushed it, signed, with its bill of
 materials and provenance attested, and `topos` builds for Windows.
 
 Open: the archives and the `topos-host` image, `toposd check`, the

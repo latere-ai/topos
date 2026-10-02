@@ -226,11 +226,11 @@ each stage ([[025-task-suite]]); what the model is told about spawning
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): `spawn` and `message`, subagents with
-their own model, instructions, effort and narrowed tools, concurrent
-spawns under `maxConcurrent`, the depth limit, `isolation: worktree` on
-a branch of its own, a thread's ask that pauses the session, and the
-advisor.
+Shipped as designed in v0.9.0 (2026-09-29): `spawn` and `message`,
+subagents with their own model, instructions, effort and narrowed tools,
+concurrent spawns under `maxConcurrent`, the depth limit, `isolation:
+worktree` on a branch of its own, a thread's ask that pauses the
+session, and the advisor.
 
 Open: the table test of narrowing along spawn edges, the refusal of a
 tool the parent lacks, two isolated threads merged by their parent, and

@@ -151,12 +151,14 @@ client built on this package outside the module.
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): `topos run`, `topos confirm` and `topos
-rewind` over the directory store with no server, the exit codes,
-`--output stream-json`, `--max-cost`, and `--agent` with a manifest file
-or the default `agent.yaml`. v0.11.0 (2026-10-02): `--mode` also takes
-`manual` and `auto`, and `topos run` consults a decision service
-([[037-decision-services]]).
+Shipped as designed in v0.9.0 (2026-09-29): `topos run`, `topos confirm`
+and `topos rewind` over the directory store with no server, the exit
+codes, `--output stream-json`, `--max-cost`, and `--agent` with a
+manifest file or the default `agent.yaml`. v0.11.0 (2026-10-02):
+`--mode` also takes `manual` and `auto`, and `topos run` consults a
+decision service ([[037-decision-services]]). The names `manual` and
+`auto` are an addition to the command table, which lists the three modes
+of [[012-permissions-and-approvals]].
 
 Open: the `client` package, the commands `attach`, `send`, `interrupt`,
 `apply`, `sessions` and `fork`, an applied agent run by name, a suite

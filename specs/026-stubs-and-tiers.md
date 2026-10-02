@@ -113,14 +113,14 @@ The task suite and the bar ([[025-task-suite]]); the conformance suite
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): the scripted model behind the
-`scripted:` scheme, the stub Lux for every dialect, the stub Cella for
-every route `machine/cella` calls, and the stub identity provider and
-key routes of [[018-credentials-and-secrets]]. The suite without tags
-runs in the family gate with the toolchain, `/usr/bin` and `/bin` on
-`PATH`, and the postgres tier runs in its own job.
+Shipped as designed in v0.9.0 (2026-09-29): the scripted model behind
+the `scripted:` scheme, the stub Lux for every dialect, the stub Cella
+for every route `machine/cella` calls, and the stub identity provider
+and key routes of [[018-credentials-and-secrets]]. The suite without
+tags runs in the family gate with the toolchain, `/usr/bin` and `/bin`
+on `PATH`, and the postgres tier runs in its own job.
 
-Open: the check that no workflow tier needs a paid credential, the
-stub Lux's cache simulation, the parity of the stub Cella with a real
-one, `make run` with the stubs (today it starts `toposd` with no model
+Open: the check that no workflow tier needs a paid credential, the stub
+Lux's cache simulation, the parity of the stub Cella with a real one,
+`make run` with the stubs (today it starts `toposd` with no model
 connection, which `serve` refuses), and the e2e tier's machine parity.

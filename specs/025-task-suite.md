@@ -277,15 +277,16 @@ pipeline around the job ([[028-release-and-installation]]).
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): `test/tasks`, the task format and its
-checkers, a scripted right and wrong solution for every task, runs
-through `models/dialect` as against a real model, the report as JSON and
-Markdown, and the release bar's arithmetic.
+Shipped as designed in v0.9.0 (2026-09-29): `test/tasks`, the task
+format and its checkers, a scripted right and wrong solution for every
+task, runs through `models/dialect` as against a real model, the report
+as JSON and Markdown, and the release bar's arithmetic.
 
-Open: no `bar.yaml` names the pinned model and no baseline has been
-measured, so no release has carried a pass rate; the run through the
-provider's own SDK, the v0.7.0 failure tasks against the pinned model,
-the replay tier, and the category table's task counts.
+Open: the suite has no `bar.yaml` yet, so no model is pinned, no
+baseline is measured and no release has carried a pass rate; also open
+are the run through the provider's own SDK, the v0.7.0 failure tasks
+against the pinned model, the replay tier, and the category table's task
+counts.
 
 The status stays `drafted` while [[005-harness-loop]], [[008-tools]],
 [[024-client-cli-skill]] and [[026-stubs-and-tiers]] are open, since the

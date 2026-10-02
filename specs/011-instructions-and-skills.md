@@ -241,11 +241,11 @@ tree; what memory stores are ([[020-memory-stores]]).
 
 ## Outcome
 
-Shipped in v0.9.0 (2026-09-29): every text a model reads as a versioned
-file under `prompts/`, the harness prompt's sections, the context block,
-`AGENTS.md` and `CLAUDE.md` from the repository root to the working
-directory, and the skills index. v0.9.3 (2026-09-30) names a session's
-repositories from its first request, before its machine opens.
+Shipped as designed in v0.9.0 (2026-09-29): every text a model reads as
+a versioned file under `prompts/`, the harness prompt's sections, the
+context block, `AGENTS.md` and `CLAUDE.md` from the repository root to
+the working directory, and the skills index. v0.9.3 (2026-09-30) names a
+session's repositories from its first request, before its machine opens.
 
 Open: skill folders as read-only roots, and the two instruction tests
 against a real model.

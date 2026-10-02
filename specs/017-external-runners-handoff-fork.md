@@ -277,12 +277,12 @@ presents ([[006-identity]]).
 
 ## Outcome
 
-Fork shipped in v0.9.7 (2026-10-01) as `POST /v1/sessions/{id}/fork`: a
-new session of the same agent version from a copy of the log up to a
-turn boundary, with its own lifetime, budget and credentials, a `parent`
-link and a continuation's title, restoring the fork point's files where
-the runner reaches its checkpoint. v0.10.0 (2026-10-02) restores a
-hosted fork's files from the git host
+Fork shipped as designed in v0.9.7 (2026-10-01) as `POST
+/v1/sessions/{id}/fork`: a new session of the same agent version from a
+copy of the log up to a turn boundary, with its own lifetime, budget and
+credentials, a `parent` link and a continuation's title, restoring the
+fork point's files where the runner reaches its checkpoint. v0.10.0
+(2026-10-02) restores a hosted fork's files from the git host
 ([[035-hosted-checkpoints-at-the-git-host]]), records
 `checkpoint_missing` when it cannot, and starts a fork's `bash` in its
 own directory. v0.10.1 (2026-10-02) forks a session that ended with its
