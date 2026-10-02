@@ -16,7 +16,7 @@ func table() []route {
 	a := func(actions ...string) []string { return actions }
 	return []route{
 		{method: http.MethodPut, path: "/agents/{name}", actions: a(authorizer.ActionAgentCreate, authorizer.ActionAgentUpdate, authorizer.ActionAgentRead),
-			op: "applyAgent", summary: "Apply an agent", status: http.StatusOK, body: MaxBody, handle: (*call).applyAgent},
+			op: "applyAgent", summary: "Apply an agent", status: http.StatusOK, creates: true, body: MaxBody, handle: (*call).applyAgent},
 		{method: http.MethodGet, path: "/agents", actions: a(authorizer.ActionAgentList),
 			op: "listAgents", summary: "List agents", status: http.StatusOK, handle: (*call).listAgents},
 		{method: http.MethodGet, path: "/agents/{ref}", actions: a(authorizer.ActionAgentRead),
@@ -60,7 +60,7 @@ func table() []route {
 		{method: http.MethodPost, path: "/sessions/{id}/events/{event_id}/redact", actions: a(authorizer.ActionSessionRedact),
 			op: "redactEvent", summary: "Redact an event", status: http.StatusNoContent, body: MaxBody, handle: (*call).redact},
 		{method: http.MethodPut, path: "/triggers/{name}", actions: a(authorizer.ActionTriggerCreate, authorizer.ActionTriggerUpdate, authorizer.ActionAgentRead),
-			op: "applyTrigger", summary: "Apply a trigger", status: http.StatusOK, body: MaxBody, handle: (*call).applyTrigger},
+			op: "applyTrigger", summary: "Apply a trigger", status: http.StatusOK, creates: true, body: MaxBody, handle: (*call).applyTrigger},
 		{method: http.MethodGet, path: "/triggers", actions: a(authorizer.ActionTriggerList),
 			op: "listTriggers", summary: "List triggers", status: http.StatusOK, handle: (*call).listTriggers},
 		{method: http.MethodGet, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerRead),

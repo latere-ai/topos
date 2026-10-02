@@ -226,6 +226,9 @@ type route struct {
 	summary string
 	// status is the answer's status on success.
 	status int
+	// creates marks a route that answers 201 Created in the place of
+	// status when the request creates its object, as an apply does.
+	creates bool
 	// body bounds the request body; zero reads none.
 	body   int64
 	handle func(c *call) error

@@ -54,7 +54,7 @@ paths:
                   kind: cella
       responses:
         "200":
-          description: OK
+          description: "OK: the object existed, and the apply changed it or left it as it was."
           content:
             application/json:
               example:
@@ -95,9 +95,54 @@ paths:
                     compactAt: 0.8
                 status:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   createdAt: "2026-09-22T12:02:00Z"
+        "201":
+          description: "Created: the apply created the object."
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Agent
+                metadata:
+                  name: release-notes
+                  displayName: Release notes
+                spec:
+                  model:
+                    name: claude-haiku-4-5
+                  instructions: Write the release notes for a tag from the pull requests merged since the tag before it.
+                  tools:
+                    - read
+                    - write
+                    - edit
+                    - bash
+                    - grep
+                    - glob
+                    - web_fetch
+                    - todo
+                  approvals:
+                    mode: confirm
+                    thresholds:
+                      flagAt: 0.3
+                      askAt: 0.5
+                      blockAt: 0.9
+                  threads:
+                    maxDepth: 2
+                    maxConcurrent: 8
+                  machine:
+                    kind: cella
+                    image: base
+                  limits:
+                    turnTimeout: 2h
+                    maxAge: 168h
+                  context:
+                    compactAt: 0.8
+                status:
+                  id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  version: 1
+                  digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                  createdAt: "2026-09-22T12:00:00Z"
         default:
           $ref: "#/components/responses/Error"
   /agents:
@@ -151,7 +196,7 @@ paths:
                         compactAt: 0.8
                     status:
                       id: agent_01M34FSDG0Q60424XT3D96DRAJ
-                      version: 2
+                      version: 3
                       digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                       createdAt: "2026-09-22T12:02:00Z"
                 next_cursor: YWdlbnRfMDFNMzRGU0RHMFE2MDQyNFhUM0Q5NkRSQUo
@@ -214,7 +259,7 @@ paths:
                     compactAt: 0.8
                 status:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   createdAt: "2026-09-22T12:02:00Z"
         default:
@@ -241,7 +286,7 @@ paths:
               example:
                 items:
                   - version: 1
-                    digest: sha256:5cdca0a8167efffd9c058b14bffaaa39ad4473ed001e29f8fbd160e951e80681
+                    digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                     created_by: https://login.example|alice
                     created_at: "2026-09-22T12:00:00Z"
                 next_cursor: MQ
@@ -309,7 +354,7 @@ paths:
                     compactAt: 0.8
                 status:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   createdAt: "2026-09-22T12:02:00Z"
         default:
@@ -376,7 +421,7 @@ paths:
                     compactAt: 0.8
                 status:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   createdAt: "2026-09-22T12:02:00Z"
                   archivedAt: "2026-09-22T13:00:00Z"
@@ -407,7 +452,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 title: Notes for v1.4.0
@@ -486,7 +531,7 @@ paths:
                     agent:
                       id: agent_01M34FSDG0Q60424XT3D96DRAJ
                       name: release-notes
-                      version: 2
+                      version: 3
                       digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                       bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                     title: Notes for v1.4.0
@@ -586,7 +631,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 title: Notes for v1.4.0
@@ -649,7 +694,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 title: Notes for v1.4.0
@@ -730,7 +775,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 title: Notes for v1.4.0
@@ -795,7 +840,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 title: Notes for v1.4.0 (continued)
@@ -844,9 +889,6 @@ paths:
           required: true
           schema:
             type: string
-      requestBody:
-        content:
-          application/json: {}
       responses:
         "200":
           description: OK
@@ -858,7 +900,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 title: Notes for v1.4.0
@@ -908,9 +950,6 @@ paths:
           required: true
           schema:
             type: string
-      requestBody:
-        content:
-          application/json: {}
       responses:
         "200":
           description: OK
@@ -922,7 +961,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 title: Notes for v1.4.0
@@ -987,7 +1026,7 @@ paths:
                 agent:
                   id: agent_01M34FSDG0Q60424XT3D96DRAJ
                   name: release-notes
-                  version: 2
+                  version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
                 initiator:
@@ -1249,7 +1288,44 @@ paths:
                   message: Write the release notes for {{event.resource}}.
       responses:
         "200":
-          description: OK
+          description: "OK: the object existed, and the apply changed it or left it as it was."
+          content:
+            application/json:
+              example:
+                apiVersion: topos.latere.ai/v1
+                kind: Trigger
+                metadata:
+                  name: on-release
+                spec:
+                  agent: agent_01M34FSDG0Q60424XT3D96DRAJ
+                  timeZone: UTC
+                  "on":
+                    product: github
+                    verbs:
+                      - release.published
+                  session:
+                    message: Write the release notes for {{event.resource}}.
+                    endOnIdle: true
+                  skipIfActive: true
+                  maxAge: 1h
+                  suspend: false
+                status:
+                  id: trg_01M34HGBA0JR98WKKXWZGAX6VA
+                  version: 3
+                  digest: sha256:cd61c91df8739587137a731afc9dbd615baa74b314f2e8ece6854065790db151
+                  createdAt: "2026-09-22T12:32:00Z"
+                  counts:
+                    started: 0
+                    continued: 0
+                    held: 0
+                    filtered: 0
+                    skippedActive: 0
+                    skippedBusy: 0
+                    skippedLate: 0
+                    refused: 0
+                    failed: 0
+        "201":
+          description: "Created: the apply created the object."
           content:
             application/json:
               example:
@@ -1320,9 +1396,9 @@ paths:
                       suspend: false
                     status:
                       id: trg_01M34HGBA0JR98WKKXWZGAX6VA
-                      version: 1
+                      version: 3
                       digest: sha256:cd61c91df8739587137a731afc9dbd615baa74b314f2e8ece6854065790db151
-                      createdAt: "2026-09-22T12:30:00Z"
+                      createdAt: "2026-09-22T12:32:00Z"
                       counts:
                         started: 0
                         continued: 0
@@ -1375,9 +1451,9 @@ paths:
                   suspend: false
                 status:
                   id: trg_01M34HGBA0JR98WKKXWZGAX6VA
-                  version: 1
+                  version: 3
                   digest: sha256:cd61c91df8739587137a731afc9dbd615baa74b314f2e8ece6854065790db151
-                  createdAt: "2026-09-22T12:30:00Z"
+                  createdAt: "2026-09-22T12:32:00Z"
                   lastFiredAt: "2026-09-22T12:40:00Z"
                   lastSessionId: ses_01M34J2N81KBW8FS0WCBFSJCGZ
                   counts:

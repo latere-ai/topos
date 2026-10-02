@@ -48,26 +48,42 @@ type shown struct {
 	} `yaml:"schema"`
 }
 
-// answers is the operation's first success answer: its status and its
-// one media type, none when the answer has no body.
+// successes are the statuses of the operation's success answers, in
+// order.
+func (d documented) successes(t *testing.T) []int {
+	t.Helper()
+	var out []int
+	for _, code := range slices.Sorted(maps.Keys(d.Responses)) {
+		if n, err := strconv.Atoi(code); err == nil && n >= 200 && n <= 299 {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s documents no success answer", d.OperationID)
+	}
+	return out
+}
+
+// answer is the operation's answer of status: its one media type and
+// that type's body, none when the answer has no body.
+func (d documented) answer(t *testing.T, status int) (media string, body shown) {
+	t.Helper()
+	content := d.Responses[strconv.Itoa(status)].Content
+	if len(content) > 1 {
+		t.Fatalf("%s answers %d media types", d.OperationID, len(content))
+	}
+	for m, b := range content {
+		media, body = m, b
+	}
+	return media, body
+}
+
+// answers is the operation's first success answer.
 func (d documented) answers(t *testing.T) (status int, media string, body shown) {
 	t.Helper()
-	for _, code := range slices.Sorted(maps.Keys(d.Responses)) {
-		n, err := strconv.Atoi(code)
-		if err != nil || n < 200 || n > 299 {
-			continue
-		}
-		content := d.Responses[code].Content
-		if len(content) > 1 {
-			t.Fatalf("%s answers %d media types", d.OperationID, len(content))
-		}
-		for m, b := range content {
-			media, body = m, b
-		}
-		return n, media, body
-	}
-	t.Fatalf("%s documents no success answer", d.OperationID)
-	return 0, "", shown{}
+	status = d.successes(t)[0]
+	media, body = d.answer(t, status)
+	return status, media, body
 }
 
 // readDocument reads the committed document's operations by id.
@@ -131,8 +147,12 @@ func canonical(t *testing.T, v any) string {
 // the story's times, sending each request example the document shows and
 // holding the route's answer to the response example beside it: the same
 // status, media type, members and values, with the ids and digests a run
-// mints compared by where they appear. An example a handler no longer
-// answers, and a route the table gains without a step here, fail it.
+// mints compared by where they appear. An apply is driven as the one
+// that creates its object and as the one that changes it, each held to
+// the answer the document shows for its status, and a route the document
+// shows no request body for is sent none. An example a handler no longer
+// answers, a success status the document does not list, and a route the
+// table gains without a step here, fail it.
 func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	doc := readDocument(t)
 	now := exampleTime(12, 0, 0)
@@ -158,35 +178,20 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	live, written := numbering{}, numbering{}
 	driven := map[string]bool{}
 
-	// send asks op's route with the path values and the query given, and
-	// body in the place of the document's request example when it is set.
-	send := func(op string, path map[string]string, query, media, body string) answer {
+	// requests are the bodies the document shows for op, by media type in
+	// the order JSON then YAML, or one empty body when it shows none. A
+	// route that reads no body, or an empty one, has no request body in
+	// the document, and every other has an example.
+	type request struct{ media, body string }
+	requests := func(op string) []request {
 		t.Helper()
-		rt := routes[op]
-		url := "/v1" + pathParam.ReplaceAllStringFunc(rt.path, func(p string) string { return path[strings.Trim(p, "{}")] }) + query
-		a := f.do(rt.method, url, "alice", body, "Content-Type", media)
-		if a.status != rt.status && (a.status != http.StatusCreated || rt.method != http.MethodPut) {
-			t.Fatalf("%s: %d %s, want %d", op, a.status, a.body, rt.status)
+		content := doc[op].RequestBody.Content
+		if rt := routes[op]; (rt.body > 0 && !emptyBodies[op]) != (len(content) > 0) {
+			t.Fatalf("%s reads a body of at most %d bytes and the document shows %d request media types", op, rt.body, len(content))
 		}
-		return a
-	}
-	// step drives op as the document shows it and holds the answer to the
-	// document's example, returning the answer.
-	step := func(op string, path map[string]string, query string) answer {
-		t.Helper()
-		d, ok := doc[op]
-		if !ok {
-			t.Fatalf("the document has no operation %s", op)
-		}
-		driven[op] = true
-		status, media, want := d.answers(t)
-		if status != routes[op].status {
-			t.Fatalf("%s: the document's first success answer is %d, the route's %d", op, status, routes[op].status)
-		}
-		var a answer
-		sent := 0
-		for _, kind := range []string{mediaJSON, mediaYAML} {
-			ex := d.RequestBody.Content[kind].Example
+		var out []request
+		for _, media := range []string{mediaJSON, mediaYAML} {
+			ex := content[media].Example
 			if ex == nil {
 				continue
 			}
@@ -198,32 +203,97 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 				}
 				body = string(b)
 			}
-			a = send(op, path, query, kind, body)
-			sent++
-			if status != http.StatusNoContent && media == mediaJSON {
-				var got any
-				a.decode(t, &got)
-				// Each request example is answered the same, so both
-				// compare to the one response example under one numbering.
-				if g, w := live.of(canonical(t, got)), written.of(canonical(t, want.Example)); g != w {
-					t.Errorf("%s (%s): the route answers\n%s\nthe document shows\n%s", op, kind, g, w)
-				}
-			}
+			out = append(out, request{media, body})
 		}
-		if sent == 0 {
-			a = send(op, path, query, "", "")
-			if media == mediaJSON {
-				var got any
-				a.decode(t, &got)
-				if g, w := live.of(canonical(t, got)), written.of(canonical(t, want.Example)); g != w {
-					t.Errorf("%s: the route answers\n%s\nthe document shows\n%s", op, g, w)
-				}
-			}
+		if len(out) != len(content) {
+			t.Fatalf("%s: %d of the document's %d request media types show an example", op, len(out), len(content))
 		}
+		if len(out) == 0 {
+			return []request{{}}
+		}
+		return out
+	}
+	// address is the route of op with its path values and its query.
+	address := func(op string, path map[string]string, query string) string {
+		return "/v1" + pathParam.ReplaceAllStringFunc(routes[op].path, func(p string) string { return path[strings.Trim(p, "{}")] }) + query
+	}
+	// send asks op's route, wants status of it, and holds the body to the
+	// example the document shows for its answer of the status as.
+	send := func(op string, path map[string]string, query string, r request, status, as int) answer {
+		t.Helper()
+		a := f.do(routes[op].method, address(op, path, query), "alice", r.body, "Content-Type", r.media)
+		if a.status != status {
+			t.Fatalf("%s (%s): %d %s, want %d", op, r.media, a.status, a.body, status)
+		}
+		media, want := doc[op].answer(t, as)
 		if got := a.header.Get("Content-Type"); got != media {
-			t.Errorf("%s answers the media type %q, the document shows %q", op, got, media)
+			t.Errorf("%s answers %d with the media type %q, the document shows %q", op, status, got, media)
+		}
+		if media == mediaJSON {
+			var got any
+			a.decode(t, &got)
+			if g, w := live.of(canonical(t, got)), written.of(canonical(t, want.Example)); g != w {
+				t.Errorf("%s (%s): the route answers %d\n%s\nthe document shows for %d\n%s", op, r.media, status, g, as, w)
+			}
 		}
 		return a
+	}
+	// listed holds the success statuses the document lists for op to the
+	// ones its route answers.
+	listed := func(op string) {
+		t.Helper()
+		if _, ok := doc[op]; !ok {
+			t.Fatalf("the document has no operation %s", op)
+		}
+		driven[op] = true
+		want := []int{routes[op].status}
+		if routes[op].creates {
+			want = append(want, http.StatusCreated)
+		}
+		if got := doc[op].successes(t); !slices.Equal(got, want) {
+			t.Fatalf("%s: the document lists the success answers %v, the route answers %v", op, got, want)
+		}
+	}
+	// step drives op as the document shows it, each request example in
+	// turn, and holds every answer to the document's example, returning
+	// the last.
+	step := func(op string, path map[string]string, query string) answer {
+		t.Helper()
+		listed(op)
+		var a answer
+		for _, r := range requests(op) {
+			a = send(op, path, query, r, routes[op].status, routes[op].status)
+		}
+		return a
+	}
+	// apply drives an apply route through both of its answers. The first
+	// request example creates the object and answers 201; the next finds
+	// it there and leaves it, which answers 200 with what the create
+	// answered. change, another manifest of the name, is then applied at
+	// changed, so the request examples sent again at again change the
+	// object back and then leave it, which answers what the document
+	// shows for 200.
+	apply := func(op string, path map[string]string, change string, changed, again time.Time) {
+		t.Helper()
+		listed(op)
+		if !routes[op].creates {
+			t.Fatalf("%s does not create its object", op)
+		}
+		for i, r := range requests(op) {
+			status := http.StatusOK
+			if i == 0 {
+				status = http.StatusCreated
+			}
+			send(op, path, "", r, status, http.StatusCreated)
+		}
+		now = changed
+		if a := f.do(routes[op].method, address(op, path, ""), "alice", change); a.status != http.StatusOK {
+			t.Fatalf("%s, changed: %d %s", op, a.status, a.body)
+		}
+		now = again
+		for _, r := range requests(op) {
+			send(op, path, "", r, http.StatusOK, http.StatusOK)
+		}
 	}
 	// turn appends a turn of a session as a runner writes one, over 41
 	// seconds from now: running, the agent's message when it wrote one,
@@ -272,12 +342,10 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 		return out.ID
 	}
 
-	// The agent: a first version, then the one the document applies, and
-	// a second agent so the list has a next page.
-	agent := map[string]string{"name": "release-notes", "ref": "release-notes", "n": "2"}
-	setup(http.MethodPut, "/v1/agents/release-notes", agentYAML("release-notes", "Write the release notes for a tag."), http.StatusCreated)
-	now = exampleTime(12, 2, 0)
-	step("applyAgent", agent, "")
+	// The agent: created, changed and changed back, which is its third
+	// version, and a second agent so the list has a next page.
+	agent := map[string]string{"name": "release-notes", "ref": "release-notes", "n": "3"}
+	apply("applyAgent", agent, agentYAML("release-notes", "Write the release notes for a tag."), exampleTime(12, 1, 0), exampleTime(12, 2, 0))
 	f.apply("alice", "triage", "Triage the new issues.")
 	step("listAgents", nil, "?limit=1")
 	step("getAgent", agent, "")
@@ -373,11 +441,13 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	step("resumeSession", stopped, "")
 	step("deleteSession", stopped, "")
 
-	// The trigger: applied, with a second so the list has a next page,
-	// and fired by an earlier delivery so its firings have one too.
+	// The trigger: created, changed and changed back, with a second so
+	// the list has a next page, and fired by an earlier delivery so its
+	// firings have one too.
 	now = exampleTime(12, 30, 0)
 	trg := map[string]string{"name": "on-release", "ref": "on-release"}
-	step("applyTrigger", trg, "")
+	apply("applyTrigger", trg, triggerOf("release-notes", "on-release", "on: {product: github, verbs: [release.published]}, session: {message: Write the release notes.}"),
+		exampleTime(12, 31, 0), exampleTime(12, 32, 0))
 	setup(http.MethodPut, "/v1/triggers/nightly", triggerOf("release-notes", "nightly", "schedule: '@daily', session: {message: Nightly.}"), http.StatusCreated)
 	step("listTriggers", nil, "?limit=1")
 	now = exampleTime(12, 35, 0)

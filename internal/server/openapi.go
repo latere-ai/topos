@@ -178,6 +178,16 @@ const (
 // frames, a blob's bytes and the document itself.
 var answerMedia = map[string]string{"streamEvents": mediaStream, "getBlob": mediaBytes, "getOpenAPI": mediaYAML}
 
+// emptyBodies are the routes that read a body only to refuse one that
+// holds a member: a caller sends none, so the document describes none.
+var emptyBodies = map[string]bool{"archiveSession": true, "unarchiveSession": true}
+
+// The answers of a route that creates its object or finds it there.
+const (
+	answerCreated = "Created: the apply created the object."
+	answerExisted = "OK: the object existed, and the apply changed it or left it as it was."
+)
+
 // deltaSchema is the data of a stream's event: delta frame (spec 015).
 var deltaSchema = yaml.MapSlice{
 	{Key: "type", Value: "object"},
@@ -332,42 +342,50 @@ func operation(rt route, shown example) (yaml.MapSlice, error) {
 	if len(params) > 0 {
 		op = append(op, yaml.MapItem{Key: "parameters", Value: params})
 	}
-	if rt.body > 0 {
-		sent := yaml.MapSlice{}
-		if shown.request != "" {
-			v, err := jsonExample(shown.request)
-			if err != nil {
-				return nil, err
-			}
-			sent = yaml.MapSlice{{Key: "example", Value: v}}
+	// A route that reads a body takes one, which the document shows by
+	// its example, but for the routes whose body is empty.
+	if rt.body > 0 && !emptyBodies[rt.op] {
+		v, err := jsonExample(shown.request)
+		if err != nil {
+			return nil, err
 		}
-		media := yaml.MapSlice{{Key: mediaJSON, Value: sent}}
+		media := yaml.MapSlice{{Key: mediaJSON, Value: yaml.MapSlice{{Key: "example", Value: v}}}}
 		if shown.manifest != "" {
 			media = append(media, yaml.MapItem{Key: mediaYAML, Value: yaml.MapSlice{{Key: "example", Value: shown.manifest}}})
 		}
 		op = append(op, yaml.MapItem{Key: "requestBody", Value: yaml.MapSlice{{Key: "content", Value: media}}})
 	}
 	ok := yaml.MapSlice{{Key: "description", Value: http.StatusText(rt.status)}}
+	if rt.creates {
+		ok = yaml.MapSlice{{Key: "description", Value: answerExisted}}
+	}
 	if rt.status != http.StatusNoContent {
-		content, err := answered(rt, shown)
+		content, err := answered(rt.op, shown.response)
 		if err != nil {
 			return nil, err
 		}
 		ok = append(ok, yaml.MapItem{Key: "content", Value: content})
 	}
 	responses := yaml.MapSlice{{Key: strconv.Itoa(rt.status), Value: ok}}
+	if rt.creates {
+		content, err := answered(rt.op, shown.created)
+		if err != nil {
+			return nil, err
+		}
+		responses = append(responses, yaml.MapItem{Key: strconv.Itoa(http.StatusCreated), Value: yaml.MapSlice{{Key: "description", Value: answerCreated}, {Key: "content", Value: content}}})
+	}
 	responses = append(responses, yaml.MapItem{Key: "default", Value: yaml.MapSlice{{Key: "$ref", Value: "#/components/responses/Error"}}})
 	return append(op, yaml.MapItem{Key: "responses", Value: responses}), nil
 }
 
-// answered is the content of a route's success answer: JSON with its
-// example as a value, and for the answers of another media type a
-// string, its example the text as it is on the wire, or a blob's bytes,
-// which have no example.
-func answered(rt route, shown example) (yaml.MapSlice, error) {
-	switch media := answerMedia[rt.op]; media {
+// answered is the content of a success answer of op whose body is
+// body: JSON with its example as a value, and for the answers of
+// another media type a string, its example the text as it is on the
+// wire, or a blob's bytes, which have no example.
+func answered(op, body string) (yaml.MapSlice, error) {
+	switch media := answerMedia[op]; media {
 	case "":
-		v, err := jsonExample(shown.response)
+		v, err := jsonExample(body)
 		if err != nil {
 			return nil, err
 		}
@@ -376,13 +394,13 @@ func answered(rt route, shown example) (yaml.MapSlice, error) {
 		return yaml.MapSlice{{Key: media, Value: yaml.MapSlice{{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "format", Value: "binary"}}}}}}, nil
 	case mediaStream:
 		return yaml.MapSlice{{Key: media, Value: yaml.MapSlice{
-			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: eventStreams[rt.op]}}},
-			{Key: "example", Value: shown.response},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: eventStreams[op]}}},
+			{Key: "example", Value: body},
 		}}}, nil
 	default:
 		return yaml.MapSlice{{Key: media, Value: yaml.MapSlice{
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "description", Value: "The document. The example is its first lines."}}},
-			{Key: "example", Value: shown.response},
+			{Key: "example", Value: body},
 		}}}, nil
 	}
 }

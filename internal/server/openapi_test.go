@@ -177,22 +177,24 @@ func TestASummaryNamesItsAction(t *testing.T) {
 }
 
 // TestEveryAnswerShowsAnExample: every operation of the committed
-// document shows what its first success answer holds, an example of the
-// body or, for bytes, a binary schema; an answer without a body shows
-// no content.
+// document shows what each of its success answers holds, an example of
+// the body or, for bytes, a binary schema; an answer without a body
+// shows no content.
 func TestEveryAnswerShowsAnExample(t *testing.T) {
 	ops := readDocument(t)
 	if len(ops) != len(table()) {
 		t.Fatalf("%d operations read, the table has %d routes", len(ops), len(table()))
 	}
 	for id, op := range ops {
-		switch status, media, body := op.answers(t); {
-		case status == http.StatusNoContent:
-			if media != "" {
-				t.Errorf("%s answers no content and shows %s", id, media)
+		for _, status := range op.successes(t) {
+			switch media, body := op.answer(t, status); {
+			case status == http.StatusNoContent:
+				if media != "" {
+					t.Errorf("%s answers no content and shows %s", id, media)
+				}
+			case body.Example == nil && body.Schema.Format != "binary":
+				t.Errorf("%s: its %d answer shows neither an example nor a binary schema", id, status)
 			}
-		case body.Example == nil && body.Schema.Format != "binary":
-			t.Errorf("%s: its %d answer shows neither an example nor a binary schema", id, status)
 		}
 	}
 }

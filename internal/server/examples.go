@@ -25,15 +25,20 @@ type example struct {
 	// response is the JSON body of the route's answer, or the frames of
 	// its stream. A route that answers no body, or bytes, has none.
 	response string
+	// created is the JSON body of the answer of a route that creates
+	// its object, when it does.
+	created string
 }
 
 // The examples follow one agent through the API. A person applies the
-// agent release-notes and has a session with it: one turn, a change of
-// the model, a second message, a fork, the end and the archive. A
-// trigger of the agent then starts a session when a release is
-// published. Every response is what its route answers to the request
-// beside it at that point, built from the type the handler encodes, with
-// these ids, this caller and these times in the place of minted ones.
+// agent release-notes, which creates it, and applies it again after it
+// was changed, which makes its third version. They have a session with
+// it: one turn, a change of the model, a second message, a fork, the end
+// and the archive. A trigger of the agent, applied the same two times,
+// then starts a session when a release is published. Every response is
+// what its route answers to the request beside it at that point, built
+// from the type the handler encodes, with these ids, this caller and
+// these times in the place of minted ones.
 const (
 	exampleCaller        = "https://login.example|alice"
 	exampleAgentID       = session.PrefixAgent + "01M34FSDG0Q60424XT3D96DRAJ"
@@ -49,7 +54,6 @@ const (
 	exampleFiringID      = session.PrefixFiring + "01M34J2N80QKPCFHVXPHHQRHGQ"
 	exampleDelivery      = "123e4567-e89b-12d3-a456-426614174000"
 
-	exampleFirstDigest   = "sha256:5cdca0a8167efffd9c058b14bffaaa39ad4473ed001e29f8fbd160e951e80681"
 	exampleDigest        = "sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9"
 	exampleBundle        = "sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec"
 	exampleTriggerDigest = "sha256:cd61c91df8739587137a731afc9dbd615baa74b314f2e8ece6854065790db151"
@@ -120,12 +124,15 @@ func examples() (map[string]example, error) {
 	}
 	list := func(item any, last string) string { return text(page{Items: []any{item}, NextCursor: last}) }
 
-	// The agent at its second version, the one the examples apply.
+	// The agent as the apply that creates it answers it, and as the apply
+	// that changes it back does: a third version of the first's digest.
 	var agent v1.Agent
 	if err := json.Unmarshal([]byte(exampleAgentResolved), &agent); err != nil {
 		return nil, err
 	}
-	agent.Status = v1.Status{ID: exampleAgentID, Version: 2, Digest: exampleDigest, CreatedAt: exampleTime(12, 2, 0)}
+	agent.Status = v1.Status{ID: exampleAgentID, Version: 1, Digest: exampleDigest, CreatedAt: exampleTime(12, 0, 0)}
+	newAgent := agent
+	agent.Status.Version, agent.Status.CreatedAt = 3, exampleTime(12, 2, 0)
 	archived := agent
 	archived.Status.ArchivedAt = new(exampleTime(13, 0, 0))
 
@@ -192,6 +199,8 @@ func examples() (map[string]example, error) {
 		return nil, err
 	}
 	applied.Status = v1.Status{ID: exampleTriggerID, Version: 1, Digest: exampleTriggerDigest, CreatedAt: exampleTime(12, 30, 0), Counts: &v1.TriggerCounts{}}
+	newTrigger := applied
+	applied.Status.Version, applied.Status.CreatedAt = 3, exampleTime(12, 32, 0)
 	fired := applied
 	fired.Status.LastFiredAt, fired.Status.LastSessionID, fired.Status.Counts = new(exampleTime(12, 40, 0)), exampleFiredID, &v1.TriggerCounts{Started: 2}
 	delivery := trigger.Envelope{ID: exampleDelivery, Product: "github", Verb: "release.published", Resource: "example/widgets@v1.4.0", Actor: "ann",
@@ -201,10 +210,10 @@ func examples() (map[string]example, error) {
 		Key:   delivery.Resource, Outcome: store.OutcomeStarted, SessionID: exampleFiredID, ReceivedAt: exampleTime(12, 40, 0)}
 
 	out := map[string]example{
-		"applyAgent":        {request: exampleAgentManifest, manifest: exampleAgentYAML, response: text(agent)},
+		"applyAgent":        {request: exampleAgentManifest, manifest: exampleAgentYAML, response: text(agent), created: text(newAgent)},
 		"listAgents":        {response: list(agent, store.Cursor(exampleAgentID))},
 		"getAgent":          {response: text(agent)},
-		"listAgentVersions": {response: list(agentVersion{Version: 1, Digest: exampleFirstDigest, CreatedBy: exampleCaller, CreatedAt: exampleTime(12, 0, 0)}, store.Cursor("1"))},
+		"listAgentVersions": {response: list(agentVersion{Version: 1, Digest: exampleDigest, CreatedBy: exampleCaller, CreatedAt: exampleTime(12, 0, 0)}, store.Cursor("1"))},
 		"getAgentVersion":   {response: text(agent)},
 		"archiveAgent":      {request: text(archiveBody{Permanent: true}), response: text(archived)},
 		"createSession":     {request: text(createBody{Agent: agent.Metadata.Name, Title: created.Title, Message: "Write the release notes for v1.4.0."}), response: text(created)},
@@ -221,7 +230,7 @@ func examples() (map[string]example, error) {
 		"sendEvent":         {request: text(sendBody{Type: session.TypeUserMessage, Payload: json.RawMessage(text(messageBody{Content: said("Add a section for the breaking changes.")}))}), response: text(sent)},
 		"streamEvents":      {response: frames.String()},
 		"redactEvent":       {request: text(redactBody{Reason: "The message held an access token."})},
-		"applyTrigger":      {request: exampleTriggerManifest, manifest: exampleTriggerYAML, response: text(applied)},
+		"applyTrigger":      {request: exampleTriggerManifest, manifest: exampleTriggerYAML, response: text(applied), created: text(newTrigger)},
 		"listTriggers":      {response: list(applied, store.Cursor(exampleTriggerID))},
 		"getTrigger":        {response: text(fired)},
 		"fireTrigger":       {request: text(delivery), response: text(started)},
