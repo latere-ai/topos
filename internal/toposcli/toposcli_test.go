@@ -510,9 +510,10 @@ spec:
 		reply(toolUse("toolu_c", "bash", `{"command":"echo built > out.txt"}`)),
 		luxstub.Reply{Response: reply(text("Built.")).Response, Expect: expectAgent("You build things.", "bash")},
 	)
-	code, _, errOut := f.run("run", "--agent", path, "--mode", "confirm", "Build it.")
+	// manual is the name a person knows for confirm.
+	code, _, errOut := f.run("run", "--agent", path, "--mode", "manual", "Build it.")
 	if code != ExitWaiting || !strings.Contains(errOut, "toolu_c") {
-		t.Fatalf("confirm mode: exit %d, stderr %q", code, errOut)
+		t.Fatalf("manual mode: exit %d, stderr %q", code, errOut)
 	}
 	var id string
 	for _, s := range f.sessions() {
@@ -652,5 +653,20 @@ func TestAgentManifestRefusals(t *testing.T) {
 	}
 	if len(f.sessions()) != 0 {
 		t.Fatal("a refused manifest created a session")
+	}
+}
+
+// --mode takes the spec's names and the names a person knows from other
+// harnesses, and records the spec's.
+func TestModeNames(t *testing.T) {
+	for name, want := range map[string]string{"": "", "plan": "plan", "confirm": "confirm", "manual": "confirm", "progressive": "progressive", "auto": "progressive"} {
+		o := runOptions{mode: name, output: "text"}
+		if err := o.validate(); err != nil || o.mode != want {
+			t.Errorf("--mode %q: %q, %v; want %q", name, o.mode, err, want)
+		}
+	}
+	o := runOptions{mode: "yolo", output: "text"}
+	if err := o.validate(); err == nil || !strings.Contains(err.Error(), "manual (confirm) or auto (progressive)") {
+		t.Errorf("an unknown mode: %v", err)
 	}
 }

@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -132,6 +132,14 @@ boundary. `agent.tool_use` records `risk` as `{"score","source",
 | `plan` | effect `none` or `read`: `allow`; anything else: `block` with `Plan mode: only read-only tools run.` |
 | `confirm` | on `always_allow`, a session pattern, or effect `none` or `read`: `allow`; a call inside a Cella machine, `bash` included: `allow`, since the step-up below bounds what it can do outside; otherwise `ask` |
 | `progressive` | score below `flag_at` (0.3): `allow`; below `ask_at` (0.5): `flag`; below `block_at` (0.9): `ask`; otherwise `block` |
+
+A person names `confirm` manual and `progressive` auto, the names other
+harnesses use for the same two experiences: `topos run --mode` takes
+`manual` and `auto` and records `confirm` and `progressive`, which stay
+the only names in a manifest, an event, and the API. With a decision
+service ([[037-decision-services]]), manual mode is how it learns, every
+answer a label, and auto mode is where its suggestions decide inside the
+rules.
 
 A call on `always_confirm` is `ask` in `confirm` and `progressive` and
 `block` in `plan`. The thresholds come from the authorizer's `limits`

@@ -160,18 +160,30 @@ type runOptions struct {
 func (o *runOptions) flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.session, "session", "", "continue this session")
 	fs.StringVar(&o.model, "model", "", "the model to run, by catalog name; replaces the agent's")
-	fs.StringVar(&o.mode, "mode", "", "plan, confirm or progressive; empty is the agent's, else confirm")
+	fs.StringVar(&o.mode, "mode", "", "plan, manual (confirm) or auto (progressive); empty is the agent's, else manual")
 	fs.Float64Var(&o.maxCost, "max-cost", 0, "the session's budget in USD; 0 is none")
 	fs.StringVar(&o.dir, "dir", "", "the working directory; empty is the current one")
 	fs.StringVar(&o.output, "output", "text", "text, json or stream-json")
 }
 
-func (o runOptions) validate() error {
-	switch harness.Mode(o.mode) {
-	case "", harness.ModePlan, harness.ModeConfirm, harness.ModeProgressive:
-	default:
-		return fmt.Errorf("--mode %q is not plan, confirm or progressive", o.mode)
+// modeNames are the names a person may give --mode: the spec's three, and
+// manual and auto for confirm and progressive, the names a person knows
+// from other harnesses (spec 012).
+var modeNames = map[string]harness.Mode{
+	"":                              "",
+	string(harness.ModePlan):        harness.ModePlan,
+	string(harness.ModeConfirm):     harness.ModeConfirm,
+	"manual":                        harness.ModeConfirm,
+	string(harness.ModeProgressive): harness.ModeProgressive,
+	"auto":                          harness.ModeProgressive,
+}
+
+func (o *runOptions) validate() error {
+	m, ok := modeNames[o.mode]
+	if !ok {
+		return fmt.Errorf("--mode %q is not plan, manual (confirm) or auto (progressive)", o.mode)
 	}
+	o.mode = string(m)
 	switch o.output {
 	case "text", "json", "stream-json":
 	default:
