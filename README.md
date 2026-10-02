@@ -41,11 +41,29 @@ The repository restarted on 2026-09-26. The Go packages of v0.7.0, an
 embeddable runtime, are gone from `main` and stay available at their tags
 through the Go module proxy; [docs/history](docs/history) holds their specs.
 
-Today `toposd` serves its probes and reads its configuration, and nothing
-else is built. The design is the numbered deck in [specs](specs), and the
-build order is its README's phases. The first release above v0.7.0,
-v0.8.0, is cut when phase 1 closes: a harness that meets the task suite's
-bar against a real model.
+The core's releases start at v0.9.0 (2026-09-29); the latest is v0.11.1
+(2026-10-02). Built and released:
+
+- the session log, kept in memory, in a directory or in Postgres, and the
+  harness: the built-in tools, the permission modes, subagents, context
+  compaction and a checkpoint of the working directory at every turn;
+- `topos run`, `topos confirm` and `topos rewind`, which run a session on
+  your machine with no server;
+- `toposd`, which serves the API under `/v1` with its OpenAPI document and
+  runs hosted sessions on Cella sandboxes, in its own process or as
+  separate runners: agents owned by a person or an organization, sessions
+  that can be forked, archived and summarized, and triggers that fire on a
+  schedule or on delivered events;
+- a decision service seam: `topos run` can ask an external service to
+  suggest the verdict on each tool call.
+
+Not built yet: write-only credentials and connections, memory stores, MCP
+servers, external runners and handoff, the event sink, the conformance
+suite and the release archives. The task suite runs, but no release has
+measured its bar against a pinned model yet. In the [specs](specs) deck,
+12 specs are complete and 4 in progress; most of the drafted ones are
+partly built and record what shipped in their Outcome sections, and
+[specs/README.md](specs/README.md) says which build phases are closed.
 
 ## Try it
 
