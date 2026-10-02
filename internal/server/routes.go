@@ -37,7 +37,7 @@ func table() []route {
 			op: "getSession", summary: "Read a session", status: http.StatusOK, handle: (*call).getSession},
 		{method: http.MethodPatch, path: "/sessions/{id}", actions: a(authorizer.ActionSessionUpdate, authorizer.ActionSessionRead),
 			op: "updateSession", summary: "Change a session's model", status: http.StatusOK, body: MaxBody, handle: (*call).updateSession},
-		{method: http.MethodPost, path: "/sessions/{id}/end", actions: a(authorizer.ActionSessionEnd),
+		{method: http.MethodPost, path: "/sessions/{id}/end", actions: a(authorizer.ActionSessionEnd, authorizer.ActionSessionRead),
 			op: "endSession", summary: "End a session", status: http.StatusOK, body: MaxBody, handle: (*call).endSession},
 		{method: http.MethodPost, path: "/sessions/{id}/fork", actions: a(authorizer.ActionSessionRead, authorizer.ActionSessionFork),
 			op: "forkSession", summary: "Fork a session", status: http.StatusCreated, body: MaxBody, handle: (*call).forkSession},

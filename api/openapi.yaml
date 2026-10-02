@@ -750,9 +750,10 @@ paths:
     post:
       operationId: endSession
       summary: End a session
-      description: End an idle session completed or canceled.
+      description: "End an idle session completed or canceled. The body is {\"reason\": \"completed\"} or {\"reason\": \"canceled\"}. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running or ended session as conflict before it asks session.end; a session a runner claims while the authorizer decides is conflict too, and a deny is forbidden."
       x-topos-actions:
         - session.end
+        - session.read
       parameters:
         - name: id
           in: path
@@ -879,7 +880,7 @@ paths:
     post:
       operationId: archiveSession
       summary: Archive a session
-      description: "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then session.update with session_id and archived true; a deny is forbidden."
+      description: "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then, of an ended session, session.update with session_id and archived true; a deny is forbidden."
       x-topos-actions:
         - session.read
         - session.update

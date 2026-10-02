@@ -644,6 +644,14 @@ type endBody struct {
 
 // endSession is POST /sessions/{id}/end: an idle session ends completed
 // or canceled. A running one is interrupted first, by its sender.
+//
+// The authorizer may act on an allowed session.end before it answers,
+// as a decider that revokes the session's credentials does, so the
+// route asks it only of a session it would end: it reads the session,
+// which a caller who may not see it hears as not_found, refuses a
+// running or ended one, and only then asks session.end. The session is
+// read again after the decision, since a runner may have claimed it
+// meanwhile.
 func (c *call) endSession() error {
 	var b endBody
 	if err := c.decode(&b); err != nil {
@@ -652,27 +660,46 @@ func (c *call) endSession() error {
 	if b.Reason != session.StopCompleted && b.Reason != session.StopCanceled {
 		return refuse(CodeInvalidRequest, "reason is %q, not completed or canceled", b.Reason)
 	}
-	s, err := c.session(authorizer.ActionSessionEnd, nil)
+	ctx := c.r.Context()
+	s, err := c.session(authorizer.ActionSessionRead, nil)
 	if err != nil {
 		return err
 	}
+	if err := endable(s); err != nil {
+		return err
+	}
+	if _, err := c.ask(ctx, authorizer.ActionSessionEnd, sessionResource(s, nil)); err != nil {
+		return err
+	}
+	if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
+		return err
+	}
+	if err := endable(s); err != nil {
+		return err
+	}
+	ev, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: b.Reason}, c.s.o.Now())
+	if err != nil {
+		return err
+	}
+	if _, err := c.s.append(ctx, s.ID, ev); err != nil {
+		return err
+	}
+	if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
+		return err
+	}
+	return c.replySession(http.StatusOK, s)
+}
+
+// endable refuses an end of a session that has ended, or that is
+// running and is interrupted first.
+func endable(s session.Session) error {
 	switch s.Status {
 	case session.StatusEnded:
 		return refuse(CodeConflict, "the session ended %s", s.StopReason)
 	case session.StatusRunning:
 		return refuse(CodeConflict, "the session is running; interrupt it first")
 	}
-	ev, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: b.Reason}, c.s.o.Now())
-	if err != nil {
-		return err
-	}
-	if _, err := c.s.append(c.r.Context(), s.ID, ev); err != nil {
-		return err
-	}
-	if s, err = c.s.o.Sessions.Get(c.r.Context(), s.ID); err != nil {
-		return err
-	}
-	return c.replySession(http.StatusOK, s)
+	return nil
 }
 
 // deleteSession is DELETE /sessions/{id}: the session, its log and its

@@ -116,6 +116,35 @@ func TestArchiveASession(t *testing.T) {
 	}
 }
 
+// TestAnArchiveOfALiveSessionAsksNoUpdate: an archive of an idle or a
+// running session is conflict before the authorizer is asked
+// session.update, whose allow a decider may act on, and an archive of an
+// ended one asks session.read and then session.update.
+func TestAnArchiveOfALiveSessionAsksNoUpdate(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	idle := f.create("alice", "reviewer")
+	running := f.create("alice", "reviewer")
+	f.appendTo(running.ID, 1, session.SessionStatus{Status: session.StatusRunning})
+	for _, id := range []string{idle.ID, running.ID} {
+		f.authz.take()
+		if a := f.do(http.MethodPost, "/v1/sessions/"+id+"/archive", "alice", ""); a.code() != CodeConflict {
+			t.Fatalf("archive a live session: %d %s", a.status, a.body)
+		}
+		if asked := f.authz.take(); slices.Contains(asked, authorizer.ActionSessionUpdate) {
+			t.Fatalf("an archive of a live session asked %v", asked)
+		}
+	}
+	done := f.ended("alice", "reviewer")
+	f.authz.take()
+	if a := f.do(http.MethodPost, "/v1/sessions/"+done.ID+"/archive", "alice", ""); a.status != http.StatusOK {
+		t.Fatalf("archive an ended session: %d %s", a.status, a.body)
+	}
+	if asked := f.authz.take(); !slices.Equal(asked, []string{authorizer.ActionSessionRead, authorizer.ActionSessionUpdate}) {
+		t.Fatalf("an archive of an ended session asked %v", asked)
+	}
+}
+
 // TestAnArchiveIsRefused: an idle session is conflict and stays as it
 // is, a denied update is forbidden and changes nothing, and a caller who
 // may not read the session hears not_found.

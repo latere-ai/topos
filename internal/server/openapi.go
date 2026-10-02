@@ -254,7 +254,6 @@ var opDescriptions = map[string]string{
 	"createSession":     "Create a session of an agent, named by id or by name among the agents of the caller's context.",
 	"listSessions":      "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
 	"getSession":        "Get a session.",
-	"endSession":        "End an idle session completed or canceled.",
 	"resumeSession":     "Resume a session idle on its budget once the cap is raised.",
 	"deleteSession":     "Delete a session, its log and its blobs.",
 	"listEvents":        "List a session's events from a sequence.",
@@ -265,6 +264,9 @@ var opDescriptions = map[string]string{
 	"deleteTrigger":     "Delete a trigger with its firings; the sessions it started keep running.",
 	"listFirings":       "List a trigger's firings, newest first.",
 	"getOpenAPI":        "This document.",
+	"endSession": `End an idle session completed or canceled. The body is {"reason": "completed"} or {"reason": "canceled"}. ` +
+		"The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running or ended session as conflict before it asks session.end; " +
+		"a session a runner claims while the authorizer decides is conflict too, and a deny is forbidden.",
 	"applyAgent": fmt.Sprintf("Apply an Agent manifest to the agent of the name in the caller's context; a changed spec creates a version. "+
 		"The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. "+
 		"metadata.displayName, optional, is the name a person reads: text on one line of at most %d characters, without control characters, line breaks or bidirectional controls; "+
@@ -309,7 +311,7 @@ var opDescriptions = map[string]string{
 		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",
 	"archiveSession": "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. " +
-		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then session.update with session_id and archived true; a deny is forbidden.",
+		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then, of an ended session, session.update with session_id and archived true; a deny is forbidden.",
 	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",
 	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "effort": "<effort>"}}, the model the session's next turn runs and its reasoning effort, either member or both; any other member is refused. `+
 		"A member left out keeps what the session runs. effort is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. "+

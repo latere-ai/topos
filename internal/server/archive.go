@@ -36,11 +36,14 @@ func (c *call) setArchived(archived bool) error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.ask(c.r.Context(), authorizer.ActionSessionUpdate, sessionResource(s, map[string]any{"session_id": s.ID, "archived": archived})); err != nil {
-		return err
-	}
+	// A live session is refused before the authorizer is asked, which may
+	// act on an allowed question as it does on an end. An ended session
+	// stays ended, so the read stands after the decision.
 	if archived && s.Status != session.StatusEnded {
 		return refuse(CodeConflict, "the session is %s; only an ended session is archived, so end it first", s.Status)
+	}
+	if _, err := c.ask(c.r.Context(), authorizer.ActionSessionUpdate, sessionResource(s, map[string]any{"session_id": s.ID, "archived": archived})); err != nil {
+		return err
 	}
 	var at *time.Time
 	if archived {

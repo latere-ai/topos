@@ -479,6 +479,69 @@ func TestEndAndDelete(t *testing.T) {
 	}
 }
 
+// TestAnEndIsAskedOnlyOfASessionItEnds: an end of a running or an ended
+// session is conflict and asks the authorizer no session.end, whose allow
+// a decider may act on before it answers, as one that revokes the
+// session's credentials does. A caller who may not read the session
+// hears not_found whatever its state, an idle session is read and then
+// asked session.end, and a session a runner claims while the authorizer
+// decides is conflict and is not ended.
+func TestAnEndIsAskedOnlyOfASessionItEnds(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	end := func(token, id string) answer {
+		t.Helper()
+		f.authz.take()
+		return f.do(http.MethodPost, "/v1/sessions/"+id+"/end", token, `{"reason":"canceled"}`)
+	}
+	askedEnd := func() bool { return slices.Contains(f.authz.take(), authorizer.ActionSessionEnd) }
+
+	running := f.create("alice", "reviewer")
+	f.appendTo(running.ID, 1, session.SessionStatus{Status: session.StatusRunning})
+	if a := end("alice", running.ID); a.code() != CodeConflict {
+		t.Fatalf("an end of a running session: %d %s", a.status, a.body)
+	}
+	if askedEnd() {
+		t.Fatal("an end of a running session asked session.end")
+	}
+	idle := f.create("alice", "reviewer")
+	for _, id := range []string{running.ID, idle.ID} {
+		if a := end("bob", id); a.status != http.StatusNotFound || a.code() != CodeNotFound {
+			t.Fatalf("bob ends alice's session %s: %d %s", id, a.status, a.body)
+		}
+		if askedEnd() {
+			t.Fatal("an end of a session the caller may not read asked session.end")
+		}
+	}
+	a := end("alice", idle.ID)
+	if a.status != http.StatusOK {
+		t.Fatalf("an end of an idle session: %d %s", a.status, a.body)
+	}
+	if asked := f.authz.take(); !slices.Equal(asked, []string{authorizer.ActionSessionRead, authorizer.ActionSessionEnd}) {
+		t.Fatalf("an end of an idle session asked %v", asked)
+	}
+	if a := end("alice", idle.ID); a.code() != CodeConflict {
+		t.Fatalf("an end of an ended session: %d %s", a.status, a.body)
+	}
+	if askedEnd() {
+		t.Fatal("an end of an ended session asked session.end")
+	}
+
+	claimed := f.create("alice", "reviewer")
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionEnd {
+			f.appendTo(claimed.ID, 1, session.SessionStatus{Status: session.StatusRunning})
+		}
+		return f.authz.next.Authorize(t.Context(), req)
+	}
+	if a := end("alice", claimed.ID); a.code() != CodeConflict {
+		t.Fatalf("an end of a session claimed while the authorizer decided: %d %s", a.status, a.body)
+	}
+	if s, err := f.sessions.Get(t.Context(), claimed.ID); err != nil || s.Status != session.StatusRunning {
+		t.Fatalf("the claimed session after a refused end: %+v, %v", s, err)
+	}
+}
+
 // TestDeniedReadAnswersAsMissing: another subject's read of a session
 // answers exactly what a read of no session does.
 func TestDeniedReadAnswersAsMissing(t *testing.T) {
