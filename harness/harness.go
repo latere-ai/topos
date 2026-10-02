@@ -86,6 +86,9 @@ type Config struct {
 	Machine machine.Machine
 	Tools   *tools.Registry
 	Policy  Policy
+	// Decider decides each validated call (spec 037); nil decides by the
+	// rules of spec 012 over Policy.
+	Decider Decider
 	// Name is the agent's name, which a message it sends a thread carries.
 	Name string
 	// Instructions are the agent's own instructions.
@@ -933,7 +936,7 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 	}
 	t.continuations = 0
 
-	planned, answered, extra, err := t.plan(res, si.maxTokens)
+	planned, answered, extra, err := t.plan(ctx, res, si.maxTokens)
 	if err != nil {
 		return err
 	}
@@ -1074,12 +1077,13 @@ type stepPlan struct {
 // validated against the text the model sent, not the {} the log holds
 // for it, so its answer names what was wrong, and the call the output
 // limit, limit tokens, cut off is answered as cut.
-func (t *turn) plan(res models.Result, limit int64) (stepPlan, []answeredCall, []session.Event, error) {
+func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPlan, []answeredCall, []session.Event, error) {
 	var p stepPlan
 	var answered []answeredCall
 	var uses []session.Event
 	remembered := rememberedPatterns(t.events())
 	kind := t.h.c.Machine.Info().Kind
+	decider := t.h.decider()
 	for _, b := range res.Message.Blocks {
 		if b.Type != ir.BlockToolUse || b.ToolUse == nil {
 			continue
@@ -1098,8 +1102,12 @@ func (t *turn) plan(res models.Result, limit int64) (stepPlan, []answeredCall, [
 			continue
 		}
 		props := tool.Properties()
-		risk := Score(name, props, input, kind, t.h.c.Policy.Egress)
-		d := t.h.c.Policy.Decide(name, props, input, risk, kind, remembered)
+		risk, d, err := decider.Decide(ctx, Call{
+			Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered,
+		})
+		if err != nil {
+			return stepPlan{}, nil, nil, err
+		}
 		mode := t.h.c.Policy.Mode
 		if mode == "" {
 			mode = ModeConfirm
