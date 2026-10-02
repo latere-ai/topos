@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.11.0 - 2026-10-02
+
 ### Added
 
 - A tool call is decided by a `Decider`; without one configured, the
