@@ -216,6 +216,22 @@ their `depends_on` allows. A spec that spans phases (009, 013, 016,
 017, 024, 034) is dispatched once and its acceptance rows are marked by
 the phase that proves them.
 
+As of 2026-10-02 (v0.11.1), phase 0 is closed and phases 1 to 3 are
+built in large part with none closed. Phase 1 is open because no
+release has measured the task suite's bar against a pinned model
+(025). Phase 2 is open because the conformance suite (029) and the
+release job that runs it (028) are not built. Phase 3 is open because
+memory stores (020) are not built and the Cella tier's three tests are
+not written. Phase 4 has fork and none of the external runner or
+handoff. Of phase 5, 037 is complete.
+
+Work ran ahead of this order, and the gate starts no spec before its
+dependencies close, so a spec that builds on an open one stays
+`drafted` however much of it is built, and its Outcome section names
+what shipped and in which release. The chain starts at 008: its one
+open criterion, the instruction tier against a real model, holds 005 at
+`drafted`, and 005 holds most of the specs after it.
+
 ## Decisions across specs
 
 | Decision | Where | Why |
