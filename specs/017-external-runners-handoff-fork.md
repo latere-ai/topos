@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 016-runners.md, 034-checkpoints-and-rewind.md]
 affects: [runner/, client/, internal/server/, internal/toposcli/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-01
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -49,11 +49,31 @@ session's credentials live no longer than the session.
 
 | Rule | Value |
 |---|---|
-| fork point | `at_seq` must be the sequence of a `session.status` `idle` event of the session's own thread, a turn boundary; absent, the last one, which for an ended session is the boundary before its end; otherwise, or for a session that never finished a turn, `invalid_fork_point` |
-| events | 1 to `at_seq` copied verbatim into the new session's log, ids, times, turns and steps included, redacted events as tombstones, and every blob they name together with the agent's bundle |
-| the new Session | a new `ses_` id, `parent` set to `{session_id, seq}`, status `idle` with the stop reason at `at_seq`, the same agent version, the old session's repositories and capture, the old session's title marked as its continuation (`Notes` gives `Notes (continued)`, which gives `Notes (continued 2)`; no title gives none) so a list tells the two apart, `expires_at` from now, the forker as initiator and writer; `end_on_idle` and `trigger_id` are not carried, since the person continues it |
+| fork point | `at_seq` must be the sequence of a turn boundary: a `session.status` of the session's own thread that is `idle`, whatever its stop reason, or `ended` `completed` straight after the thread's `running`, the end that closes a finished turn of a session created with `end_on_idle`; absent, the last boundary; otherwise, or for a session that never finished a turn, `invalid_fork_point` |
+| events | 1 to `at_seq` copied verbatim into the new session's log, ids, times, turns and steps included, redacted events as tombstones, and every blob they name together with the agent's bundle; a fork point that is an `ended` `completed` is copied as `idle` `end_turn`, its other fields kept, since that is the status the turn closed with for a session without `end_on_idle` |
+| the new Session | a new `ses_` id, `parent` set to `{session_id, seq}`, status `idle` with the stop reason at `at_seq` (`end_turn` where `at_seq` is an end), the same agent version, the old session's repositories and capture, the old session's title marked as its continuation (`Notes` gives `Notes (continued)`, which gives `Notes (continued 2)`; no title gives none) so a list tells the two apart, `expires_at` from now, the forker as initiator and writer; `end_on_idle` and `trigger_id` are not carried, since the person continues it |
 | files | the checkpoint named by the `session.status` at `at_seq` ([[034-checkpoints-and-rewind]]) is restored into the new session's working directory when its first machine opens, and recorded as that machine's `session.machine` with reason `restored` and the `checkpoint` |
 | budget | `spent_cost_usd_micro` is the sum over the copied `model.request` events; the budget itself is the new session's, and a copied `session.resumed` does not set it |
+
+A turn boundary is where the session's own thread closed a turn and
+waits for its next input, the point at which the old session itself
+would have gone on. Each way a session ends is one of these:
+
+| The end | A boundary | Why |
+|---|---|---|
+| `ended` `completed` straight after `running` | yes | the turn ended `end_turn` and `end_on_idle` ended the session with it; the runner writes this end only for `end_turn`, in place of `idle` `end_turn` ([[004-session-log]]) |
+| `ended` `completed` or `canceled` after `idle` | no, the `idle` before it is | the end route ends only an idle session, so the end closes no turn |
+| `ended` `expired` | no, the `idle` before it is | the reaper ends only an idle session |
+| `ended` `failed`, `canceled` or `expired` straight after `running` | no | the turn closed before it finished, from a writer that ended it mid-turn; the fork point is the last `idle` before it, or none |
+
+A turn that is interrupted, fails with an error, or stops on a limit
+(`budget`, `turn_limit`, `output_limit`) closes `idle` with that stop
+reason, `end_on_idle` or not, since only `end_turn` ends such a session.
+That `idle` is a boundary like any other: the old session took its next
+message, or a resume, there, and an end that follows it leaves it so. An
+ended session whose only turn was interrupted forks at that turn's
+`idle`; one whose only turn closed with an end that is not a boundary,
+or that never closed a turn, is `invalid_fork_point`.
 
 The history is the copied events, not a reference to the old session:
 the new session's fold at `at_seq` equals the old one's, its first turn
@@ -242,6 +262,8 @@ presents ([[006-identity]]).
 | A fork's first machine without a reachable checkpoint is recorded `attached` with `session.error` `checkpoint_missing` beside it, gets the session's repositories, and its first checkpoint starts a new chain | `runner.TestAForkWithoutItsCheckpointStartsFresh` | built |
 | A local fork at a turn boundary copies the log to that sequence, restores that turn's files, and the new session's fold equals the old one's at that sequence | `TestLocalForkRestoresTurnFiles` | not built |
 | A fork at a sequence that is not a turn boundary is refused with `invalid_fork_point` | `internal/server.TestForkPointMustBeATurnBoundary` | built |
+| A session that ended with its turn (`end_on_idle`) forks at that end by default: the fork's copy of it is `idle` `end_turn` with its checkpoint, the fork is `idle` `end_turn` at that sequence, and its first turn sees the whole conversation; the same holds for a log a runner wrote | `internal/server.TestForkContinuesASessionThatEndedWithItsTurn`, `session.TestAForkRestatesTheEndOfItsTurn`, `runner.TestAnEndOnIdleSessionForksAtItsTurn` | built |
+| Each end is a boundary or not as the table says: `ended` `completed` straight after `running` is; one after `idle` forks at that `idle`; `ended` `failed`, `canceled` or `expired` straight after `running` forks at the last `idle` before it or is `invalid_fork_point`; an `idle` of an interrupted, failed or limited turn is a boundary | `session.TestForkPointOfEachEnd`, `internal/server.TestForkPointMustBeATurnBoundary` | built |
 | After a fork, events the old writer appends to the old session never appear in the new one | `internal/server.TestForkNeverMerges` | built |
 | A fork of a hosted session on a Cella sandbox restores the fork point's files from the git host, through toposd over the stub Cella ([[035-hosted-checkpoints-at-the-git-host]]) | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | built |
 | A fork's bash starts in its own working directory, not in one its copied log reported on the parent's machine | `harness.TestAForkDoesNotStartBashInItsParentsDirectory` | built |
