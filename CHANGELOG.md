@@ -23,6 +23,9 @@ committed: the commit log already holds that.
   and the service learns. Every decision and every confirmation is sent
   to it; a service that fails or does not answer in two seconds makes the
   call wait for a person.
+- `topos run --mode` takes `manual` and `auto`, the names other harnesses
+  use, for `confirm` and `progressive`. Sessions, manifests and events
+  keep the spec's names.
 
 ### Fixed
 
