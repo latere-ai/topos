@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.10.1 - 2026-10-02
+
 ### Fixed
 
 - A session that ended with its turn, as one created with `end_on_idle`
