@@ -63,14 +63,14 @@ another spec.
 | [005](005-harness-loop.md) | The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls | large | drafted | 001, 004, 007, 008 |
 | [006](.archive/006-identity.md) | Identity: subjects, verification, the authorizer question, the action vocabulary, the owner policy, the local issuer | medium | complete | 001, 002, 004 |
 | [007](.archive/007-models.md) | Models: the connection, the IR in the log, llmdialect's codecs, raw capture, cost and the budget | large | complete | 001, 002, 004 |
-| [008](008-tools.md) | Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule | large | drafted | 001, 004, 009 |
+| [008](008-tools.md) | Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule | large | in-progress | 001, 004, 009 |
 | [009](.archive/009-machines.md) | Machines: the Machine interface, the host directory and its worktrees, the Cella sandbox | large | complete | 001, 002, 004 |
 | [010](010-context.md) | Context: the order of the prompt's parts, cache breakpoints, token accounting, clearing, compaction | medium | drafted | 004, 005, 007, 011 |
 | [011](011-instructions-and-skills.md) | Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills | medium | drafted | 004, 005, 009 |
 | [012](012-permissions-and-approvals.md) | Permissions, approvals and hooks: the boundary, the layers, the risk score and verdict, the modes | large | drafted | 001, 004, 005, 008, 009 |
 | [013](013-threads-and-subagents.md) | Threads, subagents and the advisor: the session's graph, spawn and message, worktree isolation, narrowing, depth | large | drafted | 001, 004, 005, 008, 009, 012 |
 | [014](.archive/014-store.md) | The server's store: the Postgres schema, toposd on the directory store, the blob store, retention and deletion | medium | complete | 002, 004, 006 |
-| [015](015-api.md) | The API: every route under /v1, streaming, errors, paging, idempotency, the OpenAPI document | large | drafted | 003, 004, 006, 014 |
+| [015](015-api.md) | The API: every route under /v1, streaming, errors, paging, idempotency, the OpenAPI document | large | in-progress | 003, 004, 006, 014 |
 | [016](016-runners.md) | Runners: driving a session, recovery of a step without results, the queue, claim, renew and release | large | drafted | 001, 002, 004, 005, 008, 009 |
 | [017](017-external-runners-handoff-fork.md) | External runners, handoff and fork: the append route, the writer rule, the inbox, moving a session's writer | large | drafted | 004, 016, 034 |
 | [018](018-credentials-and-secrets.md) | Credentials, connections and secrets: write-only credentials, the agent's identity and its session tokens, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope | large | in-progress | 001, 002, 003, 004, 006, 009 |
@@ -81,7 +81,7 @@ another spec.
 | [023](023-events-and-observability.md) | Events and observability: the content-free sink, spans derived from the log, metrics | medium | drafted | 002, 004, 006, 014, 015 |
 | [024](024-client-cli-skill.md) | The client, the topos command and the agent skill: the API client, print mode, the supported import set | medium | drafted | 002, 004, 005, 016 |
 | [025](025-task-suite.md) | The task suite and the release bar: tasks and checkers, the pinned model, the threshold, spend, replays, IR against SDK | large | drafted | 005, 007, 008, 024, 026 |
-| [026](026-stubs-and-tiers.md) | Stubs and test tiers: the scripted model, the stub Lux, authorizer, issuer, sink and Cella, the tiers and their tags | medium | drafted | 002, 004, 007, 009 |
+| [026](026-stubs-and-tiers.md) | Stubs and test tiers: the scripted model, the stub Lux, authorizer, issuer, sink and Cella, the tiers and their tags | medium | in-progress | 002, 004, 007, 009 |
 | [027](027-security.md) | Security and threat model: assets, boundaries, adversaries, and the test or invariant that holds each threat | medium | drafted | 001, 009, 012, 016, 018 |
 | [028](028-release-and-installation.md) | Release, installation and running on your own: images, archives, attestations, the compose file, toposd check | medium | drafted | 002, 006, 025, 026, 029 |
 | [029](029-conformance.md) | Conformance suite: the API contract as an importable test package against any toposd | medium | drafted | 004, 006, 015, 026, 030 |

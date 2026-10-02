@@ -1,12 +1,12 @@
 ---
 title: "Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule"
-status: drafted
+status: in-progress
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-01
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -213,9 +213,26 @@ routes, the credential deny-list and the environment
 | An output of 100 KiB is spilled: the result carries 20 KiB of head, the omission line and 10 KiB of tail, and the spill file in the machine's spill directory holds all 100 KiB | `harness/tools.TestOutputSpill`, `harness/tools.TestCap` | built |
 | `todo` replaces the thread's list and validates its items | `harness/tools.TestTodoReplacesTheList`, `harness/tools.TestTodoValidates` | built |
 | `web_fetch` reaches the network only through the machine's `Fetcher`, converts HTML to text, spills a long page, and answers a failure, a timeout and a cancel as results; the host's fetch holds to the redirect, scheme, size and time limits | `harness/tools.TestWebFetch`, `harness/tools.TestWebFetchFailures`, `harness/tools.TestHTMLText`, `machine/host.TestFetch`, `machine/host.TestFetchRefuses`, `machine/host.TestFetchTimeout` | built |
-| `web_fetch` on a Cella machine runs inside the sandbox and never from the runner's network | `TestWebFetchRunsInsideTheMachine` | not built |
+| `web_fetch` on a Cella machine runs inside the sandbox and never from the runner's network | `machine/cella.TestFetchRunsInTheSandbox` | built against the stub Cella |
 | A client-executed tool stops the turn with `tool_result` and resumes on `user.tool_result` | `harness.TestClientToolsWaitForTheirResult` | built |
 | Registering a non-built-in tool with `Repeatable` fails, and the registry refuses a bad name or a duplicate | `harness/tools.TestOnlyBuiltinsAreRepeatable`, `harness/tools.TestRegistryRefuses` | built |
 | Every built-in's description file has at least one instruction test directory | `test/tasks.TestEveryToolDescriptionHasAnInstructionTest` | built |
 | Each instruction test's checker passes its scripted solution and refuses its scripted wrong solution by an assertion on the log, not on the files | `test/tasks.TestScriptedSolutions` | built |
 | Each built-in's instruction test passes against a real model in the instruction tier | `test/tasks.TestTheSuiteAgainstAModel` with the `instructions` tag | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): the registry and its schema check, the
+eight built-ins with versioned descriptions, paths that are the
+machine's, the output cap with its spill file, client-executed tools,
+the repeat rule, and one instruction test per built-in with a scripted
+right and wrong solution. On a Cella machine `web_fetch` runs `curl` in
+the sandbox. One change from the plan: `write` and `edit` also refuse an
+existing file the thread never read, with a result that says so, and
+their descriptions are at version 2, which names both refusals.
+
+Open: the instruction tier has not been run against a real model, so
+the last criterion has no recorded pass. Until it has, this spec stays
+in progress, and [[005-harness-loop]] and every spec that builds on it
+stay at `drafted`, since the gate starts no spec whose dependencies are
+open.

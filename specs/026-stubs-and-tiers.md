@@ -1,12 +1,12 @@
 ---
 title: "Stubs and test tiers: the scripted model, the stub Lux, authorizer, issuer, sink and Cella, the tiers and their tags"
-status: drafted
+status: in-progress
 track: core
 depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 007-models.md, 009-machines.md]
 affects: [models/scripted/, test/stubs/luxstub/, test/stubs/, test/e2e/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -100,7 +100,7 @@ The task suite and the bar ([[025-task-suite]]); the conformance suite
 | Criterion | Test that proves it | State |
 |---|---|---|
 | Every tier but instructions and tasks runs in CI with no paid credential and no secret in the workflow | `TestWorkflowTiersNeedNoPaidCredential` over the workflow files | not built |
-| `go test ./...` with no tag passes in the hermetic gate with only `/bin` and `/usr/bin` on `PATH` | the `hermetic` gate | not built |
+| `go test ./...` with no tag passes in the hermetic gate with only `/bin` and `/usr/bin` on `PATH` | the `hermetic` gate | built |
 | A script plays step by step: text, thinking with its signature, tool calls with their ids, usage and cost; its `fail` injects an HTTP error the given number of times and a cut stream; its `expect` refuses a request that does not match with an `ExpectationError`; a request past the last step is `ErrExhausted` | `models/scripted.TestAScriptPlaysStepByStep` | built |
 | A malformed script is refused | `models/scripted.TestScriptsAreRefusedWhenMalformed` | built |
 | A scripted connection drives the `topos` command to the end of a turn | `internal/toposcli.TestAScriptedRun` | built |
@@ -110,3 +110,17 @@ The task suite and the bar ([[025-task-suite]]); the conformance suite
 | The stub Cella passes the parity cases `machine/cella` runs against the real Cella tier | `TestStubCellaMatchesCella` | not built |
 | `make run` starts `toposd` and the stubs and a session completes against them with no credential | `TestMakeRunCompletesASession` | not built |
 | The task suite's recorded tool calls give the same results on the host machine and on a Cella machine, in the e2e tier | `TestMachineParity` | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): the scripted model behind the
+`scripted:` scheme, the stub Lux for every dialect, the stub Cella for
+every route `machine/cella` calls, and the stub identity provider and
+key routes of [[018-credentials-and-secrets]]. The suite without tags
+runs in the family gate with the toolchain, `/usr/bin` and `/bin` on
+`PATH`, and the postgres tier runs in its own job.
+
+Open: the check that no workflow tier needs a paid credential, the
+stub Lux's cache simulation, the parity of the stub Cella with a real
+one, `make run` with the stubs (today it starts `toposd` with no model
+connection, which `serve` refuses), and the e2e tier's machine parity.

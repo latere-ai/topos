@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 003-manifes
 affects: [internal/credentials/, internal/identity/, internal/egressproxy/, session/inputcheck/, runner/, machine/cella/, manifest/, internal/hosted/, internal/runnerapi/, internal/runnerrole/, internal/server/, internal/config/, test/stubs/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-28
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -379,3 +379,21 @@ egress swapping a Secret by host and path.
 | On the host, a named secret is substituted only on requests to its hosts, and a request elsewhere carries the placeholder | `TestHostProxySubstitutesOnlyNamedHosts` | not built: comes after the hosted path |
 | The input check finds each listed format and a high-entropy string, reports no value, and never blocks the message | `TestInputCheckFindsTokensAndNeverBlocks` | not built: comes after the hosted path |
 | A widening beyond the widener's rights is refused, a lapsed widening is reverted, every change is an event, and the next call after a change uses a fresh token | `TestScopeWideningBoundedAndRecorded`, `runner.TestScopeChangeTakesFreshToken` | partly built: the next call after a `session.scope_changed` takes a fresh token; the scope route that bounds and records a change is not built, and its bound is the authorizer's |
+
+## Outcome
+
+The hosted path shipped in v0.9.0 (2026-09-29): with
+`TOPOS_IDENTITY_URL` every agent is an identity at the installation's
+identity provider and holds no key; a hosted session reaches Cella and
+its git host with tokens minted for the agent and naming the session,
+only for the holder of its lease; with `TOPOS_SESSION_KEYS_URL` a
+session asks models with a Lux key of its own and its sandbox holds a
+second one, swapped in at egress. An installation without an identity
+provider gives its sandboxes a git credential from
+`TOPOS_ORIGO_TOKEN_FILE`. v0.9.3 (2026-09-30) deletes a session's
+sandbox Secrets at its end in a drive.
+
+Open: the Credential object, its routes and its envelope encryption
+(`TOPOS_CREDENTIALS_KEY` is not read), connections, scrubbing, named
+secrets on the host, the input check, the scope route, and the
+canary run against a real Cella's egress gateway.
