@@ -19,9 +19,15 @@ committed: the commit log already holds that.
   operation now has. No route, parameter or answer changed.
 - The API document shows a wire example for every operation: the request
   body where a route takes one, an apply's manifest as JSON and as YAML,
-  and the first success answer, as JSON, as the frames of the session
+  and each success answer, as JSON, as the frames of the session
   stream, or as a binary schema for a blob. Each example is what the
   route answers to the request beside it.
+- The API document lists both answers of an apply: `PUT
+  /v1/agents/{name}` and `PUT /v1/triggers/{name}` answer 201 when they
+  create the object and 200 when they change an existing one or leave it
+  as it was, and the document listed 200 alone. It lists no request body
+  for `POST /v1/sessions/{id}/archive` and `/unarchive`, whose body is
+  empty. The routes answer as they did.
 
 ## v0.11.0 - 2026-10-02
 
