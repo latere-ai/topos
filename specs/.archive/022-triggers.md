@@ -1,12 +1,12 @@
 ---
 title: "Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, and the limits"
-status: testing
+status: complete
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 006-identity.md, 014-store.md]
 affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, session/, cmd/toposd/, api/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-30
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -397,3 +397,23 @@ a session's machine, which is the sandbox's to set.
 | The fire route is asked as `trigger.fire`; a caller without it is refused; a firing's session has the owner as initiator and `trigger:<trg_id>` as sender | `internal/server.TestFireIsAskedOfTheAuthorizer` | built |
 | An empty `fire` on a schedule trigger fires it now, once per `Idempotency-Key` | `internal/server.TestFireASchedule` | built |
 | A firing's `session.create` and `session.send` are asked as the owner with `org_id` alone as the claims, and every `trigger.*` question names the trigger by `name`, `owner` and `agent`, a create and an update with the filter applied | `internal/server.TestFireIsAskedOfTheAuthorizer`, `internal/server.TestTheTriggerQuestionsNameTheTrigger` | built |
+
+## Outcome
+
+Shipped in v0.9.4 (2026-09-30) as designed: the Trigger kind and its
+checks at apply, the firing pipeline under each trigger's lease, the
+six routes, the minute loop of `toposd serve`, and the three tables on
+Postgres (migration 0004) and the directory store. Every criterion has
+its test; the two on Postgres run in the postgres tier.
+
+- **v0.9.5 (2026-09-30).** A trigger's `trigger.create` question
+  carries the `trg_` id the trigger is stored under, so an authorizer
+  that delivers events knows a new trigger by the id the fire route
+  takes from its first apply.
+- **v0.10.0 (2026-10-02).** An agent a trigger names by name is read
+  among the agents of the context the owner's token named at apply
+  ([[036-organization-owners]]).
+
+What stays outside the core is listed under Not in this spec: the
+producers that receive a provider's webhooks and call the fire route,
+and the console's trigger screens.
