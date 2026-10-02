@@ -213,6 +213,7 @@ the behaviors of later specs cannot exist without.
 | `TOPOS_MEMORY_ARCA_URL` | when the backend is `arca` | none | [[020-memory-stores]] | the Arca files plane's base URL |
 | `TOPOS_MEMORY_DIR` | no | `$TOPOS_DATA_DIR/memory` | [[020-memory-stores]] | the root of the `dir` backend |
 | `TOPOS_MEMORY_SYNC_INTERVAL` | no | `5m` | [[020-memory-stores]] | how often a running turn syncs its attached stores between the sync points |
+| `TOPOS_DECISIONS_URL`, `TOPOS_DECISIONS_TOKEN` (added by [[037-decision-services]]) | no; the token with the URL | unset | [[037-decision-services]] | a decision service the harness asks for suggestions and sends every decision and confirmation to; unset, the rules decide alone and nothing is sent; the URL without the token is refused |
 | `TOPOS_URL`, `TOPOS_TOKEN` (added by the deck) | for `topos` commands that reach a server | unset | [[024-client-cli-skill]] | the toposd a client talks to and the bearer it sends; unset, `topos run` runs a local session |
 | `TOPOS_TEST_URL` | no | unset | [[029-conformance]] | a running toposd the conformance suite targets; unset, the suite starts one in process |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_*` | no | unset | [[023-events-and-observability]] | the standard OpenTelemetry variables, read by `latere.ai/x/pkg/otel`; telemetry is off without the endpoint |

@@ -92,6 +92,7 @@ another spec.
 | [034](034-checkpoints-and-rewind.md) | Checkpoints and rewind: each turn's working directory committed, the session repository, rewind, what fork and handoff restore | medium | drafted | 004, 005, 009 |
 | [035](.archive/035-hosted-checkpoints-at-the-git-host.md) | Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its private repository, and a fork restores its files after the sandbox is gone | medium | complete | 004, 009 |
 | [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
+| [037](037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | drafted | 004, 005, 012, 016 |
 
 ## Dependency graph
 
@@ -138,6 +139,7 @@ flowchart BT
   S034[034 checkpoints + rewind]
   S035[035 hosted checkpoints at the git host]
   S036[036 organization owners]
+  S037[037 decision services]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -192,6 +194,8 @@ flowchart BT
   S036 --> S015
   S036 --> S018
   S036 --> S022
+  S037 --> S012
+  S037 --> S016
 ```
 
 ## Build order
@@ -205,7 +209,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
@@ -232,6 +236,7 @@ the phase that proves them.
 | policy sits at the boundary an effect crosses, not on a command's text: the Cella sandbox, or the host's operating-system sandbox | 012 | pipes, subshells and scripts defeat any rule written against a string |
 | approvals in layers, none trusted alone: hard boundaries, the organization's lists, a recorded risk score, and a verdict of allow, flag, ask or block, where ask never silently denies; modes `plan`, `confirm`, `progressive` | 012 | an agent that is refused routes around the refusal, and every decision is recorded with its score |
 | authority only narrows: along spawn edges, through hooks and modes, and in the session scope; a message carries data and never authority | 012, 013, 018 | a subagent of a subagent holds a subset of a subset |
+| a decision service suggests and the harness decides; every decision is recorded with the probability, fixed before the call ran, that a person sees it | 037 | an answer can be weighted, and an error rate estimated, only when that probability is known |
 | a session's agents form a graph of threads, built in stages each gated by suite tasks | 013, 033 | one agent must work before several do; every stage runs on the same threads and messages |
 | no credential enters a machine or a log; the runner or Cella's egress gateway injects it per call, and the runner scrubs the values it holds from tool output | 018, 019 | a sandbox runs code the agent wrote |
 | an organization's agent acts with its own agent identity, a personal agent as the person narrowed to the agent; connections are chosen per connection | 018 | the shape agent platforms converged on; a session never acts with the server's own identity |
