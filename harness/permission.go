@@ -201,6 +201,17 @@ func fetchHost(input json.RawMessage) string {
 type Decision struct {
 	Verdict Verdict
 	Reason  string
+	// ReviewProbability is the probability, fixed before the call runs,
+	// that a person sees it (spec 037): 1 for an ask and a forced flag, the
+	// audit rate for an automatic verdict a decision service samples, 0
+	// otherwise. The harness records 1 for a shown verdict a decider gave
+	// no probability.
+	ReviewProbability float64
+	// Draw is the uniform draw a sampled review used; nil when none was
+	// drawn.
+	Draw *float64
+	// Suggestion is a decision service's suggestion, when one was asked.
+	Suggestion *session.Suggestion
 }
 
 // Decide applies the lists and the mode to one scored call. remembered
@@ -215,16 +226,16 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 	subject := patternSubject(name, input)
 	if matchAny(p.AlwaysConfirm, name, subject) {
 		if mode == ModePlan {
-			return Decision{VerdictBlock, prompts.Text(prompts.CallPlanMode)}
+			return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
 		}
-		return Decision{VerdictAsk, "on the organization's always-confirm list"}
+		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list"}
 	}
 	switch mode {
 	case ModePlan:
 		if readOnly {
-			return Decision{VerdictAllow, "read-only"}
+			return Decision{Verdict: VerdictAllow, Reason: "read-only"}
 		}
-		return Decision{VerdictBlock, prompts.Text(prompts.CallPlanMode)}
+		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
 	case ModeProgressive:
 		t := p.Thresholds
 		if t == (Thresholds{}) {
@@ -232,25 +243,25 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 		}
 		switch {
 		case risk.Score < t.FlagAt:
-			return Decision{VerdictAllow, "below the flag threshold"}
+			return Decision{Verdict: VerdictAllow, Reason: "below the flag threshold"}
 		case risk.Score < t.AskAt:
-			return Decision{VerdictFlag, "between the flag and ask thresholds"}
+			return Decision{Verdict: VerdictFlag, Reason: "between the flag and ask thresholds"}
 		case risk.Score < t.BlockAt:
-			return Decision{VerdictAsk, "between the ask and block thresholds"}
+			return Decision{Verdict: VerdictAsk, Reason: "between the ask and block thresholds"}
 		}
-		return Decision{VerdictBlock, prompts.Text(prompts.CallAboveBlock)}
+		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallAboveBlock)}
 	}
 	switch {
 	case readOnly:
-		return Decision{VerdictAllow, "read-only"}
+		return Decision{Verdict: VerdictAllow, Reason: "read-only"}
 	case matchAny(p.AlwaysAllow, name, subject):
-		return Decision{VerdictAllow, "on the always-allow list"}
+		return Decision{Verdict: VerdictAllow, Reason: "on the always-allow list"}
 	case matchAny(remembered, name, subject):
-		return Decision{VerdictAllow, "allowed earlier in this session"}
+		return Decision{Verdict: VerdictAllow, Reason: "allowed earlier in this session"}
 	case machineKind == machine.KindCella && props.Effect == tools.EffectWrite:
-		return Decision{VerdictAllow, "stays inside the sandbox"}
+		return Decision{Verdict: VerdictAllow, Reason: "stays inside the sandbox"}
 	}
-	return Decision{VerdictAsk, "needs a confirmation"}
+	return Decision{Verdict: VerdictAsk, Reason: "needs a confirmation"}
 }
 
 // patternSubject is what a pattern's glob matches for a call: the

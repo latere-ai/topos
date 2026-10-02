@@ -155,6 +155,27 @@ type Risk struct {
 	Features []string `json:"features,omitempty"`
 }
 
+// Suggestion is a decision service's suggestion for a call (spec 037):
+// its verdict, the probability that the person approves and its
+// uncertainty, the thresholds and the audit rate of the costs it applied,
+// its source and its reason.
+type Suggestion struct {
+	Source      string               `json:"source"`
+	Verdict     string               `json:"verdict"`
+	Approve     float64              `json:"approve"`
+	Uncertainty float64              `json:"uncertainty"`
+	Thresholds  SuggestionThresholds `json:"thresholds"`
+	AuditRate   float64              `json:"audit_rate"`
+	Reason      string               `json:"reason,omitempty"`
+}
+
+// SuggestionThresholds place an approval probability on the verdict scale:
+// above AllowAbove an allow, below BlockBelow a block, an ask between.
+type SuggestionThresholds struct {
+	AllowAbove float64 `json:"allow_above"`
+	BlockBelow float64 `json:"block_below"`
+}
+
 // AgentToolUse is the payload of agent.tool_use.
 type AgentToolUse struct {
 	ToolUseID  string          `json:"tool_use_id"`
@@ -166,6 +187,13 @@ type AgentToolUse struct {
 	Mode       string          `json:"mode,omitempty"`
 	Client     bool            `json:"client,omitempty"`
 	Repeatable bool            `json:"repeatable,omitempty"`
+	// ReviewProbability is the probability, fixed before the call ran,
+	// that a person sees it (spec 037); nil on an event written before it.
+	ReviewProbability *float64 `json:"review_probability,omitempty"`
+	// Draw is the uniform draw the call's review used, made once.
+	Draw *float64 `json:"draw,omitempty"`
+	// Suggestion is a decision service's suggestion, when one was asked.
+	Suggestion *Suggestion `json:"suggestion,omitempty"`
 }
 
 // Spill names where the rest of a capped tool output went.

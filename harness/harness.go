@@ -1112,9 +1112,14 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		if mode == "" {
 			mode = ModeConfirm
 		}
+		if d.Verdict.Shown() && !(d.ReviewProbability > 0) {
+			d.ReviewProbability = 1
+		}
+		review := d.ReviewProbability
 		use := session.AgentToolUse{
 			ToolUseID: id, Name: name, Input: input, Risk: &risk, Verdict: string(d.Verdict), Reason: d.Reason,
 			Mode: string(mode), Client: props.Client, Repeatable: props.Repeatable,
+			ReviewProbability: &review, Draw: d.Draw, Suggestion: d.Suggestion,
 		}
 		e, err := t.event(session.TypeAgentToolUse, use)
 		if err != nil {

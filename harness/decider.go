@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"latere.ai/x/pkg/verdict"
+
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/session"
 )
@@ -39,10 +41,13 @@ type Rules struct {
 	Policy Policy
 }
 
-// Decide implements [Decider].
+// Decide implements [Decider]. The rules review nothing at random, so a
+// shown verdict has review probability 1 and any other 0.
 func (r Rules) Decide(_ context.Context, c Call) (session.Risk, Decision, error) {
 	risk := Score(c.Name, c.Props, c.Input, c.MachineKind, r.Policy.Egress)
-	return risk, r.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered), nil
+	d := r.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered)
+	_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
+	return risk, d, nil
 }
 
 // decider is the configured decider, or the rules over the policy.

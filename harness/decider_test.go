@@ -40,8 +40,14 @@ func TestRulesDeciderMatchesPolicy(t *testing.T) {
 		if risk.Score != want.Score || risk.Source != want.Source {
 			t.Errorf("%s %s: risk %+v, want %+v", c.name, c.input, risk, want)
 		}
-		if wd := p.Decide(c.name, c.props, in, want, c.kind, nil); d != wd {
+		wd := p.Decide(c.name, c.props, in, want, c.kind, nil)
+		if d.Verdict != wd.Verdict || d.Reason != wd.Reason {
 			t.Errorf("%s %s: decision %+v, want %+v", c.name, c.input, d, wd)
+		}
+		// The rules review nothing at random: a shown verdict is seen for
+		// certain and any other never.
+		if want := map[bool]float64{true: 1, false: 0}[d.Verdict.Shown()]; d.ReviewProbability != want || d.Draw != nil || d.Suggestion != nil {
+			t.Errorf("%s %s: %+v, want review probability %v and no draw or suggestion", c.name, c.input, d, want)
 		}
 	}
 }
@@ -86,5 +92,43 @@ func TestConfiguredDeciderDecides(t *testing.T) {
 	f.send(ctx, "Build.")
 	if out := f.turn(ctx); out.StopReason == session.StopEndTurn {
 		t.Fatalf("a failing decider ended the turn normally: %+v", out)
+	}
+}
+
+// Every agent.tool_use records its review probability: 1 for the ask, 0
+// for the call that runs unasked.
+func TestToolUseRecordsReviewProbability(t *testing.T) {
+	e := setup(t, func(c *Config) { c.Machine = fakeMachine{kind: machine.KindHost} })
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_w", "bash", `{"command":"make"}`), call("toolu_r", "echo", `{"text":"r"}`)))
+	e.send(ctx, "Build.")
+	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
+		t.Fatalf("outcome %+v", out)
+	}
+	want := map[string]float64{"toolu_w": 1, "toolu_r": 0}
+	for _, ev := range e.events(ctx, session.TypeAgentToolUse) {
+		var use session.AgentToolUse
+		if err := ev.Decode(&use); err != nil {
+			t.Fatal(err)
+		}
+		if use.ReviewProbability == nil || *use.ReviewProbability != want[use.ToolUseID] {
+			t.Errorf("%s (%s): review probability %v, want %v", use.ToolUseID, use.Verdict, use.ReviewProbability, want[use.ToolUseID])
+		}
+	}
+
+	// A decider that gives a shown verdict no probability is recorded as
+	// certain to be seen.
+	f := setup(t, func(c *Config) {
+		c.Machine = fakeMachine{kind: machine.KindHost}
+		c.Decider = decideFunc(func(context.Context, Call) (session.Risk, Decision, error) {
+			return session.Risk{Source: "test/1"}, Decision{Verdict: VerdictAsk, Reason: "asks"}, nil
+		})
+	})
+	f.stub.Script(model, reply(ir.StopToolUse, call("toolu_a", "bash", `{"command":"make"}`)))
+	f.send(ctx, "Build.")
+	f.turn(ctx)
+	var use session.AgentToolUse
+	if err := f.events(ctx, session.TypeAgentToolUse)[0].Decode(&use); err != nil || use.ReviewProbability == nil || *use.ReviewProbability != 1 {
+		t.Fatalf("agent.tool_use %+v, %v", use, err)
 	}
 }
