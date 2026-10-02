@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.11.1 - 2026-10-02
+
 ### Changed
 
 - In the API document, an operation's `summary` is the name of its
