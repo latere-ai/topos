@@ -6,7 +6,7 @@ depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 005-harness-
 affects: [client/, cmd/topos/, internal/toposcli/, skills/topos/, examples/embed/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-28
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -148,3 +148,21 @@ client built on this package outside the module.
 | A client error decodes into `*client.Error` with the envelope's code and detail | `TestClientDecodesErrors` | not built |
 | The examples import only the supported set | `TestExamplesImportOnlyTheSupportedSet` | not built |
 | Every command in the skill exists in the command's flag table | `TestSkillCommandsExist` | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): `topos run`, `topos confirm` and `topos
+rewind` over the directory store with no server, the exit codes,
+`--output stream-json`, `--max-cost`, and `--agent` with a manifest file
+or the default `agent.yaml`. v0.11.0 (2026-10-02): `--mode` also takes
+`manual` and `auto`, and `topos run` consults a decision service
+([[037-decision-services]]).
+
+Open: the `client` package, the commands `attach`, `send`, `interrupt`,
+`apply`, `sessions` and `fork`, an applied agent run by name, a suite
+task run end to end from the command, the first SIGINT alone,
+stream-json's completeness, the examples and the agent skill.
+
+The status stays `drafted` while [[005-harness-loop]] and
+[[016-runners]] are open, since the gate starts no spec before its
+dependencies close.

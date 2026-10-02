@@ -274,3 +274,24 @@ presents ([[006-identity]]).
 | One session moves laptop to cloud to laptop with an identical fold at every sequence and identical files, with and without a git remote of the user's | `TestHandoffRoundTrip` in the e2e tier, two subtests | not built |
 | A handoff to external while a hosted turn runs ends that turn `interrupted` with `detail` `handoff` at the next step boundary | `TestHandoffInterruptsRunningTurn` | not built |
 | A handoff to `hosted` of a session whose agent the server does not hold, or whose bundle is no version of it, is `agent_not_hosted`; an accepted one is asked of the authorizer as `session.handoff` with the initiator cap, and the hosted runner takes policy, scope and budget from the Session, not from events | `TestHandoffToHostedActsAsTheAgent` | not built |
+
+## Outcome
+
+Fork shipped in v0.9.7 (2026-10-01) as `POST /v1/sessions/{id}/fork`: a
+new session of the same agent version from a copy of the log up to a
+turn boundary, with its own lifetime, budget and credentials, a `parent`
+link and a continuation's title, restoring the fork point's files where
+the runner reaches its checkpoint. v0.10.0 (2026-10-02) restores a
+hosted fork's files from the git host
+([[035-hosted-checkpoints-at-the-git-host]]), records
+`checkpoint_missing` when it cannot, and starts a fork's `bash` in its
+own directory. v0.10.1 (2026-10-02) forks a session that ended with its
+turn at that end.
+
+Open: `topos fork` on a person's machine, the run against a real Cella
+and git host, and everything of the external runner: the append route
+and its writer rule, blob uploads, the inbox and handoff.
+
+The status stays `drafted` while [[016-runners]] and
+[[034-checkpoints-and-rewind]] are open, since the gate starts no spec
+before its dependencies close.

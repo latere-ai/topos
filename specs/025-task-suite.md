@@ -6,7 +6,7 @@ depends_on: [005-harness-loop.md, 007-models.md, 008-tools.md, 024-client-cli-sk
 affects: [test/tasks/, .github/workflows/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -274,3 +274,19 @@ pipeline around the job ([[028-release-and-installation]]).
 | The tasks of the v0.7.0 failures pass against the pinned model | `test/tasks.TestTheSuiteAgainstAModel` with the `tasks` tag | not built |
 | The replay tier re-encodes every recorded request to its recorded hash | `TestRecordedRunsReplay` | not built |
 | The suite at phase 1's close has the task counts of the category table | `TestSuiteComposition` | not built |
+
+## Outcome
+
+Shipped in v0.9.0 (2026-09-29): `test/tasks`, the task format and its
+checkers, a scripted right and wrong solution for every task, runs
+through `models/dialect` as against a real model, the report as JSON and
+Markdown, and the release bar's arithmetic.
+
+Open: no `bar.yaml` names the pinned model and no baseline has been
+measured, so no release has carried a pass rate; the run through the
+provider's own SDK, the v0.7.0 failure tasks against the pinned model,
+the replay tier, and the category table's task counts.
+
+The status stays `drafted` while [[005-harness-loop]], [[008-tools]],
+[[024-client-cli-skill]] and [[026-stubs-and-tiers]] are open, since the
+gate starts no spec before its dependencies close.
