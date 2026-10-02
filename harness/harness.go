@@ -550,6 +550,9 @@ func (t *turn) resume(ctx context.Context) error {
 		case c.use.Client:
 			waitClient = true
 		case c.use.Verdict == string(VerdictAsk):
+			if c.confirmation != nil {
+				t.forwardAnswer(ctx, c)
+			}
 			switch {
 			case c.confirmation == nil:
 				waitAsk = true
@@ -1103,7 +1106,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		}
 		props := tool.Properties()
 		risk, d, err := decider.Decide(ctx, Call{
-			Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered,
+			Policy: t.h.c.Policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered,
 		})
 		if err != nil {
 			return stepPlan{}, nil, nil, err

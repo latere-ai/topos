@@ -32,7 +32,7 @@ func TestRulesDeciderMatchesPolicy(t *testing.T) {
 	}
 	for _, c := range cases {
 		in := json.RawMessage(c.input)
-		risk, d, err := Rules{Policy: p}.Decide(context.Background(), Call{Name: c.name, Props: c.props, Input: in, MachineKind: c.kind})
+		risk, d, err := Rules{}.Decide(context.Background(), Call{Policy: p, Name: c.name, Props: c.props, Input: in, MachineKind: c.kind})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,5 +130,64 @@ func TestToolUseRecordsReviewProbability(t *testing.T) {
 	var use session.AgentToolUse
 	if err := f.events(ctx, session.TypeAgentToolUse)[0].Decode(&use); err != nil || use.ReviewProbability == nil || *use.ReviewProbability != 1 {
 		t.Fatalf("agent.tool_use %+v, %v", use, err)
+	}
+}
+
+// learner records what the harness asks and tells it.
+type learner struct {
+	decided  []string
+	answered []string
+	approve  []bool
+	by       []string
+}
+
+func (l *learner) Decide(ctx context.Context, c Call) (session.Risk, Decision, error) {
+	l.decided = append(l.decided, c.ToolUseID)
+	return Rules{}.Decide(ctx, c)
+}
+
+func (l *learner) Answered(_ context.Context, _ session.Session, id string, approve bool, by string) error {
+	l.answered = append(l.answered, id)
+	l.approve = append(l.approve, approve)
+	l.by = append(l.by, by)
+	return errors.New("the service is down, which changes nothing")
+}
+
+// Resume tells a learning decider each confirmation it settles, and never
+// decides an asked call again.
+func TestResumeForwardsAnswers(t *testing.T) {
+	l := &learner{}
+	e := setup(t, func(c *Config) { c.Machine = fakeMachine{kind: machine.KindHost}; c.Decider = l })
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopToolUse, call("toolu_a", "bash", `{"command":"make"}`), call("toolu_b", "bash", `{"command":"make check"}`)),
+		reply(ir.StopEndTurn, text("done")),
+	)
+	e.send(ctx, "Build.")
+	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
+		t.Fatalf("outcome %+v", out)
+	}
+	for _, c := range []session.UserToolConfirmation{
+		{Sender: e.s.Initiator, ToolUseID: "toolu_a", Decision: session.DecisionAllow},
+		{Sender: session.Sender{Subject: "lead", Kind: session.SenderPerson}, ToolUseID: "toolu_b", Decision: session.DecisionDeny, Note: "no"},
+	} {
+		ev, err := session.NewEvent(session.TypeUserToolConfirmation, c, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.appendEvents(ctx, ev)
+	}
+	e.running(ctx)
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("after the confirmations %+v", out)
+	}
+	if len(l.decided) != 2 {
+		t.Errorf("decided %v; a resumed call must not be decided again", l.decided)
+	}
+	if len(l.answered) != 2 || l.answered[0] != "toolu_a" || !l.approve[0] || l.approve[1] || l.by[1] != "lead" {
+		t.Errorf("answered %v %v by %v", l.answered, l.approve, l.by)
+	}
+	if got := e.write.ran(); len(got) != 1 {
+		t.Errorf("ran %v; the allowed call runs and the denied one does not, whatever the service says", got)
 	}
 }

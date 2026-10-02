@@ -33,6 +33,7 @@ import (
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/internal/decisions"
 	"latere.ai/x/topos/internal/version"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
@@ -679,6 +680,25 @@ func (l *local) agentConfig(ctx context.Context, s session.Session) (*manifest.A
 	return &c, nil
 }
 
+// decider is the decision service TOPOS_DECISIONS_URL names, with the
+// bearer TOPOS_DECISIONS_TOKEN (spec 037), or nil, which decides by the
+// rules alone. The URL without the token is a usage error.
+func (l *local) decider() (harness.Decider, error) {
+	u := strings.TrimSpace(l.getenv("TOPOS_DECISIONS_URL"))
+	if u == "" {
+		return nil, nil
+	}
+	tok := strings.TrimSpace(l.getenv("TOPOS_DECISIONS_TOKEN"))
+	if tok == "" {
+		return nil, &errUsage{"TOPOS_DECISIONS_URL is set and TOPOS_DECISIONS_TOKEN is not; the decision service needs its bearer"}
+	}
+	d, err := decisions.New(decisions.Options{URL: u, Token: tok, Client: otel.HTTPClient()})
+	if err != nil {
+		return nil, &errUsage{err.Error()}
+	}
+	return d, nil
+}
+
 // config builds a session's harness: the host machine in the session's
 // working directory, and the model, instructions, tools, policy,
 // subagents and limits of the session's agent. --model replaces the
@@ -709,6 +729,9 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 			return harness.Config{}, err
 		}
 		cfg.Policy.Mode = harness.Mode(cmp.Or(o.mode, s.Metadata["mode"], string(cfg.Policy.Mode), string(harness.ModeConfirm)))
+		if cfg.Decider, err = l.decider(); err != nil {
+			return harness.Config{}, err
+		}
 		var roots []string
 		held := manifest.Builtins()
 		if ac != nil {

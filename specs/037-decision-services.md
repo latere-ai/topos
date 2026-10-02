@@ -160,11 +160,11 @@ owner; how a client names the modes.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| The harness decides every validated call through `Config.Decider`, and the rules decider decides exactly as before | `harness.TestRulesDeciderMatchesPolicy`, the existing permission tests unchanged | not built |
-| Every `agent.tool_use` records `review_probability`: 1 for an ask and a rule-forced flag, 0 for an allow or a block under the rules | `harness.TestToolUseRecordsReviewProbability` | not built |
-| In `progressive` mode with a service, an open call takes the service's suggestion through `verdict.Decide`, a drawn allow is a flag with the audit rate as its probability, and the draw and the suggestion are recorded | `internal/decisions.TestProgressiveTakesTheSuggestion` | not built |
-| The ceiling holds: an always-confirm call asks and a call at or above `block_at` is blocked whatever the service suggests, and neither asks it | `internal/decisions.TestCeilingIsNotAsked` | not built |
-| A service that fails or times out yields an ask, and the decision sent carries the action | `internal/decisions.TestFailureAsks` | not built |
-| In `confirm` mode the rules decide, the suggestion is recorded and not applied, and the decision is sent | `internal/decisions.TestConfirmModeTeaches` | not built |
-| A confirmation is sent as an answer when resume settles the call, and a resumed session never draws again | `harness.TestResumeForwardsAnswers` | not built |
-| `topos run` reads `TOPOS_DECISIONS_URL` and `TOPOS_DECISIONS_TOKEN`, and the URL without the token is refused | `internal/toposcli.TestDecisionServiceConfiguration` | not built |
+| The harness decides every validated call through `Config.Decider`, and the rules decider decides exactly as before | `harness.TestRulesDeciderMatchesPolicy`, the existing permission tests unchanged | built |
+| Every `agent.tool_use` records `review_probability`: 1 for an ask and a rule-forced flag, 0 for an allow or a block under the rules | `harness.TestToolUseRecordsReviewProbability` | built |
+| In `progressive` mode with a service, an open call takes the service's suggestion through `verdict.Decide`, a drawn allow is a flag with the audit rate as its probability, and the draw and the suggestion are recorded | `internal/decisions.TestProgressiveTakesTheSuggestion` | built |
+| The ceiling holds: an always-confirm call asks and a call at or above `block_at` is blocked whatever the service suggests, and neither asks it | `internal/decisions.TestCeilingIsNotAsked` | built |
+| A service that fails or times out yields an ask, and the decision sent carries the action | `internal/decisions.TestFailureAsks` | built |
+| In `confirm` mode the rules decide, the suggestion is recorded and not applied, and the decision is sent | `internal/decisions.TestConfirmModeTeaches` | built |
+| A confirmation is sent as an answer when resume settles the call, and a resumed session never draws again | `harness.TestResumeForwardsAnswers` | built |
+| `topos run` reads `TOPOS_DECISIONS_URL` and `TOPOS_DECISIONS_TOKEN`, and the URL without the token is refused | `internal/toposcli.TestDecisionServiceConfiguration` | built |

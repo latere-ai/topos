@@ -10,6 +10,20 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A tool call is decided by a `Decider`; without one configured, the
+  rules of spec 012 decide as before. Every `agent.tool_use` now records
+  `review_probability`, the probability, fixed before the call ran, that
+  a person sees it.
+- `topos run` can consult a decision service (`TOPOS_DECISIONS_URL`,
+  `TOPOS_DECISIONS_TOKEN`; spec 037). In `progressive` mode its
+  suggestion decides the calls the rules leave open, with a share of
+  automatic verdicts drawn for review; in `confirm` mode the rules decide
+  and the service learns. Every decision and every confirmation is sent
+  to it; a service that fails or does not answer in two seconds makes the
+  call wait for a person.
+
 ### Fixed
 
 - A verdict outside allow, flag, ask and block now composes as block. The

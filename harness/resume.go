@@ -4,6 +4,8 @@
 package harness
 
 import (
+	"context"
+
 	"latere.ai/x/topos/session"
 )
 
@@ -91,4 +93,16 @@ func rememberedPatterns(log []session.Event) []string {
 		}
 	}
 	return out
+}
+
+// forwardAnswer tells a learning decider the person's answer to an asked
+// call (spec 037). It is best effort: the call is settled as it would be
+// without a decision service, whatever the decider says.
+func (t *turn) forwardAnswer(ctx context.Context, c pendingCall) {
+	l, ok := t.h.decider().(Learner)
+	if !ok {
+		return
+	}
+	approve := c.confirmation.Decision == session.DecisionAllow
+	_ = l.Answered(ctx, t.s, c.use.ToolUseID, approve, c.confirmation.Sender.Subject)
 }
