@@ -186,6 +186,78 @@ func TestAForkWithoutItsCheckpointStartsFresh(t *testing.T) {
 	}
 }
 
+// TestAnEndOnIdleSessionForksAtItsTurn: a session created with
+// end_on_idle ends completed straight from running when its turn ends,
+// with no idle between; it forks at that end, the fork waits idle
+// end_turn, restores the turn's files from the end's checkpoint, and its
+// first request carries the whole conversation.
+func TestAnEndOnIdleSessionForksAtItsTurn(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	f := setup(t)
+	ctx := t.Context()
+	f.r.o.CheckpointDir = filepath.Join(filepath.Dir(f.work), "checkpoints")
+	parent := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
+	parent.EndOnIdle = true
+	if err := f.store.Create(ctx, parent, nil); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Dir(f.work)
+	f.works[parent.ID] = filepath.Join(base, "parent")
+	write(t, filepath.Join(f.works[parent.ID], "notes.txt"), "draft one\n")
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Noted the first draft."}))
+	f.sendTo(ctx, parent.ID, session.TypeUserMessage, session.UserMessage{Sender: parent.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Turn one."}}})
+	out, err := f.r.Drive(ctx, parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != session.StatusEnded || out.StopReason != session.StopCompleted {
+		t.Fatalf("the turn ended %s %s, want ended completed", out.Status, out.StopReason)
+	}
+	evs, err := f.store.Events(ctx, parent.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var statuses []session.Status
+	for _, e := range evs {
+		var p session.SessionStatus
+		if e.Type == session.TypeSessionStatus && e.Thread == "" && e.Decode(&p) == nil {
+			statuses = append(statuses, p.Status)
+		}
+	}
+	if !slices.Equal(statuses, []session.Status{session.StatusRunning, session.StatusEnded}) {
+		t.Fatalf("the parent's statuses are %v, want running then ended", statuses)
+	}
+	cp, _ := checkpointOf(evs, 1)
+	if cp == nil {
+		t.Fatal("the parent's turn kept no checkpoint")
+	}
+	seq, err := session.ForkPoint(evs, nil)
+	if err != nil || seq != uint64(len(evs)) {
+		t.Fatalf("the fork point is %d, %v; want the end at %d", seq, err, len(evs))
+	}
+	child := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
+	if child, err = session.Fork(ctx, f.store, child, nil, parent.ID, evs[:seq]); err != nil {
+		t.Fatal(err)
+	}
+	if child.Status != session.StatusIdle || child.StopReason != session.StopEndTurn {
+		t.Fatalf("the fork is %s %s, want idle end_turn", child.Status, child.StopReason)
+	}
+	work := filepath.Join(base, "fork")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.works[child.ID] = work
+	got := continueFork(t, f, child)
+	if b, err := os.ReadFile(filepath.Join(work, "notes.txt")); err != nil || string(b) != "draft one\n" {
+		t.Fatalf("the fork's notes.txt is %q, %v; want the fork point's", b, err)
+	}
+	if m := ownMachine(t, child, got); m.Reason != "restored" || m.Checkpoint == nil || m.Checkpoint.Commit != cp.Commit {
+		t.Fatalf("the fork's machine: reason %q, checkpoint %+v; want restored at %s", m.Reason, m.Checkpoint, cp.Commit)
+	}
+}
+
 // errorsIn are the session.error payloads of the session id's log.
 func (f *fixture) errorsIn(ctx context.Context, id string) []session.SessionError {
 	f.t.Helper()

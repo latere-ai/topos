@@ -76,6 +76,22 @@ func (f *fixture) turn(id string, n int, text string, cost int64) uint64 {
 	)
 }
 
+// endedTurn appends one turn of the session's own thread that the
+// session's end closed, as a runner writes it for a session created
+// with end_on_idle: the agent answered text at cost and the session
+// ended completed with the turn's checkpoint. It answers the end's
+// sequence.
+func (f *fixture) endedTurn(id string, n int, text string, cost int64) uint64 {
+	f.t.Helper()
+	return f.appendTo(id, n,
+		session.SessionStatus{Status: session.StatusRunning},
+		session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: text}}}, StopReason: ir.StopEndTurn},
+		session.ModelRequest{Model: "claude-haiku-4-5", CostUSDMicro: &cost},
+		session.SessionStatus{Status: session.StatusEnded, StopReason: session.StopCompleted,
+			Checkpoint: &session.CheckpointRef{Ref: "refs/topos/checkpoints/" + id + "/" + strconv.Itoa(n), Commit: fmt.Sprintf("%040d", n)}},
+	)
+}
+
 // questions keeps every authorizer question of one action.
 type questions struct {
 	mu   sync.Mutex
@@ -262,9 +278,102 @@ func TestAForksFirstTurnSeesTheHistory(t *testing.T) {
 	}
 }
 
+// TestForkContinuesASessionThatEndedWithItsTurn: a session created with
+// end_on_idle, whose turn's end ended it, forks at that end: the fork is
+// idle end_turn at the end's sequence with the end's checkpoint, carries
+// no end_on_idle, and its next turn reaches a model with the whole
+// conversation before it.
+func TestForkContinuesASessionThatEndedWithItsTurn(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer","message":"Review main.go.","end_on_idle":true}`)
+	if a.status != http.StatusCreated {
+		t.Fatalf("create: %d %s", a.status, a.body)
+	}
+	var parent session.Session
+	a.decode(t, &parent)
+	end := f.endedTurn(parent.ID, 1, "main.go looks fine.", 300)
+	if p, err := f.sessions.Get(t.Context(), parent.ID); err != nil || p.Status != session.StatusEnded || p.StopReason != session.StopCompleted {
+		t.Fatalf("the parent is %+v, %v", p, err)
+	}
+
+	a = f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", "")
+	if a.status != http.StatusCreated {
+		t.Fatalf("fork: %d %s", a.status, a.body)
+	}
+	var child session.Session
+	a.decode(t, &child)
+	switch {
+	case child.Parent == nil || *child.Parent != (session.Parent{SessionID: parent.ID, Seq: end}):
+		t.Fatalf("parent %+v, want the end at %d", child.Parent, end)
+	case child.Status != session.StatusIdle || child.StopReason != session.StopEndTurn || child.LastSeq != end || child.Turn != 1:
+		t.Fatalf("the fork is %s %s at %d, turn %d", child.Status, child.StopReason, child.LastSeq, child.Turn)
+	case child.EndOnIdle:
+		t.Fatal("the fork carries end_on_idle")
+	case child.Budget.SpentCostUSDMicro != 300:
+		t.Fatalf("spent %d, want the copied 300", child.Budget.SpentCostUSDMicro)
+	}
+	if b := f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", `{"at_seq":`+strconv.FormatUint(end, 10)+`}`); b.status != http.StatusCreated {
+		t.Fatalf("a fork at the end, %d: %d %s", end, b.status, b.body)
+	}
+
+	pe, err := f.sessions.Events(t.Context(), parent.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ce, err := f.sessions.Events(t.Context(), child.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ce) != len(pe) {
+		t.Fatalf("the fork holds %d events, the parent %d", len(ce), len(pe))
+	}
+	var st session.SessionStatus
+	if err := ce[end-1].Decode(&st); err != nil || ce[end-1].ID != pe[end-1].ID || st.Status != session.StatusIdle || st.StopReason != session.StopEndTurn ||
+		st.Checkpoint == nil || st.Checkpoint.Commit != fmt.Sprintf("%040d", 1) {
+		t.Fatalf("the fork's copy of the end: %s, %v", ce[end-1].Payload, err)
+	}
+	fold := func(evs []session.Event) string {
+		tr, err := session.Fold(evs, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	if fold(ce) != fold(pe) {
+		t.Fatalf("the fork folds to\n%s\nthe parent at the fork point to\n%s", fold(ce), fold(pe))
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+child.ID+"/events", "alice", `{"type":"user.message","payload":{"content":[{"type":"text","text":"Now main_test.go."}]}}`); a.status != http.StatusOK {
+		t.Fatalf("send to the fork: %d %s", a.status, a.body)
+	}
+	ce, err = f.sessions.Events(t.Context(), child.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := session.Fold(ce, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var said []string
+	for _, m := range tr.Messages {
+		for _, b := range m.Blocks {
+			said = append(said, b.Text)
+		}
+	}
+	if !slices.Equal(said, []string{"Review main.go.", "main.go looks fine.", "Now main_test.go."}) {
+		t.Fatalf("the fork's next turn reads %q", said)
+	}
+}
+
 // TestForkPointMustBeATurnBoundary: a sequence that is not a session's
-// own idle status, one past the log, and a session that never finished a
-// turn are invalid_fork_point, and nothing is created.
+// own idle status, one past the log, a session that never finished a
+// turn, the end route's end of an idle session, and an end failed,
+// canceled or expired straight after running are invalid_fork_point,
+// and nothing is created.
 func TestForkPointMustBeATurnBoundary(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
@@ -297,9 +406,36 @@ func TestForkPointMustBeATurnBoundary(t *testing.T) {
 	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/fork", "alice", `{"at":5}`); a.code() != CodeInvalidRequest {
 		t.Fatalf("an unknown member: %d %s", a.status, a.body)
 	}
+
+	// The end route's end closes no turn: the idle before it is the
+	// boundary, and the end is none.
+	closed := f.create("alice", "reviewer")
+	f.turn(closed.ID, 1, "Done.", 1)
+	if a := f.do(http.MethodPost, "/v1/sessions/"+closed.ID+"/end", "alice", `{"reason":"completed"}`); a.status != http.StatusOK {
+		t.Fatalf("end: %d %s", a.status, a.body)
+	}
+	ended, err := f.sessions.Get(t.Context(), closed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+closed.ID+"/fork", "alice", fmt.Sprintf(`{"at_seq":%d}`, ended.LastSeq)); a.code() != CodeInvalidForkPoint {
+		t.Errorf("at the end route's end, %d: %d %s", ended.LastSeq, a.status, a.body)
+	}
+	sessions := 3
+
+	// An end straight after running closes a turn that did not finish,
+	// but for completed, the end of a finished turn.
+	for _, reason := range []session.StopReason{session.StopFailed, session.StopCanceled, session.StopExpired} {
+		cut := f.create("alice", "reviewer")
+		sessions++
+		f.appendTo(cut.ID, 1, session.SessionStatus{Status: session.StatusRunning}, session.SessionStatus{Status: session.StatusEnded, StopReason: reason})
+		if a := f.do(http.MethodPost, "/v1/sessions/"+cut.ID+"/fork", "alice", ""); a.status != http.StatusUnprocessableEntity || a.code() != CodeInvalidForkPoint {
+			t.Errorf("ended %s straight after running: %d %s", reason, a.status, a.body)
+		}
+	}
 	page, _, err := f.sessions.List(t.Context(), session.ListOptions{})
-	if err != nil || len(page) != 2 {
-		t.Fatalf("a refused fork created a session: %d, %v", len(page), err)
+	if err != nil || len(page) != sessions {
+		t.Fatalf("a refused fork created a session: %d, want %d, %v", len(page), sessions, err)
 	}
 }
 

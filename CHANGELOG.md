@@ -10,6 +10,18 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- A session that ended with its turn, as one created with `end_on_idle`
+  does (a run-once session from the API, or a trigger's session), can be
+  continued. `POST /v1/sessions/{id}/fork` forks it at the end of that
+  turn instead of answering `invalid_fork_point`, and the new session
+  waits for its next message (`idle`, `end_turn`) with the whole
+  conversation and that turn's files. A session ended `failed`,
+  `canceled` or `expired` while its turn was still running forks at the
+  last turn it finished, or is `invalid_fork_point` when it finished
+  none.
+
 ## v0.10.0 - 2026-10-02
 
 - toposd builds with OpenTelemetry Go v1.46.0 and its log modules
