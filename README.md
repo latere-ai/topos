@@ -58,12 +58,12 @@ The core's releases start at v0.9.0 (2026-09-29); the latest is v0.11.1
   suggest the verdict on each tool call.
 
 Not built yet: write-only credentials and connections, memory stores, MCP
-servers, external runners and handoff, the event sink, the conformance
-suite and the release archives. The task suite runs, but no release has
-measured its bar against a pinned model yet. In the [specs](specs) deck,
-12 specs are complete and 4 in progress; most of the drafted ones are
-partly built and record what shipped in their Outcome sections, and
-[specs/README.md](specs/README.md) says which build phases are closed.
+servers, external runners and handoff, the event sink, the conformance suite
+and the release archives. The task suite runs, but no release has measured
+its bar against a pinned model yet. In the [specs](specs) deck, 12 specs are
+complete, 4 in progress and 21 drafted or vague, most of the drafted ones
+partly built; [specs/README.md](specs/README.md) says which build phases are
+closed.
 
 ## Try it
 
