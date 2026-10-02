@@ -17,6 +17,11 @@ committed: the commit log already holds that.
   `List sessions`, so a reference can list operations by it. What a
   summary said is in the operation's `description`, which every
   operation now has. No route, parameter or answer changed.
+- The API document shows a wire example for every operation: the request
+  body where a route takes one, an apply's manifest as JSON and as YAML,
+  and the first success answer, as JSON, as the frames of the session
+  stream, or as a binary schema for a blob. Each example is what the
+  route answers to the request beside it.
 
 ## v0.11.0 - 2026-10-02
 
