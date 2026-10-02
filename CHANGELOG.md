@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- In the API document, an operation's `summary` is the name of its
+  action in at most four words, such as `Apply an agent` or
+  `List sessions`, so a reference can list operations by it. What a
+  summary said is in the operation's `description`, which every
+  operation now has. No route, parameter or answer changed.
+
 ## v0.11.0 - 2026-10-02
 
 ### Added
