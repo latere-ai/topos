@@ -11,8 +11,8 @@ paths:
   /agents/{name}:
     put:
       operationId: applyAgent
-      summary: Apply an Agent manifest to the agent of the name in the caller's context; a changed spec creates a version
-      description: "The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. metadata.displayName, optional, is the name a person reads: text on one line of at most 200 characters, without control characters, line breaks or bidirectional controls; an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: it replaces the latest version's metadata, and every later read returns it."
+      summary: Apply an agent
+      description: "Apply an Agent manifest to the agent of the name in the caller's context; a changed spec creates a version. The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. metadata.displayName, optional, is the name a person reads: text on one line of at most 200 characters, without control characters, line breaks or bidirectional controls; an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: it replaces the latest version's metadata, and every later read returns it."
       x-topos-actions:
         - agent.create
         - agent.update
@@ -36,7 +36,8 @@ paths:
   /agents:
     get:
       operationId: listAgents
-      summary: List the agents of the caller's context
+      summary: List agents
+      description: List the agents of the caller's context.
       x-topos-actions:
         - agent.list
       responses:
@@ -47,7 +48,8 @@ paths:
   /agents/{ref}:
     get:
       operationId: getAgent
-      summary: Get an agent's latest version by id, or by name among the agents of the caller's context
+      summary: Read an agent
+      description: Get an agent's latest version by id, or by name among the agents of the caller's context.
       x-topos-actions:
         - agent.read
       parameters:
@@ -65,7 +67,8 @@ paths:
   /agents/{ref}/versions:
     get:
       operationId: listAgentVersions
-      summary: List an agent's versions
+      summary: List agent versions
+      description: List an agent's versions.
       x-topos-actions:
         - agent.read
       parameters:
@@ -83,7 +86,8 @@ paths:
   /agents/{ref}/versions/{n}:
     get:
       operationId: getAgentVersion
-      summary: Get one version of an agent
+      summary: Read an agent version
+      description: Get one version of an agent.
       x-topos-actions:
         - agent.read
       parameters:
@@ -106,7 +110,8 @@ paths:
   /agents/{ref}/archive:
     post:
       operationId: archiveAgent
-      summary: Archive an agent; running sessions keep their version
+      summary: Archive an agent
+      description: Archive an agent; running sessions keep their version.
       x-topos-actions:
         - agent.archive
       parameters:
@@ -127,7 +132,8 @@ paths:
   /sessions:
     post:
       operationId: createSession
-      summary: Create a session of an agent, named by id or by name among the agents of the caller's context
+      summary: Create a session
+      description: Create a session of an agent, named by id or by name among the agents of the caller's context.
       x-topos-actions:
         - session.create
       requestBody:
@@ -140,7 +146,8 @@ paths:
           $ref: "#/components/responses/Error"
     get:
       operationId: listSessions
-      summary: List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived
+      summary: List sessions
+      description: List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.
       x-topos-actions:
         - session.list
       parameters:
@@ -181,7 +188,7 @@ paths:
   /sessions/summary:
     get:
       operationId: getSessionSummary
-      summary: Count the sessions the list would answer under the same filters, by status, and the agents they belong to
+      summary: Count sessions
       description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
       x-topos-actions:
         - session.list
@@ -215,7 +222,8 @@ paths:
   /sessions/{id}:
     get:
       operationId: getSession
-      summary: Get a session
+      summary: Read a session
+      description: Get a session.
       x-topos-actions:
         - session.read
       parameters:
@@ -231,7 +239,7 @@ paths:
           $ref: "#/components/responses/Error"
     patch:
       operationId: updateSession
-      summary: Change the model the session's next turn runs, or its reasoning effort
+      summary: Change a session's model
       description: "The body is {\"model\": {\"name\": \"<model>\", \"effort\": \"<effort>\"}}, the model the session's next turn runs and its reasoning effort, either member or both; any other member is refused. A member left out keeps what the session runs. effort is one of minimal, low, medium, high, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. A model no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable; the authorizer is asked session.update with session_id, model when the body names one, after the model resolved, and effort, the effort the next turn runs at, when the body names one, and a deny is forbidden. An allowed change appends session.model_changed {by, old, new}, each {name, effort}, and answers the Session, whose model is the new one; a change to the model and the effort the session runs appends nothing. A turn already running keeps its model and its effort: the change takes effect at the next turn."
       x-topos-actions:
         - session.update
@@ -252,7 +260,8 @@ paths:
           $ref: "#/components/responses/Error"
     delete:
       operationId: deleteSession
-      summary: Delete a session, its log and its blobs
+      summary: Delete a session
+      description: Delete a session, its log and its blobs.
       x-topos-actions:
         - session.delete
       parameters:
@@ -269,7 +278,8 @@ paths:
   /sessions/{id}/end:
     post:
       operationId: endSession
-      summary: End an idle session completed or canceled
+      summary: End a session
+      description: End an idle session completed or canceled.
       x-topos-actions:
         - session.end
       parameters:
@@ -289,8 +299,8 @@ paths:
   /sessions/{id}/fork:
     post:
       operationId: forkSession
-      summary: Start a new session from a session's log at a turn boundary, an ended or expired session included
-      description: "The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, and the caller as initiator. Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. A session of an archived agent is conflict. A hosted session that works in a private repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, so its fork restores the fork point's files after the session's sandbox is gone. A repository that a reader with no credential can read, and one whose answer to such a read is not a refusal for want of a credential, is not known private and gets no checkpoint, since whoever reads a repository reads its checkpoints, uncommitted files included. A checkpoint the runner cannot have leaves the fork with its conversation and its repositories, recorded beside its first session.machine as session.error checkpoint_missing."
+      summary: Fork a session
+      description: "Start a new session from a session's log at a turn boundary, an ended or expired session included. The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, and the caller as initiator. Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. A session of an archived agent is conflict. A hosted session that works in a private repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, so its fork restores the fork point's files after the session's sandbox is gone. A repository that a reader with no credential can read, and one whose answer to such a read is not a refusal for want of a credential, is not known private and gets no checkpoint, since whoever reads a repository reads its checkpoints, uncommitted files included. A checkpoint the runner cannot have leaves the fork with its conversation and its repositories, recorded beside its first session.machine as session.error checkpoint_missing."
       x-topos-actions:
         - session.read
         - session.fork
@@ -311,7 +321,7 @@ paths:
   /sessions/{id}/archive:
     post:
       operationId: archiveSession
-      summary: Archive an ended session, leaving it out of the lists
+      summary: Archive a session
       description: "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then session.update with session_id and archived true; a deny is forbidden."
       x-topos-actions:
         - session.read
@@ -333,7 +343,7 @@ paths:
   /sessions/{id}/unarchive:
     post:
       operationId: unarchiveSession
-      summary: Unarchive a session, returning it to the lists
+      summary: Unarchive a session
       description: The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.
       x-topos-actions:
         - session.read
@@ -355,7 +365,8 @@ paths:
   /sessions/{id}/resume:
     post:
       operationId: resumeSession
-      summary: Resume a session idle on its budget once the cap is raised
+      summary: Resume a session
+      description: Resume a session idle on its budget once the cap is raised.
       x-topos-actions:
         - session.resume
       parameters:
@@ -375,7 +386,8 @@ paths:
   /sessions/{id}/events:
     get:
       operationId: listEvents
-      summary: List a session's events from a sequence
+      summary: List session events
+      description: List a session's events from a sequence.
       x-topos-actions:
         - session.read
       parameters:
@@ -391,7 +403,7 @@ paths:
           $ref: "#/components/responses/Error"
     post:
       operationId: sendEvent
-      summary: Send one user event
+      summary: Send a user event
       description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation or user.tool_result. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes."
       x-topos-actions:
         - session.send
@@ -413,7 +425,7 @@ paths:
   /sessions/{id}/stream:
     get:
       operationId: streamEvents
-      summary: Stream a session's events as Server-Sent Events
+      summary: Stream session events
       description: "Server-Sent Events: every event of the log from from_seq, or after the sequence a Last-Event-ID header names, then each new one as it is appended, from any replica, each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every 15 seconds, and the stream closes after the event that ends the session. With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most 16 streams open at once on one replica; the next is rate_limited."
       x-topos-actions:
         - session.read
@@ -450,7 +462,8 @@ paths:
   /sessions/{id}/blobs/{digest}:
     get:
       operationId: getBlob
-      summary: Get a blob of a session
+      summary: Read a session blob
+      description: Get a blob of a session.
       x-topos-actions:
         - session.read
       parameters:
@@ -472,7 +485,8 @@ paths:
   /sessions/{id}/events/{event_id}/redact:
     post:
       operationId: redactEvent
-      summary: Replace one event's content with a tombstone
+      summary: Redact an event
+      description: Replace one event's content with a tombstone.
       x-topos-actions:
         - session.redact
       parameters:
@@ -497,8 +511,8 @@ paths:
   /triggers/{name}:
     put:
       operationId: applyTrigger
-      summary: Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner
-      description: "The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; each value is cut at 16384 bytes and a message past 65536 bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, 5 by default and 100 at most, are active at once. The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names."
+      summary: Apply a trigger
+      description: "Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; each value is cut at 16384 bytes and a message past 65536 bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, 5 by default and 100 at most, are active at once. The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names."
       x-topos-actions:
         - trigger.create
         - trigger.update
@@ -523,6 +537,7 @@ paths:
     get:
       operationId: listTriggers
       summary: List triggers
+      description: List triggers.
       x-topos-actions:
         - trigger.list
       responses:
@@ -533,7 +548,8 @@ paths:
   /triggers/{ref}:
     get:
       operationId: getTrigger
-      summary: Get a trigger by id, or by name among the caller's own triggers, with its firing record
+      summary: Read a trigger
+      description: Get a trigger by id, or by name among the caller's own triggers, with its firing record.
       x-topos-actions:
         - trigger.read
       parameters:
@@ -550,7 +566,8 @@ paths:
           $ref: "#/components/responses/Error"
     delete:
       operationId: deleteTrigger
-      summary: Delete a trigger with its firings; the sessions it started keep running
+      summary: Delete a trigger
+      description: Delete a trigger with its firings; the sessions it started keep running.
       x-topos-actions:
         - trigger.delete
       parameters:
@@ -568,7 +585,7 @@ paths:
   /triggers/{ref}/fire:
     post:
       operationId: fireTrigger
-      summary: Deliver one event to an event trigger, or fire a schedule trigger now; answers the firing
+      summary: Fire a trigger
       description: "An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most 200 characters, unique per product, product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, refused or failed. A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner."
       x-topos-actions:
         - trigger.fire
@@ -592,7 +609,8 @@ paths:
   /triggers/{ref}/firings:
     get:
       operationId: listFirings
-      summary: List a trigger's firings, newest first
+      summary: List trigger firings
+      description: List a trigger's firings, newest first.
       x-topos-actions:
         - trigger.read
       parameters:
@@ -610,7 +628,8 @@ paths:
   /openapi.yaml:
     get:
       operationId: getOpenAPI
-      summary: This document
+      summary: Read the API document
+      description: This document.
       security: []
       responses:
         "200":

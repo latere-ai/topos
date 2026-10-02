@@ -181,11 +181,38 @@ var errorDetails = yaml.MapSlice{
 	}},
 }
 
-// opDescriptions say what a route's body holds where a client needs more
-// than its summary: an apply's manifest names the agent twice, by the
-// identifier and by the name a person reads, and only the spec versions.
+// maxSummaryWords bounds a route's summary. A reference lists an
+// operation by its summary, in a column a sentence does not fit.
+const maxSummaryWords = 4
+
+// opDescriptions say what each route does, and what its body and its
+// answer hold where a client needs to know: an apply's manifest names
+// the agent twice, by the identifier and by the name a person reads, and
+// only the spec versions. A route's summary names the action in a few
+// words, the label a reference lists the operation by, so every
+// sentence about it is here.
 var opDescriptions = map[string]string{
-	"applyAgent": fmt.Sprintf("The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. "+
+	"listAgents":        "List the agents of the caller's context.",
+	"getAgent":          "Get an agent's latest version by id, or by name among the agents of the caller's context.",
+	"listAgentVersions": "List an agent's versions.",
+	"getAgentVersion":   "Get one version of an agent.",
+	"archiveAgent":      "Archive an agent; running sessions keep their version.",
+	"createSession":     "Create a session of an agent, named by id or by name among the agents of the caller's context.",
+	"listSessions":      "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
+	"getSession":        "Get a session.",
+	"endSession":        "End an idle session completed or canceled.",
+	"resumeSession":     "Resume a session idle on its budget once the cap is raised.",
+	"deleteSession":     "Delete a session, its log and its blobs.",
+	"listEvents":        "List a session's events from a sequence.",
+	"getBlob":           "Get a blob of a session.",
+	"redactEvent":       "Replace one event's content with a tombstone.",
+	"listTriggers":      "List triggers.",
+	"getTrigger":        "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
+	"deleteTrigger":     "Delete a trigger with its firings; the sessions it started keep running.",
+	"listFirings":       "List a trigger's firings, newest first.",
+	"getOpenAPI":        "This document.",
+	"applyAgent": fmt.Sprintf("Apply an Agent manifest to the agent of the name in the caller's context; a changed spec creates a version. "+
+		"The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. "+
 		"metadata.displayName, optional, is the name a person reads: text on one line of at most %d characters, without control characters, line breaks or bidirectional controls; "+
 		"an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: "+
 		"it replaces the latest version's metadata, and every later read returns it.", manifest.MaxDisplayName),
@@ -196,7 +223,8 @@ var opDescriptions = map[string]string{
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes.",
 		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody),
-	"applyTrigger": fmt.Sprintf("The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
+	"applyTrigger": fmt.Sprintf("Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. "+
+		"The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
 		"or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. "+
 		"spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; "+
 		"each value is cut at %d bytes and a message past %d bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; "+
@@ -213,7 +241,8 @@ var opDescriptions = map[string]string{
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
 		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
-	"forkSession": "The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
+	"forkSession": "Start a new session from a session's log at a turn boundary, an ended or expired session included. " +
+		"The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
 		"or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. " +
 		"Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, " +
 		"the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), " +
@@ -240,10 +269,7 @@ var opDescriptions = map[string]string{
 // operation is one route as the document describes it. x-topos-actions
 // names the questions the route asks the authorizer.
 func operation(rt route) yaml.MapSlice {
-	op := yaml.MapSlice{{Key: "operationId", Value: rt.op}, {Key: "summary", Value: rt.summary}}
-	if d, ok := opDescriptions[rt.op]; ok {
-		op = append(op, yaml.MapItem{Key: "description", Value: d})
-	}
+	op := yaml.MapSlice{{Key: "operationId", Value: rt.op}, {Key: "summary", Value: rt.summary}, {Key: "description", Value: opDescriptions[rt.op]}}
 	if len(rt.actions) > 0 {
 		op = append(op, yaml.MapItem{Key: "x-topos-actions", Value: rt.actions})
 	} else {

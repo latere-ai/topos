@@ -132,6 +132,50 @@ func TestTheForkRouteStatesWhatItRestores(t *testing.T) {
 	}
 }
 
+// TestASummaryNamesItsAction: every operation of the committed document
+// has a summary a reference can list it by, a few words that begin with
+// a capital, end without a period and name no other operation, and a
+// description that holds its sentences.
+func TestASummaryNamesItsAction(t *testing.T) {
+	raw, err := os.ReadFile(committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Summary     string `yaml:"summary"`
+			Description string `yaml:"description"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	named := map[string]string{}
+	for path, ops := range doc.Paths {
+		for method, op := range ops {
+			key := strings.ToUpper(method) + " " + path
+			words := strings.Fields(op.Summary)
+			if len(words) == 0 || len(words) > maxSummaryWords {
+				t.Errorf("%s: the summary %q has %d words, want 1 to %d", key, op.Summary, len(words), maxSummaryWords)
+				continue
+			}
+			if first := op.Summary[0]; first < 'A' || first > 'Z' || strings.HasSuffix(op.Summary, ".") {
+				t.Errorf("%s: the summary %q is not an action's name", key, op.Summary)
+			}
+			if other, ok := named[op.Summary]; ok {
+				t.Errorf("%s and %s share the summary %q", key, other, op.Summary)
+			}
+			named[op.Summary] = key
+			if !strings.HasSuffix(op.Description, ".") {
+				t.Errorf("%s: the description %q is not a sentence", key, op.Description)
+			}
+		}
+	}
+	if len(named) != len(table()) {
+		t.Fatalf("%d operations named, the table has %d routes", len(named), len(table()))
+	}
+}
+
 // TestOpenAPIStatesTheOwner: the served document states the owner rule
 // of spec 036 in the words a client reads it by, on the agent routes'
 // name and on the PUT that creates an agent.

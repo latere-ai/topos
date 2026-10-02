@@ -220,6 +220,9 @@ type route struct {
 	actions []string
 	public  bool
 	op      string
+	// summary names the route's action in at most maxSummaryWords
+	// words, the label a reference lists the operation by; what the
+	// route does is its description, in opDescriptions.
 	summary string
 	// status is the answer's status on success.
 	status int
