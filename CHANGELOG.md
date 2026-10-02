@@ -29,6 +29,17 @@ committed: the commit log already holds that.
   for `POST /v1/sessions/{id}/archive` and `/unarchive`, whose body is
   empty. The routes answer as they did.
 
+### Fixed
+
+- `POST /v1/sessions/{id}/end` of a running or ended session answers
+  `conflict` before it asks the authorizer `session.end`. It asked first,
+  and an authorizer that revokes a session's credentials when it allows
+  an end, as the platform's does, revoked them for an end the route then
+  refused, so the running turn failed. The route now asks `session.read`
+  first, so a caller who may not read the session still hears
+  `not_found`. `POST /v1/sessions/{id}/archive` likewise refuses a
+  session that has not ended before it asks `session.update`.
+
 ## v0.11.0 - 2026-10-02
 
 ### Added
