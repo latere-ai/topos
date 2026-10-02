@@ -92,7 +92,7 @@ another spec.
 | [034](034-checkpoints-and-rewind.md) | Checkpoints and rewind: each turn's working directory committed, the session repository, rewind, what fork and handoff restore | medium | drafted | 004, 005, 009 |
 | [035](.archive/035-hosted-checkpoints-at-the-git-host.md) | Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its private repository, and a fork restores its files after the sandbox is gone | medium | complete | 004, 009 |
 | [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
-| [037](037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | drafted | 004, 005, 012, 016 |
+| [037](.archive/037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | complete | 004, 005, 012, 016 |
 
 ## Dependency graph
 

@@ -1,6 +1,6 @@
 ---
 title: "Decision services: a decider seam, decisions recorded with their review probability, answers forwarded"
-status: drafted
+status: complete
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 012-permissions-and-approvals.md, 016-runners.md]
 affects: [harness/, session/, internal/decisions/, internal/toposcli/]
@@ -168,3 +168,26 @@ owner; how a client names the modes.
 | In `confirm` mode the rules decide, the suggestion is recorded and not applied, and the decision is sent | `internal/decisions.TestConfirmModeTeaches` | built |
 | A confirmation is sent as an answer when resume settles the call, and a resumed session never draws again | `harness.TestResumeForwardsAnswers` | built |
 | `topos run` reads `TOPOS_DECISIONS_URL` and `TOPOS_DECISIONS_TOKEN`, and the URL without the token is refused | `internal/toposcli.TestDecisionServiceConfiguration` | built |
+
+## Outcome
+
+Shipped in v0.11.0 (2026-10-02) as designed: the `Decider` seam in
+`harness`, with the rules decider as the default; `review_probability`,
+`draw` and `suggestion` on every `agent.tool_use`; the client of the
+three routes in `internal/decisions`; and `topos run` reading
+`TOPOS_DECISIONS_URL` and `TOPOS_DECISIONS_TOKEN`. Every criterion has
+its test.
+
+- **The verdict vocabulary.** Verdicts are `latere.ai/x/pkg/verdict`
+  (v0.91.0) and `harness.Stricter` is its `Least`, so a verdict outside
+  allow, flag, ask and block composes as block.
+- **The client's names.** `topos run --mode` also takes `manual` and
+  `auto` for `confirm` and `progressive`; sessions, manifests and
+  events keep this spec's names.
+- **Ahead of its dependencies.** The spec closed while
+  [[005-harness-loop]], [[012-permissions-and-approvals]] and
+  [[016-runners]] stay open: the seam sits on the loop, the rules and
+  the resume path those specs already ship, and its tests run there.
+- **What remains** is listed under Not in this spec: `toposd`'s hosted
+  runners decide by the rules alone until a session records its
+  organization.
