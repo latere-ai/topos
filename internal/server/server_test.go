@@ -26,6 +26,7 @@ import (
 	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
+	"latere.ai/x/topos/session/dir"
 )
 
 const (
@@ -273,6 +274,84 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		if !slices.Contains(ops, op) {
 			t.Errorf("case %s names no route", op)
 		}
+	}
+}
+
+// TestEveryRouteOfAnObjectAnswersNotFound drives each route of the table
+// whose path names a session, an agent or a trigger with one the caller
+// cannot see: an id not in the object's form, an id no object has, and
+// another subject's object. Each answers not_found with no details,
+// whatever store holds the sessions; the directory store, as Postgres
+// does, refuses an id not in a session's form where the memory store
+// answers it absent. A route the table gains with an object in its path
+// is driven here without a case.
+func TestEveryRouteOfAnObjectAnswersNotFound(t *testing.T) {
+	for _, kind := range []string{"memory", "dir"} {
+		t.Run(kind, func(t *testing.T) {
+			sessions := session.NewMemoryStore()
+			if kind == "dir" {
+				d, err := dir.Open(t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
+				sessions = d
+			}
+			f := newFixture(t, func(o *Options) { o.Sessions = sessions })
+			f.sessions = sessions
+			agent := f.apply("alice", "reviewer", "Review.")
+			s := f.create("alice", "reviewer")
+			trigger := f.do(http.MethodPut, "/v1/triggers/nightly", "alice", triggerYAML("nightly", "schedule: '@daily', session: {message: x}"))
+			if trigger.status != http.StatusCreated {
+				t.Fatalf("apply the trigger: %d %s", trigger.status, trigger.body)
+			}
+			var tr v1.Trigger
+			trigger.decode(t, &tr)
+			evs, err := f.sessions.Events(t.Context(), s.ID, 1, 0)
+			if err != nil || len(evs) == 0 {
+				t.Fatalf("events %v, %v", evs, err)
+			}
+			bodies := map[string]string{
+				"updateSession": `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`, "endSession": `{"reason":"completed"}`, "resumeSession": `{}`,
+				"sendEvent": `{"type":"user.message","payload":{"content":[{"type":"text","text":"x"}]}}`, "redactEvent": `{"reason":"a token"}`,
+				"archiveAgent": `{"permanent":true}`,
+			}
+			// Each object a caller cannot see, by the kind of object the
+			// route's path names, as the caller who asks.
+			type unseen struct{ name, caller, session, agent, trigger string }
+			unseens := []unseen{
+				{"an id not in the form", "alice", "ses_doesnotexist0000000000000000", "agent_doesnotexist0000000000000000", "trg_doesnotexist0000000000000000"},
+				{"an id no object has", "alice", session.NewID(session.PrefixSession), session.NewID(session.PrefixAgent), session.NewID(session.PrefixTrigger)},
+				{"another subject's object by id", "bob", s.ID, agent.Status.ID, tr.Status.ID},
+				{"another subject's object by name", "bob", s.ID, "reviewer", "nightly"},
+			}
+			var driven []string
+			for _, rt := range table() {
+				object := strings.Contains(rt.path, "{id}") || strings.Contains(rt.path, "{ref}")
+				if rt.public || !object {
+					continue
+				}
+				driven = append(driven, rt.op)
+				for _, u := range unseens {
+					ref := u.agent
+					if strings.HasPrefix(rt.path, "/triggers/") {
+						ref = u.trigger
+					}
+					path := strings.NewReplacer("{id}", u.session, "{ref}", ref, "{n}", "1", "{digest}", string(s.Agent.Digest), "{event_id}", evs[0].ID).Replace(rt.path)
+					a := f.do(rt.method, "/v1"+path, u.caller, bodies[rt.op])
+					if a.status != http.StatusNotFound || a.code() != CodeNotFound || strings.Contains(string(a.body), "details") {
+						t.Errorf("%s, %s: %s %s: %d %s", rt.op, u.name, rt.method, path, a.status, a.body)
+					}
+				}
+			}
+			for _, op := range []string{"getSession", "endSession", "forkSession", "resumeSession", "getAgent", "archiveAgent", "getTrigger", "fireTrigger"} {
+				if !slices.Contains(driven, op) {
+					t.Errorf("%s was not driven", op)
+				}
+			}
+			if got, err := f.sessions.Get(t.Context(), s.ID); err != nil || got.Status != s.Status || got.LastSeq != s.LastSeq {
+				t.Fatalf("a refused route changed the session: %+v, %v", got, err)
+			}
+		})
 	}
 }
 

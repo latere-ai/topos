@@ -133,6 +133,13 @@ func classify(err error) *apiError {
 		return &apiError{code: CodeInvalidForkPoint, detail: err.Error(), err: err}
 	case errors.Is(err, session.ErrInvalid):
 		return &apiError{code: CodeInvalidRequest, detail: err.Error(), err: err}
+	// An id not in a session's form names no session, so it answers as an
+	// absent one does. A store refuses such an id as ErrBadID, and only a
+	// path carries one there, since the server mints every id it writes.
+	// It comes after ErrInvalid: a batch's bad event id wraps both and is
+	// the request's fault.
+	case errors.Is(err, session.ErrBadID):
+		return &apiError{code: CodeNotFound, err: err}
 	}
 	return &apiError{code: CodeInternal, err: err}
 }

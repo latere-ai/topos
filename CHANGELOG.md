@@ -21,6 +21,11 @@ committed: the commit log already holds that.
   `canceled` or `expired` while its turn was still running forks at the
   last turn it finished, or is `invalid_fork_point` when it finished
   none.
+- A session route given an id that is not in a session's form, such as
+  `POST /v1/sessions/ses_doesnotexist/end`, answers 404 `not_found`, as
+  an id no session has does, instead of 500 `internal`. Every route that
+  names a session answered 500 for such an id on the Postgres and the
+  directory stores.
 
 ## v0.10.0 - 2026-10-02
 
