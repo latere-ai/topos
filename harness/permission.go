@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 
+	"latere.ai/x/pkg/verdict"
+
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/prompts"
@@ -27,27 +29,22 @@ const (
 	ModeProgressive Mode = "progressive"
 )
 
-// Verdict is the decision on one call, ordered from most to least
+// Verdict is the decision on one call: the vocabulary every decision
+// point shares, latere.ai/x/pkg/verdict, ordered from most to least
 // permissive.
-type Verdict string
+type Verdict = verdict.Verdict
 
 // Verdicts.
 const (
-	VerdictAllow Verdict = "allow"
-	VerdictFlag  Verdict = "flag"
-	VerdictAsk   Verdict = "ask"
-	VerdictBlock Verdict = "block"
+	VerdictAllow = verdict.Allow
+	VerdictFlag  = verdict.Flag
+	VerdictAsk   = verdict.Ask
+	VerdictBlock = verdict.Block
 )
 
-var verdictOrder = []Verdict{VerdictAllow, VerdictFlag, VerdictAsk, VerdictBlock}
-
-// Stricter returns the less permissive of two verdicts.
-func Stricter(a, b Verdict) Verdict {
-	if slices.Index(verdictOrder, b) > slices.Index(verdictOrder, a) {
-		return b
-	}
-	return a
-}
+// Stricter returns the less permissive of two verdicts. A verdict outside
+// the four counts as block, so a malformed one can only narrow.
+func Stricter(a, b Verdict) Verdict { return verdict.Least(a, b) }
 
 // CodeSandboxUnavailable is spec 012's code for progressive asked for
 // on a host with no operating-system sandbox.

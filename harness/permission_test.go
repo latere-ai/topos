@@ -104,8 +104,16 @@ func TestStricterOrdersVerdicts(t *testing.T) {
 			}
 		}
 	}
-	if !slices.Equal(verdictOrder, order) {
-		t.Fatal("the verdict order changed")
+	// A verdict outside the four counts as block whichever side it is on:
+	// ranked by its index in a list, it was the most permissive, so an
+	// unknown verdict composed with allow allowed.
+	for _, unknown := range []Verdict{"", "deny", "ALLOW"} {
+		if got := Stricter(unknown, VerdictAllow); got != VerdictBlock {
+			t.Fatalf("Stricter(%q, allow) = %s, want block", unknown, got)
+		}
+		if got := Stricter(VerdictAllow, unknown); got != VerdictBlock {
+			t.Fatalf("Stricter(allow, %q) = %s, want block", unknown, got)
+		}
 	}
 }
 
