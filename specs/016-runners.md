@@ -1,12 +1,12 @@
 ---
 title: "Runners: driving a session, recovery of a step without results, the queue, claim, renew and release"
-status: drafted
+status: in-progress
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session-log.md, 005-harness-loop.md, 008-tools.md, 009-machines.md]
 affects: [runner/, internal/queue/, internal/runnerrole/, internal/runnerapi/, internal/serve/, internal/store/postgres/, session/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -314,5 +314,5 @@ fake clock, exclusive and bounded claims on Postgres, the test that
 toposd opens no connection to a runner, and a lost sandbox replaced with
 `machine_lost`.
 
-The status stays `drafted` while [[005-harness-loop]] and [[008-tools]]
-are open, since the gate starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

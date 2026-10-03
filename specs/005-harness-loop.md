@@ -1,12 +1,12 @@
 ---
 title: "The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls"
-status: drafted
+status: in-progress
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 007-models.md, 008-tools.md]
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -406,5 +406,5 @@ grouping of parallel calls (the harness runs each run of consecutive
 parallel calls at most 8 at once), a fresh harness's resume to the same
 request bytes, and the turn limit as the lowest of three.
 
-The status stays `drafted` while [[008-tools]] is open, since the gate
-starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

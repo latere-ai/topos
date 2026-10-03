@@ -1,12 +1,12 @@
 ---
 title: "Threads, subagents and the advisor: the session's graph, spawn and message, worktree isolation, narrowing, depth"
-status: drafted
+status: in-progress
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md]
 affects: [harness/, harness/tools/, prompts/advisor/, prompts/results/threads/, prompts/tools/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -236,6 +236,5 @@ Open: the table test of narrowing along spawn edges, the refusal of a
 tool the parent lacks, two isolated threads merged by their parent, and
 threads resumed after a runner is lost.
 
-The status stays `drafted` while [[005-harness-loop]], [[008-tools]] and
-[[012-permissions-and-approvals]] are open, since the gate starts no
-spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

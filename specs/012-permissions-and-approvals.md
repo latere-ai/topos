@@ -1,12 +1,12 @@
 ---
 title: "Permissions, approvals and hooks: the boundary, the layers, the risk score and verdict, the modes"
-status: drafted
+status: in-progress
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-tools.md, 009-machines.md]
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -317,5 +317,5 @@ is in `machine/host`, and `topos` does not apply it yet), hooks, an ask
 that holds no lease, the egress step-up, and the score of a sandbox that
 holds a swapped-in credential.
 
-The status stays `drafted` while [[005-harness-loop]] and [[008-tools]]
-are open, since the gate starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

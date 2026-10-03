@@ -1,12 +1,12 @@
 ---
 title: "Context: the order of the prompt's parts, cache breakpoints, token accounting, clearing, compaction"
-status: drafted
+status: in-progress
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instructions-and-skills.md]
 affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -175,6 +175,5 @@ that replaces nothing, and the compaction a redaction forces.
 Open: a summary range that keeps whole steps and the last three, a
 restart after a compaction, and the cache hit rate against the stub Lux.
 
-The status stays `drafted` while [[005-harness-loop]] and
-[[011-instructions-and-skills]] are open, since the gate starts no spec
-before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

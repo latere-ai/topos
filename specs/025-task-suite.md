@@ -1,12 +1,12 @@
 ---
 title: "The task suite and the release bar: tasks and checkers, the pinned model, the threshold, spend, replays, IR against SDK"
-status: drafted
+status: in-progress
 track: core
 depends_on: [005-harness-loop.md, 007-models.md, 008-tools.md, 024-client-cli-skill.md, 026-stubs-and-tiers.md]
 affects: [test/tasks/, .github/workflows/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -288,6 +288,5 @@ are the run through the provider's own SDK, the v0.7.0 failure tasks
 against the pinned model, the replay tier, and the category table's task
 counts.
 
-The status stays `drafted` while [[005-harness-loop]], [[008-tools]],
-[[024-client-cli-skill]] and [[026-stubs-and-tiers]] are open, since the
-gate starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

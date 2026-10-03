@@ -33,8 +33,9 @@ stateDiagram-v2
   [*] --> drafted
   vague --> drafted: scoped
   drafted --> validated: review passes
-  validated --> dispatched: every dependency complete or superseded
-  dispatched --> in_progress: first commit
+  validated --> dispatched: work is assigned
+  dispatched --> in_progress: first criterion built
+  drafted --> in_progress: first criterion built
   in_progress --> testing: implementation lands
   testing --> complete: verified, Outcome written
   drafted --> stale
@@ -43,14 +44,14 @@ stateDiagram-v2
   validated --> superseded
 ```
 
-`in_progress` is written `in-progress` in the frontmatter. A spec at
-`testing` moves to `complete` when every acceptance criterion has a
-passing test in the tree and its Outcome section records every
-divergence. A validated spec is dispatched when every spec in its
-`depends_on` is `complete` or `superseded`; the gate refuses a spec at
-`dispatched` or later whose dependency is anywhere else. `stale` marks
-a spec the code has moved past; `superseded` one whose work moved to
-another spec.
+`in_progress` is written `in-progress` in the frontmatter. A spec's
+status follows its own acceptance criteria: it is `in-progress` once
+one of them is built, and it moves to `complete` when every one has a
+passing test in the tree or a recorded run and its Outcome section
+records every divergence. `depends_on` records the order the design
+builds in, and review holds work to it; a dependency's status does not
+set a spec's own. `stale` marks a spec the code has moved past;
+`superseded` one whose work moved to another spec.
 
 ## Index
 
@@ -60,36 +61,36 @@ another spec.
 | [002](.archive/002-scaffold-and-configuration.md) | Scaffold and configuration reference: layout, the toposd roles, listeners, every TOPOS_* variable | small | complete | 001 |
 | [003](.archive/003-manifest.md) | manifest/v1: the Agent, Trigger, MemoryStore and Connection kinds, references, versioning, one resolver | large | complete | 001 |
 | [004](.archive/004-session-log.md) | The session log: schema v1, event types, status and stop reasons, the fold, the directory store | large | complete | 001, 002 |
-| [005](005-harness-loop.md) | The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls | large | drafted | 001, 004, 007, 008 |
+| [005](005-harness-loop.md) | The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls | large | in-progress | 001, 004, 007, 008 |
 | [006](.archive/006-identity.md) | Identity: subjects, verification, the authorizer question, the action vocabulary, the owner policy, the local issuer | medium | complete | 001, 002, 004 |
 | [007](.archive/007-models.md) | Models: the connection, the IR in the log, llmdialect's codecs, raw capture, cost and the budget | large | complete | 001, 002, 004 |
 | [008](008-tools.md) | Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule | large | in-progress | 001, 004, 009 |
 | [009](.archive/009-machines.md) | Machines: the Machine interface, the host directory and its worktrees, the Cella sandbox | large | complete | 001, 002, 004 |
-| [010](010-context.md) | Context: the order of the prompt's parts, cache breakpoints, token accounting, clearing, compaction | medium | drafted | 004, 005, 007, 011 |
-| [011](011-instructions-and-skills.md) | Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills | medium | drafted | 004, 005, 009 |
-| [012](012-permissions-and-approvals.md) | Permissions, approvals and hooks: the boundary, the layers, the risk score and verdict, the modes | large | drafted | 001, 004, 005, 008, 009 |
-| [013](013-threads-and-subagents.md) | Threads, subagents and the advisor: the session's graph, spawn and message, worktree isolation, narrowing, depth | large | drafted | 001, 004, 005, 008, 009, 012 |
+| [010](010-context.md) | Context: the order of the prompt's parts, cache breakpoints, token accounting, clearing, compaction | medium | in-progress | 004, 005, 007, 011 |
+| [011](011-instructions-and-skills.md) | Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills | medium | in-progress | 004, 005, 009 |
+| [012](012-permissions-and-approvals.md) | Permissions, approvals and hooks: the boundary, the layers, the risk score and verdict, the modes | large | in-progress | 001, 004, 005, 008, 009 |
+| [013](013-threads-and-subagents.md) | Threads, subagents and the advisor: the session's graph, spawn and message, worktree isolation, narrowing, depth | large | in-progress | 001, 004, 005, 008, 009, 012 |
 | [014](.archive/014-store.md) | The server's store: the Postgres schema, toposd on the directory store, the blob store, retention and deletion | medium | complete | 002, 004, 006 |
 | [015](015-api.md) | The API: every route under /v1, streaming, errors, paging, idempotency, the OpenAPI document | large | in-progress | 003, 004, 006, 014 |
-| [016](016-runners.md) | Runners: driving a session, recovery of a step without results, the queue, claim, renew and release | large | drafted | 001, 002, 004, 005, 008, 009 |
-| [017](017-external-runners-handoff-fork.md) | External runners, handoff and fork: the append route, the writer rule, the inbox, moving a session's writer | large | drafted | 004, 016, 034 |
+| [016](016-runners.md) | Runners: driving a session, recovery of a step without results, the queue, claim, renew and release | large | in-progress | 001, 002, 004, 005, 008, 009 |
+| [017](017-external-runners-handoff-fork.md) | External runners, handoff and fork: the append route, the writer rule, the inbox, moving a session's writer | large | in-progress | 004, 016, 034 |
 | [018](018-credentials-and-secrets.md) | Credentials, connections and secrets: write-only credentials, the agent's identity and its session tokens, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope | large | in-progress | 001, 002, 003, 004, 006, 009 |
-| [019](019-git.md) | Git in a session: repositories as inputs, plain git in the sandbox, the token at the egress gateway, ref rules, attribution, the git cache | medium | drafted | 001, 002, 004, 009, 018 |
+| [019](019-git.md) | Git in a session: repositories as inputs, plain git in the sandbox, the token at the egress gateway, ref rules, attribution, the git cache | medium | in-progress | 001, 002, 004, 009, 018 |
 | [020](020-memory-stores.md) | Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts | medium | drafted | 002, 003, 004, 008, 009, 018 |
 | [021](021-mcp-servers.md) | MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials | medium | drafted | 003, 008, 009, 012, 018 |
 | [022](.archive/022-triggers.md) | Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, the limits | medium | complete | 003, 004, 006, 014 |
 | [023](023-events-and-observability.md) | Events and observability: the content-free sink, spans derived from the log, metrics | medium | drafted | 002, 004, 006, 014, 015 |
-| [024](024-client-cli-skill.md) | The client, the topos command and the agent skill: the API client, print mode, the supported import set | medium | drafted | 002, 004, 005, 016 |
-| [025](025-task-suite.md) | The task suite and the release bar: tasks and checkers, the pinned model, the threshold, spend, replays, IR against SDK | large | drafted | 005, 007, 008, 024, 026 |
+| [024](024-client-cli-skill.md) | The client, the topos command and the agent skill: the API client, print mode, the supported import set | medium | in-progress | 002, 004, 005, 016 |
+| [025](025-task-suite.md) | The task suite and the release bar: tasks and checkers, the pinned model, the threshold, spend, replays, IR against SDK | large | in-progress | 005, 007, 008, 024, 026 |
 | [026](026-stubs-and-tiers.md) | Stubs and test tiers: the scripted model, the stub Lux, authorizer, issuer, sink and Cella, the tiers and their tags | medium | in-progress | 002, 004, 007, 009 |
 | [027](027-security.md) | Security and threat model: assets, boundaries, adversaries, and the test or invariant that holds each threat | medium | drafted | 001, 009, 012, 016, 018 |
-| [028](028-release-and-installation.md) | Release, installation and running on your own: images, archives, attestations, the compose file, toposd check | medium | drafted | 002, 006, 025, 026, 029 |
+| [028](028-release-and-installation.md) | Release, installation and running on your own: images, archives, attestations, the compose file, toposd check | medium | in-progress | 002, 006, 025, 026, 029 |
 | [029](029-conformance.md) | Conformance suite: the API contract as an importable test package against any toposd | medium | drafted | 004, 006, 015, 026, 030 |
-| [030](030-shared-origin.md) | Serving behind a shared origin: the base path, the public URL, trusted proxies, every URL toposd writes | small | drafted | 002, 006, 015 |
+| [030](030-shared-origin.md) | Serving behind a shared origin: the base path, the public URL, trusted proxies, every URL toposd writes | small | in-progress | 002, 006, 015 |
 | [031](031-review-and-graded-iteration.md) | Review and graded iteration: critic threads over an artifact, a rubric and a grader thread | large | vague | 013, 025 |
 | [032](032-editor-clients.md) | Editor clients: serving a session to editors over the Agent Client Protocol | medium | vague | 004, 016, 024 |
 | [033](033-peers-and-authored-graphs.md) | Peers and authored graphs: declared message edges between siblings, and graphs declared up front | large | vague | 003, 013, 025 |
-| [034](034-checkpoints-and-rewind.md) | Checkpoints and rewind: each turn's working directory committed, the session repository, rewind, what fork and handoff restore | medium | drafted | 004, 005, 009 |
+| [034](034-checkpoints-and-rewind.md) | Checkpoints and rewind: each turn's working directory committed, the session repository, rewind, what fork and handoff restore | medium | in-progress | 004, 005, 009 |
 | [035](.archive/035-hosted-checkpoints-at-the-git-host.md) | Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its private repository, and a fork restores its files after the sandbox is gone | medium | complete | 004, 009 |
 | [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
 | [037](.archive/037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | complete | 004, 005, 012, 016 |
@@ -225,12 +226,9 @@ memory stores (020) are not built and the Cella tier's three tests are
 not written. Phase 4 has fork and none of the external runner or
 handoff. Of phase 5, 037 is complete.
 
-Work ran ahead of this order, and the gate starts no spec before its
-dependencies close, so a spec that builds on an open one stays
-`drafted` however much of it is built, and its Outcome section names
-what shipped and in which release. The chain starts at 008: its one
-open criterion, the instruction tier against a real model, holds 005 at
-`drafted`, and 005 holds most of the specs after it.
+Work ran ahead of this order, so many specs are `in-progress` while
+specs they build on are open; each Outcome section names what shipped
+and in which release.
 
 ## Decisions across specs
 

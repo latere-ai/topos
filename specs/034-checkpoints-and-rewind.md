@@ -1,12 +1,12 @@
 ---
 title: "Checkpoints and rewind: each turn's working directory committed, the session repository, rewind, what fork and handoff restore"
-status: drafted
+status: in-progress
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [runner/checkpoint/, machine/host/, machine/cella/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -179,5 +179,5 @@ session repository of a cloud session with no repository, a deleted
 sandbox restored from its checkpoint, and the tests the partly built
 rows name.
 
-The status stays `drafted` while [[005-harness-loop]] is open, since the
-gate starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

@@ -1,12 +1,12 @@
 ---
 title: "Release, installation and running on your own: images, archives, attestations, the compose file, toposd check"
-status: drafted
+status: in-progress
 track: core
 depends_on: [002-scaffold-and-configuration.md, 006-identity.md, 025-task-suite.md, 026-stubs-and-tiers.md, 029-conformance.md]
 affects: [Dockerfile, deploy/, examples/, docs/install.md, internal/check/, .github/workflows/, CHANGELOG.md]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -131,6 +131,5 @@ Open: the archives and the `topos-host` image, `toposd check`, the
 installation document walked in CI, and a release job that stops on the
 bar or the conformance suite.
 
-The status stays `drafted` while [[025-task-suite]],
-[[026-stubs-and-tiers]] and [[029-conformance]] are open, since the gate
-starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

@@ -1,12 +1,12 @@
 ---
 title: "The client, the topos command and the agent skill: the API client, print mode, the supported import set"
-status: drafted
+status: in-progress
 track: core
 depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 005-harness-loop.md, 016-runners.md]
 affects: [client/, cmd/topos/, internal/toposcli/, skills/topos/, examples/embed/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -165,6 +165,5 @@ Open: the `client` package, the commands `attach`, `send`, `interrupt`,
 task run end to end from the command, the first SIGINT alone,
 stream-json's completeness, the examples and the agent skill.
 
-The status stays `drafted` while [[005-harness-loop]] and
-[[016-runners]] are open, since the gate starts no spec before its
-dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

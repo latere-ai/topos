@@ -1,12 +1,12 @@
 ---
 title: "Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills"
-status: drafted
+status: in-progress
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [harness/, runner/, prompts/, test/tasks/instructions/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -250,5 +250,5 @@ session's repositories from its first request, before its machine opens.
 Open: skill folders as read-only roots, and the two instruction tests
 against a real model.
 
-The status stays `drafted` while [[005-harness-loop]] is open, since the
-gate starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

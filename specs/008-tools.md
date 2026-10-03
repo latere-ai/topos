@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -232,7 +232,5 @@ existing file the thread never read, with a result that says so, and
 their descriptions are at version 2, which names both refusals.
 
 Open: the instruction tier has not been run against a real model, so
-the last criterion has no recorded pass. Until it has, this spec stays
-in progress, and [[005-harness-loop]] and every spec that builds on it
-stay at `drafted`, since the gate starts no spec whose dependencies are
-open.
+the last criterion has no recorded pass, and the status stays
+`in-progress` until it has.

@@ -1,12 +1,12 @@
 ---
 title: "External runners, handoff and fork: the append route, the writer rule, the inbox, moving a session's writer"
-status: drafted
+status: in-progress
 track: core
 depends_on: [004-session-log.md, 016-runners.md, 034-checkpoints-and-rewind.md]
 affects: [runner/, client/, internal/server/, internal/toposcli/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -292,6 +292,5 @@ Open: `topos fork` on a person's machine, the run against a real Cella
 and git host, and everything of the external runner: the append route
 and its writer rule, blob uploads, the inbox and handoff.
 
-The status stays `drafted` while [[016-runners]] and
-[[034-checkpoints-and-rewind]] are open, since the gate starts no spec
-before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.

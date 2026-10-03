@@ -1,12 +1,12 @@
 ---
 title: "Serving behind a shared origin: the base path, the public URL, trusted proxies, every URL toposd writes"
-status: drafted
+status: in-progress
 track: core
 depends_on: [002-scaffold-and-configuration.md, 006-identity.md, 015-api.md]
 affects: [internal/server/, internal/serve/, internal/config/, client/, internal/toposcli/]
 effort: small
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-03
 author: changkun
 ---
 
@@ -117,5 +117,5 @@ must equal the public URL's path, and every URL toposd writes built from
 Open: forwarded headers believed only from a trusted range, the client
 under a base path, and the conformance suite under one.
 
-The status stays `drafted` while [[015-api]] is open, since the gate
-starts no spec before its dependencies close.
+The status is `in-progress`, from these criteria alone: the rows
+marked built are proven by their tests, and the rest are open.
