@@ -160,7 +160,7 @@ type runOptions struct {
 func (o *runOptions) flags(fs *flag.FlagSet) {
 	fs.StringVar(&o.session, "session", "", "continue this session")
 	fs.StringVar(&o.model, "model", "", "the model to run, by catalog name; replaces the agent's")
-	fs.StringVar(&o.mode, "mode", "", "plan, manual (confirm) or auto (progressive); empty is the agent's, else manual")
+	fs.StringVar(&o.mode, "mode", "", "plan, manual (or confirm), or auto (or progressive). If empty, the mode of the agent, or manual")
 	fs.Float64Var(&o.maxCost, "max-cost", 0, "the session's budget in USD; 0 is none")
 	fs.StringVar(&o.dir, "dir", "", "the working directory; empty is the current one")
 	fs.StringVar(&o.output, "output", "text", "text, json or stream-json")
@@ -181,7 +181,7 @@ var modeNames = map[string]harness.Mode{
 func (o *runOptions) validate() error {
 	m, ok := modeNames[o.mode]
 	if !ok {
-		return fmt.Errorf("--mode %q is not plan, manual (confirm) or auto (progressive)", o.mode)
+		return fmt.Errorf("--mode %q is not a mode. Use plan, manual, or auto", o.mode)
 	}
 	o.mode = string(m)
 	switch o.output {
@@ -702,7 +702,7 @@ func (l *local) decider() (harness.Decider, error) {
 	}
 	tok := strings.TrimSpace(l.getenv("TOPOS_DECISIONS_TOKEN"))
 	if tok == "" {
-		return nil, &errUsage{"TOPOS_DECISIONS_URL is set and TOPOS_DECISIONS_TOKEN is not; the decision service needs its bearer"}
+		return nil, &errUsage{"TOPOS_DECISIONS_URL is set, but TOPOS_DECISIONS_TOKEN is not. Set TOPOS_DECISIONS_TOKEN to the bearer token of the decision service."}
 	}
 	d, err := decisions.New(decisions.Options{URL: u, Token: tok, Client: otel.HTTPClient()})
 	if err != nil {

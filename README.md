@@ -54,8 +54,8 @@ The core's releases start at v0.9.0 (2026-09-29); the latest is v0.11.1
   separate runners: agents owned by a person or an organization, sessions
   that can be forked, archived and summarized, and triggers that fire on a
   schedule or on delivered events;
-- a decision service seam: `topos run` can ask an external service to
-  suggest the verdict on each tool call.
+- a connection to a decision service: `topos run` can get a suggested
+  verdict for each tool call from an external service.
 
 Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite

@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- The text for a decision service is shorter and more precise. This
+  includes the reason that a person sees for each verdict, the help of
+  `--mode`, and two errors. The errors are for an unknown mode and for a
+  missing `TOPOS_DECISIONS_TOKEN`. The configuration page describes
+  `TOPOS_DECISIONS_URL` and `TOPOS_DECISIONS_TOKEN` in the same words.
+
 ## v0.11.1 - 2026-10-02
 
 ### Changed

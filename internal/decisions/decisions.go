@@ -220,7 +220,7 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 		if perr != nil {
 			d.report(perr)
 			v := verdict.OnFailure(verdict.Allow)
-			out := harness.Decision{Verdict: v, Reason: "The decision service did not answer, so the call waits for a person.", ReviewProbability: 1}
+			out := harness.Decision{Verdict: v, Reason: "The decision service did not answer. The call waits for a person.", ReviewProbability: 1}
 			d.record(ctx, a, out, SourceProgressive, false)
 			return risk, out, nil
 		}
@@ -247,16 +247,16 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 func reason(p prediction, v verdict.Verdict) string {
 	switch v {
 	case verdict.Allow:
-		return "The decision service expects the person to approve this call."
+		return "The decision service expects that the person approves this call."
 	case verdict.Flag:
-		return "The decision service expects the person to approve this call, and it was chosen for review."
+		return "The decision service expects that the person approves this call. The call runs, and the random audit selected it for review."
 	case verdict.Block:
-		return "The decision service expects the person to deny this call."
+		return "The decision service expects that the person denies this call."
 	}
 	if p.Verdict == string(verdict.Block) {
-		return "The decision service expects the person to deny this call, and it was chosen for the person to review."
+		return "The decision service expects that the person denies this call. The random audit selected the call for review. The call waits for the person."
 	}
-	return "The decision service is not sure the person would approve this call, so it waits for them."
+	return "The decision service is not sure that the person approves this call. The call waits for the person."
 }
 
 func suggestion(p prediction) *session.Suggestion {

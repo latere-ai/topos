@@ -666,7 +666,7 @@ func TestModeNames(t *testing.T) {
 		}
 	}
 	o := runOptions{mode: "yolo", output: "text"}
-	if err := o.validate(); err == nil || !strings.Contains(err.Error(), "manual (confirm) or auto (progressive)") {
+	if err := o.validate(); err == nil || !strings.Contains(err.Error(), "Use plan, manual, or auto") {
 		t.Errorf("an unknown mode: %v", err)
 	}
 }
