@@ -84,6 +84,68 @@ func TestATurnRunsOnTheSessionsModel(t *testing.T) {
 	}
 }
 
+// TestARoutedTurnRunsTheModelNotTheNameAsked: a session the authorizer
+// moved to another model between two turns (spec 038) runs its next turn
+// on that model, connected once and at the effort the change kept, and
+// its model.request records the model that ran; the name that was asked,
+// the change's via, is never connected and never sent.
+func TestARoutedTurnRunsTheModelNotTheNameAsked(t *testing.T) {
+	const asked, routed = "tier/quick", "other-model"
+	var connected []string
+	e := setup(t, func(c *Config) {
+		c.Effort = "low"
+		c.Connect = func(_ context.Context, name string) (models.Model, models.Connection, models.Entry, error) {
+			connected = append(connected, name)
+			return &dialect.Model{}, models.Connection{BaseURL: c.Connection.BaseURL, Model: name, Family: models.FamilyAnthropic},
+				models.Entry{Name: name, InputWindow: 30_000, MaxOutputTokens: 2_000}, nil
+		}
+	})
+	ctx := t.Context()
+	effort := func(r luxstub.Reply) luxstub.Reply {
+		r.Expect = func(req *ir.Request) error {
+			if req.Reasoning == nil || req.Reasoning.Effort != "low" {
+				return fmt.Errorf("the request's effort is %+v, want low", req.Reasoning)
+			}
+			return nil
+		}
+		return r
+	}
+	e.stub.Script(model, effort(reply(ir.StopEndTurn, text("One."))))
+	e.stub.Script(routed, effort(luxstub.Reply{Response: ir.Response{Model: routed, Blocks: []ir.Block{text("Two.")}, StopReason: ir.StopEndTurn, Usage: ir.Usage{InputTokens: 10, OutputTokens: 2}}}))
+	e.send(ctx, "One.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	by := session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}
+	changed, err := session.NewEvent(session.TypeModelChanged, session.ModelChanged{By: by,
+		Old: session.ModelRef{Name: model, Via: asked, Effort: "low"}, New: session.ModelRef{Name: routed, Via: asked, Effort: "low"}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.appendEvents(ctx, changed)
+	e.send(ctx, "Two.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	var ran []string
+	for _, ev := range e.events(ctx, session.TypeModelRequest) {
+		var p session.ModelRequest
+		if err := ev.Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		ran = append(ran, p.Model)
+	}
+	if len(ran) != 2 || ran[0] != model || ran[1] != routed {
+		t.Fatalf("the model requests ran %v", ran)
+	}
+	if len(connected) != 1 || connected[0] != routed {
+		t.Fatalf("Connect was asked %v", connected)
+	}
+	if reqs := e.stub.Requests(); len(reqs) != 2 || reqs[1].Request.Model != routed {
+		t.Fatalf("the provider saw %d requests", len(reqs))
+	}
+}
+
 // TestASessionsEffortReachesItsRequests: a turn runs at the effort its
 // session's latest session.model_changed names, the agent's until one
 // names any, and a thread whose agent names no effort runs at the
