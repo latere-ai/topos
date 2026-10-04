@@ -1,0 +1,14 @@
+name: web_search
+category: instructions
+# web_search's description: what the agent has no address for is
+# searched, and a result is fetched to read more than its snippet. The
+# suite's search service answers every search with results.yaml, whose
+# pages the suite serves over loopback for each run.
+agent:
+  tools: [write, web_fetch, web_search]
+serve: pages
+search: results.yaml
+prompt: |
+  The shop's command line tool is called shopctl. Find the version number
+  of its latest release on the web, and write it, and nothing else, to
+  version.txt.

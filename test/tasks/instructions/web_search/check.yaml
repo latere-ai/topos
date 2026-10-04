@@ -1,0 +1,8 @@
+- file: {path: version.txt, equals: 4.3.0}
+- call:
+    tool: web_search
+    outcome: ok
+- call:
+    tool: web_fetch
+    outcome: ok
+    input: {url: {contains: "${SERVE_URL}/shopctl/releases.html"}}

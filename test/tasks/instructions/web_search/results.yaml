@@ -1,0 +1,6 @@
+- title: shopctl release notes
+  url: ${SERVE_URL}/shopctl/releases.html
+  snippet: Every release of shopctl, the command line tool of the shop, newest first, with what each one changed.
+- title: Installing shopctl
+  url: ${SERVE_URL}/shopctl/install.html
+  snippet: Download shopctl for your platform and put it on your PATH.

@@ -74,6 +74,10 @@ type Task struct {
 	// run, at the URL the placeholder ${SERVE_URL} names; empty serves
 	// nothing.
 	Serve string
+	// Search is a file of the task holding the results the suite's
+	// search service answers every web_search with, ${SERVE_URL}
+	// expanded (spec 040); a task whose agent holds web_search names one.
+	Search string
 	// Dir is the task's directory.
 	Dir string
 	// Bundle is set when the starting files are a git bundle rather
@@ -127,6 +131,7 @@ type taskFile struct {
 	MaxCost  *float64 `yaml:"maxCost"`
 	Runs     *int     `yaml:"runs"`
 	Serve    string   `yaml:"serve"`
+	Search   string   `yaml:"search"`
 	Answers  []Answer `yaml:"answers"`
 }
 
@@ -179,7 +184,7 @@ func LoadTask(dir string) (Task, error) {
 	t := Task{
 		Name: f.Name, Category: f.Category, Prompt: strings.TrimSpace(f.Prompt), Agent: f.Agent,
 		Timeout: DefaultTimeout, MaxCostUSDMicro: int64(math.Round(DefaultMaxCost * 1e6)), Runs: DefaultRuns,
-		Serve: f.Serve, Dir: dir, Answers: f.Answers,
+		Serve: f.Serve, Search: f.Search, Dir: dir, Answers: f.Answers,
 	}
 	t.ID = t.Category + "/" + t.Name
 	fail := func(format string, a ...any) (Task, error) {
@@ -226,6 +231,17 @@ func LoadTask(dir string) (Task, error) {
 			return fail("serve %q is not a directory of the task", t.Serve)
 		}
 	}
+	searches := slices.Contains(t.Agent.Tools, tools.NameWebSearch)
+	switch {
+	case t.Search != "" && !searches:
+		return fail("search is the results of web_search, and the agent does not hold it")
+	case searches && t.Search == "":
+		return fail("the agent holds web_search, and the task names no search results")
+	case t.Search != "":
+		if _, err := readHits(filepath.Join(dir, t.Search), ""); err != nil {
+			return fail("search %q: %v", t.Search, err)
+		}
+	}
 	if err := t.findStart(); err != nil {
 		return fail("%v", err)
 	}
@@ -244,10 +260,10 @@ func builtinNames() []string {
 	return names
 }
 
-// checkTools refuses a tool list naming anything but a built-in or the
-// question tool.
+// checkTools refuses a tool list naming anything but a built-in, one
+// an agent opts into, or the question tool.
 func checkTools(a Agent) error {
-	known := append(builtinNames(), harness.ToolQuestion)
+	known := slices.Concat(builtinNames(), tools.OptIn(), []string{harness.ToolQuestion})
 	lists := map[string][]string{"agent": a.Tools}
 	for name, s := range a.Subagents {
 		lists["subagent "+name] = s.Tools
@@ -255,7 +271,7 @@ func checkTools(a Agent) error {
 	for who, list := range lists {
 		for _, n := range list {
 			if !slices.Contains(known, n) {
-				return fmt.Errorf("the %s holds %q, which is not a built-in tool or question (%s)", who, n, strings.Join(known, ", "))
+				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search or question (%s)", who, n, strings.Join(known, ", "))
 			}
 		}
 	}

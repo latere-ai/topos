@@ -1,0 +1,9 @@
+# Guesses the address of the release notes instead of searching for it.
+steps:
+  - tool_calls:
+      - name: web_fetch
+        input: {url: "${SERVE_URL}/shopctl/releases.html"}
+  - tool_calls:
+      - name: write
+        input: {path: version.txt, content: "4.3.0\n"}
+  - text: The latest release of shopctl is 4.3.0.

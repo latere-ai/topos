@@ -94,7 +94,7 @@ func TestEveryToolDescriptionHasAnInstructionTest(t *testing.T) {
 	for _, b := range tools.Builtins() {
 		names = append(names, b.Definition().Name)
 	}
-	for _, name := range append(names, harness.ToolQuestion) {
+	for _, name := range slices.Concat(names, tools.OptIn(), []string{harness.ToolQuestion}) {
 		task, err := LoadTask(filepath.Join("instructions", name))
 		if err != nil {
 			t.Errorf("the %s tool has no instruction test: %v", name, err)
