@@ -406,7 +406,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 			subs[name] = harness.Subagent{Name: name, Instructions: sa.Instructions, Tools: sa.Tools}
 		}
 		return harness.Config{
-			Model: model, Connection: conn, Entry: entry, Machine: m, Tools: reg,
+			Model: model, Connection: conn, Entry: entry, Machine: m, Tools: reg, Question: slices.Contains(r.t.Agent.Tools, harness.ToolQuestion),
 			Policy:       harness.Policy{Mode: harness.ModeConfirm, AlwaysAllow: builtinNames()},
 			Name:         "topos",
 			Instructions: r.t.Agent.Instructions,
@@ -462,6 +462,7 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 		session.Machine{Kind: machine.KindHost, Workdir: r.workdir}, now)
 	s.Budget.MaxCostUSDMicro = &r.t.MaxCostUSDMicro
 	s.EndOnIdle = true
+	s.Attended = len(r.t.Answers) > 0
 	s.Limits.TurnTimeout = r.t.Timeout.String()
 	s.Metadata = map[string]string{"task": r.t.ID, "model": conn.Model}
 	if err := st.Create(ctx, s, nil); err != nil {
@@ -488,6 +489,13 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	}
 	dctx, cancel := context.WithTimeout(ctx, r.t.Timeout+RunGrace)
 	out, derr := rn.Drive(dctx, s.ID)
+	// A task that names its answers answers the session's question once,
+	// as a person would, and the session's turn continues.
+	if derr == nil && out.StopReason == session.StopQuestion && len(r.t.Answers) > 0 {
+		if derr = answerQuestion(dctx, st, s.ID, person, r.t.Answers); derr == nil {
+			out, derr = rn.Drive(dctx, s.ID)
+		}
+	}
 	cancel()
 	if err := r.release(context.WithoutCancel(ctx)); err != nil {
 		derr = errors.Join(derr, err)
@@ -590,4 +598,56 @@ func (r *run) measure(res *RunResult, log []session.Event) {
 // usd renders micro-USD as dollars.
 func usd(micro int64) string {
 	return fmt.Sprintf("$%.4f", float64(micro)/1e6)
+}
+
+// answerQuestion appends the answer the driver gives to the session's
+// open question, after the session's last event, as a client does.
+func answerQuestion(ctx context.Context, st session.Store, id string, person session.Sender, answers []Answer) error {
+	evs, err := st.Events(ctx, id, 1, 0)
+	if err != nil {
+		return err
+	}
+	q, open := session.OpenQuestion(evs)
+	if !open {
+		return errors.New("tasks: the session stopped on a question, and none is open")
+	}
+	ev, err := session.NewEvent(session.TypeUserAnswer, AnswerTo(q, person, answers), time.Now())
+	if err != nil {
+		return err
+	}
+	batch := []session.Event{ev}
+	last := evs[len(evs)-1].Seq
+	session.Stamp(id, last, batch)
+	_, err = st.Append(ctx, id, last, batch)
+	return err
+}
+
+// AnswerTo is the answer a person gives to the question call q by
+// answers: an entry per question, the first Answer whose Question the
+// question's header or text contains, compared without case, choosing
+// the option whose label contains its Choose, or saying Choose in the
+// person's own words when no label holds it, beside its Text; a question
+// no Answer names is left to the agent.
+func AnswerTo(q session.Asked, from session.Sender, answers []Answer) session.UserAnswer {
+	out := session.UserAnswer{Sender: from, ToolUseID: q.ToolUseID, Answers: make([]session.AnswerEntry, len(q.Input.Questions))}
+	holds := func(s, sub string) bool { return strings.Contains(strings.ToLower(s), strings.ToLower(sub)) }
+	for i, question := range q.Input.Questions {
+		at := slices.IndexFunc(answers, func(a Answer) bool {
+			return holds(question.Header, a.Question) || holds(question.Question, a.Question)
+		})
+		if at < 0 {
+			continue
+		}
+		a := answers[at]
+		e := session.AnswerEntry{Text: a.Text}
+		if a.Choose != "" {
+			if o := slices.IndexFunc(question.Options, func(o session.QuestionOption) bool { return holds(o.Label, a.Choose) }); o >= 0 {
+				e.Selected = []string{question.Options[o].Label}
+			} else {
+				e.Text = strings.TrimSpace(a.Choose + " " + a.Text)
+			}
+		}
+		out.Answers[i] = e
+	}
+	return out
 }

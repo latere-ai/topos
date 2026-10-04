@@ -1,0 +1,9 @@
+# Writes both files in English without asking.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: greeting.txt, content: "hello\n"}
+  - tool_calls:
+      - name: write
+        input: {path: farewell.txt, content: "goodbye\n"}
+  - text: Wrote hello and goodbye.

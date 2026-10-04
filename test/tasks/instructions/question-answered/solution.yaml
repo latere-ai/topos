@@ -1,0 +1,26 @@
+# Asks both questions in one call, writes the greeting in the language
+# the person chose and the farewell in the one it would take, and says
+# what it assumed for the farewell.
+steps:
+  - tool_calls:
+      - name: question
+        input:
+          questions:
+            - header: Greeting
+              question: In which language should greeting.txt greet the readers?
+              options:
+                - {label: English, recommended: true, description: "hello; most readers read English."}
+                - {label: German, description: "hallo."}
+            - header: Farewell
+              question: In which language should farewell.txt bid the readers goodbye?
+              options:
+                - {label: English, recommended: true, description: "goodbye; most readers read English."}
+                - {label: German, description: "auf Wiedersehen."}
+  - expect: {tool_result_contains: "Chosen: German"}
+    tool_calls:
+      - name: write
+        input: {path: greeting.txt, content: "hallo\n"}
+  - tool_calls:
+      - name: write
+        input: {path: farewell.txt, content: "goodbye\n"}
+  - text: The greeting is German as you chose. You left the farewell to me, so I assumed English and wrote goodbye.

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 )
 
@@ -86,10 +87,14 @@ func TestEveryTaskHasItsScripts(t *testing.T) {
 }
 
 // TestEveryToolDescriptionHasAnInstructionTest is spec 008's rule: each
-// built-in tool's description has an instruction test directory.
+// built-in tool's description, and the harness's question tool's, has
+// an instruction test directory.
 func TestEveryToolDescriptionHasAnInstructionTest(t *testing.T) {
+	var names []string
 	for _, b := range tools.Builtins() {
-		name := b.Definition().Name
+		names = append(names, b.Definition().Name)
+	}
+	for _, name := range append(names, harness.ToolQuestion) {
 		task, err := LoadTask(filepath.Join("instructions", name))
 		if err != nil {
 			t.Errorf("the %s tool has no instruction test: %v", name, err)

@@ -23,6 +23,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 )
 
@@ -81,12 +82,29 @@ type Task struct {
 	// Check is the check.yaml source, placeholders unexpanded; empty
 	// when the task's checker is check.sh.
 	Check []byte
+	// Answers are what the run's driver answers a question with, as a
+	// person would. A task that names any runs in an attended session,
+	// and every other task in one nobody attends, where a question is
+	// answered at once.
+	Answers []Answer
+}
+
+// Answer is what the driver answers to the questions of the open
+// question call whose header or text contains Question, compared without
+// case: the option whose label contains Choose, or Choose itself in the
+// person's own words when no label holds it, and Text as the person's
+// words. A question no Answer names is left to the agent.
+type Answer struct {
+	Question string `yaml:"question"`
+	Choose   string `yaml:"choose"`
+	Text     string `yaml:"text"`
 }
 
 // Agent overrides the suite's agent for one task: the built-in tools it
 // holds, its own instructions, and the subagents its threads may spawn.
 type Agent struct {
-	// Tools are the built-ins the agent holds; nil holds every one.
+	// Tools are the tools the agent holds, built-ins and the question
+	// tool; nil holds every built-in, and not the question tool.
 	Tools        []string            `yaml:"tools"`
 	Instructions string              `yaml:"instructions"`
 	Subagents    map[string]Subagent `yaml:"subagents"`
@@ -109,6 +127,7 @@ type taskFile struct {
 	MaxCost  *float64 `yaml:"maxCost"`
 	Runs     *int     `yaml:"runs"`
 	Serve    string   `yaml:"serve"`
+	Answers  []Answer `yaml:"answers"`
 }
 
 // Load reads every task of the suite rooted at dir: each directory
@@ -160,7 +179,7 @@ func LoadTask(dir string) (Task, error) {
 	t := Task{
 		Name: f.Name, Category: f.Category, Prompt: strings.TrimSpace(f.Prompt), Agent: f.Agent,
 		Timeout: DefaultTimeout, MaxCostUSDMicro: int64(math.Round(DefaultMaxCost * 1e6)), Runs: DefaultRuns,
-		Serve: f.Serve, Dir: dir,
+		Serve: f.Serve, Dir: dir, Answers: f.Answers,
 	}
 	t.ID = t.Category + "/" + t.Name
 	fail := func(format string, a ...any) (Task, error) {
@@ -194,6 +213,14 @@ func LoadTask(dir string) (Task, error) {
 	if err := checkTools(t.Agent); err != nil {
 		return fail("%v", err)
 	}
+	if len(t.Answers) > 0 && !slices.Contains(t.Agent.Tools, harness.ToolQuestion) {
+		return fail("answers are for a question, and the agent does not hold the question tool")
+	}
+	for i, a := range t.Answers {
+		if a.Question == "" || (a.Choose == "" && a.Text == "") {
+			return fail("answers[%d] names a question and what to choose or say", i)
+		}
+	}
 	if t.Serve != "" {
 		if fi, err := os.Stat(filepath.Join(dir, t.Serve)); err != nil || !fi.IsDir() {
 			return fail("serve %q is not a directory of the task", t.Serve)
@@ -217,9 +244,10 @@ func builtinNames() []string {
 	return names
 }
 
-// checkTools refuses a tool list naming anything but a built-in.
+// checkTools refuses a tool list naming anything but a built-in or the
+// question tool.
 func checkTools(a Agent) error {
-	known := builtinNames()
+	known := append(builtinNames(), harness.ToolQuestion)
 	lists := map[string][]string{"agent": a.Tools}
 	for name, s := range a.Subagents {
 		lists["subagent "+name] = s.Tools
@@ -227,7 +255,7 @@ func checkTools(a Agent) error {
 	for who, list := range lists {
 		for _, n := range list {
 			if !slices.Contains(known, n) {
-				return fmt.Errorf("the %s holds %q, which is not a built-in tool (%s)", who, n, strings.Join(known, ", "))
+				return fmt.Errorf("the %s holds %q, which is not a built-in tool or question (%s)", who, n, strings.Join(known, ", "))
 			}
 		}
 	}

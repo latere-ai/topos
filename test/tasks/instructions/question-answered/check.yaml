@@ -1,0 +1,4 @@
+- question: {calls: 1}
+- file: {path: greeting.txt, matches: '^(?i)hallo\s*$'}
+- file: {path: farewell.txt, matches: '^(?i)(goodbye|auf wiedersehen)\s*$'}
+- final_message: {matches: '(?is)(farewell|goodbye|auf wiedersehen).*(assum|decid|chose|picked|went with|left)|(assum|decid|chose|picked|went with|left).*(farewell|goodbye|auf wiedersehen)'}

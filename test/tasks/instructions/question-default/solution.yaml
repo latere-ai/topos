@@ -1,0 +1,6 @@
+# Writes the conventional program.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: hello.py, content: "print(\"Hello, world\")\n"}
+  - text: hello.py prints Hello, world.

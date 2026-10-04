@@ -1,0 +1,8 @@
+name: question-default
+category: instructions
+# question's description: a choice that has a conventional default is
+# not put to the person; the agent takes the default.
+agent:
+  tools: [write, question]
+prompt: |
+  Create hello.py, a Python program that prints Hello, world.

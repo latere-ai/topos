@@ -1,0 +1,17 @@
+# Asks which order the person reads dates in, is told nobody attends,
+# takes the option it marked recommended and says so.
+steps:
+  - tool_calls:
+      - name: question
+        input:
+          questions:
+            - header: Date order
+              question: In which order should release-date.txt give the day and the month of 3 February 2027?
+              options:
+                - {label: Day first, recommended: true, description: "03/02/2027, as read in most of Europe."}
+                - {label: Month first, description: "02/03/2027, as read in the United States."}
+  - expect: {tool_result_contains: Nobody attends this session}
+    tool_calls:
+      - name: write
+        input: {path: release-date.txt, content: "03/02/2027\n"}
+  - text: I assumed the day comes first and wrote 03/02/2027.

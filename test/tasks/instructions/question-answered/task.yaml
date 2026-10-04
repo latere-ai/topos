@@ -1,0 +1,20 @@
+name: question-answered
+category: instructions
+# question's description, on the path a person takes: the session is
+# attended, and the driver answers as a person does. It chooses the
+# option the agent was told not to recommend for the greeting and
+# leaves the farewell to the agent. The outcome follows the choice, and
+# the final message says what was assumed for the farewell.
+agent:
+  tools: [write, question]
+answers:
+  - {question: greeting, choose: German}
+prompt: |
+  Write two files for the release announcement: greeting.txt holding the
+  one word that greets the readers, and farewell.txt holding the words
+  that bid them goodbye. The team writes them either in English (hello,
+  goodbye) or in German (hallo, auf Wiedersehen), the language may differ
+  between the two files, and the person decides. Before you write either
+  file, ask the person in one call: one question for the greeting and
+  one for the farewell, each with the options English and German, and
+  English marked as recommended since most readers read English.

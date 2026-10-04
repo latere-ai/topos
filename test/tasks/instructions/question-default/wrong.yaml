@@ -1,0 +1,15 @@
+# Asks about a choice the convention settles.
+steps:
+  - tool_calls:
+      - name: question
+        input:
+          questions:
+            - header: Quotes
+              question: Should hello.py use single or double quotes?
+              options:
+                - {label: Double, recommended: true, description: "print(\"Hello, world\")"}
+                - {label: Single, description: "print('Hello, world')"}
+  - tool_calls:
+      - name: write
+        input: {path: hello.py, content: "print(\"Hello, world\")\n"}
+  - text: hello.py prints Hello, world.

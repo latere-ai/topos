@@ -54,6 +54,29 @@ type Assertion struct {
 	NoCall *CallCheck `yaml:"no_call"`
 	// Todo asserts on how the root thread kept its todo list.
 	Todo *TodoCheck `yaml:"todo"`
+	// Question asserts on the root thread's question calls.
+	Question *QuestionCheck `yaml:"question"`
+	// FinalMessage asserts on the text of the root thread's last
+	// agent.message, for an instruction whose rule is what that message
+	// states, such as the question tool's rule that an agent names what
+	// it assumed.
+	FinalMessage *FinalMessageCheck `yaml:"final_message"`
+}
+
+// QuestionCheck asserts on the root thread's question calls: there are
+// Calls of them (default 1), every option of each has a description, an
+// option marked recommended comes first in its question, and no
+// question's text matches NotMatching, a pattern of what a question must
+// not ask, such as permission for an action.
+type QuestionCheck struct {
+	Calls       *int   `yaml:"calls"`
+	NotMatching string `yaml:"not_matching"`
+}
+
+// FinalMessageCheck asserts that the root thread's last agent.message
+// matches a pattern.
+type FinalMessageCheck struct {
+	Matches string `yaml:"matches"`
 }
 
 // GoCheck runs go with Args in a copy of the working directory, with
@@ -136,6 +159,7 @@ func (a Assertion) kinds() []string {
 		{"go", a.Go != nil}, {"file", a.File != nil}, {"unchanged", a.Unchanged != nil},
 		{"absent", a.Absent != nil}, {"only_files", a.OnlyFiles != nil}, {"no_match", a.NoMatch != nil},
 		{"call", a.Call != nil}, {"no_call", a.NoCall != nil}, {"todo", a.Todo != nil},
+		{"question", a.Question != nil}, {"final_message", a.FinalMessage != nil},
 	} {
 		if k.set {
 			out = append(out, k.name)
@@ -145,7 +169,7 @@ func (a Assertion) kinds() []string {
 }
 
 // LogKinds are the assertions that read the session's log.
-var LogKinds = []string{"call", "no_call", "todo"}
+var LogKinds = []string{"call", "no_call", "todo", "question", "final_message"}
 
 // ParseCheck reads a check.yaml and refuses an assertion with no kind or
 // with two, an unknown field, a bad pattern, and a call with no tool or
@@ -168,7 +192,7 @@ func ParseCheck(b []byte) (Check, error) {
 
 func (a Assertion) validate() error {
 	if k := a.kinds(); len(k) != 1 {
-		return fmt.Errorf("sets %d kinds %v; an assertion is exactly one of go, file, unchanged, absent, only_files, no_match, call, no_call, todo", len(k), k)
+		return fmt.Errorf("sets %d kinds %v; an assertion is exactly one of go, file, unchanged, absent, only_files, no_match, call, no_call, todo, question, final_message", len(k), k)
 	}
 	var patterns []string
 	switch {
@@ -184,6 +208,12 @@ func (a Assertion) validate() error {
 		patterns = append(patterns, a.NoMatch.Pattern)
 	case a.Todo != nil && a.Todo.Final != "" && !slices.Contains(todoStatuses, a.Todo.Final):
 		return fmt.Errorf("todo final %q is not one of %v", a.Todo.Final, todoStatuses)
+	case a.Question != nil:
+		patterns = append(patterns, a.Question.NotMatching)
+	case a.FinalMessage != nil && a.FinalMessage.Matches == "":
+		return errors.New("final_message has no pattern")
+	case a.FinalMessage != nil:
+		patterns = append(patterns, a.FinalMessage.Matches)
 	}
 	for _, c := range []*CallCheck{a.Call, a.NoCall} {
 		if c == nil {
@@ -280,8 +310,71 @@ func (a Assertion) eval(ctx context.Context, in Input, calls []Call, i int) (str
 		zero := 0
 		c.Max = &zero
 		return c.eval(calls, 0), nil
+	case a.Question != nil:
+		return a.Question.eval(calls), nil
+	case a.FinalMessage != nil:
+		return a.FinalMessage.eval(in.Events), nil
 	}
 	return a.Todo.eval(calls), nil
+}
+
+func (q *QuestionCheck) eval(calls []Call) string {
+	want := 1
+	if q.Calls != nil {
+		want = *q.Calls
+	}
+	var asked []Call
+	for _, c := range calls {
+		if c.Name == session.ToolQuestion && c.Thread == "" {
+			asked = append(asked, c)
+		}
+	}
+	if len(asked) != want {
+		return fmt.Sprintf("%d question calls, want %d", len(asked), want)
+	}
+	for i, c := range asked {
+		var in session.QuestionInput
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			return fmt.Sprintf("question call %d: the input does not decode: %v", i+1, err)
+		}
+		for j, question := range in.Questions {
+			if q.NotMatching != "" && regexp.MustCompile(q.NotMatching).MatchString(question.Question) {
+				return fmt.Sprintf("question call %d asks %q, which matches %s", i+1, question.Question, q.NotMatching)
+			}
+			for k, o := range question.Options {
+				if strings.TrimSpace(o.Description) == "" {
+					return fmt.Sprintf("question call %d: option %q of question %d has no description", i+1, o.Label, j+1)
+				}
+				if o.Recommended && k != 0 {
+					return fmt.Sprintf("question call %d: the recommended option %q of question %d is not first", i+1, o.Label, j+1)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func (f *FinalMessageCheck) eval(evs []session.Event) string {
+	text := ""
+	for _, e := range evs {
+		var m session.AgentMessage
+		if e.Type != session.TypeAgentMessage || e.Thread != "" || e.Redacted() || e.Decode(&m) != nil {
+			continue
+		}
+		var parts []string
+		for _, b := range m.Message.Blocks {
+			if b.Type == ir.BlockText {
+				parts = append(parts, b.Text)
+			}
+		}
+		if len(parts) > 0 {
+			text = strings.Join(parts, "\n")
+		}
+	}
+	if !regexp.MustCompile(f.Matches).MatchString(text) {
+		return fmt.Sprintf("the final message %q does not match %s", clip(text), f.Matches)
+	}
+	return ""
 }
 
 // path makes a checked path absolute against the working directory.

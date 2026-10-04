@@ -1,0 +1,6 @@
+# Picks an order without asking.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: release-date.txt, content: "03/02/2027\n"}
+  - text: Wrote 03/02/2027.

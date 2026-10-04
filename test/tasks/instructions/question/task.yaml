@@ -1,0 +1,14 @@
+name: question
+category: instructions
+# question's description: a requirement with two readings and no default
+# is put to the person in one call, its options described and the one
+# the agent would take first and marked; nobody attends the session, so
+# the agent then decides and says what it assumed.
+agent:
+  tools: [write, question]
+prompt: |
+  The first release ships on the third of February 2027. Write its date
+  into release-date.txt, as two-digit day, two-digit month and four-digit
+  year joined by slashes, in the order the person reads dates in. Some
+  people on the team read the day first and some the month first, and
+  nothing in this directory says which of them this is for.

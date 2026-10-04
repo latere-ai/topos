@@ -1,0 +1,2 @@
+- no_call: {tool: question}
+- file: {path: hello.py, contains: ["Hello, world"]}

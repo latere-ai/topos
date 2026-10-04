@@ -1,0 +1,2 @@
+- question: {calls: 1, not_matching: '(?i)\b(permission|may i|can i|shall i|should i (go ahead|proceed|continue|write)|is it ok|do you want me to)\b'}
+- file: {path: release-date.txt, matches: '^(03/02/2027|02/03/2027)\s*$'}
