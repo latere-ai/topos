@@ -274,3 +274,34 @@ func TestCutInputQuotesTheStartOfTheArguments(t *testing.T) {
 		t.Fatalf("%+v\n%q", res, text(res))
 	}
 }
+
+// TestStateOfFoldsPublish: the thread's last publish result that names an
+// app is its app, and the last one whose preview was ready is the one a
+// release takes, past a failed preview and a release after it (spec 043).
+func TestStateOfFoldsPublish(t *testing.T) {
+	var events []session.Event
+	for i, m := range []*session.PublishMeta{
+		{App: "a-poem", Commit: "c1", Status: session.PublishReady},
+		{App: "a-poem", Commit: "c2", Status: session.PublishFailed},
+		{App: "a-poem", Commit: "c1", Status: session.PublishReleased, Release: "v1"},
+		{App: ""},
+	} {
+		b, err := json.Marshal(Meta{Publish: m})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := session.NewEvent(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_x", Meta: b}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = uint64(i + 1)
+		events = append(events, e)
+	}
+	st := StateOf(events, "")
+	if st.App == nil || st.App.Status != session.PublishReleased || st.Ready == nil || st.Ready.Commit != "c1" || st.Ready.Status != session.PublishReady {
+		t.Fatalf("state %+v %+v", st.App, st.Ready)
+	}
+	if st := StateOf(nil, ""); st.App != nil || st.Ready != nil {
+		t.Fatalf("an empty log folds %+v", st)
+	}
+}

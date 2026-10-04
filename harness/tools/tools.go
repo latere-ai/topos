@@ -138,6 +138,9 @@ type Meta struct {
 	// Refusal is the code a search service refused a web search with
 	// (spec 047), for a client; the model reads the service's sentence.
 	Refusal string `json:"refusal,omitempty"`
+	// Publish is a publish call's record (spec 043): the session's app,
+	// the commit, and where its preview or release stands.
+	Publish *session.PublishMeta `json:"publish,omitempty"`
 }
 
 // Todo is one entry of a thread's list.
@@ -159,6 +162,10 @@ type State struct {
 	// directory of its parent's machine.
 	DirSeq uint64
 	Todos  []Todo
+	// App is the last publish result that named the session's app, and
+	// Ready the last one whose preview was ready, which a release takes
+	// its commit from (spec 043). Each is nil before there is one.
+	App, Ready *session.PublishMeta
 }
 
 // StateOf folds the tool.result metas of one thread, in sequence order.
@@ -184,6 +191,12 @@ func StateOf(events []session.Event, thread string) State {
 		}
 		if m.Todos != nil {
 			st.Todos = m.Todos
+		}
+		if p := m.Publish; p != nil && p.App != "" {
+			st.App = p
+			if p.Status == session.PublishReady && p.Commit != "" {
+				st.Ready = p
+			}
 		}
 	}
 	return st
