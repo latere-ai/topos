@@ -208,7 +208,7 @@ type Spill struct {
 // record for later calls of the thread: the hash of a file a file tool
 // read or wrote, the directory bash ended in, the todo list.
 // CostUSDMicro is what a service the call reached charged for it, a
-// web search's (spec 040), which the session's spend counts beside its
+// web search's (spec 042), which the session's spend counts beside its
 // model requests; nil for a call that cost nothing.
 type ToolResult struct {
 	ToolUseID    string          `json:"tool_use_id"`

@@ -16,7 +16,7 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// TestASearchCostIsCounted (spec 040): a tool result's cost is recorded
+// TestASearchCostIsCounted (spec 042): a tool result's cost is recorded
 // on its tool.result, the session's header counts it, and the budget
 // check before the next request counts it, so a search that passes the
 // session's budget stops the turn with budget before the next request.
@@ -69,7 +69,7 @@ func TestASearchCostIsCounted(t *testing.T) {
 	}
 }
 
-// TestWebSearchChangesNothing (spec 040): a web_search call scores 0 and
+// TestWebSearchChangesNothing (spec 042): a web_search call scores 0 and
 // is allowed in every mode, plan included, an always-confirm pattern
 // that names it asks, and a call never opens a machine opened on demand.
 func TestWebSearchChangesNothing(t *testing.T) {

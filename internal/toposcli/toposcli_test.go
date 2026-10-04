@@ -772,7 +772,7 @@ spec:
   tools: [read, web_search]
 `
 
-// TestWebSearchIsOfferedWhenNamed (spec 040): topos run offers web_search
+// TestWebSearchIsOfferedWhenNamed (spec 042): topos run offers web_search
 // to an agent that names it, searches TOPOS_SEARCH_URL with
 // TOPOS_SEARCH_KEY, and records the search's cost on its result; a key
 // without the URL exits 2; and without the URL the tool answers that

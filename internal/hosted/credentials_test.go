@@ -692,7 +692,7 @@ func TestASecretCellaCouldNotDeleteIsDeletedAtTheNextEnd(t *testing.T) {
 	}
 }
 
-// TestSearchCredential (spec 040): a hosted session whose agent names
+// TestSearchCredential (spec 042): a hosted session whose agent names
 // web_search is offered it with the installation's search service. On an
 // installation that mints session keys each search carries the session's
 // own key for the runner's workload, asked again at each search, and the

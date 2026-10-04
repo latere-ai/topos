@@ -610,7 +610,7 @@ func TestQuestionIsAKnownToolName(t *testing.T) {
 	}
 }
 
-// TestWebSearchIsAnOptInName (spec 040): an agent names web_search as a
+// TestWebSearchIsAnOptInName (spec 042): an agent names web_search as a
 // built-in, with outputLimit alone; an agent that names no tools holds
 // the eight and its digest is unchanged; and no client tool takes the
 // name.

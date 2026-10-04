@@ -101,7 +101,7 @@ type Result struct {
 	Meta  *Meta
 	Spill *session.Spill
 	// CostUSDMicro is what a service the call reached charged for it, a
-	// web search's (spec 040); nil for a call that cost nothing.
+	// web search's (spec 042); nil for a call that cost nothing.
 	CostUSDMicro *int64
 }
 
@@ -136,7 +136,7 @@ type Meta struct {
 	// closed.
 	session.QuestionMeta
 	// Refusal is the code a search service refused a web search with
-	// (spec 040), for a client; the model reads the service's sentence.
+	// (spec 042), for a client; the model reads the service's sentence.
 	Refusal string `json:"refusal,omitempty"`
 }
 

@@ -109,7 +109,7 @@ func Resolve(ctx context.Context, docs []byte, o Options) ([]Resolved, error) {
 	}
 	var secrets []Problem
 	// An agent names a built-in of the default set, or one an agent holds
-	// only by naming it (spec 040), by the same rules.
+	// only by naming it (spec 042), by the same rules.
 	builtins := append(Builtins(), tools.OptIn()...)
 	for _, ob := range objs {
 		d := &defaulter{doc: ob.doc, files: o.Files}

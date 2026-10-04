@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package search is the client of the search service web_search sends
-// its queries to (spec 040): one POST of a query and a result count to
+// its queries to (spec 042): one POST of a query and a result count to
 // the URL an installation configures, with the credential its function
 // answers at that search, and an answer of results a model can cite and
 // the cost the service charged. The contract names no provider: any
@@ -26,7 +26,7 @@ import (
 	"latere.ai/x/pkg/otel"
 )
 
-// The bounds of spec 040. The tool's schema and its description are
+// The bounds of spec 042. The tool's schema and its description are
 // rendered from them or held to them by a test.
 const (
 	// MaxQueryLength is the most characters a query holds.

@@ -301,7 +301,7 @@ A session's budget is its `budget.max_cost_usd_micro`
 ([[004-session-log]]), the lowest of the agent's, the session's and the
 authorizer's `limits`. The meter is the sum of `cost_usd_micro` over
 every `model.request` of every thread, and over every `tool.result` a
-service charged for, a web search's ([[040-web-search]]), whose cost a
+service charged for, a web search's ([[042-web-search]]), whose cost a
 redaction's tombstone keeps; a thread's own budget is
 carved from its parent's ([[013-threads-and-subagents]]). Before each
 request the harness checks `spent + estimate >= max`, where `estimate`

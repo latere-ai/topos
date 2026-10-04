@@ -13,7 +13,7 @@ import (
 	"latere.ai/x/topos/search"
 )
 
-// cannedSearch is the suite's search service (spec 040): every search
+// cannedSearch is the suite's search service (spec 042): every search
 // is answered with the task's results, at most the count asked, and
 // costs nothing, so a run's spend is its model requests'.
 type cannedSearch struct {

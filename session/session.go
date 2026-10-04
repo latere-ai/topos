@@ -275,7 +275,7 @@ func Marshal(v any) ([]byte, error) {
 
 // Spent is the budget meter of spec 007: the cost of every model.request
 // of every thread, and of every tool.result a service charged for (spec
-// 040), a redacted one included, since its tombstone keeps the cost.
+// 042), a redacted one included, since its tombstone keeps the cost.
 func Spent(log []Event) int64 {
 	var total int64
 	for _, e := range log {

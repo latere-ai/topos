@@ -189,7 +189,7 @@ that lost its lease loses its key at the next claim. The runner
 presents its key as the model connection's credential, asked again for
 every model request, and as the bearer of each `web_search` sent to
 `TOPOS_SEARCH_URL`, asked again for every search
-([[040-web-search]]). The key goes to those two addresses, both the
+([[042-web-search]]). The key goes to those two addresses, both the
 operator's settings, and to no base URL an agent names; the sandbox's
 key goes to neither. The sandbox's key is a Cella Secret named after
 the sandbox with `-lux`, mounted as `LUX_KEY` and scoped to Lux's host,

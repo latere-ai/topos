@@ -480,7 +480,7 @@ func CheckSequence(events []Event, from uint64) error {
 // model's name for the call and no content of the result, and without it
 // the call would read as one nothing answered, which the next runner
 // closes with a second result. A tool.result's tombstone also keeps its
-// cost, so no redaction rewrites the session's spend (spec 040).
+// cost, so no redaction rewrites the session's spend (spec 042).
 func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (Event, Event, error) {
 	red, err := NewEvent(TypeEventRedacted, EventRedacted{EventID: e.ID, By: by, Reason: reason}, now)
 	if err != nil {

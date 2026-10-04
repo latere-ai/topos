@@ -35,7 +35,7 @@ func found(want, said string) luxstub.Reply {
 	}}
 }
 
-// TestASessionSearchesWithItsOwnKey (spec 040): on an installation whose
+// TestASessionSearchesWithItsOwnKey (spec 042): on an installation whose
 // sessions act with their own credentials, an agent that names
 // web_search searches the installation's search service with the
 // session's own runner key, the one the session key routes registered by

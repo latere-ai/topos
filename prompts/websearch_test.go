@@ -17,7 +17,7 @@ import (
 
 // TestWebSearchDescriptionHoldsTheBounds: the web_search description
 // states each bound of a call with the value of its constant and holds
-// no other number, and it says what spec 040's table asks of it: search
+// no other number, and it says what spec 042's table asks of it: search
 // for an address the agent lacks, fetch one it has, cite the URLs, that
 // a search may be charged, and that a refusal is for the person.
 func TestWebSearchDescriptionHoldsTheBounds(t *testing.T) {

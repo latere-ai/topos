@@ -98,7 +98,7 @@ func sessionKey(ctx context.Context, model models.Model) (key string, keyed mode
 }
 
 // searcher is the search service of a session whose agent names
-// web_search (spec 040), nil when the installation configures none. It
+// web_search (spec 042), nil when the installation configures none. It
 // searches with the session's own model key for the runner's workload,
 // asked of the drive's token source at each search, so a renewed key
 // reaches the next one, when the installation mints one, and with

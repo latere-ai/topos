@@ -723,7 +723,7 @@ func (l *local) decider() (harness.Decider, error) {
 }
 
 // searcher is the search service of an agent that names web_search
-// (spec 040): TOPOS_SEARCH_URL with TOPOS_SEARCH_KEY, and nil when the URL
+// (spec 042): TOPOS_SEARCH_URL with TOPOS_SEARCH_KEY, and nil when the URL
 // is unset, which offers the tool with no service.
 func (l *local) searcher() (search.Searcher, error) {
 	u := strings.TrimSpace(l.getenv("TOPOS_SEARCH_URL"))
@@ -799,7 +799,7 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 			}
 		}
 		// web_search is a built-in an agent holds only by naming it (spec
-		// 040).
+		// 042).
 		if slices.Contains(held, tools.NameWebSearch) {
 			s, err := l.searcher()
 			if err != nil {
