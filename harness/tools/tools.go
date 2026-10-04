@@ -125,11 +125,10 @@ type Meta struct {
 	// Todos is the thread's todo list after a todo call. omitzero keeps
 	// an emptied list, [], apart from a meta that has no list.
 	Todos []Todo `json:"todos,omitzero"`
-	// ClosedBy and EventID are what closed a question call and the id of
-	// the event that did (spec 039), by the names of session.QuestionMeta,
-	// which a client reads to say why a question closed.
-	ClosedBy string `json:"closed_by,omitempty"`
-	EventID  string `json:"event_id,omitempty"`
+	// QuestionMeta is what closed a question call and the id of the event
+	// that did (spec 039), which a client reads to say why a question
+	// closed.
+	session.QuestionMeta
 }
 
 // Todo is one entry of a thread's list.
