@@ -141,6 +141,15 @@ service ([[037-decision-services]]), manual mode is how it learns, every
 answer a label, and auto mode is where its suggestions decide inside the
 rules.
 
+A person may change a session's mode after it started
+([[041-approval-mode-change]]): `PATCH /v1/sessions/{id}` with
+`{"policy": {"mode": ...}}`, decided by the authorizer, recorded as
+`session.policy_changed`, and applied from the next step. The agent's
+`spec.approvals.mode` is the mode a session starts in and not a bound:
+the lists, the thresholds, a subagent's own mode and the hard
+boundaries hold whatever the mode, and a call already waiting for a
+confirmation keeps waiting.
+
 A call on `always_confirm` is `ask` in `confirm` and `progressive` and
 `block` in `plan`. The thresholds come from the authorizer's `limits`
 or the agent's `spec.approvals.thresholds`, and a learned source may

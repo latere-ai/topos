@@ -55,6 +55,7 @@ session's credentials live no longer than the session.
 | files | the checkpoint named by the `session.status` at `at_seq` ([[034-checkpoints-and-rewind]]) is restored into the new session's working directory when its first machine opens, and recorded as that machine's `session.machine` with reason `restored` and the `checkpoint` |
 | budget | `spent_cost_usd_micro` is the sum over the copied `model.request` events; the budget itself is the new session's, and a copied `session.resumed` does not set it |
 | model | the model the old session stood on at `at_seq`, with the name it was asked by: the `new` of the last `session.model_changed` copied, or, with none copied, the model the old session started on, which is its agent's or the one its create's allow named ([[038-routed-models]]). It is the model the fork is checked by ([[007-models]]), and `session.fork` names it as `model` and `model_via` |
+| approval mode | the mode the fork's own create gives it, its agent's: the copied `session.policy_changed` events are the parent's history and move neither the fork's header nor its runner, since a fork's forker may not be the person who changed the parent's mode (added by [[041-approval-mode-change]]) |
 
 A turn boundary is where the session's own thread closed a turn and
 waits for its next input, the point at which the old session itself

@@ -194,7 +194,9 @@ its events and its blobs, the objects under `<prefix>/<session>/`
 included, in that order, so a crash midway leaves blobs without a
 session, which a reaper run removes once the session's id is an hour
 old, since a session being created puts its blobs before it appears,
-and never a session without its blobs. Redaction deletes only the blobs the redacted event
+and never a session without its blobs. What a delete leaves to the
+installation, a hosted session's sandbox, its Secrets and its checkpoint
+ref at the git host, is [[040-session-deletion]]'s. Redaction deletes only the blobs the redacted event
 alone named ([[004-session-log]]). An agent is archived, never
 deleted, while a session pins one of its versions.
 
