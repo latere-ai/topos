@@ -137,6 +137,11 @@ type Config struct {
 	// the connection's, runs the whole turn on the answer, and keeps it
 	// for the turns after. Nil runs every turn on the configured model.
 	Connect func(ctx context.Context, name string) (models.Model, models.Connection, models.Entry, error)
+
+	// ceiling is the stricter of the modes the agents above a thread name,
+	// empty for the session's own thread: a change of the session's mode
+	// moves a thread no further than its own agents allow (spec 041).
+	ceiling Mode
 }
 
 // Harness runs turns of one agent.
@@ -1148,6 +1153,9 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 	var uses []session.Event
 	remembered := rememberedPatterns(t.events())
 	kind := t.h.c.Machine.Info().Kind
+	// The step's calls are decided under the mode in force as the step
+	// plans them, a person's change included (spec 041).
+	mode := t.mode()
 	decider := t.h.decider()
 	// asked reports that the step already holds a question call that is
 	// asked; each later one is refused.
@@ -1171,6 +1179,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		}
 		props := tool.Properties()
 		policy := t.h.c.Policy
+		policy.Mode = mode
 		_, question := tool.(questionTool)
 		if question {
 			// The rules of a question the schema cannot state are checked
@@ -1193,10 +1202,6 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			// A decider that asks all the same is overruled: the call is
 			// itself put to a person, and is never held for a confirmation.
 			d = Decision{Verdict: VerdictAllow, Reason: "a question is itself put to a person"}
-		}
-		mode := t.h.c.Policy.Mode
-		if mode == "" {
-			mode = ModeConfirm
 		}
 		if d.Verdict.Shown() && !(d.ReviewProbability > 0) {
 			d.ReviewProbability = 1

@@ -101,6 +101,34 @@ func modeRank(m Mode) int {
 	return 1
 }
 
+// stricterCeiling is the stricter of two ceilings, where an empty one
+// bounds nothing.
+func stricterCeiling(a, b Mode) Mode {
+	if a == "" {
+		return b
+	}
+	return stricterMode(a, b)
+}
+
+// mode is the approval mode the turn decides its next calls under (spec
+// 041): the new mode of the latest session.policy_changed the turn has
+// read, held to the thread's ceiling, and the mode the turn started with
+// when the log holds none. A host with no operating-system sandbox
+// decides progressive as confirm (spec 012), whichever way the mode came.
+func (t *turn) mode() Mode {
+	mode := t.h.c.Policy.Mode
+	if m, ok := session.Mode(t.s, t.events()); ok {
+		mode = stricterCeiling(Mode(m), t.h.c.ceiling)
+	}
+	if mode == "" {
+		mode = ModeConfirm
+	}
+	if mode == ModeProgressive && t.h.c.Machine != nil && t.h.c.Machine.Info().Sandbox == machine.SandboxNone {
+		return ModeConfirm
+	}
+	return mode
+}
+
 // stricterMode is the stricter of two modes; an empty mode is confirm.
 func stricterMode(a, b Mode) Mode {
 	if a == "" {
@@ -538,7 +566,8 @@ func (t *turn) childConfig(sub Subagent) Config {
 	if sub.Effort != "" {
 		cfg.Effort = sub.Effort
 	}
-	cfg.Policy.Mode = stricterMode(t.h.c.Policy.Mode, sub.Mode)
+	cfg.Policy.Mode = stricterMode(t.mode(), sub.Mode)
+	cfg.ceiling = stricterCeiling(t.h.c.ceiling, sub.Mode)
 	cfg.Subagents = sub.Subagents
 	// The advisor belongs to the agent whose configuration names it, and
 	// only the session's own thread asks a person.

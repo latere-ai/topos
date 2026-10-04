@@ -108,10 +108,13 @@ func (f *fakeTool) ran() []string {
 // touch it.
 type fakeMachine struct {
 	machine.Machine
-	kind string
+	kind    string
+	sandbox string
 }
 
-func (m fakeMachine) Info() machine.Info { return machine.Info{Kind: m.kind, Workdir: "/work"} }
+func (m fakeMachine) Info() machine.Info {
+	return machine.Info{Kind: m.kind, Workdir: "/work", Sandbox: m.sandbox}
+}
 
 type env struct {
 	t     *testing.T
