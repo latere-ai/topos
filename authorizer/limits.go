@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"latere.ai/x/pkg/authz"
@@ -34,13 +35,14 @@ const (
 	OwnerOrganization = "organization"
 )
 
-// Limits are what an allow of session.create granted, or an allow of
-// agent.create or agent.update named, decoded from the answer's limits
-// object. The session takes the lowest of each figure
+// Limits are what an allow of session.create granted, an allow of
+// agent.create or agent.update named, or an allow of session.create,
+// session.update or session.send routed, decoded from the answer's
+// limits object. The session takes the lowest of each figure
 // against the agent's and the request's own (spec 005), and merges the
 // lists and thresholds with the agent's approvals so neither loosens the
 // other (spec 012). A member the answer left out is its zero here: no
-// list, no thresholds, no ceiling.
+// list, no thresholds, no ceiling, no model.
 type Limits struct {
 	// AlwaysConfirm and AlwaysAllow are the organization's permission
 	// patterns (spec 012).
@@ -64,6 +66,11 @@ type Limits struct {
 	// Owner is, on an allow of an agent's apply, the owner of an agent
 	// that gets its identity; nil is the applier as a person.
 	Owner *Owner
+	// Model is the name of the model the session runs in place of the
+	// one asked (spec 038): its agent's on an allow of session.create,
+	// the one the change names on session.update, and the one the
+	// session stands on at session.send. Empty runs the one asked.
+	Model string
 }
 
 // WireLimits is the limits object as an answer carries it, so an
@@ -79,11 +86,12 @@ type WireLimits struct {
 	Scope          []json.RawMessage `json:"scope,omitempty"`
 	Retention      string            `json:"retention,omitempty"`
 	Owner          *Owner            `json:"owner,omitempty"`
+	Model          string            `json:"model,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
 // the zero Limits, and a member toposd does not know is ignored. A known
-// member that does not decode is an error, and toposd refuses the create
+// member that does not decode is an error, and toposd refuses the request
 // as authorizer_unavailable: a ceiling it cannot read is one it cannot
 // apply.
 func DecodeLimits(d authz.Decision) (Limits, error) {
@@ -136,5 +144,11 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		}
 		l.Owner = o
 	}
+	// A name is sent to the gateway as it is written, so one with space
+	// around it names no model.
+	if strings.TrimSpace(w.Model) != w.Model {
+		return Limits{}, fmt.Errorf("limits.model is %q, not a model's name", w.Model)
+	}
+	l.Model = w.Model
 	return l, nil
 }

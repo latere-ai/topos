@@ -62,6 +62,45 @@ func TestScaffoldSpeaksTheVocabulary(t *testing.T) {
 	}
 }
 
+// TestARoutingScaffoldSpeaksTheVocabulary: an endpoint that names the
+// model on its allows of session.create, session.update and
+// session.send passes the suite the endpoint that names none passes,
+// and each answer decodes to the model as toposd reads it (spec 038).
+func TestARoutingScaffoldSpeaksTheVocabulary(t *testing.T) {
+	const routed = "vendor/model-a"
+	h := server.New(server.Options{Bearer: bearer, Vocabulary: authorizer.Vocabulary(), Decider: owners{model: routed}})
+	s := httptest.NewServer(h)
+	t.Cleanup(s.Close)
+	conformance.Run(t, s.URL, bearer,
+		conformance.WithVocabulary(authorizer.Vocabulary()),
+		conformance.WithSubjects(alice, bob))
+
+	c, err := authz.NewClient(authz.Options{URL: s.URL, Token: bearer, HTTP: &http.Client{}, Vocabulary: authorizer.Vocabulary()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for action, res := range map[string]authz.Resource{
+		authorizer.ActionSessionCreate: authz.NewResource(authorizer.KindSession, "", map[string]any{"initiator": alice, "model": "tier/quick"}),
+		authorizer.ActionSessionUpdate: authz.NewResource(authorizer.KindSession, "ses_x", map[string]any{"owner": alice, "model": "tier/quick", "current_model": "vendor/model-b"}),
+		authorizer.ActionSessionSend: authz.NewResource(authorizer.KindSession, "ses_x", map[string]any{"owner": alice, "sender": alice,
+			"model": "vendor/model-b", "model_via": "tier/quick", "idle_seconds": 420}),
+	} {
+		d, err := c.Authorize(t.Context(), authz.Request{Subject: alice, Issuer: issuer, Sub: "alice", Claims: map[string]any{}, Action: action, Resource: res})
+		if err != nil || !d.Allow {
+			t.Fatalf("%s: %+v, %v", action, d, err)
+		}
+		if l, err := authorizer.DecodeLimits(d); err != nil || l.Model != routed {
+			t.Fatalf("the allow of %s routes to %+v, %v", action, l, err)
+		}
+	}
+	// A question the model is not read at is answered without one.
+	d, err := c.Authorize(t.Context(), authz.Request{Subject: alice, Issuer: issuer, Sub: "alice", Claims: map[string]any{},
+		Action: authorizer.ActionSessionEnd, Resource: authz.NewResource(authorizer.KindSession, "ses_x", map[string]any{"owner": alice})})
+	if err != nil || !d.Allow || len(d.Limits) != 0 {
+		t.Fatalf("session.end: %+v, %v", d, err)
+	}
+}
+
 // TestClientRefusesAnActionOutsideTheTable: a typo costs no round trip
 // and is named as Topos's own mistake.
 func TestClientRefusesAnActionOutsideTheTable(t *testing.T) {
@@ -78,10 +117,11 @@ func TestClientRefusesAnActionOutsideTheTable(t *testing.T) {
 }
 
 // owners is the owner frame over the owner the resource carries, with a
-// budget ceiling on every allow of session.create.
-type owners struct{}
+// budget ceiling on every allow of session.create. One that holds a
+// model names it on the three allows a session's model is read at.
+type owners struct{ model string }
 
-func (owners) Decide(_ context.Context, req authz.Request) (authz.Decision, error) {
+func (o owners) Decide(_ context.Context, req authz.Request) (authz.Decision, error) {
 	if authz.IsList(req.Action) {
 		return authz.Decision{Allow: true, Filter: &authz.Filter{Owners: []string{req.Subject}}}, nil
 	}
@@ -90,13 +130,24 @@ func (owners) Decide(_ context.Context, req authz.Request) (authz.Decision, erro
 		obj = authz.Object{Exists: true, Owner: owner}
 	}
 	d := authz.Policy{Create: authorizer.Create(authorizer.Kind(req.Action))}.Decide(req, obj)
-	if d.Allow && req.Action == authorizer.ActionSessionCreate {
-		budget := int64(5_000_000)
-		raw, err := json.Marshal(authorizer.WireLimits{BudgetUSDMicro: &budget})
-		if err != nil {
-			return authz.Decision{}, err
-		}
-		d.Limits = raw
+	if !d.Allow {
+		return d, nil
 	}
+	var limits authorizer.WireLimits
+	switch req.Action {
+	case authorizer.ActionSessionCreate:
+		limits.BudgetUSDMicro, limits.Model = new(int64(5_000_000)), o.model
+	case authorizer.ActionSessionUpdate, authorizer.ActionSessionSend:
+		if limits.Model = o.model; o.model == "" {
+			return d, nil
+		}
+	default:
+		return d, nil
+	}
+	raw, err := json.Marshal(limits)
+	if err != nil {
+		return authz.Decision{}, err
+	}
+	d.Limits = raw
 	return d, nil
 }

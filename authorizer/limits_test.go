@@ -34,17 +34,18 @@ func TestDecodeLimitsReadsEveryMember(t *testing.T) {
 		Scope:          []json.RawMessage{json.RawMessage(`{"action":"repo.push","resource":"*"}`)},
 		Retention:      "720h",
 		Owner:          &Owner{Type: OwnerOrganization, ID: "org-1"},
+		Model:          "vendor/model-a",
 	}
 	l, err := DecodeLimits(decision(t, w))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(l.AlwaysConfirm, w.AlwaysConfirm) || !slices.Equal(l.AlwaysAllow, w.AlwaysAllow) || *l.Thresholds != *w.Thresholds ||
-		*l.BudgetUSDMicro != budget || l.TurnTimeout != 30*time.Minute || l.MaxAge != 72*time.Hour || l.Retention != 720*time.Hour || len(l.Scope) != 1 || *l.Owner != *w.Owner {
+		*l.BudgetUSDMicro != budget || l.TurnTimeout != 30*time.Minute || l.MaxAge != 72*time.Hour || l.Retention != 720*time.Hour || len(l.Scope) != 1 || *l.Owner != *w.Owner || l.Model != w.Model {
 		t.Fatalf("DecodeLimits = %+v", l)
 	}
 	none, err := DecodeLimits(authz.Decision{Allow: true})
-	if err != nil || none.BudgetUSDMicro != nil || none.Thresholds != nil || none.TurnTimeout != 0 {
+	if err != nil || none.BudgetUSDMicro != nil || none.Thresholds != nil || none.TurnTimeout != 0 || none.Model != "" {
 		t.Fatalf("no limits decoded to %+v, %v", none, err)
 	}
 	zero := int64(0)
@@ -69,6 +70,9 @@ func TestDecodeLimitsRefusesWhatItCannotApply(t *testing.T) {
 		"wrong type":        map[string]any{"turn_timeout": 30},
 		"owner of no type":  WireLimits{Owner: &Owner{Type: "team", ID: "t"}},
 		"owner with no id":  WireLimits{Owner: &Owner{Type: OwnerUser}},
+		"model with space":  WireLimits{Model: " vendor/model-a"},
+		"model of no name":  WireLimits{Model: " "},
+		"model not a name":  map[string]any{"model": map[string]any{"name": "vendor/model-a"}},
 	} {
 		if _, err := DecodeLimits(decision(t, w)); err == nil {
 			t.Errorf("%s: decoded", name)
@@ -76,5 +80,21 @@ func TestDecodeLimitsRefusesWhatItCannotApply(t *testing.T) {
 	}
 	if _, err := DecodeLimits(authz.Decision{Allow: true, Limits: json.RawMessage(`[`)}); err == nil || !strings.Contains(err.Error(), "limits") {
 		t.Errorf("a malformed object: %v", err)
+	}
+}
+
+// TestTheModelIsOneMemberOnTheWire: an allow that routes carries the
+// model's name as limits.model, a string, and an allow that routes
+// nothing carries no such member.
+func TestTheModelIsOneMemberOnTheWire(t *testing.T) {
+	raw, err := json.Marshal(WireLimits{Model: "vendor/model-a"})
+	if err != nil || string(raw) != `{"model":"vendor/model-a"}` {
+		t.Fatalf("the limits of a routed allow are %s, %v", raw, err)
+	}
+	if raw, err := json.Marshal(WireLimits{}); err != nil || string(raw) != `{}` {
+		t.Fatalf("the limits of an allow that routes nothing are %s, %v", raw, err)
+	}
+	if l, err := DecodeLimits(authz.Decision{Allow: true, Limits: json.RawMessage(`{"model":""}`)}); err != nil || l.Model != "" {
+		t.Fatalf("an empty model routes nothing: %+v, %v", l, err)
 	}
 }
