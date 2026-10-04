@@ -34,12 +34,13 @@ type modelChange struct {
 
 // updateSession is PATCH /sessions/{id}: the model the session's next
 // turn runs and the reasoning effort it runs at (spec 015). A caller who
-// may not read the session hears not_found first; a model the body names
-// is checked by the rule a session's create checks its agent's by before
-// session.update is asked, so the authorizer decides on a model that
-// exists and may widen the session's model key to it. The question
-// carries what the body changes: model when it names one, and effort,
-// resolved to what the next turn runs, when it names one. An allowed
+// may not read the session hears not_found first. The question carries
+// what the body changes, model when it names one, and effort, resolved
+// to what the next turn runs, when it names one, beside the model the
+// session stands on. The allow may answer a model the body names with
+// the one to run in its place (spec 038), so the model is checked after
+// the question, by the rule a session's create checks its own by: the
+// one the allow names, or the one asked when it names none. An allowed
 // change appends session.model_changed, which the header takes; a change
 // to the model and the effort the session runs appends nothing.
 func (c *call) updateSession() error {
@@ -64,41 +65,39 @@ func (c *call) updateSession() error {
 	if s.Status == session.StatusEnded {
 		return refuse(CodeConflict, "the session ended %s", s.StopReason)
 	}
-	v, err := c.s.o.Objects.Version(ctx, s.Agent.ID, s.Agent.Version)
+	cfg, err := c.s.agentConfig(ctx, s)
 	if err != nil {
 		return err
 	}
-	r, err := manifest.ReadBundle(v.Bundle)
-	if err != nil {
-		return err
-	}
-	cfg, err := r.AgentConfig(nil)
-	if err != nil {
-		return err
-	}
-	// What the session runs now: its agent's model and effort until a
-	// first change. A header written before changes carried an effort
-	// names none, and its turns run at the agent's.
-	old := session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
-	if s.Model != nil {
-		old = session.ModelRef{Name: s.Model.Name, Effort: cmp.Or(s.Model.Effort, cfg.Effort)}
-	}
+	old := standing(s, cfg)
 	next := old
-	fields := map[string]any{"session_id": s.ID}
+	fields := map[string]any{"session_id": s.ID, "current_model": old.Name}
+	if old.Via != "" {
+		fields["current_model_via"] = old.Via
+	}
 	if b.Model.Name != nil {
-		next.Name = *b.Model.Name
-		m, overlay := cfg.SessionModel(next.Name)
-		if err := c.s.runnable(ctx, m, overlay); err != nil {
-			return err
-		}
-		fields["model"] = next.Name
+		fields["model"] = *b.Model.Name
 	}
 	if b.Model.Effort != nil {
 		next.Effort = cmp.Or(*b.Model.Effort, cfg.Effort)
 		fields["effort"] = next.Effort
 	}
-	if _, err := c.ask(ctx, authorizer.ActionSessionUpdate, sessionResource(s, fields)); err != nil {
+	limits, err := c.askLimits(ctx, authorizer.ActionSessionUpdate, sessionResource(s, fields))
+	if err != nil {
 		return err
+	}
+	// A change that names a model runs the one the allow names in its
+	// place and keeps the name asked beside it. An effort change alone
+	// names no model, and an allow that names one for it moves nothing.
+	if asked := b.Model.Name; asked != nil {
+		next.Name, next.Via = cmp.Or(limits.Model, *asked), ""
+		if next.Name != *asked {
+			next.Via = *asked
+		}
+		m, overlay := cfg.SessionModel(next.Name)
+		if err := c.s.runnable(ctx, m, overlay); err != nil {
+			return err
+		}
 	}
 	if next == old {
 		return c.replySession(http.StatusOK, s)
@@ -115,6 +114,30 @@ func (c *call) updateSession() error {
 		return err
 	}
 	return c.replySession(http.StatusOK, s)
+}
+
+// agentConfig is the configuration of the agent version sess runs.
+func (s *Server) agentConfig(ctx context.Context, sess session.Session) (manifest.AgentConfig, error) {
+	v, err := s.o.Objects.Version(ctx, sess.Agent.ID, sess.Agent.Version)
+	if err != nil {
+		return manifest.AgentConfig{}, err
+	}
+	r, err := manifest.ReadBundle(v.Bundle)
+	if err != nil {
+		return manifest.AgentConfig{}, err
+	}
+	return r.AgentConfig(nil)
+}
+
+// standing is the model s runs as it stands, with the name it was asked
+// by and the effort its next turn runs at: its header's, or its agent's
+// until a first change. A header written before changes carried an
+// effort names none, and its turns run at the agent's.
+func standing(s session.Session, cfg manifest.AgentConfig) session.ModelRef {
+	if s.Model == nil {
+		return session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
+	}
+	return session.ModelRef{Name: s.Model.Name, Via: s.Model.Via, Effort: cmp.Or(s.Model.Effort, cfg.Effort)}
 }
 
 // runnable refuses a session's model the installation does not run

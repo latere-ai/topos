@@ -104,7 +104,8 @@ type Options struct {
 	Identities Identities
 	// Runnable answers whether the installation runs a session's model,
 	// by the rule its runner connects it with (spec 007), at the create
-	// of a session and at a switch of its model (spec 015): nil, a
+	// of a session, at a switch of its model (spec 015), and at a send
+	// whose allow moves the session to another (spec 038): nil, a
 	// models.Coded model_unknown for a model no source gives a window and
 	// an output limit, or another error for a model whose figures could
 	// not be read. hosted.Runnable is the one toposd runs; nil answers

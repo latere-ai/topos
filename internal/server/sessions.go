@@ -5,6 +5,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -257,20 +258,17 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if err != nil {
 		return session.Session{}, err
 	}
-	// The session runs its agent's model, checked by the rule a switch of
-	// its model is checked by (spec 007).
-	if err := s.runnable(ctx, cfg.Model, cfg.Overlay); err != nil {
-		return session.Session{}, err
-	}
 	// The session's id is minted before the question, so the authorizer
 	// records the session every later token names, with the agent's
-	// identity those tokens carry as their subject (spec 018).
+	// identity those tokens carry as their subject (spec 018). The
+	// question names the agent's model, which the allow may answer with
+	// the model to run in its place (spec 038).
 	id := session.NewID(session.PrefixSession)
 	fields := map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": ownerOf(a).field(),
 		"runner": session.RunnerHosted, "machine": m.Kind, "initiator": q.caller.Subject,
 		"permissions": permissionsField(r.Agent.Spec.Permissions, agentModels(r)), "session_id": id,
-		"repositories": repositoriesField(resources),
+		"repositories": repositoriesField(resources), "model": cfg.Model.Name,
 	}
 	// A trigger's session names the trigger and the firing that start it
 	// (spec 022).
@@ -311,6 +309,14 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		}
 		return session.Session{}, s.o.Guard.Disclose(ctx, err, auth.Envelope(q.caller, authorizer.ActionAgentRead, agentResource(a), q.r))
 	}
+	// The session runs the model the allow names, or its agent's when the
+	// allow names none, checked by the rule a switch of its model is
+	// checked by (spec 007). The check follows the question, since the
+	// agent's name may be one only the authorizer resolves.
+	started, overlay := cfg.SessionModel(limits.Model)
+	if err := s.runnable(ctx, started, overlay); err != nil {
+		return session.Session{}, err
+	}
 	if a.ArchivedAt != nil {
 		return session.Session{}, refuse(CodeConflict, "the agent %s is archived", a.Name)
 	}
@@ -322,6 +328,13 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess := session.New(ref, session.Sender{Subject: q.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
 	sess.ID = id
 	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
+	// A session the authorizer routed starts on the model it named and
+	// keeps the agent's name beside it, which a client reads as the choice
+	// that was asked. A fork's copied model changes follow it in the log
+	// and replace it, as they replace the agent's.
+	if started.Name != cfg.Model.Name {
+		sess.Model = &session.ModelRef{Name: started.Name, Via: cfg.Model.Name, Effort: cfg.Effort}
+	}
 	// The session records its approval policy merged from the agent's and
 	// the organization's limits, so every runner applies the same one.
 	var thresholds *harness.Thresholds
@@ -734,25 +747,133 @@ var errEnded = errors.New("the session ended")
 // append appends one event after the session's last, following the log
 // when another writer appended first.
 func (s *Server) append(ctx context.Context, id string, ev session.Event) (session.Event, error) {
+	batch := []session.Event{ev}
+	if err := s.appendBatch(ctx, id, batch); err != nil {
+		return session.Event{}, err
+	}
+	return batch[0], nil
+}
+
+// appendBatch appends batch after the session's last event as one
+// append, so its events land together or not at all, and stamps it in
+// place. It follows the log when another writer appended first.
+func (s *Server) appendBatch(ctx context.Context, id string, batch []session.Event) error {
 	var err error
 	for range appendRetries {
 		var sess session.Session
 		if sess, err = s.o.Sessions.Get(ctx, id); err != nil {
-			return session.Event{}, err
+			return err
 		}
 		if sess.Status == session.StatusEnded {
 			e := refuse(CodeConflict, "the session ended %s", sess.StopReason)
 			e.err = errEnded
-			return session.Event{}, e
+			return e
 		}
-		batch := []session.Event{ev}
 		session.Stamp(id, sess.LastSeq, batch)
 		if _, err = s.o.Sessions.Append(ctx, id, sess.LastSeq, batch); err == nil {
-			return batch[0], nil
+			return nil
 		}
 		if !errors.Is(err, session.ErrSequenceConflict) {
-			return session.Event{}, err
+			return err
 		}
 	}
-	return session.Event{}, err
+	return err
+}
+
+// requestWindow is how many of a log's last events sendAs reads first to
+// find the session's last model request, which between turns is among
+// the last few; it doubles the window until it finds one or the log
+// begins.
+const requestWindow = 64
+
+// lastRequest is when the session's last model.request ended, the time
+// its event was appended, on whichever thread it ran; ok is false for a
+// session that has made none.
+func (s *Server) lastRequest(ctx context.Context, sess session.Session) (time.Time, bool, error) {
+	for end, window := sess.LastSeq, uint64(requestWindow); end > 0; window *= 2 {
+		from := uint64(1)
+		if end > window {
+			from = end - window + 1
+		}
+		evs, err := s.o.Sessions.Events(ctx, sess.ID, from, int(end-from+1))
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		for _, e := range slices.Backward(evs) {
+			if e.Type == session.TypeModelRequest {
+				return e.Time, true, nil
+			}
+		}
+		end = from - 1
+	}
+	return time.Time{}, false, nil
+}
+
+// sendAs reads a session and asks q's caller session.send about it: the
+// one question the send route and a trigger's firing send by (spec 022).
+// Beside fields the question carries the model the session stands on,
+// the name it was asked by, and the whole seconds since its last model
+// request ended, absent before its first, which is what an authorizer
+// that keeps a session on one model while a provider's cache is warm
+// decides from (spec 038). change is the switch the allow made, nil when
+// it names no model or the one the session stands on: the model it
+// names, checked by the rule a person's switch is checked by, with the
+// name asked and the effort kept.
+func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[string]any) (session.Session, *session.ModelChanged, error) {
+	sess, err := s.o.Sessions.Get(ctx, id)
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	cfg, err := s.agentConfig(ctx, sess)
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	old := standing(sess, cfg)
+	all := maps.Clone(fields)
+	all["model"] = old.Name
+	if old.Via != "" {
+		all["model_via"] = old.Via
+	}
+	at, made, err := s.lastRequest(ctx, sess)
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	if made {
+		all["idle_seconds"] = max(int(s.o.Now().Sub(at)/time.Second), 0)
+	}
+	limits, err := q.limits(ctx, authorizer.ActionSessionSend, sessionResource(sess, all))
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	if limits.Model == "" || limits.Model == old.Name {
+		return sess, nil, nil
+	}
+	m, overlay := cfg.SessionModel(limits.Model)
+	if err := s.runnable(ctx, m, overlay); err != nil {
+		return session.Session{}, nil, err
+	}
+	next := session.ModelRef{Name: limits.Model, Via: cmp.Or(old.Via, old.Name), Effort: old.Effort}
+	if next.Via == next.Name {
+		next.Via = ""
+	}
+	by := session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}
+	return sess, &session.ModelChanged{By: by, Old: old, New: next}, nil
+}
+
+// appendSent appends a sent event, after the model change its allow made
+// when it made one, as one batch: the turn the event starts runs on the
+// new model, and a send that is refused changes nothing.
+func (s *Server) appendSent(ctx context.Context, id string, change *session.ModelChanged, ev session.Event) (session.Event, error) {
+	batch := []session.Event{ev}
+	if change != nil {
+		changed, err := session.NewEvent(session.TypeModelChanged, *change, ev.Time)
+		if err != nil {
+			return session.Event{}, err
+		}
+		batch = []session.Event{changed, ev}
+	}
+	if err := s.appendBatch(ctx, id, batch); err != nil {
+		return session.Event{}, err
+	}
+	return batch[len(batch)-1], nil
 }

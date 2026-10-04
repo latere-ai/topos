@@ -418,7 +418,7 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 // route sends one, asked as session.send with the trigger as sender.
 func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	from := sender(sd.Trigger)
-	sess, err := a.s.sessionAs(ctx, a.s.owner(sd.Trigger), sd.SessionID, authorizer.ActionSessionSend,
+	sess, change, err := a.s.sendAs(ctx, a.s.owner(sd.Trigger), sd.SessionID,
 		map[string]any{"sender": from.Subject, "event_type": string(session.TypeUserMessage)})
 	if err != nil {
 		return err
@@ -431,7 +431,7 @@ func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	if err != nil {
 		return err
 	}
-	if _, err := a.s.append(ctx, sess.ID, ev); err != nil {
+	if _, err := a.s.appendSent(ctx, sess.ID, change, ev); err != nil {
 		if errors.Is(err, errEnded) {
 			return triggers.ErrEnded
 		}

@@ -159,7 +159,17 @@ func (c *call) sendEvent() error {
 	default:
 		return refuse(CodeInvalidRequest, "type %q is not one a person sends: user.message, user.interrupt, user.tool_confirmation or user.tool_result", b.Type)
 	}
-	s, err := c.session(action, map[string]any{"sender": sender.Subject, "event_type": string(b.Type)})
+	// A send's allow may move the session to another model before the
+	// turn the event starts (spec 038); an interrupt starts none.
+	fields := map[string]any{"sender": sender.Subject, "event_type": string(b.Type)}
+	var s session.Session
+	var change *session.ModelChanged
+	var err error
+	if action == authorizer.ActionSessionSend {
+		s, change, err = c.s.sendAs(c.r.Context(), c.asker(), c.r.PathValue("id"), fields)
+	} else {
+		s, err = c.session(action, fields)
+	}
 	if err != nil {
 		return err
 	}
@@ -184,7 +194,7 @@ func (c *call) sendEvent() error {
 		return err
 	}
 	ev.ID = id
-	appended, err := c.s.append(c.r.Context(), s.ID, ev)
+	appended, err := c.s.appendSent(c.r.Context(), s.ID, change, ev)
 	if err != nil {
 		return err
 	}
