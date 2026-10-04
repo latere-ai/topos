@@ -10,6 +10,45 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- `PATCH /v1/sessions/{id}` takes `{"policy": {"mode": "plan" | "confirm" |
+  "progressive"}}`, alone or beside `model`, so a person can change how a
+  session asks after it started. The authorizer is asked `session.update`
+  with `approval_mode`, `current_approval_mode` and `agent_approval_mode`;
+  an allowed change appends the new event `session.policy_changed`
+  `{by, old: {mode}, new: {mode}}`, in one batch with a model change, and
+  the Session's `policy.mode` reads the new mode. The mode holds from the
+  next step of the turn that runs. A call already waiting for a
+  confirmation keeps waiting, whichever way the mode moved. A thread
+  never runs looser than the modes its own agents name, a host with no
+  operating-system sandbox runs a switch to `progressive` as `confirm`,
+  and a fork starts in its agent's mode. The agent's
+  `spec.approvals.mode` is the mode a session starts in. It does not
+  limit the modes a person can switch to: the lists, the thresholds and
+  the hard boundaries apply in every mode.
+
+### Changed
+
+- `DELETE /v1/sessions/{id}` asks `session.read` before `session.delete`,
+  and refuses a running session as `conflict` before it asks
+  `session.delete`. Before, an authorizer that acts on an allowed delete,
+  as one that revokes the session's credentials does, acted for a delete
+  the store then refused, and the running session was left cut off.
+  Interrupt a running session, then delete it once it is idle. A delete
+  removes the session's rows at once and its outside blob bodies at
+  once or within the reaper's next pass. It leaves the hosted session's
+  sandbox, its Secrets and a checkpoint ref at the git host to the
+  installation, which the API reference now says.
+
+### Upgrading
+
+- Roll this release after the installation's authorizer answers
+  `approval_mode` on `session.update`. An authorizer that requires a model
+  or an effort refuses a change of the mode alone, which is safe, and one
+  that reads only the model would allow a mode changed beside a model on
+  the model's rules alone.
+
 ## v0.13.0 - 2026-10-04
 
 ### Added
