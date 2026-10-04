@@ -557,3 +557,47 @@ func TestTheRunnerAppendsThroughItsLeasesFence(t *testing.T) {
 		t.Fatalf("the refused drive wrote: %d, then %d, %v", before.LastSeq, after.LastSeq, err)
 	}
 }
+
+// TestAnInterruptOnAnOpenQuestionIsClaimed: an interrupt appended to a
+// session idle on a question is work, since it closed the question and
+// its result is owed, so the queue claims the session even after it
+// found it quiet; an interrupt on a session idle at the end of its turn
+// is not, and an answer to the question is.
+func TestAnInterruptOnAnOpenQuestionIsClaimed(t *testing.T) {
+	st := session.NewMemoryStore()
+	ask := func(s session.Session) {
+		t.Helper()
+		appendTo(t, st, s.ID, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning})
+		appendTo(t, st, s.ID, session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_q", Name: session.ToolQuestion, Verdict: "allow",
+			Input: []byte(`{"questions":[{"header":"Storage","question":"Which?","options":[{"label":"A","description":"a"},{"label":"B","description":"b"}]}]}`)})
+		appendTo(t, st, s.ID, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopQuestion})
+	}
+	asked := hosted(t, st, "Go.")
+	ask(asked)
+	answered := hosted(t, st, "Go.")
+	ask(answered)
+	ended := hosted(t, st, "Go.")
+	appendTo(t, st, ended.ID, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopEndTurn})
+
+	q := NewQueue(st, time.Hour)
+	a := session.Holder{Runner: "run_a"}
+	if claims, err := q.Claim(t.Context(), a, 10, 0); err != nil || len(claims) != 0 {
+		t.Fatalf("an open question is work: %v, %v", ids(claims), err)
+	}
+	interrupt := session.UserInterrupt{Sender: asked.Initiator}
+	appendTo(t, st, asked.ID, session.TypeUserInterrupt, interrupt)
+	appendTo(t, st, ended.ID, session.TypeUserInterrupt, interrupt)
+	appendTo(t, st, answered.ID, session.TypeUserAnswer, session.UserAnswer{Sender: answered.Initiator, ToolUseID: "toolu_q", Answers: []session.AnswerEntry{{Selected: []string{"B"}}}})
+	claims, err := q.Claim(t.Context(), a, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{asked.ID, answered.ID}
+	slices.Sort(want)
+	if got := ids(claims); !slices.Equal(got, want) {
+		t.Fatalf("claimed %v, want the dismissed and the answered question's sessions %v", got, want)
+	}
+	if err := release(claims); err != nil {
+		t.Fatal(err)
+	}
+}
