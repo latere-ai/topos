@@ -131,6 +131,12 @@ type Config struct {
 	// its agent's token (spec 018), and where a session that works in a
 	// repository there keeps its checkpoints (spec 035).
 	OrigoURL string
+	// AppsURL is the app host's root, which the publish tool reaches for
+	// a session whose agent names it (spec 043); empty offers no session
+	// the tool. AppsAudience is the audience of the session token the
+	// runner presents there; empty is the tool's default.
+	AppsURL      string
+	AppsAudience string
 	// OrigoTokenFile is the file holding the git host's credential of an
 	// installation without an identity provider, which each sandbox's git
 	// sends to OrigoURL in the place of an agent's token; read at each
@@ -390,6 +396,16 @@ func (c *Config) readRunner(getenv Getenv) []string {
 		}
 	} else if c.SearchKey != "" {
 		problems = append(problems, "TOPOS_SEARCH_KEY needs TOPOS_SEARCH_URL, the search service it is sent to")
+	}
+	c.AppsURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_APPS_URL")), "/")
+	c.AppsAudience = strings.TrimSpace(getenv("TOPOS_APPS_AUDIENCE"))
+	if c.AppsURL != "" {
+		if err := checkURL(c.AppsURL); err != nil {
+			problems = append(problems, "TOPOS_APPS_URL "+err.Error())
+		}
+		if c.OrigoURL == "" {
+			problems = append(problems, "TOPOS_APPS_URL needs TOPOS_ORIGO_URL, the git host an app's repository is on")
+		}
 	}
 	return problems
 }

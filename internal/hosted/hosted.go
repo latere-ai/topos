@@ -32,6 +32,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/internal/publish"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -79,7 +80,11 @@ type Options struct {
 	// (spec 047). An empty URL offers the tool with no service.
 	SearchURL string
 	SearchKey string
-	Clock     func() time.Time
+	// Publish is the installation's app host, which the publish tool
+	// reaches for a session whose agent names it (spec 043); unconfigured,
+	// no session is offered the tool.
+	Publish publish.Options
+	Clock   func() time.Time
 }
 
 // Harness is the runner's Harness function for hosted sessions.
@@ -177,7 +182,16 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	// The question tool is the harness's own, offered when the agent names
 	// it (spec 039).
 	cfg.Question = slices.Contains(ac.Tools, harness.ToolQuestion)
-	if cmp.Or(s.Machine.Kind, ac.Machine.Kind) == session.MachineHost {
+	onHost := cmp.Or(s.Machine.Kind, ac.Machine.Kind) == session.MachineHost
+	// The publish tool is offered to a session in a sandbox whose agent
+	// names it, on an installation with an app host (spec 043); it reaches
+	// the host with the drive's tokens.
+	if slices.Contains(ac.Tools, publish.Name) && b.o.Publish.Configured() && !onHost {
+		if err := reg.Add(publish.New(b.o.Publish, s, runner.TokensFrom(ctx))); err != nil {
+			return harness.Config{}, err
+		}
+	}
+	if onHost {
 		m, err := b.o.Machines(ctx, s, ac.Machine)
 		if err != nil {
 			return harness.Config{}, machineSetup(err)

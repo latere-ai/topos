@@ -390,6 +390,37 @@ func TestTheCredentialVariables(t *testing.T) {
 	}
 }
 
+// TestTheAppHost: the app host's root and audience are read in serve and
+// in the runner role alike; the root needs the git host an app's
+// repository is on, and is an http URL (spec 043).
+func TestTheAppHost(t *testing.T) {
+	base := map[string]string{"TOPOS_CELLA_URL": "https://cella.example", "TOPOS_CELLA_TOKEN_FILE": "/run/cella/token", "TOPOS_ORIGO_URL": "https://origo.example"}
+	vars := maps.Clone(base)
+	maps.Copy(vars, map[string]string{"TOPOS_APPS_URL": " https://api.example/v1/apps/ ", "TOPOS_APPS_AUDIENCE": " apps-host "})
+	c, err := Load(RoleServe, serve(vars))
+	if err != nil || c.AppsURL != "https://api.example/v1/apps" || c.AppsAudience != "apps-host" {
+		t.Fatalf("config %+v %v", c, err)
+	}
+	if c, err := Load(RoleServe, serve(base)); err != nil || c.AppsURL != "" || c.AppsAudience != "" {
+		t.Fatalf("no app host: %+v %v", c, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+		"TOPOS_CELLA_URL": "https://cella.example", "TOPOS_ORIGO_URL": "https://origo.example", "TOPOS_APPS_URL": "https://api.example/v1/apps"}))
+	if err != nil || r.AppsURL != "https://api.example/v1/apps" {
+		t.Fatalf("a runner role's app host: %+v %v", r, err)
+	}
+	for name, mut := range map[string]map[string]string{
+		"not a url":        {"TOPOS_APPS_URL": "apps"},
+		"without git host": {"TOPOS_APPS_URL": "https://api.example/v1/apps", "TOPOS_ORIGO_URL": ""},
+	} {
+		v := maps.Clone(base)
+		maps.Copy(v, mut)
+		if _, err := Load(RoleServe, serve(v)); err == nil || !strings.Contains(err.Error(), "TOPOS_APPS_URL") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 // TestTheOrigoTokenFile: an installation without an identity provider
 // names the file of its git host's credential, read in serve and in the
 // runner role alike; the file needs the git host it is sent to, and an

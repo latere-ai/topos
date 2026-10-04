@@ -37,6 +37,7 @@ import (
 	"latere.ai/x/topos/internal/credentials"
 	"latere.ai/x/topos/internal/hosted"
 	idp "latere.ai/x/topos/internal/identity"
+	"latere.ai/x/topos/internal/publish"
 	"latere.ai/x/topos/internal/runnerapi"
 	"latere.ai/x/topos/internal/runnerrole"
 	"latere.ai/x/topos/internal/server"
@@ -446,7 +447,10 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		}
 	}
 	machines := hosted.ByKind(cella, onHost)
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey})
+	// The app host a session publishes to (spec 043), reached by the
+	// runner with the session's own token.
+	apps := publish.Options{URL: cfg.AppsURL, Audience: cfg.AppsAudience, GitURL: cfg.OrigoURL}
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps})
 	if err != nil {
 		return nil, err
 	}
