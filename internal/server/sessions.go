@@ -91,8 +91,11 @@ type createBody struct {
 	Limits    *createLimits     `json:"limits,omitempty"`
 	Capture   *session.Capture  `json:"capture,omitempty"`
 	EndOnIdle bool              `json:"end_on_idle,omitempty"`
-	Machine   json.RawMessage   `json:"machine,omitempty"`
-	Resources json.RawMessage   `json:"resources,omitempty"`
+	// Attended declares that a person answers the session's questions,
+	// through a client that shows them (spec 039).
+	Attended  bool            `json:"attended,omitempty"`
+	Machine   json.RawMessage `json:"machine,omitempty"`
+	Resources json.RawMessage `json:"resources,omitempty"`
 }
 
 // repositories reads a create's resources and checks them.
@@ -163,7 +166,7 @@ func (c *call) createSession() error {
 	if err != nil {
 		return err
 	}
-	in := creation{agent: b.Agent, title: b.Title, message: b.Message, metadata: b.Metadata, endOnIdle: b.EndOnIdle, resources: resources,
+	in := creation{agent: b.Agent, title: b.Title, message: b.Message, metadata: b.Metadata, endOnIdle: b.EndOnIdle, attended: b.Attended, resources: resources,
 		capture: b.Capture, sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}}
 	if b.Budget != nil {
 		in.budget = b.Budget.MaxCostUSDMicro
@@ -187,6 +190,9 @@ type creation struct {
 	message   string
 	metadata  map[string]string
 	endOnIdle bool
+	// attended is the creator's declaration that a person answers the
+	// session's questions; a trigger's firing never makes one.
+	attended bool
 	// resources are checked repositories; none takes the agent's.
 	resources []session.Resource
 	// budget is the requested spend ceiling, nil for none.
@@ -355,6 +361,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess := session.New(ref, session.Sender{Subject: q.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
 	sess.ID = id
 	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
+	sess.Attended = in.attended
 	// The header holds the model the session starts on from its create;
 	// a fork's copied model changes name it again as the log is copied.
 	sess.Model = start
@@ -885,8 +892,12 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 
 // appendSent appends a sent event, after the model change its allow made
 // when it made one, as one batch: the turn the event starts runs on the
-// new model, and a send that is refused changes nothing.
-func (s *Server) appendSent(ctx context.Context, id string, change *session.ModelChanged, ev session.Event) (session.Event, error) {
+// new model, and a send that is refused changes nothing. check, when set,
+// is held to the log the batch follows: the batch is appended after the
+// sequence the check read, and when another writer appended first the
+// log is read and checked again rather than followed, so an event that
+// answers a call is never appended after something else answered it.
+func (s *Server) appendSent(ctx context.Context, id string, change *session.ModelChanged, ev session.Event, check func([]session.Event) error) (session.Event, error) {
 	batch := []session.Event{ev}
 	if change != nil {
 		changed, err := session.NewEvent(session.TypeModelChanged, *change, ev.Time)
@@ -895,8 +906,50 @@ func (s *Server) appendSent(ctx context.Context, id string, change *session.Mode
 		}
 		batch = []session.Event{changed, ev}
 	}
-	if err := s.appendBatch(ctx, id, batch); err != nil {
+	var err error
+	if check == nil {
+		err = s.appendBatch(ctx, id, batch)
+	} else {
+		err = s.appendChecked(ctx, id, batch, check)
+	}
+	if err != nil {
 		return session.Event{}, err
 	}
 	return batch[len(batch)-1], nil
+}
+
+// appendChecked appends batch after the session's last event when check
+// passes on the log up to it, as one conditional append: a sequence
+// conflict reads the log and checks it again.
+func (s *Server) appendChecked(ctx context.Context, id string, batch []session.Event, check func([]session.Event) error) error {
+	var err error
+	for range appendRetries {
+		var sess session.Session
+		if sess, err = s.o.Sessions.Get(ctx, id); err != nil {
+			return err
+		}
+		if sess.Status == session.StatusEnded {
+			e := refuse(CodeConflict, "the session ended %s", sess.StopReason)
+			e.err = errEnded
+			return e
+		}
+		var evs []session.Event
+		if evs, err = s.o.Sessions.Events(ctx, id, 1, 0); err != nil {
+			return err
+		}
+		// The check reads the log the append follows: the events through
+		// the header's last sequence, whatever was appended since.
+		evs = slices.DeleteFunc(evs, func(e session.Event) bool { return e.Seq > sess.LastSeq })
+		if err := check(evs); err != nil {
+			return err
+		}
+		session.Stamp(id, sess.LastSeq, batch)
+		if _, err = s.o.Sessions.Append(ctx, id, sess.LastSeq, batch); err == nil {
+			return nil
+		}
+		if !errors.Is(err, session.ErrSequenceConflict) {
+			return err
+		}
+	}
+	return err
 }

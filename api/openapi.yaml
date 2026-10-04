@@ -431,7 +431,7 @@ paths:
     post:
       operationId: createSession
       summary: Create a session
-      description: "Create a session of an agent, named by id or by name among the agents of the caller's context. The session runs its agent's model, and its model is absent from the answer. Where the installation's authorizer names another model for it, the session starts on that one: its model is {name, via, effort}, name the model that runs and via the agent's own name for it, which a client that offers the choice shows. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable."
+      description: "Create a session of an agent, named by id or by name among the agents of the caller's context. The body's attended, true when a person answers the session's questions through a client that shows them, is the session's from its create on and nothing changes it: an agent's question then waits, the session idle with stop_reason question, until a user.answer, a person's user.message or a user.interrupt closes it, holding no runner while it waits; absent or false, a question is answered at once with outcome unanswered and the agent decides, so a client that shows no questions never meets one. The session runs its agent's model, and its model is absent from the answer. Where the installation's authorizer names another model for it, the session starts on that one: its model is {name, via, effort}, name the model that runs and via the agent's own name for it, which a client that offers the choice shows. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable."
       x-topos-actions:
         - session.create
       requestBody:
@@ -441,6 +441,7 @@ paths:
               agent: release-notes
               message: Write the release notes for v1.4.0.
               title: Notes for v1.4.0
+              attended: true
       responses:
         "201":
           description: Created
@@ -478,6 +479,7 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                attended: true
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:05:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -558,6 +560,7 @@ paths:
                       turn_timeout: 2h0m0s
                       max_age: 168h0m0s
                     capture: {}
+                    attended: true
                     created_at: "2026-09-22T12:05:00Z"
                     updated_at: "2026-09-22T12:05:41Z"
                     expires_at: "2026-09-29T12:05:00Z"
@@ -568,7 +571,7 @@ paths:
     get:
       operationId: getSessionSummary
       summary: Count sessions
-      description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
+      description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, those idle on question, where a question waits for a person's answer, among them; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
       x-topos-actions:
         - session.list
       parameters:
@@ -658,6 +661,7 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                attended: true
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:05:41Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -724,6 +728,7 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                attended: true
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:10:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -806,6 +811,7 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                attended: true
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:20:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -815,7 +821,7 @@ paths:
     post:
       operationId: forkSession
       summary: Fork a session
-      description: "Start a new session from a session's log at a turn boundary, an ended or expired session included. The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. A session of an archived agent is conflict. A hosted session that works in a private repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, so its fork restores the fork point's files after the session's sandbox is gone. A repository that a reader with no credential can read, and one whose answer to such a read is not a refusal for want of a credential, is not known private and gets no checkpoint, since whoever reads a repository reads its checkpoints, uncommitted files included. A checkpoint the runner cannot have leaves the fork with its conversation and its repositories, recorded beside its first session.machine as session.error checkpoint_missing."
+      description: "Start a new session from a session's log at a turn boundary, an ended or expired session included. The body is {\"at_seq\": N, \"attended\": true}, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. A session of an archived agent is conflict. A hosted session that works in a private repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, so its fork restores the fork point's files after the session's sandbox is gone. A repository that a reader with no credential can read, and one whose answer to such a read is not a refusal for want of a credential, is not known private and gets no checkpoint, since whoever reads a repository reads its checkpoints, uncommitted files included. A checkpoint the runner cannot have leaves the fork with its conversation and its repositories, recorded beside its first session.machine as session.error checkpoint_missing."
       x-topos-actions:
         - session.read
         - session.fork
@@ -830,6 +836,7 @@ paths:
           application/json:
             example:
               at_seq: 5
+              attended: true
       responses:
         "201":
           description: Created
@@ -868,6 +875,7 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                attended: true
                 parent:
                   session_id: ses_01M34G2JF01B91B8399CD1G6YP
                   seq: 5
@@ -931,6 +939,7 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                attended: true
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:20:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -992,6 +1001,7 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                attended: true
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:20:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -1097,7 +1107,7 @@ paths:
     post:
       operationId: sendEvent
       summary: Send a user event
-      description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation or user.tool_result. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes. The authorizer's allow of a message, a confirmation or a result may name another model than the one the session runs: session.model_changed {by, old, new} is then appended straight before the event, its by the service {subject: service:authorizer, kind: service} and not the sender, the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it. A turn already running keeps its model. A model the installation does not run refuses the send as model_unknown or model_unavailable."
+      description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes. The authorizer's allow of a message, a confirmation or a result may name another model than the one the session runs: session.model_changed {by, old, new} is then appended straight before the event, its by the service {subject: service:authorizer, kind: service} and not the sender, the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it. A turn already running keeps its model. A model the installation does not run refuses the send as model_unknown or model_unavailable. A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. A user.answer answers the session's open question, the agent.tool_use named question that nothing closed, of which there is at most one; its payload is a UserAnswer, {tool_use_id, answers}, one entry {selected, text} per question in the questions' order: selected the chosen labels, text the person's own words of at most 2000 characters. An entry with text alone answers in the person's words, one with both is a choice and a note on it, an empty entry leaves its question to the agent, and an answer of empty entries leaves every question to it. For example {\"type\":\"user.answer\",\"payload\":{\"tool_use_id\":\"toolu_01\",\"answers\":[{\"selected\":[\"SQLite\"],\"text\":\"we have nobody to run a second schema\"},{}]}}. It is asked of the authorizer as session.send with event_type user.answer, and its shape is checked before that question, as invalid_request. After the allow, an answer that names no open question is conflict, the detail saying what closed the question; one with another number of entries than questions, a label that is no option of its question or one named twice, or several labels on a question that does not take several, is invalid_request. Nothing is appended for a refused answer. An answer is final once appended: the reply and the stream carry it, and a correction is a message. The runner renders it into the call's tool.result, outcome ok, or unanswered when every entry is empty, with a QuestionResultMeta."
       x-topos-actions:
         - session.send
         - session.interrupt
@@ -1218,7 +1228,7 @@ paths:
     post:
       operationId: redactEvent
       summary: Redact an event
-      description: Replace one event's content with a tombstone.
+      description: "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first."
       x-topos-actions:
         - session.redact
       parameters:
@@ -1636,6 +1646,139 @@ components:
           type: boolean
           const: true
           description: Present only on a reset.
+    QuestionInput:
+      description: "The input of a question call, as the agent.tool_use named question holds it once the runner checked it: no label is used twice in one question. A client shows each question with header as its short label and question in full, the options in the order given, each with label and description; marks each option whose recommended is true in its own words, the mark no part of the label; lets the person choose one option, or several where multiple is true, and always answer in their own words beside or in place of the options; shows a preview only on a question that takes one option, each item one line of plain text in a monospace font, spaces kept, and may collapse it, since the question is answerable without it; and treats every field as text a model wrote: no markup, and no link followed on its own."
+      example:
+        questions:
+          - question: Which database should the new service keep its records in?
+            header: Storage
+            options:
+              - label: Postgres
+                description: The cluster the other services use. One more schema, no new operations work.
+                recommended: true
+              - label: SQLite
+                description: A file beside the binary. Nothing to operate, and one writer at a time.
+                preview:
+                  - data/
+                  - "  service.db"
+                  - "  service.db-wal"
+          - question: Which regions does the first release serve?
+            header: Regions
+            options:
+              - label: Europe
+                description: Where the current customers are.
+              - label: North America
+                description: Two prospects asked for it.
+            multiple: true
+      type: object
+      properties:
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          description: The questions of this call, shown to the person together.
+          items:
+            type: object
+            properties:
+              question:
+                type: string
+                minLength: 1
+                maxLength: 300
+                description: The full question, answerable without reading the conversation.
+              header:
+                type: string
+                minLength: 1
+                maxLength: 12
+                description: A short label for the question, such as a tab's title.
+              options:
+                type: array
+                minItems: 2
+                maxItems: 4
+                description: The choices, in the order they are shown, the one you would take first.
+                items:
+                  type: object
+                  properties:
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 40
+                      description: The option's name, unique in its question.
+                    description:
+                      type: string
+                      minLength: 1
+                      maxLength: 200
+                      description: "What choosing the option means: what follows from it and what it costs."
+                    preview:
+                      type: array
+                      maxItems: 15
+                      items:
+                        type: string
+                        maxLength: 40
+                      description: A mockup or a snippet as lines of plain text, shown in a monospace font. Only on a question that takes one option.
+                    recommended:
+                      type: boolean
+                      description: True on the option you would take.
+                  required:
+                    - label
+                    - description
+                  additionalProperties: false
+              multiple:
+                type: boolean
+                description: True when the person may choose several options.
+            required:
+              - question
+              - header
+              - options
+            additionalProperties: false
+      required:
+        - questions
+      additionalProperties: false
+    UserAnswer:
+      type: object
+      description: The payload of user.answer, one entry per question of the open question call, in the questions' order. The server sets sender to the caller.
+      required:
+        - tool_use_id
+        - answers
+      additionalProperties: false
+      properties:
+        tool_use_id:
+          type: string
+          description: The open question call's tool_use_id.
+        answers:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              selected:
+                type: array
+                items:
+                  type: string
+                description: "The chosen labels: at most one where the question does not take several, each a label of the question and none twice."
+              text:
+                type: string
+                maxLength: 2000
+                description: The person's own words, in characters.
+        sender:
+          type: object
+          readOnly: true
+          description: The caller, set by the server whatever the body says.
+    QuestionResultMeta:
+      type: object
+      description: The meta of a question call's tool.result, which says why the question closed without reading the result's text. The result's outcome is ok when an answer chose an option or held words, unanswered, which is not an error, when every entry of the answer was empty, a person's message came in place of an answer, or nobody attends the session, and canceled when an interrupt dismissed the question.
+      properties:
+        closed_by:
+          type: string
+          enum:
+            - answer
+            - message
+            - interrupt
+            - unattended
+        event_id:
+          type: string
+          description: The id of the event that closed the call; absent when nobody attends the session.
     Error:
       type: object
       required:

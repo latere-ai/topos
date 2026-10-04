@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,8 +157,21 @@ func (c *call) sendEvent() error {
 		}
 		p.Sender = sender
 		payload = p
+	case session.TypeUserAnswer:
+		// The answer's shape is checked before the authorizer is asked, and
+		// its fit to the open question after the allow, so a caller who
+		// may not send learns nothing of the session's calls (spec 039).
+		var p session.UserAnswer
+		if err := strict(b.Payload, &p); err != nil {
+			return err
+		}
+		if err := p.CheckShape(); err != nil {
+			return refuse(CodeInvalidRequest, "%v", err)
+		}
+		p.Sender = sender
+		payload = p
 	default:
-		return refuse(CodeInvalidRequest, "type %q is not one a person sends: user.message, user.interrupt, user.tool_confirmation or user.tool_result", b.Type)
+		return refuse(CodeInvalidRequest, "type %q is not one a person sends: %s", b.Type, strings.Join(sentTypes, ", "))
 	}
 	// A send's allow may move the session to another model before the
 	// turn the event starts (spec 038); an interrupt starts none.
@@ -171,9 +185,6 @@ func (c *call) sendEvent() error {
 		s, err = c.session(action, fields)
 	}
 	if err != nil {
-		return err
-	}
-	if err := c.answers(s.ID, b.Type, payload); err != nil {
 		return err
 	}
 	// A message's files are stored before the event that names them, and
@@ -194,7 +205,7 @@ func (c *call) sendEvent() error {
 		return err
 	}
 	ev.ID = id
-	appended, err := c.s.appendSent(c.r.Context(), s.ID, change, ev)
+	appended, err := c.s.appendSent(c.r.Context(), s.ID, change, ev, answering(b.Type, payload))
 	if err != nil {
 		return err
 	}
@@ -202,28 +213,78 @@ func (c *call) sendEvent() error {
 	return c.reply(http.StatusOK, appended)
 }
 
-// answers refuses a confirmation or a client tool's result that answers
-// no call waiting for it: a call never asked, already answered, or of
-// the other kind.
-func (c *call) answers(id string, typ session.Type, payload any) error {
-	var toolUseID string
-	var want session.Answer
+// sentTypes are the event types a person sends to a session, in the
+// order the send route's description names them. Each but user.interrupt
+// is asked of the authorizer as session.send with the type as its
+// event_type, which an authorizer that lists the types it allows reads.
+var sentTypes = []string{
+	string(session.TypeUserMessage), string(session.TypeUserInterrupt), string(session.TypeUserToolConfirmation),
+	string(session.TypeUserToolResult), string(session.TypeUserAnswer),
+}
+
+// answering is the check of a sent event against the log it is appended
+// after, nil for an event that answers no call: a confirmation, a client
+// tool's result and an answer to a question each name a call that waits
+// for exactly that answer. The check runs on the log the append follows,
+// so of two answers to one call one is appended and the other refused.
+func answering(typ session.Type, payload any) func([]session.Event) error {
 	switch p := payload.(type) {
 	case session.UserToolConfirmation:
-		toolUseID, want = p.ToolUseID, session.AnswerConfirmation
+		return awaits(typ, p.ToolUseID, session.AnswerConfirmation)
 	case session.UserToolResult:
-		toolUseID, want = p.ToolUseID, session.AnswerResult
-	default:
-		return nil
-	}
-	evs, err := c.s.o.Sessions.Events(c.r.Context(), id, 1, 0)
-	if err != nil {
-		return err
-	}
-	if session.Awaiting(evs)[toolUseID] != want {
-		return refuse(CodeConflict, "%s names %s, which waits for no such answer", typ, toolUseID)
+		return awaits(typ, p.ToolUseID, session.AnswerResult)
+	case session.UserAnswer:
+		return func(evs []session.Event) error { return fits(evs, p) }
 	}
 	return nil
+}
+
+// awaits refuses a confirmation or a client tool's result that answers
+// no call waiting for it: a call never asked, already answered, denied by
+// a person's message, or of the other kind.
+func awaits(typ session.Type, toolUseID string, want session.Answer) func([]session.Event) error {
+	return func(evs []session.Event) error {
+		if session.Awaiting(evs)[toolUseID] != want {
+			return refuse(CodeConflict, "%s names %s, which waits for no such answer", typ, toolUseID)
+		}
+		return nil
+	}
+}
+
+// fits refuses an answer that names no open question, as conflict with
+// what closed the question in the detail, and one that does not fit the
+// question it names, as invalid_request (spec 039).
+func fits(evs []session.Event, a session.UserAnswer) error {
+	c, asked := session.Closed(evs, a.ToolUseID)
+	switch {
+	case !asked:
+		if q, open := session.OpenQuestion(evs); open {
+			return refuse(CodeConflict, "user.answer names %s, which is no question of this session; the open question is %s", a.ToolUseID, q.ToolUseID)
+		}
+		return refuse(CodeConflict, "user.answer names %s, and no question is open", a.ToolUseID)
+	case !c.Open():
+		return refuse(CodeConflict, "user.answer names %s, which %s", a.ToolUseID, closedBy(c))
+	}
+	q, _ := session.OpenQuestion(evs)
+	if err := a.Fits(q.Input); err != nil {
+		return refuse(CodeInvalidRequest, "%v", err)
+	}
+	return nil
+}
+
+// closedBy says what closed a question, for a refusal's detail.
+func closedBy(c session.Closing) string {
+	switch c.By {
+	case session.ClosedByAnswer:
+		return "the user.answer " + c.EventID + " already answered"
+	case session.ClosedByMessage:
+		return "the person's user.message " + c.EventID + " closed in place of an answer"
+	case session.ClosedByInterrupt:
+		return "the user.interrupt " + c.EventID + " dismissed"
+	case session.ClosedByUnattended:
+		return "was answered at once, since nobody attends the session"
+	}
+	return "already has its result " + c.ResultID
 }
 
 // strict decodes a payload refusing fields the type does not name.
@@ -422,7 +483,13 @@ type redactBody struct {
 }
 
 // redact is POST /sessions/{id}/events/{event_id}/redact: the event's
-// content becomes a tombstone.
+// content becomes a tombstone. A user.answer's words are also in the
+// tool.result the runner rendered from it, so that result is redacted in
+// the same call (spec 039); the answer is found again by its id after a
+// redaction, so a call that failed between the two is safe to send
+// again. The agent.tool_use of a question whose result is not in the log
+// yet is refused, since its tombstone would leave a wait nothing can
+// find.
 func (c *call) redact() error {
 	var b redactBody
 	if err := c.decode(&b); err != nil {
@@ -444,9 +511,30 @@ func (c *call) redact() error {
 	if !session.Redactable(evs[i].Type) {
 		return refuse(CodeInvalidRequest, "a %s event is part of the session's record and holds no content a redaction removes", evs[i].Type)
 	}
+	var also string
+	switch evs[i].Type {
+	case session.TypeAgentToolUse:
+		var use session.AgentToolUse
+		if evs[i].Decode(&use) == nil && !evs[i].Redacted() {
+			if cl, asked := session.Closed(evs, use.ToolUseID); asked && !cl.Settled {
+				return refuse(CodeConflict, "%s is the question %s, which has no result yet; dismiss it with user.interrupt first", id, use.ToolUseID)
+			}
+		}
+	case session.TypeUserAnswer:
+		for _, q := range session.Questions(evs) {
+			if q.Closing.EventID == id && q.Closing.Settled {
+				also = q.Closing.ResultID
+			}
+		}
+	}
 	by := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
 	if err := c.s.o.Sessions.Redact(c.r.Context(), s.ID, id, by, b.Reason); err != nil {
 		return err
+	}
+	if also != "" {
+		if err := c.s.o.Sessions.Redact(c.r.Context(), s.ID, also, by, b.Reason); err != nil {
+			return err
+		}
 	}
 	c.w.WriteHeader(http.StatusNoContent)
 	return nil

@@ -21,10 +21,11 @@ import (
 // Config.Question is set, and no thread a spawn starts holds it.
 const ToolQuestion = session.ToolQuestion
 
-// questionSchema is the input schema of the question tool, with every
+// QuestionSchema is the input schema of the question tool, with every
 // bound stated from session's constants, so the schema cannot differ
-// from what the server checks an answer against.
-var questionSchema = json.RawMessage(fmt.Sprintf(`{
+// from what the server checks an answer against. The API document shows
+// it as the input a question's agent.tool_use holds.
+var QuestionSchema = json.RawMessage(fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "questions": {
@@ -79,7 +80,7 @@ var questionSchema = json.RawMessage(fmt.Sprintf(`{
 type questionTool struct{ t *turn }
 
 func (q questionTool) Definition() tools.Definition {
-	return tools.Definition{Name: ToolQuestion, Description: prompts.Text(prompts.ToolQuestion), InputSchema: questionSchema}
+	return tools.Definition{Name: ToolQuestion, Description: prompts.Text(prompts.ToolQuestion), InputSchema: QuestionSchema}
 }
 
 // Properties: the call changes nothing, so it scores 0.0 and is allowed

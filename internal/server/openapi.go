@@ -51,6 +51,10 @@ func OpenAPI(server string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	questionInput, err := questionInputSchema()
+	if err != nil {
+		return nil, err
+	}
 	shown, err := examples()
 	if err != nil {
 		return nil, err
@@ -82,6 +86,9 @@ func OpenAPI(server string) ([]byte, error) {
 			}},
 			{Key: "schemas", Value: yaml.MapSlice{
 				{Key: "Delta", Value: deltaSchema},
+				{Key: "QuestionInput", Value: questionInput},
+				{Key: "UserAnswer", Value: userAnswer},
+				{Key: "QuestionResultMeta", Value: questionResultMeta},
 				{Key: "Error", Value: yaml.MapSlice{
 					{Key: "type", Value: "object"},
 					{Key: "required", Value: []string{"error"}},
@@ -251,7 +258,7 @@ var opDescriptions = map[string]string{
 	"listAgentVersions": "List an agent's versions.",
 	"getAgentVersion":   "Get one version of an agent.",
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
-	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " +
+	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " +
 		"The session runs its agent's model, and its model is absent from the answer. Where the installation's authorizer names another model for it, the session starts on that one: " +
 		"its model is {name, via, effort}, name the model that runs and via the agent's own name for it, which a client that offers the choice shows. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable.",
@@ -261,7 +268,9 @@ var opDescriptions = map[string]string{
 	"deleteSession": "Delete a session, its log and its blobs.",
 	"listEvents":    "List a session's events from a sequence.",
 	"getBlob":       "Get a blob of a session.",
-	"redactEvent":   "Replace one event's content with a tombstone.",
+	"redactEvent": "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. " +
+		"A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. " +
+		"The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first.",
 	"listTriggers":  "List triggers.",
 	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
 	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running.",
@@ -275,14 +284,18 @@ var opDescriptions = map[string]string{
 		"metadata.displayName, optional, is the name a person reads: text on one line of at most %d characters, without control characters, line breaks or bidirectional controls; "+
 		"an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: "+
 		"it replaces the latest version's metadata, and every later read returns it.", manifest.MaxDisplayName),
-	"sendEvent": fmt.Sprintf("The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation or user.tool_result. "+
+	"sendEvent": fmt.Sprintf("The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. "+
 		"A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most %d of at most %d bytes each), "+
 		"and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most %d of at most %d bytes each, the name one path segment of at most %d bytes). "+
 		"The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; "+
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
 		"The authorizer's allow of a message, a confirmation or a result may name another model than the one the session runs: session.model_changed {by, old, new} is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
-		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it. A turn already running keeps its model. A model the installation does not run refuses the send as model_unknown or model_unavailable.",
+		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it. A turn already running keeps its model. A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
+		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
+		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
+		"A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. "+
+		AnswerRules,
 		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject),
 	"applyTrigger": fmt.Sprintf("Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. "+
 		"The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
@@ -303,7 +316,8 @@ var opDescriptions = map[string]string{
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
 		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
 	"forkSession": "Start a new session from a session's log at a turn boundary, an ended or expired session included. " +
-		"The body is {\"at_seq\": N}, or empty. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
+		"The body is {\"at_seq\": N, \"attended\": true}, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
+		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
 		"or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. " +
 		"Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, " +
 		"the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), " +
@@ -314,7 +328,8 @@ var opDescriptions = map[string]string{
 		"recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. " +
 		"A session of an archived agent is conflict. " + ForkKeptFiles,
 	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. ` +
-		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session; " +
+		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, " +
+		"those idle on question, where a question waits for a person's answer, among them; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",
 	"archiveSession": "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. " +
 		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then, of an ended session, session.update with session_id and archived true; a deny is forbidden.",

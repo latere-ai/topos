@@ -51,9 +51,12 @@ func continuedTitle(title string) string {
 }
 
 // forkBody is the body of POST /sessions/{id}/fork; an empty body forks
-// at the last turn boundary.
+// at the last turn boundary. Attended is the fork's own declaration that
+// a person answers its questions: a fork is a session of its own, and
+// its client declares it again (spec 039).
 type forkBody struct {
-	AtSeq *uint64 `json:"at_seq,omitempty"`
+	AtSeq    *uint64 `json:"at_seq,omitempty"`
+	Attended bool    `json:"attended,omitempty"`
 }
 
 // forkSession is POST /sessions/{id}/fork (spec 017): a new session of
@@ -81,8 +84,9 @@ func (c *call) forkSession() error {
 		return err
 	}
 	s, err := c.s.create(ctx, c.asker(), creation{
-		fork:   &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq)},
-		sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson},
+		fork:     &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq)},
+		attended: b.Attended,
+		sender:   session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson},
 	})
 	if err != nil {
 		return err

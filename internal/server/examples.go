@@ -106,6 +106,45 @@ spec:
 		`"session":{"message":"Write the release notes for {{event.resource}}.","endOnIdle":true},"skipIfActive":true,"maxAge":"1h","suspend":false}}`
 )
 
+// exampleQuestionInput is a question call's input, as a question's
+// agent.tool_use holds it, and exampleAnswerBody a send that answers it.
+var (
+	exampleQuestionInput = mustText(session.QuestionInput{Questions: []session.Question{
+		{Header: "Storage", Question: "Which database should the new service keep its records in?", Options: []session.QuestionOption{
+			{Label: "Postgres", Recommended: true, Description: "The cluster the other services use. One more schema, no new operations work."},
+			{Label: "SQLite", Description: "A file beside the binary. Nothing to operate, and one writer at a time.", Preview: []string{"data/", "  service.db", "  service.db-wal"}},
+		}},
+		{Header: "Regions", Multiple: true, Question: "Which regions does the first release serve?", Options: []session.QuestionOption{
+			{Label: "Europe", Description: "Where the current customers are."},
+			{Label: "North America", Description: "Two prospects asked for it."},
+		}},
+	}})
+	exampleAnswerBody = mustText(sendBody{Type: session.TypeUserAnswer, Payload: json.RawMessage(mustText(answerPayload{
+		ToolUseID: exampleQuestionCall,
+		Answers:   []session.AnswerEntry{{Selected: []string{"SQLite"}, Text: "we have nobody to run a second schema"}, {}},
+	}))})
+)
+
+// exampleQuestionCall is the tool_use_id of the example's question call.
+const exampleQuestionCall = "toolu_01"
+
+// answerPayload is a user.answer's payload as a client sends it: the
+// server sets its sender.
+type answerPayload struct {
+	ToolUseID string                `json:"tool_use_id"`
+	Answers   []session.AnswerEntry `json:"answers"`
+}
+
+// mustText renders an example value, which is a value of this package and
+// always encodes; a failure is a defect the document's tests catch.
+func mustText(v any) string {
+	b, err := session.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
 // exampleTime is a time of the examples' day.
 func exampleTime(hour, minute, second int) time.Time {
 	return time.Date(2026, time.September, 22, hour, minute, second, 0, time.UTC)
@@ -149,6 +188,7 @@ func examples() (map[string]example, error) {
 		Machine:   session.Machine{Kind: session.MachineCella, Image: "base"},
 		Policy:    &session.Policy{Mode: "confirm", Thresholds: session.Thresholds{FlagAt: 0.3, AskAt: 0.5, BlockAt: 0.9}},
 		Limits:    session.Limits{TurnTimeout: session.DefaultTurnTimeout.String(), MaxAge: session.DefaultMaxAge.String()},
+		Attended:  true,
 		CreatedAt: exampleTime(12, 5, 0),
 		UpdatedAt: exampleTime(12, 5, 0),
 		ExpiresAt: exampleTime(12, 5, 0).Add(session.DefaultMaxAge),
@@ -168,7 +208,7 @@ func examples() (map[string]example, error) {
 	// A session of the agent that stopped on its budget and is resumed
 	// with a higher one.
 	resumed := created
-	resumed.ID, resumed.Title, resumed.StopReason, resumed.Turn, resumed.LastSeq = exampleStoppedID, "", session.StopBudget, 1, 5
+	resumed.ID, resumed.Title, resumed.StopReason, resumed.Turn, resumed.LastSeq, resumed.Attended = exampleStoppedID, "", session.StopBudget, 1, 5, false
 	resumed.Budget = session.Budget{MaxCostUSDMicro: new(int64(5000000)), SpentCostUSDMicro: 1200}
 	resumed.CreatedAt, resumed.UpdatedAt, resumed.ExpiresAt = exampleTime(12, 3, 0), exampleTime(12, 28, 0), exampleTime(12, 3, 0).Add(session.DefaultMaxAge)
 
@@ -216,13 +256,13 @@ func examples() (map[string]example, error) {
 		"listAgentVersions": {response: list(agentVersion{Version: 1, Digest: exampleDigest, CreatedBy: exampleCaller, CreatedAt: exampleTime(12, 0, 0)}, store.Cursor("1"))},
 		"getAgentVersion":   {response: text(agent)},
 		"archiveAgent":      {request: text(archiveBody{Permanent: true}), response: text(archived)},
-		"createSession":     {request: text(createBody{Agent: agent.Metadata.Name, Title: created.Title, Message: "Write the release notes for v1.4.0."}), response: text(created)},
+		"createSession":     {request: text(createBody{Agent: agent.Metadata.Name, Title: created.Title, Message: "Write the release notes for v1.4.0.", Attended: true}), response: text(created)},
 		"listSessions":      {response: list(turned, exampleSessionID)},
 		"getSessionSummary": {response: text(session.Summary{Sessions: session.Counts{Idle: 2}, Agents: 1})},
 		"getSession":        {response: text(turned)},
 		"updateSession":     {request: text(updateBody{Model: &modelChange{Name: &switched.Model.Name, Effort: &switched.Model.Effort}}), response: text(switched)},
 		"endSession":        {request: text(endBody{Reason: session.StopCompleted}), response: text(ended)},
-		"forkSession":       {request: text(forkBody{AtSeq: &forked.Parent.Seq}), response: text(forked)},
+		"forkSession":       {request: text(forkBody{AtSeq: &forked.Parent.Seq, Attended: true}), response: text(forked)},
 		"archiveSession":    {response: text(filed)},
 		"unarchiveSession":  {response: text(ended)},
 		"resumeSession":     {request: text(resumeBody{Reason: "budget_raised", MaxCostUSDMicro: resumed.Budget.MaxCostUSDMicro}), response: text(resumed)},

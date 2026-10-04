@@ -209,7 +209,7 @@ func TestQuestionSchemaFollowsTheConstants(t *testing.T) {
 			}
 		}
 	}
-	if err := json.Unmarshal(questionSchema, &s); err != nil {
+	if err := json.Unmarshal(QuestionSchema, &s); err != nil {
 		t.Fatal(err)
 	}
 	q, o := s.Properties.Questions, s.Properties.Questions.Items.Properties.Options

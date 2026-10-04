@@ -119,6 +119,7 @@ func testCreateGet(t *testing.T, st session.Store) {
 	s := NewSession()
 	s.Title = "fix the build"
 	s.Metadata = map[string]string{"k": "v"}
+	s.Attended = true
 	if err := st.Create(ctx, s, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -43,6 +43,22 @@
 // about which model a name stands for or how long a provider keeps a
 // prompt cache.
 //
+// session.send is asked of every event a person sends to a session but
+// an interrupt, and its resource carries the event's type as event_type:
+// user.message, a message; user.tool_confirmation, the allow or deny of
+// a tool call that waits for a person; user.tool_result, the result of a
+// tool a client runs; and user.answer, a person's answer to a question
+// the agent put to them with its question tool. A user.interrupt is
+// asked as session.interrupt. An answer, like a confirmation, continues
+// a turn the person already started, so an endpoint that meters messages
+// tells them apart by event_type; a message sent in place of an answer
+// is a user.message. An endpoint that lists the event types it allows
+// adds a new one before a server that sends it is rolled out, and a
+// deployment rolls in that order: the endpoint, then toposd and every
+// runner, then a client that sets attended at a session's create, after
+// which an agent's question waits for an answer. Until a client sets
+// attended no session waits on a question and no user.answer is sent.
+//
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
 // verbatim, where an endpoint reads a plan, a team or a role from. The

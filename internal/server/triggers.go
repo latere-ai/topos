@@ -431,7 +431,7 @@ func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	if err != nil {
 		return err
 	}
-	if _, err := a.s.appendSent(ctx, sess.ID, change, ev); err != nil {
+	if _, err := a.s.appendSent(ctx, sess.ID, change, ev, nil); err != nil {
 		if errors.Is(err, errEnded) {
 			return triggers.ErrEnded
 		}
