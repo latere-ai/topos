@@ -198,11 +198,17 @@ func examples() (map[string]example, error) {
 	turned.Budget.SpentCostUSDMicro, turned.UpdatedAt = 1200, exampleTime(12, 5, 41)
 	switched := turned
 	switched.Model, switched.LastSeq, switched.UpdatedAt = &session.ModelRef{Name: "claude-sonnet-4-5", Effort: "high"}, 6, exampleTime(12, 10, 0)
+	// The change of the model and the mode in one body appends the two
+	// events in one batch (spec 041).
+	updated := switched
+	updated.Policy = &session.Policy{Mode: v1.ModeProgressive, Thresholds: created.Policy.Thresholds}
+	updated.LastSeq = 7
+	progressive := v1.ModeProgressive
 	forked := turned
 	forked.ID, forked.Title, forked.Parent = exampleForkID, "Notes for v1.4.0 (continued)", &session.Parent{SessionID: exampleSessionID, Seq: 5}
 	forked.CreatedAt, forked.UpdatedAt, forked.ExpiresAt = exampleTime(12, 15, 0), exampleTime(12, 15, 0), exampleTime(12, 15, 0).Add(session.DefaultMaxAge)
-	ended := switched
-	ended.Status, ended.StopReason, ended.LastSeq, ended.UpdatedAt = session.StatusEnded, session.StopCompleted, 8, exampleTime(12, 20, 0)
+	ended := updated
+	ended.Status, ended.StopReason, ended.LastSeq, ended.UpdatedAt = session.StatusEnded, session.StopCompleted, 9, exampleTime(12, 20, 0)
 	filed := ended
 	filed.ArchivedAt = new(exampleTime(12, 25, 0))
 	// A session of the agent that stopped on its budget and is resumed
@@ -223,7 +229,7 @@ func examples() (map[string]example, error) {
 	second := event(exampleSecondEventID, 2, session.TypeSessionStatus, exampleTime(12, 5, 1), 1, session.SessionStatus{Status: session.StatusRunning})
 	third := event(exampleThirdEventID, 3, session.TypeAgentMessage, exampleTime(12, 5, 40), 1,
 		session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: said("The release notes for v1.4.0 are in NOTES.md.")}, StopReason: ir.StopEndTurn})
-	sent := event(exampleSentEventID, 7, session.TypeUserMessage, exampleTime(12, 12, 0), 0,
+	sent := event(exampleSentEventID, 8, session.TypeUserMessage, exampleTime(12, 12, 0), 0,
 		session.UserMessage{Sender: person, Content: said("Add a section for the breaking changes.")})
 	var frames bytes.Buffer
 	for _, ev := range []session.Event{first, second, third} {
@@ -260,7 +266,7 @@ func examples() (map[string]example, error) {
 		"listSessions":      {response: list(turned, exampleSessionID)},
 		"getSessionSummary": {response: text(session.Summary{Sessions: session.Counts{Idle: 2}, Agents: 1})},
 		"getSession":        {response: text(turned)},
-		"updateSession":     {request: text(updateBody{Model: &modelChange{Name: &switched.Model.Name, Effort: &switched.Model.Effort}}), response: text(switched)},
+		"updateSession":     {request: text(updateBody{Model: &modelChange{Name: &switched.Model.Name, Effort: &switched.Model.Effort}, Policy: &policyChange{Mode: &progressive}}), response: text(updated)},
 		"endSession":        {request: text(endBody{Reason: session.StopCompleted}), response: text(ended)},
 		"forkSession":       {request: text(forkBody{AtSeq: &forked.Parent.Seq, Attended: true}), response: text(forked)},
 		"archiveSession":    {response: text(filed)},

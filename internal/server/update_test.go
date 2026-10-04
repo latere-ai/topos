@@ -321,3 +321,169 @@ func TestAnEffortChangeIsRefused(t *testing.T) {
 	}
 	unchanged("a denied effort change")
 }
+
+// policyEvents are a session's session.policy_changed events.
+func (f *fixture) policyEvents(id string) []session.PolicyChanged {
+	f.t.Helper()
+	evs, err := f.sessions.Events(f.t.Context(), id, 1, 0)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var out []session.PolicyChanged
+	for _, e := range evs {
+		if e.Type != session.TypePolicyChanged {
+			continue
+		}
+		var p session.PolicyChanged
+		if err := e.Decode(&p); err != nil {
+			f.t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// TestASessionChangesItsMode: a change of the approval mode asks
+// session.update with the mode the body names, the mode the session runs
+// and its agent's, records session.policy_changed from the old mode to
+// the new, and answers the Session whose policy names the new mode with
+// its lists and thresholds as they were; a change to the mode the session
+// runs is asked and appends nothing.
+func TestASessionChangesItsMode(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	var fields map[string]any
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			fields = req.Resource.Fields
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"policy":{"mode":"progressive"}}`)
+	if a.status != http.StatusOK {
+		t.Fatalf("change: %d %s", a.status, a.body)
+	}
+	var got session.Session
+	a.decode(t, &got)
+	if got.Policy == nil || got.Policy.Mode != "progressive" || got.Policy.Thresholds != s.Policy.Thresholds {
+		t.Fatalf("the answer's policy is %+v, created with %+v", got.Policy, s.Policy)
+	}
+	if fields["session_id"] != s.ID || fields["approval_mode"] != "progressive" || fields["current_approval_mode"] != "confirm" || fields["agent_approval_mode"] != "confirm" {
+		t.Fatalf("session.update asked about %v", fields)
+	}
+	if _, model := fields["model"]; model {
+		t.Fatalf("a change of the mode alone named a model: %v", fields)
+	}
+	if _, effort := fields["effort"]; effort {
+		t.Fatalf("a change of the mode alone named an effort: %v", fields)
+	}
+	changes := f.policyEvents(s.ID)
+	if len(changes) != 1 || changes[0].Old.Mode != "confirm" || changes[0].New.Mode != "progressive" || changes[0].By.Subject != alice || changes[0].By.Kind != session.SenderPerson {
+		t.Fatalf("session.policy_changed %+v", changes)
+	}
+	if len(f.modelEvents(s.ID)) != 0 {
+		t.Fatal("a change of the mode alone appended session.model_changed")
+	}
+	fields = nil
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"policy":{"mode":"progressive"}}`); a.status != http.StatusOK || len(f.policyEvents(s.ID)) != 1 {
+		t.Fatalf("a change to the mode the session runs: %d %s, %d events", a.status, a.body, len(f.policyEvents(s.ID)))
+	}
+	if fields["current_approval_mode"] != "progressive" || fields["agent_approval_mode"] != "confirm" {
+		t.Fatalf("a change to the mode the session runs asked about %v", fields)
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"policy":{"mode":"plan"}}`); a.status != http.StatusOK {
+		t.Fatalf("change back: %d %s", a.status, a.body)
+	}
+	if changes := f.policyEvents(s.ID); len(changes) != 2 || changes[1].Old.Mode != "progressive" || changes[1].New.Mode != "plan" {
+		t.Fatalf("session.policy_changed %+v", changes)
+	}
+	if stored, err := f.sessions.Get(t.Context(), s.ID); err != nil || stored.Policy == nil || stored.Policy.Mode != "plan" {
+		t.Fatalf("the stored header's policy is %+v, %v", stored.Policy, err)
+	}
+}
+
+// TestAModeAndAModelChangeTogether: one body that changes the model and
+// the mode asks one session.update with both, and appends both events in
+// one batch, after the session's last.
+func TestAModeAndAModelChangeTogether(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	var questions []map[string]any
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			questions = append(questions, req.Resource.Fields)
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"model":{"effort":"high"},"policy":{"mode":"plan"}}`)
+	if a.status != http.StatusOK {
+		t.Fatalf("change: %d %s", a.status, a.body)
+	}
+	if len(questions) != 1 || questions[0]["effort"] != "high" || questions[0]["approval_mode"] != "plan" {
+		t.Fatalf("session.update asked %v", questions)
+	}
+	evs, err := f.sessions.Events(t.Context(), s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := len(evs)
+	if n < 2 || evs[n-2].Type != session.TypeModelChanged || evs[n-1].Type != session.TypePolicyChanged || evs[n-2].Seq+1 != evs[n-1].Seq || !evs[n-2].Time.Equal(evs[n-1].Time) {
+		t.Fatalf("the log ends %+v", evs[max(0, n-2):])
+	}
+	var got session.Session
+	a.decode(t, &got)
+	if got.Model == nil || got.Model.Effort != "high" || got.Policy == nil || got.Policy.Mode != "plan" || got.LastSeq != evs[n-1].Seq {
+		t.Fatalf("the answer is %+v %+v at %d", got.Model, got.Policy, got.LastSeq)
+	}
+}
+
+// TestAModeChangeIsRefused: a mode outside the three, a policy without a
+// mode or with another member, and a body naming nothing are
+// invalid_request; a caller who may not read the session hears not_found;
+// an ended session is conflict; a denied change is forbidden with the
+// authorizer's reason. Each leaves the mode and the log as they were.
+func TestAModeChangeIsRefused(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	before, err := f.sessions.Get(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{`{"policy":{"mode":"auto"}}`, `{"policy":{"mode":""}}`, `{"policy":{}}`, `{"policy":{"mode":"plan","thresholds":{"ask_at":0.1}}}`, `{"policy":null}`, `{}`, `{"model":{},"policy":{"mode":"plan"}}`} {
+		if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", body); a.code() != CodeInvalidRequest {
+			t.Errorf("%s: %d %s", body, a.status, a.body)
+		}
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "bob", `{"policy":{"mode":"plan"}}`); a.status != http.StatusNotFound {
+		t.Fatalf("bob changes alice's mode: %d %s", a.status, a.body)
+	}
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			return authz.Decision{Reason: "approval_mode_restricted"}, nil
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"policy":{"mode":"progressive"}}`); a.status != http.StatusForbidden || !strings.Contains(string(a.body), "approval_mode_restricted") {
+		t.Fatalf("a denied change: %d %s", a.status, a.body)
+	}
+	f.authz.answer = nil
+	after, err := f.sessions.Get(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.LastSeq != before.LastSeq || after.Policy.Mode != before.Policy.Mode {
+		t.Fatalf("a refused change moved the session from %d %s to %d %s", before.LastSeq, before.Policy.Mode, after.LastSeq, after.Policy.Mode)
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/end", "alice", `{"reason":"completed"}`); a.status != http.StatusOK {
+		t.Fatalf("end: %d %s", a.status, a.body)
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"policy":{"mode":"plan"}}`); a.code() != CodeConflict {
+		t.Fatalf("a change of an ended session: %d %s", a.status, a.body)
+	}
+	if len(f.policyEvents(s.ID)) != 0 {
+		t.Fatal("a refused change appended session.policy_changed")
+	}
+}

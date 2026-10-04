@@ -336,14 +336,19 @@ var opDescriptions = map[string]string{
 	"archiveSession": "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. " +
 		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then, of an ended session, session.update with session_id and archived true; a deny is forbidden.",
 	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",
-	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "effort": "<effort>"}}, the model the session's next turn runs and its reasoning effort, either member or both; any other member is refused. `+
+	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "effort": "<effort>"}, "policy": {"mode": "<mode>"}}: the model the session's next turn runs and its reasoning effort, either member or both, and the approval mode its next steps decide calls under, one of %s. `+
+		"The body names model, policy or both; any other member is refused. "+
 		"A member left out keeps what the session runs. effort is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. "+
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+
 		"The authorizer is asked session.update with session_id, model when the body names one, and effort, the effort the next turn runs at, when the body names one, and a deny is forbidden. "+
 		"Its allow may name the model to run in place of the one the body names: the session then runs that model, and its model's via is the name the body asked, which a client that offers the choice shows; via is absent when the session runs the name asked. "+
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. "+
 		"An allowed change appends session.model_changed {by, old, new}, each {name, via, effort}, and answers the Session, whose model is the new one; a change to the model and the effort the session runs appends nothing. "+
-		"A turn already running keeps its model and its effort: the change takes effect at the next turn.", strings.Join(v1.Efforts, ", ")),
+		"A turn already running keeps its model and its effort: the change takes effect at the next turn. "+
+		"A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. "+
+		"It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. "+
+		"The mode holds from the next step, in the turn that runs: a call decided before keeps its verdict, and a call waiting for a confirmation keeps waiting for the person's answer whichever way the mode moved. "+
+		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm.", strings.Join(modes, ", "), strings.Join(v1.Efforts, ", ")),
 }
 
 // operation is one route as the document describes it, with shown as
