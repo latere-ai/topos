@@ -1,6 +1,6 @@
 ---
 title: "Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions a person attends"
-status: drafted
+status: in-progress
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 005-harness-loop.md, 006-identity.md, 008-tools.md, 010-context.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 016-runners.md, 024-client-cli-skill.md]
 affects: [session/, harness/, harness/tools/, manifest/, prompts/, internal/server/, internal/hosted/, internal/toposcli/, api/, test/tasks/]
@@ -766,23 +766,103 @@ owner's decision yet, and each is reversible.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| The harness offers `question` to the session's own thread when the agent's tools name it and to no thread a `spawn` starts; `tools.Builtins` and the default set stay the eight, with the digest an agent had; the validator accepts the name among an agent's tools and refuses a client tool that takes it | `harness.TestQuestionIsOfferedWhenNamed`, `manifest.TestQuestionIsAKnownToolName` | not built |
-| The validator checks `minItems` and `maxItems`; the tool's schema states every bound from the constants; the description file and the OpenAPI text hold no bound that differs from them | `harness/tools.TestSchemaArrayLengths`, `harness.TestQuestionSchemaFollowsTheConstants`, `prompts.TestQuestionDescriptionHoldsTheBounds` | not built |
-| A call that uses a label twice in one question is answered `invalid_input`; of two `question` calls in one step the first is asked and the second is answered `invalid_input`; a call past a count or a length is refused by the schema | `harness.TestAQuestionCallIsChecked` | not built |
-| A Session is not attended unless its creator says so: `session.New` leaves it false, the create and fork routes take the body's value, a trigger's session is not attended, and `topos run` sets it with `--attended` | `session.TestASessionIsNotAttendedByDefault`, `internal/server.TestAttendedAtCreate`, `internal/toposcli.TestRunAttended` | not built |
-| In a session that is not attended a valid call is recorded and answered in the same step, outcome `unanswered`, not an error, `meta.closed_by` `unattended`, and the session never goes idle `question` | `harness.TestAQuestionNobodyAttendsIsAnsweredAtOnce` | not built |
-| In an attended session a valid call scores 0.0 and is allowed in `plan`, `confirm` and `progressive`, a pattern of `always_confirm` that names it does not make it ask, the step's other calls run and their results are appended, the session goes idle `question`, and a claim with nothing that closed the call keeps it waiting and sends no request | `harness.TestAQuestionWaitsForItsAnswer` | not built |
-| One function says what closed a call: its result when it has one, else the first of a `user.answer`, a person's message and an interrupt after its `agent.tool_use`; a message before it closes nothing; a later event changes nothing; a redacted answer still closes. `session.Awaiting` and `session.HasPendingInput` follow it, and an interrupt is pending input only when it closed a question | `session.TestWhatClosedAQuestion` | not built |
-| A `user.answer` is rendered into one `tool.result` with outcome `ok` that holds each chosen label and the person's words and marks an empty entry as left to the agent, with `meta.closed_by` `answer` and the answer's id; all entries empty is `unanswered`; a fresh harness renders the same bytes from the log, and a runner that stops between the answer and the result leaves exactly one result | `harness.TestAnAnswerIsRenderedOnce` | not built |
-| The send route refuses a `user.answer` when no question is open, and after an answer, a person's message or an interrupt closed it, as `conflict` with what closed it in the detail; one with the wrong number of entries, an unknown or repeated label, several labels on a single-choice question, a text past its bound or an unknown field as `invalid_request`; each with nothing appended; a caller the authorizer denies hears `forbidden` whatever the answer holds | `internal/server.TestAnAnswerIsCheckedAgainstItsQuestion` | not built |
-| Of two answers sent at once one is appended and the other is `conflict`, and the same holds for two confirmations of one call | `internal/server.TestTwoAnswersAtOnce` | not built |
-| A person's message appended after the question closes it `unanswered` with `meta.closed_by` `message`, and the next request holds the result and then the message; a message appended before the question closes nothing | `harness.TestAMessageStandsInForAnAnswer` | not built |
-| An interrupt in the step that holds the call closes it `canceled` and ends the turn `interrupted`; an interrupt on a session idle `question` is claimed, the call is closed `canceled`, the session goes idle `interrupted`, and no request is sent; an interrupt on any other idle session is still not pending input | `harness.TestAnInterruptDismissesAQuestion`, `runner.TestAnInterruptOnAnOpenQuestionIsClaimed` | not built |
-| An answer is asked as `session.send` with `event_type` `user.answer`; a deny is `forbidden`, appends nothing and leaves the question open; an allow that names another model appends `session.model_changed` straight before the answer | `internal/server.TestAnAnswerIsASend` | not built |
-| `user.answer` is a known type the fold renders nothing for and notes the sender of; redacting it redacts the result rendered from it; an answer redacted before its result is rendered closes the call `unanswered`; redacting the `agent.tool_use` of an open question is `conflict` | `session.TestTheFoldSkipsAnAnswer`, `internal/server.TestRedactingAnAnswerTakesItsResult` | not built |
-| A `question` result is never cleared, and the compaction prompt's version asks for the questions put to the person with their answers | `harness.TestQuestionResultsAreNeverCleared`, `prompts.TestTheCompactionPromptKeepsQuestions` | not built |
-| An attended `topos run` exits 3 on `question` and names the open call, and a message sent with `--session` continues the turn; without the flag a question does not stop the run | `internal/toposcli.TestExitCodes`, `internal/toposcli.TestRunAttended` | not built |
-| The OpenAPI document names `user.answer`, the stop reason, `attended` on the create and the fork, the redact rule and the two schemas, is the one the handlers generate, and the send route shows an example of the event | `internal/server.TestOpenAPIIsGenerated`, `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestEveryAnswerShowsAnExample` | not built |
-| The three instruction tests exist, the third in an attended session whose driver sends its answer, and each checker passes its scripted solution and refuses its scripted wrong one by an assertion on the log | `test/tasks.TestEveryToolDescriptionHasAnInstructionTest`, which gains the harness's `question`, `test/tasks.TestScriptedSolutions`, `test/tasks.TestADriverAnswersAQuestion` | not built |
+| The harness offers `question` to the session's own thread when the agent's tools name it and to no thread a `spawn` starts; `tools.Builtins` and the default set stay the eight, with the digest an agent had; the validator accepts the name among an agent's tools and refuses a client tool that takes it | `harness.TestQuestionIsOfferedWhenNamed`, `manifest.TestQuestionIsAKnownToolName` | built |
+| The validator checks `minItems` and `maxItems`; the tool's schema states every bound from the constants; the description file and the OpenAPI text hold no bound that differs from them | `harness/tools.TestSchemaArrayLengths`, `harness.TestQuestionSchemaFollowsTheConstants`, `prompts.TestQuestionDescriptionHoldsTheBounds`, `internal/server.TestTheSendRouteShowsAnAnswer` | built |
+| A call that uses a label twice in one question is answered `invalid_input`; of two `question` calls in one step the first is asked and the second is answered `invalid_input`; a call past a count or a length is refused by the schema | `harness.TestAQuestionCallIsChecked` | built |
+| A Session is not attended unless its creator says so: `session.New` leaves it false, the create and fork routes take the body's value, a trigger's session is not attended, and `topos run` sets it with `--attended` | `session.TestASessionIsNotAttendedByDefault`, `internal/server.TestAttendedAtCreate`, `internal/toposcli.TestRunAttended` | built |
+| In a session that is not attended a valid call is recorded and answered in the same step, outcome `unanswered`, not an error, `meta.closed_by` `unattended`, and the session never goes idle `question` | `harness.TestAQuestionNobodyAttendsIsAnsweredAtOnce` | built |
+| In an attended session a valid call scores 0.0 and is allowed in `plan`, `confirm` and `progressive`, a pattern of `always_confirm` that names it does not make it ask, the step's other calls run and their results are appended, the session goes idle `question`, and a claim with nothing that closed the call keeps it waiting and sends no request | `harness.TestAQuestionWaitsForItsAnswer` | built |
+| One function says what closed a call: its result when it has one, else the first of a `user.answer`, a person's message and an interrupt after its `agent.tool_use`; a message before it closes nothing; a later event changes nothing; a redacted answer still closes. `session.Awaiting` and `session.HasPendingInput` follow it, and an interrupt is pending input only when it closed a question | `session.TestWhatClosedAQuestion` | built |
+| A `user.answer` is rendered into one `tool.result` with outcome `ok` that holds each chosen label and the person's words and marks an empty entry as left to the agent, with `meta.closed_by` `answer` and the answer's id; all entries empty is `unanswered`; a fresh harness renders the same bytes from the log, and a runner that stops between the answer and the result leaves exactly one result | `harness.TestAnAnswerIsRenderedOnce` | built |
+| The send route refuses a `user.answer` when no question is open, and after an answer, a person's message or an interrupt closed it, as `conflict` with what closed it in the detail; one with the wrong number of entries, an unknown or repeated label, several labels on a single-choice question, a text past its bound or an unknown field as `invalid_request`; each with nothing appended; a caller the authorizer denies hears `forbidden` whatever the answer holds | `internal/server.TestAnAnswerIsCheckedAgainstItsQuestion` | built |
+| Of two answers sent at once one is appended and the other is `conflict`, and the same holds for two confirmations of one call | `internal/server.TestTwoAnswersAtOnce` | built |
+| A person's message appended after the question closes it `unanswered` with `meta.closed_by` `message`, and the next request holds the result and then the message; a message appended before the question closes nothing | `harness.TestAMessageStandsInForAnAnswer` | built |
+| An interrupt in the step that holds the call closes it `canceled` and ends the turn `interrupted`; an interrupt on a session idle `question` is claimed, the call is closed `canceled`, the session goes idle `interrupted`, and no request is sent; an interrupt on any other idle session is still not pending input | `harness.TestAnInterruptDismissesAQuestion`, `runner.TestAnInterruptOnAnOpenQuestionIsClaimed` | built |
+| An answer is asked as `session.send` with `event_type` `user.answer`; a deny is `forbidden`, appends nothing and leaves the question open; an allow that names another model appends `session.model_changed` straight before the answer | `internal/server.TestAnAnswerIsASend`, `internal/server.TestTheAuthorizerDocNamesEveryEventType` | built |
+| `user.answer` is a known type the fold renders nothing for and notes the sender of; redacting it redacts the result rendered from it; an answer redacted before its result is rendered closes the call `unanswered`; redacting the `agent.tool_use` of an open question is `conflict` | `session.TestTheFoldSkipsAnAnswer`, `internal/server.TestRedactingAnAnswerTakesItsResult`, `harness.TestAnAnswerIsRenderedOnce` | built |
+| A `question` result is never cleared, and the compaction prompt's version asks for the questions put to the person with their answers | `harness.TestQuestionResultsAreNeverCleared`, `prompts.TestTheCompactionPromptKeepsQuestions`, `harness.TestASummaryRequestReplays` | built |
+| An attended `topos run` exits 3 on `question` and names the open call, and a message sent with `--session` continues the turn; without the flag a question does not stop the run | `internal/toposcli.TestExitCodes`, `internal/toposcli.TestRunAttended` | built |
+| The OpenAPI document names `user.answer`, the stop reason, `attended` on the create and the fork, the redact rule and the two schemas, is the one the handlers generate, and the send route shows an example of the event | `internal/server.TestOpenAPIIsGenerated`, `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestEveryAnswerShowsAnExample`, `internal/server.TestTheSendRouteShowsAnAnswer` | built |
+| The three instruction tests exist, the third in an attended session whose driver sends its answer, and each checker passes its scripted solution and refuses its scripted wrong one by an assertion on the log | `test/tasks.TestEveryToolDescriptionHasAnInstructionTest`, which gains the harness's `question`, `test/tasks.TestScriptedSolutions`, `test/tasks.TestADriverAnswersAQuestion`, `test/tasks.TestQuestionAssertions` | built |
 | The three instruction tests pass against a real model in the instruction tier | `test/tasks.TestTheSuiteAgainstAModel` with the `instructions` tag | not built |
-| End to end on a server over the stub Lux, whose script calls `question` and then, on reading the result, ends its turn: an attended session of an agent that names the tool streams the `agent.tool_use` and goes idle `question`; the list answers that stop reason and the summary counts the session `idle`; a `user.answer` choosing an option is appended; the second request holds a result naming that option; the session goes idle `end_turn`. The same script in a session created without `attended` ends its turn with one `unanswered` result and never idles on the question | `cmd/toposd.TestAQuestionIsAskedAnsweredAndContinued` | not built |
+| End to end on a server over the stub Lux, whose script calls `question` and then, on reading the result, ends its turn: an attended session of an agent that names the tool streams the `agent.tool_use` and goes idle `question`; the list answers that stop reason and the summary counts the session `idle`; a `user.answer` choosing an option is appended; the second request holds a result naming that option; the session goes idle `end_turn`. The same script in a session created without `attended` ends its turn with one `unanswered` result and never idles on the question | `cmd/toposd.TestAQuestionIsAskedAnsweredAndContinued` | built |
+| A fork made while a question is open, attended or not, copies the open call, and its first message closes it; a call left open in a session nobody attends is answered at once by the next claim | `harness.TestAForkAcrossAnOpenQuestion` | built |
+| A log written before this spec holds no question and waits for what it waited for | `session.TestAnOldLogReadsAsBefore` | built |
+| A redacted `tool.result` still answers its call, so no claim appends a second one | `harness.TestARedactedResultStillAnswersItsCall`, `session.TestARedactedResultKeepsItsCall` | built |
+
+## Outcome
+
+Built after v0.12.0 on 2026-10-04, in no release yet: the prerequisite
+under [[012-permissions-and-approvals]], both of its rules of the
+waits; the tool, its description `prompts/tools/question-v1.md` and its
+results under `prompts/results/question/`; `attended` on the Session,
+the create and the fork bodies and `topos run --attended`; the stop
+reason `question`; `user.answer` and its checks; the outcome
+`unanswered` and the result's `meta`; the conditional append of every
+answering event; redaction; the trigger hold; the compaction prompt's
+second version; the three instruction tests with a driver that answers
+as a person does; the API document's text and the client contract in
+`docs/questions.md`. The one criterion open is the instruction tier
+against a real model, which needs a live model connection; the scripted
+solutions pass.
+
+Where the build departs from or adds to the design above:
+
+- **The prerequisite took both rules of
+  [[012-permissions-and-approvals]].** A person's message now denies the
+  calls that wait for a confirmation, in every thread, as well as
+  closing a question, so an ask beside a question is settled by the
+  same message. A message denies or closes only when its sender's kind
+  is `person`: a trigger's message closes nothing.
+- **A redacted result keeps its call.** Redacting any `tool.result`
+  made its call read as unanswered, and the next claim appended a
+  second result `unknown_effect`. The tombstone of a `tool.result` or a
+  `user.tool_result` is now `{"tombstone":true,"tool_use_id":...}`, and
+  `session.Event.Answers` reads the id from it; a tombstone written
+  before keeps no id and reads as before. "A redacted answer still
+  closes" rests on this.
+- **The compaction prompt is versioned on the event.** The design names
+  a new version of the prompt; a replay must ask a summary again with
+  the text it was asked with, so `context.compacted` gained `prompt`,
+  the prompt's name, and a summary that names none was asked with
+  `compact-v1` ([[010-context]]).
+- **The order of the stop reasons.** When several kinds of answer wait
+  at once the stop reason names a confirmation, then a question, then a
+  client's result, at a step's end and at a claim alike.
+- **What "closed" means for redaction.** The route refuses to redact a
+  question's `agent.tool_use` until the call's `tool.result` is in the
+  log, not only while it is open: a call an answer closed whose result
+  is still owed would otherwise lose the result it is owed.
+- **A decider's ask is overruled.** `always_confirm` patterns that name
+  the tool are dropped from the policy a question is decided by, and a
+  decision service's ask on a question is recorded as an allow. A block
+  still blocks.
+- **Closing during the holding step.** The one rule counts from the
+  call's `agent.tool_use`, so an answer, a message or an interrupt that
+  arrives while the step's other calls run closes the question when the
+  step ends: its result is appended then, and the session never goes
+  idle on it. An interrupt that lands only as the turn goes idle makes
+  the outcome pending, so the runner claims again at once and closes
+  the call.
+- **Where the example of the answer lives.** The send route's example
+  in the API document stays the message the document's story sends; the
+  `user.answer` example is in the route's description and in the
+  `UserAnswer` and `QuestionInput` schemas, and a test sends it.
+- **The task suite.** A task names its answers in `task.yaml`, each
+  matched to a question by its header or text and to an option by its
+  label, both without case, and said in the person's words when no
+  label holds it. The third task's prompt fixes the option labels and
+  the recommended one, so "the option not marked recommended" is the
+  same for every model. The checker gained `question`, the calls'
+  count, described options, the recommended option first and a pattern
+  a question must not match, and `final_message`, which reads the
+  model's last message, departing from the suite's rule of never
+  reading prose because the description's rule is about that message.
+- **Triggers.** A session idle `question` is active, and a `continue`
+  firing to it is held, as for a confirmation ([[022-triggers]]).
+  `session.HasPendingInput` now reads before the last status for an
+  interrupt; the trigger engine passes it a tail of the log, which is
+  enough while a trigger's session is never attended.
+- **Not built, as the design says:** nothing in the log keeps a runner
+  built before this spec from claiming a session with an open question;
+  the rollout order of the compatibility section is the only guard.

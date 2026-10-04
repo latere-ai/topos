@@ -95,7 +95,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
 | [037](.archive/037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | complete | 004, 005, 012, 016 |
 | [038](.archive/038-routed-models.md) | Routed models: a model name the authorizer resolves, at a session's create, at a model change and between turns | medium | complete | 005, 010, 012, 015 |
-| [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions a person attends | medium | drafted | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 024 |
+| [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions a person attends | medium | in-progress | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 024 |
 
 ## Dependency graph
 
@@ -236,7 +236,8 @@ release job that runs it (028) are not built. Phase 3 is open because
 memory stores (020) are not built and the Cella tier's three tests are
 not written. Phase 4 has fork and none of the external runner or
 handoff. Of phase 5, 037 is complete, and 038 since, on 2026-10-04, in
-no release yet; 039 is drafted.
+no release yet; 039 is built but for its instruction tier against a
+real model, in no release yet.
 
 Work ran ahead of this order, so many specs are `in-progress` while
 specs they build on are open; each Outcome section names what shipped

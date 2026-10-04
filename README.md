@@ -61,7 +61,7 @@ Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite
 and the release archives. The task suite runs, but no release has measured
 its bar against a pinned model yet. In the [specs](specs) deck, 13 specs are
-complete, 17 in progress and 8 drafted or vague, none of those 8 built yet;
+complete, 18 in progress and 8 drafted or vague, none of those 8 built yet;
 [specs/README.md](specs/README.md) says which build phases are closed.
 
 ## Try it
