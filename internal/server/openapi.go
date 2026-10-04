@@ -251,19 +251,22 @@ var opDescriptions = map[string]string{
 	"listAgentVersions": "List an agent's versions.",
 	"getAgentVersion":   "Get one version of an agent.",
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
-	"createSession":     "Create a session of an agent, named by id or by name among the agents of the caller's context.",
-	"listSessions":      "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
-	"getSession":        "Get a session.",
-	"resumeSession":     "Resume a session idle on its budget once the cap is raised.",
-	"deleteSession":     "Delete a session, its log and its blobs.",
-	"listEvents":        "List a session's events from a sequence.",
-	"getBlob":           "Get a blob of a session.",
-	"redactEvent":       "Replace one event's content with a tombstone.",
-	"listTriggers":      "List triggers.",
-	"getTrigger":        "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
-	"deleteTrigger":     "Delete a trigger with its firings; the sessions it started keep running.",
-	"listFirings":       "List a trigger's firings, newest first.",
-	"getOpenAPI":        "This document.",
+	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " +
+		"The session runs its agent's model, and its model is absent from the answer. Where the installation's authorizer names another model for it, the session starts on that one: " +
+		"its model is {name, via, effort}, name the model that runs and via the agent's own name for it, which a client that offers the choice shows. " +
+		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable.",
+	"listSessions":  "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
+	"getSession":    "Get a session.",
+	"resumeSession": "Resume a session idle on its budget once the cap is raised.",
+	"deleteSession": "Delete a session, its log and its blobs.",
+	"listEvents":    "List a session's events from a sequence.",
+	"getBlob":       "Get a blob of a session.",
+	"redactEvent":   "Replace one event's content with a tombstone.",
+	"listTriggers":  "List triggers.",
+	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
+	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running.",
+	"listFirings":   "List a trigger's firings, newest first.",
+	"getOpenAPI":    "This document.",
 	"endSession": `End an idle session completed or canceled. The body is {"reason": "completed"} or {"reason": "canceled"}. ` +
 		"The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running or ended session as conflict before it asks session.end; " +
 		"a session a runner claims while the authorizer decides is conflict too, and a deny is forbidden.",
@@ -277,8 +280,10 @@ var opDescriptions = map[string]string{
 		"and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most %d of at most %d bytes each, the name one path segment of at most %d bytes). "+
 		"The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; "+
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
-		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes.",
-		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody),
+		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
+		"The authorizer's allow of a message, a confirmation or a result may name another model than the one the session runs: session.model_changed {by, old, new} is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
+		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it. A turn already running keeps its model. A model the installation does not run refuses the send as model_unknown or model_unavailable.",
+		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject),
 	"applyTrigger": fmt.Sprintf("Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. "+
 		"The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
 		"or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. "+
@@ -316,9 +321,10 @@ var opDescriptions = map[string]string{
 	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "effort": "<effort>"}}, the model the session's next turn runs and its reasoning effort, either member or both; any other member is refused. `+
 		"A member left out keeps what the session runs. effort is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. "+
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+
-		"A model no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable; the authorizer is asked session.update with session_id, model when the body names one, after the model resolved, "+
-		"and effort, the effort the next turn runs at, when the body names one, and a deny is forbidden. "+
-		"An allowed change appends session.model_changed {by, old, new}, each {name, effort}, and answers the Session, whose model is the new one; a change to the model and the effort the session runs appends nothing. "+
+		"The authorizer is asked session.update with session_id, model when the body names one, and effort, the effort the next turn runs at, when the body names one, and a deny is forbidden. "+
+		"Its allow may name the model to run in place of the one the body names: the session then runs that model, and its model's via is the name the body asked, which a client that offers the choice shows; via is absent when the session runs the name asked. "+
+		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. "+
+		"An allowed change appends session.model_changed {by, old, new}, each {name, via, effort}, and answers the Session, whose model is the new one; a change to the model and the effort the session runs appends nothing. "+
 		"A turn already running keeps its model and its effort: the change takes effect at the next turn.", strings.Join(v1.Efforts, ", ")),
 }
 
