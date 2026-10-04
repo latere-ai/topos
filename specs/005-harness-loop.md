@@ -274,9 +274,10 @@ that call.
 
 The validator is Go-native and covers `type`, `properties`,
 `required`, `additionalProperties`, `items`, `enum`, `const`,
-`minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `oneOf` and
-`anyOf`; a tool schema using another keyword is refused when the
-registry is built.
+`minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems`,
+`pattern`, `oneOf` and `anyOf`; a tool schema using another keyword is
+refused when the registry is built. The two array keywords were added
+by [[039-questions]], so the model reads a list's bounds in the schema.
 
 ### Parallel calls
 

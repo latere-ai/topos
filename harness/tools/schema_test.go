@@ -47,8 +47,10 @@ func TestCompileSchemaRefuses(t *testing.T) {
 		{`{"pattern":"("}`, "/pattern: error parsing regexp"},
 		{`{"oneOf":[]}`, "/oneOf: not a non-empty array"},
 		{`{"anyOf":[{"type":"x"}]}`, `/anyOf/0/type: "x" is not a JSON Schema type`},
-		{`{"maxItems":1}`, `/: the keyword "maxItems" is not supported`},
-		{`{"properties":{"a/b~":{"minItems":1}}}`, `/properties/a~1b~0: the keyword "minItems" is not supported`},
+		{`{"maxItems":-1}`, "/maxItems: not a non-negative integer"},
+		{`{"minItems":"1"}`, "/minItems: not a non-negative integer"},
+		{`{"uniqueItems":true}`, `/: the keyword "uniqueItems" is not supported`},
+		{`{"properties":{"a/b~":{"contains":{}}}}`, `/properties/a~1b~0: the keyword "contains" is not supported`},
 		{`{"properties":{"a":{"properties":{"b":{"$ref":"#"}}}}}`, `/properties/a/properties/b: the keyword "$ref" is not supported`},
 	} {
 		_, err := CompileSchema(json.RawMessage(c.schema))
@@ -141,5 +143,33 @@ func TestSchemaValidates(t *testing.T) {
 	}
 	if hasType("x", "integer") || hasType(json.Number("x"), "integer") || hasType("x", "number") {
 		t.Fatal("hasType")
+	}
+}
+
+// TestSchemaArrayLengths: minItems and maxItems bound an array's length,
+// a nested array's with its pointer, and say nothing of a value that is
+// not an array.
+func TestSchemaArrayLengths(t *testing.T) {
+	s, err := CompileSchema(json.RawMessage(`{"type":"object","properties":{
+	  "list":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"object","properties":{"inner":{"type":"array","minItems":2,"maxItems":2}}}},
+	  "any":{"minItems":2}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		value string
+		want  []string
+	}{
+		{`{"list":[{}]}`, nil},
+		{`{"list":[{},{},{}]}`, nil},
+		{`{"list":[]}`, []string{"/list: fewer than 1 items"}},
+		{`{"list":[{},{},{},{}]}`, []string{"/list: more than 3 items"}},
+		{`{"list":[{"inner":[1]},{"inner":[1,2,3]},{"inner":[1,2]}]}`, []string{"/list/0/inner: fewer than 2 items", "/list/1/inner: more than 2 items"}},
+		{`{"any":"a string"}`, nil},
+		{`{"any":[1]}`, []string{"/any: fewer than 2 items"}},
+	} {
+		if got := s.Validate(value(t, c.value)); !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", c.value, got, c.want)
+		}
 	}
 }

@@ -30,6 +30,8 @@ type Schema struct {
 	maximum      *big.Float
 	minLength    *int
 	maxLength    *int
+	minItems     *int
+	maxItems     *int
 	pattern      *regexp.Regexp
 	oneOf, anyOf []*Schema
 }
@@ -130,16 +132,21 @@ func compile(v any, at string) (*Schema, error) {
 			} else {
 				s.maximum = f
 			}
-		case "minLength", "maxLength":
+		case "minLength", "maxLength", "minItems", "maxItems":
 			n, ok := val.(json.Number)
 			i, ierr := strconv.Atoi(string(n))
 			if !ok || ierr != nil || i < 0 {
 				return nil, fmt.Errorf("%s/%s: not a non-negative integer", pointer(at), k)
 			}
-			if k == "minLength" {
+			switch k {
+			case "minLength":
 				s.minLength = &i
-			} else {
+			case "maxLength":
 				s.maxLength = &i
+			case "minItems":
+				s.minItems = &i
+			default:
+				s.maxItems = &i
 			}
 		case "pattern":
 			p, ok := val.(string)
@@ -253,6 +260,12 @@ func (s *Schema) validate(v any, at string, out *[]string) {
 			}
 		}
 	case []any:
+		if s.minItems != nil && len(x) < *s.minItems {
+			add("fewer than %d items", *s.minItems)
+		}
+		if s.maxItems != nil && len(x) > *s.maxItems {
+			add("more than %d items", *s.maxItems)
+		}
 		if s.items != nil {
 			for i, e := range x {
 				s.items.validate(e, at+"/"+strconv.Itoa(i), out)

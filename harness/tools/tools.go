@@ -85,6 +85,12 @@ const (
 	OutcomeBlocked       = "blocked"
 	OutcomeCanceled      = "canceled"
 	OutcomeUnknownEffect = "unknown_effect"
+	// OutcomeUnanswered is a question nobody chose an option of (spec
+	// 039): the session is not attended, the person left every question
+	// to the agent, or a message came in place of an answer. It is the
+	// one outcome beside ok that is not an error, since the call did what
+	// it could and the model is told to decide.
+	OutcomeUnanswered = "unanswered"
 )
 
 // Result is a finished call.
@@ -96,8 +102,11 @@ type Result struct {
 	Spill *session.Spill
 }
 
-// IsError reports whether the outcome is one the model sees as an error.
-func (r Result) IsError() bool { return r.Outcome != OutcomeOK && r.Outcome != "" }
+// IsError reports whether the outcome is one the model sees as an error:
+// every outcome but ok and unanswered.
+func (r Result) IsError() bool {
+	return r.Outcome != OutcomeOK && r.Outcome != OutcomeUnanswered && r.Outcome != ""
+}
 
 // Text returns a result of one text block.
 func Text(outcome, text string) Result {
@@ -116,6 +125,11 @@ type Meta struct {
 	// Todos is the thread's todo list after a todo call. omitzero keeps
 	// an emptied list, [], apart from a meta that has no list.
 	Todos []Todo `json:"todos,omitzero"`
+	// ClosedBy and EventID are what closed a question call and the id of
+	// the event that did (spec 039), by the names of session.QuestionMeta,
+	// which a client reads to say why a question closed.
+	ClosedBy string `json:"closed_by,omitempty"`
+	EventID  string `json:"event_id,omitempty"`
 }
 
 // Todo is one entry of a thread's list.

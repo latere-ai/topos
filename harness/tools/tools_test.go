@@ -59,7 +59,7 @@ func TestRegistryRefuses(t *testing.T) {
 		"empty name":   stub{def: Definition{Name: ""}},
 		"bad name":     stub{def: Definition{Name: "has space"}},
 		"long name":    stub{def: Definition{Name: strings.Repeat("a", 65)}},
-		"bad schema":   stub{def: Definition{Name: "x", InputSchema: json.RawMessage(`{"type":"object","maxItems":3}`)}},
+		"bad schema":   stub{def: Definition{Name: "x", InputSchema: json.RawMessage(`{"type":"object","uniqueItems":true}`)}},
 		"not a schema": stub{def: Definition{Name: "y", InputSchema: json.RawMessage(`[`)}},
 	} {
 		if err := r.Add(tool); err == nil {
@@ -234,7 +234,7 @@ func TestCap(t *testing.T) {
 }
 
 func TestResultHelpers(t *testing.T) {
-	if (Result{}).IsError() || (Result{Outcome: OutcomeOK}).IsError() || !(Result{Outcome: OutcomeDenied}).IsError() {
+	if (Result{}).IsError() || (Result{Outcome: OutcomeOK}).IsError() || (Result{Outcome: OutcomeUnanswered}).IsError() || !(Result{Outcome: OutcomeDenied}).IsError() {
 		t.Fatal("IsError")
 	}
 	for _, o := range []string{OutcomeError, OutcomeTimeout, OutcomeUnknownTool, OutcomeInvalidInput, OutcomeDenied, OutcomeBlocked, OutcomeCanceled, OutcomeUnknownEffect} {
