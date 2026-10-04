@@ -148,6 +148,12 @@ type Config struct {
 	// keys by hash; an empty URL mints no session key (spec 018).
 	SessionKeysURL   string
 	SessionKeysToken string
+	// SearchURL is the search service web_search sends its queries to,
+	// empty for none (spec 040); SearchKey is the bearer sent to it by an
+	// installation that mints no session keys, whose sessions search with
+	// their own.
+	SearchURL string
+	SearchKey string
 }
 
 // Defaults of the runner variables.
@@ -376,6 +382,15 @@ func (c *Config) readRunner(getenv Getenv) []string {
 	if c.OrigoTokenFile != "" && c.OrigoURL == "" {
 		problems = append(problems, "TOPOS_ORIGO_TOKEN_FILE needs TOPOS_ORIGO_URL, the git host its credential is sent to")
 	}
+	c.SearchURL = strings.TrimSpace(getenv("TOPOS_SEARCH_URL"))
+	c.SearchKey = strings.TrimSpace(getenv("TOPOS_SEARCH_KEY"))
+	if c.SearchURL != "" {
+		if err := checkURL(c.SearchURL); err != nil {
+			problems = append(problems, "TOPOS_SEARCH_URL "+err.Error())
+		}
+	} else if c.SearchKey != "" {
+		problems = append(problems, "TOPOS_SEARCH_KEY needs TOPOS_SEARCH_URL, the search service it is sent to")
+	}
 	return problems
 }
 
@@ -426,6 +441,9 @@ func (c *Config) readCredentials(getenv Getenv) []string {
 		}
 		if c.ModelsKey != "" {
 			problems = append(problems, "TOPOS_MODELS_KEY is set beside TOPOS_SESSION_KEYS_URL; sessions ask models with their own keys, so unset it")
+		}
+		if c.SearchKey != "" {
+			problems = append(problems, "TOPOS_SEARCH_KEY is set beside TOPOS_SESSION_KEYS_URL; sessions search with their own keys, so unset it")
 		}
 	}
 	return problems

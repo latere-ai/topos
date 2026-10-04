@@ -491,3 +491,36 @@ func TestBasePathMustMatchPublicURL(t *testing.T) {
 		t.Errorf("runner: %v", err)
 	}
 }
+
+// TestSearchVariables (spec 040): both roles read the search service's
+// URL and its key; a URL that is not one stops the start, the key needs
+// the URL, and a server that mints session keys refuses the key, since
+// its sessions search with their own.
+func TestSearchVariables(t *testing.T) {
+	keys := map[string]string{"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a", "TOPOS_SESSION_KEYS_URL": "https://platform.example/sessions", "TOPOS_SESSION_KEYS_TOKEN": "k"}
+	c, err := Load(RoleServe, serve(map[string]string{"TOPOS_SEARCH_URL": " https://search.example/v1/search ", "TOPOS_SEARCH_KEY": " sk "}))
+	if err != nil || c.SearchURL != "https://search.example/v1/search" || c.SearchKey != "sk" {
+		t.Fatalf("serve: %+v %v", c, err)
+	}
+	withKeys := maps.Clone(keys)
+	withKeys["TOPOS_SEARCH_URL"] = "https://search.example/v1/search"
+	if c, err := Load(RoleServe, serve(withKeys)); err != nil || c.SearchURL == "" || c.SearchKey != "" {
+		t.Fatalf("a server with session keys and a search URL: %+v %v", c, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example", "TOPOS_SEARCH_URL": "http://search.example"}))
+	if err != nil || r.SearchURL != "http://search.example" {
+		t.Fatalf("a runner: %+v %v", r, err)
+	}
+	keyBeside := maps.Clone(withKeys)
+	keyBeside["TOPOS_SEARCH_KEY"] = "sk"
+	for name, vars := range map[string]map[string]string{
+		"a URL that is not one":     {"TOPOS_SEARCH_URL": "search"},
+		"a URL with a query":        {"TOPOS_SEARCH_URL": "https://search.example/?q=1"},
+		"a key without its URL":     {"TOPOS_SEARCH_KEY": "sk"},
+		"a key beside session keys": keyBeside,
+	} {
+		if _, err := Load(RoleServe, serve(vars)); err == nil || !strings.Contains(err.Error(), "TOPOS_SEARCH_") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
