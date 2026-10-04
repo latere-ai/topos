@@ -1,6 +1,6 @@
 ---
 title: "Changing a session's approval mode: the policy member of PATCH, the session.policy_changed event, the authorizer's question, and a mode that holds from the next step"
-status: drafted
+status: complete
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 006-identity.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 017-external-runners-handoff-fork.md]
 affects: [session/, harness/, internal/server/, api/]
@@ -202,12 +202,35 @@ the agent's; the console or a client's control for the mode.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A change of the mode asks `session.update` with `approval_mode`, `current_approval_mode` and `agent_approval_mode`, appends `session.policy_changed` with the old and the new mode, and answers the Session whose `policy.mode` is the new one, its lists and thresholds unchanged; a change to the mode the session runs appends nothing | `internal/server.TestASessionChangesItsMode` | not built |
-| A change of the mode and the model in one body asks one question with both fields and appends both events in one batch | `internal/server.TestAModeAndAModelChangeTogether` | not built |
-| A mode outside the three, a `policy` without `mode` or with another member, and a body naming neither member are `invalid_request`; a caller who may not read hears `not_found`; an ended session is `conflict`; a denied change is `forbidden` with the reason; each leaves the mode and the log as they were | `internal/server.TestAModeChangeIsRefused` | not built |
-| The header's `policy.mode` follows the latest `session.policy_changed`, and a fork's copied change does not move the fork's | `session.TestThePolicyFollowsItsChanges` | not built |
-| A change appended while a step runs holds from the next step's calls in the same turn, and a call decided before it keeps its verdict | `harness.TestAModeChangeHoldsFromTheNextStep` | not built |
-| A call waiting for a confirmation keeps waiting after a change to `progressive`, and a confirmation still runs it | `harness.TestAWaitingCallStaysWaitingAfterAModeChange` | not built |
-| A thread decides under the stricter of the session's switched mode and its own agent's | `harness.TestAThreadKeepsItsAgentsStricterMode` | not built |
-| A host with no sandbox decides a session switched to `progressive` as `confirm` | `harness.TestProgressiveWithoutASandboxDecidesAsConfirm` | not built |
-| Through toposd: a session switched to `plan` blocks the write its next turn's model asks for, over the stub model | `cmd/toposd.TestAModeChangeReachesTheRunner` | not built |
+| A change of the mode asks `session.update` with `approval_mode`, `current_approval_mode` and `agent_approval_mode`, appends `session.policy_changed` with the old and the new mode, and answers the Session whose `policy.mode` is the new one, its lists and thresholds unchanged; a change to the mode the session runs appends nothing | `internal/server.TestASessionChangesItsMode` | built |
+| A change of the mode and the model in one body asks one question with both fields and appends both events in one batch | `internal/server.TestAModeAndAModelChangeTogether` | built |
+| A mode outside the three, a `policy` without `mode` or with another member, and a body naming neither member are `invalid_request`; a caller who may not read hears `not_found`; an ended session is `conflict`; a denied change is `forbidden` with the reason; each leaves the mode and the log as they were | `internal/server.TestAModeChangeIsRefused` | built |
+| The header's `policy.mode` follows the latest `session.policy_changed`, and a fork's copied change does not move the fork's | `session.TestThePolicyFollowsItsChanges` | built |
+| A change appended while a step runs holds from the next step's calls in the same turn, and a call decided before it keeps its verdict | `harness.TestAModeChangeHoldsFromTheNextStep` | built |
+| A call waiting for a confirmation keeps waiting after a change to `progressive`, and a confirmation still runs it | `harness.TestAWaitingCallStaysWaitingAfterAModeChange` | built |
+| A thread decides under the stricter of the session's switched mode and its own agent's | `harness.TestAThreadKeepsItsAgentsStricterMode` | built |
+| A host with no sandbox decides a session switched to `progressive` as `confirm` | `harness.TestProgressiveWithoutASandboxDecidesAsConfirm` | built |
+| Through toposd: a session switched to `plan` blocks the write its next turn's model asks for, over the stub model | `cmd/toposd.TestAModeChangeReachesTheRunner` | built |
+
+## Outcome
+
+Built as designed on 2026-10-05. `PATCH /v1/sessions/{id}` takes
+`policy.mode`, alone or beside `model`; one `session.update` question
+carries `approval_mode`, `current_approval_mode` and
+`agent_approval_mode` beside the model's fields; the events of one body
+land in one batch. `session.Mode` reads the latest change a session
+wrote itself from a log, which the harness reads at each step's
+decisions and `ApplyBatch` writes to the header's `policy.mode`. A
+thread holds a ceiling, the stricter of the modes its own agents name,
+which the session's change cannot pass, and a host that records
+`sandbox: none` decides `progressive` as `confirm`. Every criterion has
+a passing test, the end-to-end one through `toposd` over the stub model
+among them.
+
+Two points the design left open were settled. A change to the mode the
+session already runs is asked like any other change and appends
+nothing, as a change of the model to the model it runs does. A session
+that records no policy, which only a session created outside the server
+has, keeps none in its header after a change; the harness applies the
+change over the agent's own policy from the log, so the header does not
+invent lists it never had.

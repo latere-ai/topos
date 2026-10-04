@@ -96,8 +96,8 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [037](.archive/037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | complete | 004, 005, 012, 016 |
 | [038](.archive/038-routed-models.md) | Routed models: a model name the authorizer resolves, at a session's create, at a model change and between turns | medium | complete | 005, 010, 012, 015 |
 | [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions a person attends | medium | in-progress | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 024 |
-| [040](040-session-deletion.md) | Deleting a session: the route asks only about a session it would delete, refuses a running one, what a delete removes and when, what it leaves | small | drafted | 004, 006, 009, 014, 015, 016, 035 |
-| [041](041-approval-mode-change.md) | Changing a session's approval mode: the policy member of PATCH, session.policy_changed, the authorizer's question, from the next step | small | drafted | 004, 005, 006, 012, 013, 015, 017 |
+| [040](.archive/040-session-deletion.md) | Deleting a session: the route asks only about a session it would delete, refuses a running one, what a delete removes and when, what it leaves | small | complete | 004, 006, 009, 014, 015, 016, 035 |
+| [041](.archive/041-approval-mode-change.md) | Changing a session's approval mode: the policy member of PATCH, session.policy_changed, the authorizer's question, from the next step | small | complete | 004, 005, 006, 012, 013, 015, 017 |
 
 ## Dependency graph
 

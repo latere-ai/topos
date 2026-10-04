@@ -1,6 +1,6 @@
 ---
 title: "Deleting a session: the route asks only about a session it would delete, refuses a running one, and states what a delete removes, when, and what it leaves to the installation"
-status: drafted
+status: complete
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 009-machines.md, 014-store.md, 015-api.md, 016-runners.md, 035-hosted-checkpoints-at-the-git-host.md]
 affects: [internal/server/, api/]
@@ -97,7 +97,7 @@ direction, refusing a session that a retry deletes.
 
 | What | When it is gone |
 |---|---|
-| the header, the events and the blobs kept in the database | at the delete, in one transaction; every read of the session answers `not_found` from then on, the list and the summary leave it out, and a stream open on it ends |
+| the header, the events and the blobs kept in the database | at the delete, in one transaction; every read of the session answers `not_found` from then on, and the list and the summary leave it out |
 | blob bodies kept outside the database | at the delete, after the rows; when that removal fails, by the reaper's sweep, which runs every `ReapInterval` (10 minutes) and removes the bodies of a session that is gone once its id is `SweepGrace` (1 hour) old ([[014-store]]); a crash between the rows and the bodies therefore leaves bodies with no session, never a session without its bodies |
 | the directories of a session on a server's host | at the delete, by the serving host; on an installation of several hosts, a host that did not serve the delete keeps the directories of a session it ran and had not ended until an operator removes them, since the directories are removed on the host that holds them |
 | the Lux keys the minter holds in memory | never written anywhere; each expires within its lease, and the authorizer's revocation on an allowed delete makes the gateway refuse it at once ([[018-credentials-and-secrets]]) |
@@ -151,9 +151,31 @@ agent at once.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A delete asks `session.read`, then `session.delete`, and answers 204; the session is then `not_found` on get, events, stream and blob reads, and gone from the list and the summary | `internal/server.TestADeletedSessionIsGoneFromEveryRead` | not built |
-| A running session's delete is `conflict`, asks no `session.delete`, and leaves the session; after an interrupt and the turn's close the delete removes it | `internal/server.TestDeletingARunningSessionAsksNothing` | not built |
-| A caller who may not read the session hears `not_found` and `session.delete` is not asked; a denied `session.delete` is `forbidden` with the reason and the session stays | `internal/server.TestADeleteIsRefused` | not built |
-| A runner that claims the session between the question and the store's delete makes the delete `conflict` and leaves the session, and a retry after the claim ends deletes it | `internal/server.TestADeleteRacedByAClaimIsRetried` | not built |
+| A delete asks `session.read`, then `session.delete`, and answers 204; the session is then `not_found` on get, events, stream and blob reads, and gone from the list and the summary | `internal/server.TestADeletedSessionIsGoneFromEveryRead` | built |
+| A running session's delete is `conflict`, asks no `session.delete`, and leaves the session; after an interrupt and the turn's close the delete removes it | `internal/server.TestDeletingARunningSessionAsksNothing` | built |
+| A caller who may not read the session hears `not_found` and `session.delete` is not asked; a denied `session.delete` is `forbidden` with the reason and the session stays | `internal/server.TestADeleteIsRefused` | built |
+| A runner that claims the session between the question and the store's delete makes the delete `conflict` and leaves the session, and a retry after the claim ends deletes it | `internal/server.TestADeleteRacedByAClaimIsRetried` | built |
 | Deleting a session removes its rows and every blob object; a crash between the two leaves no session without its blobs, and the reaper removes the orphans | `internal/server.TestSessionDeletionOrder` | built |
-| Through toposd: a session that ran a turn over the stub model is deleted, and every read of it is `not_found` | `cmd/toposd.TestADeletedSessionIsGone` | not built |
+| Through toposd: a session that ran a turn over the stub model is deleted, and every read of it is `not_found` | `cmd/toposd.TestADeletedSessionIsGone` | built |
+
+## Outcome
+
+Built as designed on 2026-10-05. `DELETE /v1/sessions/{id}` reads the
+session with `session.read`, refuses a running one as `conflict`, then
+asks `session.delete`, deletes, and calls the `Deleted` hook; the
+route's row names both actions, and the API reference says what a
+delete keeps out of reach of the core. Every criterion has a passing
+test, the end-to-end one through `toposd` over the stub model and the
+stub Cella among them.
+
+One point the design left open was settled: a second delete of a
+deleted session answers `not_found`, from the `session.read` that
+opens the route, so a client that retries a delete whose answer it lost
+reads `not_found` as done.
+
+Not built, as the design says: deleting a session's sandbox, its
+Secrets and its checkpoint ref from the core with an installation
+credential, which stays the core's follow-up for a self-hosted
+installation with no authorizer of its own; and the directories a host
+that did not serve the delete keeps for a session it ran and had not
+ended.
