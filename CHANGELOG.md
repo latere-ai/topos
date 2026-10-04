@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.12.0 - 2026-10-04
+
 ### Added
 
 - An installation's authorizer can name the model a session runs. An
