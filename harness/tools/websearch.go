@@ -35,10 +35,13 @@ var webSearchSchema = fmt.Sprintf(`{
 }`, search.MaxQueryLength, search.MaxResults, search.DefaultResults)
 
 // WebSearch is the web search tool over s, the installation's search
-// service. A nil s is no service: every call answers that web search is
-// not available, as web_fetch does on a machine without network.
+// service. Its effect is none: a search changes nothing on the machine
+// and reaches only the service the operator set, so it is allowed in
+// every mode and never opens a machine. A nil s is no service: every
+// call answers that web search is not available, as web_fetch does on a
+// machine without network.
 func WebSearch(s search.Searcher) Tool {
-	return newBuiltin(NameWebSearch, prompts.Text(prompts.ToolWebSearch), webSearchSchema, Properties{Parallel: true, Effect: EffectRead},
+	return newBuiltin(NameWebSearch, prompts.Text(prompts.ToolWebSearch), webSearchSchema, Properties{Parallel: true, Effect: EffectNone},
 		func(ctx context.Context, b *builtin, c Call) (Result, error) { return runWebSearch(ctx, b, c, s) })
 }
 

@@ -4,7 +4,9 @@
 package harness
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -67,10 +69,10 @@ func TestASearchCostIsCounted(t *testing.T) {
 	}
 }
 
-// TestWebSearchIsARead (spec 040): a web_search call scores 0 and is
-// allowed in every mode, plan included, and an always-confirm pattern
-// that names it asks.
-func TestWebSearchIsARead(t *testing.T) {
+// TestWebSearchChangesNothing (spec 040): a web_search call scores 0 and
+// is allowed in every mode, plan included, an always-confirm pattern
+// that names it asks, and a call never opens a machine opened on demand.
+func TestWebSearchChangesNothing(t *testing.T) {
 	props := tools.WebSearch(nil).Properties()
 	input := json.RawMessage(`{"query":"go"}`)
 	risk := Score(tools.NameWebSearch, props, input, machine.KindCella, nil)
@@ -84,5 +86,23 @@ func TestWebSearchIsARead(t *testing.T) {
 	}
 	if d := (Policy{Mode: ModeConfirm, AlwaysConfirm: []string{tools.NameWebSearch}}).Decide(tools.NameWebSearch, props, input, risk, machine.KindHost, nil); d.Verdict != VerdictAsk {
 		t.Fatalf("always-confirm: %+v", d)
+	}
+	e := setup(t, func(c *Config) {
+		c.Machine = machine.Defer(t.Context(), machine.KindCella, func(context.Context) (machine.Machine, error) {
+			t.Error("a search opened the machine")
+			return nil, errors.New("not opened")
+		})
+		if err := c.Tools.AddBuiltin(tools.WebSearch(nil)); err != nil {
+			t.Fatal(err)
+		}
+	})
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_s", tools.NameWebSearch, `{"query":"go"}`)), reply(ir.StopEndTurn, text("done")))
+	e.send(ctx, "Search.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	if n := len(e.events(ctx, session.TypeSessionMachine)); n != 0 {
+		t.Fatalf("%d session.machine events", n)
 	}
 }

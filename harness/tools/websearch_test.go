@@ -145,7 +145,7 @@ func TestWebSearchSchemaFollowsTheConstants(t *testing.T) {
 	if p.Query.MinLength != 1 || p.Query.MaxLength != search.MaxQueryLength || p.MaxResults.Minimum != 1 || p.MaxResults.Maximum != search.MaxResults || !slices.Equal(schema.Required, []string{"query"}) {
 		t.Fatalf("the schema %s", tool.Definition().InputSchema)
 	}
-	if props := tool.Properties(); props.Effect != EffectRead || !props.Parallel {
+	if props := tool.Properties(); props.Effect != EffectNone || !props.Parallel {
 		t.Fatalf("properties %+v", props)
 	}
 	reg := NewRegistry()
