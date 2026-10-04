@@ -82,17 +82,18 @@ func active(ctx context.Context, st session.Store, s session.Session) (bool, err
 		return false, nil
 	case s.Status == session.StatusRunning:
 		return true, nil
-	case s.StopReason == session.StopToolConfirmation, s.StopReason == session.StopToolResult, s.StopReason == session.StopBudget:
+	case s.StopReason == session.StopToolConfirmation, s.StopReason == session.StopToolResult, s.StopReason == session.StopQuestion, s.StopReason == session.StopBudget:
 		return true, nil
 	}
 	return pendingInput(ctx, st, s)
 }
 
 // waitsForPerson reports whether a session is idle waiting for a person,
-// on a confirmation or on its budget, when a message would answer the
-// person's question for them: a user.message denies every pending call.
+// on a confirmation, a question or its budget, where a message would
+// stand in for the person's answer: a user.message denies every pending
+// call, and the firing is held instead.
 func waitsForPerson(s session.Session) bool {
-	return s.Status == session.StatusIdle && (s.StopReason == session.StopToolConfirmation || s.StopReason == session.StopBudget)
+	return s.Status == session.StatusIdle && (s.StopReason == session.StopToolConfirmation || s.StopReason == session.StopQuestion || s.StopReason == session.StopBudget)
 }
 
 // pendingInput reports whether an idle session's log holds input after

@@ -154,6 +154,9 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		}
 	}
 	cfg.Tools = reg
+	// The question tool is the harness's own, offered when the agent names
+	// it (spec 039).
+	cfg.Question = slices.Contains(ac.Tools, harness.ToolQuestion)
 	if cmp.Or(s.Machine.Kind, ac.Machine.Kind) == session.MachineHost {
 		m, err := b.o.Machines(ctx, s, ac.Machine)
 		if err != nil {

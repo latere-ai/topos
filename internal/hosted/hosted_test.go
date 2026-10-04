@@ -109,8 +109,20 @@ func TestTheHarnessOfAHostedSession(t *testing.T) {
 	slices.Sort(names)
 	if cfg.Connection.BaseURL != door || cfg.Connection.Credential != "k" || cfg.Connection.Model != "anthropic/claude-haiku-4.5" ||
 		cfg.Connection.Family != models.FamilyAnthropic || cfg.Entry.InputWindow == 0 || cfg.Policy.Mode != harness.ModePlan ||
-		cfg.Instructions != "Review." || cfg.TurnTimeout != 5*time.Minute || !slices.Equal(names, []string{"grep", "read"}) || asked.Image != "base" || cfg.Prompt.Host {
+		cfg.Instructions != "Review." || cfg.TurnTimeout != 5*time.Minute || !slices.Equal(names, []string{"grep", "read"}) || asked.Image != "base" || cfg.Prompt.Host || cfg.Question {
 		t.Fatalf("config %+v tools %v machine %+v", cfg.Connection, names, asked)
+	}
+
+	// An agent that names the question tool is offered it, beside the
+	// built-ins it names.
+	asking := newSession(t, st, strings.Replace(reviewer, "tools: [read, grep]", "tools: [read, question]", 1))
+	qcfg, err := h(t.Context(), asking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = qcfg.Machine.Release(context.Background(), true) })
+	if !qcfg.Question || !slices.Equal(qcfg.Tools.Names(), []string{"read"}) {
+		t.Fatalf("an agent that names question: offered %v, question %v", qcfg.Tools.Names(), qcfg.Question)
 	}
 }
 

@@ -362,8 +362,9 @@ func TestALeaseWaitEndsWithItsContext(t *testing.T) {
 	}
 }
 
-// TestTheSweepSendsHeldFiringsInOrder: held firings of two keys are sent
-// by one pass once each key's session runs on, each key in the order its
+// TestTheSweepSendsHeldFiringsInOrder: held firings of three keys, whose
+// sessions wait on a budget, a confirmation and a question, are sent by
+// one pass once each key's session runs on, each key in the order its
 // firings arrived.
 func TestTheSweepSendsHeldFiringsInOrder(t *testing.T) {
 	r := newRig(t)
@@ -387,14 +388,17 @@ func TestTheSweepSendsHeldFiringsInOrder(t *testing.T) {
 	}
 	a := r.fire(tr, r.env("1", "o/r#1"), store.OutcomeStarted)
 	b := r.fire(tr, r.env("2", "o/r#2"), store.OutcomeStarted)
+	c := r.fire(tr, r.env("3", "o/r#3"), store.OutcomeStarted)
 	wait(a.SessionID, session.StopBudget)
 	wait(b.SessionID, session.StopToolConfirmation)
+	wait(c.SessionID, session.StopQuestion)
 	var held []string
-	for i, res := range []string{"o/r#1", "o/r#2", "o/r#1"} {
+	for i, res := range []string{"o/r#1", "o/r#2", "o/r#1", "o/r#3"} {
 		held = append(held, r.fire(tr, r.env(fmt.Sprint(10+i), res), store.OutcomeHeld).ID)
 	}
 	wait(a.SessionID, session.StopEndTurn)
 	wait(b.SessionID, session.StopEndTurn)
+	wait(c.SessionID, session.StopEndTurn)
 	if err := r.engine.Tick(ctx); err != nil {
 		t.Fatal(err)
 	}
