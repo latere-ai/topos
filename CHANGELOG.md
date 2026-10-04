@@ -10,8 +10,58 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- An agent can put a decision to the person it works for with the
+  `question` tool. One call asks one to four questions, each with a
+  short header and two to four options; an option has a label, a
+  description, an optional preview and may be marked recommended, and
+  the person can always answer in their own words. An agent holds the
+  tool only when its manifest names it in `spec.tools`; an agent that
+  names no tools holds the eight built-ins as before, so its version
+  and digest do not change. A client tool may no longer be named
+  `question`: a manifest that declares one is refused as
+  `invalid_manifest` at its next apply.
+- A session created with `"attended": true` on `POST /v1/sessions`, or
+  forked with it on `POST /v1/sessions/{id}/fork`, waits for the
+  person's answer: it goes idle with the new stop reason `question` and
+  holds no runner while it waits. A session created without it, which
+  is every session a client created before, answers a question at once
+  with the outcome `unanswered`, and the agent decides and says what it
+  assumed. `topos run --attended` does the same on your machine, stops
+  with exit code 3 on a question, and prints it with its options.
+- `POST /v1/sessions/{id}/events` takes `user.answer`,
+  `{"tool_use_id", "answers": [{"selected", "text"}]}`, one entry per
+  question. The server checks it against the open question:
+  `invalid_request` for an answer that does not fit, `conflict`, with
+  what closed the question in the detail, for one that names no open
+  question. The authorizer is asked `session.send` with `event_type`
+  `user.answer`; an authorizer that lists the event types it allows
+  must accept it before a client sets `attended`. A person's message
+  in place of an answer closes the question, and an interrupt dismisses
+  it.
+- A question's `tool.result` carries `meta.closed_by` (`answer`,
+  `message`, `interrupt` or `unattended`) and `meta.event_id`, and the
+  new outcome `unanswered`, which is not an error.
+- `user.answer` is redactable, and redacting it also redacts the result
+  rendered from it.
+- `docs/questions.md` is the contract a client follows to show a
+  question and send its answer; `api/openapi.yaml` gains the schemas
+  `QuestionInput`, `UserAnswer` and `QuestionResultMeta`.
+- The compaction prompt asks the summary to list each question put to
+  the person with its answer, so a long session does not ask again. A
+  summary records the prompt it was asked with in `context.compacted`'s
+  `prompt`.
+- A tool's input schema may use `minItems` and `maxItems`.
+
 ### Changed
 
+- A `user.tool_confirmation` or a `user.tool_result` is appended only
+  after the log it was checked against. Two sent at once for the same
+  call no longer both land: one is appended and the other is
+  `conflict`.
+- A trigger's `continue` firing to a session that waits on a question
+  is held, as it is for a confirmation.
 - A person's `user.message` sent while a call waits for a confirmation
   denies the call, as the session log's contract states. The call's
   `tool.result` has outcome `denied` and carries the message's text as
@@ -21,9 +71,10 @@ committed: the commit log already holds that.
   call a subagent's thread waits on. A `user.tool_confirmation` sent
   after such a message is `conflict`. A trigger's message denies
   nothing.
-- When a confirmation and a client tool's result wait at once, the
-  session's stop reason is `tool_confirmation`. A client finds the open
-  calls from the log, not from the stop reason.
+- When a confirmation, a question and a client tool's result wait at
+  once, the session's stop reason names the first of them in that
+  order. A client finds the open calls from the log, not from the stop
+  reason.
 
 ### Fixed
 
