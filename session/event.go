@@ -21,6 +21,7 @@ const (
 	TypeUserInterrupt        Type = "user.interrupt"
 	TypeUserToolConfirmation Type = "user.tool_confirmation"
 	TypeUserToolResult       Type = "user.tool_result"
+	TypeUserAnswer           Type = "user.answer"
 	TypeAgentMessage         Type = "agent.message"
 	TypeAgentToolUse         Type = "agent.tool_use"
 	TypeToolResult           Type = "tool.result"
@@ -46,7 +47,7 @@ const (
 // every store and reported by the fold.
 var Known = map[Type]bool{
 	TypeUserMessage: true, TypeUserInterrupt: true, TypeUserToolConfirmation: true,
-	TypeUserToolResult: true, TypeAgentMessage: true, TypeAgentToolUse: true,
+	TypeUserToolResult: true, TypeUserAnswer: true, TypeAgentMessage: true, TypeAgentToolUse: true,
 	TypeToolResult: true, TypeThreadStarted: true, TypeThreadEnded: true,
 	TypeThreadMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
 	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypeSessionResumed: true,

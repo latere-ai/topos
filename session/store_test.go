@@ -291,6 +291,7 @@ func TestHasPendingInput(t *testing.T) {
 		"a confirmation":            {[]Event{ev(TypeSessionStatus), ev(TypeUserToolConfirmation)}, true},
 		"a client result":           {[]Event{ev(TypeSessionStatus), ev(TypeUserToolResult)}, true},
 		"an interrupt resumes none": {[]Event{ev(TypeSessionStatus), ev(TypeUserInterrupt)}, false},
+		"an answer":                 {[]Event{ev(TypeSessionStatus), ev(TypeUserAnswer)}, true},
 	} {
 		if got := HasPendingInput(c.evs); got != c.want {
 			t.Errorf("%s: %v, want %v", name, got, c.want)
@@ -404,7 +405,7 @@ func TestAwaitingAndRedactable(t *testing.T) {
 	if len(got) != 2 || got["ask"] != AnswerConfirmation || got["client"] != AnswerResult {
 		t.Fatalf("Awaiting = %v", got)
 	}
-	for typ, want := range map[Type]bool{TypeUserMessage: true, TypeToolResult: true, TypeAgentToolUse: true, TypeModelRequest: false, TypeSessionStatus: false, TypeUserToolConfirmation: false, TypeScopeChanged: false} {
+	for typ, want := range map[Type]bool{TypeUserMessage: true, TypeUserAnswer: true, TypeToolResult: true, TypeAgentToolUse: true, TypeModelRequest: false, TypeSessionStatus: false, TypeUserToolConfirmation: false, TypeScopeChanged: false} {
 		if Redactable(typ) != want {
 			t.Errorf("Redactable(%s) = %v", typ, !want)
 		}

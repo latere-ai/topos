@@ -32,11 +32,14 @@ const (
 	StopEndTurn          StopReason = "end_turn"
 	StopToolConfirmation StopReason = "tool_confirmation"
 	StopToolResult       StopReason = "tool_result"
-	StopBudget           StopReason = "budget"
-	StopTurnLimit        StopReason = "turn_limit"
-	StopOutputLimit      StopReason = "output_limit"
-	StopInterrupted      StopReason = "interrupted"
-	StopError            StopReason = "error"
+	// StopQuestion is a question call that waits for the person's answer
+	// (spec 039).
+	StopQuestion    StopReason = "question"
+	StopBudget      StopReason = "budget"
+	StopTurnLimit   StopReason = "turn_limit"
+	StopOutputLimit StopReason = "output_limit"
+	StopInterrupted StopReason = "interrupted"
+	StopError       StopReason = "error"
 )
 
 // Stop reasons of an ended session.
@@ -209,6 +212,12 @@ type Session struct {
 	Limits    Limits    `json:"limits"`
 	Capture   Capture   `json:"capture"`
 	EndOnIdle bool      `json:"end_on_idle,omitempty"`
+	// Attended is the creator's declaration that a person answers the
+	// session's questions, through a client that shows them (spec 039). A
+	// question call of a session that is not attended is answered at
+	// once, and the session never goes idle on it. It is set at create
+	// and no event changes it, so every runner reads the same value.
+	Attended  bool      `json:"attended,omitempty"`
 	Parent    *Parent   `json:"parent,omitempty"`
 	TriggerID string    `json:"trigger_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -282,40 +291,53 @@ func Spent(log []Event) int64 {
 
 // HasPendingInput reports whether a session's log holds input a runner
 // should act on: a resuming user event, a message, a confirmation, a
-// client tool's result, or a session.resumed after a budget stop, after
-// its last session.status (the stop reason
+// client tool's result, an answer to a question, or a session.resumed
+// after a budget stop, after its last session.status (the stop reason
 // table of spec 004). A session that has never run has pending input once
-// its first message is in the log.
+// its first message is in the log. A user.interrupt is input in one case
+// alone (spec 039): it closed a question whose result no runner appended
+// yet, so a runner claims the session to close the call. An interrupt on
+// any other idle session starts nothing.
 func HasPendingInput(evs []Event) bool {
 	for _, ev := range slices.Backward(evs) {
 		switch ev.Type {
 		case TypeSessionStatus:
 			return false
-		case TypeUserMessage, TypeUserToolConfirmation, TypeUserToolResult, TypeSessionResumed:
+		case TypeUserMessage, TypeUserToolConfirmation, TypeUserToolResult, TypeSessionResumed, TypeUserAnswer:
 			return true
+		case TypeUserInterrupt:
+			if c, owed := owedQuestion(evs); owed && c.EventID == ev.ID {
+				return true
+			}
 		}
 	}
 	return false
 }
 
 // Answer is what a call waiting for a person needs: a confirmation of a
-// call whose verdict was ask, or the result of a call a client runs.
+// call whose verdict was ask, the result of a call a client runs, or the
+// answer to a question.
 type Answer int
 
 // The answers a waiting call takes.
 const (
 	AnswerConfirmation Answer = iota + 1
 	AnswerResult
+	AnswerQuestion
 )
 
 // Awaiting lists the calls of a log, in every thread, that wait for a
-// person's answer, by tool_use id: an ask not yet confirmed, and a
-// client's call without its result. A call answered once is not
-// awaiting a second answer, so a repeated or stray confirmation or
-// result names no call here. A person's message appended after an ask
-// denies it (spec 012), so the ask awaits no confirmation after it.
+// person's answer, by tool_use id: an ask not yet confirmed, a client's
+// call without its result, and the question nothing closed. A call
+// answered once is not awaiting a second answer, so a repeated or stray
+// confirmation or result names no call here. A person's message appended
+// after an ask denies it (spec 012), so the ask awaits no confirmation
+// after it. What closed a question is Questions' to say.
 func Awaiting(evs []Event) map[string]Answer {
 	out := map[string]Answer{}
+	if q, open := OpenQuestion(evs); open {
+		out[q.ToolUseID] = AnswerQuestion
+	}
 	for _, e := range evs {
 		// A redacted result still answers its call.
 		if id := e.Answers(); id != "" {
@@ -361,10 +383,11 @@ func Awaiting(evs []Event) map[string]Answer {
 // a tool put in the log, which a redaction removes (spec 018). The
 // record of what was decided and spent, a verdict, a confirmation, a
 // model request, a status, a scope change, is not redactable, so no
-// redaction rewrites the audit or the budget.
+// redaction rewrites the audit or the budget. An answer to a question
+// holds a person's own words and is redactable.
 func Redactable(typ Type) bool {
 	switch typ {
-	case TypeUserMessage, TypeUserToolResult, TypeAgentMessage, TypeAgentToolUse, TypeToolResult, TypeContextCompacted:
+	case TypeUserMessage, TypeUserToolResult, TypeUserAnswer, TypeAgentMessage, TypeAgentToolUse, TypeToolResult, TypeContextCompacted:
 		return true
 	}
 	return false

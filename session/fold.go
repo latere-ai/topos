@@ -178,6 +178,16 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				return Transcript{}, err
 			}
 			noteSender(p.Sender)
+		case TypeUserAnswer:
+			// An answer renders nothing: the model reads it as the result
+			// of the question's call, which the runner renders from it
+			// (spec 039). Its sender is noted as a confirmation's is, so a
+			// later message of a second person is led by their name.
+			var p UserAnswer
+			if err := e.Decode(&p); err != nil {
+				return Transcript{}, err
+			}
+			noteSender(p.Sender)
 		case TypeAgentMessage:
 			var p AgentMessage
 			if err := e.Decode(&p); err != nil {
