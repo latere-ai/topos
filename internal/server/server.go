@@ -281,13 +281,13 @@ func (c *call) ask(ctx context.Context, action string, res authz.Resource) (auth
 	return c.s.o.Guard.Ask(ctx, auth.Envelope(c.caller, action, res, c.r))
 }
 
-// askCreate asks a question whose allow may carry limits, a create or
-// an agent's apply, and decodes them.
-func (c *call) askCreate(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error) {
+// askLimits asks a question whose allow may carry limits, and decodes
+// them.
+func (c *call) askLimits(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error) {
 	if !slices.Contains(c.rt.actions, action) {
 		return authorizer.Limits{}, fmt.Errorf("server: %s %s asked %s, which its row does not name", c.rt.method, c.rt.path, action)
 	}
-	return c.s.o.Guard.Create(ctx, auth.Envelope(c.caller, action, res, c.r))
+	return c.s.o.Guard.Limits(ctx, auth.Envelope(c.caller, action, res, c.r))
 }
 
 // body reads the request body.

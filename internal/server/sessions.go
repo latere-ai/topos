@@ -64,12 +64,12 @@ type asker struct {
 	caller auth.Caller
 	r      *http.Request
 	ask    func(ctx context.Context, action string, res authz.Resource) (authz.Decision, error)
-	create func(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error)
+	limits func(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error)
 }
 
 // asker is the route's caller as an asker.
 func (c *call) asker() asker {
-	return asker{caller: c.caller, r: c.r, ask: c.ask, create: c.askCreate}
+	return asker{caller: c.caller, r: c.r, ask: c.ask, limits: c.askLimits}
 }
 
 // replySession answers a session with its stream's URL.
@@ -301,7 +301,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 			fields["agent_owner"] = map[string]any{"type": st.Owner.Type, "id": st.Owner.ID}
 		}
 	}
-	limits, err := q.create(ctx, action, authz.NewResource(authorizer.KindSession, resourceID, fields))
+	limits, err := q.limits(ctx, action, authz.NewResource(authorizer.KindSession, resourceID, fields))
 	if err != nil {
 		// The deny's reason may be about the agent. The caller applied
 		// an agent of its own and hears why; another subject's agent,

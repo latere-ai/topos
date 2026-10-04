@@ -125,7 +125,7 @@ func (c *call) applyAgent() error {
 	case err != nil && !errors.Is(err, store.ErrNotFound):
 		return err
 	case exists:
-		if allowed, err = c.askCreate(ctx, authorizer.ActionAgentUpdate, agentResource(stored)); err != nil {
+		if allowed, err = c.askLimits(ctx, authorizer.ActionAgentUpdate, agentResource(stored)); err != nil {
 			return err
 		}
 		if stored.ArchivedAt != nil {
@@ -147,7 +147,7 @@ func (c *call) applyAgent() error {
 		if _, ok := here.organization(); ok {
 			fields["owner"] = here.field()
 		}
-		if allowed, err = c.askCreate(ctx, authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", fields)); err != nil {
+		if allowed, err = c.askLimits(ctx, authorizer.ActionAgentCreate, authz.NewResource(authorizer.KindAgent, "", fields)); err != nil {
 			return err
 		}
 	}

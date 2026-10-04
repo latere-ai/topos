@@ -377,8 +377,8 @@ func (s *Server) owner(t store.Trigger) asker {
 	q.ask = func(ctx context.Context, action string, res authz.Resource) (authz.Decision, error) {
 		return s.o.Guard.Ask(ctx, auth.Envelope(q.caller, action, res, nil))
 	}
-	q.create = func(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error) {
-		return s.o.Guard.Create(ctx, auth.Envelope(q.caller, action, res, nil))
+	q.limits = func(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error) {
+		return s.o.Guard.Limits(ctx, auth.Envelope(q.caller, action, res, nil))
 	}
 	return q
 }

@@ -40,7 +40,7 @@ func (c *call) resumeSession() error {
 	if b.MaxCostUSDMicro != nil {
 		fields["max_cost_usd_micro"] = *b.MaxCostUSDMicro
 	}
-	limits, err := c.askCreate(ctx, authorizer.ActionSessionResume, sessionResource(s, fields))
+	limits, err := c.askLimits(ctx, authorizer.ActionSessionResume, sessionResource(s, fields))
 	if err != nil {
 		return err
 	}

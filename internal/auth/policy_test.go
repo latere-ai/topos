@@ -319,15 +319,15 @@ func TestLimitsAtCreate(t *testing.T) {
 		})
 	}
 	req := authz.Request{Subject: alice, Action: authorizer.ActionSessionCreate, Resource: authz.NewResource(authorizer.KindSession, "", nil)}
-	l, err := auth.Guard{Authorizer: limits(`{"budget_usd_micro":1000,"turn_timeout":"10m"}`)}.Create(t.Context(), req)
+	l, err := auth.Guard{Authorizer: limits(`{"budget_usd_micro":1000,"turn_timeout":"10m"}`)}.Limits(t.Context(), req)
 	if err != nil || *l.BudgetUSDMicro != 1000 || l.TurnTimeout.Minutes() != 10 {
 		t.Fatalf("limits %+v, %v", l, err)
 	}
-	if _, err := (auth.Guard{Authorizer: limits(`{"turn_timeout":"soon"}`)}).Create(t.Context(), req); code(t, err) != auth.CodeAuthorizerUnavailable {
+	if _, err := (auth.Guard{Authorizer: limits(`{"turn_timeout":"soon"}`)}).Limits(t.Context(), req); code(t, err) != auth.CodeAuthorizerUnavailable {
 		t.Fatalf("unreadable limits: %v", err)
 	}
 	deny := decider(func(authz.Request) (authz.Decision, error) { return authz.Decision{}, nil })
-	if _, err := (auth.Guard{Authorizer: deny}).Create(t.Context(), req); code(t, err) != auth.CodeForbidden {
+	if _, err := (auth.Guard{Authorizer: deny}).Limits(t.Context(), req); code(t, err) != auth.CodeForbidden {
 		t.Fatalf("a denied create: %v", err)
 	}
 }

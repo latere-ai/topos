@@ -135,10 +135,12 @@ func (g Guard) Disclose(ctx context.Context, err error, read authz.Request) erro
 	return &withheld
 }
 
-// Create asks session.create and decodes the limits the allow carries.
-// Limits that do not decode refuse the create as authorizer_unavailable,
-// because a ceiling that cannot be read is not applied.
-func (g Guard) Create(ctx context.Context, req authz.Request) (authorizer.Limits, error) {
+// Limits asks a question whose allow may carry limits, and decodes them:
+// a create, an agent's apply, a resume, and the questions an allow may
+// name a session's model at (spec 038). Limits that do not decode refuse
+// the request as authorizer_unavailable, because a ceiling that cannot be
+// read is not applied.
+func (g Guard) Limits(ctx context.Context, req authz.Request) (authorizer.Limits, error) {
 	d, err := g.Ask(ctx, req)
 	if err != nil {
 		return authorizer.Limits{}, err
