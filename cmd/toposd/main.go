@@ -446,7 +446,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 		}
 	}
 	machines := hosted.ByKind(cella, onHost)
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines})
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey})
 	if err != nil {
 		return nil, err
 	}

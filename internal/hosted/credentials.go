@@ -16,11 +16,13 @@ import (
 
 	"latere.ai/x/cella/client"
 	cellav1 "latere.ai/x/cella/manifest/v1"
+	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner"
+	"latere.ai/x/topos/search"
 	"latere.ai/x/topos/session"
 )
 
@@ -93,6 +95,42 @@ func sessionKey(ctx context.Context, model models.Model) (key string, keyed mode
 		return "", nil, false, credentialSetup(CodeModelCredentialMissing, err)
 	}
 	return c.Value, &keyedModel{Model: model, src: src}, true, nil
+}
+
+// searcher is the search service of a session whose agent names
+// web_search (spec 040), nil when the installation configures none. It
+// searches with the session's own model key for the runner's workload,
+// asked of the drive's token source at each search, so a renewed key
+// reaches the next one, when the installation mints one, and with
+// TOPOS_SEARCH_KEY otherwise. The session's key goes to the
+// installation's model URL and to its search URL, both the operator's,
+// and to no address an agent names; the sandbox's key is never sent.
+func (b builder) searcher(ctx context.Context) (search.Searcher, error) {
+	if b.o.SearchURL == "" {
+		return nil, nil
+	}
+	installation := b.o.SearchKey
+	cred := func(context.Context) (string, error) { return installation, nil }
+	if src := runner.TokensFrom(ctx); src != nil {
+		_, err := src.Token(ctx, runner.AudienceLux, runner.WorkloadSession)
+		switch {
+		case err == nil:
+			cred = func(ctx context.Context) (string, error) {
+				c, err := src.Token(ctx, runner.AudienceLux, runner.WorkloadSession)
+				if err != nil {
+					return "", fmt.Errorf("the session's key: %w", err)
+				}
+				return c.Value, nil
+			}
+		case !errors.Is(err, runner.ErrNotMinted):
+			return nil, credentialSetup(CodeModelCredentialMissing, err)
+		}
+	}
+	c, err := search.New(b.o.SearchURL, cred, otel.HTTPClient())
+	if err != nil {
+		return nil, setup(CodeSearchUnavailable, err)
+	}
+	return c, nil
 }
 
 // cellaToken is the bearer of the runner's own calls to Cella: the

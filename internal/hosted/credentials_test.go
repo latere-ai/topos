@@ -5,9 +5,13 @@ package hosted
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,6 +25,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -684,5 +689,109 @@ func TestASecretCellaCouldNotDeleteIsDeletedAtTheNextEnd(t *testing.T) {
 	}
 	if n := f.cella.Count(cellastub.OpDelete); n != deletes {
 		t.Fatalf("the next end deleted the sandbox again: %d deletes, want %d", n, deletes)
+	}
+}
+
+// TestSearchCredential (spec 040): a hosted session whose agent names
+// web_search is offered it with the installation's search service. On an
+// installation that mints session keys each search carries the session's
+// own key for the runner's workload, asked again at each search, and the
+// sandbox's key is never asked for; one that mints none sends
+// TOPOS_SEARCH_KEY; a key that cannot be had closes the turn; and with no
+// search URL the tool is offered and answers that search is not
+// available.
+func TestSearchCredential(t *testing.T) {
+	var seen []string
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("Authorization"))
+		_, _ = io.WriteString(w, `{"results":[{"title":"Go","url":"https://go.dev","snippet":"The Go language."}],"cost_usd_micro":10000}`)
+	}))
+	t.Cleanup(svc.Close)
+	st := session.NewMemoryStore()
+	s := newSession(t, st, strings.Replace(reviewer, "tools: [read, grep]", "tools: [read, web_search]", 1))
+	door := luxstub.New(t).URL() + "/anthropic"
+	var asked v1.Machine
+	harnessOf := func(o Options) func(context.Context, session.Session) (harness.Config, error) {
+		t.Helper()
+		o.Store, o.ModelsURL, o.Machines = st, door, hostMachines(t, &asked)
+		h, err := Harness(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	searchOnce := func(ctx context.Context, cfg harness.Config) tools.Result {
+		t.Helper()
+		tool, ok := cfg.Tools.Get(tools.NameWebSearch)
+		if !ok {
+			t.Fatalf("web_search is not offered: %v", cfg.Tools.Names())
+		}
+		res, err := tool.Run(ctx, tools.Call{ID: "toolu_s", Input: json.RawMessage(`{"query":"go"}`), Machine: cfg.Machine})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	// Session keys: the session's own key, asked at each search.
+	creds := &issued{life: time.Minute}
+	ctx := runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil))
+	h := harnessOf(Options{SearchURL: svc.URL})
+	cfg, err := h(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if !slices.Contains(cfg.Tools.Names(), tools.NameWebSearch) || !slices.Contains(cfg.Tools.Names(), "read") {
+		t.Fatalf("offered %v", cfg.Tools.Names())
+	}
+	first, second := searchOnce(ctx, cfg), searchOnce(ctx, cfg)
+	if first.Outcome != tools.OutcomeOK || first.CostUSDMicro == nil || *first.CostUSDMicro != 10000 || second.Outcome != tools.OutcomeOK {
+		t.Fatalf("the searches %+v %+v", first, second)
+	}
+	n := len(seen)
+	if n < 2 || !strings.HasPrefix(seen[n-2], "Bearer lux-session-") || seen[n-2] == seen[n-1] || !strings.HasPrefix(seen[n-1], "Bearer lux-session-") {
+		t.Fatalf("the searches carried %v", seen)
+	}
+	if slices.Contains(creds.calls, runner.AudienceLux+"/"+runner.WorkloadSandbox) {
+		t.Fatalf("the sandbox's key was asked for: %v", creds.calls)
+	}
+
+	// No session keys: the installation's search key.
+	none := &issued{err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	plain := runner.WithTokens(t.Context(), runner.NewTokenSource(none, nil, nil))
+	cfg, err = harnessOf(Options{SearchURL: svc.URL, SearchKey: "installation-search-key", ModelsKey: "k"})(plain, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if searchOnce(plain, cfg); seen[len(seen)-1] != "Bearer installation-search-key" {
+		t.Fatalf("an installation without session keys sent %q", seen[len(seen)-1])
+	}
+
+	// A key that cannot be had closes the turn.
+	failing := runner.WithTokens(t.Context(), runner.NewTokenSource(&issued{err: map[string]error{runner.AudienceLux: errors.New("no answer")}}, nil, nil))
+	if _, err := harnessOf(Options{SearchURL: svc.URL})(failing, s); code(t, err) != CodeModelCredentialMissing {
+		t.Fatalf("a key that could not be had: %v", err)
+	}
+
+	// No search URL: offered, and not available.
+	cfg, err = harnessOf(Options{ModelsKey: "k"})(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if res := searchOnce(t.Context(), cfg); res.Outcome != tools.OutcomeError || res.Content[0].Text != "Web search is not available on this server." {
+		t.Fatalf("no service: %+v", res)
+	}
+	// An agent that does not name it is not offered it.
+	other := newSession(t, st, reviewer)
+	cfg, err = harnessOf(Options{SearchURL: svc.URL, ModelsKey: "k"})(t.Context(), other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if _, ok := cfg.Tools.Get(tools.NameWebSearch); ok {
+		t.Fatal("web_search offered to an agent that does not name it")
 	}
 }

@@ -48,6 +48,9 @@ const (
 	CodeModelUnavailable       = models.CodeUnavailable
 	CodeModelCredentialMissing = models.CodeCredentialMissing
 	CodeMachineUnavailable     = machine.CodeUnavailable
+	// CodeSearchUnavailable is a search service whose URL the client
+	// refuses, which configuration checks first (spec 040).
+	CodeSearchUnavailable = "search_unavailable"
 )
 
 // Machines opens the machine of a session from its agent's
@@ -70,7 +73,13 @@ type Options struct {
 	Model models.Model
 	// Machines opens each session's machine.
 	Machines Machines
-	Clock    func() time.Time
+	// SearchURL and SearchKey are TOPOS_SEARCH_URL and TOPOS_SEARCH_KEY:
+	// the search service of an agent that names web_search, and the
+	// bearer sent to it when the installation mints no session keys
+	// (spec 040). An empty URL offers the tool with no service.
+	SearchURL string
+	SearchKey string
+	Clock     func() time.Time
 }
 
 // Harness is the runner's Harness function for hosted sessions.
@@ -153,6 +162,17 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 			}
 		}
 	}
+	// web_search is a built-in an agent holds only by naming it (spec
+	// 040), with the installation's search service.
+	if slices.Contains(ac.Tools, tools.NameWebSearch) {
+		s, err := b.searcher(ctx)
+		if err != nil {
+			return harness.Config{}, err
+		}
+		if err := reg.AddBuiltin(tools.WebSearch(s)); err != nil {
+			return harness.Config{}, err
+		}
+	}
 	cfg.Tools = reg
 	// The question tool is the harness's own, offered when the agent names
 	// it (spec 039).
@@ -194,7 +214,9 @@ func machineSetup(err error) error {
 // serves for the model, then by the agent's own. A connection to the
 // installation's model URL acts with the session's own Lux key when the
 // installation mints one (spec 018), and with TOPOS_MODELS_KEY
-// otherwise; the session's key never leaves for another base URL.
+// otherwise. The session's key goes to the installation's model URL and
+// its search URL (spec 040), both the operator's settings, and never to
+// a base URL an agent names.
 func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Model, models.Connection, models.Entry, error) {
 	base := cmp.Or(m.BaseURL, b.o.ModelsURL)
 	if base == "" {
