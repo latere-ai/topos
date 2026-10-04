@@ -41,7 +41,7 @@ A task is a directory `test/tasks/<category>/<name>/`:
 
 | File | Holds |
 |---|---|
-| `task.yaml` | `name` and `category`, which match the directory; `prompt`; `agent`, overrides of the suite's agent: `tools` (the built-ins it holds; absent holds every one), `instructions`, and `subagents` (each with its `instructions` and `tools`); `timeout` (default `30m`); `maxCost` (USD, default `2.00`); `runs` (default 3); `serve`, a directory of the task served over loopback for each run |
+| `task.yaml` | `name` and `category`, which match the directory; `prompt`; `agent`, overrides of the suite's agent: `tools` (the built-ins it holds, and `question`; absent holds every built-in and not `question`), `instructions`, and `subagents` (each with its `instructions` and `tools`); `timeout` (default `30m`); `maxCost` (USD, default `2.00`); `runs` (default 3); `serve`, a directory of the task served over loopback for each run; `answers`, each `{question, choose, text}`, which make the session attended and which the driver answers the open question with once, as a person does: each question by the first answer whose `question` its header or text holds, the option whose label holds `choose`, or `choose` in the person's words when no label holds it, beside `text`, all compared without case ([[039-questions]]) |
 | `fixture/` | the starting working directory, copied fresh for each run, or `fixture.bundle`, a git bundle cloned for each run; a task with neither starts in an empty directory. A fixture holding Go code has its own `go.mod`, so the repository's module never compiles it |
 | `check.yaml` or `check.sh` | the checker: given the final working directory and the session log, it passes or fails, deterministically. `check.yaml` is a list of assertions; `check.sh` runs with `/bin/sh`, the working directory and the log's path as its arguments, and passes on exit 0 |
 | `solution.yaml` | a script of the scripted model ([[026-stubs-and-tiers]]) that solves the task |
@@ -111,6 +111,8 @@ and the reason.
 | `call: {tool, thread, outcome, input, min, max}` | at least `min` (default 1) and at most `max` calls match: an `agent.tool_use` of the tool, in the `root` thread, a `sub` thread or any, whose `tool.result` has the outcome, and whose top-level input fields meet their matchers (`present`, `equals`, `not_equals`, `matches`, `contains`, `min_length`) |
 | `no_call: {...}` | no call matches |
 | `todo: {min_items, max_in_progress, final}` | the root thread's `todo` lists held at least `min_items` items, never more than `max_in_progress` in progress, and the last list's items all have the status `final` |
+| `question: {calls, not_matching}` | the root thread made `calls` (default 1) `question` calls, every option of each has a description, an option marked recommended comes first in its question, and no question's text matches `not_matching` ([[039-questions]]) |
+| `final_message: {matches}` | the root thread's last `agent.message` matches the pattern: the one assertion that reads the model's prose, for an instruction whose rule is what that message states ([[039-questions]]) |
 
 The verdict of a checker is a function of the final directory and the
 log alone: `go test` durations are removed from a reason, and a second
@@ -262,7 +264,7 @@ pipeline around the job ([[028-release-and-installation]]).
 | A run that hits its `maxCost` fails, and a suite run that hits the CI budget ends the job incomplete | `test/tasks.TestSpendCapsFailClosed` | built |
 | Every checker is deterministic: two evaluations of the same final directory and log agree | `test/tasks.TestScriptedSolutions` | built |
 | Every task's scripted solution passes its checker and every wrong solution is refused, with no model | `test/tasks.TestScriptedSolutions`, `test/tasks.TestEveryTaskHasItsScripts` | built |
-| Each assertion of `check.yaml` passes and fails as its row says, and a malformed check is refused | `test/tasks.TestFileAssertions`, `test/tasks.TestTreeAssertions`, `test/tasks.TestGoAssertions`, `test/tasks.TestCallAssertions`, `test/tasks.TestTodoAssertions`, `test/tasks.TestCheckScripts`, `test/tasks.TestParseCheckRefuses` | built |
+| Each assertion of `check.yaml` passes and fails as its row says, and a malformed check is refused | `test/tasks.TestFileAssertions`, `test/tasks.TestTreeAssertions`, `test/tasks.TestGoAssertions`, `test/tasks.TestCallAssertions`, `test/tasks.TestTodoAssertions`, `test/tasks.TestQuestionAssertions`, `test/tasks.TestCheckScripts`, `test/tasks.TestParseCheckRefuses` | built |
 | A task directory that breaks the format is refused when the suite loads | `test/tasks.TestLoadTaskRefuses`, `test/tasks.TestLoadRefusesASuite` | built |
 | A run starts from a fresh copy of its fixture or a clone of its bundle, and reports its verdict, steps, cost, stop reason and log | `test/tasks.TestRunReportsEveryRun`, `test/tasks.TestABundleIsCloned`, `test/tasks.TestRunCountsFailedRuns` | built |
 | A run that stops other than at the end of its turn fails | `test/tasks.TestAStopOtherThanTheEndOfTheTurnFails` | built |

@@ -27,8 +27,9 @@ import (
 
 // Check is a parsed check.yaml: assertions evaluated in order, the
 // first failing one failing the run. Each assertion reads an outcome,
-// the final working directory or the session's log, and never the
-// model's prose.
+// the final working directory or the session's log, and none reads the
+// model's prose but final_message, whose instruction's rule is what the
+// final message states.
 type Check []Assertion
 
 // Assertion is one entry of check.yaml; exactly one field is set.

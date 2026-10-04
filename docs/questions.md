@@ -1,7 +1,7 @@
 # Questions: showing an agent's question and sending the answer
 
 An agent that holds the `question` tool can put a decision to the person
-it works for: one call asks one to four questions, each with two to four
+it works for: one call asks several questions at once, each with a few
 options, and the person may always answer in their own words. This page
 is the contract a client follows to show such a question and send the
 answer. Everything here is on the wire of `/v1`; the field names are the
@@ -88,7 +88,7 @@ checked.
 
 | Field | Show it as |
 |---|---|
-| `header` | the question's short label, such as a tab's title; at most 12 characters |
+| `header` | the question's short label, such as a tab's title |
 | `question` | the full question; it is written to be answered without the conversation |
 | `options` | in the order given, each with its `label` and its `description` |
 | `recommended` | a mark of your own wording on the option; the mark is not part of the label |
@@ -114,7 +114,7 @@ POST /v1/sessions/ses_01.../events
 | Entry | Means |
 |---|---|
 | `{"selected": ["SQLite"]}` | the person chose that option |
-| `{"text": "..."}` | an answer in the person's own words, at most 2000 characters |
+| `{"text": "..."}` | an answer in the person's own words |
 | `{"selected": [...], "text": "..."}` | a choice and the person's note on it |
 | `{}` | the question is left to the agent |
 
