@@ -317,6 +317,11 @@ const (
 func Awaiting(evs []Event) map[string]Answer {
 	out := map[string]Answer{}
 	for _, e := range evs {
+		// A redacted result still answers its call.
+		if id := e.Answers(); id != "" {
+			delete(out, id)
+			continue
+		}
 		if e.Redacted() {
 			continue
 		}
@@ -347,22 +352,6 @@ func Awaiting(evs []Event) map[string]Answer {
 					delete(out, id)
 				}
 			}
-		case TypeUserToolResult, TypeToolResult:
-			var id string
-			if e.Type == TypeUserToolResult {
-				var p UserToolResult
-				if e.Decode(&p) != nil {
-					continue
-				}
-				id = p.ToolUseID
-			} else {
-				var p ToolResult
-				if e.Decode(&p) != nil {
-					continue
-				}
-				id = p.ToolUseID
-			}
-			delete(out, id)
 		}
 	}
 	return out

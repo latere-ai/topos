@@ -31,22 +31,12 @@ type pendingCall struct {
 // user.tool_result, in the order they were decided, each with what a
 // person answered it by: a confirmation, or a message that denied it.
 func openCalls(log []session.Event, thread string) []pendingCall {
+	// A result answers its call whether or not it was redacted since: a
+	// redaction removes what the result held, not that the call returned.
 	answered := map[string]bool{}
 	for _, e := range log {
-		if e.Redacted() || e.Thread != thread {
-			continue
-		}
-		switch e.Type {
-		case session.TypeToolResult:
-			var p session.ToolResult
-			if e.Decode(&p) == nil {
-				answered[p.ToolUseID] = true
-			}
-		case session.TypeUserToolResult:
-			var p session.UserToolResult
-			if e.Decode(&p) == nil {
-				answered[p.ToolUseID] = true
-			}
+		if id := e.Answers(); id != "" && e.Thread == thread {
+			answered[id] = true
 		}
 	}
 	var open []pendingCall

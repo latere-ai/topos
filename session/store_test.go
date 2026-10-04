@@ -327,6 +327,53 @@ func TestAMessageClosesAnAsk(t *testing.T) {
 	}
 }
 
+// TestARedactedResultKeepsItsCall: the tombstone of a tool.result and of
+// a user.tool_result names the call it answered and nothing of what it
+// held, any other event's tombstone holds the mark alone, and a call
+// whose result was redacted awaits no answer.
+func TestARedactedResultKeepsItsCall(t *testing.T) {
+	ev := func(typ Type, p any) Event {
+		e, err := NewEvent(typ, p, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	by := Sender{Subject: "usr_ada", Kind: SenderPerson}
+	for typ, payload := range map[Type]any{
+		TypeToolResult:     ToolResult{ToolUseID: "toolu_1", Content: []lux.Block{{Type: ir.BlockText, Text: "a secret"}}},
+		TypeUserToolResult: UserToolResult{ToolUseID: "toolu_1", Content: []lux.Block{{Type: ir.BlockText, Text: "a secret"}}},
+	} {
+		tomb, red, err := Tombstone(ev(typ, payload), 7, by, "it held a secret", t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !tomb.Redacted() || tomb.Answers() != "toolu_1" || string(tomb.Payload) != `{"tombstone":true,"tool_use_id":"toolu_1"}` || red.Seq != 8 {
+			t.Fatalf("%s: tombstone %s, redaction at %d", typ, tomb.Payload, red.Seq)
+		}
+	}
+	tomb, _, err := Tombstone(ev(TypeUserMessage, UserMessage{Sender: by}), 7, by, "", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(tomb.Payload) != string(tombstone) || tomb.Answers() != "" {
+		t.Fatalf("a message's tombstone: %s", tomb.Payload)
+	}
+	old := ev(TypeToolResult, ToolResult{ToolUseID: "toolu_1"})
+	old.Payload = slices.Clone(tombstone)
+	if old.Answers() != "" || (Event{Type: TypeToolResult, Payload: json.RawMessage(`[`)}).Answers() != "" {
+		t.Fatal("a tombstone without an id, or a payload that does not decode, names a call")
+	}
+	ask := ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "toolu_1", Verdict: "ask"})
+	result, _, err := Tombstone(ev(TypeToolResult, ToolResult{ToolUseID: "toolu_1"}), 2, by, "", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Awaiting([]Event{ask, result}); len(got) != 0 {
+		t.Fatalf("a call whose result was redacted awaits %v", got)
+	}
+}
+
 func TestAwaitingAndRedactable(t *testing.T) {
 	ev := func(typ Type, p any) Event {
 		e, err := NewEvent(typ, p, t0)

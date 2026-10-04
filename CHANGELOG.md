@@ -35,6 +35,14 @@ committed: the commit log already holds that.
   confirmation, while the other still waits. The same loss hit a
   confirmed call beside a subagent's thread that still waited for a
   confirmation of its own.
+- Redacting a `tool.result` made its call look unanswered. The next
+  turn appended a second `tool.result` for the same call with outcome
+  `unknown_effect`. A redacted `tool.result` or `user.tool_result` now
+  keeps its `tool_use_id` beside the tombstone mark,
+  `{"tombstone":true,"tool_use_id":"..."}`, and still answers its call.
+  The id is the model's name for the call and holds nothing of the
+  result. A result redacted before this release keeps a tombstone
+  without the id and is read as before.
 
 ## v0.12.0 - 2026-10-04
 

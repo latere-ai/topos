@@ -285,3 +285,43 @@ func TestAMessageDeniesTheCallsThatWait(t *testing.T) {
 		}
 	})
 }
+
+// TestARedactedResultStillAnswersItsCall: redacting a call's tool.result
+// removes what the result held and not the fact that the call was
+// answered, so the next claim appends no second result for it.
+func TestARedactedResultStillAnswersItsCall(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopToolUse, call("toolu_a", "echo", `{"text":"a secret"}`)),
+		reply(ir.StopEndTurn, text("done")),
+		reply(ir.StopEndTurn, text("The first turn echoed a value that was removed.")),
+		reply(ir.StopEndTurn, text("continued")),
+	)
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	res := e.events(ctx, session.TypeToolResult)
+	if len(res) != 1 {
+		t.Fatalf("%d results", len(res))
+	}
+	if err := e.store.Redact(ctx, e.s.ID, res[0].ID, e.s.Initiator, "it held a secret"); err != nil {
+		t.Fatal(err)
+	}
+	if got := session.Awaiting(e.all()); len(got) != 0 {
+		t.Fatalf("a call whose result was redacted awaits %v", got)
+	}
+	e.send(ctx, "More.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("after the redaction %+v", out)
+	}
+	if res := e.events(ctx, session.TypeToolResult); len(res) != 1 || !res[0].Redacted() {
+		t.Fatalf("the call has %d results after its result was redacted, want the redacted one alone", len(res))
+	}
+	for _, ev := range e.all() {
+		if strings.Contains(string(ev.Payload), "a secret") && ev.Type == session.TypeToolResult {
+			t.Fatalf("the redacted result still holds its content: %s", ev.Payload)
+		}
+	}
+}

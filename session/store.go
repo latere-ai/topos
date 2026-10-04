@@ -464,7 +464,11 @@ func CheckSequence(events []Event, from uint64) error {
 }
 
 // Tombstone returns e redacted, and the event.redacted event recording
-// it, sequenced after last.
+// it, sequenced after last. The tombstone of a tool.result or a
+// user.tool_result keeps the tool_use_id beside the mark: the id is the
+// model's name for the call and no content of the result, and without it
+// the call would read as one nothing answered, which the next runner
+// closes with a second result.
 func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (Event, Event, error) {
 	red, err := NewEvent(TypeEventRedacted, EventRedacted{EventID: e.ID, By: by, Reason: reason}, now)
 	if err != nil {
@@ -472,8 +476,37 @@ func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (E
 	}
 	red.SessionID = e.SessionID
 	red.Seq = last + 1
-	e.Payload = slices.Clone(tombstone)
+	payload := slices.Clone(tombstone)
+	if id := e.Answers(); id != "" {
+		if payload, err = Marshal(answeredTombstone{Tombstone: true, ToolUseID: id}); err != nil {
+			return Event{}, Event{}, err
+		}
+	}
+	e.Payload = payload
 	return e, red, nil
+}
+
+// answeredTombstone is the payload a redacted result keeps.
+type answeredTombstone struct {
+	Tombstone bool   `json:"tombstone"`
+	ToolUseID string `json:"tool_use_id"`
+}
+
+// Answers is the tool_use id of the call a tool.result or a
+// user.tool_result answers, read from a redacted result as from any. It
+// is empty for an event of another type, and for a result redacted by a
+// build whose tombstone kept no id.
+func (e Event) Answers() string {
+	if e.Type != TypeToolResult && e.Type != TypeUserToolResult {
+		return ""
+	}
+	var p struct {
+		ToolUseID string `json:"tool_use_id"`
+	}
+	if json.Unmarshal(e.Payload, &p) != nil {
+		return ""
+	}
+	return p.ToolUseID
 }
 
 // Blobs returns the digests a payload names, in order of appearance,
