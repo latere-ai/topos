@@ -6,7 +6,10 @@ package toposcli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -756,5 +759,70 @@ func TestRunAttended(t *testing.T) {
 	}
 	if u.sessions()[0].Attended {
 		t.Fatal("a run without --attended is attended")
+	}
+}
+
+// searcher is an agent that names web_search.
+const searcher = `apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata: {name: searcher}
+spec:
+  model: {name: claude-haiku-4-5}
+  instructions: Search before you answer.
+  tools: [read, web_search]
+`
+
+// TestWebSearchIsOfferedWhenNamed (spec 040): topos run offers web_search
+// to an agent that names it, searches TOPOS_SEARCH_URL with
+// TOPOS_SEARCH_KEY, and records the search's cost on its result; a key
+// without the URL exits 2; and without the URL the tool answers that
+// search is not available.
+func TestWebSearchIsOfferedWhenNamed(t *testing.T) {
+	var auth string
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, `{"results":[{"title":"Go","url":"https://go.dev","snippet":"The Go language."}],"cost_usd_micro":10000}`)
+	}))
+	t.Cleanup(svc.Close)
+	f := setup(t)
+	f.vars["TOPOS_SEARCH_URL"], f.vars["TOPOS_SEARCH_KEY"] = svc.URL, "search-key"
+	path := f.manifest("searcher.yaml", searcher)
+	f.stub.Script(model,
+		luxstub.Reply{Response: reply(toolUse("toolu_s", "web_search", `{"query":"go"}`)).Response, Expect: expectAgent("Search before you answer", "read,web_search")},
+		luxstub.Reply{Response: reply(text("Go is at go.dev.")).Response, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1]
+			if last.Blocks[0].ToolResult == nil || !strings.Contains(last.Blocks[0].ToolResult.Blocks[0].Text, "https://go.dev") {
+				return errUnexpected("the results did not reach the model")
+			}
+			return nil
+		}},
+	)
+	code, out, errOut := f.run("run", "--agent", path, "Where is Go?")
+	if code != ExitOK || out != "Go is at go.dev.\n" || auth != "Bearer search-key" {
+		t.Fatalf("exit %d, stdout %q, stderr %q, auth %q", code, out, errOut, auth)
+	}
+	if s := f.sessions()[0]; s.Budget.SpentCostUSDMicro < 10000 {
+		t.Fatalf("the spend %d does not count the search", s.Budget.SpentCostUSDMicro)
+	}
+
+	g := setup(t)
+	g.vars["TOPOS_SEARCH_KEY"] = "search-key"
+	if code, _, errOut := g.run("run", "--agent", g.manifest("searcher.yaml", searcher), "Where is Go?"); code != ExitUsage || !strings.Contains(errOut, "TOPOS_SEARCH_URL") {
+		t.Fatalf("a key without the URL: exit %d, %q", code, errOut)
+	}
+
+	u := setup(t)
+	u.stub.Script(model,
+		reply(toolUse("toolu_s", "web_search", `{"query":"go"}`)),
+		luxstub.Reply{Response: reply(text("No search here.")).Response, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1]
+			if last.Blocks[0].ToolResult == nil || last.Blocks[0].ToolResult.Blocks[0].Text != "Web search is not available on this server." {
+				return errUnexpected("the tool did not say search is not available")
+			}
+			return nil
+		}},
+	)
+	if code, out, errOut := u.run("run", "--agent", u.manifest("searcher.yaml", searcher), "Where is Go?"); code != ExitOK || out != "No search here.\n" {
+		t.Fatalf("no service: exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

@@ -44,6 +44,7 @@ import (
 	"latere.ai/x/topos/models/scripted"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
+	"latere.ai/x/topos/search"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/dir"
 )
@@ -721,6 +722,25 @@ func (l *local) decider() (harness.Decider, error) {
 	return d, nil
 }
 
+// searcher is the search service of an agent that names web_search
+// (spec 040): TOPOS_SEARCH_URL with TOPOS_SEARCH_KEY, and nil when the URL
+// is unset, which offers the tool with no service.
+func (l *local) searcher() (search.Searcher, error) {
+	u := strings.TrimSpace(l.getenv("TOPOS_SEARCH_URL"))
+	key := strings.TrimSpace(l.getenv("TOPOS_SEARCH_KEY"))
+	if u == "" {
+		if key != "" {
+			return nil, &errUsage{"TOPOS_SEARCH_KEY is set, but TOPOS_SEARCH_URL is not. Set TOPOS_SEARCH_URL to the search service the key is for."}
+		}
+		return nil, nil
+	}
+	c, err := search.New(u, func(context.Context) (string, error) { return key, nil }, otel.HTTPClient())
+	if err != nil {
+		return nil, &errUsage{"TOPOS_SEARCH_URL " + strings.TrimPrefix(err.Error(), "search: ")}
+	}
+	return c, nil
+}
+
 // config builds a session's harness: the host machine in the session's
 // working directory, and the model, instructions, tools, policy,
 // subagents and limits of the session's agent. --model replaces the
@@ -775,6 +795,17 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 				continue
 			}
 			if err := reg.AddBuiltin(t); err != nil {
+				return harness.Config{}, errors.Join(err, m.Stop(ctx))
+			}
+		}
+		// web_search is a built-in an agent holds only by naming it (spec
+		// 040).
+		if slices.Contains(held, tools.NameWebSearch) {
+			s, err := l.searcher()
+			if err != nil {
+				return harness.Config{}, errors.Join(err, m.Stop(ctx))
+			}
+			if err := reg.AddBuiltin(tools.WebSearch(s)); err != nil {
 				return harness.Config{}, errors.Join(err, m.Stop(ctx))
 			}
 		}
