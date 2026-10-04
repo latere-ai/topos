@@ -415,10 +415,12 @@ type ScopeChanged struct {
 	Until  string            `json:"until,omitempty"`
 }
 
-// ModelChanged is the payload of session.model_changed: the session's
-// owner changed the model its next turn runs, its reasoning effort, or
-// both (spec 015). Old is the model and the effort the session ran, its
-// agent's until a first change.
+// ModelChanged is the payload of session.model_changed: the model the
+// session's next turn runs, its reasoning effort, or both changed (spec
+// 015). By is the person who changed them, or the service when a send's
+// allow named another model (spec 038). Old is the model and the effort
+// the session ran, its agent's until a first change, and each names in
+// via the name that was asked when the authorizer answered another.
 type ModelChanged struct {
 	By  Sender   `json:"by"`
 	Old ModelRef `json:"old"`

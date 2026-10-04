@@ -71,6 +71,12 @@ const (
 // trigger:<trg_id> (spec 004).
 const TriggerSubjectPrefix = "trigger:"
 
+// AuthorizerSubject is the subject of a change the installation's
+// authorizer made, a Sender of kind service: the model a send's allow
+// moved the session to (spec 038), which nobody who wrote to the session
+// asked for.
+const AuthorizerSubject = "service:authorizer"
+
 // AgentRef names the agent version a session runs.
 type AgentRef struct {
 	ID      string `json:"id"`
@@ -155,9 +161,12 @@ const (
 
 // ModelRef names a model a session runs and the reasoning effort it runs
 // at: one of manifest/v1's Effort values, or empty for the model's own
-// default (spec 015).
+// default (spec 015). Via is the name that was asked, of the agent, of a
+// person's change or of the session before, when the authorizer answered
+// another, and empty when the session runs the name asked (spec 038).
 type ModelRef struct {
 	Name   string `json:"name"`
+	Via    string `json:"via,omitempty"`
 	Effort string `json:"effort,omitempty"`
 }
 
@@ -193,8 +202,9 @@ type Session struct {
 	// leaves the agent's own to the runner.
 	Policy *Policy `json:"policy,omitempty"`
 	Budget Budget  `json:"budget"`
-	// Model is the model the session's turns run, the latest
-	// session.model_changed's; nil runs the agent's.
+	// Model is the model the session's turns run: the one its create's
+	// allow named, then the latest session.model_changed's; nil runs the
+	// agent's.
 	Model     *ModelRef `json:"model,omitempty"`
 	Limits    Limits    `json:"limits"`
 	Capture   Capture   `json:"capture"`

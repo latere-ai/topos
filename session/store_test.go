@@ -194,6 +194,40 @@ func TestApplyBatchSkipsRedactedStatus(t *testing.T) {
 	}
 }
 
+// TestTheHeaderTakesAModelChangeWhole: the header's model is the new
+// model of the last session.model_changed with the name that was asked
+// beside the one that runs, a header that named a model at its create
+// keeps it until a change, and both names are on the wire.
+func TestTheHeaderTakesAModelChangeWhole(t *testing.T) {
+	s := Session{Model: &ModelRef{Name: "vendor/model-a", Via: "tier/quick"}}
+	ApplyBatch(&s, nil)
+	if s.Model == nil || *s.Model != (ModelRef{Name: "vendor/model-a", Via: "tier/quick"}) {
+		t.Fatalf("the model a create named is %+v", s.Model)
+	}
+	by := Sender{Subject: AuthorizerSubject, Kind: SenderService}
+	e, err := NewEvent(TypeModelChanged, ModelChanged{By: by, Old: *s.Model, New: ModelRef{Name: "vendor/model-b", Via: "tier/quick", Effort: "high"}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Seq = 1
+	if want := `{"by":{"subject":"service:authorizer","kind":"service"},"old":{"name":"vendor/model-a","via":"tier/quick"},"new":{"name":"vendor/model-b","via":"tier/quick","effort":"high"}}`; string(e.Payload) != want {
+		t.Fatalf("session.model_changed is %s", e.Payload)
+	}
+	ApplyBatch(&s, []Event{e})
+	if s.Model == nil || *s.Model != (ModelRef{Name: "vendor/model-b", Via: "tier/quick", Effort: "high"}) {
+		t.Fatalf("the header's model is %+v", s.Model)
+	}
+	plain, err := NewEvent(TypeModelChanged, ModelChanged{By: by, Old: *s.Model, New: ModelRef{Name: "vendor/model-c"}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain.Seq = 2
+	ApplyBatch(&s, []Event{plain})
+	if b, err := Marshal(s.Model); err != nil || string(b) != `{"name":"vendor/model-c"}` {
+		t.Fatalf("a model that runs the name asked is %s, %v", b, err)
+	}
+}
+
 func TestTranscriptCheck(t *testing.T) {
 	if (Transcript{}).Check() != nil {
 		t.Fatal("an empty transcript is too new")
