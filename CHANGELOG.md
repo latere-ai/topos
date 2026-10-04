@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.14.0 - 2026-10-05
+
 ### Added
 
 - `PATCH /v1/sessions/{id}` takes `{"policy": {"mode": "plan" | "confirm" |
