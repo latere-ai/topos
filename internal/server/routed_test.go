@@ -101,20 +101,20 @@ func wire(t *testing.T, req authz.Request, ids ...string) string {
 
 // checking is a fixture whose model check keeps the names it was asked,
 // and answers from the embedded catalog as the fixture's own does.
-func checking(t *testing.T, mut ...func(*Options)) (*fixture, *[]string) {
+func checking(t *testing.T) (*fixture, *[]string) {
 	t.Helper()
 	cat, err := models.Embedded()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
-	f := newFixture(t, append([]func(*Options){func(o *Options) {
+	f := newFixture(t, func(o *Options) {
 		o.Runnable = func(_ context.Context, m v1.AgentModel, overlay models.Entry) error {
 			names = append(names, m.Name)
 			_, err := cat.Resolve(m.Name, overlay)
 			return err
 		}
-	}}, mut...)...)
+	})
 	return f, &names
 }
 
