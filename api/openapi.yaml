@@ -1812,6 +1812,13 @@ components:
         event_id:
           type: string
           description: The id of the event that closed the call; absent when nobody attends the session.
+    WebSearchResultMeta:
+      type: object
+      description: The meta of a web_search call's tool.result. An agent holds web_search only when its manifest names it, and each call sends its query to the search service the installation configures, with the session's own credential. The result's outcome is ok with the results, or with none; error when the service refused the search, the text then the service's own sentence for the person and refusal its code, or when the search failed; timeout past the search's timeout. A search the service charged for carries cost_usd_micro on the tool.result itself, beside meta, and the session's spent_cost_usd_micro counts it as it counts a model request's.
+      properties:
+        refusal:
+          type: string
+          description: The code the search service refused the search with; absent on a search it answered.
     Error:
       type: object
       required:

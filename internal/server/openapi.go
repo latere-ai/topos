@@ -89,6 +89,7 @@ func OpenAPI(server string) ([]byte, error) {
 				{Key: "QuestionInput", Value: questionInput},
 				{Key: "UserAnswer", Value: userAnswer},
 				{Key: "QuestionResultMeta", Value: questionResultMeta},
+				{Key: "WebSearchResultMeta", Value: webSearchResultMeta},
 				{Key: "Error", Value: yaml.MapSlice{
 					{Key: "type", Value: "object"},
 					{Key: "required", Value: []string{"error"}},
