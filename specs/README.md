@@ -96,6 +96,8 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [037](.archive/037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | complete | 004, 005, 012, 016 |
 | [038](.archive/038-routed-models.md) | Routed models: a model name the authorizer resolves, at a session's create, at a model change and between turns | medium | complete | 005, 010, 012, 015 |
 | [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions a person attends | medium | in-progress | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 024 |
+| [040](040-session-deletion.md) | Deleting a session: the route asks only about a session it would delete, refuses a running one, what a delete removes and when, what it leaves | small | drafted | 004, 006, 009, 014, 015, 016, 035 |
+| [041](041-approval-mode-change.md) | Changing a session's approval mode: the policy member of PATCH, session.policy_changed, the authorizer's question, from the next step | small | drafted | 004, 005, 006, 012, 013, 015, 017 |
 
 ## Dependency graph
 
@@ -145,6 +147,8 @@ flowchart BT
   S037[037 decision services]
   S038[038 routed models]
   S039[039 questions]
+  S040[040 session deletion]
+  S041[041 approval mode change]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -208,6 +212,12 @@ flowchart BT
   S039 --> S013
   S039 --> S015
   S039 --> S024
+  S040 --> S015
+  S040 --> S016
+  S040 --> S035
+  S041 --> S013
+  S041 --> S015
+  S041 --> S017
 ```
 
 ## Build order
@@ -221,7 +231,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
