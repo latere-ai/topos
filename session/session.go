@@ -274,19 +274,36 @@ func Marshal(v any) ([]byte, error) {
 }
 
 // Spent is the budget meter of spec 007: the cost of every model.request
-// of every thread.
+// of every thread, and of every tool.result a service charged for (spec
+// 040), a redacted one included, since its tombstone keeps the cost.
 func Spent(log []Event) int64 {
 	var total int64
 	for _, e := range log {
-		if e.Type != TypeModelRequest || e.Redacted() {
-			continue
-		}
-		var p ModelRequest
-		if e.Decode(&p) == nil && p.CostUSDMicro != nil {
-			total += *p.CostUSDMicro
-		}
+		total += Cost(e)
 	}
 	return total
+}
+
+// Cost is what one event adds to the session's spend: a model request's
+// cost, a tool result's, and nothing for any other event. A redacted
+// model request is not counted, and none is ever redacted (Redactable);
+// a redacted tool result is read from its tombstone.
+func Cost(e Event) int64 {
+	switch {
+	case e.Type == TypeModelRequest && !e.Redacted():
+		var p ModelRequest
+		if e.Decode(&p) == nil && p.CostUSDMicro != nil {
+			return *p.CostUSDMicro
+		}
+	case e.Type == TypeToolResult:
+		var p struct {
+			CostUSDMicro *int64 `json:"cost_usd_micro"`
+		}
+		if json.Unmarshal(e.Payload, &p) == nil && p.CostUSDMicro != nil {
+			return *p.CostUSDMicro
+		}
+	}
+	return 0
 }
 
 // HasPendingInput reports whether a session's log holds input a runner

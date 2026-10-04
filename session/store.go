@@ -406,8 +406,8 @@ func SameEvent(a, b Event) bool {
 // sequence, the turn, the update time, the status and stop reason of the
 // last session.status event, the budget of the last session.resumed, the
 // model of the last session.model_changed, the approval mode of the last
-// session.policy_changed, and the spend, which each model.request's cost
-// adds to as Spent counts it.
+// session.policy_changed, and the spend, which each model.request's and
+// each charged tool.result's cost adds to as Spent counts it.
 func ApplyBatch(s *Session, events []Event) {
 	for _, e := range events {
 		if e.Seq > s.LastSeq {
@@ -419,11 +419,8 @@ func ApplyBatch(s *Session, events []Event) {
 		if t := e.Time.UTC(); t.After(s.UpdatedAt) {
 			s.UpdatedAt = t
 		}
-		if e.Type == TypeModelRequest && !e.Redacted() {
-			var p ModelRequest
-			if e.Decode(&p) == nil && p.CostUSDMicro != nil {
-				s.Budget.SpentCostUSDMicro += *p.CostUSDMicro
-			}
+		if e.Type == TypeModelRequest || e.Type == TypeToolResult {
+			s.Budget.SpentCostUSDMicro += Cost(e)
 			continue
 		}
 		// A fork's copied session.resumed raised its parent's budget; the
@@ -482,7 +479,8 @@ func CheckSequence(events []Event, from uint64) error {
 // user.tool_result keeps the tool_use_id beside the mark: the id is the
 // model's name for the call and no content of the result, and without it
 // the call would read as one nothing answered, which the next runner
-// closes with a second result.
+// closes with a second result. A tool.result's tombstone also keeps its
+// cost, so no redaction rewrites the session's spend (spec 040).
 func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (Event, Event, error) {
 	red, err := NewEvent(TypeEventRedacted, EventRedacted{EventID: e.ID, By: by, Reason: reason}, now)
 	if err != nil {
@@ -492,7 +490,13 @@ func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (E
 	red.Seq = last + 1
 	payload := slices.Clone(tombstone)
 	if id := e.Answers(); id != "" {
-		if payload, err = Marshal(answeredTombstone{Tombstone: true, ToolUseID: id}); err != nil {
+		kept := answeredTombstone{Tombstone: true, ToolUseID: id}
+		if e.Type == TypeToolResult {
+			if c := Cost(e); c != 0 {
+				kept.CostUSDMicro = &c
+			}
+		}
+		if payload, err = Marshal(kept); err != nil {
 			return Event{}, Event{}, err
 		}
 	}
@@ -502,8 +506,9 @@ func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (E
 
 // answeredTombstone is the payload a redacted result keeps.
 type answeredTombstone struct {
-	Tombstone bool   `json:"tombstone"`
-	ToolUseID string `json:"tool_use_id"`
+	Tombstone    bool   `json:"tombstone"`
+	ToolUseID    string `json:"tool_use_id"`
+	CostUSDMicro *int64 `json:"cost_usd_micro,omitempty"`
 }
 
 // Answers is the tool_use id of the call a tool.result or a
