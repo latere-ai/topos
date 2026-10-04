@@ -1,6 +1,6 @@
 ---
 title: "Publishing a folder: the publish tool, the session's own app at the installation's app host, its preview and its release, and the route a session runs by"
-status: drafted
+status: in-progress
 track: core
 depends_on: [004-session-log.md, 008-tools.md, 010-context.md, 012-permissions-and-approvals.md, 018-credentials-and-secrets.md, 019-git.md, 038-routed-models.md, 039-questions.md]
 affects: [internal/publish/, internal/hosted/, internal/config/, cmd/toposd/, harness/, harness/tools/, manifest/, session/, prompts/, internal/toposcli/, docs/]
@@ -202,13 +202,14 @@ reads; previews served beside the session in a client.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A session whose agent names `publish` publishes a folder of its sandbox: the app is created with the session's title and `public`, with the session's token for the app host's audience and the workload `session`, the sandbox's git pushes the folder to the session's branch with the session's author and trailers, the result names the preview's address with `meta.publish` status `ready`, and no token reaches the sandbox, an event or a tool result | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` over the stub Cella, a stub app host and git's own http backend | not built |
-| A second publish reuses the app, pushes a new commit on the same branch, and a publish with nothing changed pushes no new commit | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` | not built |
-| `release: true` pushes `v1` on the last ready preview's commit, the next release `v2`, and the result is `released` with the app's address | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` | not built |
-| A failed build answers `failed` with its code, its message and the tail of its log; a refused release answers `refused` with its reason; a wait that runs out answers `building` or `pending` | `internal/publish.TestOutcomes` | not built |
-| A path that is no folder, a release with no ready preview, a push URL on another host, an app host that refuses, and an installation that mints no token for it each answer an error the model reads | `internal/publish.TestRefusals` | not built |
-| The runner offers `publish` only to the session's own thread, only when the agent names it, the app host is configured and the machine is Cella; the manifest takes it by name alone; `topos run` refuses it | `internal/hosted.TestPublishIsOfferedWhenConfigured`, `manifest.TestValidationRules`, `harness.TestASpawnedThreadHoldsNoPublish`, `internal/toposcli.TestAgentManifestRefusals` | not built |
-| `TOPOS_APPS_URL` without `TOPOS_ORIGO_URL`, or one that is not an http URL, stops the start | `internal/config.TestLoad` | not built |
-| A routed session's every request carries its route as a system part, and an unrouted one's none | `harness.TestTheRequestNamesTheRoute` | not built |
+| A session whose agent names `publish` publishes a folder of its sandbox: the app is created with the session's title and `public`, with the session's token for the app host's audience and the workload `session`, the sandbox's git pushes the folder to the session's branch with the session's author and trailers, the result names the preview's address with `meta.publish` status `ready`, and no token reaches the sandbox, an event or a tool result | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` over the stub Cella, a stub app host and git's own http backend | built |
+| A second publish reuses the app, pushes a new commit on the same branch, and a publish with nothing changed pushes no new commit | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` | built |
+| `release: true` pushes `v1` on the last ready preview's commit, the next release `v2`, and the result is `released` with the app's address | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` | built |
+| A failed build answers `failed` with its code, its message and the tail of its log; a refused release answers `refused` with its reason; a wait that runs out answers `building` or `pending` | `internal/publish.TestOutcomes` | built |
+| A path that is no folder, a release with no ready preview, a push URL on another host, an app host that refuses, and an installation that mints no token for it each answer an error the model reads | `internal/publish.TestRefusals` | built |
+| The runner offers `publish` only to the session's own thread, only when the agent names it, the app host is configured and the machine is Cella; the manifest takes it by name alone; `topos run` refuses it | `internal/hosted.TestPublishIsOfferedWhenConfigured`, `manifest.TestPublishIsAKnownToolName`, `harness.TestASpawnedThreadHoldsNoPublish`, `internal/toposcli.TestAgentManifestRefusals` | built |
+| `TOPOS_APPS_URL` without `TOPOS_ORIGO_URL`, or one that is not an http URL, stops the start | `internal/config.TestTheAppHost` | built |
+| A routed session's every request carries its route as a system part, and an unrouted one's none | `harness.TestTheRequestNamesTheRoute` | built |
+| A model given a request for a page publishes it and answers with its address, instead of starting a server in its sandbox | a task of the suite ([[025-task-suite]]) against a stub app host | not built |
 
 ## Outcome
