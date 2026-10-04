@@ -95,6 +95,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 - [specs/README.md](specs/README.md): the design, the index of specs and
   the build order.
 - [docs/configuration.md](docs/configuration.md): every `TOPOS_*` variable.
+- [docs/questions.md](docs/questions.md): how a client shows an agent's
+  question and sends the person's answer.
 
 ## Contributing
 
