@@ -95,7 +95,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
 | [037](.archive/037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | complete | 004, 005, 012, 016 |
 | [038](.archive/038-routed-models.md) | Routed models: a model name the authorizer resolves, at a session's create, at a model change and between turns | medium | complete | 005, 010, 012, 015 |
-| [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions nobody attends | medium | drafted | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 022, 024 |
+| [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions a person attends | medium | drafted | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 024 |
 
 ## Dependency graph
 
@@ -207,7 +207,6 @@ flowchart BT
   S039 --> S010
   S039 --> S013
   S039 --> S015
-  S039 --> S022
   S039 --> S024
 ```
 
