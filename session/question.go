@@ -243,7 +243,7 @@ func Questions(evs []Event) []Asked {
 			unclosed = slices.DeleteFunc(unclosed, func(j int) bool { return j == i })
 			continue
 		}
-		by := ""
+		var by string
 		switch e.Type {
 		case TypeAgentToolUse:
 			var p AgentToolUse

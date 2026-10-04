@@ -683,7 +683,7 @@ func TestAMessageStandsInForAnAnswer(t *testing.T) {
 		ctx := t.Context()
 		var msg session.Event
 		e.echo.run = func(tools.Call) (tools.Result, error) {
-			msg = e.alongside(session.TypeUserMessage, session.UserMessage{Sender: e.s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Use SQLite."}}})
+			msg = e.alongside(context.WithoutCancel(ctx), session.TypeUserMessage, session.UserMessage{Sender: e.s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Use SQLite."}}})
 			return tools.Text(tools.OutcomeOK, "done"), nil
 		}
 		e.stub.Script(model,
@@ -706,7 +706,7 @@ func TestAMessageStandsInForAnAnswer(t *testing.T) {
 		e := asking(t, true)
 		ctx := t.Context()
 		e.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{call("toolu_q", ToolQuestion, twoQuestions)}, StopReason: ir.StopToolUse}, Respond: func(*ir.Request, *ir.Response) {
-			e.alongside(session.TypeUserMessage, session.UserMessage{Sender: e.s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "And keep it small."}}})
+			e.alongside(context.WithoutCancel(ctx), session.TypeUserMessage, session.UserMessage{Sender: e.s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "And keep it small."}}})
 		}})
 		e.send(ctx, "Build the service.")
 		out := e.turn(ctx)
@@ -785,20 +785,20 @@ func TestAMessageStandsInForAnAnswer(t *testing.T) {
 
 // alongside appends an event as another writer does, a client beside the
 // running turn, straight to the store.
-func (e *env) alongside(typ session.Type, payload any) session.Event {
+func (e *env) alongside(ctx context.Context, typ session.Type, payload any) session.Event {
 	e.t.Helper()
 	ev, err := session.NewEvent(typ, payload, t0)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	for range 8 {
-		s, err := e.store.Get(context.Background(), e.s.ID)
+		s, err := e.store.Get(ctx, e.s.ID)
 		if err != nil {
 			e.t.Fatal(err)
 		}
 		batch := []session.Event{ev}
 		session.Stamp(e.s.ID, s.LastSeq, batch)
-		_, err = e.store.Append(context.Background(), e.s.ID, s.LastSeq, batch)
+		_, err = e.store.Append(ctx, e.s.ID, s.LastSeq, batch)
 		if err == nil {
 			return batch[0]
 		}
@@ -821,7 +821,7 @@ func TestAnInterruptDismissesAQuestion(t *testing.T) {
 		ctx := t.Context()
 		var in session.Event
 		e.echo.run = func(tools.Call) (tools.Result, error) {
-			in = e.alongside(session.TypeUserInterrupt, session.UserInterrupt{Sender: e.s.Initiator})
+			in = e.alongside(context.WithoutCancel(ctx), session.TypeUserInterrupt, session.UserInterrupt{Sender: e.s.Initiator})
 			return tools.Text(tools.OutcomeOK, "done"), nil
 		}
 		e.stub.Script(model, reply(ir.StopToolUse, call("toolu_q", ToolQuestion, twoQuestions), call("toolu_e", "echo", `{"text":"beside"}`)), reply(ir.StopEndTurn, text("never")))
@@ -925,7 +925,7 @@ type interrupting struct {
 
 func (l *interrupting) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
 	if l.id == "" && len(batch) == 1 && batch[0].Type == session.TypeSessionStatus {
-		l.id = l.e.alongside(session.TypeUserInterrupt, session.UserInterrupt{Sender: l.e.s.Initiator}).ID
+		l.id = l.e.alongside(ctx, session.TypeUserInterrupt, session.UserInterrupt{Sender: l.e.s.Initiator}).ID
 	}
 	return l.storeLog.Append(ctx, batch)
 }

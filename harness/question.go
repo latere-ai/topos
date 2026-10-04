@@ -165,7 +165,8 @@ func withoutConfirm(p Policy) Policy {
 // outcome and, in its meta, the cause and the id of the closing event.
 // It reads the log alone, so any runner renders the same bytes.
 func questionResult(in session.QuestionInput, c session.Closing) tools.Result {
-	outcome, text := tools.OutcomeUnanswered, ""
+	outcome := tools.OutcomeUnanswered
+	var text string
 	switch c.By {
 	case session.ClosedByAnswer:
 		var a session.UserAnswer

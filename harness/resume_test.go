@@ -29,7 +29,11 @@ func (e *env) confirm(ctx context.Context, id string) {
 		e.t.Fatal(err)
 	}
 	e.appendEvents(ctx, c)
-	if !session.HasPendingInput(e.all()) {
+	evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if !session.HasPendingInput(evs) {
 		e.t.Fatalf("the confirmation of %s is not pending input", id)
 	}
 	e.running(ctx)
