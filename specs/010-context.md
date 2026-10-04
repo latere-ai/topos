@@ -89,13 +89,16 @@ thread:
 
 1. If the estimate is under the threshold, send.
 2. Otherwise clear: every `tool.result` older than the thread's last
-   ten steps, except `todo` results, is cleared, by appending one
+   ten steps, except `todo` and `question` results, is cleared, by appending one
    `context.compacted` with `kind` `clear_tool_results`, the cleared
    `tool_use_ids`, the range, and the estimates before and after.
 3. If the estimate is still over the threshold, compact:
    1. Send one request with the thread's transcript and the compaction
-      prompt `prompts/compact/compact-v1.md`, on the thread's own model,
-      recorded as a `model.request` that counts toward the budget.
+      prompt `prompts/compact/compact-v2.md`, on the thread's own model,
+      recorded as a `model.request` that counts toward the budget. The
+      `context.compacted` names the prompt in `prompt`, so a replay
+      asks with the same text; a summary that names none was asked with
+      `compact-v1`.
    2. The summary covers every event up to the last complete step
       before the thread's three most recent steps; a step is never
       split from its results.
@@ -106,7 +109,9 @@ thread:
    the turn fails with `session.error` `context_exhausted`.
 
 The compaction prompt asks for, in order: the person's requests quoted
-exactly, the decisions made and why, the files changed and their state,
+exactly, the questions put to the person with each answer or that it
+was left to the agent (added by [[039-questions]]), the decisions made
+and why, the files changed and their state,
 the commands that matter and their results, the open problems, and the
 next step. A compaction that fails after retries ends the turn with
 `error` and `session.error` `compaction_failed`; nothing is cleared or

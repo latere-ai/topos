@@ -94,7 +94,7 @@ once, which releases the lock.
 | 0 | `end_turn`, or the session ended `completed` |
 | 1 | `error`, or the session ended `failed`, or a failure of the command |
 | 2 | usage |
-| 3 | waiting for a person: `tool_confirmation` or `tool_result` |
+| 3 | waiting for a person: `tool_confirmation`, `tool_result`, or `question` in a session created with `--attended` ([[039-questions]]), which names the open call and is answered by a message sent with `--session` |
 | 4 | at a limit: `budget`, `turn_limit` or `output_limit` |
 | 5 | `interrupted` |
 

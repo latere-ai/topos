@@ -107,6 +107,7 @@ and writes them back unchanged.
 | `limits` | object | `turn_timeout` (default `2h`) and `max_age` (default `168h`), Go durations ([[005-harness-loop]]), and `retention`, how long the session is kept after it ends, absent to keep it until it is deleted ([[014-store]]) |
 | `capture` | object | `requests`: when true every model request's bytes are kept as a blob ([[007-models]]) |
 | `end_on_idle` | boolean | end `completed` when the first turn goes idle `end_turn`; set by triggers ([[022-triggers]]) |
+| `attended` | boolean | the creator declares that a person answers the session's questions; absent is false, and a question of a session that is not attended is answered at once (added by [[039-questions]]) |
 | `parent` | object | `session_id` and `seq` of the session this one was forked from; events 1 to `seq` are that session's, copied ([[017-external-runners-handoff-fork]]) |
 | `archived_at` | time | when the session was archived, absent when it is not; set and cleared by the server alone, never by an event ([[015-api]]) |
 | `trigger_id` | string | `trg_…` when a trigger started it |
@@ -143,6 +144,7 @@ claims a session, before anything else, every time it claims it.
 | `idle` | `end_turn` | the model ended its turn, by `end_turn`, a stop sequence, or a refusal (named in `detail`) | `user.message` |
 | `idle` | `tool_confirmation` | at least one call's verdict is ask, or one step-up approval, waits for a person | `user.tool_confirmation` for every pending call and approval, or a `user.message`, which denies each with the message as its note |
 | `idle` | `tool_result` | a client-executed tool call waits for its result | `user.tool_result` for every pending call |
+| `idle` | `question` | a `question` call waits for the person (added by [[039-questions]]) | `user.answer` or a person's `user.message`; a `user.interrupt` dismisses the question and leaves the session idle `interrupted` |
 | `idle` | `budget` | the session's or a thread's budget is reached, or a core refused a request for spend (`detail` names the refusal) | `user.message`, or `session.resumed` after the cap is raised or the wallet refilled ([[007-models]]) |
 | `idle` | `turn_limit` | the turn's wall-clock limit passed | `user.message` |
 | `idle` | `output_limit` | a `max_tokens` stop the harness could not continue | `user.message` |
@@ -186,6 +188,7 @@ appending and the session stays `running` until the next runner's claim
 | `user.interrupt` | a client | yes | `sender`; the runner stops at the next step boundary ([[005-harness-loop]]) |
 | `user.tool_confirmation` | a client | no | `sender`, `tool_use_id` or `approval_id` (exactly one), `decision` (`allow` or `deny`), `note`, `remember` (an argument pattern, [[012-permissions-and-approvals]]) |
 | `user.tool_result` | a client | yes | `sender`, `tool_use_id`, `content`, `is_error` |
+| `user.answer` | a client | no | `sender`, `tool_use_id`, `answers`: one entry `{selected, text}` per question of the open `question` call; the runner renders it into the call's `tool.result` (added by [[039-questions]]) |
 | `agent.message` | the runner | yes | `message` (the Lux wire message, role `assistant`, every block verbatim, thinking and its signature included), `stop_reason` (the IR's: `end_turn`, `tool_use`, `max_tokens`, `stop_sequence`, `refusal`), `request` (the `model.request` event id), `truncated`, `continuation_of` |
 | `agent.tool_use` | the runner | no | `tool_use_id`, `name`, `input`, `risk` (`score`, `source`, `features`), `verdict`, `reason`, `mode`, `client`, `repeatable`; verdicts, sources and modes are [[012-permissions-and-approvals]]'s |
 | `tool.result` | the runner | yes | `tool_use_id`, `content`, `is_error`, `outcome`, `duration_ms`, `spill` (`path`, `bytes`), `meta` (the tool's record for later calls of the thread: `{path, sha256}` for `read`, `write` and `edit`, `{dir, exit_code}` for `bash`, `{todos}` for `todo`; not rendered); outcomes and meta are [[008-tools]]'s |

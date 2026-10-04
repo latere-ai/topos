@@ -114,6 +114,7 @@ runner can find is tool calls with no result, the fold's `Open` list
 |---|---|
 | verdict ask, no confirmation | does nothing; the session is still waiting |
 | a client-executed call with no `user.tool_result` | does nothing; the session is still waiting |
+| a `question` call ([[039-questions]]) | renders its result from what closed it, an answer, a person's message or an interrupt; with nothing that closed it, keeps an attended session waiting and answers it at once in one nobody attends. The call has no effect outside the log, so it is never closed `unknown_effect` |
 | confirmed `allow`, and no `session.status` `running` after the confirmation but the resuming runner's own claim | runs it: no runner started it; one that another claim follows is closed `unknown_effect` |
 | a tool whose `repeatable` is true (`memory_sync`, [[020-memory-stores]]) | runs it again |
 | anything else | appends `tool.result` with outcome `unknown_effect` and the text `The runner stopped while this call ran. Its effects are unknown; inspect the machine before repeating it.` |

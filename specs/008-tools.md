@@ -75,6 +75,10 @@ nothing, `write` changes the machine, `external` reaches outside it.
 | `web_fetch` | yes | external | `url` (`http` or `https`) | 30 second timeout, 5 redirects, 10 MiB read; HTML converted to text |
 | `todo` | yes | none | `todos`: a list of `{id, content, status}`, status `pending`, `in_progress` or `completed` | replaces the thread's list; at most 100 items |
 
+The harness adds `question` to the session's own thread when an agent
+names it, a tool of its own and not a built-in, so the default set
+stays the table's eight ([[039-questions]]).
+
 `grep` and `glob` are Go-native and need no external binary. A
 result's `meta` ([[004-session-log]]) is the tool's record for later
 calls of its thread, and `tools.StateOf` folds the thread's metas from
@@ -154,6 +158,7 @@ full size.
 | `blocked` | yes | the verdict was block; the reason is in the text |
 | `canceled` | yes | an interrupt or a shutdown canceled the call while it ran |
 | `unknown_effect` | yes | the runner stopped while the call ran; the text says its effects are unknown and to inspect the machine |
+| `unanswered` | no | a `question` call no option was chosen in: every entry of the answer empty, a message in place of an answer, or a session nobody attends; the model decides ([[039-questions]]) |
 
 Result text is written for the model: what happened, in one or two
 sentences, and what to do next when there is something to do.
