@@ -245,7 +245,7 @@ func TestTwoInterruptsExitAtOnce(t *testing.T) {
 func TestExitCodes(t *testing.T) {
 	for reason, want := range map[session.StopReason]int{
 		session.StopEndTurn: ExitOK, session.StopCompleted: ExitOK,
-		session.StopToolConfirmation: ExitWaiting, session.StopToolResult: ExitWaiting,
+		session.StopToolConfirmation: ExitWaiting, session.StopToolResult: ExitWaiting, session.StopQuestion: ExitWaiting,
 		session.StopBudget: ExitLimit, session.StopTurnLimit: ExitLimit, session.StopOutputLimit: ExitLimit,
 		session.StopInterrupted: ExitInterrupted, session.StopError: ExitError, session.StopFailed: ExitError,
 	} {
@@ -668,5 +668,93 @@ func TestModeNames(t *testing.T) {
 	o := runOptions{mode: "yolo", output: "text"}
 	if err := o.validate(); err == nil || !strings.Contains(err.Error(), "Use plan, manual, or auto") {
 		t.Errorf("an unknown mode: %v", err)
+	}
+}
+
+const asker = `apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata: {name: asker}
+spec:
+  model: {name: claude-haiku-4-5}
+  instructions: Ask before you choose a database.
+  tools: [read, question]
+`
+
+// storageQuestion is a question call with one question of two options.
+const storageQuestion = `{"questions":[{"header":"Storage","question":"Which database should the service use?","options":[` +
+	`{"label":"Postgres","recommended":true,"description":"The shared cluster."},{"label":"SQLite","description":"A file beside the binary."}]}]}`
+
+// TestRunAttended: a run created with --attended records the session as
+// attended, and a question stops it with exit code 3, naming the open
+// call, its question and its options; a message sent with --session
+// answers it and continues the turn. Without the flag a question is
+// answered at once and does not stop the run. --attended with --session
+// is a usage error.
+func TestRunAttended(t *testing.T) {
+	f := setup(t)
+	path := f.manifest("asker.yaml", asker)
+	f.stub.Script(model,
+		luxstub.Reply{Response: reply(toolUse("toolu_q", "question", storageQuestion)).Response, Expect: expectAgent("Ask before you choose", "read,question")},
+		luxstub.Reply{Response: reply(text("SQLite, then.")).Response, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1]
+			if len(last.Blocks) != 2 || last.Blocks[0].ToolResult == nil || !strings.Contains(last.Blocks[0].ToolResult.Blocks[0].Text, "it may be the answer") || last.Blocks[1].Text != "SQLite, one file." {
+				return errUnexpected("the answer did not reach the model as a message after the result")
+			}
+			return nil
+		}},
+	)
+	code, out, errOut := f.run("run", "--attended", "--agent", path, "Set up the storage.")
+	if code != ExitWaiting {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	s := f.sessions()[0]
+	for _, want := range []string{"waiting for an answer to toolu_q", "1. Storage: Which database should the service use?", "- Postgres (recommended): The shared cluster.", "- SQLite: A file beside the binary.", "topos run --session " + s.ID} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errOut)
+		}
+	}
+	if !s.Attended || s.Status != session.StatusIdle || s.StopReason != session.StopQuestion {
+		t.Fatalf("the session %+v", s)
+	}
+	if code, _, errOut := f.run("run", "--session", s.ID, "--attended", "Again."); code != ExitUsage || !strings.Contains(errOut, "--attended starts a new session") {
+		t.Fatalf("--attended with --session: exit %d, %q", code, errOut)
+	}
+	code, out, errOut = f.run("run", "--session", s.ID, "SQLite, one file.")
+	if code != ExitOK || out != "SQLite, then.\n" {
+		t.Fatalf("the answer: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+
+	// JSON output names the open call among the pending ones.
+	j := setup(t)
+	jpath := j.manifest("asker.yaml", asker)
+	j.stub.Script(model, reply(toolUse("toolu_q", "question", storageQuestion)))
+	code, out, _ = j.run("run", "--attended", "--output", "json", "--agent", jpath, "Set up the storage.")
+	var res struct {
+		StopReason string   `json:"stop_reason"`
+		Pending    []string `json:"pending"`
+	}
+	if code != ExitWaiting || json.Unmarshal([]byte(out), &res) != nil || res.StopReason != string(session.StopQuestion) || len(res.Pending) != 1 || res.Pending[0] != "toolu_q" {
+		t.Fatalf("json: exit %d, %q", code, out)
+	}
+
+	// Without the flag nobody attends: the question is answered at once.
+	u := setup(t)
+	upath := u.manifest("asker.yaml", asker)
+	u.stub.Script(model,
+		reply(toolUse("toolu_q", "question", storageQuestion)),
+		luxstub.Reply{Response: reply(text("I assumed Postgres.")).Response, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1]
+			if last.Blocks[0].ToolResult == nil || !strings.Contains(last.Blocks[0].ToolResult.Blocks[0].Text, "Nobody attends this session") {
+				return errUnexpected("the question was not answered at once")
+			}
+			return nil
+		}},
+	)
+	code, out, errOut = u.run("run", "--agent", upath, "Set up the storage.")
+	if code != ExitOK || out != "I assumed Postgres.\n" || strings.Contains(errOut, "waiting for an answer") {
+		t.Fatalf("unattended: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if u.sessions()[0].Attended {
+		t.Fatal("a run without --attended is attended")
 	}
 }

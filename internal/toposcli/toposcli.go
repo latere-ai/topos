@@ -139,7 +139,8 @@ func (c *cli) run(ctx context.Context, args []string) int {
 func usage(w *console) {
 	w.printf("%s", `usage:
   topos run [flags] [<prompt>]        run a turn of a local session in the working directory
-                                      (--agent <file>, --model, --mode, --max-cost, --dir, --output, --session)
+                                      (--agent <file>, --model, --mode, --max-cost, --dir, --output, --session,
+                                      --attended)
   topos confirm <session> <tool_use_id> allow|deny [--note <text>] [--remember <pattern>]
   topos rewind <session> <turn>       restore the working directory to the end of a turn
   topos version
@@ -155,6 +156,9 @@ type runOptions struct {
 	maxCost float64
 	dir     string
 	output  string
+	// attended declares that a person answers the new session's
+	// questions (spec 039).
+	attended bool
 }
 
 func (o *runOptions) flags(fs *flag.FlagSet) {
@@ -201,6 +205,7 @@ func runCmd(ctx context.Context, args []string, env *cli) int {
 	var o runOptions
 	o.flags(fs)
 	fs.StringVar(&o.agent, "agent", "", "the agent manifest to run; default $XDG_CONFIG_HOME/topos/agent.yaml when present")
+	fs.BoolVar(&o.attended, "attended", false, "a person answers the new session's questions: a question stops the run with exit code 3, and a message sent with --session answers it")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -214,6 +219,10 @@ func runCmd(ctx context.Context, args []string, env *cli) int {
 	}
 	if o.session != "" && o.agent != "" {
 		env.stderr.println("topos: --agent starts a new session; a session keeps the agent it was created with")
+		return ExitUsage
+	}
+	if o.session != "" && o.attended {
+		env.stderr.println("topos: --attended starts a new session; a session keeps what its create declared")
 		return ExitUsage
 	}
 	prompt := strings.Join(fs.Args(), " ")
@@ -405,6 +414,7 @@ func (l *local) create(ctx context.Context, o runOptions, agent *manifest.Resolv
 		s.Budget.MaxCostUSDMicro = &micro
 	}
 	s.Metadata = map[string]string{"model": o.model, "mode": o.mode}
+	s.Attended = o.attended
 	var blobs map[session.Digest][]byte
 	if agent != nil {
 		c, err := agent.AgentConfig(nil)
@@ -768,7 +778,9 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 				return harness.Config{}, errors.Join(err, m.Stop(ctx))
 			}
 		}
-		cfg.Machine, cfg.Tools = m, reg
+		// The question tool is the harness's own, offered when the agent
+		// names it (spec 039).
+		cfg.Machine, cfg.Tools, cfg.Question = m, reg, slices.Contains(held, harness.ToolQuestion)
 		return cfg, nil
 	}
 }
@@ -845,7 +857,17 @@ func (l *local) drive(ctx context.Context, id string, o runOptions, env *cli) in
 	if derr != nil {
 		return report(env, derr)
 	}
-	out.finish(id, result)
+	var asked *session.Asked
+	if result.StopReason == session.StopQuestion {
+		evs, err := l.store.Events(context.WithoutCancel(ctx), id, 1, 0)
+		if err != nil {
+			return report(env, err)
+		}
+		if q, open := session.OpenQuestion(evs); open {
+			asked = &q
+		}
+	}
+	out.finish(id, result, asked)
 	return exitCode(result)
 }
 
@@ -854,7 +876,7 @@ func exitCode(o harness.Outcome) int {
 	switch o.StopReason {
 	case session.StopEndTurn, session.StopCompleted:
 		return ExitOK
-	case session.StopToolConfirmation, session.StopToolResult:
+	case session.StopToolConfirmation, session.StopToolResult, session.StopQuestion:
 		return ExitWaiting
 	case session.StopBudget, session.StopTurnLimit, session.StopOutputLimit:
 		return ExitLimit
@@ -948,7 +970,10 @@ func summarize(input json.RawMessage) string {
 	return ""
 }
 
-func (p *printer) finish(id string, o harness.Outcome) {
+// finish writes how the run ended. asked is the question the session
+// waits on when it stopped on one: the run names the open call, each
+// question with its options, and how a person answers it.
+func (p *printer) finish(id string, o harness.Outcome, asked *session.Asked) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var pending []string
@@ -958,6 +983,9 @@ func (p *printer) finish(id string, o harness.Outcome) {
 				pending = append(pending, u.ToolUseID)
 			}
 		}
+	}
+	if asked != nil {
+		pending = append(pending, asked.ToolUseID)
 	}
 	switch p.output {
 	case "json":
@@ -970,7 +998,24 @@ func (p *printer) finish(id string, o harness.Outcome) {
 			p.env.stdout.println(p.final)
 		}
 		for _, id2 := range pending {
+			if asked != nil && id2 == asked.ToolUseID {
+				continue
+			}
 			p.env.stderr.printf("waiting for a confirmation: topos confirm %s %s allow|deny\n", id, id2)
+		}
+		if asked != nil {
+			p.env.stderr.printf("waiting for an answer to %s:\n", asked.ToolUseID)
+			for i, q := range asked.Input.Questions {
+				p.env.stderr.printf("  %d. %s: %s\n", i+1, q.Header, q.Question)
+				for _, opt := range q.Options {
+					mark := ""
+					if opt.Recommended {
+						mark = " (recommended)"
+					}
+					p.env.stderr.printf("     - %s%s: %s\n", opt.Label, mark, opt.Description)
+				}
+			}
+			p.env.stderr.printf("answer in your own words: topos run --session %s <answer>\n", id)
 		}
 		if o.StopReason != session.StopEndTurn && o.StopReason != session.StopCompleted {
 			p.env.stderr.printf("session %s stopped: %s %s\n", id, o.StopReason, o.Detail)
