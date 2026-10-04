@@ -98,6 +98,9 @@ type Config struct {
 	// Advisor is the model the advisor tool asks (spec 013); nil offers
 	// no advisor.
 	Advisor *Subagent
+	// Question offers the question tool to the session's own thread (spec
+	// 039): the runner sets it when the agent's tools name the tool.
+	Question bool
 	// MaxDepth bounds how deep threads nest: zero is 2, at most 4.
 	MaxDepth int
 	// MaxConcurrent bounds the threads running at once in a session:
@@ -472,18 +475,21 @@ func LastCheckpoint(log []session.Event, thread string) string {
 }
 
 // pending reports a person's event after the last sequence a request
-// was built from.
+// was built from, an answer to a question among them, and an interrupt
+// that closed a question whose result is still owed: the runner claims
+// again at once, and the claim closes the call.
 func (t *turn) pending() bool {
-	for _, e := range t.events() {
+	evs := t.events()
+	for _, e := range evs {
 		if e.Seq <= t.seen {
 			continue
 		}
 		switch e.Type {
-		case session.TypeUserMessage, session.TypeUserToolConfirmation, session.TypeUserToolResult:
+		case session.TypeUserMessage, session.TypeUserToolConfirmation, session.TypeUserToolResult, session.TypeUserAnswer:
 			return true
 		}
 	}
-	return false
+	return session.Dismissed(evs)
 }
 
 func (t *turn) sessionError(code, message string, retryable bool, detail string) (session.Event, error) {
@@ -546,15 +552,39 @@ func (t *turn) run(ctx context.Context) (Outcome, error) {
 // earlier runner could have started run, with the repeatable built-ins,
 // and the threads the open spawn, message and advisor calls drove
 // continue. Only then does the session go idle on what still waits: an
-// ask nobody answered, a client's call, a thread's pause.
+// ask nobody answered, a question nothing closed, a client's call, a
+// thread's pause.
+//
+// A question call runs nothing, so it is settled in the first pass (spec
+// 039): one an answer or a person's message closed gets its result, one
+// an interrupt closed is canceled and the turn ends interrupted with no
+// request, and one nothing closed keeps the session waiting, or, in a
+// session nobody attends, is answered at once.
 func (t *turn) resume(ctx context.Context) error {
 	open := openCalls(t.events(), t.thread)
 	var w waits
 	var run, threads []pendingCall
+	interrupted := false
 	for _, c := range open {
 		switch {
 		case c.use.Client:
 			w.result = true
+		case isQuestion(c.use):
+			by, err := t.settleQuestion(ctx, c.use.ToolUseID)
+			if err != nil {
+				return err
+			}
+			switch {
+			case by == session.ClosedByInterrupt:
+				interrupted = true
+			case by != "":
+			case t.s.Attended:
+				w.question = true
+			default:
+				if err := t.result(ctx, c.use.ToolUseID, unattended(), 0); err != nil {
+					return err
+				}
+			}
 		case c.use.Verdict == string(VerdictAsk):
 			if c.confirmation != nil {
 				t.forwardAnswer(ctx, c)
@@ -600,11 +630,8 @@ func (t *turn) resume(ctx context.Context) error {
 		}
 		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: c.use.Input})
 	}
-	if err := t.runCalls(ctx, calls); err != nil {
-		if !isPause(err) {
-			return t.callsStopped(ctx, err)
-		}
-		w.paused(err)
+	if err := t.runCalls(ctx, calls, &w); err != nil {
+		return t.callsStopped(ctx, err)
 	}
 	for _, c := range threads {
 		res, err := t.resumeThread(ctx, c)
@@ -618,6 +645,9 @@ func (t *turn) resume(ctx context.Context) error {
 		if err := t.result(ctx, c.use.ToolUseID, res, 0); err != nil {
 			return err
 		}
+	}
+	if interrupted {
+		return t.finish(ctx, session.StopInterrupted, "")
 	}
 	if reason, waiting := w.reason(); waiting {
 		return t.finish(ctx, reason, "")
@@ -976,15 +1006,25 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 	}
 	// A call that waits for a person leaves the step's other calls to
 	// run, and the step goes idle once they have: on an ask, on a client's
-	// call, or on the pause a thread's call returned.
+	// call, on a question, or on the pause a thread's call returned.
 	w := waits{confirmation: len(planned.ask) > 0, result: len(planned.client) > 0}
-	if err := t.runCalls(ctx, planned.run); err != nil {
-		if !isPause(err) {
-			return t.callsStopped(ctx, err)
-		}
-		w.paused(err)
+	if err := t.runCalls(ctx, planned.run, &w); err != nil {
+		return t.callsStopped(ctx, err)
 	}
-	if t.cut.Load() {
+	interrupted := t.cut.Load()
+	if w.question {
+		// What closes a question counts from its agent.tool_use, so an
+		// answer, a message or an interrupt that arrived while the step's
+		// other calls ran has closed it already: the call gets its result
+		// here, and the session does not go idle on it.
+		by, err := t.settleQuestion(ctx, planned.question)
+		if err != nil {
+			return err
+		}
+		w.question = by == ""
+		interrupted = interrupted || by == session.ClosedByInterrupt
+	}
+	if interrupted {
 		return t.finish(ctx, session.StopInterrupted, "")
 	}
 	if reason, waiting := w.reason(); waiting {
@@ -1091,6 +1131,9 @@ type stepPlan struct {
 	run    []plannedCall
 	ask    []string
 	client []string
+	// question is the tool_use id of the step's question call, when it
+	// has one that runs.
+	question string
 }
 
 // plan validates, scores and decides each call of the response. Valid
@@ -1106,6 +1149,9 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 	remembered := rememberedPatterns(t.events())
 	kind := t.h.c.Machine.Info().Kind
 	decider := t.h.decider()
+	// asked reports that the step already holds a question call that is
+	// asked; each later one is refused.
+	asked := false
 	for _, b := range res.Message.Blocks {
 		if b.Type != ir.BlockToolUse || b.ToolUse == nil {
 			continue
@@ -1124,11 +1170,29 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			continue
 		}
 		props := tool.Properties()
+		policy := t.h.c.Policy
+		_, question := tool.(questionTool)
+		if question {
+			// The rules of a question the schema cannot state are checked
+			// here, before the call is recorded, so an agent.tool_use of
+			// the question tool always holds questions a person can be
+			// shown.
+			if bad := checkQuestion(input, asked); bad != nil {
+				answered = append(answered, answeredCall{id, *bad})
+				continue
+			}
+			asked, policy = true, withoutConfirm(policy)
+		}
 		risk, d, err := decider.Decide(ctx, Call{
-			Policy: t.h.c.Policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered,
+			Policy: policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered,
 		})
 		if err != nil {
 			return stepPlan{}, nil, nil, err
+		}
+		if question && d.Verdict == VerdictAsk {
+			// A decider that asks all the same is overruled: the call is
+			// itself put to a person, and is never held for a confirmation.
+			d = Decision{Verdict: VerdictAllow, Reason: "a question is itself put to a person"}
 		}
 		mode := t.h.c.Policy.Mode
 		if mode == "" {
@@ -1157,6 +1221,9 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			p.client = append(p.client, id)
 		default:
 			p.run = append(p.run, plannedCall{id: id, tool: tool, input: input})
+			if question {
+				p.question = id
+			}
 		}
 	}
 	return p, answered, uses, nil
@@ -1164,18 +1231,19 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 
 // runCalls runs a step's calls: each maximal run of consecutive parallel
 // tools concurrently, at most MaxParallel at once, every other call alone
-// in order. Each result is appended as its call returns. A call a core
-// refused for spend, and a thread that waits for a person, leave the
-// rest of the step's calls to run and are returned after them, the spend
-// refusal first.
-func (t *turn) runCalls(ctx context.Context, calls []plannedCall) error {
-	var paused, spent error
+// in order. Each result is appended as its call returns. A call that
+// waits for a person, a thread's or a question, keeps no result and
+// leaves the rest of the step's calls to run: its wait is recorded in w,
+// each of them, since several may wait at once. A call a core refused
+// for spend leaves the rest to run too, and is returned after them.
+func (t *turn) runCalls(ctx context.Context, calls []plannedCall, w *waits) error {
+	var spent error
 	keep := func(err error) error {
 		switch {
 		case isSpent(err):
 			spent = err
 		case isPause(err):
-			paused = err
+			w.paused(err)
 		default:
 			return err
 		}
@@ -1195,17 +1263,14 @@ func (t *turn) runCalls(ctx context.Context, calls []plannedCall) error {
 		for j < len(calls) && calls[j].tool.Properties().Parallel {
 			j++
 		}
-		if err := t.parallel(ctx, calls[i:j]); err != nil {
+		if err := t.parallel(ctx, calls[i:j], w); err != nil {
 			if err := keep(err); err != nil {
 				return err
 			}
 		}
 		i = j
 	}
-	if spent != nil {
-		return spent
-	}
-	return paused
+	return spent
 }
 
 // callsStopped ends a step whose calls stopped it with an error that is
@@ -1248,7 +1313,7 @@ func pauseReason(err error) session.StopReason {
 	return ""
 }
 
-func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
+func (t *turn) parallel(ctx context.Context, calls []plannedCall, w *waits) error {
 	type done struct {
 		id  string
 		res tools.Result
@@ -1268,12 +1333,12 @@ func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
 		}()
 	}
 	var errs []error
-	var paused, spent error
+	var spent error
 	for range calls {
 		d := <-results
 		switch {
 		case isPause(d.err):
-			paused = d.err
+			w.paused(d.err)
 		case d.err != nil && !isSpent(d.err):
 			errs = append(errs, d.err)
 		case len(errs) == 0:
@@ -1288,10 +1353,7 @@ func (t *turn) parallel(ctx context.Context, calls []plannedCall) error {
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	if spent != nil {
-		return spent
-	}
-	return paused
+	return spent
 }
 
 // toolState is what the thread's tools know from the log. A fork's first

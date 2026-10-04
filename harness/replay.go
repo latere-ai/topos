@@ -88,7 +88,18 @@ func (t *turn) replayRequest(ctx context.Context, log, prefix []session.Event, s
 		if err != nil {
 			return ir.Request{}, err
 		}
-		ask := lux.Block{Type: ir.BlockText, Text: prompts.Text(prompts.Compaction)}
+		// The summary was asked with the compaction prompt it names, and
+		// one that names none with the first version.
+		var asked string
+		switch prompts.Name(c.Prompt) {
+		case "":
+			asked = prompts.Text(prompts.CompactionV1)
+		case prompts.Compaction:
+			asked = prompts.Text(prompts.Compaction)
+		default:
+			return ir.Request{}, fmt.Errorf("%w: the summary was asked with %s, a compaction prompt this build does not hold", models.ErrNotRebuilt, c.Prompt)
+		}
+		ask := lux.Block{Type: ir.BlockText, Text: asked}
 		if n := len(tr.Messages); n > 0 && tr.Messages[n-1].Role == ir.RoleUser {
 			tr.Messages[n-1].Blocks = append(tr.Messages[n-1].Blocks, ask)
 		} else {

@@ -1,0 +1,1 @@
+The person chose no option and sent a message in place of an answer. The message follows, and it may be the answer. Where it settles no question, decide that question yourself and state what you assumed.

@@ -132,8 +132,11 @@ func (t *turn) steps() []session.Event {
 }
 
 // clear appends a clear_tool_results compaction for every result older
-// than the thread's last ten steps, todo results and results already
-// cleared aside. It reports false when there is nothing to clear.
+// than the thread's last ten steps, results already cleared aside, and
+// the results of todo and of question, which are never cleared: the
+// cleared text tells the model to run the tool again, which for a
+// question would ask the person twice (spec 039). It reports false when
+// there is nothing to clear.
 func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 	steps := t.steps()
 	if len(steps) <= keepResults {
@@ -184,7 +187,7 @@ func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 		default:
 			continue
 		}
-		if done[id] || names[id] == "todo" || slices.Contains(ids, id) {
+		if done[id] || names[id] == "todo" || names[id] == ToolQuestion || slices.Contains(ids, id) {
 			continue
 		}
 		ids = append(ids, id)
@@ -336,7 +339,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 		}
 		return false, t.finish(ctx, session.StopError, CodeCompactionFailed, mr, se)
 	}
-	c := session.ContextCompacted{Kind: session.CompactSummary, FromSeq: from, ToSeq: to, Summary: strings.Join(summary, "\n\n"), Cause: cause, Request: mr.ID, TokensBefore: before}
+	c := session.ContextCompacted{Kind: session.CompactSummary, FromSeq: from, ToSeq: to, Summary: strings.Join(summary, "\n\n"), Cause: cause, Request: mr.ID, Prompt: string(prompts.Compaction), TokensBefore: before}
 	e, err := t.event(session.TypeContextCompacted, c)
 	if err != nil {
 		return false, err

@@ -1,0 +1,1 @@
+Question {{.Number}} uses the label {{printf "%q" .Label}} twice, so the call was not asked. An answer names an option by its label: send the call again with a different label for each option of a question.

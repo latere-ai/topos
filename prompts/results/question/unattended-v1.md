@@ -1,0 +1,1 @@
+Nobody attends this session, so no person will answer. Decide each question yourself: take the option you marked recommended where you marked one, state each assumption in your final message, and do not ask again in this session.

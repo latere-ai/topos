@@ -106,26 +106,31 @@ func note(m session.UserMessage) string {
 
 // waits are the kinds of answer a step still waits for once every call
 // that could be settled is.
-type waits struct{ confirmation, result bool }
+type waits struct{ confirmation, question, result bool }
 
-// paused records the wait a paused call left, a thread's.
+// paused records the wait a paused call left: a thread's, or a
+// question's.
 func (w *waits) paused(err error) {
 	switch pauseReason(err) {
 	case session.StopToolConfirmation:
 		w.confirmation = true
+	case session.StopQuestion:
+		w.question = true
 	case session.StopToolResult:
 		w.result = true
 	}
 }
 
 // reason is the stop reason the session goes idle with, and false when
-// nothing waits. Both kinds may wait at once and the reason names one of
-// them, a confirmation before a client's result; a client finds what is
-// open from the log.
+// nothing waits. Several kinds may wait at once and the reason names one
+// of them, a confirmation before a question before a client's result; a
+// client finds what is open from the log.
 func (w waits) reason() (session.StopReason, bool) {
 	switch {
 	case w.confirmation:
 		return session.StopToolConfirmation, true
+	case w.question:
+		return session.StopQuestion, true
 	case w.result:
 		return session.StopToolResult, true
 	}

@@ -116,8 +116,12 @@ func stricterMode(a, b Mode) Mode {
 }
 
 // registry builds a thread's registry: the root registry's tools that
-// the thread holds, and spawn and message when the thread has
-// subagents and is below the depth limit.
+// the thread holds, spawn and message when the thread has subagents and
+// is below the depth limit, the advisor when the agent has one, and the
+// question tool for the session's own thread when the agent names it.
+// A thread a spawn started holds no question tool: it ends its turn
+// saying what it needs decided, and its parent, which holds the
+// conversation with the person, asks (spec 039).
 func (t *turn) registry(names []string) (*tools.Registry, error) {
 	r := t.root.Subset(names)
 	var extra []tools.Tool
@@ -126,6 +130,9 @@ func (t *turn) registry(names []string) (*tools.Registry, error) {
 	}
 	if t.h.c.Advisor != nil {
 		extra = append(extra, advisorTool{t})
+	}
+	if t.h.c.Question && t.thread == "" {
+		extra = append(extra, questionTool{t})
 	}
 	for _, tool := range extra {
 		if err := r.AddBuiltin(tool); err != nil {
@@ -358,7 +365,7 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	held := t.reg.Names()
 	var names []string
 	for _, n := range held {
-		if n == ToolSpawn || n == ToolMessage {
+		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion {
 			continue
 		}
 		if sub.Tools != nil && !slices.Contains(sub.Tools, n) {
@@ -533,8 +540,10 @@ func (t *turn) childConfig(sub Subagent) Config {
 	}
 	cfg.Policy.Mode = stricterMode(t.h.c.Policy.Mode, sub.Mode)
 	cfg.Subagents = sub.Subagents
-	// The advisor belongs to the agent whose configuration names it.
+	// The advisor belongs to the agent whose configuration names it, and
+	// only the session's own thread asks a person.
 	cfg.Advisor = nil
+	cfg.Question = false
 	cfg.Checkpoint = nil
 	cfg.Prompt.Threads = len(sub.Subagents) > 0
 	return cfg

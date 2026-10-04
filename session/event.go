@@ -268,15 +268,20 @@ const (
 
 // ContextCompacted is the payload of context.compacted.
 type ContextCompacted struct {
-	Kind         string   `json:"kind"`
-	FromSeq      uint64   `json:"from_seq,omitempty"`
-	ToSeq        uint64   `json:"to_seq,omitempty"`
-	ToolUseIDs   []string `json:"tool_use_ids,omitempty"`
-	Summary      string   `json:"summary,omitempty"`
-	Cause        string   `json:"cause,omitempty"`
-	Request      string   `json:"request,omitempty"`
-	TokensBefore int64    `json:"tokens_before,omitempty"`
-	TokensAfter  int64    `json:"tokens_after,omitempty"`
+	Kind       string   `json:"kind"`
+	FromSeq    uint64   `json:"from_seq,omitempty"`
+	ToSeq      uint64   `json:"to_seq,omitempty"`
+	ToolUseIDs []string `json:"tool_use_ids,omitempty"`
+	Summary    string   `json:"summary,omitempty"`
+	Cause      string   `json:"cause,omitempty"`
+	Request    string   `json:"request,omitempty"`
+	// Prompt names the compaction prompt a summary's request asked with,
+	// such as compact/compact-v2, so a replay builds the request again
+	// with the same text. It is absent on a summary asked with the first
+	// version, the only one before the field existed.
+	Prompt       string `json:"prompt,omitempty"`
+	TokensBefore int64  `json:"tokens_before,omitempty"`
+	TokensAfter  int64  `json:"tokens_after,omitempty"`
 }
 
 // ModelRequest is the payload of model.request.

@@ -138,6 +138,13 @@ func price(s string) *models.Price {
 
 func setup(t *testing.T, mut func(*Config)) *env {
 	t.Helper()
+	return setupSession(t, mut, nil)
+}
+
+// setupSession is setup with the session's header changed by header
+// before the session is created.
+func setupSession(t *testing.T, mut func(*Config), header func(*session.Session)) *env {
+	t.Helper()
 	e := &env{t: t, stub: luxstub.New(t), store: session.NewMemoryStore()}
 	e.echo = &fakeTool{name: "echo", props: tools.Properties{Parallel: true, Effect: tools.EffectRead}}
 	e.write = &fakeTool{name: "bash", props: tools.Properties{Effect: tools.EffectWrite}}
@@ -168,6 +175,9 @@ func setup(t *testing.T, mut func(*Config)) *env {
 	e.s = session.New(session.AgentRef{ID: session.NewID(session.PrefixAgent), Name: "builder", Version: 1},
 		session.Sender{Subject: "usr_ada", Name: "Ada", Kind: session.SenderPerson}, session.RunnerHosted,
 		session.Machine{Kind: machine.KindCella}, t0)
+	if header != nil {
+		header(&e.s)
+	}
 	if err := e.store.Create(t.Context(), e.s, nil); err != nil {
 		t.Fatal(err)
 	}

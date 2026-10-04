@@ -15,6 +15,7 @@ import (
 
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/luxstub"
 )
@@ -200,7 +201,9 @@ func TestReplayReportsWhatItDoesNotCompare(t *testing.T) {
 }
 
 // TestASummaryRequestReplays: a compaction's summary request is built
-// again from the range it summarized.
+// again from the range it summarized, with the compaction prompt the
+// summary names; a summary that names none was asked with the first
+// version, and one that names a prompt this build lacks is skipped.
 func TestASummaryRequestReplays(t *testing.T) {
 	e := setup(t, window(8000))
 	ctx := t.Context()
@@ -212,11 +215,39 @@ func TestASummaryRequestReplays(t *testing.T) {
 	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
 		t.Fatalf("outcome %+v", out)
 	}
-	if len(e.compactions(ctx)) == 0 {
+	cs := e.compactions(ctx)
+	if len(cs) == 0 {
 		t.Fatal("no compaction")
 	}
-	if got := outcomes(e.replay(ctx, e.h, e.all())); !slices.Equal(got, []string{models.ReplayMatch, models.ReplayMatch}) {
+	if cs[0].Prompt != string(prompts.Compaction) {
+		t.Fatalf("the summary names the prompt %q", cs[0].Prompt)
+	}
+	log := e.all()
+	if got := outcomes(e.replay(ctx, e.h, log)); !slices.Equal(got, []string{models.ReplayMatch, models.ReplayMatch}) {
 		t.Fatalf("replay %v", got)
+	}
+	// naming rewrites the summary's prompt field.
+	naming := func(prompt string) []session.Event {
+		out := slices.Clone(log)
+		for i, ev := range out {
+			var c session.ContextCompacted
+			if ev.Type != session.TypeContextCompacted || ev.Decode(&c) != nil || c.Kind != session.CompactSummary {
+				continue
+			}
+			c.Prompt = prompt
+			b, err := session.Marshal(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[i].Payload = b
+		}
+		return out
+	}
+	if got := outcomes(e.replay(ctx, e.h, naming(""))); got[0] != models.ReplayMismatch {
+		t.Fatalf("a summary asked with version 2 replayed as one that names no prompt: %v", got)
+	}
+	if got := outcomes(e.replay(ctx, e.h, naming("compact/compact-v9"))); got[0] != models.ReplaySkipped {
+		t.Fatalf("a summary that names a prompt this build lacks: %v", got)
 	}
 }
 

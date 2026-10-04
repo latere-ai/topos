@@ -4,8 +4,15 @@
 package prompts
 
 // The compaction prompt (spec 010), sent after the transcript it
-// summarizes.
-const Compaction Name = "compact/compact-v1"
+// summarizes. Compaction is the one a new summary is asked with, which
+// its context.compacted names; CompactionV1 is the one a summary that
+// names none was asked with, kept so a replay builds that request again.
+// Version 2 adds the heading for the questions put to a person (spec
+// 039).
+const (
+	Compaction   Name = "compact/compact-v2"
+	CompactionV1 Name = "compact/compact-v1"
+)
 
 // The advisor's texts (spec 013): its instructions when its configuration
 // names none, the caller's transcript as the advisor reads it, and the
@@ -33,6 +40,34 @@ const (
 	ToolSpawn    Name = "tools/spawn-v1"
 	ToolMessage  Name = "tools/message-v1"
 	ToolAdvisor  Name = "tools/advisor-v1"
+	// ToolQuestion states the bounds of session's question constants in
+	// its text, which a test holds to them (spec 039).
+	ToolQuestion Name = "tools/question-v1"
+)
+
+// The results of the question tool (spec 039): what the model reads once
+// a question call is closed, by what closed it, and the two refusals of
+// a call the schema accepts.
+const (
+	// QuestionAnswered takes Questions, each with Number, Header,
+	// Question, Chosen (the chosen labels joined), Text (the person's own
+	// words) and Left, true for a question left to the agent.
+	QuestionAnswered Name = "results/question/answered-v1"
+	// QuestionLeft is an answer whose entries are all empty.
+	QuestionLeft Name = "results/question/left-v1"
+	// QuestionMessage is a person's message in place of an answer.
+	QuestionMessage Name = "results/question/message-v1"
+	// QuestionCanceled is an interrupt that dismissed the question.
+	QuestionCanceled Name = "results/question/canceled-v1"
+	// QuestionUnattended is a session nobody attends.
+	QuestionUnattended Name = "results/question/unattended-v1"
+	// QuestionRemoved is an answer redacted before it was read.
+	QuestionRemoved Name = "results/question/removed-v1"
+	// QuestionDuplicateLabel takes Number, the question's place in the
+	// call from 1, and Label.
+	QuestionDuplicateLabel Name = "results/question/duplicate-label-v1"
+	// QuestionSecondCall takes Max, the most questions of one call.
+	QuestionSecondCall Name = "results/question/second-call-v1"
 )
 
 // The texts the session fold writes into a transcript (spec 004).

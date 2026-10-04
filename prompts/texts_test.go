@@ -69,7 +69,8 @@ var textCases = func() []textCase {
 		return Data{"URL": "https://example.com/final", "Status": 404, "ContentType": ctype, "Body": "no such page\n", "Truncated": truncated, "Max": 10}
 	}
 	return []textCase{
-		{name: Compaction, wantSHA: "8d62d8134b413672d87d57e05c20f135933fa3f0095199280438e3170f879bf5"},
+		{name: Compaction, wantSHA: "ef4ea47663fbe10d2d83d96f8b96a8a4ecfea04c9c06bc06d5b46b0994131e57"},
+		{name: CompactionV1, wantSHA: "8d62d8134b413672d87d57e05c20f135933fa3f0095199280438e3170f879bf5"},
 
 		{name: AdvisorInstructions, want: "You advise another agent. You see the conversation it has had so far and the question it asks. You act on nothing and have no tools: read what it did, say what is wrong or missing, and what it should do next, briefly and concretely."},
 		{name: AdvisorTranscript, data: Data{"Entries": entries}, want: transcript},
@@ -90,6 +91,25 @@ var textCases = func() []textCase {
 		{name: ToolSpawn, want: "Start a thread that runs one of your subagents on a task, on this same machine, and return its final answer. The thread does not see this conversation: give it a complete task. Several spawn calls in one step run their threads at once. Send the thread more work later with message."},
 		{name: ToolMessage, want: "Send a message to a thread you spawned and return its answer. Set end to true to end the thread after this turn."},
 		{name: ToolAdvisor, want: "Ask a stronger model to review your work so far. It sees this conversation and your question, acts on nothing, and answers with advice. Use it before a hard decision or when you are stuck."},
+		{name: ToolQuestion, wantSHA: "13d1e88094ffe3d9c0c19a1fd102c5fbc539b7f1ad5804a43e6039bf7daa8a63"},
+
+		{name: QuestionAnswered, data: Data{"Questions": []Data{
+			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
+			{"Number": 2, "Header": "Regions", "Question": "Which regions does the first release serve?", "Chosen": "", "Text": "", "Left": true},
+			{"Number": 3, "Header": "Launch", "Question": "When does it ship?", "Chosen": "", "Text": "after the audit", "Left": false},
+			{"Number": 4, "Header": "Tiers", "Question": "Which tiers get it?", "Chosen": "Free, Team", "Text": "", "Left": false},
+		}}, want: "The person answered.\n" +
+			"\n1. Storage: Which database should the new service keep its records in?\n   Chosen: SQLite\n   In their words: we have nobody to run a second schema" +
+			"\n2. Regions: Which regions does the first release serve?\n   Left to you. Decide, and state what you assumed." +
+			"\n3. Launch: When does it ship?\n   In their words: after the audit" +
+			"\n4. Tiers: Which tiers get it?\n   Chosen: Free, Team"},
+		{name: QuestionLeft, want: "The person chose no option and left every question to you. Decide each question yourself, take the option you marked recommended where you marked one, and state what you assumed."},
+		{name: QuestionMessage, want: "The person chose no option and sent a message in place of an answer. The message follows, and it may be the answer. Where it settles no question, decide that question yourself and state what you assumed."},
+		{name: QuestionCanceled, want: "The person stopped the work before answering, so no question was answered. Do not go on with what the questions were about until the person says what to do."},
+		{name: QuestionUnattended, want: "Nobody attends this session, so no person will answer. Decide each question yourself: take the option you marked recommended where you marked one, state each assumption in your final message, and do not ask again in this session."},
+		{name: QuestionRemoved, want: "The person answered, and the answer was removed from the session's record before it was read. Decide each question yourself, state what you assumed, and do not ask for what was removed."},
+		{name: QuestionDuplicateLabel, data: Data{"Number": 2, "Label": `the "fast" one`}, want: fmt.Sprintf("Question %d uses the label %q twice, so the call was not asked. An answer names an option by its label: send the call again with a different label for each option of a question.", 2, `the "fast" one`)},
+		{name: QuestionSecondCall, data: Data{"Max": 4}, want: fmt.Sprintf("A step takes one question call and this step already made one, so this call was not asked. Read the answer to the first call, then ask what you still need in a later step, in one call of at most %d questions.", 4)},
 
 		{name: "harness/machine-host-v1", want: "This is the person's own computer. Files you delete or overwrite outside version control are gone, and commands run with the person's own account. Prefer reversible changes, and ask before a command that deletes data, rewrites history, or reaches another system."},
 		{name: "harness/machine-sandbox-v1", want: "This is a disposable sandbox made for this session. Its files are yours to change, and it holds no credential; what leaves it goes through the session's network rules."},
