@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/topos/harness/tools"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/session"
 )
@@ -107,7 +108,9 @@ func Resolve(ctx context.Context, docs []byte, o Options) ([]Resolved, error) {
 		return nil, err
 	}
 	var secrets []Problem
-	builtins := Builtins()
+	// An agent names a built-in of the default set, or one an agent holds
+	// only by naming it (spec 040), by the same rules.
+	builtins := append(Builtins(), tools.OptIn()...)
 	for _, ob := range objs {
 		d := &defaulter{doc: ob.doc, files: o.Files}
 		d.object(ob)

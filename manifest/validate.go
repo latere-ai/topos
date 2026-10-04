@@ -349,7 +349,7 @@ func (v *validator) tools(at string, list []v1.Tool) {
 				v.add(tp+".inputSchema", "a client tool needs an input schema")
 			}
 		case !builtin:
-			v.add(tp+".name", "not a built-in tool or question; declare a client tool with client: true")
+			v.add(tp+".name", "not a built-in tool, web_search or question; declare a client tool with client: true")
 		case t.Description != "" || len(t.InputSchema) > 0:
 			v.add(tp, "a built-in takes only name and outputLimit")
 		}

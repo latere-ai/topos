@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/tools"
 
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -321,7 +322,7 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "instructions: x", "instructionsFile: x.md"), "spec.instructionsFile", "not both"},
 		{agent("a", m, "instructionsFile: x.md"), "spec.instructionsFile", "reads no files"},
 		{agent("a", m, "tools: [read, read]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool or question"},
+		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search or question"},
 		{agent("a", m, "tools: ['bad name']"), "spec.tools[0].name", "not a tool name"},
 		{agent("a", m, "tools: [{outputLimit: 3}]"), "spec.tools[0].name", "required"},
 		{agent("a", m, "tools: [{name: read, outputLimit: -1}]"), "spec.tools[0].outputLimit", "negative"},
@@ -601,6 +602,37 @@ func TestQuestionIsAKnownToolName(t *testing.T) {
 		{agent("a", m, "tools: [{name: question, outputLimit: 10}]"), "spec.tools[0]", "takes only its name"},
 		{agent("a", m, "tools: [{name: question, description: x}]"), "spec.tools[0]", "takes only its name"},
 		{agent("a", m, "tools: [question, question]"), "spec.tools[1]", "repeats an earlier entry"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, Options{})
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: %s", c.body, e.Detail())
+		}
+	}
+}
+
+// TestWebSearchIsAnOptInName (spec 040): an agent names web_search as a
+// built-in, with outputLimit alone; an agent that names no tools holds
+// the eight and its digest is unchanged; and no client tool takes the
+// name.
+func TestWebSearchIsAnOptInName(t *testing.T) {
+	const m = "model: {name: m}"
+	r := one(t, agent("searcher", m, "tools: [read, {name: web_search, outputLimit: 4096}]"), fixed(newStore()))
+	c, err := r.AgentConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.Tools, []string{"read", tools.NameWebSearch}) {
+		t.Fatalf("the config holds %v", c.Tools)
+	}
+	plain := one(t, agent("plain", m), fixed(newStore()))
+	if got := toolNames(plain.Agent.Spec.Tools); !slices.Equal(got, Builtins()) || slices.Contains(got, tools.NameWebSearch) {
+		t.Fatalf("an agent that names no tools holds %v", got)
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{agent("a", m, "tools: [{name: web_search, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "a client tool may not take a built-in's name"},
+		{agent("a", m, "tools: [{name: web_search, description: x}]"), "spec.tools[0]", "a built-in takes only name and outputLimit"},
+		{agent("a", m, "tools: [web_search, web_search]"), "spec.tools[1]", "repeats an earlier entry"},
+		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search or question"},
 	} {
 		e := refused(t, CodeInvalidManifest, c.body, Options{})
 		if !hasProblem(e, c.path, c.detail) {
