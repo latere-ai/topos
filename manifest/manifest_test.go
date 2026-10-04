@@ -322,7 +322,7 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "instructions: x", "instructionsFile: x.md"), "spec.instructionsFile", "not both"},
 		{agent("a", m, "instructionsFile: x.md"), "spec.instructionsFile", "reads no files"},
 		{agent("a", m, "tools: [read, read]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search or question"},
+		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search, question or publish"},
 		{agent("a", m, "tools: ['bad name']"), "spec.tools[0].name", "not a tool name"},
 		{agent("a", m, "tools: [{outputLimit: 3}]"), "spec.tools[0].name", "required"},
 		{agent("a", m, "tools: [{name: read, outputLimit: -1}]"), "spec.tools[0].outputLimit", "negative"},
@@ -573,6 +573,26 @@ func TestTheTriggerFieldsOfSpec022(t *testing.T) {
 // names no tools holds the eight built-ins and not question, so its
 // resolved spec and digest are what they were; a client tool may not
 // take the name, and the question tool takes nothing but its name.
+// TestPublishIsAKnownToolName: an agent names publish by its name alone,
+// beside the built-ins, and no client tool takes its name (spec 043).
+func TestPublishIsAKnownToolName(t *testing.T) {
+	const m = "model: {name: m}"
+	r := one(t, agent("a", m, "tools: [bash, publish]"), fixed(newStore()))
+	if got := toolNames(r.Agent.Spec.Tools); !slices.Equal(got, []string{"bash", "publish"}) {
+		t.Fatalf("the agent holds %v", got)
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{agent("a", m, "tools: [{name: publish, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "reserved for the hosted runner's publish tool"},
+		{agent("a", m, "tools: [{name: publish, outputLimit: 10}]"), "spec.tools[0]", "the publish tool takes only its name"},
+		{agent("a", m, "tools: [publish, publish]"), "spec.tools[1]", "repeats an earlier entry"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, Options{})
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: %s", c.body, e.Detail())
+		}
+	}
+}
+
 func TestQuestionIsAKnownToolName(t *testing.T) {
 	const m = "model: {name: m}"
 	r := one(t, agent("asker", m, "tools: [read, question]"), fixed(newStore()))

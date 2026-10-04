@@ -637,6 +637,7 @@ func TestAgentManifestRefusals(t *testing.T) {
 		"hooks":        {agent("  hooks: [{event: turn_end, command: 'true'}]\n"), "does not apply spec.hooks yet"},
 		"client tool":  {agent("  tools: [{name: ask, client: true, description: Ask., inputSchema: {type: object}}]\n"), "does not apply spec.tools[0] yet"},
 		"cella":        {agent("  machine: {kind: cella}\n"), "machine.kind cella"},
+		"publish":      {agent("  tools: [bash, publish]\n"), "does not apply spec.tools[1] yet"},
 		"repositories": {agent("  repositories: [{url: 'https://code.example/app'}]\n"), "does not apply spec.repositories yet"},
 		"inline":       {agent("  subagents: [{name: s, spec: {model: {name: m}, advisor: {model: {name: m}}}}]\n"), "spec.subagents[0].spec.advisor"},
 		"referenced":   {agent("  subagents: [{name: s, agent: b}]\n") + "---\napiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata: {name: b}\nspec: {model: {name: m}, skills: [{path: /s}]}\n", "b.spec.skills"},

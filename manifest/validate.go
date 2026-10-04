@@ -313,6 +313,10 @@ func (v *validator) model(at string, m v1.AgentModel) {
 	}
 }
 
+// reservedFor names the tool each name that is no built-in's is kept
+// for.
+var reservedFor = map[string]string{harness.ToolQuestion: "harness's question tool", session.ToolPublish: "hosted runner's publish tool"}
+
 func (v *validator) tools(at string, list []v1.Tool) {
 	names := make([]string, 0, len(list))
 	for i, t := range list {
@@ -330,16 +334,17 @@ func (v *validator) tools(at string, list []v1.Tool) {
 			v.add(tp+".outputLimit", "negative")
 		}
 		builtin := slices.Contains(v.builtins, t.Name)
-		// The question tool is the harness's own (spec 039): an agent names
-		// it among its tools, and no client tool may take its name.
-		harnessTool := t.Name == harness.ToolQuestion
+		// The question tool is the harness's own (spec 039), and the publish
+		// tool the hosted runner's (spec 043): an agent names each among its
+		// tools, and no client tool may take either name.
+		harnessTool := t.Name == harness.ToolQuestion || t.Name == session.ToolPublish
 		switch {
 		case t.Client && builtin:
 			v.add(tp+".name", "a client tool may not take a built-in's name")
 		case t.Client && harnessTool:
-			v.add(tp+".name", "the name question is reserved for the harness's question tool; rename the client tool")
+			v.add(tp+".name", "the name "+t.Name+" is reserved for the "+reservedFor[t.Name]+"; rename the client tool")
 		case harnessTool && (t.Description != "" || len(t.InputSchema) > 0 || t.OutputLimit != 0):
-			v.add(tp, "the question tool takes only its name")
+			v.add(tp, "the "+t.Name+" tool takes only its name")
 		case harnessTool:
 		case t.Client:
 			if t.Description == "" {
@@ -349,7 +354,7 @@ func (v *validator) tools(at string, list []v1.Tool) {
 				v.add(tp+".inputSchema", "a client tool needs an input schema")
 			}
 		case !builtin:
-			v.add(tp+".name", "not a built-in tool, web_search or question; declare a client tool with client: true")
+			v.add(tp+".name", "not a built-in tool, web_search, question or publish; declare a client tool with client: true")
 		case t.Description != "" || len(t.InputSchema) > 0:
 			v.add(tp, "a built-in takes only name and outputLimit")
 		}

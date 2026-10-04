@@ -546,13 +546,15 @@ func resolveFile(ctx context.Context, env *cli, flag, file string) ([]manifest.R
 
 // localUnsupported lists the fields of an agent and its subagents that
 // a local run cannot honor. Each is refused rather than ignored: a hook
-// or a client tool left out would change what the agent may do.
+// or a client tool left out would change what the agent may do, and the
+// publish tool needs an app host and a sandbox a local run has neither of
+// (spec 043).
 func localUnsupported(r *manifest.Resolved) []string {
 	var out []string
 	var walk func(at string, s v1.AgentSpec)
 	walk = func(at string, s v1.AgentSpec) {
 		for i, t := range s.Tools {
-			if t.Client || t.OutputLimit != 0 {
+			if t.Client || t.OutputLimit != 0 || t.Name == session.ToolPublish {
 				out = append(out, fmt.Sprintf("%s.tools[%d]", at, i))
 			}
 		}
