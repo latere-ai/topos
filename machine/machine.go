@@ -60,6 +60,14 @@ type ExecRequest struct {
 	// ReportDir asks for the shell's final directory, written to a
 	// separate descriptor so it never mixes with the output.
 	ReportDir bool
+	// ServerGrace, when positive on a foreground command, moves the
+	// command to the background once it has run this long and a process
+	// of its group listens on a server port, as ServerPorts reads them,
+	// checked again every ServerPoll (spec 045): the call returns at
+	// once with Moved set, and the group runs on with its output drained
+	// into a job log. Zero waits for the command's end. A machine that
+	// cannot see its commands' sockets leaves the command to Timeout.
+	ServerGrace time.Duration
 }
 
 // ExecResult is a finished command, or a started background job.
@@ -77,6 +85,18 @@ type ExecResult struct {
 	// PID and Log name a background job.
 	PID int
 	Log string
+	// Moved is a foreground command ServerGrace moved to the background:
+	// PID leads its process group, Log receives what it writes from the
+	// move on, Ports are the server ports it listens on, and Output is
+	// what it wrote before the move. The machine stops the job when the
+	// session ends, as it stops a background job.
+	Moved bool
+	Ports []int
+	// ServerErr is why the check of ServerGrace stopped early for this
+	// command: its group's sockets could not be read, or the job log a
+	// move needs could not be made. The command went on under its
+	// timeout.
+	ServerErr error
 }
 
 // ExecStream is a running command whose output arrives as it is
