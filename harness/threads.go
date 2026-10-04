@@ -393,7 +393,10 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	held := t.reg.Names()
 	var names []string
 	for _, n := range held {
-		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion {
+		// The question and publish tools are the session's own thread's:
+		// the thread that holds the conversation with the person asks,
+		// and a session has one app (specs 039 and 043).
+		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion || n == session.ToolPublish {
 			continue
 		}
 		if sub.Tools != nil && !slices.Contains(sub.Tools, n) {

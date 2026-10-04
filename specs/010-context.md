@@ -45,14 +45,17 @@ Nothing is borrowed.
 | 5 | project instruction files | `session.machine` | when a machine attaches |
 | 6 | the skills index | `session.machine` | when a machine attaches |
 | 7 | memory notes | `memory.attached` | when a store attaches |
-| 8 | the messages | the fold ([[004-session-log]]) | every step, by appending |
+| 8 | the route: the routed name the session runs by, when it runs by one | the session's `model.via` ([[043-publishing-a-folder]]) | when the session's model changes |
+| 9 | the messages | the fold ([[004-session-log]]) | every step, by appending |
 
-Parts 2 to 7 are the system prompt. The order puts what changes least
+Parts 2 to 8 are the system prompt. The order puts what changes least
 first. Parts 4 to 7 are the fold's structured system parts
 ([[004-session-log]]); the harness renders each into text blocks,
 reading an instruction file's content from its blob, in the fold's
 order, and [[011-instructions-and-skills]] fixes the text each renders
-to.
+to. Part 8 is read from the session's header on every request, so an
+agent knows which of the installation's routes it runs by; it changes
+only with the model, which changes the cached prefix anyway.
 
 ### Cache breakpoints
 
@@ -159,6 +162,7 @@ encoding and pricing ([[007-models]]).
 | Criterion | Test that proves it | State |
 |---|---|---|
 | The system prompt renders its parts in the table's order (the harness prompt, the agent's instructions, the context block, each instruction file cut at 64 KiB, the skills index, the memory notes), and a part it does not know renders nothing | `harness.TestSystemBlocksRenderEveryPart` | built |
+| A session that runs by a routed name carries it as the last system part on every request, and one that runs by none carries no such part | `harness.TestTheRequestNamesTheRoute` | built |
 | Breakpoint 2 is on the last system block and breakpoints 3 and 4 on the last blocks of the last two user messages; the request carries the effort, `max_tokens` and the session id as cache key | `harness.TestBreakpointsRollWithTheConversation` | built |
 | A session past the threshold clears first and compacts only when clearing is not enough, and the compaction's request is recorded as a `model.request` | `harness.TestClearingOldResultsIsEnough`, `harness.TestSummaryWhenClearingIsNotEnough` | built |
 | Clearing keeps the last ten steps' results and every `todo` result, and a second clearing skips what the first cleared | `harness.TestClearingOldResultsIsEnough`, `harness.TestTodoResultsAreNeverCleared`, `harness.TestASecondClearingSkipsWhatIsCleared` | built |

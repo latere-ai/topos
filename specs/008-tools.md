@@ -77,7 +77,10 @@ nothing, `write` changes the machine, `external` reaches outside it.
 
 The harness adds `question` to the session's own thread when an agent
 names it, a tool of its own and not a built-in, so the default set
-stays the table's eight ([[039-questions]]).
+stays the table's eight ([[039-questions]]). The hosted runner adds
+`publish` the same way, to the session's own thread of a session in a
+sandbox, when the installation has an app host
+([[043-publishing-a-folder]]).
 
 `web_search` is a built-in an agent holds only by naming it
 (`tools.OptIn`), so it is in no default set ([[047-web-search]]):

@@ -31,8 +31,8 @@ type BlobReader interface {
 }
 
 // systemBlocks renders a request's system prompt (spec 010, parts 2 to
-// 7): the harness prompt, the agent's instructions, then the fold's
-// system parts in order.
+// 8): the harness prompt, the agent's instructions, then the system parts
+// in order, the fold's and the route after them.
 func systemBlocks(ctx context.Context, harnessPrompt, agentInstructions string, parts []session.Part, blobs BlobReader) ([]lux.Block, error) {
 	blocks := []lux.Block{{Type: ir.BlockText, Text: harnessPrompt}}
 	if s := strings.TrimSpace(agentInstructions); s != "" {
@@ -105,6 +105,19 @@ func withRepositories(parts []session.Part, s session.Session) []session.Part {
 	}
 	block := session.Part{Kind: session.PartContext, Context: prompts.Render(prompts.ContextRepositories, prompts.Data{"Repositories": lines})}
 	return append([]session.Part{block}, parts...)
+}
+
+// withRoute are a request's system parts with the routed name the
+// session runs by after them, when it runs by one (spec 043), so an
+// agent can say when another of the installation's routes would serve
+// the person better. It changes only with the session's model, which
+// already changes the request's prefix.
+func withRoute(parts []session.Part, s session.Session) []session.Part {
+	if s.Model == nil || s.Model.Via == "" {
+		return parts
+	}
+	route := session.Part{Kind: session.PartContext, Context: prompts.Render(prompts.ContextRoute, prompts.Data{"Route": s.Model.Via})}
+	return append(slices.Clip(parts), route)
 }
 
 // withoutImages are the messages with every image a message carries
