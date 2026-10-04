@@ -10,7 +10,53 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- An installation's authorizer can name the model a session runs. An
+  allow may carry `limits.model`, the name of the model to run in place
+  of the one that was asked. A session starts on it at its create or its
+  fork, changes to it at a `PATCH /v1/sessions/{id}` that names a model,
+  and changes to it before its next turn at a send. An agent can
+  therefore name a choice, such as `tier/quick`, that no gateway lists
+  and the authorizer resolves for each person. An allow without
+  `limits.model` leaves every route as it was. `authorizer.Limits` and
+  `authorizer.WireLimits` gain the member `Model`.
+- A session's `model` has `via`: the name that was asked, when the
+  authorizer answered another. It is absent when the session runs the
+  name that was asked. `session.model_changed` carries `via` in `old`
+  and `new`. A client that offers a choice of models shows `via`.
+  `model.request` records the model that ran, as before.
+- A model change that a send's allow made is recorded as
+  `session.model_changed` with `by` set to
+  `{"subject": "service:authorizer", "kind": "service"}`, straight
+  before the event that was sent. A change that a `PATCH` made is the
+  person's, as before.
+- The questions tell an authorizer what it routes from. `session.create`
+  and `session.fork` carry `model`, the agent's name for its model.
+  `session.update` carries `current_model`, the model the session runs,
+  and `current_model_via`, beside `model`, which is still the name the
+  change asks. `session.send` carries `model`, the model the session
+  runs, `model_via`, and `idle_seconds`: the whole seconds since the
+  session's last model request ended, absent before its first. Topos
+  itself knows nothing about how long a provider keeps a prompt cache.
+
 ### Changed
+
+- `POST /v1/sessions` and `PATCH /v1/sessions/{id}` check that the
+  installation runs the model after they ask the authorizer. They
+  checked before. The model checked is the one the allow names, or the
+  one asked when it names none, so a name that only the authorizer
+  resolves is not refused unread. A request that the authorizer denies
+  for a model the installation does not run now answers `forbidden`; it
+  answered `model_unknown`. An authorizer is now asked about a model
+  name that the installation may not run.
+- An allow of `session.update` or `session.send` whose `limits` do not
+  decode refuses the request as `authorizer_unavailable`. Their limits
+  were not read before.
+- A send reads the session's agent version and the last events of its
+  log before it asks the authorizer. The question of `session.send`
+  changes as `idle_seconds` changes, so a cached allow of it is seldom
+  reused.
 
 - The text for a decision service is shorter and more precise. This
   includes the reason that a person sees for each verdict, the help of

@@ -84,9 +84,9 @@ gains fields.
 | Action | Kind | Resource fields | Asked at |
 |---|---|---|---|
 | `agent.create`, `agent.read`, `agent.list`, `agent.update`, `agent.archive` | `agent` | `name`, `owner` (a person's subject, or `{type, id}` for an organization's agent; on `agent.create` only in an organization's context, changed by [[036-organization-owners]]) | the agent routes of [[015-api]] |
-| `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent, changed by [[036-organization-owners]]), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity`, and `trigger_id` and `firing_id` for a trigger's session, asked as the trigger's owner (added by [[022-triggers]]) | session create, and a trigger's firing; the authorizer applies the initiator cap here |
+| `session.create` | `session` | `agent`, `agent_version`, `agent_owner` (the owner's subject, or `{type, id}` for an organization's agent, changed by [[036-organization-owners]]), `runner`, `machine`, `initiator`, `permissions` (the pinned version's `{action, resource}` list, then `lux:model.use` on each model the agent names: its own, its advisor's and its subagents'), `session_id`, `agent_identity`, `trigger_id` and `firing_id` for a trigger's session, asked as the trigger's owner (added by [[022-triggers]]), and `model`, the agent's name for its model (added by [[038-routed-models]]) | session create, and a trigger's firing; the authorizer applies the initiator cap here, and may name the model the session starts on |
 | `session.read`, `session.list` | `session` | `agent`, `owner`, `runner`; a list `status`, `runner` and `agent_owner`, the context it lists (added by [[036-organization-owners]]) | session get, list, the sessions' summary (added by [[015-api]]), events list, stream |
-| `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type` | sending a user event; the authorizer applies the sender rule here |
+| `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type`, and `model`, the model the session stands on, `model_via`, the name it was asked by, when it has one, and `idle_seconds`, the whole seconds since the session's last model request ended, absent before its first (added by [[038-routed-models]]) | sending a user event; the authorizer applies the sender rule here, and may name the model the session changes to before its next turn |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
 | `session.fork` | `session` | the fields of `session.create` for the new session (its `session_id`, the forker as `initiator`, the agent version's `permissions`, the `repositories`), and `owner`, `parent` and `seq` of the session forked, which is the resource's id (changed by [[017-external-runners-handoff-fork]]) | a fork; the authorizer decides it as a create of its initiator, initiator cap included |
 | `session.rewind` | `session` | `agent`, `owner`, `turn` | [[034-checkpoints-and-rewind]] |
@@ -94,7 +94,7 @@ gains fields.
 | `session.redact` | `session` | `agent`, `owner`, `event_id` | [[015-api]], [[018-credentials-and-secrets]] |
 | `session.append`, `session.handoff` | `session` | `agent`, `owner`, `runner`, `writer`, and for a handoff `to` and `initiator` | [[017-external-runners-handoff-fork]]; a handoff to `hosted` gets the initiator cap of a create |
 | `session.scope` | `session` | `agent`, `owner`, `old`, `new`, `until` | a scope change; the authorizer holds a widening to the agent's permissions and the widener's own rights |
-| `session.update` | `session` | `agent`, `owner`, `runner`, `session_id`, and what the change names: `model` (the name of the model the session's next turn runs), `effort` (the reasoning effort it runs at, `""` for the model's own default), or `archived` (`true` or `false`, added by [[015-api]]) | a change of the session's model, its effort or both ([[015-api]]); asked after the model resolved, so the authorizer decides whether the session may use a model that exists, and may widen the session's model key to it; an effort change alone carries no `model` and reaches no new model; an archive or an unarchive carries `archived` alone |
+| `session.update` | `session` | `agent`, `owner`, `runner`, `session_id`, and what the change names: `model` (the name of the model the session's next turn runs), `effort` (the reasoning effort it runs at, `""` for the model's own default), or `archived` (`true` or `false`, added by [[015-api]]); a change of the model or the effort also carries `current_model`, the model the session stands on, and `current_model_via`, the name it was asked by, when it has one (added by [[038-routed-models]]) | a change of the session's model, its effort or both ([[015-api]]); the authorizer decides whether the session may use the model, may widen the session's model key to it, and may name the model to run in its place, so the model is resolved after the question (changed by [[038-routed-models]]); an effort change alone carries no `model` and reaches no new model; an archive or an unarchive carries `archived` alone |
 | `trigger.create`, `trigger.read`, `trigger.list`, `trigger.update`, `trigger.delete` | `trigger` | `name`, `agent`, `owner`, and on a create and an update the filter applied as `on` (changed by [[022-triggers]]) | the trigger routes |
 | `trigger.fire` (added by [[022-triggers]]) | `trigger` | `name`, `agent`, `owner` | deliver an event to a trigger, or fire it now |
 | `credential.create`, `credential.read`, `credential.list`, `credential.delete` | `credential` | `name`, `owner`, `service` | the credential routes; `read` returns metadata only |
@@ -112,7 +112,9 @@ someone who could not have started the session.
 
 An allow of `session.create` may carry a `limits` object, decoded with
 `Decision.DecodeLimits` into the members below; an allow of
-`agent.create` or `agent.update` may carry `owner`. The session takes the
+`agent.create` or `agent.update` may carry `owner`, and an allow of
+`session.create`, `session.fork`, `session.update` or `session.send` may
+carry `model` (added by [[038-routed-models]]). The session takes the
 lowest of each figure against the agent's and the request's own
 ([[005-harness-loop]]), and merges the lists and thresholds with the
 agent's so neither loosens the other ([[012-permissions-and-approvals]]).
@@ -125,6 +127,7 @@ agent's so neither loosens the other ([[012-permissions-and-approvals]]).
 | `turn_timeout`, `max_age` | Go durations, ceilings | [[005-harness-loop]], [[004-session-log]] |
 | `scope` | the session's starting scope, a list of grants | [[018-credentials-and-secrets]] |
 | `retention` | a Go duration: how long the session is kept after it ends; absent, it is kept until deleted | [[014-store]] |
+| `model` | a model's name: the model the session runs in place of the one asked, at a create, a fork, a change of the model and a send (added by [[038-routed-models]]) | [[038-routed-models]] |
 | `owner` | `{type, id}`, `type` `user` or `organization`: on an agent's apply, the owner of an agent that gets its identity at the identity provider, which must be the agent's own; absent, the agent's owner (changed by [[036-organization-owners]]) | [[018-credentials-and-secrets]] |
 
 A member toposd does not know is ignored; a member it knows that does

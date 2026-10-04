@@ -60,7 +60,7 @@ The core's releases start at v0.9.0 (2026-09-29); the latest is v0.11.1
 Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite
 and the release archives. The task suite runs, but no release has measured
-its bar against a pinned model yet. In the [specs](specs) deck, 12 specs are
+its bar against a pinned model yet. In the [specs](specs) deck, 13 specs are
 complete, 17 in progress and 8 drafted or vague, none of those 8 built yet;
 [specs/README.md](specs/README.md) says which build phases are closed.
 
