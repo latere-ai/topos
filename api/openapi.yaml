@@ -737,9 +737,10 @@ paths:
     delete:
       operationId: deleteSession
       summary: Delete a session
-      description: Delete a session, its log and its blobs.
+      description: "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove."
       x-topos-actions:
         - session.delete
+        - session.read
       parameters:
         - name: id
           in: path

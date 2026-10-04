@@ -47,7 +47,7 @@ func table() []route {
 			op: "unarchiveSession", summary: "Unarchive a session", status: http.StatusOK, body: MaxBody, handle: (*call).unarchiveSession},
 		{method: http.MethodPost, path: "/sessions/{id}/resume", actions: a(authorizer.ActionSessionResume),
 			op: "resumeSession", summary: "Resume a session", status: http.StatusOK, body: MaxBody, handle: (*call).resumeSession},
-		{method: http.MethodDelete, path: "/sessions/{id}", actions: a(authorizer.ActionSessionDelete),
+		{method: http.MethodDelete, path: "/sessions/{id}", actions: a(authorizer.ActionSessionDelete, authorizer.ActionSessionRead),
 			op: "deleteSession", summary: "Delete a session", status: http.StatusNoContent, handle: (*call).deleteSession},
 		{method: http.MethodGet, path: "/sessions/{id}/events", actions: a(authorizer.ActionSessionRead),
 			op: "listEvents", summary: "List session events", status: http.StatusOK, handle: (*call).listEvents},

@@ -746,13 +746,28 @@ func endable(s session.Session) error {
 }
 
 // deleteSession is DELETE /sessions/{id}: the session, its log and its
-// blobs.
+// blobs (spec 040).
+//
+// The authorizer may act on an allowed session.delete before it answers,
+// as on session.end, so the route asks it only of a session it would
+// delete: it reads the session, which a caller who may not see it hears
+// as not_found, refuses a running one, and only then asks
+// session.delete. The store's lease check still holds after the
+// question: a runner that claimed the session meanwhile makes the delete
+// a conflict, and the session stays for a retry.
 func (c *call) deleteSession() error {
-	s, err := c.session(authorizer.ActionSessionDelete, nil)
+	ctx := c.r.Context()
+	s, err := c.session(authorizer.ActionSessionRead, nil)
 	if err != nil {
 		return err
 	}
-	if err := c.s.o.Sessions.Delete(c.r.Context(), s.ID); err != nil {
+	if s.Status == session.StatusRunning {
+		return refuse(CodeConflict, "the session is running; interrupt it first")
+	}
+	if _, err := c.ask(ctx, authorizer.ActionSessionDelete, sessionResource(s, nil)); err != nil {
+		return err
+	}
+	if err := c.s.o.Sessions.Delete(ctx, s.ID); err != nil {
 		return err
 	}
 	// The session is gone whatever its leftovers do, so a failed removal

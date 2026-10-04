@@ -265,9 +265,11 @@ var opDescriptions = map[string]string{
 	"listSessions":  "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
 	"getSession":    "Get a session.",
 	"resumeSession": "Resume a session idle on its budget once the cap is raised.",
-	"deleteSession": "Delete a session, its log and its blobs.",
-	"listEvents":    "List a session's events from a sequence.",
-	"getBlob":       "Get a blob of a session.",
+	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
+		"interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. " +
+		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
+	"listEvents": "List a session's events from a sequence.",
+	"getBlob":    "Get a blob of a session.",
 	"redactEvent": "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. " +
 		"A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. " +
 		"The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first.",
