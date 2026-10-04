@@ -228,6 +228,70 @@ func TestTheHeaderTakesAModelChangeWhole(t *testing.T) {
 	}
 }
 
+// TestThePolicyFollowsItsChanges: the header's policy takes the mode of
+// the last session.policy_changed and keeps its lists and thresholds,
+// Mode reads the same mode from the log, a fork's copied change moves
+// neither, and a session that records no policy keeps none while Mode
+// still reads the change for the harness (spec 041).
+func TestThePolicyFollowsItsChanges(t *testing.T) {
+	by := Sender{Subject: "https://login.example|alice", Kind: SenderPerson}
+	change := func(seq uint64, from, to string) Event {
+		t.Helper()
+		e, err := NewEvent(TypePolicyChanged, PolicyChanged{By: by, Old: PolicyRef{Mode: from}, New: PolicyRef{Mode: to}}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = seq
+		return e
+	}
+	first := change(3, "confirm", "progressive")
+	if want := `{"by":{"subject":"https://login.example|alice","kind":"person"},"old":{"mode":"confirm"},"new":{"mode":"progressive"}}`; string(first.Payload) != want {
+		t.Fatalf("session.policy_changed is %s", first.Payload)
+	}
+	policy := Policy{Mode: "confirm", AlwaysConfirm: []string{"bash(git push*)"}, Thresholds: Thresholds{FlagAt: 0.3, AskAt: 0.5, BlockAt: 0.9}}
+	s := Session{Policy: &policy}
+	log := []Event{first, change(5, "progressive", "plan")}
+	ApplyBatch(&s, log)
+	if s.Policy.Mode != "plan" || !slices.Equal(s.Policy.AlwaysConfirm, policy.AlwaysConfirm) || s.Policy.Thresholds != policy.Thresholds {
+		t.Fatalf("the header's policy is %+v", s.Policy)
+	}
+	if policy.Mode != "confirm" {
+		t.Fatal("applying a change wrote through to the policy the header was built with")
+	}
+	if mode, ok := Mode(s, log); !ok || mode != "plan" {
+		t.Fatalf("Mode = %q, %v", mode, ok)
+	}
+	if _, ok := Mode(s, nil); ok {
+		t.Fatal("a log with no change names a mode")
+	}
+
+	fork := Session{Policy: &Policy{Mode: "confirm"}, Parent: &Parent{SessionID: "ses_parent", Seq: 5}}
+	ApplyBatch(&fork, log)
+	if fork.Policy.Mode != "confirm" {
+		t.Fatalf("a fork's copied change moved its mode to %s", fork.Policy.Mode)
+	}
+	if _, ok := Mode(fork, log); ok {
+		t.Fatal("Mode read a fork's copied change")
+	}
+	own := change(7, "confirm", "progressive")
+	ApplyBatch(&fork, []Event{own})
+	if mode, ok := Mode(fork, append(log, own)); fork.Policy.Mode != "progressive" || !ok || mode != "progressive" {
+		t.Fatalf("a fork's own change: header %s, Mode %q %v", fork.Policy.Mode, mode, ok)
+	}
+
+	local := Session{}
+	ApplyBatch(&local, log)
+	if local.Policy != nil {
+		t.Fatalf("a session that records no policy holds %+v", local.Policy)
+	}
+	if mode, ok := Mode(local, log); !ok || mode != "plan" {
+		t.Fatalf("Mode of a session that records no policy = %q, %v", mode, ok)
+	}
+	if Redactable(TypePolicyChanged) {
+		t.Fatal("session.policy_changed is redactable")
+	}
+}
+
 func TestTranscriptCheck(t *testing.T) {
 	if (Transcript{}).Check() != nil {
 		t.Fatal("an empty transcript is too new")

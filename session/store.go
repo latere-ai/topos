@@ -405,8 +405,9 @@ func SameEvent(a, b Event) bool {
 // ApplyBatch updates the Session header from appended events: the last
 // sequence, the turn, the update time, the status and stop reason of the
 // last session.status event, the budget of the last session.resumed, the
-// model of the last session.model_changed, and the spend, which each
-// model.request's cost adds to as Spent counts it.
+// model of the last session.model_changed, the approval mode of the last
+// session.policy_changed, and the spend, which each model.request's cost
+// adds to as Spent counts it.
 func ApplyBatch(s *Session, events []Event) {
 	for _, e := range events {
 		if e.Seq > s.LastSeq {
@@ -438,6 +439,19 @@ func ApplyBatch(s *Session, events []Event) {
 			var m ModelChanged
 			if e.Decode(&m) == nil {
 				s.Model = &m.New
+			}
+			continue
+		}
+		// A fork's copied change moved its parent's mode; the fork runs the
+		// mode it was created with (spec 041). A session that records no
+		// policy runs its agent's, which the harness applies the change
+		// to from the log.
+		if e.Type == TypePolicyChanged && !e.Redacted() && !s.Copied(e) && s.Policy != nil {
+			var p PolicyChanged
+			if e.Decode(&p) == nil && p.New.Mode != "" {
+				policy := *s.Policy
+				policy.Mode = p.New.Mode
+				s.Policy = &policy
 			}
 			continue
 		}

@@ -34,6 +34,7 @@ const (
 	TypeSessionMachine       Type = "session.machine"
 	TypeScopeChanged         Type = "session.scope_changed"
 	TypeModelChanged         Type = "session.model_changed"
+	TypePolicyChanged        Type = "session.policy_changed"
 	TypeSessionResumed       Type = "session.resumed"
 	TypeSessionError         Type = "session.error"
 	TypeMemoryAttached       Type = "memory.attached"
@@ -50,7 +51,7 @@ var Known = map[Type]bool{
 	TypeUserToolResult: true, TypeUserAnswer: true, TypeAgentMessage: true, TypeAgentToolUse: true,
 	TypeToolResult: true, TypeThreadStarted: true, TypeThreadEnded: true,
 	TypeThreadMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
-	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypeSessionResumed: true,
+	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypePolicyChanged: true, TypeSessionResumed: true,
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 }
@@ -431,6 +432,40 @@ type ModelChanged struct {
 	By  Sender   `json:"by"`
 	Old ModelRef `json:"old"`
 	New ModelRef `json:"new"`
+}
+
+// PolicyChanged is the payload of session.policy_changed: a person
+// changed the approval mode the session decides its calls under (spec
+// 041). Old is the mode the session ran, New the one it runs from the
+// next step; the lists and the thresholds of its policy are unchanged.
+type PolicyChanged struct {
+	By  Sender    `json:"by"`
+	Old PolicyRef `json:"old"`
+	New PolicyRef `json:"new"`
+}
+
+// PolicyRef is what a session.policy_changed names of a session's
+// policy: its approval mode, one of manifest/v1's Mode values.
+type PolicyRef struct {
+	Mode string `json:"mode"`
+}
+
+// Mode is the approval mode of the latest session.policy_changed among
+// events that s wrote itself, and false when it holds none: a fork reads
+// its copied changes as its parent's history and runs the mode it was
+// created with (spec 041).
+func Mode(s Session, events []Event) (string, bool) {
+	mode, found := "", false
+	for _, e := range events {
+		if e.Type != TypePolicyChanged || e.Redacted() || s.Copied(e) {
+			continue
+		}
+		var p PolicyChanged
+		if e.Decode(&p) == nil && p.New.Mode != "" {
+			mode, found = p.New.Mode, true
+		}
+	}
+	return mode, found
 }
 
 // SessionResumed is the payload of session.resumed: a session idle on its
