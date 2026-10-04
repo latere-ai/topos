@@ -100,6 +100,9 @@ type Result struct {
 	// Meta is recorded on the tool.result for later calls of the thread.
 	Meta  *Meta
 	Spill *session.Spill
+	// CostUSDMicro is what a service the call reached charged for it, a
+	// web search's (spec 040); nil for a call that cost nothing.
+	CostUSDMicro *int64
 }
 
 // IsError reports whether the outcome is one the model sees as an error:
@@ -132,6 +135,9 @@ type Meta struct {
 	// that did (spec 039), which a client reads to say why a question
 	// closed.
 	session.QuestionMeta
+	// Refusal is the code a search service refused a web search with
+	// (spec 040), for a client; the model reads the service's sentence.
+	Refusal string `json:"refusal,omitempty"`
 }
 
 // Todo is one entry of a thread's list.

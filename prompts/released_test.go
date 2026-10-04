@@ -135,4 +135,12 @@ var released = map[string]string{
 	"transcript/summary-v1.md":               "24e67f5a0fd4fb1a629984b9f9867f229f5afe3dc5885475364468b69abbc0ef",
 	"transcript/thread-message-v1.md":        "9e014220f359fa9ace8a34f492847640ed6e6c1e8f830799d488ea26407267cc",
 	"transcript/truncated-v1.md":             "d47b0a730c088f169f1025480811d9a64aa75ca979e3eeee77b8590d92d05a63",
+	"results/web_search/canceled-v1.md":      "af82638fb9aeb6b4e7e020926594a7c49ef7259012150e43c5fcd2f57a8c1e0c",
+	"results/web_search/failed-v1.md":        "7217217b1c9005218523ba9a66868086134d22177c9f1a137056875223ebc192",
+	"results/web_search/none-v1.md":          "977d78102f137c7d3cf0a0159b133a3398e635dac671548c1ddfb55f42e56cdc",
+	"results/web_search/refused-v1.md":       "df36680875f94af73957824a7b7e01bd21366e29e3e63b1c70f289c00b77da6e",
+	"results/web_search/results-v1.md":       "5146e42309975f3fe4b103c82de4aa0fe6dbee23cfd19b37816aa8ce3c816e15",
+	"results/web_search/timeout-v1.md":       "a9fe1aae3c591daea808a62bb218e49f3a7d6f7ee79c5d652463b44ac13f6231",
+	"results/web_search/unavailable-v1.md":   "24f5160d043d1f2f093a20949abe7a51693a83f00dcd043315f1ad5ccce4cd39",
+	"tools/web_search-v1.md":                 "ffc38f2ae64fe714363050febe67261ec52a12d4222ce77d25c03cc5687a0263",
 }

@@ -93,6 +93,7 @@ var textCases = func() []textCase {
 		{name: ToolMessage, want: "Send a message to a thread you spawned and return its answer. Set end to true to end the thread after this turn."},
 		{name: ToolAdvisor, want: "Ask a stronger model to review your work so far. It sees this conversation and your question, acts on nothing, and answers with advice. Use it before a hard decision or when you are stuck."},
 		{name: ToolQuestion, wantSHA: "13d1e88094ffe3d9c0c19a1fd102c5fbc539b7f1ad5804a43e6039bf7daa8a63"},
+		{name: ToolWebSearch, wantSHA: "06e451f41ab008ed24de132b0e9ea18488e4092f221284b5a97a15829f5a2ce6"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -225,6 +226,17 @@ var textCases = func() []textCase {
 		{name: FetchNotText, data: Data{"URL": "https://e/x", "ContentType": ""}, want: fmt.Sprintf("%s returned %s, which is not text; web_fetch returns text and HTML pages.", "https://e/x", cmp.Or("", "no content type"))},
 		{name: FetchPage, data: page("text/plain", true), want: fmt.Sprintf("URL: %s\nStatus: %d\n", "https://example.com/final", 404) + fmt.Sprintf("Content-Type: %s\n", "text/plain") + "\n" + "no such page\n" + fmt.Sprintf("[the body passed %d MiB and was cut there]\n", 10)},
 		{name: FetchPage, data: page("", false), want: fmt.Sprintf("URL: %s\nStatus: %d\n", "https://example.com/final", 404) + "\n" + "no such page\n"},
+		{name: WebSearchResults, data: Data{"Results": []Data{
+			{"Number": 1, "Title": "Go 1.25 is released", "URL": "https://go.dev/blog/go1.25", "Snippet": "Go 1.25 is now available."},
+			{"Number": 2, "Title": "Release History", "URL": "https://go.dev/doc/devel/release", "Snippet": ""},
+		}}, want: "1. Go 1.25 is released\n   https://go.dev/blog/go1.25\n   Go 1.25 is now available.\n\n2. Release History\n   https://go.dev/doc/devel/release\n\n"},
+		{name: WebSearchNone, data: Data{"Query": "go \"release\""}, want: fmt.Sprintf("No results for %q.", `go "release"`)},
+		{name: WebSearchRefused, data: Data{"Message": "Searching the web needs credit.", "Retry": ""}, want: "The search service refused the search: Searching the web needs credit."},
+		{name: WebSearchRefused, data: Data{"Message": "Too many searches.", "Retry": "7s"}, want: "The search service refused the search: Too many searches. It can be tried again in 7s."},
+		{name: WebSearchFailed, data: Data{"Error": "the service answered 503"}, want: "The search failed: the service answered 503."},
+		{name: WebSearchTimeout, data: Data{"Query": "go", "Timeout": (30 * time.Second).String()}, want: fmt.Sprintf("The search for %q passed its timeout of %s.", "go", 30*time.Second)},
+		{name: WebSearchCanceled, data: Data{"Query": "go"}, want: fmt.Sprintf("The search for %q was canceled.", "go")},
+		{name: WebSearchUnavailable, want: "Web search is not available on this server."},
 
 		{name: ContextBlock, data: contextData(false, "", false, nil), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
 			fmt.Sprintf("Machine: %s\n", "host") + fmt.Sprintf("Date: %s\n", "2026-09-27") + "</context>"},

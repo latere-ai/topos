@@ -43,6 +43,29 @@ const (
 	// ToolQuestion states the bounds of session's question constants in
 	// its text, which a test holds to them (spec 039).
 	ToolQuestion Name = "tools/question-v1"
+	// ToolWebSearch states the bounds of the search package's constants
+	// in its text, which a test holds to them (spec 040).
+	ToolWebSearch Name = "tools/web_search-v1"
+)
+
+// The results of web_search (spec 040).
+const (
+	// WebSearchResults takes Results, each with Number, Title, URL and
+	// Snippet, which may be empty.
+	WebSearchResults Name = "results/web_search/results-v1"
+	// WebSearchNone takes Query.
+	WebSearchNone Name = "results/web_search/none-v1"
+	// WebSearchRefused takes Message, the service's sentence for the
+	// person, and Retry, when it may be tried again, empty when the
+	// service said nothing.
+	WebSearchRefused Name = "results/web_search/refused-v1"
+	// WebSearchFailed takes Error.
+	WebSearchFailed Name = "results/web_search/failed-v1"
+	// WebSearchTimeout takes Query and Timeout.
+	WebSearchTimeout Name = "results/web_search/timeout-v1"
+	// WebSearchCanceled takes Query.
+	WebSearchCanceled    Name = "results/web_search/canceled-v1"
+	WebSearchUnavailable Name = "results/web_search/unavailable-v1"
 )
 
 // The results of the question tool (spec 039): what the model reads once
