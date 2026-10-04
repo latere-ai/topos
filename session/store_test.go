@@ -298,6 +298,35 @@ func TestHasPendingInput(t *testing.T) {
 	}
 }
 
+// TestAMessageClosesAnAsk: a person's message appended after a call that
+// waits for a confirmation denies it (spec 012), so the call awaits no
+// confirmation after it; a message before the call, a trigger's message
+// and a client's call are left as they were.
+func TestAMessageClosesAnAsk(t *testing.T) {
+	ev := func(typ Type, p any) Event {
+		e, err := NewEvent(typ, p, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	person := Sender{Subject: "usr_ada", Kind: SenderPerson}
+	trigger := Sender{Subject: TriggerSubjectPrefix + "trg_1", Kind: SenderTrigger}
+	log := []Event{
+		ev(TypeUserMessage, UserMessage{Sender: person}),
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "ask", Verdict: "ask"}),
+		ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "client", Client: true}),
+		ev(TypeUserMessage, UserMessage{Sender: trigger}),
+	}
+	if got := Awaiting(log); len(got) != 2 || got["ask"] != AnswerConfirmation || got["client"] != AnswerResult {
+		t.Fatalf("before a person's message: %v", got)
+	}
+	log = append(log, ev(TypeUserMessage, UserMessage{Sender: person}), ev(TypeAgentToolUse, AgentToolUse{ToolUseID: "later", Verdict: "ask"}))
+	if got := Awaiting(log); len(got) != 2 || got["later"] != AnswerConfirmation || got["client"] != AnswerResult {
+		t.Fatalf("after a person's message: %v", got)
+	}
+}
+
 func TestAwaitingAndRedactable(t *testing.T) {
 	ev := func(typ Type, p any) Event {
 		e, err := NewEvent(typ, p, t0)

@@ -5,6 +5,9 @@ package harness
 
 import (
 	"context"
+	"strings"
+
+	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/session"
 )
@@ -18,10 +21,15 @@ type pendingCall struct {
 	// confirmation: the current claim appends one, so a second means an
 	// earlier runner may have started the call.
 	runsAfter int
+	// message is the person's message that denied a call waiting for a
+	// confirmation (spec 012): the first one appended after the call's
+	// agent.tool_use while no confirmation had answered it.
+	message *session.UserMessage
 }
 
 // openCalls returns the thread's calls without a tool.result or a
-// user.tool_result, in the order they were decided.
+// user.tool_result, in the order they were decided, each with what a
+// person answered it by: a confirmation, or a message that denied it.
 func openCalls(log []session.Event, thread string) []pendingCall {
 	answered := map[string]bool{}
 	for _, e := range log {
@@ -60,9 +68,24 @@ func openCalls(log []session.Event, thread string) []pendingCall {
 			if e.Decode(&p) != nil {
 				continue
 			}
-			if i, ok := index[p.ToolUseID]; ok {
+			// A message that denied the call stands: a confirmation
+			// appended after it answers nothing.
+			if i, ok := index[p.ToolUseID]; ok && open[i].message == nil {
 				open[i].confirmation = &p
 				open[i].runsAfter = 0
+			}
+		case e.Type == session.TypeUserMessage:
+			// A person's message is in the session's own thread and denies
+			// the waiting calls of every thread, so it is read whatever
+			// thread the calls are of.
+			var p session.UserMessage
+			if e.Decode(&p) != nil || p.Sender.Kind != session.SenderPerson {
+				continue
+			}
+			for i := range open {
+				if open[i].use.Verdict == string(VerdictAsk) && open[i].confirmation == nil && open[i].message == nil {
+					open[i].message = &p
+				}
 			}
 		case e.Type == session.TypeSessionStatus:
 			var p session.SessionStatus
@@ -77,6 +100,46 @@ func openCalls(log []session.Event, thread string) []pendingCall {
 		}
 	}
 	return open
+}
+
+// note is the text of a message that denied a call, which the call's
+// result gives the model as the person's note.
+func note(m session.UserMessage) string {
+	var parts []string
+	for _, b := range m.Content {
+		if b.Type == ir.BlockText && strings.TrimSpace(b.Text) != "" {
+			parts = append(parts, strings.TrimSpace(b.Text))
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// waits are the kinds of answer a step still waits for once every call
+// that could be settled is.
+type waits struct{ confirmation, result bool }
+
+// paused records the wait a paused call left, a thread's.
+func (w *waits) paused(err error) {
+	switch pauseReason(err) {
+	case session.StopToolConfirmation:
+		w.confirmation = true
+	case session.StopToolResult:
+		w.result = true
+	}
+}
+
+// reason is the stop reason the session goes idle with, and false when
+// nothing waits. Both kinds may wait at once and the reason names one of
+// them, a confirmation before a client's result; a client finds what is
+// open from the log.
+func (w waits) reason() (session.StopReason, bool) {
+	switch {
+	case w.confirmation:
+		return session.StopToolConfirmation, true
+	case w.result:
+		return session.StopToolResult, true
+	}
+	return "", false
 }
 
 // rememberedPatterns are the allow patterns people added with remember

@@ -537,25 +537,36 @@ func (t *turn) run(ctx context.Context) (Outcome, error) {
 }
 
 // resume settles the calls the log left without a result (spec 005 step
-// 2, spec 016's recovery): a confirmed call that no earlier runner
-// could have started runs, a denied one is answered, an unanswered ask
-// or client call keeps the session waiting, a repeatable built-in runs
-// again, and any other call is closed as unknown_effect.
+// 2, spec 016's recovery), in three passes, so that a call a person
+// answered is settled in the claim that reads the answer, whatever else
+// of the step still waits (spec 012). First every call is settled that
+// needs nothing run: a denied one is answered, by its confirmation or by
+// the person's message that stood in for one, and a call no rule can
+// repeat is closed as unknown_effect. Then the confirmed calls that no
+// earlier runner could have started run, with the repeatable built-ins,
+// and the threads the open spawn, message and advisor calls drove
+// continue. Only then does the session go idle on what still waits: an
+// ask nobody answered, a client's call, a thread's pause.
 func (t *turn) resume(ctx context.Context) error {
 	open := openCalls(t.events(), t.thread)
-	var waitAsk, waitClient bool
-	var run []pendingCall
+	var w waits
+	var run, threads []pendingCall
 	for _, c := range open {
 		switch {
 		case c.use.Client:
-			waitClient = true
+			w.result = true
 		case c.use.Verdict == string(VerdictAsk):
 			if c.confirmation != nil {
 				t.forwardAnswer(ctx, c)
 			}
 			switch {
+			case c.message != nil:
+				text := prompts.Render(prompts.CallDenied, prompts.Data{"Note": note(*c.message)})
+				if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeDenied, text), 0); err != nil {
+					return err
+				}
 			case c.confirmation == nil:
-				waitAsk = true
+				w.confirmation = true
 			case c.confirmation.Decision == session.DecisionDeny:
 				text := prompts.Render(prompts.CallDenied, prompts.Data{"Note": c.confirmation.Note})
 				if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeDenied, text), 0); err != nil {
@@ -569,16 +580,7 @@ func (t *turn) resume(ctx context.Context) error {
 				run = append(run, c)
 			}
 		case c.use.Name == ToolSpawn || c.use.Name == ToolMessage || c.use.Name == ToolAdvisor:
-			res, err := t.resumeThread(ctx, c)
-			if isPause(err) {
-				return t.finish(ctx, pauseReason(err), "")
-			}
-			if err != nil {
-				return err
-			}
-			if err := t.result(ctx, c.use.ToolUseID, res, 0); err != nil {
-				return err
-			}
+			threads = append(threads, c)
 		case c.use.Repeatable:
 			run = append(run, c)
 		default:
@@ -586,12 +588,6 @@ func (t *turn) resume(ctx context.Context) error {
 				return err
 			}
 		}
-	}
-	if waitAsk {
-		return t.finish(ctx, session.StopToolConfirmation, "")
-	}
-	if waitClient {
-		return t.finish(ctx, session.StopToolResult, "")
 	}
 	calls := make([]plannedCall, 0, len(run))
 	for _, c := range run {
@@ -605,7 +601,26 @@ func (t *turn) resume(ctx context.Context) error {
 		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: c.use.Input})
 	}
 	if err := t.runCalls(ctx, calls); err != nil {
-		return t.callsStopped(ctx, err)
+		if !isPause(err) {
+			return t.callsStopped(ctx, err)
+		}
+		w.paused(err)
+	}
+	for _, c := range threads {
+		res, err := t.resumeThread(ctx, c)
+		if isPause(err) {
+			w.paused(err)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := t.result(ctx, c.use.ToolUseID, res, 0); err != nil {
+			return err
+		}
+	}
+	if reason, waiting := w.reason(); waiting {
+		return t.finish(ctx, reason, "")
 	}
 	return nil
 }
@@ -959,17 +974,21 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 		}
 		return t.finish(ctx, session.StopEndTurn, detail)
 	}
+	// A call that waits for a person leaves the step's other calls to
+	// run, and the step goes idle once they have: on an ask, on a client's
+	// call, or on the pause a thread's call returned.
+	w := waits{confirmation: len(planned.ask) > 0, result: len(planned.client) > 0}
 	if err := t.runCalls(ctx, planned.run); err != nil {
-		return t.callsStopped(ctx, err)
+		if !isPause(err) {
+			return t.callsStopped(ctx, err)
+		}
+		w.paused(err)
 	}
 	if t.cut.Load() {
 		return t.finish(ctx, session.StopInterrupted, "")
 	}
-	switch {
-	case len(planned.ask) > 0:
-		return t.finish(ctx, session.StopToolConfirmation, "")
-	case len(planned.client) > 0:
-		return t.finish(ctx, session.StopToolResult, "")
+	if reason, waiting := w.reason(); waiting {
+		return t.finish(ctx, reason, "")
 	}
 	return nil
 }
@@ -1189,26 +1208,24 @@ func (t *turn) runCalls(ctx context.Context, calls []plannedCall) error {
 	return paused
 }
 
-// callsStopped ends a step whose calls stopped it: a core's refusal for
-// spend with budget and a session.error naming the refusal, as a model
-// gateway's refusal does (spec 007), a thread that waits for a person
-// with its stop reason. Any other error is returned.
+// callsStopped ends a step whose calls stopped it with an error that is
+// not a pause: a core's refusal for spend ends it with budget and a
+// session.error naming the refusal, as a model gateway's refusal does
+// (spec 007). Any other error is returned.
 func (t *turn) callsStopped(ctx context.Context, err error) error {
-	if code, spent := models.SpendRefused(err); spent {
-		var detail string
-		if se, ok := errors.AsType[*models.SpendError](err); ok {
-			detail = se.Core
-		}
-		e, eerr := t.sessionError(code, err.Error(), false, detail)
-		if eerr != nil {
-			return eerr
-		}
-		return t.finish(ctx, session.StopBudget, code, e)
-	}
-	if !isPause(err) {
+	code, spent := models.SpendRefused(err)
+	if !spent {
 		return err
 	}
-	return t.finish(ctx, pauseReason(err), "")
+	var detail string
+	if se, ok := errors.AsType[*models.SpendError](err); ok {
+		detail = se.Core
+	}
+	e, eerr := t.sessionError(code, err.Error(), false, detail)
+	if eerr != nil {
+		return eerr
+	}
+	return t.finish(ctx, session.StopBudget, code, e)
 }
 
 func isPause(err error) bool {

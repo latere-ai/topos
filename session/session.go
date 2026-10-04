@@ -312,7 +312,8 @@ const (
 // person's answer, by tool_use id: an ask not yet confirmed, and a
 // client's call without its result. A call answered once is not
 // awaiting a second answer, so a repeated or stray confirmation or
-// result names no call here.
+// result names no call here. A person's message appended after an ask
+// denies it (spec 012), so the ask awaits no confirmation after it.
 func Awaiting(evs []Event) map[string]Answer {
 	out := map[string]Answer{}
 	for _, e := range evs {
@@ -335,6 +336,16 @@ func Awaiting(evs []Event) map[string]Answer {
 			var p UserToolConfirmation
 			if e.Decode(&p) == nil && out[p.ToolUseID] == AnswerConfirmation {
 				delete(out, p.ToolUseID)
+			}
+		case TypeUserMessage:
+			var p UserMessage
+			if e.Decode(&p) != nil || p.Sender.Kind != SenderPerson {
+				continue
+			}
+			for id, want := range out {
+				if want == AnswerConfirmation {
+					delete(out, id)
+				}
 			}
 		case TypeUserToolResult, TypeToolResult:
 			var id string
