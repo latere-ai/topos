@@ -56,6 +56,27 @@ committed: the commit log already holds that.
   session's directory is read on the server's disk.
 - A `write` or `edit` result's `meta` carries `size`, the length in
   bytes of the file it left, beside `path` and `sha256`.
+- An agent can put a folder of its sandbox online with the `publish`
+  tool. The first call creates the session's own app at the
+  installation's app host, named after the session; the folder is
+  pushed from the sandbox to the session's branch of the app's
+  repository, and the call waits for the preview the host builds and
+  answers with its address, or with the failed build's code and the
+  end of its log. `publish` with `release: true` releases the last
+  ready preview to the app's address with the next `v` tag. Each call
+  asks the person in `confirm` and `progressive`, the runner reaches
+  the host with the session's own token, which never enters the
+  sandbox, and every result carries `meta.publish` for a client to show
+  the preview and the release. An agent holds the tool only when its
+  manifest names it; a client tool may no longer be named `publish`,
+  and `topos run` refuses an agent that names it. See
+  `docs/publishing.md`.
+- `TOPOS_APPS_URL` and `TOPOS_APPS_AUDIENCE` connect the app host and
+  name the audience of the session's token there. The URL needs
+  `TOPOS_ORIGO_URL`.
+- Every request of a session that runs by a routed name carries it to
+  the model as `Model route: <name>`, after the other system parts, so
+  an agent can say when another route would serve the person better.
 
 ### Changed
 
