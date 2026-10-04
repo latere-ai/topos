@@ -88,7 +88,7 @@ gains fields.
 | `session.read`, `session.list` | `session` | `agent`, `owner`, `runner`; a list `status`, `runner` and `agent_owner`, the context it lists (added by [[036-organization-owners]]) | session get, list, the sessions' summary (added by [[015-api]]), events list, stream |
 | `session.send` | `session` | `agent`, `owner`, `runner`, `sender`, `event_type`, and `model`, the model the session stands on, `model_via`, the name it was asked by, when it has one, and `idle_seconds`, the whole seconds since the session's last model request ended, absent before its first (added by [[038-routed-models]]) | sending a user event; the authorizer applies the sender rule here, and may name the model the session changes to before its next turn |
 | `session.interrupt`, `session.end`, `session.delete` | `session` | `agent`, `owner` | those routes |
-| `session.fork` | `session` | the fields of `session.create` for the new session (its `session_id`, the forker as `initiator`, the agent version's `permissions`, the `repositories`), and `owner`, `parent` and `seq` of the session forked, which is the resource's id (changed by [[017-external-runners-handoff-fork]]) | a fork; the authorizer decides it as a create of its initiator, initiator cap included |
+| `session.fork` | `session` | the fields of `session.create` for the new session (its `session_id`, the forker as `initiator`, the agent version's `permissions`, the `repositories`), and `owner`, `parent` and `seq` of the session forked, which is the resource's id (changed by [[017-external-runners-handoff-fork]]); its `model` is the model the fork starts on, with `model_via`, the name it was asked by, when it has one (added by [[038-routed-models]]) | a fork; the authorizer decides it as a create of its initiator, initiator cap included |
 | `session.rewind` | `session` | `agent`, `owner`, `turn` | [[034-checkpoints-and-rewind]] |
 | `session.resume` | `session` | `agent`, `owner`, `stop_reason`, `max_cost_usd_micro` | resuming a session idle with `budget`; the decision's `limits` carry the raised cap ([[007-models]]) |
 | `session.redact` | `session` | `agent`, `owner`, `event_id` | [[015-api]], [[018-credentials-and-secrets]] |
@@ -113,8 +113,8 @@ someone who could not have started the session.
 An allow of `session.create` may carry a `limits` object, decoded with
 `Decision.DecodeLimits` into the members below; an allow of
 `agent.create` or `agent.update` may carry `owner`, and an allow of
-`session.create`, `session.fork`, `session.update` or `session.send` may
-carry `model` (added by [[038-routed-models]]). The session takes the
+`session.create`, `session.update` or `session.send` may carry `model`
+(added by [[038-routed-models]]). The session takes the
 lowest of each figure against the agent's and the request's own
 ([[005-harness-loop]]), and merges the lists and thresholds with the
 agent's so neither loosens the other ([[012-permissions-and-approvals]]).
@@ -127,7 +127,7 @@ agent's so neither loosens the other ([[012-permissions-and-approvals]]).
 | `turn_timeout`, `max_age` | Go durations, ceilings | [[005-harness-loop]], [[004-session-log]] |
 | `scope` | the session's starting scope, a list of grants | [[018-credentials-and-secrets]] |
 | `retention` | a Go duration: how long the session is kept after it ends; absent, it is kept until deleted | [[014-store]] |
-| `model` | a model's name: the model the session runs in place of the one asked, at a create, a fork, a change of the model and a send (added by [[038-routed-models]]) | [[038-routed-models]] |
+| `model` | a model's name: the model the session runs in place of the one asked, at a create, a change of the model and a send (added by [[038-routed-models]]) | [[038-routed-models]] |
 | `owner` | `{type, id}`, `type` `user` or `organization`: on an agent's apply, the owner of an agent that gets its identity at the identity provider, which must be the agent's own; absent, the agent's owner (changed by [[036-organization-owners]]) | [[018-credentials-and-secrets]] |
 
 A member toposd does not know is ignored; a member it knows that does

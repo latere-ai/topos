@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 016-runners.md, 034-checkpoints-and-rewind.md]
 affects: [runner/, client/, internal/server/, internal/toposcli/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-04
 author: changkun
 ---
 
@@ -54,6 +54,7 @@ session's credentials live no longer than the session.
 | the new Session | a new `ses_` id, `parent` set to `{session_id, seq}`, status `idle` with the stop reason at `at_seq` (`end_turn` where `at_seq` is an end), the same agent version, the old session's repositories and capture, the old session's title marked as its continuation (`Notes` gives `Notes (continued)`, which gives `Notes (continued 2)`; no title gives none) so a list tells the two apart, `expires_at` from now, the forker as initiator and writer; `end_on_idle` and `trigger_id` are not carried, since the person continues it |
 | files | the checkpoint named by the `session.status` at `at_seq` ([[034-checkpoints-and-rewind]]) is restored into the new session's working directory when its first machine opens, and recorded as that machine's `session.machine` with reason `restored` and the `checkpoint` |
 | budget | `spent_cost_usd_micro` is the sum over the copied `model.request` events; the budget itself is the new session's, and a copied `session.resumed` does not set it |
+| model | the model the old session stood on at `at_seq`, with the name it was asked by: the `new` of the last `session.model_changed` copied, or, with none copied, the model the old session started on, which is its agent's or the one its create's allow named ([[038-routed-models]]). It is the model the fork is checked by ([[007-models]]), and `session.fork` names it as `model` and `model_via` |
 
 A turn boundary is where the session's own thread closed a turn and
 waits for its next input, the point at which the old session itself
@@ -267,6 +268,7 @@ presents ([[006-identity]]).
 | After a fork, events the old writer appends to the old session never appear in the new one | `internal/server.TestForkNeverMerges` | built |
 | A fork of a hosted session on a Cella sandbox restores the fork point's files from the git host, through toposd over the stub Cella ([[035-hosted-checkpoints-at-the-git-host]]) | `cmd/toposd.TestAContinuedHostedSessionHasItsFiles` | built |
 | A fork's bash starts in its own working directory, not in one its copied log reported on the parent's machine | `harness.TestAForkDoesNotStartBashInItsParentsDirectory` | built |
+| A fork starts on the model the old session stood on at the fork point, the one its create's allow named included, and is checked by that model | `internal/server.TestAForkStartsOnTheModelItsParentStoodOn` | built |
 | The same against a real Cella and git host | `TestCloudForkRestoresFiles` in the Cella tier | not built |
 | A program using only `client` and a key runs a session as an external runner: it syncs a local session, appends its turns, and receives a message sent through the send route by way of the inbox | `TestExternalRunnerWithClientOnly` in the e2e tier | not built |
 | An append from a subject other than the writer is `not_writer`; one the authorizer refuses is `append_refused` and leaves the local session intact | `TestAppendWriterRule` | not built |

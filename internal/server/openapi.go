@@ -307,7 +307,8 @@ var opDescriptions = map[string]string{
 		"or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. " +
 		"Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, " +
 		"the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), " +
-		"status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, and the caller as initiator. " +
+		"status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, " +
+		"and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. " +
 		"Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, " +
 		"so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
 		"recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. " +

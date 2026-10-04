@@ -81,11 +81,35 @@ func (c *call) forkSession() error {
 		return err
 	}
 	s, err := c.s.create(ctx, c.asker(), creation{
-		fork:   &forkOrigin{parent: parent, seq: seq, events: evs[:seq]},
+		fork:   &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq)},
 		sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson},
 	})
 	if err != nil {
 		return err
 	}
 	return c.replySession(http.StatusCreated, s)
+}
+
+// modelAt is the model a session stood on after the first seq events of
+// its log evs, nil when it ran its agent's with nothing recorded: the new
+// model of the last change among those events, or, with none among them,
+// the model the session started on, which is the old model of its first
+// change after them and, in a log that holds no change, its header's.
+func modelAt(s session.Session, evs []session.Event, seq uint64) *session.ModelRef {
+	at := s.Model
+	changed := false
+	for _, e := range evs {
+		var m session.ModelChanged
+		if e.Type != session.TypeModelChanged || e.Redacted() || e.Decode(&m) != nil {
+			continue
+		}
+		if e.Seq > seq {
+			if !changed {
+				at = &m.Old
+			}
+			break
+		}
+		at, changed = &m.New, true
+	}
+	return at
 }

@@ -29,8 +29,8 @@ once the session has been quiet for a while.
 
 ## Current state
 
-Built. An allow's `limits.model` is read at a session's create and
-fork, at a `session.update` that names a model and at `session.send`
+Built. An allow's `limits.model` is read at a session's create, at a
+`session.update` that names a model and at `session.send`
 (`authorizer/limits.go`, `internal/server/sessions.go`,
 `internal/server/update.go`). The session's model reference and
 `session.model_changed` carry `via` (`session/session.go`), and the
@@ -69,10 +69,11 @@ A `limits.model` that is not a string, or has space around it, refuses
 the request as `authorizer_unavailable`, as any limit toposd cannot
 read does ([[006-identity]]).
 
-A fork is decided as a create ([[017-external-runners-handoff-fork]]),
-so `session.fork` is read as a create is: the fork starts on the model
-its allow names, and a model change in the log it copies follows that
-and is the one the fork runs.
+A fork is not one of the three. It starts on the model the session it
+forks stood on at the fork point, with the name that model was asked
+by ([[017-external-runners-handoff-fork]]): the model its create's
+allow named when the copied log holds no change. Its first turn starts
+with a send, which is asked as any send is.
 
 ### Both names are kept
 
@@ -121,9 +122,10 @@ its name and the name it was asked by, as flat fields
 
 | Decision | Fields |
 |---|---|
-| `session.create`, `session.fork` | `model`, the agent's name for its model |
+| `session.create` | `model`, the agent's name for its model |
 | `session.update` | `model`, the name the change asks, as before, when it names one; `current_model`, the model the session stands on; `current_model_via`, its `via`, when it has one |
 | `session.send` | `model`, the model the session stands on; `model_via`, its `via`, when it has one; `idle_seconds` |
+| `session.fork` | `model`, the model the fork starts on; `model_via`, its `via`, when it has one |
 
 A `session.update` carried `model` as the name asked before this spec,
 and a field keeps its meaning, so there the session's own model has
@@ -187,13 +189,15 @@ test. What shipped differs from the draft in these points:
   not an object of `name` and `via`; on `session.update`, where `model`
   already was the name asked, it is `current_model` and
   `current_model_via`.
-- **A fork is a fourth decision.** `session.fork` shares the create's
-  code and question, and its allow's model is read as a create's is.
-  Without it a fork of an agent whose model is a name no door lists
-  would be `model_unknown`.
 - **A create appends nothing.** The header takes the model the create's
   allow names, with no `session.model_changed`: the session never ran
-  another. A fork of it is routed by its own allow.
+  another.
+- **A fork carries the model over.** Because a create appends nothing,
+  a fork's copied log may not name the model the session ran, so the
+  fork takes the model the session stood on at the fork point and is
+  checked by it, where it was checked by the agent's. Without this a
+  fork of an agent whose model no door lists would be `model_unknown`.
+  The allow of `session.fork` is not read for a model.
 - **Every `session.send` is read**, a confirmation and a client tool's
   result as well as a message. A turn that waited on one resumes on the
   model the allow names, as it would after a `PATCH` made while it

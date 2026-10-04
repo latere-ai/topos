@@ -14,9 +14,9 @@ committed: the commit log already holds that.
 
 - An installation's authorizer can name the model a session runs. An
   allow may carry `limits.model`, the name of the model to run in place
-  of the one that was asked. A session starts on it at its create or its
-  fork, changes to it at a `PATCH /v1/sessions/{id}` that names a model,
-  and changes to it before its next turn at a send. An agent can
+  of the one that was asked. A session starts on it at its create,
+  changes to it at a `PATCH /v1/sessions/{id}` that names a model, and
+  changes to it before its next turn at a send. An agent can
   therefore name a choice, such as `tier/quick`, that no gateway lists
   and the authorizer resolves for each person. An allow without
   `limits.model` leaves every route as it was. `authorizer.Limits` and
@@ -32,13 +32,17 @@ committed: the commit log already holds that.
   before the event that was sent. A change that a `PATCH` made is the
   person's, as before.
 - The questions tell an authorizer what it routes from. `session.create`
-  and `session.fork` carry `model`, the agent's name for its model.
-  `session.update` carries `current_model`, the model the session runs,
-  and `current_model_via`, beside `model`, which is still the name the
+  carries `model`, the agent's name for its model. `session.update`
+  carries `current_model`, the model the session runs, and
+  `current_model_via`, beside `model`, which is still the name the
   change asks. `session.send` carries `model`, the model the session
   runs, `model_via`, and `idle_seconds`: the whole seconds since the
   session's last model request ended, absent before its first. Topos
   itself knows nothing about how long a provider keeps a prompt cache.
+- A fork starts on the model that the forked session ran at the fork
+  point, with its `via`, a model that the authorizer named at the
+  session's create included. `session.fork` carries it as `model` and
+  `model_via`.
 
 ### Changed
 
@@ -53,6 +57,9 @@ committed: the commit log already holds that.
 - An allow of `session.update` or `session.send` whose `limits` do not
   decode refuses the request as `authorizer_unavailable`. Their limits
   were not read before.
+- A fork checks that the installation runs the model the fork starts
+  on. It checked the agent's model, whatever the forked session had
+  changed to.
 - A send reads the session's agent version and the last events of its
   log before it asks the authorizer. The question of `session.send`
   changes as `idle_seconds` changes, so a cached allow of it is seldom

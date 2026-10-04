@@ -26,21 +26,22 @@
 //
 // One member, model, routes a session (spec 038): the allow names the
 // model to run in place of the one asked. toposd reads it on an allow of
-// session.create, and of session.fork, which is decided as a create,
-// where the session starts on it instead of its agent's; of a
-// session.update that names a model, where the session changes to it
-// instead of the one asked; and of session.send, where the session
-// changes to it before its next turn when it is another than the one the
-// session stands on. An allow without it leaves each as it was. The
-// resource tells an endpoint what it routes from: model, the name asked,
-// on a create and an update; current_model and current_model_via, the
-// model the session stands on and the name it was asked by, on an
-// update; and model, model_via and idle_seconds on a send, the model the
-// session stands on, the name it was asked by, and the whole seconds
-// since the session's last model request ended, absent before its
-// first. toposd keeps both names, checks that the installation runs the
-// one named, and decides nothing about which model a name stands for or
-// how long a provider keeps a prompt cache.
+// session.create, where the session starts on it instead of its
+// agent's; of a session.update that names a model, where the session
+// changes to it instead of the one asked; and of session.send, where the
+// session changes to it before its next turn when it is another than the
+// one the session stands on. An allow without it leaves each as it was,
+// and no other allow is read for it: a fork starts on the model the
+// session it forks stood on. The resource tells an endpoint what it
+// routes from: model, the name asked, on a create and an update;
+// current_model and current_model_via, the model the session stands on
+// and the name it was asked by, on an update; and model, model_via and
+// idle_seconds on a send, the model the session stands on, the name it
+// was asked by, and the whole seconds since the session's last model
+// request ended, absent before its first. toposd keeps both names,
+// checks that the installation runs the one named, and decides nothing
+// about which model a name stands for or how long a provider keeps a
+// prompt cache.
 //
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's

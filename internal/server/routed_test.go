@@ -558,43 +558,84 @@ func TestAModelThatDoesNotDecodeRefusesTheRequest(t *testing.T) {
 	}
 }
 
-// TestAForkIsRoutedAsACreate: session.fork carries the agent's model as
-// a create does and its allow's model is the fork's, which starts on it;
-// a model change in the copied log follows it and is the one the fork
-// runs, as it is for a fork of a session that was never routed.
-func TestAForkIsRoutedAsACreate(t *testing.T) {
-	f := newFixture(t)
+// TestAForkStartsOnTheModelItsParentStoodOn: a fork of a routed session
+// starts on the model the session stood on at the fork point, with the
+// name it was asked by: the one its create's allow named for a fork
+// point before any change, and the new model of the last change before
+// a later one. session.fork carries that model, its allow's model is
+// not read, and the model checked is the one the fork starts on, so an
+// agent whose model no door lists is forked with no answer from the
+// authorizer.
+func TestAForkStartsOnTheModelItsParentStoodOn(t *testing.T) {
+	f, names := checking(t)
 	f.applyModel("quick", "name: "+quick)
 	r := f.route(func(authz.Request) string { return haiku })
 	var s session.Session
 	f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"quick","message":"Answer."}`).decode(t, &s)
-	f.turn(s.ID, 1, "Answered.", 1)
-	fork := func() session.Session {
+	first := f.turn(s.ID, 1, "Answered.", 1)
+	fork := func(body string) session.Session {
 		t.Helper()
-		a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/fork", "alice", "")
+		a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/fork", "alice", body)
 		if a.status != http.StatusCreated {
-			t.Fatalf("fork: %d %s", a.status, a.body)
+			t.Fatalf("fork %s: %d %s", body, a.status, a.body)
 		}
 		var out session.Session
 		a.decode(t, &out)
 		return out
 	}
+	started := session.ModelRef{Name: haiku, Via: quick}
+	// The log holds no change: the model is the header's, and an allow
+	// that names another model moves nothing.
+	*names = nil
 	r.to(sonnet)
-	if got := fork(); got.Model == nil || *got.Model != (session.ModelRef{Name: sonnet, Via: quick}) {
-		t.Fatalf("the fork's model is %+v", got.Model)
+	if got := fork(""); got.Model == nil || *got.Model != started {
+		t.Fatalf("a fork of a session routed at its create runs %+v", got.Model)
 	}
-	if asked := r.last(t, authorizer.ActionSessionFork); asked.Resource.String("model") != quick || asked.Resource.ID != s.ID {
+	asked := r.last(t, authorizer.ActionSessionFork)
+	if asked.Resource.String("model") != haiku || asked.Resource.String("model_via") != quick || asked.Resource.ID != s.ID {
 		t.Fatalf("session.fork asked about %v", asked.Resource.Fields)
 	}
-	// The session is moved by a send, and a fork past that move runs
-	// what its log says.
+	if !slices.Equal(*names, []string{haiku}) {
+		t.Fatalf("the fork checked %v, not the model it starts on alone", *names)
+	}
+	// A send moves the session, and then a person does.
 	if a := f.send(s.ID, "And again."); a.status != http.StatusOK {
 		t.Fatalf("send: %d %s", a.status, a.body)
 	}
-	f.turn(s.ID, 2, "Answered again.", 1)
-	r.to(haiku)
-	if got := fork(); got.Model == nil || *got.Model != (session.ModelRef{Name: sonnet, Via: quick}) {
-		t.Fatalf("a fork past a model change runs %+v", got.Model)
+	second := f.turn(s.ID, 2, "Answered again.", 1)
+	r.to("")
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"model":{"name":"`+haiku+`"}}`); a.status != http.StatusOK {
+		t.Fatalf("switch: %d %s", a.status, a.body)
+	}
+	for at, want := range map[uint64]session.ModelRef{first: started, second: {Name: sonnet, Via: quick}} {
+		body, err := json.Marshal(forkBody{AtSeq: &at})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fork(string(body)); got.Model == nil || *got.Model != want {
+			t.Errorf("a fork at %d runs %+v, want %+v", at, got.Model, want)
+		}
+	}
+	// A session that ran its agent's model at the fork point forks with
+	// no model of its own, whatever it changed to later.
+	f.apply("alice", "reviewer", "Review.")
+	plain := f.create("alice", "reviewer")
+	boundary := f.turn(plain.ID, 1, "Reviewed.", 1)
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+plain.ID, "alice", `{"model":{"name":"`+sonnet+`"}}`); a.status != http.StatusOK {
+		t.Fatalf("switch: %d %s", a.status, a.body)
+	}
+	body, err := json.Marshal(forkBody{AtSeq: &boundary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := f.do(http.MethodPost, "/v1/sessions/"+plain.ID+"/fork", "alice", string(body))
+	var forked session.Session
+	a.decode(t, &forked)
+	if a.status != http.StatusCreated || forked.Model != nil {
+		t.Fatalf("a fork before the session's first change: %d, model %+v", a.status, forked.Model)
+	}
+	if asked := r.last(t, authorizer.ActionSessionFork); asked.Resource.String("model") != haiku || asked.Resource.Fields["model_via"] != nil {
+		t.Fatalf("session.fork asked about %v", asked.Resource.Fields)
 	}
 }
 

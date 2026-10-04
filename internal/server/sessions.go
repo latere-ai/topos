@@ -205,11 +205,13 @@ type creation struct {
 }
 
 // forkOrigin is what a fork starts from: the session forked, the fork
-// point, and its log up to that point, which the new session copies.
+// point, its log up to that point, which the new session copies, and
+// the model it stood on there, nil for its agent's.
 type forkOrigin struct {
 	parent session.Session
 	seq    uint64
 	events []session.Event
+	model  *session.ModelRef
 }
 
 // create creates a session of in's agent with q's caller as its
@@ -258,17 +260,33 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if err != nil {
 		return session.Session{}, err
 	}
+	// start is the model the session starts on when it is not its
+	// agent's. A fork starts on the one the session it forks stood on at
+	// the fork point, which may be one an authorizer named (spec 038); a
+	// header that names the agent's own model at its own effort names
+	// nothing a new session does not run already.
+	var start *session.ModelRef
+	if f := in.fork; f != nil && f.model != nil && standing(session.Session{Model: f.model}, cfg) != standing(session.Session{}, cfg) {
+		start = new(*f.model)
+	}
 	// The session's id is minted before the question, so the authorizer
 	// records the session every later token names, with the agent's
 	// identity those tokens carry as their subject (spec 018). The
-	// question names the agent's model, which the allow may answer with
-	// the model to run in its place (spec 038).
+	// question names the model the session would start on, the agent's
+	// name for its model at a create, which the allow may answer with the
+	// model to run in its place (spec 038).
 	id := session.NewID(session.PrefixSession)
 	fields := map[string]any{
 		"agent": a.ID, "agent_version": version, "agent_owner": ownerOf(a).field(),
 		"runner": session.RunnerHosted, "machine": m.Kind, "initiator": q.caller.Subject,
 		"permissions": permissionsField(r.Agent.Spec.Permissions, agentModels(r)), "session_id": id,
 		"repositories": repositoriesField(resources), "model": cfg.Model.Name,
+	}
+	if start != nil {
+		fields["model"] = start.Name
+		if start.Via != "" {
+			fields["model_via"] = start.Via
+		}
 	}
 	// A trigger's session names the trigger and the firing that start it
 	// (spec 022).
@@ -309,11 +327,20 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		}
 		return session.Session{}, s.o.Guard.Disclose(ctx, err, auth.Envelope(q.caller, authorizer.ActionAgentRead, agentResource(a), q.r))
 	}
-	// The session runs the model the allow names, or its agent's when the
-	// allow names none, checked by the rule a switch of its model is
-	// checked by (spec 007). The check follows the question, since the
-	// agent's name may be one only the authorizer resolves.
-	started, overlay := cfg.SessionModel(limits.Model)
+	// A session the authorizer routed starts on the model its allow names
+	// and keeps the agent's name beside it, which a client reads as the
+	// choice that was asked. A fork is not routed: it continues its
+	// parent's model, and its first send is asked as any send is.
+	if in.fork == nil && limits.Model != "" && limits.Model != cfg.Model.Name {
+		start = &session.ModelRef{Name: limits.Model, Via: cfg.Model.Name, Effort: cfg.Effort}
+	}
+	// The model the session starts on is checked by the rule a switch of
+	// its model is checked by (spec 007). The check follows the question,
+	// since the agent's name may be one only the authorizer resolves.
+	started, overlay := cfg.Model, cfg.Overlay
+	if start != nil {
+		started, overlay = cfg.SessionModel(start.Name)
+	}
 	if err := s.runnable(ctx, started, overlay); err != nil {
 		return session.Session{}, err
 	}
@@ -328,13 +355,9 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess := session.New(ref, session.Sender{Subject: q.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
 	sess.ID = id
 	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
-	// A session the authorizer routed starts on the model it named and
-	// keeps the agent's name beside it, which a client reads as the choice
-	// that was asked. A fork's copied model changes follow it in the log
-	// and replace it, as they replace the agent's.
-	if started.Name != cfg.Model.Name {
-		sess.Model = &session.ModelRef{Name: started.Name, Via: cfg.Model.Name, Effort: cfg.Effort}
-	}
+	// The header holds the model the session starts on from its create;
+	// a fork's copied model changes name it again as the log is copied.
+	sess.Model = start
 	// The session records its approval policy merged from the agent's and
 	// the organization's limits, so every runner applies the same one.
 	var thresholds *harness.Thresholds
