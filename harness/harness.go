@@ -1453,7 +1453,7 @@ func settle(ctx context.Context, res tools.Result, err error) tools.Result {
 
 // result appends one tool.result, commit point two.
 func (t *turn) result(ctx context.Context, id string, res tools.Result, dur time.Duration) error {
-	p := session.ToolResult{ToolUseID: id, Content: res.Content, IsError: res.IsError(), Outcome: res.Outcome, DurationMS: dur.Milliseconds(), Spill: res.Spill}
+	p := session.ToolResult{ToolUseID: id, Content: res.Content, IsError: res.IsError(), Outcome: res.Outcome, DurationMS: dur.Milliseconds(), Spill: res.Spill, CostUSDMicro: res.CostUSDMicro}
 	if res.Meta != nil {
 		b, err := session.Marshal(res.Meta)
 		if err != nil {
