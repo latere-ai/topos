@@ -1,0 +1,1 @@
+{{if .Preview}}The preview of {{.Path}} is still building after {{.Wait}}; once it is built it answers at {{.Preview}}.{{else}}The app host has not started a build of {{.Path}} after {{.Wait}}. It builds a limited number of pushes an hour for each app.{{end}} Call publish again with the same folder to keep waiting.

@@ -94,6 +94,7 @@ var textCases = func() []textCase {
 		{name: ToolAdvisor, want: "Ask a stronger model to review your work so far. It sees this conversation and your question, acts on nothing, and answers with advice. Use it before a hard decision or when you are stuck."},
 		{name: ToolQuestion, wantSHA: "13d1e88094ffe3d9c0c19a1fd102c5fbc539b7f1ad5804a43e6039bf7daa8a63"},
 		{name: ToolWebSearch, wantSHA: "06e451f41ab008ed24de132b0e9ea18488e4092f221284b5a97a15829f5a2ce6"},
+		{name: ToolPublish, wantSHA: "e663f8f91d8a2f109da6b27d8f03074de7f27d335538aae78245f9b00072e911"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -217,6 +218,27 @@ var textCases = func() []textCase {
 		{name: TodoList, data: Data{"Done": 1, "Total": 2, "Items": []todo{{"a", "first", "completed"}, {"b", "second", "pending"}}},
 			want: fmt.Sprintf("The todo list, %d of %d completed:\n", 1, 2) + fmt.Sprintf("[%s] %s: %s\n", "completed", "a", "first") + fmt.Sprintf("[%s] %s: %s\n", "pending", "b", "second")},
 
+		{name: PublishReady, data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site"},
+			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it.\n" +
+				"Next, call publish with release set to true. It waits for the person, who releases this preview with one click or asks for a change instead."},
+		{name: PublishBuilding, data: Data{"Path": "site", "Wait": "10m0s", "Preview": "https://9a21ee1c--a-poem.example.site"},
+			want: "The preview of site is still building after 10m0s; once it is built it answers at https://9a21ee1c--a-poem.example.site. Call publish again with the same folder to keep waiting."},
+		{name: PublishBuilding, data: Data{"Path": "site", "Wait": "10m0s", "Preview": ""},
+			want: "The app host has not started a build of site after 10m0s. It builds a limited number of pushes an hour for each app. Call publish again with the same folder to keep waiting."},
+		{name: PublishFailed, data: Data{"Path": "site", "Code": "build_failed", "Message": "The build command exited with an error.", "Log": "npm ERR! missing script: build"},
+			want: "The preview of site failed: build_failed: The build command exited with an error.\n" + "The end of the build log:\n" + "npm ERR! missing script: build\n" +
+				"Fix the cause and publish again. If it is not something you can fix, such as a project that needs a server process, tell the person plainly."},
+		{name: PublishFailed, data: Data{"Path": "site", "Code": "canceled", "Message": "", "Log": ""},
+			want: "The preview of site failed: canceled.\n" + "Fix the cause and publish again. If it is not something you can fix, such as a project that needs a server process, tell the person plainly."},
+		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site"}, want: "Released v2: https://a-poem.example.site now serves the preview published last."},
+		{name: PublishPending, data: Data{"Tag": "v2", "Wait": "10m0s"}, want: "The release v2 is not done after 10m0s. Call publish with release set to true again to keep waiting."},
+		{name: PublishRefused, data: Data{"Tag": "v2", "Reason": "agents_may_not_release"}, want: "The app host refused the release v2: agents_may_not_release. Tell the person; do not try another way to release it."},
+		{name: PublishReleaseFailed, data: Data{"Tag": "v2", "Code": "build_failed", "Message": "The build failed."}, want: "The release v2 failed: build_failed: The build failed."},
+		{name: PublishNoPreview, want: "There is no ready preview to release. Publish a folder first, and release it once its preview is ready."},
+		{name: PublishNotFolder, data: Data{"Path": "site"}, want: "site is not a folder of the machine. Publish the folder that holds the site, such as the one with its index.html."},
+		{name: PublishUnavailable, data: Data{"Reason": "this server mints no credential for its app host"}, want: "Publishing is not available in this session: this server mints no credential for its app host."},
+		{name: PublishError, data: Data{"Path": "site", "Error": "the app host answered 503"}, want: "Publishing site failed: the app host answered 503."},
+		{name: ContextRoute, data: Data{"Route": "tier/quick"}, want: "<context>\n" + "Model route: tier/quick\n" + "</context>"},
 		{name: FetchNotURL, data: Data{"URL": "ftp://x"}, want: fmt.Sprintf("%q is not an http or https URL.", "ftp://x")},
 		{name: FetchUnavailable, want: "Web fetch is not available on this machine."},
 		{name: FetchCanceled, data: Data{"URL": "https://example.com/a"}, want: fmt.Sprintf("The fetch of %s was canceled.", "https://example.com/a")},

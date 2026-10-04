@@ -46,6 +46,38 @@ const (
 	// ToolWebSearch states the bounds of the search package's constants
 	// in its text, which a test holds to them (spec 047).
 	ToolWebSearch Name = "tools/web_search-v1"
+	// ToolPublish states the publish tool's wait in its text, which a
+	// test holds to its constant (spec 043).
+	ToolPublish Name = "tools/publish-v1"
+)
+
+// The results of the publish tool (spec 043). Path is the folder as the
+// call named it, Wait a duration, Tag a release's tag, and Code and
+// Message the app host's code and sentence.
+const (
+	// PublishReady takes Path, Preview and URL.
+	PublishReady Name = "results/publish/ready-v1"
+	// PublishBuilding takes Path, Wait and Preview, empty when the host
+	// started no build.
+	PublishBuilding Name = "results/publish/building-v1"
+	// PublishFailed takes Path, Code, Message and Log, the end of the
+	// build log, empty when there is none.
+	PublishFailed Name = "results/publish/failed-v1"
+	// PublishReleased takes Tag and URL.
+	PublishReleased Name = "results/publish/released-v1"
+	// PublishPending takes Tag and Wait.
+	PublishPending Name = "results/publish/pending-v1"
+	// PublishRefused takes Tag and Reason.
+	PublishRefused Name = "results/publish/refused-v1"
+	// PublishReleaseFailed takes Tag, Code and Message.
+	PublishReleaseFailed Name = "results/publish/release-failed-v1"
+	PublishNoPreview     Name = "results/publish/no-preview-v1"
+	// PublishNotFolder takes Path.
+	PublishNotFolder Name = "results/publish/not-folder-v1"
+	// PublishUnavailable takes Reason.
+	PublishUnavailable Name = "results/publish/unavailable-v1"
+	// PublishError takes Path and Error.
+	PublishError Name = "results/publish/error-v1"
 )
 
 // The results of web_search (spec 047).
@@ -268,4 +300,7 @@ const (
 	ContextSkills Name = "context/skills-v1"
 	// ContextMemory takes Name, ReadOnly, Path and Description.
 	ContextMemory Name = "context/memory-v1"
+	// ContextRoute takes Route, the routed name a session runs by (spec
+	// 043).
+	ContextRoute Name = "context/route-v1"
 )
