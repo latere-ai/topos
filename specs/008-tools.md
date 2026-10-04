@@ -79,6 +79,13 @@ The harness adds `question` to the session's own thread when an agent
 names it, a tool of its own and not a built-in, so the default set
 stays the table's eight ([[039-questions]]).
 
+`web_search` is a built-in an agent holds only by naming it
+(`tools.OptIn`), so it is in no default set ([[040-web-search]]):
+
+| Name | Parallel | Effect | Input | Limits |
+|---|---|---|---|---|
+| `web_search` | yes | none | `query` (1 to 400 characters), `max_results` (1 to 10, default 5) | the search service's 30 second timeout and 1 MiB answer; at most 300 characters of a title and 1,000 of a snippet |
+
 `grep` and `glob` are Go-native and need no external binary. A
 result's `meta` ([[004-session-log]]) is the tool's record for later
 calls of its thread, and `tools.StateOf` folds the thread's metas from

@@ -1,6 +1,6 @@
 ---
 title: "Web search: a tool that searches the web through a search service the installation configures, with the session's own key, and the cost a search reports counted in the session's spend"
-status: drafted
+status: in-progress
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 005-harness-loop.md, 007-models.md, 008-tools.md, 012-permissions-and-approvals.md, 016-runners.md, 018-credentials-and-secrets.md, 024-client-cli-skill.md, 025-task-suite.md]
 affects: [search/, harness/tools/, harness/, session/, manifest/, prompts/, internal/hosted/, internal/config/, internal/toposcli/, cmd/toposd/, test/tasks/, docs/]
@@ -75,7 +75,7 @@ that opens the design lists them with what each was weighed against.
 | the credential | the session's own key when the installation mints one, else `TOPOS_SEARCH_KEY` | a hosted-agent token for a new audience: it needs the identity provider to mint for that audience, and an installation without an identity provider would have none. The session's key is what the installation's authorizer already registered and can recognize by its hash |
 | depth | none: one kind of search | a `depth` input for a slower multi-step search: the agent's own loop already searches, reads and searches again, a deeper search typically costs several times as much and takes tens of seconds, and one kind of search lets a service charge one price a person can learn. A later member can add it without breaking a caller |
 | the result count | `max_results`, 1 to `MaxResults`, `DefaultResults` when omitted | a fixed count: a quick check needs two results and a survey ten |
-| the effect | `read`: allowed in every mode, plan included, risk 0 | `external`, as `web_fetch`: a search reaches only the service the operator chose, so a query cannot be sent to a host an injected instruction names, and it changes nothing anywhere but the wallet it is charged to, as a model request does. An organization that wants each search confirmed names `web_search` in `alwaysConfirm` |
+| the effect | `none`: allowed in every mode, plan included, risk 0, and the call never opens a machine | `external`, as `web_fetch`: a search reaches only the service the operator chose, so a query cannot be sent to a host an injected instruction names, and it changes nothing anywhere but the wallet it is charged to, as a model request does. `read`: the harness opens a machine opened on demand before any call whose effect is not `none`, so a session that only searches would create a sandbox. An organization that wants each search confirmed names `web_search` in `alwaysConfirm` |
 | the cost | the service reports it, the `tool.result` records it, and the session's spend counts it | the core pricing searches itself: the core does not know what a service charges, and a price in two places would disagree |
 | a refusal | the service's own sentence is the result, outcome `error` | a sentence of the core's per refusal: the core cannot know why an installation refuses (a level that does not pay for searches, an empty wallet, a rate), and the service's `message` is written for the person, which the model passes on |
 | where it lives | a built-in of `harness/tools` that an agent holds only when it names it, with the service's client in a package of its own, `search` | a ninth member of the default set: every agent that names no tools would start searching, and charging, at its next apply. A harness tool beside `question`: a search needs no Session and holds no turn |
@@ -84,7 +84,7 @@ that opens the design lists them with what each was weighed against.
 
 | Name | Parallel | Effect | Input | Limits |
 |---|---|---|---|---|
-| `web_search` | yes | read | `query`, `max_results` | the bounds below; the service's timeout and body limit |
+| `web_search` | yes | none | `query`, `max_results` | the bounds below; the service's timeout and body limit |
 
 ```json
 {"query": "latest stable release of the Go programming language", "max_results": 5}
@@ -105,7 +105,8 @@ by a test, so no bound is written twice. Lengths are characters
 | `MaxQueryLength` | 400 | `query` | a long natural-language question fits; a pasted document does not, and a service's index matches on a few terms anyway |
 | `DefaultResults` | 5 | `max_results` when omitted | enough to compare sources without filling the context |
 | `MaxResults` | 10 | `max_results` | a page of results; more is a sign the query should be narrower |
-| `MaxSnippetLength` | 1000 | one result's `snippet`, cut by the client | ten results at the bound are about 3,000 tokens, under the tool's output cap |
+| `MaxTitleLength` | 300 | one result's `title`, made one line and cut by the client | a title is a line; a longer one is a page's text in the wrong member |
+| `MaxSnippetLength` | 1000 | one result's `snippet`, cut by the client | ten results at the bound are about 3,000 tokens, under the tool's output cap, so a search never spills, which would open a machine |
 | `Timeout` | 30 seconds | one search, from the request to the end of the body | a service that searches in several steps answers in seconds; the runner's other limits are in the same range ([[008-tools]]) |
 | `MaxResponseBody` | 1 MiB | the service's answer | ten results at the bound are about 15 KiB |
 
@@ -130,7 +131,7 @@ The result lists the results in the service's order:
 
 | The service | The result | Outcome |
 |---|---|---|
-| answers results | the list above (`results/web_search/results-v1`); its `meta.cost_usd_micro` and the result's cost are the answer's `cost_usd_micro` | `ok` |
+| answers results | the list above (`results/web_search/results-v1`); the `tool.result`'s `cost_usd_micro` is the answer's | `ok` |
 | answers no results | "No results for <query>." (`results/web_search/none-v1`) | `ok` |
 | refuses, with the error envelope | "The search service refused the search: <message>" and, after a 429 with `Retry-After`, when it may be tried again (`results/web_search/refused-v1`) | `error` |
 | answers 5xx, or anything the contract does not describe | "The search failed: <detail>." (`results/web_search/failed-v1`) | `error` |
@@ -176,8 +177,9 @@ Accept: application/json
   `{"error": {"code": "...", "message": "...", "details": {...}}}`.
   `message` is one sentence written for the person whose session
   searched; the model reads it as the result and passes it on.
-  `code` is recorded in the result's `meta.refusal` for a client and is
-  not shown to the model. A 429 may carry `Retry-After` in seconds.
+  `code` is recorded in the result's meta as `refusal`, a
+  `WebSearchResultMeta` the API document names, for a client, and is not
+  shown to the model. A 429 may carry `Retry-After` in seconds.
 - A 4xx without the envelope, a 5xx, a body that does not decode, or a
   body past `MaxResponseBody` is a failure, never charged by the
   contract's reading: a service charges only a search it answered 200.
@@ -280,13 +282,42 @@ Both join the table of [[002-scaffold-and-configuration]] and
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `web_search` is offered when an agent names it, by the hosted runner and `topos run`; `tools.Builtins` and the default set stay the eight; the validator accepts the name with `outputLimit` alone and refuses a client tool that takes it | `internal/hosted.TestTheHarnessOfAHostedSession`, `internal/toposcli.TestWebSearchIsOfferedWhenNamed`, `manifest.TestWebSearchIsAnOptInName` | not built |
-| The schema states every bound from the constants, and the description holds none that differs | `harness/tools.TestWebSearchSchemaFollowsTheConstants`, `prompts.TestWebSearchDescriptionHoldsTheBounds` | not built |
-| The client sends `query` and `max_results` with the credential its function answers at that search, and reads results, cost, refusals with `Retry-After`, failures, a body past the bound and a timeout as the contract says | `search.TestTheClient` | not built |
-| Each row of the result table renders its text and outcome; results past `max_results` and non-http URLs are dropped; a long snippet is cut | `harness/tools.TestWebSearchResults` | not built |
-| A result's cost is on the `tool.result`, and `session.Spent` and `ApplyBatch` count it, redacted or not; an old log reads as before | `session.TestSpentCountsToolCosts`, `harness.TestASearchCostIsCounted` | not built |
-| A hosted session searches with its own key, asked at each search; an installation without session keys sends `TOPOS_SEARCH_KEY`; the sandbox's key is never sent | `internal/hosted.TestSearchCredential` | not built |
-| `TOPOS_SEARCH_URL` is checked at start, and `TOPOS_SEARCH_KEY` is refused without it and beside `TOPOS_SESSION_KEYS_URL` | `internal/config.TestSearchVariables` | not built |
-| `web_search` is allowed in every mode with risk 0, and an `alwaysConfirm` pattern that names it asks | `harness.TestWebSearchIsARead` | not built |
-| The instruction test exists, and its checker passes its scripted solution and refuses its scripted wrong one | `test/tasks.TestEveryToolDescriptionHasAnInstructionTest`, `test/tasks.TestScriptedSolutions` | not built |
-| End to end on a server over the stub Lux and the stub session key routes, with a search service that admits only the hash the routes registered: an agent that names `web_search` searches, the service sees the session's own key, the next request holds the results, the `tool.result` carries the cost, and the session's spend includes it; a refusal's sentence is the result the model reads | `cmd/toposd.TestASessionSearchesWithItsOwnKey` | not built |
+| `web_search` is offered when an agent names it, by the hosted runner and `topos run`, and not otherwise; `tools.Builtins` and the default set stay the eight, with the digest an agent had; the validator accepts the name with `outputLimit` alone and refuses a client tool that takes it | `internal/hosted.TestSearchCredential`, `internal/toposcli.TestWebSearchIsOfferedWhenNamed`, `manifest.TestWebSearchIsAnOptInName`, `harness/tools.TestWebSearchSchemaFollowsTheConstants` | built |
+| The schema states every bound from the constants, and the description holds none that differs | `harness/tools.TestWebSearchSchemaFollowsTheConstants`, `prompts.TestWebSearchDescriptionHoldsTheBounds` | built |
+| The client sends `query` and `max_results` with the credential its function answers at that search, and reads results, cost, refusals with `Retry-After`, failures, a body past the bound and a timeout as the contract says | `search.TestTheClient`, `search.TestTheClientsFailures` | built |
+| Each row of the result table renders its text and outcome; results past `max_results` and non-http URLs are dropped; a long title or snippet is cut | `harness/tools.TestWebSearchResults`, `search.TestTheClient`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| A result's cost is on the `tool.result`, and `session.Spent` and `ApplyBatch` count it, redacted or not; an old log reads as before; a search past the budget stops the turn `budget` before the next request | `session.TestSpentCountsToolCosts`, `harness.TestASearchCostIsCounted` | built |
+| A hosted session searches with its own key, asked at each search; an installation without session keys sends `TOPOS_SEARCH_KEY`; a key that cannot be had closes the turn; the sandbox's key is never sent | `internal/hosted.TestSearchCredential` | built |
+| `TOPOS_SEARCH_URL` is checked at start, and `TOPOS_SEARCH_KEY` is refused without it and beside `TOPOS_SESSION_KEYS_URL`; both are in spec 002's table and the configuration page | `internal/config.TestSearchVariables`, `internal/config.TestConfigurationTableMatchesTheSpec`, `internal/config.TestConfigurationPageNamesEveryRead` | built |
+| `web_search` is allowed in every mode with risk 0, an `alwaysConfirm` pattern that names it asks, and a call never opens a machine opened on demand | `harness.TestWebSearchChangesNothing` | built |
+| The instruction test exists, its task names the canned results, and its checker passes its scripted solution and refuses its scripted wrong one; a run's cost counts what its tools were charged | `test/tasks.TestEveryToolDescriptionHasAnInstructionTest`, `test/tasks.TestScriptedSolutions`, `test/tasks.TestTheCannedSearch`, `test/tasks.TestLoadTaskRefuses` | built |
+| The instruction test passes against a real model in the instruction tier | `test/tasks.TestTheSuiteAgainstAModel` with the `instructions` tag | not built |
+| The API document names `WebSearchResultMeta` and where a search's cost is | `internal/server.TestOpenAPIIsGenerated` | built |
+| End to end on a server over the stub Lux and the stub session key routes, with a search service: an agent that names `web_search` searches, the service sees the hash the routes registered for the session's runner key, the next request holds the results, the `tool.result` carries the cost, the session's spend includes it, and no sandbox is opened; a refusal's sentence is the result the model reads, with its code in the meta | `cmd/toposd.TestASessionSearchesWithItsOwnKey` | built |
+
+## Outcome
+
+Built on 2026-10-05 as designed, but for the instruction test against a
+real model, which needs a model and its spend and waits for the next
+instruction-tier run. Where the build departs from the draft:
+
+- **The effect is `none`, not `read`.** The draft chose `read`. The
+  harness opens a machine opened on demand before any call whose effect
+  is not `none` (`harness.execute`), so a session that only searched
+  created a Cella sandbox, which the end-to-end test showed. `none` is
+  also allowed in every mode with risk 0, so nothing else changes.
+- **A title is bounded too.** `MaxTitleLength`, 300 characters, joins
+  the constants: a title is made one line and cut, and with the snippet
+  bound a search's text stays under the output cap, so it never spills,
+  which would open a machine.
+- **A key that cannot be had closes the turn.** On an installation with
+  session keys, the search's key is the model's key, so a failure to
+  have it at the turn's setup closes the turn with
+  `model_credential_missing`, as the model connection does. A URL the
+  client refuses closes it with `search_unavailable`; configuration
+  checks the URL first, so only a programmatic caller meets it.
+- **A cost of zero is no cost.** The result carries `cost_usd_micro`
+  only when the service reported more than zero.
+- **The task suite names its results in `task.yaml`.** `search` names a
+  file of results the suite's service answers; a task whose agent holds
+  `web_search` must name one, and one that does not hold it must not.

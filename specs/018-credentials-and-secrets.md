@@ -187,7 +187,11 @@ again, which renews it; a new lease generation or a new toposd process
 generates a new value, whose hash replaces the old key, so a runner
 that lost its lease loses its key at the next claim. The runner
 presents its key as the model connection's credential, asked again for
-every model request. The sandbox's key is a Cella Secret named after
+every model request, and as the bearer of each `web_search` sent to
+`TOPOS_SEARCH_URL`, asked again for every search
+([[040-web-search]]). The key goes to those two addresses, both the
+operator's settings, and to no base URL an agent names; the sandbox's
+key goes to neither. The sandbox's key is a Cella Secret named after
 the sandbox with `-lux`, mounted as `LUX_KEY` and scoped to Lux's host,
 and to its model doors' path once Cella scopes a Secret by path; the
 sandbox holds a placeholder that Cella's egress gateway swaps in
@@ -200,8 +204,8 @@ the session, admitting only what names it, admits them. Lux's host here is the o
 under, which the sandbox also reads as `LUX_URL`: a sandbox leaves
 only through the egress gateway, toward public hosts, while the runner
 may reach the same Lux at `TOPOS_MODELS_URL`, an address inside the
-installation's network, and reaches each discovered door under it. It opens nothing but models, because no other core
-accepts a Lux key. Lux enforces the budget per key and records each
+installation's network, and reaches each discovered door under it. It opens nothing but models and the installation's search
+service, because no other core accepts a Lux key. Lux enforces the budget per key and records each
 call against the session and its workload, so the ledger keeps a
 session's own spend apart from its sandbox's
 ([[023-events-and-observability]]).
