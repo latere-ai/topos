@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+
+	"latere.ai/x/topos/harness"
 
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -318,7 +321,7 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "instructions: x", "instructionsFile: x.md"), "spec.instructionsFile", "not both"},
 		{agent("a", m, "instructionsFile: x.md"), "spec.instructionsFile", "reads no files"},
 		{agent("a", m, "tools: [read, read]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool"},
+		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool or question"},
 		{agent("a", m, "tools: ['bad name']"), "spec.tools[0].name", "not a tool name"},
 		{agent("a", m, "tools: [{outputLimit: 3}]"), "spec.tools[0].name", "required"},
 		{agent("a", m, "tools: [{name: read, outputLimit: -1}]"), "spec.tools[0].outputLimit", "negative"},
@@ -560,6 +563,48 @@ func TestTheTriggerFieldsOfSpec022(t *testing.T) {
 		e := refused(t, CodeInvalidManifest, c.body, Options{})
 		if !hasProblem(e, c.path, c.detail) {
 			t.Errorf("%s: want %s: %s, got\n%s", strings.ReplaceAll(c.body, "\n", " "), c.path, c.detail, e.Detail())
+		}
+	}
+}
+
+// TestQuestionIsAKnownToolName: an agent names the harness's question
+// tool among its tools, and its config holds the name; an agent that
+// names no tools holds the eight built-ins and not question, so its
+// resolved spec and digest are what they were; a client tool may not
+// take the name, and the question tool takes nothing but its name.
+func TestQuestionIsAKnownToolName(t *testing.T) {
+	const m = "model: {name: m}"
+	r := one(t, agent("asker", m, "tools: [read, question]"), fixed(newStore()))
+	c, err := r.AgentConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.Tools, []string{"read", harness.ToolQuestion}) {
+		t.Fatalf("the config holds %v", c.Tools)
+	}
+	sub := one(t, agent("lead", m, "subagents: [{name: s, spec: {model: {name: m}, tools: [question]}}]"), fixed(newStore()))
+	if _, err := sub.AgentConfig(nil); err != nil {
+		t.Fatalf("a subagent that names question: %v", err)
+	}
+
+	plain := one(t, agent("plain", m), fixed(newStore()))
+	if got := toolNames(plain.Agent.Spec.Tools); !slices.Equal(got, Builtins()) || slices.Contains(got, harness.ToolQuestion) || len(got) != 8 {
+		t.Fatalf("an agent that names no tools holds %v", got)
+	}
+	again := one(t, agent("plain", m), fixed(newStore()))
+	if plain.Digest != again.Digest || plain.Digest == "" {
+		t.Fatalf("the digest moved: %s, %s", plain.Digest, again.Digest)
+	}
+
+	for _, c := range []struct{ body, path, detail string }{
+		{agent("a", m, "tools: [{name: question, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "reserved for the harness's question tool"},
+		{agent("a", m, "tools: [{name: question, outputLimit: 10}]"), "spec.tools[0]", "takes only its name"},
+		{agent("a", m, "tools: [{name: question, description: x}]"), "spec.tools[0]", "takes only its name"},
+		{agent("a", m, "tools: [question, question]"), "spec.tools[1]", "repeats an earlier entry"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, Options{})
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: %s", c.body, e.Detail())
 		}
 	}
 }

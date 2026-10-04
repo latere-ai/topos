@@ -21,8 +21,8 @@ type AgentConfig struct {
 	// Name is the agent's metadata.name.
 	Name         string
 	Instructions string
-	// Tools are the names the agent holds, built-in and client tools in
-	// the manifest's order; empty is none.
+	// Tools are the names the agent holds, built-in tools, the question
+	// tool and client tools in the manifest's order; empty is none.
 	Tools []string
 	// Policy is the mode, the lists, the thresholds and the egress of
 	// spec 012.
