@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.13.0 - 2026-10-04
+
 ### Added
 
 - An agent can put a decision to the person it works for with the
