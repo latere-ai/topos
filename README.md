@@ -97,6 +97,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 - [docs/configuration.md](docs/configuration.md): every `TOPOS_*` variable.
 - [docs/questions.md](docs/questions.md): how a client shows an agent's
   question and sends the person's answer.
+- [docs/web-search.md](docs/web-search.md): turning on `web_search`, and
+  the contract a search service answers.
 
 ## Contributing
 
