@@ -95,6 +95,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
 | [037](.archive/037-decision-services.md) | Decision services: a decider seam, decisions recorded with their review probability, answers forwarded | medium | complete | 004, 005, 012, 016 |
 | [038](.archive/038-routed-models.md) | Routed models: a model name the authorizer resolves, at a session's create, at a model change and between turns | medium | complete | 005, 010, 012, 015 |
+| [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions nobody attends | medium | drafted | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 022, 024 |
 
 ## Dependency graph
 
@@ -143,6 +144,7 @@ flowchart BT
   S036[036 organization owners]
   S037[037 decision services]
   S038[038 routed models]
+  S039[039 questions]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -202,6 +204,11 @@ flowchart BT
   S038 --> S010
   S038 --> S012
   S038 --> S015
+  S039 --> S010
+  S039 --> S013
+  S039 --> S015
+  S039 --> S022
+  S039 --> S024
 ```
 
 ## Build order
@@ -215,7 +222,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
@@ -230,7 +237,7 @@ release job that runs it (028) are not built. Phase 3 is open because
 memory stores (020) are not built and the Cella tier's three tests are
 not written. Phase 4 has fork and none of the external runner or
 handoff. Of phase 5, 037 is complete, and 038 since, on 2026-10-04, in
-no release yet.
+no release yet; 039 is drafted.
 
 Work ran ahead of this order, so many specs are `in-progress` while
 specs they build on are open; each Outcome section names what shipped
