@@ -31,9 +31,9 @@ import (
 // with their own credentials: a stub authorizer that allows everything,
 // the stub identity provider, the stub session keys, and a git host, with
 // neither installation credential.
-func credentialStubs(t *testing.T) (map[string]string, stubsOf) {
+func credentialStubs(t *testing.T, replies ...luxstub.Reply) (map[string]string, stubsOf) {
 	t.Helper()
-	vars, lux, cella := hostedStubs(t)
+	vars, lux, cella := hostedStubs(t, replies...)
 	delete(vars, "TOPOS_MODELS_KEY")
 	delete(vars, "TOPOS_CELLA_TOKEN_FILE")
 	// Each call carries a token minted for it, which the checks below
