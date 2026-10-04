@@ -307,8 +307,8 @@ authorizer's one-shot grant.
 | An ask pauses the session idle `tool_confirmation`, and a claim with no answer keeps it waiting and sends no request | `harness.TestAnUnansweredAskKeepsWaiting` | built |
 | An ask holds no lease and never times out into a deny | `TestAskIsDurableAndNeverDenies` | not built |
 | A confirmation survives a runner restart: the confirmed call runs exactly once when no runner started it, is closed `unknown_effect` when one may have, a denied call is answered `denied` with the note, and a confirmed call for a tool that is gone is `unknown_tool` | `harness.TestConfirmationsAndDenials`, `harness.TestAConfirmedCallAnEarlierRunnerMayHaveStarted`, `harness.TestAConfirmedCallForAToolThatIsGone` | built |
-| Two asks of one step, confirmed in separate claims, each run once in the claim that reads its confirmation, and neither is closed `unknown_effect`; a confirmed call beside a thread that still waits runs the same way | `harness.TestTwoAsksConfirmedApart` | not built |
-| A person's `user.message` denies every call that waits for a confirmation, with the message as its note ([[004-session-log]]) | `harness.TestAMessageDeniesTheCallsThatWait` | not built |
+| Two asks of one step, confirmed in separate claims, each run once in the claim that reads its confirmation, and neither is closed `unknown_effect`; a confirmed call beside a thread that still waits runs the same way | `harness.TestTwoAsksConfirmedApart` | built |
+| A person's `user.message` denies every call that waits for a confirmation, with the message as its note ([[004-session-log]]) | `harness.TestAMessageDeniesTheCallsThatWait`, `session.TestAMessageClosesAnAsk` | built |
 | A command hook receives the documented payload, exit code 2 blocks with stderr as the reason, and a timeout blocks | `TestCommandHookContract` | not built |
 | `progressive` on a host without a sandbox is refused with `sandbox_unavailable` | `harness.TestProgressiveNeedsASandbox`; the CLI refuses it on a Windows host, which records `sandbox: none` ([[009-machines]]); a Linux or macOS host, whose sandbox the CLI does not yet apply, records no driver and is not refused | built for Windows hosts |
 | `remember` adds a pattern that the next turn, on a fresh harness, applies to the next matching call | `harness.TestConfirmationsAndDenials` | built |
@@ -329,11 +329,25 @@ those of `latere.ai/x/pkg/verdict`.
 Open: the operating-system sandbox on a macOS or Linux host (its driver
 is in `machine/host`, and `topos` does not apply it yet), hooks, an ask
 that holds no lease, the egress step-up, and the score of a sandbox that
-holds a swapped-in credential. Two rules of the waits are written and
-not built: a confirmed call that waits beside another is not run in the
-claim that reads its confirmation, so the next claim closes it
-`unknown_effect`, and a person's message does not yet deny the calls
-that wait.
+holds a swapped-in credential.
+
+Built after v0.12.0, both rules of the waits. `harness.resume` settles
+every open call, runs the calls it found confirmed with the repeatable
+ones, continues the threads its open calls drove, and only then goes
+idle, so a call confirmed beside another wait runs in the claim that
+reads its confirmation; before, the next claim closed it
+`unknown_effect` without it ever running. A person's `user.message`
+appended after a call's `agent.tool_use`, with no confirmation before
+it, denies the call with the message's text as its note, in the
+session's thread and in a thread it spawned, and `session.Awaiting`
+drops the call, so the send route refuses a confirmation that follows
+the message as `conflict`. Three points the text above leaves open were
+settled as follows. A message denies only when its sender is a person,
+so a trigger's message denies nothing. A denial by message is not
+forwarded to a decision service as an answer
+([[037-decision-services]]), since nobody was asked. When several kinds
+of answer wait at once the stop reason names a confirmation before a
+client's result, at a step's end and at a claim alike.
 
 The status is `in-progress`, from these criteria alone: the rows
 marked built are proven by their tests, and the rest are open.

@@ -10,6 +10,32 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A person's `user.message` sent while a call waits for a confirmation
+  denies the call, as the session log's contract states. The call's
+  `tool.result` has outcome `denied` and carries the message's text as
+  the person's note, the model reads the denial and then the message,
+  and the turn goes on. Before, the session went back to idle
+  `tool_confirmation` and nothing read the message. The same holds for a
+  call a subagent's thread waits on. A `user.tool_confirmation` sent
+  after such a message is `conflict`. A trigger's message denies
+  nothing.
+- When a confirmation and a client tool's result wait at once, the
+  session's stop reason is `tool_confirmation`. A client finds the open
+  calls from the log, not from the stop reason.
+
+### Fixed
+
+- A tool call that a person allowed was lost when one step left two
+  calls waiting and they were answered one at a time. The first call
+  never ran, and after the second answer its `tool.result` came back
+  with outcome `unknown_effect`, telling the model to inspect a command
+  that had not started. Each call now runs in the turn that reads its
+  confirmation, while the other still waits. The same loss hit a
+  confirmed call beside a subagent's thread that still waited for a
+  confirmation of its own.
+
 ## v0.12.0 - 2026-10-04
 
 ### Added
