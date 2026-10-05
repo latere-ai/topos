@@ -85,6 +85,37 @@ func TestRetryable(t *testing.T) {
 	}
 }
 
+// TestDown: a gateway's answer that the model cannot serve now is down at
+// its 5xx status; a refusal about the caller, the gateway's own failure, a
+// transport failure and a provider's own words are not.
+func TestDown(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want bool
+	}{
+		{&HTTPError{Status: 502, Type: "upstream_error"}, true},
+		{&HTTPError{Status: 503, Type: "provider_unavailable"}, true},
+		{&HTTPError{Status: 504, Type: "upstream_timeout"}, true},
+		{fmt.Errorf("wrapped: %w", &HTTPError{Status: 503, Type: "provider_unavailable"}), true},
+		{&HTTPError{Status: 400, Type: "upstream_error"}, false},
+		{&HTTPError{Status: 429, Type: "budget_exhausted"}, false},
+		{&HTTPError{Status: 429, Type: "spend_exceeded"}, false},
+		{&HTTPError{Status: 429, Type: "rate_limited"}, false},
+		{&HTTPError{Status: 403, Type: "model_not_allowed"}, false},
+		{&HTTPError{Status: 503, Type: "store_unavailable"}, false},
+		{&HTTPError{Status: 503, Type: "authorizer_unavailable"}, false},
+		{&HTTPError{Status: 529, Type: "overloaded_error"}, false},
+		{&HTTPError{Status: 503}, false},
+		{&TransportError{Err: errors.New("i/o timeout")}, false},
+		{&StreamError{Err: errors.New("upstream_error")}, false},
+		{nil, false},
+	} {
+		if got := Down(c.err); got != c.want {
+			t.Errorf("Down(%v) = %v", c.err, got)
+		}
+	}
+}
+
 func TestErrorMessages(t *testing.T) {
 	for _, c := range []struct {
 		err  error

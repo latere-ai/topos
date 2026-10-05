@@ -44,7 +44,10 @@ const (
 type Failure struct {
 	Status     int
 	RetryAfter string
-	Body       string
+	// Detail is the developer detail sent in Lux-Error-Detail, as Lux
+	// sends an upstream's status and the start of its body.
+	Detail string
+	Body   string
 	// Times is how many requests fail before the reply is served; zero
 	// is once.
 	Times int
@@ -234,6 +237,9 @@ func (s *Server) fail(w http.ResponseWriter, fe llmdialect.Frontend, reply Reply
 			}
 		}
 		return
+	}
+	if f.Detail != "" {
+		w.Header().Set("Lux-Error-Detail", f.Detail)
 	}
 	if f.RetryAfter != "" {
 		w.Header().Set("Retry-After", f.RetryAfter)

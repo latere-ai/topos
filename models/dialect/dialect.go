@@ -199,11 +199,20 @@ func authorize(r *http.Request, conn models.Connection) {
 	}
 }
 
+// detail is a gateway's developer detail cut at models.MaxDetail bytes,
+// on a character's boundary.
+func detail(h string) string {
+	if len(h) <= models.MaxDetail {
+		return h
+	}
+	return strings.ToValidUTF8(h[:models.MaxDetail], "")
+}
+
 // httpError reads a model server's error answer.
 func httpError(resp *http.Response, now time.Time) error {
 	b, rerr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 	cerr := resp.Body.Close()
-	e := &models.HTTPError{Status: resp.StatusCode, Body: b, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), now)}
+	e := &models.HTTPError{Status: resp.StatusCode, Body: b, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), now), Detail: detail(resp.Header.Get(models.HeaderErrorDetail))}
 	var body struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`

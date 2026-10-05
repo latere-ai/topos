@@ -153,13 +153,45 @@ type Result struct {
 	FirstToken time.Duration
 }
 
-// HTTPError is a model server's error answer.
+// HTTPError is a model server's error answer. Detail is the developer
+// detail a gateway sent beside it in HeaderErrorDetail, at most MaxDetail
+// bytes: for Lux's upstream_error, the upstream's own status and the
+// start of its body, which is how a core tells a provider's rate limit
+// from its outage.
 type HTTPError struct {
 	Status     int
 	Type       string
 	Message    string
 	Body       []byte
 	RetryAfter time.Duration
+	Detail     string
+}
+
+// HeaderErrorDetail is the response header a Lux gateway sends the
+// developer detail of a failure in.
+const HeaderErrorDetail = "Lux-Error-Detail"
+
+// MaxDetail is the most of a gateway's developer detail a core keeps and
+// passes on, Lux's own bound on the header.
+const MaxDetail = 1024
+
+// GatewayDetail is the developer detail the gateway sent with err, "" for
+// none.
+func GatewayDetail(err error) string {
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return he.Detail
+	}
+	return ""
+}
+
+// Described is err as a record of a failure reads it: its message, and
+// the gateway's developer detail after it when one came.
+func Described(err error) string {
+	if d := GatewayDetail(err); d != "" {
+		return err.Error() + " (" + d + ")"
+	}
+	return err.Error()
 }
 
 func (e *HTTPError) Error() string {
@@ -269,6 +301,27 @@ func Retryable(err error) bool {
 	}
 	var te *TransportError
 	return errors.As(err, &te) || errors.Is(err, ErrIncomplete)
+}
+
+// downTypes are the error types a model gateway answers when the model
+// asked cannot serve a request now, though the request and the caller are
+// sound: every target of the model failed upstream or timed out, an
+// upstream's own rate limit among the failures, or every target's circuit
+// is open. They are Lux's names; a provider reached without a gateway
+// answers in its own words, which Retryable alone reads.
+var downTypes = []string{"upstream_error", "provider_unavailable", "upstream_timeout"}
+
+// Down reports whether err is a model gateway's answer that the model
+// asked cannot serve now (spec 051): one of downTypes, at a 5xx status.
+// Another model behind the same gateway may serve the request; the same
+// one, asked again at once, most often fails again. A refusal about the
+// caller is not one: a spent budget, a rate limit on the caller's key, a
+// model the key may not use. Neither is a gateway's own failure, such as
+// its store or its authorizer unavailable, nor a transport failure on the
+// way to the gateway, which no other model behind it would escape.
+func Down(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && he.Status >= 500 && slices.Contains(downTypes, he.Type)
 }
 
 // RetryAfter is the delay a model server asked for, or zero.

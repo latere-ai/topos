@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
@@ -192,6 +193,22 @@ func TestErrorsAreClassifiedForRetry(t *testing.T) {
 		var he *models.HTTPError
 		if !errors.As(err, &he) || he.Type != "invalid_request_error" || he.Message != "bad" || models.Retryable(err) {
 			t.Fatalf("400: %v", err)
+		}
+	})
+	t.Run("a gateway's detail", func(t *testing.T) {
+		stub := luxstub.New(t)
+		const sent = `upstream status 429: {"error":{"message":"Rate limit exceeded","code":429}}`
+		stub.Script("m", luxstub.Reply{Response: reply(), Fail: &luxstub.Failure{Status: 502, Detail: sent,
+			Body: `{"type":"error","error":{"type":"upstream_error","message":"The provider returned an error."}}`}})
+		_, err := (&Model{}).Stream(t.Context(), models.Request{IR: request("m"), Connection: conn(stub)})
+		if !models.Down(err) || models.GatewayDetail(err) != sent || models.Described(err) != err.Error()+" ("+sent+")" {
+			t.Fatalf("a gateway's detail: %v, %q", err, models.GatewayDetail(err))
+		}
+		if long := strings.Repeat("é", models.MaxDetail); len(detail(long)) != models.MaxDetail || !utf8.ValidString(detail(long)) || detail("short") != "short" {
+			t.Fatal("a detail past models.MaxDetail is not cut on a character's boundary")
+		}
+		if models.Described(errors.New("other")) != "other" {
+			t.Fatal("an error with no detail is described as more")
 		}
 	})
 	t.Run("retry-after as a date", func(t *testing.T) {
