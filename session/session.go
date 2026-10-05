@@ -170,7 +170,7 @@ const (
 //
 // The level is stored under effort, the spelling every header and every
 // session.model_changed stored before the rename carries, so an earlier
-// release reads what this one stores (spec 048). The API answers it under
+// release reads what this one stores (spec 049). The API answers it under
 // reasoning alone: Answered moves it there, and nothing stored sets
 // Reasoning.
 type ModelRef struct {

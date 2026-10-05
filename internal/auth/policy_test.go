@@ -312,7 +312,7 @@ func TestAForbiddenCarriesTheReason(t *testing.T) {
 
 // TestADenysLimitsGoWithItsReason: a forbidden refusal carries the deny's
 // limits object beside a reason it shows, so a deny for a bound that
-// resets says when it does (spec 048); a deny with no reason to show, or
+// resets says when it does (spec 049); a deny with no reason to show, or
 // limits that are no object, carries none, and Disclose withholds the
 // limits with the reason.
 func TestADenysLimitsGoWithItsReason(t *testing.T) {

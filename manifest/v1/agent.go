@@ -97,7 +97,7 @@ type AgentModel struct {
 	// The resolved spec holds its id.
 	Credential string `json:"credential,omitempty"`
 	// Effort and Reasoning are how much the model reasons before it
-	// answers, one of Efforts, empty for the model's own (spec 048). A
+	// answers, one of Efforts, empty for the model's own (spec 049). A
 	// manifest names it reasoning, or effort, the name it had before. A
 	// resolved spec holds it under effort alone, the spelling every
 	// stored version's digest covers, and the API answers it under

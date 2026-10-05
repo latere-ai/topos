@@ -128,7 +128,7 @@ func (l *leveling) last(t *testing.T, action string) authz.Request {
 func reasoning(r string) *authorizer.WireLimits { return &authorizer.WireLimits{Reasoning: &r} }
 
 // noEffort fails when an answer of the API names effort anywhere: from
-// spec 048 every answer names the level reasoning.
+// spec 049 every answer names the level reasoning.
 func noEffort(t *testing.T, what string, body []byte) {
 	t.Helper()
 	if strings.Contains(string(body), `"effort"`) {
@@ -141,7 +141,7 @@ func noEffort(t *testing.T, what string, body []byte) {
 // unchanged: a session of it starts, takes a message, changes its level
 // and resumes; the version reads answer its levels as reasoning; and the
 // manifest applied again unchanged, under either name, keeps the version
-// and writes nothing (spec 048).
+// and writes nothing (spec 049).
 func TestAVersionStoredBeforeTheRenameRunsWithItsDigest(t *testing.T) {
 	f := newFixture(t)
 	stored := f.putStoredBefore()

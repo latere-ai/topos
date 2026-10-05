@@ -336,7 +336,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// A session the authorizer routed starts on the model its allow names
 	// and keeps the agent's name beside it, which a client reads as the
 	// choice that was asked, and at the reasoning level its allow names,
-	// "" being the agent's own (spec 048). A fork is not routed: it
+	// "" being the agent's own (spec 049). A fork is not routed: it
 	// continues its parent's model at its parent's level, and its first
 	// send is asked as any send is.
 	if in.fork == nil {
@@ -877,7 +877,7 @@ func (s *Server) lastRequest(ctx context.Context, sess session.Session) (time.Ti
 // stands on: the model it names, checked by the rule a person's switch is
 // checked by, with the name asked, at the level it names, "" being the
 // agent's own, or the level the session had when it names none (spec
-// 048). A level alone moves the level and keeps the model.
+// 049). A level alone moves the level and keeps the model.
 func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[string]any) (session.Session, *session.ModelChanged, error) {
 	sess, err := s.o.Sessions.Get(ctx, id)
 	if err != nil {

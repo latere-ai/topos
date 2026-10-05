@@ -42,7 +42,7 @@ var modes = []string{v1.ModePlan, v1.ModeConfirm, v1.ModeProgressive}
 // modelChange is what a PATCH changes of the session's model: its name,
 // its reasoning level, or both. A member left out keeps what the session
 // runs, so each is a pointer; an empty level returns to the agent's own.
-// The level is named reasoning, or effort, its name before spec 048,
+// The level is named reasoning, or effort, its name before spec 049,
 // which is read through every v0.x release; a body that names both names
 // one level.
 type modelChange struct {
@@ -67,13 +67,13 @@ func (m modelChange) level() *string {
 // carries what the body changes: model when it names one, and the level,
 // resolved to what the next turn runs, when it names one, under both
 // effort and reasoning, so an authorizer that reads either name decides
-// it (spec 048), beside the model the session stands on; approval_mode
+// it (spec 049), beside the model the session stands on; approval_mode
 // beside the mode the session runs and its agent's. The allow may answer
 // a model the body names with the one to run in its place (spec 038), so
 // the model is checked after the question, by the rule a session's create
 // checks its own by: the one the allow names, or the one asked when it
 // names none. The allow may also answer the level the change runs at
-// (spec 048). An allowed change appends session.model_changed and
+// (spec 049). An allowed change appends session.model_changed and
 // session.policy_changed in one batch, which the header takes; a change
 // to what the session runs appends nothing.
 func (c *call) updateSession() error {

@@ -11,7 +11,7 @@ import (
 )
 
 // The reasoning level is stored under effort and answered under reasoning
-// (spec 048). Every stored agent version's digest covers the level under
+// (spec 049). Every stored agent version's digest covers the level under
 // effort, every header and every session.model_changed stored before the
 // rename names it so, and an earlier release reads what this one stores,
 // so the stored spelling stays and the API renames at its edge: asAnswer

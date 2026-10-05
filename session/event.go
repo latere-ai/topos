@@ -429,7 +429,7 @@ type ScopeChanged struct {
 // ModelChanged is the payload of session.model_changed: the model the
 // session's next turn runs, its reasoning level, or both changed (spec
 // 015). By is the person who changed them, or the service when a send's
-// allow named another model or another level (specs 038 and 048). Old is
+// allow named another model or another level (specs 038 and 049). Old is
 // the model and the level the session ran, its agent's until a first
 // change, and each names in via the name that was asked when the
 // authorizer answered another. The payload is stored with each level

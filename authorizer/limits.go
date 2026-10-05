@@ -75,7 +75,7 @@ type Limits struct {
 	// session stands on at session.send. Empty runs the one asked.
 	Model string
 	// Reasoning is the reasoning level the session's next turn runs at,
-	// read where Model is (spec 048): nil keeps the level the session
+	// read where Model is (spec 049): nil keeps the level the session
 	// has, one of manifest/v1's Efforts sets it, and a pointer to ""
 	// returns the session to its agent's own.
 	Reasoning *string

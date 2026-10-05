@@ -20,7 +20,7 @@ type oldModelRef struct {
 // TestAHeaderKeepsItsLevelAcrossTheRename: a header stored before the
 // rename names its level under effort and keeps it, and a header this
 // release stores names it under effort alone, so an earlier release
-// reads it with its level (spec 048).
+// reads it with its level (spec 049).
 func TestAHeaderKeepsItsLevelAcrossTheRename(t *testing.T) {
 	var stored Session
 	if err := json.Unmarshal([]byte(`{"schema":1,"id":"ses_1","model":{"name":"vendor/model-a","via":"tier/quick","effort":"high"}}`), &stored); err != nil {

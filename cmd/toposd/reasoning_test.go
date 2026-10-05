@@ -21,7 +21,7 @@ import (
 
 // TestASessionRunsAtTheLevelItsAuthorizerNames: through toposd, an
 // authorizer's allow names the reasoning level a session runs at (spec
-// 048). The create's level is the header's from the start, and the first
+// 049). The create's level is the header's from the start, and the first
 // turn's request carries it; a send whose allow names another level
 // appends one session.model_changed by the service, keeping the model,
 // and the next turn's request carries the new level. The API answers the

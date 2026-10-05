@@ -12,7 +12,7 @@ import (
 
 // TestTheReasoningLevelIsReadUnderEitherName: a manifest names a model's
 // reasoning level as reasoning, or as effort, the name it had before
-// (spec 048). Either resolves to the bytes a version stored before the
+// (spec 049). Either resolves to the bytes a version stored before the
 // rename was hashed over, with the level under effort, so an agent stored
 // by an earlier release and applied again under the new name keeps its
 // version.

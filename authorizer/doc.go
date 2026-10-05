@@ -44,7 +44,7 @@
 // prompt cache.
 //
 // A second member, reasoning, sets the reasoning level the session runs
-// at (spec 048), read where model is: absent keeps the level the session
+// at (spec 049), read where model is: absent keeps the level the session
 // has, one of manifest/v1's Efforts sets it for the next turn, and ""
 // returns the session to its agent's own. A fork starts at the level the
 // session it forks stood on. toposd resolves "" to the agent's own before

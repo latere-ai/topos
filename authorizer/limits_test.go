@@ -105,7 +105,7 @@ func TestTheModelIsOneMemberOnTheWire(t *testing.T) {
 // TestTheReasoningLevelHasThreeStatesOnTheWire: limits.reasoning absent
 // keeps the session's level, a level sets it, and "" returns the session
 // to its agent's own, so the member is a pointer and "" is written out
-// (spec 048).
+// (spec 049).
 func TestTheReasoningLevelHasThreeStatesOnTheWire(t *testing.T) {
 	high, own := "high", ""
 	for _, c := range []struct {
