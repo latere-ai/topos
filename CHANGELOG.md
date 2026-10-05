@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.18.0 - 2026-10-05
+
 ### Added
 
 - An authorizer's allow may set the reasoning level a session runs at,
