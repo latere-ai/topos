@@ -84,7 +84,7 @@ acts on it and never before.
 | the open | runs under the drive's context, not the call's, so an interrupt waits for the sandbox and its hook rather than leaving either half done; parallel calls wait for the one open |
 | the record | the runner's hook appends `session.machine` with reason `attached` right after the sandbox opens, between the call's `agent.tool_use` and its `tool.result`, and first delivers the session's repositories ([[019-git]]); the turn's next request carries the machine's context block, instruction files and skills, read from the sandbox then |
 | a failed open | the call's result says the machine could not be started, and a `session.error` names the code, `machine_unavailable` or the code the setup named; a Cella refusal for spend stops the turn `budget` as a call's refusal does. A later call tries again |
-| a session that had one | a drive of a session whose log records a machine opens it at once, by name, since its sandbox exists; a restarted runner reattaches this way and records nothing again |
+| a session that had one | a drive of a session whose log records a machine opens it as a new session's opens, at the first call of a tool that acts on it, by name; its requests carry the context the log recorded, and the open records nothing again unless the sandbox was replaced ([[048-the-machine-starts-at-the-first-tool-call]]). A restarted runner reattaches this way |
 | the host | a person's host and a server's host session are opened with the harness, as before: they cost nothing to have |
 
 A session whose agent has no such tool never creates a sandbox.

@@ -103,7 +103,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [045](.archive/045-a-server-cannot-hold-a-turn.md) | A server cannot hold a turn: a foreground command that starts a server moves to the background after a grace, with its port, pid and log | small | complete | 008, 009 |
 | [046](.archive/046-the-machine-starts-with-the-turn.md) | The machine starts with the turn: a session's sandbox opens beside the turn's first model call, not at its first tool call | small | complete | 009, 016 |
 | [047](047-web-search.md) | Web search: a tool that searches through a service the installation configures, with the session's own key, and the cost a search reports in the session's spend | medium | in-progress | 003, 004, 005, 007, 008, 012, 016, 018, 024, 025 |
-| [048](.archive/048-the-machine-starts-at-the-first-tool-call.md) | The machine starts at the first tool call: a session's sandbox starts when the model's response begins a call of a tool that acts on it, beside the call's arguments, and a turn that only talks starts none | small | complete | 009, 016, 046 |
+| [048](.archive/048-the-machine-starts-at-the-first-tool-call.md) | The machine starts at the first tool call: a session's sandbox starts when the model's response begins a call of a tool that acts on it, beside the call's arguments, in a new session and in one that had a sandbox alike, and a turn that only talks starts none | small | complete | 009, 016, 046 |
 
 ## Dependency graph
 

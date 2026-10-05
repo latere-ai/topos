@@ -25,8 +25,9 @@ it begins, beside the turn's first model call.
 
 Revised on 2026-10-05 by [[048-the-machine-starts-at-the-first-tool-call]]:
 the machine now starts when the model's response begins a call of a
-tool that acts on it, so a turn that only talks starts none. The rest
-of this spec stands. The rows below record what this spec built; the
+tool that acts on it, so a turn that only talks starts none, and a
+session that already had a machine no longer opens it before the turn.
+The rest of this spec stands. The rows below record what this spec built; the
 two whose rule 048 changed name the tests that replaced theirs.
 
 ## Current state
