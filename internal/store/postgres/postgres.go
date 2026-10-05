@@ -75,6 +75,10 @@ type Store struct {
 	ttl    time.Duration
 	now    func() time.Time
 	blobs  session.Blobs
+	// stopIndex ends the background indexing of searched events no
+	// server has indexed, and indexed is closed once it has ended.
+	stopIndex context.CancelFunc
+	indexed   chan struct{}
 }
 
 // Open applies the migrations on dsn and connects.
@@ -119,6 +123,9 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if s.now == nil {
 		s.now = time.Now
 	}
+	index, stop := context.WithCancel(context.Background())
+	s.stopIndex, s.indexed = stop, make(chan struct{})
+	go s.keepIndexed(index, log)
 	return s, nil
 }
 
@@ -126,6 +133,8 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 // connection and the pool. A watcher still open wakes, finds the pool
 // closed, and closes its channel.
 func (s *Store) Close() {
+	s.stopIndex()
+	<-s.indexed
 	s.sender.close()
 	s.listener.stop()
 	s.pool.Close()
@@ -257,20 +266,12 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 	if limit <= 0 {
 		limit = session.DefaultListLimit
 	}
-	owners := o.Owners
-	if owners == nil {
-		owners = []string{}
+	var args []any
+	where := filters("", o, &args)
+	if o.Cursor != "" {
+		where += " AND id < " + arg(&args, o.Cursor)
 	}
-	agents := o.Agents
-	if agents == nil {
-		agents = []string{}
-	}
-	rows, err := s.pool.Query(ctx, `SELECT body FROM sessions
-		WHERE ($1 = '' OR status = $1) AND ($2 = '' OR agent_id = $2) AND ($3 = '' OR id < $3)
-		AND (cardinality($5::text[]) = 0 OR owner = ANY($5::text[])) AND ($6 = '' OR runner = $6)
-		AND ($7 = '' OR ($7 = 'exclude' AND archived_at IS NULL) OR ($7 = 'only' AND archived_at IS NOT NULL))
-		AND (cardinality($8::text[]) = 0 OR agent_id = ANY($8::text[]))
-		ORDER BY id DESC LIMIT $4`, string(o.Status), o.AgentID, o.Cursor, limit+1, owners, o.Runner, string(o.Archived), agents)
+	rows, err := s.pool.Query(ctx, `SELECT body FROM sessions WHERE `+where+` ORDER BY id DESC LIMIT `+arg(&args, limit+1), args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: list sessions: %w", err)
 	}
@@ -295,33 +296,25 @@ func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Sess
 // Summarize counts in one query over the columns List filters on, so no
 // session's body is read.
 func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.Summary, error) {
-	owners := o.Owners
-	if owners == nil {
-		owners = []string{}
-	}
-	ids := o.Agents
-	if ids == nil {
-		ids = []string{}
-	}
-	var running, waiting, idle, ended, agents int64
+	o.Status = ""
+	var args []any
+	where := filters("", o, &args)
+	running, idle := arg(&args, string(session.StatusRunning)), arg(&args, string(session.StatusIdle))
+	ended, waiting := arg(&args, string(session.StatusEnded)), arg(&args, string(session.StopToolConfirmation))
+	var nRunning, nWaiting, nIdle, nEnded, agents int64
 	err := s.pool.QueryRow(ctx, `SELECT
-		count(*) FILTER (WHERE status = $5),
-		count(*) FILTER (WHERE status = $6 AND stop_reason = $8),
-		count(*) FILTER (WHERE status = $6 AND stop_reason <> $8),
-		count(*) FILTER (WHERE status = $7),
+		count(*) FILTER (WHERE status = `+running+`),
+		count(*) FILTER (WHERE status = `+idle+` AND stop_reason = `+waiting+`),
+		count(*) FILTER (WHERE status = `+idle+` AND stop_reason <> `+waiting+`),
+		count(*) FILTER (WHERE status = `+ended+`),
 		count(DISTINCT agent_id)
-		FROM sessions
-		WHERE ($1 = '' OR agent_id = $1) AND (cardinality($2::text[]) = 0 OR owner = ANY($2::text[])) AND ($3 = '' OR runner = $3)
-		AND ($4 = '' OR ($4 = 'exclude' AND archived_at IS NULL) OR ($4 = 'only' AND archived_at IS NOT NULL))
-		AND (cardinality($9::text[]) = 0 OR agent_id = ANY($9::text[]))`,
-		o.AgentID, owners, o.Runner, string(o.Archived),
-		string(session.StatusRunning), string(session.StatusIdle), string(session.StatusEnded), string(session.StopToolConfirmation), ids,
-	).Scan(&running, &waiting, &idle, &ended, &agents)
+		FROM sessions WHERE `+where, args...,
+	).Scan(&nRunning, &nWaiting, &nIdle, &nEnded, &agents)
 	if err != nil {
 		return session.Summary{}, fmt.Errorf("postgres: summarize sessions: %w", err)
 	}
 	return session.Summary{
-		Sessions: session.Counts{Running: int(running), WaitingForApproval: int(waiting), Idle: int(idle), Ended: int(ended)},
+		Sessions: session.Counts{Running: int(nRunning), WaitingForApproval: int(nWaiting), Idle: int(nIdle), Ended: int(nEnded)},
 		Agents:   int(agents),
 	}, nil
 }
@@ -391,9 +384,15 @@ func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (sess
 
 func insertEvents(ctx context.Context, tx pgx.Tx, events []session.Event) error {
 	for _, e := range events {
-		_, err := tx.Exec(ctx, `INSERT INTO events (session_id, seq, id, type, time, thread, turn, step, payload, redacted)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-			e.SessionID, int64(e.Seq), e.ID, string(e.Type), e.Time, e.Thread, e.Turn, e.Step, string(e.Payload), e.Redacted())
+		// A searched event is indexed by its words as the search reads
+		// them (spec 050); every other event has no entry.
+		var search *string
+		if doc, ok := session.SearchDocument(e); ok {
+			search = &doc
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO events (session_id, seq, id, type, time, thread, turn, step, payload, redacted, search)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, to_tsvector('simple', $11::text))`,
+			e.SessionID, int64(e.Seq), e.ID, string(e.Type), e.Time, e.Thread, e.Turn, e.Step, string(e.Payload), e.Redacted(), search)
 		if isUnique(err) {
 			return fmt.Errorf("%w: event %s is already in the log", session.ErrSequenceConflict, e.ID)
 		}
@@ -640,7 +639,7 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE events SET payload = $3, redacted = true WHERE session_id = $1 AND id = $2`, id, eventID, string(tomb.Payload)); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE events SET payload = $3, redacted = true, search = NULL WHERE session_id = $1 AND id = $2`, id, eventID, string(tomb.Payload)); err != nil {
 			return fmt.Errorf("postgres: redact %s: %w", eventID, err)
 		}
 		if err := insertEvents(ctx, tx, []session.Event{red}); err != nil {
