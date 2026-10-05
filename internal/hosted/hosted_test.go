@@ -398,6 +398,64 @@ func TestASwitchedSessionConnectsItsModel(t *testing.T) {
 
 }
 
+// TestAConnectionWaitsForTheDoorToListItsModel: a door that answers its
+// list without the model a runner connects, as a gateway replica answers
+// a key with its earlier models until it reads the authorizer's widening,
+// is read again until it names the model, and the drive starts on the
+// door's figures; one that never names it is read for the settle alone,
+// and nothing is served; a door that answers no list, or a list of no
+// model, is read once, and a drive that ends stops the reads.
+func TestAConnectionWaitsForTheDoorToListItsModel(t *testing.T) {
+	const moved = "vendor/moved-to"
+	stub := luxstub.New(t)
+	stub.Models(bridge.Model{Name: moved, ContextWindow: 64_000, MaxOutputTokens: 4_000}, bridge.Model{Name: "vendor/before", ContextWindow: 8_000, MaxOutputTokens: 1_000})
+	// The door reads the key's change at its third list.
+	stub.Select(func(string) []string {
+		if len(stub.Listed()) < 3 {
+			return []string{"vendor/before"}
+		}
+		return []string{"vendor/before", moved}
+	})
+	st := session.NewMemoryStore()
+	var asked v1.Machine
+	h, err := Harness(Options{Store: st, ModelsURL: stub.URL() + "/anthropic", Doors: models.Doors{"openai": stub.URL() + "/openai"}, ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newSession(t, st, reviewer)
+	s.Model = &session.ModelRef{Name: moved, Via: "tier/quick"}
+	cfg, err := h(t.Context(), s)
+	if err != nil {
+		t.Fatalf("a model the door names at its third read: %v", err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if cfg.Connection.Model != moved || cfg.Entry.InputWindow != 64_000 || cfg.Entry.MaxOutputTokens != 4_000 || len(stub.Listed()) != 3 {
+		t.Fatalf("the drive started on %+v %+v after %d reads", cfg.Connection, cfg.Entry, len(stub.Listed()))
+	}
+
+	conn := models.Connection{BaseURL: stub.URL() + "/openai", Model: "vendor/never", Dialect: ir.DialectOpenAIChat, Credential: "k"}
+	before, began := len(stub.Listed()), time.Now()
+	e, err := servedSettled(t.Context(), conn, 3*settleEvery)
+	if took, n := time.Since(began), len(stub.Listed())-before; err != nil || e.Name != "" || n != 3 || took < 2*settleEvery || took >= 3*settleEvery {
+		t.Fatalf("a model the door never names: %+v, %v, %d reads in %s", e, err, n, took)
+	}
+	gone := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(gone.Close)
+	if e, err := servedSettled(t.Context(), models.Connection{BaseURL: gone.URL, Model: moved}, DoorSettle); err != nil || e.Name != "" {
+		t.Fatalf("a base that answers no list: %+v, %v", e, err)
+	}
+	empty := luxstub.New(t)
+	began = time.Now()
+	if e, err := servedSettled(t.Context(), models.Connection{BaseURL: empty.URL() + "/openai", Model: moved, Credential: "k"}, DoorSettle); err != nil || e.Name != "" || len(empty.Listed()) != 1 || time.Since(began) >= settleEvery {
+		t.Fatalf("a list of no model: %+v, %v, %d reads", e, err, len(empty.Listed()))
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), settleEvery/2)
+	defer cancel()
+	if _, err := servedSettled(ctx, conn, DoorSettle); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a drive that ended: %v", err)
+	}
+}
+
 // TestRunnable: the check of a session's model at its create and at a
 // switch routes it as its runner does. With TOPOS_MODELS_KEY the door's
 // list is read with it, so a model only the door serves runs and one it

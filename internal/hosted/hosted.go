@@ -54,6 +54,22 @@ const (
 	CodeSearchUnavailable = "search_unavailable"
 )
 
+// DoorSettle is how long a runner reads a door's model list again when
+// the door answers with a list of other models and not the one it
+// connects (spec 051). A door lists the models the presented key may use, and a
+// gateway that runs several replicas applies a change of a key's models
+// on each replica within a window of its own: an authorizer that has
+// just moved a session to another model widened the session's key
+// moments before the runner connects the model, and a replica that has
+// not read the change yet lists the key's earlier models. Lux's replicas
+// read a key's change within a second of it. A model the list still does
+// not name once DoorSettle has passed is connected as it was before: by
+// the embedded catalog's figures, or refused as unknown.
+const DoorSettle = 3 * time.Second
+
+// settleEvery is how soon a door's list is read again within DoorSettle.
+const settleEvery = 250 * time.Millisecond
+
 // Machines opens the machine of a session from its agent's
 // spec.machine.
 type Machines func(ctx context.Context, s session.Session, m v1.Machine) (machine.Machine, error)
@@ -262,11 +278,12 @@ func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.En
 }
 
 // resolve is the connection and the figures of one spec.model at base,
-// its route's door read with credential.
+// its route's door read with credential, again for DoorSettle while the
+// door lists other models alone.
 func (b builder) resolve(ctx context.Context, m v1.AgentModel, overlay models.Entry, base, credential string) (models.Connection, models.Entry, error) {
 	conn := b.route(m, overlay, base)
 	conn.Credential = credential
-	entry, err := b.figures(ctx, conn, m, overlay)
+	entry, err := b.figures(ctx, conn, m, overlay, DoorSettle)
 	if err != nil {
 		return models.Connection{}, models.Entry{}, err
 	}
@@ -296,12 +313,14 @@ func (b builder) route(m v1.AgentModel, overlay models.Entry, base string) model
 // figures are the model's figures on conn: the embedded catalog's,
 // overlaid by those a Lux door serves for the model, read with the
 // connection's credential, then by the agent's own. A model no source
-// gives an input window and an output limit is model_unknown.
-func (b builder) figures(ctx context.Context, conn models.Connection, m v1.AgentModel, overlay models.Entry) (models.Entry, error) {
+// gives an input window and an output limit is model_unknown. A door
+// that answers a list without the model is read again for settle, as
+// DoorSettle says; the figures are those of the last read.
+func (b builder) figures(ctx context.Context, conn models.Connection, m v1.AgentModel, overlay models.Entry, settle time.Duration) (models.Entry, error) {
 	var served models.Entry
 	if models.NamesADoor(conn.BaseURL) {
 		var err error
-		if served, err = dialect.Served(ctx, otel.HTTPClient(), conn); err != nil {
+		if served, err = servedSettled(ctx, conn, settle); err != nil {
 			return models.Entry{}, setup(CodeModelUnavailable, err)
 		}
 	}
@@ -313,6 +332,28 @@ func (b builder) figures(ctx context.Context, conn models.Connection, m v1.Agent
 		entry.Dialect = conn.Dialect
 	}
 	return entry, nil
+}
+
+// servedSettled is the figures the door at conn serves for its model,
+// read again every settleEvery while the door answers a list of other
+// models alone, until settle has passed. A door that answers no list or a
+// list of no model, one that names the model, and an error end the reads
+// at once.
+func servedSettled(ctx context.Context, conn models.Connection, settle time.Duration) (models.Entry, error) {
+	deadline := time.Now().Add(settle)
+	for {
+		served, listed, err := dialect.Listed(ctx, otel.HTTPClient(), conn)
+		if err != nil || !listed || served.Name != "" || !time.Now().Add(settleEvery).Before(deadline) {
+			return served, err
+		}
+		wait := time.NewTimer(settleEvery)
+		select {
+		case <-ctx.Done():
+			wait.Stop()
+			return models.Entry{}, ctx.Err()
+		case <-wait.C:
+		}
+	}
 }
 
 // Runnable is the one answer to whether this installation runs a
@@ -345,7 +386,9 @@ func Runnable(o Options) (func(ctx context.Context, m v1.AgentModel, overlay mod
 			}
 			conn.Credential = o.ModelsKey
 		}
-		_, err := b.figures(ctx, conn, m, overlay)
+		// The installation's own key is one no authorizer's move
+		// widens, so its door is read once.
+		_, err := b.figures(ctx, conn, m, overlay, 0)
 		if se, ok := errors.AsType[*runner.SetupError](err); ok {
 			err = &models.Coded{Code: se.Code, Message: se.Err.Error()}
 		}
