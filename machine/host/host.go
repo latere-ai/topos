@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"latere.ai/x/topos/machine"
@@ -519,12 +520,52 @@ type stream struct {
 	done chan struct{}
 	res  machine.ExecResult
 	err  error
+
+	// reading is held through each read of out, so a move to the
+	// background knows when no read is left on the pipe; moved makes
+	// every read after it the end of the stream.
+	reading sync.Mutex
+	moved   atomic.Bool
 }
 
-func (s *stream) Read(p []byte) (int, error) { return s.out.Read(p) }
+func (s *stream) Read(p []byte) (int, error) {
+	s.reading.Lock()
+	defer s.reading.Unlock()
+	if s.moved.Load() {
+		return 0, io.EOF
+	}
+	n, err := s.out.Read(p)
+	if err != nil && s.moved.Load() && errors.Is(err, os.ErrDeadlineExceeded) {
+		// The deadline is the move's: the command's output goes to its
+		// job log from here on, and this stream has ended.
+		return n, io.EOF
+	}
+	return n, err
+}
+
+// stop ends the stream for a command moved to the background: a read
+// blocked on the pipe returns at once, every read after it is the end
+// of the stream, and the pipe is left open for the job log's drain,
+// which reads it alone from then on.
+func (s *stream) stop() error {
+	s.moved.Store(true)
+	if err := s.out.SetReadDeadline(time.Now()); err != nil {
+		return fmt.Errorf("machine: stop reading the command's output: %w", err)
+	}
+	s.reading.Lock()
+	defer s.reading.Unlock()
+	if err := s.out.SetReadDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("machine: hand the command's output to its job log: %w", err)
+	}
+	return nil
+}
 
 func (s *stream) Wait() (machine.ExecResult, error) {
 	<-s.done
+	if s.res.Moved {
+		// The job log's drain owns the pipe and closes it.
+		return s.res, s.err
+	}
 	return s.res, errors.Join(s.err, s.out.Close())
 }
 
@@ -620,7 +661,14 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 	}
 	go func() {
 		defer close(s.done)
-		s.res, s.err = h.wait(ctx, cmd, g, r.Timeout)
+		var mv *move
+		s.res, mv, s.err = h.wait(ctx, cmd, g, r.Timeout, r.ServerGrace)
+		if mv != nil {
+			// The shell has not exited, so its final directory is not
+			// waited for: the directory pipe's reader ends with it.
+			s.err = errors.Join(werr, h.adopt(s, cmd, g, mv, cleanup))
+			return
+		}
 		if dirOut != nil {
 			s.res.Dir = <-dirOut
 		}
@@ -633,10 +681,22 @@ func (h *Host) start(ctx context.Context, r machine.ExecRequest) (*stream, error
 	return s, nil
 }
 
+// move is a foreground command wait moved to the background: the
+// server ports it listens on, the job log its output goes to from the
+// move on, and the shell's exit, which the job waits for.
+type move struct {
+	ports  []int
+	log    *os.File
+	exited <-chan error
+}
+
 // wait waits for the shell and ends its group when the timeout passes,
 // when ctx ends, and once the shell has exited, so a stray child cannot
-// hold the output open.
-func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, g *group, timeout time.Duration) (machine.ExecResult, error) {
+// hold the output open. With grace positive, a command still running
+// after grace whose group listens on a server port is moved instead
+// (spec 045): wait returns at once with the move, and the group is left
+// running for adopt.
+func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, g *group, timeout, grace time.Duration) (machine.ExecResult, *move, error) {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 	var timer <-chan time.Time
@@ -645,31 +705,129 @@ func (h *Host) wait(ctx context.Context, cmd *exec.Cmd, g *group, timeout time.D
 		defer t.Stop()
 		timer = t.C
 	}
+	var probe *time.Timer
+	var probed <-chan time.Time
+	if grace > 0 && machine.SeesServers {
+		probe = time.NewTimer(grace)
+		defer probe.Stop()
+		probed = probe.C
+	}
 	var res machine.ExecResult
 	var werr, kerr error
-	select {
-	case werr = <-exited:
-	case <-timer:
-		res.TimedOut = true
-		kerr = g.kill()
-		werr = <-exited
-	case <-ctx.Done():
-		res.Canceled = true
-		kerr = g.terminate()
+waiting:
+	for {
 		select {
 		case werr = <-exited:
-		case <-time.After(KillGrace):
-			kerr = errors.Join(kerr, g.kill())
+			break waiting
+		case <-timer:
+			res.TimedOut = true
+			kerr = g.kill()
 			werr = <-exited
+			break waiting
+		case <-ctx.Done():
+			res.Canceled = true
+			kerr = g.terminate()
+			select {
+			case werr = <-exited:
+			case <-time.After(KillGrace):
+				kerr = errors.Join(kerr, g.kill())
+				werr = <-exited
+			}
+			break waiting
+		case <-probed:
+			ports, err := machine.ServerPorts(ctx, cmd.Process.Pid)
+			if err == nil && len(ports) > 0 {
+				var log *os.File
+				if log, err = h.jobLog(); err == nil {
+					return machine.ExecResult{Moved: true, Ports: ports, PID: cmd.Process.Pid, Log: log.Name()}, &move{ports: ports, log: log, exited: exited}, nil
+				}
+			}
+			switch {
+			case err != nil && ctx.Err() == nil:
+				// The check cannot be had for this command; it goes on
+				// under its timeout, and the result says why.
+				res.ServerErr, probed = err, nil
+			case err == nil:
+				probe.Reset(machine.ServerPoll)
+			}
 		}
 	}
 	kerr = errors.Join(kerr, g.kill(), g.close())
 	res.ExitCode = cmd.ProcessState.ExitCode()
 	var ee *exec.ExitError
 	if werr != nil && !errors.As(werr, &ee) {
-		return res, errors.Join(fmt.Errorf("machine: wait for the command: %w", werr), kerr)
+		return res, nil, errors.Join(fmt.Errorf("machine: wait for the command: %w", werr), kerr)
 	}
-	return res, kerr
+	return res, nil, kerr
+}
+
+// adopt keeps a command wait moved as a job of the machine: the stream
+// stops, the pipe drains into the job log, and the group joins the jobs
+// Stop ends at the session's end. Once the shell has exited and the
+// pipe is drained, the log gets the job's exit line and the command's
+// script file is removed. A machine released meanwhile keeps no job, so
+// the command ends as a canceled foreground command does, and so does
+// one whose stream could not be stopped.
+func (h *Host) adopt(s *stream, cmd *exec.Cmd, g *group, mv *move, cleanup func() error) error {
+	pid := cmd.Process.Pid
+	serr := s.stop()
+	h.mu.Lock()
+	released := h.released
+	if serr == nil && !released {
+		h.jobs[pid] = g
+	}
+	h.mu.Unlock()
+	if serr != nil || released {
+		kerr := g.kill()
+		werr := <-mv.exited
+		s.res = machine.ExecResult{Canceled: true, ExitCode: cmd.ProcessState.ExitCode()}
+		var ee *exec.ExitError
+		if werr != nil && !errors.As(werr, &ee) {
+			kerr = errors.Join(fmt.Errorf("machine: wait for the command: %w", werr), kerr)
+		}
+		return errors.Join(serr, kerr, g.close(), mv.log.Close(), os.Remove(mv.log.Name()), cleanup())
+	}
+	drained := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(mv.log, s.out)
+		drained <- errors.Join(err, s.out.Close(), mv.log.Close())
+	}()
+	go func() {
+		werr := <-mv.exited
+		err := <-drained
+		code := cmd.ProcessState.ExitCode()
+		err = errors.Join(err, appendLine(mv.log.Name(), fmt.Sprintf("\n[job %d exited with code %d]\n", pid, code)), cleanup())
+		var ee *exec.ExitError
+		if werr != nil && !errors.As(werr, &ee) {
+			err = errors.Join(werr, err)
+		}
+		h.mu.Lock()
+		delete(h.jobs, pid)
+		// Once released, the machine's Release holds this group and
+		// closes it after its last signal.
+		if !h.released {
+			err = errors.Join(err, g.close())
+		}
+		if err != nil {
+			h.jobErrs = append(h.jobErrs, fmt.Errorf("machine: job %d: %w", pid, err))
+		}
+		h.mu.Unlock()
+	}()
+	return nil
+}
+
+// jobLog creates a new job log in the jobs directory of the spill
+// directory.
+func (h *Host) jobLog() (*os.File, error) {
+	jobs := filepath.Join(h.spill, "jobs")
+	if err := os.MkdirAll(jobs, 0o700); err != nil {
+		return nil, fmt.Errorf("machine: create the job directory: %w", err)
+	}
+	log, err := os.CreateTemp(jobs, "job-*.log")
+	if err != nil {
+		return nil, fmt.Errorf("machine: create the job log: %w", err)
+	}
+	return log, nil
 }
 
 // reap waits for a command the machine killed because its group could
@@ -695,15 +853,11 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 	if err != nil {
 		return machine.ExecResult{}, err
 	}
-	jobs := filepath.Join(h.spill, "jobs")
-	if err := os.MkdirAll(jobs, 0o700); err != nil {
-		return machine.ExecResult{}, fmt.Errorf("machine: create the job directory: %w", err)
-	}
-	log, err := os.CreateTemp(jobs, "job-*.log")
+	log, err := h.jobLog()
 	if err != nil {
-		return machine.ExecResult{}, fmt.Errorf("machine: create the job log: %w", err)
+		return machine.ExecResult{}, err
 	}
-	args, remove, err := machine.ShellArgs(jobs, r.Command)
+	args, remove, err := machine.ShellArgs(filepath.Dir(log.Name()), r.Command)
 	if err != nil {
 		return machine.ExecResult{}, errors.Join(err, log.Close())
 	}
