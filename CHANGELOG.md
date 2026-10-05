@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.19.1 - 2026-10-05
+
 ### Fixed
 
 - A turn that moves off a model that cannot serve now reaches the model
