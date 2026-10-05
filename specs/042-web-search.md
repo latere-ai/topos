@@ -3,7 +3,7 @@ title: "Web search: a tool that searches the web through a search service the in
 status: in-progress
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 005-harness-loop.md, 007-models.md, 008-tools.md, 012-permissions-and-approvals.md, 016-runners.md, 018-credentials-and-secrets.md, 024-client-cli-skill.md, 025-task-suite.md]
-affects: [search/, harness/tools/, harness/, session/, manifest/, prompts/, internal/hosted/, internal/config/, internal/toposcli/, cmd/toposd/, test/tasks/, docs/]
+affects: [harness/search/, internal/websearch/, harness/tools/, harness/, session/, manifest/, prompts/, internal/hosted/, internal/config/, internal/toposcli/, cmd/toposd/, test/tasks/, docs/]
 effort: medium
 created: 2026-10-05
 updated: 2026-10-05
@@ -78,7 +78,7 @@ that opens the design lists them with what each was weighed against.
 | the effect | `none`: allowed in every mode, plan included, risk 0, and the call never opens a machine | `external`, as `web_fetch`: a search reaches only the service the operator chose, so a query cannot be sent to a host an injected instruction names, and it changes nothing anywhere but the wallet it is charged to, as a model request does. `read`: the harness opens a machine opened on demand before any call whose effect is not `none`, so a session that only searches would create a sandbox. An organization that wants each search confirmed names `web_search` in `alwaysConfirm` |
 | the cost | the service reports it, the `tool.result` records it, and the session's spend counts it | the core pricing searches itself: the core does not know what a service charges, and a price in two places would disagree |
 | a refusal | the service's own sentence is the result, outcome `error` | a sentence of the core's per refusal: the core cannot know why an installation refuses (a level that does not pay for searches, an empty wallet, a rate), and the service's `message` is written for the person, which the model passes on |
-| where it lives | a built-in of `harness/tools` that an agent holds only when it names it, with the service's client in a package of its own, `search` | a ninth member of the default set: every agent that names no tools would start searching, and charging, at its next apply. A harness tool beside `question`: a search needs no Session and holds no turn |
+| where it lives | a built-in of `harness/tools` that an agent holds only when it names it, the contract in `harness/search`, which dials nothing, and toposd's HTTP client of it in `internal/websearch` | a ninth member of the default set: every agent that names no tools would start searching, and charging, at its next apply. A harness tool beside `question`: a search needs no Session and holds no turn |
 
 ### The tool
 
@@ -95,7 +95,7 @@ that opens the design lists them with what each was weighed against.
 | `query` | yes | what to search for, as a person would type it, 1 to `MaxQueryLength` characters |
 | `max_results` | no, default `DefaultResults` | how many results to return, 1 to `MaxResults` |
 
-Bounds are constants of the `search` package. The schema, the client's
+Bounds are constants of the `harness/search` package. The schema, the client's
 check and the description file are rendered from them or held to them
 by a test, so no bound is written twice. Lengths are characters
 (Unicode code points).
@@ -284,8 +284,8 @@ Both join the table of [[002-scaffold-and-configuration]] and
 |---|---|---|
 | `web_search` is offered when an agent names it, by the hosted runner and `topos run`, and not otherwise; `tools.Builtins` and the default set stay the eight, with the digest an agent had; the validator accepts the name with `outputLimit` alone and refuses a client tool that takes it | `internal/hosted.TestSearchCredential`, `internal/toposcli.TestWebSearchIsOfferedWhenNamed`, `manifest.TestWebSearchIsAnOptInName`, `harness/tools.TestWebSearchSchemaFollowsTheConstants` | built |
 | The schema states every bound from the constants, and the description holds none that differs | `harness/tools.TestWebSearchSchemaFollowsTheConstants`, `prompts.TestWebSearchDescriptionHoldsTheBounds` | built |
-| The client sends `query` and `max_results` with the credential its function answers at that search, and reads results, cost, refusals with `Retry-After`, failures, a body past the bound and a timeout as the contract says | `search.TestTheClient`, `search.TestTheClientsFailures` | built |
-| Each row of the result table renders its text and outcome; results past `max_results` and non-http URLs are dropped; a long title or snippet is cut | `harness/tools.TestWebSearchResults`, `search.TestTheClient`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| The client sends `query` and `max_results` with the credential its function answers at that search, and reads results, cost, refusals with `Retry-After`, failures, a body past the bound and a timeout as the contract says | `internal/websearch.TestTheClient`, `internal/websearch.TestTheClientsFailures`, `harness/search.TestClean` | built |
+| Each row of the result table renders its text and outcome; results past `max_results` and non-http URLs are dropped; a long title or snippet is cut | `harness/tools.TestWebSearchResults`, `internal/websearch.TestTheClient`, `harness/search.TestClean`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | A result's cost is on the `tool.result`, and `session.Spent` and `ApplyBatch` count it, redacted or not; an old log reads as before; a search past the budget stops the turn `budget` before the next request | `session.TestSpentCountsToolCosts`, `harness.TestASearchCostIsCounted` | built |
 | A hosted session searches with its own key, asked at each search; an installation without session keys sends `TOPOS_SEARCH_KEY`; a key that cannot be had closes the turn; the sandbox's key is never sent | `internal/hosted.TestSearchCredential` | built |
 | `TOPOS_SEARCH_URL` is checked at start, and `TOPOS_SEARCH_KEY` is refused without it and beside `TOPOS_SESSION_KEYS_URL`; both are in spec 002's table and the configuration page | `internal/config.TestSearchVariables`, `internal/config.TestConfigurationTableMatchesTheSpec`, `internal/config.TestConfigurationPageNamesEveryRead` | built |
@@ -316,6 +316,12 @@ instruction-tier run. Where the build departs from the draft:
   `model_credential_missing`, as the model connection does. A URL the
   client refuses closes it with `search_unavailable`; configuration
   checks the URL first, so only a programmatic caller meets it.
+- **The contract and its client are two packages.** The draft put both
+  in a root package, `search`. Spec 001 keeps every package in one of
+  its trees and the harness tree free of anything that dials, so the
+  contract, which the tool imports, is `harness/search`, and the HTTP
+  client toposd and `topos run` hand the tool is `internal/websearch`.
+  An embedder hands the tool any `search.Searcher`.
 - **A cost of zero is no cost.** The result carries `cost_usd_micro`
   only when the service reported more than zero.
 - **The task suite names its results in `task.yaml`.** `search` names a

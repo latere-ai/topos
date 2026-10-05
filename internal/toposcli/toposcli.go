@@ -31,10 +31,12 @@ import (
 	"latere.ai/x/pkg/otel"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/search"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/config"
 	"latere.ai/x/topos/internal/decisions"
 	"latere.ai/x/topos/internal/version"
+	"latere.ai/x/topos/internal/websearch"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
 	"latere.ai/x/topos/manifest"
@@ -44,7 +46,6 @@ import (
 	"latere.ai/x/topos/models/scripted"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
-	"latere.ai/x/topos/search"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/dir"
 )
@@ -734,7 +735,7 @@ func (l *local) searcher() (search.Searcher, error) {
 		}
 		return nil, nil
 	}
-	c, err := search.New(u, func(context.Context) (string, error) { return key, nil }, otel.HTTPClient())
+	c, err := websearch.New(u, func(context.Context) (string, error) { return key, nil }, otel.HTTPClient())
 	if err != nil {
 		return nil, &errUsage{"TOPOS_SEARCH_URL " + strings.TrimPrefix(err.Error(), "search: ")}
 	}

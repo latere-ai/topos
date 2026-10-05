@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/topos/search"
+	"latere.ai/x/topos/harness/search"
 )
 
 // searching is a search service whose answer a test sets.

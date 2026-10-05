@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"latere.ai/x/topos/search"
+	"latere.ai/x/topos/harness/search"
 )
 
 // TestTheCannedSearch: the suite's search service answers the task's

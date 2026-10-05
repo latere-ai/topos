@@ -10,7 +10,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"latere.ai/x/topos/search"
+	"latere.ai/x/topos/harness/search"
 )
 
 // cannedSearch is the suite's search service (spec 042): every search

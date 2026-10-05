@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"latere.ai/x/topos/harness/search"
 	"latere.ai/x/topos/prompts"
-	"latere.ai/x/topos/search"
 )
 
 // NameWebSearch is the web search tool of spec 042, a built-in an agent

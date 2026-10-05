@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"latere.ai/x/topos/harness/search"
 	"latere.ai/x/topos/prompts"
-	"latere.ai/x/topos/search"
 )
 
 // TestWebSearchDescriptionHoldsTheBounds: the web_search description

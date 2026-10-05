@@ -18,11 +18,12 @@ import (
 	cellav1 "latere.ai/x/cella/manifest/v1"
 	"latere.ai/x/pkg/otel"
 
+	"latere.ai/x/topos/harness/search"
+	"latere.ai/x/topos/internal/websearch"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner"
-	"latere.ai/x/topos/search"
 	"latere.ai/x/topos/session"
 )
 
@@ -126,7 +127,7 @@ func (b builder) searcher(ctx context.Context) (search.Searcher, error) {
 			return nil, credentialSetup(CodeModelCredentialMissing, err)
 		}
 	}
-	c, err := search.New(b.o.SearchURL, cred, otel.HTTPClient())
+	c, err := websearch.New(b.o.SearchURL, cred, otel.HTTPClient())
 	if err != nil {
 		return nil, setup(CodeSearchUnavailable, err)
 	}
