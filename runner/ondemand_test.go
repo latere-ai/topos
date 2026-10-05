@@ -25,6 +25,7 @@ import (
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/session"
+	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
 // onDemand makes the fixture's runner open its machine, a host machine
@@ -40,8 +41,8 @@ type demand struct {
 	// noTools is an agent with no tools, none of which acts on a machine.
 	noTools bool
 	// opening runs at each open, before the machine opens, as the time a
-	// sandbox takes to come up, and opened after it opened.
-	opening, opened func()
+	// sandbox takes to come up.
+	opening func()
 }
 
 func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
@@ -63,11 +64,7 @@ func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
 				if d.opening != nil {
 					d.opening()
 				}
-				m, err := host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
-				if d.opened != nil {
-					d.opened()
-				}
-				return m, err
+				return host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
 			})
 			return harness.Config{
 				Model: &dialect.Model{}, Connection: models.Connection{BaseURL: f.stub.URL() + "/anthropic", Model: model, Family: models.FamilyAnthropic},
@@ -103,7 +100,7 @@ func toolUse(id, name, args string) ir.Block {
 
 // TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt: a turn of an
 // agent with no tool that acts on a machine opens no machine and records
-// none; once the agent has one, the turn starts the machine, the first
+// none; once the agent has one and calls it, the machine opens, the first
 // tool that acts on it runs on it, its session.machine is appended beside
 // the turn and the turn's next request carries the machine's context and
 // instructions; a later drive of a session that has a machine opens it
@@ -389,46 +386,59 @@ func jsonString(s string) string {
 	return string(b)
 }
 
-// TestTheMachineStartsBesideTheFirstModelCall: the first turn of an
-// agent whose tools act on the machine starts the machine as it begins,
-// so the machine's start and the model's first answer overlap instead of
-// adding up before the first tool call runs (spec 046). Both take took
-// here: the turn ends after about one of them where it took both.
-func TestTheMachineStartsBesideTheFirstModelCall(t *testing.T) {
+// paced is a reply that calls bash and streams as a model does: it waits
+// before the call's block begins and again before its arguments, and
+// notes when the block's start was sent.
+func paced(beforeCall, args time.Duration, mu *sync.Mutex, callAt *time.Time) luxstub.Reply {
+	r := reply(toolUse("toolu_1", "bash", `{"command":"echo ran"}`))
+	r.Hold = func(ev ir.Event) {
+		switch {
+		case ev.Type == ir.EventBlockStart && ev.Block != nil && ev.Block.ToolUse != nil:
+			time.Sleep(beforeCall)
+			mu.Lock()
+			*callAt = time.Now()
+			mu.Unlock()
+		case ev.Type == ir.EventArgsDelta:
+			time.Sleep(args)
+		}
+	}
+	return r
+}
+
+// TestTheMachineStartsAsTheFirstToolCallBegins: the machine starts when
+// the model's response begins a call of a tool that acts on it, not when
+// the turn begins, so its start overlaps the call's arguments streaming
+// (spec 048). Each of the model's wait before the call, the arguments and
+// the machine's open takes took: the turn takes about two of them, where
+// opening the machine at the call took all three.
+func TestTheMachineStartsAsTheFirstToolCallBegins(t *testing.T) {
 	const took = time.Second
 	f := setup(t)
 	ctx := t.Context()
 	var opens atomic.Int32
 	var mu sync.Mutex
-	var openedAt, answeredAt time.Time
+	var openedAt, callAt time.Time
 	f.onDemandWith(f.work, &opens, demand{opening: func() {
 		mu.Lock()
 		openedAt = time.Now()
 		mu.Unlock()
 		time.Sleep(took)
 	}})
-	first := reply(toolUse("toolu_1", "bash", `{"command":"echo ran"}`))
-	first.Respond = func(*ir.Request, *ir.Response) {
-		time.Sleep(took)
-		mu.Lock()
-		answeredAt = time.Now()
-		mu.Unlock()
-	}
-	f.stub.Script(model, first, reply(ir.Block{Type: ir.BlockText, Text: "Done."}))
+	f.stub.Script(model, paced(took, took, &mu, &callAt), reply(ir.Block{Type: ir.BlockText, Text: "Done."}))
 	f.message(ctx, "Run it.")
 	start := time.Now()
 	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
 		t.Fatal(err)
 	}
 	elapsed := time.Since(start)
-	t.Logf("the turn took %s with a machine and a first answer of %s each", elapsed.Round(time.Millisecond), took)
+	t.Logf("the turn took %s with %s before the call, %s of arguments and a machine of %s", elapsed.Round(time.Millisecond), took, took, took)
 	mu.Lock()
 	defer mu.Unlock()
-	if openedAt.IsZero() || !openedAt.Before(answeredAt) {
-		t.Fatalf("the machine opened at %v, after the first answer at %v", openedAt, answeredAt)
+	if openedAt.IsZero() || openedAt.Before(callAt) {
+		t.Fatalf("the machine opened at %v, before the call began at %v", openedAt, callAt)
 	}
-	if elapsed >= took*8/5 {
-		t.Fatalf("the turn took %s: the machine's start and the first answer added up", elapsed)
+	if elapsed >= took*13/5 {
+		t.Fatalf("the turn took %s: the machine's open and the arguments added up", elapsed)
 	}
 	var res session.ToolResult
 	results := f.events(ctx, session.TypeToolResult)
@@ -440,29 +450,20 @@ func TestTheMachineStartsBesideTheFirstModelCall(t *testing.T) {
 	}
 }
 
-// TestATurnThatOnlyTalksStartsTheMachineAndRecordsNone: a turn of an
-// agent whose tools act on the machine starts it even when the model
-// only talks, and the session records no machine, since no tool used it;
-// the drive does not wait for the start to finish before it lets the
-// session go.
-func TestATurnThatOnlyTalksStartsTheMachineAndRecordsNone(t *testing.T) {
+// TestATurnThatOnlyTalksStartsNoMachine: a turn of an agent whose tools
+// act on the machine, whose model only talks, opens no machine and
+// records none, so a hosted session makes no sandbox for it (spec 048).
+func TestATurnThatOnlyTalksStartsNoMachine(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
 	var opens atomic.Int32
-	slow, finished := make(chan struct{}), make(chan struct{})
-	f.onDemandWith(f.work, &opens, demand{opening: func() { <-slow }, opened: func() { close(finished) }})
-	// The open the drive left behind finishes before the test's
-	// directories go.
-	defer func() {
-		close(slow)
-		<-finished
-	}()
+	f.onDemand(f.work, &opens)
 	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Hello."}))
 	f.message(ctx, "Hi.")
 	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
 		t.Fatal(err)
 	}
-	if opens.Load() != 1 || f.count(ctx, session.TypeSessionMachine) != 0 {
+	if opens.Load() != 0 || f.count(ctx, session.TypeSessionMachine) != 0 {
 		t.Fatalf("%d opens, %d session.machine", opens.Load(), f.count(ctx, session.TypeSessionMachine))
 	}
 	s, err := f.store.Get(ctx, f.s.ID)
