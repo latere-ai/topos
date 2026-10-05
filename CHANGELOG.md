@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.17.0 - 2026-10-05
+
 ### Added
 
 - An agent can put a folder of its sandbox online with the `publish`
