@@ -226,15 +226,18 @@ func bash(id, command string) luxstub.Reply {
 	return luxstub.Reply{Response: ir.Response{Model: haiku, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "bash", Args: args}}}, StopReason: ir.StopToolUse}}
 }
 
-// TestASessionThatOnlyTalksCreatesNoSandbox: a hosted session whose turns
-// call no tool that acts on a machine never reaches Cella and records no
-// machine.
-func TestASessionThatOnlyTalksCreatesNoSandbox(t *testing.T) {
+// TestASessionThatOnlyTalksStartsItsSandboxAndRecordsNone: a hosted
+// session of an agent whose tools act on a machine starts its sandbox as
+// its turns begin (spec 046), and one sandbox serves every turn; turns
+// that call no tool that acts on it record no machine.
+func TestASessionThatOnlyTalksStartsItsSandboxAndRecordsNone(t *testing.T) {
 	c := newCloud(t, nil)
 	c.drive("Hello.", said("Hello."))
 	c.drive("How are you?", said("Well."))
-	if n := len(c.cella.Requests()); n != 0 {
-		t.Fatalf("%d requests to Cella: %+v", n, c.cella.Requests())
+	// A drive does not wait for a start that is under way, so the first
+	// turn may end before its create was sent.
+	if n := c.cella.Count(cellastub.OpCreate); n > 1 {
+		t.Fatalf("%d sandboxes created", n)
 	}
 	if n := len(c.events(session.TypeSessionMachine)); n != 0 {
 		t.Fatalf("%d session.machine events", n)

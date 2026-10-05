@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -31,16 +32,27 @@ import (
 // and bash needs no confirmation.
 func (f *fixture) onDemand(work string, opens *atomic.Int32) {
 	f.t.Helper()
+	f.onDemandWith(work, opens, demand{})
+}
+
+// demand varies the agent and the machine of onDemand.
+type demand struct {
+	// noTools is an agent with no tools, none of which acts on a machine.
+	noTools bool
+	// opening runs at each open, before the machine opens, as the time a
+	// sandbox takes to come up, and opened after it opened.
+	opening, opened func()
+}
+
+func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
+	f.t.Helper()
 	base := filepath.Dir(f.work)
 	r, err := New(Options{
 		Store: f.store, ID: "run_local", Clock: func() time.Time { return t0 },
 		Harness: func(ctx context.Context, s session.Session) (harness.Config, error) {
 			reg := tools.NewRegistry()
-			if err := reg.AddBuiltin(echo{}); err != nil {
-				return harness.Config{}, err
-			}
-			for _, t := range tools.Builtins() {
-				if t.Definition().Name == tools.NameBash {
+			for _, t := range append([]tools.Tool{echo{}}, tools.Builtins()...) {
+				if n := t.Definition().Name; !d.noTools && (n == "echo" || n == tools.NameBash) {
 					if err := reg.AddBuiltin(t); err != nil {
 						return harness.Config{}, err
 					}
@@ -48,7 +60,14 @@ func (f *fixture) onDemand(work string, opens *atomic.Int32) {
 			}
 			m := machine.Defer(ctx, machine.KindHost, func(context.Context) (machine.Machine, error) {
 				opens.Add(1)
-				return host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
+				if d.opening != nil {
+					d.opening()
+				}
+				m, err := host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
+				if d.opened != nil {
+					d.opened()
+				}
+				return m, err
 			})
 			return harness.Config{
 				Model: &dialect.Model{}, Connection: models.Connection{BaseURL: f.stub.URL() + "/anthropic", Model: model, Family: models.FamilyAnthropic},
@@ -82,28 +101,30 @@ func toolUse(id, name, args string) ir.Block {
 	return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: json.RawMessage(args)}}
 }
 
-// TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt: a turn that only
-// talks opens no machine and records none; the first tool that acts on
-// the machine opens it, its session.machine is appended beside the turn
-// and the turn's next request carries the machine's context and
+// TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt: a turn of an
+// agent with no tool that acts on a machine opens no machine and records
+// none; once the agent has one, the turn starts the machine, the first
+// tool that acts on it runs on it, its session.machine is appended beside
+// the turn and the turn's next request carries the machine's context and
 // instructions; a later drive of a session that has a machine opens it
 // at once and records it no second time.
 func TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
 	var opens atomic.Int32
-	f.onDemand(f.work, &opens)
+	f.onDemandWith(f.work, &opens, demand{noTools: true})
 	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Hello."}))
 	f.message(ctx, "Hi.")
 	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
 		t.Fatal(err)
 	}
 	if opens.Load() != 0 || f.count(ctx, session.TypeSessionMachine) != 0 {
-		t.Fatalf("a turn that only talks opened %d machines", opens.Load())
+		t.Fatalf("a turn of an agent with no machine tools opened %d machines", opens.Load())
 	}
 	if first := f.systemText(0); strings.Contains(first, "Working directory") || strings.Contains(first, "Repositories") {
 		t.Fatalf("a session with no machine and no repositories was told of one:\n%s", first)
 	}
+	f.onDemand(f.work, &opens)
 	f.stub.Script(model,
 		reply(toolUse("toolu_1", "echo", `{}`)),
 		reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
@@ -132,12 +153,13 @@ func TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt(t *testing.T) {
 }
 
 // TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine: an end_on_idle
-// session that never needs a machine ends with none opened.
+// session of an agent with no tool that acts on a machine ends with none
+// opened.
 func TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
 	var opens atomic.Int32
-	f.onDemand(f.work, &opens)
+	f.onDemandWith(f.work, &opens, demand{noTools: true})
 	s := session.New(session.AgentRef{ID: session.NewID(session.PrefixAgent), Name: "builder", Version: 1}, f.s.Initiator, session.RunnerHosted, session.Machine{Kind: machine.KindCella}, t0)
 	s.EndOnIdle = true
 	if err := f.store.Create(ctx, s, nil); err != nil {
@@ -365,4 +387,86 @@ func jsonString(s string) string {
 		panic(err)
 	}
 	return string(b)
+}
+
+// TestTheMachineStartsBesideTheFirstModelCall: the first turn of an
+// agent whose tools act on the machine starts the machine as it begins,
+// so the machine's start and the model's first answer overlap instead of
+// adding up before the first tool call runs (spec 046). Both take took
+// here: the turn ends after about one of them where it took both.
+func TestTheMachineStartsBesideTheFirstModelCall(t *testing.T) {
+	const took = time.Second
+	f := setup(t)
+	ctx := t.Context()
+	var opens atomic.Int32
+	var mu sync.Mutex
+	var openedAt, answeredAt time.Time
+	f.onDemandWith(f.work, &opens, demand{opening: func() {
+		mu.Lock()
+		openedAt = time.Now()
+		mu.Unlock()
+		time.Sleep(took)
+	}})
+	first := reply(toolUse("toolu_1", "bash", `{"command":"echo ran"}`))
+	first.Respond = func(*ir.Request, *ir.Response) {
+		time.Sleep(took)
+		mu.Lock()
+		answeredAt = time.Now()
+		mu.Unlock()
+	}
+	f.stub.Script(model, first, reply(ir.Block{Type: ir.BlockText, Text: "Done."}))
+	f.message(ctx, "Run it.")
+	start := time.Now()
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	elapsed := time.Since(start)
+	t.Logf("the turn took %s with a machine and a first answer of %s each", elapsed.Round(time.Millisecond), took)
+	mu.Lock()
+	defer mu.Unlock()
+	if openedAt.IsZero() || !openedAt.Before(answeredAt) {
+		t.Fatalf("the machine opened at %v, after the first answer at %v", openedAt, answeredAt)
+	}
+	if elapsed >= took*8/5 {
+		t.Fatalf("the turn took %s: the machine's start and the first answer added up", elapsed)
+	}
+	var res session.ToolResult
+	results := f.events(ctx, session.TypeToolResult)
+	if len(results) != 1 || results[0].Decode(&res) != nil || res.IsError || !strings.Contains(res.Content[0].Text, "ran") {
+		t.Fatalf("the bash call: %+v", res)
+	}
+	if opens.Load() != 1 || f.count(ctx, session.TypeSessionMachine) != 1 {
+		t.Fatalf("%d opens, %d session.machine", opens.Load(), f.count(ctx, session.TypeSessionMachine))
+	}
+}
+
+// TestATurnThatOnlyTalksStartsTheMachineAndRecordsNone: a turn of an
+// agent whose tools act on the machine starts it even when the model
+// only talks, and the session records no machine, since no tool used it;
+// the drive does not wait for the start to finish before it lets the
+// session go.
+func TestATurnThatOnlyTalksStartsTheMachineAndRecordsNone(t *testing.T) {
+	f := setup(t)
+	ctx := t.Context()
+	var opens atomic.Int32
+	slow, finished := make(chan struct{}), make(chan struct{})
+	f.onDemandWith(f.work, &opens, demand{opening: func() { <-slow }, opened: func() { close(finished) }})
+	// The open the drive left behind finishes before the test's
+	// directories go.
+	defer func() {
+		close(slow)
+		<-finished
+	}()
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Hello."}))
+	f.message(ctx, "Hi.")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if opens.Load() != 1 || f.count(ctx, session.TypeSessionMachine) != 0 {
+		t.Fatalf("%d opens, %d session.machine", opens.Load(), f.count(ctx, session.TypeSessionMachine))
+	}
+	s, err := f.store.Get(ctx, f.s.ID)
+	if err != nil || s.Status != session.StatusIdle {
+		t.Fatalf("the session after the turn: %+v %v", s.Status, err)
+	}
 }

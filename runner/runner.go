@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner/checkpoint"
@@ -269,6 +270,15 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		if err != nil {
 			return harness.Outcome{}, err
 		}
+		// A machine opened on demand starts as a turn of an agent whose
+		// tools act on it begins, beside the turn's first model call,
+		// rather than at its first tool call (spec 046). The start only
+		// opens it: the first tool that acts on it records it, as it
+		// would have opened it, and a turn that uses no tool leaves it to
+		// its own idle stop.
+		if onDemand && actsOnMachine(cfg.Tools) {
+			deferred.Start()
+		}
 		out, err = h.RunTurn(ctx, s, evs, log)
 		if err != nil {
 			return harness.Outcome{}, err
@@ -283,6 +293,20 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 			return harness.Outcome{}, err
 		}
 	}
+}
+
+// actsOnMachine reports whether a tool of reg acts on the machine, the
+// tools before whose call the harness opens a machine opened on demand.
+func actsOnMachine(reg *tools.Registry) bool {
+	if reg == nil {
+		return false
+	}
+	for _, name := range reg.Names() {
+		if t, ok := reg.Get(name); ok && t.Properties().Effect != tools.EffectNone {
+			return true
+		}
+	}
+	return false
 }
 
 // setupFailed closes a turn that could not start, with a session.error
