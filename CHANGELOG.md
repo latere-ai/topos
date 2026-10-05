@@ -10,8 +10,36 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- `GET /v1/sessions/{id}/files?path=<path>` answers one file of a
+  session's working directory as it is now, such as a page the agent
+  wrote, to anyone who may read the session: the authorizer is asked
+  `session.read`, with no new field. The path is absolute, as a write or
+  edit result names it, or relative to the working directory. The answer
+  is a download of at most 10 MiB with its media type, its length, an
+  attachment disposition with its name, `nosniff`, the policy
+  `sandbox; default-src 'none'` and `no-store`; `HEAD` answers the
+  headers alone. The file is read from the session's machine while it
+  runs, and the read never starts or creates one: a sandbox that is
+  stopped, never started or gone is `file_unavailable` (409), a larger
+  file `file_too_large` (413), and a path outside the working directory,
+  a directory or a credential path `invalid_request`. A Cella sandbox is
+  read with the session's own Cella token where the installation mints
+  one, and with `TOPOS_CELLA_TOKEN_FILE`'s bearer otherwise; a host
+  session's directory is read on the server's disk.
+- A `write` or `edit` result's `meta` carries `size`, the length in
+  bytes of the file it left, beside `path` and `sha256`.
+
 ### Changed
 
+- A hosted session's sandbox starts as a turn of an agent whose tools
+  act on a machine begins, beside the turn's first model call, instead
+  of at the first tool call, so the sandbox's start and the model's
+  first answer overlap. The session still records its machine at the
+  first tool that uses it. A turn that only talks starts the sandbox
+  too and records none; Cella stops it after its idle time, and the
+  drive does not wait for it. `machine.Deferred` gains `Start`.
 - A server started in the foreground no longer holds the turn until the
   command's timeout. A `bash` command still running after 3 seconds
   whose process group listens on a TCP port it chose is moved to the

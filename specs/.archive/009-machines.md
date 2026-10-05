@@ -80,13 +80,14 @@ acts on it and never before.
 |---|---|
 | what opens it | the first call of a tool whose effect is not `none` ([[008-tools]]): `read`, `write`, `edit`, `bash`, `grep`, `glob` and `web_fetch`. The harness opens the machine before the tool runs, so the tool's paths resolve against the working directory of a machine that exists. `todo`, the thread tools and the advisor never open it; a result past its output limit opens it for its spill file |
 | before it opens | `Info` answers the kind alone, so the risk score and the verdict of each call still see a Cella machine; `Roots` and `SpillDir` answer nothing; `Release` has nothing to let go of, and a checkpoint takes nothing |
+| the start | a turn of an agent with such a tool starts the machine as it begins, beside its first model call, with `Deferred.Start`: the open runs in the background and the hook waits for the first call that needs the machine, which waits for the open; a turn that calls none leaves the started sandbox to Cella's idle stop and records no machine ([[046-the-machine-starts-with-the-turn]]) |
 | the open | runs under the drive's context, not the call's, so an interrupt waits for the sandbox and its hook rather than leaving either half done; parallel calls wait for the one open |
 | the record | the runner's hook appends `session.machine` with reason `attached` right after the sandbox opens, between the call's `agent.tool_use` and its `tool.result`, and first delivers the session's repositories ([[019-git]]); the turn's next request carries the machine's context block, instruction files and skills, read from the sandbox then |
 | a failed open | the call's result says the machine could not be started, and a `session.error` names the code, `machine_unavailable` or the code the setup named; a Cella refusal for spend stops the turn `budget` as a call's refusal does. A later call tries again |
 | a session that had one | a drive of a session whose log records a machine opens it at once, by name, since its sandbox exists; a restarted runner reattaches this way and records nothing again |
 | the host | a person's host and a server's host session are opened with the harness, as before: they cost nothing to have |
 
-A session that never calls such a tool never creates a sandbox.
+A session whose agent has no such tool never creates a sandbox.
 
 ### The host machine
 
@@ -340,7 +341,7 @@ checks of a server's host run where `srt` is installed.
 | the helper builds are embedded in the runner | the runner reads them at start from `TOPOS_MACHINE_HELPERS`, where the image puts them | the builds are other platforms' binaries, which the release image carries beside `toposd` |
 | a runner that finds the sandbox gone creates one, restores the latest checkpoint, and appends `session.machine` `restored`, or `replaced` with a `session.error` `machine_lost` | the machine answers `machine_lost` until `Recreate`; the runner's replacement is a row of [[016-runners]] and the restore one of [[034-checkpoints-and-rewind]], neither built | the mechanisms are the runner's and the checkpoints' |
 | `ExecRequest` has `Command`, `Dir`, `Env`, `Stdin`, `Timeout` and `Background` | it also has `ReportDir`, which asks for the command's final directory, and `ServerGrace`, after which a server the command started moves to the background ([[045-a-server-cannot-hold-a-turn]]) | `bash` keeps the directory a command changed to, and a foreground server does not hold the turn |
-| a runner attaches the machine before it runs a turn, and a hosted session's sandbox exists from its first claim | a hosted session's Cella sandbox is opened on demand, at the first tool that acts on it; the host is still opened with the harness | a session that only talks costs no sandbox, and the agent decides at runtime whether it needs one |
+| a runner attaches the machine before it runs a turn, and a hosted session's sandbox exists from its first claim | a hosted session's Cella sandbox starts as a turn of an agent whose tools act on it begins, and is recorded at the first tool that acts on it ([[046-the-machine-starts-with-the-turn]]); the host is still opened with the harness | the sandbox's start overlaps the model's first answer, and a session that only talks records no machine |
 
 ### What this leaves open
 
