@@ -54,9 +54,16 @@
 // upstream's own status. An endpoint that routes answers it as a switch
 // to the routed name, passing over failed_model, and names the model in
 // model; the turn continues on it. An allow that names no model or the
-// failed one moves nothing, and the turn ends. An endpoint that reads the
-// fields rolls out before a server that sends them, and one that does not
-// read them keeps answering as before.
+// failed one moves nothing, and the turn ends. A model an allow names
+// that the runner cannot connect, such as one the session's key does not
+// reach even once the gateway has had a moment to apply the endpoint's
+// widening of the key, counts as a move that failed: the next question
+// names it as failed_model, beside current_model and current_model_via,
+// the model the session still stands on and its name, with why it could
+// not be connected as failed_detail, and an endpoint that routes passes
+// over it as over any failed model. An endpoint that reads the fields
+// rolls out before a server that sends them, and one that does not read
+// them keeps answering as before.
 //
 // A second member, reasoning, sets the reasoning level the session runs
 // at (spec 049), read where model is: absent keeps the level the session

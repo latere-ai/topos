@@ -336,6 +336,7 @@ var opDescriptions = map[string]string{
 		"unless the model cannot serve: on a session whose model has a via, a model the gateway answers upstream_error, provider_unavailable or upstream_timeout is not retried, and the authorizer is asked session.update as the session's initiator, "+
 		"with session_id, model the via, current_model and current_model_via the model that failed and its via, failed_model the model that failed, and failed_detail the gateway's developer detail of the failure when it sent one, at most %d bytes; "+
 		"the turn then continues on the model the allow names, after session.model_changed {by, old, new, reason, detail} by the service with reason model_busy (%q), at most %d times a turn. "+
+		"A model an allow names that cannot be connected counts as one of those moves: the next question names it as failed_model, beside the model the session stands on as current_model, with why it could not be connected as failed_detail. "+
 		"A turn that cannot move retries such a model once, a second later, and a turn that still fails ends with session.error model_busy (%q). "+
 		"A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
 		"A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. "+
