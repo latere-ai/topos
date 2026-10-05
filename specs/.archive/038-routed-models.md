@@ -6,7 +6,7 @@ depends_on: [005-harness-loop.md, 010-context.md, 012-permissions-and-approvals.
 affects: [authorizer/, session/, internal/server/, harness/, manifest/]
 effort: medium
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 author: changkun
 ---
 
@@ -159,7 +159,8 @@ and a model that takes none ignores it ([[015-api]]).
 - How an installation chooses: pools, order, prices, what a person may
   narrow. That is the authorizer's.
 - A cache's lifetime per provider, and placing breakpoints by it.
-- Changing the model inside a turn.
+- Changing the model inside a turn. A turn whose model cannot serve
+  moves inside the turn since [[051-a-turn-moves-off-a-model-that-cannot-serve]].
 
 ## Acceptance criteria
 

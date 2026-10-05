@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 007-models.md, 008-tools.m
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-05
 author: changkun
 ---
 
@@ -231,6 +231,13 @@ provider's `Retry-After` raises a delay and never lowers it.
 |---|---|
 | HTTP 408, 429, 500, 502, 503, 504, 529; an overloaded or rate-limit error event inside a stream; a connection error; a stream that ends before its terminal event | HTTP 400, 401, 403, 404, 413, 422; a codec error encoding the request; a gateway's refusal for spend, `budget_exhausted` or `spend_exceeded`, whatever its status (Lux sends it as 429), which stops the turn with `budget` and a `session.error` naming the refusal |
 
+A gateway's answer that the model cannot serve now, `upstream_error`,
+`provider_unavailable` or `upstream_timeout` at a 5xx (`models.Down`),
+is not retried by this policy ([[051-a-turn-moves-off-a-model-that-cannot-serve]]):
+a routed turn asks the authorizer for another model and sends the step
+on it, and a turn that cannot move retries once, a second later, and
+then ends with `model_busy`.
+
 A retried stream's partial output is discarded and the Observer
 receives a reset for the step. Waiting counts against the turn
 deadline: a wait that would pass it ends the attempts, and the step
@@ -332,6 +339,7 @@ streams of attached clients ([[016-runners]], [[015-api]]).
 | Code | Retryable | Meaning |
 |---|---|---|
 | `model_error` | as the failure's class: true after retries of a retryable failure, false for one that is not retried | the model answered with an error after retries, or with one that is not retried; `detail` carries the provider's status and error type |
+| `model_busy` | yes | the model could not serve now and the turn could not move to another, or ran out of moves ([[051-a-turn-moves-off-a-model-that-cannot-serve]]); `message` is "The model is busy right now. Send your message again in a moment." and `detail` carries the gateway's answer and why the turn did not move |
 | `output_truncated` | yes | three `max_tokens` stops at the output limit in a row |
 | `internal` | no | a failure of the harness itself, for example an instruction blob it cannot read; `message` carries the error |
 
