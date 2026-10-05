@@ -123,7 +123,9 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if s.now == nil {
 		s.now = time.Now
 	}
-	index, stop := context.WithCancel(context.Background())
+	// The indexing outlives the open's context, which may be a start's
+	// deadline, and ends with Close.
+	index, stop := context.WithCancel(context.WithoutCancel(ctx))
 	s.stopIndex, s.indexed = stop, make(chan struct{})
 	go s.keepIndexed(index, log)
 	return s, nil
