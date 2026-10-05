@@ -373,14 +373,7 @@ func (s *Server) owner(t store.Trigger) asker {
 	if !ok {
 		sub = t.Owner
 	}
-	q := asker{caller: auth.Caller{Subject: t.Owner, Issuer: issuer, Sub: sub, Claims: t.Claims}}
-	q.ask = func(ctx context.Context, action string, res authz.Resource) (authz.Decision, error) {
-		return s.o.Guard.Ask(ctx, auth.Envelope(q.caller, action, res, nil))
-	}
-	q.limits = func(ctx context.Context, action string, res authz.Resource) (authorizer.Limits, error) {
-		return s.o.Guard.Limits(ctx, auth.Envelope(q.caller, action, res, nil))
-	}
-	return q
+	return s.as(auth.Caller{Subject: t.Owner, Issuer: issuer, Sub: sub, Claims: t.Claims})
 }
 
 // sender is who a trigger's messages are from.
