@@ -313,7 +313,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 	}
 	req.ToolChoice = &ir.ToolChoice{Mode: ir.ToolChoiceNone}
 	began := t.h.c.Clock()
-	res, attempts, err := t.send(ctx, req)
+	res, attempts, err := t.send(ctx, req, false)
 	if err != nil {
 		se, eerr := t.sessionError(CodeCompactionFailed, err.Error(), models.Retryable(err), "")
 		if eerr != nil {

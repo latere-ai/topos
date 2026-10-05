@@ -1,0 +1,371 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
+package harness
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"latere.ai/x/pkg/llmdialect/ir"
+
+	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/models/dialect"
+	"latere.ai/x/topos/session"
+	"latere.ai/x/topos/test/stubs/luxstub"
+)
+
+const via = "tier/quick"
+
+// downReply fails every request with the gateway's answer that no target
+// of the model is available, as Lux answers once each upstream failed or
+// its circuit opened.
+func downReply(name string) luxstub.Reply {
+	return luxstub.Reply{Response: ir.Response{Model: name}, Fail: &luxstub.Failure{Status: 503, Times: 99,
+		Body: `{"type":"error","error":{"type":"provider_unavailable","message":"No provider for this model is available right now."}}`}}
+}
+
+// limitedReply fails every request with the gateway's upstream_error over
+// an upstream's 429, its status and body in the developer detail, as Lux
+// answers a provider's rate limit.
+func limitedReply(name string) luxstub.Reply {
+	return luxstub.Reply{Response: ir.Response{Model: name}, Fail: &luxstub.Failure{Status: 502, Times: 99, Detail: upstreamLimit,
+		Body: `{"type":"error","error":{"type":"upstream_error","message":"The provider returned an error."}}`}}
+}
+
+const upstreamLimit = `upstream status 429: {"error":{"message":"Rate limit exceeded: free-models-per-day.","code":429}}`
+
+// answerFrom is a reply of the model name.
+func answerFrom(name, say string) luxstub.Reply {
+	return luxstub.Reply{Response: ir.Response{Model: name, Blocks: []ir.Block{text(say)}, StopReason: ir.StopEndTurn, Usage: ir.Usage{InputTokens: 10, OutputTokens: 2}}}
+}
+
+// router is a Failover that answers the models of next in turn, with the
+// routed name of the failed model, and records what it was asked.
+type router struct {
+	mu      sync.Mutex
+	next    []session.ModelRef
+	err     error
+	asked   []session.ModelRef
+	details []string
+}
+
+func (r *router) failover(_ context.Context, failed session.ModelRef, detail string) (session.ModelRef, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.asked = append(r.asked, failed)
+	r.details = append(r.details, detail)
+	if r.err != nil {
+		return session.ModelRef{}, r.err
+	}
+	if len(r.next) == 0 {
+		return failed, nil
+	}
+	n := r.next[0]
+	r.next = r.next[1:]
+	return n, nil
+}
+
+// failoverEnv is a session on via standing on model, with a router and a
+// clock that records every wait.
+func failoverEnv(t *testing.T, r *router) (*env, *[]time.Duration) {
+	t.Helper()
+	var slept []time.Duration
+	e := setupSession(t, func(c *Config) {
+		c.Sleep = func(_ context.Context, d time.Duration) error {
+			slept = append(slept, d)
+			return nil
+		}
+		c.Connect = func(_ context.Context, name string) (models.Model, models.Connection, models.Entry, error) {
+			if name == "unknown-model" {
+				return nil, models.Connection{}, models.Entry{}, &models.Coded{Code: models.CodeUnknown, Message: "no figures for " + name}
+			}
+			return &dialect.Model{}, models.Connection{BaseURL: c.Connection.BaseURL, Model: name, Family: models.FamilyAnthropic},
+				models.Entry{Name: name, InputWindow: 30_000, MaxOutputTokens: 2_000}, nil
+		}
+		if r != nil {
+			c.Failover = r.failover
+		}
+	}, func(s *session.Session) { s.Model = &session.ModelRef{Name: model, Via: via} })
+	return e, &slept
+}
+
+// changes are the session.model_changed events of the log.
+func (e *env) changes(ctx context.Context) []session.ModelChanged {
+	e.t.Helper()
+	var out []session.ModelChanged
+	for _, ev := range e.events(ctx, session.TypeModelChanged) {
+		var m session.ModelChanged
+		if err := ev.Decode(&m); err != nil {
+			e.t.Fatal(err)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// requests are the model.request events of the log.
+func (e *env) requests(ctx context.Context) []session.ModelRequest {
+	e.t.Helper()
+	var out []session.ModelRequest
+	for _, ev := range e.events(ctx, session.TypeModelRequest) {
+		var p session.ModelRequest
+		if err := ev.Decode(&p); err != nil {
+			e.t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// sessionErrors are the session.error events of the log.
+func (e *env) sessionErrors(ctx context.Context) []session.SessionError {
+	e.t.Helper()
+	var out []session.SessionError
+	for _, ev := range e.events(ctx, session.TypeSessionError) {
+		var se session.SessionError
+		if err := ev.Decode(&se); err != nil {
+			e.t.Fatal(err)
+		}
+		out = append(out, se)
+	}
+	return out
+}
+
+// TestATurnMovesOffAModelThatCannotServe: a routed turn whose model the
+// gateway answers provider_unavailable is not retried on it: the router
+// is asked at once, the failed request and the service's
+// session.model_changed with the reason are recorded in one batch, and
+// the same step is sent again on the model named, at its level, within
+// the turn. The next turn stays on that model.
+func TestATurnMovesOffAModelThatCannotServe(t *testing.T) {
+	const other = "other-model"
+	r := &router{next: []session.ModelRef{{Name: other, Via: via, Effort: "low"}}}
+	e, slept := failoverEnv(t, r)
+	ctx := t.Context()
+	low := answerFrom(other, "Answered.")
+	low.Expect = func(req *ir.Request) error {
+		if req.Reasoning == nil || req.Reasoning.Effort != "low" {
+			return errors.New("the moved request is not at the level the router named")
+		}
+		return nil
+	}
+	e.stub.Script(model, limitedReply(model))
+	e.stub.Script(other, low, answerFrom(other, "Again."))
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	if len(*slept) != 0 {
+		t.Fatalf("the turn waited %v on a model it could move off", *slept)
+	}
+	if len(r.asked) != 1 || r.asked[0] != (session.ModelRef{Name: model, Via: via}) || r.details[0] != upstreamLimit {
+		t.Fatalf("the router was asked %+v with %q", r.asked, r.details)
+	}
+	reqs := e.requests(ctx)
+	if len(reqs) != 2 || reqs[0].Model != model || reqs[0].Outcome != "error" || reqs[0].Attempts != 1 ||
+		!strings.Contains(reqs[0].Error, "upstream_error") || !strings.Contains(reqs[0].Error, "free-models-per-day") || reqs[1].Model != other || reqs[1].Outcome != "ok" {
+		t.Fatalf("model requests %+v", reqs)
+	}
+	ch := e.changes(ctx)
+	if len(ch) != 1 || ch[0].By.Kind != session.SenderService || ch[0].By.Subject != session.AuthorizerSubject ||
+		ch[0].Old.Name != model || ch[0].New.Name != other || ch[0].New.Via != via ||
+		ch[0].Reason != session.ReasonModelBusy || !strings.Contains(ch[0].Detail, "upstream status 429") {
+		t.Fatalf("session.model_changed %+v", ch)
+	}
+	evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, ev := range evs {
+		if ev.Type == session.TypeModelChanged && (i == 0 || evs[i-1].Type != session.TypeModelRequest || evs[i+1].Type != session.TypeModelRequest) {
+			t.Fatalf("the change is not between the failed request and the one that answered: %v", evs)
+		}
+	}
+	s, err := e.store.Get(ctx, e.s.ID)
+	if err != nil || s.Model == nil || s.Model.Name != other || s.Model.Via != via {
+		t.Fatalf("the header's model %+v, %v", s.Model, err)
+	}
+	if n := len(e.sessionErrors(ctx)); n != 0 {
+		t.Fatalf("%d session errors on a turn that answered", n)
+	}
+
+	e.send(ctx, "Again.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("the next turn %+v", out)
+	}
+	if reqs := e.stub.Requests(); len(reqs) != 3 || reqs[2].Request.Model != other {
+		t.Fatalf("the next turn's request went to %d requests", len(reqs))
+	}
+}
+
+// TestATurnThatRunsOutOfMovesEndsBusy: a turn moves at most
+// MaxModelSwitches times; the model it stands on then gets DownRetry's
+// one quick retry, and the turn ends with model_busy, its sentence for a
+// person and the gateway's answer for a developer.
+func TestATurnThatRunsOutOfMovesEndsBusy(t *testing.T) {
+	pool := []string{model, "second-model", "third-model", "fourth-model", "fifth-model"}
+	r := &router{}
+	for _, m := range pool[1:] {
+		r.next = append(r.next, session.ModelRef{Name: m, Via: via})
+	}
+	e, slept := failoverEnv(t, r)
+	ctx := t.Context()
+	for _, m := range pool {
+		e.stub.Script(m, downReply(m))
+	}
+	e.send(ctx, "Go.")
+	out := e.turn(ctx)
+	if out.StopReason != session.StopError || out.Detail != CodeModelBusy {
+		t.Fatalf("outcome %+v", out)
+	}
+	if len(r.asked) != MaxModelSwitches || len(e.changes(ctx)) != MaxModelSwitches {
+		t.Fatalf("the router was asked %d times and the turn moved %d times; at most %d", len(r.asked), len(e.changes(ctx)), MaxModelSwitches)
+	}
+	if want := []time.Duration{DownRetry.Delay(1)}; len(*slept) != 1 || (*slept)[0] != want[0] || want[0] != time.Second {
+		t.Fatalf("waits %v, want the one quick retry %v", *slept, want)
+	}
+	var ran []string
+	for _, p := range e.requests(ctx) {
+		ran = append(ran, p.Model)
+	}
+	if want := strings.Join(pool[:MaxModelSwitches+1], ","); strings.Join(ran, ",") != want {
+		t.Fatalf("model requests ran %v, want %s", ran, want)
+	}
+	if n := len(e.stub.Requests()); n != MaxModelSwitches+2 {
+		t.Fatalf("%d requests: one per model moved off, two on the last", n)
+	}
+	errs := e.sessionErrors(ctx)
+	if len(errs) != 1 || errs[0].Code != CodeModelBusy || errs[0].Message != MessageModelBusy || !errs[0].Retryable ||
+		!strings.Contains(errs[0].Detail, "provider_unavailable") {
+		t.Fatalf("session.error %+v", errs)
+	}
+}
+
+// TestATurnTheRouterCannotMoveEndsAtOnce: a router that names no other
+// model, cannot be asked, or names one that cannot be connected ends the
+// turn with model_busy at once, with no retry and nothing recorded but
+// the failed request; the detail says what kept the turn where it was.
+func TestATurnTheRouterCannotMoveEndsAtOnce(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		r    *router
+		why  string
+	}{
+		{"the failed model", &router{}, "no other model was named"},
+		{"an error", &router{err: errors.New("authorizer_unavailable")}, "authorizer_unavailable"},
+		{"a model that cannot be connected", &router{next: []session.ModelRef{{Name: "unknown-model", Via: via}}}, "unknown-model was named and could not be connected"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e, slept := failoverEnv(t, c.r)
+			ctx := t.Context()
+			e.stub.Script(model, downReply(model))
+			e.send(ctx, "Go.")
+			if out := e.turn(ctx); out.StopReason != session.StopError || out.Detail != CodeModelBusy {
+				t.Fatalf("outcome %+v", out)
+			}
+			if len(*slept) != 0 || len(e.stub.Requests()) != 1 || len(e.changes(ctx)) != 0 {
+				t.Fatalf("waits %v, %d requests, %d changes", *slept, len(e.stub.Requests()), len(e.changes(ctx)))
+			}
+			if errs := e.sessionErrors(ctx); len(errs) != 1 || errs[0].Code != CodeModelBusy || !strings.Contains(errs[0].Detail, c.why) {
+				t.Fatalf("session.error %+v", errs)
+			}
+		})
+	}
+}
+
+// TestAModelThatCannotServeTakesOneQuickRetry: a session that cannot move,
+// on a model named itself or with no router, retries a model that cannot
+// serve once, a second later, where spec 005's policy waited 2, 4, 8, 16
+// and 32 seconds less up to a fifth for jitter over six attempts; a
+// Retry-After longer than that second takes no retry. A gateway's own
+// failure and a provider's overload keep spec 005's policy.
+func TestAModelThatCannotServeTakesOneQuickRetry(t *testing.T) {
+	ctx := t.Context()
+	for _, header := range []func(*session.Session){nil, func(s *session.Session) { s.Model = &session.ModelRef{Name: model, Via: via} }} {
+		var slept []time.Duration
+		e := setupSession(t, func(c *Config) {
+			c.Sleep = func(_ context.Context, d time.Duration) error {
+				slept = append(slept, d)
+				return nil
+			}
+		}, header)
+		e.stub.Script(model, downReply(model))
+		e.send(ctx, "Go.")
+		if out := e.turn(ctx); out.Detail != CodeModelBusy {
+			t.Fatalf("outcome %+v", out)
+		}
+		if len(slept) != 1 || slept[0] != time.Second {
+			t.Fatalf("waits %v, want one of a second", slept)
+		}
+		if reqs := e.requests(ctx); len(reqs) != 1 || reqs[0].Attempts != DownRetry.Attempts() {
+			t.Fatalf("model requests %+v", reqs)
+		}
+	}
+
+	var slept []time.Duration
+	later := setup(t, func(c *Config) {
+		c.Sleep = func(_ context.Context, d time.Duration) error {
+			slept = append(slept, d)
+			return nil
+		}
+	})
+	r := downReply(model)
+	r.Fail.RetryAfter = "30"
+	later.stub.Script(model, r)
+	later.send(ctx, "Go.")
+	if out := later.turn(ctx); out.Detail != CodeModelBusy || len(slept) != 0 || len(later.stub.Requests()) != 1 {
+		t.Fatalf("a Retry-After past the quick retry: %+v, waits %v", out, slept)
+	}
+
+	for _, typ := range []string{"store_unavailable", "overloaded_error"} {
+		var slept []time.Duration
+		g := setup(t, func(c *Config) {
+			c.Sleep = func(_ context.Context, d time.Duration) error {
+				slept = append(slept, d)
+				return nil
+			}
+		})
+		g.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model}, Fail: &luxstub.Failure{Status: 503, Times: 99,
+			Body: `{"type":"error","error":{"type":"` + typ + `","message":"try later"}}`}})
+		g.send(ctx, "Go.")
+		if out := g.turn(ctx); out.Detail != CodeModelError {
+			t.Fatalf("%s: outcome %+v", typ, out)
+		}
+		if len(slept) != DefaultRetry.Attempts()-1 {
+			t.Fatalf("%s: waits %v, want spec 005's %d", typ, slept, DefaultRetry.Attempts()-1)
+		}
+		for i, d := range slept {
+			full := DefaultRetry.Base << i
+			if d > full || d < full*4/5 {
+				t.Fatalf("%s: wait %d is %v, want %v less up to a fifth", typ, i+1, d, full)
+			}
+		}
+	}
+}
+
+// TestASpentWalletOnTheModelMovedToStopsWithBudget: a turn moved to a
+// priced model whose wallet is spent stops with budget at the gateway's
+// refusal, as any spent request does, and never asks the router about a
+// refusal for spend.
+func TestASpentWalletOnTheModelMovedToStopsWithBudget(t *testing.T) {
+	const priced = "priced-model"
+	r := &router{next: []session.ModelRef{{Name: priced, Via: via}}}
+	e, _ := failoverEnv(t, r)
+	ctx := t.Context()
+	e.stub.Script(model, downReply(model))
+	e.stub.Script(priced, luxstub.Reply{Response: ir.Response{Model: priced}, Fail: &luxstub.Failure{Status: 429, Times: 9,
+		Body: `{"type":"error","error":{"type":"budget_exhausted","message":"The budget has nothing left for the window."}}`}})
+	e.send(ctx, "Go.")
+	out := e.turn(ctx)
+	if out.StopReason != session.StopBudget || out.Detail != "budget_exhausted" {
+		t.Fatalf("outcome %+v", out)
+	}
+	if len(r.asked) != 1 || len(e.changes(ctx)) != 1 {
+		t.Fatalf("the router was asked %d times", len(r.asked))
+	}
+}

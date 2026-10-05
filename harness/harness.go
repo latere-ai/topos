@@ -60,6 +60,22 @@ type Observer interface {
 // DefaultRetry is spec 005's retry policy.
 var DefaultRetry = retry.Policy{MaxAttempts: 6, Base: 2 * time.Second, Max: 60 * time.Second, Jitter: 0.2}
 
+// DownRetry is the policy of a request whose model cannot serve now
+// (models.Down, spec 051) on a turn that cannot move to another model: one
+// quick retry, a second after the failure, in place of DefaultRetry's
+// minute of backoff, since a gateway that answers so has already tried
+// every target of the model. A Retry-After longer than its wait ends the
+// attempts at once. A turn that can move asks for another model instead,
+// with no retry of this one.
+var DownRetry = retry.Policy{MaxAttempts: 2, Base: time.Second, Max: time.Second, Jitter: -1}
+
+// MaxModelSwitches is how many times one turn moves to another model when
+// the one it runs cannot serve (spec 051): enough to pass three entries of
+// a routed name that fail together, as free models behind one provider
+// account do, and reach a fourth. A failure past it takes DownRetry's
+// quick retry and then ends the turn.
+const MaxModelSwitches = 3
+
 // MaxContinuations is how many truncated responses in a row a turn
 // continues before it ends with output_limit.
 const MaxContinuations = 2
@@ -137,6 +153,17 @@ type Config struct {
 	// the connection's, runs the whole turn on the answer, and keeps it
 	// for the turns after. Nil runs every turn on the configured model.
 	Connect func(ctx context.Context, name string) (models.Model, models.Connection, models.Entry, error)
+	// Failover asks which model a turn continues on when the model it runs
+	// cannot serve now (spec 051), for a session on a routed name alone:
+	// failed is the model the turn ran, with the name it was picked for as
+	// via, and detail the gateway's developer detail of the failure, ""
+	// for none, from which an installation tells a provider's rate limit
+	// from its outage. The answer names the model to run in its place with
+	// the same via, at the reasoning level it answers, the agent's own
+	// resolved; an answer that names the failed model or none moves
+	// nothing. The runner asks the installation's authorizer. Nil asks
+	// nothing, and such a failure ends the turn after DownRetry.
+	Failover func(ctx context.Context, failed session.ModelRef, detail string) (session.ModelRef, error)
 
 	// ceiling is the stricter of the modes the agents above a thread name,
 	// empty for the session's own thread: a change of the session's mode
@@ -167,7 +194,15 @@ const (
 	CodeModelError      = "model_error"
 	CodeOutputTruncated = "output_truncated"
 	CodeInternal        = "internal"
+	// CodeModelBusy ends a turn whose model could not serve now and that
+	// could not move to another model, or ran out of moves (spec 051). The
+	// session.error carries MessageModelBusy, and the gateway's answer in
+	// its detail; a person's next message starts a turn as any does.
+	CodeModelBusy = "model_busy"
 )
+
+// MessageModelBusy is the one sentence of CodeModelBusy, for a person.
+const MessageModelBusy = "The model is busy right now. Send your message again in a moment."
 
 // New checks the configuration: a model, a valid connection, a machine,
 // a registry, and a catalog entry with an output limit.
@@ -288,6 +323,9 @@ func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.
 		h = &scoped
 	}
 	t := &turn{h: h, s: s, sh: &shared{events: append([]session.Event(nil), log...)}, l: l, root: h.c.Tools, num: s.Turn + 1, start: h.c.Clock()}
+	if s.Model != nil {
+		t.model = *s.Model
+	}
 	var err error
 	if t.reg, err = t.registry(h.c.Tools.Names()); err != nil {
 		return Outcome{}, err
@@ -369,6 +407,12 @@ type turn struct {
 	bias         int64
 	// cut is set when an interrupt canceled the current step.
 	cut atomic.Bool
+	// model is the session's model as the turn runs it, its via the routed
+	// name it was picked for, and switches the moves the turn made off a
+	// model that could not serve (spec 051). A thread's turn holds neither:
+	// it runs its own agent's model, which no router picked.
+	model    session.ModelRef
+	switches int
 }
 
 func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
@@ -709,16 +753,44 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	t.lastEstimate = tokencount.Estimate(&req)
 	sctx, stop := t.interruptible(ctx)
 	defer stop()
-	limit := t.h.c.Entry.MaxOutputTokens
 	for {
+		limit := t.h.c.Entry.MaxOutputTokens
 		began := t.h.c.Clock()
-		res, attempts, err := t.send(sctx, req)
+		moves := t.switchable()
+		res, attempts, err := t.send(sctx, req, moves)
 		si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began)}
 		if err != nil {
 			if t.cut.Load() {
 				return t.canceledRequest(ctx, si)
 			}
-			return t.modelFailed(ctx, err, si, res.RawResponse)
+			why := ""
+			if moves && models.Down(err) {
+				moved, reason, ferr := t.failover(sctx, err, si, res.RawResponse)
+				switch {
+				case !moved && t.cut.Load():
+					return t.canceledRequest(ctx, si)
+				case ferr != nil:
+					return ferr
+				case !moved:
+					why = reason
+				default:
+					// The step runs again on the model the turn moved to:
+					// its request is built for that model's connection and
+					// window, and its price is held to the budget again.
+					if err := t.checkBudget(ctx); err != nil {
+						return err
+					}
+					if req, toolsSHA, err = t.request(ctx, tr); err != nil {
+						return err
+					}
+					if req, toolsSHA, err = t.manageContext(ctx, req, toolsSHA); err != nil {
+						return err
+					}
+					t.lastEstimate = tokencount.Estimate(&req)
+					continue
+				}
+			}
+			return t.modelFailed(ctx, err, si, res.RawResponse, why)
 		}
 		if res.StopReason != ir.StopMaxTokens || si.maxTokens >= limit || cutCall(res) != nil {
 			return t.commitStep(sctx, res, si)
@@ -870,22 +942,35 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 
 // send streams the request with retry: a retryable failure waits the
 // policy's delay, raised to the server's Retry-After, and a wait that
-// would pass the turn deadline ends the attempts. A failure returns the
-// last attempt's result, which holds the bytes it received.
-func (t *turn) send(ctx context.Context, req ir.Request) (models.Result, int, error) {
+// would pass the turn deadline ends the attempts. A model that cannot
+// serve now (models.Down) is not retried when the caller moves the turn
+// to another model on such a failure, which moves says, and is retried
+// by DownRetry otherwise (spec 051). A failure returns the last attempt's
+// result, which holds the bytes it received.
+func (t *turn) send(ctx context.Context, req ir.Request, moves bool) (models.Result, int, error) {
 	policy := t.h.c.Retry
+	downs := 0
 	for attempt := 1; ; attempt++ {
 		res, err := t.stream(ctx, req)
 		if err == nil {
 			return res, attempt, nil
 		}
-		if !models.Retryable(err) || attempt >= policy.Attempts() {
+		var d time.Duration
+		switch {
+		case models.Down(err):
+			downs++
+			d = DownRetry.Delay(downs)
+			if moves || downs >= DownRetry.Attempts() || models.RetryAfter(err) > d {
+				return res, attempt, err
+			}
+		case !models.Retryable(err) || attempt >= policy.Attempts():
 			return res, attempt, err
+		default:
+			d = max(policy.Delay(attempt), models.RetryAfter(err))
 		}
 		if o := t.h.c.Observer; o != nil {
 			o.OnReset(t.thread, t.num, t.step)
 		}
-		d := max(policy.Delay(attempt), models.RetryAfter(err))
 		if !t.h.c.Clock().Add(d).Before(t.deadline) {
 			return res, attempt, err
 		}
@@ -941,29 +1026,19 @@ func opensMachine(p tools.Properties) bool {
 // modelFailed records a request that failed after its attempts and ends
 // the turn with error, keeping every earlier event of the turn. The
 // bytes the last attempt received, raw, are its response blob, so a
-// stream that failed part way keeps what the model sent.
-func (t *turn) modelFailed(ctx context.Context, err error, si sendInfo, raw []byte) error {
+// stream that failed part way keeps what the model sent. A model that
+// could not serve now ends the turn with CodeModelBusy and its one
+// sentence (spec 051), the gateway's answer and why, what kept the turn
+// from moving to another model, in the detail.
+func (t *turn) modelFailed(ctx context.Context, err error, si sendInfo, raw []byte, why string) error {
 	if ctx.Err() != nil {
 		return err
 	}
-	p := t.sentRequest(si)
-	p.Outcome, p.Error = "error", err.Error()
-	if len(raw) > 0 {
-		blob, perr := t.l.PutBlob(ctx, bytes.NewReader(raw))
-		if perr != nil {
-			return errors.Join(err, fmt.Errorf("harness: store the failed response: %w", perr))
-		}
-		p.ResponseBlob = blob
-	}
-	mr, eerr := t.event(session.TypeModelRequest, p)
+	mr, eerr := t.failedRequest(ctx, err, si, raw)
 	if eerr != nil {
 		return eerr
 	}
-	var detail string
-	var he *models.HTTPError
-	if errors.As(err, &he) {
-		detail = fmt.Sprintf("HTTP %d %s", he.Status, he.Type)
-	}
+	detail := httpDetail(err)
 	if code, spent := models.SpendRefused(err); spent {
 		// The gateway's budget for this caller is spent: the turn stops
 		// with budget, which a message resumes once the budget is raised.
@@ -973,11 +1048,99 @@ func (t *turn) modelFailed(ctx context.Context, err error, si sendInfo, raw []by
 		}
 		return t.finish(ctx, session.StopBudget, code, mr, se)
 	}
+	if models.Down(err) {
+		detail = models.Described(err)
+		if why != "" {
+			detail += "; " + why
+		}
+		se, eerr := t.sessionError(CodeModelBusy, MessageModelBusy, true, detail)
+		if eerr != nil {
+			return eerr
+		}
+		return t.finish(ctx, session.StopError, CodeModelBusy, mr, se)
+	}
 	se, eerr := t.sessionError(CodeModelError, err.Error(), models.Retryable(err), detail)
 	if eerr != nil {
 		return eerr
 	}
 	return t.finish(ctx, session.StopError, CodeModelError, mr, se)
+}
+
+// failedRequest is the model.request of a request that failed after its
+// attempts, outcome error, with the bytes the last attempt received as
+// its response blob.
+func (t *turn) failedRequest(ctx context.Context, err error, si sendInfo, raw []byte) (session.Event, error) {
+	p := t.sentRequest(si)
+	p.Outcome, p.Error = "error", models.Described(err)
+	if len(raw) > 0 {
+		blob, perr := t.l.PutBlob(ctx, bytes.NewReader(raw))
+		if perr != nil {
+			return session.Event{}, errors.Join(err, fmt.Errorf("harness: store the failed response: %w", perr))
+		}
+		p.ResponseBlob = blob
+	}
+	return t.event(session.TypeModelRequest, p)
+}
+
+// httpDetail is a model server's error answer as a session.error's
+// detail, its status and type, and "" for another failure.
+func httpDetail(err error) string {
+	var he *models.HTTPError
+	if errors.As(err, &he) {
+		return fmt.Sprintf("HTTP %d %s", he.Status, he.Type)
+	}
+	return ""
+}
+
+// switchable reports whether a failure of the turn's model to serve now
+// moves the turn to another model (spec 051): the session's own thread,
+// on a routed name, with a router to ask and moves left.
+func (t *turn) switchable() bool {
+	return t.thread == "" && t.h.c.Failover != nil && t.model.Via != "" && t.model.Name != "" && t.switches < MaxModelSwitches
+}
+
+// failover moves the turn off a model that could not serve now (spec
+// 051). It asks Config.Failover, connects the model answered as a switch
+// between turns connects one, and records in one batch the failed
+// request and the session.model_changed the service made, with
+// session.ReasonModelBusy; the step then sends its request again on the
+// new model, at the level answered. moved is false, with nothing
+// recorded, when the question fails, the answer names no other model, or
+// the model answered cannot be connected; why says which, for the turn's
+// error. err is a failure to record, which stops the turn at once.
+func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byte) (moved bool, why string, err error) {
+	next, err := t.h.c.Failover(ctx, t.model, models.GatewayDetail(cause))
+	switch {
+	case err != nil:
+		return false, "no other model was named: " + err.Error(), nil
+	case next.Name == "" || next.Name == t.model.Name:
+		return false, "no other model was named", nil
+	}
+	scoped := *t.h
+	if err := scoped.on(ctx, next.Name); err != nil {
+		return false, fmt.Sprintf("%s was named and could not be connected: %v", next.Name, err), nil
+	}
+	scoped.c.Effort = next.Level()
+	mr, err := t.failedRequest(ctx, cause, si, raw)
+	if err != nil {
+		return false, "", err
+	}
+	change, err := t.event(session.TypeModelChanged, session.ModelChanged{
+		By: session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}, Old: t.model, New: next,
+		Reason: session.ReasonModelBusy, Detail: models.Described(cause),
+	})
+	if err != nil {
+		return false, "", err
+	}
+	if err := t.commit(ctx, mr, change); err != nil {
+		return false, "", err
+	}
+	t.h, t.model = &scoped, next
+	t.switches++
+	if o := t.h.c.Observer; o != nil {
+		o.OnReset(t.thread, t.num, t.step)
+	}
+	return true, "", nil
 }
 
 // commitStep is commit point one and what follows it: model.request,
