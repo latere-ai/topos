@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.15.0 - 2026-10-05
+
 ### Added
 
 - `GET /v1/sessions/{id}/files?path=<path>` answers one file of a
