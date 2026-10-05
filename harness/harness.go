@@ -908,10 +908,34 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 		if err != nil {
 			return s.Result(), errors.Join(err, s.Close())
 		}
+		t.startMachine(ev)
 		if o := t.h.c.Observer; o != nil {
 			o.OnDelta(Delta{Thread: t.thread, Turn: t.num, Step: t.step, Event: ev})
 		}
 	}
+}
+
+// startMachine starts a machine opened on demand when the response begins
+// a call of a tool that acts on it (spec 048): the block's start names
+// the tool before its arguments stream, so the machine comes up while
+// they do, and a response that calls no such tool starts none. A name
+// this thread's registry does not hold starts nothing; the call is
+// refused as unknown before anything would run on the machine.
+func (t *turn) startMachine(ev ir.Event) {
+	if ev.Type != ir.EventBlockStart || ev.Block == nil || ev.Block.ToolUse == nil {
+		return
+	}
+	if tool, ok := t.reg.Get(ev.Block.ToolUse.Name); ok && opensMachine(tool.Properties()) {
+		machine.Start(t.h.c.Machine)
+	}
+}
+
+// opensMachine reports whether a call of a tool with these properties
+// acts on the machine, which the harness opens before running it: every
+// tool with an effect, and no tool a client runs, since that call never
+// runs here.
+func opensMachine(p tools.Properties) bool {
+	return !p.Client && p.Effect != tools.EffectNone
 }
 
 // modelFailed records a request that failed after its attempts and ends
@@ -1396,7 +1420,7 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 	// A tool that acts on the machine opens a machine opened on demand
 	// first, so its paths resolve against the working directory of the
 	// machine that exists; a tool of no effect never opens one.
-	if c.tool.Properties().Effect != tools.EffectNone {
+	if opensMachine(c.tool.Properties()) {
 		if err := machine.Open(ctx, t.h.c.Machine); err != nil {
 			return t.unopened(ctx, err)
 		}

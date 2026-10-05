@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
@@ -149,4 +150,71 @@ func (m spillMachine) SpillDir() string { return "/spill" }
 func (m spillMachine) WriteFile(_ context.Context, p string, _ io.Reader, _ fs.FileMode) error {
 	*m.wrote = p
 	return nil
+}
+
+// TestTheMachineStartsWhenAToolCallBegins: a response that only talks, one
+// that calls a tool of no effect and one that calls a tool the thread does
+// not have start no machine; a response that calls a tool that acts on the
+// machine starts it as the call's block begins, before its arguments have
+// streamed, and the call runs on the machine that start opened (spec 048).
+func TestTheMachineStartsWhenAToolCallBegins(t *testing.T) {
+	began := make(chan struct{})
+	var opens atomic.Int32
+	e, note := onDemand(t, func(context.Context) (machine.Machine, error) {
+		if opens.Add(1) == 1 {
+			close(began)
+		}
+		return fakeMachine{kind: machine.KindCella}, nil
+	})
+	ctx := t.Context()
+	e.stub.Script(model,
+		reply(ir.StopToolUse, text("Let me note that."), call("toolu_a", "note", `{"text":"a"}`)),
+		reply(ir.StopToolUse, call("toolu_b", "nosuch", `{}`)),
+		reply(ir.StopEndTurn, text("Noted.")),
+	)
+	e.send(ctx, "Note it.")
+	e.turn(ctx)
+	if opens.Load() != 0 || len(note.ran()) != 1 {
+		t.Fatalf("a turn with no call that acts on the machine opened %d machines", opens.Load())
+	}
+	var early atomic.Bool
+	first := reply(ir.StopToolUse, call("toolu_c", "echo", `{"text":"c"}`))
+	first.Hold = func(ev ir.Event) {
+		if ev.Type != ir.EventArgsDelta {
+			return
+		}
+		select {
+		case <-began:
+			early.Store(true)
+		case <-time.After(2 * time.Second):
+		}
+	}
+	e.stub.Script(model, first, reply(ir.StopEndTurn, text("Done.")))
+	e.send(ctx, "Look.")
+	e.turn(ctx)
+	if !early.Load() {
+		t.Fatal("the machine's open had not begun when the call's arguments streamed")
+	}
+	if opens.Load() != 1 || len(e.echo.ran()) != 1 {
+		t.Fatalf("%d opens and %d echo calls, want one each", opens.Load(), len(e.echo.ran()))
+	}
+}
+
+// TestOpensMachine: a call opens the machine when its tool has an effect
+// and the runner, not a client, runs it.
+func TestOpensMachine(t *testing.T) {
+	for _, tc := range []struct {
+		props tools.Properties
+		want  bool
+	}{
+		{tools.Properties{Effect: tools.EffectNone}, false},
+		{tools.Properties{Effect: tools.EffectRead}, true},
+		{tools.Properties{Effect: tools.EffectWrite}, true},
+		{tools.Properties{Effect: tools.EffectExternal}, true},
+		{tools.Properties{Effect: tools.EffectWrite, Client: true}, false},
+	} {
+		if got := opensMachine(tc.props); got != tc.want {
+			t.Errorf("opensMachine(%+v) = %v, want %v", tc.props, got, tc.want)
+		}
+	}
 }
