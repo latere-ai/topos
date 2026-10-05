@@ -296,8 +296,16 @@ func (v *validator) model(at string, m v1.AgentModel) {
 		v.ref(at+".credential", m.Credential, session.PrefixCredential)
 		v.text(at+".credential", m.Credential)
 	}
+	// The level is named reasoning, or effort as before the rename; a
+	// model that names both names one level.
+	if m.Reasoning != "" {
+		v.oneOf(at+".reasoning", m.Reasoning, v1.Efforts...)
+	}
 	if m.Effort != "" {
 		v.oneOf(at+".effort", m.Effort, v1.Efforts...)
+	}
+	if m.Reasoning != "" && m.Effort != "" && m.Reasoning != m.Effort {
+		v.add(at+".reasoning", fmt.Sprintf("%q, and effort names %q: name the level once, as reasoning", m.Reasoning, m.Effort))
 	}
 	if m.InputWindow < 0 {
 		v.add(at+".inputWindow", "negative")

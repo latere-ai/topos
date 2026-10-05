@@ -16,7 +16,8 @@ const (
 	ModeProgressive = "progressive"
 )
 
-// Values of AgentModel.Effort.
+// The reasoning levels of AgentModel.Reasoning, which a resolved spec
+// holds as AgentModel.Effort.
 const (
 	EffortMinimal = "minimal"
 	EffortLow     = "low"
@@ -24,8 +25,9 @@ const (
 	EffortHigh    = "high"
 )
 
-// Efforts are the values of AgentModel.Effort, least reasoning first. A
-// session's change of its effort takes the same values (spec 015).
+// Efforts are the reasoning levels, least reasoning first: the values of
+// AgentModel.Reasoning and AgentModel.Effort. A session's change of its
+// level takes the same values (spec 015).
 var Efforts = []string{EffortMinimal, EffortLow, EffortMedium, EffortHigh}
 
 // Values of Machine.Kind.
@@ -93,11 +95,66 @@ type AgentModel struct {
 	BaseURL string `json:"baseURL,omitempty"`
 	// Credential names a Credential by name or cred_ id, never a value.
 	// The resolved spec holds its id.
-	Credential      string   `json:"credential,omitempty"`
+	Credential string `json:"credential,omitempty"`
+	// Effort and Reasoning are how much the model reasons before it
+	// answers, one of Efforts, empty for the model's own (spec 048). A
+	// manifest names it reasoning, or effort, the name it had before. A
+	// resolved spec holds it under effort alone, the spelling every
+	// stored version's digest covers, and the API answers it under
+	// reasoning alone: Stored and Answered move it between the two.
 	Effort          string   `json:"effort,omitempty"`
+	Reasoning       string   `json:"reasoning,omitempty"`
 	InputWindow     int64    `json:"inputWindow,omitempty"`
 	MaxOutputTokens int64    `json:"maxOutputTokens,omitempty"`
 	Pricing         *Pricing `json:"pricing,omitempty"`
+}
+
+// Level is the model's reasoning level under either name: reasoning, and
+// effort where reasoning is empty.
+func (m AgentModel) Level() string {
+	if m.Reasoning != "" {
+		return m.Reasoning
+	}
+	return m.Effort
+}
+
+// Stored is m as a resolved spec holds it: the level under effort and
+// none under reasoning, so a spec that names it either way renders the
+// bytes a version stored before the rename did.
+func (m AgentModel) Stored() AgentModel {
+	m.Effort, m.Reasoning = m.Level(), ""
+	return m
+}
+
+// Answered is m as the API answers it: the level under reasoning and none
+// under effort.
+func (m AgentModel) Answered() AgentModel {
+	m.Reasoning, m.Effort = m.Level(), ""
+	return m
+}
+
+// Answered is s as the API answers it: every model it names, its own, its
+// advisor's and each inline subagent's, with the level under reasoning.
+// s itself is not changed.
+func (s AgentSpec) Answered() AgentSpec {
+	s.Model = s.Model.Answered()
+	if s.Advisor != nil {
+		a := *s.Advisor
+		a.Model = a.Model.Answered()
+		s.Advisor = &a
+	}
+	if s.Subagents != nil {
+		subs := make([]Subagent, len(s.Subagents))
+		for i, sub := range s.Subagents {
+			if sub.Spec != nil {
+				spec := sub.Spec.Answered()
+				sub.Spec = &spec
+			}
+			subs[i] = sub
+		}
+		s.Subagents = subs
+	}
+	return s
 }
 
 // Pricing is USD per million tokens, each a decimal string.

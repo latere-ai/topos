@@ -452,6 +452,13 @@ func (r *resolver) fromBatch(kind, ref string) *object {
 }
 
 func (r *resolver) agentSpec(ctx context.Context, at string, s *v1.AgentSpec) error {
+	// A model's reasoning level is held under effort, the spelling a
+	// stored version's digest covers, whichever name the manifest gave
+	// it, so an agent applied again unchanged keeps its version.
+	s.Model = s.Model.Stored()
+	if s.Advisor != nil {
+		s.Advisor.Model = s.Advisor.Model.Stored()
+	}
 	var err error
 	if c := s.Model.Credential; c != "" {
 		if s.Model.Credential, err = r.credential(ctx, at+".model.credential", c); err != nil {

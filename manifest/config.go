@@ -84,7 +84,7 @@ func (r Resolved) AgentConfig(connect Connect) (AgentConfig, error) {
 	}
 	c := AgentConfig{
 		Name: r.Agent.Metadata.Name, Instructions: s.Instructions, Tools: toolNames(s.Tools),
-		Policy: policy(s), Model: s.Model, Overlay: overlay, Effort: s.Model.Effort,
+		Policy: policy(s), Model: s.Model, Overlay: overlay, Effort: s.Model.Level(),
 		MaxDepth: *s.Threads.MaxDepth, MaxConcurrent: *s.Threads.MaxConcurrent, CompactAt: *s.Context.CompactAt,
 		Machine: s.Machine,
 	}
@@ -232,7 +232,7 @@ func (b *builder) subagents(s v1.AgentSpec, level int) (map[string]harness.Subag
 			return nil, fmt.Errorf("manifest: subagent %s: %w", sub.Name, err)
 		}
 		h := harness.Subagent{
-			Name: sub.Name, Instructions: spec.Instructions, Entry: &overlay, Effort: spec.Model.Effort,
+			Name: sub.Name, Instructions: spec.Instructions, Entry: &overlay, Effort: spec.Model.Level(),
 			Tools: toolNames(spec.Tools), Mode: harness.Mode(spec.Approvals.Mode), Ignored: ignoredFields(*spec),
 		}
 		if b.connect != nil {
