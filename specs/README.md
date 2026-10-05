@@ -105,6 +105,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [047](047-web-search.md) | Web search: a tool that searches through a service the installation configures, with the session's own key, and the cost a search reports in the session's spend | medium | in-progress | 003, 004, 005, 007, 008, 012, 016, 018, 024, 025 |
 | [048](.archive/048-the-machine-starts-at-the-first-tool-call.md) | The machine starts at the first tool call: a session's sandbox starts when the model's response begins a call of a tool that acts on it, beside the call's arguments, in a new session and in one that had a sandbox alike, and a turn that only talks starts none | small | complete | 009, 016, 046 |
 | [049](.archive/049-reasoning.md) | Reasoning: the model's level is named reasoning at the API and kept as effort in storage, and an authorizer's decision may set it | medium | complete | 003, 004, 006, 015, 038 |
+| [050](.archive/050-searching-sessions.md) | Searching sessions: one route finds the caller's sessions by the words of their messages and answers, with an excerpt of each match and its place in the log | medium | complete | 004, 006, 014, 015 |
 
 ## Dependency graph
 
@@ -163,6 +164,7 @@ flowchart BT
   S047[047 web search]
   S048[048 the machine starts at the first tool call]
   S049[049 reasoning]
+  S050[050 searching sessions]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -245,6 +247,7 @@ flowchart BT
   S043 --> S038
   S049 --> S038
   S043 --> S039
+  S050 --> S015
 ```
 
 ## Build order
