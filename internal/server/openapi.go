@@ -14,9 +14,11 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/manifest"
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 )
 
@@ -330,14 +332,18 @@ var opDescriptions = map[string]string{
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
 		"The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: "+
 		"session.model_changed {by, old, new}, each {name, via, reasoning}, is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
-		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level. "+
+		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level, "+
+		"unless the model cannot serve: on a session whose model has a via, a model the gateway answers upstream_error, provider_unavailable or upstream_timeout is not retried, and the authorizer is asked session.update as the session's initiator, "+
+		"with session_id, model the via, current_model and current_model_via the model that failed and its via, failed_model the model that failed, and failed_detail the gateway's developer detail of the failure when it sent one, at most %d bytes; "+
+		"the turn then continues on the model the allow names, after session.model_changed {by, old, new, reason, detail} by the service with reason model_busy (%q), at most %d times a turn. "+
+		"A turn that cannot move retries such a model once, a second later, and a turn that still fails ends with session.error model_busy (%q). "+
 		"A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
 		"A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. "+
 		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
 		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
 		"A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. "+
 		AnswerRules,
-		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject),
+		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject, models.MaxDetail, session.MessageModelBusyChange, harness.MaxModelSwitches, harness.MessageModelBusy),
 	"applyTrigger": fmt.Sprintf("Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. "+
 		"The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
 		"or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. "+

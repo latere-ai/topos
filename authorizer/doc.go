@@ -43,6 +43,21 @@
 // about which model a name stands for or how long a provider keeps a
 // prompt cache.
 //
+// A turn may ask for another model in its middle (spec 051). When the
+// model of a session that has a via cannot serve, the gateway answering
+// upstream_error, provider_unavailable or upstream_timeout, toposd asks
+// session.update as the session's initiator, its claims org_id alone, the
+// context the session runs in, with model the via, current_model and
+// current_model_via the model that failed and that name, failed_model the
+// model that failed, and failed_detail, when the gateway sent one, its
+// developer detail of the failure, at most 1024 bytes, such as the
+// upstream's own status. An endpoint that routes answers it as a switch
+// to the routed name, passing over failed_model, and names the model in
+// model; the turn continues on it. An allow that names no model or the
+// failed one moves nothing, and the turn ends. An endpoint that reads the
+// fields rolls out before a server that sends them, and one that does not
+// read them keeps answering as before.
+//
 // A second member, reasoning, sets the reasoning level the session runs
 // at (spec 049), read where model is: absent keeps the level the session
 // has, one of manifest/v1's Efforts sets it for the next turn, and ""
