@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.0 - 2026-10-05
+
 ### Added
 
 - An agent can search the web with the `web_search` tool: each call
