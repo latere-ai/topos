@@ -345,7 +345,7 @@ waiting:
 			if err == nil && len(ports) > 0 {
 				var log string
 				var after error
-				if log, after, err = c.handOver(srv, pgid); err == nil {
+				if log, after, err = c.handOver(ctx, srv, pgid); err == nil {
 					moved := exitBody{Moved: true, PID: pgid, Log: log, Ports: ports}
 					if after != nil {
 						moved.ServerErr = after.Error()
@@ -380,7 +380,7 @@ waiting:
 // letting go of the helper's copies, which leaves the move standing. A
 // move that cannot be made gives the pipe back to the helper's pump, and
 // the command stays in the foreground.
-func (c *command) handOver(srv server, pgid int) (log string, after, err error) {
+func (c *command) handOver(ctx context.Context, srv server, pgid int) (log string, after, err error) {
 	if err := os.MkdirAll(srv.jobs, 0o700); err != nil {
 		return "", nil, fmt.Errorf("machine: create the job directory: %w", err)
 	}
@@ -414,7 +414,9 @@ func (c *command) handOver(srv server, pgid int) (log string, after, err error) 
 		}
 		return drop(errors.Join(errors.New("machine: the command's output could not be moved"), derr))
 	}
-	p := exec.Command(exe, "pump", "-job", strconv.Itoa(pgid))
+	// The log pump outlives the helper that starts it, and so its
+	// context.
+	p := exec.CommandContext(context.WithoutCancel(ctx), exe, "pump", "-job", strconv.Itoa(pgid))
 	p.Stdin, p.Stdout, p.Stderr = c.out, f, f
 	p.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := p.Start(); err != nil {
