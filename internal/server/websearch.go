@@ -11,7 +11,7 @@ import (
 	"latere.ai/x/topos/harness/tools"
 )
 
-// webSearchResultMeta is the WebSearchResultMeta schema (spec 042): what
+// webSearchResultMeta is the WebSearchResultMeta schema (spec 047): what
 // the tool.result of a web_search call records beside its text, which a
 // client reads to show a refused search or what a search cost.
 var webSearchResultMeta = yaml.MapSlice{

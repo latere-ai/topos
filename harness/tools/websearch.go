@@ -13,7 +13,7 @@ import (
 	"latere.ai/x/topos/prompts"
 )
 
-// NameWebSearch is the web search tool of spec 042, a built-in an agent
+// NameWebSearch is the web search tool of spec 047, a built-in an agent
 // holds only when it names it.
 const NameWebSearch = "web_search"
 

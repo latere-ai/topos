@@ -34,7 +34,7 @@ func (s searching) Search(ctx context.Context, r search.Request) (search.Result,
 	return s.res, s.err
 }
 
-// TestWebSearchResults: each row of spec 042's result table renders its
+// TestWebSearchResults: each row of spec 047's result table renders its
 // text and outcome, a search's cost is the result's, and the call asks
 // the count it names or the default.
 func TestWebSearchResults(t *testing.T) {

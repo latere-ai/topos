@@ -76,7 +76,7 @@ type Task struct {
 	Serve string
 	// Search is a file of the task holding the results the suite's
 	// search service answers every web_search with, ${SERVE_URL}
-	// expanded (spec 042); a task whose agent holds web_search names one.
+	// expanded (spec 047); a task whose agent holds web_search names one.
 	Search string
 	// Dir is the task's directory.
 	Dir string

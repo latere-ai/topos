@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package search is the contract of the search service web_search sends
-// its queries to (spec 042): the request, the results a model can cite,
+// its queries to (spec 047): the request, the results a model can cite,
 // a refusal and a failure, the bounds of a call, and the Searcher a
 // runner hands the tool. It dials nothing (spec 001): the HTTP client of
 // the contract is toposd's, and an embedder may hand the tool any
@@ -19,7 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-// The bounds of spec 042. The tool's schema and its description are
+// The bounds of spec 047. The tool's schema and its description are
 // rendered from them or held to them by a test.
 const (
 	// MaxQueryLength is the most characters a query holds.

@@ -11,7 +11,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 )
 
-// TestSpentCountsToolCosts (spec 042): the spend is every model
+// TestSpentCountsToolCosts (spec 047): the spend is every model
 // request's cost and every tool result's a service charged, in Spent and
 // in the header ApplyBatch keeps; a redacted result keeps its cost in its
 // tombstone and is still counted; a result with no cost and an old log

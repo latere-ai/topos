@@ -149,7 +149,7 @@ type Config struct {
 	SessionKeysURL   string
 	SessionKeysToken string
 	// SearchURL is the search service web_search sends its queries to,
-	// empty for none (spec 042); SearchKey is the bearer sent to it by an
+	// empty for none (spec 047); SearchKey is the bearer sent to it by an
 	// installation that mints no session keys, whose sessions search with
 	// their own.
 	SearchURL string

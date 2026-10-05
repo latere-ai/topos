@@ -80,7 +80,7 @@ names it, a tool of its own and not a built-in, so the default set
 stays the table's eight ([[039-questions]]).
 
 `web_search` is a built-in an agent holds only by naming it
-(`tools.OptIn`), so it is in no default set ([[042-web-search]]):
+(`tools.OptIn`), so it is in no default set ([[047-web-search]]):
 
 | Name | Parallel | Effect | Input | Limits |
 |---|---|---|---|---|

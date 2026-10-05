@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package websearch is toposd's HTTP client of the search service
-// web_search sends its queries to (spec 042): one POST of a query and a
+// web_search sends its queries to (spec 047): one POST of a query and a
 // result count to the URL the installation configures, with the
 // credential its function answers at that search, read into the
 // contract of harness/search.

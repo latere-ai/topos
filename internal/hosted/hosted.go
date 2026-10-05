@@ -49,7 +49,7 @@ const (
 	CodeModelCredentialMissing = models.CodeCredentialMissing
 	CodeMachineUnavailable     = machine.CodeUnavailable
 	// CodeSearchUnavailable is a search service whose URL the client
-	// refuses, which configuration checks first (spec 042).
+	// refuses, which configuration checks first (spec 047).
 	CodeSearchUnavailable = "search_unavailable"
 )
 
@@ -76,7 +76,7 @@ type Options struct {
 	// SearchURL and SearchKey are TOPOS_SEARCH_URL and TOPOS_SEARCH_KEY:
 	// the search service of an agent that names web_search, and the
 	// bearer sent to it when the installation mints no session keys
-	// (spec 042). An empty URL offers the tool with no service.
+	// (spec 047). An empty URL offers the tool with no service.
 	SearchURL string
 	SearchKey string
 	Clock     func() time.Time
@@ -163,7 +163,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		}
 	}
 	// web_search is a built-in an agent holds only by naming it (spec
-	// 042), with the installation's search service.
+	// 047), with the installation's search service.
 	if slices.Contains(ac.Tools, tools.NameWebSearch) {
 		s, err := b.searcher(ctx)
 		if err != nil {
@@ -215,7 +215,7 @@ func machineSetup(err error) error {
 // installation's model URL acts with the session's own Lux key when the
 // installation mints one (spec 018), and with TOPOS_MODELS_KEY
 // otherwise. The session's key goes to the installation's model URL and
-// its search URL (spec 042), both the operator's settings, and never to
+// its search URL (spec 047), both the operator's settings, and never to
 // a base URL an agent names.
 func (b builder) connect(ctx context.Context, m v1.AgentModel, overlay models.Entry) (models.Model, models.Connection, models.Entry, error) {
 	base := cmp.Or(m.BaseURL, b.o.ModelsURL)

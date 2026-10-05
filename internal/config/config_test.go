@@ -492,7 +492,7 @@ func TestBasePathMustMatchPublicURL(t *testing.T) {
 	}
 }
 
-// TestSearchVariables (spec 042): both roles read the search service's
+// TestSearchVariables (spec 047): both roles read the search service's
 // URL and its key; a URL that is not one stops the start, the key needs
 // the URL, and a server that mints session keys refuses the key, since
 // its sessions search with their own.

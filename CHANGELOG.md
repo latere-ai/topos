@@ -32,6 +32,25 @@ committed: the commit log already holds that.
   session's directory is read on the server's disk.
 - A `write` or `edit` result's `meta` carries `size`, the length in
   bytes of the file it left, beside `path` and `sha256`.
+- An agent can search the web with the `web_search` tool: each call
+  sends a query to the search service the installation configures with
+  `TOPOS_SEARCH_URL` and returns results the agent can cite, a title, a
+  URL and a snippet each, which it reads in full with `web_fetch`. An
+  agent holds the tool only when its manifest names it in `spec.tools`;
+  an agent that names no tools holds the eight built-ins as before, and
+  its version and digest do not change. A client tool may no longer be
+  named `web_search`: a manifest that declares one is refused as
+  `invalid_manifest` at its next apply.
+- Topos names no search provider: the contract a service answers is in
+  `docs/web-search.md`. On an installation with session keys each search
+  carries the session's own model key, so the service can tell which
+  session searched; without them it carries `TOPOS_SEARCH_KEY`. A
+  service's refusal reaches the agent as its own sentence for the
+  person, and its code is the result's `refusal` meta.
+- A `tool.result` records `cost_usd_micro` when a service charged for
+  the call, and the session's spend, its budget check before each model
+  request and the task suite's run cost count it beside model requests.
+  A redacted result keeps its cost, so no redaction lowers the spend.
 
 ### Changed
 
@@ -54,25 +73,6 @@ committed: the commit log already holds that.
   and Windows keep the timeout alone. `machine.ExecRequest` gains
   `ServerGrace`, and `machine.ExecResult` gains `Moved`, `Ports` and
   `ServerErr`.
-- An agent can search the web with the `web_search` tool: each call
-  sends a query to the search service the installation configures with
-  `TOPOS_SEARCH_URL` and returns results the agent can cite, a title, a
-  URL and a snippet each, which it reads in full with `web_fetch`. An
-  agent holds the tool only when its manifest names it in `spec.tools`;
-  an agent that names no tools holds the eight built-ins as before, and
-  its version and digest do not change. A client tool may no longer be
-  named `web_search`: a manifest that declares one is refused as
-  `invalid_manifest` at its next apply.
-- Topos names no search provider: the contract a service answers is in
-  `docs/web-search.md`. On an installation with session keys each search
-  carries the session's own model key, so the service can tell which
-  session searched; without them it carries `TOPOS_SEARCH_KEY`. A
-  service's refusal reaches the agent as its own sentence for the
-  person, and its code is the result's `refusal` meta.
-- A `tool.result` records `cost_usd_micro` when a service charged for
-  the call, and the session's spend, its budget check before each model
-  request and the task suite's run cost count it beside model requests.
-  A redacted result keeps its cost, so no redaction lowers the spend.
 
 ## v0.14.0 - 2026-10-05
 

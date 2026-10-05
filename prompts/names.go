@@ -44,11 +44,11 @@ const (
 	// its text, which a test holds to them (spec 039).
 	ToolQuestion Name = "tools/question-v1"
 	// ToolWebSearch states the bounds of the search package's constants
-	// in its text, which a test holds to them (spec 042).
+	// in its text, which a test holds to them (spec 047).
 	ToolWebSearch Name = "tools/web_search-v1"
 )
 
-// The results of web_search (spec 042).
+// The results of web_search (spec 047).
 const (
 	// WebSearchResults takes Results, each with Number, Title, URL and
 	// Snippet, which may be empty.

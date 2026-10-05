@@ -399,7 +399,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 			}
 		}
 		// web_search, which an agent holds only by naming it, answers with
-		// the task's results (spec 042).
+		// the task's results (spec 047).
 		if slices.Contains(r.t.Agent.Tools, tools.NameWebSearch) {
 			hits, err := readHits(filepath.Join(r.t.Dir, r.t.Search), r.serveURL)
 			if err != nil {
@@ -588,7 +588,7 @@ func (r *run) measure(res *RunResult, log []session.Event) {
 			res.CostUSDMicro += session.Cost(e)
 		case session.TypeToolResult:
 			// A tool a service charged for counts toward the run's
-			// spend, as the session's own meter counts it (spec 042).
+			// spend, as the session's own meter counts it (spec 047).
 			res.CostUSDMicro += session.Cost(e)
 		case session.TypeAgentToolUse:
 			res.ToolCalls++
