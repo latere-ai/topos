@@ -162,15 +162,38 @@ const (
 	DefaultMaxAge      = 168 * time.Hour
 )
 
-// ModelRef names a model a session runs and the reasoning effort it runs
-// at: one of manifest/v1's Effort values, or empty for the model's own
-// default (spec 015). Via is the name that was asked, of the agent, of a
-// person's change or of the session before, when the authorizer answered
-// another, and empty when the session runs the name asked (spec 038).
+// ModelRef names a model a session runs and the reasoning level it runs
+// at: one of manifest/v1's Efforts, or empty for the model's own default
+// (spec 015). Via is the name that was asked, of the agent, of a person's
+// change or of the session before, when the authorizer answered another,
+// and empty when the session runs the name asked (spec 038).
+//
+// The level is stored under effort, the spelling every header and every
+// session.model_changed stored before the rename carries, so an earlier
+// release reads what this one stores (spec 048). The API answers it under
+// reasoning alone: Answered moves it there, and nothing stored sets
+// Reasoning.
 type ModelRef struct {
-	Name   string `json:"name"`
-	Via    string `json:"via,omitempty"`
-	Effort string `json:"effort,omitempty"`
+	Name      string `json:"name"`
+	Via       string `json:"via,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
+// Level is the reasoning level under either name: reasoning, and effort
+// where reasoning is empty.
+func (m ModelRef) Level() string {
+	if m.Reasoning != "" {
+		return m.Reasoning
+	}
+	return m.Effort
+}
+
+// Answered is m as the API answers it: the level under reasoning and none
+// under effort.
+func (m ModelRef) Answered() ModelRef {
+	m.Reasoning, m.Effort = m.Level(), ""
+	return m
 }
 
 // Capture says which raw wire data a session keeps beyond the default.

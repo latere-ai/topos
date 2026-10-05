@@ -278,13 +278,13 @@ func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.
 		unconnected = scoped.on(ctx, want.Name)
 		h = &scoped
 	}
-	// A session that changed its effort runs the turn at it (spec 015),
-	// and so does a thread whose agent names none; an empty one is a
-	// header from before a change carried an effort, which runs at the
-	// agent's.
-	if want := s.Model; want != nil && want.Effort != "" && want.Effort != h.c.Effort {
+	// A session that changed its reasoning level runs the turn at it
+	// (spec 015), and so does a thread whose agent names none; an empty
+	// one is a header from before a change carried a level, which runs at
+	// the agent's.
+	if want := s.Model; want != nil && want.Level() != "" && want.Level() != h.c.Effort {
 		scoped := *h
-		scoped.c.Effort = want.Effort
+		scoped.c.Effort = want.Level()
 		h = &scoped
 	}
 	t := &turn{h: h, s: s, sh: &shared{events: append([]session.Event(nil), log...)}, l: l, root: h.c.Tools, num: s.Turn + 1, start: h.c.Clock()}
