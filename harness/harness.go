@@ -765,15 +765,10 @@ func (t *turn) stepOnce(ctx context.Context) error {
 			}
 			why := ""
 			if moves && models.Down(err) {
-				moved, reason, ferr := t.failover(sctx, err, si, res.RawResponse)
+				ferr := t.failover(sctx, err, si, res.RawResponse)
+				var stay *stayed
 				switch {
-				case !moved && t.cut.Load():
-					return t.canceledRequest(ctx, si)
-				case ferr != nil:
-					return ferr
-				case !moved:
-					why = reason
-				default:
+				case ferr == nil:
 					// The step runs again on the model the turn moved to:
 					// its request is built for that model's connection and
 					// window, and its price is held to the budget again.
@@ -788,6 +783,12 @@ func (t *turn) stepOnce(ctx context.Context) error {
 					}
 					t.lastEstimate = tokencount.Estimate(&req)
 					continue
+				case t.cut.Load():
+					return t.canceledRequest(ctx, si)
+				case errors.As(ferr, &stay):
+					why = stay.why
+				default:
+					return ferr
 				}
 			}
 			return t.modelFailed(ctx, err, si, res.RawResponse, why)
@@ -1104,44 +1105,50 @@ func (t *turn) switchable() bool {
 // between turns connects one, and records in one batch the failed
 // request and the session.model_changed the service made, with
 // session.ReasonModelBusy; the step then sends its request again on the
-// new model, at the level answered. moved is false, with nothing
+// new model, at the level answered. It is a *stayed, with nothing
 // recorded, when the question fails, the answer names no other model, or
-// the model answered cannot be connected; why says which, for the turn's
-// error. err is a failure to record, which stops the turn at once.
-func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byte) (moved bool, why string, err error) {
+// the model answered cannot be connected; any other error is a failure to
+// record, which stops the turn at once.
+func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byte) error {
 	next, err := t.h.c.Failover(ctx, t.model, models.GatewayDetail(cause))
 	switch {
 	case err != nil:
-		return false, "no other model was named: " + err.Error(), nil
+		return &stayed{why: "no other model was named: " + err.Error()}
 	case next.Name == "" || next.Name == t.model.Name:
-		return false, "no other model was named", nil
+		return &stayed{why: "no other model was named"}
 	}
 	scoped := *t.h
 	if err := scoped.on(ctx, next.Name); err != nil {
-		return false, fmt.Sprintf("%s was named and could not be connected: %v", next.Name, err), nil
+		return &stayed{why: fmt.Sprintf("%s was named and could not be connected: %v", next.Name, err)}
 	}
 	scoped.c.Effort = next.Level()
 	mr, err := t.failedRequest(ctx, cause, si, raw)
 	if err != nil {
-		return false, "", err
+		return err
 	}
 	change, err := t.event(session.TypeModelChanged, session.ModelChanged{
 		By: session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}, Old: t.model, New: next,
 		Reason: session.ReasonModelBusy, Detail: models.Described(cause),
 	})
 	if err != nil {
-		return false, "", err
+		return err
 	}
 	if err := t.commit(ctx, mr, change); err != nil {
-		return false, "", err
+		return err
 	}
 	t.h, t.model = &scoped, next
 	t.switches++
 	if o := t.h.c.Observer; o != nil {
 		o.OnReset(t.thread, t.num, t.step)
 	}
-	return true, "", nil
+	return nil
 }
+
+// stayed is a failover that left the turn on its model (spec 051): why
+// says what kept it there, for the turn's error.
+type stayed struct{ why string }
+
+func (s *stayed) Error() string { return "harness: the turn stayed on its model: " + s.why }
 
 // commitStep is commit point one and what follows it: model.request,
 // agent.message and the agent.tool_use of every valid call are durable
