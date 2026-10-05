@@ -30,6 +30,36 @@ committed: the commit log already holds that.
   finds, leaving out one the caller may not read; an authorizer that
   answers both needs no change. `docs/searching-sessions.md` is the
   contract a client follows.
+- A turn on a routed name moves off a model that cannot serve. When the
+  gateway answers `upstream_error`, `provider_unavailable` or
+  `upstream_timeout`, the turn asks the authorizer at once for another
+  model and continues on the one it names, inside the same turn, at most
+  3 times a turn. The log records the failed `model.request`, then
+  `session.model_changed` by the service with the new `reason`
+  `model_busy` ("The model was busy, so another one answered.") and the
+  gateway's answer in `detail`, then the request that answered.
+- The question is `session.update`, asked as the session's initiator in
+  the session's context, with `model` the routed name, `current_model`
+  and `current_model_via`, and two new fields: `failed_model`, the model
+  that failed, and `failed_detail`, the gateway's developer detail of the
+  failure, at most 1024 bytes, such as the upstream's own status. A
+  runner process asks it over the internal listener at
+  `POST /internal/v1/leases/{session}/failover`.
+- The model client keeps a gateway's developer detail
+  (`Lux-Error-Detail`), and a failed `model.request`'s `error` and the
+  turn's `session.error` detail show it, so a provider's rate limit is
+  told from its outage.
+
+### Changed
+
+- A gateway's answer that the model cannot serve is no longer retried
+  for about a minute. A turn that can move asks for another model with no
+  retry; one that cannot, on a model named itself or out of moves, retries
+  once a second later. Every other failure keeps its retries.
+- Such a turn ends with `session.error` `model_busy`, retryable, with the
+  sentence "The model is busy right now. Send your message again in a
+  moment." in `message`, where it ended with `model_error` and the
+  gateway's words.
 
 ### Upgrading
 
@@ -40,6 +70,9 @@ committed: the commit log already holds that.
   search finds an older session a short while after the first replica
   of this release starts. The directory store needs no migration: a
   search reads each session's log.
+- Roll the authorizer that reads `failed_model` before this release. An
+  authorizer that does not read it keeps the session on its model, and
+  such a turn ends at once with `model_busy`.
 
 ## v0.18.0 - 2026-10-05
 
