@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.19.0 - 2026-10-05
+
 ### Added
 
 - `GET /v1/sessions/search?q=` finds the sessions `GET /v1/sessions`
