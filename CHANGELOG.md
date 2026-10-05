@@ -72,18 +72,6 @@ committed: the commit log already holds that.
 - The `session.update` question carries a change's level under both
   `effort` and `reasoning`, so an authorizer that reads either name
   decides it.
-
-### Upgrading
-
-- Move a client that reads a session's, an agent's or an event's level
-  to `reasoning` before rolling this release: from it, no answer names
-  `effort`. A client that writes `effort` keeps working through v0.x.
-- Roll an authorizer that answers `limits.reasoning` before or after
-  this release: an earlier server ignores the member, and this one keeps
-  every level when the member is absent.
-
-### Changed
-
 - A hosted session's sandbox starts when the model's response begins a
   call of a tool that acts on a machine, while the call's arguments
   stream, instead of as each turn begins. A turn that only talks creates
@@ -99,6 +87,15 @@ committed: the commit log already holds that.
   needed it, carrying Cella's sentence to the model, rather than a
   failed turn. A turn that opens no machine takes no checkpoint, so a
   rewind to it answers `checkpoint_missing`.
+
+### Upgrading
+
+- Move a client that reads a session's, an agent's or an event's level
+  to `reasoning` before rolling this release: from it, no answer names
+  `effort`. A client that writes `effort` keeps working through v0.x.
+- Roll an authorizer that answers `limits.reasoning` before or after
+  this release: an earlier server ignores the member, and this one keeps
+  every level when the member is absent.
 
 ## v0.16.0 - 2026-10-05
 
