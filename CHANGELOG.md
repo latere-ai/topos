@@ -44,6 +44,14 @@ committed: the commit log already holds that.
   none of the sandboxes Cella allows its owner. The session still
   records its machine at the first tool that uses it. `machine.Starter`
   and `machine.Start` begin the open of a machine opened on demand.
+- A session that already has a sandbox no longer starts it as a drive
+  begins: it starts at the first call of a tool that acts on it, as a
+  new session's does, and the turn's requests carry the machine context
+  the session recorded. A turn that only talks leaves a stopped sandbox
+  stopped, and a start Cella refuses is the result of the call that
+  needed it, carrying Cella's sentence to the model, rather than a
+  failed turn. A turn that opens no machine takes no checkpoint, so a
+  rewind to it answers `checkpoint_missing`.
 
 ## v0.16.0 - 2026-10-05
 
