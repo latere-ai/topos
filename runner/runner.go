@@ -60,11 +60,12 @@ type Options struct {
 	// has no token source.
 	Credentials func(id string, lease session.Lease) Credentials
 	// Failover asks which model the session id's turn continues on when the
-	// model it runs cannot serve now (spec 051): toposd's question to its
+	// model it runs cannot serve now (spec 051), standing, failed and
+	// detail as harness.Config.Failover says: toposd's question to its
 	// authorizer, for the leases of its own runners. A lease that asks it
 	// itself (Failover) is asked instead; with neither, a drive asks
 	// nothing and such a turn ends after harness.DownRetry.
-	Failover func(ctx context.Context, id string, failed session.ModelRef, detail string) (session.ModelRef, error)
+	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, detail string) (session.ModelRef, error)
 	Clock    func() time.Time
 }
 
@@ -72,20 +73,20 @@ type Options struct {
 // on when the model it runs cannot serve now (spec 051): a runner
 // process's, which reaches toposd over its internal listener.
 type Failover interface {
-	Failover(ctx context.Context, failed session.ModelRef, detail string) (session.ModelRef, error)
+	Failover(ctx context.Context, standing, failed session.ModelRef, detail string) (session.ModelRef, error)
 }
 
 // failover is the harness's Failover for a drive holding lease on the
 // session id: the lease's own, Options.Failover's, or nil.
-func (r *Runner) failover(id string, lease session.Lease) func(context.Context, session.ModelRef, string) (session.ModelRef, error) {
+func (r *Runner) failover(id string, lease session.Lease) func(context.Context, session.ModelRef, session.ModelRef, string) (session.ModelRef, error) {
 	if f, ok := lease.(Failover); ok {
 		return f.Failover
 	}
 	if r.o.Failover == nil {
 		return nil
 	}
-	return func(ctx context.Context, failed session.ModelRef, detail string) (session.ModelRef, error) {
-		return r.o.Failover(ctx, id, failed, detail)
+	return func(ctx context.Context, standing, failed session.ModelRef, detail string) (session.ModelRef, error) {
+		return r.o.Failover(ctx, id, standing, failed, detail)
 	}
 }
 

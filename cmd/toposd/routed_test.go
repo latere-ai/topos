@@ -304,3 +304,102 @@ func TestARoutedTurnMovesOffAModelThatCannotServe(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 }
+
+// TestARoutedTurnPassesOverAModelItCannotConnect: through toposd, a model
+// the failover's allow names that the door never lists for the session's
+// key, and that the embedded catalog does not know, cannot be connected
+// once hosted.DoorSettle has passed. The turn asks session.update again,
+// standing on the model it runs, with that model as failed_model and why
+// it could not be connected as failed_detail, and is answered by the model
+// the second allow names; the change records the model passed over.
+func TestARoutedTurnPassesOverAModelItCannotConnect(t *testing.T) {
+	const (
+		quick  = "tier/quick"
+		first  = "anthropic/claude-haiku-4.5"
+		never  = "vendor/never-selected"
+		second = "vendor/door-only-model"
+	)
+	vars, s := credentialStubs(t, luxstub.Reply{Response: ir.Response{Model: first}, Fail: &luxstub.Failure{Status: 503, Times: 99,
+		Body: `{"type":"error","error":{"type":"provider_unavailable","message":"No provider for this model is available right now."}}`}})
+	vars["TOPOS_MODELS_URL"] = s.lux.URL()
+	s.lux.Models(bridge.Model{Name: first, ContextWindow: 200_000, MaxOutputTokens: 8_192}, bridge.Model{Name: second, ContextWindow: 100_000, MaxOutputTokens: 4_096},
+		bridge.Model{Name: never, ContextWindow: 100_000, MaxOutputTokens: 4_096})
+	s.lux.Script(second, luxstub.Reply{Response: ir.Response{Model: second, Blocks: []ir.Block{{Type: ir.BlockText, Text: "Answered by the second."}}, StopReason: ir.StopEndTurn}})
+	s.lux.Select(func(key string) []string {
+		if k, ok := s.keys.ByHash(hash(key)); ok && k.Workload == "session" {
+			return []string{first, second}
+		}
+		return nil
+	})
+	// The authorizer routes on the model that failed: the first failure
+	// moves the turn to a model the key never selects, and that one's to
+	// the second.
+	az := stub.New(t, stub.WithVocabulary(authorizer.Vocabulary()), stub.WithResourceName(func(r authz.Resource) string { return r.String("failed_model") }))
+	az.SetRules(
+		stub.Rule{Action: authorizer.ActionSessionCreate, Allow: true, Limits: map[string]any{"model": first}},
+		stub.Rule{Action: authorizer.ActionSessionUpdate, Resource: first, Allow: true, Limits: map[string]any{"model": never}},
+		stub.Rule{Action: authorizer.ActionSessionUpdate, Resource: never, Allow: true, Limits: map[string]any{"model": second}},
+	)
+	vars["TOPOS_AUTHORIZER_URL"], vars["TOPOS_AUTHORIZER_TOKEN"] = az.URL(), az.Token()
+	publicURL, _, stop := startServe(t, vars)
+	send := apiClient(t, publicURL, vars)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: quick\nspec:\n  model: {name: " + quick + "}\n  machine: {kind: cella}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/quick", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"quick","message":"Answer."}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	var sess session.Session
+	if err := json.Unmarshal([]byte(body), &sess); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		_, body := send(http.MethodGet, "/v1/sessions/"+sess.ID, "")
+		if strings.Contains(body, `"turn":1`) && strings.Contains(body, `"status":"idle"`) {
+			if !strings.Contains(body, `"model":{"name":"`+second+`","via":"`+quick+`"}`) {
+				_, events := send(http.MethodGet, "/v1/sessions/"+sess.ID+"/events", "")
+				t.Fatalf("the session after its turn: %s\nevents %s", body, events)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the turn never ended: %s", body)
+		}
+	}
+	var questions []authz.Request
+	for _, r := range az.Requests() {
+		if r.Action == authorizer.ActionSessionUpdate {
+			questions = append(questions, r)
+		}
+	}
+	if len(questions) != 2 || questions[0].Resource.String("failed_model") != first || questions[1].Resource.String("failed_model") != never ||
+		questions[1].Resource.String("current_model") != first || questions[1].Resource.String("current_model_via") != quick ||
+		!strings.Contains(questions[1].Resource.String("failed_detail"), never+" was named and could not be connected") {
+		t.Fatalf("session.update was asked %+v", questions)
+	}
+	_, body = send(http.MethodGet, "/v1/sessions/"+sess.ID+"/events", "")
+	var log struct {
+		Items []session.Event `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &log); err != nil {
+		t.Fatal(err)
+	}
+	var changes []session.ModelChanged
+	for _, e := range log.Items {
+		if e.Type == session.TypeModelChanged {
+			var p session.ModelChanged
+			if err := e.Decode(&p); err != nil {
+				t.Fatal(err)
+			}
+			changes = append(changes, p)
+		}
+	}
+	if len(changes) != 1 || changes[0].Old.Name != first || changes[0].New.Name != second || !strings.Contains(changes[0].Detail, never+" was named and could not be connected") {
+		t.Fatalf("session.model_changed %+v", changes)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}

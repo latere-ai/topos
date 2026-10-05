@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -155,15 +156,18 @@ type Config struct {
 	Connect func(ctx context.Context, name string) (models.Model, models.Connection, models.Entry, error)
 	// Failover asks which model a turn continues on when the model it runs
 	// cannot serve now (spec 051), for a session on a routed name alone:
-	// failed is the model the turn ran, with the name it was picked for as
-	// via, and detail the gateway's developer detail of the failure, ""
-	// for none, from which an installation tells a provider's rate limit
-	// from its outage. The answer names the model to run in its place with
-	// the same via, at the reasoning level it answers, the agent's own
-	// resolved; an answer that names the failed model or none moves
-	// nothing. The runner asks the installation's authorizer. Nil asks
-	// nothing, and such a failure ends the turn after DownRetry.
-	Failover func(ctx context.Context, failed session.ModelRef, detail string) (session.ModelRef, error)
+	// standing is the model the turn runs, with the name it was picked for
+	// as via; failed is the model that could not serve, standing itself,
+	// or a model an earlier answer of the turn named that could not be
+	// connected, with the same via; and detail is the developer detail of
+	// the failure, the gateway's or the connection's, "" for none, from
+	// which an installation tells a provider's rate limit from its outage.
+	// The answer names the model to run in its place with the same via, at
+	// the reasoning level it answers, the agent's own resolved; an answer
+	// that names standing, failed or none moves nothing. The runner asks
+	// the installation's authorizer. Nil asks nothing, and such a failure
+	// ends the turn after DownRetry.
+	Failover func(ctx context.Context, standing, failed session.ModelRef, detail string) (session.ModelRef, error)
 
 	// ceiling is the stricter of the modes the agents above a thread name,
 	// empty for the session's own thread: a change of the session's mode
@@ -1105,30 +1109,54 @@ func (t *turn) switchable() bool {
 // between turns connects one, and records in one batch the failed
 // request and the session.model_changed the service made, with
 // session.ReasonModelBusy; the step then sends its request again on the
-// new model, at the level answered. It is a *stayed, with nothing
-// recorded, when the question fails, the answer names no other model, or
-// the model answered cannot be connected; any other error is a failure to
-// record, which stops the turn at once.
+// new model, at the level answered. A model answered that cannot be
+// connected is a move that failed: it counts against MaxModelSwitches,
+// and while moves are left the next question names it as the failed
+// model, with why it could not be connected as the detail, so the
+// authorizer passes over it too; the change's detail then says which
+// models were passed over and why. It is a *stayed, with nothing
+// recorded, when a question fails, an answer names no other model, or
+// the turn runs out of moves; any other error is a failure to record,
+// which stops the turn at once.
 func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byte) error {
-	next, err := t.h.c.Failover(ctx, t.model, models.GatewayDetail(cause))
-	switch {
-	case err != nil:
-		return &stayed{why: "no other model was named: " + err.Error()}
-	case next.Name == "" || next.Name == t.model.Name:
-		return &stayed{why: "no other model was named"}
-	}
-	scoped := *t.h
-	if err := scoped.on(ctx, next.Name); err != nil {
-		return &stayed{why: fmt.Sprintf("%s was named and could not be connected: %v", next.Name, err)}
+	failed, detail := t.model, models.GatewayDetail(cause)
+	var passed []string
+	stay := func(why string) error { return &stayed{why: strings.Join(append(passed, why), "; ")} }
+	var next session.ModelRef
+	var scoped Harness
+	for {
+		var err error
+		next, err = t.h.c.Failover(ctx, t.model, failed, detail)
+		switch {
+		case err != nil:
+			return stay("no other model was named: " + err.Error())
+		case next.Name == "" || next.Name == t.model.Name || next.Name == failed.Name:
+			return stay("no other model was named")
+		}
+		scoped = *t.h
+		err = scoped.on(ctx, next.Name)
+		if err == nil {
+			break
+		}
+		why := fmt.Sprintf("%s was named and could not be connected: %v", next.Name, err)
+		passed = append(passed, why)
+		if t.switches++; t.switches >= MaxModelSwitches {
+			return &stayed{why: strings.Join(passed, "; ")}
+		}
+		failed, detail = next, why
 	}
 	scoped.c.Effort = next.Level()
 	mr, err := t.failedRequest(ctx, cause, si, raw)
 	if err != nil {
 		return err
 	}
+	changed := models.Described(cause)
+	if len(passed) > 0 {
+		changed += "; " + strings.Join(passed, "; ")
+	}
 	change, err := t.event(session.TypeModelChanged, session.ModelChanged{
 		By: session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}, Old: t.model, New: next,
-		Reason: session.ReasonModelBusy, Detail: models.Described(cause),
+		Reason: session.ReasonModelBusy, Detail: changed,
 	})
 	if err != nil {
 		return err

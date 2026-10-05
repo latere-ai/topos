@@ -438,7 +438,8 @@ type ScopeChanged struct {
 // Reason is why the service changed the model, a code a client maps to
 // one sentence, and empty for every change but the one a turn makes when
 // its model could not serve (spec 051): ReasonModelBusy, with the
-// gateway's answer in Detail for a developer.
+// gateway's answer in Detail for a developer, followed by each model the
+// authorizer named before that could not be connected, and why.
 type ModelChanged struct {
 	By     Sender   `json:"by"`
 	Old    ModelRef `json:"old"`

@@ -40,7 +40,8 @@ func TestAFailoverAsksTheInitiatorForAnotherModel(t *testing.T) {
 	s := f.create("alice", "quick")
 	before := len(f.log(s.ID))
 	*names = nil
-	next, err := f.api.Failover(t.Context(), s.ID, session.ModelRef{Name: haiku, Via: quick}, "")
+	on := session.ModelRef{Name: haiku, Via: quick}
+	next, err := f.api.Failover(t.Context(), s.ID, on, on, "")
 	if err != nil || next != (session.ModelRef{Name: sonnet, Via: quick}) {
 		t.Fatalf("the failover answered %+v, %v", next, err)
 	}
@@ -60,11 +61,46 @@ func TestAFailoverAsksTheInitiatorForAnotherModel(t *testing.T) {
 	}
 }
 
+// TestAFailoverPassesOnAModelNamedThatCouldNotBeConnected: a turn whose
+// runner could not connect the model an earlier answer named asks again
+// standing on the model the session runs, with the model named as
+// failed_model and why it could not be connected as failed_detail, and is
+// answered the model the next allow names; an allow that names the failed
+// model again moves nothing.
+func TestAFailoverPassesOnAModelNamedThatCouldNotBeConnected(t *testing.T) {
+	const opus = "anthropic/claude-opus-4-5"
+	f, _ := checking(t)
+	f.applyModel("quick", "name: "+quick)
+	answer := opus
+	r := f.route(func(req authz.Request) string {
+		if req.Action == authorizer.ActionSessionCreate {
+			return haiku
+		}
+		return answer
+	})
+	s := f.create("alice", "quick")
+	on, named := session.ModelRef{Name: haiku, Via: quick}, session.ModelRef{Name: sonnet, Via: quick}
+	const why = sonnet + " was named and could not be connected: models: model_unknown"
+	next, err := f.api.Failover(t.Context(), s.ID, on, named, why)
+	if err != nil || next != (session.ModelRef{Name: opus, Via: quick}) {
+		t.Fatalf("the failover answered %+v, %v", next, err)
+	}
+	asked := r.last(t, authorizer.ActionSessionUpdate)
+	if asked.Resource.String("current_model") != haiku || asked.Resource.String("current_model_via") != quick || asked.Resource.String("model") != quick ||
+		asked.Resource.String("failed_model") != sonnet || asked.Resource.String("failed_detail") != why {
+		t.Fatalf("session.update asked about %v", asked.Resource.Fields)
+	}
+	answer = sonnet
+	if next, err := f.api.Failover(t.Context(), s.ID, on, named, why); err != nil || next != on {
+		t.Fatalf("an allow of the failed model again: %+v, %v", next, err)
+	}
+}
+
 // TestAFailoverThatNamesNoOtherModelMovesNothing: an allow that names no
-// model or the failed one answers the model the session stands on; a
-// failed model the session does not stand on, and a session on a model
-// named itself, ask nothing; a deny, and a model the installation does not
-// run, are errors.
+// model or the failed one answers the model the session stands on; a turn
+// that stands on a model the header does not name, a failed model of
+// another routed name, and a session on a model named itself, ask
+// nothing; a deny, and a model the installation does not run, are errors.
 func TestAFailoverThatNamesNoOtherModelMovesNothing(t *testing.T) {
 	f, _ := checking(t)
 	f.applyModel("quick", "name: "+quick)
@@ -79,28 +115,32 @@ func TestAFailoverThatNamesNoOtherModelMovesNothing(t *testing.T) {
 	standing := session.ModelRef{Name: haiku, Via: quick}
 	for _, a := range []string{haiku, ""} {
 		answer = a
-		if next, err := f.api.Failover(t.Context(), s.ID, standing, ""); err != nil || next != standing {
+		if next, err := f.api.Failover(t.Context(), s.ID, standing, standing, ""); err != nil || next != standing {
 			t.Fatalf("an allow of %q answered %+v, %v", a, next, err)
 		}
 	}
 	asks := len(r.asked)
-	if next, err := f.api.Failover(t.Context(), s.ID, session.ModelRef{Name: sonnet, Via: quick}, ""); err != nil || next != standing || len(r.asked) != asks {
-		t.Fatalf("a failed model the session does not stand on: %+v, %v, %d questions", next, err, len(r.asked)-asks)
+	elsewhere := session.ModelRef{Name: sonnet, Via: quick}
+	if next, err := f.api.Failover(t.Context(), s.ID, elsewhere, elsewhere, ""); err != nil || next != standing || len(r.asked) != asks {
+		t.Fatalf("a turn on a model the session does not stand on: %+v, %v, %d questions", next, err, len(r.asked)-asks)
+	}
+	if next, err := f.api.Failover(t.Context(), s.ID, standing, session.ModelRef{Name: sonnet, Via: "tier/thorough"}, ""); err != nil || next != standing || len(r.asked) != asks {
+		t.Fatalf("a failed model of another routed name: %+v, %v, %d questions", next, err, len(r.asked)-asks)
 	}
 	f.apply("alice", "reviewer", "Review.")
 	plain := f.create("alice", "reviewer")
-	if next, err := f.api.Failover(t.Context(), plain.ID, session.ModelRef{Name: haiku}, ""); err != nil || next.Via != "" || len(r.asked) != asks+1 {
+	if next, err := f.api.Failover(t.Context(), plain.ID, session.ModelRef{Name: haiku}, session.ModelRef{Name: haiku}, ""); err != nil || next.Via != "" || len(r.asked) != asks+1 {
 		t.Fatalf("a session on a model named itself: %+v, %v", next, err)
 	}
 
 	answer = "no-such-model"
-	if _, err := f.api.Failover(t.Context(), s.ID, standing, ""); err == nil {
+	if _, err := f.api.Failover(t.Context(), s.ID, standing, standing, ""); err == nil {
 		t.Fatal("a model the installation does not run was answered")
 	}
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		return authz.Decision{Reason: "model_tier_quick_unavailable"}, nil
 	}
-	if _, err := f.api.Failover(t.Context(), s.ID, standing, ""); err == nil {
+	if _, err := f.api.Failover(t.Context(), s.ID, standing, standing, ""); err == nil {
 		t.Fatal("a deny was answered")
 	}
 }
@@ -125,7 +165,7 @@ func TestAnOrganizationsSessionFailsOverInItsContext(t *testing.T) {
 	if err := f.api.appendBatch(t.Context(), s.ID, []session.Event{changed}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.api.Failover(t.Context(), s.ID, on, strings.Repeat("é", models.MaxDetail)); err != nil {
+	if _, err := f.api.Failover(t.Context(), s.ID, on, on, strings.Repeat("é", models.MaxDetail)); err != nil {
 		t.Fatal(err)
 	}
 	asked := f.last(authorizer.ActionSessionUpdate)

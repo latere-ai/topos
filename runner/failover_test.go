@@ -16,26 +16,27 @@ type asking struct {
 	session.Lease
 }
 
-func (asking) Failover(_ context.Context, failed session.ModelRef, _ string) (session.ModelRef, error) {
+func (asking) Failover(_ context.Context, _, failed session.ModelRef, _ string) (session.ModelRef, error) {
 	return session.ModelRef{Name: "from-the-lease", Via: failed.Via}, nil
 }
 
 // TestADriveAsksTheFailoverOfItsLease: a drive's harness asks the lease's
 // own failover question when the lease has one, the runner's options'
-// otherwise with the session's id and the gateway's detail, and none when
-// neither is set (spec 051).
+// otherwise with the session's id, the model the turn stands on, the
+// failed one and the detail, and none when neither is set (spec 051).
 func TestADriveAsksTheFailoverOfItsLease(t *testing.T) {
-	failed := session.ModelRef{Name: "vendor/model-a", Via: "tier/quick"}
+	standing := session.ModelRef{Name: "vendor/model-a", Via: "tier/quick"}
+	failed := session.ModelRef{Name: "vendor/model-b", Via: "tier/quick"}
 	var asked string
-	r := &Runner{o: Options{Failover: func(_ context.Context, id string, f session.ModelRef, detail string) (session.ModelRef, error) {
-		asked = id + " " + f.Name + " " + detail
+	r := &Runner{o: Options{Failover: func(_ context.Context, id string, on, f session.ModelRef, detail string) (session.ModelRef, error) {
+		asked = id + " " + on.Name + " " + f.Name + " " + detail
 		return session.ModelRef{Name: "from-the-server", Via: f.Via}, nil
 	}}}
-	next, err := r.failover("ses_1", nil)(t.Context(), failed, "upstream status 429")
-	if err != nil || next.Name != "from-the-server" || asked != "ses_1 vendor/model-a upstream status 429" {
+	next, err := r.failover("ses_1", nil)(t.Context(), standing, failed, "upstream status 429")
+	if err != nil || next.Name != "from-the-server" || asked != "ses_1 vendor/model-a vendor/model-b upstream status 429" {
 		t.Fatalf("the options' question answered %+v, %v, asked %q", next, err, asked)
 	}
-	if next, err := r.failover("ses_1", asking{})(t.Context(), failed, ""); err != nil || next.Name != "from-the-lease" {
+	if next, err := r.failover("ses_1", asking{})(t.Context(), standing, failed, ""); err != nil || next.Name != "from-the-lease" {
 		t.Fatalf("the lease's question answered %+v, %v", next, err)
 	}
 	if (&Runner{}).failover("ses_1", nil) != nil {

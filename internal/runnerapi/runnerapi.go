@@ -109,11 +109,14 @@ type Token struct {
 }
 
 // FailoverRequest asks, under the lease, which model the session's turn
-// continues on when Failed, the model it ran with the routed name it was
-// picked for, could not serve now (spec 051), Detail the gateway's
-// developer detail of the failure.
+// continues on when Failed could not serve now (spec 051): Standing is the
+// model the turn runs with the routed name it was picked for, and Failed
+// that model, or one an earlier answer of the turn named that could not be
+// connected; Detail is the developer detail of the failure. A request
+// with no Standing, from a runner before it, stands on Failed.
 type FailoverRequest struct {
 	Generation int64            `json:"generation"`
+	Standing   session.ModelRef `json:"standing"`
 	Failed     session.ModelRef `json:"failed"`
 	Detail     string           `json:"detail,omitempty"`
 }
@@ -161,10 +164,11 @@ type Options struct {
 	// checked the runner holds; nil mints nothing.
 	Credentials func(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error)
 	// Failover answers which model the session id's turn continues on
-	// when failed could not serve now (spec 051), to a lease the route
-	// has checked the runner holds: toposd's question to its authorizer.
-	// Nil names none, so nothing moves.
-	Failover func(ctx context.Context, id string, failed session.ModelRef, detail string) (session.ModelRef, error)
+	// when failed could not serve now (spec 051), standing the model the
+	// turn runs, to a lease the route has checked the runner holds:
+	// toposd's question to its authorizer. Nil names none, so nothing
+	// moves.
+	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, detail string) (session.ModelRef, error)
 	Now      func() time.Time
 	Log      *slog.Logger
 }
@@ -412,7 +416,7 @@ func (s *Server) tokens(w http.ResponseWriter, r *http.Request) error {
 }
 
 // failover answers a runner's failover question under its lease (spec
-// 051) with the model the turn continues on, the failed one when the
+// 051) with the model the turn continues on, the one it stands on when the
 // server names none.
 func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
 	var req FailoverRequest
@@ -433,10 +437,13 @@ func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
 		return &wireError{CodeLeaseLost, http.StatusConflict, "the store's lease on the session ended"}
 	default:
 	}
-	if s.o.Failover == nil {
-		return reply(w, http.StatusOK, FailoverAnswer{Model: req.Failed})
+	if req.Standing.Name == "" {
+		req.Standing = req.Failed
 	}
-	next, err := s.o.Failover(r.Context(), id, req.Failed, req.Detail)
+	if s.o.Failover == nil {
+		return reply(w, http.StatusOK, FailoverAnswer{Model: req.Standing})
+	}
+	next, err := s.o.Failover(r.Context(), id, req.Standing, req.Failed, req.Detail)
 	if err != nil {
 		return &wireError{CodeNoFailover, http.StatusBadGateway, err.Error()}
 	}

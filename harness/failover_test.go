@@ -6,6 +6,7 @@ package harness
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -44,26 +45,29 @@ func answerFrom(name, say string) luxstub.Reply {
 	return luxstub.Reply{Response: ir.Response{Model: name, Blocks: []ir.Block{text(say)}, StopReason: ir.StopEndTurn, Usage: ir.Usage{InputTokens: 10, OutputTokens: 2}}}
 }
 
-// router is a Failover that answers the models of next in turn, with the
-// routed name of the failed model, and records what it was asked.
+// router is a Failover that answers the models of next in turn, and the
+// model the turn stands on once they run out, and records what it was
+// asked.
 type router struct {
-	mu      sync.Mutex
-	next    []session.ModelRef
-	err     error
-	asked   []session.ModelRef
-	details []string
+	mu       sync.Mutex
+	next     []session.ModelRef
+	err      error
+	standing []session.ModelRef
+	asked    []session.ModelRef
+	details  []string
 }
 
-func (r *router) failover(_ context.Context, failed session.ModelRef, detail string) (session.ModelRef, error) {
+func (r *router) failover(_ context.Context, standing, failed session.ModelRef, detail string) (session.ModelRef, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.standing = append(r.standing, standing)
 	r.asked = append(r.asked, failed)
 	r.details = append(r.details, detail)
 	if r.err != nil {
 		return session.ModelRef{}, r.err
 	}
 	if len(r.next) == 0 {
-		return failed, nil
+		return standing, nil
 	}
 	n := r.next[0]
 	r.next = r.next[1:]
@@ -81,7 +85,7 @@ func failoverEnv(t *testing.T, r *router) (*env, *[]time.Duration) {
 			return nil
 		}
 		c.Connect = func(_ context.Context, name string) (models.Model, models.Connection, models.Entry, error) {
-			if name == "unknown-model" {
+			if strings.HasPrefix(name, "unknown-") {
 				return nil, models.Connection{}, models.Entry{}, &models.Coded{Code: models.CodeUnknown, Message: "no figures for " + name}
 			}
 			return &dialect.Model{}, models.Connection{BaseURL: c.Connection.BaseURL, Model: name, Family: models.FamilyAnthropic},
@@ -163,8 +167,8 @@ func TestATurnMovesOffAModelThatCannotServe(t *testing.T) {
 	if len(*slept) != 0 {
 		t.Fatalf("the turn waited %v on a model it could move off", *slept)
 	}
-	if len(r.asked) != 1 || r.asked[0] != (session.ModelRef{Name: model, Via: via}) || r.details[0] != upstreamLimit {
-		t.Fatalf("the router was asked %+v with %q", r.asked, r.details)
+	if len(r.asked) != 1 || r.asked[0] != (session.ModelRef{Name: model, Via: via}) || r.standing[0] != r.asked[0] || r.details[0] != upstreamLimit {
+		t.Fatalf("the router was asked %+v standing on %+v with %q", r.asked, r.standing, r.details)
 	}
 	reqs := e.requests(ctx)
 	if len(reqs) != 2 || reqs[0].Model != model || reqs[0].Outcome != "error" || reqs[0].Attempts != 1 ||
@@ -247,9 +251,10 @@ func TestATurnThatRunsOutOfMovesEndsBusy(t *testing.T) {
 }
 
 // TestATurnTheRouterCannotMoveEndsAtOnce: a router that names no other
-// model, cannot be asked, or names one that cannot be connected ends the
-// turn with model_busy at once, with no retry and nothing recorded but
-// the failed request; the detail says what kept the turn where it was.
+// model, cannot be asked, or names one that cannot be connected and then
+// none other ends the turn with model_busy at once, with no retry and
+// nothing recorded but the failed request; the detail says what kept the
+// turn where it was.
 func TestATurnTheRouterCannotMoveEndsAtOnce(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -258,7 +263,7 @@ func TestATurnTheRouterCannotMoveEndsAtOnce(t *testing.T) {
 	}{
 		{"the failed model", &router{}, "no other model was named"},
 		{"an error", &router{err: errors.New("authorizer_unavailable")}, "authorizer_unavailable"},
-		{"a model that cannot be connected", &router{next: []session.ModelRef{{Name: "unknown-model", Via: via}}}, "unknown-model was named and could not be connected"},
+		{"a model that cannot be connected", &router{next: []session.ModelRef{{Name: "unknown-model", Via: via}}}, "unknown-model was named and could not be connected: models: model_unknown: no figures for unknown-model; no other model was named"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			e, slept := failoverEnv(t, c.r)
@@ -275,6 +280,65 @@ func TestATurnTheRouterCannotMoveEndsAtOnce(t *testing.T) {
 				t.Fatalf("session.error %+v", errs)
 			}
 		})
+	}
+}
+
+// TestAModelNamedThatCannotBeConnectedIsPassedOver: a model the router
+// names that cannot be connected is a move that failed: the next question
+// stands on the model the turn runs and names the one that could not be
+// connected as the failed model, with why as the detail, and the turn
+// moves to the model that answer names; the change's detail says which
+// model was passed over and why. Each such model counts against
+// MaxModelSwitches, so a router that names only such models is asked that
+// many times, and the turn then ends model_busy with every one of them in
+// the detail and nothing recorded but the failed request.
+func TestAModelNamedThatCannotBeConnectedIsPassedOver(t *testing.T) {
+	const other = "other-model"
+	r := &router{next: []session.ModelRef{{Name: "unknown-model", Via: via}, {Name: other, Via: via}}}
+	e, slept := failoverEnv(t, r)
+	ctx := t.Context()
+	e.stub.Script(model, limitedReply(model))
+	e.stub.Script(other, answerFrom(other, "Answered."))
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	standing := session.ModelRef{Name: model, Via: via}
+	if len(r.asked) != 2 || r.standing[0] != standing || r.standing[1] != standing || r.asked[0] != standing ||
+		r.asked[1] != (session.ModelRef{Name: "unknown-model", Via: via}) || r.details[0] != upstreamLimit ||
+		!strings.HasPrefix(r.details[1], "unknown-model was named and could not be connected: models: model_unknown") {
+		t.Fatalf("the router was asked %+v standing on %+v with %q", r.asked, r.standing, r.details)
+	}
+	ch := e.changes(ctx)
+	if len(ch) != 1 || ch[0].Old.Name != model || ch[0].New.Name != other || ch[0].Reason != session.ReasonModelBusy ||
+		!strings.Contains(ch[0].Detail, "upstream status 429") || !strings.Contains(ch[0].Detail, "unknown-model was named and could not be connected") {
+		t.Fatalf("session.model_changed %+v", ch)
+	}
+	if reqs := e.requests(ctx); len(reqs) != 2 || reqs[0].Model != model || reqs[1].Model != other || reqs[1].Outcome != "ok" || len(*slept) != 0 {
+		t.Fatalf("model requests %+v, waits %v", reqs, *slept)
+	}
+
+	unknown := &router{}
+	for i := range MaxModelSwitches + 1 {
+		unknown.next = append(unknown.next, session.ModelRef{Name: fmt.Sprintf("unknown-%d", i), Via: via})
+	}
+	e, slept = failoverEnv(t, unknown)
+	e.stub.Script(model, limitedReply(model))
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopError || out.Detail != CodeModelBusy {
+		t.Fatalf("outcome %+v", out)
+	}
+	if len(unknown.asked) != MaxModelSwitches || len(e.changes(ctx)) != 0 || len(e.stub.Requests()) != 1 || len(*slept) != 0 {
+		t.Fatalf("the router was asked %d times, %d changes, %d requests, waits %v", len(unknown.asked), len(e.changes(ctx)), len(e.stub.Requests()), *slept)
+	}
+	errs := e.sessionErrors(ctx)
+	if len(errs) != 1 || errs[0].Code != CodeModelBusy {
+		t.Fatalf("session.error %+v", errs)
+	}
+	for i := range MaxModelSwitches {
+		if !strings.Contains(errs[0].Detail, fmt.Sprintf("unknown-%d was named and could not be connected", i)) {
+			t.Fatalf("the detail lacks unknown-%d: %s", i, errs[0].Detail)
+		}
 	}
 }
 
