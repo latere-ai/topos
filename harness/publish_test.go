@@ -86,3 +86,39 @@ func TestASpawnedThreadHoldsNoPublish(t *testing.T) {
 		t.Fatalf("outcome %+v", out)
 	}
 }
+
+// TestAPublishCallAsksInConfirm: a publish call on a Cella machine in
+// confirm mode waits for a person, a release included, since its effect
+// reaches outside the sandbox: the session goes idle tool_confirmation
+// with the call recorded ask, and the tool does not run (spec 043).
+func TestAPublishCallAsksInConfirm(t *testing.T) {
+	pub := &fakeTool{name: session.ToolPublish, props: tools.Properties{Effect: tools.EffectExternal},
+		schema: `{"type":"object","properties":{"path":{"type":"string"},"release":{"type":"boolean"}},"additionalProperties":false}`}
+	e := setup(t, func(c *Config) {
+		if err := c.Tools.Add(pub); err != nil {
+			t.Fatal(err)
+		}
+	})
+	ctx := t.Context()
+	e.stub.Script(model, reply(ir.StopToolUse, call("toolu_r", session.ToolPublish, `{"release":true}`)))
+	e.send(ctx, "Release it.")
+	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
+		t.Fatalf("outcome %+v, want a wait for the person", out)
+	}
+	var use session.AgentToolUse
+	for _, ev := range e.all() {
+		if ev.Type == session.TypeAgentToolUse {
+			if err := ev.Decode(&use); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if use.Name != session.ToolPublish || use.Verdict != string(VerdictAsk) {
+		t.Fatalf("the call is recorded %+v, want publish asked", use)
+	}
+	for _, ev := range e.all() {
+		if ev.Type == session.TypeToolResult {
+			t.Fatalf("the call ran before the person answered: %s", ev.Payload)
+		}
+	}
+}
