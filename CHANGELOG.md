@@ -10,6 +10,30 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- A turn that moves off a model that cannot serve now reaches the model
+  the authorizer names. The authorizer widens the session's key to that
+  model as it answers, and a gateway with several replicas applies the
+  change on each within a moment of its own, so the runner could read
+  the door's model list before the change reached it, find the model
+  missing, and end the turn with `model_busy` and `model_unknown` in the
+  detail. While a door lists other models and not the one the runner
+  connects, the runner now reads the list again for up to 3 seconds
+  (`hosted.DoorSettle`), which also covers a model a send moves the
+  session to.
+- A model the authorizer names that still cannot be connected no longer
+  ends the turn. It counts as one of the turn's 3 moves, and the next
+  `session.update` names it as `failed_model`, beside the model the
+  session stands on as `current_model`, with why as `failed_detail`, so
+  the authorizer passes over it too. The change the turn records says
+  which models were passed over and why. An authorizer that holds
+  `failed_model` to `current_model` refuses that question, and the turn
+  ends `model_busy` as before; platformd accepts it from the release
+  that records it. The runner protocol's failover request carries
+  `standing`, the model the turn stands on; a request without it stands
+  on `failed`.
+
 ## v0.19.0 - 2026-10-05
 
 ### Added
