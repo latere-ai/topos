@@ -434,11 +434,28 @@ type ScopeChanged struct {
 // change, and each names in via the name that was asked when the
 // authorizer answered another. The payload is stored with each level
 // under effort and answered with it under reasoning.
+//
+// Reason is why the service changed the model, a code a client maps to
+// one sentence, and empty for every change but the one a turn makes when
+// its model could not serve (spec 051): ReasonModelBusy, with the
+// gateway's answer in Detail for a developer.
 type ModelChanged struct {
-	By  Sender   `json:"by"`
-	Old ModelRef `json:"old"`
-	New ModelRef `json:"new"`
+	By     Sender   `json:"by"`
+	Old    ModelRef `json:"old"`
+	New    ModelRef `json:"new"`
+	Reason string   `json:"reason,omitempty"`
+	Detail string   `json:"detail,omitempty"`
 }
+
+// ReasonModelBusy is the reason of a session.model_changed a turn made
+// when the model it ran could not serve and the authorizer named another
+// to answer in its place (spec 051). A client renders it as
+// MessageModelBusyChange.
+const ReasonModelBusy = "model_busy"
+
+// MessageModelBusyChange is the one sentence of ReasonModelBusy, for a
+// person.
+const MessageModelBusyChange = "The model was busy, so another one answered."
 
 // PolicyChanged is the payload of session.policy_changed: a person
 // changed the approval mode the session decides its calls under (spec
