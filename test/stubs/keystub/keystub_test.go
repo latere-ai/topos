@@ -75,6 +75,12 @@ func TestTheStubAnswersTheKeyRoutes(t *testing.T) {
 	if k, _ := s.Key("ses_1", "session"); k.Hash != h2 || k.Puts != 1 || len(k.Replaced) != 1 || k.Replaced[0] != h1 {
 		t.Fatalf("after a replacement %+v", k)
 	}
+	if k, ok := s.ByHash(h2); !ok || k.Session != "ses_1" || k.Workload != "session" {
+		t.Fatalf("the key by its hash %+v %v", k, ok)
+	}
+	if _, ok := s.ByHash(h1); ok {
+		t.Fatal("a replaced hash was found")
+	}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, s.URL()+"/ses_1/keys/session", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +95,9 @@ func TestTheStubAnswersTheKeyRoutes(t *testing.T) {
 	}
 	if k, ok := s.Key("ses_1", "session"); !ok || !k.Deleted {
 		t.Fatalf("after the delete %+v", k)
+	}
+	if _, ok := s.ByHash(h2); ok {
+		t.Fatal("a deleted key was found by its hash")
 	}
 	if _, ok := s.Key("ses_2", "session"); ok {
 		t.Fatal("a key nobody registered")

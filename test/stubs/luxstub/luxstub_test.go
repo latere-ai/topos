@@ -146,6 +146,83 @@ func TestEachDoorListsTheModelsWithTheirFigures(t *testing.T) {
 	}
 }
 
+// TestAKeyIsAnsweredForTheModelsItSelects: with a selection, each door's
+// list names the models the presented key selects alone, whichever header
+// carries it, and a request on another model is recorded and refused
+// model_not_allowed; a selection the test widens reaches the next request.
+func TestAKeyIsAnsweredForTheModelsItSelects(t *testing.T) {
+	s := New(t)
+	s.Models(bridge.Model{Name: "vendor/a", ContextWindow: 1000, MaxOutputTokens: 100}, bridge.Model{Name: "vendor/b", ContextWindow: 2000, MaxOutputTokens: 200})
+	s.Script("vendor/b", Reply{Response: ir.Response{Blocks: []ir.Block{{Type: ir.BlockText, Text: "b"}}}})
+	var mu sync.Mutex
+	selected := map[string][]string{"k": {"vendor/a"}}
+	s.Select(func(key string) []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return selected[key]
+	})
+	list := func(path string, header http.Header) string {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL()+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header = header
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(resp.Body)
+		if cerr := resp.Body.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	for _, h := range []http.Header{{"Authorization": {"Bearer k"}}, {"X-Api-Key": {"k"}}, {"X-Goog-Api-Key": {"k"}}} {
+		if got := list("/openai"+PathModels, h); !strings.Contains(got, `"id":"vendor/a"`) || strings.Contains(got, "vendor/b") {
+			t.Fatalf("the list of %v: %s", h, got)
+		}
+	}
+	if got := list("/anthropic"+PathModels, http.Header{"X-Api-Key": {"other"}}); strings.Contains(got, "vendor/") {
+		t.Fatalf("a key that selects nothing listed %s", got)
+	}
+	call := func() (int, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL()+PathChat, strings.NewReader(strings.Replace(chatBody, `"m"`, `"vendor/b"`, 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer k")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(resp.Body)
+		if cerr := resp.Body.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(b)
+	}
+	if code, body := call(); code != http.StatusForbidden || !strings.Contains(body, "model_not_allowed") || len(s.Requests()) != 1 {
+		t.Fatalf("a model the key does not select: %d %s, %d recorded", code, body, len(s.Requests()))
+	}
+	mu.Lock()
+	selected["k"] = append(selected["k"], "vendor/b")
+	mu.Unlock()
+	if got := list("/openai"+PathModels, http.Header{"Authorization": {"Bearer k"}}); !strings.Contains(got, `"id":"vendor/b"`) {
+		t.Fatalf("the list after the key widened: %s", got)
+	}
+	if code, body := call(); code != http.StatusOK || !strings.Contains(body, `"b"`) {
+		t.Fatalf("the model after the key widened: %d %s", code, body)
+	}
+}
+
 func TestAResponsesReasoningItemStreamsAsTheProviderSendsIt(t *testing.T) {
 	raw := json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"weigh it"}],"encrypted_content":"gAAAA-stub"}`)
 	s := New(t)

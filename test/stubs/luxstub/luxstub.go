@@ -6,8 +6,9 @@
 // doors, each door's model list, and Lux's discovery document, decodes
 // each request with that dialect's frontend codec, and streams the
 // scripted reply for the request's model back through the same codec.
-// It records every request and injects the failures a reply names. It
-// is a test artifact.
+// It records every request, injects the failures a reply names, and,
+// when a test sets a selection, answers each key for the models it
+// selects alone. It is a test artifact.
 package luxstub
 
 import (
@@ -17,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -102,6 +104,9 @@ type Server struct {
 	// published is the root the discovery document names the doors
 	// under; "" is the stub's own URL.
 	published string
+	// selects is the models a presented key may use; nil answers every
+	// key for every model.
+	selects func(key string) []string
 }
 
 // New starts a stub for the test and closes it when the test ends.
@@ -145,6 +150,38 @@ func (s *Server) Models(models ...bridge.Model) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.models = append([]bridge.Model(nil), models...)
+}
+
+// Select has the doors answer each key for the models sel names for its
+// value alone, as a Lux door answers a Key for the Models its selectors
+// match: a model list names those models only, and a request on another
+// model is refused model_not_allowed (403) after it is recorded. sel is
+// asked at every request, so a test changes what a key selects while a
+// session runs, as an authorizer widens a session's key; nil answers
+// every key for every model, the stub's default.
+func (s *Server) Select(sel func(key string) []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.selects = sel
+}
+
+// Presented is the key a request carries: x-api-key, x-goog-api-key, or
+// the bearer of Authorization, as a Lux door reads it.
+func Presented(h http.Header) string {
+	if k := h.Get("X-Api-Key"); k != "" {
+		return k
+	}
+	if k := h.Get("X-Goog-Api-Key"); k != "" {
+		return k
+	}
+	return strings.TrimPrefix(h.Get("Authorization"), "Bearer ")
+}
+
+// allows reports whether the key h presents may use model under sel;
+// with no selection every key may use every model. It is called with no
+// lock held, since sel may read other stubs.
+func allows(sel func(string) []string, h http.Header, model string) bool {
+	return sel == nil || slices.Contains(sel(Presented(h)), model)
 }
 
 // Listed returns the headers of every model list request so far.
@@ -192,6 +229,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.requests = append(s.requests, Recorded{Dialect: d, Model: req.Model, Header: r.Header.Clone(), Body: body, Request: req})
+	sel := s.selects
+	s.mu.Unlock()
+	if !allows(sel, r.Header, req.Model) {
+		writeError(w, http.StatusForbidden, "model_not_allowed", fmt.Sprintf("the key may not use the model %q", req.Model))
+		return
+	}
+	s.mu.Lock()
 	queue := s.replies[req.Model]
 	if len(queue) == 0 {
 		s.mu.Unlock()
@@ -285,12 +329,15 @@ func listWire(p string) (bridge.Wire, bool) {
 	return "", false
 }
 
-// list answers a door's model list in that door's shape.
+// list answers a door's model list in that door's shape: the models the
+// presented key selects, every model without a selection.
 func (s *Server) list(w http.ResponseWriter, r *http.Request, wire bridge.Wire) {
 	s.mu.Lock()
 	s.listed = append(s.listed, r.Header.Clone())
-	body := bridge.ModelList(wire, s.models)
+	sel, models := s.selects, slices.Clone(s.models)
 	s.mu.Unlock()
+	models = slices.DeleteFunc(models, func(m bridge.Model) bool { return !allows(sel, r.Header, m.Name) })
+	body := bridge.ModelList(wire, models)
 	w.Header().Set("Content-Type", "application/json")
 	// A failed write means the client is gone; the stub has nothing left
 	// to answer.

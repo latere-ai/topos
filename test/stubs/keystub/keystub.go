@@ -114,6 +114,21 @@ func (s *Server) Key(session, workload string) (Key, bool) {
 	return out, true
 }
 
+// ByHash is the key whose hash is hash now, of any session and workload,
+// as a model gateway finds a key by the SHA-256 of the value presented.
+func (s *Server) ByHash(hash string) (Key, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range s.keys {
+		if k.Hash == hash && !k.Deleted {
+			out := *k
+			out.Replaced = slices.Clone(k.Replaced)
+			return out, true
+		}
+	}
+	return Key{}, false
+}
+
 // Requests returns every request the stub received, in order.
 func (s *Server) Requests() []Recorded {
 	s.mu.Lock()
