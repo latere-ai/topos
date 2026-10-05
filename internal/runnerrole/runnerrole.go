@@ -472,8 +472,12 @@ var _ runner.Credentials = (*lease)(nil)
 // runs and detail the developer detail of the failure, under the lease's
 // generation; lease_lost ends the lease.
 func (l *lease) Failover(ctx context.Context, standing, failed session.ModelRef, detail string) (session.ModelRef, error) {
+	q := runnerapi.FailoverRequest{Generation: l.gen, Failed: failed, Detail: detail}
+	if standing != failed {
+		q.Standing = &standing
+	}
 	var a runnerapi.FailoverAnswer
-	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/failover", runnerapi.FailoverRequest{Generation: l.gen, Standing: standing, Failed: failed, Detail: detail}, &a)
+	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/failover", q, &a)
 	if errors.Is(err, session.ErrLeaseLost) {
 		l.end()
 	}

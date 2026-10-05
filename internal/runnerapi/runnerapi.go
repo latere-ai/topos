@@ -109,16 +109,18 @@ type Token struct {
 }
 
 // FailoverRequest asks, under the lease, which model the session's turn
-// continues on when Failed could not serve now (spec 051): Standing is the
-// model the turn runs with the routed name it was picked for, and Failed
-// that model, or one an earlier answer of the turn named that could not be
-// connected; Detail is the developer detail of the failure. A request
-// with no Standing, from a runner before it, stands on Failed.
+// continues on when Failed could not serve now (spec 051): Failed is the
+// model the turn runs with the routed name it was picked for, or one an
+// earlier answer of the turn named that could not be connected, and
+// Standing, set only when it is another model than Failed, the model the
+// turn runs; Detail is the developer detail of the failure. A request
+// with no Standing stands on Failed, so a server before Standing reads
+// every request but one that passes a model over.
 type FailoverRequest struct {
-	Generation int64            `json:"generation"`
-	Standing   session.ModelRef `json:"standing"`
-	Failed     session.ModelRef `json:"failed"`
-	Detail     string           `json:"detail,omitempty"`
+	Generation int64             `json:"generation"`
+	Standing   *session.ModelRef `json:"standing,omitempty"`
+	Failed     session.ModelRef  `json:"failed"`
+	Detail     string            `json:"detail,omitempty"`
 }
 
 // FailoverAnswer is the model the turn continues on: the failed one when
@@ -437,13 +439,14 @@ func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
 		return &wireError{CodeLeaseLost, http.StatusConflict, "the store's lease on the session ended"}
 	default:
 	}
-	if req.Standing.Name == "" {
-		req.Standing = req.Failed
+	standing := req.Failed
+	if req.Standing != nil {
+		standing = *req.Standing
 	}
 	if s.o.Failover == nil {
-		return reply(w, http.StatusOK, FailoverAnswer{Model: req.Standing})
+		return reply(w, http.StatusOK, FailoverAnswer{Model: standing})
 	}
-	next, err := s.o.Failover(r.Context(), id, req.Standing, req.Failed, req.Detail)
+	next, err := s.o.Failover(r.Context(), id, standing, req.Failed, req.Detail)
 	if err != nil {
 		return &wireError{CodeNoFailover, http.StatusBadGateway, err.Error()}
 	}
