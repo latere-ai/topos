@@ -235,6 +235,12 @@ func examples() (map[string]example, error) {
 		session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: said("The release notes for v1.4.0 are in NOTES.md.")}, StopReason: ir.StopEndTurn})
 	sent := event(exampleSentEventID, 8, session.TypeUserMessage, exampleTime(12, 12, 0), 0,
 		session.UserMessage{Sender: person, Content: said("Add a section for the breaking changes.")})
+	// A search for the notes finds the session by its answer and its first
+	// message.
+	notes, err := session.ParseQuery("release notes")
+	if err != nil {
+		return nil, err
+	}
 	var frames bytes.Buffer
 	for _, ev := range []session.Event{first, second, third} {
 		ev, err := eventAnswer(ev)
@@ -273,6 +279,7 @@ func examples() (map[string]example, error) {
 		"createSession":     {request: text(createBody{Agent: agent.Metadata.Name, Title: created.Title, Message: "Write the release notes for v1.4.0.", Attended: true}), response: text(created)},
 		"listSessions":      {response: list(turned, exampleSessionID)},
 		"getSessionSummary": {response: text(session.Summary{Sessions: session.Counts{Idle: 2}, Agents: 1})},
+		"searchSessions":    {response: list(session.SearchResult{Session: turned, Matches: []session.Match{session.MatchOf(third, notes), session.MatchOf(first, notes)}}, "")},
 		"getSession":        {response: text(turned)},
 		"updateSession":     {request: text(updateBody{Model: &modelChange{Name: &switched.Model.Name, Reasoning: &switched.Model.Effort}, Policy: &policyChange{Mode: &progressive}}), response: text(updated)},
 		"endSession":        {request: text(endBody{Reason: session.StopCompleted}), response: text(ended)},

@@ -141,10 +141,13 @@ var paramDescriptions = map[string]string{
 }
 
 // agentParam, runnerParam and archivedParam scope the sessions a list
-// pages through and a summary counts; status is the list's alone.
+// pages through, a search looks in and a summary counts; status is the
+// list's and the search's alone.
 var (
 	agentParam = yaml.MapSlice{{Key: "name", Value: "agent"}, {Key: "in", Value: "query"}, {Key: "description", Value: "An agent's id, or a name among the agents of the caller's context."},
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
+	statusParam = yaml.MapSlice{{Key: "name", Value: "status"}, {Key: "in", Value: "query"},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{string(session.StatusIdle), string(session.StatusRunning), string(session.StatusEnded)}}}}}
 	runnerParam = yaml.MapSlice{{Key: "name", Value: "runner"}, {Key: "in", Value: "query"},
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{session.RunnerHosted, session.RunnerExternal}}}}}
 	archivedParam = yaml.MapSlice{{Key: "name", Value: "archived"}, {Key: "in", Value: "query"}, {Key: "description", Value: "false or absent leaves archived sessions out, true lists only them, any lists both."},
@@ -153,12 +156,16 @@ var (
 
 // queryParams are the query parameters of the routes that read any.
 var queryParams = map[string][]yaml.MapSlice{
-	"listSessions": {
-		agentParam,
-		{{Key: "name", Value: "status"}, {Key: "in", Value: "query"},
-			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{string(session.StatusIdle), string(session.StatusRunning), string(session.StatusEnded)}}}}},
-		runnerParam,
-		archivedParam,
+	"listSessions": {agentParam, statusParam, runnerParam, archivedParam},
+	"searchSessions": {
+		{{Key: "name", Value: "q"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
+			{Key: "description", Value: "The words to search for. Each is found as the start of a word, whatever its case; characters of Han, Hiragana and Katakana typed in a row are found as those characters in a row."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: session.MaxSearchQuery}}}},
+		{{Key: "name", Value: "limit"}, {Key: "in", Value: "query"}, {Key: "description", Value: fmt.Sprintf("How many sessions a page holds at most; %d when absent.", session.MaxSearchResults)},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}, {Key: "maximum", Value: session.MaxSearchResults}}}},
+		{{Key: "name", Value: "cursor"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The next_cursor of the page before."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}},
+		agentParam, statusParam, runnerParam, archivedParam,
 	},
 	"getSessionSummary": {agentParam, runnerParam, archivedParam},
 	"getFile": {
@@ -273,7 +280,17 @@ var opDescriptions = map[string]string{
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
 		"its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable.",
-	"listSessions":  "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
+	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
+	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, "+
+		"and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. "+
+		"Markdown's marks and a link's address are not searched, and a message is searched in its first %d bytes. "+
+		"The answer is a page of {session, matches}, at most limit sessions, newest first by id as the list orders them, with next_cursor while more follow. "+
+		"matches are the session's newest %d matching events, newest first, each {seq, event_id, type, time, excerpt}: seq is the event's place in the log, a client's way to show it in the conversation, "+
+		"and excerpt at most %d characters around the first match, as fragments of text with match true on each part q matched and … where the message is cut. "+
+		"The route asks session.list with the list's fields and searches the sessions the list would, then asks session.read of each session it found, as a read of its log does: "+
+		"a session the caller may not read is left out, so a page may hold fewer sessions than limit while next_cursor remains. "+
+		"A fork holds its parent's events, so a session and the session it was forked from can both match. A q that is empty, holds no word, or is longer than %d characters is invalid_request.",
+		session.MaxSearchText, session.MaxSearchMatches, session.SearchExcerpt, session.MaxSearchQuery),
 	"getSession":    "Get a session.",
 	"resumeSession": "Resume a session idle on its budget once the cap is raised.",
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +

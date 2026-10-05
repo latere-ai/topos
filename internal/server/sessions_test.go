@@ -586,7 +586,9 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 			"sendEvent": `{"type":"user.interrupt"}`, "redactEvent": `{"reason":"x"}`, "resumeSession": `{}`, "updateSession": `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`,
 			"applyTrigger": triggerYAML("reviewer", "schedule: '@hourly', session: {message: y}"),
 		}[rt.op]
-		if a := f.do(rt.method, "/v1"+path, "alice", body); a.status != http.StatusServiceUnavailable || a.code() != auth.CodeAuthorizerUnavailable {
+		// A search's words are read before it asks, as a list's filters are.
+		query := map[string]string{"searchSessions": "?q=review"}[rt.op]
+		if a := f.do(rt.method, "/v1"+path+query, "alice", body); a.status != http.StatusServiceUnavailable || a.code() != auth.CodeAuthorizerUnavailable {
 			t.Errorf("%s: %d %s", rt.op, a.status, a.body)
 		}
 	}

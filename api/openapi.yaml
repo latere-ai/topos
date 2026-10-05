@@ -610,6 +610,138 @@ paths:
                 agents: 1
         default:
           $ref: "#/components/responses/Error"
+  /sessions/search:
+    get:
+      operationId: searchSessions
+      summary: Search sessions
+      description: "Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. Markdown's marks and a link's address are not searched, and a message is searched in its first 65536 bytes. The answer is a page of {session, matches}, at most limit sessions, newest first by id as the list orders them, with next_cursor while more follow. matches are the session's newest 3 matching events, newest first, each {seq, event_id, type, time, excerpt}: seq is the event's place in the log, a client's way to show it in the conversation, and excerpt at most 160 characters around the first match, as fragments of text with match true on each part q matched and … where the message is cut. The route asks session.list with the list's fields and searches the sessions the list would, then asks session.read of each session it found, as a read of its log does: a session the caller may not read is left out, so a page may hold fewer sessions than limit while next_cursor remains. A fork holds its parent's events, so a session and the session it was forked from can both match. A q that is empty, holds no word, or is longer than 200 characters is invalid_request."
+      x-topos-actions:
+        - session.list
+        - session.read
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: The words to search for. Each is found as the start of a word, whatever its case; characters of Han, Hiragana and Katakana typed in a row are found as those characters in a row.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: limit
+          in: query
+          description: How many sessions a page holds at most; 20 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before.
+          schema:
+            type: string
+        - name: agent
+          in: query
+          description: An agent's id, or a name among the agents of the caller's context.
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - idle
+              - running
+              - ended
+        - name: runner
+          in: query
+          schema:
+            type: string
+            enum:
+              - hosted
+              - external
+        - name: archived
+          in: query
+          description: false or absent leaves archived sessions out, true lists only them, any lists both.
+          schema:
+            type: string
+            enum:
+              - "false"
+              - "true"
+              - any
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example:
+                items:
+                  - session:
+                      schema: 1
+                      id: ses_01M34G2JF01B91B8399CD1G6YP
+                      agent:
+                        id: agent_01M34FSDG0Q60424XT3D96DRAJ
+                        name: release-notes
+                        version: 3
+                        digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
+                        bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
+                      title: Notes for v1.4.0
+                      initiator:
+                        subject: https://login.example|alice
+                        kind: person
+                      runner: hosted
+                      status: idle
+                      stop_reason: end_turn
+                      turn: 1
+                      last_seq: 5
+                      machine:
+                        kind: cella
+                        image: base
+                      policy:
+                        mode: confirm
+                        thresholds:
+                          flag_at: 0.3
+                          ask_at: 0.5
+                          block_at: 0.9
+                      budget:
+                        spent_cost_usd_micro: 1200
+                      limits:
+                        turn_timeout: 2h0m0s
+                        max_age: 168h0m0s
+                      capture: {}
+                      attended: true
+                      created_at: "2026-09-22T12:05:00Z"
+                      updated_at: "2026-09-22T12:05:41Z"
+                      expires_at: "2026-09-29T12:05:00Z"
+                    matches:
+                      - seq: 3
+                        event_id: evt_01M34G3SH0V6283G9W516VXR87
+                        type: agent.message
+                        time: "2026-09-22T12:05:40Z"
+                        excerpt:
+                          - text: "The "
+                          - text: release
+                            match: true
+                          - text: " "
+                          - text: notes
+                            match: true
+                          - text: " for v1.4.0 are in "
+                          - text: NOTES
+                            match: true
+                          - text: .md.
+                      - seq: 1
+                        event_id: evt_01M34G2JF1P53NNG7DN08D5QAG
+                        type: user.message
+                        time: "2026-09-22T12:05:00Z"
+                        excerpt:
+                          - text: "Write the "
+                          - text: release
+                            match: true
+                          - text: " "
+                          - text: notes
+                            match: true
+                          - text: " for v1.4.0."
+        default:
+          $ref: "#/components/responses/Error"
   /sessions/{id}:
     get:
       operationId: getSession

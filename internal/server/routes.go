@@ -33,6 +33,11 @@ func table() []route {
 			op: "listSessions", summary: "List sessions", status: http.StatusOK, handle: (*call).listSessions},
 		{method: http.MethodGet, path: "/sessions/summary", actions: a(authorizer.ActionSessionList),
 			op: "getSessionSummary", summary: "Count sessions", status: http.StatusOK, handle: (*call).getSessionSummary},
+		// A search's scope is the list's; each session it finds is then
+		// asked as a read of its log is, since an excerpt is its content
+		// (spec 050).
+		{method: http.MethodGet, path: "/sessions/search", actions: a(authorizer.ActionSessionList, authorizer.ActionSessionRead),
+			op: "searchSessions", summary: "Search sessions", status: http.StatusOK, handle: (*call).searchSessions},
 		{method: http.MethodGet, path: "/sessions/{id}", actions: a(authorizer.ActionSessionRead),
 			op: "getSession", summary: "Read a session", status: http.StatusOK, handle: (*call).getSession},
 		{method: http.MethodPatch, path: "/sessions/{id}", actions: a(authorizer.ActionSessionUpdate, authorizer.ActionSessionRead),

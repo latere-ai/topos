@@ -18,9 +18,9 @@ import (
 // is applied to every value a route of the API answers, and to nothing a
 // store, a runner or the harness reads.
 
-// asAnswer is v as the API answers it: a session's model, an agent's
-// models and a session.model_changed's two models with their level under
-// reasoning. A value of any other type is answered as it is. The values v
+// asAnswer is v as the API answers it: a session's model, a search
+// result's session's, an agent's models and a session.model_changed's two
+// models with their level under reasoning. A value of any other type is answered as it is. The values v
 // holds are not changed.
 func asAnswer(v any) (any, error) {
 	switch v := v.(type) {
@@ -30,6 +30,16 @@ func asAnswer(v any) (any, error) {
 		out := make([]session.Session, len(v))
 		for i, s := range v {
 			out[i] = sessionAnswer(s)
+		}
+		return out, nil
+	case session.SearchResult:
+		v.Session = sessionAnswer(v.Session)
+		return v, nil
+	case []session.SearchResult:
+		out := make([]session.SearchResult, len(v))
+		for i, r := range v {
+			r.Session = sessionAnswer(r.Session)
+			out[i] = r
 		}
 		return out, nil
 	case session.Event:

@@ -469,6 +469,16 @@ func TestServeAnswersTheAPIAsASelfHoster(t *testing.T) {
 		sum.Sessions.Running+sum.Sessions.WaitingForApproval+sum.Sessions.Idle+sum.Sessions.Ended != 1 || sum.Agents != 1 {
 		t.Fatalf("summary: %d %s (%v)", code, body, err)
 	}
+	// A search finds the session by its first message, in the data
+	// directory, which has no index of its own.
+	code, body = send(http.MethodGet, "/v1/sessions/search?q=main.go", "")
+	var found struct {
+		Items []session.SearchResult `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &found); code != http.StatusOK || err != nil || len(found.Items) != 1 ||
+		len(found.Items[0].Matches) != 1 || found.Items[0].Matches[0].Seq != 1 {
+		t.Fatalf("search: %d %s (%v)", code, body, err)
+	}
 	if code, _ := get(t, publicURL+"/v1/openapi.yaml"); code != 200 {
 		t.Fatalf("openapi: %d", code)
 	}
