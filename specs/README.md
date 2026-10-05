@@ -103,6 +103,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [045](.archive/045-a-server-cannot-hold-a-turn.md) | A server cannot hold a turn: a foreground command that starts a server moves to the background after a grace, with its port, pid and log | small | complete | 008, 009 |
 | [046](.archive/046-the-machine-starts-with-the-turn.md) | The machine starts with the turn: a session's sandbox opens beside the turn's first model call, not at its first tool call | small | complete | 009, 016 |
 | [047](047-web-search.md) | Web search: a tool that searches through a service the installation configures, with the session's own key, and the cost a search reports in the session's spend | medium | in-progress | 003, 004, 005, 007, 008, 012, 016, 018, 024, 025 |
+| [048](048-the-machine-starts-at-the-first-tool-call.md) | The machine starts at the first tool call: a session's sandbox starts when the model's response begins a call of a tool that acts on it, beside the call's arguments, and a turn that only talks starts none | small | in-progress | 009, 016, 046 |
 
 ## Dependency graph
 
@@ -159,6 +160,7 @@ flowchart BT
   S045[045 a server cannot hold a turn]
   S046[046 the machine starts with the turn]
   S047[047 web search]
+  S048[048 the machine starts at the first tool call]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -236,6 +238,7 @@ flowchart BT
   S047 --> S012
   S047 --> S018
   S047 --> S025
+  S048 --> S046
   S043 --> S019
   S043 --> S038
   S043 --> S039
@@ -252,7 +255,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
