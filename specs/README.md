@@ -104,6 +104,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [046](.archive/046-the-machine-starts-with-the-turn.md) | The machine starts with the turn: a session's sandbox opens beside the turn's first model call, not at its first tool call | small | complete | 009, 016 |
 | [047](047-web-search.md) | Web search: a tool that searches through a service the installation configures, with the session's own key, and the cost a search reports in the session's spend | medium | in-progress | 003, 004, 005, 007, 008, 012, 016, 018, 024, 025 |
 | [048](.archive/048-the-machine-starts-at-the-first-tool-call.md) | The machine starts at the first tool call: a session's sandbox starts when the model's response begins a call of a tool that acts on it, beside the call's arguments, in a new session and in one that had a sandbox alike, and a turn that only talks starts none | small | complete | 009, 016, 046 |
+| [049](.archive/049-reasoning.md) | Reasoning: the model's level is named reasoning at the API and kept as effort in storage, and an authorizer's decision may set it | medium | complete | 003, 004, 006, 015, 038 |
 
 ## Dependency graph
 
@@ -161,6 +162,7 @@ flowchart BT
   S046[046 the machine starts with the turn]
   S047[047 web search]
   S048[048 the machine starts at the first tool call]
+  S049[049 reasoning]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -241,6 +243,7 @@ flowchart BT
   S048 --> S046
   S043 --> S019
   S043 --> S038
+  S049 --> S038
   S043 --> S039
 ```
 
