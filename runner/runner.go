@@ -59,7 +59,34 @@ type Options struct {
 	// leases of its own runners. Nil, and with such a lease, a drive
 	// has no token source.
 	Credentials func(id string, lease session.Lease) Credentials
-	Clock       func() time.Time
+	// Failover asks which model the session id's turn continues on when the
+	// model it runs cannot serve now (spec 051): toposd's question to its
+	// authorizer, for the leases of its own runners. A lease that asks it
+	// itself (Failover) is asked instead; with neither, a drive asks
+	// nothing and such a turn ends after harness.DownRetry.
+	Failover func(ctx context.Context, id string, failed session.ModelRef, detail string) (session.ModelRef, error)
+	Clock    func() time.Time
+}
+
+// Failover is a lease that asks which model its session's turn continues
+// on when the model it runs cannot serve now (spec 051): a runner
+// process's, which reaches toposd over its internal listener.
+type Failover interface {
+	Failover(ctx context.Context, failed session.ModelRef, detail string) (session.ModelRef, error)
+}
+
+// failover is the harness's Failover for a drive holding lease on the
+// session id: the lease's own, Options.Failover's, or nil.
+func (r *Runner) failover(id string, lease session.Lease) func(context.Context, session.ModelRef, string) (session.ModelRef, error) {
+	if f, ok := lease.(Failover); ok {
+		return f.Failover
+	}
+	if r.o.Failover == nil {
+		return nil
+	}
+	return func(ctx context.Context, failed session.ModelRef, detail string) (session.ModelRef, error) {
+		return r.o.Failover(ctx, id, failed, detail)
+	}
 }
 
 // Runner drives sessions.
@@ -177,6 +204,9 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	cfg, err := r.o.Harness(built, s)
 	if err != nil {
 		return harness.Outcome{}, r.setupFailed(ctx, log, err)
+	}
+	if cfg.Failover == nil {
+		cfg.Failover = r.failover(id, lease)
 	}
 	evs, err := st.Events(ctx, id, 1, 0)
 	if err != nil {

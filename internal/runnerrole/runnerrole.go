@@ -466,3 +466,21 @@ func (l *lease) Credential(ctx context.Context, audience, workload string) (runn
 }
 
 var _ runner.Credentials = (*lease)(nil)
+
+// Failover asks the server which model the session's turn continues on
+// when failed could not serve now (spec 051), detail the gateway's
+// developer detail of the failure, under the lease's
+// generation; lease_lost ends the lease.
+func (l *lease) Failover(ctx context.Context, failed session.ModelRef, detail string) (session.ModelRef, error) {
+	var a runnerapi.FailoverAnswer
+	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/failover", runnerapi.FailoverRequest{Generation: l.gen, Failed: failed, Detail: detail}, &a)
+	if errors.Is(err, session.ErrLeaseLost) {
+		l.end()
+	}
+	if err != nil {
+		return session.ModelRef{}, err
+	}
+	return a.Model, nil
+}
+
+var _ runner.Failover = (*lease)(nil)

@@ -52,6 +52,11 @@ const (
 	// CodeCredentialRefused is a credential the minter could not have:
 	// details.code names the setup code the runner closes the turn with.
 	CodeCredentialRefused = "credential_refused"
+	// CodeNoFailover is a failover question the server could not answer
+	// with a model (spec 051): the authorizer denied it or could not be
+	// asked, or the model it named is not one the installation runs. The
+	// message says which; the runner ends the turn where it is.
+	CodeNoFailover = "no_failover"
 )
 
 // ClaimRequest asks for sessions to run.
@@ -103,6 +108,22 @@ type Token struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// FailoverRequest asks, under the lease, which model the session's turn
+// continues on when Failed, the model it ran with the routed name it was
+// picked for, could not serve now (spec 051), Detail the gateway's
+// developer detail of the failure.
+type FailoverRequest struct {
+	Generation int64            `json:"generation"`
+	Failed     session.ModelRef `json:"failed"`
+	Detail     string           `json:"detail,omitempty"`
+}
+
+// FailoverAnswer is the model the turn continues on: the failed one when
+// nothing moves.
+type FailoverAnswer struct {
+	Model session.ModelRef `json:"model"`
+}
+
 // Appended is the log's last sequence after an append.
 type Appended struct {
 	LastSeq uint64 `json:"last_seq"`
@@ -139,8 +160,13 @@ type Options struct {
 	// workload to the lease named lease (spec 018), which the route has
 	// checked the runner holds; nil mints nothing.
 	Credentials func(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error)
-	Now         func() time.Time
-	Log         *slog.Logger
+	// Failover answers which model the session id's turn continues on
+	// when failed could not serve now (spec 051), to a lease the route
+	// has checked the runner holds: toposd's question to its authorizer.
+	// Nil names none, so nothing moves.
+	Failover func(ctx context.Context, id string, failed session.ModelRef, detail string) (session.ModelRef, error)
+	Now      func() time.Time
+	Log      *slog.Logger
 }
 
 // Server holds the claims of remote runners. A claim holds the store's
@@ -201,6 +227,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST "+Root+"/leases/{session}/renew", s.renew)
 	route("POST "+Root+"/leases/{session}/release", s.release)
 	route("POST "+Root+"/leases/{session}/tokens", s.tokens)
+	route("POST "+Root+"/leases/{session}/failover", s.failover)
 	route("POST "+Root+"/sessions/{session}/events", s.append)
 	route("GET "+Root+"/sessions/{session}", s.get)
 	route("GET "+Root+"/sessions/{session}/events", s.events)
@@ -382,6 +409,38 @@ func (s *Server) tokens(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return reply(w, http.StatusOK, Token{Token: cred.Value, ExpiresAt: cred.ExpiresAt.UTC()})
+}
+
+// failover answers a runner's failover question under its lease (spec
+// 051) with the model the turn continues on, the failed one when the
+// server names none.
+func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
+	var req FailoverRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	if req.Failed.Name == "" {
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a failover request names the failed model"}
+	}
+	id := r.PathValue("session")
+	c, err := s.held(id, req.Generation)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-c.lease.Lost():
+		s.drop(id, c)
+		return &wireError{CodeLeaseLost, http.StatusConflict, "the store's lease on the session ended"}
+	default:
+	}
+	if s.o.Failover == nil {
+		return reply(w, http.StatusOK, FailoverAnswer{Model: req.Failed})
+	}
+	next, err := s.o.Failover(r.Context(), id, req.Failed, req.Detail)
+	if err != nil {
+		return &wireError{CodeNoFailover, http.StatusBadGateway, err.Error()}
+	}
+	return reply(w, http.StatusOK, FailoverAnswer{Model: next})
 }
 
 func (s *Server) append(w http.ResponseWriter, r *http.Request) error {
