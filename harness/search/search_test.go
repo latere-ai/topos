@@ -4,6 +4,10 @@
 package search
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -30,5 +34,32 @@ func TestClean(t *testing.T) {
 	}
 	if (&Refused{Status: 403, Code: "c", Message: "m"}).Error() == "" {
 		t.Fatal("a refusal says nothing")
+	}
+}
+
+// TestTheContractPageStatesTheBounds: docs/web-search.md, the contract a
+// search service's author reads, states each bound with the value of its
+// constant, so a bound that changes fails here until the page says it.
+func TestTheContractPageStatesTheBounds(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "web-search.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := strings.Join(strings.Fields(string(raw)), " ")
+	thousands := func(n int) string {
+		if n < 1000 {
+			return strconv.Itoa(n)
+		}
+		return fmt.Sprintf("%d,%03d", n/1000, n%1000)
+	}
+	for _, want := range []string{
+		fmt.Sprintf("`query` is 1 to %d characters", MaxQueryLength),
+		fmt.Sprintf("`max_results` is 1 to %d, and always present: Topos sends %d", MaxResults, DefaultResults),
+		fmt.Sprintf("cuts a title past %s characters and a snippet past %s.", thousands(MaxTitleLength), thousands(MaxSnippetLength)),
+		fmt.Sprintf("larger than %d MiB, or no answer within %d seconds", MaxResponseBody>>20, int(Timeout.Seconds())),
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("docs/web-search.md does not state %q", want)
+		}
 	}
 }
