@@ -85,7 +85,7 @@ the callback on every drive:
 | Runner | Where the question goes |
 |---|---|
 | a `toposd serve` runner, in process | `Server.Failover`, toposd's question to its authorizer |
-| a `toposd runner` process | `POST /internal/v1/leases/{session}/failover` on the server's internal listener, with `{generation, standing, failed, detail}`, under the lease's generation as the token route checks it; a request with no `standing`, from a runner before it, stands on `failed`; `lease_lost` ends the lease, and a question the server could not answer is `no_failover` with why |
+| a `toposd runner` process | `POST /internal/v1/leases/{session}/failover` on the server's internal listener, with `{generation, failed, detail}` and `standing` when the turn stands on another model than `failed`, under the lease's generation as the token route checks it; a request with no `standing` stands on `failed`; `lease_lost` ends the lease, and a question the server could not answer is `no_failover` with why |
 
 toposd asks `session.update` as the session's initiator, in the context
 the session runs in, the context of its agent's owner ([[036-organization-owners]]):
@@ -226,11 +226,16 @@ shows any.
 
 A question whose `failed_model` is a model named that could not be
 connected, not the one `current_model` names, is a shape the authorizer
-must accept: platformd holds it to the model its own record holds, from
-the release that accepts it. An authorizer before that refuses it as
-`invalid_resource`, and the turn ends `model_busy` at once, as it did
-before; nothing breaks. The settle of "Connecting the model named" needs
-no authorizer change.
+must accept: an authorizer that routes may hold it to the model it
+recorded when it named it. One that holds `failed_model` to
+`current_model` refuses it as `invalid_resource`, and the turn ends
+`model_busy` at once, as it did before; nothing breaks, and such an
+authorizer rolls first to accept it. The settle of "Connecting the model
+named" needs no authorizer change. The runner protocol sends `standing`
+only when it differs from `failed`, so a runner with this change asks a
+server before it the first question as before; the second, which a
+server before it refuses as `invalid_request`, ends the turn as before
+too.
 
 ## Not in this spec
 
