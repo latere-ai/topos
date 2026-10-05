@@ -302,6 +302,73 @@ func TestARestartedRunnerReattachesTheSandboxByName(t *testing.T) {
 	}
 }
 
+// TestATalkOnlyTurnLeavesAStoppedSandboxStopped: a turn that only talks,
+// in a session whose sandbox Cella stopped, starts nothing and completes
+// on the context the session recorded; the next turn that calls a tool
+// on the machine starts the sandbox once and runs in it (spec 048).
+func TestATalkOnlyTurnLeavesAStoppedSandboxStopped(t *testing.T) {
+	c := newCloud(t, nil)
+	c.drive("Make a file.", bash("toolu_1", "echo kept > f.txt"), said("Made."))
+	if !c.cella.Stop(cella.SandboxName(c.s.ID)) {
+		t.Fatal("the session has no sandbox to stop")
+	}
+	c.drive("Thanks.", said("You are welcome."))
+	if n := c.cella.Count(cellastub.OpStart); n != 0 {
+		t.Fatalf("a turn that only talks started the sandbox %d times", n)
+	}
+	reqs := c.lux.Requests()
+	var system []string
+	for _, b := range reqs[len(reqs)-1].Request.System {
+		system = append(system, b.Text)
+	}
+	if !strings.Contains(strings.Join(system, "\n"), "Cella sandbox") {
+		t.Fatalf("the talking turn's request lacks the recorded machine context: %q", system)
+	}
+	c.drive("Read it.", bash("toolu_2", "cat f.txt"), bash("toolu_3", "cat f.txt"), said("Read."))
+	if n, m := c.cella.Count(cellastub.OpStart), c.cella.Count(cellastub.OpCreate); n != 1 || m != 1 {
+		t.Fatalf("the tool turn started the sandbox %d times and created %d, want one start and the first create", n, m)
+	}
+	if got := c.results(); !strings.Contains(got[1], "kept") || !strings.Contains(got[2], "kept") {
+		t.Fatalf("the tool turn's calls ran elsewhere: %q", got)
+	}
+	if n := len(c.events(session.TypeSessionMachine)); n != 1 {
+		t.Fatalf("%d session.machine events", n)
+	}
+}
+
+// TestAStartRefusedForTheRunningCeilingIsTheCallsResult: a tool call on a
+// session whose stopped sandbox Cella refuses to start, because its owner
+// runs as many sandboxes as the ceiling allows, is answered with Cella's
+// sentence, which the model reads in the call's result; the drive
+// completes and the session waits for its next message (spec 048).
+func TestAStartRefusedForTheRunningCeilingIsTheCallsResult(t *testing.T) {
+	const sentence = "You have reached your limit of running sandboxes. Stop one to start another."
+	c := newCloud(t, nil)
+	c.drive("Make a file.", bash("toolu_1", "echo kept > f.txt"), said("Made."))
+	if !c.cella.Stop(cella.SandboxName(c.s.ID)) {
+		t.Fatal("the session has no sandbox to stop")
+	}
+	c.cella.Fail(cellastub.OpStart, cellastub.Failure{Status: 422, Code: "quota_exceeded", Detail: "starting it would make 5 running sandboxes of a ceiling of 4"})
+	c.drive("Read it.", bash("toolu_2", "cat f.txt"), said("Stop another sandbox and ask again."))
+	var res session.ToolResult
+	results := c.events(session.TypeToolResult)
+	if len(results) != 2 || results[1].Decode(&res) != nil || !res.IsError || !strings.Contains(res.Content[0].Text, sentence) {
+		t.Fatalf("the refused call's result: %+v", res)
+	}
+	reqs := c.lux.Requests()
+	if body := string(reqs[len(reqs)-1].Body); !strings.Contains(body, sentence) {
+		t.Fatalf("the model was not told the refusal: %s", body)
+	}
+	var se session.SessionError
+	if errs := c.events(session.TypeSessionError); len(errs) != 1 || errs[0].Decode(&se) != nil || se.Code != machine.CodeUnavailable {
+		t.Fatalf("session.error %+v", errs)
+	}
+	s, err := c.st.Get(t.Context(), c.s.ID)
+	if err != nil || s.Status != session.StatusIdle {
+		t.Fatalf("the session after the refused start: %+v %v", s.Status, err)
+	}
+}
+
 // TestTheSandboxReachesItsRepositoriesHosts: a session's repositories'
 // git host is on its sandbox's egress allowlist, beside the agent's own
 // hosts, and one that cannot be cloned is reported as

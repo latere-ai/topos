@@ -183,9 +183,12 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		return harness.Outcome{}, err
 	}
 	// A session's first machine gets its repositories (spec 019). A
-	// machine opened on demand is recorded when a tool first acts on
-	// it, beside the running turn; one the session already had is opened
-	// at once, since its sandbox exists.
+	// machine opened on demand opens when a tool first acts on it and is
+	// recorded then, beside the running turn, whether or not the session
+	// had one before: its requests carry the context its log recorded,
+	// so a turn that only talks starts no stopped sandbox, and no
+	// ceiling on running sandboxes can refuse it (spec 048). The hook
+	// records a sandbox that replaced the recorded one.
 	first := !hasMachine(s, evs)
 	deferred, onDemand := cfg.Machine.(*machine.Deferred)
 	switch {
@@ -193,11 +196,6 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		deferred.OnOpen(func(ctx context.Context, m machine.Machine) error {
 			return r.opened(ctx, s, m, log, first, true)
 		})
-		if !first {
-			if err := deferred.Open(ctx); err != nil {
-				return harness.Outcome{}, r.setupFailed(ctx, log, err)
-			}
-		}
 	default:
 		if err := r.opened(ctx, s, cfg.Machine, log, first, false); err != nil {
 			return harness.Outcome{}, r.setupFailed(ctx, log, err)

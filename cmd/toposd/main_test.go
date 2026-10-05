@@ -962,9 +962,10 @@ func TestServeFindsTheFamilysDoorFromLuxsRoot(t *testing.T) {
 
 // TestCellaMachineSurvivesRunnerRestart: a serve stopped mid-turn, after
 // a tool opened the session's sandbox, leaves its session running; a
-// serve started again on the same data directory claims it, finds the
-// session's sandbox by name, starts it when Cella stopped it meanwhile,
-// and finishes the turn without creating another.
+// serve started again on the same data directory claims it, and when the
+// resumed turn calls a tool on the machine it finds the session's sandbox
+// by name, starts it since Cella stopped it meanwhile, and finishes the
+// turn without creating another.
 func TestCellaMachineSurvivesRunnerRestart(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -973,6 +974,7 @@ func TestCellaMachineSurvivesRunnerRestart(t *testing.T) {
 			once.Do(func() { close(started) })
 			<-release
 		}},
+		luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_glob_again", Name: "glob", Args: json.RawMessage(`{"pattern":"*.go"}`)}}}, StopReason: ir.StopToolUse}},
 		luxstub.Reply{Response: ir.Response{Model: "anthropic/claude-haiku-4.5", Blocks: []ir.Block{{Type: ir.BlockText, Text: "Reviewed."}}, StopReason: ir.StopEndTurn}},
 	)
 	t.Cleanup(func() { close(release) })

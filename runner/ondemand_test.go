@@ -103,8 +103,10 @@ func toolUse(id, name, args string) ir.Block {
 // none; once the agent has one and calls it, the machine opens, the first
 // tool that acts on it runs on it, its session.machine is appended beside
 // the turn and the turn's next request carries the machine's context and
-// instructions; a later drive of a session that has a machine opens it
-// at once and records it no second time.
+// instructions. A later drive of a session that has a machine does not
+// open it for a turn that only talks, whose request still carries the
+// recorded context, and opens it once for a turn that calls a tool on
+// it, recording it no second time (spec 048).
 func TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
@@ -144,8 +146,22 @@ func TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt(t *testing.T) {
 	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
 		t.Fatal(err)
 	}
+	if opens.Load() != 1 || f.count(ctx, session.TypeSessionMachine) != 1 {
+		t.Fatalf("a turn that only talks opened the session's machine: %d opens, %d session.machine", opens.Load(), f.count(ctx, session.TypeSessionMachine))
+	}
+	if talked := f.systemText(3); !strings.Contains(talked, "Working directory: "+f.work) || !strings.Contains(talked, "Run make check") {
+		t.Fatalf("the request of a turn that only talks lacks the recorded context:\n%s", talked)
+	}
+	f.stub.Script(model,
+		reply(toolUse("toolu_2", "echo", `{}`), toolUse("toolu_3", "echo", `{}`)),
+		reply(ir.Block{Type: ir.BlockText, Text: "Echoed."}),
+	)
+	f.message(ctx, "Echo twice.")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
 	if opens.Load() != 2 || f.count(ctx, session.TypeSessionMachine) != 1 {
-		t.Fatalf("the session's machine was not reopened at once, or was recorded again: %d opens, %d session.machine", opens.Load(), f.count(ctx, session.TypeSessionMachine))
+		t.Fatalf("a tool turn of a session that had a machine: %d opens, %d session.machine, want it opened once and recorded no second time", opens.Load(), f.count(ctx, session.TypeSessionMachine))
 	}
 }
 
