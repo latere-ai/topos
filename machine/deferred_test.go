@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fake is a machine that records the operations it served.
@@ -218,5 +219,139 @@ func TestOpenLeavesAnyOtherMachineAlone(t *testing.T) {
 	under := &fake{}
 	if err := Open(t.Context(), under); err != nil || len(under.ops) != 0 {
 		t.Fatalf("%v %v", err, under.ops)
+	}
+}
+
+// TestAStartedMachineOpensInTheBackground: Start opens the machine
+// without a caller waiting and without the hook; an operation that comes
+// while the open runs waits for it, runs the hook on the machine Start
+// opened and acts on it; a second Start opens nothing more.
+func TestAStartedMachineOpensInTheBackground(t *testing.T) {
+	ctx := t.Context()
+	under := &fake{}
+	gate := make(chan struct{})
+	var opens, hooks atomic.Int32
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) {
+		opens.Add(1)
+		<-gate
+		return under, nil
+	})
+	d.OnOpen(func(context.Context, Machine) error { hooks.Add(1); return nil })
+	d.Start()
+	d.Start()
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Exec(ctx, ExecRequest{Command: "true"})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("the call did not wait for the open: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if hooks.Load() != 0 || d.Opened() != nil {
+		t.Fatal("the start ran the hook or published the machine")
+	}
+	close(gate)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	d.Start()
+	if err := d.Release(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if opens.Load() != 1 || hooks.Load() != 1 || len(under.ops) != 1 || d.Opened() != under {
+		t.Fatalf("%d opens, %d hooks, ops %v", opens.Load(), hooks.Load(), under.ops)
+	}
+}
+
+// TestAStartThatFailsAnswersTheNextCall: a start whose open fails
+// answers the first operation after it with that failure, in the place
+// of the open it would have made; the next operation tries again, and so
+// does a later Start. A hook that fails on a started machine answers the
+// operation that ran it, and leaves the machine open.
+func TestAStartThatFailsAnswersTheNextCall(t *testing.T) {
+	ctx := t.Context()
+	var opens atomic.Int32
+	fail := errors.New("no capacity")
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) {
+		if opens.Add(1) == 1 {
+			return nil, fail
+		}
+		return &fake{}, nil
+	})
+	d.Start()
+	if oe, ok := errors.AsType[*OpenError](Open(ctx, d)); !ok || !errors.Is(oe, fail) || oe.Code != CodeUnavailable {
+		t.Fatalf("the first call after a failed start: %v", oe)
+	}
+	if opens.Load() != 1 {
+		t.Fatalf("the first call opened again: %d opens", opens.Load())
+	}
+	if err := Open(ctx, d); err != nil || opens.Load() != 2 {
+		t.Fatalf("the next call: %v, %d opens", err, opens.Load())
+	}
+
+	hookErr := &OpenError{Code: "repository_unavailable", Err: errors.New("clone refused")}
+	h := Defer(ctx, KindCella, func(context.Context) (Machine, error) { return &fake{}, nil })
+	h.OnOpen(func(context.Context, Machine) error { return hookErr })
+	h.Start()
+	if _, err := h.Exec(ctx, ExecRequest{}); !errors.Is(err, hookErr) {
+		t.Fatalf("the first call on a started machine whose hook fails: %v", err)
+	}
+	if _, err := h.Exec(ctx, ExecRequest{}); err != nil {
+		t.Fatalf("the machine a failed hook left open: %v", err)
+	}
+
+	var again atomic.Int32
+	r := Defer(ctx, KindCella, func(context.Context) (Machine, error) {
+		if again.Add(1) == 1 {
+			return nil, fail
+		}
+		return &fake{}, nil
+	})
+	r.Start()
+	if err := Open(ctx, r); !errors.Is(err, fail) {
+		t.Fatalf("the first call: %v", err)
+	}
+	r.Start()
+	if _, err := r.Exec(ctx, ExecRequest{}); err != nil || again.Load() != 2 {
+		t.Fatalf("a start after a failed one: %v, %d opens", err, again.Load())
+	}
+}
+
+// TestAReleaseAndAStartedOpen: an idle release does not wait for an
+// open a start began, and a release at the session's end waits for it,
+// then removes the machine it made, which never ran the hook.
+func TestAReleaseAndAStartedOpen(t *testing.T) {
+	ctx := t.Context()
+	under := &fake{}
+	gate := make(chan struct{})
+	var hooks atomic.Int32
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) {
+		<-gate
+		return under, nil
+	})
+	d.OnOpen(func(context.Context, Machine) error { hooks.Add(1); return nil })
+	d.Start()
+	if err := d.Release(ctx, false); err != nil {
+		t.Fatalf("an idle release: %v", err)
+	}
+	released := make(chan error, 1)
+	go func() { released <- d.Release(ctx, true) }()
+	select {
+	case err := <-released:
+		t.Fatalf("the end did not wait for the open: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(gate)
+	if err := <-released; err != nil {
+		t.Fatal(err)
+	}
+	if len(under.released) != 1 || !under.released[0] || hooks.Load() != 0 {
+		t.Fatalf("released %v, %d hooks", under.released, hooks.Load())
+	}
+	d.Start()
+	if _, err := d.Exec(ctx, ExecRequest{}); !errors.Is(err, ErrReleased) {
+		t.Fatalf("a call after the end: %v", err)
 	}
 }

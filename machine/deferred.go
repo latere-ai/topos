@@ -65,6 +65,13 @@ type Deferred struct {
 	mu       sync.Mutex
 	m        Machine
 	released bool
+	// starting is closed once the open Start began has finished, and is
+	// nil while none was begun; startErr is that open's failure, which
+	// the next operation answers, and prepared the machine it opened,
+	// which the next operation records through the hook and publishes.
+	starting chan struct{}
+	startErr error
+	prepared Machine
 }
 
 // Defer is a machine of kind that open makes on first use, under ctx.
@@ -91,6 +98,86 @@ func (d *Deferred) Open(ctx context.Context) error {
 	return err
 }
 
+// Start opens the machine in the background, unless it is open, released
+// or already starting, so the open runs beside other work: the runner
+// starts a session's machine as a turn of an agent whose tools act on it
+// begins, beside the turn's first model call (spec 046). The hook does
+// not run: the first operation that needs the machine runs it on the
+// machine Start opened, and waits for an open still under way, so the
+// session records its machine where it does without a start. A failed
+// open is answered to that first operation, in the place of the open it
+// would have made, and the next one tries again; a turn that never
+// needs the machine never hears it.
+func (d *Deferred) Start() {
+	d.mu.Lock()
+	if d.m != nil || d.prepared != nil || d.released || inFlight(d.starting) {
+		d.mu.Unlock()
+		return
+	}
+	done := make(chan struct{})
+	d.starting = done
+	d.mu.Unlock()
+	go func() {
+		defer close(done)
+		m, err := d.prepare()
+		d.mu.Lock()
+		d.startErr, d.prepared = err, m
+		d.mu.Unlock()
+	}()
+}
+
+// prepare opens the machine for Start, without the hook.
+func (d *Deferred) prepare() (Machine, error) {
+	d.opening.Lock()
+	defer d.opening.Unlock()
+	if m, err := d.current(); m != nil || err != nil {
+		return nil, err
+	}
+	return d.openCoded()
+}
+
+// openCoded opens the machine, a failure as an OpenError.
+func (d *Deferred) openCoded() (Machine, error) {
+	m, err := d.open(d.ctx)
+	if err != nil {
+		if _, coded := errors.AsType[*OpenError](err); coded {
+			return nil, err
+		}
+		return nil, &OpenError{Code: CodeUnavailable, Err: err}
+	}
+	return m, nil
+}
+
+// inFlight reports whether a start's channel is open.
+func inFlight(starting chan struct{}) bool {
+	if starting == nil {
+		return false
+	}
+	select {
+	case <-starting:
+		return false
+	default:
+		return true
+	}
+}
+
+// settle waits for the open Start began, if one runs, and answers its
+// failure once.
+func (d *Deferred) settle() error {
+	d.mu.Lock()
+	starting := d.starting
+	d.mu.Unlock()
+	if starting == nil {
+		return nil
+	}
+	<-starting
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	err := d.startErr
+	d.startErr = nil
+	return err
+}
+
 // Opened is the open machine, nil until the first open.
 func (d *Deferred) Opened() Machine {
 	d.mu.Lock()
@@ -109,9 +196,19 @@ func (d *Deferred) current() (Machine, error) {
 }
 
 // machine is the open machine, opening it and running the hook the first
+// time, after the open Start began has finished; that open's failure is
+// the answer of the first call after it.
+func (d *Deferred) machine() (Machine, error) {
+	if err := d.settle(); err != nil {
+		return nil, err
+	}
+	return d.ensure()
+}
+
+// ensure is the open machine, opening it and running the hook the first
 // time. The machine is published only once the hook returned, so a
 // parallel call never acts on it before the session records it.
-func (d *Deferred) machine() (Machine, error) {
+func (d *Deferred) ensure() (Machine, error) {
 	if m, err := d.current(); m != nil || err != nil {
 		return m, err
 	}
@@ -120,12 +217,15 @@ func (d *Deferred) machine() (Machine, error) {
 	if m, err := d.current(); m != nil || err != nil {
 		return m, err
 	}
-	m, err := d.open(d.ctx)
-	if err != nil {
-		if _, coded := errors.AsType[*OpenError](err); coded {
+	d.mu.Lock()
+	m := d.prepared
+	d.prepared = nil
+	d.mu.Unlock()
+	if m == nil {
+		var err error
+		if m, err = d.openCoded(); err != nil {
 			return nil, err
 		}
-		return nil, &OpenError{Code: CodeUnavailable, Err: err}
 	}
 	var herr error
 	if d.hook != nil {
@@ -251,20 +351,34 @@ func (d *Deferred) Fetch(ctx context.Context, r FetchRequest) (FetchResult, erro
 	return f.Fetch(ctx, r)
 }
 
-// Release releases the open machine. A machine that never opened has
-// nothing to let go of; after Release(ctx, true) every operation answers
-// ErrReleased either way.
+// Release releases the open machine, and the one Start opened that no
+// operation took. An idle release does not wait for an open Start began:
+// that open goes on under the drive's context, and a machine it leaves
+// behind is the session's to find by name and stops by its own idle
+// rule. A release at the session's end waits for it, so the end removes
+// what the start made. A machine that never opened has nothing to let go
+// of; after Release(ctx, true) every operation answers ErrReleased
+// either way.
 func (d *Deferred) Release(ctx context.Context, end bool) error {
 	d.mu.Lock()
-	m := d.m
+	starting := d.starting
+	d.mu.Unlock()
+	if end && starting != nil {
+		<-starting
+	}
+	d.mu.Lock()
+	m, prepared := d.m, d.prepared
 	d.mu.Unlock()
 	var err error
 	if m != nil {
 		err = m.Release(ctx, end)
 	}
+	if prepared != nil {
+		err = errors.Join(err, prepared.Release(ctx, end))
+	}
 	if end && err == nil {
 		d.mu.Lock()
-		d.released = true
+		d.released, d.prepared = true, nil
 		d.mu.Unlock()
 	}
 	return err
