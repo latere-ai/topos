@@ -29,10 +29,10 @@ committed: the commit log already holds that.
   the authorizer passes over it too. The change the turn records says
   which models were passed over and why. An authorizer that holds
   `failed_model` to `current_model` refuses that question, and the turn
-  ends `model_busy` as before; platformd accepts it from the release
-  that records it. The runner protocol's failover request carries
-  `standing`, the model the turn stands on; a request without it stands
-  on `failed`.
+  ends `model_busy` as before, so such an authorizer rolls first to
+  accept it. The runner protocol's failover request carries `standing`,
+  the model the turn stands on, when it is not `failed`; a request
+  without it stands on `failed`.
 
 ## v0.19.0 - 2026-10-05
 
