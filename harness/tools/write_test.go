@@ -25,7 +25,7 @@ func TestWriteRequiresCurrentContent(t *testing.T) {
 	if res.Outcome != OutcomeOK || text(res) != "Created "+p+" (7 bytes, 2 lines)." || get(t, p) != "one\ntwo" {
 		t.Fatalf("create %s %q", res.Outcome, text(res))
 	}
-	if res.Meta == nil || res.Meta.Path != p || res.Meta.SHA256 != sum("one\ntwo") {
+	if res.Meta == nil || res.Meta.Path != p || res.Meta.SHA256 != sum("one\ntwo") || res.Meta.Size == nil || *res.Meta.Size != 7 {
 		t.Fatalf("create meta %+v", res.Meta)
 	}
 
@@ -152,7 +152,7 @@ func TestEditRequiresUniqueMatch(t *testing.T) {
 		t.Fatalf("a unique edit %s %q", res.Outcome, text(res))
 	}
 	want := "package a\n\nfunc A() int { return 1 }\n\nfunc B() int { return 2 }\n"
-	if get(t, p) != want || res.Meta == nil || res.Meta.SHA256 != sum(want) || res.Meta.Path != p {
+	if get(t, p) != want || res.Meta == nil || res.Meta.SHA256 != sum(want) || res.Meta.Path != p || res.Meta.Size == nil || *res.Meta.Size != int64(len(want)) {
 		t.Fatalf("after the edit %q, meta %+v", get(t, p), res.Meta)
 	}
 

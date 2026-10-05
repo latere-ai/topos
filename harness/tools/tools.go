@@ -119,6 +119,9 @@ type Meta struct {
 	// of its content then. An empty SHA256 is a file that does not exist.
 	Path   string `json:"path,omitempty"`
 	SHA256 string `json:"sha256,omitempty"`
+	// Size is the length in bytes of the file a write or an edit left,
+	// which a client shows beside the file it offers to open (spec 044).
+	Size *int64 `json:"size,omitempty"`
 	// Dir is the directory bash ended in.
 	Dir      string `json:"dir,omitempty"`
 	ExitCode *int   `json:"exit_code,omitempty"`

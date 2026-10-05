@@ -77,7 +77,8 @@ func runEdit(ctx context.Context, b *builtin, c Call) (Result, error) {
 	if err := c.Machine.WriteFile(ctx, p, strings.NewReader(updated), 0); err != nil {
 		return b.fail(ctx, c, p, err)
 	}
-	meta := &Meta{Path: p, SHA256: digest([]byte(updated))}
+	size := int64(len(updated))
+	meta := &Meta{Path: p, SHA256: digest([]byte(updated)), Size: &size}
 	text := prompts.Render(prompts.EditDoneOne, prompts.Data{"Path": p, "Line": line})
 	if n > 1 {
 		text = prompts.Render(prompts.EditDoneMany, prompts.Data{"Path": p, "Count": n, "Line": line})

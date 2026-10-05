@@ -51,7 +51,8 @@ func runWrite(ctx context.Context, b *builtin, c Call) (Result, error) {
 	if err := c.Machine.WriteFile(ctx, p, strings.NewReader(in.Content), 0); err != nil {
 		return b.fail(ctx, c, p, err)
 	}
-	meta := &Meta{Path: p, SHA256: digest([]byte(in.Content))}
+	size := int64(len(in.Content))
+	meta := &Meta{Path: p, SHA256: digest([]byte(in.Content)), Size: &size}
 	done := prompts.Data{"Existed": f.exists, "Path": p, "Bytes": plural(len(in.Content), "byte"), "Lines": plural(lineCount(in.Content), "line")}
 	return b.result(ctx, c, OutcomeOK, prompts.Render(prompts.WriteDone, done), meta)
 }
