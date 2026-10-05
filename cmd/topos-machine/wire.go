@@ -140,11 +140,18 @@ func kindOf(err error) string {
 	return kindOther
 }
 
-// exitBody is how a command ended.
+// exitBody is how a command ended, or that it moved to the background
+// (spec 045): its group's leader, its job log, the server ports it
+// listens on, and why the check for a server stopped early, if it did.
 type exitBody struct {
-	Code     int  `json:"code"`
-	TimedOut bool `json:"timedOut,omitempty"`
-	Canceled bool `json:"canceled,omitempty"`
+	Code      int    `json:"code"`
+	TimedOut  bool   `json:"timedOut,omitempty"`
+	Canceled  bool   `json:"canceled,omitempty"`
+	Moved     bool   `json:"moved,omitempty"`
+	PID       int    `json:"pid,omitempty"`
+	Log       string `json:"log,omitempty"`
+	Ports     []int  `json:"ports,omitempty"`
+	ServerErr string `json:"serverError,omitempty"`
 }
 
 // entry is one file as the fs modes answer it: the whole mode, so a

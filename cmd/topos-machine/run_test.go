@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -138,7 +139,7 @@ func TestRunOutputAndExit(t *testing.T) {
 	d.send(t, frameEOF, "")
 	frames, code := d.rest(t)
 	out, gotDir, exit := outcome(t, frames)
-	if code != 0 || out != "out\nerr\n" || gotDir != "" || exit != (exitBody{Code: 4}) {
+	if code != 0 || out != "out\nerr\n" || gotDir != "" || !reflect.DeepEqual(exit, exitBody{Code: 4}) {
 		t.Errorf("code %d, output %q, dir %q, exit %+v", code, out, gotDir, exit)
 	}
 }

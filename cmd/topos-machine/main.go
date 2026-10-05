@@ -6,9 +6,10 @@
 // the machine package, so a sandbox needs nothing in its image for the
 // tools: search runs the Go-native grep and glob of spec 008 where the
 // files are, run gives a command its own process group, a timeout, an
-// input that ends and a report of its final directory, job starts a
-// background job, and fs reaches the files outside the workspace, which
-// Cella's file routes do not serve.
+// input that ends and a report of its final directory, and moves a
+// server to the background (spec 045), job starts a background job, pump
+// drains a moved command's output into its job log, and fs reaches the
+// files outside the workspace, which Cella's file routes do not serve.
 //
 // Every mode that answers the machine writes its answer on standard
 // output alone: the exec socket carries standard output and standard
@@ -35,7 +36,7 @@ func main() {
 
 // usage is the one line a mistaken invocation prints. The machine never
 // makes one; a person running the helper by hand reads it.
-const usage = "usage: topos-machine sum | search <root> | run [flags] -- <script> | job [flags] -- <script> | fs <op> <root> <path> [<arg>]"
+const usage = "usage: topos-machine sum | search <root> | run [flags] -- <script> | job [flags] -- <script> | pump -job <pid> | fs <op> <root> <path> [<arg>]"
 
 // run dispatches the mode and returns the exit code: 0 once a mode has
 // answered, whatever the answer, and 2 for a usage error.
@@ -52,6 +53,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runCommand(ctx, args[1:], stdin, stdout, stderr)
 	case "job":
 		return job(ctx, args[1:], stdout, stderr)
+	case "pump":
+		return pump(args[1:], stdin, stdout, stderr)
 	case "fs":
 		return fileOp(ctx, args[1:], stdin, stdout, stderr)
 	}

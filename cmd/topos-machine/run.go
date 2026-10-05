@@ -13,8 +13,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -48,11 +50,16 @@ func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, std
 	report := flags.Bool("report-dir", false, "report the shell's final directory")
 	grace := flags.Duration("grace", killGrace, "how long a canceled command has between SIGTERM and SIGKILL")
 	framed := flags.Bool("script-frames", false, "read the script from the input frames before the command's input")
+	serverGrace := flags.Duration("server-grace", 0, "move the command to the background once it has run this long and listens on a server port; zero never moves it")
+	jobs := flags.String("jobs", "", "the directory of job logs, where a moved command's output goes")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 	if *framed != (flags.NArg() == 0) || flags.NArg() > 1 {
 		return fail(stderr, "run [flags] -- <script>, or run -script-frames [flags]")
+	}
+	if *serverGrace > 0 && *jobs == "" {
+		return fail(stderr, "run -server-grace needs -jobs")
 	}
 	out := &frameWriter{w: stdout}
 	script := flags.Arg(0)
@@ -74,10 +81,18 @@ func runCommand(ctx context.Context, args []string, stdin io.Reader, stdout, std
 	var once sync.Once
 	cancel := func() { once.Do(func() { close(kill) }) }
 	go c.input(stdin, cancel)
-	pumped := make(chan error, 1)
-	go func() { pumped <- c.pump(out, cancel) }()
-	res, err := c.wait(ctx, *timeout, *grace, kill)
-	err = errors.Join(err, <-pumped, c.out.Close())
+	c.pumped = make(chan error, 1)
+	go c.pumpTo(out, cancel)
+	res, moved, err := c.wait(ctx, *timeout, *grace, kill, server{grace: *serverGrace, jobs: *jobs, out: out, cancel: cancel})
+	if moved {
+		// The command runs on as a job: its output is the log pump's,
+		// and its shell has not exited, so it has no final directory to
+		// report yet. Its input ends here, as a background job's is
+		// empty; a command that already closed it has nothing to lose.
+		_ = c.closeInput()
+		return sent(out.json(frameExit, res))
+	}
+	err = errors.Join(err, <-c.pumped, c.out.Close())
 	d := c.finalDir()
 	if err != nil {
 		return sent(out.json(frameFail, failure(err)))
@@ -103,6 +118,11 @@ type command struct {
 
 	inOnce sync.Once
 	inErr  error
+
+	// pumped carries the output pump's end; handing is set while the
+	// pump stops for the pipe to move to a job's log pump.
+	pumped  chan error
+	handing atomic.Bool
 }
 
 // start starts the script with one pipe for its standard output and
@@ -215,9 +235,17 @@ func (c *command) input(stdin io.Reader, cancel func()) {
 	}
 }
 
+// pumpTo runs pump and hands its end to pumped.
+func (c *command) pumpTo(out *frameWriter, cancel func()) { c.pumped <- c.pump(out, cancel) }
+
+// errHandedOver is the pump stopping for a move to the background: the
+// pipe is still open, and the job's log pump reads it from then on.
+var errHandedOver = errors.New("machine: the output moved to the job's log")
+
 // pump sends the command's output as it is written, until the pipe ends,
-// which is once every process in the group has exited or been killed. A
-// frame that cannot be written cancels the command.
+// which is once every process in the group has exited or been killed, or
+// until a move to the background stops it. A frame that cannot be
+// written cancels the command.
 func (c *command) pump(out *frameWriter, cancel func()) error {
 	buf := make([]byte, chunk)
 	for {
@@ -231,6 +259,9 @@ func (c *command) pump(out *frameWriter, cancel func()) error {
 		}
 		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		if errors.Is(err, os.ErrDeadlineExceeded) && c.handing.Load() {
+			return errHandedOver
 		}
 		if err != nil {
 			return err
@@ -247,11 +278,24 @@ func (c *command) finalDir() string {
 	return <-c.dirs
 }
 
+// server is the check that moves a server to the background (spec 045):
+// the grace before the first look at the group's sockets, the jobs
+// directory its log goes in, and the output pump's writer and cancel,
+// which a move that could not be made starts again.
+type server struct {
+	grace  time.Duration
+	jobs   string
+	out    *frameWriter
+	cancel func()
+}
+
 // wait waits for the shell and kills its process group when the timeout
 // passes, when the command is canceled, and once the shell has exited,
 // so a stray child cannot hold the output open. It is the host machine's
-// wait.
-func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill <-chan struct{}) (exitBody, error) {
+// wait. With a server grace, a command still running after it whose
+// group listens on a server port is moved to the background instead, and
+// wait reports the move with the group left running.
+func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill <-chan struct{}, srv server) (exitBody, bool, error) {
 	pgid := c.cmd.Process.Pid
 	exited := make(chan error, 1)
 	go func() { exited <- c.cmd.Wait() }()
@@ -260,6 +304,13 @@ func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill <
 		t := time.NewTimer(timeout)
 		defer t.Stop()
 		timer = t.C
+	}
+	var probe *time.Timer
+	var probed <-chan time.Time
+	if srv.grace > 0 && machine.SeesServers {
+		probe = time.NewTimer(srv.grace)
+		defer probe.Stop()
+		probed = probe.C
 	}
 	var res exitBody
 	var werr, kerr error
@@ -273,24 +324,108 @@ func (c *command) wait(ctx context.Context, timeout, grace time.Duration, kill <
 			werr = <-exited
 		}
 	}
-	select {
-	case werr = <-exited:
-	case <-timer:
-		res.TimedOut = true
-		kerr = signalGroup(pgid, syscall.SIGKILL)
-		werr = <-exited
-	case <-kill:
-		canceled()
-	case <-ctx.Done():
-		canceled()
+waiting:
+	for {
+		select {
+		case werr = <-exited:
+			break waiting
+		case <-timer:
+			res.TimedOut = true
+			kerr = signalGroup(pgid, syscall.SIGKILL)
+			werr = <-exited
+			break waiting
+		case <-kill:
+			canceled()
+			break waiting
+		case <-ctx.Done():
+			canceled()
+			break waiting
+		case <-probed:
+			ports, err := machine.ServerPorts(ctx, pgid)
+			if err == nil && len(ports) > 0 {
+				var log string
+				var after error
+				if log, after, err = c.handOver(srv, pgid); err == nil {
+					moved := exitBody{Moved: true, PID: pgid, Log: log, Ports: ports}
+					if after != nil {
+						moved.ServerErr = after.Error()
+					}
+					return moved, true, nil
+				}
+			}
+			switch {
+			case err != nil && ctx.Err() == nil:
+				// The check cannot be had for this command; it goes on
+				// under its timeout, and the exit says why.
+				res.ServerErr, probed = err.Error(), nil
+			case err == nil:
+				probe.Reset(machine.ServerPoll)
+			}
+		}
 	}
 	kerr = errors.Join(kerr, signalGroup(pgid, syscall.SIGKILL), c.closeInput(), c.remove())
 	res.Code = c.cmd.ProcessState.ExitCode()
 	var ee *exec.ExitError
 	if werr != nil && !errors.As(werr, &ee) {
-		return res, errors.Join(fmt.Errorf("machine: wait for the command: %w", werr), kerr)
+		return res, false, errors.Join(fmt.Errorf("machine: wait for the command: %w", werr), kerr)
 	}
-	return res, kerr
+	return res, false, kerr
+}
+
+// handOver moves the command's output to a new job log in the jobs
+// directory: the helper's own pump stops, so the pipe has one reader at a
+// time, and a log pump, a copy of this helper in a session of its own,
+// takes the pipe and outlives the helper, as a background job does. A
+// move that was made answers the log, and after, what went wrong in
+// letting go of the helper's copies, which leaves the move standing. A
+// move that cannot be made gives the pipe back to the helper's pump, and
+// the command stays in the foreground.
+func (c *command) handOver(srv server, pgid int) (log string, after, err error) {
+	if err := os.MkdirAll(srv.jobs, 0o700); err != nil {
+		return "", nil, fmt.Errorf("machine: create the job directory: %w", err)
+	}
+	f, err := os.CreateTemp(srv.jobs, "job-*.log")
+	if err != nil {
+		return "", nil, fmt.Errorf("machine: create the job log: %w", err)
+	}
+	drop := func(err error) (string, error, error) {
+		return "", nil, errors.Join(err, f.Close(), os.Remove(f.Name()))
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return drop(fmt.Errorf("machine: find the helper for the job's log pump: %w", err))
+	}
+	c.handing.Store(true)
+	if err := c.out.SetReadDeadline(time.Now()); err != nil {
+		c.handing.Store(false)
+		return drop(fmt.Errorf("machine: stop reading the command's output: %w", err))
+	}
+	perr := <-c.pumped
+	derr := c.out.SetReadDeadline(time.Time{})
+	if !errors.Is(perr, errHandedOver) || derr != nil {
+		// The pump ended on its own, at the output's end or a frame it
+		// could not send, and its end is the command's to report; or the
+		// pipe could not be read again. Either way nothing moves.
+		c.handing.Store(false)
+		if errors.Is(perr, errHandedOver) {
+			go c.pumpTo(srv.out, srv.cancel)
+		} else {
+			c.pumped <- perr
+		}
+		return drop(errors.Join(errors.New("machine: the command's output could not be moved"), derr))
+	}
+	p := exec.Command(exe, "pump", "-job", strconv.Itoa(pgid))
+	p.Stdin, p.Stdout, p.Stderr = c.out, f, f
+	p.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := p.Start(); err != nil {
+		c.handing.Store(false)
+		go c.pumpTo(srv.out, srv.cancel)
+		return drop(fmt.Errorf("machine: start the job's log pump: %w", err))
+	}
+	// The log pump holds its own copies of the pipe and the log, so the
+	// move stands whatever letting go of the helper's says, which is
+	// answered as after.
+	return f.Name(), errors.Join(f.Close(), c.out.Close(), p.Process.Release()), nil
 }
 
 // signalGroup signals a process group. A group already gone is not an
