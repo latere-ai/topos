@@ -45,6 +45,7 @@ import (
 	"latere.ai/x/topos/internal/store/postgres"
 	"latere.ai/x/topos/internal/token"
 	"latere.ai/x/topos/internal/version"
+	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/runner"
@@ -168,6 +169,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if cfg.HostSessions {
 		so.Deleted = func(id string) error { return hosted.RemoveHostSession(cfg.DataDir, id) }
 	}
+	so.Workspaces = workspaces(cfg, minter)
 	api, err := server.New(so)
 	if err != nil {
 		return fail(stderr, err)
@@ -375,6 +377,29 @@ func newMinter(cfg config.Config, st stores) (*credentials.Minter, *idp.Client, 
 		return nil, nil, err
 	}
 	return m, ic, nil
+}
+
+// workspaces reads the working directories of hosted sessions for the
+// API's files route (spec 044): a sandbox with the session's own Cella
+// token when the installation mints one, as a drive presents it, and
+// with TOPOS_CELLA_TOKEN_FILE's bearer otherwise; a host session's
+// directory when TOPOS_HOST_SESSIONS is on.
+func workspaces(cfg config.Config, minter *credentials.Minter) func(context.Context, session.Session) (machine.FileReader, error) {
+	o := hosted.WorkspaceOptions{CellaURL: cfg.CellaURL}
+	if cfg.CellaTokenFile != "" {
+		o.CellaToken = client.TokenFile(cfg.CellaTokenFile)
+	}
+	if minter != nil {
+		// A read holds no lease; the tag names the API among the holders
+		// of a session's credentials.
+		o.Mint = func(ctx context.Context, id, audience, workload string) (runner.Credential, error) {
+			return minter.Credential(ctx, id, "api", audience, workload)
+		}
+	}
+	if cfg.HostSessions {
+		o.DataDir = cfg.DataDir
+	}
+	return hosted.Workspaces(o)
 }
 
 // reapInterval is how often serve frees the claims of remote runners
