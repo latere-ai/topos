@@ -36,6 +36,51 @@ committed: the commit log already holds that.
 - Every request of a session that runs by a routed name carries it to
   the model as `Model route: <name>`, after the other system parts, so
   an agent can say when another route would serve the person better.
+- An authorizer's allow may set the reasoning level a session runs at,
+  as `limits.reasoning`, read where `limits.model` is: at a session's
+  create, at a change of its model or level, and at each send. Absent
+  keeps the session's level, one of `minimal`, `low`, `medium` and
+  `high` sets it for the next turn, and `""` returns the session to its
+  agent's own. A send whose allow names another level appends
+  `session.model_changed` by the service and keeps the model; a session
+  already at the level appends nothing. A fork starts at the level its
+  parent stood on. A level outside the four refuses the request as
+  `authorizer_unavailable`.
+- A refusal of the authorizer's carries the deny's limits beside its
+  reason, as `details.limits`, so a client can say when a request
+  refused for a bound that resets can be made again (`resets_at`). A
+  refusal whose reason is withheld carries no limits either.
+
+### Changed
+
+- The API names a model's reasoning level `reasoning`, where it said
+  `effort`: an agent's `spec.model.reasoning`, its advisor's and each
+  inline subagent's, a session's `model.reasoning`, the `PATCH
+  /v1/sessions/{id}` body's `model.reasoning`, and `old` and `new` of
+  `session.model_changed`, in the events list and the stream, events
+  stored before this release included. Every answer names `reasoning`
+  alone. A manifest and a `PATCH` body may still name `effort`, which is
+  read on input through every v0.x release and dropped in v1.0; both
+  names with two levels are refused as `invalid_manifest` or
+  `invalid_request`.
+- What is stored keeps `effort`: an agent version keeps its digest and
+  its version, and an agent applied again unchanged keeps its version
+  under either name. An agent read answers a spec that is not byte for
+  byte the spec its digest covers. A server rolled back to an earlier
+  release reads every agent, header and event this one stored, its
+  levels included.
+- The `session.update` question carries a change's level under both
+  `effort` and `reasoning`, so an authorizer that reads either name
+  decides it.
+
+### Upgrading
+
+- Move a client that reads a session's, an agent's or an event's level
+  to `reasoning` before rolling this release: from it, no answer names
+  `effort`. A client that writes `effort` keeps working through v0.x.
+- Roll an authorizer that answers `limits.reasoning` before or after
+  this release: an earlier server ignores the member, and this one keeps
+  every level when the member is absent.
 
 ### Changed
 
