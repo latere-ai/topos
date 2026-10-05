@@ -10,6 +10,37 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- `GET /v1/sessions/search?q=` finds the sessions `GET /v1/sessions`
+  would list for the caller by what was said in them: the text of the
+  messages a person sent and the answers the agent wrote on the
+  session's own thread, and a person's answers to the agent's
+  questions. Each word of `q` is found as the start of a word, whatever
+  its case, and characters of Han, Hiragana and Katakana typed in a row
+  as those characters in a row; a message matches when it holds every
+  one. Tool output, the model's thinking, a subagent's thread, files and
+  redacted messages are never searched, and markdown's marks and a
+  link's address are not either. Each session found carries its 3
+  newest matches, each with its `seq` in the log and an excerpt of at
+  most 160 characters with the matched words marked. Pages hold 20
+  sessions at most, newest first by id, and take the list's `agent`,
+  `status`, `runner` and `archived` filters. The route asks
+  `session.list` as the list does and `session.read` of each session it
+  finds, leaving out one the caller may not read; an authorizer that
+  answers both needs no change. `docs/searching-sessions.md` is the
+  contract a client follows.
+
+### Upgrading
+
+- The release carries a Postgres migration, which adds a column and two
+  indexes to `events`. A server indexes the messages written before it
+  in the background after it starts, and again every ten minutes for
+  those a replica of an earlier release writes during the rollout, so a
+  search finds an older session a short while after the first replica
+  of this release starts. The directory store needs no migration: a
+  search reads each session's log.
+
 ## v0.18.0 - 2026-10-05
 
 ### Added
