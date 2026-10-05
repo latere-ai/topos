@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -103,13 +104,17 @@ func (g Guard) Ask(ctx context.Context, req authz.Request) (authz.Decision, erro
 var reasonToken = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 // forbidden is a deny the API answers as forbidden, carrying the
-// authorizer's reason when it is a reason token. The guard answers
+// authorizer's reason when it is a reason token, and with it the deny's
+// limits when they are an object. The guard answers
 // forbidden only where the refusal discloses nothing the caller may not
 // see: a create, a list, or a mutation of an object the caller may read.
 func forbidden(req authz.Request, d authz.Decision) *Error {
 	e := refuse(CodeForbidden, nil, "the authorizer denied %s", req.Action)
 	if reasonToken.MatchString(d.Reason) {
 		e.Reason = d.Reason
+		if t := bytes.TrimSpace(d.Limits); len(t) > 0 && t[0] == '{' {
+			e.Limits = t
+		}
 	}
 	return e
 }
@@ -121,7 +126,7 @@ func forbidden(req authz.Request, d authz.Decision) *Error {
 // its deny may be about one of them: whose it is, the organization it
 // belongs to, its budget. The caller learns that only of an object it
 // may read. An authorizer that gives no answer to read withholds the
-// reason too.
+// reason too. A withheld reason withholds the deny's limits with it.
 func (g Guard) Disclose(ctx context.Context, err error, read authz.Request) error {
 	e, ok := errors.AsType[*Error](err)
 	if !ok || e.Code != CodeForbidden || e.Reason == "" {
@@ -131,7 +136,7 @@ func (g Guard) Disclose(ctx context.Context, err error, read authz.Request) erro
 		return err
 	}
 	withheld := *e
-	withheld.Reason = ""
+	withheld.Reason, withheld.Limits = "", nil
 	return &withheld
 }
 

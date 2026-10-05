@@ -10,6 +10,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,11 +37,15 @@ const (
 // message. Reason is, on a forbidden, the authorizer's reason for the
 // deny, which the API returns to the caller; it is empty when the
 // authorizer gave none, gave one that is not a reason token, or when the
-// guard withheld it (Guard.Disclose).
+// guard withheld it (Guard.Disclose). Limits are the deny's limits
+// object, passed on beside a reason that is returned, so a deny for a
+// bound that resets says when it does (spec 048); nil without a reason or
+// an object.
 type Error struct {
 	Code    string
 	Message string
 	Reason  string
+	Limits  json.RawMessage
 	Err     error
 }
 

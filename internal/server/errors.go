@@ -111,6 +111,9 @@ func classify(err error) *apiError {
 		var details map[string]any
 		if e.Code == auth.CodeForbidden && e.Reason != "" {
 			details = map[string]any{"reason": e.Reason}
+			if len(e.Limits) > 0 {
+				details["limits"] = e.Limits
+			}
 		}
 		return &apiError{code: e.Code, detail: e.Message, details: details, err: err}
 	}

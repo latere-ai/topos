@@ -310,6 +310,47 @@ func TestAForbiddenCarriesTheReason(t *testing.T) {
 	}
 }
 
+// TestADenysLimitsGoWithItsReason: a forbidden refusal carries the deny's
+// limits object beside a reason it shows, so a deny for a bound that
+// resets says when it does (spec 048); a deny with no reason to show, or
+// limits that are no object, carries none, and Disclose withholds the
+// limits with the reason.
+func TestADenysLimitsGoWithItsReason(t *testing.T) {
+	const resets = `{"resets_at":"2026-10-06T00:00:00Z"}`
+	denying := func(reason, limits string) authz.Authorizer {
+		return decider(func(r authz.Request) (authz.Decision, error) {
+			return authz.Decision{Allow: r.Action == authorizer.ActionSessionRead, Reason: reason, Limits: json.RawMessage(limits)}, nil
+		})
+	}
+	send := authz.Request{Subject: bob, Action: authorizer.ActionSessionSend, Resource: authz.NewResource(authorizer.KindSession, "ses_1", nil)}
+	for _, row := range []struct {
+		name, reason, limits, want string
+	}{
+		{"a reason and limits", "rate_limited", resets, resets},
+		{"limits with space", "rate_limited", "  " + resets + "\n", resets},
+		{"no reason", "", resets, ""},
+		{"prose", "Try again tomorrow", resets, ""},
+		{"no limits", "rate_limited", "", ""},
+		{"limits that are no object", "rate_limited", `"tomorrow"`, ""},
+	} {
+		_, err := auth.Guard{Authorizer: denying(row.reason, row.limits)}.Ask(t.Context(), send)
+		e, ok := errors.AsType[*auth.Error](err)
+		if !ok || e.Code != auth.CodeForbidden || string(e.Limits) != row.want {
+			t.Errorf("%s: %v, limits %s", row.name, err, e.Limits)
+		}
+	}
+	_, err := auth.Guard{Authorizer: denying("rate_limited", resets)}.Ask(t.Context(), send)
+	denied, _ := errors.AsType[*auth.Error](err)
+	withheld := auth.Guard{Authorizer: denying("", "")}.Disclose(t.Context(), denied, authz.Request{Subject: bob, Action: authorizer.ActionAgentRead,
+		Resource: authz.NewResource(authorizer.KindAgent, "agent_1", nil)})
+	if e, ok := errors.AsType[*auth.Error](withheld); !ok || e.Reason != "" || e.Limits != nil {
+		t.Fatalf("a withheld reason kept %+v", withheld)
+	}
+	if string(denied.Limits) != resets {
+		t.Fatalf("Disclose changed the refusal it was handed: %+v", denied)
+	}
+}
+
 // TestLimitsAtCreate: an allow's limits decode through the guard, and
 // limits that do not decode refuse the create as authorizer_unavailable.
 func TestLimitsAtCreate(t *testing.T) {
