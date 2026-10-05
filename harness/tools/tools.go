@@ -163,9 +163,11 @@ type State struct {
 	DirSeq uint64
 	Todos  []Todo
 	// App is the last publish result that named the session's app, and
-	// Ready the last one whose preview was ready, which a release takes
-	// its commit from (spec 043). Each is nil before there is one.
-	App, Ready *session.PublishMeta
+	// Standing the newest preview that stands, ready or still building,
+	// which a release takes its commit from (spec 043): a failed or
+	// canceled preview, a denied call and a release are none. Each is nil
+	// before there is one.
+	App, Standing *session.PublishMeta
 }
 
 // StateOf folds the tool.result metas of one thread, in sequence order.
@@ -194,8 +196,8 @@ func StateOf(events []session.Event, thread string) State {
 		}
 		if p := m.Publish; p != nil && p.App != "" {
 			st.App = p
-			if p.Status == session.PublishReady && p.Commit != "" {
-				st.Ready = p
+			if (p.Status == session.PublishReady || p.Status == session.PublishBuilding) && p.Commit != "" {
+				st.Standing = p
 			}
 		}
 	}

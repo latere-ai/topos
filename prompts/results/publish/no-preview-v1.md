@@ -1,1 +1,1 @@
-There is no ready preview to release. Publish a folder first, and release it once its preview is ready.
+There is no preview to release. Publish a folder first, then release its preview.

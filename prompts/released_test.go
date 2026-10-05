@@ -147,7 +147,7 @@ var released = map[string]string{
 	"results/publish/building-v1.md":         "b9896ca57b98c55793d130448317571b57d83750f72c7d3a9305509e65a1c655",
 	"results/publish/error-v1.md":            "58e71043de37428fef78f80fc8e452f05ccfb77b59311a2aa8ae732a0c4f74d8",
 	"results/publish/failed-v1.md":           "e11dab923d0cafff35b20467446c7bee70a24bc691afdf1323920ecc86e49620",
-	"results/publish/no-preview-v1.md":       "c65421bae2fa28e8ed07e22c2bcac09ad66b86746b154c6a73543fc59afefc1e",
+	"results/publish/no-preview-v1.md":       "a62b7c000aa960a8bcba5a70e8403a2532ab39b6f407ea102f18e50eca612cf3",
 	"results/publish/not-folder-v1.md":       "5d1b3fd02908f1f9f805e632254d875392c5bb4314cd5e5b596a85a32a3563eb",
 	"results/publish/pending-v1.md":          "d2986e45eb5d7c898a603d237caf963c37181ae2383da1e1dceaa859de3c6263",
 	"results/publish/ready-v1.md":            "f99beb014682600d2bad95dc51f5547b9bf5ce519734182316c406eebd399766",
@@ -155,5 +155,5 @@ var released = map[string]string{
 	"results/publish/release-failed-v1.md":   "571820ecf8de4132601eb7181c28e62383c0aeffd7827efe96578db9224bf113",
 	"results/publish/released-v1.md":         "b2ebc73886b6f4978d4ec6b5dc94fdd70f9ba740e6479846876da9c13b7d2597",
 	"results/publish/unavailable-v1.md":      "93a550281a8812b4dbc9be15c1de209df62777759c649d9496375b2eb059df3e",
-	"tools/publish-v1.md":                    "8ec1af7832a77effe82fcf4fd953bee0b21466af496d279ae8978f5eb8397a4c",
+	"tools/publish-v1.md":                    "4d5bd6bd0d3a9580f660faf4ccccf3cbefe96323b542d2a6d29486370f0d8075",
 }

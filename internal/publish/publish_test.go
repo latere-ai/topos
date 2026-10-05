@@ -246,7 +246,7 @@ func TestOutcomes(t *testing.T) {
 		}
 	}
 
-	readyState := tools.State{App: &session.PublishMeta{App: "a-poem"}, Ready: &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady, Preview: "https://d1--a-poem.apps.example"}}
+	readyState := tools.State{App: &session.PublishMeta{App: "a-poem"}, Standing: &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady, Preview: "https://d1--a-poem.apps.example"}}
 	reason := "agents_may_not_release"
 	for name, c := range map[string]struct {
 		release func(int) (int, any)
@@ -283,6 +283,25 @@ func TestOutcomes(t *testing.T) {
 		if res.IsError() != (c.status != session.PublishPending) {
 			t.Errorf("%s: outcome %s", name, res.Outcome)
 		}
+	}
+
+	// A preview still building is released: its commit is tagged, and the
+	// host releases it once it is ready.
+	building := tools.State{Standing: &session.PublishMeta{App: "a-poem", Commit: sha2, Status: session.PublishBuilding}}
+	h = newHost(t, map[string]func(int) (int, any){
+		"GET /apps/a-poem":          app("a-poem"),
+		"GET /apps/a-poem/releases": func(int) (int, any) { return http.StatusOK, map[string]any{"releases": []map[string]any{}} },
+		"GET /apps/a-poem/releases/v1": func(n int) (int, any) {
+			if n == 1 {
+				return http.StatusOK, map[string]any{"release": map[string]any{"tag": "v1", "commit_sha": sha2, "status": "pending"}}
+			}
+			return http.StatusOK, map[string]any{"release": map[string]any{"tag": "v1", "commit_sha": sha2, "status": "released"}}
+		},
+	})
+	m = &fakeMachine{}
+	res, err = newTool(t, h, creds{}).Run(ctx, call(`{"release":true}`, m, building))
+	if got := metaOf(res); err != nil || got.Status != session.PublishReleased || got.Commit != sha2 || len(m.scripts) != 1 || !strings.Contains(m.scripts[0], sha2) {
+		t.Fatalf("a release of a preview still building: %+v %+v %v %q", res, got, err, m.scripts)
 	}
 
 	// A release the host already holds for the commit is waited on, not
@@ -473,7 +492,7 @@ func TestTheHostsAnswers(t *testing.T) {
 		t.Fatalf("an unreadable log: %+v %v", res, err)
 	}
 
-	ready := tools.State{Ready: &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady}}
+	ready := tools.State{Standing: &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady}}
 	for name, c := range map[string]struct {
 		answer map[string]func(int) (int, any)
 		want   string

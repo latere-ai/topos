@@ -25,13 +25,16 @@ publish again. A call whose wait runs out says the preview is still
 building; calling it again with the same folder waits on the same
 build.
 
-A second call releases the last ready preview to the app's address:
+A second call releases the newest preview to the app's address:
 
 ```json
 {"release": true}
 ```
 
-The release is a `v` tag on the preview's commit, `v1` and up. Whether
+The newest preview is the last one that is ready or still building; a
+failed or canceled one, and a call the person denied, are passed over. A
+preview still building is released once it is ready. The release is a
+`v` tag on the preview's commit, `v1` and up. Whether
 the session's agent may release is the app host's question to the
 installation's authorizer.
 

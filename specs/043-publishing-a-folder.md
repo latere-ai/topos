@@ -132,8 +132,12 @@ names it, since a local run has no app host and no sandbox.
    `ready`, `failed` or `canceled`, for at most `Wait`. A failed
    deploy's log is read and its last `LogTail` lines go to the model.
 
-**Releasing.** `release: true` takes the commit of the thread's last
-`ready` preview, and the app it was published to. A release of that
+**Releasing.** `release: true` takes the commit of the thread's newest
+preview that stands, and the app it was published to: the last whose
+status is `ready` or `building`, passing over a failed or canceled one
+and a call the person denied, which is the preview a client shows as
+the one to release. The host releases a preview still building once it
+is ready. A release of that
 commit the host already lists answers with its status. Otherwise the
 tag is `v<n>`, one past the highest `v` followed by digits among the
 app's releases, pushed on the commit from the session's git directory,
@@ -176,7 +180,7 @@ state folds and a client reads:
 
 The outcome is `ok` for `ready`, `building`, `released` and `pending`,
 and `error` for the others and for every failure before a deploy
-exists: a path that is no folder, a release with no ready preview, an
+exists: a path that is no folder, a release with no preview, an
 app host or git host that refused or could not be reached, and an
 installation that mints no token for the app host. Those carry no
 `meta.publish`, or one with the app alone once it exists.
@@ -204,9 +208,9 @@ reads; previews served beside the session in a client.
 |---|---|---|
 | A session whose agent names `publish` publishes a folder of its sandbox: the app is created with the session's title and `public`, with the session's token for the app host's audience and the workload `session`, the sandbox's git pushes the folder to the session's branch with the session's author and trailers, the result names the preview's address with `meta.publish` status `ready`, and no token reaches the sandbox, an event or a tool result | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` over the stub Cella, a stub app host and git's own http backend | built |
 | A second publish reuses the app, pushes a new commit on the same branch, and a publish with nothing changed pushes no new commit | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` | built |
-| `release: true` pushes `v1` on the last ready preview's commit, the next release `v2`, and the result is `released` with the app's address | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` | built |
+| `release: true` pushes `v1` on the newest standing preview's commit, the next release `v2`, and the result is `released` with the app's address; a preview still building is released, and a failed one is passed over | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt`, `harness/tools.TestStateOfFoldsPublish`, `internal/publish.TestOutcomes` | built |
 | A failed build answers `failed` with its code, its message and the tail of its log; a refused release answers `refused` with its reason; a wait that runs out answers `building` or `pending` | `internal/publish.TestOutcomes` | built |
-| A path that is no folder, a release with no ready preview, a push URL on another host, an app host that refuses, and an installation that mints no token for it each answer an error the model reads | `internal/publish.TestRefusals` | built |
+| A path that is no folder, a release with no preview, a push URL on another host, an app host that refuses, and an installation that mints no token for it each answer an error the model reads | `internal/publish.TestRefusals` | built |
 | The runner offers `publish` only to the session's own thread, only when the agent names it, the app host is configured and the machine is Cella; the manifest takes it by name alone; `topos run` refuses it | `internal/hosted.TestPublishIsOfferedWhenConfigured`, `manifest.TestPublishIsAKnownToolName`, `harness.TestASpawnedThreadHoldsNoPublish`, `internal/toposcli.TestAgentManifestRefusals` | built |
 | `TOPOS_APPS_URL` without `TOPOS_ORIGO_URL`, or one that is not an http URL, stops the start | `internal/config.TestTheAppHost` | built |
 | A routed session's every request carries its route as a system part, and an unrouted one's none | `harness.TestTheRequestNamesTheRoute` | built |

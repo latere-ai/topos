@@ -94,7 +94,7 @@ var textCases = func() []textCase {
 		{name: ToolAdvisor, want: "Ask a stronger model to review your work so far. It sees this conversation and your question, acts on nothing, and answers with advice. Use it before a hard decision or when you are stuck."},
 		{name: ToolQuestion, wantSHA: "13d1e88094ffe3d9c0c19a1fd102c5fbc539b7f1ad5804a43e6039bf7daa8a63"},
 		{name: ToolWebSearch, wantSHA: "06e451f41ab008ed24de132b0e9ea18488e4092f221284b5a97a15829f5a2ce6"},
-		{name: ToolPublish, wantSHA: "e663f8f91d8a2f109da6b27d8f03074de7f27d335538aae78245f9b00072e911"},
+		{name: ToolPublish, wantSHA: "b69d44de4feda666898dd58abeaff8fb58e644894785963965d2255600e7087f"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -234,7 +234,7 @@ var textCases = func() []textCase {
 		{name: PublishPending, data: Data{"Tag": "v2", "Wait": "10m0s"}, want: "The release v2 is not done after 10m0s. Call publish with release set to true again to keep waiting."},
 		{name: PublishRefused, data: Data{"Tag": "v2", "Reason": "agents_may_not_release"}, want: "The app host refused the release v2: agents_may_not_release. Tell the person; do not try another way to release it."},
 		{name: PublishReleaseFailed, data: Data{"Tag": "v2", "Code": "build_failed", "Message": "The build failed."}, want: "The release v2 failed: build_failed: The build failed."},
-		{name: PublishNoPreview, want: "There is no ready preview to release. Publish a folder first, and release it once its preview is ready."},
+		{name: PublishNoPreview, want: "There is no preview to release. Publish a folder first, then release its preview."},
 		{name: PublishNotFolder, data: Data{"Path": "site"}, want: "site is not a folder of the machine. Publish the folder that holds the site, such as the one with its index.html."},
 		{name: PublishUnavailable, data: Data{"Reason": "this server mints no credential for its app host"}, want: "Publishing is not available in this session: this server mints no credential for its app host."},
 		{name: PublishError, data: Data{"Path": "site", "Error": "the app host answered 503"}, want: "Publishing site failed: the app host answered 503."},

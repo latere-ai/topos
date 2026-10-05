@@ -4,7 +4,7 @@
 // Package publish is the publish tool of spec 043: it publishes a folder
 // of a hosted session's sandbox as the session's own app at the
 // installation's app host, waits for the preview the host builds of it,
-// and releases the last ready preview to the app's address. The runner
+// and releases the newest preview to the app's address. The runner
 // reaches the app host with the session's own short token, which never
 // enters the sandbox; the folder is pushed by the sandbox's own git,
 // which reaches the installation's git host with the session's git
@@ -67,7 +67,7 @@ var schema = json.RawMessage(`{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the working directory."},
-    "release": {"type": "boolean", "description": "True to release the last ready preview to the app's own address instead of publishing a folder."}
+    "release": {"type": "boolean", "description": "True to release the newest preview to the app's own address instead of publishing a folder."}
   },
   "additionalProperties": false
 }`)
@@ -248,10 +248,12 @@ func (t *Tool) preview(ctx context.Context, c tools.Call, p string) (tools.Resul
 	return text(tools.OutcomeError, prompts.Render(prompts.PublishFailed, prompts.Data{"Path": shown, "Code": e.Code, "Message": e.Message, "Log": log}), meta), nil
 }
 
-// release puts the commit of the thread's last ready preview at the
-// app's address with the next version tag, and waits for the release.
+// release puts the commit of the thread's newest preview that stands,
+// ready or still building, at the app's address with the next version
+// tag, and waits for the release: the host releases a preview still
+// building once it is ready.
 func (t *Tool) release(ctx context.Context, c tools.Call) (tools.Result, error) {
-	ready := c.State.Ready
+	ready := c.State.Standing
 	if ready == nil {
 		return text(tools.OutcomeError, prompts.Text(prompts.PublishNoPreview), nil), nil
 	}

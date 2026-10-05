@@ -276,12 +276,14 @@ func TestCutInputQuotesTheStartOfTheArguments(t *testing.T) {
 }
 
 // TestStateOfFoldsPublish: the thread's last publish result that names an
-// app is its app, and the last one whose preview was ready is the one a
-// release takes, past a failed preview and a release after it (spec 043).
+// app is its app, and the newest preview that stands, ready or still
+// building, is the one a release takes, past a failed preview and a
+// release after it (spec 043).
 func TestStateOfFoldsPublish(t *testing.T) {
 	var events []session.Event
 	for i, m := range []*session.PublishMeta{
-		{App: "a-poem", Commit: "c1", Status: session.PublishReady},
+		{App: "a-poem", Commit: "c0", Status: session.PublishReady},
+		{App: "a-poem", Commit: "c1", Status: session.PublishBuilding},
 		{App: "a-poem", Commit: "c2", Status: session.PublishFailed},
 		{App: "a-poem", Commit: "c1", Status: session.PublishReleased, Release: "v1"},
 		{App: ""},
@@ -298,10 +300,10 @@ func TestStateOfFoldsPublish(t *testing.T) {
 		events = append(events, e)
 	}
 	st := StateOf(events, "")
-	if st.App == nil || st.App.Status != session.PublishReleased || st.Ready == nil || st.Ready.Commit != "c1" || st.Ready.Status != session.PublishReady {
-		t.Fatalf("state %+v %+v", st.App, st.Ready)
+	if st.App == nil || st.App.Status != session.PublishReleased || st.Standing == nil || st.Standing.Commit != "c1" || st.Standing.Status != session.PublishBuilding {
+		t.Fatalf("state %+v %+v", st.App, st.Standing)
 	}
-	if st := StateOf(nil, ""); st.App != nil || st.Ready != nil {
+	if st := StateOf(nil, ""); st.App != nil || st.Standing != nil {
 		t.Fatalf("an empty log folds %+v", st)
 	}
 }

@@ -62,8 +62,9 @@ committed: the commit log already holds that.
   pushed from the sandbox to the session's branch of the app's
   repository, and the call waits for the preview the host builds and
   answers with its address, or with the failed build's code and the
-  end of its log. `publish` with `release: true` releases the last
-  ready preview to the app's address with the next `v` tag. Each call
+  end of its log. `publish` with `release: true` releases the newest
+  preview that is ready or still building to the app's address with
+  the next `v` tag. Each call
   asks the person in `confirm` and `progressive`, the runner reaches
   the host with the session's own token, which never enters the
   sandbox, and every result carries `meta.publish` for a client to show
