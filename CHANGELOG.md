@@ -35,6 +35,16 @@ committed: the commit log already holds that.
   the model as `Model route: <name>`, after the other system parts, so
   an agent can say when another route would serve the person better.
 
+### Changed
+
+- A hosted session's sandbox starts when the model's response begins a
+  call of a tool that acts on a machine, while the call's arguments
+  stream, instead of as each turn begins. A turn that only talks creates
+  and starts no sandbox, so a conversation that never uses a tool holds
+  none of the sandboxes Cella allows its owner. The session still
+  records its machine at the first tool that uses it. `machine.Starter`
+  and `machine.Start` begin the open of a machine opened on demand.
+
 ## v0.16.0 - 2026-10-05
 
 ### Added
