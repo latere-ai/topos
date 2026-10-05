@@ -52,31 +52,43 @@ type listed struct {
 // count are no figures. The error is a base that did not answer at all,
 // or a list whose prices are not decimals.
 func Served(ctx context.Context, client *http.Client, conn models.Connection) (models.Entry, error) {
+	e, _, err := Listed(ctx, client, conn)
+	return e, err
+}
+
+// Listed is Served, and whether the door answered with a list of models.
+// A list that names other models and not this one is listed with no
+// figures: a Lux door lists the models the presented key may use, so a
+// key that does not reach the model yet reads so. A base that answers no
+// list, and a list of no model, say nothing about the key, and are not
+// listed.
+func Listed(ctx context.Context, client *http.Client, conn models.Connection) (models.Entry, bool, error) {
 	base := strings.TrimRight(conn.BaseURL, "/")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
 	if err != nil {
-		return models.Entry{}, fmt.Errorf("models: read the model list of %s: %w", base, err)
+		return models.Entry{}, false, fmt.Errorf("models: read the model list of %s: %w", base, err)
 	}
 	authorize(req, conn)
 	resp, err := client.Do(req)
 	if err != nil {
-		return models.Entry{}, fmt.Errorf("models: read the model list of %s: %w", base, err)
+		return models.Entry{}, false, fmt.Errorf("models: read the model list of %s: %w", base, err)
 	}
 	var list struct {
 		Data []listed `json:"data"`
 	}
 	read := resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, maxModelList)).Decode(&list) == nil
 	if err := resp.Body.Close(); err != nil {
-		return models.Entry{}, fmt.Errorf("models: read the model list of %s: %w", base, err)
+		return models.Entry{}, false, fmt.Errorf("models: read the model list of %s: %w", base, err)
 	}
-	if !read {
-		return models.Entry{}, nil
+	if !read || len(list.Data) == 0 {
+		return models.Entry{}, false, nil
 	}
 	i := slices.IndexFunc(list.Data, func(l listed) bool { return l.ID == conn.Model })
 	if i < 0 {
-		return models.Entry{}, nil
+		return models.Entry{}, true, nil
 	}
-	return list.Data[i].entry()
+	e, err := list.Data[i].entry()
+	return e, true, err
 }
 
 // entry is the listed figures as a catalog entry; a figure the list

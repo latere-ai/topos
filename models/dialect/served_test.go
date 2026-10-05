@@ -52,6 +52,13 @@ func TestServedReadsTheDoorsModelList(t *testing.T) {
 	if e, err := Served(t.Context(), http.DefaultClient, conn); err != nil || e.Name != "" {
 		t.Fatalf("a model the list does not name: %+v, %v", e, err)
 	}
+	if e, listed, err := Listed(t.Context(), http.DefaultClient, conn); err != nil || !listed || e.Name != "" {
+		t.Fatalf("a list that does not name the model: %+v, listed %v, %v", e, listed, err)
+	}
+	conn.Model = "vendor/euro"
+	if e, listed, err := Listed(t.Context(), http.DefaultClient, conn); err != nil || !listed || e.Name != "vendor/euro" {
+		t.Fatalf("a list that names the model: %+v, listed %v, %v", e, listed, err)
+	}
 }
 
 func TestServedRefusesWhatItCannotRead(t *testing.T) {
@@ -75,6 +82,11 @@ func TestServedRefusesWhatItCannotRead(t *testing.T) {
 		e, err := Served(t.Context(), http.DefaultClient, models.Connection{BaseURL: base, Model: "m"})
 		if err != nil || e.Pricing != nil {
 			t.Fatalf("%s: %+v, %v", name, e, err)
+		}
+	}
+	for name, base := range map[string]string{"not found": answer(http.StatusNotFound, `{}`), "not a list": answer(http.StatusOK, `<html>`), "no model": answer(http.StatusOK, `{"data":[]}`)} {
+		if _, listed, err := Listed(t.Context(), http.DefaultClient, models.Connection{BaseURL: base, Model: "m"}); err != nil || listed {
+			t.Fatalf("%s: listed %v, %v", name, listed, err)
 		}
 	}
 	if _, err := Served(t.Context(), http.DefaultClient, models.Connection{BaseURL: answer(http.StatusOK, `{"data":[{"id":"m","pricing":{"per":1000000,"input":"one"}}]}`), Model: "m"}); err == nil {
