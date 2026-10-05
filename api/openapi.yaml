@@ -1227,6 +1227,36 @@ paths:
                 format: binary
         default:
           $ref: "#/components/responses/Error"
+  /sessions/{id}/files:
+    get:
+      operationId: getFile
+      summary: Read a session file
+      description: "Get one file of the session's working directory as it is now, such as a file the agent wrote, by its path. The answer is the file's bytes as a download: Content-Type from its extension or its first bytes, Content-Length, Content-Disposition attachment with its name, X-Content-Type-Options nosniff, Content-Security-Policy \"sandbox; default-src 'none'\" and Cache-Control no-store. HEAD answers the same headers without the bytes. The file is read from the session's machine while it runs, and the read never starts or creates one: a machine that is stopped, never opened, or gone is file_unavailable, and the file can be read again once the session runs its machine. A file past 10485760 bytes is file_too_large. A path outside the working directory, a directory, or a path the credential deny-list names is invalid_request, and a file that does not exist not_found."
+      x-topos-actions:
+        - session.read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: true
+          description: "The file: an absolute path inside the session's working directory, as a write or edit tool.result's meta.path names it, or a path relative to the working directory."
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: "#/components/responses/Error"
   /sessions/{id}/events/{event_id}/redact:
     post:
       operationId: redactEvent
@@ -1801,6 +1831,8 @@ components:
                 - authorizer_unavailable
                 - confirmation_required
                 - conflict
+                - file_too_large
+                - file_unavailable
                 - forbidden
                 - idempotency_conflict
                 - identity_refused
@@ -1846,7 +1878,7 @@ components:
                   description: On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read.
   responses:
     Error:
-      description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, idempotency_conflict, sequence_conflict; 413: attachment_too_large, payload_too_large; 422: invalid_fork_point, machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable, model_unavailable."
+      description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, file_unavailable, idempotency_conflict, sequence_conflict; 413: attachment_too_large, file_too_large, payload_too_large; 422: invalid_fork_point, machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable, model_unavailable."
       content:
         application/json:
           schema:

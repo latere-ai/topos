@@ -160,6 +160,11 @@ var queryParams = map[string][]yaml.MapSlice{
 		archivedParam,
 	},
 	"getSessionSummary": {agentParam, runnerParam, archivedParam},
+	"getFile": {
+		{{Key: "name", Value: "path"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
+			{Key: "description", Value: "The file: an absolute path inside the session's working directory, as a write or edit tool.result's meta.path names it, or a path relative to the working directory."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "minLength", Value: 1}}}},
+	},
 	"streamEvents": {
 		{{Key: "name", Value: "from_seq"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The sequence the replay starts at; 1 when absent. A Last-Event-ID header starts it after the sequence the header names instead."},
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}}},
@@ -183,7 +188,7 @@ const (
 
 // answerMedia are the routes whose answer is not JSON: a stream's
 // frames, a blob's bytes and the document itself.
-var answerMedia = map[string]string{"streamEvents": mediaStream, "getBlob": mediaBytes, "getOpenAPI": mediaYAML}
+var answerMedia = map[string]string{"streamEvents": mediaStream, "getBlob": mediaBytes, "getFile": mediaBytes, "getOpenAPI": mediaYAML}
 
 // emptyBodies are the routes that read a body only to refuse one that
 // holds a member: a caller sends none, so the document describes none.
@@ -270,6 +275,12 @@ var opDescriptions = map[string]string{
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
 	"listEvents": "List a session's events from a sequence.",
 	"getBlob":    "Get a blob of a session.",
+	"getFile": fmt.Sprintf("Get one file of the session's working directory as it is now, such as a file the agent wrote, by its path. "+
+		"The answer is the file's bytes as a download: Content-Type from its extension or its first bytes, Content-Length, Content-Disposition attachment with its name, "+
+		"X-Content-Type-Options nosniff, Content-Security-Policy %q and Cache-Control no-store. HEAD answers the same headers without the bytes. "+
+		"The file is read from the session's machine while it runs, and the read never starts or creates one: a machine that is stopped, never opened, or gone is file_unavailable, "+
+		"and the file can be read again once the session runs its machine. A file past %d bytes is file_too_large. "+
+		"A path outside the working directory, a directory, or a path the credential deny-list names is invalid_request, and a file that does not exist not_found.", filePolicy, MaxFileBytes),
 	"redactEvent": "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. " +
 		"A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. " +
 		"The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first.",

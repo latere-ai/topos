@@ -57,6 +57,8 @@ func table() []route {
 			op: "streamEvents", summary: "Stream session events", status: http.StatusOK, handle: (*call).stream},
 		{method: http.MethodGet, path: "/sessions/{id}/blobs/{digest}", actions: a(authorizer.ActionSessionRead),
 			op: "getBlob", summary: "Read a session blob", status: http.StatusOK, handle: (*call).blob},
+		{method: http.MethodGet, path: "/sessions/{id}/files", actions: a(authorizer.ActionSessionRead),
+			op: "getFile", summary: "Read a session file", status: http.StatusOK, handle: (*call).file},
 		{method: http.MethodPost, path: "/sessions/{id}/events/{event_id}/redact", actions: a(authorizer.ActionSessionRedact),
 			op: "redactEvent", summary: "Redact an event", status: http.StatusNoContent, body: MaxBody, handle: (*call).redact},
 		{method: http.MethodPut, path: "/triggers/{name}", actions: a(authorizer.ActionTriggerCreate, authorizer.ActionTriggerUpdate, authorizer.ActionAgentRead),

@@ -232,6 +232,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"sendEvent":         {http.MethodPost, "/v1/sessions/" + ended.ID + "/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"x"}]}}`},
 		"streamEvents":      {http.MethodGet, "/v1/sessions/" + ended.ID + "/stream", ""},
 		"getBlob":           {http.MethodGet, "/v1/sessions/" + ended.ID + "/blobs/" + string(ended.Agent.Digest), ""},
+		"getFile":           {http.MethodGet, "/v1/sessions/" + ended.ID + "/files?path=a.txt", ""},
 		"redactEvent":       {http.MethodPost, "/v1/sessions/" + ended.ID + "/events/" + evs[0].ID + "/redact", `{"reason":"a token"}`},
 		"getOpenAPI":        {http.MethodGet, "/v1/openapi.yaml", ""},
 		"applyTrigger":      {http.MethodPut, "/v1/triggers/fresh", triggerYAML("fresh", "schedule: '@daily', session: {message: x}")},

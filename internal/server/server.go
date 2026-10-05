@@ -32,6 +32,7 @@ import (
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/internal/triggers"
+	"latere.ai/x/topos/machine"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
@@ -111,6 +112,12 @@ type Options struct {
 	// not be read. hosted.Runnable is the one toposd runs; nil answers
 	// from the embedded catalog alone.
 	Runnable func(ctx context.Context, m v1.AgentModel, overlay models.Entry) error
+	// Workspaces reads a session's working directory as it is now, for
+	// GET /sessions/{id}/files (spec 044), and never starts or creates a
+	// machine: one that does not run is machine.ErrNotRunning.
+	// hosted.Workspaces is the one toposd runs; nil answers every read
+	// file_unavailable.
+	Workspaces func(ctx context.Context, s session.Session) (machine.FileReader, error)
 }
 
 // Server answers the API.

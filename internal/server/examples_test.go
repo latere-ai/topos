@@ -156,9 +156,11 @@ func canonical(t *testing.T, v any) string {
 func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	doc := readDocument(t)
 	now := exampleTime(12, 0, 0)
+	workdir := &memFiles{files: map[string][]byte{"/workspace/notes.bin": {0, 1, 2, 3}}}
 	f := newFixture(t, func(o *Options) {
 		o.Now = func() time.Time { return now }
 		o.Objects = store.NewMemory(o.Now)
+		o.Workspaces = workdir.workspaces
 	})
 	routes := map[string]route{}
 	for _, rt := range table() {
@@ -380,6 +382,9 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	}
 	if _, media, body := doc["getBlob"].answers(t); media != mediaBytes || body.Schema.Format != "binary" || body.Example != nil {
 		t.Errorf("the document shows a blob as %s %+v", media, body)
+	}
+	if file := step("getFile", ses, "?path=notes.bin"); string(file.body) != "\x00\x01\x02\x03" {
+		t.Errorf("the file is %q", file.body)
 	}
 
 	// The stream's example is the first frames of the log, a comment
