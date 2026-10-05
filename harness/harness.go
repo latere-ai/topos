@@ -1140,7 +1140,9 @@ func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byt
 		}
 		why := fmt.Sprintf("%s was named and could not be connected: %v", next.Name, err)
 		passed = append(passed, why)
-		if t.switches++; t.switches >= MaxModelSwitches {
+		// A turn that ended while the model was connected asks nothing
+		// more: its connection failed for its own end, not the model's.
+		if t.switches++; t.switches >= MaxModelSwitches || ctx.Err() != nil {
 			return &stayed{why: strings.Join(passed, "; ")}
 		}
 		failed, detail = next, why

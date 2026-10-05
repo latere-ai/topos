@@ -342,6 +342,39 @@ func TestAModelNamedThatCannotBeConnectedIsPassedOver(t *testing.T) {
 	}
 }
 
+// TestATurnInterruptedWhileConnectingAsksNothingMore: a turn interrupted
+// while it connects the model the router named does not pass that model to
+// another question, since the connection failed for the turn's own end:
+// the router is asked once, and the turn stops interrupted.
+func TestATurnInterruptedWhileConnectingAsksNothingMore(t *testing.T) {
+	const slow = "slow-model"
+	r := &router{next: []session.ModelRef{{Name: slow, Via: via}, {Name: "other-model", Via: via}}}
+	interrupt := make(chan struct{})
+	e := setupSession(t, func(c *Config) {
+		c.Sleep = func(context.Context, time.Duration) error { return nil }
+		c.Interrupt = func() <-chan struct{} { return interrupt }
+		c.Connect = func(ctx context.Context, name string) (models.Model, models.Connection, models.Entry, error) {
+			if name == slow {
+				close(interrupt)
+				<-ctx.Done()
+				return nil, models.Connection{}, models.Entry{}, ctx.Err()
+			}
+			return &dialect.Model{}, models.Connection{BaseURL: c.Connection.BaseURL, Model: name, Family: models.FamilyAnthropic},
+				models.Entry{Name: name, InputWindow: 30_000, MaxOutputTokens: 2_000}, nil
+		}
+		c.Failover = r.failover
+	}, func(s *session.Session) { s.Model = &session.ModelRef{Name: model, Via: via} })
+	ctx := t.Context()
+	e.stub.Script(model, limitedReply(model))
+	e.send(ctx, "Go.")
+	if out := e.turn(ctx); out.StopReason != session.StopInterrupted {
+		t.Fatalf("outcome %+v", out)
+	}
+	if len(r.asked) != 1 || len(e.changes(ctx)) != 0 {
+		t.Fatalf("the router was asked %d times, %d changes", len(r.asked), len(e.changes(ctx)))
+	}
+}
+
 // TestAModelThatCannotServeTakesOneQuickRetry: a session that cannot move,
 // on a model named itself or with no router, retries a model that cannot
 // serve once, a second later, where spec 005's policy waited 2, 4, 8, 16
