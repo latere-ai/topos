@@ -70,6 +70,11 @@ type Reply struct {
 	// such as tool call arguments that are not JSON or parallel calls
 	// whose arguments interleave.
 	Raw string
+	// Hold runs before each event of the stream is written, once the
+	// events before it reached the client, so a test paces a response
+	// the way a model streams one: a wait before a tool_use block, or
+	// arguments that take a while.
+	Hold func(ir.Event)
 }
 
 // Recorded is one request the stub received.
@@ -217,12 +222,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if reply.Respond != nil {
 		reply.Respond(req, &resp)
 	}
-	s.stream(w, fe, resp, false)
+	s.stream(w, fe, resp, false, reply.Hold)
 }
 
 func (s *Server) fail(w http.ResponseWriter, fe llmdialect.Frontend, reply Reply, f Failure) {
 	if f.Cut || f.Event != "" {
-		s.stream(w, fe, reply.Response, true)
+		s.stream(w, fe, reply.Response, true, nil)
 		if f.Event != "" {
 			if _, err := io.WriteString(w, f.Event); err != nil {
 				return
@@ -301,15 +306,23 @@ func writeError(w http.ResponseWriter, status int, typ, msg string) {
 // stream writes the response as the dialect's SSE, through its
 // frontend encoder; cut stops before the terminal events. The blocks the
 // frontend encoder cannot stream are written as the provider streams
-// them (native).
-func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.Response, cut bool) {
+// them (native). A hold runs before each event, after what was written
+// before it is flushed to the client.
+func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.Response, cut bool, hold func(ir.Event)) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	enc := fe.NewEventEncoder(w)
 	evs := Events(resp)
 	if cut {
 		evs = evs[:len(evs)-2]
 	}
+	flusher, _ := w.(http.Flusher)
 	for _, ev := range evs {
+		if hold != nil {
+			if flusher != nil {
+				flusher.Flush()
+			}
+			hold(ev)
+		}
 		if handled, err := native(w, fe.Name(), resp, ev); handled {
 			if err != nil {
 				return
@@ -320,8 +333,8 @@ func (s *Server) stream(w http.ResponseWriter, fe llmdialect.Frontend, resp ir.R
 			return
 		}
 	}
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
+	if flusher != nil {
+		flusher.Flush()
 	}
 }
 

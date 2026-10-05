@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect/anthropic"
@@ -220,5 +221,65 @@ func TestARedactedThinkingBlockStreamsAsTheMessagesAPISendsIt(t *testing.T) {
 	}
 	if len(blocks) != 2 || blocks[0].Type != ir.BlockRedactedThinking || blocks[0].Redacted != "r1" || blocks[1].Type != ir.BlockText {
 		t.Fatalf("blocks %+v", blocks)
+	}
+}
+
+// TestAHoldPacesTheStream: a reply's hold runs before each event, after
+// the events before it reached the client, so the client reads a tool
+// call's start while the hold before its arguments still waits.
+func TestAHoldPacesTheStream(t *testing.T) {
+	s := New(t)
+	read := make(chan string, 1)
+	var mu sync.Mutex
+	var seen []ir.EventType
+	s.Script("m", Reply{
+		Response: ir.Response{Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "a", Name: "write", Args: []byte(`{"path":"f"}`)}}}, StopReason: ir.StopToolUse},
+		Hold: func(ev ir.Event) {
+			mu.Lock()
+			seen = append(seen, ev.Type)
+			mu.Unlock()
+			if ev.Type == ir.EventArgsDelta {
+				if got := <-read; !strings.Contains(got, `"write"`) {
+					t.Errorf("the client read %q before the arguments, want the call's start", got)
+				}
+			}
+		},
+	})
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL()+PathChat, strings.NewReader(chatBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	// The call's start arrives on its own: the hold before the arguments
+	// waits for this read to say what it saw.
+	var head []byte
+	buf := make([]byte, 4096)
+	for !bytes.Contains(head, []byte(`"write"`)) {
+		n, err := resp.Body.Read(buf)
+		head = append(head, buf[:n]...)
+		if err != nil {
+			t.Fatalf("the stream ended before the call's start: %v, %q", err, head)
+		}
+	}
+	read <- string(head)
+	rest, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rest), "path") || !strings.Contains(string(rest), "[DONE]") {
+		t.Fatalf("the rest of the stream: %q", rest)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != len(Events(ir.Response{Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{}}}})) {
+		t.Fatalf("the hold ran for %v", seen)
 	}
 }
