@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +22,15 @@ const (
 	BashDefaultTimeoutMS = 120000
 	BashMaxTimeoutMS     = 600000
 )
+
+// BashServerGrace is how long a foreground command runs before a server
+// it started is moved to the background (spec 045): long enough that a
+// command which listens for a moment and ends is left alone, short
+// enough that a server does not hold the turn.
+const BashServerGrace = 3 * time.Second
+
+// serverGrace is BashServerGrace, which a test shortens.
+var serverGrace = BashServerGrace
 
 // bashSchema states the timeouts from their constants, so the schema
 // cannot drift from what runBash enforces.
@@ -67,6 +77,9 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		Background: in.Background,
 		ReportDir:  !in.Background,
 	}
+	if !in.Background {
+		req.ServerGrace = serverGrace
+	}
 	res, err := c.Machine.Exec(ctx, req)
 	note := ""
 	if err != nil && req.Dir != "" && missingDir(err) {
@@ -87,6 +100,18 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		text := note + prompts.Render(prompts.BashBackground, prompts.Data{"PID": res.PID, "Log": res.Log})
 		return b.result(ctx, c, OutcomeOK, text, nil)
 	}
+	if res.Moved {
+		// A server the command started keeps running as a job; the turn
+		// goes on with what it wrote so far.
+		var out strings.Builder
+		out.WriteString(note)
+		out.Write(res.Output)
+		if len(res.Output) > 0 && res.Output[len(res.Output)-1] != '\n' {
+			out.WriteByte('\n')
+		}
+		out.WriteString(prompts.Render(prompts.BashMoved, prompts.Data{"Grace": serverGrace.String(), "Ports": portList(res.Ports), "PID": res.PID, "Log": res.Log}))
+		return b.result(ctx, c, OutcomeOK, out.String(), nil)
+	}
 	code := res.ExitCode
 	meta := &Meta{Dir: res.Dir, ExitCode: &code}
 	if note != "" && res.Dir == "" {
@@ -106,6 +131,11 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 	case res.TimedOut:
 		outcome = OutcomeTimeout
 		out.WriteString(prompts.Render(prompts.BashTimeout, prompts.Data{"Timeout": (time.Duration(timeout) * time.Millisecond).String()}))
+		if res.ServerErr != nil {
+			// The model learns why a server it ran in the foreground held
+			// the call to the timeout.
+			out.WriteString(" " + prompts.Render(prompts.BashUnchecked, prompts.Data{"Error": res.ServerErr.Error()}))
+		}
 	case res.Canceled:
 		outcome = OutcomeCanceled
 		out.WriteString(prompts.Text(prompts.BashCanceled))
@@ -119,4 +149,20 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 // gone or is no longer a directory.
 func missingDir(err error) bool {
 	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+}
+
+// portList names the ports a moved command listens on: "port 8000", or
+// "ports 3000 and 8000", or "ports 3000, 5173 and 8000".
+func portList(ports []int) string {
+	names := make([]string, len(ports))
+	for i, p := range ports {
+		names[i] = strconv.Itoa(p)
+	}
+	switch len(names) {
+	case 0:
+		return "a port"
+	case 1:
+		return "port " + names[0]
+	}
+	return "ports " + strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

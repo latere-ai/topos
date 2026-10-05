@@ -32,7 +32,7 @@ const (
 	ToolRead     Name = "tools/read-v1"
 	ToolWrite    Name = "tools/write-v2"
 	ToolEdit     Name = "tools/edit-v2"
-	ToolBash     Name = "tools/bash-v1"
+	ToolBash     Name = "tools/bash-v2"
 	ToolGrep     Name = "tools/grep-v1"
 	ToolGlob     Name = "tools/glob-v1"
 	ToolWebFetch Name = "tools/web_fetch-v1"
@@ -187,6 +187,12 @@ const (
 	BashTimeout    Name = "results/bash/timeout-v1"
 	BashCanceled   Name = "results/bash/canceled-v1"
 	BashExitCode   Name = "results/bash/exit-code-v1"
+	// BashMoved takes Grace, Ports, PID and Log: a foreground server
+	// moved to the background (spec 045).
+	BashMoved Name = "results/bash/moved-v1"
+	// BashUnchecked takes Error: why a command that passed its timeout
+	// was never checked for a server.
+	BashUnchecked Name = "results/bash/unchecked-v1"
 )
 
 // The results of grep, glob, todo and web_fetch (spec 008).

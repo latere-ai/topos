@@ -22,7 +22,7 @@ func TestToolTextStatesTheLimitsItEnforces(t *testing.T) {
 		name   prompts.Name
 		limits []string
 	}{
-		{prompts.ToolBash, []string{itoa(BashDefaultTimeoutMS), itoa(BashMaxTimeoutMS)}},
+		{prompts.ToolBash, []string{itoa(BashDefaultTimeoutMS), itoa(BashMaxTimeoutMS), itoa(int(BashServerGrace.Seconds())) + " seconds"}},
 		{prompts.ToolTodo, []string{itoa(TodoLimit) + " items"}},
 		{prompts.ToolRead, []string{itoa(ReadDefaultLimit), itoa(ReadMaxLineChars) + " characters", itoa(ReadMaxImage>>20) + " MiB"}},
 		{prompts.ToolGlob, []string{itoa(machine.GlobLimit)}},
