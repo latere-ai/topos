@@ -652,7 +652,7 @@ func TestWebSearchIsAnOptInName(t *testing.T) {
 		{agent("a", m, "tools: [{name: web_search, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "a client tool may not take a built-in's name"},
 		{agent("a", m, "tools: [{name: web_search, description: x}]"), "spec.tools[0]", "a built-in takes only name and outputLimit"},
 		{agent("a", m, "tools: [web_search, web_search]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search or question"},
+		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search, question or publish"},
 	} {
 		e := refused(t, CodeInvalidManifest, c.body, Options{})
 		if !hasProblem(e, c.path, c.detail) {
