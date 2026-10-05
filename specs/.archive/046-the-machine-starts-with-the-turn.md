@@ -23,6 +23,12 @@ answer and the sandbox's start are independent, so they can overlap.
 This spec starts the machine as a turn of an agent whose tools act on
 it begins, beside the turn's first model call.
 
+Revised on 2026-10-05 by [[048-the-machine-starts-at-the-first-tool-call]]:
+the machine now starts when the model's response begins a call of a
+tool that acts on it, so a turn that only talks starts none. The rest
+of this spec stands. The rows below record what this spec built; the
+two whose rule 048 changed name the tests that replaced theirs.
+
 ## Current state
 
 The runner gives a hosted Cella session a `machine.Deferred`, which
@@ -92,9 +98,9 @@ session's first message is sent.
 | `Start` opens the machine without the hook; an operation during the open waits for it, then runs the hook on that machine; a second `Start` opens nothing more | `machine.TestAStartedMachineOpensInTheBackground` | built |
 | A failed start answers the first operation after it, the next one tries again, and so does a later `Start`; a hook that fails on a started machine answers the operation that ran it and leaves the machine open | `machine.TestAStartThatFailsAnswersTheNextCall` | built |
 | An idle release does not wait for a start; the session's end waits for it and removes the machine it made | `machine.TestAReleaseAndAStartedOpen` | built |
-| The first turn of an agent whose tools act on the machine starts it beside the first model call: with a machine and a first answer of one second each, the turn takes about one second, not two, and the first tool runs on the started machine, recorded once | `runner.TestTheMachineStartsBesideTheFirstModelCall` | built |
-| A turn that only talks starts the machine, records none, and does not wait for it; an agent with no tool that acts on a machine starts none | `runner.TestATurnThatOnlyTalksStartsTheMachineAndRecordsNone`, `runner.TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt`, `runner.TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine` | built |
-| A hosted session's talking turns share one sandbox and record no machine | `internal/hosted.TestASessionThatOnlyTalksStartsItsSandboxAndRecordsNone` | built |
+| The first turn of an agent whose tools act on the machine starts it beside the first model call: with a machine and a first answer of one second each, the turn takes about one second, not two, and the first tool runs on the started machine, recorded once | `runner.TestTheMachineStartsAsTheFirstToolCallBegins` | revised by 048: the machine starts at the call's start |
+| A turn that only talks starts the machine, records none, and does not wait for it; an agent with no tool that acts on a machine starts none | `runner.TestATurnThatOnlyTalksStartsNoMachine`, `runner.TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt`, `runner.TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine` | revised by 048: a turn that only talks starts none |
+| A hosted session's talking turns share one sandbox and record no machine | `internal/hosted.TestASessionThatOnlyTalksCreatesNoSandbox` | revised by 048: talking turns create no sandbox |
 
 ## Outcome
 
