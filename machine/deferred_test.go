@@ -222,6 +222,34 @@ func TestOpenLeavesAnyOtherMachineAlone(t *testing.T) {
 	}
 }
 
+// TestStartBeginsADeferredOpenAndLeavesAnyOtherMachineAlone: Start begins
+// a deferred machine's open without waiting for it, and does nothing to a
+// machine that exists already, or to none.
+func TestStartBeginsADeferredOpenAndLeavesAnyOtherMachineAlone(t *testing.T) {
+	under := &fake{}
+	Start(under)
+	Start(nil)
+	if len(under.ops) != 0 {
+		t.Fatalf("a machine that exists was acted on: %v", under.ops)
+	}
+	began, gate := make(chan struct{}), make(chan struct{})
+	d := Defer(t.Context(), KindCella, func(context.Context) (Machine, error) {
+		close(began)
+		<-gate
+		return under, nil
+	})
+	Start(d)
+	select {
+	case <-began:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the deferred machine's open did not begin")
+	}
+	close(gate)
+	if err := d.Open(t.Context()); err != nil || d.Opened() != under {
+		t.Fatalf("the open Start began: %v", err)
+	}
+}
+
 // TestAStartedMachineOpensInTheBackground: Start opens the machine
 // without a caller waiting and without the hook; an operation that comes
 // while the open runs waits for it, runs the hook on the machine Start

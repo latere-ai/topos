@@ -29,6 +29,24 @@ func Open(ctx context.Context, m Machine) error {
 	return nil
 }
 
+// Starter is the optional interface of a machine opened on demand that
+// can begin its open ahead of the operation that needs it (spec 048):
+// Start returns at once, and the open runs beside whatever the caller
+// does next. The harness starts the machine when the model's response
+// begins a call of a tool that acts on it, so the machine comes up while
+// the call's arguments stream.
+type Starter interface {
+	Start()
+}
+
+// Start begins m's open in the background when m is opened on demand;
+// any other machine exists already, and nothing is done.
+func Start(m Machine) {
+	if s, ok := m.(Starter); ok {
+		s.Start()
+	}
+}
+
 // OpenError is a machine opened on demand that could not be had. Code is
 // the error code the session's session.error carries: machine_unavailable
 // for the machine itself (spec 009), or the code of what failed right
@@ -99,15 +117,15 @@ func (d *Deferred) Open(ctx context.Context) error {
 }
 
 // Start opens the machine in the background, unless it is open, released
-// or already starting, so the open runs beside other work: the runner
-// starts a session's machine as a turn of an agent whose tools act on it
-// begins, beside the turn's first model call (spec 046). The hook does
-// not run: the first operation that needs the machine runs it on the
-// machine Start opened, and waits for an open still under way, so the
-// session records its machine where it does without a start. A failed
-// open is answered to that first operation, in the place of the open it
-// would have made, and the next one tries again; a turn that never
-// needs the machine never hears it.
+// or already starting, so the open runs beside other work: the harness
+// starts a session's machine when the model's response begins a call of
+// a tool that acts on it, beside the call's streaming arguments (specs
+// 046 and 048). The hook does not run: the first operation that needs
+// the machine runs it on the machine Start opened, and waits for an open
+// still under way, so the session records its machine where it does
+// without a start. A failed open is answered to that first operation, in
+// the place of the open it would have made, and the next one tries
+// again; a turn that never needs the machine never hears it.
 func (d *Deferred) Start() {
 	d.mu.Lock()
 	if d.m != nil || d.prepared != nil || d.released || inFlight(d.starting) {
@@ -387,5 +405,6 @@ func (d *Deferred) Release(ctx context.Context, end bool) error {
 var (
 	_ Machine = (*Deferred)(nil)
 	_ Opener  = (*Deferred)(nil)
+	_ Starter = (*Deferred)(nil)
 	_ Fetcher = (*Deferred)(nil)
 )
