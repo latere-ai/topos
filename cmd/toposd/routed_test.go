@@ -152,3 +152,94 @@ func TestARoutedSessionRunsTheModelsItsAuthorizerNames(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 }
+
+// TestARoutedTurnMovesOffAModelThatCannotServe: through toposd, a routed
+// session whose model the gateway answers upstream_error over an
+// upstream's 429 asks the authorizer session.update with failed_model and
+// the gateway's detail as failed_detail in the middle of its first turn,
+// as its initiator, and the turn is answered by the model the allow
+// names: the log holds the failed request, the service's
+// session.model_changed with the reason model_busy, and the request that
+// answered, and the session stands on the new model with its via.
+func TestARoutedTurnMovesOffAModelThatCannotServe(t *testing.T) {
+	const (
+		quick  = "tier/quick"
+		first  = "anthropic/claude-haiku-4.5"
+		second = "anthropic/claude-sonnet-4.5"
+	)
+	const detail = `upstream status 429: {"error":{"message":"Rate limit exceeded: free-models-per-min.","code":429}}`
+	vars, lux, _ := hostedStubs(t, luxstub.Reply{Response: ir.Response{Model: first}, Fail: &luxstub.Failure{Status: 502, Times: 99, Detail: detail,
+		Body: `{"type":"error","error":{"type":"upstream_error","message":"The provider returned an error."}}`}})
+	lux.Script(second, luxstub.Reply{Response: ir.Response{Model: second, Blocks: []ir.Block{{Type: ir.BlockText, Text: "Answered by the second."}}, StopReason: ir.StopEndTurn}})
+	az := stub.New(t, stub.WithVocabulary(authorizer.Vocabulary()))
+	az.SetRules(
+		stub.Rule{Action: authorizer.ActionSessionCreate, Allow: true, Limits: map[string]any{"model": first}},
+		stub.Rule{Action: authorizer.ActionSessionUpdate, Allow: true, Limits: map[string]any{"model": second}},
+	)
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(),
+		"TOPOS_AUTHORIZER_URL": az.URL(), "TOPOS_AUTHORIZER_TOKEN": az.Token()})
+	publicURL, _, stop := startServe(t, vars)
+	send := apiClient(t, publicURL, vars)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: quick\nspec:\n  model: {name: " + quick + "}\n  machine: {kind: cella}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/quick", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"quick","message":"Answer."}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	var s session.Session
+	if err := json.Unmarshal([]byte(body), &s); err != nil {
+		t.Fatal(err)
+	}
+	waitAnswered(t, publicURL, vars, s.ID)
+	if _, body := send(http.MethodGet, "/v1/sessions/"+s.ID, ""); !strings.Contains(body, `"model":{"name":"`+second+`","via":"`+quick+`"}`) || !strings.Contains(body, `"turn":1`) {
+		t.Fatalf("the session after its turn: %s", body)
+	}
+	_, body = send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", "")
+	var log struct {
+		Items []session.Event `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &log); err != nil {
+		t.Fatal(err)
+	}
+	var trail []string
+	for _, e := range log.Items {
+		switch e.Type {
+		case session.TypeModelRequest:
+			var p session.ModelRequest
+			if err := e.Decode(&p); err != nil {
+				t.Fatal(err)
+			}
+			trail = append(trail, p.Model+" "+p.Outcome)
+		case session.TypeModelChanged:
+			var p session.ModelChanged
+			if err := e.Decode(&p); err != nil {
+				t.Fatal(err)
+			}
+			if p.By.Kind != session.SenderService || p.Reason != session.ReasonModelBusy || p.Old.Name != first || p.New != (session.ModelRef{Name: second, Via: quick}) {
+				t.Fatalf("session.model_changed %+v", p)
+			}
+			trail = append(trail, "changed")
+		case session.TypeSessionError:
+			t.Fatalf("a turn that moved recorded %s", e.Payload)
+		}
+	}
+	if got := strings.Join(trail, ", "); got != first+" error, changed, "+second+" ok" {
+		t.Fatalf("the turn's trail is %s", got)
+	}
+	var failover *authz.Request
+	for _, r := range az.Requests() {
+		if r.Action == authorizer.ActionSessionUpdate {
+			failover = &r
+		}
+	}
+	if failover == nil || failover.Resource.String("failed_model") != first || failover.Resource.String("current_model") != first ||
+		failover.Resource.String("current_model_via") != quick || failover.Resource.String("model") != quick || failover.Resource.ID != s.ID ||
+		failover.Resource.String("failed_detail") != detail {
+		t.Fatalf("session.update asked about %+v", failover)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
