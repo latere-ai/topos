@@ -1,6 +1,6 @@
 ---
 title: "The machine starts at the first tool call: a session's sandbox starts when the model's response begins a call of a tool that acts on it, beside the call's arguments, and a turn that only talks starts none"
-status: in-progress
+status: complete
 track: core
 depends_on: [009-machines.md, 016-runners.md, 046-the-machine-starts-with-the-turn.md]
 affects: [machine/, harness/, runner/, test/stubs/luxstub/]
@@ -96,10 +96,41 @@ arguments that take a while. A reply without one is written as before.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `machine.Start` begins a deferred machine's open without waiting, and does nothing to a machine that exists or to none | `machine.TestStartBeginsADeferredOpenAndLeavesAnyOtherMachineAlone` | not built |
-| A response that only talks, calls a tool of no effect, or names a tool the thread does not have starts no machine; one that calls a tool that acts on the machine starts it at the call's block start, before the arguments stream, and the call runs on that machine | `harness.TestTheMachineStartsWhenAToolCallBegins` | not built |
-| A client's tool and a tool of no effect open no machine; a tool of any other effect does | `harness.TestOpensMachine` | not built |
-| With a second before the call, a second of arguments and a machine of a second, the machine opens after the call begins and the turn takes about two seconds, not three | `runner.TestTheMachineStartsAsTheFirstToolCallBegins` | not built |
-| A turn that only talks opens no machine and records none | `runner.TestATurnThatOnlyTalksStartsNoMachine`, `runner.TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine` | not built |
-| A hosted session whose turns only talk creates no sandbox and starts none | `internal/hosted.TestASessionThatOnlyTalksCreatesNoSandbox` | not built |
-| A reply's hold runs before each event, after the events before it reached the client | `luxstub.TestAHoldPacesTheStream` | not built |
+| `machine.Start` begins a deferred machine's open without waiting, and does nothing to a machine that exists or to none | `machine.TestStartBeginsADeferredOpenAndLeavesAnyOtherMachineAlone` | built |
+| A response that only talks, calls a tool of no effect, or names a tool the thread does not have starts no machine; one that calls a tool that acts on the machine starts it at the call's block start, before the arguments stream, and the call runs on that machine | `harness.TestTheMachineStartsWhenAToolCallBegins` | built |
+| A client's tool and a tool of no effect open no machine; a tool of any other effect does | `harness.TestOpensMachine` | built |
+| With a second before the call, a second of arguments and a machine of a second, the machine opens after the call begins and the turn takes about two seconds, not three | `runner.TestTheMachineStartsAsTheFirstToolCallBegins` | built |
+| A turn that only talks opens no machine and records none | `runner.TestATurnThatOnlyTalksStartsNoMachine`, `runner.TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine` | built |
+| A hosted session whose turns only talk creates no sandbox and starts none | `internal/hosted.TestASessionThatOnlyTalksCreatesNoSandbox` | built |
+| A reply's hold runs before each event, after the events before it reached the client | `luxstub.TestAHoldPacesTheStream` | built |
+
+## Outcome
+
+Built as designed on 2026-10-05. Measured with the runner's stub
+machine, which takes one second to open, and the stub model paced by
+`Hold`, one second before the call's block begins and a variable time
+for its arguments; one drive per row, the start of each rule:
+
+| Response | At the call (before 046) | At the turn (046) | At the call's start (048) |
+|---|---|---|---|
+| 1 s before the call, 1 s of arguments | 3.16 s | 2.14 s | 2.12 s |
+| 1 s before the call, arguments at once | 2.14 s | 1.15 s | 2.10 s |
+| 1 s before the call, 2 s of arguments | 4.16 s | 3.15 s | 3.14 s |
+| talks only | no machine | a machine opened, none recorded | no machine |
+
+A tool turn waits for the machine's open less the time its arguments
+took, where 046 also hid the model's time before the call; a call
+whose arguments stream for as long as the machine takes to open, a
+file written whole, loses nothing against 046, and a short command
+waits for the open. In a hosted session a new sandbox takes about 29
+seconds, so the wait at the first tool call is that less the call's
+arguments, and a turn that only talks creates no sandbox. Each new
+test fails against 046: the machine opened before the call began, a
+turn that only talked opened one, and a hosted session that only
+talked created one.
+
+One point was settled while it was built: the start and the open
+before a call share one predicate, `opensMachine`, which leaves out a
+client's tool, whose call never runs in the runner; 046 counted the
+registry's effects alone.
+
