@@ -402,3 +402,105 @@ func TestNextTag(t *testing.T) {
 		}
 	}
 }
+
+// timedOut answers every command as one that passed its timeout, or with
+// err.
+type timedOut struct {
+	fakeMachine
+	err error
+}
+
+func (m *timedOut) Exec(context.Context, machine.ExecRequest) (machine.ExecResult, error) {
+	return machine.ExecResult{TimedOut: true}, m.err
+}
+
+// TestTheHostsAnswers: what the tool makes of an app host that answers
+// without its envelope, with what it does not read, or not at all, a
+// build log it cannot read, and a git command that runs out of time.
+func TestTheHostsAnswers(t *testing.T) {
+	ctx := t.Context()
+	if (Options{}).Configured() || !(Options{URL: "https://apps.example", GitURL: gitURL}).Configured() {
+		t.Fatal("Configured")
+	}
+	for _, c := range []struct {
+		e    hostError
+		want string
+	}{
+		{hostError{Status: 502}, "the app host answered 502"},
+		{hostError{Status: 403, Code: "forbidden"}, "the app host refused with forbidden"},
+		{hostError{Status: 409, Code: "slug_taken", Message: "This slug is already in use."}, "the app host refused with slug_taken: This slug is already in use"},
+	} {
+		if got := c.e.Error(); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.e, got, c.want)
+		}
+	}
+	if deref(nil) != "" {
+		t.Fatal("deref(nil)")
+	}
+	site := map[string]bool{"/work/site": true}
+	for name, c := range map[string]struct {
+		answer map[string]func(int) (int, any)
+		m      machine.Machine
+		want   string
+	}{
+		"plain text": {map[string]func(int) (int, any){"POST /apps": func(int) (int, any) { return http.StatusBadGateway, "upstream down" }}, &fakeMachine{dirs: site}, "the app host answered 502"},
+		"not json":   {map[string]func(int) (int, any){"POST /apps": func(int) (int, any) { return http.StatusCreated, "[" }}, &fakeMachine{dirs: site}, "not what the tool reads"},
+		"no slug":    {map[string]func(int) (int, any){"POST /apps": func(int) (int, any) { return http.StatusCreated, map[string]any{} }}, &fakeMachine{dirs: site}, "without a slug or a push URL"},
+		"deploys down": {map[string]func(int) (int, any){"POST /apps": created("a-poem"), "GET /apps/a-poem/deploys": refused(http.StatusServiceUnavailable, "unavailable")},
+			&fakeMachine{dirs: site, outputs: []string{"1 " + sha1}}, "refused with unavailable"},
+		"push timeout": {map[string]func(int) (int, any){"POST /apps": created("a-poem")}, &timedOut{dirs: site}, "passed its timeout"},
+		"push error":   {map[string]func(int) (int, any){"POST /apps": created("a-poem")}, &timedOut{dirs: site, err: errors.New("the sandbox is gone")}, "the sandbox is gone"},
+		"odd output":   {map[string]func(int) (int, any){"POST /apps": created("a-poem")}, &fakeMachine{dirs: site, outputs: []string{"nothing\n"}}, "answered \"nothing\""},
+	} {
+		h := newHost(t, c.answer)
+		res, err := newTool(t, h, creds{}).Run(ctx, call(`{"path":"site"}`, c.m, tools.State{}))
+		if err != nil || !res.IsError() || !strings.Contains(resultText(res), c.want) {
+			t.Errorf("%s: %+v %v", name, res, err)
+		}
+	}
+	if _, err := newTool(t, newHost(t, nil), creds{}).Run(ctx, call(`{"path":`, &fakeMachine{dirs: site}, tools.State{})); err == nil {
+		t.Fatal("an input that is no JSON object ran")
+	}
+
+	failed := map[string]any{"id": "d1", "status": "failed", "preview": true, "commit_sha": sha1}
+	h := newHost(t, map[string]func(int) (int, any){
+		"POST /apps":                       created("a-poem"),
+		"GET /apps/a-poem/deploys":         deploys(failed),
+		"GET /apps/a-poem/deploys/d1/logs": refused(http.StatusInternalServerError, "internal"),
+	})
+	res, err := newTool(t, h, creds{}).Run(ctx, call(`{"path":"site"}`, &fakeMachine{dirs: site, outputs: []string{"1 " + sha1}}, tools.State{}))
+	if err != nil || !strings.Contains(resultText(res), "[the build log could not be read: the app host answered 500]") || metaOf(res).Error.Code != session.PublishFailed {
+		t.Fatalf("an unreadable log: %+v %v", res, err)
+	}
+
+	ready := tools.State{Ready: &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady}}
+	for name, c := range map[string]struct {
+		answer map[string]func(int) (int, any)
+		want   string
+	}{
+		"gone":          {map[string]func(int) (int, any){"GET /apps/a-poem": refused(http.StatusNotFound, "app_not_found")}, "no longer exists at the app host"},
+		"releases down": {map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/releases": refused(http.StatusServiceUnavailable, "unavailable")}, "refused with unavailable"},
+		"release down": {map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/releases": func(int) (int, any) { return http.StatusOK, map[string]any{} },
+			"GET /apps/a-poem/releases/v1": refused(http.StatusServiceUnavailable, "unavailable")}, "refused with unavailable"},
+		"other host": {map[string]func(int) (int, any){"GET /apps/a-poem": func(int) (int, any) {
+			return http.StatusOK, map[string]any{"slug": "a-poem", "repository": map[string]string{"push_url": "https://elsewhere.example/a.git"}}
+		}}, "is not on the git host"},
+	} {
+		res, err := newTool(t, newHost(t, c.answer), creds{}).Run(ctx, call(`{"release":true}`, &fakeMachine{}, ready))
+		if err != nil || !res.IsError() || !strings.Contains(resultText(res), c.want) {
+			t.Errorf("%s: %+v %v", name, res, err)
+		}
+	}
+	res, err = newTool(t, newHost(t, map[string]func(int) (int, any){
+		"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/releases": func(int) (int, any) { return http.StatusOK, map[string]any{} },
+	}), creds{}).Run(ctx, call(`{"release":true}`, &fakeMachine{outputs: []string{"1!fatal: refused\n"}}, ready))
+	if err != nil || !res.IsError() || !strings.Contains(resultText(res), "the push of the tag v1 failed: exit 1: fatal: refused") {
+		t.Fatalf("a refused tag: %+v %v", res, err)
+	}
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if sleep(canceled, time.Now().Add(time.Hour), time.Millisecond) {
+		t.Fatal("a canceled wait slept")
+	}
+}

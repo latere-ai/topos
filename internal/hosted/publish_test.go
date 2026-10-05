@@ -5,6 +5,7 @@ package hosted
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -71,8 +72,13 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 		h.created = append(h.created, body)
 		h.mu.Unlock()
 		slug := strings.Trim(slugWord.ReplaceAllString(strings.ToLower(body["name"]), "-"), "-")
-		gitIn(t, root, "init", "--quiet", "--bare", "-b", "main", slug+".git")
-		gitIn(t, filepath.Join(root, slug+".git"), "config", "http.receivepack", "true")
+		repo := filepath.Join(root, slug+".git")
+		for _, args := range [][]string{{"init", "--quiet", "--bare", "-b", "main", repo}, {"-C", repo, "config", "http.receivepack", "true"}} {
+			if out, err := exec.CommandContext(r.Context(), "git", args...).CombinedOutput(); err != nil {
+				http.Error(w, fmt.Sprintf("git %v: %v: %s", args, err, out), http.StatusInternalServerError)
+				return
+			}
+		}
 		h.write(w, http.StatusCreated, h.app(slug, body["name"]))
 	})
 	mux.HandleFunc("GET /apps/{slug}", func(w http.ResponseWriter, r *http.Request) {

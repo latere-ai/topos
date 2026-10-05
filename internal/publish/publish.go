@@ -136,8 +136,10 @@ type input struct {
 func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	var in input
 	if len(bytes.TrimSpace(c.Input)) > 0 {
+		// The registry checked the input against the schema, so a failure
+		// here is the harness's.
 		if err := json.Unmarshal(c.Input, &in); err != nil {
-			return text(tools.OutcomeInvalidInput, prompts.Render(prompts.PublishError, prompts.Data{"Path": cmp.Or(in.Path, "."), "Error": err.Error()}), nil), nil
+			return tools.Result{}, fmt.Errorf("publish: read the input: %w", err)
 		}
 	}
 	if t.tokens == nil {
