@@ -175,7 +175,9 @@ as `failed_model`, with why as `failed_detail`, so the authorizer passes
 over it as over any failed model. The change the turn then records
 carries, after the gateway's answer, each model passed over and why. A
 turn that runs out of moves this way ends `model_busy` with every reason
-in the detail, and nothing recorded but the failed request.
+in the detail, and nothing recorded but the failed request. A turn
+interrupted while it connects the model named asks nothing more, since
+the connection failed for the turn's own end, and stops interrupted.
 
 ### The retry of a model that cannot move
 
@@ -256,6 +258,7 @@ too.
 | A turn moves at most `MaxModelSwitches` times, then takes one quick retry and ends `model_busy` with its sentence, retryable, and the gateway's answer in the detail | `harness.TestATurnThatRunsOutOfMovesEndsBusy` | built |
 | A question that names no other model or fails ends the turn at once with `model_busy` and why, with no retry and no change; so does one that names a model that cannot be connected when the next question names no other | `harness.TestATurnTheRouterCannotMoveEndsAtOnce` | built |
 | A model named that cannot be connected is a failed move: the next question stands on the model the turn runs and names it as `failed_model` with why as the detail, the turn moves to the model that answer names, and the change says which model was passed over; such models count against `MaxModelSwitches`, and a turn that runs out of moves on them ends `model_busy` with each reason | `harness.TestAModelNamedThatCannotBeConnectedIsPassedOver` | built |
+| A turn interrupted while it connects the model named asks the router nothing more and stops interrupted, with no change recorded | `harness.TestATurnInterruptedWhileConnectingAsksNothingMore` | built |
 | A door that lists other models and not the one connected is read again until it names it, for at most `hosted.DoorSettle`; one that never does is read for the settle alone; no list, or a list of no model, is read once; a drive that ends stops the reads | `internal/hosted.TestAConnectionWaitsForTheDoorToListItsModel` | built |
 | A turn that cannot move retries a down model once, a second later, and not at all past a longer `Retry-After`; a gateway's own failure and a provider's overload keep spec 005's six attempts and waits | `harness.TestAModelThatCannotServeTakesOneQuickRetry` | built |
 | A spent wallet on the model moved to stops the turn with `budget`, and spend never asks the question | `harness.TestASpentWalletOnTheModelMovedToStopsWithBudget` | built |
