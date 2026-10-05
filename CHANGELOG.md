@@ -10,6 +10,21 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A server started in the foreground no longer holds the turn until the
+  command's timeout. A `bash` command still running after 3 seconds
+  whose process group listens on a TCP port it chose is moved to the
+  background: the call returns at once with the output so far, the
+  port, the job's pid and its log, and the server keeps running until
+  the model stops it or the session ends. A listener on a port in the
+  system's ephemeral range, as a test's server bound to port 0, does
+  not count, and every other long command keeps its timeout. This
+  works on Linux, in Cella sandboxes, and on macOS; a sandboxed host
+  and Windows keep the timeout alone. `machine.ExecRequest` gains
+  `ServerGrace`, and `machine.ExecResult` gains `Moved`, `Ports` and
+  `ServerErr`.
+
 ## v0.14.0 - 2026-10-05
 
 ### Added

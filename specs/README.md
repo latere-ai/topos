@@ -98,6 +98,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [039](039-questions.md) | Questions: a tool that puts a decision to a person, the idle wait for the answer, the answer event, sessions a person attends | medium | in-progress | 003, 004, 005, 006, 008, 010, 012, 013, 015, 016, 024 |
 | [040](.archive/040-session-deletion.md) | Deleting a session: the route asks only about a session it would delete, refuses a running one, what a delete removes and when, what it leaves | small | complete | 004, 006, 009, 014, 015, 016, 035 |
 | [041](.archive/041-approval-mode-change.md) | Changing a session's approval mode: the policy member of PATCH, session.policy_changed, the authorizer's question, from the next step | small | complete | 004, 005, 006, 012, 013, 015, 017 |
+| [045](045-a-server-cannot-hold-a-turn.md) | A server cannot hold a turn: a foreground command that starts a server moves to the background after a grace, with its port, pid and log | small | complete | 008, 009 |
 
 ## Dependency graph
 
@@ -149,6 +150,7 @@ flowchart BT
   S039[039 questions]
   S040[040 session deletion]
   S041[041 approval mode change]
+  S045[045 a server cannot hold a turn]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -218,6 +220,7 @@ flowchart BT
   S041 --> S013
   S041 --> S015
   S041 --> S017
+  S045 --> S008
 ```
 
 ## Build order

@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-05
 author: changkun
 ---
 
@@ -98,7 +98,10 @@ persist between calls. A `background` call starts the command detached
 in its own process group, writes its output to a job log in the spill
 directory, and returns at once with the pid and the log's path; the
 model reads the log with `read` and stops the job with `bash`. The
-machine kills background jobs when the session ends.
+machine kills background jobs when the session ends. A foreground
+command still running after 3 seconds whose process group listens on a
+port it chose, a server, is moved to the background the same way and
+the call says so ([[045-a-server-cannot-hold-a-turn]]).
 
 `web_fetch` runs inside the machine's network boundary, never from the
 runner's own network. `harness/tools` dials nothing: the tool reaches
@@ -214,6 +217,7 @@ routes, the credential deny-list and the environment
 | `edit` refuses an `old_string` that occurs zero or two times without `replace_all` | `harness/tools.TestEditRequiresUniqueMatch` | built |
 | `bash` keeps its directory between calls across a harness restart, keeps no variable, and kills its process group on timeout | `harness/tools.TestBashPersistentDirectory`, `harness/tools.TestBashTimeoutKillsGroup`, `harness/tools.TestBashCanceled` | built |
 | A `background` command returns at once with a pid and a log path, keeps running across steps, and is killed at session end | `harness/tools.TestBashBackgroundJob`, `machine/host.TestBackgroundJobsEndWithTheSession` | built |
+| A foreground server moves to the background after the grace with its port, pid and log, and a listener the system placed stays in the foreground ([[045-a-server-cannot-hold-a-turn]]) | `harness/tools.TestBashMovesAServerToTheBackground`, `harness/tools.TestBashLeavesAListenerTheSystemPlacedInTheForeground` | built |
 | `grep` and `glob` run with no external binary | `harness/tools.TestGrepNeedsNoBinary`, `harness/tools.TestGlobNeedsNoBinary` | built |
 | An output of 100 KiB is spilled: the result carries 20 KiB of head, the omission line and 10 KiB of tail, and the spill file in the machine's spill directory holds all 100 KiB | `harness/tools.TestOutputSpill`, `harness/tools.TestCap` | built |
 | `todo` replaces the thread's list and validates its items | `harness/tools.TestTodoReplacesTheList`, `harness/tools.TestTodoValidates` | built |
