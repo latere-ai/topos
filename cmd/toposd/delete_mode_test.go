@@ -72,8 +72,18 @@ func TestADeletedSessionIsGone(t *testing.T) {
 		t.Fatalf("create: %d %s", code, body)
 	}
 	waitFor(s.ID, 1, session.StopEndTurn)
-	if code, body := send(http.MethodDelete, "/v1/sessions/"+s.ID, ""); code != http.StatusNoContent {
-		t.Fatalf("delete: %d %s", code, body)
+	// The runner releases the directory store's lock on the session just
+	// after the idle status it appended, so a delete in that moment is
+	// refused as a lock's conflict; it is asked again until the lock is
+	// gone, and any other answer fails.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		code, body := send(http.MethodDelete, "/v1/sessions/"+s.ID, "")
+		if code == http.StatusNoContent {
+			break
+		}
+		if code != http.StatusConflict || !strings.Contains(body, "locked by runner") || time.Now().After(deadline) {
+			t.Fatalf("delete: %d %s", code, body)
+		}
 	}
 	for _, path := range []string{"/v1/sessions/" + s.ID, "/v1/sessions/" + s.ID + "/events", "/v1/sessions/" + s.ID + "/stream", "/v1/sessions/" + s.ID + "/blobs/" + string(s.Agent.Digest)} {
 		if code, body := send(http.MethodGet, path, ""); code != http.StatusNotFound {
