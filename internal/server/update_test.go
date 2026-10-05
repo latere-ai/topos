@@ -238,10 +238,13 @@ func TestASessionChangesItsEffort(t *testing.T) {
 		return got
 	}
 	const sonnet = "anthropic/claude-sonnet-4-5"
+	// ref is a model as the log and the header store it, answered as the
+	// API answers it, its level under reasoning.
 	ref := func(name, effort string) session.ModelRef { return session.ModelRef{Name: name, Effort: effort} }
+	answered := func(name, level string) session.ModelRef { return session.ModelRef{Name: name, Reasoning: level} }
 
 	got := patch(`{"model":{"effort":"high"}}`)
-	if got.Model == nil || *got.Model != ref("claude-haiku-4-5", "high") {
+	if got.Model == nil || *got.Model != answered("claude-haiku-4-5", "high") {
 		t.Fatalf("an effort change answers the model %+v", got.Model)
 	}
 	if len(asked) != 1 || asked[0]["effort"] != "high" || asked[0]["session_id"] != s.ID {
@@ -251,18 +254,18 @@ func TestASessionChangesItsEffort(t *testing.T) {
 		t.Fatalf("an effort change named the model: %v", asked[0])
 	}
 	got = patch(`{"model":{"name":"` + sonnet + `"}}`)
-	if *got.Model != ref(sonnet, "high") {
+	if *got.Model != answered(sonnet, "high") {
 		t.Fatalf("a switch of the model alone answers %+v", got.Model)
 	}
 	if _, named := asked[1]["effort"]; named || asked[1]["model"] != sonnet {
 		t.Fatalf("a switch of the model asked about %v", asked[1])
 	}
 	got = patch(`{"model":{"effort":""}}`)
-	if *got.Model != ref(sonnet, "low") || asked[2]["effort"] != "low" {
+	if *got.Model != answered(sonnet, "low") || asked[2]["effort"] != "low" {
 		t.Fatalf("a return to the agent's effort answers %+v, asked %v", got.Model, asked[2])
 	}
 	got = patch(`{"model":{"name":"claude-haiku-4-5","effort":"minimal"}}`)
-	if *got.Model != ref("claude-haiku-4-5", "minimal") {
+	if *got.Model != answered("claude-haiku-4-5", "minimal") {
 		t.Fatalf("a change of both answers %+v", got.Model)
 	}
 	changes := f.modelEvents(s.ID)
@@ -434,7 +437,7 @@ func TestAModeAndAModelChangeTogether(t *testing.T) {
 	}
 	var got session.Session
 	a.decode(t, &got)
-	if got.Model == nil || got.Model.Effort != "high" || got.Policy == nil || got.Policy.Mode != "plan" || got.LastSeq != evs[n-1].Seq {
+	if got.Model == nil || got.Model.Reasoning != "high" || got.Policy == nil || got.Policy.Mode != "plan" || got.LastSeq != evs[n-1].Seq {
 		t.Fatalf("the answer is %+v %+v at %d", got.Model, got.Policy, got.LastSeq)
 	}
 }

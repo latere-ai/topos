@@ -155,6 +155,10 @@ func exampleTime(hour, minute, second int) time.Time {
 func examples() (map[string]example, error) {
 	var failed error
 	text := func(v any) string {
+		v, err := asAnswer(v)
+		if err != nil && failed == nil {
+			failed = err
+		}
 		b, err := session.Marshal(v)
 		if err != nil && failed == nil {
 			failed = err
@@ -233,6 +237,10 @@ func examples() (map[string]example, error) {
 		session.UserMessage{Sender: person, Content: said("Add a section for the breaking changes.")})
 	var frames bytes.Buffer
 	for _, ev := range []session.Event{first, second, third} {
+		ev, err := eventAnswer(ev)
+		if err != nil {
+			return nil, err
+		}
 		if err := frame(&frames, ev); err != nil {
 			return nil, err
 		}
@@ -266,7 +274,7 @@ func examples() (map[string]example, error) {
 		"listSessions":      {response: list(turned, exampleSessionID)},
 		"getSessionSummary": {response: text(session.Summary{Sessions: session.Counts{Idle: 2}, Agents: 1})},
 		"getSession":        {response: text(turned)},
-		"updateSession":     {request: text(updateBody{Model: &modelChange{Name: &switched.Model.Name, Effort: &switched.Model.Effort}, Policy: &policyChange{Mode: &progressive}}), response: text(updated)},
+		"updateSession":     {request: text(updateBody{Model: &modelChange{Name: &switched.Model.Name, Reasoning: &switched.Model.Effort}, Policy: &policyChange{Mode: &progressive}}), response: text(updated)},
 		"endSession":        {request: text(endBody{Reason: session.StopCompleted}), response: text(ended)},
 		"forkSession":       {request: text(forkBody{AtSeq: &forked.Parent.Seq, Attended: true}), response: text(forked)},
 		"archiveSession":    {response: text(filed)},

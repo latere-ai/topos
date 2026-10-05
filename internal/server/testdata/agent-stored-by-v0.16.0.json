@@ -1,0 +1,19 @@
+{
+  "_comment": "An agent version exactly as Topos v0.16.0 stored it, with each model's reasoning level under effort: the agent row, the version's document and bundle, and the manifest it was applied from.",
+  "manifest": "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: careful\nspec:\n  model: {name: claude-haiku-4-5, effort: high}\n  instructions: Think it through.\n  machine: {kind: cella}\n  advisor: {model: {name: claude-haiku-4-5, effort: medium}}\n  subagents: [{name: helper, spec: {model: {name: claude-haiku-4-5, effort: minimal}, instructions: Help.}}]\n",
+  "agent": {
+    "id": "agent_01M458DQ0Y29QCF1CV5FJGDDDJ",
+    "name": "careful",
+    "owner": "https://login.example|alice",
+    "owner_type": "user",
+    "created_at": "2026-10-05T05:26:12.766243Z"
+  },
+  "version": {
+    "version": 1,
+    "digest": "sha256:b39d3e424250f0413a6c6c9b0e8792c583f10c726f213f6958fa627de9d8d9c1",
+    "created_by": "https://login.example|alice",
+    "created_at": "2026-10-05T05:26:12.766243Z",
+    "doc": "{\"apiVersion\":\"topos.latere.ai/v1\",\"kind\":\"Agent\",\"metadata\":{\"name\":\"careful\"},\"spec\":{\"model\":{\"name\":\"claude-haiku-4-5\",\"effort\":\"high\"},\"instructions\":\"Think it through.\",\"tools\":[\"read\",\"write\",\"edit\",\"bash\",\"grep\",\"glob\",\"web_fetch\",\"todo\"],\"approvals\":{\"mode\":\"confirm\",\"thresholds\":{\"flagAt\":0.3,\"askAt\":0.5,\"blockAt\":0.9}},\"subagents\":[{\"name\":\"helper\",\"spec\":{\"model\":{\"name\":\"claude-haiku-4-5\",\"effort\":\"minimal\"},\"instructions\":\"Help.\",\"tools\":[\"read\",\"write\",\"edit\",\"bash\",\"grep\",\"glob\",\"web_fetch\",\"todo\"],\"approvals\":{\"mode\":\"confirm\",\"thresholds\":{\"flagAt\":0.3,\"askAt\":0.5,\"blockAt\":0.9}},\"threads\":{\"maxDepth\":2,\"maxConcurrent\":8},\"machine\":{\"kind\":\"host\"},\"limits\":{\"turnTimeout\":\"2h\",\"maxAge\":\"168h\"},\"context\":{\"compactAt\":0.8}}}],\"threads\":{\"maxDepth\":2,\"maxConcurrent\":8},\"advisor\":{\"model\":{\"name\":\"claude-haiku-4-5\",\"effort\":\"medium\"}},\"machine\":{\"kind\":\"cella\",\"image\":\"base\"},\"limits\":{\"turnTimeout\":\"2h\",\"maxAge\":\"168h\"},\"context\":{\"compactAt\":0.8}},\"status\":{\"id\":\"agent_01M458DQ0Y29QCF1CV5FJGDDDJ\",\"version\":1,\"digest\":\"sha256:b39d3e424250f0413a6c6c9b0e8792c583f10c726f213f6958fa627de9d8d9c1\",\"createdAt\":\"2026-10-05T05:26:12.766243Z\"}}",
+    "bundle": "{\"apiVersion\":\"topos.latere.ai/v1\",\"kind\":\"Agent\",\"metadata\":{\"name\":\"careful\"},\"spec\":{\"model\":{\"name\":\"claude-haiku-4-5\",\"effort\":\"high\"},\"instructions\":\"Think it through.\",\"tools\":[\"read\",\"write\",\"edit\",\"bash\",\"grep\",\"glob\",\"web_fetch\",\"todo\"],\"approvals\":{\"mode\":\"confirm\",\"thresholds\":{\"flagAt\":0.3,\"askAt\":0.5,\"blockAt\":0.9}},\"subagents\":[{\"name\":\"helper\",\"spec\":{\"model\":{\"name\":\"claude-haiku-4-5\",\"effort\":\"minimal\"},\"instructions\":\"Help.\",\"tools\":[\"read\",\"write\",\"edit\",\"bash\",\"grep\",\"glob\",\"web_fetch\",\"todo\"],\"approvals\":{\"mode\":\"confirm\",\"thresholds\":{\"flagAt\":0.3,\"askAt\":0.5,\"blockAt\":0.9}},\"threads\":{\"maxDepth\":2,\"maxConcurrent\":8},\"machine\":{\"kind\":\"host\"},\"limits\":{\"turnTimeout\":\"2h\",\"maxAge\":\"168h\"},\"context\":{\"compactAt\":0.8}}}],\"threads\":{\"maxDepth\":2,\"maxConcurrent\":8},\"advisor\":{\"model\":{\"name\":\"claude-haiku-4-5\",\"effort\":\"medium\"}},\"machine\":{\"kind\":\"cella\",\"image\":\"base\"},\"limits\":{\"turnTimeout\":\"2h\",\"maxAge\":\"168h\"},\"context\":{\"compactAt\":0.8}},\"status\":{\"id\":\"agent_01M458DQ0Y29QCF1CV5FJGDDDJ\",\"version\":1,\"digest\":\"sha256:b39d3e424250f0413a6c6c9b0e8792c583f10c726f213f6958fa627de9d8d9c1\",\"createdAt\":\"2026-10-05T05:26:12.766243Z\"}}\n"
+  }
+}

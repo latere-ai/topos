@@ -245,6 +245,11 @@ var errorDetails = yaml.MapSlice{
 			{Key: "description", Value: "On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. " +
 				"The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read."},
 		}},
+		{Key: "limits", Value: yaml.MapSlice{
+			{Key: "type", Value: "object"},
+			{Key: "description", Value: "On forbidden, the limits object the authorizer's deny carried, as it carried it, beside the reason and only with it: " +
+				"a deny for a bound that resets names when it does as resets_at, an RFC 3339 time, so a client says when the refused request can be sent again. The authorizer owns its members."},
+		}},
 	}},
 }
 
@@ -260,13 +265,13 @@ const maxSummaryWords = 4
 // sentence about it is here.
 var opDescriptions = map[string]string{
 	"listAgents":        "List the agents of the caller's context.",
-	"getAgent":          "Get an agent's latest version by id, or by name among the agents of the caller's context.",
+	"getAgent":          "Get an agent's latest version by id, or by name among the agents of the caller's context. " + AnsweredSpec,
 	"listAgentVersions": "List an agent's versions.",
-	"getAgentVersion":   "Get one version of an agent.",
+	"getAgentVersion":   "Get one version of an agent. " + AnsweredSpec,
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
 	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " +
-		"The session runs its agent's model, and its model is absent from the answer. Where the installation's authorizer names another model for it, the session starts on that one: " +
-		"its model is {name, via, effort}, name the model that runs and via the agent's own name for it, which a client that offers the choice shows. " +
+		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
+		"its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable.",
 	"listSessions":  "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
 	"getSession":    "Get a session.",
@@ -297,15 +302,20 @@ var opDescriptions = map[string]string{
 		"The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. "+
 		"metadata.displayName, optional, is the name a person reads: text on one line of at most %d characters, without control characters, line breaks or bidirectional controls; "+
 		"an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: "+
-		"it replaces the latest version's metadata, and every later read returns it.", manifest.MaxDisplayName),
+		"it replaces the latest version's metadata, and every later read returns it. "+
+		`A model's reasoning level is spec.model.reasoning; the manifest may still name it "effort", its name before reasoning, which is read through every v0.x release and dropped in v1.0, and a model that names both with different levels is invalid_manifest. `+
+		"Either name resolves to the same digest, so an agent applied again under the other name keeps its version.", manifest.MaxDisplayName),
 	"sendEvent": fmt.Sprintf("The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. "+
 		"A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most %d of at most %d bytes each), "+
 		"and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most %d of at most %d bytes each, the name one path segment of at most %d bytes). "+
 		"The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; "+
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
-		"The authorizer's allow of a message, a confirmation or a result may name another model than the one the session runs: session.model_changed {by, old, new} is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
-		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it. A turn already running keeps its model. A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
+		"The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: "+
+		"session.model_changed {by, old, new}, each {name, via, reasoning}, is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
+		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level. "+
+		"A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
+		"A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. "+
 		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
 		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
 		"A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. "+
@@ -348,15 +358,17 @@ var opDescriptions = map[string]string{
 	"archiveSession": "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. " +
 		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then, of an ended session, session.update with session_id and archived true; a deny is forbidden.",
 	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",
-	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "effort": "<effort>"}, "policy": {"mode": "<mode>"}}: the model the session's next turn runs and its reasoning effort, either member or both, and the approval mode its next steps decide calls under, one of %s. `+
+	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "reasoning": "<level>"}, "policy": {"mode": "<mode>"}}: the model the session's next turn runs and its reasoning level, either member or both, and the approval mode its next steps decide calls under, one of %s. `+
 		"The body names model, policy or both; any other member is refused. "+
-		"A member left out keeps what the session runs. effort is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. "+
+		"A member left out keeps what the session runs. reasoning is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that does not reason ignores it. "+
+		`The level may still be named "effort", its name before reasoning, which is read through every v0.x release and dropped in v1.0; a body that names both with different levels is invalid_request. `+
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+
-		"The authorizer is asked session.update with session_id, model when the body names one, and effort, the effort the next turn runs at, when the body names one, and a deny is forbidden. "+
+		"The authorizer is asked session.update with session_id, model when the body names one, and the level the next turn runs at when the body names one, under both effort and reasoning, and a deny is forbidden. "+
 		"Its allow may name the model to run in place of the one the body names: the session then runs that model, and its model's via is the name the body asked, which a client that offers the choice shows; via is absent when the session runs the name asked. "+
+		"Its allow may also name the level the change runs at, empty for the agent's own, in place of the one the body names. "+
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. "+
-		"An allowed change appends session.model_changed {by, old, new}, each {name, via, effort}, and answers the Session, whose model is the new one; a change to the model and the effort the session runs appends nothing. "+
-		"A turn already running keeps its model and its effort: the change takes effect at the next turn. "+
+		"An allowed change appends session.model_changed {by, old, new}, each {name, via, reasoning}, and answers the Session, whose model is the new one; a change to the model and the level the session runs appends nothing. "+
+		"A turn already running keeps its model and its level: the change takes effect at the next turn. "+
 		"A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. "+
 		"It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. "+
 		"The mode holds from the next step, in the turn that runs: a call decided before keeps its verdict, and a call waiting for a confirmation keeps waiting for the person's answer whichever way the mode moved. "+

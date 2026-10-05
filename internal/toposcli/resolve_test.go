@@ -147,12 +147,18 @@ func TestCLIAndServerResolveAgree(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// The API answers each model's level as reasoning, where the
+			// resolved spec, and the digest, hold it as effort.
+			cli, err := session.Marshal(r.Agent.Spec.Answered())
+			if err != nil {
+				t.Fatal(err)
+			}
 			if len(r.Pinned) == 0 {
-				if !bytes.Equal(spec, r.Spec) || applied.Status.Digest != r.Digest {
-					t.Errorf("%s: %s resolves apart:\ntopos %s %s\nAPI   %s %s", file, r.Name, r.Digest, r.Spec, applied.Status.Digest, spec)
+				if !bytes.Equal(spec, cli) || applied.Status.Digest != r.Digest {
+					t.Errorf("%s: %s resolves apart:\ntopos %s %s\nAPI   %s %s", file, r.Name, r.Digest, cli, applied.Status.Digest, spec)
 				}
-			} else if withNames(spec, serverNames) != withNames(r.Spec, cliNames) {
-				t.Errorf("%s: %s pins apart:\ntopos %s\nAPI   %s", file, r.Name, r.Spec, spec)
+			} else if withNames(spec, serverNames) != withNames(cli, cliNames) {
+				t.Errorf("%s: %s pins apart:\ntopos %s\nAPI   %s", file, r.Name, cli, spec)
 			}
 			agreed++
 		}

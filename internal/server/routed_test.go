@@ -204,10 +204,11 @@ func TestARoutedSessionStartsOnTheModelItsAllowNames(t *testing.T) {
 	if got.Model == nil || got.Model.Name != haiku || got.Model.Via != quick {
 		t.Fatalf("a read answers the model %+v", got.Model)
 	}
-	// The agent's effort holds on the model the allow named.
+	// The agent's level holds on the model the allow named, answered as
+	// reasoning.
 	a = f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"careful"}`)
 	a.decode(t, &got)
-	if a.status != http.StatusCreated || got.Model == nil || *got.Model != (session.ModelRef{Name: haiku, Via: quick, Effort: "high"}) {
+	if a.status != http.StatusCreated || got.Model == nil || *got.Model != (session.ModelRef{Name: haiku, Via: quick, Reasoning: "high"}) {
 		t.Fatalf("a routed create of an agent with an effort: %d, model %+v", a.status, got.Model)
 	}
 	// An allow that names the agent's own model routes nothing.
@@ -273,18 +274,18 @@ func TestAPatchToANameTheAuthorizerResolves(t *testing.T) {
 	// An effort change alone names no model, and an allow that names one
 	// for it moves nothing.
 	r.to(haiku)
-	if got := patch(`{"model":{"effort":"high"}}`); *got.Model != (session.ModelRef{Name: sonnet, Via: quick, Effort: "high"}) {
+	if got := patch(`{"model":{"effort":"high"}}`); *got.Model != (session.ModelRef{Name: sonnet, Via: quick, Reasoning: "high"}) {
 		t.Fatalf("an effort change on a routed session answers %+v", got.Model)
 	}
 	// The same name answered with another model moves the session and
 	// keeps the name asked and the effort.
-	if got := patch(`{"model":{"name":"` + quick + `"}}`); *got.Model != (session.ModelRef{Name: haiku, Via: quick, Effort: "high"}) {
+	if got := patch(`{"model":{"name":"` + quick + `"}}`); *got.Model != (session.ModelRef{Name: haiku, Via: quick, Reasoning: "high"}) {
 		t.Fatalf("a name answered with another model answers %+v", got.Model)
 	}
 	// A model asked by its own name, which the allow leaves as asked,
 	// runs with no via.
 	r.to("")
-	if got := patch(`{"model":{"name":"` + haiku + `"}}`); *got.Model != (session.ModelRef{Name: haiku, Effort: "high"}) {
+	if got := patch(`{"model":{"name":"` + haiku + `"}}`); *got.Model != (session.ModelRef{Name: haiku, Reasoning: "high"}) {
 		t.Fatalf("a model asked by its own name answers %+v", got.Model)
 	}
 	if n := len(f.modelEvents(s.ID)); n != 4 {

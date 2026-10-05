@@ -367,7 +367,12 @@ func (c *call) stream() error {
 			if !open {
 				return nil
 			}
-			if err := frame(c.w, ev); err != nil {
+			shown, err := eventAnswer(ev)
+			if err != nil {
+				c.s.o.Log.ErrorContext(ctx, "stream: an event does not read; the stream ends", "session", s.ID, "seq", ev.Seq, "err", err)
+				return nil
+			}
+			if err := frame(c.w, shown); err != nil {
 				return nil
 			}
 			flusher.Flush()
@@ -421,7 +426,8 @@ func (s *slots) take(subject string) (func(), bool) {
 	}), true
 }
 
-// frame writes one event as a Server-Sent Events frame.
+// frame writes one event as a Server-Sent Events frame, as eventAnswer
+// reads it.
 func frame(w io.Writer, ev session.Event) error {
 	b, err := session.Marshal(ev)
 	if err != nil {

@@ -342,9 +342,13 @@ func decodeBody(b []byte, v any) error {
 	return nil
 }
 
-// reply writes v as JSON with the route's success status, or status when
-// it is set.
+// reply writes v as JSON, as the API answers it, with the route's
+// success status, or status when it is set.
 func (c *call) reply(status int, v any) error {
+	v, err := asAnswer(v)
+	if err != nil {
+		return err
+	}
 	b, err := session.Marshal(v)
 	if err != nil {
 		return err

@@ -12,7 +12,7 @@ paths:
     put:
       operationId: applyAgent
       summary: Apply an agent
-      description: "Apply an Agent manifest to the agent of the name in the caller's context; a changed spec creates a version. The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. metadata.displayName, optional, is the name a person reads: text on one line of at most 200 characters, without control characters, line breaks or bidirectional controls; an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: it replaces the latest version's metadata, and every later read returns it."
+      description: "Apply an Agent manifest to the agent of the name in the caller's context; a changed spec creates a version. The body is one Agent manifest of topos.latere.ai/v1. metadata.name is the agent's identifier, a DNS label equal to the path's name. metadata.displayName, optional, is the name a person reads: text on one line of at most 200 characters, without control characters, line breaks or bidirectional controls; an agent without one is shown by its name. A changed spec creates the next version. A change to the metadata alone (the display name, labels, annotations) creates none: it replaces the latest version's metadata, and every later read returns it. A model's reasoning level is spec.model.reasoning; the manifest may still name it \"effort\", its name before reasoning, which is read through every v0.x release and dropped in v1.0, and a model that names both with different levels is invalid_manifest. Either name resolves to the same digest, so an agent applied again under the other name keeps its version."
       x-topos-actions:
         - agent.create
         - agent.update
@@ -206,7 +206,7 @@ paths:
     get:
       operationId: getAgent
       summary: Read an agent
-      description: Get an agent's latest version by id, or by name among the agents of the caller's context.
+      description: Get an agent's latest version by id, or by name among the agents of the caller's context. Every model of the spec, spec.model, spec.advisor.model and each inline subagent's, answers its reasoning level as reasoning. A version is stored, and its digest computed, with the level under effort, its name before reasoning, so the spec answered is not byte for byte the spec its digest covers.
       x-topos-actions:
         - agent.read
       parameters:
@@ -296,7 +296,7 @@ paths:
     get:
       operationId: getAgentVersion
       summary: Read an agent version
-      description: Get one version of an agent.
+      description: Get one version of an agent. Every model of the spec, spec.model, spec.advisor.model and each inline subagent's, answers its reasoning level as reasoning. A version is stored, and its digest computed, with the level under effort, its name before reasoning, so the spec answered is not byte for byte the spec its digest covers.
       x-topos-actions:
         - agent.read
       parameters:
@@ -431,7 +431,7 @@ paths:
     post:
       operationId: createSession
       summary: Create a session
-      description: "Create a session of an agent, named by id or by name among the agents of the caller's context. The body's attended, true when a person answers the session's questions through a client that shows them, is the session's from its create on and nothing changes it: an agent's question then waits, the session idle with stop_reason question, until a user.answer, a person's user.message or a user.interrupt closes it, holding no runner while it waits; absent or false, a question is answered at once with outcome unanswered and the agent decides, so a client that shows no questions never meets one. The session runs its agent's model, and its model is absent from the answer. Where the installation's authorizer names another model for it, the session starts on that one: its model is {name, via, effort}, name the model that runs and via the agent's own name for it, which a client that offers the choice shows. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable."
+      description: "Create a session of an agent, named by id or by name among the agents of the caller's context. The body's attended, true when a person answers the session's questions through a client that shows them, is the session's from its create on and nothing changes it: an agent's question then waits, the session idle with stop_reason question, until a user.answer, a person's user.message or a user.interrupt closes it, holding no runner while it waits; absent or false, a question is answered at once with outcome unanswered and the agent decides, so a client that shows no questions never meets one. The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable."
       x-topos-actions:
         - session.create
       requestBody:
@@ -670,7 +670,7 @@ paths:
     patch:
       operationId: updateSession
       summary: Change a session's model
-      description: "The body is {\"model\": {\"name\": \"<model>\", \"effort\": \"<effort>\"}, \"policy\": {\"mode\": \"<mode>\"}}: the model the session's next turn runs and its reasoning effort, either member or both, and the approval mode its next steps decide calls under, one of plan, confirm, progressive. The body names model, policy or both; any other member is refused. A member left out keeps what the session runs. effort is one of minimal, low, medium, high, or empty to return to the agent's own; it holds across a change of the model, and a model that takes no reasoning effort ignores it. The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. The authorizer is asked session.update with session_id, model when the body names one, and effort, the effort the next turn runs at, when the body names one, and a deny is forbidden. Its allow may name the model to run in place of the one the body names: the session then runs that model, and its model's via is the name the body asked, which a client that offers the choice shows; via is absent when the session runs the name asked. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. An allowed change appends session.model_changed {by, old, new}, each {name, via, effort}, and answers the Session, whose model is the new one; a change to the model and the effort the session runs appends nothing. A turn already running keeps its model and its effort: the change takes effect at the next turn. A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. The mode holds from the next step, in the turn that runs: a call decided before keeps its verdict, and a call waiting for a confirmation keeps waiting for the person's answer whichever way the mode moved. A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm."
+      description: "The body is {\"model\": {\"name\": \"<model>\", \"reasoning\": \"<level>\"}, \"policy\": {\"mode\": \"<mode>\"}}: the model the session's next turn runs and its reasoning level, either member or both, and the approval mode its next steps decide calls under, one of plan, confirm, progressive. The body names model, policy or both; any other member is refused. A member left out keeps what the session runs. reasoning is one of minimal, low, medium, high, or empty to return to the agent's own; it holds across a change of the model, and a model that does not reason ignores it. The level may still be named \"effort\", its name before reasoning, which is read through every v0.x release and dropped in v1.0; a body that names both with different levels is invalid_request. The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. The authorizer is asked session.update with session_id, model when the body names one, and the level the next turn runs at when the body names one, under both effort and reasoning, and a deny is forbidden. Its allow may name the model to run in place of the one the body names: the session then runs that model, and its model's via is the name the body asked, which a client that offers the choice shows; via is absent when the session runs the name asked. Its allow may also name the level the change runs at, empty for the agent's own, in place of the one the body names. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. An allowed change appends session.model_changed {by, old, new}, each {name, via, reasoning}, and answers the Session, whose model is the new one; a change to the model and the level the session runs appends nothing. A turn already running keeps its model and its level: the change takes effect at the next turn. A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. The mode holds from the next step, in the turn that runs: a call decided before keeps its verdict, and a call waiting for a confirmation keeps waiting for the person's answer whichever way the mode moved. A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm."
       x-topos-actions:
         - session.update
         - session.read
@@ -686,7 +686,7 @@ paths:
             example:
               model:
                 name: claude-sonnet-4-5
-                effort: high
+                reasoning: high
               policy:
                 mode: progressive
       responses:
@@ -725,7 +725,7 @@ paths:
                   spent_cost_usd_micro: 1200
                 model:
                   name: claude-sonnet-4-5
-                  effort: high
+                  reasoning: high
                 limits:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
@@ -809,7 +809,7 @@ paths:
                   spent_cost_usd_micro: 1200
                 model:
                   name: claude-sonnet-4-5
-                  effort: high
+                  reasoning: high
                 limits:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
@@ -937,7 +937,7 @@ paths:
                   spent_cost_usd_micro: 1200
                 model:
                   name: claude-sonnet-4-5
-                  effort: high
+                  reasoning: high
                 limits:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
@@ -999,7 +999,7 @@ paths:
                   spent_cost_usd_micro: 1200
                 model:
                   name: claude-sonnet-4-5
-                  effort: high
+                  reasoning: high
                 limits:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
@@ -1110,7 +1110,7 @@ paths:
     post:
       operationId: sendEvent
       summary: Send a user event
-      description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes. The authorizer's allow of a message, a confirmation or a result may name another model than the one the session runs: session.model_changed {by, old, new} is then appended straight before the event, its by the service {subject: service:authorizer, kind: service} and not the sender, the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it. A turn already running keeps its model. A model the installation does not run refuses the send as model_unknown or model_unavailable. A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. A user.answer answers the session's open question, the agent.tool_use named question that nothing closed, of which there is at most one; its payload is a UserAnswer, {tool_use_id, answers}, one entry {selected, text} per question in the questions' order: selected the chosen labels, text the person's own words of at most 2000 characters. An entry with text alone answers in the person's words, one with both is a choice and a note on it, an empty entry leaves its question to the agent, and an answer of empty entries leaves every question to it. For example {\"type\":\"user.answer\",\"payload\":{\"tool_use_id\":\"toolu_01\",\"answers\":[{\"selected\":[\"SQLite\"],\"text\":\"we have nobody to run a second schema\"},{}]}}. It is asked of the authorizer as session.send with event_type user.answer, and its shape is checked before that question, as invalid_request. After the allow, an answer that names no open question is conflict, the detail saying what closed the question; one with another number of entries than questions, a label that is no option of its question or one named twice, or several labels on a question that does not take several, is invalid_request. Nothing is appended for a refused answer. An answer is final once appended: the reply and the stream carry it, and a correction is a message. The runner renders it into the call's tool.result, outcome ok, or unanswered when every entry is empty, with a QuestionResultMeta."
+      description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes. The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: session.model_changed {by, old, new}, each {name, via, reasoning}, is then appended straight before the event, its by the service {subject: service:authorizer, kind: service} and not the sender, the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level. A model the installation does not run refuses the send as model_unknown or model_unavailable. A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. A user.answer answers the session's open question, the agent.tool_use named question that nothing closed, of which there is at most one; its payload is a UserAnswer, {tool_use_id, answers}, one entry {selected, text} per question in the questions' order: selected the chosen labels, text the person's own words of at most 2000 characters. An entry with text alone answers in the person's words, one with both is a choice and a note on it, an empty entry leaves its question to the agent, and an answer of empty entries leaves every question to it. For example {\"type\":\"user.answer\",\"payload\":{\"tool_use_id\":\"toolu_01\",\"answers\":[{\"selected\":[\"SQLite\"],\"text\":\"we have nobody to run a second schema\"},{}]}}. It is asked of the authorizer as session.send with event_type user.answer, and its shape is checked before that question, as invalid_request. After the allow, an answer that names no open question is conflict, the detail saying what closed the question; one with another number of entries than questions, a label that is no option of its question or one named twice, or several labels on a question that does not take several, is invalid_request. Nothing is appended for a refused answer. An answer is final once appended: the reply and the stream carry it, and a correction is a message. The runner renders it into the call's tool.result, outcome ok, or unanswered when every entry is empty, with a QuestionResultMeta."
       x-topos-actions:
         - session.send
         - session.interrupt
@@ -1883,6 +1883,9 @@ components:
                 reason:
                   type: string
                   description: On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read.
+                limits:
+                  type: object
+                  description: "On forbidden, the limits object the authorizer's deny carried, as it carried it, beside the reason and only with it: a deny for a bound that resets names when it does as resets_at, an RFC 3339 time, so a client says when the refused request can be sent again. The authorizer owns its members."
   responses:
     Error:
       description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused; 404: not_found; 409: agent_identity_missing, conflict, file_unavailable, idempotency_conflict, sequence_conflict; 413: attachment_too_large, file_too_large, payload_too_large; 422: invalid_fork_point, machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, identity_unavailable, model_unavailable."
