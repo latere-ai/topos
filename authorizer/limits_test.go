@@ -73,6 +73,9 @@ func TestDecodeLimitsRefusesWhatItCannotApply(t *testing.T) {
 		"model with space":  WireLimits{Model: " vendor/model-a"},
 		"model of no name":  WireLimits{Model: " "},
 		"model not a name":  map[string]any{"model": map[string]any{"name": "vendor/model-a"}},
+		"reasoning unknown": map[string]any{"reasoning": "extreme"},
+		"reasoning cased":   map[string]any{"reasoning": "High"},
+		"reasoning number":  map[string]any{"reasoning": 3},
 	} {
 		if _, err := DecodeLimits(decision(t, w)); err == nil {
 			t.Errorf("%s: decoded", name)
@@ -96,5 +99,34 @@ func TestTheModelIsOneMemberOnTheWire(t *testing.T) {
 	}
 	if l, err := DecodeLimits(authz.Decision{Allow: true, Limits: json.RawMessage(`{"model":""}`)}); err != nil || l.Model != "" {
 		t.Fatalf("an empty model routes nothing: %+v, %v", l, err)
+	}
+}
+
+// TestTheReasoningLevelHasThreeStatesOnTheWire: limits.reasoning absent
+// keeps the session's level, a level sets it, and "" returns the session
+// to its agent's own, so the member is a pointer and "" is written out
+// (spec 048).
+func TestTheReasoningLevelHasThreeStatesOnTheWire(t *testing.T) {
+	high, own := "high", ""
+	for _, c := range []struct {
+		name string
+		in   *string
+		wire string
+	}{
+		{"absent", nil, `{"model":"vendor/model-a"}`},
+		{"a level", &high, `{"model":"vendor/model-a","reasoning":"high"}`},
+		{"the agent's own", &own, `{"model":"vendor/model-a","reasoning":""}`},
+	} {
+		raw, err := json.Marshal(WireLimits{Model: "vendor/model-a", Reasoning: c.in})
+		if err != nil || string(raw) != c.wire {
+			t.Fatalf("%s: the limits are %s, %v", c.name, raw, err)
+		}
+		l, err := DecodeLimits(authz.Decision{Allow: true, Limits: raw})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if (l.Reasoning == nil) != (c.in == nil) || (l.Reasoning != nil && *l.Reasoning != *c.in) {
+			t.Fatalf("%s: decoded to %v", c.name, l.Reasoning)
+		}
 	}
 }

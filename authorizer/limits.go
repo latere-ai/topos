@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"latere.ai/x/pkg/authz"
+
+	v1 "latere.ai/x/topos/manifest/v1"
 )
 
 // Thresholds are the progressive permission mode's score cut-offs
@@ -71,6 +74,11 @@ type Limits struct {
 	// the one the change names on session.update, and the one the
 	// session stands on at session.send. Empty runs the one asked.
 	Model string
+	// Reasoning is the reasoning level the session's next turn runs at,
+	// read where Model is (spec 048): nil keeps the level the session
+	// has, one of manifest/v1's Efforts sets it, and a pointer to ""
+	// returns the session to its agent's own.
+	Reasoning *string
 }
 
 // WireLimits is the limits object as an answer carries it, so an
@@ -87,6 +95,7 @@ type WireLimits struct {
 	Retention      string            `json:"retention,omitempty"`
 	Owner          *Owner            `json:"owner,omitempty"`
 	Model          string            `json:"model,omitempty"`
+	Reasoning      *string           `json:"reasoning,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -150,5 +159,11 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		return Limits{}, fmt.Errorf("limits.model is %q, not a model's name", w.Model)
 	}
 	l.Model = w.Model
+	if r := w.Reasoning; r != nil {
+		if *r != "" && !slices.Contains(v1.Efforts, *r) {
+			return Limits{}, fmt.Errorf("limits.reasoning is %q, not one of %s or empty for the agent's own", *r, strings.Join(v1.Efforts, ", "))
+		}
+		l.Reasoning = r
+	}
 	return l, nil
 }

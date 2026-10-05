@@ -43,6 +43,16 @@
 // about which model a name stands for or how long a provider keeps a
 // prompt cache.
 //
+// A second member, reasoning, sets the reasoning level the session runs
+// at (spec 048), read where model is: absent keeps the level the session
+// has, one of manifest/v1's Efforts sets it for the next turn, and ""
+// returns the session to its agent's own. A fork starts at the level the
+// session it forks stood on. toposd resolves "" to the agent's own before
+// it compares, so an allow that answers "" for a session already there
+// changes nothing. A session.update whose change names a level carries
+// it under both names, effort and reasoning, through every v0.x release,
+// so an endpoint that reads either name decides it.
+//
 // session.send is asked of every event a person sends to a session but
 // an interrupt, and its resource carries the event's type as event_type:
 // user.message, a message; user.tool_confirmation, the allow or deny of
@@ -76,7 +86,10 @@
 // mutation of an object the caller may not read, answer not_found and
 // carry no reason. An endpoint gives a reason a person's client can act
 // on, such as agents_not_enabled, and one that names nothing of another
-// subject's.
+// subject's. A deny that carries limits passes them on beside the reason,
+// as the error's details.limits, so a deny for a bound that resets can
+// say when it does (resets_at); a reason that is withheld withholds its
+// limits too.
 //
 // An action string never changes and never disappears, a kind stays the
 // kind it is, and a limits member keeps its wire name and its meaning.
