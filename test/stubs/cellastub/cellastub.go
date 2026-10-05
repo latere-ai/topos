@@ -399,6 +399,7 @@ var messages = map[string]string{
 	"capability_unsupported": "The environment cannot provide this.",
 	"admission_refused":      "The request was refused by this server's policy.",
 	"driver_unavailable":     "The environment is unavailable; retry shortly.",
+	"quota_exceeded":         "You have reached your limit of running sandboxes. Stop one to start another.",
 }
 
 // refuse writes Cella's error envelope.
