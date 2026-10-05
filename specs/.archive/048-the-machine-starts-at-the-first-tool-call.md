@@ -90,7 +90,7 @@ arguments that take a while. A reply without one is written as before.
 
 | Item | Why |
 |---|---|
-| Opening, before the turn, the machine of a session that already had one | kept from 046: the turn's first request carries the machine's context, read from the open machine. A turn that only talks in such a session still starts its stopped sandbox; rendering that context from the session's record instead is its own change |
+| Opening, before the turn, the machine of a session that already had one | kept from 046: the turn's first request carries the machine's context, read from the open machine. A turn that only talks in such a session still starts its stopped sandbox, and where Cella checks a start against the owner's count of running sandboxes, a refused start fails the drive's setup with `machine_unavailable` before the model is asked, so the turn does not run; rendering that context from the session's record instead is its own change |
 
 ## Acceptance criteria
 
