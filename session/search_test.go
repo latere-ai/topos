@@ -5,6 +5,9 @@ package session
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -314,6 +317,30 @@ func TestSearchLimit(t *testing.T) {
 	for in, want := range map[int]int{0: MaxSearchResults, -1: MaxSearchResults, 5: 5, MaxSearchResults: MaxSearchResults, MaxSearchResults + 1: MaxSearchResults} {
 		if got := SearchLimit(in); got != want {
 			t.Errorf("SearchLimit(%d) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+// TestTheContractPageStatesTheBounds: docs/searching-sessions.md, the
+// contract a client's author reads, states each bound with the value of
+// its constant, so a bound that changes fails here until the page says
+// it.
+func TestTheContractPageStatesTheBounds(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "docs", "searching-sessions.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := strings.Join(strings.Fields(string(raw)), " ")
+	for _, want := range []string{
+		fmt.Sprintf("required, at most %d characters", MaxSearchQuery),
+		fmt.Sprintf("1 to %d; %d when absent", MaxSearchResults, MaxSearchResults),
+		fmt.Sprintf("or is longer than %d characters is `invalid_request`, and so is a `limit` outside 1 to %d", MaxSearchQuery, MaxSearchResults),
+		fmt.Sprintf("searched in its first %d KiB", MaxSearchText>>10),
+		fmt.Sprintf("the session's %d newest matching events at most", MaxSearchMatches),
+		fmt.Sprintf("at most %d characters of the message", SearchExcerpt),
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("docs/searching-sessions.md does not state %q", want)
 		}
 	}
 }

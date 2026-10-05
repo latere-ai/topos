@@ -99,6 +99,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   question and sends the person's answer.
 - [docs/web-search.md](docs/web-search.md): turning on `web_search`, and
   the contract a search service answers.
+- [docs/searching-sessions.md](docs/searching-sessions.md): finding a
+  caller's sessions by what was said in them, and showing the match.
 
 ## Contributing
 
