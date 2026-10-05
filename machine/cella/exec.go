@@ -115,6 +115,11 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 	if r.ReportDir {
 		args = append(args, "-report-dir")
 	}
+	if r.ServerGrace > 0 {
+		// A server the command starts moves to a job log beside the
+		// background jobs' (spec 045).
+		args = append(args, "-server-grace", r.ServerGrace.String(), "-jobs", m.jobsDir())
+	}
 	framed := len(r.Command) > inlineScript
 	if framed {
 		args = append(args, "-script-frames")
@@ -328,6 +333,10 @@ func (st *stream) next() {
 			return
 		}
 		st.res.ExitCode, st.res.TimedOut, st.res.Canceled = e.Code, e.TimedOut, e.Canceled
+		st.res.Moved, st.res.PID, st.res.Log, st.res.Ports = e.Moved, e.PID, e.Log, e.Ports
+		if e.ServerErr != "" {
+			st.res.ServerErr = errors.New(e.ServerErr)
+		}
 		st.end(nil)
 	case frameFail:
 		var e errorBody
@@ -385,11 +394,15 @@ func (st *stream) Wait() (machine.ExecResult, error) {
 	return st.res, st.inputErr
 }
 
+// jobsDir holds the logs of the background jobs and of the commands
+// moved to the background, in the spill directory.
+func (m *Machine) jobsDir() string { return path.Join(m.SpillDir(), "jobs") }
+
 // background starts a detached job through the helper's job mode, with
 // its output in a job log in the spill directory, and returns at once.
 func (m *Machine) background(ctx context.Context, r machine.ExecRequest) (machine.ExecResult, error) {
 	dir := m.dir(r.Dir)
-	jobs := path.Join(m.SpillDir(), "jobs")
+	jobs := m.jobsDir()
 	args := []string{"job", "-jobs", jobs, "-dir", dir, "--", r.Command}
 	if len(r.Command) > inlineScript {
 		// Cella's synchronous route has no input to carry a long script,

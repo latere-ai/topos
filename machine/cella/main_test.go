@@ -5,6 +5,7 @@ package cella
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,8 +16,38 @@ import (
 // run on, which is where the stub Cella runs its sandboxes' commands.
 var helperBin []byte
 
+// envListen makes the test binary a listener on the address it names,
+// for a command in a sandbox to start as its server.
+const envListen = "TOPOS_TEST_LISTEN"
+
 func TestMain(m *testing.M) {
+	if addr := os.Getenv(envListen); addr != "" {
+		os.Exit(listen(addr))
+	}
 	os.Exit(run(m))
+}
+
+// listen serves addr, answering each connection "ok" and printing that
+// it accepted it, until it is killed.
+func listen(addr string) int {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		fmt.Println("listen:", err)
+		return 2
+	}
+	fmt.Println("listening")
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			fmt.Println("accept:", err)
+			return 2
+		}
+		fmt.Println("accepted")
+		_, werr := c.Write([]byte("ok\n"))
+		if err := c.Close(); err != nil || werr != nil {
+			fmt.Println("answer:", werr, err)
+		}
+	}
 }
 
 func run(m *testing.M) int {
