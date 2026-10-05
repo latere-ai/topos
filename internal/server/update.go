@@ -40,27 +40,42 @@ type policyChange struct {
 var modes = []string{v1.ModePlan, v1.ModeConfirm, v1.ModeProgressive}
 
 // modelChange is what a PATCH changes of the session's model: its name,
-// its reasoning effort, or both. A member left out keeps what the session
-// runs, so each is a pointer; an empty Effort returns to the agent's own.
+// its reasoning level, or both. A member left out keeps what the session
+// runs, so each is a pointer; an empty level returns to the agent's own.
+// The level is named reasoning, or effort, its name before spec 048,
+// which is read through every v0.x release; a body that names both names
+// one level.
 type modelChange struct {
-	Name   *string `json:"name"`
-	Effort *string `json:"effort"`
+	Name      *string `json:"name,omitempty"`
+	Reasoning *string `json:"reasoning,omitempty"`
+	Effort    *string `json:"effort,omitempty"`
+}
+
+// level is the reasoning level the change names under either name, nil
+// when it names none.
+func (m modelChange) level() *string {
+	if m.Reasoning != nil {
+		return m.Reasoning
+	}
+	return m.Effort
 }
 
 // updateSession is PATCH /sessions/{id}: the model the session's next
-// turn runs and the reasoning effort it runs at (spec 015), and the
+// turn runs and the reasoning level it runs at (spec 015), and the
 // approval mode its next steps decide calls under (spec 041). A caller
 // who may not read the session hears not_found first. One question
-// carries what the body changes: model when it names one, and effort,
-// resolved to what the next turn runs, when it names one, beside the
-// model the session stands on; approval_mode beside the mode the session
-// runs and its agent's. The allow may answer a model the body names with
-// the one to run in its place (spec 038), so the model is checked after
-// the question, by the rule a session's create checks its own by: the
-// one the allow names, or the one asked when it names none. An allowed
-// change appends session.model_changed and session.policy_changed in one
-// batch, which the header takes; a change to what the session runs
-// appends nothing.
+// carries what the body changes: model when it names one, and the level,
+// resolved to what the next turn runs, when it names one, under both
+// effort and reasoning, so an authorizer that reads either name decides
+// it (spec 048), beside the model the session stands on; approval_mode
+// beside the mode the session runs and its agent's. The allow may answer
+// a model the body names with the one to run in its place (spec 038), so
+// the model is checked after the question, by the rule a session's create
+// checks its own by: the one the allow names, or the one asked when it
+// names none. The allow may also answer the level the change runs at
+// (spec 048). An allowed change appends session.model_changed and
+// session.policy_changed in one batch, which the header takes; a change
+// to what the session runs appends nothing.
 func (c *call) updateSession() error {
 	var b updateBody
 	if err := c.decode(&b); err != nil {
@@ -92,9 +107,9 @@ func (c *call) updateSession() error {
 		if b.Model.Name != nil {
 			fields["model"] = *b.Model.Name
 		}
-		if b.Model.Effort != nil {
-			next.Effort = cmp.Or(*b.Model.Effort, cfg.Effort)
-			fields["effort"] = next.Effort
+		if level := b.Model.level(); level != nil {
+			next.Effort = cmp.Or(*level, cfg.Effort)
+			fields["effort"], fields["reasoning"] = next.Effort, next.Effort
 		}
 	}
 	agentMode := cmp.Or(cfg.Policy.Mode, harness.ModeConfirm)
@@ -111,7 +126,7 @@ func (c *call) updateSession() error {
 		return err
 	}
 	// A change that names a model runs the one the allow names in its
-	// place and keeps the name asked beside it. An effort change alone
+	// place and keeps the name asked beside it. A level change alone
 	// names no model, and an allow that names one for it moves nothing.
 	if b.Model != nil && b.Model.Name != nil {
 		asked := *b.Model.Name
@@ -123,6 +138,12 @@ func (c *call) updateSession() error {
 		if err := c.s.runnable(ctx, m, overlay); err != nil {
 			return err
 		}
+	}
+	// A change of the model or the level runs at the level the allow
+	// names when it names one, "" being the agent's own; a change of the
+	// mode alone moves no model and reads none.
+	if r := limits.Reasoning; b.Model != nil && r != nil {
+		next.Effort = cmp.Or(*r, cfg.Effort)
 	}
 	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
 	now := c.s.o.Now()
@@ -156,18 +177,26 @@ func (c *call) updateSession() error {
 // check refuses a body that names nothing to change or a value no
 // session takes, before the session is read.
 func (b updateBody) check() error {
-	if (b.Model == nil || (b.Model.Name == nil && b.Model.Effort == nil)) && b.Policy == nil {
-		return refuse(CodeInvalidRequest, `the body names what changes: {"model": {"name": "...", "effort": "..."}}, either member or both, {"policy": {"mode": "..."}}, or both`)
+	if (b.Model == nil || (b.Model.Name == nil && b.Model.level() == nil)) && b.Policy == nil {
+		return refuse(CodeInvalidRequest, `the body names what changes: {"model": {"name": "...", "reasoning": "..."}}, either member or both, {"policy": {"mode": "..."}}, or both`)
 	}
 	if b.Model != nil {
-		if b.Model.Name == nil && b.Model.Effort == nil {
-			return refuse(CodeInvalidRequest, "model names neither name nor effort")
+		if b.Model.Name == nil && b.Model.level() == nil {
+			return refuse(CodeInvalidRequest, "model names neither name nor reasoning")
 		}
 		if n := b.Model.Name; n != nil && (*n == "" || strings.TrimSpace(*n) != *n) {
 			return refuse(CodeInvalidRequest, "model.name is %q, not a model's name", *n)
 		}
-		if e := b.Model.Effort; e != nil && *e != "" && !slices.Contains(v1.Efforts, *e) {
-			return refuse(CodeInvalidRequest, "model.effort is %q, not one of %s, or empty for the agent's own", *e, strings.Join(v1.Efforts, ", "))
+		for _, l := range []struct {
+			name  string
+			level *string
+		}{{"reasoning", b.Model.Reasoning}, {"effort", b.Model.Effort}} {
+			if l.level != nil && *l.level != "" && !slices.Contains(v1.Efforts, *l.level) {
+				return refuse(CodeInvalidRequest, "model.%s is %q, not one of %s, or empty for the agent's own", l.name, *l.level, strings.Join(v1.Efforts, ", "))
+			}
+		}
+		if r, e := b.Model.Reasoning, b.Model.Effort; r != nil && e != nil && *r != *e {
+			return refuse(CodeInvalidRequest, "model.reasoning is %q and model.effort %q: name the level once, as reasoning", *r, *e)
 		}
 	}
 	if b.Policy != nil && (b.Policy.Mode == nil || !slices.Contains(modes, *b.Policy.Mode)) {
@@ -203,9 +232,9 @@ func (s *Server) agentConfig(ctx context.Context, sess session.Session) (manifes
 }
 
 // standing is the model s runs as it stands, with the name it was asked
-// by and the effort its next turn runs at: its header's, or its agent's
-// until a first change. A header written before changes carried an
-// effort names none, and its turns run at the agent's.
+// by and the reasoning level its next turn runs at: its header's, or its
+// agent's until a first change. A header written before changes carried
+// a level names none, and its turns run at the agent's.
 func standing(s session.Session, cfg manifest.AgentConfig) session.ModelRef {
 	if s.Model == nil {
 		return session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}

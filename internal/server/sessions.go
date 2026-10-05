@@ -269,7 +269,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// start is the model the session starts on when it is not its
 	// agent's. A fork starts on the one the session it forks stood on at
 	// the fork point, which may be one an authorizer named (spec 038); a
-	// header that names the agent's own model at its own effort names
+	// header that names the agent's own model at its own level names
 	// nothing a new session does not run already.
 	var start *session.ModelRef
 	if f := in.fork; f != nil && f.model != nil && standing(session.Session{Model: f.model}, cfg) != standing(session.Session{}, cfg) {
@@ -335,10 +335,22 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	}
 	// A session the authorizer routed starts on the model its allow names
 	// and keeps the agent's name beside it, which a client reads as the
-	// choice that was asked. A fork is not routed: it continues its
-	// parent's model, and its first send is asked as any send is.
-	if in.fork == nil && limits.Model != "" && limits.Model != cfg.Model.Name {
-		start = &session.ModelRef{Name: limits.Model, Via: cfg.Model.Name, Effort: cfg.Effort}
+	// choice that was asked, and at the reasoning level its allow names,
+	// "" being the agent's own (spec 048). A fork is not routed: it
+	// continues its parent's model at its parent's level, and its first
+	// send is asked as any send is.
+	if in.fork == nil {
+		own := session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
+		routed := own
+		if limits.Model != "" && limits.Model != cfg.Model.Name {
+			routed.Name, routed.Via = limits.Model, cfg.Model.Name
+		}
+		if r := limits.Reasoning; r != nil {
+			routed.Effort = cmp.Or(*r, cfg.Effort)
+		}
+		if routed != own {
+			start = &routed
+		}
 	}
 	// The model the session starts on is checked by the rule a switch of
 	// its model is checked by (spec 007). The check follows the question,
@@ -861,9 +873,11 @@ func (s *Server) lastRequest(ctx context.Context, sess session.Session) (time.Ti
 // request ended, absent before its first, which is what an authorizer
 // that keeps a session on one model while a provider's cache is warm
 // decides from (spec 038). change is the switch the allow made, nil when
-// it names no model or the one the session stands on: the model it
-// names, checked by the rule a person's switch is checked by, with the
-// name asked and the effort kept.
+// the model and the reasoning level it names are the ones the session
+// stands on: the model it names, checked by the rule a person's switch is
+// checked by, with the name asked, at the level it names, "" being the
+// agent's own, or the level the session had when it names none (spec
+// 048). A level alone moves the level and keeps the model.
 func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[string]any) (session.Session, *session.ModelChanged, error) {
 	sess, err := s.o.Sessions.Get(ctx, id)
 	if err != nil {
@@ -890,16 +904,22 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 	if err != nil {
 		return session.Session{}, nil, err
 	}
-	if limits.Model == "" || limits.Model == old.Name {
+	next := old
+	if limits.Model != "" && limits.Model != old.Name {
+		m, overlay := cfg.SessionModel(limits.Model)
+		if err := s.runnable(ctx, m, overlay); err != nil {
+			return session.Session{}, nil, err
+		}
+		next.Name, next.Via = limits.Model, cmp.Or(old.Via, old.Name)
+		if next.Via == next.Name {
+			next.Via = ""
+		}
+	}
+	if r := limits.Reasoning; r != nil {
+		next.Effort = cmp.Or(*r, cfg.Effort)
+	}
+	if next == old {
 		return sess, nil, nil
-	}
-	m, overlay := cfg.SessionModel(limits.Model)
-	if err := s.runnable(ctx, m, overlay); err != nil {
-		return session.Session{}, nil, err
-	}
-	next := session.ModelRef{Name: limits.Model, Via: cmp.Or(old.Via, old.Name), Effort: old.Effort}
-	if next.Via == next.Name {
-		next.Via = ""
 	}
 	by := session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}
 	return sess, &session.ModelChanged{By: by, Old: old, New: next}, nil
