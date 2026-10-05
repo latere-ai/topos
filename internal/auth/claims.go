@@ -10,7 +10,17 @@ package auth
 // was applied in, "" for a personal one. The core reads no meaning from
 // them; the authorizer decides.
 func TriggerClaims(c Caller) map[string]any {
-	return map[string]any{"org_id": c.Organization()}
+	return ContextClaims(c.Organization())
+}
+
+// ContextClaims are the claims a question asked for a person with no token
+// of theirs in hand carries: the org_id claim alone, naming the context
+// org, "" for the person's own. A trigger's firing asks with them (spec
+// 022), and so does a turn's failover, for the session's initiator in the
+// context the session runs in (spec 051). The core reads no meaning from
+// them; the authorizer decides.
+func ContextClaims(org string) map[string]any {
+	return map[string]any{"org_id": org}
 }
 
 // Organization is the organization the caller's token names in its

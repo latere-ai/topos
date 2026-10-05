@@ -106,7 +106,7 @@ func (s *Server) initiator(ctx context.Context, sess session.Session) (asker, er
 	if !ok {
 		sub = sess.Initiator.Subject
 	}
-	return s.as(auth.Caller{Subject: sess.Initiator.Subject, Issuer: issuer, Sub: sub, Claims: map[string]any{"org_id": org}}), nil
+	return s.as(auth.Caller{Subject: sess.Initiator.Subject, Issuer: issuer, Sub: sub, Claims: auth.ContextClaims(org)}), nil
 }
 
 // as is an asker for a caller toposd asks for with no request of theirs
