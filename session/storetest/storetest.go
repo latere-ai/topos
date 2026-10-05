@@ -52,6 +52,9 @@ func Run(t *testing.T, open Open) {
 		{"ListFilters", testListFilters},
 		{"Archive", testArchive},
 		{"Summary", testSummary},
+		{"SearchMatches", testSearchMatches},
+		{"SearchBounds", testSearchBounds},
+		{"SearchScope", testSearchScope},
 		{"UnknownTypeIsKept", testUnknownType},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open(t)) })
