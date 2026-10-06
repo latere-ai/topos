@@ -1,6 +1,6 @@
 ---
 title: "The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, which the session records and the model reads after its agent's own"
-status: drafted
+status: testing
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 010-context.md, 011-instructions-and-skills.md, 015-api.md, 038-routed-models.md]
 affects: [authorizer/, session/, harness/, prompts/context/, internal/server/, api/openapi.yaml, docs/]
@@ -54,7 +54,8 @@ flowchart LR
 `WireLimits` gains `instructions`, a string, read on an allow of
 `session.create` only. `DecodeLimits` refuses one longer than
 `MaxInitiatorInstructions`, 8 KiB of UTF-8, or one that is not valid
-UTF-8, as `authorizer_unavailable`. Empty is none.
+UTF-8 as the answer wrote it, a lone surrogate escape included, as
+`authorizer_unavailable`. Empty is none.
 
 A send's answer does not carry it: the text sits in the prompt's
 cached prefix, and changing it in the middle of a session would pay for
@@ -72,7 +73,8 @@ deleting the session.
 
 The harness renders `prompts/context/initiator-v1.md` after the agent's
 instructions and before the project's instruction files, in the cached
-prefix:
+prefix, on the session's own thread; a subagent's thread works from its
+task and does not read it:
 
 ```
 <initiator_instructions>
@@ -108,7 +110,28 @@ together, since the header's new field is read by the harness.
 
 | Criterion | Test | State |
 |---|---|---|
-| `DecodeLimits` reads `instructions` and refuses 8 KiB plus one byte and invalid UTF-8 | `authorizer.TestDecodeInstructions` | not built |
-| A create's text is recorded on the header and rendered after the agent's instructions in the cached prefix, the same bytes on every turn | `harness.TestInitiatorInstructionsInThePrefix` | not built |
-| A send's answer never changes the text; a fork takes the authorizer's text at its create | `server.TestInstructionsAtCreateOnly` | not built |
-| A session with no text renders no wrapper | `harness.TestNoInitiatorInstructions` | not built |
+| `DecodeLimits` reads `instructions` and refuses 8 KiB plus one byte and invalid UTF-8 | `authorizer.TestDecodeInstructions`, `authorizer.TestInstructionsEscapesAreHeldToUTF8` | built |
+| A create's text is recorded on the header and rendered after the agent's instructions in the cached prefix, the same bytes on every turn | `harness.TestInitiatorInstructionsInThePrefix`, `server.TestInstructionsAtCreateOnly` | built |
+| A send's answer never changes the text; a fork takes the authorizer's text at its create | `server.TestInstructionsAtCreateOnly` | built |
+| A session with no text renders no wrapper | `harness.TestNoInitiatorInstructions` | built |
+
+## Outcome
+
+Built on 2026-10-06, in no release yet, and not yet run against a live
+authorizer. Every criterion has its test. What shipped differs from the
+draft in these points:
+
+- **UTF-8 is read from the raw answer.** encoding/json replaces an
+  invalid byte, and a lone surrogate escape, with U+FFFD as it decodes,
+  so a check of the decoded text never fails. `DecodeLimits` reads the
+  member's raw bytes and its `\u` escapes and refuses either.
+- **The session's own thread alone.** The text is the person's to the
+  session's agent; a subagent's thread renders its own agent's
+  instructions and its task, without the wrapper.
+- **The prompt version.** `model.request` records the harness prompt's
+  version, as before; the wrapper is the fixed file
+  `context/initiator-v1`, pinned with every released text, so a replay
+  rebuilds the same bytes from the header.
+
+An authorizer may answer `instructions` before toposd reads it; toposd
+and every runner then roll together.

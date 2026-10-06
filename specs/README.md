@@ -107,8 +107,8 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [049](.archive/049-reasoning.md) | Reasoning: the model's level is named reasoning at the API and kept as effort in storage, and an authorizer's decision may set it | medium | complete | 003, 004, 006, 015, 038 |
 | [050](.archive/050-searching-sessions.md) | Searching sessions: one route finds the caller's sessions by the words of their messages and answers, with an excerpt of each match and its place in the log | medium | complete | 004, 006, 014, 015 |
 | [051](.archive/051-a-turn-moves-off-a-model-that-cannot-serve.md) | A turn moves off a model that cannot serve: a gateway's answer that the model is down, or that its provider rejected the request, asks the authorizer for another model inside the turn, one quick retry where none can be had, and an error a client can name | medium | complete | 005, 006, 007, 015, 016, 038, 049 |
-| [052](052-a-sessions-network.md) | A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow | large | drafted | 003, 004, 006, 008, 009, 012, 015, 016, 018, 038, 039 |
-| [053](053-the-initiators-instructions.md) | The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, read after the agent's own | small | drafted | 004, 006, 010, 011, 015, 038 |
+| [052](052-a-sessions-network.md) | A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow | large | testing | 003, 004, 006, 008, 009, 012, 015, 016, 018, 038, 039 |
+| [053](053-the-initiators-instructions.md) | The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, read after the agent's own | small | testing | 004, 006, 010, 011, 015, 038 |
 
 ## Dependency graph
 

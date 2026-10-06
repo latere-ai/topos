@@ -1,9 +1,9 @@
 ---
 title: "A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow"
-status: drafted
+status: testing
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 038-routed-models.md, 039-questions.md]
-affects: [manifest/v1/, authorizer/, session/, harness/, runner/, machine/cella/, internal/hosted/, internal/server/, api/openapi.yaml, prompts/results/call/, docs/]
+affects: [manifest/, authorizer/, session/, harness/, runner/, machine/, internal/hosted/, internal/server/, internal/toposcli/, test/stubs/cellastub/, api/openapi.yaml, prompts/results/call/, prompts/transcript/, docs/]
 effort: large
 created: 2026-10-06
 updated: 2026-10-06
@@ -109,9 +109,12 @@ spec:
     egress: [api.example.com]
 ```
 
-Absent is `allowlist`, which is every session's mode today. `egress`
-with `open` or `none` is `invalid_field`, as Cella refuses
-`allowedHosts` outside `allowlist`. The field is read on a Cella
+Absent is `allowlist`, which is every session's mode today, and stays
+absent in the resolved spec, so an agent that names none keeps its
+digest. `egress` with `open` or `none` is a problem of the manifest at
+`spec.machine.egress`, refused `invalid_manifest`, as Cella refuses
+`allowedHosts` outside `allowlist`; a mode outside the three is one at
+`spec.machine.egressMode`. The field is read on a Cella
 machine; a host machine's driver applies what it can and records the
 mode it ran with.
 
@@ -163,22 +166,25 @@ sandbox reports.
 
 ### The session's record
 
-The `Session` header gains `network`, the base network at create:
+The `Session` header gains `network`, the base network: the one the
+create named, which each authorizer's change at a send replaces as
+`session.model_changed` replaces `model`:
 
 ```json
 "network": {"mode": "allowlist", "hosts": ["example.com"], "ask": true, "source": "authorizer"}
 ```
 
 `source` is `authorizer` or `agent`. One event type joins
-[[004-session-log]], appended by the runner, not shown to the model:
+[[004-session-log]], not shown to the model, appended by the runner for
+a person's allow and by toposd for an authorizer's change at a send:
 
 | Type | Payload |
 |---|---|
 | `session.network_changed` | `added` and `removed` (hosts), `mode` and `ask` when they changed, `source` (`authorizer` for a send's answer, `person` for an allow), `tool_use_id` or `approval_id` for an allow |
 
 The fold reads the effective network from the header and every
-`session.network_changed`, so every runner rebuilds the same boundary
-after a restart or a handoff.
+`session.network_changed` a person's allow appended, so every runner
+rebuilds the same boundary after a restart or a handoff.
 
 ### `web_fetch`
 
@@ -236,8 +242,9 @@ each `bash` call returns, when the effective network is `allowlist`:
    verdict is `block` and nothing waits: the record lets a client offer
    the host for next time. Hosts past the third are named in the last
    request's `more`, a count.
-4. The model reads each request as a system part after the call's
-   result: which host was refused, and that the person is asked.
+4. The model reads each request as text after the call's result, in
+   the same user message: which host was refused, and that the person
+   is asked.
 5. With an `ask` among them, the session goes idle with
    `tool_confirmation` once the call's result is in, as an ask does.
 
@@ -261,12 +268,18 @@ refusals stays its own.
 ### A change at send
 
 An allow of `session.send` that carries a `network` other than the
-base replaces the base before the turn: the runner computes the hosts
-added and removed, updates the sandbox (a removal is a narrowing any
-caller may make; an addition the owner's widening), and appends
-`session.network_changed` with `source: authorizer`. Hosts the person
-allowed in this session stay. A sandbox that is not running is created
-from the new effective network when it next opens.
+base replaces the base before the turn: toposd computes the hosts added
+and removed and appends `session.network_changed` with `source:
+authorizer` straight before the sent event, in one batch, as it appends
+`session.model_changed`; the runner gives the running sandbox the new
+effective network before the turn's first request (a removal is a
+narrowing any caller may make; an addition the owner's widening), and a
+sandbox found by name is given it before any call runs in it. Hosts the
+person allowed in this session stay. A sandbox that is not running is
+created from the new effective network when it next opens. A network
+the machine cannot take ends the turn with `network_unavailable` before
+any request: a session never runs on a boundary its authorizer did not
+name.
 
 ### Subagents and forks
 
@@ -306,13 +319,92 @@ egress beyond what its driver applies.
 
 | Criterion | Test | State |
 |---|---|---|
-| `egressMode` decodes, defaults to `allowlist`, and `egress` with `open` or `none` is `invalid_field` | `manifest/v1.TestEgressMode` | not built |
-| `DecodeLimits` reads `network` and refuses a bad mode, hosts outside `allowlist`, a host the rule refuses, and 513 hosts | `authorizer.TestDecodeNetwork` | not built |
-| A create's network sets the sandbox's mode and hosts, with the agent's, the secrets' and the repositories' hosts joined under `allowlist` | `machine/cella.TestManifestTakesTheSessionsNetwork` | not built |
-| A fetch inside the network runs without asking in `confirm`, records `inside the session's network`, and is still asked when `always_confirm` names it | `harness.TestFetchInsideTheNetwork` | not built |
-| A fetch outside an asking network asks; allowed, the sandbox is updated before the call runs and the log holds `session.network_changed` | `runner.TestAllowedFetchWidensTheMachine` (Cella stub) | not built |
-| A fetch outside a network that does not ask, or in an unattended session, is blocked with the result file | `harness.TestFetchOutsideBlocks` | not built |
-| A command's denied connection appends `approval.requested` after its result, at most three, and the session idles; an allow by `approval_id` widens and appends `approval.decided`; a deny is not asked again | `runner.TestRefusedConnectionAsks` (Cella stub with denied records) | not built |
-| A send's answer that removes a host narrows the running sandbox before the turn and keeps the person's allows | `runner.TestSendNarrowsTheNetwork` | not built |
-| A runner that claims the session after a restart rebuilds the same effective network from the log | `runner.TestNetworkSurvivesAClaim` | not built |
-| A widening Cella refuses closes the call `network_unavailable` and changes nothing | `runner.TestWideningRefused` | not built |
+| `egressMode` decodes, defaults to `allowlist`, and `egress` with `open` or `none` is a problem of the manifest | `manifest/v1.TestEgressMode` | built |
+| `DecodeLimits` reads `network` and refuses a bad mode, hosts outside `allowlist`, a host the rule refuses, and 513 hosts | `authorizer.TestDecodeNetwork` | built |
+| A create's network sets the sandbox's mode and hosts, with the agent's, the secrets' and the repositories' hosts joined under `allowlist` | `machine/cella.TestManifestTakesTheSessionsNetwork`, `harness.TestEffectiveNetworkJoinsTheSessionsHosts`, `hosted.TestTheSandboxTakesTheSessionsMode`, `server.TestNetworkAtCreateAndSend` | built |
+| A fetch inside the network runs without asking in `confirm`, records `inside the session's network`, and is still asked when `always_confirm` names it | `harness.TestFetchInsideTheNetwork` | built |
+| A fetch outside an asking network asks; allowed, the sandbox is updated before the call runs and the log holds `session.network_changed` | `hosted.TestAllowedFetchWidensTheMachine` (Cella stub), `harness.TestAnAllowedFetchWidensBeforeItRuns` | built |
+| A fetch outside a network that does not ask, or in an unattended session, is blocked with the result file | `harness.TestFetchOutsideBlocks` | built |
+| A command's denied connection appends `approval.requested` after its result, at most three, and the session idles; an allow by `approval_id` widens and appends `approval.decided`; a deny is not asked again | `hosted.TestRefusedConnectionAsks` (Cella stub with denied records), `harness.TestARefusedConnectionAsksAfterTheCall`, `server.TestConfirmationByApprovalID` | built |
+| A send's answer that removes a host narrows the running sandbox before the turn and keeps the person's allows | `hosted.TestSendNarrowsTheNetwork`, `harness.TestASendsNetworkReachesTheMachineBeforeTheTurn`, `server.TestNetworkAtCreateAndSend` | built |
+| A runner that claims the session after a restart rebuilds the same effective network from the log | `hosted.TestNetworkSurvivesAClaim`, `machine/cella.TestAFoundSandboxTakesTheSessionsNetwork` | built |
+| A widening Cella refuses closes the call `network_unavailable` and changes nothing | `hosted.TestWideningRefused`, `machine/cella.TestApplyNetworkWidensAndNarrows` | built |
+
+## Outcome
+
+Built on 2026-10-06, in no release yet, and not yet run against a live
+authorizer or Cella. Every criterion has its test. The end-to-end tests
+live in `internal/hosted`, whose runner drives a session against the
+stub Cella and the stub model gateway; the stub Cella gained the
+sandbox's apply (`PUT /v1/sandboxes/{name}`, refusing a change of a
+field Cella holds immutable) and its egress records, which a command
+that names a refused host adds at exec time. What shipped differs from
+the draft in these points:
+
+- **The manifest's refusal.** Topos has no `invalid_field`: `egress`
+  with `open` or `none` is a problem at `spec.machine.egress` of an
+  `invalid_manifest` refusal. A machine that names `egressMode` is not
+  the default machine, as one that names `egress` is not.
+- **The header keeps the current base network.** `Session.network` is
+  the base the create named as each authorizer's change replaced it,
+  folded at append as `model` is; the log's person allows join it. A
+  fork's copied changes are its parent's and leave its header alone.
+- **toposd appends a send's change.** Only toposd holds the send's
+  allow, so it appends `session.network_changed` in the send's batch,
+  straight before the sent event. The runner gives the machine the
+  session's network at the start of each turn, and a sandbox found by
+  name is given it before any call runs in it; a network the machine
+  cannot take ends the turn `network_unavailable` before any request.
+- **An outside host that the network does not ask about is blocked even
+  when `always_confirm` names the fetch**: no answer could reach it.
+  `always_confirm` still asks for a host inside. In `progressive` a host
+  inside scores 0.4 and its verdict carries the threshold's reason; the
+  reason `inside the session's network` is recorded in `confirm`. The
+  network's decision is settled by the rules, so a decision service
+  suggests past none of it. The rules apply on a Cella machine; a host
+  machine keeps its decisions by the mode.
+- **The secrets' hosts are the machine's.** The harness decides a fetch
+  by the base hosts, the person's allows, the agent's hosts and the
+  repositories' git hosts; the hosts of the session's named secrets are
+  joined by the machine alone, so a fetch of one asks or is blocked
+  although the sandbox reaches it.
+- **The model reads the approval events as text after the call's
+  result**, in the user message that carries the result, not as a part
+  of the system prompt, which sits in the cached prefix and has no place
+  beside a result. `approval.decided` reads as allowed, denied, or, for
+  an allow whose widening Cella refused, as still out of reach.
+- **A widening opens the machine first.** The allow of a fetch or of an
+  approval applies to a running sandbox, so a refusal is known before
+  anything is recorded: it appends a `session.error`
+  `network_unavailable` and no `session.network_changed`. An approval's
+  allow therefore starts a stopped sandbox. The update applies the
+  sandbox's whole spec read back from Cella with its egress replaced,
+  since an apply that omits a field sets it to its default, and a
+  network the machine last asked for sends nothing.
+- **A person's message in place of an answer denies a waiting
+  approval**, as it denies an asked call, and `approval.decided` names
+  the sender; otherwise the session would wait on the approval forever.
+  A host with a request still open is not requested again.
+- **Thread coverage.** An approval asks only in the session's own
+  thread; a subagent's refused connection is recorded with verdict
+  `block`. A subagent's fetch asks and widens as the session's does.
+- **The window of records.** The runner reads the gateway's records
+  stamped at or after the call's start by its own wall clock, at most
+  200, Cella's page ceiling; a skew between the two clocks moves the
+  window by as much.
+- **The wire payloads** are the ones a client renders: `approval.requested`
+  carries no `risk` and `approval.decided` no `grant`, the fields
+  [[004-session-log]] lists for the step-up of
+  [[012-permissions-and-approvals]], which keeps its own reading.
+- **The recorded mode.** `session.machine` records `machine.egress`, the
+  mode the sandbox reports once its admission ran.
+- **Beyond the draft.** `DecodeLimits` refuses an address as a host;
+  `topos confirm` takes an `apr_` id; a confirmation of an `approval_id`
+  that carries `remember` is `invalid_request`.
+
+A platform authorizer answers `network` on `session.create` and on
+`session.send`, and rolls first: a core before this spec ignores the
+member. toposd and every runner roll together. A client then renders
+`approval.requested`, answers by `approval_id`, and shows the reasons
+`inside the session's network` and `outside the session's network` on a
+fetch's `agent.tool_use`.
