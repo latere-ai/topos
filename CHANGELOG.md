@@ -33,6 +33,15 @@ committed: the commit log already holds that.
   every runner. The runner protocol's failover request carries `reason`
   when there is one; a server before it refuses that request as
   `invalid_request`, and the turn ends with `model_error` as before.
+- Every model failure's `session.error` carries the gateway's developer
+  detail. A `model_error`, a spend refusal and a `compaction_failed` read
+  only the HTTP status and type, such as `HTTP 400 upstream_rejected`,
+  while the provider's own status and words were on the failed
+  `model.request` alone. Their `detail` now adds the gateway's
+  `Lux-Error-Detail` in parentheses, at most 1024 bytes, as
+  `HTTP 400 upstream_rejected (upstream status 404: {...})`; a turn the
+  authorizer kept on its model adds why it did not move. The `message`
+  is unchanged.
 
 ## v0.19.1 - 2026-10-05
 
