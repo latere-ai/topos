@@ -153,7 +153,7 @@ func policy(s v1.AgentSpec) harness.Policy {
 	return harness.Policy{
 		Mode: harness.Mode(s.Approvals.Mode), AlwaysAllow: s.Approvals.AlwaysAllow, AlwaysConfirm: s.Approvals.AlwaysConfirm,
 		Thresholds: harness.Thresholds{FlagAt: *t.FlagAt, AskAt: *t.AskAt, BlockAt: *t.BlockAt},
-		Egress:     s.Machine.Egress,
+		Egress:     s.Machine.Egress, EgressMode: s.Machine.Mode(),
 	}
 }
 
@@ -201,7 +201,7 @@ func ignoredFields(s v1.AgentSpec) []string {
 // how a resolved agent that named no machine reads.
 func DefaultMachine(m v1.Machine) bool {
 	return (m.Kind == "" || m.Kind == v1.MachineHost) && m.Image == "" && m.Environment == "" && m.Resources == (v1.Resources{}) &&
-		len(m.Egress) == 0 && len(m.Roots) == 0 && len(m.ReadPaths) == 0
+		m.EgressMode == "" && len(m.Egress) == 0 && len(m.Roots) == 0 && len(m.ReadPaths) == 0
 }
 
 // builder builds the subagent tree from the pinned agents.

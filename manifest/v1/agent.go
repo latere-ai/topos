@@ -36,6 +36,15 @@ const (
 	MachineCella = "cella"
 )
 
+// Values of Machine.EgressMode (spec 052), Cella's egress modes: open
+// reaches every host but a denied one, allowlist the hosts of egress and
+// the ones a session's network joins, and none nothing.
+const (
+	EgressOpen      = "open"
+	EgressAllowlist = "allowlist"
+	EgressNone      = "none"
+)
+
 // Values of MemoryStoreRef.Access and SessionResource.Access.
 const (
 	AccessReadWrite = "readWrite"
@@ -293,15 +302,27 @@ type Repository struct {
 
 // Machine is the machine an agent's sessions default to (spec 009).
 // Image, Environment and Resources apply to a Cella machine; Roots and
-// ReadPaths to the host.
+// ReadPaths to the host. EgressMode is the mode of the machine's egress
+// beside Egress, its hosts (spec 052): absent is allowlist and stays
+// absent in a resolved spec, so an agent that names none keeps its digest;
+// Egress is set only with allowlist.
 type Machine struct {
 	Kind        string    `json:"kind"`
 	Image       string    `json:"image,omitempty"`
 	Environment string    `json:"environment,omitempty"`
 	Resources   Resources `json:"resources,omitzero"`
+	EgressMode  string    `json:"egressMode,omitempty"`
 	Egress      []string  `json:"egress,omitempty"`
 	Roots       []string  `json:"roots,omitempty"`
 	ReadPaths   []string  `json:"readPaths,omitempty"`
+}
+
+// Mode is the machine's egress mode, EgressAllowlist when it names none.
+func (m Machine) Mode() string {
+	if m.EgressMode == "" {
+		return EgressAllowlist
+	}
+	return m.EgressMode
 }
 
 // Resources are Kubernetes quantities for a Cella machine.

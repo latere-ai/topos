@@ -81,8 +81,11 @@ type Policy struct {
 	AlwaysConfirm []string
 	Thresholds    Thresholds
 	// Egress are the hosts the agent's machine may reach, for the
-	// external-effect feature.
-	Egress []string
+	// external-effect feature, and EgressMode the mode of its egress, open,
+	// allowlist or none (spec 052): the network of a session that records
+	// none.
+	Egress     []string
+	EgressMode string
 }
 
 // Merge is the policy of a session from the agent's, p, and the
@@ -131,13 +134,13 @@ func (p Policy) Session() session.Policy {
 }
 
 // Under is p with the mode, the lists and the thresholds of a session's
-// recorded policy in place of the agent's own; the egress stays the
-// agent's machine's.
+// recorded policy in place of the agent's own; the egress and its mode
+// stay the agent's machine's.
 func (p Policy) Under(sp session.Policy) Policy {
 	t := sp.Thresholds
 	return Policy{
 		Mode: Mode(sp.Mode), AlwaysAllow: slices.Clone(sp.AlwaysAllow), AlwaysConfirm: slices.Clone(sp.AlwaysConfirm),
-		Thresholds: Thresholds{FlagAt: t.FlagAt, AskAt: t.AskAt, BlockAt: t.BlockAt}, Egress: p.Egress,
+		Thresholds: Thresholds{FlagAt: t.FlagAt, AskAt: t.AskAt, BlockAt: t.BlockAt}, Egress: p.Egress, EgressMode: p.EgressMode,
 	}
 }
 

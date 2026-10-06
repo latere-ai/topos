@@ -487,6 +487,14 @@ func (v *validator) machine(at string, m v1.Machine) {
 			v.add(at+".resources."+q.name, "not a Kubernetes quantity, for example 500m or 4Gi")
 		}
 	}
+	if m.EgressMode != "" {
+		v.oneOf(at+".egressMode", m.EgressMode, v1.EgressOpen, v1.EgressAllowlist, v1.EgressNone)
+	}
+	// Cella refuses allowedHosts outside allowlist, so hosts with another
+	// mode would name hosts the machine never reaches.
+	if len(m.Egress) > 0 && m.Mode() != v1.EgressAllowlist {
+		v.add(at+".egress", "set only with egressMode allowlist; egressMode is "+m.EgressMode)
+	}
 	v.hosts(at+".egress", m.Egress)
 	for _, list := range []struct {
 		name  string

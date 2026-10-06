@@ -91,7 +91,7 @@ func TestAgentConfigCarriesTheHarnessPieces(t *testing.T) {
 		Name: "lead", Instructions: "Lead the review.", Tools: []string{"read", "glob", "bash"},
 		Policy: harness.Policy{
 			Mode: harness.ModeProgressive, AlwaysAllow: []string{"bash(go test *)"}, AlwaysConfirm: []string{"web_fetch"},
-			Thresholds: harness.Thresholds{FlagAt: 0.2, AskAt: 0.4, BlockAt: 0.8}, Egress: []string{"proxy.golang.org"},
+			Thresholds: harness.Thresholds{FlagAt: 0.2, AskAt: 0.4, BlockAt: 0.8}, Egress: []string{"proxy.golang.org"}, EgressMode: v1.EgressAllowlist,
 		},
 		Model:   r.Agent.Spec.Model,
 		Overlay: models.Entry{Name: "claude-sonnet-4-6", InputWindow: 500000, Pricing: &models.Pricing{Input: &three, Output: &fifteen, CacheRead: &cr, CacheWrite: &cw}},
