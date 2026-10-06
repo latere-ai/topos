@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.20.0 - 2026-10-06
+
 ### Fixed
 
 - A routed turn whose request the model's provider rejects can move to
