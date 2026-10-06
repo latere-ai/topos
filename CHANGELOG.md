@@ -10,6 +10,26 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A session's title changes: `PATCH /v1/sessions/{id}` takes `title`,
+  alone or beside `model` and `policy`. The title is trimmed, and one
+  that is empty, longer than 200 characters (`session.MaxTitleLength`),
+  or holds a control character or a line break is `invalid_request`.
+  The authorizer is asked `session.update` with `title` beside the
+  fields of the rest of the change, and an allowed change appends
+  `session.title_changed` `{by, old, new}`, which the header's `title`
+  follows. A rename does not move `updated_at`, so a list ordered by it
+  keeps the session in its place, and a fork keeps the title its create
+  gave it over the renames it copies.
+
+### Changed
+
+- An idle session can be archived, not only an ended one, so a client
+  whose sessions stay open between turns can file one away. A running
+  session is still `conflict`. An archived idle session takes a message
+  as before, and stays archived while its turn runs.
+
 ## v0.21.0 - 2026-10-06
 
 ### Added
