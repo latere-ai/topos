@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -71,7 +70,9 @@ const DoorSettle = 3 * time.Second
 const settleEvery = 250 * time.Millisecond
 
 // Machines opens the machine of a session from its agent's
-// spec.machine.
+// spec.machine. A Cella machine's m carries the session's network in
+// place of the agent's egress (spec 052): its mode as EgressMode and,
+// under allowlist, every host it reaches beside its secrets' as Egress.
 type Machines func(ctx context.Context, s session.Session, m v1.Machine) (machine.Machine, error)
 
 // Options configure the hosted harness.
@@ -219,7 +220,11 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	// 009), under the drive's context, so a session whose agent never
 	// needs one has none.
 	cfg.Machine = machine.Defer(ctx, machine.KindCella, func(ctx context.Context) (machine.Machine, error) {
-		m, err := b.o.Machines(ctx, s, ac.Machine)
+		spec, err := b.withNetwork(ctx, s, ac.Machine)
+		if err != nil {
+			return nil, &machine.OpenError{Code: CodeMachineUnavailable, Err: err}
+		}
+		m, err := b.o.Machines(ctx, s, spec)
 		if err == nil {
 			return m, nil
 		}
@@ -227,6 +232,26 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		return nil, &machine.OpenError{Code: se.Code, Err: se.Err}
 	})
 	return cfg, nil
+}
+
+// withNetwork is the agent's spec.machine with its egress replaced by the
+// session's network as the store holds it when the machine opens (spec
+// 052): the header's base network, or the agent's, with the hosts a
+// person allowed, the agent's and the repositories' joined under
+// allowlist. A sandbox created or found by a runner that claims the
+// session later takes the same network from the same log.
+func (b builder) withNetwork(ctx context.Context, s session.Session, m v1.Machine) (v1.Machine, error) {
+	cur, err := b.o.Store.Get(ctx, s.ID)
+	if err != nil {
+		return v1.Machine{}, fmt.Errorf("read the session's network: %w", err)
+	}
+	evs, err := b.o.Store.Events(ctx, s.ID, 1, 0)
+	if err != nil {
+		return v1.Machine{}, fmt.Errorf("read the session's network: %w", err)
+	}
+	n := harness.EffectiveNetwork(cur, evs, m.Mode(), m.Egress)
+	m.EgressMode, m.Egress = n.Mode, n.Hosts
+	return m, nil
 }
 
 // machineSetup is a machine that could not be had as the setup error a
@@ -470,8 +495,9 @@ func Cella(o CellaOptions) Machines {
 		mach, err := cella.Open(ctx, cella.Options{
 			URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
 			Environment: cmp.Or(s.Machine.Environment, m.Environment), Image: cmp.Or(s.Machine.Image, m.Image),
-			Resources: cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
-			Egress:    append(slices.Clone(m.Egress), repositoryHosts(s)...), Secrets: mounts, Env: env, Labels: o.Labels, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
+			Resources:  cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
+			EgressMode: m.EgressMode, Egress: session.JoinHosts(m.Egress, harness.RepositoryHosts(s)),
+			Secrets: mounts, Env: env, Labels: o.Labels, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
 		})
 		if err != nil {
 			return nil, err
@@ -525,18 +551,6 @@ func (m *sessionMachine) Release(ctx context.Context, end bool) error {
 		return err
 	}
 	return remove(ctx, m.c, m.secrets)
-}
-
-// repositoryHosts are the git hosts of the session's repositories, which
-// the sandbox's egress allowlist includes (spec 009).
-func repositoryHosts(s session.Session) []string {
-	var out []string
-	for _, r := range session.Repositories(s) {
-		if u, err := url.Parse(r.URL); err == nil && u.Hostname() != "" {
-			out = append(out, u.Hostname())
-		}
-	}
-	return out
 }
 
 // ReadHelpers reads the topos-machine builds under dir, each named

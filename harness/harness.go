@@ -706,13 +706,15 @@ func (t *turn) resume(ctx context.Context) error {
 		// An allowed fetch of a host outside the session's network widens
 		// it before it runs, or is answered with why it cannot run.
 		held, err := t.admitFetch(ctx, c.use)
+		if held != nil {
+			if rerr := t.result(ctx, c.use.ToolUseID, *held, 0); rerr != nil {
+				return rerr
+			}
+		}
 		if err != nil {
-			return err
+			return t.callsStopped(ctx, err)
 		}
 		if held != nil {
-			if err := t.result(ctx, c.use.ToolUseID, *held, 0); err != nil {
-				return err
-			}
 			continue
 		}
 		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: c.use.Input})

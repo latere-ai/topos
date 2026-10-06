@@ -109,6 +109,13 @@ type cloud struct {
 // session changed by mut before it is created.
 func newCloud(t *testing.T, mut func(*session.Session)) *cloud {
 	t.Helper()
+	return newCloudOf(t, builderAgent, mut)
+}
+
+// newCloudOf is a cloud whose sessions run the agent the document
+// defines.
+func newCloudOf(t *testing.T, agentDoc string, mut func(*session.Session)) *cloud {
+	t.Helper()
 	c := &cloud{t: t, st: session.NewMemoryStore(), lux: luxstub.New(t), cella: cellastub.New(t)}
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -116,7 +123,7 @@ func newCloud(t *testing.T, mut func(*session.Session)) *cloud {
 	}
 	c.o = Options{Store: c.st, ModelsURL: c.lux.URL() + "/anthropic", ModelsKey: "k",
 		Machines: Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir})}
-	rs, err := manifest.Resolve(t.Context(), []byte(builderAgent), manifest.Options{})
+	rs, err := manifest.Resolve(t.Context(), []byte(agentDoc), manifest.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +147,6 @@ func newCloud(t *testing.T, mut func(*session.Session)) *cloud {
 func (c *cloud) drive(text string, replies ...luxstub.Reply) {
 	c.t.Helper()
 	ctx := c.t.Context()
-	c.lux.Script(haiku, replies...)
 	s, err := c.st.Get(ctx, c.s.ID)
 	if err != nil {
 		c.t.Fatal(err)
@@ -149,7 +155,19 @@ func (c *cloud) drive(text string, replies ...luxstub.Reply) {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	evs := []session.Event{e}
+	c.driveAfter(session.StopEndTurn, []session.Event{e}, replies...)
+}
+
+// driveAfter appends evs as a client does and drives the session once
+// with a runner of its own, which must leave it idle for want.
+func (c *cloud) driveAfter(want session.StopReason, evs []session.Event, replies ...luxstub.Reply) {
+	c.t.Helper()
+	ctx := c.t.Context()
+	c.lux.Script(haiku, replies...)
+	s, err := c.st.Get(ctx, c.s.ID)
+	if err != nil {
+		c.t.Fatal(err)
+	}
 	session.Stamp(s.ID, s.LastSeq, evs)
 	if _, err := c.st.Append(ctx, s.ID, s.LastSeq, evs); err != nil {
 		c.t.Fatal(err)
@@ -167,8 +185,8 @@ func (c *cloud) drive(text string, replies ...luxstub.Reply) {
 		c.t.Fatal(err)
 	}
 	out, err := r.Drive(ctx, s.ID)
-	if err != nil || out.StopReason != session.StopEndTurn {
-		c.t.Fatalf("drive %+v, %v\nevents %s", out, err, c.dump())
+	if err != nil || out.StopReason != want {
+		c.t.Fatalf("drive %+v, %v, want %s\nevents %s", out, err, want, c.dump())
 	}
 }
 

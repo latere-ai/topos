@@ -165,10 +165,15 @@ func (t *turn) applyNetwork(ctx context.Context) error {
 
 // widen gives the session's machine its network with host joined, as a
 // person's allow does (spec 052), and records the allow in a
-// session.network_changed naming the call or the approval it answered. A
-// machine not opened yet takes the host when it opens, from the log. A
-// widening the machine refuses records nothing and is returned.
+// session.network_changed naming the call or the approval it answered. The
+// machine is opened first, so the widening reaches a running sandbox and
+// a refusal is known before anything is recorded: a widening the machine
+// refuses, or a machine that cannot be had, records nothing and is
+// returned.
 func (t *turn) widen(ctx context.Context, n Network, host, toolUseID, approvalID string) error {
+	if err := machine.Open(ctx, t.h.c.Machine); err != nil {
+		return err
+	}
 	if nm, ok := t.h.c.Machine.(machine.Networked); ok {
 		if err := nm.ApplyNetwork(ctx, n.with(host).Machine()); err != nil {
 			return err
@@ -186,8 +191,10 @@ func (t *turn) widen(ctx context.Context, n Network, host, toolUseID, approvalID
 // admitFetch readies an allowed web_fetch to run (spec 052): a host
 // outside the session's network is joined to it first, as the person's
 // allow asked. It answers the result of a fetch that must not run: one
-// whose host the network no longer asks about, or whose widening the
-// machine refused, which also appends a session.error network_unavailable.
+// whose host the network no longer asks about, whose machine cannot be
+// had, or whose widening the machine refused, which also appends a
+// session.error network_unavailable. A core's refusal for spend comes
+// back beside the result, to stop the turn once it is recorded.
 func (t *turn) admitFetch(ctx context.Context, use session.AgentToolUse) (*tools.Result, error) {
 	n := t.network()
 	if n == nil || use.Name != tools.NameWebFetch {
@@ -200,6 +207,15 @@ func (t *turn) admitFetch(ctx context.Context, use session.AgentToolUse) (*tools
 	case !n.asks(host):
 		res := tools.Text(tools.OutcomeBlocked, prompts.Render(prompts.CallOutsideNetwork, prompts.Data{"Host": host}))
 		return &res, nil
+	}
+	// The fetch opens the machine anyway; one that cannot be had answers
+	// the call as any tool's open does.
+	if err := machine.Open(ctx, t.h.c.Machine); err != nil {
+		res, uerr := t.unopened(ctx, err)
+		if uerr != nil && !isSpent(uerr) {
+			return nil, uerr
+		}
+		return &res, uerr
 	}
 	err := t.widen(ctx, *n, host, use.ToolUseID, "")
 	if err == nil {
