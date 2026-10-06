@@ -148,7 +148,11 @@ the last copied `model.request`, absent when none was copied
 an authorizer that keeps a record of the sessions it allows has written
 the fork's at the allow of `session.fork`, and answers the send about
 it. A deny of either refuses the call as that question's deny, with the
-authorizer's reason, and nothing is written. An allow of the send that
+authorizer's reason, and nothing is written. A send denied after an
+allowed `session.fork` is a refused mutation the authorizer allowed, so
+the operator's sink receives the fork with the send's deny code as its
+`outcome` ([[023-events-and-observability]]), and an authorizer that
+recorded the fork at its allow closes that record. An allow of the send that
 names another model as `limits.model` appends `session.model_changed`
 straight before the message, as a send's allow does.
 
