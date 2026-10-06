@@ -30,6 +30,8 @@ type netMachine struct {
 	applied []machine.Network
 	refuse  error
 	refused []machine.Connection
+	// unread fails the next read of the refused connections.
+	unread error
 }
 
 // ApplyNetwork takes a network, and as a Cella machine does, sends nothing
@@ -51,6 +53,10 @@ func (m *netMachine) ApplyNetwork(_ context.Context, n machine.Network) error {
 func (m *netMachine) Refused(context.Context, time.Time) ([]machine.Connection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.unread; err != nil {
+		m.unread = nil
+		return nil, err
+	}
 	out := m.refused
 	m.refused = nil
 	return out, nil
@@ -99,7 +105,7 @@ func newNetEnv(t *testing.T, mut func(*Config), header func(*session.Session)) *
 	return ne
 }
 
-// fetchUse is the agent.tool_use of a call.
+// use is the agent.tool_use of a call.
 func (ne *netEnv) use(ctx context.Context, id string) session.AgentToolUse {
 	ne.t.Helper()
 	for _, e := range ne.events(ctx, session.TypeAgentToolUse) {
@@ -451,5 +457,122 @@ func TestEffectiveNetworkJoinsTheSessionsHosts(t *testing.T) {
 	s.Network = nil
 	if n := EffectiveNetwork(s, nil, "none", nil); n.Mode != "none" || n.Inside("code.example.com") {
 		t.Fatalf("the agent's none %+v", n)
+	}
+}
+
+// unopenable is a networked machine opened on demand whose open fails.
+type unopenable struct {
+	*netMachine
+	err error
+}
+
+func (u unopenable) Open(context.Context) error { return u.err }
+
+// TestTheNetworksEdges: the rules settle a fetch outside the network for
+// a decision service; an allowed fetch the network stopped asking about
+// is blocked, and one whose machine cannot open is answered as any
+// tool's; an approval's allow the machine refuses reads as still out of
+// reach; and a read of the refused connections that fails is a
+// session.error the call stands beside (spec 052).
+func TestTheNetworksEdges(t *testing.T) {
+	ctx := t.Context()
+	fetchOf := func(url string) Call {
+		return Call{Name: tools.NameWebFetch, Props: tools.Properties{Effect: tools.EffectExternal}, Input: []byte(`{"url":"` + url + `"}`)}
+	}
+	p := Policy{Mode: ModeProgressive, Network: &Network{Mode: "allowlist", Hosts: []string{"a.example.com"}, Ask: true}}
+	if d, ok := p.Settle(fetchOf("https://b.example.com/"), session.Risk{}); !ok || d.Verdict != VerdictAsk || d.ReviewProbability != 1 || d.Reason != "outside the session's network" {
+		t.Fatalf("an asking network settles %+v, %v", d, ok)
+	}
+	p.Network.Ask = false
+	if d, ok := p.Settle(fetchOf("https://b.example.com/"), session.Risk{}); !ok || d.Verdict != VerdictBlock {
+		t.Fatalf("a network that does not ask settles %+v, %v", d, ok)
+	}
+	if _, ok := p.Settle(fetchOf("https://a.example.com/"), session.Risk{Score: 0.4}); ok {
+		t.Fatal("a fetch inside the network is settled before the service is asked")
+	}
+
+	// The authorizer stopped the network asking between the ask and the
+	// allow: the fetch is blocked and nothing widens.
+	ne := newNetEnv(t, nil, allowlist(true, "docs.example.com"))
+	ne.stub.Script(model, reply(ir.StopToolUse, fetchCall("toolu_1", "https://other.example.com/x")), reply(ir.StopEndTurn, text("no")))
+	ne.send(ctx, "Read.")
+	ne.turn(ctx)
+	off, err := session.NewEvent(session.TypeNetworkChanged, session.NetworkChanged{Ask: new(false), Source: session.NetworkFromAuthorizer}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ne.appendEvents(ctx, off)
+	ne.confirm(ctx, session.UserToolConfirmation{ToolUseID: "toolu_1", Decision: session.DecisionAllow})
+	ne.turn(ctx)
+	if r := ne.result(ctx, "toolu_1"); r.Outcome != tools.OutcomeBlocked || len(ne.fetch.ran()) != 0 || len(ne.events(ctx, session.TypeNetworkChanged)) != 1 {
+		t.Fatalf("a network that stopped asking: %+v, ran %v", r, ne.fetch.ran())
+	}
+
+	// The machine cannot be had when the allowed fetch would widen it.
+	closed := newNetEnv(t, nil, allowlist(true, "docs.example.com"))
+	closed.cfg.Machine = unopenable{netMachine: closed.m, err: errors.New("Cella is unreachable")}
+	h, err := New(closed.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed.h = h
+	closed.stub.Script(model, reply(ir.StopToolUse, fetchCall("toolu_1", "https://other.example.com/x")), reply(ir.StopEndTurn, text("no")))
+	closed.send(ctx, "Read.")
+	closed.turn(ctx)
+	closed.confirm(ctx, session.UserToolConfirmation{ToolUseID: "toolu_1", Decision: session.DecisionAllow})
+	closed.turn(ctx)
+	var se session.SessionError
+	if r := closed.result(ctx, "toolu_1"); r.Outcome != tools.OutcomeError || !strings.Contains(r.Content[0].Text, "could not be started") ||
+		closed.events(ctx, session.TypeSessionError)[0].Decode(&se) != nil || se.Code != machine.CodeUnavailable {
+		t.Fatalf("an unopenable machine: %+v, %+v", r, se)
+	}
+
+	// An approval's allow the machine refuses: the model reads that the
+	// host is still out of reach.
+	refused := newNetEnv(t, nil, allowlist(true, "docs.example.com"))
+	refused.m.refused = []machine.Connection{{Host: "a.example.com", Port: 443}}
+	refused.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "bash", `{"command":"make"}`)), reply(ir.StopEndTurn, text("sorry")))
+	refused.send(ctx, "Install.")
+	refused.turn(ctx)
+	var req session.ApprovalRequested
+	if err := refused.events(ctx, session.TypeApprovalRequested)[0].Decode(&req); err != nil {
+		t.Fatal(err)
+	}
+	refused.m.mu.Lock()
+	refused.m.refuse = errors.New("Cella refused to change the network: admission_refused")
+	refused.m.mu.Unlock()
+	refused.confirm(ctx, session.UserToolConfirmation{ApprovalID: req.ApprovalID, Decision: session.DecisionAllow})
+	if out := refused.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("after a refused allow: %+v", out)
+	}
+	if n := len(refused.events(ctx, session.TypeNetworkChanged)); n != 0 {
+		t.Fatalf("%d changes after a refused widening", n)
+	}
+	var d session.ApprovalDecided
+	if err := refused.events(ctx, session.TypeApprovalDecided)[0].Decode(&d); err != nil || d.Decision != "allow" {
+		t.Fatalf("decided %+v, %v", d, err)
+	}
+	reqs := refused.stub.Requests()
+	last := reqs[len(reqs)-1].Request.Messages
+	var said []string
+	for _, b := range last[len(last)-1].Blocks {
+		said = append(said, b.Text)
+	}
+	if !strings.Contains(strings.Join(said, "\n"), "still out of reach") {
+		t.Fatalf("the model read %q", said)
+	}
+
+	// A read of the refused connections that fails is recorded, and the
+	// call's result stands.
+	unread := newNetEnv(t, nil, allowlist(true, "docs.example.com"))
+	unread.m.unread = errors.New("the gateway's records are unavailable")
+	unread.stub.Script(model, reply(ir.StopToolUse, call("toolu_1", "bash", `{"command":"make"}`)), reply(ir.StopEndTurn, text("done")))
+	unread.send(ctx, "Install.")
+	if out := unread.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("an unread record: %+v", out)
+	}
+	errs := unread.events(ctx, session.TypeSessionError)
+	if len(errs) != 1 || errs[0].Decode(&se) != nil || se.Code != CodeNetworkUnavailable || len(unread.events(ctx, session.TypeToolResult)) != 1 {
+		t.Fatalf("an unread record: %+v", se)
 	}
 }
