@@ -143,7 +143,7 @@ func usage(w *console) {
   topos run [flags] [<prompt>]        run a turn of a local session in the working directory
                                       (--agent <file>, --model, --mode, --max-cost, --dir, --output, --session,
                                       --attended)
-  topos confirm <session> <tool_use_id> allow|deny [--note <text>] [--remember <pattern>]
+  topos confirm <session> <tool_use_id|approval_id> allow|deny [--note <text>] [--remember <pattern>]
   topos rewind <session> <turn>       restore the working directory to the end of a turn
   topos version
 `)
@@ -282,8 +282,18 @@ func confirmCmd(ctx context.Context, args []string, env *cli) int {
 		return ExitUsage
 	}
 	if len(pos) != 3 || (pos[2] != session.DecisionAllow && pos[2] != session.DecisionDeny) {
-		env.stderr.println("topos: confirm takes <session> <tool_use_id> allow|deny")
+		env.stderr.println("topos: confirm takes <session> <tool_use_id or approval_id> allow|deny")
 		return ExitUsage
+	}
+	// An apr_ id names an approval of a refused connection, which no call
+	// pattern names (spec 052).
+	conf := session.UserToolConfirmation{ToolUseID: pos[1], Decision: pos[2], Note: *note, Remember: *remember}
+	if strings.HasPrefix(pos[1], session.PrefixApproval) {
+		if *remember != "" {
+			env.stderr.println("topos: an approval takes no -remember")
+			return ExitUsage
+		}
+		conf.ToolUseID, conf.ApprovalID = "", pos[1]
 	}
 	if err := o.validate(); err != nil {
 		env.stderr.println("topos:", err)
@@ -293,9 +303,8 @@ func confirmCmd(ctx context.Context, args []string, env *cli) int {
 	if err != nil {
 		return report(env, err)
 	}
-	c, err := session.NewEvent(session.TypeUserToolConfirmation, session.UserToolConfirmation{
-		Sender: l.person, ToolUseID: pos[1], Decision: pos[2], Note: *note, Remember: *remember,
-	}, time.Now())
+	conf.Sender = l.person
+	c, err := session.NewEvent(session.TypeUserToolConfirmation, conf, time.Now())
 	if err != nil {
 		return report(env, err)
 	}

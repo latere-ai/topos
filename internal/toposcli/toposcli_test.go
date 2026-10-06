@@ -149,6 +149,10 @@ func TestAConfirmationRoundTrip(t *testing.T) {
 	if code, _, _ := f.run("confirm", id, "toolu_b", "maybe"); code != ExitUsage {
 		t.Fatalf("a bad decision exits %d", code)
 	}
+	// An approval of a refused connection takes no call pattern.
+	if code, _, _ := f.run("confirm", id, "apr_01J9Z3Q4W8KX6T0M2V5N7R0000", "allow", "--remember", "bash(curl *)"); code != ExitUsage {
+		t.Fatalf("an approval with a pattern exits %d", code)
+	}
 	code, out, errOut := f.run("confirm", id, "toolu_b", "allow", "--remember", "bash(echo *)")
 	if code != ExitOK || out != "Built.\n" {
 		t.Fatalf("confirm: exit %d, stdout %q, stderr %q", code, out, errOut)
