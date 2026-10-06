@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 007-models.md, 008-tools.m
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-05
+updated: 2026-10-06
 author: changkun
 ---
 
@@ -236,7 +236,11 @@ A gateway's answer that the model cannot serve now, `upstream_error`,
 is not retried by this policy ([[051-a-turn-moves-off-a-model-that-cannot-serve]]):
 a routed turn asks the authorizer for another model and sends the step
 on it, and a turn that cannot move retries once, a second later, and
-then ends with `model_busy`.
+then ends with `model_busy`. A provider's refusal of the request,
+`upstream_rejected` at a 4xx (`models.Rejected`), is not retried either:
+a routed turn asks the authorizer the same question with the reason
+`rejected`, and a turn the authorizer keeps on its model, or that cannot
+move, ends with `model_error`.
 
 A retried stream's partial output is discarded and the Observer
 receives a reset for the step. Waiting counts against the turn

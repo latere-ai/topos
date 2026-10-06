@@ -6,7 +6,7 @@ depends_on: [005-harness-loop.md, 006-identity.md, 007-models.md, 015-api.md, 01
 affects: [models/, harness/, session/, runner/, internal/server/, internal/runnerapi/, internal/runnerrole/, internal/hosted/, cmd/toposd/, authorizer/doc.go, test/stubs/luxstub/, test/stubs/keystub/, api/openapi.yaml]
 effort: medium
 created: 2026-10-05
-updated: 2026-10-05
+updated: 2026-10-06
 author: changkun
 ---
 
@@ -53,7 +53,7 @@ and keep the policy they had:
 |---|---|---|
 | `budget_exhausted`, `spend_exceeded` | a refusal about the caller's spend; another model is refused the same | stops the turn with `budget` ([[007-models]]) |
 | the gateway's `rate_limited` | a bound on the caller's key | spec 005's retry |
-| `model_not_allowed`, `model_disabled` and every 4xx | a refusal of the caller or the request | not retried |
+| `model_not_allowed`, `model_disabled` and every 4xx but `upstream_rejected` | a refusal of the caller or the request | not retried |
 | `store_unavailable`, `authorizer_unavailable` (503) | the gateway's own failure; every model behind it fails alike | spec 005's retry |
 | a transport failure on the way to the gateway, a stream cut | the gateway, not the model, is unreachable | spec 005's retry |
 | a provider reached without a gateway, in its own words (529 `overloaded_error`) | no gateway has tried another target yet | spec 005's retry |
@@ -61,6 +61,10 @@ and keep the policy they had:
 Marking a model down for a failure of the gateway itself would move
 every turn through every model of the pool, so the classification reads
 the type and never the status alone.
+
+A provider's refusal of the request, `upstream_rejected`, is not down
+either. A routed turn asks the same question about it with a reason, as
+"A provider's rejection of the request" says.
 
 ### The gateway's detail
 
@@ -101,6 +105,7 @@ admits for the session. The resource is the session's, with:
 | `current_model`, `current_model_via` | the model the session stands on, which failed, and that name |
 | `failed_model` | the model that failed: the one the session stands on, or one an earlier answer of the turn named that could not be connected (see "A model named that cannot be connected"); its presence asks for a pick that passes over it |
 | `failed_detail` | the developer detail of the failure, at most 1024 bytes: the gateway's, or why the model named could not be connected; absent when there is none |
+| `failed_reason` | why the model failed when it is not that it cannot serve now: `rejected` for a request the provider rejected; absent for a model that cannot serve now or could not be connected |
 
 An authorizer that routes answers a switch to a routed name as it does
 today, picking with `failed_model` passed over, and names the model in
@@ -200,6 +205,62 @@ says.
 A compaction's summary request never moves the turn and takes the one
 quick retry.
 
+### A provider's rejection of the request
+
+A model gateway answers `upstream_rejected` (400) when it reached the
+provider and the provider refused the request with a 4xx of its own.
+Lux does so for any upstream 4xx but 401 and 403, which are its own
+credential and answer `upstream_error`, and 408 and 429, which it
+retries on the model's next target; it tries no other target after a
+rejection. The refusal is either the request's, such as a body the model
+cannot take, or the provider's, which no longer serves the model under
+that name, as providers withdraw and change free variants without
+notice. A provider that has withdrawn a model answers in milliseconds,
+every request, and before this section every turn that reached such a
+model ended with `model_error`, while the routed name stood for other
+models that would have answered.
+
+The core cannot tell the two apart, and which models are worth passing
+over is the authorizer's to say. `models.Rejected` reports the answer:
+the type `upstream_rejected` at a 4xx, never the status alone. A turn
+that may move asks the question of "The question" for it at once, the
+callback given `harness.FailedRejected` as its reason:
+
+| Field | Value |
+|---|---|
+| `failed_model` | the model the request was sent on, which is also `current_model` |
+| `failed_reason` | `rejected` |
+| `failed_detail` | the gateway's code and its developer detail, such as `upstream_rejected: upstream status 404: {"error":...}`, at most 1024 bytes |
+
+An allow that names another model moves the turn as "The move" says: the
+failed request and the service's change in one batch, reason
+`model_busy`, the gateway's answer in the change's detail, and one of
+the turn's `MaxModelSwitches` moves. `model_busy` is kept rather than a
+reason of its own: to the person, the model could not answer and another
+one did, and the detail says which failure it was. A model named that
+cannot be connected is asked past as "A model named that cannot be
+connected" says, with no reason, since it failed to connect, not to
+serve.
+
+An allow that names no other model, a deny, a question that cannot be
+asked, and a turn that may not move end the turn at once with
+`model_error` and the gateway's sentence, as a rejection ended before.
+The request may be what was refused, so the quick retry is not taken,
+and the turn does not end `model_busy`, whose sentence asks the person
+to send the message again. The `session.error` detail carries, after the
+gateway's status and type, why the turn did not move.
+
+The gateway's own refusals carry their own types and ask nothing:
+`invalid_request`, `model_not_allowed`, `model_disabled`,
+`model_unpriced`, `rate_limited`, `budget_exhausted` and
+`spend_exceeded` keep the policies of the table above.
+
+| | Before | After |
+|---|---|---|
+| a routed turn whose request the provider rejects | ends at once with `model_error` | the authorizer is asked at once; the step is sent on the model it names, within the same 3 moves |
+| a routed turn the authorizer keeps on the model, or refuses | ends at once with `model_error` | the same, the detail saying why it did not move |
+| a turn on a model named itself, or out of moves | ends at once with `model_error` | unchanged |
+
 ### The turn that fails
 
 A turn that ends on a down failure ends `error` with `detail`
@@ -225,6 +286,18 @@ breaks. The deployment rolls the authorizer, then toposd and every
 runner. A client that names `model_busy` and the change's `reason` may
 roll at any time: before it does, it shows the code and the change as it
 shows any.
+
+A question with `failed_reason` rolls the same way, and here the order
+is required. An authorizer that reads `failed_model` and not
+`failed_reason` reads the question as one about a model that cannot
+serve, and would pass over a model on any rejected request, the
+request's own fault among them. An authorizer that refuses a
+`failed_reason` it does not know, or answers no other model, leaves the
+turn as before, ending `model_error`. The deployment rolls the
+authorizer that reads it, then toposd and every runner. A runner with
+this change asks a server before it with `reason` in the runner
+protocol's failover request, a member that server does not decode, so it
+answers `invalid_request` and the turn ends `model_error` as before.
 
 A question whose `failed_model` is a model named that could not be
 connected, not the one `current_model` names, is a shape the authorizer
@@ -267,6 +340,14 @@ too.
 | A drive asks its lease's question, else the runner's, else none | `runner.TestADriveAsksTheFailoverOfItsLease` | built |
 | Through toposd against an authorizer that routes, on an installation whose sessions act with their own keys and a door that answers each key for the models it selects, a routed session whose model the gateway answers `upstream_error` over a 429 is answered in its first turn by the model the `session.update` allow names, the question carrying `failed_model` and `failed_detail`, while the door applies the key's widening only some time after the allow, and every request carries the session's key | `cmd/toposd.TestARoutedTurnMovesOffAModelThatCannotServe` | built |
 | Through toposd, a model the allow names that the door never lists for the key is passed over: the second question names it as `failed_model` beside the model the session stands on, and the turn is answered by the model the second allow names | `cmd/toposd.TestARoutedTurnPassesOverAModelItCannotConnect` | built |
+| `models.Rejected` is the gateway's `upstream_rejected` at a 4xx and nothing else: not a model that cannot serve, and none of the gateway's own refusals | `models.TestRejected` | built |
+| A routed turn whose request the provider rejects asks the question at once with `failed_reason` `rejected` and the gateway's code and detail, moves to the model named, records the failed request and the change with `model_busy`, and answers within the turn; a model named that cannot be connected is asked past with no reason | `harness.TestATurnMovesOffAModelItsProviderRejected` | built |
+| A rejected request the router keeps on its model, or whose question is refused, ends the turn at once with `model_error` and the gateway's sentence, not retryable, with no retry and no change, the detail saying why it did not move | `harness.TestARejectedRequestTheRouterKeepsEndsWithTheModelsError` | built |
+| Moves off rejected requests count against `MaxModelSwitches`; a rejection past them asks nothing and ends `model_error` | `harness.TestRejectionsCountAgainstTheMoves` | built |
+| The gateway's own refusals of a routed turn ask nothing and keep their policies; a rejection on a session on a model named itself asks nothing and ends `model_error` at once | `harness.TestTheGatewaysOwnRefusalAsksNothing` | built |
+| toposd asks the rejection's question with `failed_reason` beside `failed_model` and `failed_detail`, and an allow that names no model moves nothing | `internal/server.TestAFailoverOfARejectedRequestSaysWhy` | built |
+| The runner protocol's failover request carries `reason` only when there is one, a drive passes it to the server, and a reason the server does not know is `invalid_request` | `internal/runnerrole.TestARemoteLeaseAsksTheServerToFailOver`, `runner.TestADriveAsksTheFailoverOfItsLease` | built |
+| Through toposd, a routed session whose first model the gateway answers 400 `upstream_rejected` asks `session.update` with `failed_reason` `rejected` and `failed_detail` `upstream_rejected: <the gateway's detail>`, and its first turn is answered by the model the allow names | `cmd/toposd.TestARoutedTurnMovesOffAModelItsProviderRejected` | built |
 
 ## Outcome
 
@@ -339,3 +420,24 @@ any key, so the test of the whole path passed. `luxstub.Server.Select`
 now answers each key for the models it selects, a request on another is
 refused `model_not_allowed`, and the test widens the session's key only
 some time after the authorizer's allow, as the lagging replica did.
+
+### A provider's rejection
+
+On a hosted installation, a routed turn moved off a free model that was
+down to the next free model of its routed name, and the gateway answered
+the request there `upstream_rejected` in about 35 ms. The turn ended
+`model_error`, since only the three types of `models.Down` asked the
+question, and a session that started on that model ended the same way at
+its first request. The gateway's log showed every request on that model
+rejected, in 19 to 41 ms, over four hours of the same day, after it had
+answered earlier that afternoon, while the next entry of the routed
+name, a priced model, would have answered. The log keeps no upstream
+status, so whether the provider had withdrawn the variant is not known;
+either way, an authorizer asked could have passed over it.
+
+"A provider's rejection of the request" was built on 2026-10-06 and is
+in no release yet. The decision stays the authorizer's: the core names
+the failure and does not judge which models a rejection should pass
+over. An installation that passes over a free model on a rejection, and
+keeps a priced one, needs its authorizer to read `failed_reason` before
+this core rolls, as "The roll" says.
