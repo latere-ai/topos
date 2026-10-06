@@ -318,4 +318,7 @@ const (
 	// ContextRoute takes Route, the routed name a session runs by (spec
 	// 043).
 	ContextRoute Name = "context/route-v1"
+	// ContextInitiator takes Text, the initiator's standing instructions
+	// (spec 053).
+	ContextInitiator Name = "context/initiator-v1"
 )

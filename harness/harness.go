@@ -960,7 +960,13 @@ func (t *turn) maxTokens() int64 {
 
 // request builds the step's IR request from the fold.
 func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, string, error) {
-	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, withRoute(withRepositories(tr.System, t.s), t.s), t.l)
+	// The initiator's instructions are the person's to the session's own
+	// agent; a subagent's thread works from its task (spec 053).
+	initiator := ""
+	if t.thread == "" {
+		initiator = t.s.Instructions
+	}
+	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, initiator, withRoute(withRepositories(tr.System, t.s), t.s), t.l)
 	if err != nil {
 		return ir.Request{}, "", err
 	}

@@ -31,12 +31,18 @@ type BlobReader interface {
 }
 
 // systemBlocks renders a request's system prompt (spec 010, parts 2 to
-// 8): the harness prompt, the agent's instructions, then the system parts
-// in order, the fold's and the route after them.
-func systemBlocks(ctx context.Context, harnessPrompt, agentInstructions string, parts []session.Part, blobs BlobReader) ([]lux.Block, error) {
+// 8): the harness prompt, the agent's instructions, the initiator's
+// standing instructions in their wrapper (spec 053), then the system parts
+// in order, the fold's and the route after them. Every block is in the
+// prefix a provider caches, and the initiator's text is the header's,
+// which no event changes, so its bytes are the same on every request.
+func systemBlocks(ctx context.Context, harnessPrompt, agentInstructions, initiator string, parts []session.Part, blobs BlobReader) ([]lux.Block, error) {
 	blocks := []lux.Block{{Type: ir.BlockText, Text: harnessPrompt}}
 	if s := strings.TrimSpace(agentInstructions); s != "" {
 		blocks = append(blocks, lux.Block{Type: ir.BlockText, Text: s})
+	}
+	if initiator != "" {
+		blocks = append(blocks, lux.Block{Type: ir.BlockText, Text: prompts.Render(prompts.ContextInitiator, prompts.Data{"Text": initiator})})
 	}
 	for _, p := range parts {
 		text, err := renderPart(ctx, p, blobs)

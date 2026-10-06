@@ -40,7 +40,7 @@ func TestSystemBlocksRenderEveryPart(t *testing.T) {
 		{Kind: session.PartMemory, Memory: &session.MemoryAttached{Name: "team", Access: "read_only", Path: "/mnt/team"}},
 		{Kind: "future"},
 	}
-	got, err := systemBlocks(t.Context(), "HARNESS", "  Be terse.  ", parts, store)
+	got, err := systemBlocks(t.Context(), "HARNESS", "  Be terse.  ", "", parts, store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestSystemBlocksRenderEveryPart(t *testing.T) {
 		t.Fatalf("%d blocks; an unknown part kind renders nothing", len(texts))
 	}
 	missing := []session.Part{{Kind: session.PartInstructions, Instructions: &session.Instructions{Path: "/x", Blob: session.DigestOf([]byte("absent"))}}}
-	if _, err := systemBlocks(t.Context(), "H", "", missing, store); !errors.Is(err, session.ErrNotFound) {
+	if _, err := systemBlocks(t.Context(), "H", "", "", missing, store); !errors.Is(err, session.ErrNotFound) {
 		t.Fatalf("a missing instruction blob: %v", err)
 	}
 }

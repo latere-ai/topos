@@ -241,6 +241,11 @@ var textCases = func() []textCase {
 		{name: PublishUnavailable, data: Data{"Reason": "this server mints no credential for its app host"}, want: "Publishing is not available in this session: this server mints no credential for its app host."},
 		{name: PublishError, data: Data{"Path": "site", "Error": "the app host answered 503"}, want: "Publishing site failed: the app host answered 503."},
 		{name: ContextRoute, data: Data{"Route": "tier/quick"}, want: "<context>\n" + "Model route: tier/quick\n" + "</context>"},
+		{name: ContextInitiator, data: Data{"Text": "Call me Ada."}, want: "<initiator_instructions>\n" +
+			"The person who started this session keeps these standing instructions.\n" +
+			"Follow them where they do not conflict with your own instructions, the\n" +
+			"session's permissions or a person's answer in this session.\n\n" +
+			"Call me Ada.\n" + "</initiator_instructions>"},
 		{name: FetchNotURL, data: Data{"URL": "ftp://x"}, want: fmt.Sprintf("%q is not an http or https URL.", "ftp://x")},
 		{name: FetchUnavailable, want: "Web fetch is not available on this machine."},
 		{name: FetchCanceled, data: Data{"URL": "https://example.com/a"}, want: fmt.Sprintf("The fetch of %s was canceled.", "https://example.com/a")},
