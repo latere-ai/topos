@@ -1104,13 +1104,21 @@ func (t *turn) failedRequest(ctx context.Context, err error, si sendInfo, raw []
 }
 
 // httpDetail is a model server's error answer as a session.error's
-// detail, its status and type, and "" for another failure.
+// detail, for a developer: its status and type, then the gateway's
+// developer detail in parentheses when it sent one, as models.Described
+// adds it to the failed model.request's error; "" for another failure.
+// The gateway's detail is at most models.MaxDetail bytes, cut on a
+// character's boundary where the model client read it.
 func httpDetail(err error) string {
 	var he *models.HTTPError
-	if errors.As(err, &he) {
-		return fmt.Sprintf("HTTP %d %s", he.Status, he.Type)
+	if !errors.As(err, &he) {
+		return ""
 	}
-	return ""
+	d := fmt.Sprintf("HTTP %d %s", he.Status, he.Type)
+	if he.Detail != "" {
+		d += " (" + he.Detail + ")"
+	}
+	return d
 }
 
 // switchable reports whether a failure of the turn's model to serve now,

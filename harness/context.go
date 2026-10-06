@@ -315,7 +315,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 	began := t.h.c.Clock()
 	res, attempts, err := t.send(ctx, req, false)
 	if err != nil {
-		se, eerr := t.sessionError(CodeCompactionFailed, err.Error(), models.Retryable(err), "")
+		se, eerr := t.sessionError(CodeCompactionFailed, err.Error(), models.Retryable(err), httpDetail(err))
 		if eerr != nil {
 			return false, eerr
 		}

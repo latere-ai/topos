@@ -554,7 +554,7 @@ func TestARejectedRequestTheRouterKeepsEndsWithTheModelsError(t *testing.T) {
 			}
 			errs := e.sessionErrors(ctx)
 			if len(errs) != 1 || errs[0].Code != CodeModelError || !strings.Contains(errs[0].Message, "The provider rejected this request.") ||
-				errs[0].Retryable || !strings.HasPrefix(errs[0].Detail, "HTTP 400 upstream_rejected; ") || !strings.Contains(errs[0].Detail, c.why) {
+				errs[0].Retryable || !strings.HasPrefix(errs[0].Detail, "HTTP 400 upstream_rejected ("+upstreamRejection+"); ") || !strings.Contains(errs[0].Detail, c.why) {
 				t.Fatalf("session.error %+v", errs)
 			}
 		})
@@ -585,7 +585,7 @@ func TestRejectionsCountAgainstTheMoves(t *testing.T) {
 	if n := len(e.stub.Requests()); n != MaxModelSwitches+1 {
 		t.Fatalf("%d requests, want one per model", n)
 	}
-	if errs := e.sessionErrors(ctx); len(errs) != 1 || errs[0].Code != CodeModelError || errs[0].Detail != "HTTP 400 upstream_rejected" {
+	if errs := e.sessionErrors(ctx); len(errs) != 1 || errs[0].Code != CodeModelError || errs[0].Detail != "HTTP 400 upstream_rejected ("+upstreamRejection+")" {
 		t.Fatalf("session.error %+v", errs)
 	}
 }
@@ -643,7 +643,7 @@ func TestTheGatewaysOwnRefusalAsksNothing(t *testing.T) {
 	if len(r.asked) != 0 || len(slept) != 0 || len(named.stub.Requests()) != 1 {
 		t.Fatalf("a model named itself: asked %+v, waits %v, %d requests", r.asked, slept, len(named.stub.Requests()))
 	}
-	if errs := named.sessionErrors(ctx); len(errs) != 1 || errs[0].Detail != "HTTP 400 upstream_rejected" {
+	if errs := named.sessionErrors(ctx); len(errs) != 1 || errs[0].Detail != "HTTP 400 upstream_rejected ("+upstreamRejection+")" {
 		t.Fatalf("a model named itself: session.error %+v", errs)
 	}
 }
