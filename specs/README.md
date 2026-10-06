@@ -109,6 +109,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [051](.archive/051-a-turn-moves-off-a-model-that-cannot-serve.md) | A turn moves off a model that cannot serve: a gateway's answer that the model is down, or that its provider rejected the request, asks the authorizer for another model inside the turn, one quick retry where none can be had, and an error a client can name | medium | complete | 005, 006, 007, 015, 016, 038, 049 |
 | [052](052-a-sessions-network.md) | A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow | large | testing | 003, 004, 006, 008, 009, 012, 015, 016, 018, 038, 039 |
 | [053](053-the-initiators-instructions.md) | The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, read after the agent's own | small | testing | 004, 006, 010, 011, 015, 038 |
+| [054](054-a-sessions-title-and-filing.md) | A session's title and its filing: the title member of PATCH, session.title_changed, and an archive of an idle session | small | in-progress | 004, 006, 015, 017, 041 |
 
 ## Dependency graph
 
@@ -171,6 +172,7 @@ flowchart BT
   S051[051 a turn moves off a model that cannot serve]
   S052[052 a session's network]
   S053[053 the initiator's instructions]
+  S054[054 a session's title and its filing]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -260,6 +262,8 @@ flowchart BT
   S052 --> S038
   S052 --> S039
   S053 --> S038
+  S054 --> S015
+  S054 --> S041
 ```
 
 ## Build order
@@ -273,7 +277,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
