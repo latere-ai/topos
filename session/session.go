@@ -386,11 +386,6 @@ const (
 // confirmation by its approval_id (spec 052).
 func Awaiting(evs []Event) map[string]Answer {
 	out := map[string]Answer{}
-	for _, a := range Approvals(evs) {
-		if a.Waiting() {
-			out[a.Request.ApprovalID] = AnswerConfirmation
-		}
-	}
 	if q, open := OpenQuestion(evs); open {
 		out[q.ToolUseID] = AnswerQuestion
 	}
@@ -430,6 +425,13 @@ func Awaiting(evs []Event) map[string]Answer {
 					delete(out, id)
 				}
 			}
+		}
+	}
+	// An approval reads what answered it in its own order: a message
+	// appended before it answers nothing.
+	for _, a := range Approvals(evs) {
+		if a.Waiting() {
+			out[a.Request.ApprovalID] = AnswerConfirmation
 		}
 	}
 	return out

@@ -61,6 +61,7 @@ func TestApprovalsAndTheReach(t *testing.T) {
 		return ApprovalRequested{ApprovalID: id, ToolUseID: "toolu_1", Source: ApprovalFromEgress, Destination: Destination{Host: host, Port: 443}, Reason: ReasonConnectionOutside, Verdict: verdict}
 	}
 	evs := []Event{
+		netEvent(t, 0, TypeUserMessage, UserMessage{Sender: ada}),
 		netEvent(t, 1, TypeApprovalRequested, req("apr_1", "a.example.com", "ask")),
 		netEvent(t, 2, TypeApprovalRequested, req("apr_2", "b.example.com", "ask")),
 		netEvent(t, 3, TypeApprovalRequested, req("apr_3", "c.example.com", "block")),
