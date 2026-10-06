@@ -403,6 +403,12 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	}
 	sess.ExpiresAt = sess.CreatedAt.Add(age)
 	sess.Scope = limits.Scope
+	// The session's network is the one its allow names, or its agent's
+	// mode with ask false (spec 052); a fork is asked as a create is, and
+	// the hosts a person allowed in its parent are not carried. The
+	// initiator's instructions are read at the create alone (spec 053).
+	sess.Network = createdNetwork(limits.Network, cfg.Machine)
+	sess.Instructions = limits.Instructions
 	if f := in.fork; f != nil {
 		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent.ID, f.events)
 	}
@@ -878,14 +884,14 @@ func (s *Server) lastRequest(ctx context.Context, sess session.Session) (time.Ti
 // checked by, with the name asked, at the level it names, "" being the
 // agent's own, or the level the session had when it names none (spec
 // 049). A level alone moves the level and keeps the model.
-func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[string]any) (session.Session, *session.ModelChanged, error) {
+func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[string]any) (session.Session, sendChanges, error) {
 	sess, err := s.o.Sessions.Get(ctx, id)
 	if err != nil {
-		return session.Session{}, nil, err
+		return session.Session{}, sendChanges{}, err
 	}
 	cfg, err := s.agentConfig(ctx, sess)
 	if err != nil {
-		return session.Session{}, nil, err
+		return session.Session{}, sendChanges{}, err
 	}
 	old := standing(sess, cfg)
 	all := maps.Clone(fields)
@@ -895,20 +901,24 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 	}
 	at, made, err := s.lastRequest(ctx, sess)
 	if err != nil {
-		return session.Session{}, nil, err
+		return session.Session{}, sendChanges{}, err
 	}
 	if made {
 		all["idle_seconds"] = max(int(s.o.Now().Sub(at)/time.Second), 0)
 	}
 	limits, err := q.limits(ctx, authorizer.ActionSessionSend, sessionResource(sess, all))
 	if err != nil {
-		return session.Session{}, nil, err
+		return session.Session{}, sendChanges{}, err
 	}
+	// A send's allow may name the session's network, which replaces its
+	// base network before the next turn (spec 052); its instructions are
+	// not read, since they sit in the prompt's cached prefix (spec 053).
+	out := sendChanges{network: sentNetwork(sess, limits.Network)}
 	next := old
 	if limits.Model != "" && limits.Model != old.Name {
 		m, overlay := cfg.SessionModel(limits.Model)
 		if err := s.runnable(ctx, m, overlay); err != nil {
-			return session.Session{}, nil, err
+			return session.Session{}, sendChanges{}, err
 		}
 		next.Name, next.Via = limits.Model, cmp.Or(old.Via, old.Name)
 		if next.Via == next.Name {
@@ -919,28 +929,46 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 		next.Effort = cmp.Or(*r, cfg.Effort)
 	}
 	if next == old {
-		return sess, nil, nil
+		return sess, out, nil
 	}
 	by := session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}
-	return sess, &session.ModelChanged{By: by, Old: old, New: next}, nil
+	out.model = &session.ModelChanged{By: by, Old: old, New: next}
+	return sess, out, nil
 }
 
-// appendSent appends a sent event, after the model change its allow made
-// when it made one, as one batch: the turn the event starts runs on the
-// new model, and a send that is refused changes nothing. check, when set,
-// is held to the log the batch follows: the batch is appended after the
-// sequence the check read, and when another writer appended first the
-// log is read and checked again rather than followed, so an event that
-// answers a call is never appended after something else answered it.
-func (s *Server) appendSent(ctx context.Context, id string, change *session.ModelChanged, ev session.Event, check func([]session.Event) error) (session.Event, error) {
-	batch := []session.Event{ev}
-	if change != nil {
-		changed, err := session.NewEvent(session.TypeModelChanged, *change, ev.Time)
+// sendChanges are the changes an allow of a send made: the model, nil
+// when it names the one the session stands on, and the network, nil when
+// it names none or the one the session runs.
+type sendChanges struct {
+	model   *session.ModelChanged
+	network *session.NetworkChanged
+}
+
+// appendSent appends a sent event, after the model and network changes
+// its allow made, as one batch: the turn the event starts runs on the new
+// model and network, and a send that is refused changes nothing. check,
+// when set, is held to the log the batch follows: the batch is appended
+// after the sequence the check read, and when another writer appended
+// first the log is read and checked again rather than followed, so an
+// event that answers a call is never appended after something else
+// answered it.
+func (s *Server) appendSent(ctx context.Context, id string, changes sendChanges, ev session.Event, check func([]session.Event) error) (session.Event, error) {
+	var batch []session.Event
+	if changes.model != nil {
+		changed, err := session.NewEvent(session.TypeModelChanged, *changes.model, ev.Time)
 		if err != nil {
 			return session.Event{}, err
 		}
-		batch = []session.Event{changed, ev}
+		batch = append(batch, changed)
 	}
+	if changes.network != nil {
+		changed, err := session.NewEvent(session.TypeNetworkChanged, *changes.network, ev.Time)
+		if err != nil {
+			return session.Event{}, err
+		}
+		batch = append(batch, changed)
+	}
+	batch = append(batch, ev)
 	var err error
 	if check == nil {
 		err = s.appendBatch(ctx, id, batch)

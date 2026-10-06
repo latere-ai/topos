@@ -281,7 +281,8 @@ var opDescriptions = map[string]string{
 	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
 		"its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. " +
-		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable.",
+		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +
+		NetworkRule,
 	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
 	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, "+
 		"and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. "+
@@ -346,7 +347,7 @@ var opDescriptions = map[string]string{
 		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
 		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
 		"A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. "+
-		AnswerRules,
+		SendNetworkRule+AnswerRules,
 		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject, models.MaxDetail, session.MessageModelBusyChange, harness.MaxModelSwitches, harness.MessageModelBusy, harness.FailedRejected),
 	"applyTrigger": fmt.Sprintf("Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. "+
 		"The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+

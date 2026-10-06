@@ -5,6 +5,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -139,8 +140,13 @@ func (c *call) sendEvent() error {
 		if err := strict(b.Payload, &p); err != nil {
 			return err
 		}
-		if p.ToolUseID == "" || (p.Decision != session.DecisionAllow && p.Decision != session.DecisionDeny) {
-			return refuse(CodeInvalidRequest, "a user.tool_confirmation names its tool_use_id and a decision of allow or deny")
+		if (p.ToolUseID == "") == (p.ApprovalID == "") || (p.Decision != session.DecisionAllow && p.Decision != session.DecisionDeny) {
+			return refuse(CodeInvalidRequest, "a user.tool_confirmation names exactly one of tool_use_id and approval_id, and a decision of allow or deny")
+		}
+		// An approval is of a connection, which no call pattern names
+		// (spec 052).
+		if p.ApprovalID != "" && p.Remember != "" {
+			return refuse(CodeInvalidRequest, "remember names a call's argument pattern; a user.tool_confirmation of an approval_id carries none")
 		}
 		p.Sender = sender
 		payload = p
@@ -177,7 +183,7 @@ func (c *call) sendEvent() error {
 	// turn the event starts (spec 038); an interrupt starts none.
 	fields := map[string]any{"sender": sender.Subject, "event_type": string(b.Type)}
 	var s session.Session
-	var change *session.ModelChanged
+	var change sendChanges
 	var err error
 	if action == authorizer.ActionSessionSend {
 		s, change, err = c.s.sendAs(c.r.Context(), c.asker(), c.r.PathValue("id"), fields)
@@ -230,7 +236,7 @@ var sentTypes = []string{
 func answering(typ session.Type, payload any) func([]session.Event) error {
 	switch p := payload.(type) {
 	case session.UserToolConfirmation:
-		return awaits(typ, p.ToolUseID, session.AnswerConfirmation)
+		return awaits(typ, cmp.Or(p.ToolUseID, p.ApprovalID), session.AnswerConfirmation)
 	case session.UserToolResult:
 		return awaits(typ, p.ToolUseID, session.AnswerResult)
 	case session.UserAnswer:
@@ -241,7 +247,9 @@ func answering(typ session.Type, payload any) func([]session.Event) error {
 
 // awaits refuses a confirmation or a client tool's result that answers
 // no call waiting for it: a call never asked, already answered, denied by
-// a person's message, or of the other kind.
+// a person's message, or of the other kind. A confirmation of an
+// approval_id answers an approval.requested that asks and that nothing
+// answered (spec 052).
 func awaits(typ session.Type, toolUseID string, want session.Answer) func([]session.Event) error {
 	return func(evs []session.Event) error {
 		if session.Awaiting(evs)[toolUseID] != want {

@@ -431,7 +431,7 @@ paths:
     post:
       operationId: createSession
       summary: Create a session
-      description: "Create a session of an agent, named by id or by name among the agents of the caller's context. The body's attended, true when a person answers the session's questions through a client that shows them, is the session's from its create on and nothing changes it: an agent's question then waits, the session idle with stop_reason question, until a user.answer, a person's user.message or a user.interrupt closes it, holding no runner while it waits; absent or false, a question is answered at once with outcome unanswered and the agent decides, so a client that shows no questions never meets one. The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable."
+      description: "Create a session of an agent, named by id or by name among the agents of the caller's context. The body's attended, true when a person answers the session's questions through a client that shows them, is the session's from its create on and nothing changes it: an agent's question then waits, the session idle with stop_reason question, until a user.answer, a person's user.message or a user.interrupt closes it, holding no runner while it waits; absent or false, a question is answered at once with outcome unanswered and the agent decides, so a client that shows no questions never meets one. The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. The session's network is what its machine may reach, network {mode, hosts, ask, source}: mode open, allowlist or none, the one the authorizer's allow names with source authorizer, or the agent's spec.machine egressMode with ask false and source agent. Under allowlist the agent's spec.machine.egress, the hosts of the session's named secrets and the git hosts of its repositories are always joined. A web_fetch of a host inside the network runs without asking, its reason \"inside the session's network\"; one outside it asks, its reason \"outside the session's network\", when ask is true and the session is attended, and is blocked otherwise. The allow may carry the initiator's standing instructions, at most 8192 bytes of UTF-8, which the session records as instructions and its model reads after its agent's own; no send changes them."
       x-topos-actions:
         - session.create
       requestBody:
@@ -480,6 +480,9 @@ paths:
                   max_age: 168h0m0s
                 capture: {}
                 attended: true
+                network:
+                  mode: allowlist
+                  source: agent
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:05:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -561,6 +564,9 @@ paths:
                       max_age: 168h0m0s
                     capture: {}
                     attended: true
+                    network:
+                      mode: allowlist
+                      source: agent
                     created_at: "2026-09-22T12:05:00Z"
                     updated_at: "2026-09-22T12:05:41Z"
                     expires_at: "2026-09-29T12:05:00Z"
@@ -709,6 +715,9 @@ paths:
                         max_age: 168h0m0s
                       capture: {}
                       attended: true
+                      network:
+                        mode: allowlist
+                        source: agent
                       created_at: "2026-09-22T12:05:00Z"
                       updated_at: "2026-09-22T12:05:41Z"
                       expires_at: "2026-09-29T12:05:00Z"
@@ -794,6 +803,9 @@ paths:
                   max_age: 168h0m0s
                 capture: {}
                 attended: true
+                network:
+                  mode: allowlist
+                  source: agent
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:05:41Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -863,6 +875,9 @@ paths:
                   max_age: 168h0m0s
                 capture: {}
                 attended: true
+                network:
+                  mode: allowlist
+                  source: agent
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:10:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -947,6 +962,9 @@ paths:
                   max_age: 168h0m0s
                 capture: {}
                 attended: true
+                network:
+                  mode: allowlist
+                  source: agent
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:20:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -1011,6 +1029,9 @@ paths:
                   max_age: 168h0m0s
                 capture: {}
                 attended: true
+                network:
+                  mode: allowlist
+                  source: agent
                 parent:
                   session_id: ses_01M34G2JF01B91B8399CD1G6YP
                   seq: 5
@@ -1075,6 +1096,9 @@ paths:
                   max_age: 168h0m0s
                 capture: {}
                 attended: true
+                network:
+                  mode: allowlist
+                  source: agent
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:20:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -1137,6 +1161,9 @@ paths:
                   max_age: 168h0m0s
                 capture: {}
                 attended: true
+                network:
+                  mode: allowlist
+                  source: agent
                 created_at: "2026-09-22T12:05:00Z"
                 updated_at: "2026-09-22T12:20:00Z"
                 expires_at: "2026-09-29T12:05:00Z"
@@ -1199,6 +1226,9 @@ paths:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
                 capture: {}
+                network:
+                  mode: allowlist
+                  source: agent
                 created_at: "2026-09-22T12:03:00Z"
                 updated_at: "2026-09-22T12:28:00Z"
                 expires_at: "2026-09-29T12:03:00Z"
@@ -1242,7 +1272,7 @@ paths:
     post:
       operationId: sendEvent
       summary: Send a user event
-      description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes. The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: session.model_changed {by, old, new}, each {name, via, reasoning}, is then appended straight before the event, its by the service {subject: service:authorizer, kind: service} and not the sender, the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level, unless the model cannot serve: on a session whose model has a via, a model the gateway answers upstream_error, provider_unavailable or upstream_timeout is not retried, and the authorizer is asked session.update as the session's initiator, with session_id, model the via, current_model and current_model_via the model that failed and its via, failed_model the model that failed, and failed_detail the gateway's developer detail of the failure when it sent one, at most 1024 bytes; the turn then continues on the model the allow names, after session.model_changed {by, old, new, reason, detail} by the service with reason model_busy (\"The model was busy, so another one answered.\"), at most 3 times a turn. A model an allow names that cannot be connected counts as one of those moves: the next question names it as failed_model, beside the model the session stands on as current_model, with why it could not be connected as failed_detail. A turn that cannot move retries such a model once, a second later, and a turn that still fails ends with session.error model_busy (\"The model is busy right now. Send your message again in a moment.\"). A request the gateway answers upstream_rejected at a 4xx, the provider's refusal of the request and not the gateway's own, asks the same question with failed_reason \"rejected\" and failed_detail the gateway's code and its developer detail, and moves the turn as one of those moves when the allow names another model; an allow that names none, a deny, and a turn that cannot move end the turn at once with session.error model_error and the gateway's sentence. The gateway's own refusals, such as invalid_request, model_not_allowed, rate_limited and budget_exhausted, ask nothing. A model the installation does not run refuses the send as model_unknown or model_unavailable. A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. A user.answer answers the session's open question, the agent.tool_use named question that nothing closed, of which there is at most one; its payload is a UserAnswer, {tool_use_id, answers}, one entry {selected, text} per question in the questions' order: selected the chosen labels, text the person's own words of at most 2000 characters. An entry with text alone answers in the person's words, one with both is a choice and a note on it, an empty entry leaves its question to the agent, and an answer of empty entries leaves every question to it. For example {\"type\":\"user.answer\",\"payload\":{\"tool_use_id\":\"toolu_01\",\"answers\":[{\"selected\":[\"SQLite\"],\"text\":\"we have nobody to run a second schema\"},{}]}}. It is asked of the authorizer as session.send with event_type user.answer, and its shape is checked before that question, as invalid_request. After the allow, an answer that names no open question is conflict, the detail saying what closed the question; one with another number of entries than questions, a label that is no option of its question or one named twice, or several labels on a question that does not take several, is invalid_request. Nothing is appended for a refused answer. An answer is final once appended: the reply and the stream carry it, and a correction is a message. The runner renders it into the call's tool.result, outcome ok, or unanswered when every entry is empty, with a QuestionResultMeta."
+      description: "The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most 8 of at most 5242880 bytes each), and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most 8 of at most 5242880 bytes each, the name one path segment of at most 255 bytes). The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most 8388608 bytes. The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: session.model_changed {by, old, new}, each {name, via, reasoning}, is then appended straight before the event, its by the service {subject: service:authorizer, kind: service} and not the sender, the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level, unless the model cannot serve: on a session whose model has a via, a model the gateway answers upstream_error, provider_unavailable or upstream_timeout is not retried, and the authorizer is asked session.update as the session's initiator, with session_id, model the via, current_model and current_model_via the model that failed and its via, failed_model the model that failed, and failed_detail the gateway's developer detail of the failure when it sent one, at most 1024 bytes; the turn then continues on the model the allow names, after session.model_changed {by, old, new, reason, detail} by the service with reason model_busy (\"The model was busy, so another one answered.\"), at most 3 times a turn. A model an allow names that cannot be connected counts as one of those moves: the next question names it as failed_model, beside the model the session stands on as current_model, with why it could not be connected as failed_detail. A turn that cannot move retries such a model once, a second later, and a turn that still fails ends with session.error model_busy (\"The model is busy right now. Send your message again in a moment.\"). A request the gateway answers upstream_rejected at a 4xx, the provider's refusal of the request and not the gateway's own, asks the same question with failed_reason \"rejected\" and failed_detail the gateway's code and its developer detail, and moves the turn as one of those moves when the allow names another model; an allow that names none, a deny, and a turn that cannot move end the turn at once with session.error model_error and the gateway's sentence. The gateway's own refusals, such as invalid_request, model_not_allowed, rate_limited and budget_exhausted, ask nothing. A model the installation does not run refuses the send as model_unknown or model_unavailable. A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. The allow may also name the session's network {mode, hosts, ask}: session.network_changed {added, removed, mode, ask, source: authorizer} is then appended straight before the event, and the session's machine runs the new network before a call of the turn runs on it; the hosts a person allowed in the session stay. A command's connection the gateway refused outside the session's network appends approval.requested {approval_id, tool_use_id, source: egress, destination {host, port}, reason \"connection outside the session's network\", verdict, more} after the call's result, at most 3 per call, more counting the further hosts on the last; verdict ask, in an attended session whose network asks, idles the session with tool_confirmation, and block records it with nothing waiting. A user.tool_confirmation names exactly one of tool_use_id, a call that waits, and approval_id, an approval.requested that asks and that nothing answered, and remember is invalid_request with approval_id. An allow widens the session's network to the host for the rest of the session, appending session.network_changed {added, source: person, approval_id} and approval.decided {approval_id, decision, by, note}; a deny, or a person's user.message in place of an answer, appends approval.decided with deny, and the host is not asked again in the session. An allowed web_fetch outside the network widens it the same way before it runs, with tool_use_id; a widening Cella refuses closes the call with session.error network_unavailable and changes nothing. A user.answer answers the session's open question, the agent.tool_use named question that nothing closed, of which there is at most one; its payload is a UserAnswer, {tool_use_id, answers}, one entry {selected, text} per question in the questions' order: selected the chosen labels, text the person's own words of at most 2000 characters. An entry with text alone answers in the person's words, one with both is a choice and a note on it, an empty entry leaves its question to the agent, and an answer of empty entries leaves every question to it. For example {\"type\":\"user.answer\",\"payload\":{\"tool_use_id\":\"toolu_01\",\"answers\":[{\"selected\":[\"SQLite\"],\"text\":\"we have nobody to run a second schema\"},{}]}}. It is asked of the authorizer as session.send with event_type user.answer, and its shape is checked before that question, as invalid_request. After the allow, an answer that names no open question is conflict, the detail saying what closed the question; one with another number of entries than questions, a label that is no option of its question or one named twice, or several labels on a question that does not take several, is invalid_request. Nothing is appended for a refused answer. An answer is final once appended: the reply and the stream carry it, and a correction is a message. The runner renders it into the call's tool.result, outcome ok, or unanswered when every entry is empty, with a QuestionResultMeta."
       x-topos-actions:
         - session.send
         - session.interrupt

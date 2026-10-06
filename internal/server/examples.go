@@ -193,6 +193,7 @@ func examples() (map[string]example, error) {
 		Policy:    &session.Policy{Mode: "confirm", Thresholds: session.Thresholds{FlagAt: 0.3, AskAt: 0.5, BlockAt: 0.9}},
 		Limits:    session.Limits{TurnTimeout: session.DefaultTurnTimeout.String(), MaxAge: session.DefaultMaxAge.String()},
 		Attended:  true,
+		Network:   &session.Network{Mode: session.NetworkAllowlist, Source: session.NetworkFromAgent},
 		CreatedAt: exampleTime(12, 5, 0),
 		UpdatedAt: exampleTime(12, 5, 0),
 		ExpiresAt: exampleTime(12, 5, 0).Add(session.DefaultMaxAge),
