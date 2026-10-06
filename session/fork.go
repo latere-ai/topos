@@ -14,7 +14,8 @@ import (
 )
 
 // ErrInvalidForkPoint is a fork at a sequence that is not a turn
-// boundary, or of a session that has none (spec 017).
+// boundary, or of a session that has none (spec 017), or before an event
+// that is no person's message that opened a turn (spec 054).
 var ErrInvalidForkPoint = errors.New("session: invalid_fork_point")
 
 // ForkPoint is the sequence a fork copies a log to: at when it names a

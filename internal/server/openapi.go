@@ -156,9 +156,23 @@ var (
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{"false", "true", "any"}}}}}
 )
 
+// rootParam, parentParam and groupParam read a session's fork tree
+// from the list (spec 054); a search and a summary take none of them.
+var (
+	rootParam = yaml.MapSlice{{Key: "name", Value: "root"}, {Key: "in", Value: "query"},
+		{Key: "description", Value: "A session's id: that session and every session whose root it is, the sessions of its fork tree when it is the tree's root."},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
+	parentParam = yaml.MapSlice{{Key: "name", Value: "parent"}, {Key: "in", Value: "query"},
+		{Key: "description", Value: "A session's id: the sessions forked from that session, at any sequence."},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
+	groupParam = yaml.MapSlice{{Key: "name", Value: "group"}, {Key: "in", Value: "query"},
+		{Key: "description", Value: "tree lists one session per fork tree, the newest of the tree's sessions the other filters keep, each carrying tree {root, sessions}."},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{string(session.GroupTree)}}}}}
+)
+
 // queryParams are the query parameters of the routes that read any.
 var queryParams = map[string][]yaml.MapSlice{
-	"listSessions": {agentParam, statusParam, runnerParam, archivedParam},
+	"listSessions": {agentParam, statusParam, runnerParam, archivedParam, rootParam, parentParam, groupParam},
 	"searchSessions": {
 		{{Key: "name", Value: "q"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
 			{Key: "description", Value: "The words to search for. Each is found as the start of a word, whatever its case; characters of Han, Hiragana and Katakana typed in a row are found as those characters in a row."},
@@ -283,7 +297,12 @@ var opDescriptions = map[string]string{
 		"its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +
 		NetworkRule,
-	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.",
+	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. " +
+		"A fork names the session it was forked from as parent {session_id, seq} and the session at the top of its fork tree as root; a session no fork made has neither, and its tree is keyed by its own id. " +
+		"root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. " +
+		"root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, " +
+		"carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, " +
+		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request.",
 	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, "+
 		"and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. "+
 		"Markdown's marks and a link's address are not searched, and a message is searched in its first %d bytes. "+
@@ -367,19 +386,32 @@ var opDescriptions = map[string]string{
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
 		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
-	"forkSession": "Start a new session from a session's log at a turn boundary, an ended or expired session included. " +
-		"The body is {\"at_seq\": N, \"attended\": true}, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
+	"forkSession": "Start a new session from a session's log at a turn boundary, or just before a person's message to send an edited message in its place, an ended or expired session included. " +
+		"The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
 		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
 		"or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. " +
-		"Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, " +
-		"the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), " +
+		"Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. " +
+		"before_seq names a user.message of the session's own thread from a person that opened a turn, the last session.status of the session's own thread before it being idle, or none before it, as for the opening message; " +
+		"the fork copies events 1 to before_seq - 1, whatever lies between the turn's end and the message included, such as a change of model, and seq 0, nothing, before the opening message. " +
+		"A message sent while a turn ran, a trigger's, a service's or a redacted one, and any other event, is invalid_fork_point; before_seq beside at_seq is invalid_request. " +
+		"message is a user.message's payload as the send route takes it, {content, attachments}, under the same limits and refusals, sent to the fork in the same call; " +
+		"a file of it is {name, data} as on a send, or {name, blob}, a digest a file a message of the forked session attached names, kept with that message's media type and size without its bytes being sent again; " +
+		"a file with both or neither of data and blob, a blob beside a media_type, and a blob no message of the forked session attaches are invalid_request. " +
+		fmt.Sprintf("A body without a message is at most %d bytes, one with a message at most %d. ", MaxBody, MaxEventBody) +
+		"The answer is the new Session, 201: a new id, parent {session_id, seq}, root, the session at the top of its fork tree, the forked session's root or, where it has none, its id, the same agent version, repositories and capture, " +
+		"title, the body's, none for \"\", or absent the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), " +
 		"status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, " +
 		"and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. " +
 		"Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, " +
-		"so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
-		"recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. " +
-		"A session of an archived agent is conflict. " + ForkKeptFiles,
-	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. ` +
+		"so its first turn has the forked session's history; its spend starts at what the copied model requests cost, which budget.carried_cost_usd_micro holds apart, and its budget holds its own spend alone, spent_cost_usd_micro less carried_cost_usd_micro. " +
+		"With a message the log continues with the message, after any change of model or network the allow of its send made, last_seq is the message's, and the fork runs its turn on it. " +
+		"Its requests carry the tree's root as their prompt cache key, so a provider that keys its cache routes the fork's prefix, which is the forked session's, to that session's cache. " +
+		"The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
+		"recorded as session.machine reason restored; a fork before the opening message has none and starts fresh. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one, " +
+		"and, with a message, session.send of the new session as a send asks it, with model and model_via the model the fork starts on and idle_seconds the whole seconds since the last model request it copied, absent when it copied none. " +
+		"Both are asked before anything is written, and a deny of either is forbidden with nothing written; a send refused after session.fork was allowed is reported to the installation's sink as session.fork of the new id with the refusal's code as outcome, " +
+		"so an authorizer that recorded the fork at its allow closes the record. A session of an archived agent is conflict. " + ForkKeptFiles,
+	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. ` +
 		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, " +
 		"those idle on question, where a question waits for a person's answer, among them; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",

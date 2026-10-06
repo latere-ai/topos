@@ -211,13 +211,16 @@ type creation struct {
 }
 
 // forkOrigin is what a fork starts from: the session forked, the fork
-// point, its log up to that point, which the new session copies, and
-// the model it stood on there, nil for its agent's.
+// point, its log up to that point, which the new session copies, the
+// model it stood on there, nil for its agent's, the fork's title, and
+// the message it is sent in the same call, nil for none (spec 054).
 type forkOrigin struct {
-	parent session.Session
-	seq    uint64
-	events []session.Event
-	model  *session.ModelRef
+	parent  session.Session
+	seq     uint64
+	events  []session.Event
+	model   *session.ModelRef
+	title   string
+	message *forkMessage
 }
 
 // create creates a session of in's agent with q's caller as its
@@ -229,7 +232,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if in.fork != nil {
 		p := in.fork.parent
 		in.agent = p.Agent.ID + "@" + strconv.Itoa(p.Agent.Version)
-		in.resources, in.title, in.metadata, in.capture = p.Resources, continuedTitle(p.Title), p.Metadata, &p.Capture
+		in.resources, in.title, in.metadata, in.capture = p.Resources, in.fork.title, p.Metadata, &p.Capture
 	}
 	name, n, pinned := strings.Cut(in.agent, "@")
 	a, err := store.FindAgent(ctx, s.o.Objects, contextOf(q.caller).subject, name)
@@ -410,7 +413,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess.Network = createdNetwork(limits.Network, cfg.Machine)
 	sess.Instructions = limits.Instructions
 	if f := in.fork; f != nil {
-		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent, f.events)
+		return s.writeFork(ctx, q, sess, cfg, blobs, f)
 	}
 	if err := s.o.Sessions.Create(ctx, sess, blobs); err != nil {
 		return session.Session{}, err
@@ -561,9 +564,14 @@ func lowest(field, requested string, agent, authorizer time.Duration) (time.Dura
 
 // listSessions is GET /sessions, filtered by agent, status, runner and
 // whether a session is archived, leaving archived ones out unless asked,
-// and narrowed to the owners the authorizer's allow names.
+// by fork tree and parent, grouped by tree when asked (spec 054), and
+// narrowed to the owners the authorizer's allow names.
 func (c *call) listSessions() error {
 	limit, cursor, err := c.pageParams()
+	if err != nil {
+		return err
+	}
+	tree, err := treeFilters(c.r.URL.Query())
 	if err != nil {
 		return err
 	}
@@ -571,6 +579,7 @@ func (c *call) listSessions() error {
 	if err != nil {
 		return err
 	}
+	o.Root, o.Parent, o.Group = tree.Root, tree.Parent, tree.Group
 	if none {
 		return c.replyPage([]session.Session{}, "")
 	}
@@ -893,22 +902,35 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 	if err != nil {
 		return session.Session{}, sendChanges{}, err
 	}
+	at, made, err := s.lastRequest(ctx, sess)
+	if err != nil {
+		return session.Session{}, sendChanges{}, err
+	}
+	out, err := s.askSend(ctx, q, sess, cfg, fields, at, made)
+	if err != nil {
+		return session.Session{}, sendChanges{}, err
+	}
+	return sess, out, nil
+}
+
+// askSend asks q's caller session.send about sess, an agent's session of
+// configuration cfg, whose last model request ended at at, made false
+// before its first, and answers the changes the allow made, as sendAs
+// describes. A fork that is sent its message in the same call asks it of
+// the fork's header before the fork is written (spec 054).
+func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg manifest.AgentConfig, fields map[string]any, at time.Time, made bool) (sendChanges, error) {
 	old := standing(sess, cfg)
 	all := maps.Clone(fields)
 	all["model"] = old.Name
 	if old.Via != "" {
 		all["model_via"] = old.Via
 	}
-	at, made, err := s.lastRequest(ctx, sess)
-	if err != nil {
-		return session.Session{}, sendChanges{}, err
-	}
 	if made {
 		all["idle_seconds"] = max(int(s.o.Now().Sub(at)/time.Second), 0)
 	}
 	limits, err := q.limits(ctx, authorizer.ActionSessionSend, sessionResource(sess, all))
 	if err != nil {
-		return session.Session{}, sendChanges{}, err
+		return sendChanges{}, err
 	}
 	// A send's allow may name the session's network, which replaces its
 	// base network before the next turn (spec 052); its instructions are
@@ -918,7 +940,7 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 	if limits.Model != "" && limits.Model != old.Name {
 		m, overlay := cfg.SessionModel(limits.Model)
 		if err := s.runnable(ctx, m, overlay); err != nil {
-			return session.Session{}, sendChanges{}, err
+			return sendChanges{}, err
 		}
 		next.Name, next.Via = limits.Model, cmp.Or(old.Via, old.Name)
 		if next.Via == next.Name {
@@ -929,11 +951,11 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 		next.Effort = cmp.Or(*r, cfg.Effort)
 	}
 	if next == old {
-		return sess, out, nil
+		return out, nil
 	}
 	by := session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}
 	out.model = &session.ModelChanged{By: by, Old: old, New: next}
-	return sess, out, nil
+	return out, nil
 }
 
 // sendChanges are the changes an allow of a send made: the model, nil
@@ -942,6 +964,27 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 type sendChanges struct {
 	model   *session.ModelChanged
 	network *session.NetworkChanged
+}
+
+// events are the changes as the events a send appends before what it
+// sent, each at time at: the model's change, then the network's.
+func (c sendChanges) events(at time.Time) ([]session.Event, error) {
+	var out []session.Event
+	if c.model != nil {
+		changed, err := session.NewEvent(session.TypeModelChanged, *c.model, at)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, changed)
+	}
+	if c.network != nil {
+		changed, err := session.NewEvent(session.TypeNetworkChanged, *c.network, at)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, changed)
+	}
+	return out, nil
 }
 
 // appendSent appends a sent event, after the model and network changes
@@ -953,23 +996,11 @@ type sendChanges struct {
 // event that answers a call is never appended after something else
 // answered it.
 func (s *Server) appendSent(ctx context.Context, id string, changes sendChanges, ev session.Event, check func([]session.Event) error) (session.Event, error) {
-	var batch []session.Event
-	if changes.model != nil {
-		changed, err := session.NewEvent(session.TypeModelChanged, *changes.model, ev.Time)
-		if err != nil {
-			return session.Event{}, err
-		}
-		batch = append(batch, changed)
-	}
-	if changes.network != nil {
-		changed, err := session.NewEvent(session.TypeNetworkChanged, *changes.network, ev.Time)
-		if err != nil {
-			return session.Event{}, err
-		}
-		batch = append(batch, changed)
+	batch, err := changes.events(ev.Time)
+	if err != nil {
+		return session.Event{}, err
 	}
 	batch = append(batch, ev)
-	var err error
 	if check == nil {
 		err = s.appendBatch(ctx, id, batch)
 	} else {

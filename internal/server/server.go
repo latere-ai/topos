@@ -96,6 +96,13 @@ type Options struct {
 	// sandboxes, so a session of an agent that names no machine runs on
 	// one when host sessions are off.
 	Cella bool
+	// Sink receives a mutation the authorizer allowed that the server
+	// then refused, as spec 023's sink envelope carries it: a fork whose
+	// message's session.send was refused after its session.fork was
+	// allowed (spec 054), which an authorizer that recorded the fork at
+	// that allow reads to close the record. Its error is logged and
+	// changes no answer. Nil logs the event.
+	Sink func(ctx context.Context, e SinkEvent) error
 	// Deleted is called after a session is deleted, to remove what the
 	// server keeps for it outside the store, such as a host session's
 	// directories. Nil removes nothing.

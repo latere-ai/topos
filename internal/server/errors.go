@@ -62,7 +62,7 @@ var codes = map[string]struct {
 	CodeFileUnavailable:             {http.StatusConflict, "The file cannot be read now, because the session's machine is not running."},
 	CodeRateLimited:                 {http.StatusTooManyRequests, "Too many requests; wait and try again."},
 	CodeMachineUnavailable:          {http.StatusUnprocessableEntity, "The session's machine is not available here."},
-	CodeInvalidForkPoint:            {http.StatusUnprocessableEntity, "A session is forked only at the end of a turn."},
+	CodeInvalidForkPoint:            {http.StatusUnprocessableEntity, "A session is forked only at the end of a turn, or before a message of yours that started one."},
 	models.CodeUnknown:              {http.StatusUnprocessableEntity, "This server cannot run that model."},
 	models.CodeUnavailable:          {http.StatusServiceUnavailable, "The model's gateway did not answer; try again."},
 	auth.CodeAuthorizerUnavailable:  {http.StatusServiceUnavailable, "The authorizer did not answer; try again."},

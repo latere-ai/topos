@@ -44,8 +44,10 @@ func table() []route {
 			op: "updateSession", summary: "Change a session", status: http.StatusOK, body: MaxBody, handle: (*call).updateSession},
 		{method: http.MethodPost, path: "/sessions/{id}/end", actions: a(authorizer.ActionSessionEnd, authorizer.ActionSessionRead),
 			op: "endSession", summary: "End a session", status: http.StatusOK, body: MaxBody, handle: (*call).endSession},
-		{method: http.MethodPost, path: "/sessions/{id}/fork", actions: a(authorizer.ActionSessionRead, authorizer.ActionSessionFork),
-			op: "forkSession", summary: "Fork a session", status: http.StatusCreated, body: MaxBody, handle: (*call).forkSession},
+		// A fork sent a message in the same call asks session.send of the
+		// fork after session.fork (spec 054).
+		{method: http.MethodPost, path: "/sessions/{id}/fork", actions: a(authorizer.ActionSessionRead, authorizer.ActionSessionFork, authorizer.ActionSessionSend),
+			op: "forkSession", summary: "Fork a session", status: http.StatusCreated, body: MaxEventBody, handle: (*call).forkSession},
 		{method: http.MethodPost, path: "/sessions/{id}/archive", actions: a(authorizer.ActionSessionRead, authorizer.ActionSessionUpdate),
 			op: "archiveSession", summary: "Archive a session", status: http.StatusOK, body: MaxBody, handle: (*call).archiveSession},
 		{method: http.MethodPost, path: "/sessions/{id}/unarchive", actions: a(authorizer.ActionSessionRead, authorizer.ActionSessionUpdate),

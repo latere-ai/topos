@@ -491,7 +491,7 @@ paths:
     get:
       operationId: listSessions
       summary: List sessions
-      description: List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived.
+      description: "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. A fork names the session it was forked from as parent {session_id, seq} and the session at the top of its fork tree as root; a session no fork made has neither, and its tree is keyed by its own id. root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, so a fork moves its tree to the head of the list. A group other than tree is invalid_request."
       x-topos-actions:
         - session.list
       parameters:
@@ -524,6 +524,23 @@ paths:
               - "false"
               - "true"
               - any
+        - name: root
+          in: query
+          description: "A session's id: that session and every session whose root it is, the sessions of its fork tree when it is the tree's root."
+          schema:
+            type: string
+        - name: parent
+          in: query
+          description: "A session's id: the sessions forked from that session, at any sequence."
+          schema:
+            type: string
+        - name: group
+          in: query
+          description: tree lists one session per fork tree, the newest of the tree's sessions the other filters keep, each carrying tree {root, sessions}.
+          schema:
+            type: string
+            enum:
+              - tree
       responses:
         "200":
           description: OK
@@ -577,7 +594,7 @@ paths:
     get:
       operationId: getSessionSummary
       summary: Count sessions
-      description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, those idle on question, where a question waits for a person's answer, among them; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
+      description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, those idle on question, where a question waits for a person's answer, among them; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
       x-topos-actions:
         - session.list
       parameters:
@@ -974,10 +991,11 @@ paths:
     post:
       operationId: forkSession
       summary: Fork a session
-      description: "Start a new session from a session's log at a turn boundary, an ended or expired session included. The body is {\"at_seq\": N, \"attended\": true}, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. The answer is the new Session, 201: a new id, parent {session_id, seq}, the same agent version, repositories and capture, the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, so its first turn has the forked session's history; its spend starts at what the copied model requests cost. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, recorded as session.machine reason restored. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one. A session of an archived agent is conflict. A hosted session that works in a private repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, so its fork restores the fork point's files after the session's sandbox is gone. A repository that a reader with no credential can read, and one whose answer to such a read is not a refusal for want of a credential, is not known private and gets no checkpoint, since whoever reads a repository reads its checkpoints, uncommitted files included. A checkpoint the runner cannot have leaves the fork with its conversation and its repositories, recorded beside its first session.machine as session.error checkpoint_missing."
+      description: "Start a new session from a session's log at a turn boundary, or just before a person's message to send an edited message in its place, an ended or expired session included. The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. before_seq names a user.message of the session's own thread from a person that opened a turn, the last session.status of the session's own thread before it being idle, or none before it, as for the opening message; the fork copies events 1 to before_seq - 1, whatever lies between the turn's end and the message included, such as a change of model, and seq 0, nothing, before the opening message. A message sent while a turn ran, a trigger's, a service's or a redacted one, and any other event, is invalid_fork_point; before_seq beside at_seq is invalid_request. message is a user.message's payload as the send route takes it, {content, attachments}, under the same limits and refusals, sent to the fork in the same call; a file of it is {name, data} as on a send, or {name, blob}, a digest a file a message of the forked session attached names, kept with that message's media type and size without its bytes being sent again; a file with both or neither of data and blob, a blob beside a media_type, and a blob no message of the forked session attaches are invalid_request. A body without a message is at most 1048576 bytes, one with a message at most 8388608. The answer is the new Session, 201: a new id, parent {session_id, seq}, root, the session at the top of its fork tree, the forked session's root or, where it has none, its id, the same agent version, repositories and capture, title, the body's, none for \"\", or absent the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, so its first turn has the forked session's history; its spend starts at what the copied model requests cost, which budget.carried_cost_usd_micro holds apart, and its budget holds its own spend alone, spent_cost_usd_micro less carried_cost_usd_micro. With a message the log continues with the message, after any change of model or network the allow of its send made, last_seq is the message's, and the fork runs its turn on it. Its requests carry the tree's root as their prompt cache key, so a provider that keys its cache routes the fork's prefix, which is the forked session's, to that session's cache. The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, recorded as session.machine reason restored; a fork before the opening message has none and starts fresh. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one, and, with a message, session.send of the new session as a send asks it, with model and model_via the model the fork starts on and idle_seconds the whole seconds since the last model request it copied, absent when it copied none. Both are asked before anything is written, and a deny of either is forbidden with nothing written; a send refused after session.fork was allowed is reported to the installation's sink as session.fork of the new id with the refusal's code as outcome, so an authorizer that recorded the fork at its allow closes the record. A session of an archived agent is conflict. A hosted session that works in a private repository on the git host keeps each turn's checkpoint at that repository, under refs/topos/checkpoints/<session>/latest, so its fork restores the fork point's files after the session's sandbox is gone. A repository that a reader with no credential can read, and one whose answer to such a read is not a refusal for want of a credential, is not known private and gets no checkpoint, since whoever reads a repository reads its checkpoints, uncommitted files included. A checkpoint the runner cannot have leaves the fork with its conversation and its repositories, recorded beside its first session.machine as session.error checkpoint_missing."
       x-topos-actions:
         - session.read
         - session.fork
+        - session.send
       parameters:
         - name: id
           in: path
@@ -988,7 +1006,12 @@ paths:
         content:
           application/json:
             example:
-              at_seq: 5
+              before_seq: 8
+              title: Notes for v1.4.0
+              message:
+                content:
+                  - type: text
+                    text: Add a section for the breaking changes, and one for the fixes.
               attended: true
       responses:
         "201":
@@ -1004,7 +1027,7 @@ paths:
                   version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   bundle: sha256:b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec
-                title: Notes for v1.4.0 (continued)
+                title: Notes for v1.4.0
                 initiator:
                   subject: https://login.example|alice
                   kind: person
@@ -1012,7 +1035,7 @@ paths:
                 status: idle
                 stop_reason: end_turn
                 turn: 1
-                last_seq: 5
+                last_seq: 8
                 machine:
                   kind: cella
                   image: base
@@ -1024,6 +1047,10 @@ paths:
                     block_at: 0.9
                 budget:
                   spent_cost_usd_micro: 1200
+                  carried_cost_usd_micro: 1200
+                model:
+                  name: claude-sonnet-4-5
+                  reasoning: high
                 limits:
                   turn_timeout: 2h0m0s
                   max_age: 168h0m0s
@@ -1034,7 +1061,8 @@ paths:
                   source: agent
                 parent:
                   session_id: ses_01M34G2JF01B91B8399CD1G6YP
-                  seq: 5
+                  seq: 7
+                root: ses_01M34G2JF01B91B8399CD1G6YP
                 created_at: "2026-09-22T12:15:00Z"
                 updated_at: "2026-09-22T12:15:00Z"
                 expires_at: "2026-09-29T12:15:00Z"

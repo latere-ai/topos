@@ -49,17 +49,48 @@ type messageBody struct {
 	Attachments []attachmentBody `json:"attachments,omitempty"`
 }
 
-// attachmentBody is one file as a client sends it.
+// attachmentBody is one file as a client sends it: its bytes as base64
+// data, or, in a fork's message alone, the blob of a file a message of
+// the session forked attached, which the fork keeps without the bytes
+// being sent again (spec 054).
 type attachmentBody struct {
-	Name      string `json:"name"`
-	MediaType string `json:"media_type,omitempty"`
-	Data      string `json:"data"`
+	Name      string         `json:"name"`
+	MediaType string         `json:"media_type,omitempty"`
+	Data      string         `json:"data,omitempty"`
+	Blob      session.Digest `json:"blob,omitempty"`
 }
 
-// file is one attached file checked and decoded, before it is stored.
+// file is one attached file checked and decoded, before it is stored:
+// its bytes, or the blob a message of the session forked names, whose
+// media type and size are that message's record of it.
 type file struct {
 	name, media string
 	data        []byte
+	blob        session.Digest
+	size        int64
+}
+
+// check reads a person's user.message: content or attachments, the
+// content checked by checkContent and the files by checkAttachments,
+// blobs naming the files a message of the session forked attached where
+// a fork's message is read. It answers the message's payload from sender
+// without its files, which are stored once the session is known to take
+// it, and the files.
+func (m messageBody) check(sender session.Sender, blobs bool) (session.UserMessage, []file, error) {
+	if len(m.Content) == 0 && len(m.Attachments) == 0 {
+		return session.UserMessage{}, nil, refuse(CodeInvalidRequest, "a user.message holds content or attachments")
+	}
+	if err := checkContent(m.Content); err != nil {
+		return session.UserMessage{}, nil, err
+	}
+	files, err := checkAttachments(m.Attachments, blobs)
+	if err != nil {
+		return session.UserMessage{}, nil, err
+	}
+	if m.Content == nil {
+		m.Content = []lux.Block{}
+	}
+	return session.UserMessage{Sender: sender, Content: m.Content}, files, nil
 }
 
 // checkContent refuses content that is not text and inline images: an
@@ -112,8 +143,11 @@ func checkContent(blocks []lux.Block) error {
 // bytes without a control or a bidirectional character, no two of one
 // name, base64 data of
 // at most MaxAttachmentBytes, and a media type, the one given or the
-// one the bytes give.
-func checkAttachments(in []attachmentBody) ([]file, error) {
+// one the bytes give. Where blobs is set, as in a fork's message, a file
+// may name a blob in place of its data and no media type, which the
+// fork reads from the message that attached it; a file names exactly
+// one of the two.
+func checkAttachments(in []attachmentBody, blobs bool) ([]file, error) {
 	if len(in) > MaxAttachments {
 		return nil, refuse(CodeInvalidRequest, "a user.message attaches at most %d files", MaxAttachments)
 	}
@@ -127,6 +161,21 @@ func checkAttachments(in []attachmentBody) ([]file, error) {
 			return nil, refuse(CodeInvalidRequest, "attachments[%d]: the message attaches another file named %q", i, a.Name)
 		}
 		names[a.Name] = true
+		switch {
+		case a.Blob != "" && !blobs:
+			return nil, refuse(CodeInvalidRequest, "attachments[%d] names a blob; a message sent to a session attaches its file's data, and only a fork's message keeps a file of the session it forks by its blob", i)
+		case a.Blob != "" && a.Data != "":
+			return nil, refuse(CodeInvalidRequest, "attachments[%d] names both data and a blob; a file is one of the two", i)
+		case a.Blob != "" && a.MediaType != "":
+			return nil, refuse(CodeInvalidRequest, "attachments[%d] names a blob and a media_type; a kept file's media type is the one its message recorded", i)
+		case a.Blob != "" && !a.Blob.Valid():
+			return nil, refuse(CodeInvalidRequest, "attachments[%d]: the blob %q is not a sha256: digest", i, a.Blob)
+		case a.Blob != "":
+			out = append(out, file{name: a.Name, blob: a.Blob})
+			continue
+		case a.Data == "" && blobs:
+			return nil, refuse(CodeInvalidRequest, "attachments[%d] names neither data nor a blob; a file is one of the two", i)
+		}
 		if limit := base64.StdEncoding.EncodedLen(MaxAttachmentBytes); len(a.Data) > limit {
 			return nil, refuse(CodeAttachmentTooLarge, "attachments[%d] is past %d bytes", i, MaxAttachmentBytes)
 		}
@@ -181,4 +230,22 @@ func (c *call) storeAttachments(ctx context.Context, s session.Session, message 
 		out = append(out, session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: d, Path: session.AttachmentPath(message, f.name)})
 	}
 	return out, nil
+}
+
+// attached is each file the user.messages of a log attach, by its blob:
+// the record of the first message that attached it.
+func attached(evs []session.Event) map[session.Digest]session.Attachment {
+	out := map[session.Digest]session.Attachment{}
+	for _, e := range evs {
+		var m session.UserMessage
+		if e.Type != session.TypeUserMessage || e.Redacted() || e.Decode(&m) != nil {
+			continue
+		}
+		for _, a := range m.Attachments {
+			if _, ok := out[a.Blob]; !ok {
+				out[a.Blob] = a
+			}
+		}
+	}
+	return out
 }

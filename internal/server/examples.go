@@ -209,8 +209,13 @@ func examples() (map[string]example, error) {
 	updated.Policy = &session.Policy{Mode: v1.ModeProgressive, Thresholds: created.Policy.Thresholds}
 	updated.LastSeq = 7
 	progressive := v1.ModeProgressive
+	// The fork edits the message sent after the first turn: it copies the
+	// log before it, the model change among it, and runs on the edited
+	// message under the same title (spec 054).
 	forked := turned
-	forked.ID, forked.Title, forked.Parent = exampleForkID, "Notes for v1.4.0 (continued)", &session.Parent{SessionID: exampleSessionID, Seq: 5}
+	forked.ID, forked.Title, forked.Model = exampleForkID, "Notes for v1.4.0", switched.Model
+	forked.Parent, forked.Root, forked.LastSeq = &session.Parent{SessionID: exampleSessionID, Seq: 7}, exampleSessionID, 8
+	forked.Budget.CarriedCostUSDMicro = turned.Budget.SpentCostUSDMicro
 	forked.CreatedAt, forked.UpdatedAt, forked.ExpiresAt = exampleTime(12, 15, 0), exampleTime(12, 15, 0), exampleTime(12, 15, 0).Add(session.DefaultMaxAge)
 	ended := updated
 	ended.Status, ended.StopReason, ended.LastSeq, ended.UpdatedAt = session.StatusEnded, session.StopCompleted, 9, exampleTime(12, 20, 0)
@@ -284,19 +289,20 @@ func examples() (map[string]example, error) {
 		"getSession":        {response: text(turned)},
 		"updateSession":     {request: text(updateBody{Model: &modelChange{Name: &switched.Model.Name, Reasoning: &switched.Model.Effort}, Policy: &policyChange{Mode: &progressive}}), response: text(updated)},
 		"endSession":        {request: text(endBody{Reason: session.StopCompleted}), response: text(ended)},
-		"forkSession":       {request: text(forkBody{AtSeq: &forked.Parent.Seq, Attended: true}), response: text(forked)},
-		"archiveSession":    {response: text(filed)},
-		"unarchiveSession":  {response: text(ended)},
-		"resumeSession":     {request: text(resumeBody{Reason: "budget_raised", MaxCostUSDMicro: resumed.Budget.MaxCostUSDMicro}), response: text(resumed)},
-		"listEvents":        {response: list(first, cursorSeq(first.Seq))},
-		"sendEvent":         {request: text(sendBody{Type: session.TypeUserMessage, Payload: json.RawMessage(text(messageBody{Content: said("Add a section for the breaking changes.")}))}), response: text(sent)},
-		"streamEvents":      {response: frames.String()},
-		"redactEvent":       {request: text(redactBody{Reason: "The message held an access token."})},
-		"applyTrigger":      {request: exampleTriggerManifest, manifest: exampleTriggerYAML, response: text(applied), created: text(newTrigger)},
-		"listTriggers":      {response: list(applied, store.Cursor(exampleTriggerID))},
-		"getTrigger":        {response: text(fired)},
-		"fireTrigger":       {request: text(delivery), response: text(started)},
-		"listFirings":       {response: list(started, store.Cursor(exampleFiringID))},
+		"forkSession": {request: text(forkBody{BeforeSeq: new(forked.Parent.Seq + 1), Title: &forked.Title, Attended: true,
+			Message: &messageBody{Content: said("Add a section for the breaking changes, and one for the fixes.")}}), response: text(forked)},
+		"archiveSession":   {response: text(filed)},
+		"unarchiveSession": {response: text(ended)},
+		"resumeSession":    {request: text(resumeBody{Reason: "budget_raised", MaxCostUSDMicro: resumed.Budget.MaxCostUSDMicro}), response: text(resumed)},
+		"listEvents":       {response: list(first, cursorSeq(first.Seq))},
+		"sendEvent":        {request: text(sendBody{Type: session.TypeUserMessage, Payload: json.RawMessage(text(messageBody{Content: said("Add a section for the breaking changes.")}))}), response: text(sent)},
+		"streamEvents":     {response: frames.String()},
+		"redactEvent":      {request: text(redactBody{Reason: "The message held an access token."})},
+		"applyTrigger":     {request: exampleTriggerManifest, manifest: exampleTriggerYAML, response: text(applied), created: text(newTrigger)},
+		"listTriggers":     {response: list(applied, store.Cursor(exampleTriggerID))},
+		"getTrigger":       {response: text(fired)},
+		"fireTrigger":      {request: text(delivery), response: text(started)},
+		"listFirings":      {response: list(started, store.Cursor(exampleFiringID))},
 	}
 	return out, failed
 }

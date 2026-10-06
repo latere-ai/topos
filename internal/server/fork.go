@@ -4,16 +4,25 @@
 package server
 
 import (
+	"bytes"
+	"context"
+	"maps"
 	"net/http"
+	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
+	"time"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/manifest"
 	"latere.ai/x/topos/session"
 )
 
 // CodeInvalidForkPoint is spec 017's code for a fork at a sequence that
-// is not a turn boundary, or of a session that has none.
+// is not a turn boundary, or of a session that has none, and spec 054's
+// for a fork before an event that is no person's message that opened a
+// turn.
 const CodeInvalidForkPoint = "invalid_fork_point"
 
 // ForkKeptFiles is the fork route's sentence on a hosted session's files
@@ -53,22 +62,62 @@ func continuedTitle(title string) string {
 // forkBody is the body of POST /sessions/{id}/fork; an empty body forks
 // at the last turn boundary. Attended is the fork's own declaration that
 // a person answers its questions: a fork is a session of its own, and
-// its client declares it again (spec 039).
+// its client declares it again (spec 039). BeforeSeq forks before a
+// person's message in place of a turn boundary, Message is the message
+// the fork is sent in the same call, and Title the fork's title in place
+// of its continuation title, "" for none (spec 054).
 type forkBody struct {
-	AtSeq    *uint64 `json:"at_seq,omitempty"`
-	Attended bool    `json:"attended,omitempty"`
+	AtSeq     *uint64      `json:"at_seq,omitempty"`
+	BeforeSeq *uint64      `json:"before_seq,omitempty"`
+	Title     *string      `json:"title,omitempty"`
+	Message   *messageBody `json:"message,omitempty"`
+	Attended  bool         `json:"attended,omitempty"`
+}
+
+// forkMessage is the message a fork is sent in the same call: its
+// payload without its files, and its files, checked, each new one's
+// bytes or a blob of the session forked with that session's record of
+// it.
+type forkMessage struct {
+	payload session.UserMessage
+	files   []file
 }
 
 // forkSession is POST /sessions/{id}/fork (spec 017): a new session of
 // the same agent version whose log starts as a copy of this one's up to
-// a turn boundary, with the caller as its initiator and its own lifetime,
-// budget and credentials. Any session the caller may read is forked, an
-// ended or expired one included; a caller who may not read it hears
-// not_found before anything else.
+// a turn boundary, or up to a person's message the fork replaces (spec
+// 054), with the caller as its initiator and its own lifetime, budget
+// and credentials. Any session the caller may read is forked, an ended
+// or expired one included; a caller who may not read it hears not_found
+// before anything else. A fork sent a message in the same call is asked
+// session.send of after session.fork, before anything is written.
 func (c *call) forkSession() error {
-	var b forkBody
-	if err := c.decodeOptional(&b); err != nil {
+	raw, err := c.body()
+	if err != nil {
 		return err
+	}
+	var b forkBody
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := decodeBody(raw, &b); err != nil {
+			return err
+		}
+	}
+	// The route takes a message's bytes; a body without one is held to
+	// the bound of every other body.
+	if b.Message == nil && len(raw) > MaxBody {
+		return refuse(CodePayloadTooLarge, "a fork without a message is at most %d bytes", MaxBody)
+	}
+	if b.AtSeq != nil && b.BeforeSeq != nil {
+		return refuse(CodeInvalidRequest, "at_seq and before_seq name two fork points; a fork names one")
+	}
+	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
+	var message *forkMessage
+	if b.Message != nil {
+		payload, files, err := b.Message.check(sender, true)
+		if err != nil {
+			return err
+		}
+		message = &forkMessage{payload: payload, files: files}
 	}
 	ctx := c.r.Context()
 	parent, err := c.session(authorizer.ActionSessionRead, nil)
@@ -79,19 +128,123 @@ func (c *call) forkSession() error {
 	if err != nil {
 		return err
 	}
-	seq, err := session.ForkPoint(evs, b.AtSeq)
+	var seq uint64
+	if b.BeforeSeq != nil {
+		seq, err = session.ForkBefore(evs, *b.BeforeSeq)
+	} else {
+		seq, err = session.ForkPoint(evs, b.AtSeq)
+	}
 	if err != nil {
 		return err
 	}
+	if message != nil {
+		if err := message.keep(attached(evs)); err != nil {
+			return err
+		}
+	}
+	title := continuedTitle(parent.Title)
+	if b.Title != nil {
+		title = *b.Title
+	}
 	s, err := c.s.create(ctx, c.asker(), creation{
-		fork:     &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq)},
+		fork:     &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq), title: title, message: message},
 		attended: b.Attended,
-		sender:   session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson},
+		sender:   sender,
 	})
 	if err != nil {
 		return err
 	}
 	return c.replySession(http.StatusCreated, s)
+}
+
+// keep reads the record of each file the message names by blob from
+// kept, the files the session forked attached, and refuses a blob it
+// does not hold.
+func (m *forkMessage) keep(kept map[session.Digest]session.Attachment) error {
+	for i, f := range m.files {
+		if f.blob == "" {
+			continue
+		}
+		a, ok := kept[f.blob]
+		if !ok {
+			return refuse(CodeInvalidRequest, "attachments[%d] names the blob %s, which no message of the session forked attaches", i, f.blob)
+		}
+		m.files[i].media, m.files[i].size = a.MediaType, a.Size
+	}
+	return nil
+}
+
+// events are the message as the events the fork appends after its copy:
+// the changes the allow of its send made, then the message, its files
+// recorded under its event's id, each new file's bytes added to blobs.
+func (m *forkMessage) events(changes sendChanges, now time.Time, blobs map[session.Digest][]byte) ([]session.Event, error) {
+	out, err := changes.events(now)
+	if err != nil {
+		return nil, err
+	}
+	id := session.NewID(session.PrefixEvent)
+	payload := m.payload
+	for _, f := range m.files {
+		a := session.Attachment{Name: f.name, MediaType: f.media, Size: f.size, Blob: f.blob, Path: session.AttachmentPath(id, f.name)}
+		if f.blob == "" {
+			a.Size, a.Blob = int64(len(f.data)), session.DigestOf(f.data)
+			blobs[a.Blob] = f.data
+		}
+		payload.Attachments = append(payload.Attachments, a)
+	}
+	ev, err := session.NewEvent(session.TypeUserMessage, payload, now)
+	if err != nil {
+		return nil, err
+	}
+	ev.ID = id
+	return append(out, ev), nil
+}
+
+// writeFork writes the fork sess of f, with blobs, the agent's. A fork
+// sent a message asks session.send of its header first, with the model
+// it starts on and the whole seconds since the last request it copied,
+// and writes the copy, the changes the allow made and the message as one
+// batch, after which a runner claims it (spec 054). A send refused after
+// the authorizer allowed session.fork writes nothing and is reported to
+// the sink, so an authorizer that recorded the fork at that allow closes
+// the record.
+func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, cfg manifest.AgentConfig, blobs map[session.Digest][]byte, f *forkOrigin) (session.Session, error) {
+	if f.message == nil {
+		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent, f.events)
+	}
+	at, made := lastCopiedRequest(f.events)
+	fields := map[string]any{"sender": q.caller.Subject, "event_type": string(session.TypeUserMessage)}
+	changes, err := s.askSend(ctx, q, sess, cfg, fields, at, made)
+	if err != nil {
+		s.refusedFork(ctx, q, sess, f, err)
+		return session.Session{}, err
+	}
+	all := maps.Clone(blobs)
+	if all == nil {
+		all = map[session.Digest][]byte{}
+	}
+	then, err := f.message.events(changes, s.o.Now(), all)
+	if err != nil {
+		return session.Session{}, err
+	}
+	forked, err := session.Fork(ctx, s.o.Sessions, sess, all, f.parent, f.events, then...)
+	if err != nil {
+		return session.Session{}, err
+	}
+	s.o.Notify()
+	return forked, nil
+}
+
+// lastCopiedRequest is when the last model.request among evs ended, the
+// time its event was appended, on whichever thread it ran; made is false
+// when evs hold none.
+func lastCopiedRequest(evs []session.Event) (at time.Time, made bool) {
+	for _, e := range slices.Backward(evs) {
+		if e.Type == session.TypeModelRequest {
+			return e.Time, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // modelAt is the model a session stood on after the first seq events of
@@ -116,4 +269,15 @@ func modelAt(s session.Session, evs []session.Event, seq uint64) *session.ModelR
 		at, changed = &m.New, true
 	}
 	return at
+}
+
+// treeFilters reads the list's fork tree filters (spec 054): root and
+// parent, each a session's id, which an id of no session matches nothing
+// by, and group, which takes tree alone.
+func treeFilters(q url.Values) (session.ListOptions, error) {
+	o := session.ListOptions{Root: q.Get("root"), Parent: q.Get("parent"), Group: session.Group(q.Get("group"))}
+	if o.Group != "" && o.Group != session.GroupTree {
+		return o, refuse(CodeInvalidRequest, "group is %q; a list groups by tree alone", o.Group)
+	}
+	return o, nil
 }
