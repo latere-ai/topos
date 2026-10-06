@@ -403,3 +403,112 @@ func TestARoutedTurnPassesOverAModelItCannotConnect(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 }
+
+// TestARoutedTurnMovesOffAModelItsProviderRejected: through toposd, a
+// routed session whose first model the gateway answers upstream_rejected,
+// a provider's own 400 over a model it no longer serves, asks the
+// authorizer session.update in the middle of its first turn with
+// failed_model, failed_reason rejected and the gateway's code and detail
+// as failed_detail. The authorizer here answers only a question that
+// names the reason, as one that routes a rejection of a free entry to the
+// next entry does, and the turn is answered by the model it names, with
+// the failed request and the service's change in the log.
+func TestARoutedTurnMovesOffAModelItsProviderRejected(t *testing.T) {
+	const (
+		quick  = "tier/quick"
+		first  = "vendor/free-model"
+		second = "vendor/door-only-model"
+		detail = `upstream status 404: {"error":{"message":"No endpoints found for vendor/free-model.","code":404}}`
+	)
+	vars, s := credentialStubs(t)
+	s.lux.Script(first, luxstub.Reply{Response: ir.Response{Model: first}, Fail: &luxstub.Failure{Status: 400, Times: 99, Detail: detail,
+		Body: `{"type":"error","error":{"type":"upstream_rejected","message":"The provider rejected this request."}}`}})
+	vars["TOPOS_MODELS_URL"] = s.lux.URL()
+	s.lux.Models(bridge.Model{Name: first, ContextWindow: 100_000, MaxOutputTokens: 4_096}, bridge.Model{Name: second, ContextWindow: 100_000, MaxOutputTokens: 4_096})
+	s.lux.Script(second, luxstub.Reply{Response: ir.Response{Model: second, Blocks: []ir.Block{{Type: ir.BlockText, Text: "Answered by the second."}}, StopReason: ir.StopEndTurn}})
+	s.lux.Select(func(key string) []string {
+		if k, ok := s.keys.ByHash(hash(key)); ok && k.Workload == "session" {
+			return []string{first, second}
+		}
+		return nil
+	})
+	az := stub.New(t, stub.WithVocabulary(authorizer.Vocabulary()), stub.WithResourceName(func(r authz.Resource) string { return r.String("failed_reason") }))
+	az.SetRules(
+		stub.Rule{Action: authorizer.ActionSessionCreate, Allow: true, Limits: map[string]any{"model": first}},
+		stub.Rule{Action: authorizer.ActionSessionUpdate, Resource: "rejected", Allow: true, Limits: map[string]any{"model": second}},
+	)
+	vars["TOPOS_AUTHORIZER_URL"], vars["TOPOS_AUTHORIZER_TOKEN"] = az.URL(), az.Token()
+	publicURL, _, stop := startServe(t, vars)
+	send := apiClient(t, publicURL, vars)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: quick\nspec:\n  model: {name: " + quick + "}\n  machine: {kind: cella}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/quick", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"quick","message":"Answer."}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	var sess session.Session
+	if err := json.Unmarshal([]byte(body), &sess); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		_, body := send(http.MethodGet, "/v1/sessions/"+sess.ID, "")
+		if strings.Contains(body, `"turn":1`) && strings.Contains(body, `"status":"idle"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the turn never ended: %s", body)
+		}
+	}
+	_, body = send(http.MethodGet, "/v1/sessions/"+sess.ID+"/events", "")
+	var log struct {
+		Items []session.Event `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &log); err != nil {
+		t.Fatal(err)
+	}
+	var trail []string
+	for _, e := range log.Items {
+		switch e.Type {
+		case session.TypeModelRequest:
+			var p session.ModelRequest
+			if err := e.Decode(&p); err != nil {
+				t.Fatal(err)
+			}
+			trail = append(trail, p.Model+" "+p.Outcome)
+		case session.TypeModelChanged:
+			var p session.ModelChanged
+			if err := e.Decode(&p); err != nil {
+				t.Fatal(err)
+			}
+			if p.By.Kind != session.SenderService || p.Reason != session.ReasonModelBusy || p.Old.Name != first || p.New != (session.ModelRef{Name: second, Via: quick}) ||
+				!strings.Contains(p.Detail, "upstream_rejected") {
+				t.Fatalf("session.model_changed %+v", p)
+			}
+			trail = append(trail, "changed")
+		case session.TypeSessionError:
+			t.Fatalf("the turn ended with %s", e.Payload)
+		}
+	}
+	if got := strings.Join(trail, ", "); got != first+" error, changed, "+second+" ok" {
+		t.Fatalf("the turn's trail is %s", got)
+	}
+	if _, body := send(http.MethodGet, "/v1/sessions/"+sess.ID, ""); !strings.Contains(body, `"model":{"name":"`+second+`","via":"`+quick+`"}`) {
+		t.Fatalf("the session after its turn: %s", body)
+	}
+	var questions []authz.Request
+	for _, r := range az.Requests() {
+		if r.Action == authorizer.ActionSessionUpdate {
+			questions = append(questions, r)
+		}
+	}
+	if len(questions) != 1 || questions[0].Resource.String("failed_model") != first || questions[0].Resource.String("current_model") != first ||
+		questions[0].Resource.String("model") != quick || questions[0].Resource.String("failed_reason") != "rejected" ||
+		questions[0].Resource.String("failed_detail") != "upstream_rejected: "+detail {
+		t.Fatalf("session.update was asked %+v", questions)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+}
