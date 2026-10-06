@@ -148,6 +148,11 @@ type Thresholds struct {
 type Budget struct {
 	MaxCostUSDMicro   *int64 `json:"max_cost_usd_micro,omitempty"`
 	SpentCostUSDMicro int64  `json:"spent_cost_usd_micro"`
+	// CarriedCostUSDMicro is the part of the spend a fork copied from its
+	// parent's log, fixed at the fork, zero on a session no fork made
+	// (spec 054). The session's own spend, which its ceiling holds, is
+	// SpentCostUSDMicro less it.
+	CarriedCostUSDMicro int64 `json:"carried_cost_usd_micro,omitempty"`
 }
 
 // Limits are a session's wall-clock bounds, as Go durations.
@@ -204,10 +209,20 @@ type Capture struct {
 	Requests bool `json:"requests,omitempty"`
 }
 
-// Parent names the session and sequence a forked session started from.
+// Parent names the session and sequence a forked session started from:
+// the session forked and how many of its events the fork copied, 0 for
+// a fork before its opening message (spec 054).
 type Parent struct {
 	SessionID string `json:"session_id"`
 	Seq       uint64 `json:"seq"`
+}
+
+// Tree is a fork tree as a list grouped by tree answers it (spec 054):
+// the id of the session at its top, and how many of its sessions the
+// list keeps under the same filters.
+type Tree struct {
+	Root     string `json:"root"`
+	Sessions int    `json:"sessions"`
 }
 
 // Session is the header of a session. Its status mirrors the last
@@ -252,17 +267,35 @@ type Session struct {
 	// Instructions are the initiator's standing instructions an allow of
 	// the session's create carried (spec 053), which the model reads after
 	// its agent's own; empty for none. No event changes them.
-	Instructions string    `json:"instructions,omitempty"`
-	Parent       *Parent   `json:"parent,omitempty"`
-	TriggerID    string    `json:"trigger_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	Instructions string  `json:"instructions,omitempty"`
+	Parent       *Parent `json:"parent,omitempty"`
+	// Root is the id of the session at the top of this session's fork
+	// tree: its parent's root, or its parent's id where the parent has
+	// none; empty on a session no fork made, whose tree's root is itself
+	// (spec 054). It is fixed at the fork, and names a deleted session as
+	// readily as a live one.
+	Root      string    `json:"root,omitempty"`
+	TriggerID string    `json:"trigger_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	ExpiresAt time.Time `json:"expires_at"`
 	// ArchivedAt is when the session was filed away from the lists, nil
 	// while it is not. Only a store's SetArchived writes it; no event
 	// does, so an ended session's log stays closed (spec 015).
 	ArchivedAt *time.Time        `json:"archived_at,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+	// Tree is set only on the sessions a List grouped by tree answers,
+	// each the one that stands for its tree (spec 054).
+	Tree *Tree `json:"tree,omitempty"`
+}
+
+// TreeRoot is the id that keys s's fork tree: its root, or its own id
+// where it has none.
+func (s Session) TreeRoot() string {
+	if s.Root != "" {
+		return s.Root
+	}
+	return s.ID
 }
 
 // Copied reports whether e is one of the events a fork copied from the

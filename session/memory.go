@@ -116,18 +116,23 @@ func (m *memoryStore) SetArchived(ctx context.Context, id string, at *time.Time)
 // ListPage filters sessions by o and returns one page, newest first, and
 // the cursor of the next page ("" on the last). Stores that list by
 // reading every header share it.
+//
+// A list grouped by tree groups the sessions every filter keeps before
+// it pages, so a cursor names the session that stands for a tree and
+// the page after it starts at the next tree.
 func ListPage(all []Session, o ListOptions) ([]Session, string) {
 	slices.SortFunc(all, func(a, b Session) int { return strings.Compare(b.ID, a.ID) })
 	limit := o.Limit
 	if limit <= 0 {
 		limit = DefaultListLimit
 	}
+	kept := slices.DeleteFunc(all, func(s Session) bool { return !o.keeps(s) })
+	if o.Group == GroupTree {
+		kept = trees(kept)
+	}
 	var page []Session
-	for _, s := range all {
+	for _, s := range kept {
 		if o.Cursor != "" && s.ID >= o.Cursor {
-			continue
-		}
-		if !o.keeps(s) {
 			continue
 		}
 		if len(page) == limit {
@@ -379,6 +384,10 @@ func cloneSession(s Session) Session {
 	if s.Parent != nil {
 		p := *s.Parent
 		s.Parent = &p
+	}
+	if s.Tree != nil {
+		t := *s.Tree
+		s.Tree = &t
 	}
 	if s.ArchivedAt != nil {
 		t := *s.ArchivedAt

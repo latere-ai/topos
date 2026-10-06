@@ -410,7 +410,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess.Network = createdNetwork(limits.Network, cfg.Machine)
 	sess.Instructions = limits.Instructions
 	if f := in.fork; f != nil {
-		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent.ID, f.events)
+		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent, f.events)
 	}
 	if err := s.o.Sessions.Create(ctx, sess, blobs); err != nil {
 		return session.Session{}, err

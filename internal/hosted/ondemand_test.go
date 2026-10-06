@@ -639,7 +639,7 @@ func TestAHostedSessionKeepsItsCheckpointsAtTheGitHost(t *testing.T) {
 		}
 		child := session.New(parent.Agent, parent.Initiator, session.RunnerHosted, parent.Machine, time.Now())
 		child.Resources = parent.Resources
-		if child, err = session.Fork(t.Context(), c.st, child, c.blobs, parent.ID, evs[:seq]); err != nil {
+		if child, err = session.Fork(t.Context(), c.st, child, c.blobs, parent, evs[:seq]); err != nil {
 			t.Fatal(err)
 		}
 		mu.Lock()

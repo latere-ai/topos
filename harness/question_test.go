@@ -946,7 +946,7 @@ func TestAForkAcrossAnOpenQuestion(t *testing.T) {
 			}
 			child := session.New(e.s.Agent, e.s.Initiator, session.RunnerHosted, e.s.Machine, t0)
 			child.Attended = attended
-			forked, err := session.Fork(ctx, e.store, child, nil, e.s.ID, parent[:at])
+			forked, err := session.Fork(ctx, e.store, child, nil, e.s, parent[:at])
 			if err != nil {
 				t.Fatal(err)
 			}

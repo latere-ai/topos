@@ -36,6 +36,49 @@ func ForkPoint(evs []Event, at *uint64) (uint64, error) {
 	return 0, fmt.Errorf("%w: the session has not finished a turn, so it has no turn boundary to fork at", ErrInvalidForkPoint)
 }
 
+// ForkBefore is the sequence a fork that replaces the person's message
+// at before copies a log to: before - 1 (spec 054). before names a
+// user.message of the session's own thread, not redacted, whose sender
+// is a person, and which opened a turn: the last session.status of the
+// session's own thread before it is idle, whatever its stop reason, or
+// the log holds none, as before the session's opening message, which
+// copies what precedes it, nothing at all when it is the first event. A
+// message sent while a turn ran steered that turn and opened none; a
+// trigger's message is its owner's text, and a service's is no person's
+// to edit; a redacted message's sender is gone with its content.
+func ForkBefore(evs []Event, before uint64) (uint64, error) {
+	if before == 0 || before > uint64(len(evs)) {
+		return 0, fmt.Errorf("%w: before_seq %d names no event of the log, which ends at %d", ErrInvalidForkPoint, before, len(evs))
+	}
+	e := evs[before-1]
+	if e.Type != TypeUserMessage || e.Thread != "" {
+		return 0, fmt.Errorf("%w: before_seq %d is a %s, not a user.message of the session's own thread", ErrInvalidForkPoint, before, e.Type)
+	}
+	if e.Redacted() {
+		return 0, fmt.Errorf("%w: the user.message at before_seq %d is redacted", ErrInvalidForkPoint, before)
+	}
+	var m UserMessage
+	if err := e.Decode(&m); err != nil {
+		return 0, fmt.Errorf("%w: the user.message at before_seq %d: %w", ErrInvalidForkPoint, before, err)
+	}
+	switch m.Sender.Kind {
+	case SenderPerson:
+	case SenderTrigger:
+		return 0, fmt.Errorf("%w: the user.message at before_seq %d is a trigger's, whose text is its owner's and is not edited", ErrInvalidForkPoint, before)
+	default:
+		return 0, fmt.Errorf("%w: the user.message at before_seq %d is from a %q sender, not a person", ErrInvalidForkPoint, before, m.Sender.Kind)
+	}
+	for _, prev := range slices.Backward(evs[:before-1]) {
+		if p, ok := ownStatus(prev); ok {
+			if p.Status != StatusIdle {
+				return 0, fmt.Errorf("%w: the user.message at before_seq %d was sent while the session was %s, so it opened no turn", ErrInvalidForkPoint, before, p.Status)
+			}
+			break
+		}
+	}
+	return before - 1, nil
+}
+
 // boundaries marks the turn boundaries of a log (spec 017): each
 // session.status of the session's own thread that is idle, whatever its
 // stop reason, since the session takes its next input there, and each
@@ -101,16 +144,22 @@ func restate(e Event) (Event, error) {
 	return e, nil
 }
 
-// Fork writes child as a fork of the session parent at the end of
-// events, that session's log from 1 to the fork point: child with its
-// parent link, the blobs given (the agent's) and every blob of parent's
-// the events name, then the events as one batch, ids, times, turns and
+// Fork writes child as a fork of parent at the end of events, parent's
+// log from 1 to the fork point, followed by then, the events the fork
+// starts with, such as a person's message that replaces the one after
+// the fork point (spec 054): child with its parent link, its tree's root
+// and the copied spend, the blobs given (the agent's, and a new
+// message's files) and every blob of parent's the events and then name,
+// then the copy and then as one batch, the copy's ids, times, turns and
 // steps kept and the session id child's, a fork point that is an end
 // restated as idle end_turn. The store's header takes the fork point's
-// status, the copied spend and the last model switch from the batch. A
-// copy that fails deletes child, so no half-copied session remains.
-func Fork(ctx context.Context, st Store, child Session, blobs map[Digest][]byte, parent string, events []Event) (Session, error) {
-	child.Parent = &Parent{SessionID: parent, Seq: uint64(len(events))}
+// status, the spend and the last model switch from the batch. A write
+// that fails deletes child, so no half-copied session remains, and no
+// fork without the message it was made for.
+func Fork(ctx context.Context, st Store, child Session, blobs map[Digest][]byte, parent Session, events []Event, then ...Event) (Session, error) {
+	child.Parent = &Parent{SessionID: parent.ID, Seq: uint64(len(events))}
+	child.Root = parent.TreeRoot()
+	child.Budget.CarriedCostUSDMicro = Spent(events)
 	all := maps.Clone(blobs)
 	if all == nil {
 		all = map[Digest][]byte{}
@@ -122,13 +171,13 @@ func Fork(ctx context.Context, st Store, child Session, blobs map[Digest][]byte,
 		}
 		events = append(events[:n-1:n-1], last)
 	}
-	copied := make([]Event, len(events))
-	for i, e := range events {
+	batch := make([]Event, 0, len(events)+len(then))
+	for _, e := range slices.Concat(events, then) {
 		for _, d := range e.Blobs() {
 			if _, ok := all[d]; ok {
 				continue
 			}
-			b, err := readBlob(ctx, st, parent, d)
+			b, err := readBlob(ctx, st, parent.ID, d)
 			if errors.Is(err, ErrNotFound) {
 				// A digest-shaped string in a payload is not always a blob
 				// of the session, as a digest a tool printed is not.
@@ -140,14 +189,15 @@ func Fork(ctx context.Context, st Store, child Session, blobs map[Digest][]byte,
 			all[d] = b
 		}
 		e.SessionID = child.ID
-		copied[i] = e
+		batch = append(batch, e)
 	}
+	Stamp(child.ID, uint64(len(events)), batch[len(events):])
 	if err := st.Create(ctx, child, all); err != nil {
 		return Session{}, err
 	}
-	if len(copied) > 0 {
-		if _, err := st.Append(ctx, child.ID, 0, copied); err != nil {
-			return Session{}, errors.Join(fmt.Errorf("session: copy the log of %s: %w", parent, err), st.Delete(context.WithoutCancel(ctx), child.ID))
+	if len(batch) > 0 {
+		if _, err := st.Append(ctx, child.ID, 0, batch); err != nil {
+			return Session{}, errors.Join(fmt.Errorf("session: copy the log of %s: %w", parent.ID, err), st.Delete(context.WithoutCancel(ctx), child.ID))
 		}
 	}
 	return st.Get(ctx, child.ID)

@@ -117,9 +117,25 @@ type ListOptions struct {
 	// Archived keeps sessions by whether they are archived; the zero
 	// value keeps both, as every caller inside the server lists.
 	Archived Archived
-	Limit    int
-	Cursor   string
+	// Root, when set, keeps that session and every session whose root it
+	// is; Parent, when set, keeps the sessions forked from that session,
+	// at any sequence (spec 054).
+	Root, Parent string
+	// Group, when GroupTree, answers one session per fork tree of those
+	// the other filters keep: the newest, carrying Tree. The list then
+	// orders and pages by the id of the session that stands for each
+	// tree.
+	Group  Group
+	Limit  int
+	Cursor string
 }
+
+// Group is how a List groups the sessions it keeps.
+type Group string
+
+// GroupTree groups a List by fork tree (spec 054); the zero Group lists
+// every session on its own.
+const GroupTree Group = "tree"
 
 // Archived selects sessions by their archived_at.
 type Archived string
@@ -217,7 +233,32 @@ func (o ListOptions) keeps(s Session) bool {
 		(len(o.Agents) == 0 || slices.Contains(o.Agents, s.Agent.ID)) &&
 		(len(o.Owners) == 0 || slices.Contains(o.Owners, s.Initiator.Subject)) &&
 		(o.Runner == "" || s.Runner == o.Runner) &&
-		o.Archived.Keeps(s)
+		o.Archived.Keeps(s) &&
+		(o.Root == "" || s.ID == o.Root || s.Root == o.Root) &&
+		(o.Parent == "" || s.Parent != nil && s.Parent.SessionID == o.Parent)
+}
+
+// trees groups sessions by fork tree (spec 054): of each tree's sessions
+// in all, the one with the greatest id, which ids give as the newest,
+// carrying the tree's root and how many of all are of it, in the order
+// all is in. all is sorted newest first.
+func trees(all []Session) []Session {
+	count := map[string]int{}
+	for _, s := range all {
+		count[s.TreeRoot()]++
+	}
+	var out []Session
+	for _, s := range all {
+		root := s.TreeRoot()
+		n, ok := count[root]
+		if !ok {
+			continue
+		}
+		delete(count, root)
+		s.Tree = &Tree{Root: root, Sessions: n}
+		out = append(out, s)
+	}
+	return out
 }
 
 // Archive sets s's archived_at to at, or clears it for nil, and reports

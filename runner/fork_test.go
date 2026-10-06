@@ -51,7 +51,7 @@ func forkParent(t *testing.T, f *fixture) (session.Session, string, session.Chec
 		t.Fatal(err)
 	}
 	child := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
-	child, err = session.Fork(ctx, f.store, child, nil, f.s.ID, evs[:seq])
+	child, err = session.Fork(ctx, f.store, child, nil, f.s, evs[:seq])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestAnEndOnIdleSessionForksAtItsTurn(t *testing.T) {
 		t.Fatalf("the fork point is %d, %v; want the end at %d", seq, err, len(evs))
 	}
 	child := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
-	if child, err = session.Fork(ctx, f.store, child, nil, parent.ID, evs[:seq]); err != nil {
+	if child, err = session.Fork(ctx, f.store, child, nil, parent, evs[:seq]); err != nil {
 		t.Fatal(err)
 	}
 	if child.Status != session.StatusIdle || child.StopReason != session.StopEndTurn {
@@ -375,7 +375,7 @@ func forkFromRepository(t *testing.T, f *fixture, url, fork string) (session.Ses
 	}
 	child := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
 	child.Resources = []session.Resource{{Type: session.ResourceRepository, URL: fork}}
-	if child, err = session.Fork(ctx, f.store, child, nil, parent.ID, evs[:seq]); err != nil {
+	if child, err = session.Fork(ctx, f.store, child, nil, parent, evs[:seq]); err != nil {
 		t.Fatal(err)
 	}
 	f.works[child.ID] = filepath.Join(base, "fork-"+child.ID)

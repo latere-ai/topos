@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -50,6 +51,9 @@ func Run(t *testing.T, open Open) {
 		{"Delete", testDelete},
 		{"List", testList},
 		{"ListFilters", testListFilters},
+		{"ListByRoot", testListByRoot},
+		{"ListByParent", testListByParent},
+		{"ListGroupedByTree", testListGroupedByTree},
 		{"Archive", testArchive},
 		{"Summary", testSummary},
 		{"SearchMatches", testSearchMatches},
@@ -918,5 +922,154 @@ func testUnknownType(t *testing.T, st session.Store) {
 	}
 	if len(tr.Messages) != 1 {
 		t.Fatalf("the unknown event rendered: %d messages", len(tr.Messages))
+	}
+}
+
+// forest creates sessions in three fork trees and a fork whose tree's
+// root was deleted before it was read (spec 054), newest last: a, the
+// root of b and c, which b's fork d joins; x alone; y and its fork z;
+// and w, a fork of a session no longer in the store. d is of another
+// initiator than the rest.
+func forest(t *testing.T, st session.Store) map[string]session.Session {
+	t.Helper()
+	out := map[string]session.Session{}
+	gone := session.NewID(session.PrefixSession)
+	for _, c := range []struct{ name, parent, root string }{
+		{"a", "", ""}, {"x", "", ""}, {"b", "a", "a"}, {"y", "", ""}, {"c", "a", "a"}, {"z", "y", "y"}, {"d", "b", "a"}, {"w", "gone", "gone"},
+	} {
+		s := NewSession()
+		id := func(name string) string {
+			if name == "gone" {
+				return gone
+			}
+			return out[name].ID
+		}
+		if c.parent != "" {
+			s.Parent, s.Root = &session.Parent{SessionID: id(c.parent), Seq: 8}, id(c.root)
+		}
+		if c.name == "d" {
+			s.Initiator.Subject = "usr_2"
+		}
+		if err := st.Create(t.Context(), s, nil); err != nil {
+			t.Fatal(err)
+		}
+		got, err := st.Get(t.Context(), s.ID)
+		if err != nil || got.Root != s.Root || (got.Parent == nil) != (s.Parent == nil) {
+			t.Fatalf("%s reads back with root %q, parent %+v, %v", c.name, got.Root, got.Parent, err)
+		}
+		out[c.name] = s
+	}
+	return out
+}
+
+// listed pages through what o lists at several page sizes and answers
+// the names of the sessions, and, grouped by tree, each one's tree.
+func listed(t *testing.T, st session.Store, o session.ListOptions, names map[string]session.Session) []string {
+	t.Helper()
+	byID := map[string]string{}
+	for name, s := range names {
+		byID[s.ID] = name
+	}
+	var first []string
+	for _, limit := range []int{1, 2, 0} {
+		var got []string
+		cursor := ""
+		for range 20 {
+			o.Limit, o.Cursor = limit, cursor
+			page, next, err := st.List(t.Context(), o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range page {
+				item := byID[s.ID]
+				if (s.Tree != nil) != (o.Group == session.GroupTree) {
+					t.Fatalf("%s carries tree %+v in a list grouped %q", item, s.Tree, o.Group)
+				}
+				if s.Tree != nil {
+					root := byID[s.Tree.Root]
+					if root == "" {
+						root = "gone"
+					}
+					item += fmt.Sprintf("(%s %d)", root, s.Tree.Sessions)
+				}
+				got = append(got, item)
+			}
+			if next == "" {
+				break
+			}
+			cursor = next
+		}
+		if first != nil && !slices.Equal(got, first) {
+			t.Fatalf("pages of %d list %v, of another size %v", limit, got, first)
+		}
+		first = got
+	}
+	if first == nil {
+		first = []string{}
+	}
+	return first
+}
+
+func testListByRoot(t *testing.T, st session.Store) {
+	f := forest(t, st)
+	for _, c := range []struct {
+		name string
+		o    session.ListOptions
+		want []string
+	}{
+		{"a tree", session.ListOptions{Root: f["a"].ID}, []string{"d", "c", "b", "a"}},
+		{"its owner's sessions of it", session.ListOptions{Root: f["a"].ID, Owners: []string{"usr_1"}}, []string{"c", "b", "a"}},
+		{"a fork, which is no root", session.ListOptions{Root: f["b"].ID}, []string{"b"}},
+		{"a session alone", session.ListOptions{Root: f["x"].ID}, []string{"x"}},
+		{"a deleted root", session.ListOptions{Root: f["w"].Root}, []string{"w"}},
+		{"no session", session.ListOptions{Root: session.NewID(session.PrefixSession)}, []string{}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := listed(t, st, c.o, f); !slices.Equal(got, c.want) {
+				t.Fatalf("listed %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func testListByParent(t *testing.T, st session.Store) {
+	f := forest(t, st)
+	for _, c := range []struct {
+		name string
+		o    session.ListOptions
+		want []string
+	}{
+		{"a root's forks", session.ListOptions{Parent: f["a"].ID}, []string{"c", "b"}},
+		{"a fork's fork", session.ListOptions{Parent: f["b"].ID}, []string{"d"}},
+		{"in a tree", session.ListOptions{Parent: f["b"].ID, Root: f["a"].ID}, []string{"d"}},
+		{"within the owners", session.ListOptions{Parent: f["b"].ID, Owners: []string{"usr_1"}}, []string{}},
+		{"a session no one forked", session.ListOptions{Parent: f["x"].ID}, []string{}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := listed(t, st, c.o, f); !slices.Equal(got, c.want) {
+				t.Fatalf("listed %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func testListGroupedByTree(t *testing.T, st session.Store) {
+	f := forest(t, st)
+	for _, c := range []struct {
+		name string
+		o    session.ListOptions
+		want []string
+	}{
+		{"every tree by its newest", session.ListOptions{Group: session.GroupTree}, []string{"w(gone 1)", "d(a 4)", "z(y 2)", "x(x 1)"}},
+		{"within the owners", session.ListOptions{Group: session.GroupTree, Owners: []string{"usr_1"}}, []string{"w(gone 1)", "z(y 2)", "c(a 3)", "x(x 1)"}},
+		{"one tree", session.ListOptions{Group: session.GroupTree, Root: f["a"].ID}, []string{"d(a 4)"}},
+		{"a parent's forks", session.ListOptions{Group: session.GroupTree, Parent: f["a"].ID}, []string{"c(a 2)"}},
+		{"nothing kept", session.ListOptions{Group: session.GroupTree, Owners: []string{"usr_z"}}, []string{}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := listed(t, st, c.o, f); !slices.Equal(got, c.want) {
+				t.Fatalf("listed %v, want %v", got, c.want)
+			}
+		})
 	}
 }

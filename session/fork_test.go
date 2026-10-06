@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/ir"
+	"latere.ai/x/pkg/llmdialect/lux"
+
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/storetest"
 )
@@ -144,7 +147,7 @@ func TestAForkRestatesTheEndOfItsTurn(t *testing.T) {
 	copied := slices.Clone(logged[:seq])
 	child := storetest.NewSession()
 	child.ID = session.NewID(session.PrefixSession)
-	child, err = session.Fork(ctx, st, child, nil, parent.ID, copied)
+	child, err = session.Fork(ctx, st, child, nil, parent, copied)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,5 +187,153 @@ func TestAForkRestatesTheEndOfItsTurn(t *testing.T) {
 	parentNow, err := st.Get(ctx, parent.ID)
 	if err != nil || parentNow.Status != session.StatusEnded || parentNow.StopReason != session.StopCompleted {
 		t.Fatalf("the parent is %+v, %v", parentNow, err)
+	}
+}
+
+// edited is a log of two turns of a person's messages, each answered,
+// with a model change the person made between the first turn's end and
+// the second message, a message steered into the second turn, a
+// trigger's message, a service's, and a subagent thread's: the events
+// ForkBefore reads a fork point from.
+func edited(t *testing.T) []session.Event {
+	t.Helper()
+	at := time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC)
+	message := func(text, kind, thread string) session.Event {
+		e, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{
+			Sender: session.Sender{Subject: "usr_1", Kind: kind}, Content: []lux.Block{{Type: ir.BlockText, Text: text}},
+		}, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Thread = thread
+		return e
+	}
+	changed, err := session.NewEvent(session.TypeModelChanged, session.ModelChanged{
+		By: session.Sender{Subject: "usr_1", Kind: session.SenderPerson}, Old: session.ModelRef{Name: "small"}, New: session.ModelRef{Name: "large"},
+	}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost := int64(700)
+	request, err := session.NewEvent(session.TypeModelRequest, session.ModelRequest{Model: "small", CostUSDMicro: &cost}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := []session.Event{
+		message("Plan it for three people.", session.SenderPerson, ""), // 1
+		storetest.Status(t, session.StatusRunning, "", at),             // 2
+		request, // 3
+		storetest.Status(t, session.StatusIdle, session.StopEndTurn, at), // 4
+		changed, // 5
+		message("And the budget?", session.SenderPerson, ""),               // 6
+		storetest.Status(t, session.StatusRunning, "", at),                 // 7
+		message("In euros.", session.SenderPerson, ""),                     // 8
+		message("Look up prices.", session.SenderPerson, "thr_researcher"), // 9
+		storetest.Status(t, session.StatusIdle, session.StopEndTurn, at),   // 10
+		message("Weekly report.", session.SenderTrigger, ""),               // 11
+		storetest.Status(t, session.StatusRunning, "", at),                 // 12
+		storetest.Status(t, session.StatusIdle, session.StopEndTurn, at),   // 13
+		message("A service's note.", session.SenderService, ""),            // 14
+	}
+	session.Stamp(session.NewID(session.PrefixSession), 0, evs)
+	return evs
+}
+
+// TestForkBeforeAMessage: a person's message that opened a turn is a
+// fork point, the copy ending just before it with whatever lies between
+// the turn's end and the message, a model change included; the opening
+// message copies nothing.
+func TestForkBeforeAMessage(t *testing.T) {
+	evs := edited(t)
+	for _, c := range []struct {
+		before, want uint64
+	}{{1, 0}, {6, 5}} {
+		got, err := session.ForkBefore(evs, c.before)
+		if err != nil || got != c.want {
+			t.Errorf("ForkBefore(%d) = %d, %v; want %d", c.before, got, err, c.want)
+		}
+	}
+}
+
+// TestBeforeSeqMustOpenATurn: a message steered into a running turn, a
+// thread's message, a trigger's, a service's, a redacted one, an event
+// that is no message, and a sequence outside the log are no fork point.
+func TestBeforeSeqMustOpenATurn(t *testing.T) {
+	evs := edited(t)
+	redacted := slices.Clone(evs)
+	tomb, _, err := session.Tombstone(redacted[5], uint64(len(redacted)), session.Sender{Subject: "usr_1", Kind: session.SenderPerson}, "", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	redacted[5] = tomb
+	for _, c := range []struct {
+		name   string
+		log    []session.Event
+		before uint64
+	}{
+		{"none", evs, 0},
+		{"past the log", evs, uint64(len(evs)) + 1},
+		{"a status", evs, 4},
+		{"a model change", evs, 5},
+		{"a message steered into a turn", evs, 8},
+		{"a thread's message", evs, 9},
+		{"a trigger's message", evs, 11},
+		{"a service's message", evs, 14},
+		{"a redacted message", redacted, 6},
+	} {
+		if got, err := session.ForkBefore(c.log, c.before); !errors.Is(err, session.ErrInvalidForkPoint) {
+			t.Errorf("%s, before_seq %d: %d, %v; want invalid_fork_point", c.name, c.before, got, err)
+		}
+	}
+}
+
+// TestRootOfAFork: a fork's root is its parent's id when the parent is
+// no fork, and its parent's root when it is, so a fork of a fork stays
+// in the first session's tree; its carried spend is the copy's, and a
+// message it starts with lands in the same append after the copy.
+func TestRootOfAFork(t *testing.T) {
+	ctx := t.Context()
+	st := session.NewMemoryStore()
+	evs := edited(t)
+	top := storetest.NewSession()
+	if err := st.Create(ctx, top, nil); err != nil {
+		t.Fatal(err)
+	}
+	session.Stamp(top.ID, 0, evs)
+	if _, err := st.Append(ctx, top.ID, 0, evs); err != nil {
+		t.Fatal(err)
+	}
+	if top.Root != "" || top.TreeRoot() != top.ID {
+		t.Fatalf("a session no fork made has root %q, tree %q", top.Root, top.TreeRoot())
+	}
+	replacement, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{
+		Sender: session.Sender{Subject: "usr_1", Kind: session.SenderPerson}, Content: []lux.Block{{Type: ir.BlockText, Text: "And the budget for four?"}},
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := session.Fork(ctx, st, storetest.NewSession(), nil, top, evs[:5], replacement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch {
+	case child.Root != top.ID || child.Parent.SessionID != top.ID || child.Parent.Seq != 5:
+		t.Fatalf("the fork's root %q, parent %+v", child.Root, child.Parent)
+	case child.LastSeq != 6 || child.Budget.CarriedCostUSDMicro != 700 || child.Budget.SpentCostUSDMicro != 700:
+		t.Fatalf("the fork is at %d, carried %d, spent %d", child.LastSeq, child.Budget.CarriedCostUSDMicro, child.Budget.SpentCostUSDMicro)
+	case child.Model == nil || child.Model.Name != "large" || child.Status != session.StatusIdle || child.StopReason != session.StopEndTurn:
+		t.Fatalf("the fork stands on %+v, %s %s", child.Model, child.Status, child.StopReason)
+	}
+	got, err := st.Events(ctx, child.ID, 6, 0)
+	if err != nil || len(got) != 1 || got[0].ID != replacement.ID || got[0].SessionID != child.ID {
+		t.Fatalf("the fork's message: %+v, %v", got, err)
+	}
+	grandchild, err := session.Fork(ctx, st, storetest.NewSession(), nil, child, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grandchild.Root != top.ID || grandchild.Parent.SessionID != child.ID || grandchild.Parent.Seq != 0 || grandchild.LastSeq != 0 ||
+		grandchild.Status != session.StatusIdle || grandchild.StopReason != "" || grandchild.Turn != 0 || grandchild.Budget.CarriedCostUSDMicro != 0 {
+		t.Fatalf("a fork of the fork that copies nothing: %+v", grandchild)
 	}
 }
