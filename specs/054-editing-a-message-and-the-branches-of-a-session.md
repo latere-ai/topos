@@ -225,7 +225,7 @@ any count.
 |---|---|
 | `root=<ses_id>` | that session and every session whose `root` it is |
 | `parent=<ses_id>` | the sessions forked from that session, whatever their `parent.seq` |
-| `group=tree` | one session per tree: of a tree's sessions the list keeps, the one whose `updated_at` is latest, ties by the greater id; each item carries `tree`, below |
+| `group=tree` | one session per tree: of a tree's sessions the list keeps, the newest, the one with the greatest id (ids sort by their creation time); each item carries `tree`, below |
 
 ```json
 {"items": [
@@ -242,9 +242,10 @@ any count.
 `group` takes `tree` alone; any other value is `invalid_request`. The
 grouped list orders its items as the list does, newest id first, by the
 id of the session that stands for each tree, and pages by that id. The
-session that stands for a tree can change between two pages when
-another of its sessions is updated; a client that reads the list again
-sees the tree once. `root`, `parent` and `group` combine with each other
+session that stands for a tree changes only when a fork is made in it,
+which moves the tree to the head of the list; a client that reads the
+list again sees the tree once. A client that opens a conversation from
+the grouped list opens its newest fork. `root`, `parent` and `group` combine with each other
 and with the other filters. `GET /v1/sessions/summary` takes none of
 them and counts sessions, as today.
 
@@ -257,7 +258,7 @@ sessions lists `?group=tree`.
 
 | Store | Change |
 |---|---|
-| Postgres | migration `0008_session_tree`: `parent_id text`, `parent_seq bigint`, `root_id text` on `sessions`; indexes `sessions_root (root_id, id DESC) WHERE root_id IS NOT NULL` and `sessions_parent (parent_id, id DESC) WHERE parent_id IS NOT NULL`; the columns are written from the body at insert, and an update sets them only where the body names them, never clearing one (Roll order). `root` filters on `(id = $1 OR root_id = $1)`; `group=tree` is a `DISTINCT ON (COALESCE(root_id, id))` over the filtered rows ordered by `updated_at DESC, id DESC`, ordered again by id and paged by it |
+| Postgres | migration `0008_session_tree`: `parent_id text`, `parent_seq bigint`, `root_id text` on `sessions`; indexes `sessions_root (root_id, id DESC) WHERE root_id IS NOT NULL` and `sessions_parent (parent_id, id DESC) WHERE parent_id IS NOT NULL`; the columns are written from the body at insert, and an update sets them only where the body names them, never clearing one (Roll order). `root` filters on `(id = $1 OR root_id = $1)`; `group=tree` is a `DISTINCT ON (COALESCE(root_id, id))` over the filtered rows ordered by `id DESC`, ordered again by that id and paged by it |
 | directory and memory | filter and group the headers they read for a list, as they filter today |
 
 The migration backfills `parent_id` and `parent_seq` from each body's
@@ -386,8 +387,9 @@ No new code.
 | The replacement message | in the fork's body, asked as a send before anything is written | a fork, then a send: two calls, and a failure between them leaves a branch with no edited message |
 | A file of the original message | named by its blob | uploaded again by the client: the bytes are already the parent's, and a large file doubles the call |
 | How branches are read | `root` on the Session, with `root`, `parent` and `group` filters | `parent` alone: a client walks one call per level; a route of its own per session: one more contract for what a filter answers |
-| The session that stands for a tree | the one updated last | the newest fork: a person who goes back to an older version and goes on there expects to find that version |
-| A fork's budget | its own spend against its own cap | the whole log against its cap, as today: a fork of an expensive session stops at once though nothing was spent |
+| The session that stands for a tree | the newest fork, decided 2026-10-06, reversible | the one updated last: a person who went back to an older version and went on there would find it, but the tree moves in the list with every message, and a page boundary can show it twice |
+| A trigger's message | not editable: `before_seq` naming it is `invalid_fork_point`; decided 2026-10-06, reversible | editable as a person's: a scheduled task's text is its owner's, and an edit makes a one-off variant of it |
+| A fork's budget | its own spend against its own cap, an edit's fork and a fork that continues an ended session alike; decided 2026-10-06, reversible | the whole log against its cap, as today: a fork of an expensive session stops at once though nothing was spent, and a continued session would keep today's shorter run |
 | The cache key | the tree's root | the session id: forks never share a cached prefix in a dialect that keys its cache; a key per fork point: a key per conversation is what a dialect that takes one asks for |
 
 ## Not in this spec
@@ -436,7 +438,7 @@ the server.
 | An attachment that names a blob of the parent's messages is copied and recorded under the new message's id; a digest the parent's messages do not name is refused | `internal/server.TestAForkMessageKeepsAnAttachmentByBlob` | not built |
 | `title` sets the fork's title, `""` gives none, absent keeps the continuation title | `internal/server.TestForkTitle` | not built |
 | A fork's `root` is its parent's root or its parent's id; a session no fork made has none | `session.TestRootOfAFork`, `internal/server.TestForkRoot` | not built |
-| `root`, `parent` and `group=tree` answer as the table says in every store, inside the list's other filters and the authorizer's owners, and `tree.sessions` counts only what the list keeps | `session/storetest` conformance rows `ListByRoot`, `ListByParent`, `ListGroupedByTree`, run by the memory, directory and Postgres stores | not built |
+| `root`, `parent` and `group=tree` answer as the table says in every store, inside the list's other filters and the authorizer's owners; `group=tree` stands each tree by its newest session; `tree.sessions` counts only what the list keeps | `session/storetest` conformance rows `ListByRoot`, `ListByParent`, `ListGroupedByTree`, run by the memory, directory and Postgres stores | not built |
 | The migration backfills `parent_id`, `parent_seq` and `root_id`, and writes `root` into the bodies of existing forks | `internal/store/postgres.TestMigrationBackfillsTheTree` (postgres tier) | not built |
 | Deleting a session in the middle of a tree leaves its forks readable, with `root` and `parent` unchanged, and they still list under `root` | `internal/server.TestDeletingAParentLeavesItsForks` | not built |
 | A fork's budget check counts only the fork's own spend: a fork of a session that spent past the fork's cap runs its first request | `harness.TestAForksBudgetCountsItsOwnSpend` | not built |
@@ -446,12 +448,7 @@ the server.
 
 ## Open questions
 
-1. Which version a conversation opens on: the session updated last
-   (picked here, so a person who went back to an older version finds
-   it) or the newest fork.
-2. Whether a trigger's message may be edited as a person's is. A
-   scheduled task's text is its owner's, and an edit would make a
-   one-off variant of it; this spec refuses it.
-3. Whether the fork's own-spend rule should also apply to a fork that
-   continues an ended session. It does here, so a continued session
-   runs longer before its cap than it does today.
+None. The draft's three questions, which version a conversation opens
+on, whether a trigger's message is editable, and whether a continued
+session counts only its own spend, are decided above (2026-10-06,
+reversible).
