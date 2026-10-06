@@ -6,8 +6,11 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // SchemaVersion is the schema of every Session and Event this package
@@ -272,6 +275,30 @@ func (s Session) Copied(e Event) bool {
 
 // MaxMetadata is the most entries a session's metadata holds.
 const MaxMetadata = 32
+
+// MaxTitleLength is the most characters a title a person changes a
+// session's title to holds (spec 054).
+const MaxTitleLength = 200
+
+// CheckTitle reports why a title a person changes a session's title to
+// cannot be one, "" when it can: empty, longer than MaxTitleLength
+// characters, or holding a control character or a line or paragraph
+// separator, which would break the line a list shows it on. The title is
+// checked as given; trimming it is the caller's.
+func CheckTitle(title string) string {
+	switch n := utf8.RuneCountInString(title); {
+	case n == 0:
+		return "the title is empty"
+	case n > MaxTitleLength:
+		return fmt.Sprintf("the title is %d characters, more than %d", n, MaxTitleLength)
+	}
+	for _, r := range title {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return fmt.Sprintf("the title holds the control character %U", r)
+		}
+	}
+	return ""
+}
 
 // New returns a Session with the schema, a fresh id, the given agent and
 // initiator, status idle, and the default limits applied from now.

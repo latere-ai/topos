@@ -35,6 +35,7 @@ const (
 	TypeScopeChanged         Type = "session.scope_changed"
 	TypeModelChanged         Type = "session.model_changed"
 	TypePolicyChanged        Type = "session.policy_changed"
+	TypeTitleChanged         Type = "session.title_changed"
 	TypeSessionResumed       Type = "session.resumed"
 	TypeSessionError         Type = "session.error"
 	TypeMemoryAttached       Type = "memory.attached"
@@ -54,7 +55,7 @@ var Known = map[Type]bool{
 	TypeUserToolResult: true, TypeUserAnswer: true, TypeAgentMessage: true, TypeAgentToolUse: true,
 	TypeToolResult: true, TypeThreadStarted: true, TypeThreadEnded: true,
 	TypeThreadMessage: true, TypeContextCompacted: true, TypeModelRequest: true,
-	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypePolicyChanged: true, TypeSessionResumed: true,
+	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypePolicyChanged: true, TypeTitleChanged: true, TypeSessionResumed: true,
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
@@ -476,6 +477,15 @@ type PolicyChanged struct {
 	By  Sender    `json:"by"`
 	Old PolicyRef `json:"old"`
 	New PolicyRef `json:"new"`
+}
+
+// TitleChanged is the payload of session.title_changed: the title the
+// session had, empty for one created without a title, and the one it has
+// (spec 054).
+type TitleChanged struct {
+	By  Sender `json:"by"`
+	Old string `json:"old"`
+	New string `json:"new"`
 }
 
 // PolicyRef is what a session.policy_changed names of a session's

@@ -475,3 +475,63 @@ func TestAwaitingAndRedactable(t *testing.T) {
 		}
 	}
 }
+
+// TestApplyBatchFoldsATitleChange: the header takes the new title of the
+// last session.title_changed and keeps its update time; a fork's copied
+// change and a redacted one move nothing, and the event is not
+// redactable (spec 054).
+func TestApplyBatchFoldsATitleChange(t *testing.T) {
+	by := Sender{Subject: "https://login.example|alice", Kind: SenderPerson}
+	rename := func(seq uint64, from, to string, at time.Time) Event {
+		t.Helper()
+		e, err := NewEvent(TypeTitleChanged, TitleChanged{By: by, Old: from, New: to}, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = seq
+		return e
+	}
+	e := rename(3, "Notes", "Release notes", t0.Add(time.Hour))
+	if want := `{"by":{"subject":"https://login.example|alice","kind":"person"},"old":"Notes","new":"Release notes"}`; string(e.Payload) != want {
+		t.Fatalf("session.title_changed is %s", e.Payload)
+	}
+	s := Session{Title: "Notes", UpdatedAt: t0, LastSeq: 2}
+	ApplyBatch(&s, []Event{e})
+	if s.Title != "Release notes" || s.LastSeq != 3 || !s.UpdatedAt.Equal(t0) {
+		t.Fatalf("the header after a rename is %q at %d, updated %s", s.Title, s.LastSeq, s.UpdatedAt)
+	}
+	redacted := rename(4, "Release notes", "Gone", t0)
+	redacted.Payload = slices.Clone(tombstone)
+	ApplyBatch(&s, []Event{redacted})
+	if s.Title != "Release notes" {
+		t.Fatalf("a redacted rename moved the title to %q", s.Title)
+	}
+	fork := Session{Title: "Release notes (continued)", Parent: &Parent{SessionID: "ses_parent", Seq: 3}}
+	ApplyBatch(&fork, []Event{rename(3, "Notes", "Release notes", t0)})
+	if fork.Title != "Release notes (continued)" {
+		t.Fatalf("a fork's copied rename moved its title to %q", fork.Title)
+	}
+	ApplyBatch(&fork, []Event{rename(4, "Release notes (continued)", "Mine", t0)})
+	if fork.Title != "Mine" {
+		t.Fatalf("a fork's own rename left its title %q", fork.Title)
+	}
+	if Redactable(TypeTitleChanged) || !Known[TypeTitleChanged] {
+		t.Fatal("session.title_changed is redactable or unknown")
+	}
+}
+
+// TestCheckTitle: a title is refused empty, past MaxTitleLength
+// characters, or with a control character or a line separator, and
+// counted in characters, not bytes.
+func TestCheckTitle(t *testing.T) {
+	for _, ok := range []string{"Notes", strings.Repeat("é", MaxTitleLength), "发布说明", "a b"} {
+		if why := CheckTitle(ok); why != "" {
+			t.Errorf("CheckTitle(%q) = %q", ok, why)
+		}
+	}
+	for _, bad := range []string{"", strings.Repeat("a", MaxTitleLength+1), "a\nb", "a\tb", "a\u0000b", "a b", "a b", "a\u007fb"} {
+		if CheckTitle(bad) == "" {
+			t.Errorf("CheckTitle(%q) passed", bad)
+		}
+	}
+}
