@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/authz"
 
@@ -156,7 +157,7 @@ func TestAModelSwitchIsRefused(t *testing.T) {
 	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "bob", `{"model":{"name":"no-such-model"}}`); a.status != http.StatusNotFound {
 		t.Fatalf("another subject's switch: %d %s", a.status, a.body)
 	}
-	for _, body := range []string{`{}`, `{"model":{"name":""}}`, `{"model":{"name":" x"}}`, `{"model":{"name":"x"},"title":"t"}`} {
+	for _, body := range []string{`{}`, `{"model":{"name":""}}`, `{"model":{"name":" x"}}`, `{"model":{"name":"x"},"color":"t"}`} {
 		if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", body); a.code() != CodeInvalidRequest {
 			t.Fatalf("%s: %d %s", body, a.status, a.body)
 		}
@@ -488,5 +489,205 @@ func TestAModeChangeIsRefused(t *testing.T) {
 	}
 	if len(f.policyEvents(s.ID)) != 0 {
 		t.Fatal("a refused change appended session.policy_changed")
+	}
+}
+
+// titleEvents are a session's session.title_changed events.
+func (f *fixture) titleEvents(id string) []session.TitleChanged {
+	f.t.Helper()
+	var out []session.TitleChanged
+	for _, e := range f.log(id) {
+		if e.Type != session.TypeTitleChanged {
+			continue
+		}
+		var p session.TitleChanged
+		if err := e.Decode(&p); err != nil {
+			f.t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// titled creates a session of reviewer as alice with title.
+func (f *fixture) titled(title string) session.Session {
+	f.t.Helper()
+	a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer","title":"`+title+`","message":"Review main.go."}`)
+	if a.status != http.StatusCreated {
+		f.t.Fatalf("create: %d %s", a.status, a.body)
+	}
+	var s session.Session
+	a.decode(f.t, &s)
+	return s
+}
+
+// TestASessionChangesItsTitle: a title alone asks session.update with the
+// session and the trimmed title, appends session.title_changed from the
+// old title to the new, answers the Session with it and leaves its update
+// time; a change to the title it has appends nothing (spec 054).
+func TestASessionChangesItsTitle(t *testing.T) {
+	now := time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC)
+	clock := now
+	f := newFixture(t, func(o *Options) { o.Now = func() time.Time { return clock } })
+	f.apply("alice", "reviewer", "Review.")
+	s := f.titled("Notes")
+	var fields map[string]any
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			fields = req.Resource.Fields
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	before := f.header(s.ID)
+	clock = now.Add(time.Hour)
+	a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"title":"  Release notes for v1.4.0 "}`)
+	if a.status != http.StatusOK {
+		t.Fatalf("rename: %d %s", a.status, a.body)
+	}
+	if fields["session_id"] != s.ID || fields["title"] != "Release notes for v1.4.0" || fields["model"] != nil || fields["approval_mode"] != nil {
+		t.Fatalf("session.update asked about %v", fields)
+	}
+	var got session.Session
+	a.decode(t, &got)
+	if got.Title != "Release notes for v1.4.0" || got.LastSeq != before.LastSeq+1 || !got.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("the answer is %q at %d, updated %s; was %d, updated %s", got.Title, got.LastSeq, got.UpdatedAt, before.LastSeq, before.UpdatedAt)
+	}
+	changes := f.titleEvents(s.ID)
+	if len(changes) != 1 || changes[0].Old != "Notes" || changes[0].New != "Release notes for v1.4.0" || changes[0].By.Subject != alice {
+		t.Fatalf("session.title_changed %+v", changes)
+	}
+	if stored := f.header(s.ID); stored.Title != "Release notes for v1.4.0" {
+		t.Fatalf("the stored header's title is %q", stored.Title)
+	}
+	if ids := f.listIDs("alice", ""); len(ids) != 1 || ids[0] != s.ID {
+		t.Fatalf("the list after a rename is %v", ids)
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"title":"Release notes for v1.4.0"}`); a.status != http.StatusOK || len(f.titleEvents(s.ID)) != 1 {
+		t.Fatalf("a change to the title it has: %d %s, %d events", a.status, a.body, len(f.titleEvents(s.ID)))
+	}
+	// A session created without a title takes one, from empty.
+	bare := f.create("alice", "reviewer")
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+bare.ID, "alice", `{"title":"发布说明"}`); a.status != http.StatusOK {
+		t.Fatalf("rename an untitled session: %d %s", a.status, a.body)
+	}
+	if changes := f.titleEvents(bare.ID); len(changes) != 1 || changes[0].Old != "" || changes[0].New != "发布说明" {
+		t.Fatalf("session.title_changed of an untitled session %+v", changes)
+	}
+}
+
+// TestATitleChangesWithTheModelAndTheMode: a title beside a model level
+// and a mode is one session.update carrying all three, and one batch
+// whose last event is the title's.
+func TestATitleChangesWithTheModelAndTheMode(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.titled("Notes")
+	var questions []map[string]any
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			questions = append(questions, req.Resource.Fields)
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"model":{"reasoning":"high"},"policy":{"mode":"plan"},"title":"Plan"}`)
+	if a.status != http.StatusOK {
+		t.Fatalf("change: %d %s", a.status, a.body)
+	}
+	if len(questions) != 1 || questions[0]["reasoning"] != "high" || questions[0]["approval_mode"] != "plan" || questions[0]["title"] != "Plan" {
+		t.Fatalf("session.update asked %v", questions)
+	}
+	evs := f.log(s.ID)
+	n := len(evs)
+	if n < 3 || evs[n-3].Type != session.TypeModelChanged || evs[n-2].Type != session.TypePolicyChanged || evs[n-1].Type != session.TypeTitleChanged || !evs[n-3].Time.Equal(evs[n-1].Time) {
+		t.Fatalf("the log ends %+v", evs[max(0, n-3):])
+	}
+	var got session.Session
+	if a.decode(t, &got); got.Title != "Plan" || got.Policy == nil || got.Policy.Mode != "plan" || got.LastSeq != evs[n-1].Seq {
+		t.Fatalf("the answer is %q %+v at %d", got.Title, got.Policy, got.LastSeq)
+	}
+}
+
+// TestATitleChangeIsRefused: an empty, blank, multi-line, control
+// character or overlong title and one that is no string are
+// invalid_request; another person hears not_found; a denied change is
+// forbidden with the authorizer's reason; an ended session is conflict.
+// Each leaves the title and the log as they were.
+func TestATitleChangeIsRefused(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.titled("Notes")
+	before := f.header(s.ID)
+	unchanged := func(what string) {
+		t.Helper()
+		after := f.header(s.ID)
+		if after.Title != "Notes" || after.LastSeq != before.LastSeq || len(f.titleEvents(s.ID)) != 0 {
+			t.Fatalf("%s changed the session: %q at %d from %d", what, after.Title, after.LastSeq, before.LastSeq)
+		}
+	}
+	long := strings.Repeat("a", session.MaxTitleLength+1)
+	for _, body := range []string{`{"title":""}`, `{"title":"   "}`, `{"title":"a\nb"}`, `{"title":"a\tb"}`, `{"title":"a\u0007b"}`, `{"title":"` + long + `"}`, `{"title":5}`, `{"title":null}`, `{"title":"x","color":"red"}`} {
+		if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", body); a.code() != CodeInvalidRequest {
+			t.Errorf("%.40s: %d %s", body, a.status, a.body)
+		}
+	}
+	unchanged("an invalid title")
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"title":"`+strings.Repeat("a", session.MaxTitleLength)+`"}`); a.status != http.StatusOK {
+		t.Fatalf("a title of the most characters: %d %s", a.status, a.body)
+	}
+	f.titled("Other")
+	s = f.titled("Notes")
+	before = f.header(s.ID)
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "bob", `{"title":"Mine"}`); a.status != http.StatusNotFound {
+		t.Fatalf("bob renames alice's session: %d %s", a.status, a.body)
+	}
+	unchanged("another person's change")
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionUpdate {
+			return authz.Decision{Reason: "role_insufficient"}, nil
+		}
+		return (&auth.OwnerPolicy{}).Authorize(t.Context(), req)
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"title":"Denied"}`); a.status != http.StatusForbidden || !strings.Contains(string(a.body), "role_insufficient") {
+		t.Fatalf("a denied change: %d %s", a.status, a.body)
+	}
+	unchanged("a denied change")
+	f.authz.answer = nil
+	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/end", "alice", `{"reason":"completed"}`); a.status != http.StatusOK {
+		t.Fatalf("end: %d %s", a.status, a.body)
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+s.ID, "alice", `{"title":"Late"}`); a.code() != CodeConflict {
+		t.Fatalf("a change of an ended session: %d %s", a.status, a.body)
+	}
+	if got := f.header(s.ID); got.Title != "Notes" || len(f.titleEvents(s.ID)) != 0 {
+		t.Fatalf("a refused change of an ended session left %q", got.Title)
+	}
+}
+
+// TestAForkKeepsItsOwnTitle: a renamed session's fork is titled as the
+// continuation of its new title and keeps that title over the copied
+// rename; a rename of the fork is its own.
+func TestAForkKeepsItsOwnTitle(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	parent := f.titled("Notes")
+	f.turn(parent.ID, 1, "One finding.", 1200)
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+parent.ID, "alice", `{"title":"Release notes"}`); a.status != http.StatusOK {
+		t.Fatalf("rename: %d %s", a.status, a.body)
+	}
+	f.turn(parent.ID, 2, "Two findings.", 1200)
+	r := f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", "")
+	if r.status != http.StatusCreated {
+		t.Fatalf("fork: %d %s", r.status, r.body)
+	}
+	var child session.Session
+	r.decode(t, &child)
+	if child.Title != "Release notes (continued)" || f.header(child.ID).Title != "Release notes (continued)" {
+		t.Fatalf("the fork is titled %q, stored %q", child.Title, f.header(child.ID).Title)
+	}
+	if len(f.titleEvents(child.ID)) != 1 {
+		t.Fatalf("the fork copied %d renames", len(f.titleEvents(child.ID)))
+	}
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+child.ID, "alice", `{"title":"Release notes"}`); a.status != http.StatusOK || f.header(child.ID).Title != "Release notes" {
+		t.Fatalf("rename the fork: %d %s", a.status, a.body)
 	}
 }

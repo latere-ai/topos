@@ -383,11 +383,11 @@ var opDescriptions = map[string]string{
 		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, " +
 		"those idle on question, where a question waits for a person's answer, among them; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",
-	"archiveSession": "The body is empty. An ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, and nothing is appended to its log. " +
-		"An idle or running session is conflict: end it first. Archiving an archived session keeps its archived_at. The route asks session.read, then, of an ended session, session.update with session_id and archived true; a deny is forbidden.",
+	"archiveSession": "The body is empty. An idle or ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, nothing is appended to its log, and an idle one still takes a message, whose turn runs while it stays archived. " +
+		"A running session is conflict: archiving never stops a turn, so interrupt it or wait for it to finish. Archiving an archived session keeps its archived_at. The route asks session.read, then, of a session that is not running, session.update with session_id and archived true; a deny is forbidden.",
 	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",
-	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "reasoning": "<level>"}, "policy": {"mode": "<mode>"}}: the model the session's next turn runs and its reasoning level, either member or both, and the approval mode its next steps decide calls under, one of %s. `+
-		"The body names model, policy or both; any other member is refused. "+
+	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "reasoning": "<level>"}, "policy": {"mode": "<mode>"}, "title": "<title>"}: the model the session's next turn runs and its reasoning level, either member or both, the approval mode its next steps decide calls under, one of %s, and the session's title. `+
+		"The body names model, policy, title or more than one; any other member is refused. "+
 		"A member left out keeps what the session runs. reasoning is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that does not reason ignores it. "+
 		`The level may still be named "effort", its name before reasoning, which is read through every v0.x release and dropped in v1.0; a body that names both with different levels is invalid_request. `+
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+
@@ -400,7 +400,10 @@ var opDescriptions = map[string]string{
 		"A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. "+
 		"It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. "+
 		"The mode holds from the next step, in the turn that runs: a call decided before keeps its verdict, and a call waiting for a confirmation keeps waiting for the person's answer whichever way the mode moved. "+
-		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm.", strings.Join(modes, ", "), strings.Join(v1.Efforts, ", ")),
+		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm. "+
+		"A title is trimmed of surrounding white space, and one that is then empty, longer than %d characters, or holds a control character or a line or paragraph separator is invalid_request. "+
+		"A change of the title asks the same session.update with title, the trimmed title, and appends session.title_changed {by, old, new}, the title the session had, empty when it had none, and the one it has, after the other changes of the same body; the Session's title is the new one and its updated_at does not move. "+
+		"A change to the title the session has appends nothing.", strings.Join(modes, ", "), strings.Join(v1.Efforts, ", "), session.MaxTitleLength),
 }
 
 // operation is one route as the document describes it, with shown as

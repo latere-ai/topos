@@ -95,6 +95,13 @@
 // it under both names, effort and reasoning, through every v0.x release,
 // so an endpoint that reads either name decides it.
 //
+// A session.update also files a session away and names it (spec 054). An
+// archive or an unarchive carries archived, true or false, beside
+// session_id alone. A change of the title carries title, the trimmed
+// title, beside the fields of the rest of the change, and alone when the
+// change names nothing else. Neither reaches a model, and an allow's
+// limits are not read for either.
+//
 // A third member, network, is what the session's machine may reach (spec
 // 052), read on an allow of session.create and of session.send:
 //

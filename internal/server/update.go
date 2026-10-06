@@ -21,11 +21,12 @@ import (
 )
 
 // updateBody is the body of PATCH /sessions/{id}: the fields of the
-// session a request changes, its model and the approval mode of its
-// policy, either or both.
+// session a request changes, its model, the approval mode of its policy
+// and its title, any of them (spec 054).
 type updateBody struct {
 	Model  *modelChange  `json:"model"`
 	Policy *policyChange `json:"policy"`
+	Title  *string       `json:"title,omitempty"`
 }
 
 // policyChange is what a PATCH changes of the session's policy: the
@@ -73,9 +74,11 @@ func (m modelChange) level() *string {
 // the model is checked after the question, by the rule a session's create
 // checks its own by: the one the allow names, or the one asked when it
 // names none. The allow may also answer the level the change runs at
-// (spec 049). An allowed change appends session.model_changed and
-// session.policy_changed in one batch, which the header takes; a change
-// to what the session runs appends nothing.
+// (spec 049). A title, trimmed, is asked as title beside the rest (spec
+// 054). An allowed change appends session.model_changed,
+// session.policy_changed and session.title_changed in one batch, in that
+// order, which the header takes; a change to what the session runs and
+// the title it has appends nothing.
 func (c *call) updateSession() error {
 	var b updateBody
 	if err := c.decode(&b); err != nil {
@@ -121,6 +124,9 @@ func (c *call) updateSession() error {
 		fields["current_approval_mode"] = string(oldMode)
 		fields["agent_approval_mode"] = string(agentMode)
 	}
+	if b.Title != nil {
+		fields["title"] = *b.Title
+	}
 	limits, err := c.askLimits(ctx, authorizer.ActionSessionUpdate, sessionResource(s, fields))
 	if err != nil {
 		return err
@@ -162,6 +168,13 @@ func (c *call) updateSession() error {
 		}
 		batch = append(batch, ev)
 	}
+	if b.Title != nil && *b.Title != s.Title {
+		ev, err := session.NewEvent(session.TypeTitleChanged, session.TitleChanged{By: sender, Old: s.Title, New: *b.Title}, now)
+		if err != nil {
+			return err
+		}
+		batch = append(batch, ev)
+	}
 	if len(batch) == 0 {
 		return c.replySession(http.StatusOK, s)
 	}
@@ -175,10 +188,18 @@ func (c *call) updateSession() error {
 }
 
 // check refuses a body that names nothing to change or a value no
-// session takes, before the session is read.
-func (b updateBody) check() error {
-	if (b.Model == nil || (b.Model.Name == nil && b.Model.level() == nil)) && b.Policy == nil {
-		return refuse(CodeInvalidRequest, `the body names what changes: {"model": {"name": "...", "reasoning": "..."}}, either member or both, {"policy": {"mode": "..."}}, or both`)
+// session takes, before the session is read, and trims the title it
+// names.
+func (b *updateBody) check() error {
+	if (b.Model == nil || (b.Model.Name == nil && b.Model.level() == nil)) && b.Policy == nil && b.Title == nil {
+		return refuse(CodeInvalidRequest, `the body names what changes: {"model": {"name": "...", "reasoning": "..."}}, either member or both, {"policy": {"mode": "..."}}, {"title": "..."}, or more than one`)
+	}
+	if b.Title != nil {
+		title := strings.TrimSpace(*b.Title)
+		if why := session.CheckTitle(title); why != "" {
+			return refuse(CodeInvalidRequest, "title: %s; a title is 1 to %d characters on one line", why, session.MaxTitleLength)
+		}
+		b.Title = &title
 	}
 	if b.Model != nil {
 		if b.Model.Name == nil && b.Model.level() == nil {
