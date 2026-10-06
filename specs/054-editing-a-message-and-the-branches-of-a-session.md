@@ -1,12 +1,12 @@
 ---
 title: "A fork before a person's message, the replacement message in the same call, and the tree of a session's forks read in one list"
-status: drafted
+status: testing
 track: core
 depends_on: [017-external-runners-handoff-fork.md, 038-routed-models.md]
-affects: [session/, harness/, internal/server/, internal/store/postgres/, internal/store/dir/, internal/store/storetest/, session/storetest/, client/, api/openapi.yaml]
+affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, authorizer/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -430,21 +430,22 @@ the server.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A fork with `before_seq` naming a message that opened a turn copies events 1 to `before_seq - 1`, a model change between the boundary and the message included, and its header takes the boundary's status | `session.TestForkBeforeAMessage`, `internal/server.TestAForkBeforeAMessageCopiesUpToIt` | not built |
-| A fork before the session's opening message copies nothing, has `parent.seq` 0, is idle with no stop reason, and opens a fresh machine with no `checkpoint_missing` | `internal/server.TestAForkBeforeTheOpeningMessage`, `runner.TestAForkOfNothingStartsFresh` | not built |
-| `before_seq` naming a message sent while a turn ran, a trigger's message, an answer, or a sequence that is no message is `invalid_fork_point`; with `at_seq` it is `invalid_request` | `session.TestBeforeSeqMustOpenATurn`, `internal/server.TestForkBodyRefusals` | not built |
-| A fork with `message` asks `session.read`, `session.fork` and `session.send` in that order, writes the copy and the message in one batch, and answers the fork with the message's `last_seq`; a deny of either question writes nothing | `internal/server.TestAForkWithAMessage`, `internal/server.TestAForkWhoseSendIsDeniedWritesNothing` | not built |
-| The send of a fork's message carries the fork's model, its `model_via` and the seconds since the last copied request; an allow naming another model appends `session.model_changed` before the message | `internal/server.TestAForksSendCarriesTheCopiedIdle` | not built |
-| An attachment that names a blob of the parent's messages is copied and recorded under the new message's id; a digest the parent's messages do not name is refused | `internal/server.TestAForkMessageKeepsAnAttachmentByBlob` | not built |
-| `title` sets the fork's title, `""` gives none, absent keeps the continuation title | `internal/server.TestForkTitle` | not built |
-| A fork's `root` is its parent's root or its parent's id; a session no fork made has none | `session.TestRootOfAFork`, `internal/server.TestForkRoot` | not built |
-| `root`, `parent` and `group=tree` answer as the table says in every store, inside the list's other filters and the authorizer's owners; `group=tree` stands each tree by its newest session; `tree.sessions` counts only what the list keeps | `session/storetest` conformance rows `ListByRoot`, `ListByParent`, `ListGroupedByTree`, run by the memory, directory and Postgres stores | not built |
-| The migration backfills `parent_id`, `parent_seq` and `root_id`, and writes `root` into the bodies of existing forks | `internal/store/postgres.TestMigrationBackfillsTheTree` (postgres tier) | not built |
-| Deleting a session in the middle of a tree leaves its forks readable, with `root` and `parent` unchanged, and they still list under `root` | `internal/server.TestDeletingAParentLeavesItsForks` | not built |
-| A fork's budget check counts only the fork's own spend: a fork of a session that spent past the fork's cap runs its first request | `harness.TestAForksBudgetCountsItsOwnSpend` | not built |
-| Every request of a fork carries the tree's root as its cache key; a session no fork made carries its own id | `harness.TestTheCacheKeyIsTheTreesRoot` | not built |
-| The fork's first request equals its parent's last request up to the copy's end, byte for byte, when no machine attached in between | `harness.TestAForksPrefixIsItsParents` | not built |
-| The OpenAPI document carries `before_seq`, `message`, `title`, `root`, `carried_cost_usd_micro`, the three list parameters and `tree` | `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestOpenAPIIsGenerated` | not built |
+| A fork with `before_seq` naming a message that opened a turn copies events 1 to `before_seq - 1`, a model change between the boundary and the message included, and its header takes the boundary's status | `session.TestForkBeforeAMessage`, `internal/server.TestAForkBeforeAMessageCopiesUpToIt` | built |
+| A fork before the session's opening message copies nothing, has `parent.seq` 0, is idle with no stop reason, and opens a fresh machine with no `checkpoint_missing` | `internal/server.TestAForkBeforeTheOpeningMessage`, `runner.TestAForkOfNothingStartsFresh` | built |
+| `before_seq` naming a message sent while a turn ran, a trigger's message, an answer, or a sequence that is no message is `invalid_fork_point`; with `at_seq` it is `invalid_request` | `session.TestBeforeSeqMustOpenATurn`, `internal/server.TestForkBodyRefusals` | built |
+| A fork with `message` asks `session.read`, `session.fork` and `session.send` in that order, writes the copy and the message in one batch, and answers the fork with the message's `last_seq`; a deny of either question writes nothing, and a send denied after the fork's allow is reported to the sink as the fork with the deny's code | `internal/server.TestAForkWithAMessage`, `internal/server.TestAForkWhoseSendIsDeniedWritesNothing` | built |
+| The send of a fork's message carries the fork's model, its `model_via` and the seconds since the last copied request; an allow naming another model appends `session.model_changed` before the message | `internal/server.TestAForksSendCarriesTheCopiedIdle` | built |
+| An attachment that names a blob of the parent's messages is copied and recorded under the new message's id; a digest the parent's messages do not name is refused | `internal/server.TestAForkMessageKeepsAnAttachmentByBlob` | built |
+| `title` sets the fork's title, `""` gives none, absent keeps the continuation title | `internal/server.TestForkTitle` | built |
+| A fork's `root` is its parent's root or its parent's id; a session no fork made has none | `session.TestRootOfAFork`, `internal/server.TestForkRoot` | built |
+| `root`, `parent` and `group=tree` answer as the table says in every store, inside the list's other filters and the authorizer's owners; `group=tree` stands each tree by its newest session; `tree.sessions` counts only what the list keeps | `session/storetest` conformance rows `ListByRoot`, `ListByParent`, `ListGroupedByTree`, run by the memory, directory and Postgres stores; `internal/server.TestTheListReadsATree` | built |
+| The migration backfills `parent_id`, `parent_seq` and `root_id`, and writes `root` into the bodies of existing forks | `internal/store/postgres.TestMigrationBackfillsTheTree` (postgres tier) | built |
+| Deleting a session in the middle of a tree leaves its forks readable, with `root` and `parent` unchanged, and they still list under `root` | `internal/server.TestDeletingAParentLeavesItsForks` | built |
+| A fork's budget check counts only the fork's own spend: a fork of a session that spent past the fork's cap runs its first request | `harness.TestAForksBudgetCountsItsOwnSpend` | built |
+| Every request of a fork carries the tree's root as its cache key; a session no fork made carries its own id | `harness.TestTheCacheKeyIsTheTreesRoot` | built |
+| The fork's first request equals its parent's last request up to the copy's end, byte for byte, when no machine attached in between | `harness.TestAForksPrefixIsItsParents` | built |
+| The OpenAPI document carries `before_seq`, `message`, `title`, `root`, `carried_cost_usd_micro`, the three list parameters and `tree` | `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestOpenAPIIsGenerated` | built |
+| A person's edited message runs on a fork through toposd: one call forks before the message with the edit, a runner claims the fork, its request carries the history before the message and the edit and never the original, and the list reads the two sessions as one tree standing by the fork | `cmd/toposd.TestAnEditedMessageRunsOnAFork` | built |
 
 ## Open questions
 
@@ -452,3 +453,63 @@ None. The draft's three questions, which version a conversation opens
 on, whether a trigger's message is editable, and whether a continued
 session counts only its own spend, are decided above (2026-10-06,
 reversible).
+
+## Outcome
+
+Built on 2026-10-07, in no release yet, and not yet run against a live
+authorizer or a model gateway. Every criterion has its test. What
+shipped differs from the draft in these points:
+
+- **The sink is a server option.** The sink of
+  [[023-events-and-observability]], its outbox, signature and delivery,
+  is not built. The server takes a `Sink` function in its options, which
+  receives the refused fork in 023's envelope without the delivery's id
+  and signature: `type` `session.fork`, `object` and `session_id` the id
+  the allow of `session.fork` named, `outcome` the refusal's code, and
+  `attributes` `parent`, `seq`, `refused` (`session.send`) and the
+  deny's `reason` where it is a reason token. toposd configures none and
+  logs the event, so an authorizer that recorded the fork at its allow
+  has no feed to close that record from until 023's delivery is built.
+  Such a record names a session that was never written; toposd mints no
+  credential for it.
+- **Every refusal of the send is reported**, a deny and an
+  authorizer that gave no decision alike, and so is a model the send's
+  allow names that the installation does not run; the outcome is the
+  refusal's code. Nothing is written in any of them.
+- **`message` with any fork point.** A fork at a turn boundary, `at_seq`
+  or none, takes `message` as a fork with `before_seq` does: the copy,
+  the allow's changes and the message in one batch, after the same three
+  questions.
+- **What else `before_seq` refuses.** A redacted message is no fork
+  point, since its sender went with its content; a file naming `blob`
+  beside a `media_type` is `invalid_request`, since a kept file's media
+  type is its message's record; and the send route refuses `blob`, which
+  only a fork's message reads. A body without a message past `MaxBody`
+  is `payload_too_large`; the route itself takes `MaxEventBody`.
+- **The user sentence of `invalid_fork_point`** names both points: "A
+  session is forked only at the end of a turn, or before a message of
+  yours that started one."
+- **The store's update sets the tree columns where the header names
+  them**, `COALESCE` over the column, so a fork an earlier replica
+  inserted without them gains `parent_id` and `parent_seq` at its next
+  append, and its `root_id` waits for the next release's backfill, as
+  the Roll order says. A read fills a header's missing `root` from
+  `root_id`, in a get, a list, a search and under the row lock.
+- **The cache key is the request's.** The harness sets the tree's root
+  as the IR request's `CacheKey`, which
+  `harness.TestTheCacheKeyIsTheTreesRoot` holds. The Messages and
+  Responses encoders the runner sends with do not emit a cache key, as
+  the IR states of every backend, so on those wires the shared prefix is
+  read from the provider's cache by its bytes, which
+  `harness.TestAForksPrefixIsItsParents` holds, and the key reaches a
+  gateway only through a dialect that carries one.
+- **A fork before the opening message reads no checkpoint.** The runner
+  returns before reading the fork's log for one, so a fork that copied
+  nothing opens a fresh machine without a read.
+
+`harness.TestAForksPrefixIsItsParents` and
+`runner.TestAForkOfNothingStartsFresh` hold behavior the core had
+before this spec, and pass without it; every other test fails without
+it. The roll order stands as written: toposd and every runner in one
+release, then the next release's migration repeats the backfill, and
+clients after the first release.

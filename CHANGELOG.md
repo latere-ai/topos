@@ -10,6 +10,61 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A person can edit a message and ask again from that point. `POST
+  /v1/sessions/{id}/fork` takes `before_seq`, the message a person sent
+  that started a turn, and forks just before it: the new session holds
+  the events before the message, a model change the person made after
+  the last answer included, and `before_seq` 1 copies nothing. `message`,
+  the edited message as a send takes it, is sent to the new session in
+  the same call, and a runner starts its turn at once; a file of the
+  original message is kept by naming its `blob`. `title` names the new
+  session, in place of the continuation title. A message sent while a
+  turn ran, a trigger's message, and any other event are
+  `invalid_fork_point`.
+- A fork with a message asks the authorizer `session.read`, then
+  `session.fork`, then `session.send` of the new session, before anything
+  is written; a deny of either writes nothing. A send refused after the
+  fork was allowed is handed to the server's sink option as
+  `session.fork` with the refusal's code as its outcome, and toposd logs
+  it.
+- A session made by a fork carries `root`, the session at the top of its
+  tree of forks, beside `parent`. `GET /v1/sessions` takes `root`, a
+  tree's sessions, `parent`, a session's forks, and `group=tree`, one
+  session per tree, the newest, carrying `tree {root, sessions}`. The
+  summary takes none of them. Postgres keeps `parent_id`, `parent_seq`
+  and `root_id` in columns; migration 0008 adds them and fills them, and
+  `root`, for the forks already stored.
+- `docs/editing-a-message.md`: how a client sends an edited message and
+  shows its versions.
+
+### Changed
+
+- A fork's budget counts its own spend. `budget.carried_cost_usd_micro`
+  is the spend a fork copied from its parent, and the check before each
+  model request holds `spent_cost_usd_micro` less it to the fork's
+  ceiling, so a fork of a session that spent most of its budget runs on
+  its own. This holds for a fork that continues an ended session too.
+- A request's prompt cache key is the session's tree's root, its `root`
+  or its id, so a fork and the session it came from share one key.
+- `invalid_fork_point` says "A session is forked only at the end of a
+  turn, or before a message of yours that started one."
+
+### Upgrading
+
+- Roll toposd and every runner together; the authorizer needs no change.
+  Migration 0008 runs at start, in one transaction. A replica of the
+  earlier release that rewrites a fork's header during the roll drops
+  `root` and `carried_cost_usd_micro`: a read fills `root` from its
+  column, and that fork's budget counts its whole log, as before. A fork
+  such a replica creates during the roll gets its `root` from the next
+  release's migration.
+- Roll clients that edit messages or read trees after the server: an
+  earlier server refuses `before_seq`, `message` and `title` in a fork
+  body as unknown members and ignores the list's `root`, `parent` and
+  `group`.
+
 ## v0.22.0 - 2026-10-07
 
 ### Added

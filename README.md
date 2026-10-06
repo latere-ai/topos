@@ -101,6 +101,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   the contract a search service answers.
 - [docs/searching-sessions.md](docs/searching-sessions.md): finding a
   caller's sessions by what was said in them, and showing the match.
+- [docs/editing-a-message.md](docs/editing-a-message.md): sending an
+  edited message from a point in a conversation, and showing its
+  versions.
 - [docs/network.md](docs/network.md): where a session's sandbox may
   reach, how a person widens it, and the initiator's instructions.
 

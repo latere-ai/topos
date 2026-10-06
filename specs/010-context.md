@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instruc
 affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-06
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -70,7 +70,10 @@ Breakpoints 3 and 4 roll forward with the conversation, so each step's
 request reads the previous step's prefix from the cache and writes its
 own. [[007-models]] expresses them per dialect. The history is only
 appended to, so a prefix, once cached, stays valid until a compaction.
-The session id is the request's cache key, for dialects that take one.
+The request's cache key is the session's fork tree's root, its `root`
+or its id where it has none, so a fork and the session it was forked
+from share one key ([[054-editing-a-message-and-the-branches-of-a-session]]),
+for dialects that take one.
 
 ### Token accounting
 
@@ -163,7 +166,7 @@ encoding and pricing ([[007-models]]).
 |---|---|---|
 | The system prompt renders its parts in the table's order (the harness prompt, the agent's instructions, the context block, each instruction file cut at 64 KiB, the skills index, the memory notes), and a part it does not know renders nothing | `harness.TestSystemBlocksRenderEveryPart` | built |
 | A session that runs by a routed name carries it as the last system part on every request, and one that runs by none carries no such part | `harness.TestTheRequestNamesTheRoute` | built |
-| Breakpoint 2 is on the last system block and breakpoints 3 and 4 on the last blocks of the last two user messages; the request carries the effort, `max_tokens` and the session id as cache key | `harness.TestBreakpointsRollWithTheConversation` | built |
+| Breakpoint 2 is on the last system block and breakpoints 3 and 4 on the last blocks of the last two user messages; the request carries the effort, `max_tokens` and the tree's root as cache key | `harness.TestBreakpointsRollWithTheConversation`, `harness.TestTheCacheKeyIsTheTreesRoot` | built |
 | A session past the threshold clears first and compacts only when clearing is not enough, and the compaction's request is recorded as a `model.request` | `harness.TestClearingOldResultsIsEnough`, `harness.TestSummaryWhenClearingIsNotEnough` | built |
 | Clearing keeps the last ten steps' results and every `todo` result, and a second clearing skips what the first cleared | `harness.TestClearingOldResultsIsEnough`, `harness.TestTodoResultsAreNeverCleared`, `harness.TestASecondClearingSkipsWhatIsCleared` | built |
 | The threshold is `compactAt` of the input window, held between 0.5 and 0.95 | `harness.TestThresholdIsHeldInRange` | built |

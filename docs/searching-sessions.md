@@ -100,5 +100,7 @@ A fork starts with a copy of its parent's events, at the same
 sequences. When a conversation went on in a fork, the fork and the
 session it came from both hold its earlier messages and both match. A
 client that shows a conversation as its newest session keeps the newest
-of the two; the sequence of a match before the fork point names the
-same message in both.
+of the two, and a session's `root` tells which sessions are one
+conversation; the sequence of a match before the fork point names the
+same message in both. [Editing a message](editing-a-message.md) describes a session's
+forks and how a list reads them.

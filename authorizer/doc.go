@@ -151,6 +151,23 @@
 // which an agent's question waits for an answer. Until a client sets
 // attended no session waits on a question and no user.answer is sent.
 //
+// A fork may be sent its first message in the same call, the edit of a
+// person's message (spec 054). toposd then asks session.fork, as for any
+// fork, with session_id the new session's id, parent the session forked
+// and seq the copy's end, 0 for a fork before the session's opening
+// message; and after its allow session.send of the new session, as a
+// send is asked, with model and model_via the model the fork starts on
+// and idle_seconds the whole seconds since the last model request the
+// copy holds, absent when it holds none. The new session is not written
+// until both are allowed: an endpoint that records the sessions it
+// allows has recorded the fork at the allow of session.fork, and answers
+// the send from that record. A send denied after that allow writes
+// nothing, and toposd reports the refusal as an event of spec 023's
+// sink, session.fork of the new session with the deny's code as its
+// outcome, which an endpoint that recorded the fork reads to close the
+// record. A send's allow that names another model or network changes
+// the fork before its message, as on any send.
+//
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
 // verbatim, where an endpoint reads a plan, a team or a role from. The
