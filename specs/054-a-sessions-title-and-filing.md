@@ -1,6 +1,6 @@
 ---
 title: "A session's title and its filing: the title member of PATCH, the session.title_changed event, and an archive of an idle session"
-status: in-progress
+status: testing
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 015-api.md, 017-external-runners-handoff-fork.md, 041-approval-mode-change.md]
 affects: [session/, internal/server/, api/openapi.yaml, docs/]
@@ -118,3 +118,20 @@ invalid resource until it reads the field; the client then hears
 | An empty, blank, control-character or 201-character title, and a title that is no string, are `invalid_request`; a deny is `forbidden`; another person hears `not_found`; an ended session is `conflict`; each leaves the title and the log as they were | `internal/server.TestATitleChangeIsRefused` | built |
 | The header folds the title from the log, and a fork keeps the title its create gave it over its parent's copied changes | `session.TestApplyBatchFoldsATitleChange`, `internal/server.TestAForkKeepsItsOwnTitle` | built |
 | An idle session is archived, takes a message while archived and stays archived; a running one is `conflict` | `internal/server.TestArchiveASession`, `internal/server.TestAnArchiveIsRefused` | built |
+
+## Outcome
+
+Built on 2026-10-06, in no release yet, and not yet run against a live
+authorizer. Every criterion has its test. What shipped differs from the
+draft in these points:
+
+- **The bound counts characters.** `session.CheckTitle` counts runes, so
+  a title in a script of several bytes a character holds as many
+  characters as one in ASCII. A title the JSON decoder read is valid
+  UTF-8 by then, so validity is not checked again.
+- **The update's summary.** The route's summary in the API document is
+  "Change a session", the four words the document's rule allows.
+- **The authorizer's package.** `authorizer`'s documentation names the
+  two fields a filing and a rename carry, so an endpoint written against
+  the package knows them; neither is a limits member, so the vocabulary
+  a mirror holds to a release is unchanged.

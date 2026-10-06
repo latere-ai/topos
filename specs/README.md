@@ -109,7 +109,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [051](.archive/051-a-turn-moves-off-a-model-that-cannot-serve.md) | A turn moves off a model that cannot serve: a gateway's answer that the model is down, or that its provider rejected the request, asks the authorizer for another model inside the turn, one quick retry where none can be had, and an error a client can name | medium | complete | 005, 006, 007, 015, 016, 038, 049 |
 | [052](052-a-sessions-network.md) | A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow | large | testing | 003, 004, 006, 008, 009, 012, 015, 016, 018, 038, 039 |
 | [053](053-the-initiators-instructions.md) | The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, read after the agent's own | small | testing | 004, 006, 010, 011, 015, 038 |
-| [054](054-a-sessions-title-and-filing.md) | A session's title and its filing: the title member of PATCH, session.title_changed, and an archive of an idle session | small | in-progress | 004, 006, 015, 017, 041 |
+| [054](054-a-sessions-title-and-filing.md) | A session's title and its filing: the title member of PATCH, session.title_changed, and an archive of an idle session | small | testing | 004, 006, 015, 017, 041 |
 
 ## Dependency graph
 
