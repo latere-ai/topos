@@ -905,9 +905,11 @@ func (t *turn) interrupted() bool {
 	return false
 }
 
-// checkBudget is the pre-request check of spec 007: the spend so far
-// plus the next request's input, priced at the input rate, against the
-// session's ceiling.
+// checkBudget is the pre-request check of spec 007: the session's own
+// spend so far plus the next request's input, priced at the input rate,
+// against the session's ceiling. A fork's own spend leaves out what it
+// copied from its parent's log, which the parent's ceiling held (spec
+// 054).
 func (t *turn) checkBudget(ctx context.Context) error {
 	max := t.s.Budget.MaxCostUSDMicro
 	if max == nil {
@@ -921,7 +923,7 @@ func (t *turn) checkBudget(ctx context.Context) error {
 		}
 		return t.finish(ctx, session.StopError, models.CodeUnpriced, e)
 	}
-	if session.Spent(t.events())+est >= *max {
+	if session.Spent(t.events())-t.s.Budget.CarriedCostUSDMicro+est >= *max {
 		return t.finish(ctx, session.StopBudget, "")
 	}
 	return nil
@@ -981,7 +983,7 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 	}
 	req, err := buildRequest(requestParts{
 		Model: t.h.c.Connection.Model, System: system, Messages: messages, Tools: defs,
-		MaxTokens: t.maxTokens(), Effort: t.h.c.Effort, CacheKey: t.s.ID,
+		MaxTokens: t.maxTokens(), Effort: t.h.c.Effort, CacheKey: t.s.TreeRoot(),
 		ReasoningReplay: t.h.c.Connection.EffectiveDialect() == ir.DialectOpenAIResponses,
 	})
 	return req, sum, err
