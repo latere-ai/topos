@@ -95,6 +95,39 @@
 // it under both names, effort and reasoning, through every v0.x release,
 // so an endpoint that reads either name decides it.
 //
+// A third member, network, is what the session's machine may reach (spec
+// 052), read on an allow of session.create and of session.send:
+//
+//	"network": {"mode": "allowlist", "hosts": ["example.com", "*.example.org"], "ask": true}
+//
+// mode is open, allowlist or none; hosts are an allowlist's host patterns,
+// each an exact name or one leading "*.", never an address, a port or a
+// single label, at most MaxNetworkHosts; ask makes a first contact with a
+// host outside the network ask the person attending the session, and only
+// an allowlist takes hosts or ask. At a create the session's network is
+// the answer's, and absent it is the agent's spec.machine egressMode with
+// ask false. At a send an answer that names another network than the
+// session's replaces it before the next turn, and the running sandbox is
+// narrowed or widened to it; absent keeps the session's. Under an
+// allowlist the agent's spec.machine.egress, the hosts of the session's
+// named secrets and the git hosts of its repositories are always joined,
+// so a narrow answer never cuts a session off from its model gateway or
+// its repositories; an endpoint that wants no egress answers none. The
+// hosts a person allows in a session stay in its network for the rest of
+// it whatever a later answer names, and a fork does not carry them. A
+// network toposd cannot read is refused as authorizer_unavailable. An
+// endpoint may only answer what the installation's sandbox admission
+// admits: a sandbox admission narrowed runs narrowed.
+//
+// A fourth member, instructions, is the initiator's standing instructions
+// (spec 053): text of at most MaxInitiatorInstructions bytes of valid
+// UTF-8, read on an allow of session.create alone, including the create
+// of a fork. The session records it and the model reads it after its
+// agent's own instructions, in the prompt's cached prefix, so no later
+// answer changes it; a send's answer that carries it is not read. Whose
+// text it is, and in which contexts it applies, is the endpoint's to
+// decide; toposd never parses it.
+//
 // session.send is asked of every event a person sends to a session but
 // an interrupt, and its resource carries the event's type as event_type:
 // user.message, a message; user.tool_confirmation, the allow or deny of

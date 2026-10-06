@@ -5,6 +5,7 @@ package authorizer
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -127,6 +128,96 @@ func TestTheReasoningLevelHasThreeStatesOnTheWire(t *testing.T) {
 		}
 		if (l.Reasoning == nil) != (c.in == nil) || (l.Reasoning != nil && *l.Reasoning != *c.in) {
 			t.Fatalf("%s: decoded to %v", c.name, l.Reasoning)
+		}
+	}
+}
+
+// TestDecodeNetwork: an allow's network is read with its hosts lowercased
+// and sorted, and refused as one toposd cannot apply when its mode is
+// none of the three, it names hosts or ask with a mode other than
+// allowlist, a host is not a name or a "*." pattern, or it names more
+// than MaxNetworkHosts hosts (spec 052).
+func TestDecodeNetwork(t *testing.T) {
+	l, err := DecodeLimits(decision(t, WireLimits{Network: &Network{Mode: "allowlist", Hosts: []string{"Docs.Example.com", "*.example.org", "docs.example.com"}, Ask: true}}))
+	if err != nil || l.Network == nil || l.Network.Mode != "allowlist" || !l.Network.Ask || !slices.Equal(l.Network.Hosts, []string{"*.example.org", "docs.example.com"}) {
+		t.Fatalf("network %+v, %v", l.Network, err)
+	}
+	for _, mode := range []string{"open", "none"} {
+		if l, err := DecodeLimits(decision(t, map[string]any{"network": map[string]any{"mode": mode}})); err != nil || l.Network.Mode != mode || len(l.Network.Hosts) != 0 {
+			t.Fatalf("%s: %+v, %v", mode, l.Network, err)
+		}
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{})); err != nil || l.Network != nil {
+		t.Fatalf("an allow without a network: %+v, %v", l.Network, err)
+	}
+	many := make([]string, MaxNetworkHosts+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("h%d.example.com", i)
+	}
+	for name, n := range map[string]map[string]any{
+		"no mode":         {"hosts": []string{"example.com"}},
+		"a bad mode":      {"mode": "closed"},
+		"hosts with open": {"mode": "open", "hosts": []string{"example.com"}},
+		"hosts with none": {"mode": "none", "hosts": []string{"example.com"}},
+		"ask with open":   {"mode": "open", "ask": true},
+		"ask with none":   {"mode": "none", "ask": true},
+		"a single label":  {"mode": "allowlist", "hosts": []string{"localhost"}},
+		"an address":      {"mode": "allowlist", "hosts": []string{"192.0.2.1"}},
+		"a port":          {"mode": "allowlist", "hosts": []string{"example.com:443"}},
+		"a URL":           {"mode": "allowlist", "hosts": []string{"https://example.com"}},
+		"a bare wildcard": {"mode": "allowlist", "hosts": []string{"*"}},
+		"513 hosts":       {"mode": "allowlist", "hosts": many},
+	} {
+		if _, err := DecodeLimits(decision(t, map[string]any{"network": n})); err == nil {
+			t.Errorf("%s: decoded", name)
+		}
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{Network: &Network{Mode: "allowlist", Hosts: many[:MaxNetworkHosts]}})); err != nil || len(l.Network.Hosts) != MaxNetworkHosts {
+		t.Fatalf("%d hosts: %v", MaxNetworkHosts, err)
+	}
+}
+
+// TestDecodeInstructions: an allow's instructions are read as they are,
+// up to MaxInitiatorInstructions bytes of valid UTF-8, and refused past it
+// or when they are not UTF-8 (spec 053).
+func TestDecodeInstructions(t *testing.T) {
+	text := "Call me Ada. I work on the parser. " + strings.Repeat("ü", 10)
+	if l, err := DecodeLimits(decision(t, WireLimits{Instructions: text})); err != nil || l.Instructions != text {
+		t.Fatalf("instructions %q, %v", l.Instructions, err)
+	}
+	full := strings.Repeat("x", MaxInitiatorInstructions)
+	if l, err := DecodeLimits(decision(t, WireLimits{Instructions: full})); err != nil || len(l.Instructions) != MaxInitiatorInstructions {
+		t.Fatalf("%d bytes: %v", MaxInitiatorInstructions, err)
+	}
+	if _, err := DecodeLimits(decision(t, WireLimits{Instructions: full + "x"})); err == nil {
+		t.Fatal("8 KiB plus one byte decoded")
+	}
+	// encoding/json replaces invalid UTF-8 when it encodes, so the raw
+	// answer carries the bytes as a server that writes them would.
+	raw := []byte(`{"instructions":"bad ` + "\xff\xfe" + ` text"}`)
+	if _, err := DecodeLimits(authz.Decision{Allow: true, Limits: raw}); err == nil {
+		t.Fatal("invalid UTF-8 decoded")
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{})); err != nil || l.Instructions != "" {
+		t.Fatalf("no instructions: %q, %v", l.Instructions, err)
+	}
+}
+
+// TestInstructionsEscapesAreHeldToUTF8: a lone surrogate escape, which
+// encoding/json would read as a replacement character, is refused, and a
+// pair, an escaped backslash and the other escapes are read.
+func TestInstructionsEscapesAreHeldToUTF8(t *testing.T) {
+	for raw, ok := range map[string]bool{
+		`{"instructions":"a 😀 face"}`:             true,
+		`{"instructions":"a \\ud800 text"}`:       true,
+		`{"instructions":"tab\t \"q\" ü"}`:        true,
+		`{"instructions":"lone \ud800 high"}`:     false,
+		`{"instructions":"lone \udc00 low"}`:      false,
+		`{"instructions":"swapped \udc00\ud800"}`: false,
+		`{"instructions":null}`:                   true,
+	} {
+		if _, err := DecodeLimits(authz.Decision{Allow: true, Limits: []byte(raw)}); (err == nil) != ok {
+			t.Errorf("%s: %v", raw, err)
 		}
 	}
 }

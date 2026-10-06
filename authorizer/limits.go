@@ -6,15 +6,40 @@ package authorizer
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"latere.ai/x/pkg/authz"
+	"latere.ai/x/pkg/hostmatch"
 
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/session"
 )
+
+// MaxNetworkHosts is the most hosts a network's hosts name (spec 052).
+const MaxNetworkHosts = 512
+
+// MaxInitiatorInstructions is the longest initiator's instructions an
+// allow of session.create carries, in bytes of UTF-8 (spec 053).
+const MaxInitiatorInstructions = 8 << 10
+
+// Network is a session's network as an allow of session.create or
+// session.send names it (spec 052): a mode, open, allowlist or none; the
+// host patterns of an allowlist, each an exact name or one leading "*.";
+// and whether a first contact with a host outside the network asks the
+// person attending the session, which only an allowlist does.
+type Network struct {
+	Mode  string   `json:"mode"`
+	Hosts []string `json:"hosts,omitempty"`
+	Ask   bool     `json:"ask,omitempty"`
+}
 
 // Thresholds are the progressive permission mode's score cut-offs
 // (spec 012), each a risk score between 0 and 1.
@@ -79,6 +104,14 @@ type Limits struct {
 	// has, one of manifest/v1's Efforts sets it, and a pointer to ""
 	// returns the session to its agent's own.
 	Reasoning *string
+	// Network is the session's network, read where Model is on an allow
+	// of session.create and session.send (spec 052), its hosts lowercased
+	// and sorted; nil keeps the agent's at a create and the session's at a
+	// send.
+	Network *Network
+	// Instructions are the initiator's standing instructions, read on an
+	// allow of session.create alone (spec 053); empty is none.
+	Instructions string
 }
 
 // WireLimits is the limits object as an answer carries it, so an
@@ -96,6 +129,8 @@ type WireLimits struct {
 	Owner          *Owner            `json:"owner,omitempty"`
 	Model          string            `json:"model,omitempty"`
 	Reasoning      *string           `json:"reasoning,omitempty"`
+	Network        *Network          `json:"network,omitempty"`
+	Instructions   string            `json:"instructions,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -165,5 +200,99 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		}
 		l.Reasoning = r
 	}
+	if n := w.Network; n != nil {
+		checked, err := checkNetwork(*n)
+		if err != nil {
+			return Limits{}, err
+		}
+		l.Network = &checked
+	}
+	if len(w.Instructions) > MaxInitiatorInstructions {
+		return Limits{}, fmt.Errorf("limits.instructions is %d bytes, more than %d", len(w.Instructions), MaxInitiatorInstructions)
+	}
+	// encoding/json replaces invalid UTF-8 and a lone surrogate escape as
+	// it decodes, so the text is held to UTF-8 as the answer wrote it.
+	var raw struct {
+		Instructions json.RawMessage `json:"instructions"`
+	}
+	if err := d.DecodeLimits(&raw); err != nil {
+		return Limits{}, fmt.Errorf("limits: %w", err)
+	}
+	if !validString(raw.Instructions) {
+		return Limits{}, errors.New("limits.instructions is not valid UTF-8")
+	}
+	l.Instructions = w.Instructions
 	return l, nil
+}
+
+// validString reports whether a JSON string member, as raw bytes, is
+// valid UTF-8 whose every \u escape is a character or a surrogate pair.
+// An absent or null member is valid.
+func validString(raw json.RawMessage) bool {
+	if !utf8.Valid(raw) {
+		return false
+	}
+	b := bytes.TrimSpace(raw)
+	surrogate := func(i int) (rune, bool) {
+		if i+6 > len(b) || b[i] != '\\' || b[i+1] != 'u' {
+			return 0, false
+		}
+		v, err := strconv.ParseUint(string(b[i+2:i+6]), 16, 16)
+		return rune(v), err == nil
+	}
+	for i := 0; i < len(b); i++ {
+		if b[i] != '\\' || i+1 >= len(b) {
+			continue
+		}
+		if b[i+1] != 'u' {
+			i++
+			continue
+		}
+		r, ok := surrogate(i)
+		switch {
+		case !ok:
+			return false
+		case utf16.IsSurrogate(r):
+			low, ok := surrogate(i + 6)
+			if !ok || utf16.DecodeRune(r, low) == utf8.RuneError {
+				return false
+			}
+			i += 11
+		default:
+			i += 5
+		}
+	}
+	return true
+}
+
+// checkNetwork holds a network to Cella's rules (spec 052): one of the
+// three modes; hosts and ask with an allowlist alone; at most
+// MaxNetworkHosts hosts, each an exact name or one leading "*.", never an
+// address, a port or a single label. The hosts it answers are lowercased,
+// without a repeat, sorted, so two answers that name one network compare
+// equal.
+func checkNetwork(n Network) (Network, error) {
+	if !slices.Contains(session.NetworkModes, n.Mode) {
+		return Network{}, fmt.Errorf("limits.network.mode is %q, not one of %s", n.Mode, strings.Join(session.NetworkModes, ", "))
+	}
+	if n.Mode != session.NetworkAllowlist && (len(n.Hosts) > 0 || n.Ask) {
+		return Network{}, fmt.Errorf("limits.network names hosts or ask with mode %s; only an allowlist takes them", n.Mode)
+	}
+	if len(n.Hosts) > MaxNetworkHosts {
+		return Network{}, fmt.Errorf("limits.network.hosts names %d hosts, more than %d", len(n.Hosts), MaxNetworkHosts)
+	}
+	for i, h := range n.Hosts {
+		if !hostmatch.ValidPattern(h) || isAddr(strings.TrimPrefix(h, "*.")) {
+			return Network{}, fmt.Errorf("limits.network.hosts[%d] is %q, not a host name or a \"*.\" pattern", i, h)
+		}
+	}
+	n.Hosts = session.JoinHosts(n.Hosts)
+	return n, nil
+}
+
+// isAddr reports whether a host is an IP address, which a network names
+// by no pattern: Cella's host rule admits names alone.
+func isAddr(h string) bool {
+	_, err := netip.ParseAddr(h)
+	return err == nil
 }
