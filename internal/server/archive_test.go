@@ -116,47 +116,79 @@ func TestArchiveASession(t *testing.T) {
 	}
 }
 
-// TestAnArchiveOfALiveSessionAsksNoUpdate: an archive of an idle or a
-// running session is conflict before the authorizer is asked
-// session.update, whose allow a decider may act on, and an archive of an
-// ended one asks session.read and then session.update.
-func TestAnArchiveOfALiveSessionAsksNoUpdate(t *testing.T) {
+// TestAnArchiveOfARunningSessionAsksNoUpdate: an archive of a running
+// session is conflict before the authorizer is asked session.update,
+// whose allow a decider may act on, and an archive of an idle or an ended
+// one asks session.read and then session.update (spec 054).
+func TestAnArchiveOfARunningSessionAsksNoUpdate(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
-	idle := f.create("alice", "reviewer")
 	running := f.create("alice", "reviewer")
 	f.appendTo(running.ID, 1, session.SessionStatus{Status: session.StatusRunning})
-	for _, id := range []string{idle.ID, running.ID} {
-		f.authz.take()
-		if a := f.do(http.MethodPost, "/v1/sessions/"+id+"/archive", "alice", ""); a.code() != CodeConflict {
-			t.Fatalf("archive a live session: %d %s", a.status, a.body)
-		}
-		if asked := f.authz.take(); slices.Contains(asked, authorizer.ActionSessionUpdate) {
-			t.Fatalf("an archive of a live session asked %v", asked)
-		}
-	}
-	done := f.ended("alice", "reviewer")
 	f.authz.take()
-	if a := f.do(http.MethodPost, "/v1/sessions/"+done.ID+"/archive", "alice", ""); a.status != http.StatusOK {
-		t.Fatalf("archive an ended session: %d %s", a.status, a.body)
+	if a := f.do(http.MethodPost, "/v1/sessions/"+running.ID+"/archive", "alice", ""); a.code() != CodeConflict {
+		t.Fatalf("archive a running session: %d %s", a.status, a.body)
 	}
-	if asked := f.authz.take(); !slices.Equal(asked, []string{authorizer.ActionSessionRead, authorizer.ActionSessionUpdate}) {
-		t.Fatalf("an archive of an ended session asked %v", asked)
+	if asked := f.authz.take(); slices.Contains(asked, authorizer.ActionSessionUpdate) {
+		t.Fatalf("an archive of a running session asked %v", asked)
+	}
+	for _, s := range []session.Session{f.create("alice", "reviewer"), f.ended("alice", "reviewer")} {
+		f.authz.take()
+		if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/archive", "alice", ""); a.status != http.StatusOK {
+			t.Fatalf("archive a session %s: %d %s", s.Status, a.status, a.body)
+		}
+		if asked := f.authz.take(); !slices.Equal(asked, []string{authorizer.ActionSessionRead, authorizer.ActionSessionUpdate}) {
+			t.Fatalf("an archive asked %v", asked)
+		}
 	}
 }
 
-// TestAnArchiveIsRefused: an idle session is conflict and stays as it
+// TestAnIdleSessionIsFiledAndTalkedTo: an idle session is archived as it
+// is, still idle, takes a message while archived and stays archived, and
+// an unarchive returns it to the list (spec 054).
+func TestAnIdleSessionIsFiledAndTalkedTo(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/archive", "alice", "")
+	if a.status != http.StatusOK {
+		t.Fatalf("archive an idle session: %d %s", a.status, a.body)
+	}
+	var got session.Session
+	if a.decode(t, &got); got.ArchivedAt == nil || got.Status != session.StatusIdle {
+		t.Fatalf("the archived idle session is %s, archived %v", got.Status, got.ArchivedAt)
+	}
+	if ids := f.listIDs("alice", ""); slices.Contains(ids, s.ID) {
+		t.Fatalf("the list holds the archived session: %v", ids)
+	}
+	before := f.header(s.ID).LastSeq
+	if a := f.send(s.ID, "One more thing."); a.status != http.StatusOK {
+		t.Fatalf("a message to an archived session: %d %s", a.status, a.body)
+	}
+	if after := f.header(s.ID); after.LastSeq <= before || after.ArchivedAt == nil {
+		t.Fatalf("after the message the session is at %d from %d, archived %v", after.LastSeq, before, after.ArchivedAt)
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/unarchive", "alice", ""); a.status != http.StatusOK {
+		t.Fatalf("unarchive: %d %s", a.status, a.body)
+	}
+	if ids := f.listIDs("alice", ""); !slices.Contains(ids, s.ID) {
+		t.Fatalf("the unarchived session is not listed: %v", ids)
+	}
+}
+
+// TestAnArchiveIsRefused: a running session is conflict and stays as it
 // is, a denied update is forbidden and changes nothing, and a caller who
 // may not read the session hears not_found.
 func TestAnArchiveIsRefused(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
-	idle := f.create("alice", "reviewer")
-	if a := f.do(http.MethodPost, "/v1/sessions/"+idle.ID+"/archive", "alice", ""); a.code() != CodeConflict {
-		t.Fatalf("archive an idle session: %d %s", a.status, a.body)
+	running := f.create("alice", "reviewer")
+	f.appendTo(running.ID, 1, session.SessionStatus{Status: session.StatusRunning})
+	if a := f.do(http.MethodPost, "/v1/sessions/"+running.ID+"/archive", "alice", ""); a.code() != CodeConflict {
+		t.Fatalf("archive a running session: %d %s", a.status, a.body)
 	}
-	if s, err := f.sessions.Get(t.Context(), idle.ID); err != nil || s.ArchivedAt != nil || s.Status != session.StatusIdle {
-		t.Fatalf("the idle session after a refused archive: %+v, %v", s, err)
+	if s, err := f.sessions.Get(t.Context(), running.ID); err != nil || s.ArchivedAt != nil || s.Status != session.StatusRunning {
+		t.Fatalf("the running session after a refused archive: %+v, %v", s, err)
 	}
 	done := f.ended("alice", "reviewer")
 	if a := f.do(http.MethodPost, "/v1/sessions/"+done.ID+"/archive", "bob", ""); a.status != http.StatusNotFound {

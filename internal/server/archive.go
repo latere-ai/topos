@@ -18,11 +18,12 @@ func (c *call) archiveSession() error { return c.setArchived(true) }
 // unarchiveSession is POST /sessions/{id}/unarchive.
 func (c *call) unarchiveSession() error { return c.setArchived(false) }
 
-// setArchived files an ended session away from the lists, or back
-// (spec 015). It asks session.read, so a caller who may not read the
-// session hears not_found, then session.update with archived. A live
-// session is conflict: archiving never stops work, so unarchiving
-// restores exactly what was there. A repeat changes nothing.
+// setArchived files an idle or ended session away from the lists, or
+// back (specs 015 and 054). It asks session.read, so a caller who may not
+// read the session hears not_found, then session.update with archived. A
+// running session is conflict: archiving never stops work, so unarchiving
+// restores exactly what was there. An archived idle session still takes
+// a message, and its turn runs as any other. A repeat changes nothing.
 func (c *call) setArchived(archived bool) error {
 	var b struct{}
 	if err := c.decodeOptional(&b); err != nil {
@@ -36,11 +37,12 @@ func (c *call) setArchived(archived bool) error {
 	if err != nil {
 		return err
 	}
-	// A live session is refused before the authorizer is asked, which may
-	// act on an allowed question as it does on an end. An ended session
-	// stays ended, so the read stands after the decision.
-	if archived && s.Status != session.StatusEnded {
-		return refuse(CodeConflict, "the session is %s; only an ended session is archived, so end it first", s.Status)
+	// A running session is refused before the authorizer is asked, which
+	// may act on an allowed question as it does on an end. Filing changes
+	// nothing of the session, so a turn that starts while the authorizer
+	// decides runs on, filed away.
+	if archived && s.Status == session.StatusRunning {
+		return refuse(CodeConflict, "the session is running; archiving never stops a turn, so interrupt it or wait for it to finish")
 	}
 	if _, err := c.ask(c.r.Context(), authorizer.ActionSessionUpdate, sessionResource(s, map[string]any{"session_id": s.ID, "archived": archived})); err != nil {
 		return err
