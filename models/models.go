@@ -324,6 +324,27 @@ func Down(err error) bool {
 	return errors.As(err, &he) && he.Status >= 500 && slices.Contains(downTypes, he.Type)
 }
 
+// rejectedType is the error type a model gateway answers when it reached
+// the provider that serves the model and the provider refused the request
+// with a 4xx of its own: Lux's upstream_rejected, at 400. Lux answers it
+// for any upstream 4xx but 401 and 403, which are its credential and
+// answer upstream_error, and 408 and 429, which it retries on the next
+// target; it tries no other target after it.
+const rejectedType = "upstream_rejected"
+
+// Rejected reports whether err is a model gateway's answer that the
+// provider serving the model refused the request (spec 051): rejectedType
+// at a 4xx status. The provider may have refused the request for what it
+// holds, or it may no longer serve the model as the gateway names it, as a
+// free variant a provider withdrew; whether another model is asked is the
+// authorizer's to say. The gateway's own refusals are not one, each under
+// its own type: an invalid request, a model the key may not use, a spent
+// budget, a rate limit on the caller's key.
+func Rejected(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && he.Status >= 400 && he.Status < 500 && he.Type == rejectedType
+}
+
 // RetryAfter is the delay a model server asked for, or zero.
 func RetryAfter(err error) time.Duration {
 	var he *HTTPError

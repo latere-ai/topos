@@ -116,6 +116,39 @@ func TestDown(t *testing.T) {
 	}
 }
 
+// TestRejected: a gateway's upstream_rejected at a 4xx is a provider's
+// refusal of the request, and nothing else is: not a model that cannot
+// serve, and none of the gateway's own refusals, which carry their own
+// types.
+func TestRejected(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want bool
+	}{
+		{&HTTPError{Status: 400, Type: "upstream_rejected"}, true},
+		{fmt.Errorf("wrapped: %w", &HTTPError{Status: 400, Type: "upstream_rejected", Detail: "upstream status 404: no endpoints"}), true},
+		{&HTTPError{Status: 502, Type: "upstream_rejected"}, false},
+		{&HTTPError{Status: 502, Type: "upstream_error"}, false},
+		{&HTTPError{Status: 503, Type: "provider_unavailable"}, false},
+		{&HTTPError{Status: 400, Type: "invalid_request"}, false},
+		{&HTTPError{Status: 400, Type: "dialect_unsupported"}, false},
+		{&HTTPError{Status: 403, Type: "model_not_allowed"}, false},
+		{&HTTPError{Status: 403, Type: "model_disabled"}, false},
+		{&HTTPError{Status: 403, Type: "model_unpriced"}, false},
+		{&HTTPError{Status: 429, Type: "budget_exhausted"}, false},
+		{&HTTPError{Status: 429, Type: "spend_exceeded"}, false},
+		{&HTTPError{Status: 429, Type: "rate_limited"}, false},
+		{&HTTPError{Status: 400, Type: "invalid_request_error"}, false},
+		{&HTTPError{Status: 400}, false},
+		{&StreamError{Err: errors.New("upstream_rejected")}, false},
+		{nil, false},
+	} {
+		if got := Rejected(c.err); got != c.want {
+			t.Errorf("Rejected(%v) = %v", c.err, got)
+		}
+	}
+}
+
 func TestErrorMessages(t *testing.T) {
 	for _, c := range []struct {
 		err  error
