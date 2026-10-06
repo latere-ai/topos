@@ -152,7 +152,7 @@
 // attended no session waits on a question and no user.answer is sent.
 //
 // A fork may be sent its first message in the same call, the edit of a
-// person's message (spec 054). toposd then asks session.fork, as for any
+// person's message (spec 056). toposd then asks session.fork, as for any
 // fork, with session_id the new session's id, parent the session forked
 // and seq the copy's end, 0 for a fork before the session's opening
 // message; and after its allow session.send of the new session, as a

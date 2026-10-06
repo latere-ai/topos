@@ -41,7 +41,7 @@ type SinkAgent struct {
 
 // refusedFork reports a fork refused after the authorizer allowed its
 // session.fork, err being the refusal of its message's session.send
-// (spec 054): the event names the fork the allow named, with the
+// (spec 056): the event names the fork the allow named, with the
 // refusal's code as its outcome, the session forked and the fork point,
 // and the authorizer's reason where the refusal carries one. Nothing of
 // the fork was written. A sink that fails is logged, since the refusal

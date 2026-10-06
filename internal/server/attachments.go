@@ -52,7 +52,7 @@ type messageBody struct {
 // attachmentBody is one file as a client sends it: its bytes as base64
 // data, or, in a fork's message alone, the blob of a file a message of
 // the session forked attached, which the fork keeps without the bytes
-// being sent again (spec 054).
+// being sent again (spec 056).
 type attachmentBody struct {
 	Name      string         `json:"name"`
 	MediaType string         `json:"media_type,omitempty"`

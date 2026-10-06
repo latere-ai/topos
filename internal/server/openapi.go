@@ -157,7 +157,7 @@ var (
 )
 
 // rootParam, parentParam and groupParam read a session's fork tree
-// from the list (spec 054); a search and a summary take none of them.
+// from the list (spec 056); a search and a summary take none of them.
 var (
 	rootParam = yaml.MapSlice{{Key: "name", Value: "root"}, {Key: "in", Value: "query"},
 		{Key: "description", Value: "A session's id: that session and every session whose root it is, the sessions of its fork tree when it is the tree's root."},

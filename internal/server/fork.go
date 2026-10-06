@@ -20,7 +20,7 @@ import (
 )
 
 // CodeInvalidForkPoint is spec 017's code for a fork at a sequence that
-// is not a turn boundary, or of a session that has none, and spec 054's
+// is not a turn boundary, or of a session that has none, and spec 056's
 // for a fork before an event that is no person's message that opened a
 // turn.
 const CodeInvalidForkPoint = "invalid_fork_point"
@@ -65,7 +65,7 @@ func continuedTitle(title string) string {
 // its client declares it again (spec 039). BeforeSeq forks before a
 // person's message in place of a turn boundary, Message is the message
 // the fork is sent in the same call, and Title the fork's title in place
-// of its continuation title, "" for none (spec 054).
+// of its continuation title, "" for none (spec 056).
 type forkBody struct {
 	AtSeq     *uint64      `json:"at_seq,omitempty"`
 	BeforeSeq *uint64      `json:"before_seq,omitempty"`
@@ -86,7 +86,7 @@ type forkMessage struct {
 // forkSession is POST /sessions/{id}/fork (spec 017): a new session of
 // the same agent version whose log starts as a copy of this one's up to
 // a turn boundary, or up to a person's message the fork replaces (spec
-// 054), with the caller as its initiator and its own lifetime, budget
+// 056), with the caller as its initiator and its own lifetime, budget
 // and credentials. Any session the caller may read is forked, an ended
 // or expired one included; a caller who may not read it hears not_found
 // before anything else. A fork sent a message in the same call is asked
@@ -204,7 +204,7 @@ func (m *forkMessage) events(changes sendChanges, now time.Time, blobs map[sessi
 // sent a message asks session.send of its header first, with the model
 // it starts on and the whole seconds since the last request it copied,
 // and writes the copy, the changes the allow made and the message as one
-// batch, after which a runner claims it (spec 054). A send refused after
+// batch, after which a runner claims it (spec 056). A send refused after
 // the authorizer allowed session.fork writes nothing and is reported to
 // the sink, so an authorizer that recorded the fork at that allow closes
 // the record.
@@ -271,7 +271,7 @@ func modelAt(s session.Session, evs []session.Event, seq uint64) *session.ModelR
 	return at
 }
 
-// treeFilters reads the list's fork tree filters (spec 054): root and
+// treeFilters reads the list's fork tree filters (spec 056): root and
 // parent, each a session's id, which an id of no session matches nothing
 // by, and group, which takes tree alone.
 func treeFilters(q url.Values) (session.ListOptions, error) {

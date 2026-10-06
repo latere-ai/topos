@@ -1,4 +1,4 @@
--- A session's place in its fork tree (spec 054): the session it was
+-- A session's place in its fork tree (spec 056): the session it was
 -- forked from and how many of that session's events it copied, and the
 -- session at the top of its tree. The body carries parent and root as
 -- every other field; the columns are the filters a list reads, NULL on a

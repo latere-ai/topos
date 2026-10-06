@@ -150,7 +150,7 @@ type Budget struct {
 	SpentCostUSDMicro int64  `json:"spent_cost_usd_micro"`
 	// CarriedCostUSDMicro is the part of the spend a fork copied from its
 	// parent's log, fixed at the fork, zero on a session no fork made
-	// (spec 054). The session's own spend, which its ceiling holds, is
+	// (spec 056). The session's own spend, which its ceiling holds, is
 	// SpentCostUSDMicro less it.
 	CarriedCostUSDMicro int64 `json:"carried_cost_usd_micro,omitempty"`
 }
@@ -211,13 +211,13 @@ type Capture struct {
 
 // Parent names the session and sequence a forked session started from:
 // the session forked and how many of its events the fork copied, 0 for
-// a fork before its opening message (spec 054).
+// a fork before its opening message (spec 056).
 type Parent struct {
 	SessionID string `json:"session_id"`
 	Seq       uint64 `json:"seq"`
 }
 
-// Tree is a fork tree as a list grouped by tree answers it (spec 054):
+// Tree is a fork tree as a list grouped by tree answers it (spec 056):
 // the id of the session at its top, and how many of its sessions the
 // list keeps under the same filters.
 type Tree struct {
@@ -272,7 +272,7 @@ type Session struct {
 	// Root is the id of the session at the top of this session's fork
 	// tree: its parent's root, or its parent's id where the parent has
 	// none; empty on a session no fork made, whose tree's root is itself
-	// (spec 054). It is fixed at the fork, and names a deleted session as
+	// (spec 056). It is fixed at the fork, and names a deleted session as
 	// readily as a live one.
 	Root      string    `json:"root,omitempty"`
 	TriggerID string    `json:"trigger_id,omitempty"`
@@ -285,7 +285,7 @@ type Session struct {
 	ArchivedAt *time.Time        `json:"archived_at,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	// Tree is set only on the sessions a List grouped by tree answers,
-	// each the one that stands for its tree (spec 054).
+	// each the one that stands for its tree (spec 056).
 	Tree *Tree `json:"tree,omitempty"`
 }
 

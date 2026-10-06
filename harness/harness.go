@@ -909,7 +909,7 @@ func (t *turn) interrupted() bool {
 // spend so far plus the next request's input, priced at the input rate,
 // against the session's ceiling. A fork's own spend leaves out what it
 // copied from its parent's log, which the parent's ceiling held (spec
-// 054).
+// 056).
 func (t *turn) checkBudget(ctx context.Context) error {
 	max := t.s.Budget.MaxCostUSDMicro
 	if max == nil {

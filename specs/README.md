@@ -110,8 +110,8 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [052](052-a-sessions-network.md) | A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow | large | testing | 003, 004, 006, 008, 009, 012, 015, 016, 018, 038, 039 |
 | [053](053-the-initiators-instructions.md) | The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, read after the agent's own | small | testing | 004, 006, 010, 011, 015, 038 |
 | [054](054-a-sessions-title-and-filing.md) | A session's title and its filing: the title member of PATCH, session.title_changed, and an archive of an idle session | small | testing | 004, 006, 015, 017, 041 |
-| [054](054-editing-a-message-and-the-branches-of-a-session.md) | A fork before a person's message, the replacement message in the same call, and the tree of a session's forks read in one list: `before_seq`, `message` and `title` on the fork, the Session's `root`, the list's `root`, `parent` and `group=tree`, a fork's own spend, the tree's cache key | medium | testing | 017, 038 |
 | [055](055-images-an-answer-shows.md) | Images an answer shows: each local image an agent message names is kept from the machine as a blob, recorded by `files.kept`, and served by the blob route as an image | medium | drafted | 016, 044 |
+| [056](056-editing-a-message-and-the-branches-of-a-session.md) | A fork before a person's message, the replacement message in the same call, and the tree of a session's forks read in one list: `before_seq`, `message` and `title` on the fork, the Session's `root`, the list's `root`, `parent` and `group=tree`, a fork's own spend, the tree's cache key | medium | testing | 017, 038 |
 
 ## Dependency graph
 
@@ -175,8 +175,8 @@ flowchart BT
   S052[052 a session's network]
   S053[053 the initiator's instructions]
   S054[054 a session's title and its filing]
-  S054[054 a fork before a message, branches]
   S055[055 images an answer shows]
+  S056[056 a fork before a message, branches]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -268,10 +268,10 @@ flowchart BT
   S053 --> S038
   S054 --> S015
   S054 --> S041
-  S054 --> S017
-  S054 --> S038
   S055 --> S016
   S055 --> S044
+  S056 --> S017
+  S056 --> S038
 ```
 
 ## Build order
@@ -285,7 +285,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 055, 056 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,

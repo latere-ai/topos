@@ -72,7 +72,7 @@ own. [[007-models]] expresses them per dialect. The history is only
 appended to, so a prefix, once cached, stays valid until a compaction.
 The request's cache key is the session's fork tree's root, its `root`
 or its id where it has none, so a fork and the session it was forked
-from share one key ([[054-editing-a-message-and-the-branches-of-a-session]]),
+from share one key ([[056-editing-a-message-and-the-branches-of-a-session]]),
 for dialects that take one.
 
 ### Token accounting

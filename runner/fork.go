@@ -44,7 +44,7 @@ func forkCheckpoint(s session.Session, evs []session.Event) (*session.Checkpoint
 // have or cannot check out answers why, and the fork starts on the files
 // its repositories give it. A fork before its parent's opening message
 // copied nothing, so it has no fork point to restore and starts fresh
-// (spec 054).
+// (spec 056).
 func (r *Runner) restoreFork(ctx context.Context, s session.Session, m machine.Machine) (*session.CheckpointRef, error) {
 	if s.Parent.Seq == 0 {
 		return nil, nil

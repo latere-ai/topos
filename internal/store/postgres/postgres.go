@@ -242,7 +242,7 @@ func (s *Store) insertBlob(ctx context.Context, q interface {
 }
 
 // treeColumns are a session's tree columns as its insert writes them,
-// each nil for a session no fork made (spec 054).
+// each nil for a session no fork made (spec 056).
 func treeColumns(sess session.Session) (parentID *string, parentSeq *int64, rootID *string) {
 	if p := sess.Parent; p != nil {
 		id, seq := p.SessionID, int64(p.Seq)
@@ -277,7 +277,7 @@ type sessionRow struct {
 }
 
 // decode reads the body, its root filled from the column where a
-// replica of an earlier release rewrote the body without it (spec 054).
+// replica of an earlier release rewrote the body without it (spec 056).
 func (r sessionRow) decode() (session.Session, error) {
 	var sess session.Session
 	if err := json.Unmarshal([]byte(r.Body), &sess); err != nil {
@@ -308,7 +308,7 @@ func decodeRows(rows pgx.Rows) ([]session.Session, error) {
 
 // List pages the filtered sessions newest first. Grouped by tree, it
 // keeps of each tree's filtered sessions the newest, counting them, and
-// pages those by their own id (spec 054).
+// pages those by their own id (spec 056).
 func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Session, string, error) {
 	limit := o.Limit
 	if limit <= 0 {
@@ -421,7 +421,7 @@ func locked(ctx context.Context, tx pgx.Tx, id string) (session.Session, error) 
 // saveHeader writes a session's header back with its filter columns. A
 // tree column is set where the header names it and never cleared, so a
 // fork an earlier replica inserted without them gains its parent here
-// (spec 054).
+// (spec 056).
 func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 	body, err := encode(sess)
 	if err != nil {

@@ -213,7 +213,7 @@ type creation struct {
 // forkOrigin is what a fork starts from: the session forked, the fork
 // point, its log up to that point, which the new session copies, the
 // model it stood on there, nil for its agent's, the fork's title, and
-// the message it is sent in the same call, nil for none (spec 054).
+// the message it is sent in the same call, nil for none (spec 056).
 type forkOrigin struct {
 	parent  session.Session
 	seq     uint64
@@ -564,7 +564,7 @@ func lowest(field, requested string, agent, authorizer time.Duration) (time.Dura
 
 // listSessions is GET /sessions, filtered by agent, status, runner and
 // whether a session is archived, leaving archived ones out unless asked,
-// by fork tree and parent, grouped by tree when asked (spec 054), and
+// by fork tree and parent, grouped by tree when asked (spec 056), and
 // narrowed to the owners the authorizer's allow names.
 func (c *call) listSessions() error {
 	limit, cursor, err := c.pageParams()
@@ -917,7 +917,7 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 // configuration cfg, whose last model request ended at at, made false
 // before its first, and answers the changes the allow made, as sendAs
 // describes. A fork that is sent its message in the same call asks it of
-// the fork's header before the fork is written (spec 054).
+// the fork's header before the fork is written (spec 056).
 func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg manifest.AgentConfig, fields map[string]any, at time.Time, made bool) (sendChanges, error) {
 	old := standing(sess, cfg)
 	all := maps.Clone(fields)

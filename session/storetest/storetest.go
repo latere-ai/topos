@@ -926,7 +926,7 @@ func testUnknownType(t *testing.T, st session.Store) {
 }
 
 // forest creates sessions in three fork trees and a fork whose tree's
-// root was deleted before it was read (spec 054), newest last: a, the
+// root was deleted before it was read (spec 056), newest last: a, the
 // root of b and c, which b's fork d joins; x alone; y and its fork z;
 // and w, a fork of a session no longer in the store. d is of another
 // initiator than the rest.

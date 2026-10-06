@@ -211,7 +211,7 @@ func examples() (map[string]example, error) {
 	progressive := v1.ModeProgressive
 	// The fork edits the message sent after the first turn: it copies the
 	// log before it, the model change among it, and runs on the edited
-	// message under the same title (spec 054).
+	// message under the same title (spec 056).
 	forked := turned
 	forked.ID, forked.Title, forked.Model = exampleForkID, "Notes for v1.4.0", switched.Model
 	forked.Parent, forked.Root, forked.LastSeq = &session.Parent{SessionID: exampleSessionID, Seq: 7}, exampleSessionID, 8

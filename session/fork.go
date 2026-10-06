@@ -15,7 +15,7 @@ import (
 
 // ErrInvalidForkPoint is a fork at a sequence that is not a turn
 // boundary, or of a session that has none (spec 017), or before an event
-// that is no person's message that opened a turn (spec 054).
+// that is no person's message that opened a turn (spec 056).
 var ErrInvalidForkPoint = errors.New("session: invalid_fork_point")
 
 // ForkPoint is the sequence a fork copies a log to: at when it names a
@@ -38,7 +38,7 @@ func ForkPoint(evs []Event, at *uint64) (uint64, error) {
 }
 
 // ForkBefore is the sequence a fork that replaces the person's message
-// at before copies a log to: before - 1 (spec 054). before names a
+// at before copies a log to: before - 1 (spec 056). before names a
 // user.message of the session's own thread, not redacted, whose sender
 // is a person, and which opened a turn: the last session.status of the
 // session's own thread before it is idle, whatever its stop reason, or
@@ -148,7 +148,7 @@ func restate(e Event) (Event, error) {
 // Fork writes child as a fork of parent at the end of events, parent's
 // log from 1 to the fork point, followed by then, the events the fork
 // starts with, such as a person's message that replaces the one after
-// the fork point (spec 054): child with its parent link, its tree's root
+// the fork point (spec 056): child with its parent link, its tree's root
 // and the copied spend, the blobs given (the agent's, and a new
 // message's files) and every blob of parent's the events and then name,
 // then the copy and then as one batch, the copy's ids, times, turns and

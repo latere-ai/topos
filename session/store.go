@@ -119,7 +119,7 @@ type ListOptions struct {
 	Archived Archived
 	// Root, when set, keeps that session and every session whose root it
 	// is; Parent, when set, keeps the sessions forked from that session,
-	// at any sequence (spec 054).
+	// at any sequence (spec 056).
 	Root, Parent string
 	// Group, when GroupTree, answers one session per fork tree of those
 	// the other filters keep: the newest, carrying Tree. The list then
@@ -133,7 +133,7 @@ type ListOptions struct {
 // Group is how a List groups the sessions it keeps.
 type Group string
 
-// GroupTree groups a List by fork tree (spec 054); the zero Group lists
+// GroupTree groups a List by fork tree (spec 056); the zero Group lists
 // every session on its own.
 const GroupTree Group = "tree"
 
@@ -238,7 +238,7 @@ func (o ListOptions) keeps(s Session) bool {
 		(o.Parent == "" || s.Parent != nil && s.Parent.SessionID == o.Parent)
 }
 
-// trees groups sessions by fork tree (spec 054): of each tree's sessions
+// trees groups sessions by fork tree (spec 056): of each tree's sessions
 // in all, the one with the greatest id, which ids give as the newest,
 // carrying the tree's root and how many of all are of it, in the order
 // all is in. all is sorted newest first.

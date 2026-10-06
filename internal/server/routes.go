@@ -45,7 +45,7 @@ func table() []route {
 		{method: http.MethodPost, path: "/sessions/{id}/end", actions: a(authorizer.ActionSessionEnd, authorizer.ActionSessionRead),
 			op: "endSession", summary: "End a session", status: http.StatusOK, body: MaxBody, handle: (*call).endSession},
 		// A fork sent a message in the same call asks session.send of the
-		// fork after session.fork (spec 054).
+		// fork after session.fork (spec 056).
 		{method: http.MethodPost, path: "/sessions/{id}/fork", actions: a(authorizer.ActionSessionRead, authorizer.ActionSessionFork, authorizer.ActionSessionSend),
 			op: "forkSession", summary: "Fork a session", status: http.StatusCreated, body: MaxEventBody, handle: (*call).forkSession},
 		{method: http.MethodPost, path: "/sessions/{id}/archive", actions: a(authorizer.ActionSessionRead, authorizer.ActionSessionUpdate),
