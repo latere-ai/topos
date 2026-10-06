@@ -48,6 +48,17 @@ committed: the commit log already holds that.
   fork takes its own allow's.
 - `docs/network.md` is the contract an authorizer and a client follow.
 
+### Changed
+
+- On a Cella machine, a `web_fetch` of a host outside the session's
+  network is blocked, and the model reads that the host is outside the
+  network this session may reach. Before, it asked the person in
+  `confirm` mode and then failed at the gateway. This holds for a
+  session whose authorizer names no network too: it runs on its agent's
+  mode and hosts with `ask` false, so a fetch outside the agent's
+  `spec.machine.egress` is blocked where it was asked. A session on the
+  host machine decides a fetch as before.
+
 ### Upgrading
 
 - Roll the authorizer that answers `network` and `instructions` first: a
