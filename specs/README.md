@@ -110,6 +110,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [052](052-a-sessions-network.md) | A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow | large | testing | 003, 004, 006, 008, 009, 012, 015, 016, 018, 038, 039 |
 | [053](053-the-initiators-instructions.md) | The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, read after the agent's own | small | testing | 004, 006, 010, 011, 015, 038 |
 | [054](054-a-sessions-title-and-filing.md) | A session's title and its filing: the title member of PATCH, session.title_changed, and an archive of an idle session | small | testing | 004, 006, 015, 017, 041 |
+| [054](054-editing-a-message-and-the-branches-of-a-session.md) | A fork before a person's message, the replacement message in the same call, and the tree of a session's forks read in one list: `before_seq`, `message` and `title` on the fork, the Session's `root`, the list's `root`, `parent` and `group=tree`, a fork's own spend, the tree's cache key | medium | drafted | 017, 038 |
 
 ## Dependency graph
 
@@ -173,6 +174,7 @@ flowchart BT
   S052[052 a session's network]
   S053[053 the initiator's instructions]
   S054[054 a session's title and its filing]
+  S054[054 a fork before a message, branches]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -264,6 +266,8 @@ flowchart BT
   S053 --> S038
   S054 --> S015
   S054 --> S041
+  S054 --> S017
+  S054 --> S038
 ```
 
 ## Build order
