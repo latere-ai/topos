@@ -120,6 +120,23 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 		}
 	}
 
+	// An approval's answer names its host from its request, and an allow
+	// reads as reachable once the runner widened the network for it, which
+	// it records before the answer (spec 052).
+	approvalHosts, widened := map[string]string{}, map[string]bool{}
+	for _, e := range evs {
+		if e.Type != TypeNetworkChanged || e.Redacted() {
+			continue
+		}
+		var p NetworkChanged
+		if err := e.Decode(&p); err != nil {
+			return Transcript{}, err
+		}
+		if p.ApprovalID != "" {
+			widened[p.ApprovalID] = true
+		}
+	}
+
 	var items []item
 	results := map[string]lux.Block{}
 	lastStep := -1
@@ -249,6 +266,31 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				return Transcript{}, err
 			}
 			user(text(prompts.Render(prompts.TranscriptRewound, prompts.Data{"Turn": p.ToTurn})))
+		case TypeApprovalRequested:
+			// A refused connection reads after the result of the call that
+			// made it, which its event follows, in the same user message.
+			var p ApprovalRequested
+			if err := e.Decode(&p); err != nil {
+				return Transcript{}, err
+			}
+			approvalHosts[p.ApprovalID] = p.Destination.Host
+			user(text(prompts.Render(prompts.TranscriptApprovalRequested, prompts.Data{
+				"Host": p.Destination.Host, "Port": p.Destination.Port, "More": p.More, "Ask": p.Verdict == "ask",
+			})))
+		case TypeApprovalDecided:
+			var p ApprovalDecided
+			if err := e.Decode(&p); err != nil {
+				return Transcript{}, err
+			}
+			data := prompts.Data{"Host": approvalHosts[p.ApprovalID], "Note": p.Note}
+			switch {
+			case p.Decision != DecisionAllow:
+				user(text(prompts.Render(prompts.TranscriptApprovalDenied, data)))
+			case widened[p.ApprovalID]:
+				user(text(prompts.Render(prompts.TranscriptApprovalAllowed, data)))
+			default:
+				user(text(prompts.Render(prompts.TranscriptApprovalUnavailable, data)))
+			}
 		}
 	}
 	for i := range ranges {

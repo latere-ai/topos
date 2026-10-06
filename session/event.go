@@ -42,6 +42,9 @@ const (
 	TypeEventRedacted        Type = "event.redacted"
 	TypeSessionRewound       Type = "session.rewound"
 	TypeAttachmentsDelivered Type = "attachments.delivered"
+	TypeNetworkChanged       Type = "session.network_changed"
+	TypeApprovalRequested    Type = "approval.requested"
+	TypeApprovalDecided      Type = "approval.decided"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -54,6 +57,7 @@ var Known = map[Type]bool{
 	TypeSessionStatus: true, TypeSessionMachine: true, TypeScopeChanged: true, TypeModelChanged: true, TypePolicyChanged: true, TypeSessionResumed: true,
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
+	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
 }
 
 // Event is one entry of a session's log.
@@ -118,13 +122,16 @@ type UserInterrupt struct {
 	Sender Sender `json:"sender"`
 }
 
-// UserToolConfirmation is the payload of user.tool_confirmation.
+// UserToolConfirmation is the payload of user.tool_confirmation. It
+// answers exactly one of a call that waits, by ToolUseID, and an
+// approval.requested that asks, by ApprovalID (spec 052).
 type UserToolConfirmation struct {
-	Sender    Sender `json:"sender"`
-	ToolUseID string `json:"tool_use_id"`
-	Decision  string `json:"decision"`
-	Note      string `json:"note,omitempty"`
-	Remember  string `json:"remember,omitempty"`
+	Sender     Sender `json:"sender"`
+	ToolUseID  string `json:"tool_use_id,omitempty"`
+	ApprovalID string `json:"approval_id,omitempty"`
+	Decision   string `json:"decision"`
+	Note       string `json:"note,omitempty"`
+	Remember   string `json:"remember,omitempty"`
 }
 
 // Decisions of a tool confirmation.

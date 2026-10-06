@@ -406,8 +406,10 @@ func SameEvent(a, b Event) bool {
 // sequence, the turn, the update time, the status and stop reason of the
 // last session.status event, the budget of the last session.resumed, the
 // model of the last session.model_changed, the approval mode of the last
-// session.policy_changed, and the spend, which each model.request's and
-// each charged tool.result's cost adds to as Spent counts it.
+// session.policy_changed, the base network each authorizer's
+// session.network_changed replaces, and the spend, which each
+// model.request's and each charged tool.result's cost adds to as Spent
+// counts it.
 func ApplyBatch(s *Session, events []Event) {
 	for _, e := range events {
 		if e.Seq > s.LastSeq {
@@ -449,6 +451,17 @@ func ApplyBatch(s *Session, events []Event) {
 				policy := *s.Policy
 				policy.Mode = p.New.Mode
 				s.Policy = &policy
+			}
+			continue
+		}
+		// A person's allow grows the session's reach, which the log keeps;
+		// the header holds the base network the authorizer named. A fork's
+		// copied change moved its parent's, and the fork runs the network
+		// its own create was answered (spec 052).
+		if e.Type == TypeNetworkChanged && !e.Redacted() && !s.Copied(e) {
+			var p NetworkChanged
+			if e.Decode(&p) == nil && p.Source == NetworkFromAuthorizer {
+				s.Network = p.Apply(s.Network)
 			}
 			continue
 		}

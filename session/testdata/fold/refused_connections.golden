@@ -1,0 +1,74 @@
+{
+  "": {
+    "system": [],
+    "messages": [
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Install the dependencies."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "blocks": [
+          {
+            "type": "tool_use",
+            "tool_use": {
+              "id": "toolu_1",
+              "name": "bash",
+              "args": {
+                "command": "ls"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "blocks": [
+          {
+            "type": "tool_result",
+            "tool_result": {
+              "tool_use_id": "toolu_1",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "curl: (56) CONNECT tunnel failed, response 403"
+                }
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "The gateway refused a connection the command made to registry.example.com on port 443: the host is outside the network this session may reach. The person attending the session is asked whether the session may reach it."
+          },
+          {
+            "type": "text",
+            "text": "The gateway refused a connection the command made to cdn.example.com on port 443: the host is outside the network this session may reach. It refused 1 more host too. The person attending the session is asked whether the session may reach it."
+          },
+          {
+            "type": "text",
+            "text": "The gateway refused a connection the command made to mirror.example.org on port 443: the host is outside the network this session may reach. The person attending the session is asked whether the session may reach it."
+          },
+          {
+            "type": "text",
+            "text": "The person allowed connections to registry.example.com. It is in the session's network now, so you may try again."
+          },
+          {
+            "type": "text",
+            "text": "The person allowed connections to cdn.example.com, but the session's network could not be widened to it, so it is still out of reach."
+          },
+          {
+            "type": "text",
+            "text": "The person denied connections to mirror.example.org. Do not try to reach it again in this session. Their note: Use the registry."
+          }
+        ]
+      }
+    ],
+    "open": [],
+    "unknown": []
+  }
+}

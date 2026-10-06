@@ -240,12 +240,21 @@ type Session struct {
 	// question call of a session that is not attended is answered at
 	// once, and the session never goes idle on it. It is set at create
 	// and no event changes it, so every runner reads the same value.
-	Attended  bool      `json:"attended,omitempty"`
-	Parent    *Parent   `json:"parent,omitempty"`
-	TriggerID string    `json:"trigger_id,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Attended bool `json:"attended,omitempty"`
+	// Network is the session's base network (spec 052): the one its
+	// create's allow named, or its agent's, with each change an allow of a
+	// send made since. Nil on a session that recorded none, which runs on
+	// its agent's mode and hosts.
+	Network *Network `json:"network,omitempty"`
+	// Instructions are the initiator's standing instructions an allow of
+	// the session's create carried (spec 053), which the model reads after
+	// its agent's own; empty for none. No event changes them.
+	Instructions string    `json:"instructions,omitempty"`
+	Parent       *Parent   `json:"parent,omitempty"`
+	TriggerID    string    `json:"trigger_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
 	// ArchivedAt is when the session was filed away from the lists, nil
 	// while it is not. Only a store's SetArchived writes it; no event
 	// does, so an ended session's log stays closed (spec 015).
@@ -372,9 +381,16 @@ const (
 // answered once is not awaiting a second answer, so a repeated or stray
 // confirmation or result names no call here. A person's message appended
 // after an ask denies it (spec 012), so the ask awaits no confirmation
-// after it. What closed a question is Questions' to say.
+// after it. What closed a question is Questions' to say. An
+// approval.requested that asks and that nothing answered awaits a
+// confirmation by its approval_id (spec 052).
 func Awaiting(evs []Event) map[string]Answer {
 	out := map[string]Answer{}
+	for _, a := range Approvals(evs) {
+		if a.Waiting() {
+			out[a.Request.ApprovalID] = AnswerConfirmation
+		}
+	}
 	if q, open := OpenQuestion(evs); open {
 		out[q.ToolUseID] = AnswerQuestion
 	}

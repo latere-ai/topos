@@ -237,6 +237,32 @@ var foldCases = []struct {
 		b.user(ada, "Try something smaller.", 2)
 		return []string{""}
 	}, nil},
+	{"refused_connections", func(b *logb) []string {
+		// A command's refused connections read after its result; the
+		// person's allow reads as reachable once the network was widened
+		// for it, an allow it could not take as still out of reach, and a
+		// deny as a host not to try again (spec 052).
+		b.user(ada, "Install the dependencies.", 1)
+		b.assistant("", 1, false, use("toolu_1", "bash"))
+		b.toolUse("", 1, "toolu_1")
+		b.result("", 1, "toolu_1", "curl: (56) CONNECT tunnel failed, response 403")
+		b.add(session.TypeApprovalRequested, "", 1, session.ApprovalRequested{ApprovalID: "apr_1", ToolUseID: "toolu_1", Source: session.ApprovalFromEgress,
+			Destination: session.Destination{Host: "registry.example.com", Port: 443}, Reason: session.ReasonConnectionOutside, Verdict: "ask"})
+		b.add(session.TypeApprovalRequested, "", 1, session.ApprovalRequested{ApprovalID: "apr_2", ToolUseID: "toolu_1", Source: session.ApprovalFromEgress,
+			Destination: session.Destination{Host: "cdn.example.com", Port: 443}, Reason: session.ReasonConnectionOutside, Verdict: "ask", More: 1})
+		b.add(session.TypeApprovalRequested, "", 1, session.ApprovalRequested{ApprovalID: "apr_3", ToolUseID: "toolu_1", Source: session.ApprovalFromEgress,
+			Destination: session.Destination{Host: "mirror.example.org", Port: 443}, Reason: session.ReasonConnectionOutside, Verdict: "ask"})
+		b.add(session.TypeSessionStatus, "", 1, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopToolConfirmation})
+		b.add(session.TypeUserToolConfirmation, "", 0, session.UserToolConfirmation{Sender: ada, ApprovalID: "apr_1", Decision: session.DecisionAllow})
+		b.add(session.TypeUserToolConfirmation, "", 0, session.UserToolConfirmation{Sender: ada, ApprovalID: "apr_2", Decision: session.DecisionAllow})
+		b.add(session.TypeUserToolConfirmation, "", 0, session.UserToolConfirmation{Sender: ada, ApprovalID: "apr_3", Decision: session.DecisionDeny, Note: "Use the registry."})
+		b.add(session.TypeNetworkChanged, "", 2, session.NetworkChanged{Added: []string{"registry.example.com"}, Source: session.NetworkFromPerson, ApprovalID: "apr_1"})
+		b.add(session.TypeApprovalDecided, "", 2, session.ApprovalDecided{ApprovalID: "apr_1", Decision: session.DecisionAllow, By: ada})
+		b.add(session.TypeSessionError, "", 2, session.SessionError{Code: "network_unavailable", Message: "The session's network could not be widened."})
+		b.add(session.TypeApprovalDecided, "", 2, session.ApprovalDecided{ApprovalID: "apr_2", Decision: session.DecisionAllow, By: ada})
+		b.add(session.TypeApprovalDecided, "", 2, session.ApprovalDecided{ApprovalID: "apr_3", Decision: session.DecisionDeny, By: ada, Note: "Use the registry."})
+		return []string{""}
+	}, nil},
 	{"redacted_and_summarized", func(b *logb) []string {
 		secret := b.user(ada, "my token is abc", 1)
 		b.assistant("", 1, false, txt("Noted."))

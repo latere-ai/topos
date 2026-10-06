@@ -22,6 +22,9 @@ const (
 	PrefixFiring     = "frg_"
 	PrefixCredential = "cred_"
 	PrefixMemory     = "mem_"
+	// PrefixApproval is an approval.requested's approval_id, minted by the
+	// runner (spec 052).
+	PrefixApproval = "apr_"
 )
 
 // crockford is the ULID alphabet: Crockford's base32, uppercase, without

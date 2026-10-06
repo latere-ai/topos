@@ -146,6 +146,15 @@ const (
 	// TranscriptImageUnseen stands in for an image a message carries when
 	// the model does not take images.
 	TranscriptImageUnseen Name = "transcript/image-unseen-v1"
+	// TranscriptApprovalRequested takes Host, Port, More and Ask: a
+	// command's connection the egress gateway refused (spec 052).
+	TranscriptApprovalRequested Name = "transcript/approval-requested-v1"
+	// TranscriptApprovalAllowed, TranscriptApprovalDenied and
+	// TranscriptApprovalUnavailable take Host and Note: the person's answer
+	// to a refused connection, and an allow the network could not take.
+	TranscriptApprovalAllowed     Name = "transcript/approval-allowed-v1"
+	TranscriptApprovalDenied      Name = "transcript/approval-denied-v1"
+	TranscriptApprovalUnavailable Name = "transcript/approval-unavailable-v1"
 )
 
 // The results the harness gives a call it does not run, or whose run
