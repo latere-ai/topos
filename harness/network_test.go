@@ -239,6 +239,13 @@ func TestFetchOutsideBlocks(t *testing.T) {
 	if agent.use(ctx, "toolu_1").Verdict != string(VerdictBlock) || agent.use(ctx, "toolu_2").Verdict != string(VerdictAllow) {
 		t.Fatalf("the agent's network: %+v %+v", agent.use(ctx, "toolu_1"), agent.use(ctx, "toolu_2"))
 	}
+	// A fetch whose URL names no host is the mode's to decide.
+	nohost := newNetEnv(t, nil, allowlist(false, "docs.example.com"))
+	nohost.stub.Script(model, reply(ir.StopToolUse, fetchCall("toolu_1", "file:///etc/hosts")))
+	nohost.send(ctx, "Read.")
+	if out := nohost.turn(ctx); out.StopReason != session.StopToolConfirmation || nohost.use(ctx, "toolu_1").Reason == "outside the session's network" {
+		t.Fatalf("a URL with no host: %+v %+v", out, nohost.use(ctx, "toolu_1"))
+	}
 	// A host machine is decided by the mode alone, as before.
 	host := newNetEnv(t, func(c *Config) { c.Machine = fakeMachine{kind: machine.KindHost} }, allowlist(false, "docs.example.com"))
 	host.stub.Script(model, reply(ir.StopToolUse, fetchCall("toolu_1", "https://other.example.com/x")))
