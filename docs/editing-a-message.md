@@ -70,7 +70,7 @@ neither, or a `blob` no message of the session attached is
 | Answer | |
 |---|---|
 | `invalid_fork_point` (422) | `before_seq` names no message a person sent that started a turn |
-| `invalid_request` (400) | `before_seq` beside `at_seq`; a message holding nothing; a file as above |
+| `invalid_request` (400) | `before_seq` beside `at_seq`; a message holding nothing; a file as above; a `tree` other than `"new"` |
 | `forbidden` (403) | the installation refused the new session, or refused the message, as it would refuse a create or a send; `details.reason` says why where it may |
 | `not_found` (404) | the caller may not read the session |
 
@@ -138,7 +138,31 @@ with `tree`:
 versions the list keeps. Opening an entry opens its newest version. A
 new fork moves its conversation to the head of the list. `root`,
 `parent` and `group` combine with each other and with the list's other
-filters; `parent=ses_A` lists the sessions forked from `ses_A`.
+filters; `parent=ses_A` lists the sessions forked from `ses_A`, those
+that started a conversation of their own included.
+
+## Continuing in a new conversation
+
+"Continue in a new conversation from here" is a fork too, but the new
+session is a conversation of its own, not another version of the one it
+came from. Send `tree: "new"`:
+
+```http
+POST /v1/sessions/ses_A/fork
+{"tree": "new",
+ "title": "Packing list",
+ "message": {"content": [{"type": "text", "text": "Now make a packing list for the trip."}]}}
+```
+
+The new session's `root` is its own id, so it is the top of a tree of
+its own: `group=tree` lists it as a separate conversation, `root=ses_A`
+leaves it out, and its own later edits are versions of it, not of
+`ses_A`. Its `parent` still names `ses_A` and the point it continued
+from, so a client can show where it came from. Any fork point works
+with it: `before_seq` to continue from just before a message, `at_seq`
+or none to continue from the end of a turn. Leaving `tree` out joins the
+tree of the session forked, as an edit does; `tree` takes `"new"`
+alone.
 
 ## What a version costs
 
@@ -155,4 +179,6 @@ Every session of a tree sends one prompt cache key, its root's, so where
 the provider caches a request's prefix and the version runs on the same
 model within the cache's lifetime, that prefix is read from what the
 original session cached, at the cache's read rate, and only the rest is
-paid at the input rate.
+paid at the input rate. A new conversation sends a key of its own, so a
+provider that routes its cache by key may not find the copied prefix
+from its first request.

@@ -36,8 +36,8 @@ Four things are missing for an edit:
    cannot be filtered by it, so a client that draws "1 / 2" pages through
    every session to find a session's forks.
 
-This spec adds `before_seq`, `message` and `title` to the fork body,
-`root` to the Session, three filters to the session list, and two
+This spec adds `before_seq`, `message`, `title` and `tree` to the fork
+body, `root` to the Session, three filters to the session list, and two
 corrections a fork needs once forks are common: its budget counts its
 own spend, and its requests share one cache key with the session it was
 forked from.
@@ -45,6 +45,7 @@ forked from.
 | Capability | What a client calls |
 |---|---|
 | edit fork | `POST /v1/sessions/{id}/fork` with `before_seq`, `message` and `title` |
+| new conversation | the same route with `tree: "new"`: a fork that starts a tree of its own |
 | branch list | the Session's `parent` and `root`; `GET /v1/sessions?root=<id>`, `?parent=<id>`, `?group=tree` |
 
 ## Current state
@@ -175,6 +176,28 @@ of [[017-external-runners-handoff-fork]] as today. A client that edits a
 message passes the parent's title, so the two versions read as one
 conversation.
 
+### A new conversation
+
+"Continue in a new conversation from here" is a fork too, and its
+session is not another version of the conversation it came from. Were
+it to join its parent's tree, `group=tree` would list it in the same
+entry as its source and its own edits would count as versions of the
+source. `tree` in the fork body says which tree the fork joins:
+
+| `tree` | The fork |
+|---|---|
+| absent | joins its parent's tree: its `root` is the parent's `root`, or the parent's id |
+| `"new"` | starts a tree of its own: its `root` is its own id |
+| anything else, `""` included | `invalid_request` |
+
+`parent {session_id, seq}` is kept in both, as the lineage: a client
+shows where a new conversation came from by it, and `parent=` lists it
+among its parent's forks. `tree` combines with every fork point and
+with `message` and `title`. `session.fork` carries `root`, the root of
+the tree the new session joins, so an authorizer that meters
+conversations rather than sessions tells a new conversation, whose
+`root` is its `session_id`, from another version of one.
+
 ### The tree
 
 A fork tree is every session reached from one session by forks, and
@@ -182,7 +205,7 @@ its root is the session at the top.
 
 | Session field | Type | Meaning |
 |---|---|---|
-| `root` | string | the `ses_` id of the session at the top of this session's fork tree: the parent's `root` when the parent has one, otherwise the parent's id; absent on a session no fork made, whose tree's root is itself |
+| `root` | string | the `ses_` id of the session at the top of this session's fork tree: the parent's `root` when the parent has one, otherwise the parent's id; its own id on a fork with `tree: "new"`; absent on a session no fork made, whose tree's root is itself |
 | `parent` | object | as today: `session_id` and `seq`, the session forked and how many of its events were copied, `seq` 0 for a fork before the opening message |
 | `budget.carried_cost_usd_micro` | integer | the spend of the copied events, below; absent on a session no fork made |
 
@@ -375,7 +398,7 @@ No new code.
 | Code | Status | When |
 |---|---|---|
 | `invalid_fork_point` | 422 | `before_seq` names no message that opened a turn, as above |
-| `invalid_request` | 400 | `before_seq` with `at_seq`; an attachment with both or neither of `data` and `blob`, or a `blob` no attachment of the parent names; `group` other than `tree` |
+| `invalid_request` | 400 | `before_seq` with `at_seq`; an attachment with both or neither of `data` and `blob`, or a `blob` no attachment of the parent names; `tree` other than `new`; `group` other than `tree` |
 | `forbidden` | 403 | the authorizer denied `session.fork` or `session.send`, with its reason in `details.reason` |
 
 ### Decisions
@@ -390,6 +413,7 @@ No new code.
 | The session that stands for a tree | the newest fork, decided 2026-10-06, reversible | the one updated last: a person who went back to an older version and went on there would find it, but the tree moves in the list with every message, and a page boundary can show it twice |
 | A trigger's message | not editable: `before_seq` naming it is `invalid_fork_point`; decided 2026-10-06, reversible | editable as a person's: a scheduled task's text is its owner's, and an edit makes a one-off variant of it |
 | A fork's budget | its own spend against its own cap, an edit's fork and a fork that continues an ended session alike; decided 2026-10-06, reversible | the whole log against its cap, as today: a fork of an expensive session stops at once though nothing was spent, and a continued session would keep today's shorter run |
+| A new conversation from a point | a fork with `tree: "new"`, its own root, its parent kept as lineage, decided 2026-10-07 | a fork that joins its parent's tree: the list shows it as a version of its source; a plain new session: it carries no `parent`, and a client cannot show where it came from |
 | The cache key | the tree's root | the session id: forks never share a cached prefix in a dialect that keys its cache; a key per fork point: a key per conversation is what a dialect that takes one asks for |
 
 ## Not in this spec
@@ -416,9 +440,13 @@ the server.
    check over the whole log, which is today's behavior.
 2. The next release's migration repeats the backfill for forks whose
    `root_id` is empty: a fork an earlier replica created during the
-   first roll has no columns.
+   first roll has no columns. Its walk up `parent_id` stops at a session
+   whose `root_id` is set and takes that `root_id`, so a fork whose
+   ancestor started a tree of its own joins that tree, not its
+   ancestor's source's.
 3. An installation's authorizer needs no change: `session.fork` asks
-   the fields it asks today, and the send of a fork's message is a send.
+   the fields it asks today and `root`, which an authorizer that does
+   not read it passes over, and the send of a fork's message is a send.
    An authorizer that reads its own record of a session on a send finds
    the fork's, written at the allow of `session.fork`.
 4. Clients after the first release: an older core refuses `before_seq`,
@@ -438,13 +466,14 @@ the server.
 | An attachment that names a blob of the parent's messages is copied and recorded under the new message's id; a digest the parent's messages do not name is refused | `internal/server.TestAForkMessageKeepsAnAttachmentByBlob` | built |
 | `title` sets the fork's title, `""` gives none, absent keeps the continuation title | `internal/server.TestForkTitle` | built |
 | A fork's `root` is its parent's root or its parent's id; a session no fork made has none | `session.TestRootOfAFork`, `internal/server.TestForkRoot` | built |
+| A fork with `tree: "new"` is its own root and keeps its parent; `session.fork` names that root; `root=` of the source leaves it out, `parent=` keeps it, `group=tree` lists it as a tree of its own, and a fork of it joins its tree; any other `tree` is `invalid_request` | `session.TestRootOfAFork`, `internal/server.TestAForkThatStartsANewConversation`, `internal/server.TestForkBodyRefusals`; the conformance rows `ListByRoot`, `ListByParent`, `ListGroupedByTree` hold such a fork in every store | built |
 | `root`, `parent` and `group=tree` answer as the table says in every store, inside the list's other filters and the authorizer's owners; `group=tree` stands each tree by its newest session; `tree.sessions` counts only what the list keeps | `session/storetest` conformance rows `ListByRoot`, `ListByParent`, `ListGroupedByTree`, run by the memory, directory and Postgres stores; `internal/server.TestTheListReadsATree` | built |
 | The migration backfills `parent_id`, `parent_seq` and `root_id`, and writes `root` into the bodies of existing forks | `internal/store/postgres.TestMigrationBackfillsTheTree` (postgres tier) | built |
 | Deleting a session in the middle of a tree leaves its forks readable, with `root` and `parent` unchanged, and they still list under `root` | `internal/server.TestDeletingAParentLeavesItsForks` | built |
 | A fork's budget check counts only the fork's own spend: a fork of a session that spent past the fork's cap runs its first request | `harness.TestAForksBudgetCountsItsOwnSpend` | built |
 | Every request of a fork carries the tree's root as its cache key; a session no fork made carries its own id | `harness.TestTheCacheKeyIsTheTreesRoot` | built |
 | The fork's first request equals its parent's last request up to the copy's end, byte for byte, when no machine attached in between | `harness.TestAForksPrefixIsItsParents` | built |
-| The OpenAPI document carries `before_seq`, `message`, `title`, `root`, `carried_cost_usd_micro`, the three list parameters and `tree` | `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestOpenAPIIsGenerated` | built |
+| The OpenAPI document carries `before_seq`, `message`, `title`, `tree`, `root`, `carried_cost_usd_micro`, the three list parameters and `tree` | `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestOpenAPIIsGenerated` | built |
 | A person's edited message runs on a fork through toposd: one call forks before the message with the edit, a runner claims the fork, its request carries the history before the message and the edit and never the original, and the list reads the two sessions as one tree standing by the fork | `cmd/toposd.TestAnEditedMessageRunsOnAFork` | built |
 
 ## Open questions
@@ -495,6 +524,13 @@ shipped differs from the draft in these points:
   append, and its `root_id` waits for the next release's backfill, as
   the Roll order says. A read fills a header's missing `root` from
   `root_id`, in a get, a list, a search and under the row lock.
+- **A new conversation (added 2026-10-07).** `tree: "new"` was added
+  after the first build, from the chat design: a fork that continues in
+  a new conversation starts a tree of its own. `session.Fork` keeps a
+  child's `root` only where it names the child itself; any other value
+  is replaced by the parent's tree's root. Such a fork sends its own id
+  as its cache key, so a dialect that keys its cache may not find the
+  copied prefix from its first request.
 - **The cache key is the request's.** The harness sets the tree's root
   as the IR request's `CacheKey`, which
   `harness.TestTheCacheKeyIsTheTreesRoot` holds. The Messages and

@@ -23,6 +23,14 @@ committed: the commit log already holds that.
   session, in place of the continuation title. A message sent while a
   turn ran, a trigger's message, and any other event are
   `invalid_fork_point`.
+- "Continue in a new conversation from here": a fork body's `tree:
+  "new"` starts a tree of the new session's own. Its `root` is its own
+  id and its `parent` still names the session it came from, so
+  `group=tree` lists it as a conversation of its own, `root=` of the
+  source leaves it out, and its edits are versions of it. Absent, a fork
+  joins its parent's tree; any other `tree` is `invalid_request`.
+  `session.fork` carries `root`, the root of the tree the new session
+  joins.
 - A fork with a message asks the authorizer `session.read`, then
   `session.fork`, then `session.send` of the new session, before anything
   is written; a deny of either writes nothing. A send refused after the
