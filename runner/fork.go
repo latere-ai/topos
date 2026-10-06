@@ -42,8 +42,13 @@ func forkCheckpoint(s session.Session, evs []session.Event) (*session.Checkpoint
 // out into the working directory. A fork point that kept no checkpoint
 // restores nothing and answers nil; one whose checkpoint the runner cannot
 // have or cannot check out answers why, and the fork starts on the files
-// its repositories give it.
+// its repositories give it. A fork before its parent's opening message
+// copied nothing, so it has no fork point to restore and starts fresh
+// (spec 054).
 func (r *Runner) restoreFork(ctx context.Context, s session.Session, m machine.Machine) (*session.CheckpointRef, error) {
+	if s.Parent.Seq == 0 {
+		return nil, nil
+	}
 	evs, err := r.o.Store.Events(ctx, s.ID, 1, int(s.Parent.Seq))
 	if err != nil {
 		return nil, err

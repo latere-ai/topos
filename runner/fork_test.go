@@ -186,6 +186,63 @@ func TestAForkWithoutItsCheckpointStartsFresh(t *testing.T) {
 	}
 }
 
+// TestAForkOfNothingStartsFresh: a fork before its parent's opening
+// message copies nothing and starts with its own message, so its first
+// machine opens on a directory of its own with none of the parent's
+// files, attached with no checkpoint and no checkpoint_missing.
+func TestAForkOfNothingStartsFresh(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	f := setup(t)
+	f.r.o.CheckpointDir = filepath.Join(filepath.Dir(f.work), "checkpoints")
+	ctx := t.Context()
+	write(t, filepath.Join(f.work, "notes.txt"), "draft one\n")
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Noted the first draft."}))
+	f.message(ctx, "Turn one.")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := session.ForkBefore(evs, 1)
+	if err != nil || at != 0 {
+		t.Fatalf("the fork point before the opening message is %d, %v", at, err)
+	}
+	msg, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: f.s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Turn one, put another way."}}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := session.New(f.s.Agent, f.s.Initiator, session.RunnerExternal, session.Machine{Kind: machine.KindHost}, t0)
+	if child, err = session.Fork(ctx, f.store, child, nil, f.s, evs[:at], msg); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(filepath.Dir(f.work), "fork")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.works[child.ID] = work
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Starting over."}))
+	if _, err := f.r.Drive(ctx, child.ID); err != nil {
+		t.Fatal(err)
+	}
+	cevs, err := f.store.Events(ctx, child.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := ownMachine(t, child, cevs); m.Reason != "attached" || m.Checkpoint != nil {
+		t.Fatalf("the fork's machine: reason %q, checkpoint %+v; want attached with none", m.Reason, m.Checkpoint)
+	}
+	if _, err := os.Stat(filepath.Join(work, "notes.txt")); !os.IsNotExist(err) {
+		t.Fatalf("the parent's file reached a fork that copied nothing: %v", err)
+	}
+	if errs := f.errorsIn(ctx, child.ID); len(errs) != 0 {
+		t.Fatalf("session errors %+v, want none", errs)
+	}
+}
+
 // TestAnEndOnIdleSessionForksAtItsTurn: a session created with
 // end_on_idle ends completed straight from running when its turn ends,
 // with no idle between; it forks at that end, the fork waits idle
