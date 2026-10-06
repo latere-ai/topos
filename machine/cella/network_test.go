@@ -24,14 +24,13 @@ import (
 // reports the mode the sandbox runs.
 func TestManifestTakesTheSessionsNetwork(t *testing.T) {
 	for _, c := range []struct {
-		mode  string
-		want  v1.Egress
-		hosts []string
+		mode string
+		want v1.Egress
 	}{
-		{"", v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: []string{"api.example.com", "code.example.com", "docs.example.org", "lux.example.com"}}, nil},
-		{"allowlist", v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: []string{"api.example.com", "code.example.com", "docs.example.org", "lux.example.com"}}, nil},
-		{"open", v1.Egress{Mode: v1.EgressOpen}, nil},
-		{"none", v1.Egress{Mode: v1.EgressNone}, nil},
+		{"", v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: []string{"api.example.com", "code.example.com", "docs.example.org", "lux.example.com"}}},
+		{"allowlist", v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: []string{"api.example.com", "code.example.com", "docs.example.org", "lux.example.com"}}},
+		{"open", v1.Egress{Mode: v1.EgressOpen}},
+		{"none", v1.Egress{Mode: v1.EgressNone}},
 	} {
 		f := open(t, func(stub *cellastub.Server, o *Options) {
 			stub.AddSecret("lux", "lux.example.com")
