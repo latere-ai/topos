@@ -3,9 +3,9 @@
 
 // Package cellastub is the stub Cella of spec 026: an HTTP server on
 // loopback that serves the routes machine/cella calls, the sandboxes'
-// create, read, start, stop and delete, the synchronous exec route, the
-// exec socket, the file routes and the tar routes, and the secret read
-// and apply.
+// create, read, apply, start, stop and delete, the synchronous exec route,
+// the exec socket, the file routes, the tar routes, the egress records,
+// and the secret read and apply.
 // Each sandbox is a temporary directory with its workspace in it, and a
 // command runs on the machine the test runs on, in that directory, so
 // the workspace path a sandbox reports is a real path and a command and
@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"latere.ai/x/cella/authorizer"
+	"latere.ai/x/cella/client"
 	v1 "latere.ai/x/cella/manifest/v1"
 	"latere.ai/x/pkg/httpjson"
 )
@@ -105,19 +106,24 @@ type Server struct {
 	secrets   map[string]v1.Secret
 	values    map[string]string
 	sandboxes map[string]*sandbox
-	failures  map[string][]Failure
-	starting  int
-	requests  []Recorded
-	errs      []error
-	seq       int
+	// refusing are the hosts the egress gateway refuses a command's
+	// connection to, by host, with the port it reports.
+	refusing map[string]int
+	failures map[string][]Failure
+	starting int
+	requests []Recorded
+	errs     []error
+	seq      int
 }
 
 // sandbox is one sandbox: its object and its directory, which holds the
-// workspace, a home directory and a temporary directory.
+// workspace, a home directory and a temporary directory, and the
+// connections the egress gateway reported for it, oldest first.
 type sandbox struct {
 	obj      v1.Sandbox
 	dir      string
 	starting int
+	records  []client.EgressRecord
 }
 
 func (sb *sandbox) workspace() string { return sb.obj.Spec.Workspace.Path }
@@ -137,6 +143,7 @@ func New(t testing.TB) *Server {
 		values:    map[string]string{},
 		sandboxes: map[string]*sandbox{},
 		failures:  map[string][]Failure{},
+		refusing:  map[string]int{},
 	}
 	s.srv = httptest.NewServer(s.routes())
 	t.Cleanup(s.srv.Close)
@@ -333,6 +340,8 @@ func (s *Server) routes() http.Handler {
 	}
 	handle("POST /v1/sandboxes", OpCreate, s.create)
 	handle("GET /v1/sandboxes/{ref}", OpGet, s.get)
+	handle("PUT /v1/sandboxes/{ref}", OpApply, s.apply)
+	handle("GET /v1/sandboxes/{ref}/egress", OpEgress, s.egressRecords)
 	handle("DELETE /v1/sandboxes/{ref}", OpDelete, s.remove)
 	handle("POST /v1/sandboxes/{ref}/start", OpStart, s.start)
 	handle("POST /v1/sandboxes/{ref}/stop", OpStop, s.stop)
@@ -418,13 +427,27 @@ func refuse(w http.ResponseWriter, status int, code, detail string) {
 var namePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
+	obj, ok := decodeSandbox(w, r)
+	if !ok {
+		return
+	}
+	s.createSandbox(w, obj)
+}
+
+// decodeSandbox reads a Sandbox manifest strictly, as Cella does.
+func decodeSandbox(w http.ResponseWriter, r *http.Request) (v1.Sandbox, bool) {
 	var obj v1.Sandbox
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&obj); err != nil {
 		refuse(w, http.StatusBadRequest, "unknown_field", err.Error())
-		return
+		return v1.Sandbox{}, false
 	}
+	return obj, true
+}
+
+// createSandbox creates a sandbox from a decoded manifest.
+func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 	if obj.APIVersion != v1.APIVersion || obj.Kind != v1.KindSandbox {
 		refuse(w, http.StatusBadRequest, "invalid_field", "the manifest is not a "+v1.APIVersion+" Sandbox")
 		return

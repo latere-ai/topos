@@ -114,9 +114,13 @@ type Options struct {
 	Image string
 	// Resources is the agent's spec.machine.resources.
 	Resources v1.Resources
-	// Egress are the hosts the sandbox may reach: the agent's
-	// spec.machine.egress and the git host of the session's repositories.
-	// The hosts of the named secrets join them.
+	// EgressMode is the mode of the sandbox's egress, open, allowlist or
+	// none, the session's network's (spec 052); empty is allowlist.
+	EgressMode string
+	// Egress are the hosts the sandbox may reach under allowlist: the
+	// session's network, the agent's spec.machine.egress and the git host
+	// of the session's repositories. The hosts of the named secrets join
+	// them. They are not sent under open or none.
 	Egress []string
 	// Secrets are the session's named secrets, each under the variable
 	// its placeholder arrives in.
@@ -170,6 +174,14 @@ type Machine struct {
 	created   bool
 	lost      bool
 	released  bool
+	// asked is the egress this machine last created or updated the
+	// sandbox with, which an ApplyNetwork of the same network does not
+	// send again; nil until it asked one.
+	asked *v1.Egress
+	// secretHosts are the hosts of the session's named secrets, read from
+	// Cella once.
+	secretHostList []string
+	secretsRead    bool
 }
 
 // SandboxName is the sandbox of a session: ses- and the session's ULID
@@ -358,6 +370,13 @@ func (m *Machine) attach(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A sandbox found by name runs the network it was last given, which a
+	// change made while no runner held the session has moved since.
+	if !created {
+		if sb, err = m.reconcile(ctx, sb); err != nil {
+			return err
+		}
+	}
 	m.set(sb, created)
 	return m.ensureHelper(ctx, sb.Status.ID)
 }
@@ -394,7 +413,7 @@ func (m *Machine) set(sb v1.Sandbox, created bool) {
 	m.workspace = sb.Spec.Workspace.Path
 	workdir := cmpOr(m.o.Workdir, sb.Spec.Workdir, m.workspace)
 	m.info = machine.Info{Kind: machine.KindCella, ID: sb.Status.ID, Workdir: workdir, Environment: sb.Status.Environment,
-		OS: m.info.OS, Arch: m.info.Arch}
+		OS: m.info.OS, Arch: m.info.Arch, Egress: string(sb.Spec.Network.Egress.Mode)}
 	m.roots = nil
 	for _, r := range []string{workdir, m.workspace, m.SpillDir()} {
 		if r != "" && !slices.Contains(m.roots, r) {
@@ -492,23 +511,19 @@ func sleep(ctx context.Context, d time.Duration) error {
 }
 
 // manifest is the sandbox's create body (spec 009): named after the
-// session, labeled, on the session's Environment, with the egress
-// allowlist, the named secrets and the lifecycle.
+// session, labeled, on the session's Environment, with the session's
+// network as its egress, the named secrets and the lifecycle.
 func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
-	hosts := slices.Clone(m.o.Egress)
-	for _, s := range m.o.Secrets {
-		sec, _, err := m.c.GetSecret(ctx, s.Name)
-		if err != nil {
-			return nil, refused("read the secret "+s.Name, err)
-		}
-		hosts = append(hosts, sec.Spec.Scope.Hosts...)
+	m.mu.Lock()
+	mode, hosts := m.o.EgressMode, slices.Clone(m.o.Egress)
+	m.mu.Unlock()
+	egress, err := m.egress(ctx, mode, hosts)
+	if err != nil {
+		return nil, err
 	}
-	for i, h := range hosts {
-		hosts[i] = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h)), ".")
-	}
-	slices.Sort(hosts)
-	hosts = slices.Compact(hosts)
-	hosts = slices.DeleteFunc(hosts, func(h string) bool { return h == "" })
+	m.mu.Lock()
+	m.asked = &egress
+	m.mu.Unlock()
 	labels := Labels(m.o.Labels, m.o.Session, m.o.Agent)
 	env := maps.Clone(m.o.Env)
 	if _, set := env["HOME"]; !set {
@@ -536,7 +551,7 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 			Resources:   m.o.Resources,
 			Env:         env,
 			Secrets:     m.o.Secrets,
-			Network:     v1.Network{Egress: v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: hosts}},
+			Network:     v1.Network{Egress: egress},
 			Lifecycle:   life,
 		},
 	}

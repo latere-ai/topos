@@ -33,6 +33,38 @@ type Info struct {
 	// empty on a machine that runs commands without one, and SandboxNone
 	// on a host whose operating system offers no sandbox at all.
 	Sandbox string
+	// Egress is the egress mode the machine reports it runs, open,
+	// allowlist or none, which its admission may have narrowed from the
+	// one asked (spec 052); empty on a machine that reports none.
+	Egress string
+}
+
+// Network is the egress a session's network gives its machine (spec
+// 052): the mode, open, allowlist or none, and under allowlist the hosts
+// the machine may reach beside the ones it joins itself, such as the
+// hosts its secrets are for.
+type Network struct {
+	Mode  string
+	Hosts []string
+}
+
+// Connection is one connection the machine's egress gateway refused, and
+// when it decided.
+type Connection struct {
+	Host string
+	Port int
+	At   time.Time
+}
+
+// Networked is the optional interface of a machine whose egress a
+// session's network governs (spec 052). ApplyNetwork narrows or widens
+// the machine to the network, and does nothing when it runs that network
+// already; a refusal leaves the machine's egress as it was. Refused are
+// the distinct hosts the gateway refused since a time, one connection
+// each, oldest first.
+type Networked interface {
+	ApplyNetwork(ctx context.Context, n Network) error
+	Refused(ctx context.Context, since time.Time) ([]Connection, error)
 }
 
 // SandboxNone is the Sandbox of a host with none of the mechanisms the

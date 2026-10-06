@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"sync"
+	"time"
 )
 
 // Opener is the optional interface of a machine opened on demand (spec
@@ -402,9 +403,29 @@ func (d *Deferred) Release(ctx context.Context, end bool) error {
 	return err
 }
 
+// ApplyNetwork applies the network to the open machine when it is
+// networked. A machine not opened yet has nothing to apply it to: its
+// opener reads the session's network when it opens.
+func (d *Deferred) ApplyNetwork(ctx context.Context, n Network) error {
+	if nm, ok := d.Opened().(Networked); ok {
+		return nm.ApplyNetwork(ctx, n)
+	}
+	return nil
+}
+
+// Refused are the open machine's refused connections, none before it
+// opens or on a machine that is not networked.
+func (d *Deferred) Refused(ctx context.Context, since time.Time) ([]Connection, error) {
+	if nm, ok := d.Opened().(Networked); ok {
+		return nm.Refused(ctx, since)
+	}
+	return nil, nil
+}
+
 var (
-	_ Machine = (*Deferred)(nil)
-	_ Opener  = (*Deferred)(nil)
-	_ Starter = (*Deferred)(nil)
-	_ Fetcher = (*Deferred)(nil)
+	_ Machine   = (*Deferred)(nil)
+	_ Networked = (*Deferred)(nil)
+	_ Opener    = (*Deferred)(nil)
+	_ Starter   = (*Deferred)(nil)
+	_ Fetcher   = (*Deferred)(nil)
 )

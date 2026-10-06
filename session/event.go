@@ -365,6 +365,9 @@ type AttachedMachine struct {
 	// Sandbox is the host sandbox driver the machine's commands run
 	// under, set on a server's host (spec 009).
 	Sandbox string `json:"sandbox,omitempty"`
+	// Egress is the egress mode the machine reported when it attached,
+	// open, allowlist or none (spec 052).
+	Egress string `json:"egress,omitempty"`
 }
 
 // Instructions names one project instruction file the harness loaded.

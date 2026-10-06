@@ -606,3 +606,42 @@ func TestExecRules(t *testing.T) {
 		t.Errorf("a first frame past the body limit: %v", err)
 	}
 }
+
+// TestApplyUpdatesTheEgressAndRefusesWhatCellaRefuses: an apply of a held
+// name updates the sandbox's egress, one that moves an immutable field is
+// refused immutable_field, one of a free name creates, and a refused host
+// is recorded for a command that names it until the egress admits it.
+func TestApplyUpdatesTheEgressAndRefusesWhatCellaRefuses(t *testing.T) {
+	s := New(t)
+	c, sb := create(t, s, "ses-net", func(sb *v1.Sandbox) {
+		sb.Spec.Network.Egress = v1.Egress{Mode: v1.EgressAllowlist, AllowedHosts: []string{"a.example.com"}}
+	})
+	s.RefuseHost("b.example.com", 443)
+	if _, _, err := c.Exec(t.Context(), sb.Status.ID, client.ExecRequest{Command: []string{"sh", "-c", "echo b.example.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	recs, _, err := c.EgressRecords(t.Context(), sb.Status.ID, 10)
+	if err != nil || len(recs) != 1 || recs[0].Host != "b.example.com" || recs[0].Decision != "denied" || recs[0].Port != 443 {
+		t.Fatalf("records %+v, %v", recs, err)
+	}
+	moved := sb
+	moved.Status = v1.SandboxStatus{}
+	moved.Spec.Image = "other"
+	_, _, err = c.ApplySandbox(t.Context(), "ses-net", manifest(t, "ses-net", func(x *v1.Sandbox) { x.Spec = moved.Spec }))
+	code(t, err, "immutable_field")
+	widened := sb.Spec
+	widened.Network.Egress.AllowedHosts = []string{"a.example.com", "b.example.com"}
+	got, _, err := c.ApplySandbox(t.Context(), "ses-net", manifest(t, "ses-net", func(x *v1.Sandbox) { x.Spec = widened }))
+	if err != nil || len(got.Spec.Network.Egress.AllowedHosts) != 2 || got.Status.ID != sb.Status.ID {
+		t.Fatalf("applied %+v, %v", got, err)
+	}
+	if _, _, err := c.Exec(t.Context(), sb.Status.ID, client.ExecRequest{Command: []string{"sh", "-c", "echo b.example.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	if recs, _, err := c.EgressRecords(t.Context(), sb.Status.ID, 10); err != nil || len(recs) != 1 {
+		t.Fatalf("a host the egress admits was refused: %+v, %v", recs, err)
+	}
+	if fresh, _, err := c.ApplySandbox(t.Context(), "ses-new", manifest(t, "ses-new")); err != nil || fresh.Status.ID == sb.Status.ID {
+		t.Fatalf("an apply of a free name: %+v, %v", fresh, err)
+	}
+}

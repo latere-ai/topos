@@ -125,6 +125,7 @@ func (s *Server) execWait(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusBadRequest, "invalid_field", err.Error())
 		return
 	}
+	s.noteRefusals(r.PathValue("ref"), req.Command)
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, lookPath(req.Command[0]), req.Command[1:]...)
@@ -197,6 +198,7 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 		s.fail(c, "invalid_field", err.Error())
 		return
 	}
+	s.noteRefusals(r.PathValue("ref"), req.Command)
 	s.drive(r.Context(), c, sb, req, timeout)
 }
 
