@@ -415,7 +415,7 @@ var reapInterval = 5 * time.Second
 // confine stops the start. failover is the server's question of which
 // model a turn continues on when its model cannot serve (spec 051), nil
 // in a runner process, whose leases ask it over the internal listener.
-func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string) (session.ModelRef, error), log *slog.Logger) (<-chan struct{}, error) {
+func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string, string) (session.ModelRef, error), log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)

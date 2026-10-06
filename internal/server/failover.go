@@ -17,21 +17,24 @@ import (
 )
 
 // Failover answers which model a session's turn continues on when the
-// model it runs could not serve now (spec 051); a hosted runner's harness
-// asks it in the middle of a turn. current is the model the turn runs, and
-// failed that model, or a model an earlier answer of the turn named that
-// the runner could not connect, with the same via. It asks the authorizer
-// session.update as the session's initiator, in the context the session's
-// agent belongs to, which is the context the session runs in: model is the
-// routed name the session runs, current_model and current_model_via the
-// model the session stands on and that name, failed_model the model that
-// failed, and failed_detail, when there is one, the developer detail of
+// model it runs could not serve now, or its provider rejected the request
+// (spec 051); a hosted runner's harness asks it in the middle of a turn.
+// current is the model the turn runs, and failed that model, or a model an
+// earlier answer of the turn named that the runner could not connect, with
+// the same via. It asks the authorizer session.update as the session's
+// initiator, in the context the session's agent belongs to, which is the
+// context the session runs in: model is the routed name the session runs,
+// current_model and current_model_via the model the session stands on and
+// that name, failed_model the model that failed, failed_reason, when there
+// is one, why it failed, harness.FailedRejected for a request the provider
+// rejected, and failed_detail, when there is one, the developer detail of
 // the failure, at most models.MaxDetail bytes: the gateway's, from which
 // an installation tells a provider's rate limit from its outage, or why
 // the model named could not be connected. An authorizer that routes
 // passes over the failed model and names another in the allow's model, as
-// it answers any switch to a routed name; one that reads no failed_model
-// answers the model the session stands on.
+// it answers any switch to a routed name, or keeps the turn on the model a
+// rejected request failed on by naming none; one that reads no
+// failed_model answers the model the session stands on.
 //
 // The model the allow names is checked by the rule a switch checks a
 // model by, and its level, "" being the agent's own, is resolved as a
@@ -43,7 +46,7 @@ import (
 // Recording the change is the harness's, in the turn's own batch. A deny,
 // an authorizer that cannot be asked and a model the installation does
 // not run are errors.
-func (s *Server) Failover(ctx context.Context, id string, current, failed session.ModelRef, detail string) (session.ModelRef, error) {
+func (s *Server) Failover(ctx context.Context, id string, current, failed session.ModelRef, reason, detail string) (session.ModelRef, error) {
 	sess, err := s.o.Sessions.Get(ctx, id)
 	if err != nil {
 		return session.ModelRef{}, err
@@ -63,6 +66,9 @@ func (s *Server) Failover(ctx context.Context, id string, current, failed sessio
 	fields := map[string]any{
 		"session_id": sess.ID, "model": old.Via, "current_model": old.Name, "current_model_via": old.Via,
 		"failed_model": failed.Name,
+	}
+	if reason != "" {
+		fields["failed_reason"] = reason
 	}
 	if detail != "" {
 		fields["failed_detail"] = cut(detail, models.MaxDetail)

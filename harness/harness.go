@@ -155,19 +155,22 @@ type Config struct {
 	// for the turns after. Nil runs every turn on the configured model.
 	Connect func(ctx context.Context, name string) (models.Model, models.Connection, models.Entry, error)
 	// Failover asks which model a turn continues on when the model it runs
-	// cannot serve now (spec 051), for a session on a routed name alone:
-	// standing is the model the turn runs, with the name it was picked for
-	// as via; failed is the model that could not serve, standing itself,
-	// or a model an earlier answer of the turn named that could not be
-	// connected, with the same via; and detail is the developer detail of
-	// the failure, the gateway's or the connection's, "" for none, from
-	// which an installation tells a provider's rate limit from its outage.
-	// The answer names the model to run in its place with the same via, at
-	// the reasoning level it answers, the agent's own resolved; an answer
-	// that names standing, failed or none moves nothing. The runner asks
-	// the installation's authorizer. Nil asks nothing, and such a failure
-	// ends the turn after DownRetry.
-	Failover func(ctx context.Context, standing, failed session.ModelRef, detail string) (session.ModelRef, error)
+	// cannot serve now, or its provider rejected the request (spec 051),
+	// for a session on a routed name alone: standing is the model the turn
+	// runs, with the name it was picked for as via; failed is the model
+	// that failed, standing itself, or a model an earlier answer of the
+	// turn named that could not be connected, with the same via; reason is
+	// FailedRejected when the provider rejected the request on failed, and
+	// "" when failed cannot serve now or could not be connected; and detail
+	// is the developer detail of the failure, the gateway's or the
+	// connection's, "" for none, from which an installation tells a
+	// provider's rate limit from its outage. The answer names the model to
+	// run in its place with the same via, at the reasoning level it
+	// answers, the agent's own resolved; an answer that names standing,
+	// failed or none moves nothing. The runner asks the installation's
+	// authorizer. Nil asks nothing: a model that cannot serve ends the turn
+	// after DownRetry, and a rejected request with the model's error.
+	Failover func(ctx context.Context, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
 
 	// ceiling is the stricter of the modes the agents above a thread name,
 	// empty for the session's own thread: a change of the session's mode
@@ -207,6 +210,14 @@ const (
 
 // MessageModelBusy is the one sentence of CodeModelBusy, for a person.
 const MessageModelBusy = "The model is busy right now. Send your message again in a moment."
+
+// FailedRejected is the reason Config.Failover is asked with when the
+// provider serving the turn's model rejected the request (models.Rejected,
+// spec 051), and the value of failed_reason in the authorizer's question.
+// The authorizer decides whether another model answers in its place; a
+// turn it keeps on the model ends with the model's error, CodeModelError,
+// since the request itself may be what was refused.
+const FailedRejected = "rejected"
 
 // New checks the configuration: a model, a valid connection, a machine,
 // a registry, and a catalog entry with an output limit.
@@ -768,7 +779,7 @@ func (t *turn) stepOnce(ctx context.Context) error {
 				return t.canceledRequest(ctx, si)
 			}
 			why := ""
-			if moves && models.Down(err) {
+			if moves && (models.Down(err) || models.Rejected(err)) {
 				ferr := t.failover(sctx, err, si, res.RawResponse)
 				var stay *stayed
 				switch {
@@ -1064,6 +1075,11 @@ func (t *turn) modelFailed(ctx context.Context, err error, si sendInfo, raw []by
 		}
 		return t.finish(ctx, session.StopError, CodeModelBusy, mr, se)
 	}
+	// A request the provider rejected that the authorizer kept on its
+	// model ends with the model's error, and why it did not move.
+	if why != "" {
+		detail += "; " + why
+	}
 	se, eerr := t.sessionError(CodeModelError, err.Error(), models.Retryable(err), detail)
 	if eerr != nil {
 		return eerr
@@ -1097,15 +1113,18 @@ func httpDetail(err error) string {
 	return ""
 }
 
-// switchable reports whether a failure of the turn's model to serve now
-// moves the turn to another model (spec 051): the session's own thread,
-// on a routed name, with a router to ask and moves left.
+// switchable reports whether a failure of the turn's model to serve now,
+// or the provider's rejection of its request, may move the turn to another
+// model (spec 051): the session's own thread, on a routed name, with a
+// router to ask and moves left.
 func (t *turn) switchable() bool {
 	return t.thread == "" && t.h.c.Failover != nil && t.model.Via != "" && t.model.Name != "" && t.switches < MaxModelSwitches
 }
 
-// failover moves the turn off a model that could not serve now (spec
-// 051). It asks Config.Failover, connects the model answered as a switch
+// failover moves the turn off a model that could not serve now, or whose
+// provider rejected the request (spec 051). It asks Config.Failover, the
+// first question with FailedRejected and the gateway's code and detail
+// for a rejected request, connects the model answered as a switch
 // between turns connects one, and records in one batch the failed
 // request and the session.model_changed the service made, with
 // session.ReasonModelBusy; the step then sends its request again on the
@@ -1119,14 +1138,17 @@ func (t *turn) switchable() bool {
 // the turn runs out of moves; any other error is a failure to record,
 // which stops the turn at once.
 func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byte) error {
-	failed, detail := t.model, models.GatewayDetail(cause)
+	failed, reason, detail := t.model, "", models.GatewayDetail(cause)
+	if models.Rejected(cause) {
+		reason, detail = FailedRejected, rejectedDetail(cause)
+	}
 	var passed []string
 	stay := func(why string) error { return &stayed{why: strings.Join(append(passed, why), "; ")} }
 	var next session.ModelRef
 	var scoped Harness
 	for {
 		var err error
-		next, err = t.h.c.Failover(ctx, t.model, failed, detail)
+		next, err = t.h.c.Failover(ctx, t.model, failed, reason, detail)
 		switch {
 		case err != nil:
 			return stay("no other model was named: " + err.Error())
@@ -1145,7 +1167,9 @@ func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byt
 		if t.switches++; t.switches >= MaxModelSwitches || ctx.Err() != nil {
 			return &stayed{why: strings.Join(passed, "; ")}
 		}
-		failed, detail = next, why
+		// The model named failed to connect, not to serve a request: the
+		// next question asks past it with no reason.
+		failed, reason, detail = next, "", why
 	}
 	scoped.c.Effort = next.Level()
 	mr, err := t.failedRequest(ctx, cause, si, raw)
@@ -1172,6 +1196,20 @@ func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byt
 		o.OnReset(t.thread, t.num, t.step)
 	}
 	return nil
+}
+
+// rejectedDetail is the detail a failover question carries for a request
+// the provider rejected: the gateway's code, then its developer detail when
+// it sent one, as the gateway writes the two in its own records.
+func rejectedDetail(err error) string {
+	var he *models.HTTPError
+	if !errors.As(err, &he) {
+		return ""
+	}
+	if he.Detail == "" {
+		return he.Type
+	}
+	return he.Type + ": " + he.Detail
 }
 
 // stayed is a failover that left the turn on its model (spec 051): why

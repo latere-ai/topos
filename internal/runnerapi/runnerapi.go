@@ -24,6 +24,7 @@ import (
 	"latere.ai/x/pkg/bearer"
 	"latere.ai/x/pkg/httpjson"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
@@ -109,17 +110,22 @@ type Token struct {
 }
 
 // FailoverRequest asks, under the lease, which model the session's turn
-// continues on when Failed could not serve now (spec 051): Failed is the
-// model the turn runs with the routed name it was picked for, or one an
-// earlier answer of the turn named that could not be connected, and
-// Standing, set only when it is another model than Failed, the model the
-// turn runs; Detail is the developer detail of the failure. A request
+// continues on when Failed could not serve now, or its provider rejected
+// the request (spec 051): Failed is the model the turn runs with the
+// routed name it was picked for, or one an earlier answer of the turn
+// named that could not be connected, and Standing, set only when it is
+// another model than Failed, the model the turn runs; Reason is
+// harness.FailedRejected for a request the provider rejected, absent
+// otherwise; Detail is the developer detail of the failure. A request
 // with no Standing stands on Failed, so a server before Standing reads
-// every request but one that passes a model over.
+// every request but one that passes a model over. A server before Reason
+// refuses a request that carries it as invalid_request, since it decodes
+// no unknown member, and the turn ends with the model's error.
 type FailoverRequest struct {
 	Generation int64             `json:"generation"`
 	Standing   *session.ModelRef `json:"standing,omitempty"`
 	Failed     session.ModelRef  `json:"failed"`
+	Reason     string            `json:"reason,omitempty"`
 	Detail     string            `json:"detail,omitempty"`
 }
 
@@ -166,11 +172,12 @@ type Options struct {
 	// checked the runner holds; nil mints nothing.
 	Credentials func(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error)
 	// Failover answers which model the session id's turn continues on
-	// when failed could not serve now (spec 051), standing the model the
-	// turn runs, to a lease the route has checked the runner holds:
-	// toposd's question to its authorizer. Nil names none, so nothing
-	// moves.
-	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, detail string) (session.ModelRef, error)
+	// when failed could not serve now, or its provider rejected the
+	// request (spec 051), standing the model the turn runs, reason and
+	// detail as harness.Config.Failover says, to a lease the route has
+	// checked the runner holds: toposd's question to its authorizer. Nil
+	// names none, so nothing moves.
+	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
 	Now      func() time.Time
 	Log      *slog.Logger
 }
@@ -428,6 +435,9 @@ func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
 	if req.Failed.Name == "" {
 		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a failover request names the failed model"}
 	}
+	if req.Reason != "" && req.Reason != harness.FailedRejected {
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, fmt.Sprintf("a failover request's reason is %q or absent", harness.FailedRejected)}
+	}
 	id := r.PathValue("session")
 	c, err := s.held(id, req.Generation)
 	if err != nil {
@@ -446,7 +456,7 @@ func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
 	if s.o.Failover == nil {
 		return reply(w, http.StatusOK, FailoverAnswer{Model: standing})
 	}
-	next, err := s.o.Failover(r.Context(), id, standing, req.Failed, req.Detail)
+	next, err := s.o.Failover(r.Context(), id, standing, req.Failed, req.Reason, req.Detail)
 	if err != nil {
 		return &wireError{CodeNoFailover, http.StatusBadGateway, err.Error()}
 	}
