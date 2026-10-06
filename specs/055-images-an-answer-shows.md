@@ -205,7 +205,9 @@ today, and nothing else.
 | What names an image | the answer's own reference, read when the step is committed | a `show` tool the agent calls: one more call per image, an image shown where the call stands rather than where the text puts it, and an agent that forgets the call shows a broken picture; keeping every image a step writes: a command's writes are not in the log by name, and a diff of the working directory after every step costs a walk of it |
 | When | when the step is committed, from the open machine | when the client reads the answer: the machine rests and the read fails, which is the problem; at the end of the session: the machine may be gone and the answer was read long before |
 | Where the bytes go | a blob of the session | a checkpoint: only a session in a repository keeps one, per turn and not per answer, and it holds the whole directory |
-| Which formats | the four raster formats a model and a browser both take | SVG: a document that runs script when opened as one, which a client would have to sanitize; left for a later spec |
+| Which formats | the four raster formats a model and a browser both take; no SVG, decided 2026-10-06, reversible | SVG: a document that runs script when opened as one, which a client would have to sanitize, or served only as a download or through a sanitizer |
+| A step with no open machine | keeps nothing and never opens a machine to keep an image, decided 2026-10-06, reversible | opening the machine to keep it: the session spends a machine's time on a read, against [[044-reading-a-sessions-files]]'s rule |
+| Files of other kinds an answer links | not kept here; a later spec, decided 2026-10-06, reversible | a PDF report or a spreadsheet kept the same way now, under bounds of their own |
 | The blob route's type | sniffed from the bytes at each read | a type stored with the blob: the store keeps bytes by digest alone, and the same bytes have one type |
 
 ## Not in this spec
@@ -213,7 +215,7 @@ today, and nothing else.
 How a client draws a kept image beside the reference, and what it shows
 for a skipped one. Images on the web that an answer links by URL: a
 client's to fetch, and not the session's. Files of other kinds an
-answer names. The files route, which stays a live read
+answer names, a PDF or a spreadsheet: a later spec. The files route, which stays a live read
 ([[044-reading-a-sessions-files]]).
 
 ## Roll order
@@ -250,9 +252,6 @@ answer names. The files route, which stays a live read
 
 ## Open questions
 
-1. Whether SVG images are kept too, served only as a download or
-   through a sanitizer, since charting libraries often write SVG.
-2. Whether a step that names an image while no machine is open should
-   open the machine to keep it, at the cost of that machine's time.
-3. Whether files of other kinds an answer links, a PDF report or a
-   spreadsheet, are kept the same way under their own bounds.
+None. The draft's three questions, SVG, opening a machine to keep an
+image, and files of other kinds, are decided above (2026-10-06,
+reversible).
