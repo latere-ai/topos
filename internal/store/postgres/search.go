@@ -50,6 +50,13 @@ func filters(alias string, o session.ListOptions, args *[]any) string {
 	case session.ArchivedOnly:
 		conds = append(conds, alias+"archived_at IS NOT NULL")
 	}
+	if o.Root != "" {
+		root := arg(args, o.Root)
+		conds = append(conds, "("+alias+"id = "+root+" OR "+alias+"root_id = "+root+")")
+	}
+	if o.Parent != "" {
+		conds = append(conds, alias+"parent_id = "+arg(args, o.Parent))
+	}
 	return strings.Join(conds, " AND ")
 }
 
@@ -111,23 +118,15 @@ func (s *Store) Search(ctx context.Context, o session.SearchOptions) ([]session.
 	if o.Cursor != "" {
 		where += " AND s.id < " + arg(&args, o.Cursor)
 	}
-	rows, err := s.pool.Query(ctx, `SELECT s.body FROM sessions s WHERE `+where+`
+	rows, err := s.pool.Query(ctx, `SELECT s.body, s.root_id FROM sessions s WHERE `+where+`
 		AND EXISTS (SELECT 1 FROM events e WHERE e.session_id = s.id AND NOT e.redacted AND e.search @@ to_tsquery('simple', $1))
 		ORDER BY s.id DESC LIMIT `+arg(&args, limit+1), args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: search sessions: %w", err)
 	}
-	bodies, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	found, err := decodeRows(rows)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: search sessions: %w", err)
-	}
-	var found []session.Session
-	for _, b := range bodies {
-		sess, err := decodeSession(b)
-		if err != nil {
-			return nil, "", err
-		}
-		found = append(found, sess)
 	}
 	next := ""
 	if len(found) > limit {

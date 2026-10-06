@@ -197,11 +197,12 @@ func (s *Store) Create(ctx context.Context, sess session.Session, blobs map[sess
 		if sess.Writer != nil {
 			writerKind, writerSubject = sess.Writer.Kind, sess.Writer.Subject
 		}
+		parentID, parentSeq, rootID := treeColumns(sess)
 		_, err := tx.Exec(ctx, `INSERT INTO sessions (id, agent_id, agent_version, owner, runner, status, stop_reason, turn, last_seq,
-			created_at, updated_at, expires_at, body, writer_kind, writer_subject)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			created_at, updated_at, expires_at, body, writer_kind, writer_subject, parent_id, parent_seq, root_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
 			sess.ID, sess.Agent.ID, sess.Agent.Version, sess.Initiator.Subject, sess.Runner, string(sess.Status), string(sess.StopReason),
-			sess.Turn, int64(sess.LastSeq), sess.CreatedAt, sess.UpdatedAt, sess.ExpiresAt, body, writerKind, writerSubject)
+			sess.Turn, int64(sess.LastSeq), sess.CreatedAt, sess.UpdatedAt, sess.ExpiresAt, body, writerKind, writerSubject, parentID, parentSeq, rootID)
 		if isUnique(err) {
 			return fmt.Errorf("%w: %s", session.ErrExists, sess.ID)
 		}
@@ -240,53 +241,136 @@ func (s *Store) insertBlob(ctx context.Context, q interface {
 	return nil
 }
 
+// treeColumns are a session's tree columns as its insert writes them,
+// each nil for a session no fork made (spec 054).
+func treeColumns(sess session.Session) (parentID *string, parentSeq *int64, rootID *string) {
+	if p := sess.Parent; p != nil {
+		id, seq := p.SessionID, int64(p.Seq)
+		parentID, parentSeq = &id, &seq
+	}
+	if sess.Root != "" {
+		root := sess.Root
+		rootID = &root
+	}
+	return parentID, parentSeq, rootID
+}
+
 func (s *Store) Get(ctx context.Context, id string) (session.Session, error) {
 	if err := session.CheckID(session.PrefixSession, id); err != nil {
 		return session.Session{}, err
 	}
-	var body string
-	err := s.pool.QueryRow(ctx, `SELECT body FROM sessions WHERE id = $1`, id).Scan(&body)
+	var row sessionRow
+	err := s.pool.QueryRow(ctx, `SELECT body, root_id FROM sessions WHERE id = $1`, id).Scan(&row.Body, &row.Root)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return session.Session{}, fmt.Errorf("%w: %s", session.ErrNotFound, id)
 	}
 	if err != nil {
 		return session.Session{}, fmt.Errorf("postgres: read session %s: %w", id, err)
 	}
-	return decodeSession(body)
+	return row.decode()
 }
 
-func decodeSession(body string) (session.Session, error) {
+// sessionRow is a session's body with its root column.
+type sessionRow struct {
+	Body string
+	Root *string
+}
+
+// decode reads the body, its root filled from the column where a
+// replica of an earlier release rewrote the body without it (spec 054).
+func (r sessionRow) decode() (session.Session, error) {
 	var sess session.Session
-	if err := json.Unmarshal([]byte(body), &sess); err != nil {
+	if err := json.Unmarshal([]byte(r.Body), &sess); err != nil {
 		return session.Session{}, fmt.Errorf("%w: a session row: %w", session.ErrCorrupt, err)
+	}
+	if sess.Root == "" && r.Root != nil {
+		sess.Root = *r.Root
 	}
 	return sess, nil
 }
 
+// decodeRows reads the bodies and root columns of a query's rows.
+func decodeRows(rows pgx.Rows) ([]session.Session, error) {
+	read, err := pgx.CollectRows(rows, pgx.RowToStructByPos[sessionRow])
+	if err != nil {
+		return nil, err
+	}
+	out := make([]session.Session, 0, len(read))
+	for _, r := range read {
+		sess, err := r.decode()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sess)
+	}
+	return out, nil
+}
+
+// List pages the filtered sessions newest first. Grouped by tree, it
+// keeps of each tree's filtered sessions the newest, counting them, and
+// pages those by their own id (spec 054).
 func (s *Store) List(ctx context.Context, o session.ListOptions) ([]session.Session, string, error) {
 	limit := o.Limit
 	if limit <= 0 {
 		limit = session.DefaultListLimit
+	}
+	if o.Group == session.GroupTree {
+		return s.listTrees(ctx, o, limit)
 	}
 	var args []any
 	where := filters("", o, &args)
 	if o.Cursor != "" {
 		where += " AND id < " + arg(&args, o.Cursor)
 	}
-	rows, err := s.pool.Query(ctx, `SELECT body FROM sessions WHERE `+where+` ORDER BY id DESC LIMIT `+arg(&args, limit+1), args...)
+	rows, err := s.pool.Query(ctx, `SELECT body, root_id FROM sessions WHERE `+where+` ORDER BY id DESC LIMIT `+arg(&args, limit+1), args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: list sessions: %w", err)
 	}
-	bodies, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	out, err := decodeRows(rows)
 	if err != nil {
 		return nil, "", fmt.Errorf("postgres: list sessions: %w", err)
 	}
-	var out []session.Session
-	for _, b := range bodies {
-		sess, err := decodeSession(b)
+	if len(out) > limit {
+		return out[:limit], out[limit-1].ID, nil
+	}
+	return out, "", nil
+}
+
+// listTrees is List grouped by tree: the filtered rows are grouped
+// before the cursor applies, so a page starts at the tree after the one
+// the cursor names.
+func (s *Store) listTrees(ctx context.Context, o session.ListOptions, limit int) ([]session.Session, string, error) {
+	var args []any
+	where := filters("", o, &args)
+	outer := "TRUE"
+	if o.Cursor != "" {
+		outer = "id < " + arg(&args, o.Cursor)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT body, root_id, tree_root, tree_sessions FROM (
+		SELECT DISTINCT ON (COALESCE(root_id, id)) id, body, root_id, COALESCE(root_id, id) AS tree_root,
+			count(*) OVER (PARTITION BY COALESCE(root_id, id)) AS tree_sessions
+		FROM sessions WHERE `+where+` ORDER BY COALESCE(root_id, id), id DESC
+	) trees WHERE `+outer+` ORDER BY id DESC LIMIT `+arg(&args, limit+1), args...)
+	if err != nil {
+		return nil, "", fmt.Errorf("postgres: list session trees: %w", err)
+	}
+	type treeRow struct {
+		Body     string
+		Root     *string
+		TreeRoot string
+		Sessions int64
+	}
+	read, err := pgx.CollectRows(rows, pgx.RowToStructByPos[treeRow])
+	if err != nil {
+		return nil, "", fmt.Errorf("postgres: list session trees: %w", err)
+	}
+	out := make([]session.Session, 0, len(read))
+	for _, r := range read {
+		sess, err := sessionRow{Body: r.Body, Root: r.Root}.decode()
 		if err != nil {
 			return nil, "", err
 		}
+		sess.Tree = &session.Tree{Root: r.TreeRoot, Sessions: int(r.Sessions)}
 		out = append(out, sess)
 	}
 	if len(out) > limit {
@@ -323,18 +407,21 @@ func (s *Store) Summarize(ctx context.Context, o session.ListOptions) (session.S
 
 // locked reads a session under its row lock for the rest of tx.
 func locked(ctx context.Context, tx pgx.Tx, id string) (session.Session, error) {
-	var body string
-	err := tx.QueryRow(ctx, `SELECT body FROM sessions WHERE id = $1 FOR UPDATE`, id).Scan(&body)
+	var row sessionRow
+	err := tx.QueryRow(ctx, `SELECT body, root_id FROM sessions WHERE id = $1 FOR UPDATE`, id).Scan(&row.Body, &row.Root)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return session.Session{}, fmt.Errorf("%w: %s", session.ErrNotFound, id)
 	}
 	if err != nil {
 		return session.Session{}, fmt.Errorf("postgres: lock session %s: %w", id, err)
 	}
-	return decodeSession(body)
+	return row.decode()
 }
 
-// saveHeader writes a session's header back with its filter columns.
+// saveHeader writes a session's header back with its filter columns. A
+// tree column is set where the header names it and never cleared, so a
+// fork an earlier replica inserted without them gains its parent here
+// (spec 054).
 func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 	body, err := encode(sess)
 	if err != nil {
@@ -344,9 +431,11 @@ func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 	if sess.Status == session.StatusEnded {
 		ended = sess.UpdatedAt
 	}
+	parentID, parentSeq, rootID := treeColumns(sess)
 	_, err = tx.Exec(ctx, `UPDATE sessions SET body = $2, status = $3, stop_reason = $4, turn = $5, last_seq = $6, updated_at = $7,
-		ended_at = COALESCE(ended_at, $8) WHERE id = $1`,
-		sess.ID, body, string(sess.Status), string(sess.StopReason), sess.Turn, int64(sess.LastSeq), sess.UpdatedAt, ended)
+		ended_at = COALESCE(ended_at, $8), parent_id = COALESCE($9, parent_id), parent_seq = COALESCE($10, parent_seq),
+		root_id = COALESCE($11, root_id) WHERE id = $1`,
+		sess.ID, body, string(sess.Status), string(sess.StopReason), sess.Turn, int64(sess.LastSeq), sess.UpdatedAt, ended, parentID, parentSeq, rootID)
 	if err != nil {
 		return fmt.Errorf("postgres: save session %s: %w", sess.ID, err)
 	}

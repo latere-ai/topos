@@ -6,6 +6,7 @@
 package postgres
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"slices"
@@ -20,6 +21,7 @@ import (
 
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/session"
+	"latere.ai/x/topos/session/storetest"
 )
 
 // migrateTo applies the embedded migrations up to and including version
@@ -184,5 +186,105 @@ func TestOwnerTypeMigratesATableThatHoldsAgents(t *testing.T) {
 	}
 	if _, err := conn.Exec(t.Context(), `UPDATE agents SET owner_type = 'team' WHERE id = $1`, held); err == nil {
 		t.Fatal("the table took an owner type that is neither a person nor an organization")
+	}
+}
+
+// TestMigrationBackfillsTheTree: a database at migration 0007 holds a
+// session, its fork and that fork's fork, and two forks below a session
+// deleted before the migration. After it each fork reads its tree's
+// root, the deleted session's id where the walk up ends at it, from its
+// body and its columns; a body an earlier release rewrote without root
+// still reads it, and a list by root finds the tree.
+func TestMigrationBackfillsTheTree(t *testing.T) {
+	dsn := database(t)
+	migrateTo(t, dsn, "0007")
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	gone := session.NewID(session.PrefixSession)
+	sessions := map[string]session.Session{}
+	for _, c := range []struct{ name, parent string }{{"a", ""}, {"b", "a"}, {"c", "b"}, {"d", "gone"}, {"e", "d"}} {
+		s := storetest.NewSession()
+		if c.parent == "gone" {
+			s.Parent = &session.Parent{SessionID: gone, Seq: 3}
+		} else if c.parent != "" {
+			s.Parent = &session.Parent{SessionID: sessions[c.parent].ID, Seq: 4}
+		}
+		body, err := encode(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Exec(t.Context(), `INSERT INTO sessions (id, agent_id, agent_version, owner, runner, status, turn, last_seq, created_at, updated_at, expires_at, body)
+			VALUES ($1, $2, 1, $3, $4, $5, 0, 0, $6, $6, $7, $8)`, s.ID, s.Agent.ID, s.Initiator.Subject, s.Runner, string(s.Status), s.CreatedAt, s.ExpiresAt, body); err != nil {
+			t.Fatal(err)
+		}
+		sessions[c.name] = s
+	}
+
+	st, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	a := sessions["a"].ID
+	for name, want := range map[string]string{"a": "", "b": a, "c": a, "d": gone, "e": gone} {
+		id := sessions[name].ID
+		got, err := st.Get(t.Context(), id)
+		if err != nil || got.Root != want {
+			t.Fatalf("%s reads root %q, want %q: %v", name, got.Root, want, err)
+		}
+		var body string
+		var parentID, rootID *string
+		var parentSeq *int64
+		if err := conn.QueryRow(t.Context(), `SELECT body, parent_id, parent_seq, root_id FROM sessions WHERE id = $1`, id).Scan(&body, &parentID, &parentSeq, &rootID); err != nil {
+			t.Fatal(err)
+		}
+		var stored session.Session
+		if err := json.Unmarshal([]byte(body), &stored); err != nil {
+			t.Fatal(err)
+		}
+		p := sessions[name].Parent
+		switch {
+		case stored.Root != want:
+			t.Fatalf("%s's body holds root %q, want %q", name, stored.Root, want)
+		case p == nil && (parentID != nil || parentSeq != nil || rootID != nil):
+			t.Fatalf("%s, no fork, has tree columns %v %v %v", name, parentID, parentSeq, rootID)
+		case p != nil && (parentID == nil || *parentID != p.SessionID || parentSeq == nil || *parentSeq != int64(p.Seq) || rootID == nil || *rootID != want):
+			t.Fatalf("%s's tree columns %v %v %v, want %s %d %s", name, parentID, parentSeq, rootID, p.SessionID, p.Seq, want)
+		}
+	}
+	// A replica of the earlier release rewrites a fork's header without
+	// root; the column fills it on a read, and an append keeps it.
+	b := sessions["b"].ID
+	if _, err := conn.Exec(t.Context(), `UPDATE sessions SET body = (body::jsonb - 'root')::text WHERE id = $1`, b); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Get(t.Context(), b); err != nil || got.Root != a {
+		t.Fatalf("b rewritten without root reads %q, %v", got.Root, err)
+	}
+	again := []session.Event{storetest.Message(t, "Again.", time.Now())}
+	session.Stamp(b, 0, again)
+	if _, err := st.Append(t.Context(), b, 0, again); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Get(t.Context(), b); err != nil || got.Root != a || got.LastSeq != 1 {
+		t.Fatalf("b after an append: root %q at %d, %v", got.Root, got.LastSeq, err)
+	}
+	page, _, err := st.List(t.Context(), session.ListOptions{Root: a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, s := range page {
+		listed = append(listed, s.ID)
+	}
+	if want := []string{sessions["c"].ID, b, a}; !slices.Equal(listed, want) {
+		t.Fatalf("the tree of a lists %v, want %v", listed, want)
 	}
 }
