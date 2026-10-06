@@ -404,10 +404,28 @@ func (d *Deferred) Release(ctx context.Context, end bool) error {
 }
 
 // ApplyNetwork applies the network to the open machine when it is
-// networked. A machine not opened yet has nothing to apply it to: its
-// opener reads the session's network when it opens.
+// networked, and to one a Start opened that no operation took yet, after
+// an open Start began has finished, since that machine was opened with
+// the network as it was then. A machine not opened yet has nothing to
+// apply it to: its opener reads the session's network when it opens.
 func (d *Deferred) ApplyNetwork(ctx context.Context, n Network) error {
-	if nm, ok := d.Opened().(Networked); ok {
+	d.mu.Lock()
+	starting := d.starting
+	d.mu.Unlock()
+	if inFlight(starting) {
+		select {
+		case <-starting:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	d.mu.Lock()
+	m := d.m
+	if m == nil {
+		m = d.prepared
+	}
+	d.mu.Unlock()
+	if nm, ok := m.(Networked); ok {
 		return nm.ApplyNetwork(ctx, n)
 	}
 	return nil

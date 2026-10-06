@@ -175,6 +175,12 @@ const (
 	// recorded on its agent.tool_use and read by the model as its result.
 	CallPlanMode   Name = "results/call/plan-mode-v1"
 	CallAboveBlock Name = "results/call/above-block-v1"
+	// CallOutsideNetwork takes Host: a fetch of a host outside the
+	// session's network that nobody is asked about (spec 052).
+	CallOutsideNetwork Name = "results/call/outside-network-v1"
+	// CallNetworkUnavailable takes Host and Error: an allowed fetch whose
+	// widening of the session's network was refused (spec 052).
+	CallNetworkUnavailable Name = "results/call/network-unavailable-v1"
 )
 
 // The results of the thread tools (spec 013). Each takes the values its

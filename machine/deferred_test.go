@@ -383,3 +383,49 @@ func TestAReleaseAndAStartedOpen(t *testing.T) {
 		t.Fatalf("a call after the end: %v", err)
 	}
 }
+
+// networked is a fake that takes networks and reports refusals.
+type networked struct {
+	fake
+	applied []Network
+}
+
+func (n *networked) ApplyNetwork(_ context.Context, net Network) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.applied = append(n.applied, net)
+	return nil
+}
+
+func (n *networked) Refused(context.Context, time.Time) ([]Connection, error) {
+	return []Connection{{Host: "b.example.com", Port: 443}}, nil
+}
+
+// TestADeferredMachinePassesItsNetworkOn: a network applied before the
+// machine opens applies to nothing, since the opener reads it; once a
+// Start opened the machine that no operation took yet, or an operation
+// opened it, the network and the refusals reach it (spec 052).
+func TestADeferredMachinePassesItsNetworkOn(t *testing.T) {
+	ctx := t.Context()
+	m := &networked{}
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) { return m, nil })
+	if err := d.ApplyNetwork(ctx, Network{Mode: "none"}); err != nil || len(m.applied) != 0 {
+		t.Fatalf("an unopened machine took a network: %v, %v", m.applied, err)
+	}
+	if got, err := d.Refused(ctx, time.Time{}); err != nil || got != nil {
+		t.Fatalf("an unopened machine refused %v, %v", got, err)
+	}
+	d.Start()
+	if err := d.ApplyNetwork(ctx, Network{Mode: "allowlist", Hosts: []string{"a.example.com"}}); err != nil || len(m.applied) != 1 {
+		t.Fatalf("the machine a start prepared did not take the network: %v, %v", m.applied, err)
+	}
+	if err := d.Open(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := d.Refused(ctx, time.Time{}); err != nil || len(got) != 1 || got[0].Host != "b.example.com" {
+		t.Fatalf("refused %v, %v", got, err)
+	}
+	if err := d.ApplyNetwork(ctx, Network{Mode: "open"}); err != nil || len(m.applied) != 2 || m.applied[1].Mode != "open" {
+		t.Fatalf("the open machine took %v, %v", m.applied, err)
+	}
+}

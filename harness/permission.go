@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -86,6 +87,11 @@ type Policy struct {
 	// none.
 	Egress     []string
 	EgressMode string
+	// Network is the session's network a web_fetch is decided by (spec
+	// 052), with Ask set only where a person attends the session; nil on a
+	// machine no session network governs, where a fetch is decided by the
+	// mode alone.
+	Network *Network
 }
 
 // Merge is the policy of a session from the agent's, p, and the
@@ -150,8 +156,16 @@ const RiskSource = "rules/1"
 // networkPrograms raise a host bash call's score.
 var networkPrograms = regexp.MustCompile(`(^|[\s;&|(])(curl|wget|ssh|scp|rsync|git\s+push|rm\s+-[a-zA-Z]*r)`)
 
-// Score is the rule-feature risk of one call (spec 012).
+// Score is the rule-feature risk of one call (spec 012): a fetch of one of
+// the egress hosts scores lower.
 func Score(name string, props tools.Properties, input json.RawMessage, machineKind string, egress []string) session.Risk {
+	return score(name, props, input, machineKind, func(host string) bool { return slices.Contains(egress, host) })
+}
+
+// score is Score with the hosts a fetch scores lower for named by named:
+// the agent's egress hosts, or every host inside the session's network
+// (spec 052).
+func score(name string, props tools.Properties, input json.RawMessage, machineKind string, named func(host string) bool) session.Risk {
 	r := session.Risk{Source: RiskSource}
 	host := machineKind != machine.KindCella
 	switch {
@@ -173,7 +187,7 @@ func Score(name string, props tools.Properties, input json.RawMessage, machineKi
 		r.Score, r.Features = 0.3, []string{"effect:write", "machine:host"}
 	case props.Effect == tools.EffectExternal:
 		r.Score, r.Features = 0.6, []string{"effect:external"}
-		if h := fetchHost(input); h != "" && slices.Contains(egress, h) {
+		if h := fetchHost(input); h != "" && named(h) {
 			r.Score, r.Features = 0.4, []string{"effect:external", "egress:named"}
 		}
 	default:
@@ -182,6 +196,9 @@ func Score(name string, props tools.Properties, input json.RawMessage, machineKi
 	return r
 }
 
+// fetchHost is the host a web_fetch's URL names, lowercased, without its
+// port or the user information before it; empty for an input that names
+// no http or https URL with a host.
 func fetchHost(input json.RawMessage) string {
 	var in struct {
 		URL string `json:"url"`
@@ -189,13 +206,11 @@ func fetchHost(input json.RawMessage) string {
 	if json.Unmarshal(input, &in) != nil {
 		return ""
 	}
-	rest, ok := strings.CutPrefix(in.URL, "https://")
-	if !ok {
-		rest, _ = strings.CutPrefix(in.URL, "http://")
+	u, err := url.Parse(strings.TrimSpace(in.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
 	}
-	host, _, _ := strings.Cut(rest, "/")
-	host, _, _ = strings.Cut(host, ":")
-	return strings.ToLower(host)
+	return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 }
 
 // Decision is a verdict with its reason, as agent.tool_use records it. A
@@ -217,9 +232,15 @@ type Decision struct {
 	Suggestion *session.Suggestion
 }
 
-// Decide applies the lists and the mode to one scored call. remembered
-// are the session's own allow patterns, from confirmations answered with
-// remember.
+// Decide applies the lists, the session's network and the mode to one
+// scored call. remembered are the session's own allow patterns, from
+// confirmations answered with remember.
+//
+// A web_fetch of a host outside the session's network asks when the
+// network asks and is blocked otherwise, before the lists and the mode:
+// no answer of always_confirm reaches a host the network does not ask
+// about. One inside it is allowed in confirm, unless always_confirm names
+// it, and scores as a named host in progressive (spec 052).
 func (p Policy) Decide(name string, props tools.Properties, input json.RawMessage, risk session.Risk, machineKind string, remembered []string) Decision {
 	mode := p.Mode
 	if mode == "" {
@@ -227,6 +248,10 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 	}
 	readOnly := props.Effect == tools.EffectNone || props.Effect == tools.EffectRead
 	subject := patternSubject(name, input)
+	network, networked := p.fetchDecision(name, input)
+	if networked && mode != ModePlan && network.Verdict != VerdictAllow {
+		return network
+	}
 	if matchAny(p.AlwaysConfirm, name, subject) {
 		if mode == ModePlan {
 			return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
@@ -257,6 +282,8 @@ func (p Policy) Decide(name string, props tools.Properties, input json.RawMessag
 	switch {
 	case readOnly:
 		return Decision{Verdict: VerdictAllow, Reason: "read-only"}
+	case networked:
+		return network
 	case matchAny(p.AlwaysAllow, name, subject):
 		return Decision{Verdict: VerdictAllow, Reason: "on the always-allow list"}
 	case matchAny(remembered, name, subject):

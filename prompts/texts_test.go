@@ -141,6 +141,8 @@ var textCases = func() []textCase {
 		{name: CallMachineUnavailable, data: Data{"Error": "no sandbox"}, want: "The machine this tool acts on could not be started, so the call did not run: " + "no sandbox"},
 		{name: CallPlanMode, want: "Plan mode: only read-only tools run."},
 		{name: CallAboveBlock, want: "above the block threshold"},
+		{name: CallOutsideNetwork, data: Data{"Host": "api.example.com"}, want: "api.example.com is outside the network this session may reach, so the fetch did not run. The person who runs the session decides which hosts it may reach."},
+		{name: CallNetworkUnavailable, data: Data{"Host": "api.example.com", "Error": "admission_refused"}, want: "The session's network could not be widened to api.example.com, so the call did not run: admission_refused"},
 
 		{name: ThreadIdle, data: Data{"Thread": "evt_7"}, want: "Thread " + "evt_7" + " is idle; send it more work with message."},
 		{name: ThreadStopped, data: Data{"Thread": "evt_7", "Reason": "error", "Detail": "model_error"}, want: fmt.Sprintf("Thread %s stopped: %s %s", "evt_7", "error", "model_error")},

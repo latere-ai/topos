@@ -6,6 +6,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"latere.ai/x/pkg/verdict"
 
@@ -46,7 +47,11 @@ type Rules struct{}
 // Decide implements [Decider]. The rules review nothing at random, so a
 // shown verdict has review probability 1 and any other 0.
 func (Rules) Decide(_ context.Context, c Call) (session.Risk, Decision, error) {
-	risk := Score(c.Name, c.Props, c.Input, c.MachineKind, c.Policy.Egress)
+	named := func(host string) bool { return slices.Contains(c.Policy.Egress, host) }
+	if n := c.Policy.Network; n != nil {
+		named = n.Inside
+	}
+	risk := score(c.Name, c.Props, c.Input, c.MachineKind, named)
 	d := c.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered)
 	_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
 	return risk, d, nil
@@ -62,11 +67,20 @@ func (h *Harness) decider() Decider {
 
 // Settle reports whether the rules decide the call whatever a decision
 // service would suggest (spec 037), and their decision when they do: a
-// call on always_confirm asks, a score at or above block_at is blocked,
-// and a read-only call, or one an always_allow or remembered pattern
-// matches, is allowed. Every other call is open to the service, under a
-// ceiling of allow.
+// fetch outside the session's network asks or is blocked as the network
+// says, a call on always_confirm asks, a score at or above block_at is
+// blocked, and a read-only call, or one an always_allow or remembered
+// pattern matches, is allowed. Every other call is open to the service,
+// under a ceiling of allow.
 func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
+	// A fetch outside the session's network is the network's to decide,
+	// which no service suggests past (spec 052).
+	if d, ok := p.fetchDecision(c.Name, c.Input); ok && d.Verdict != VerdictAllow {
+		if d.Verdict == VerdictAsk {
+			d.ReviewProbability = 1
+		}
+		return d, true
+	}
 	subject := patternSubject(c.Name, c.Input)
 	t := p.Thresholds
 	if t == (Thresholds{}) {

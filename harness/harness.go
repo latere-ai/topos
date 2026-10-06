@@ -625,8 +625,19 @@ func (t *turn) run(ctx context.Context) (Outcome, error) {
 // request, and one nothing closed keeps the session waiting, or, in a
 // session nobody attends, is answered at once.
 func (t *turn) resume(ctx context.Context) error {
-	open := openCalls(t.events(), t.thread)
 	var w waits
+	// The session's machine takes the network a send may have changed
+	// before anything runs on it, and the approvals a person answered are
+	// settled before the calls (spec 052).
+	if t.thread == "" {
+		if err := t.applyNetwork(ctx); err != nil {
+			return err
+		}
+	}
+	if err := t.settleApprovals(ctx, &w); err != nil {
+		return err
+	}
+	open := openCalls(t.events(), t.thread)
 	var run, threads []pendingCall
 	interrupted := false
 	for _, c := range open {
@@ -688,6 +699,18 @@ func (t *turn) resume(ctx context.Context) error {
 		tool, ok := t.reg.Get(c.use.Name)
 		if !ok {
 			if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeUnknownTool, prompts.Render(prompts.CallUnknownTool, prompts.Data{"Name": c.use.Name})), 0); err != nil {
+				return err
+			}
+			continue
+		}
+		// An allowed fetch of a host outside the session's network widens
+		// it before it runs, or is answered with why it cannot run.
+		held, err := t.admitFetch(ctx, c.use)
+		if err != nil {
+			return err
+		}
+		if held != nil {
+			if err := t.result(ctx, c.use.ToolUseID, *held, 0); err != nil {
 				return err
 			}
 			continue
@@ -1423,6 +1446,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 	var uses []session.Event
 	remembered := rememberedPatterns(t.events())
 	kind := t.h.c.Machine.Info().Kind
+	network := t.network()
 	// The step's calls are decided under the mode in force as the step
 	// plans them, a person's change included (spec 041).
 	mode := t.mode()
@@ -1450,6 +1474,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		props := tool.Properties()
 		policy := t.h.c.Policy
 		policy.Mode = mode
+		policy.Network = network
 		_, question := tool.(questionTool)
 		if question {
 			// The rules of a question the schema cannot state are checked
@@ -1526,7 +1551,7 @@ func (t *turn) runCalls(ctx context.Context, calls []plannedCall, w *waits) erro
 	}
 	for i := 0; i < len(calls); {
 		if !calls[i].tool.Properties().Parallel {
-			if err := t.call(ctx, calls[i]); err != nil {
+			if err := t.call(ctx, calls[i], w); err != nil {
 				if err := keep(err); err != nil {
 					return err
 				}
@@ -1642,14 +1667,23 @@ func (t *turn) toolState() tools.State {
 	return st
 }
 
-func (t *turn) call(ctx context.Context, c plannedCall) error {
-	start := t.h.c.Clock()
+// call runs one call alone and appends its result. A bash call's
+// connections the egress gateway refused follow the result as
+// approval.requested, read from the gateway's records since the call
+// began by the wall clock the gateway stamps them with (spec 052).
+func (t *turn) call(ctx context.Context, c plannedCall, w *waits) error {
+	start, began := t.h.c.Clock(), time.Now()
 	res, err := t.execute(ctx, c, t.toolState())
 	if err != nil && !isSpent(err) {
 		return err
 	}
 	if rerr := t.result(ctx, c.id, res, t.h.c.Clock().Sub(start)); rerr != nil {
 		return rerr
+	}
+	if c.tool.Definition().Name == tools.NameBash {
+		if rerr := t.refusals(context.WithoutCancel(ctx), c.id, began, w); rerr != nil {
+			return rerr
+		}
 	}
 	return err
 }

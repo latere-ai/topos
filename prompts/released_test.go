@@ -138,6 +138,8 @@ var released = map[string]string{
 	"results/web_search/canceled-v1.md":      "af82638fb9aeb6b4e7e020926594a7c49ef7259012150e43c5fcd2f57a8c1e0c",
 	"results/web_search/failed-v1.md":        "7217217b1c9005218523ba9a66868086134d22177c9f1a137056875223ebc192",
 	"results/web_search/none-v1.md":          "977d78102f137c7d3cf0a0159b133a3398e635dac671548c1ddfb55f42e56cdc",
+	"results/call/network-unavailable-v1.md": "2b39b49c24a40e40916a88504a7c031458a67b1a4d140a46d0338c69f722ce2d",
+	"results/call/outside-network-v1.md":     "f1b0cb5491943209b161bf1c2fcec5548fb198afa09389b16c57c9a061268387",
 	"transcript/approval-allowed-v1.md":      "b4cd71f69d290f0ffc9df9b0d7c4893c8abc790bbc93476f073d692b63c54508",
 	"transcript/approval-denied-v1.md":       "3b5f5f7f3b4e5b17fcd81353a0ee303dcca50ccc7bb16464af5ea4ed58044f3b",
 	"transcript/approval-requested-v1.md":    "2ad9b0fb34feb85402a5504a49170df86db788086ced5f9dd8b0c238017ffcce",
