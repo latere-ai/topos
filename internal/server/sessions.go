@@ -212,8 +212,9 @@ type creation struct {
 
 // forkOrigin is what a fork starts from: the session forked, the fork
 // point, its log up to that point, which the new session copies, the
-// model it stood on there, nil for its agent's, the fork's title, and
-// the message it is sent in the same call, nil for none (spec 056).
+// model it stood on there, nil for its agent's, the fork's title, the
+// message it is sent in the same call, nil for none, and whether it
+// starts a fork tree of its own (spec 056).
 type forkOrigin struct {
 	parent  session.Session
 	seq     uint64
@@ -221,6 +222,16 @@ type forkOrigin struct {
 	model   *session.ModelRef
 	title   string
 	message *forkMessage
+	newTree bool
+}
+
+// root is the root of the fork tree a fork of f joins, whose id is id:
+// its own for a fork that starts a tree, its parent's tree's otherwise.
+func (f *forkOrigin) root(id string) string {
+	if f.newTree {
+		return id
+	}
+	return f.parent.TreeRoot()
 }
 
 // create creates a session of in's agent with q's caller as its
@@ -303,11 +314,13 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		fields["trigger_id"], fields["firing_id"] = in.triggerID, in.firingID
 	}
 	// A fork is asked about the session it forks, with that session's
-	// owner and the fork point beside the new session's fields.
+	// owner and the fork point beside the new session's fields, and the
+	// root of the tree the new session joins, its own id when it starts
+	// a conversation of its own (spec 056).
 	action, resourceID := authorizer.ActionSessionCreate, ""
 	if f := in.fork; f != nil {
 		action, resourceID = authorizer.ActionSessionFork, f.parent.ID
-		fields["owner"], fields["parent"], fields["seq"] = f.parent.Initiator.Subject, f.parent.ID, f.seq
+		fields["owner"], fields["parent"], fields["seq"], fields["root"] = f.parent.Initiator.Subject, f.parent.ID, f.seq, f.root(id)
 	}
 	if s.o.Identities != nil {
 		st, err := s.agentStatus(ctx, a)
@@ -413,6 +426,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess.Network = createdNetwork(limits.Network, cfg.Machine)
 	sess.Instructions = limits.Instructions
 	if f := in.fork; f != nil {
+		sess.Root = f.root(sess.ID)
 		return s.writeFork(ctx, q, sess, cfg, blobs, f)
 	}
 	if err := s.o.Sessions.Create(ctx, sess, blobs); err != nil {

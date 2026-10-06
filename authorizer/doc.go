@@ -151,11 +151,18 @@
 // which an agent's question waits for an answer. Until a client sets
 // attended no session waits on a question and no user.answer is sent.
 //
+// session.fork carries, beside a create's fields, owner, parent and seq,
+// the session forked, its initiator and the copy's end, 0 for a fork
+// before the session's opening message, and root, the root of the fork
+// tree the new session joins (spec 056): the forked session's tree's
+// root for a fork that is another version of its conversation, and the
+// new session's own id, session_id, for a fork that starts a
+// conversation of its own. An endpoint that meters conversations rather
+// than sessions tells the two apart by whether root is session_id.
+//
 // A fork may be sent its first message in the same call, the edit of a
 // person's message (spec 056). toposd then asks session.fork, as for any
-// fork, with session_id the new session's id, parent the session forked
-// and seq the copy's end, 0 for a fork before the session's opening
-// message; and after its allow session.send of the new session, as a
+// fork, and after its allow session.send of the new session, as a
 // send is asked, with model and model_via the model the fork starts on
 // and idle_seconds the whole seconds since the last model request the
 // copy holds, absent when it holds none. The new session is not written

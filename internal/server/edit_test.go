@@ -164,6 +164,9 @@ func TestForkBodyRefusals(t *testing.T) {
 		{"a trigger's message", `{"before_seq":12,"message":{"content":[{"type":"text","text":"Monthly review."}]}}`, CodeInvalidForkPoint},
 		{"a message steered into a turn", `{"before_seq":14}`, CodeInvalidForkPoint},
 		{"two fork points", `{"before_seq":7,"at_seq":5}`, CodeInvalidRequest},
+		{"a tree that is not new", `{"before_seq":7,"tree":"parent"}`, CodeInvalidRequest},
+		{"an empty tree", `{"before_seq":7,"tree":""}`, CodeInvalidRequest},
+		{"a tree that is no string", `{"before_seq":7,"tree":true}`, CodeInvalidRequest},
 		{"an empty message", `{"before_seq":7,"message":{"content":[]}}`, CodeInvalidRequest},
 		{"a file of data and a blob", `{"before_seq":7,"message":{"attachments":[{"name":"a.csv","data":"` + data + `","blob":"` + string(blob) + `"}]}}`, CodeInvalidRequest},
 		{"a file of neither", `{"before_seq":7,"message":{"attachments":[{"name":"a.csv"}]}}`, CodeInvalidRequest},
@@ -536,5 +539,52 @@ func TestDeletingAParentLeavesItsForks(t *testing.T) {
 		if ids, _ := f.listTree("root=" + top.ID); !slices.Contains(ids, grandchild.ID) {
 			t.Fatalf("after deleting %s the tree lists %v", gone, ids)
 		}
+	}
+}
+
+// TestAForkThatStartsANewConversation: a fork with tree new is the root
+// of a tree of its own: its root is its own id and its parent stays the
+// session it came from, session.fork names that root, the list by the
+// source's root leaves it out while the list by its parent keeps it, a
+// list grouped by tree shows it as a conversation of its own, and a fork
+// of it joins its tree.
+func TestAForkThatStartsANewConversation(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	source := f.conversation()
+	version := f.forked(source.ID, `{"before_seq":7}`)
+	var fork questions
+	fork.keep(f, authorizer.ActionSessionFork)
+	fresh := f.forked(source.ID, `{"tree":"new","title":"Tests","message":{"content":[{"type":"text","text":"Now write the tests."}]}}`)
+	switch {
+	case fresh.Root != fresh.ID || fresh.Parent == nil || *fresh.Parent != (session.Parent{SessionID: source.ID, Seq: 11}):
+		t.Fatalf("a new conversation: root %q, parent %+v", fresh.Root, fresh.Parent)
+	case fresh.Title != "Tests" || fresh.LastSeq != 12 || fresh.Budget.CarriedCostUSDMicro != 2000:
+		t.Fatalf("a new conversation: %+v", fresh)
+	}
+	asked := fork.last(t)
+	if asked.Resource.String("root") != fresh.ID || asked.Resource.String("session_id") != fresh.ID || asked.Resource.String("parent") != source.ID {
+		t.Fatalf("session.fork of a new conversation asked %v", asked.Resource.Fields)
+	}
+	opening := f.forked(source.ID, `{"before_seq":1}`)
+	if q := fork.last(t); q.Resource.String("root") != source.ID {
+		t.Fatalf("session.fork of a version asked root %q, want the source's %s", q.Resource.String("root"), source.ID)
+	}
+	if ids, _ := f.listTree("root=" + source.ID); slices.Contains(ids, fresh.ID) || !slices.Contains(ids, version.ID) {
+		t.Fatalf("the source's tree lists %v", ids)
+	}
+	if ids, _ := f.listTree("parent=" + source.ID); !slices.Contains(ids, fresh.ID) {
+		t.Fatalf("the source's forks list %v", ids)
+	}
+	ids, trees := f.listTree("group=tree")
+	if !slices.Equal(ids, []string{opening.ID, fresh.ID}) || !slices.Equal(trees, []string{source.ID + " 3", fresh.ID + " 1"}) {
+		t.Fatalf("grouped by tree: %v, %v", ids, trees)
+	}
+	next := f.forked(fresh.ID, `{"before_seq":12}`)
+	if next.Root != fresh.ID {
+		t.Fatalf("a version in the new conversation has root %q, want %s", next.Root, fresh.ID)
+	}
+	if ids, _ := f.listTree("root=" + fresh.ID); !slices.Equal(ids, []string{next.ID, fresh.ID}) {
+		t.Fatalf("the new conversation lists %v", ids)
 	}
 }

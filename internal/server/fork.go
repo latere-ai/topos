@@ -65,14 +65,23 @@ func continuedTitle(title string) string {
 // its client declares it again (spec 039). BeforeSeq forks before a
 // person's message in place of a turn boundary, Message is the message
 // the fork is sent in the same call, and Title the fork's title in place
-// of its continuation title, "" for none (spec 056).
+// of its continuation title, "" for none, and Tree, when TreeNew, starts
+// a fork tree of the fork's own in place of joining its parent's (spec
+// 056).
 type forkBody struct {
 	AtSeq     *uint64      `json:"at_seq,omitempty"`
 	BeforeSeq *uint64      `json:"before_seq,omitempty"`
 	Title     *string      `json:"title,omitempty"`
 	Message   *messageBody `json:"message,omitempty"`
+	Tree      *string      `json:"tree,omitempty"`
 	Attended  bool         `json:"attended,omitempty"`
 }
+
+// TreeNew is the fork body's tree that starts a fork tree of the fork's
+// own: a new conversation from the fork point, whose root is its own id
+// and whose parent stays its lineage (spec 056). Absent, a fork joins
+// its parent's tree.
+const TreeNew = "new"
 
 // forkMessage is the message a fork is sent in the same call: its
 // payload without its files, and its files, checked, each new one's
@@ -109,6 +118,9 @@ func (c *call) forkSession() error {
 	}
 	if b.AtSeq != nil && b.BeforeSeq != nil {
 		return refuse(CodeInvalidRequest, "at_seq and before_seq name two fork points; a fork names one")
+	}
+	if b.Tree != nil && *b.Tree != TreeNew {
+		return refuse(CodeInvalidRequest, "tree is %q; a fork joins its parent's tree when tree is absent, and starts its own with %q", *b.Tree, TreeNew)
 	}
 	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
 	var message *forkMessage
@@ -147,7 +159,8 @@ func (c *call) forkSession() error {
 		title = *b.Title
 	}
 	s, err := c.s.create(ctx, c.asker(), creation{
-		fork:     &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq), title: title, message: message},
+		fork: &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq), title: title, message: message,
+			newTree: b.Tree != nil},
 		attended: b.Attended,
 		sender:   sender,
 	})

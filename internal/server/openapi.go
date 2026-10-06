@@ -387,7 +387,7 @@ var opDescriptions = map[string]string{
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
 		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
 	"forkSession": "Start a new session from a session's log at a turn boundary, or just before a person's message to send an edited message in its place, an ended or expired session included. " +
-		"The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
+		"The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"tree\": \"new\", \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
 		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
 		"or that is ended completed straight after the thread's running, the end of the turn that ended a session created with end_on_idle; absent, the last boundary, which for a session ended while idle is that idle. " +
 		"Another sequence, or a session that never finished a turn, as one ended failed, canceled or expired while its only turn ran, is invalid_fork_point. " +
@@ -398,7 +398,8 @@ var opDescriptions = map[string]string{
 		"a file of it is {name, data} as on a send, or {name, blob}, a digest a file a message of the forked session attached names, kept with that message's media type and size without its bytes being sent again; " +
 		"a file with both or neither of data and blob, a blob beside a media_type, and a blob no message of the forked session attaches are invalid_request. " +
 		fmt.Sprintf("A body without a message is at most %d bytes, one with a message at most %d. ", MaxBody, MaxEventBody) +
-		"The answer is the new Session, 201: a new id, parent {session_id, seq}, root, the session at the top of its fork tree, the forked session's root or, where it has none, its id, the same agent version, repositories and capture, " +
+		"tree new starts a fork tree of the new session's own, a new conversation from the fork point: its root is its own id, its parent stays the session forked, and a list by the forked session's root leaves it out; absent, the fork joins the forked session's tree; any other tree is invalid_request. " +
+		"The answer is the new Session, 201: a new id, parent {session_id, seq}, root, the session at the top of its fork tree, the forked session's root or, where it has none, its id, or its own id with tree new, the same agent version, repositories and capture, " +
 		"title, the body's, none for \"\", or absent the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), " +
 		"status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, " +
 		"and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. " +
@@ -407,7 +408,7 @@ var opDescriptions = map[string]string{
 		"With a message the log continues with the message, after any change of model or network the allow of its send made, last_seq is the message's, and the fork runs its turn on it. " +
 		"Its requests carry the tree's root as their prompt cache key, so a provider that keys its cache routes the fork's prefix, which is the forked session's, to that session's cache. " +
 		"The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
-		"recorded as session.machine reason restored; a fork before the opening message has none and starts fresh. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session and owner, parent and seq of the forked one, " +
+		"recorded as session.machine reason restored; a fork before the opening message has none and starts fresh. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session, owner, parent and seq of the forked one, and root, the root of the tree the new session joins, its own id with tree new, " +
 		"and, with a message, session.send of the new session as a send asks it, with model and model_via the model the fork starts on and idle_seconds the whole seconds since the last model request it copied, absent when it copied none. " +
 		"Both are asked before anything is written, and a deny of either is forbidden with nothing written; a send refused after session.fork was allowed is reported to the installation's sink as session.fork of the new id with the refusal's code as outcome, " +
 		"so an authorizer that recorded the fork at its allow closes the record. A session of an archived agent is conflict. " + ForkKeptFiles,
