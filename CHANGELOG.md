@@ -10,6 +10,30 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- A routed turn whose request the model's provider rejects can move to
+  another model. When the gateway answers `upstream_rejected`, the
+  provider's own 4xx and not one of the gateway's refusals, the turn asks
+  the authorizer the same `session.update` it asks for a model that
+  cannot serve, with the new `failed_reason: rejected` beside
+  `failed_model`, and the gateway's code and developer detail as
+  `failed_detail`, such as `upstream_rejected: upstream status 404: ...`.
+  An allow that names another model moves the turn there, as one of its 3
+  moves, and the conversation records the change with `model_busy`. An
+  allow that names none, or a deny, ends the turn with `model_error` as
+  before. Providers withdraw and change free models without notice, and
+  until now such a turn ended with an error while the routed name stood
+  for models that would have answered. The gateway's own refusals,
+  `invalid_request`, `model_not_allowed`, `rate_limited`,
+  `budget_exhausted` and the rest, never move a turn. An authorizer that
+  reads `failed_model` but not `failed_reason` would read the question as
+  one about a model that cannot serve and move the turn on any rejection,
+  so the authorizer that reads the field rolls first, then toposd and
+  every runner. The runner protocol's failover request carries `reason`
+  when there is one; a server before it refuses that request as
+  `invalid_request`, and the turn ends with `model_error` as before.
+
 ## v0.19.1 - 2026-10-05
 
 ### Fixed
