@@ -10,6 +10,55 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A session has a network: where its sandbox may reach. An authorizer's
+  allow of `session.create` may carry `limits.network`, `{mode, hosts,
+  ask}`, with `mode` `open`, `allowlist` or `none`; the session records
+  it as `network`, or its agent's mode with `ask` false when the allow
+  names none. An agent names its own mode as `spec.machine.egressMode`
+  beside `egress`, `allowlist` when absent. Under `allowlist` the agent's
+  hosts, the hosts of the session's credentials and its repositories' git
+  hosts are always joined, so a narrow answer never cuts a session off
+  from its model gateway or its repositories. An allow of `session.send`
+  that names another network replaces the session's before the next
+  turn, recorded as `session.network_changed` straight before the sent
+  event, and narrows or widens the running sandbox.
+- A `web_fetch` of a host inside the network runs without asking, its
+  reason `inside the session's network`. One outside it asks, its reason
+  `outside the session's network`, when the network asks and the session
+  is attended, and is blocked otherwise. A person's allow widens the
+  running sandbox to the host before the fetch runs and records it as
+  `session.network_changed`; the host stays reachable for the rest of the
+  session. A widening Cella refuses closes the call with
+  `network_unavailable` and changes nothing.
+- A command's connection the egress gateway refused becomes an
+  `approval.requested` after the command's result, `{approval_id,
+  tool_use_id, source: egress, destination {host, port}, reason, verdict,
+  more}`, at most 3 per command. With `verdict: ask` the session waits
+  for a `user.tool_confirmation` that names the `approval_id`; an allow
+  widens the network and appends `approval.decided`, and the agent may
+  run the command again. A deny, or a message in place of an answer, is
+  not asked again in the session. `topos confirm` takes an `apr_` id.
+- An authorizer's allow of `session.create` may carry
+  `limits.instructions`, the initiator's standing instructions, at most
+  8 KiB of UTF-8. The session records them as `instructions`, and the
+  agent reads them after its own instructions in the prompt's cached
+  prefix, the same bytes on every turn; a send never changes them, and a
+  fork takes its own allow's.
+- `docs/network.md` is the contract an authorizer and a client follow.
+
+### Upgrading
+
+- Roll the authorizer that answers `network` and `instructions` first: a
+  server before this release ignores both members. Then roll toposd and
+  every runner together, since a runner that reads a log must know
+  `session.network_changed`, `approval.requested` and `approval.decided`
+  before any is appended. Until a client answers by `approval_id`, a
+  command's refused connection in a session whose network asks waits for
+  an answer the client cannot send; answer `ask` false until the client
+  rolls.
+
 ## v0.20.0 - 2026-10-06
 
 ### Fixed
