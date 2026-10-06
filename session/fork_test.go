@@ -289,7 +289,8 @@ func TestBeforeSeqMustOpenATurn(t *testing.T) {
 
 // TestRootOfAFork: a fork's root is its parent's id when the parent is
 // no fork, and its parent's root when it is, so a fork of a fork stays
-// in the first session's tree; its carried spend is the copy's, and a
+// in the first session's tree, unless it names itself its root and
+// starts a tree of its own; its carried spend is the copy's, and a
 // message it starts with lands in the same append after the copy.
 func TestRootOfAFork(t *testing.T) {
 	ctx := t.Context()
@@ -327,6 +328,22 @@ func TestRootOfAFork(t *testing.T) {
 	got, err := st.Events(ctx, child.ID, 6, 0)
 	if err != nil || len(got) != 1 || got[0].ID != replacement.ID || got[0].SessionID != child.ID {
 		t.Fatalf("the fork's message: %+v, %v", got, err)
+	}
+	// A fork that names itself its root starts a tree of its own, its
+	// parent kept as its lineage.
+	own := storetest.NewSession()
+	own.Root = own.ID
+	own, err = session.Fork(ctx, st, own, nil, child, evs[:5])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if own.Root != own.ID || own.TreeRoot() != own.ID || own.Parent.SessionID != child.ID || own.Parent.Seq != 5 {
+		t.Fatalf("a fork that started a tree: root %q, parent %+v", own.Root, own.Parent)
+	}
+	stray := storetest.NewSession()
+	stray.Root = session.NewID(session.PrefixSession)
+	if stray, err = session.Fork(ctx, st, stray, nil, child, nil); err != nil || stray.Root != top.ID {
+		t.Fatalf("a fork that names another session its root joins %q, %v; want its parent's tree", stray.Root, err)
 	}
 	grandchild, err := session.Fork(ctx, st, storetest.NewSession(), nil, child, nil)
 	if err != nil {

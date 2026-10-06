@@ -271,9 +271,10 @@ type Session struct {
 	Parent       *Parent `json:"parent,omitempty"`
 	// Root is the id of the session at the top of this session's fork
 	// tree: its parent's root, or its parent's id where the parent has
-	// none; empty on a session no fork made, whose tree's root is itself
-	// (spec 056). It is fixed at the fork, and names a deleted session as
-	// readily as a live one.
+	// none; its own id on a fork that started a tree of its own; empty on
+	// a session no fork made, whose tree's root is itself (spec 056). It
+	// is fixed at the fork, and names a deleted session as readily as a
+	// live one.
 	Root      string    `json:"root,omitempty"`
 	TriggerID string    `json:"trigger_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`

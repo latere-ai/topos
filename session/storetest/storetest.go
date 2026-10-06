@@ -925,22 +925,25 @@ func testUnknownType(t *testing.T, st session.Store) {
 	}
 }
 
-// forest creates sessions in three fork trees and a fork whose tree's
+// forest creates sessions in four fork trees and a fork whose tree's
 // root was deleted before it was read (spec 056), newest last: a, the
-// root of b and c, which b's fork d joins; x alone; y and its fork z;
-// and w, a fork of a session no longer in the store. d is of another
-// initiator than the rest.
+// root of b and c, which b's fork d joins; x alone; y and its fork z; n,
+// a fork of a that started a tree of its own; and w, a fork of a session
+// no longer in the store. d is of another initiator than the rest.
 func forest(t *testing.T, st session.Store) map[string]session.Session {
 	t.Helper()
 	out := map[string]session.Session{}
 	gone := session.NewID(session.PrefixSession)
 	for _, c := range []struct{ name, parent, root string }{
-		{"a", "", ""}, {"x", "", ""}, {"b", "a", "a"}, {"y", "", ""}, {"c", "a", "a"}, {"z", "y", "y"}, {"d", "b", "a"}, {"w", "gone", "gone"},
+		{"a", "", ""}, {"x", "", ""}, {"b", "a", "a"}, {"y", "", ""}, {"c", "a", "a"}, {"z", "y", "y"}, {"d", "b", "a"}, {"n", "a", "n"}, {"w", "gone", "gone"},
 	} {
 		s := NewSession()
 		id := func(name string) string {
-			if name == "gone" {
+			switch name {
+			case "gone":
 				return gone
+			case c.name:
+				return s.ID
 			}
 			return out[name].ID
 		}
@@ -1020,6 +1023,7 @@ func testListByRoot(t *testing.T, st session.Store) {
 		{"a tree", session.ListOptions{Root: f["a"].ID}, []string{"d", "c", "b", "a"}},
 		{"its owner's sessions of it", session.ListOptions{Root: f["a"].ID, Owners: []string{"usr_1"}}, []string{"c", "b", "a"}},
 		{"a fork, which is no root", session.ListOptions{Root: f["b"].ID}, []string{"b"}},
+		{"a fork that started a tree", session.ListOptions{Root: f["n"].ID}, []string{"n"}},
 		{"a session alone", session.ListOptions{Root: f["x"].ID}, []string{"x"}},
 		{"a deleted root", session.ListOptions{Root: f["w"].Root}, []string{"w"}},
 		{"no session", session.ListOptions{Root: session.NewID(session.PrefixSession)}, []string{}},
@@ -1039,7 +1043,8 @@ func testListByParent(t *testing.T, st session.Store) {
 		o    session.ListOptions
 		want []string
 	}{
-		{"a root's forks", session.ListOptions{Parent: f["a"].ID}, []string{"c", "b"}},
+		{"a root's forks, one of another tree", session.ListOptions{Parent: f["a"].ID}, []string{"n", "c", "b"}},
+		{"a root's forks in its tree", session.ListOptions{Parent: f["a"].ID, Root: f["a"].ID}, []string{"c", "b"}},
 		{"a fork's fork", session.ListOptions{Parent: f["b"].ID}, []string{"d"}},
 		{"in a tree", session.ListOptions{Parent: f["b"].ID, Root: f["a"].ID}, []string{"d"}},
 		{"within the owners", session.ListOptions{Parent: f["b"].ID, Owners: []string{"usr_1"}}, []string{}},
@@ -1060,10 +1065,10 @@ func testListGroupedByTree(t *testing.T, st session.Store) {
 		o    session.ListOptions
 		want []string
 	}{
-		{"every tree by its newest", session.ListOptions{Group: session.GroupTree}, []string{"w(gone 1)", "d(a 4)", "z(y 2)", "x(x 1)"}},
-		{"within the owners", session.ListOptions{Group: session.GroupTree, Owners: []string{"usr_1"}}, []string{"w(gone 1)", "z(y 2)", "c(a 3)", "x(x 1)"}},
+		{"every tree by its newest", session.ListOptions{Group: session.GroupTree}, []string{"w(gone 1)", "n(n 1)", "d(a 4)", "z(y 2)", "x(x 1)"}},
+		{"within the owners", session.ListOptions{Group: session.GroupTree, Owners: []string{"usr_1"}}, []string{"w(gone 1)", "n(n 1)", "z(y 2)", "c(a 3)", "x(x 1)"}},
 		{"one tree", session.ListOptions{Group: session.GroupTree, Root: f["a"].ID}, []string{"d(a 4)"}},
-		{"a parent's forks", session.ListOptions{Group: session.GroupTree, Parent: f["a"].ID}, []string{"c(a 2)"}},
+		{"a parent's forks", session.ListOptions{Group: session.GroupTree, Parent: f["a"].ID}, []string{"n(n 1)", "c(a 2)"}},
 		{"nothing kept", session.ListOptions{Group: session.GroupTree, Owners: []string{"usr_z"}}, []string{}},
 	} {
 		t.Run(c.name, func(t *testing.T) {

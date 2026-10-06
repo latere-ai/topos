@@ -157,9 +157,16 @@ func restate(e Event) (Event, error) {
 // status, the spend and the last model switch from the batch. A write
 // that fails deletes child, so no half-copied session remains, and no
 // fork without the message it was made for.
+//
+// The child joins parent's fork tree, its root parent's root or parent's
+// id, unless its Root already names itself: such a fork starts a tree of
+// its own, a new conversation from the fork point, and keeps parent as
+// its lineage alone.
 func Fork(ctx context.Context, st Store, child Session, blobs map[Digest][]byte, parent Session, events []Event, then ...Event) (Session, error) {
 	child.Parent = &Parent{SessionID: parent.ID, Seq: uint64(len(events))}
-	child.Root = parent.TreeRoot()
+	if child.Root != child.ID {
+		child.Root = parent.TreeRoot()
+	}
 	child.Budget.CarriedCostUSDMicro = Spent(events)
 	all := maps.Clone(blobs)
 	if all == nil {
