@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.21.0 - 2026-10-06
+
 ### Added
 
 - A session has a network: where its sandbox may reach. An authorizer's
