@@ -65,6 +65,26 @@
 // rolls out before a server that sends them, and one that does not read
 // them keeps answering as before.
 //
+// A request the model's provider rejected asks the same question (spec
+// 051). When the gateway answers upstream_rejected at a 4xx, the
+// provider's own refusal and not one of the gateway's, toposd asks it
+// with failed_reason rejected, failed_model the model the request was
+// sent on, which is also current_model, and failed_detail the gateway's
+// code and its developer detail, such as "upstream_rejected: upstream
+// status 404: ...". The provider may have refused the request for what
+// it holds, or may no longer serve the model under that name, as a
+// provider withdraws a free variant without notice: which it is, and
+// whether another model answers, is the endpoint's to decide. An allow
+// that names another model moves the turn as for a model that cannot
+// serve, within the same bound of moves; an allow that names none, or a
+// deny, ends the turn with model_error and the gateway's sentence. An
+// endpoint that reads failed_model but not failed_reason answers the
+// question as for a model that cannot serve, and would move a turn on
+// any rejection, so an endpoint refuses a failed_reason it does not know,
+// and one that reads it rolls out before a server that sends it. The
+// gateway's own refusals, a request it finds invalid, a model the key may
+// not use, a rate limit on the key or a spent budget, ask nothing.
+//
 // A second member, reasoning, sets the reasoning level the session runs
 // at (spec 049), read where model is: absent keeps the level the session
 // has, one of manifest/v1's Efforts sets it for the next turn, and ""

@@ -338,13 +338,16 @@ var opDescriptions = map[string]string{
 		"the turn then continues on the model the allow names, after session.model_changed {by, old, new, reason, detail} by the service with reason model_busy (%q), at most %d times a turn. "+
 		"A model an allow names that cannot be connected counts as one of those moves: the next question names it as failed_model, beside the model the session stands on as current_model, with why it could not be connected as failed_detail. "+
 		"A turn that cannot move retries such a model once, a second later, and a turn that still fails ends with session.error model_busy (%q). "+
+		"A request the gateway answers upstream_rejected at a 4xx, the provider's refusal of the request and not the gateway's own, asks the same question with failed_reason %q and failed_detail the gateway's code and its developer detail, "+
+		"and moves the turn as one of those moves when the allow names another model; an allow that names none, a deny, and a turn that cannot move end the turn at once with session.error model_error and the gateway's sentence. "+
+		"The gateway's own refusals, such as invalid_request, model_not_allowed, rate_limited and budget_exhausted, ask nothing. "+
 		"A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
 		"A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. "+
 		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
 		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
 		"A person's user.message denies every call that waits for a confirmation, with the message's text as the person's note, and closes an open question in place of an answer. "+
 		AnswerRules,
-		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject, models.MaxDetail, session.MessageModelBusyChange, harness.MaxModelSwitches, harness.MessageModelBusy),
+		MaxImages, MaxImageBytes, MaxAttachments, MaxAttachmentBytes, MaxAttachmentName, MaxEventBody, session.AuthorizerSubject, models.MaxDetail, session.MessageModelBusyChange, harness.MaxModelSwitches, harness.MessageModelBusy, harness.FailedRejected),
 	"applyTrigger": fmt.Sprintf("Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. "+
 		"The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, "+
 		"or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. "+
