@@ -55,8 +55,9 @@ committed: the commit log already holds that.
   every runner together, since a runner that reads a log must know
   `session.network_changed`, `approval.requested` and `approval.decided`
   before any is appended. Until a client answers by `approval_id`, a
-  command's refused connection in a session whose network asks waits for
-  an answer the client cannot send; answer `ask` false until the client
+  command's refused connection in a session whose network asks leaves
+  the session waiting until the person's next message, which denies the
+  host for the rest of the session; answer `ask` false until the client
   rolls.
 
 ## v0.20.0 - 2026-10-06
