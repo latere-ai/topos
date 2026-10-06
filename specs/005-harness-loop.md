@@ -250,8 +250,11 @@ that is not retried, the step appends one `model.request` with
 `outcome` `error`, `attempts`, and as `response_blob` the bytes the last
 attempt received when it received any, then `session.error` with code
 `model_error`, `retryable` as the failure's class, and the HTTP status
-and error type in `detail`; every earlier event of the turn stays in
-the log. A turn whose context is canceled during a request records no
+and error type in `detail`, then, in parentheses, the gateway's
+developer detail when it sent one (`Lux-Error-Detail`, at most
+`models.MaxDetail` bytes, cut on a character's boundary), such as
+`HTTP 400 upstream_rejected (upstream status 404: {...})`; every
+earlier event of the turn stays in the log. A turn whose context is canceled during a request records no
 `model.request` for it and ends `interrupted` with `detail` `canceled`.
 
 ### Tool-call validation
@@ -342,7 +345,7 @@ streams of attached clients ([[016-runners]], [[015-api]]).
 
 | Code | Retryable | Meaning |
 |---|---|---|
-| `model_error` | as the failure's class: true after retries of a retryable failure, false for one that is not retried | the model answered with an error after retries, or with one that is not retried; `detail` carries the provider's status and error type |
+| `model_error` | as the failure's class: true after retries of a retryable failure, false for one that is not retried | the model answered with an error after retries, or with one that is not retried; `detail` carries the provider's status and error type, and the gateway's developer detail when it sent one |
 | `model_busy` | yes | the model could not serve now and the turn could not move to another, or ran out of moves ([[051-a-turn-moves-off-a-model-that-cannot-serve]]); `message` is "The model is busy right now. Send your message again in a moment." and `detail` carries the gateway's answer and why the turn did not move |
 | `output_truncated` | yes | three `max_tokens` stops at the output limit in a row |
 | `internal` | no | a failure of the harness itself, for example an instruction blob it cannot read; `message` carries the error |

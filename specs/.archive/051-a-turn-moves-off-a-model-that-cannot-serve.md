@@ -247,8 +247,10 @@ asked, and a turn that may not move end the turn at once with
 `model_error` and the gateway's sentence, as a rejection ended before.
 The request may be what was refused, so the quick retry is not taken,
 and the turn does not end `model_busy`, whose sentence asks the person
-to send the message again. The `session.error` detail carries, after the
-gateway's status and type, why the turn did not move.
+to send the message again. The `session.error` detail carries the
+gateway's status and type, its developer detail in parentheses, and why
+the turn did not move, such as `HTTP 400 upstream_rejected (upstream
+status 404: {...}); no other model was named`.
 
 The gateway's own refusals carry their own types and ask nothing:
 `invalid_request`, `model_not_allowed`, `model_disabled`,
@@ -347,6 +349,7 @@ too.
 | The gateway's own refusals of a routed turn ask nothing and keep their policies; a rejection on a session on a model named itself asks nothing and ends `model_error` at once | `harness.TestTheGatewaysOwnRefusalAsksNothing` | built |
 | toposd asks the rejection's question with `failed_reason` beside `failed_model` and `failed_detail`, and an allow that names no model moves nothing | `internal/server.TestAFailoverOfARejectedRequestSaysWhy` | built |
 | The runner protocol's failover request carries `reason` only when there is one, a drive passes it to the server, and a reason the server does not know is `invalid_request` | `internal/runnerrole.TestARemoteLeaseAsksTheServerToFailOver`, `runner.TestADriveAsksTheFailoverOfItsLease` | built |
+| Every model failure's `session.error`, `model_error`, a spend refusal and `compaction_failed` alike, carries the gateway's developer detail after the status and type, at most `models.MaxDetail` bytes cut on a character's boundary, with the message unchanged | `harness.TestAModelErrorsDetailCarriesTheGatewaysDetail`, `harness.TestAFailedCompactionCarriesTheGatewaysDetail` | built |
 | Through toposd, a routed session whose first model the gateway answers 400 `upstream_rejected` asks `session.update` with `failed_reason` `rejected` and `failed_detail` `upstream_rejected: <the gateway's detail>`, and its first turn is answered by the model the allow names | `cmd/toposd.TestARoutedTurnMovesOffAModelItsProviderRejected` | built |
 
 ## Outcome
@@ -441,3 +444,13 @@ the failure and does not judge which models a rejection should pass
 over. An installation that passes over a free model on a rejection, and
 keeps a priced one, needs its authorizer to read `failed_reason` before
 this core rolls, as "The roll" says.
+
+The same change made every model failure's `session.error` carry the
+gateway's developer detail. Before it, only `model_busy` did, through
+`models.Described`: a `model_error`, a spend refusal and a failed
+compaction read `HTTP 400 upstream_rejected` alone, and the provider's
+own status and words were on the failed `model.request` and nowhere a
+client reads an error. Each now reads the status and type, then the
+gateway's detail in parentheses, at most `models.MaxDetail` bytes; the
+`message` is unchanged (`harness.TestAModelErrorsDetailCarriesTheGatewaysDetail`,
+`harness.TestAFailedCompactionCarriesTheGatewaysDetail`).

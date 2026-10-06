@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instruc
 affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-06
 author: changkun
 ---
 
@@ -147,7 +147,7 @@ is testable without a provider.
 
 | Code | Meaning |
 |---|---|
-| `compaction_failed` | the compaction request failed after retries |
+| `compaction_failed` | the compaction request failed after retries; an HTTP failure's `detail` carries its status, type and the gateway's developer detail, as `model_error`'s does |
 | `context_exhausted` | a request is over the model's window after compaction |
 
 ## Not in this spec
