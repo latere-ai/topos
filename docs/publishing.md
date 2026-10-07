@@ -54,9 +54,49 @@ spec:
 ```
 
 The tool belongs to the session's own thread: a thread a spawn starts
-holds none, so a session has one app. `topos run` refuses an agent that
-names it, since a run on a person's machine has no app host and no
-sandbox.
+holds none. A thread publishes to its own app, created at its first such
+call, and to each app the installation attached to the session. `topos
+run` refuses an agent that names it, since a run on a person's machine
+has no app host and no sandbox.
+
+## Keeping an app going across sessions
+
+An installation's authorizer may attach existing apps to a session,
+each the repository of its source with the app it publishes. The
+session then starts with a checkout of each one, in the directory of
+the app's slug under the working directory, on the session's own branch
+at the commit the app serves: its live release, else its newest ready
+preview, else the repository's default branch. The model reads which
+apps it was given, with their slugs and addresses.
+
+`app` names the app a call publishes to or releases:
+
+```json
+{"app": "tide-tables"}
+{"app": "tide-tables", "release": true}
+```
+
+Publishing an attached app commits its checkout on the session's branch
+and pushes that branch, so each publish builds on the history it
+started from, and a merge or a conflict is plain git in the checkout.
+`path` may name the checkout or a folder inside it; a folder outside it
+is refused `not_in_checkout`. With no `app`, a folder inside an attached
+app's checkout publishes that app, and any other folder the session's
+own app. An `app` that is neither attached nor one the session made is
+refused `app_not_attached` before any request, and a release with no
+`app` while previews of several apps stand is refused `app_required`.
+The thread keeps a standing preview per app, so releasing one app never
+takes another's.
+
+Several sessions may build one app at once, each on its own branch.
+Before it tags a release, the tool requires the commit the app serves
+to be an ancestor of the commit it releases. Otherwise the release is
+refused, `status` `refused` with `error.code` `behind_live`, no tag is
+pushed, and the model is told to merge the live release into its
+checkout, publish, and release again. The check and the tag are two
+steps, so two releases a few seconds apart can still pass it together;
+the later one then serves, and the earlier session's next release is
+refused until it merges.
 
 ## What a client reads
 
@@ -71,7 +111,8 @@ Every `tool.result` of a `publish` call carries `meta.publish`:
 | `deploy` | the deploy's id at the host |
 | `status` | `ready`, `building`, `failed` or `canceled` for a preview; `released`, `pending`, `refused` or `failed` for a release |
 | `release` | the tag, on a release |
-| `error` | `{code, message}` for `failed`, `canceled` and `refused` |
+| `error` | `{code, message}` for `failed`, `canceled` and `refused`, and the code of a call refused before any request: `app_not_attached`, `app_required` or `not_in_checkout`, whose `app` is empty |
+| `attached` | true for an app the installation attached, absent for the session's own |
 
 A client shows a `ready` preview with its address, and may frame it
 beside the conversation. A `publish` call with `release: true` that
@@ -100,7 +141,7 @@ The host answers this contract under its root:
 | Request | Answer |
 |---|---|
 | `POST /apps` with `{"name", "visibility"}` | `201` with the app: `slug`, `name`, `url`, `repository.push_url` |
-| `GET /apps/{slug}` | the app, or `404` |
+| `GET /apps/{slug}` | the app, or `404`; with `current_deploy` and `latest_preview`, each `{"id", "commit_sha"}` or `null`, the commit its address serves and its newest ready preview's, which the start of an attached app's checkout and the check before a release read |
 | `GET /apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` and `error` |
 | `GET /apps/{slug}/deploys/{id}/logs` | the build log, one JSON object with its `line` per line |
 | `GET /apps/{slug}/releases` | `{"releases": [...]}`, each with `tag`, `commit_sha`, `status` and `reason` |
