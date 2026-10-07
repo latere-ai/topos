@@ -112,6 +112,10 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [054](054-a-sessions-title-and-filing.md) | A session's title and its filing: the title member of PATCH, session.title_changed, and an archive of an idle session | small | testing | 004, 006, 015, 017, 041 |
 | [055](055-images-an-answer-shows.md) | Images an answer shows: each local image an agent message names is kept from the machine as a blob, recorded by `files.kept`, and served by the blob route as an image | medium | testing | 016, 044 |
 | [056](056-editing-a-message-and-the-branches-of-a-session.md) | A fork before a person's message, the replacement message in the same call, and the tree of a session's forks read in one list: `before_seq`, `message`, `title` and `tree` on the fork, the Session's `root`, the list's `root`, `parent` and `group=tree`, a fork's own spend, the tree's cache key | medium | testing | 017, 038 |
+| [057](057-a-sessions-metadata-in-its-questions-and-lists.md) | A session's metadata in its questions and lists: the create and fork questions carry it, a list filters by one entry, and a PATCH merge files a session elsewhere with no event | small | drafted | 004, 006, 014, 015, 023, 054, 056 |
+| [058](058-what-a-create-allow-attaches.md) | What a create's allow attaches: repositories with the app each publishes, checked out at the app's live commit, read-only files the runner fetches with the session's token, and context text, each fixed for the session's life | medium | drafted | 004, 006, 010, 011, 015, 016, 018, 019, 043, 053, 057 |
+| [059](059-publishing-to-a-chosen-app.md) | Publishing to a chosen app: the app input, an attached app published from its own checkout on the session's branch, a release refused while the live version holds work it lacks, a standing preview per app | medium | drafted | 008, 012, 019, 043, 058 |
+| [060](060-the-memory-tool.md) | The memory tool: short entries an agent saves, updates and forgets through a memory service the installation configures, with the session's own key, read at the start through the allow's context | medium | drafted | 003, 004, 008, 012, 016, 018, 020, 025, 047, 058 |
 
 ## Dependency graph
 
@@ -177,6 +181,10 @@ flowchart BT
   S054[054 a session's title and its filing]
   S055[055 images an answer shows]
   S056[056 a fork before a message, branches]
+  S057[057 a session's metadata]
+  S058[058 what a create's allow attaches]
+  S059[059 publishing to a chosen app]
+  S060[060 the memory tool]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -272,6 +280,16 @@ flowchart BT
   S055 --> S044
   S056 --> S017
   S056 --> S038
+  S057 --> S023
+  S057 --> S054
+  S057 --> S056
+  S058 --> S043
+  S058 --> S053
+  S058 --> S057
+  S059 --> S058
+  S060 --> S020
+  S060 --> S047
+  S060 --> S058
 ```
 
 ## Build order
@@ -285,7 +303,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
@@ -302,6 +320,10 @@ not written. Phase 4 has fork and none of the external runner or
 handoff. Of phase 5, 037 is complete, and 038 since, on 2026-10-04, in
 no release yet; 039 is built but for its instruction tier against a
 real model, in no release yet, and 047 likewise, on 2026-10-05.
+
+Of the specs drafted on 2026-10-07, 057 comes first, since an
+authorizer decides attachments by the label it reads; 058 follows, and
+059 and 060 each build on 058 and can run in parallel.
 
 Work ran ahead of this order, so many specs are `in-progress` while
 specs they build on are open; each Outcome section names what shipped
@@ -335,6 +357,8 @@ and in which release.
 | toposd verifies and asks: the installation's authorizer decides, an unavailable one is a refusal, and the owner policy applies only when none is configured | 006 | the core decides nothing about a person |
 | git is optional and plain inside the sandbox; the git host's ref rules keep an agent on its own branches | 019 | the boundary is at the git host, so no push tool is needed |
 | memory stores are an API resource whose bytes live in a directory or under Arca's files plane, synced by the runner into the machine | 020 | the model reads and writes memory with the file tools, and no machine holds a storage credential |
+| what a session starts with beyond its request (repositories, files, context) is attached by the allow of its create and fixed for its life; a request cannot attach a file or name an app | 058 | which of a person's things a session reaches is the authorizer's answer, and a prefix that never changes costs no cache |
+| several sessions build one app on their own branches, and a release whose commit does not descend from the live one is refused by the tool | 059 | one session's release never silently removes another's work, and a merge is plain git in the checkout |
 | a trigger fires on a schedule or on an event delivered to its fire route, and the core keeps no listener, verifies no provider's signature and polls nothing | 022 | the core is not an event bus: whatever produces an installation's events delivers them, and a filter, a template and a session policy are all the core adds |
 | every mutation emits one content-free event to the operator's sink | 023 | usage and audit need events; content in a sink is a second copy of every secret |
 | manifests are declarative and never hold a secret; one resolver serves the CLI and the server | 003 | everything a console does is scriptable, and a file in a repository is not a vault |
