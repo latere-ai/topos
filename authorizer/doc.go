@@ -152,6 +152,36 @@
 // text it is, and in which contexts it applies, is the endpoint's to
 // decide; toposd never parses it.
 //
+// Two members attach what a session starts with beyond its request (spec
+// 058), read on an allow of session.create alone, a fork's included, and
+// fixed for the session's life:
+//
+//	"repositories": [{"url": "https://git.example.com/r/7f3c.git", "app": {"slug": "tide-tables", "name": "Tide tables", "url": "https://tide-tables.apps.example.com"}}],
+//	"context": [{"title": "Project", "text": "Tide tables for the harbor club."}]
+//
+// repositories are WireRepository values: a repository as a request names
+// it, an https url and an optional ref, and app, the app at the
+// installation's app host the repository is the source of. They follow
+// the request's repositories, or the agent's when the request names none,
+// in the answer's order; one whose url those already name is dropped,
+// and the request's keeps its place and its ref. The question's
+// repositories names what the session holds before the answer, so an
+// endpoint has session.MaxRepositories less that many to attach. A
+// repository with app is checked out into the directory of its slug, on
+// the session's branch at the commit the app serves, and the publish
+// tool publishes to it; a request never names an app. context is titled
+// text, each title one line of at most session.MaxContextTitle
+// characters, at most session.MaxContext bytes together, which the model
+// reads after the initiator's instructions. A fork carries what its
+// parent's request named and what its own answer attaches, never what its
+// parent's answer attached. An answer past a bound, an app or a part that
+// breaks its rule, or a url or an app named twice is refused as
+// authorizer_unavailable, its detail naming the member. Whether the
+// session may push to an attached repository is the scope the answer
+// carries. An endpoint sends these members only to a server that reads
+// them, which a server before them ignores as unknown members; this
+// release reads no files member.
+//
 // session.send is asked of every event a person sends to a session but
 // an interrupt, and its resource carries the event's type as event_type:
 // user.message, a message; user.tool_confirmation, the allow or deny of

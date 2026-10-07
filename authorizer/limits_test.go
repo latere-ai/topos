@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/authz"
+
+	"latere.ai/x/topos/session"
 )
 
 func decision(t *testing.T, w any) authz.Decision {
@@ -218,6 +220,66 @@ func TestInstructionsEscapesAreHeldToUTF8(t *testing.T) {
 	} {
 		if _, err := DecodeLimits(authz.Decision{Allow: true, Limits: []byte(raw)}); (err == nil) != ok {
 			t.Errorf("%s: %v", raw, err)
+		}
+	}
+}
+
+// TestTheAttachMembers: an allow's repositories are read as repository
+// resources marked attached, each with its app, and its context as it is;
+// a member past its bound or breaking its rule does not decode, and the
+// error names it. files is not read by this release, so it is ignored as
+// any unknown member is.
+func TestTheAttachMembers(t *testing.T) {
+	app := &session.ResourceApp{Slug: "tide-tables", Name: "Tide tables", URL: "https://tide-tables.apps.example.com"}
+	w := WireLimits{
+		Repositories: []WireRepository{{URL: "https://git.example.com/r/7f3c.git", App: app}, {URL: "https://git.example.com/acme/lib.git", Ref: "main"}},
+		Context:      []session.ContextPart{{Title: "Project", Text: "Tide tables for the harbor club."}, {Title: "Memory", Text: "- ent_01: The club's color is navy.\n"}},
+	}
+	l, err := DecodeLimits(decision(t, w))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []session.Resource{
+		{Type: session.ResourceRepository, URL: w.Repositories[0].URL, App: app, Attached: true},
+		{Type: session.ResourceRepository, URL: w.Repositories[1].URL, Ref: "main", Attached: true},
+	}
+	if len(l.Repositories) != 2 || l.Repositories[0].URL != want[0].URL || *l.Repositories[0].App != *app || !l.Repositories[0].Attached ||
+		l.Repositories[1].Ref != "main" || l.Repositories[1].App != nil || !l.Repositories[1].Attached || l.Repositories[1].Type != session.ResourceRepository {
+		t.Fatalf("repositories %+v", l.Repositories)
+	}
+	if !slices.Equal(l.Context, w.Context) {
+		t.Fatalf("context %+v", l.Context)
+	}
+	if l, err := DecodeLimits(decision(t, map[string]any{"files": []any{map[string]any{"url": "https://storage.example.com/f", "path": "notes.md", "size": 2}}})); err != nil || l.Repositories != nil || l.Context != nil {
+		t.Fatalf("an allow with files alone: %+v, %v", l, err)
+	}
+	many := make([]WireRepository, session.MaxRepositories+1)
+	for i := range many {
+		many[i] = WireRepository{URL: fmt.Sprintf("https://git.example.com/r/%d.git", i)}
+	}
+	for name, c := range map[string]struct {
+		w     any
+		names string
+	}{
+		"too many repositories": {WireLimits{Repositories: many}, "limits.repositories"},
+		"an http repository":    {WireLimits{Repositories: []WireRepository{{URL: "http://git.example.com/r.git"}}}, "limits.repositories[0]"},
+		"a credential":          {WireLimits{Repositories: []WireRepository{{URL: "https://u:p@git.example.com/r.git"}}}, "limits.repositories[0]"},
+		"a ref of git's syntax": {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", Ref: "--upload-pack=x"}}}, "limits.repositories[0]"},
+		"a repeated url":        {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git"}, {URL: "https://git.example.com/r.git"}}}, "limits.repositories[1]"},
+		"a bad slug":            {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "Tide", Name: "T", URL: app.URL}}}}, "limits.repositories[0].app"},
+		"an app with no name":   {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "tide", URL: app.URL}}}}, "limits.repositories[0].app"},
+		"an http app":           {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "tide", Name: "T", URL: "http://tide.example"}}}}, "limits.repositories[0].app"},
+		"a repeated app": {WireLimits{Repositories: []WireRepository{
+			{URL: "https://git.example.com/r/1.git", App: app}, {URL: "https://git.example.com/r/2.git", App: app},
+		}}, "limits.repositories[1]"},
+		"a repositories object":   {map[string]any{"repositories": map[string]any{"url": "https://git.example.com/r.git"}}, "limits"},
+		"a context with no title": {WireLimits{Context: []session.ContextPart{{Text: "x"}}}, "limits.context[0].title"},
+		"a context with no text":  {WireLimits{Context: []session.ContextPart{{Title: "P"}}}, "limits.context[0].text"},
+		"a context too long":      {WireLimits{Context: []session.ContextPart{{Title: "P", Text: strings.Repeat("x", session.MaxContext)}}}, "limits.context is"},
+		"a lone surrogate":        {json.RawMessage(`{"context":[{"title":"P","text":"\ud800"}]}`), "limits.context[0]"},
+	} {
+		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
+			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)
 		}
 	}
 }

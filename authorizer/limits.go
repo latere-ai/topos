@@ -112,25 +112,43 @@ type Limits struct {
 	// Instructions are the initiator's standing instructions, read on an
 	// allow of session.create alone (spec 053); empty is none.
 	Instructions string
+	// Repositories are what an allow of session.create attaches beside
+	// the request's repositories, each a repository resource marked
+	// attached, optionally naming the app it is the source of (spec 058).
+	Repositories []session.Resource
+	// Context is the titled text an allow of session.create attaches,
+	// which the model reads for the session's life (spec 058).
+	Context []session.ContextPart
+}
+
+// WireRepository is one repository an allow of session.create attaches
+// (spec 058): a repository as a request names it, and the app at the
+// installation's app host it is the source of, nil for none.
+type WireRepository struct {
+	URL string               `json:"url"`
+	Ref string               `json:"ref,omitempty"`
+	App *session.ResourceApp `json:"app,omitempty"`
 }
 
 // WireLimits is the limits object as an answer carries it, so an
 // authorizer renders its answer through the type toposd decodes. Every
 // member is optional and a member left nil is left out.
 type WireLimits struct {
-	AlwaysConfirm  []string          `json:"always_confirm,omitempty"`
-	AlwaysAllow    []string          `json:"always_allow,omitempty"`
-	Thresholds     *Thresholds       `json:"thresholds,omitempty"`
-	BudgetUSDMicro *int64            `json:"budget_usd_micro,omitempty"`
-	TurnTimeout    string            `json:"turn_timeout,omitempty"`
-	MaxAge         string            `json:"max_age,omitempty"`
-	Scope          []json.RawMessage `json:"scope,omitempty"`
-	Retention      string            `json:"retention,omitempty"`
-	Owner          *Owner            `json:"owner,omitempty"`
-	Model          string            `json:"model,omitempty"`
-	Reasoning      *string           `json:"reasoning,omitempty"`
-	Network        *Network          `json:"network,omitempty"`
-	Instructions   string            `json:"instructions,omitempty"`
+	AlwaysConfirm  []string              `json:"always_confirm,omitempty"`
+	AlwaysAllow    []string              `json:"always_allow,omitempty"`
+	Thresholds     *Thresholds           `json:"thresholds,omitempty"`
+	BudgetUSDMicro *int64                `json:"budget_usd_micro,omitempty"`
+	TurnTimeout    string                `json:"turn_timeout,omitempty"`
+	MaxAge         string                `json:"max_age,omitempty"`
+	Scope          []json.RawMessage     `json:"scope,omitempty"`
+	Retention      string                `json:"retention,omitempty"`
+	Owner          *Owner                `json:"owner,omitempty"`
+	Model          string                `json:"model,omitempty"`
+	Reasoning      *string               `json:"reasoning,omitempty"`
+	Network        *Network              `json:"network,omitempty"`
+	Instructions   string                `json:"instructions,omitempty"`
+	Repositories   []WireRepository      `json:"repositories,omitempty"`
+	Context        []session.ContextPart `json:"context,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -214,6 +232,10 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 	// it decodes, so the text is held to UTF-8 as the answer wrote it.
 	var raw struct {
 		Instructions json.RawMessage `json:"instructions"`
+		Context      []struct {
+			Title json.RawMessage `json:"title"`
+			Text  json.RawMessage `json:"text"`
+		} `json:"context"`
 	}
 	if err := d.DecodeLimits(&raw); err != nil {
 		return Limits{}, fmt.Errorf("limits: %w", err)
@@ -222,7 +244,54 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		return Limits{}, errors.New("limits.instructions is not valid UTF-8")
 	}
 	l.Instructions = w.Instructions
+	repos, err := attachedRepositories(w.Repositories)
+	if err != nil {
+		return Limits{}, err
+	}
+	l.Repositories = repos
+	for i, p := range raw.Context {
+		if !validString(p.Title) || !validString(p.Text) {
+			return Limits{}, fmt.Errorf("limits.context[%d] is not valid UTF-8", i)
+		}
+	}
+	if err := session.CheckContext(w.Context); err != nil {
+		return Limits{}, fmt.Errorf("limits.%w", err)
+	}
+	l.Context = w.Context
 	return l, nil
+}
+
+// attachedRepositories reads an allow's repositories (spec 058): at most
+// session.MaxRepositories, each a repository a request could name over
+// https, its app, when it names one, held to session.CheckApp, and no URL
+// or app named twice. Each is a repository resource marked attached.
+func attachedRepositories(ws []WireRepository) ([]session.Resource, error) {
+	if len(ws) > session.MaxRepositories {
+		return nil, fmt.Errorf("limits.repositories names %d repositories, more than %d", len(ws), session.MaxRepositories)
+	}
+	var out []session.Resource
+	urls, slugs := map[string]bool{}, map[string]bool{}
+	for i, w := range ws {
+		r := session.Resource{Type: session.ResourceRepository, URL: w.URL, Ref: w.Ref, App: w.App, Attached: true}
+		if err := session.CheckRepository(r, "https"); err != nil {
+			return nil, fmt.Errorf("limits.repositories[%d]: %w", i, err)
+		}
+		if urls[w.URL] {
+			return nil, fmt.Errorf("limits.repositories[%d] names %s a second time", i, w.URL)
+		}
+		urls[w.URL] = true
+		if a := w.App; a != nil {
+			if err := session.CheckApp(*a); err != nil {
+				return nil, fmt.Errorf("limits.repositories[%d].app: %w", i, err)
+			}
+			if slugs[a.Slug] {
+				return nil, fmt.Errorf("limits.repositories[%d] names the app %s a second time", i, a.Slug)
+			}
+			slugs[a.Slug] = true
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // validString reports whether a JSON string member, as raw bytes, is
