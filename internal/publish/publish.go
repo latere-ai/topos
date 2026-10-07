@@ -20,10 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -66,8 +68,9 @@ const DefaultAudience = "apps"
 var schema = json.RawMessage(`{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the working directory."},
-    "release": {"type": "boolean", "description": "True to release the newest preview to the app's own address instead of publishing a folder."}
+    "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the checkout of the app that app names, else the working directory."},
+    "app": {"type": "string", "description": "The slug of the app to publish to or release: one the session was given, or one this session created. Default: the app whose checkout path is in, else this session's own app."},
+    "release": {"type": "boolean", "description": "True to release the app's newest preview to its own address instead of publishing a folder."}
   },
   "additionalProperties": false
 }`)
@@ -126,13 +129,41 @@ func (t *Tool) Properties() tools.Properties {
 
 type input struct {
 	Path    string `json:"path"`
+	App     string `json:"app"`
 	Release bool   `json:"release"`
 }
 
-// Run publishes the folder the call names, or releases the last ready
-// preview. A failure of the app host, the git host or the machine is the
-// call's error result, which the model reads; a Go error is a lost lease
-// or a released machine, which stop the turn.
+// target is the app a call publishes to or releases (spec 059): an
+// attached app, with its repository and the absolute path of its
+// checkout, or the thread's own, with the thread's last result for it.
+type target struct {
+	// slug is the app's slug, "" for the thread's own app when the call
+	// names none, which ensureApp finds or creates.
+	slug string
+	// repo is an attached app's repository, nil for an own app, and dir
+	// its checkout's absolute path and rel that path under the working
+	// directory.
+	repo     *session.Resource
+	dir, rel string
+	// last is the thread's last result for an own app.
+	last *session.PublishMeta
+}
+
+func (g target) attached() bool { return g.repo != nil }
+
+// meta is a result's meta for the app a, marked attached for an
+// attached app, so the thread's state never folds an attached app as its
+// own.
+func (g target) meta(a hostApp) *session.PublishMeta {
+	return &session.PublishMeta{App: a.Slug, Name: a.Name, URL: a.URL, Attached: g.attached()}
+}
+
+// Run publishes the folder the call names, or releases the newest
+// preview of the app it names. The app is resolved before any request,
+// and a call that names an app the session may not publish to is
+// refused then. A failure of the app host, the git host or the machine
+// is the call's error result, which the model reads; a Go error is a
+// lost lease or a released machine, which stop the turn.
 func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	var in input
 	if len(bytes.TrimSpace(c.Input)) > 0 {
@@ -141,6 +172,10 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 		if err := json.Unmarshal(c.Input, &in); err != nil {
 			return tools.Result{}, fmt.Errorf("publish: read the input: %w", err)
 		}
+	}
+	g, refused := t.which(c, in)
+	if refused != nil {
+		return *refused, nil
 	}
 	if t.tokens == nil {
 		return unavailable("this server mints no credential for its app host"), nil
@@ -155,9 +190,110 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 		return unavailable("the session's credential for the app host could not be had: " + err.Error()), nil
 	}
 	if in.Release {
-		return t.release(ctx, c)
+		return t.release(ctx, c, g)
 	}
-	return t.preview(ctx, c, in.Path)
+	return t.preview(ctx, c, g, in.Path)
+}
+
+// which resolves the app a call publishes to or releases, before any
+// request (spec 059): the app the call names, one the session was
+// attached or one the thread created; else, for a folder, the attached
+// app whose checkout holds it, or the thread's own; else, for a release,
+// the one app whose preview stands. A call that names any other app, a
+// folder outside the named attached app's checkout, and a release that
+// names no app while previews of several stand are refused, each with a
+// result whose meta names no app, so the thread's state folds none.
+func (t *Tool) which(c tools.Call, in input) (target, *tools.Result) {
+	workdir := c.Machine.Info().Workdir
+	if in.App != "" {
+		if g, ok := t.attachedApp(workdir, in.App); ok {
+			if p := in.Path; !in.Release && p != "" && !inside(abs(workdir, p), g.dir) {
+				return g, refusal(session.PublishNotInCheckout, prompts.Render(prompts.PublishNotInCheckout, prompts.Data{"Path": p, "Dir": g.rel, "App": g.slug}))
+			}
+			return g, nil
+		}
+		if m := c.State.Apps[in.App]; m != nil && !m.Attached {
+			return target{slug: in.App, last: m}, nil
+		}
+		return target{}, refusal(session.PublishAppNotAttached, prompts.Render(prompts.PublishNotAttached, prompts.Data{"App": in.App, "Apps": strings.Join(t.publishable(c.State), ", ")}))
+	}
+	if in.Release {
+		slugs := slices.Sorted(maps.Keys(c.State.Standing))
+		switch len(slugs) {
+		case 0:
+			return target{}, nil
+		case 1:
+			return t.targetOf(workdir, c.State, slugs[0]), nil
+		}
+		return target{}, refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAppRequired, prompts.Data{"Apps": strings.Join(slugs, ", ")}))
+	}
+	folder := abs(workdir, cmp.Or(in.Path, "."))
+	for _, r := range session.Repositories(t.s) {
+		if r.App == nil {
+			continue
+		}
+		if g, ok := t.attachedApp(workdir, r.App.Slug); ok && inside(folder, g.dir) {
+			return g, nil
+		}
+	}
+	return target{last: c.State.App}, nil
+}
+
+// attachedApp is the attached app of slug, with its checkout under
+// workdir, and whether the session was attached one.
+func (t *Tool) attachedApp(workdir, slug string) (target, bool) {
+	r, dir, ok := session.App(t.s, slug)
+	if !ok {
+		return target{}, false
+	}
+	return target{slug: slug, repo: &r, dir: path.Join(workdir, dir), rel: dir}, true
+}
+
+// targetOf is the app of slug, attached when the session was attached
+// one, the thread's own otherwise.
+func (t *Tool) targetOf(workdir string, st tools.State, slug string) target {
+	if g, ok := t.attachedApp(workdir, slug); ok {
+		return g
+	}
+	return target{slug: slug, last: st.Apps[slug]}
+}
+
+// publishable are the slugs of the apps the session may publish to: the
+// attached ones and those the thread created, sorted.
+func (t *Tool) publishable(st tools.State) []string {
+	var out []string
+	for _, r := range session.Repositories(t.s) {
+		if r.App != nil {
+			out = append(out, r.App.Slug)
+		}
+	}
+	for slug, m := range st.Apps {
+		if !m.Attached && !slices.Contains(out, slug) {
+			out = append(out, slug)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// refusal is a call's error result refused with code before any
+// request: its meta names no app, so the thread's state folds none.
+func refusal(code, s string) *tools.Result {
+	r := text(tools.OutcomeError, s, &session.PublishMeta{Error: &session.PublishError{Code: code}})
+	return &r
+}
+
+// abs is p resolved against workdir and cleaned.
+func abs(workdir, p string) string {
+	if !path.IsAbs(p) {
+		p = path.Join(workdir, p)
+	}
+	return path.Clean(p)
+}
+
+// inside reports whether the folder p is dir or a folder under it.
+func inside(p, dir string) bool {
+	return p == dir || strings.HasPrefix(p, dir+"/")
 }
 
 // harnessError reports the errors that stop the turn instead of being
@@ -187,13 +323,14 @@ func failure(shown string, err error, meta *session.PublishMeta) (tools.Result, 
 	return text(tools.OutcomeError, prompts.Render(prompts.PublishError, prompts.Data{"Path": shown, "Error": err.Error()}), meta), nil
 }
 
-// preview publishes the folder p of the machine and waits for its
-// preview.
-func (t *Tool) preview(ctx context.Context, c tools.Call, p string) (tools.Result, error) {
-	shown := cmp.Or(p, ".")
-	dir := p
-	if !path.IsAbs(dir) {
-		dir = path.Join(c.Machine.Info().Workdir, dir)
+// preview publishes the folder p of the machine to g and waits for its
+// preview: the thread's own app's folder through the session's git
+// directory (spec 043), or an attached app's checkout, committed and
+// pushed on the session's branch (spec 059).
+func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p string) (tools.Result, error) {
+	shown, dir := cmp.Or(p, "."), abs(c.Machine.Info().Workdir, cmp.Or(p, "."))
+	if g.attached() && p == "" {
+		shown, dir = g.rel, g.dir
 	}
 	if fi, err := c.Machine.Stat(ctx, dir); err != nil || !fi.IsDir {
 		if harnessError(err) {
@@ -201,15 +338,31 @@ func (t *Tool) preview(ctx context.Context, c tools.Call, p string) (tools.Resul
 		}
 		return text(tools.OutcomeError, prompts.Render(prompts.PublishNotFolder, prompts.Data{"Path": shown}), nil), nil
 	}
-	a, err := t.ensureApp(ctx, c.State.App)
-	if err != nil {
-		return failure(shown, err, nil)
+	var a hostApp
+	var meta *session.PublishMeta
+	var push func(empty bool) (pushed, error)
+	if g.attached() {
+		var err error
+		if a, err = t.app(ctx, g.slug); err != nil {
+			return failure(shown, err, &session.PublishMeta{App: g.slug, Attached: true})
+		}
+		meta = g.meta(a)
+		if err := errors.Join(t.onGitHost(a.Repository.PushURL), t.onGitHost(g.repo.URL)); err != nil {
+			return failure(shown, err, meta)
+		}
+		push = func(empty bool) (pushed, error) { return t.pushCheckout(ctx, c.Machine, g, empty) }
+	} else {
+		var err error
+		if a, err = t.ensureApp(ctx, g.last); err != nil {
+			return failure(shown, err, nil)
+		}
+		meta = g.meta(a)
+		if err := t.onGitHost(a.Repository.PushURL); err != nil {
+			return failure(shown, err, meta)
+		}
+		push = func(empty bool) (pushed, error) { return t.push(ctx, c.Machine, a, dir, empty) }
 	}
-	meta := &session.PublishMeta{App: a.Slug, Name: a.Name, URL: a.URL}
-	if err := t.onGitHost(a.Repository.PushURL); err != nil {
-		return failure(shown, err, meta)
-	}
-	pushed, err := t.push(ctx, c.Machine, a, dir, false)
+	pushed, err := push(false)
 	if err != nil {
 		return failure(shown, err, meta)
 	}
@@ -217,7 +370,7 @@ func (t *Tool) preview(ctx context.Context, c tools.Call, p string) (tools.Resul
 	if err == nil && !pushed.changed && done && (d.Status == session.PublishFailed || d.Status == session.PublishCanceled) {
 		// Nothing changed since a build that failed or was replaced: an
 		// empty commit builds the same files again.
-		if pushed, err = t.push(ctx, c.Machine, a, dir, true); err != nil {
+		if pushed, err = push(true); err != nil {
 			return failure(shown, err, meta)
 		}
 		d, found, done, err = t.waitDeploy(ctx, a.Slug, pushed.commit)
@@ -248,12 +401,17 @@ func (t *Tool) preview(ctx context.Context, c tools.Call, p string) (tools.Resul
 	return text(tools.OutcomeError, prompts.Render(prompts.PublishFailed, prompts.Data{"Path": shown, "Code": e.Code, "Message": e.Message, "Log": log}), meta), nil
 }
 
-// release puts the commit of the thread's newest preview that stands,
-// ready or still building, at the app's address with the next version
-// tag, and waits for the release: the host releases a preview still
-// building once it is ready.
-func (t *Tool) release(ctx context.Context, c tools.Call) (tools.Result, error) {
-	ready := c.State.Standing
+// release puts the commit of g's newest preview that stands in the
+// thread, ready or still building, at the app's address with the next
+// version tag, and waits for the release: the host releases a preview
+// still building once it is ready. Before it tags, it requires the commit
+// the app serves to be an ancestor of the one it releases, and refuses
+// behind_live otherwise (spec 059).
+func (t *Tool) release(ctx context.Context, c tools.Call, g target) (tools.Result, error) {
+	var ready *session.PublishMeta
+	if g.slug != "" {
+		ready = c.State.Standing[g.slug]
+	}
 	if ready == nil {
 		return text(tools.OutcomeError, prompts.Text(prompts.PublishNoPreview), nil), nil
 	}
@@ -262,11 +420,23 @@ func (t *Tool) release(ctx context.Context, c tools.Call) (tools.Result, error) 
 		if isNotFound(err) {
 			err = fmt.Errorf("the app %s no longer exists at the app host; publish the folder again", ready.App)
 		}
-		return failure(ready.App, err, nil)
+		var named *session.PublishMeta
+		if g.attached() {
+			named = &session.PublishMeta{App: g.slug, Attached: true}
+		}
+		return failure(ready.App, err, named)
 	}
-	meta := &session.PublishMeta{App: a.Slug, Name: a.Name, URL: a.URL, Commit: ready.Commit, Preview: ready.Preview}
+	meta := g.meta(a)
+	meta.Commit, meta.Preview = ready.Commit, ready.Preview
 	if err := t.onGitHost(a.Repository.PushURL); err != nil {
 		return failure(a.Slug, err, meta)
+	}
+	repoURL := a.Repository.PushURL
+	if g.attached() {
+		if err := t.onGitHost(g.repo.URL); err != nil {
+			return failure(a.Slug, err, meta)
+		}
+		repoURL = g.repo.URL
 	}
 	var list struct {
 		Releases []hostRelease `json:"releases"`
@@ -282,8 +452,20 @@ func (t *Tool) release(ctx context.Context, c tools.Call) (tools.Result, error) 
 		}
 	}
 	if tag == "" {
+		if live := a.live(); live != "" && live != ready.Commit {
+			holds, err := t.holds(ctx, c.Machine, g, a.Slug, repoURL, live, ready.Commit)
+			if err != nil {
+				return failure(a.Slug, err, meta)
+			}
+			if !holds {
+				meta.Status, meta.Error = session.PublishRefused, &session.PublishError{Code: session.PublishBehindLive}
+				return text(tools.OutcomeError, prompts.Render(prompts.PublishBehindLive, prompts.Data{
+					"App": a.Slug, "Live": live[:min(len(live), 7)], "Attached": g.attached(), "Dir": g.rel, "URL": repoURL,
+				}), meta), nil
+			}
+		}
 		tag = nextTag(list.Releases)
-		if err := t.pushTag(ctx, c.Machine, a, ready.Commit, tag); err != nil {
+		if err := t.pushTag(ctx, c.Machine, g, a.Slug, repoURL, ready.Commit, tag); err != nil {
 			return failure(a.Slug, err, meta)
 		}
 	}
@@ -492,6 +674,15 @@ func Served(o Options) func(ctx context.Context, tokens *runner.TokenSource, slu
 	}
 }
 
+// live is the commit the app's address serves, "" when nothing is live
+// or the host names no commit.
+func (a hostApp) live() string {
+	if a.CurrentDeploy == nil {
+		return ""
+	}
+	return a.CurrentDeploy.CommitSHA
+}
+
 // app reads one app by its slug.
 func (t *Tool) app(ctx context.Context, slug string) (hostApp, error) {
 	var a hostApp
@@ -599,24 +790,118 @@ func (t *Tool) push(ctx context.Context, m machine.Machine, a hostApp, dir strin
 	return pushed{commit: fields[1], changed: fields[0] == "1"}, nil
 }
 
-// pushTag pushes tag on commit to the app's repository from the session's
-// git directory, which fetches the session's branch first when it no
-// longer holds the commit.
-func (t *Tool) pushTag(ctx context.Context, m machine.Machine, a hostApp, commit, tag string) error {
+// pushCheckout commits the checkout of the attached app g on the
+// session's branch and pushes the branch to the repository the session
+// was attached, never to a remote the checkout names, which a command in
+// the machine may have changed (spec 059). node_modules/ and lost+found/
+// are excluded beside the repository's own .gitignore. empty commits
+// even when nothing changed.
+func (t *Tool) pushCheckout(ctx context.Context, m machine.Machine, g target, empty bool) (pushed, error) {
+	agent := t.s.Agent.ID + "@" + strconv.Itoa(t.s.Agent.Version)
+	msg := "Publish " + g.slug + "\n\n" + runner.TrailerSession + ": " + t.s.ID + "\n" + runner.TrailerAgent + ": " + agent + "\n"
+	force := "0"
+	if empty {
+		force = "1"
+	}
 	var b strings.Builder
 	w := func(line string) { b.WriteString(line + "\n") }
 	w("set -e")
-	w("url=" + quote(a.Repository.PushURL))
+	w("cd " + quote(g.dir))
+	w("url=" + quote(g.repo.URL))
+	w("branch=" + quote(session.Branch(t.s)))
+	w(`exclude=$(git rev-parse --git-path info/exclude)`)
+	w(`mkdir -p "$(dirname "$exclude")"`)
+	w(`for p in node_modules/ lost+found/; do grep -qxF "$p" "$exclude" 2>/dev/null || printf '%s\n' "$p" >>"$exclude"; done`)
+	w(`git add --all`)
+	w(`changed=1`)
+	w(`if git rev-parse --verify --quiet HEAD >/dev/null && git diff --cached --quiet HEAD; then changed=0; fi`)
+	w(`if [ "$changed" = 1 ] || [ ` + force + ` = 1 ]; then`)
+	w(`  git -c user.name=` + quote(t.s.AgentName()) + ` -c user.email=` + quote(t.s.AgentName()+"@agents.topos.invalid") + ` commit --quiet --allow-empty -m ` + quote(msg))
+	w(`  changed=1`)
+	w(`fi`)
+	w(`git push --quiet "$url" "HEAD:refs/heads/$branch"`)
+	w(`printf '%s %s\n' "$changed" "$(git rev-parse HEAD)"`)
+	out, err := run(ctx, m, b.String())
+	if err != nil {
+		return pushed{}, fmt.Errorf("the push of %s failed: %w", g.rel, err)
+	}
+	fields := strings.Fields(lastLine(out))
+	if len(fields) != 2 || len(fields[1]) < 7 {
+		return pushed{}, fmt.Errorf("the push of %s answered %q", g.rel, strings.TrimSpace(out))
+	}
+	return pushed{commit: fields[1], changed: fields[0] == "1"}, nil
+}
+
+// gitPlace is the lines that put a script's git in g's repository: an
+// attached app's checkout, or the session's git directory of its own
+// app slug, made bare when it is not there.
+func gitPlace(g target, slug string) []string {
+	if g.attached() {
+		return []string{"cd " + quote(g.dir)}
+	}
+	return []string{"export GIT_DIR=" + gitDir(slug), `if [ ! -f "$GIT_DIR/HEAD" ]; then mkdir -p "$GIT_DIR" && git init --quiet --bare; fi`}
+}
+
+// pushTag pushes tag on commit to the app's repository at url, from g's
+// repository, which fetches the session's branch first when it no longer
+// holds the commit.
+func (t *Tool) pushTag(ctx context.Context, m machine.Machine, g target, slug, url, commit, tag string) error {
+	var b strings.Builder
+	w := func(line string) { b.WriteString(line + "\n") }
+	w("set -e")
+	for _, l := range gitPlace(g, slug) {
+		w(l)
+	}
+	w("url=" + quote(url))
 	w("branch=" + quote(session.Branch(t.s)))
 	w("commit=" + quote(commit))
-	w("export GIT_DIR=" + gitDir(a.Slug))
-	w(`if [ ! -f "$GIT_DIR/HEAD" ]; then mkdir -p "$GIT_DIR" && git init --quiet --bare; fi`)
 	w(`if ! git cat-file -e "$commit^{commit}" 2>/dev/null; then git fetch --quiet "$url" "+refs/heads/$branch:refs/remotes/published"; fi`)
 	w(`git push --quiet "$url" "$commit:refs/tags/"` + quote(tag))
 	if _, err := run(ctx, m, b.String()); err != nil {
 		return fmt.Errorf("the push of the tag %s failed: %w", tag, err)
 	}
 	return nil
+}
+
+// ancestryMark begins the line the ancestry script answers with.
+const ancestryMark = "ancestry "
+
+// holds reports whether commit holds live, the commit the app serves:
+// in g's repository it fetches the commit when it is gone, the
+// repository's tags and the live commit when no tag brought it, and asks
+// git whether live is an ancestor of commit (spec 059). A fetch that
+// fails, or an answer of git other than yes or no, is an error with
+// git's output.
+func (t *Tool) holds(ctx context.Context, m machine.Machine, g target, slug, url, live, commit string) (bool, error) {
+	var b strings.Builder
+	w := func(line string) { b.WriteString(line + "\n") }
+	w("set -e")
+	for _, l := range gitPlace(g, slug) {
+		w(l)
+	}
+	w("url=" + quote(url))
+	w("branch=" + quote(session.Branch(t.s)))
+	w("live=" + quote(live))
+	w("commit=" + quote(commit))
+	w(`git cat-file -e "$commit^{commit}" 2>/dev/null || git fetch --quiet "$url" "+refs/heads/$branch:refs/remotes/published"`)
+	// The tags by refspec, so a repository whose HEAD names no branch, as
+	// an app's that only sessions pushed to, still answers.
+	w(`git fetch --quiet "$url" "+refs/tags/*:refs/tags/*"`)
+	w(`git cat-file -e "$live^{commit}" 2>/dev/null || git fetch --quiet "$url" "$live"`)
+	w("set +e")
+	w(`git merge-base --is-ancestor "$live" "$commit"`)
+	w(`printf '` + ancestryMark + `%s\n' "$?"`)
+	out, err := run(ctx, m, b.String())
+	if err != nil {
+		return false, fmt.Errorf("the check of the live release %s failed: %w", live, err)
+	}
+	switch strings.TrimSpace(lastLine(out)) {
+	case ancestryMark + "0":
+		return true, nil
+	case ancestryMark + "1":
+		return false, nil
+	}
+	return false, fmt.Errorf("the check of the live release %s answered: %s", live, strings.TrimSpace(tail(out, 20)))
 }
 
 // run runs a script in the machine and answers its output, or why it

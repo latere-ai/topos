@@ -246,7 +246,7 @@ func TestOutcomes(t *testing.T) {
 		}
 	}
 
-	readyState := tools.State{App: &session.PublishMeta{App: "a-poem"}, Standing: &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady, Preview: "https://d1--a-poem.apps.example"}}
+	readyState := tools.State{App: &session.PublishMeta{App: "a-poem"}, Standing: map[string]*session.PublishMeta{"a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady, Preview: "https://d1--a-poem.apps.example"}}}
 	reason := "agents_may_not_release"
 	for name, c := range map[string]struct {
 		release func(int) (int, any)
@@ -287,7 +287,7 @@ func TestOutcomes(t *testing.T) {
 
 	// A preview still building is released: its commit is tagged, and the
 	// host releases it once it is ready.
-	building := tools.State{Standing: &session.PublishMeta{App: "a-poem", Commit: sha2, Status: session.PublishBuilding}}
+	building := tools.State{Standing: map[string]*session.PublishMeta{"a-poem": {App: "a-poem", Commit: sha2, Status: session.PublishBuilding}}}
 	h = newHost(t, map[string]func(int) (int, any){
 		"GET /apps/a-poem":          app("a-poem"),
 		"GET /apps/a-poem/releases": func(int) (int, any) { return http.StatusOK, map[string]any{"releases": []map[string]any{}} },
@@ -492,7 +492,7 @@ func TestTheHostsAnswers(t *testing.T) {
 		t.Fatalf("an unreadable log: %+v %v", res, err)
 	}
 
-	ready := tools.State{Standing: &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady}}
+	ready := tools.State{Standing: map[string]*session.PublishMeta{"a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady}}}
 	for name, c := range map[string]struct {
 		answer map[string]func(int) (int, any)
 		want   string
@@ -567,5 +567,183 @@ func TestServedReadsTheCommitsAnAppServes(t *testing.T) {
 	}
 	if _, err := read(t.Context(), nil, "tide"); err == nil {
 		t.Fatal("a drive with no token source read the host")
+	}
+}
+
+// attachedSession is newTool's session attached the app tide, whose
+// checkout is /work/tide, beside a repository of its request in the
+// working directory.
+func attachedTool(t *testing.T, h *host) *Tool {
+	t.Helper()
+	s := session.Session{ID: "ses_1", Title: "A poem", Agent: session.AgentRef{ID: "agent_1", Name: "latere", Version: 3}, Resources: []session.Resource{
+		{Type: session.ResourceRepository, URL: gitURL + "/acme/web.git"},
+		{Type: session.ResourceRepository, URL: gitURL + "/r/tide.git", App: &session.ResourceApp{Slug: "tide", Name: "Tide", URL: "https://tide.apps.example"}, Attached: true},
+	}}
+	return New(Options{URL: h.srv.URL, Audience: "apps", GitURL: gitURL, Wait: 50 * time.Millisecond, PollEvery: 5 * time.Millisecond}, s, runner.NewTokenSource(creds{}, nil, nil))
+}
+
+// liveApp answers the app slug with its current deploy at live, none
+// when live is "".
+func liveApp(slug, live string) func(int) (int, any) {
+	return func(n int) (int, any) {
+		_, body := app(slug)(n)
+		m := body.(map[string]any)
+		m["current_deploy"] = nil
+		if live != "" {
+			m["current_deploy"] = map[string]any{"id": "dlive", "commit_sha": live}
+		}
+		return http.StatusOK, m
+	}
+}
+
+// TestWhichApp: app naming an attached app publishes its checkout from
+// the checkout, pushing the session's branch to the repository the
+// session was attached; naming an app the thread made publishes that one
+// through the session's git directory; any other slug is
+// app_not_attached with no request and no app in its meta; a folder
+// outside the named app's checkout is not_in_checkout; with no app a
+// folder inside a checkout publishes that app and one outside it the
+// thread's own; a release with standing previews of several apps and no
+// app is app_required, naming them.
+func TestWhichApp(t *testing.T) {
+	ctx := t.Context()
+	ready := map[string]any{"id": "d2", "status": "ready", "preview": true, "commit_sha": sha2, "preview_url": "https://d2--tide.apps.example"}
+	dirs := map[string]bool{"/work": true, "/work/tide": true, "/work/tide/site": true, "/work/site": true}
+
+	h := newHost(t, map[string]func(int) (int, any){"GET /apps/tide": app("tide"), "GET /apps/tide/deploys": deploys(ready)})
+	m := &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha2 + "\n"}}
+	res, err := attachedTool(t, h).Run(ctx, call(`{"app":"tide"}`, m, tools.State{}))
+	got := metaOf(res)
+	if err != nil || res.IsError() || got.App != "tide" || !got.Attached || got.Status != session.PublishReady || got.Commit != sha2 || h.count("POST /apps") != 0 {
+		t.Fatalf("an attached app: %+v %+v %v", res, got, err)
+	}
+	script := m.scripts[0]
+	for _, want := range []string{"cd '/work/tide'", "url='" + gitURL + "/r/tide.git'", `git push --quiet "$url" "HEAD:refs/heads/$branch"`, "Publish tide", "Topos-Session: ses_1", "node_modules/ lost+found/"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("the checkout's push lacks %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, ".topos/publish") || strings.Contains(script, "origin") {
+		t.Fatalf("an attached app's push used the session's git directory or the checkout's remote:\n%s", script)
+	}
+	if !strings.Contains(resultText(res), "Published tide as a preview") {
+		t.Fatalf("the result names %q", resultText(res))
+	}
+
+	// A folder inside the checkout publishes the app with no app named.
+	m = &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha2 + "\n"}}
+	if res, err := attachedTool(t, h).Run(ctx, call(`{"path":"tide/site"}`, m, tools.State{})); err != nil || !metaOf(res).Attached || metaOf(res).App != "tide" {
+		t.Fatalf("a folder inside the checkout: %+v %v", res, err)
+	}
+
+	// The thread's own app, named by its slug.
+	own := map[string]any{"id": "d3", "status": "ready", "preview": true, "commit_sha": sha1, "preview_url": "https://d3--a-poem.apps.example"}
+	h = newHost(t, map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": deploys(own)})
+	m = &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}
+	st := tools.State{App: &session.PublishMeta{App: "a-poem"}, Apps: map[string]*session.PublishMeta{"a-poem": {App: "a-poem"}}}
+	res, err = attachedTool(t, h).Run(ctx, call(`{"app":"a-poem","path":"site"}`, m, st))
+	if got := metaOf(res); err != nil || res.IsError() || got.App != "a-poem" || got.Attached || !strings.Contains(m.scripts[0], ".topos/publish") {
+		t.Fatalf("the thread's own app: %+v %+v %v %q", res, got, err, m.scripts)
+	}
+	// With no app, a folder outside every checkout is the thread's own.
+	m = &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}
+	if res, err := attachedTool(t, h).Run(ctx, call(`{"path":"site"}`, m, st)); err != nil || metaOf(res).App != "a-poem" || metaOf(res).Attached {
+		t.Fatalf("a folder outside every checkout: %+v %v", res, err)
+	}
+
+	for name, c := range map[string]struct {
+		input string
+		st    tools.State
+		code  string
+		text  string
+	}{
+		"another slug":           {`{"app":"other"}`, st, session.PublishAppNotAttached, "other is not an app this session may publish to. It may publish to a-poem, tide."},
+		"an attached app's slug": {`{"app":"tide-2"}`, tools.State{}, session.PublishAppNotAttached, "It may publish to tide."},
+		"an attached app as own": {`{"app":"web"}`, tools.State{Apps: map[string]*session.PublishMeta{"web": {App: "web", Attached: true}}}, session.PublishAppNotAttached, "web is not an app"},
+		"a folder outside":       {`{"app":"tide","path":"site"}`, tools.State{}, session.PublishNotInCheckout, "site is outside tide/, the checkout of tide."},
+		"several standing": {`{"release":true}`, tools.State{Standing: map[string]*session.PublishMeta{
+			"tide": {App: "tide", Commit: sha2, Status: session.PublishReady}, "a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady},
+		}}, session.PublishAppRequired, "Previews of several apps stand: a-poem, tide."},
+	} {
+		h := newHost(t, nil)
+		m := &fakeMachine{dirs: dirs}
+		res, err := attachedTool(t, h).Run(ctx, call(c.input, m, c.st))
+		got := metaOf(res)
+		if err != nil || !res.IsError() || got.Error == nil || got.Error.Code != c.code || got.App != "" || !strings.Contains(resultText(res), c.text) {
+			t.Errorf("%s: %+v %+v %v", name, res, got, err)
+		}
+		h.mu.Lock()
+		calls := len(h.calls)
+		h.mu.Unlock()
+		if calls != 0 || len(m.scripts) != 0 {
+			t.Errorf("%s: %d requests and %d scripts before the refusal", name, calls, len(m.scripts))
+		}
+	}
+}
+
+// TestAReleaseIsCheckedAgainstTheLiveVersion: a release whose commit
+// descends from the live one is tagged from the attached app's checkout;
+// one that does not is refused behind_live with no tag, its text naming
+// the merge; nothing live tags at once without a check; an answer of git
+// that is neither yes nor no is the call's error and pushes no tag; and
+// an own app is checked in the session's git directory.
+func TestAReleaseIsCheckedAgainstTheLiveVersion(t *testing.T) {
+	ctx := t.Context()
+	const live = "3333333ccccccccccccccccccccccccccccccccc"
+	st := tools.State{Standing: map[string]*session.PublishMeta{"tide": {App: "tide", Commit: sha2, Status: session.PublishReady, Attached: true}}}
+	host := func(current string) *host {
+		return newHost(t, map[string]func(int) (int, any){
+			"GET /apps/tide": liveApp("tide", current),
+			"GET /apps/tide/releases": func(int) (int, any) {
+				return http.StatusOK, map[string]any{"releases": []map[string]any{{"tag": "v1", "commit_sha": live, "status": "released"}}}
+			},
+			"GET /apps/tide/releases/v2": func(int) (int, any) {
+				return http.StatusOK, map[string]any{"release": map[string]any{"tag": "v2", "commit_sha": sha2, "status": "released"}}
+			},
+		})
+	}
+
+	m := &fakeMachine{outputs: []string{"ancestry 0\n", ""}}
+	res, err := attachedTool(t, host(live)).Run(ctx, call(`{"release":true}`, m, st))
+	if got := metaOf(res); err != nil || res.IsError() || got.Status != session.PublishReleased || got.Release != "v2" || !got.Attached || len(m.scripts) != 2 {
+		t.Fatalf("a release that holds the live one: %+v %+v %v %q", res, got, err, m.scripts)
+	}
+	for _, want := range []string{"cd '/work/tide'", "live='" + live + "'", `git merge-base --is-ancestor "$live" "$commit"`, `git fetch --quiet "$url" "+refs/tags/*:refs/tags/*"`} {
+		if !strings.Contains(m.scripts[0], want) {
+			t.Fatalf("the check lacks %q:\n%s", want, m.scripts[0])
+		}
+	}
+	if !strings.Contains(m.scripts[1], "cd '/work/tide'") || !strings.Contains(m.scripts[1], "refs/tags/\"'v2'") {
+		t.Fatalf("the tag script:\n%s", m.scripts[1])
+	}
+
+	m = &fakeMachine{outputs: []string{"ancestry 1\n"}}
+	res, err = attachedTool(t, host(live)).Run(ctx, call(`{"app":"tide","release":true}`, m, st))
+	got := metaOf(res)
+	if err != nil || !res.IsError() || got.Status != session.PublishRefused || got.Error == nil || got.Error.Code != session.PublishBehindLive || !got.Attached || got.Release != "" || len(m.scripts) != 1 {
+		t.Fatalf("a release behind the live one: %+v %+v %v %q", res, got, err, m.scripts)
+	}
+	if text := resultText(res); !strings.Contains(text, "tide is live at 3333333") || !strings.Contains(text, "git -C tide merge 3333333") {
+		t.Fatalf("the refusal reads %q", text)
+	}
+
+	m = &fakeMachine{outputs: []string{""}}
+	if res, err := attachedTool(t, host("")).Run(ctx, call(`{"release":true}`, m, st)); err != nil || res.IsError() || len(m.scripts) != 1 || strings.Contains(m.scripts[0], "merge-base") {
+		t.Fatalf("nothing live: %+v %v %q", res, err, m.scripts)
+	}
+
+	m = &fakeMachine{outputs: []string{"ancestry 128\nfatal: Not a valid commit name\n"}}
+	if res, err := attachedTool(t, host(live)).Run(ctx, call(`{"release":true}`, m, st)); err != nil || !res.IsError() || metaOf(res).Error != nil || !strings.Contains(resultText(res), "Not a valid commit name") || len(m.scripts) != 1 {
+		t.Fatalf("an odd answer of git: %+v %v %q", res, err, m.scripts)
+	}
+
+	ownState := tools.State{App: &session.PublishMeta{App: "tide"}, Apps: map[string]*session.PublishMeta{"tide": {App: "tide"}}, Standing: map[string]*session.PublishMeta{"tide": {App: "tide", Commit: sha2, Status: session.PublishReady}}}
+	m = &fakeMachine{outputs: []string{"ancestry 1\n"}}
+	res, err = newTool(t, host(live), creds{}).Run(ctx, call(`{"release":true}`, m, ownState))
+	if got := metaOf(res); err != nil || got.Error == nil || got.Error.Code != session.PublishBehindLive || got.Attached || !strings.Contains(m.scripts[0], ".topos/publish") {
+		t.Fatalf("an own app behind the live one: %+v %+v %v %q", res, got, err, m.scripts)
+	}
+	if text := resultText(res); !strings.Contains(text, `--git-dir="$HOME/.topos/publish/tide.git"`) || !strings.Contains(text, gitURL+"/ada/tide.git") {
+		t.Fatalf("an own app's refusal reads %q", text)
 	}
 }

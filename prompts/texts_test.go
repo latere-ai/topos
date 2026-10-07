@@ -97,7 +97,8 @@ var textCases = func() []textCase {
 		{name: ToolAdvisor, want: "Ask a stronger model to review your work so far. It sees this conversation and your question, acts on nothing, and answers with advice. Use it before a hard decision or when you are stuck."},
 		{name: ToolQuestion, wantSHA: "13d1e88094ffe3d9c0c19a1fd102c5fbc539b7f1ad5804a43e6039bf7daa8a63"},
 		{name: ToolWebSearch, wantSHA: "06e451f41ab008ed24de132b0e9ea18488e4092f221284b5a97a15829f5a2ce6"},
-		{name: ToolPublish, wantSHA: "b69d44de4feda666898dd58abeaff8fb58e644894785963965d2255600e7087f"},
+		{name: "tools/publish-v1", wantSHA: "b69d44de4feda666898dd58abeaff8fb58e644894785963965d2255600e7087f"},
+		{name: ToolPublish, wantSHA: "82af1e42d94fe80cd3b3f19f12b92eba9bee2c549c3af36c12353153682360d5"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -243,6 +244,18 @@ var textCases = func() []textCase {
 		{name: PublishNotFolder, data: Data{"Path": "site"}, want: "site is not a folder of the machine. Publish the folder that holds the site, such as the one with its index.html."},
 		{name: PublishUnavailable, data: Data{"Reason": "this server mints no credential for its app host"}, want: "Publishing is not available in this session: this server mints no credential for its app host."},
 		{name: PublishError, data: Data{"Path": "site", "Error": "the app host answered 503"}, want: "Publishing site failed: the app host answered 503."},
+		{name: PublishNotAttached, data: Data{"App": "tide", "Apps": "a-poem, tide-tables"}, want: "tide is not an app this session may publish to. It may publish to a-poem, tide-tables. Leave app out to publish to the session's own app."},
+		{name: PublishNotAttached, data: Data{"App": "tide", "Apps": ""}, want: "tide is not an app this session may publish to. Leave app out to publish to the session's own app."},
+		{name: PublishAppRequired, data: Data{"Apps": "a-poem, tide-tables"}, want: "Previews of several apps stand: a-poem, tide-tables. Call publish with release set to true and app naming the one to release."},
+		{name: PublishNotInCheckout, data: Data{"Path": "site", "Dir": "tide-tables", "App": "tide-tables"}, want: "site is outside tide-tables/, the checkout of tide-tables. Publishing tide-tables publishes its repository: leave path out, or name tide-tables or a folder inside it."},
+		{name: PublishBehindLive, data: Data{"App": "tide-tables", "Live": "4b1e2c0", "Attached": true, "Dir": "tide-tables", "URL": "https://git.example/r/1.git"}, want: "The release was not made: tide-tables is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
+			"Merge it into tide-tables/ first:\n" + "  git -C tide-tables fetch origin --tags\n" + "  git -C tide-tables merge 4b1e2c0\n" +
+			`Resolve any conflict, check the result, then call publish with app "tide-tables" and, once the preview is ready, release again.`},
+		{name: PublishBehindLive, data: Data{"App": "a-poem", "Live": "4b1e2c0", "Attached": false, "Dir": "", "URL": "https://git.example/ada/a-poem.git"}, want: "The release was not made: a-poem is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
+			"Merge it into the folder you published first, through the session's git directory for the app, where <folder> is that folder:\n" +
+			`  git --git-dir="$HOME/.topos/publish/a-poem.git" --work-tree=<folder> fetch https://git.example/ada/a-poem.git --tags` + "\n" +
+			`  git --git-dir="$HOME/.topos/publish/a-poem.git" --work-tree=<folder> merge 4b1e2c0` + "\n" +
+			`Resolve any conflict, check the result, then call publish with app "a-poem" and, once the preview is ready, release again.`},
 		{name: ContextRoute, data: Data{"Route": "tier/quick"}, want: "<context>\n" + "Model route: tier/quick\n" + "</context>"},
 		{name: ContextInitiator, data: Data{"Text": "Call me Ada."}, want: "<initiator_instructions>\n" +
 			"The person who started this session keeps these standing instructions.\n" +

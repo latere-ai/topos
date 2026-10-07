@@ -165,4 +165,9 @@ var released = map[string]string{
 	"tools/publish-v1.md":                    "4d5bd6bd0d3a9580f660faf4ccccf3cbefe96323b542d2a6d29486370f0d8075",
 	"context/attached-v1.md":                 "c5e9526c281d30066af721f06ef9a346c30b6dc66886b6aa866d26c061bed7e7",
 	"context/attachments-v1.md":              "9890465ce02dafa98bec031eecae159feeab97707e738b8f613b54a8cc1b480c",
+	"tools/publish-v2.md":                    "279a5226e532df993e4011906d96243988a65984fa61b0a8a6d97aadbfa2b5de",
+	"results/publish/not-attached-v1.md":     "c91432d6a47ca7fd27ac64ddbc0e3dca2a726111af6117b0e3394ca7c099672a",
+	"results/publish/app-required-v1.md":     "f13431d8e221b6ca8afc8c2116b4051bc095abab435cf422187f9a1cf3d562f1",
+	"results/publish/not-in-checkout-v1.md":  "d0916c0c2ffce99488eddee4ace9361a1251bef149bee8a388bfd433c8d65ea2",
+	"results/publish/behind-live-v1.md":      "458d463a354d06e71d569f880758a81a378fe86521542bab5b722a81d02d8102",
 }
