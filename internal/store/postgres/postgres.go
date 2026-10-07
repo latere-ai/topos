@@ -713,36 +713,25 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 		if err != nil {
 			return err
 		}
-		var target *session.Event
-		for i := range log {
-			if log[i].ID == eventID {
-				target = &log[i]
+		r, err := session.Redact(log, eventID, sess.LastSeq, by, reason, time.Now())
+		if err != nil || len(r.Records) == 0 {
+			return err
+		}
+		for _, tomb := range r.Tombstones {
+			if _, err := tx.Exec(ctx, `UPDATE events SET payload = $3, redacted = true, search = NULL WHERE session_id = $1 AND id = $2`, id, tomb.ID, string(tomb.Payload)); err != nil {
+				return fmt.Errorf("postgres: redact %s: %w", tomb.ID, err)
 			}
 		}
-		if target == nil {
-			return fmt.Errorf("%w: event %s", session.ErrNotFound, eventID)
-		}
-		if target.Redacted() {
-			return nil
-		}
-		orphans := session.OrphanBlobs(*target, log)
-		tomb, red, err := session.Tombstone(*target, sess.LastSeq, by, reason, time.Now())
-		if err != nil {
+		if err := insertEvents(ctx, tx, r.Records); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE events SET payload = $3, redacted = true, search = NULL WHERE session_id = $1 AND id = $2`, id, eventID, string(tomb.Payload)); err != nil {
-			return fmt.Errorf("postgres: redact %s: %w", eventID, err)
-		}
-		if err := insertEvents(ctx, tx, []session.Event{red}); err != nil {
-			return err
-		}
-		for _, d := range orphans {
+		for _, d := range r.Orphans {
 			if _, err := tx.Exec(ctx, `DELETE FROM blobs WHERE session_id = $1 AND digest = $2`, id, string(d)); err != nil {
 				return fmt.Errorf("postgres: delete blob %s: %w", d, err)
 			}
 		}
-		removed = orphans
-		session.ApplyBatch(&sess, []session.Event{red})
+		removed = r.Orphans
+		session.ApplyBatch(&sess, r.Records)
 		if err := saveHeader(ctx, tx, sess); err != nil {
 			return err
 		}
