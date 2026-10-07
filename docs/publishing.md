@@ -25,24 +25,35 @@ publish again. A call whose wait runs out says the preview is still
 building; calling it again with the same folder waits on the same
 build.
 
-A second call releases the newest preview to the app's address:
+`release` puts a change live in one call:
 
 ```json
-{"release": true}
+{"path": "site", "release": true}
 ```
 
-The newest preview is the last one that is ready or still building; a
-failed or canceled one, and a call the person denied, are passed over. A
-preview still building is released once it is ready. The release is a
-`v` tag on the preview's commit, `v1` and up. Whether
-the session's agent may release is the app host's question to the
-installation's authorizer.
+The call publishes the folder as above, waits for its build, and
+releases the commit it built to the app's address. A build that fails
+releases nothing, and the call answers with why and the end of the
+build log; a build still running when the wait ends is released by the
+host once it is ready. The release is a `v` tag on the commit, `v1` and
+up. Whether the session's agent may release is the app host's question
+to the installation's authorizer. A preview first is for a person who
+wants to look before the change goes live; a release after it pushes
+nothing new while the folder is unchanged, and releases that preview.
+
+With no `path`, a call publishes the folder the session last published
+to its own app, else the working directory. A release that names
+neither `path` nor `app` takes the app the session has a preview of,
+else the one app it has published, and is refused `app_required` when
+that could be several.
 
 `publish` reaches outside the sandbox, so in the `confirm` and
-`progressive` modes every call waits for the person's approval, the
-release included. A person's message in place of the approval denies
-the call with the message as the note, which is how a person asks for
-a change instead of a release.
+`progressive` modes every call waits for the person's approval, and a
+change that goes live in one call asks once. A person's message in
+place of the approval denies the call with the message as the note,
+which is how a person asks for a change instead of a release. A call
+bound to be refused on what it names, such as an app the session was
+not given, is answered at once and never asks.
 
 An agent holds the tool only when its manifest names it, beside the
 tools it builds the site with:
@@ -83,8 +94,10 @@ started from, and a merge or a conflict is plain git in the checkout.
 is refused `not_in_checkout`. With no `app`, a folder inside an attached
 app's checkout publishes that app, and any other folder the session's
 own app. An `app` that is neither attached nor one the session made is
-refused `app_not_attached` before any request, and a release with no
-`app` while previews of several apps stand is refused `app_required`.
+refused `app_not_attached`. A release that names neither `app` nor
+`path` is refused `app_required` while previews of several apps stand,
+and in a session given apps that has published none. Each of these is
+refused before the call is decided, so nobody is asked to approve it.
 The thread keeps a standing preview per app, so releasing one app never
 takes another's.
 
@@ -93,7 +106,7 @@ Before it tags a release, the tool requires the commit the app serves
 to be an ancestor of the commit it releases. Otherwise the release is
 refused, `status` `refused` with `error.code` `behind_live`, no tag is
 pushed, and the model is told to merge the live release into its
-checkout, publish, and release again. The check and the tag are two
+checkout and release again. The check and the tag are two
 steps, so two releases a few seconds apart can still pass it together;
 the later one then serves, and the earlier session's next release is
 refused until it merges.
@@ -107,11 +120,12 @@ Every `tool.result` of a `publish` call carries `meta.publish`:
 | `app`, `name` | the app's slug and its name |
 | `url` | the app's own address |
 | `preview` | the preview's own address, once the host names it |
+| `folder` | the folder published, relative to the working directory when it is inside it: an attached app's checkout, or the folder of the session's own app |
 | `commit` | the commit published or released |
 | `deploy` | the deploy's id at the host |
-| `status` | `ready`, `building`, `failed` or `canceled` for a preview; `released`, `pending`, `refused` or `failed` for a release |
+| `status` | `ready`, `building`, `failed` or `canceled` for a preview; `released`, `pending`, `refused` or `failed` for a release, or the status of its build when the build failed, was canceled or had not started, and nothing was released |
 | `release` | the tag, on a release |
-| `error` | `{code, message}` for `failed`, `canceled` and `refused`, and the code of a call refused before any request: `app_not_attached`, `app_required` or `not_in_checkout`, whose `app` is empty |
+| `error` | `{code, message}` for `failed`, `canceled` and `refused`, and the code of a call refused before any request: `app_not_attached`, `app_required` or `not_in_checkout`, whose `app` is empty and which has no `agent.tool_use` |
 | `attached` | true for an app the installation attached, absent for the session's own |
 
 A client shows a `ready` preview with its address, and may frame it
