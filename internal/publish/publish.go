@@ -5,11 +5,10 @@
 // of a hosted session's sandbox as the session's own app at the
 // installation's app host, waits for the preview the host builds of it,
 // and releases it to the app's address, in the same call when it is asked
-// to release (spec 059). The runner
-// reaches the app host with the session's own short token, which never
-// enters the sandbox; the folder is pushed by the sandbox's own git,
-// which reaches the installation's git host with the session's git
-// credential (spec 019).
+// to release (spec 059). The runner reaches the app host with the
+// session's own short token, which never enters the sandbox; the folder
+// is pushed by the sandbox's own git, which reaches the installation's
+// git host with the session's git credential (spec 019).
 package publish
 
 import (
@@ -21,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
 	"net/http"
 	"net/url"
 	"path"
