@@ -43,13 +43,15 @@ type demand struct {
 	// opening runs at each open, before the machine opens, as the time a
 	// sandbox takes to come up.
 	opening func()
+	// apps is the runner's reader of the commits an app is served at.
+	apps func(ctx context.Context, tokens *TokenSource, slug string) (AppCommits, error)
 }
 
 func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
 	f.t.Helper()
 	base := filepath.Dir(f.work)
 	r, err := New(Options{
-		Store: f.store, ID: "run_local", Clock: func() time.Time { return t0 },
+		Store: f.store, ID: "run_local", Clock: func() time.Time { return t0 }, Apps: d.apps,
 		Harness: func(ctx context.Context, s session.Session) (harness.Config, error) {
 			reg := tools.NewRegistry()
 			for _, t := range append([]tools.Tool{echo{}}, tools.Builtins()...) {

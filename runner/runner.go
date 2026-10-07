@@ -67,7 +67,20 @@ type Options struct {
 	// (Failover) is asked instead; with neither, a drive asks nothing, and
 	// such a turn ends after harness.DownRetry or with the model's error.
 	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
-	Clock    func() time.Time
+	// Apps reads the commits an app is served at from the installation's
+	// app host, with the drive's token source, nil when the drive reaches
+	// no session credentials (spec 058). Nil starts the checkout of every
+	// app a session is attached at its repository's default branch.
+	Apps  func(ctx context.Context, tokens *TokenSource, slug string) (AppCommits, error)
+	Clock func() time.Time
+}
+
+// AppCommits are the commits an app is served at (spec 058): Live, the
+// deploy at its public address, and Preview, its newest preview that is
+// ready, each "" when it has none.
+type AppCommits struct {
+	Live    string
+	Preview string
 }
 
 // Failover is a lease that asks which model its session's turn continues
@@ -227,10 +240,10 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	switch {
 	case onDemand:
 		deferred.OnOpen(func(ctx context.Context, m machine.Machine) error {
-			return r.opened(ctx, s, m, log, first, true)
+			return r.opened(ctx, s, m, log, first, true, tokens)
 		})
 	default:
-		if err := r.opened(ctx, s, cfg.Machine, log, first, false); err != nil {
+		if err := r.opened(ctx, s, cfg.Machine, log, first, false, tokens); err != nil {
 			return harness.Outcome{}, r.setupFailed(ctx, log, err)
 		}
 	}
@@ -370,11 +383,11 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 // the session keeps the machine and learns what is missing; a file that
 // could not be written is a session.error, and the call that opened the
 // machine runs.
-func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool) error {
+func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool, tokens *TokenSource) error {
 	var repos []session.DeliveredRepository
 	var delivered error
 	if first && len(session.Repositories(s)) > 0 {
-		repos, delivered = deliver(ctx, s, m)
+		repos, delivered = deliver(ctx, s, m, r.served(tokens))
 	}
 	// A fork's first machine gets the files of the turn it forked at,
 	// over the repositories it was given (spec 017). Files it cannot get

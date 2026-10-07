@@ -390,12 +390,29 @@ type Skill struct {
 // DeliveredRepository is one repository the runner delivered into the
 // session's first machine (spec 019): its URL, the session's branch in
 // it, and the commit that branch's HEAD was at once the delivery
-// finished, absent for a repository with no commit yet.
+// finished, absent for a repository with no commit yet. A repository
+// that is an app's source names the app's slug and the base its branch
+// started from (spec 058): BaseLive, BasePreview or BaseDefault, with
+// BaseError saying why an app's served commit could not be had when it
+// starts from BaseDefault for that reason; a ref the allow named leaves
+// the base empty.
 type DeliveredRepository struct {
-	URL    string `json:"url"`
-	Branch string `json:"branch"`
-	Commit string `json:"commit,omitempty"`
+	URL       string `json:"url"`
+	Branch    string `json:"branch"`
+	Commit    string `json:"commit,omitempty"`
+	App       string `json:"app,omitempty"`
+	Base      string `json:"base,omitempty"`
+	BaseError string `json:"base_error,omitempty"`
 }
+
+// The bases an app's checkout starts from (spec 058): the commit the app
+// serves at its address, the commit of its newest ready preview, or its
+// repository's default branch.
+const (
+	BaseLive    = "live"
+	BasePreview = "preview"
+	BaseDefault = "default"
+)
 
 // SessionMachine is the payload of session.machine. Repositories are set
 // on the attachment of the session's first machine, the one its
