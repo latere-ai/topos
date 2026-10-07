@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.22.0 - 2026-10-07
+
 ### Added
 
 - A session's title changes: `PATCH /v1/sessions/{id}` takes `title`,
