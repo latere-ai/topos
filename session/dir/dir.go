@@ -330,6 +330,34 @@ func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (sess
 	return out, nil
 }
 
+// SetMetadata merges a change into the session's metadata under its lock
+// and rewrites session.json; the log is untouched (spec 057).
+func (s *Store) SetMetadata(ctx context.Context, id string, change map[string]*string) (session.Session, error) {
+	if err := s.exists(id); err != nil {
+		return session.Session{}, err
+	}
+	st := s.state(id)
+	var out session.Session
+	err := s.locked(id, st, func(hdr *session.Session) error {
+		changed, err := session.Relabel(hdr, change)
+		if err != nil {
+			return err
+		}
+		if changed {
+			if err := s.writeHeader(id, *hdr); err != nil {
+				return err
+			}
+			st.notify()
+		}
+		out = *hdr
+		return nil
+	})
+	if err != nil {
+		return session.Session{}, err
+	}
+	return out, nil
+}
+
 func (s *Store) writeHeader(id string, hdr session.Session) error {
 	b, err := session.Marshal(hdr)
 	if err != nil {

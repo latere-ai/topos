@@ -125,9 +125,12 @@ type ListOptions struct {
 	// the other filters keep: the newest, carrying Tree. The list then
 	// orders and pages by the id of the session that stands for each
 	// tree.
-	Group  Group
-	Limit  int
-	Cursor string
+	Group Group
+	// Metadata, when set, keeps the sessions whose metadata holds its key
+	// with exactly its value (spec 057).
+	Metadata *MetadataEntry
+	Limit    int
+	Cursor   string
 }
 
 // Group is how a List groups the sessions it keeps.
@@ -187,8 +190,8 @@ type Summary struct {
 
 // Summarizer is the optional interface of a store that counts the
 // sessions a List filters to without reading them a page at a time
-// (spec 015). It applies o's AgentID, Owners, Runner and Archived as
-// List does; Status, Limit and Cursor do not apply.
+// (spec 015). It applies o's AgentID, Owners, Runner, Archived and
+// Metadata as List does; Status, Limit and Cursor do not apply.
 type Summarizer interface {
 	Summarize(ctx context.Context, o ListOptions) (Summary, error)
 }
@@ -235,7 +238,18 @@ func (o ListOptions) keeps(s Session) bool {
 		(o.Runner == "" || s.Runner == o.Runner) &&
 		o.Archived.Keeps(s) &&
 		(o.Root == "" || s.ID == o.Root || s.Root == o.Root) &&
-		(o.Parent == "" || s.Parent != nil && s.Parent.SessionID == o.Parent)
+		(o.Parent == "" || s.Parent != nil && s.Parent.SessionID == o.Parent) &&
+		o.Metadata.keeps(s)
+}
+
+// keeps reports whether s's metadata holds the entry; a nil entry keeps
+// every session.
+func (e *MetadataEntry) keeps(s Session) bool {
+	if e == nil {
+		return true
+	}
+	v, ok := s.Metadata[e.Key]
+	return ok && v == e.Value
 }
 
 // trees groups sessions by fork tree (spec 056): of each tree's sessions

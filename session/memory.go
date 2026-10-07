@@ -113,6 +113,23 @@ func (m *memoryStore) SetArchived(ctx context.Context, id string, at *time.Time)
 	return cloneSession(ms.s), nil
 }
 
+func (m *memoryStore) SetMetadata(ctx context.Context, id string, change map[string]*string) (Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ms, err := m.get(id)
+	if err != nil {
+		return Session{}, err
+	}
+	changed, err := Relabel(&ms.s, change)
+	if err != nil {
+		return Session{}, err
+	}
+	if changed {
+		ms.notify()
+	}
+	return cloneSession(ms.s), nil
+}
+
 // ListPage filters sessions by o and returns one page, newest first, and
 // the cursor of the next page ("" on the last). Stores that list by
 // reading every header share it.
