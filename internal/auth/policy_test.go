@@ -364,8 +364,8 @@ func TestLimitsAtCreate(t *testing.T) {
 	if err != nil || *l.BudgetUSDMicro != 1000 || l.TurnTimeout.Minutes() != 10 {
 		t.Fatalf("limits %+v, %v", l, err)
 	}
-	if _, err := (auth.Guard{Authorizer: limits(`{"turn_timeout":"soon"}`)}).Limits(t.Context(), req); code(t, err) != auth.CodeAuthorizerUnavailable {
-		t.Fatalf("unreadable limits: %v", err)
+	if _, err := (auth.Guard{Authorizer: limits(`{"turn_timeout":"soon"}`)}).Limits(t.Context(), req); code(t, err) != auth.CodeAuthorizerUnavailable || !strings.Contains(err.Error(), "limits.turn_timeout") {
+		t.Fatalf("unreadable limits, which the refusal names: %v", err)
 	}
 	deny := decider(func(authz.Request) (authz.Decision, error) { return authz.Decision{}, nil })
 	if _, err := (auth.Guard{Authorizer: deny}).Limits(t.Context(), req); code(t, err) != auth.CodeForbidden {

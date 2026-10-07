@@ -144,7 +144,8 @@ func (g Guard) Disclose(ctx context.Context, err error, read authz.Request) erro
 // a create, an agent's apply, a resume, and the questions an allow may
 // name a session's model at (spec 038). Limits that do not decode refuse
 // the request as authorizer_unavailable, because a ceiling that cannot be
-// read is not applied.
+// read is not applied; the refusal's detail names the member that did
+// not decode, so the installation's operator finds it (spec 058).
 func (g Guard) Limits(ctx context.Context, req authz.Request) (authorizer.Limits, error) {
 	d, err := g.Ask(ctx, req)
 	if err != nil {
@@ -152,7 +153,7 @@ func (g Guard) Limits(ctx context.Context, req authz.Request) (authorizer.Limits
 	}
 	l, err := authorizer.DecodeLimits(d)
 	if err != nil {
-		return authorizer.Limits{}, refuse(CodeAuthorizerUnavailable, err, "the authorizer's limits on %s do not decode", req.Action)
+		return authorizer.Limits{}, refuse(CodeAuthorizerUnavailable, err, "the authorizer's limits on %s do not decode: %v", req.Action, err)
 	}
 	return l, nil
 }
