@@ -349,6 +349,17 @@ type (
 		Repository struct {
 			PushURL string `json:"push_url"`
 		} `json:"repository"`
+		// CurrentDeploy is the deploy at the app's address and
+		// LatestPreview its newest ready preview, each nil when it has
+		// none or the host does not name it (spec 058).
+		CurrentDeploy *hostServed `json:"current_deploy"`
+		LatestPreview *hostServed `json:"latest_preview"`
+	}
+	// hostServed is a deploy as the app resource names it, with the
+	// commit it serves.
+	hostServed struct {
+		ID        string `json:"id"`
+		CommitSHA string `json:"commit_sha"`
 	}
 	hostDeploy struct {
 		ID         string                `json:"id"`
@@ -455,6 +466,30 @@ func (t *Tool) do(ctx context.Context, method, p string, body, out any) error {
 		return fmt.Errorf("the app host's answer is not what the tool reads: %w", err)
 	}
 	return nil
+}
+
+// Served is the runner's reader of the commits an app is served at
+// (spec 058): the app host's answer for the app, read with the drive's
+// token for the app host, its current deploy's commit as Live and its
+// newest ready preview's as Preview, each "" when the host names none.
+func Served(o Options) func(ctx context.Context, tokens *runner.TokenSource, slug string) (runner.AppCommits, error) {
+	return func(ctx context.Context, tokens *runner.TokenSource, slug string) (runner.AppCommits, error) {
+		if tokens == nil {
+			return runner.AppCommits{}, errors.New("this server mints no credential for its app host")
+		}
+		a, err := New(o, session.Session{}, tokens).app(ctx, slug)
+		if err != nil {
+			return runner.AppCommits{}, err
+		}
+		var c runner.AppCommits
+		if d := a.CurrentDeploy; d != nil {
+			c.Live = d.CommitSHA
+		}
+		if d := a.LatestPreview; d != nil {
+			c.Preview = d.CommitSHA
+		}
+		return c, nil
+	}
 }
 
 // app reads one app by its slug.

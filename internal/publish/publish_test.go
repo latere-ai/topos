@@ -523,3 +523,49 @@ func TestTheHostsAnswers(t *testing.T) {
 		t.Fatal("a canceled wait slept")
 	}
 }
+
+// TestServedReadsTheCommitsAnAppServes: the runner's reader answers the
+// app's current deploy's commit as Live and its newest ready preview's
+// as Preview, read with the session's token for the app host; a host
+// that names neither answers none; a host that refuses, and a drive with
+// no token source, are errors.
+func TestServedReadsTheCommitsAnAppServes(t *testing.T) {
+	h := newHost(t, map[string]func(int) (int, any){
+		"GET /apps/tide": func(int) (int, any) {
+			_, body := app("tide")(1)
+			m := body.(map[string]any)
+			m["current_deploy"] = map[string]any{"id": "d4", "commit_sha": sha1}
+			m["latest_preview"] = map[string]any{"id": "d5", "commit_sha": sha2}
+			return http.StatusOK, m
+		},
+		"GET /apps/fresh": app("fresh"),
+		"GET /apps/draft": func(int) (int, any) {
+			_, body := app("draft")(1)
+			m := body.(map[string]any)
+			m["current_deploy"], m["latest_preview"] = nil, map[string]any{"id": "d1", "commit_sha": sha2}
+			return http.StatusOK, m
+		},
+		"GET /apps/gone": refused(http.StatusNotFound, "not_found"),
+	})
+	read := Served(Options{URL: h.srv.URL, Audience: "apps", GitURL: gitURL})
+	tokens := runner.NewTokenSource(creds{}, nil, nil)
+	for _, c := range []struct {
+		slug string
+		want runner.AppCommits
+	}{
+		{"tide", runner.AppCommits{Live: sha1, Preview: sha2}},
+		{"fresh", runner.AppCommits{}},
+		{"draft", runner.AppCommits{Preview: sha2}},
+	} {
+		got, err := read(t.Context(), tokens, c.slug)
+		if err != nil || got != c.want {
+			t.Fatalf("%s: %+v, %v; want %+v", c.slug, got, err, c.want)
+		}
+	}
+	if _, err := read(t.Context(), tokens, "gone"); err == nil || !strings.Contains(err.Error(), "not_found") {
+		t.Fatalf("a refused read: %v", err)
+	}
+	if _, err := read(t.Context(), nil, "tide"); err == nil {
+		t.Fatal("a drive with no token source read the host")
+	}
+}

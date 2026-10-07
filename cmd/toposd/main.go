@@ -463,7 +463,13 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	// A session that works in a repository on the git host keeps its
 	// checkpoints there, so a fork restores its files after the sandbox
 	// is gone (spec 035).
-	r, err := runner.New(runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind, Credentials: creds, Failover: failover, CheckpointHost: cfg.OrigoURL})
+	ro := runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind, Credentials: creds, Failover: failover, CheckpointHost: cfg.OrigoURL}
+	// An app's checkout starts at the commit the app host serves it at
+	// (spec 058).
+	if apps.Configured() {
+		ro.Apps = publish.Served(apps)
+	}
+	r, err := runner.New(ro)
 	if err != nil {
 		return nil, err
 	}
