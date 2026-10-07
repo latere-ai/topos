@@ -34,6 +34,12 @@ type PublishMeta struct {
 	// Preview is the preview deploy's own address, once the host names
 	// it.
 	Preview string `json:"preview,omitempty"`
+	// Folder is the folder of the machine whose files were published,
+	// relative to the working directory when it is inside it: an
+	// attached app's checkout, or the folder a call published to the
+	// thread's own app, which a later release that names no path
+	// publishes again (spec 059). Empty on a result that pushed nothing.
+	Folder string `json:"folder,omitempty"`
 	// Commit is the commit published or released.
 	Commit string `json:"commit,omitempty"`
 	// Deploy is the id of the deploy that carries it.
@@ -58,8 +64,9 @@ const (
 	// PublishAppNotAttached is an app the session was not attached and the
 	// thread did not create.
 	PublishAppNotAttached = "app_not_attached"
-	// PublishAppRequired is a release that names no app while previews of
-	// several apps stand.
+	// PublishAppRequired is a release that names neither an app nor a
+	// folder while the thread's previews, or its results, name several
+	// apps, or name none in a session attached apps.
 	PublishAppRequired = "app_required"
 	// PublishNotInCheckout is a folder outside the checkout of the
 	// attached app the call names.
