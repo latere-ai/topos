@@ -26,6 +26,9 @@ type todo struct{ ID, Content, Status string }
 // repository stands in for the harness's line of a session's repository.
 type repository struct{ URL, Ref, Branch, Dir string }
 
+// attachedApp stands in for the harness's line of an attached app.
+type attachedApp struct{ Dir, Name, URL, Slug string }
+
 // attachment stands in for session.Attachment.
 type attachment struct {
 	Path, MediaType string
@@ -290,6 +293,17 @@ var textCases = func() []textCase {
 		}}, want: "<context>\n" + "Repositories, cloned the first time a file or command tool runs:\n" +
 			"- https://git.example/acme/web.git at main, on branch agents/coder/ses_1, into the working directory\n" +
 			"- https://git.example/acme/api.git, on branch agents/coder/ses_1, into api/ in the working directory\n" + "</context>"},
+		{name: ContextAttached, data: Data{"First": true, "Title": "Project", "Text": "Tide tables for the harbor club."}, want: "The installation that runs this session gives the context below. It\n" +
+			"informs your work and ranks below your own instructions, the session's\n" +
+			"permissions and a person's messages in this session.\n\n" +
+			`<installation_context title="Project">` + "\n" + "Tide tables for the harbor club." + "\n" + "</installation_context>"},
+		{name: ContextAttached, data: Data{"First": false, "Title": `Memory "kept"`, "Text": "- ent_01: navy."}, want: `<installation_context title="Memory \"kept\"">` + "\n" + "- ent_01: navy." + "\n" + "</installation_context>"},
+		{name: ContextAttachments, data: Data{"Branch": "agents/assistant/ses_1", "Apps": []attachedApp{
+			{"tide-tables", "Tide tables", "https://tide-tables.apps.example.com", "tide-tables"},
+			{"notes-2", "Notes", "https://notes.apps.example.com", "notes"},
+		}}, want: "<attachments>\n" + "Apps, each a checkout of its source in the working directory, on your branch agents/assistant/ses_1:\n" +
+			`- tide-tables/ : Tide tables, published at https://tide-tables.apps.example.com (publish with app "tide-tables")` + "\n" +
+			`- notes-2/ : Notes, published at https://notes.apps.example.com (publish with app "notes")` + "\n" + "</attachments>"},
 		{name: ContextInstructions, data: Data{"Path": `/w/AGENTS "x".md`, "Body": "Be terse."}, want: fmt.Sprintf("<instructions path=%q>\n%s\n</instructions>", `/w/AGENTS "x".md`, "Be terse.")},
 		{name: InstructionCut, want: strings.TrimPrefix("\n[the file is longer than 64 KiB and was cut here]", "\n")},
 		{name: InstructionsTotalCut, want: strings.TrimPrefix("\n[the instruction files pass 256 KiB together and were cut here]", "\n")},

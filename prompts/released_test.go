@@ -163,4 +163,6 @@ var released = map[string]string{
 	"results/publish/released-v1.md":         "b2ebc73886b6f4978d4ec6b5dc94fdd70f9ba740e6479846876da9c13b7d2597",
 	"results/publish/unavailable-v1.md":      "93a550281a8812b4dbc9be15c1de209df62777759c649d9496375b2eb059df3e",
 	"tools/publish-v1.md":                    "4d5bd6bd0d3a9580f660faf4ccccf3cbefe96323b542d2a6d29486370f0d8075",
+	"context/attached-v1.md":                 "c5e9526c281d30066af721f06ef9a346c30b6dc66886b6aa866d26c061bed7e7",
+	"context/attachments-v1.md":              "9890465ce02dafa98bec031eecae159feeab97707e738b8f613b54a8cc1b480c",
 }

@@ -321,4 +321,12 @@ const (
 	// ContextInitiator takes Text, the initiator's standing instructions
 	// (spec 053).
 	ContextInitiator Name = "context/initiator-v1"
+	// ContextAttached takes First, whether the part is the first one,
+	// which opens with what the parts are, Title and Text: one context
+	// part an allow of the session's create attached (spec 058).
+	ContextAttached Name = "context/attached-v1"
+	// ContextAttachments takes Branch, the session's branch, and Apps,
+	// each with Dir, Name, URL and Slug: the apps whose source an allow
+	// attached (spec 058).
+	ContextAttachments Name = "context/attachments-v1"
 )

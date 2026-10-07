@@ -31,18 +31,18 @@ type BlobReader interface {
 }
 
 // systemBlocks renders a request's system prompt (spec 010, parts 2 to
-// 8): the harness prompt, the agent's instructions, the initiator's
-// standing instructions in their wrapper (spec 053), then the system parts
-// in order, the fold's and the route after them. Every block is in the
-// prefix a provider caches, and the initiator's text is the header's,
-// which no event changes, so its bytes are the same on every request.
-func systemBlocks(ctx context.Context, harnessPrompt, agentInstructions, initiator string, parts []session.Part, blobs BlobReader) ([]lux.Block, error) {
+// 8): the harness prompt, the agent's instructions, the blocks the
+// session's header gives (headerBlocks), then the system parts in order,
+// the fold's and the route after them. Every block is in the prefix a
+// provider caches, and the header's blocks are of what no event changes,
+// so their bytes are the same on every request.
+func systemBlocks(ctx context.Context, harnessPrompt, agentInstructions string, header []string, parts []session.Part, blobs BlobReader) ([]lux.Block, error) {
 	blocks := []lux.Block{{Type: ir.BlockText, Text: harnessPrompt}}
 	if s := strings.TrimSpace(agentInstructions); s != "" {
 		blocks = append(blocks, lux.Block{Type: ir.BlockText, Text: s})
 	}
-	if initiator != "" {
-		blocks = append(blocks, lux.Block{Type: ir.BlockText, Text: prompts.Render(prompts.ContextInitiator, prompts.Data{"Text": initiator})})
+	for _, text := range header {
+		blocks = append(blocks, lux.Block{Type: ir.BlockText, Text: text})
 	}
 	for _, p := range parts {
 		text, err := renderPart(ctx, p, blobs)
@@ -90,6 +90,48 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 	return "", nil
 }
 
+// headerBlocks are the system blocks s's header gives a request of its
+// own thread, own, or of a subagent's: the initiator's standing
+// instructions in their wrapper (spec 053) and the context an allow
+// attached, a block per part (spec 058), on the session's own thread,
+// since they speak to its agent and a subagent works from its task; and
+// on every thread the attachments block, which names the checkout of
+// each app an allow attached, since every thread works in the same
+// machine.
+func headerBlocks(s session.Session, own bool) []string {
+	var out []string
+	if own && s.Instructions != "" {
+		out = append(out, prompts.Render(prompts.ContextInitiator, prompts.Data{"Text": s.Instructions}))
+	}
+	if own {
+		for i, p := range s.Context {
+			out = append(out, prompts.Render(prompts.ContextAttached, prompts.Data{"First": i == 0, "Title": p.Title, "Text": strings.TrimRight(p.Text, "\n")}))
+		}
+	}
+	if apps := attachedApps(s); len(apps) > 0 {
+		out = append(out, prompts.Render(prompts.ContextAttachments, prompts.Data{"Branch": session.Branch(s), "Apps": apps}))
+	}
+	return out
+}
+
+// appLine is one app as the attachments block names it.
+type appLine struct{ Dir, Name, URL, Slug string }
+
+// attachedApps are the apps s's repositories are the source of, each
+// with the directory its checkout is delivered into, in the session's
+// order.
+func attachedApps(s session.Session) []appLine {
+	repos := session.Repositories(s)
+	dirs := session.RepositoryDirs(repos)
+	var out []appLine
+	for i, r := range repos {
+		if a := r.App; a != nil {
+			out = append(out, appLine{Dir: dirs[i], Name: a.Name, URL: a.URL, Slug: a.Slug})
+		}
+	}
+	return out
+}
+
 // repositoryLine is one repository as the repositories block names it.
 type repositoryLine struct{ URL, Ref, Branch, Dir string }
 
@@ -98,16 +140,23 @@ type repositoryLine struct{ URL, Ref, Branch, Dir string }
 // no machine recorded (spec 011): a machine opened on demand clones them
 // only when a tool first acts on it, and the model knows them from the
 // first request. Once a session.machine is recorded its context block
-// stands there, and a session without repositories has no such block.
+// stands there, and a session without repositories has no such block. A
+// repository that names an app is named by the attachments block instead
+// (spec 058), so no repository is named twice.
 func withRepositories(parts []session.Part, s session.Session) []session.Part {
 	repos := session.Repositories(s)
 	if len(repos) == 0 || slices.ContainsFunc(parts, func(p session.Part) bool { return p.Kind == session.PartContext }) {
 		return parts
 	}
 	dirs := session.RepositoryDirs(repos)
-	lines := make([]repositoryLine, len(repos))
+	var lines []repositoryLine
 	for i, r := range repos {
-		lines[i] = repositoryLine{URL: r.URL, Ref: r.Ref, Branch: session.Branch(s), Dir: dirs[i]}
+		if r.App == nil {
+			lines = append(lines, repositoryLine{URL: r.URL, Ref: r.Ref, Branch: session.Branch(s), Dir: dirs[i]})
+		}
+	}
+	if len(lines) == 0 {
+		return parts
 	}
 	block := session.Part{Kind: session.PartContext, Context: prompts.Render(prompts.ContextRepositories, prompts.Data{"Repositories": lines})}
 	return append([]session.Part{block}, parts...)
