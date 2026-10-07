@@ -387,6 +387,7 @@ func cloneEvents(in []Event) []Event {
 
 func cloneSession(s Session) Session {
 	s.Resources = slices.Clone(s.Resources)
+	s.Context = slices.Clone(s.Context)
 	s.Scope = slices.Clone(s.Scope)
 	if s.Writer != nil {
 		w := *s.Writer

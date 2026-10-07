@@ -49,26 +49,44 @@ var dirPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // RepositoryDirs are the directories repos are delivered into, relative
 // to the machine's working directory and in their order: "" for the
-// first, which is the working directory itself, and for each further one
-// the last segment of its URL without .git, or repository-<i> when that
-// is no name, made unique with -<i>.
+// first repository that names no app, which is the working directory
+// itself; for a repository that names an app, its slug (spec 058); and
+// for each further one the last segment of its URL without .git, or
+// repository-<i> when that is no name; each made unique with -<i>. An
+// app's checkout is never the working directory, so the working
+// directory is the same whatever number of apps a session is given.
 func RepositoryDirs(repos []Resource) []string {
 	out := make([]string, len(repos))
 	taken := map[string]bool{}
+	workdir := false
 	for i, r := range repos {
-		if i > 0 {
-			out[i] = repositoryDir(r.URL, i, taken)
+		switch {
+		case r.App != nil:
+			out[i] = repositoryDir(r.App.Slug, i, taken)
+		case !workdir:
+			workdir = true
+		default:
+			out[i] = repositoryDir(urlName(r.URL), i, taken)
 		}
 	}
 	return out
 }
 
-func repositoryDir(raw string, i int, taken map[string]bool) string {
-	name := "repository-" + strconv.Itoa(i)
-	if u, err := url.Parse(raw); err == nil {
-		if base := strings.TrimSuffix(path.Base(u.Path), ".git"); dirPattern.MatchString(base) {
-			name = base
-		}
+// urlName is the last segment of a repository's URL without .git, ""
+// when that is no directory name.
+func urlName(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(path.Base(u.Path), ".git")
+}
+
+// repositoryDir is name as the directory of the i-th repository, or
+// repository-<i> when it is no directory name, made unique with -<i>.
+func repositoryDir(name string, i int, taken map[string]bool) string {
+	if !dirPattern.MatchString(name) {
+		name = "repository-" + strconv.Itoa(i)
 	}
 	for taken[name] {
 		name += "-" + strconv.Itoa(i)

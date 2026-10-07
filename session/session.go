@@ -123,6 +123,14 @@ type Resource struct {
 	Access        string `json:"access,omitempty"`
 	URL           string `json:"url,omitempty"`
 	Ref           string `json:"ref,omitempty"`
+	// App is the app at the installation's app host a repository is the
+	// source of, nil for any other; only the allow of the session's create
+	// attaches one (spec 058).
+	App *ResourceApp `json:"app,omitempty"`
+	// Attached marks a resource the allow of the session's create
+	// attached rather than the request or the agent named. A fork does
+	// not carry it: its own allow attaches what it reaches (spec 058).
+	Attached bool `json:"attached,omitempty"`
 }
 
 // Policy is a session's approval policy (spec 012): the agent's
@@ -267,8 +275,12 @@ type Session struct {
 	// Instructions are the initiator's standing instructions an allow of
 	// the session's create carried (spec 053), which the model reads after
 	// its agent's own; empty for none. No event changes them.
-	Instructions string  `json:"instructions,omitempty"`
-	Parent       *Parent `json:"parent,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+	// Context is the text the allow of the session's create attached, in
+	// its order, which the model reads after the initiator's instructions
+	// (spec 058); no event changes it.
+	Context []ContextPart `json:"context,omitempty"`
+	Parent  *Parent       `json:"parent,omitempty"`
 	// Root is the id of the session at the top of this session's fork
 	// tree: its parent's root, or its parent's id where the parent has
 	// none; its own id on a fork that started a tree of its own; empty on
