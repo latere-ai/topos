@@ -46,6 +46,20 @@ committed: the commit log already holds that.
   names a repository's `app` or `attached` is `invalid_request`. An
   allow that breaks a member's rule is `authorizer_unavailable`, and the
   refusal's detail now names the member that did not decode.
+- `publish` takes `app`, the slug of the app to publish to or release:
+  one the authorizer attached, or one the session created. An attached
+  app is published from its checkout: the tool commits it on the
+  session's branch and pushes that branch to the attached repository,
+  so a merge is plain git there. With no `app`, a folder inside an
+  attached app's checkout publishes that app. An `app` the session may
+  not publish to is `app_not_attached`, a release with no `app` while
+  previews of several apps stand is `app_required`, and a folder outside
+  the named app's checkout is `not_in_checkout`, each before any
+  request. A release is refused `behind_live`, with no tag, when the
+  commit the app serves is not an ancestor of the one it releases, and
+  the model is told to merge it first. `meta.publish` carries
+  `attached` for an attached app, and the thread keeps a standing
+  preview per app.
 
 ### Upgrading
 
@@ -64,7 +78,8 @@ committed: the commit log already holds that.
   the session starts without them. This release does not read `files`.
   An app's checkout starts at the commit the app host serves once the
   host answers `commit_sha` on `current_deploy` and `latest_preview`,
-  and at the default branch until then.
+  and at the default branch until then; until then, too, `publish` reads
+  every app as having nothing live and releases without the check.
 
 ## v0.24.0 - 2026-10-07
 
