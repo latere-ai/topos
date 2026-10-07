@@ -318,8 +318,11 @@ var opDescriptions = map[string]string{
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
 		"interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
-	"listEvents": "List a session's events from a sequence.",
-	"getBlob":    "Get a blob of a session.",
+	"listEvents": "List a session's events from a sequence. " + KeptRule,
+	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, the agent's bundle. The answer is read by the blob's leading bytes: "+
+		"PNG, JPEG, GIF or WebP is that image type with Content-Disposition inline, and any other blob, an SVG included, application/octet-stream with Content-Disposition attachment. "+
+		"Both carry X-Content-Type-Options nosniff, Content-Security-Policy %q, Cache-Control %q, since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag.",
+		filePolicy, blobCache),
 	"getFile": fmt.Sprintf("Get one file of the session's working directory as it is now, such as a file the agent wrote, by its path. "+
 		"The answer is the file's bytes as a download: Content-Type from its extension or its first bytes, Content-Length, Content-Disposition attachment with its name, "+
 		"X-Content-Type-Options nosniff, Content-Security-Policy %q and Cache-Control no-store. HEAD answers the same headers without the bytes. "+
@@ -328,7 +331,8 @@ var opDescriptions = map[string]string{
 		"A path outside the working directory, a directory, or a path the credential deny-list names is invalid_request, and a file that does not exist not_found.", filePolicy, MaxFileBytes),
 	"redactEvent": "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. " +
 		"A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. " +
-		"The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first.",
+		"The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first. " +
+		"A files.kept is redactable, and its tombstone names no image; redacting an agent.message redacts the files.kept that names it in the same append, one event.redacted each, and an image no other event names is deleted.",
 	"listTriggers":  "List triggers.",
 	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
 	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running.",
@@ -385,7 +389,7 @@ var opDescriptions = map[string]string{
 		"each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every %d seconds, and the stream closes after the event that ends the session. "+
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
-		int(DefaultHeartbeat.Seconds()), StreamsPerSubject),
+		int(DefaultHeartbeat.Seconds()), StreamsPerSubject) + " " + KeptRule,
 	"forkSession": "Start a new session from a session's log at a turn boundary, or just before a person's message to send an edited message in its place, an ended or expired session included. " +
 		"The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"tree\": \"new\", \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
 		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +

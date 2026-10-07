@@ -1266,7 +1266,7 @@ paths:
     get:
       operationId: listEvents
       summary: List session events
-      description: List a session's events from a sequence.
+      description: "List a session's events from a sequence. files.kept {message, files, skipped} follows an agent.message of the session's own thread that names local images, once the message's step is committed and before the turn's session.status: message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for an image kept as a blob of the session, path the destination as the message wrote it, and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, outside_workdir, no_machine, limit and unavailable. A client draws a reference from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it."
       x-topos-actions:
         - session.read
       parameters:
@@ -1343,7 +1343,7 @@ paths:
     get:
       operationId: streamEvents
       summary: Stream session events
-      description: "Server-Sent Events: every event of the log from from_seq, or after the sequence a Last-Event-ID header names, then each new one as it is appended, from any replica, each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every 15 seconds, and the stream closes after the event that ends the session. With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most 16 streams open at once on one replica; the next is rate_limited."
+      description: "Server-Sent Events: every event of the log from from_seq, or after the sequence a Last-Event-ID header names, then each new one as it is appended, from any replica, each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every 15 seconds, and the stream closes after the event that ends the session. With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most 16 streams open at once on one replica; the next is rate_limited. files.kept {message, files, skipped} follows an agent.message of the session's own thread that names local images, once the message's step is committed and before the turn's session.status: message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for an image kept as a blob of the session, path the destination as the message wrote it, and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, outside_workdir, no_machine, limit and unavailable. A client draws a reference from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it."
       x-topos-actions:
         - session.read
       parameters:
@@ -1393,7 +1393,7 @@ paths:
     get:
       operationId: getBlob
       summary: Read a session blob
-      description: Get a blob of a session.
+      description: "Get a blob of a session: a message's file, an image an answer showed, the agent's bundle. The answer is read by the blob's leading bytes: PNG, JPEG, GIF or WebP is that image type with Content-Disposition inline, and any other blob, an SVG included, application/octet-stream with Content-Disposition attachment. Both carry X-Content-Type-Options nosniff, Content-Security-Policy \"sandbox; default-src 'none'\", Cache-Control \"private, max-age=31536000, immutable\", since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag."
       x-topos-actions:
         - session.read
       parameters:
@@ -1451,7 +1451,7 @@ paths:
     post:
       operationId: redactEvent
       summary: Redact an event
-      description: "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first."
+      description: "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first. A files.kept is redactable, and its tombstone names no image; redacting an agent.message redacts the files.kept that names it in the same append, one event.redacted each, and an image no other event names is deleted."
       x-topos-actions:
         - session.redact
       parameters:

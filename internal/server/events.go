@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"cmp"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/session"
 )
@@ -457,7 +459,24 @@ func ends(ev session.Event) bool {
 	return ev.Decode(&p) == nil && p.Status == session.StatusEnded
 }
 
-// blob is GET /sessions/{id}/blobs/{digest}.
+// KeptRule is the sentence the event routes state files.kept by (spec
+// 055): what a client draws an answer's images from.
+const KeptRule = "files.kept {message, files, skipped} follows an agent.message of the session's own thread that names local images, once the message's step is committed and before the turn's session.status: " +
+	"message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for an image kept as a blob of the session, path the destination as the message wrote it, " +
+	"and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, outside_workdir, no_machine, limit and unavailable. " +
+	"A client draws a reference from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it."
+
+// blobCache is a blob's Cache-Control: its bytes never change under its
+// digest, so a client keeps it as long as it likes, and private keeps it
+// out of any shared cache, since the answer depends on who may read the
+// session (spec 055).
+const blobCache = "private, max-age=31536000, immutable"
+
+// blob is GET /sessions/{id}/blobs/{digest}. The blob is answered by its
+// leading bytes (spec 055): PNG, JPEG, GIF or WebP as its image type,
+// inline, and any other blob as an application/octet-stream attachment,
+// each with nosniff and the sandboxing policy of a file's answer, so no
+// blob is ever a document of the API's origin.
 func (c *call) blob() error {
 	d := session.Digest(c.r.PathValue("digest"))
 	if !d.Valid() {
@@ -476,9 +495,25 @@ func (c *call) blob() error {
 			c.s.o.Log.WarnContext(c.r.Context(), "close a blob", "session", s.ID, "err", err)
 		}
 	}()
-	c.w.Header().Set("Content-Type", "application/octet-stream")
+	br := bufio.NewReaderSize(rc, sniffBytes)
+	head, err := br.Peek(sniffBytes)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	h := c.w.Header()
+	if media := tools.ImageType(head); media != "" {
+		h.Set("Content-Type", media)
+		h.Set("Content-Disposition", "inline")
+	} else {
+		h.Set("Content-Type", "application/octet-stream")
+		h.Set("Content-Disposition", "attachment")
+	}
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", filePolicy)
+	h.Set("Cache-Control", blobCache)
+	h.Set("ETag", strconv.Quote(string(d)))
 	c.w.WriteHeader(http.StatusOK)
-	_, err = io.Copy(c.w, rc)
+	_, err = io.Copy(c.w, br)
 	return err
 }
 
