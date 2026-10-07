@@ -21,6 +21,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/session"
@@ -461,10 +462,13 @@ func ends(ev session.Event) bool {
 
 // KeptRule is the sentence the event routes state files.kept by (spec
 // 055): what a client draws an answer's images from.
-const KeptRule = "files.kept {message, files, skipped} follows an agent.message of the session's own thread that names local images, once the message's step is committed and before the turn's session.status: " +
-	"message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for an image kept as a blob of the session, path the destination as the message wrote it, " +
-	"and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, outside_workdir, no_machine, limit and unavailable. " +
-	"A client draws a reference from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it."
+var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agent.message of the session's own thread that names local images, once the message's step is committed and before the turn's session.status: "+
+	"message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for an image kept as a blob of the session, path the destination as the message wrote it, "+
+	"and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, outside_workdir, no_machine, limit and unavailable. "+
+	"An image is named by a Markdown image or an HTML img element's src whose destination has no scheme or the file: scheme, inside the working directory; "+
+	"the first %d of a message are read, each PNG, JPEG, GIF or WebP by its bytes, never an SVG, at most %d bytes, %d pixels a side and %d pixels, from a machine the turn opened, never one opened to keep it. "+
+	"A client draws a reference from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it.",
+	tools.MaxImages, tools.ReadMaxImage, harness.MaxKeptImageSide, harness.MaxKeptImagePixels)
 
 // blobCache is a blob's Cache-Control: its bytes never change under its
 // digest, so a client keeps it as long as it likes, and private keeps it
