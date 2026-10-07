@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.25.0 - 2026-10-07
+
 ### Added
 
 - A session's `metadata` is a label a client files sessions under.
