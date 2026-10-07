@@ -292,7 +292,7 @@ var opDescriptions = map[string]string{
 	"listAgentVersions": "List an agent's versions.",
 	"getAgentVersion":   "Get one version of an agent. " + AnsweredSpec,
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
-	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " +
+	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
 		"its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +

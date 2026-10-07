@@ -128,6 +128,8 @@ func checkRepositories(rs []session.Resource) error {
 			return refuse(CodeInvalidRequest, "resources[%d] is of type %q; a session names repositories, and its memory stores are its agent's", i, r.Type)
 		case r.MemoryStoreID != "" || r.Access != "":
 			return refuse(CodeInvalidRequest, "resources[%d]: a repository has a url and a ref alone", i)
+		case r.App != nil || r.Attached:
+			return refuse(CodeInvalidRequest, "resources[%d]: a request names a repository's url and ref; the app a repository publishes is attached by the authorizer", i)
 		}
 		if err := session.CheckRepository(r, "https"); err != nil {
 			return refuse(CodeInvalidRequest, "resources[%d]: %v", i, err)
@@ -243,10 +245,13 @@ func (f *forkOrigin) root(id string) string {
 // as session.fork for a fork, which runs the parent's agent version and
 // copies its log to the fork point.
 func (s *Server) create(ctx context.Context, q asker, in creation) (session.Session, error) {
+	// A fork carries the repositories its parent's request or agent
+	// named; what its parent's allow attached it reaches only when its
+	// own allow attaches it again (spec 058).
 	if in.fork != nil {
 		p := in.fork.parent
 		in.agent = p.Agent.ID + "@" + strconv.Itoa(p.Agent.Version)
-		in.resources, in.title, in.metadata, in.capture = p.Resources, in.fork.title, p.Metadata, &p.Capture
+		in.resources, in.title, in.metadata, in.capture = session.Requested(p.Resources), in.fork.title, p.Metadata, &p.Capture
 	}
 	name, n, pinned := strings.Cut(in.agent, "@")
 	a, err := store.FindAgent(ctx, s.o.Objects, contextOf(q.caller).subject, name)
@@ -434,6 +439,14 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// initiator's instructions are read at the create alone (spec 053).
 	sess.Network = createdNetwork(limits.Network, cfg.Machine)
 	sess.Instructions = limits.Instructions
+	// The allow's repositories follow the request's and the agent's, and
+	// its context follows the initiator's instructions, each fixed for
+	// the session's life (spec 058). An allow that would give the session
+	// more repositories than it holds is one the server cannot apply.
+	if sess.Resources, err = session.Attach(resources, limits.Repositories); err != nil {
+		return session.Session{}, &apiError{code: auth.CodeAuthorizerUnavailable, detail: "limits.repositories: " + err.Error(), err: err}
+	}
+	sess.Context = limits.Context
 	if f := in.fork; f != nil {
 		sess.Root = f.root(sess.ID)
 		return s.writeFork(ctx, q, sess, cfg, blobs, f)
@@ -745,6 +758,15 @@ func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, e
 var MetadataRule = fmt.Sprintf("The body's metadata is an object of at most %d strings, each key %s, each value at most %d bytes without a control character; any other is invalid_request. "+
 	"The session holds it as given, a fork holds the metadata of the session it forks, and the authorizer's session.create and session.fork carry it as metadata, absent when there is none.",
 	session.MaxMetadata, session.MetadataKeyRule, session.MaxMetadataValue)
+
+// AttachRule is the create route's sentence on what the authorizer's
+// allow attaches (spec 058).
+var AttachRule = fmt.Sprintf("The authorizer's allow of session.create or session.fork may attach repositories, each {url, ref, app}, app {slug, name, url} the app at the installation's app host it is the source of, "+
+	"which follow the request's resources marked attached, one whose url the request names left out, at most %d repositories together; "+
+	"and context, titled text {title, text} of at most %d bytes together, which the model reads after the initiator's instructions for the session's whole life. "+
+	"An app's repository is delivered into the directory of its slug under the working directory, on the session's branch at the commit the app serves. "+
+	"A fork carries the repositories its parent's request named, and what its own allow attaches; a request that names a repository's app or marks one attached is invalid_request.",
+	session.MaxRepositories, session.MaxContext)
 
 // MetadataFilterRule is the list route's sentence on its filter by a
 // metadata entry (spec 057).
