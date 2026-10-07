@@ -565,8 +565,25 @@ func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (E
 			return Event{}, Event{}, err
 		}
 	}
+	// A files.kept's tombstone keeps the id of the answer it named, no
+	// content of it, so a runner never keeps the answer's images again
+	// after a person removed them (spec 055).
+	if e.Type == TypeFilesKept {
+		var p FilesKept
+		if e.Decode(&p) == nil && p.Message != "" {
+			if payload, err = Marshal(keptTombstone{Tombstone: true, Message: p.Message}); err != nil {
+				return Event{}, Event{}, err
+			}
+		}
+	}
 	e.Payload = payload
 	return e, red, nil
+}
+
+// keptTombstone is the payload a redacted files.kept keeps.
+type keptTombstone struct {
+	Tombstone bool   `json:"tombstone"`
+	Message   string `json:"message"`
 }
 
 // answeredTombstone is the payload a redacted result keeps.
@@ -680,17 +697,23 @@ type Redaction struct {
 }
 
 // Redact plans the redaction of the event eventID of log, whose last
-// sequence is last. A log that holds no such event is ErrNotFound, and an
-// event already redacted plans nothing: a redaction sent again is safe.
+// sequence is last. A log that holds no such event is ErrNotFound. An
+// event already redacted plans the companions it has gained since, such
+// as the files.kept a runner appended for an answer a person redacted
+// while its step ran, and nothing when it has none: a redaction sent
+// again is safe, and closes what the first could not see.
 func Redact(log []Event, eventID string, last uint64, by Sender, reason string, now time.Time) (Redaction, error) {
 	i := slices.IndexFunc(log, func(e Event) bool { return e.ID == eventID })
 	if i < 0 {
 		return Redaction{}, fmt.Errorf("%w: event %s", ErrNotFound, eventID)
 	}
-	if log[i].Redacted() {
+	targets := Companions(log[i], log)
+	if !log[i].Redacted() {
+		targets = append([]Event{log[i]}, targets...)
+	}
+	if len(targets) == 0 {
 		return Redaction{}, nil
 	}
-	targets := append([]Event{log[i]}, Companions(log[i], log)...)
 	r := Redaction{Orphans: orphanBlobs(targets, log)}
 	for _, e := range targets {
 		tomb, red, err := Tombstone(e, last, by, reason, now)

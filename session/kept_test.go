@@ -91,7 +91,7 @@ func TestFilesKeptIsKnownAndRedactable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !tomb.Redacted() || len(tomb.Blobs()) != 0 {
+	if !tomb.Redacted() || len(tomb.Blobs()) != 0 || !session.KeptFor(msg.ID, []session.Event{tomb}) || session.KeptFor(with[0].ID, []session.Event{tomb}) {
 		t.Fatalf("the tombstone of files.kept is %s", tomb.Payload)
 	}
 	if c := session.Companions(with[1], []session.Event{with[0], with[1], tomb}); len(c) != 0 {

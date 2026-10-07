@@ -649,6 +649,30 @@ func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
 	if evs, err = st.Events(ctx, s.ID, 1, 0); err != nil || len(evs) != int(last)+3 {
 		t.Fatalf("a redaction sent again appended: %d events, %v", len(evs), err)
 	}
+	if !session.KeptFor(second.ID, evs) {
+		t.Fatal("a redacted files.kept no longer names its answer")
+	}
+
+	// A files.kept a runner appended after its answer was redacted is
+	// taken by the redaction sent again, with its image.
+	late, err := st.PutBlob(ctx, s.ID, strings.NewReader("\x89PNG\r\n\x1a\nlate"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lateKept := kept(first, late, "late.png")
+	appendAll(t, st, s.ID, last+3, lateKept)
+	if err := st.Redact(ctx, s.ID, first.ID, by, "again"); err != nil {
+		t.Fatal(err)
+	}
+	if evs, err = st.Events(ctx, s.ID, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != int(last)+5 || !evs[last+3].Redacted() {
+		t.Fatalf("the redaction sent again left the late files.kept: %d events", len(evs))
+	}
+	if _, err := st.Blob(ctx, s.ID, late); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("the late image survives: %v", err)
+	}
 }
 
 func testLease(t *testing.T, st session.Store) {

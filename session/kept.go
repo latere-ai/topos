@@ -3,6 +3,8 @@
 
 package session
 
+import "encoding/json"
+
 // FilesKept is the payload of files.kept (spec 055): the local images an
 // agent.message of the session's own thread names, read from the open
 // machine once the message's step was committed and stored as blobs of
@@ -78,4 +80,18 @@ func Companions(e Event, log []Event) []Event {
 		}
 	}
 	return out
+}
+
+// KeptFor reports whether a files.kept of log names the message id, one a
+// redaction tombstoned included: an answer's images are kept once.
+func KeptFor(id string, log []Event) bool {
+	for _, e := range log {
+		var p struct {
+			Message string `json:"message"`
+		}
+		if e.Type == TypeFilesKept && json.Unmarshal(e.Payload, &p) == nil && p.Message == id {
+			return true
+		}
+	}
+	return false
 }
