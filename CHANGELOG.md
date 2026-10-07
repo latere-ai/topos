@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.23.0 - 2026-10-07
+
 ### Added
 
 - A person can edit a message and ask again from that point. `POST
