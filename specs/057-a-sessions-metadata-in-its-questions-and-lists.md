@@ -1,6 +1,6 @@
 ---
 title: "A session's metadata in its questions and lists: the create and fork questions carry it, a list filters by one entry, and a change files a session elsewhere"
-status: drafted
+status: testing
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 014-store.md, 015-api.md, 023-events-and-observability.md, 054-a-sessions-title-and-filing.md, 056-editing-a-message-and-the-branches-of-a-session.md]
 affects: [internal/server/, session/, internal/store/postgres/, internal/store/postgres/migrations/, client/, api/, docs/]
@@ -225,17 +225,49 @@ or by a key's absence. Metadata on an agent, which has labels of its own
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A create's and a fork's question carry `metadata` when the session has any, and none when it has none; a deny creates nothing | `internal/server.TestTheCreateQuestionNamesMetadata`, `internal/server.TestAForkQuestionNamesMetadata` | not built |
-| A key outside the rule, a value past `MaxMetadataValue` or holding a control character, and a merge past `MaxMetadata` are `invalid_request` at create and at a change, before a question | `internal/server.TestMetadataBounds` | not built |
-| `GET /v1/sessions?metadata.<key>=<value>` lists only the sessions holding that entry within the caller's scope, beside the other filters and under `group=tree`; the summary counts the same set | `internal/server.TestListFiltersByOneMetadataEntry`, `internal/server.TestSummaryFiltersByMetadata` | not built |
-| Two metadata filters, a malformed key and an empty value are `invalid_request` | `internal/server.TestMetadataFilterRefusals` | not built |
-| Every store keeps the filter: memory, directory and Postgres | `session/storetest.TestListByMetadata` run by each store | not built |
-| The migration copies existing headers' metadata into `session_metadata`, and a create, a fork and a change keep the table equal to the body | `internal/store/postgres.TestMetadataTableFollowsTheBody` (postgres tier) | not built |
-| A PATCH with `metadata` merges sets and deletions, asks `session.update` with `metadata` and `current_metadata`, appends no event, and answers the Session after | `internal/server.TestPatchMergesMetadata` | not built |
-| A PATCH with `metadata` alone is taken on an idle, a running and an ended session; beside `title` on an ended session it is `conflict` and changes nothing | `internal/server.TestPatchMetadataInEveryStatus` | not built |
-| The sink receives the update with the changed keys and no values | `internal/server.TestMetadataChangeReachesTheSinkWithoutValues` | not built |
+| A create's and a fork's question carry `metadata` when the session has any, and none when it has none; a deny creates nothing | `internal/server.TestTheCreateQuestionNamesMetadata`, `internal/server.TestAForkQuestionNamesMetadata` | built |
+| A key outside the rule, a value past `MaxMetadataValue` or holding a control character, and a merge past `MaxMetadata` are `invalid_request` at create and at a change, before a question | `internal/server.TestMetadataBounds`, `session.TestMetadataRules` | built |
+| `GET /v1/sessions?metadata.<key>=<value>` lists only the sessions holding that entry within the caller's scope, beside the other filters and under `group=tree`; the summary counts the same set | `internal/server.TestListFiltersByOneMetadataEntry`, `internal/server.TestSummaryFiltersByMetadata` | built |
+| Two metadata filters, a malformed key and an empty value are `invalid_request` | `internal/server.TestMetadataFilterRefusals` | built |
+| Every store keeps the filter: memory, directory and Postgres | `session/storetest`'s `ListByMetadata` and `SetMetadata` cases, run by each store's conformance test | built |
+| The migration copies existing headers' metadata into `session_metadata`, and a create, a fork and a change keep the table equal to the body | `internal/store/postgres.TestMetadataTableFollowsTheBody` (postgres tier) | built |
+| A PATCH with `metadata` merges sets and deletions, asks `session.update` with `metadata` and `current_metadata`, appends no event, and answers the Session after | `internal/server.TestPatchMergesMetadata`, `session.TestMergeMetadata` | built |
+| A PATCH with `metadata` alone is taken on an idle, a running and an ended session; beside `title` on an ended session it is `conflict` and changes nothing | `internal/server.TestPatchMetadataInEveryStatus` | built |
+| The sink receives the update with the changed keys and no values | `internal/server.TestMetadataChangeReachesTheSinkWithoutValues` | built |
 
 ## Open questions
 
 None. The core gives no key a meaning, so what a label is for, who may
 use it and what follows from it are the installation's to decide.
+
+## Outcome
+
+Built on 2026-10-07, in no release yet, and not yet run against a live
+authorizer. Every criterion has its test. What shipped differs from the
+draft in these points:
+
+- **A fork's metadata is not checked.** A fork copies the metadata of
+  the session it forks as it is, so a session labeled before the key and
+  value rules forks as before; the rules hold at a create's request and
+  at a change, where a change is checked on the merged result.
+- **`current_metadata` is always present** on a change's question, an
+  empty object when the session holds none of the keys the change names,
+  so an authorizer reads one shape.
+- **The sink.** The operator's sink of [[023-events-and-observability]]
+  is still the server's `Sink` option, which no installation setting
+  wires; the change is handed to it as `session.update` with the changed
+  keys under `metadata_keys`, and logged where no sink is set. A change
+  that leaves the metadata as it was is not reported.
+- **The store refuses a merge past `MaxMetadata`** as `session: invalid`
+  under the row lock, so two changes checked at once against the same
+  header cannot together pass the bound.
+- **The filter's SQL** is an `EXISTS` over `session_metadata` on
+  `(key, value)`, which reads the index `session_metadata_entry` and
+  composes with the tree grouping and the search's scope as every other
+  filter does. The migration reads only a header whose `metadata` is an
+  object.
+- **Today's authorizer.** An authorizer that decides `session.update` by
+  the fields it knows refuses a change that names `metadata` alone until
+  it learns the field, so the change is `forbidden` there; the create and
+  fork questions add a field such an authorizer ignores.
+
