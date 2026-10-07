@@ -720,6 +720,11 @@ func (t *turn) resume(ctx context.Context) error {
 		calls = append(calls, plannedCall{id: c.use.ToolUseID, tool: tool, input: c.use.Input})
 	}
 	if err := t.runCalls(ctx, calls, &w); err != nil {
+		if _, spent := models.SpendRefused(err); spent {
+			if err := t.keepResumed(ctx, open); err != nil {
+				return err
+			}
+		}
 		return t.callsStopped(ctx, err)
 	}
 	for _, c := range threads {

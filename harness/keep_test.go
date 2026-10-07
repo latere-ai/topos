@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -23,7 +24,9 @@ import (
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/luxstub"
 )
@@ -463,5 +466,180 @@ func TestAWaitingStepKeepsOnceItsCallsAreAnswered(t *testing.T) {
 	var p session.FilesKept
 	if len(got) != 1 || got[0].Decode(&p) != nil || len(p.Files) != 1 || p.Files[0].Blob != session.DigestOf(chart) {
 		t.Fatalf("files.kept after the confirmation: %d", len(got))
+	}
+}
+
+// TestAnAnswerRedactedWhileItsStepRunsKeepsNothing: a person who redacts
+// an answer while its step's calls run leaves no files.kept for it, and
+// its image is never stored (spec 055).
+func TestAnAnswerRedactedWhileItsStepRunsKeepsNothing(t *testing.T) {
+	chart := encoded(t, "png", 8, 8)
+	m, _ := workMachine(t, map[string][]byte{"chart.png": chart})
+	e := setup(t, func(c *Config) {
+		c.Machine = m
+		c.Policy = Policy{AlwaysAllow: []string{"bash"}}
+	})
+	ctx := t.Context()
+	e.write.run = func(tools.Call) (tools.Result, error) {
+		msgs := e.events(ctx, session.TypeAgentMessage)
+		if err := e.store.Redact(ctx, e.s.ID, msgs[len(msgs)-1].ID, e.s.Initiator, "the wrong chart"); err != nil {
+			return tools.Result{}, err
+		}
+		return tools.Text(tools.OutcomeOK, "ran"), nil
+	}
+	e.stub.Script(model,
+		reply(ir.StopToolUse, text("![Sales](chart.png)"), call("toolu_a", "bash", `{"command":"plot"}`)),
+		reply(ir.StopEndTurn, text("Done.")),
+	)
+	e.send(ctx, "Chart it.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	if got := e.events(ctx, session.TypeFilesKept); len(got) != 0 {
+		t.Fatalf("a redacted answer kept its images: %s", got[0].Payload)
+	}
+	if _, err := e.store.Blob(ctx, e.s.ID, session.DigestOf(chart)); err == nil {
+		t.Fatal("the redacted answer's image was stored")
+	}
+}
+
+// TestAResumedStepKeepsOnlyItsOwnAnswerOnce: a resume whose step's
+// answer was redacted keeps nothing, never an earlier answer in its
+// place; an answer whose files.kept a person redacted is not kept again;
+// and a resume that opened no machine records nothing, so no reference
+// is marked no_machine for a step that ran on one (spec 055).
+func TestAResumedStepKeepsOnlyItsOwnAnswerOnce(t *testing.T) {
+	chart := encoded(t, "png", 8, 8)
+	m, _ := workMachine(t, map[string][]byte{"chart.png": chart})
+	for _, c := range []struct {
+		name    string
+		prepare func(e *env, earlier, waiting session.Event)
+		machine func(e *env) machine.Machine
+	}{
+		{"redacted answer", func(e *env, _, waiting session.Event) {
+			if err := e.store.Redact(t.Context(), e.s.ID, waiting.ID, e.s.Initiator, ""); err != nil {
+				t.Fatal(err)
+			}
+		}, nil},
+		{"redacted files.kept", func(e *env, _, waiting session.Event) {
+			p, _, err := KeepImages(t.Context(), m, e.log, waiting)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kept, err := session.NewEvent(session.TypeFilesKept, p, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.appendEvents(t.Context(), kept)
+			if err := e.store.Redact(t.Context(), e.s.ID, kept.ID, e.s.Initiator, ""); err != nil {
+				t.Fatal(err)
+			}
+		}, nil},
+		{"no machine opened", func(*env, session.Event, session.Event) {}, func(e *env) machine.Machine {
+			return machine.Defer(t.Context(), machine.KindHost, func(context.Context) (machine.Machine, error) {
+				t.Error("the resume opened a machine")
+				return m, nil
+			})
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := setup(t, func(cfg *Config) { cfg.Machine = m })
+			ctx := t.Context()
+			earlier := answerEvent(t, "Before: ![Old](chart.png)")
+			use, err := session.NewEvent(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_w", Name: "bash", Input: []byte(`{"command":"plot"}`), Verdict: string(VerdictAsk)}, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waiting := answerEvent(t, "![Sales](chart.png)")
+			e.send(ctx, "Chart it.")
+			e.appendEvents(ctx, earlier)
+			e.appendEvents(ctx, waiting, use)
+			idle, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopToolConfirmation}, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.appendEvents(ctx, idle)
+			c.prepare(e, earlier, waiting)
+			deny, err := session.NewEvent(session.TypeUserToolConfirmation, session.UserToolConfirmation{Sender: e.s.Initiator, ToolUseID: "toolu_w", Decision: session.DecisionDeny}, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.appendEvents(ctx, deny)
+			e.running(ctx)
+			if c.machine != nil {
+				cfg := e.cfg
+				cfg.Machine = c.machine(e)
+				h, err := New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.h = h
+			}
+			before := len(e.events(ctx, session.TypeFilesKept))
+			// The resume keeps before the step's next request, so what the
+			// model answers that request does not matter here.
+			e.stub.Script(model, reply(ir.StopEndTurn, text("Fine.")))
+			e.turn(ctx)
+			if got := e.events(ctx, session.TypeFilesKept); len(got) != before {
+				t.Fatalf("the resume appended %d files.kept: %s", len(got)-before, got[len(got)-1].Payload)
+			}
+		})
+	}
+}
+
+// TestAResumeStoppedForSpendKeepsItsStep: a resume whose confirmed call
+// a core refuses for spend keeps the step's images before the turn's
+// closing status, as a step stopped for spend does (spec 055).
+func TestAResumeStoppedForSpendKeepsItsStep(t *testing.T) {
+	chart := encoded(t, "png", 8, 8)
+	m, _ := workMachine(t, map[string][]byte{"chart.png": chart})
+	e := setup(t, func(c *Config) { c.Machine = m })
+	ctx := t.Context()
+	e.write.run = func(tools.Call) (tools.Result, error) {
+		return tools.Result{}, &models.SpendError{Core: machine.KindCella, Code: "budget_exhausted", Err: errors.New("the sandbox allowance is spent")}
+	}
+	e.stub.Script(model, reply(ir.StopToolUse, text("![Sales](chart.png)"), call("toolu_w", "bash", `{"command":"plot"}`)))
+	e.send(ctx, "Chart it.")
+	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
+		t.Fatalf("outcome %+v", out)
+	}
+	conf, err := session.NewEvent(session.TypeUserToolConfirmation, session.UserToolConfirmation{Sender: e.s.Initiator, ToolUseID: "toolu_w", Decision: session.DecisionAllow}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.appendEvents(ctx, conf)
+	e.running(ctx)
+	if out := e.turn(ctx); out.StopReason != session.StopBudget {
+		t.Fatalf("outcome %+v", out)
+	}
+	evs, err := e.store.Events(ctx, e.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := keptOf(t, evs)
+	msgs := e.events(ctx, session.TypeAgentMessage)
+	if p := kept[msgs[0].ID]; len(p.Files) != 1 || p.Files[0].Blob != session.DigestOf(chart) {
+		t.Fatalf("files.kept %+v", kept)
+	}
+	if evs[len(evs)-1].Type != session.TypeSessionStatus {
+		t.Fatalf("the turn ends with %s", evs[len(evs)-1].Type)
+	}
+}
+
+// TestADestinationIsReadAsCommonMarkReadsIt: an inline image's
+// destination has its backslash escapes and character references
+// resolved, and an img's src its surrounding white space stripped, so
+// the file the message names is the one read (spec 055).
+func TestADestinationIsReadAsCommonMarkReadsIt(t *testing.T) {
+	got := imageRefs(`![a](a\(b\).png) ![b](my\_chart.png) ![c](x&amp;y.png) ![d](&#x41;.png) <img src=" spaced.png ">`)
+	if want := []string{"a(b).png", "my_chart.png", "x&y.png", "A.png", "spaced.png"}; !slices.Equal(got, want) {
+		t.Fatalf("references %q, want %q", got, want)
+	}
+	png := encoded(t, "png", 3, 3)
+	m, _ := workMachine(t, map[string][]byte{"a(b).png": png})
+	e := setup(t, func(c *Config) { c.Machine = m })
+	p, _, err := KeepImages(t.Context(), m, e.log, answerEvent(t, `![a](a\(b\).png)`))
+	if err != nil || len(p.Files) != 1 || p.Files[0].Path != "a(b).png" {
+		t.Fatalf("files.kept %+v, %v", p, err)
 	}
 }

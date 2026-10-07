@@ -23,6 +23,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	mdtext "github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 	"golang.org/x/net/html"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -73,7 +74,10 @@ func imageRefs(src string) []string {
 		}
 		switch n := n.(type) {
 		case *ast.Image:
-			add(string(n.Destination))
+			// The destination as CommonMark reads it: backslash escapes
+			// and character references resolved, which the parser leaves
+			// to its renderer.
+			add(string(util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(n.Destination)))))
 		case *ast.RawHTML:
 			var b bytes.Buffer
 			for i := range n.Segments.Len() {
@@ -117,7 +121,9 @@ func imgSources(fragment []byte) []string {
 			}
 			for _, a := range tok.Attr {
 				if a.Namespace == "" && a.Key == "src" {
-					out = append(out, a.Val)
+					// A src is a URL with its surrounding white space
+					// stripped, as a browser reads it.
+					out = append(out, strings.TrimSpace(a.Val))
 					break
 				}
 			}
@@ -344,18 +350,48 @@ func webpSize(b []byte) (int, int, error) {
 	return 0, 0, fmt.Errorf("harness: a WebP whose first chunk is %q", b[12:16])
 }
 
+// openMachine is the turn's machine when it is open, nil when it is a
+// machine opened on demand that no call of the turn opened.
+func (t *turn) openMachine() machine.Machine {
+	m := t.h.c.Machine
+	if d, ok := m.(*machine.Deferred); ok {
+		if o := d.Opened(); o != nil {
+			return o
+		}
+		return nil
+	}
+	return m
+}
+
+// redactedSince reports whether the log the turn holds records a
+// redaction of the event id: the turn's own copy of an event a person
+// redacted while the step ran keeps its content, and the event.redacted
+// that another writer appended is what tells it.
+func redactedSince(evs []session.Event, id string) bool {
+	for _, e := range evs {
+		var p session.EventRedacted
+		if e.Type == session.TypeEventRedacted && e.Decode(&p) == nil && p.EventID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // keepAnswer appends the files.kept of msg, an agent.message of the
 // session's own thread whose step is committed, when it names a local
 // image. It reads only a machine that is open: a machine opened on
 // demand that no call of the turn opened is not opened to keep an image.
+// An answer a person redacted while its step ran keeps nothing.
 func (t *turn) keepAnswer(ctx context.Context, msg session.Event) error {
-	if t.thread != "" {
+	if t.thread != "" || redactedSince(t.events(), msg.ID) {
 		return nil
 	}
-	m := t.h.c.Machine
-	if d, ok := m.(*machine.Deferred); ok {
-		m = d.Opened()
-	}
+	return t.keep(ctx, t.openMachine(), msg)
+}
+
+// keep reads msg's images from m, nil for none, and appends their
+// files.kept.
+func (t *turn) keep(ctx context.Context, m machine.Machine, msg session.Event) error {
 	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), keepTimeout)
 	defer cancel()
 	p, ok, err := KeepImages(kctx, m, t.l, msg)
@@ -371,9 +407,13 @@ func (t *turn) keepAnswer(ctx context.Context, msg session.Event) error {
 }
 
 // keepResumed keeps the images of the step whose open calls a resume
-// settled, the agent.message last before the first of them, unless a
-// files.kept already names it: the step is committed once its calls are
-// answered, which for a call that waited on a person is in this claim.
+// settled, the agent.message last before the first of them: the step is
+// committed once its calls are answered, which for a call that waited on
+// a person is in this claim. A message that is redacted, or that a
+// files.kept names already, a redacted one included, keeps nothing
+// again. A claim that settled the calls without opening the machine
+// reads nothing and records nothing, since the step did run on a machine
+// and its images may be in it.
 func (t *turn) keepResumed(ctx context.Context, open []pendingCall) error {
 	if t.thread != "" || len(open) == 0 {
 		return nil
@@ -385,12 +425,13 @@ func (t *turn) keepResumed(ctx context.Context, open []pendingCall) error {
 		if e.Seq >= open[0].seq {
 			break
 		}
-		if e.Type == session.TypeAgentMessage && e.Thread == "" && !e.Redacted() {
+		if e.Type == session.TypeAgentMessage && e.Thread == "" {
 			msg = &evs[i]
 		}
 	}
-	if msg == nil || len(session.Companions(*msg, evs)) > 0 {
+	m := t.openMachine()
+	if msg == nil || m == nil || msg.Redacted() || redactedSince(evs, msg.ID) || session.KeptFor(msg.ID, evs) {
 		return nil
 	}
-	return t.keepAnswer(ctx, *msg)
+	return t.keep(ctx, m, *msg)
 }
