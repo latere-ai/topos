@@ -50,7 +50,8 @@ never takes another app's preview.
   `$HOME/.topos/publish/<slug>.git`, with the folder as its work tree,
   seeded from the session's branch on the app's repository when that
   branch exists, and pushes `HEAD` to `agents/<agent>/<session>`.
-  `onGitHost` refuses a push URL on another host than `TOPOS_ORIGO_URL`'s.
+  `onGitHost` refuses a push URL on another host than the configured git
+  host's.
 - `release` takes `c.State.Standing`, the newest preview of the thread
   that is `ready` or `building` whatever its app, reads the app's
   releases, and pushes `nextTag` on that commit unless a release of it
