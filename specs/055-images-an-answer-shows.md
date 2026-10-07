@@ -266,9 +266,9 @@ Built on 2026-10-07, in no release yet, and not yet run against a
 model gateway or a Cella installation; the Cella machine is proven
 against the stub. Every criterion has its test. The two releases of the
 roll order are two runs of commits on the branch: the first ends with
-the changelog entry that says `files.kept` is read and the blob route
-answers by a blob's bytes, and the second starts with the move of
-`MaxImages`. What shipped differs from the draft in these points:
+the changelog entry that says a redaction sent again takes a
+`files.kept` that landed since, after the type, its redaction and the
+blob route, and the second starts with the move of `MaxImages`. What shipped differs from the draft in these points:
 
 - **The redaction of an answer's images is the store's.** Each store's
   `Redact` plans its writes with `session.Redact`: the event, its
