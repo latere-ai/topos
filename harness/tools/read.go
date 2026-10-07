@@ -33,6 +33,11 @@ const (
 	binarySniff = 8000
 )
 
+// MaxImages is the most images one message carries: the images of a
+// person's message (spec 015), and the images kept from an agent's
+// answer (spec 055), each at most ReadMaxImage bytes.
+const MaxImages = 8
+
 // readSchema states the default from ReadDefaultLimit, so the schema
 // cannot drift from what runRead does.
 var readSchema = fmt.Sprintf(`{

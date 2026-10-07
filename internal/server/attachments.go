@@ -27,7 +27,7 @@ import (
 // them together in their base64 form. An image is at most what the read
 // tool gives a model, the largest a provider takes.
 const (
-	MaxImages          = 8
+	MaxImages          = tools.MaxImages
 	MaxImageBytes      = tools.ReadMaxImage
 	MaxAttachments     = 8
 	MaxAttachmentBytes = 5 << 20
