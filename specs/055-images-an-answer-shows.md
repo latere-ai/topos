@@ -246,7 +246,9 @@ answer names, a PDF or a spreadsheet: a later spec. The files route, which stays
 | A Cella machine's image is read through the sandbox's file routes, inside the workspace only | `machine/cella.TestKeepReadsTheWorkspace` (stub Cella) | built |
 | A fork copies the blobs its copied `files.kept` events name | `session.TestAForkCopiesKeptImages` | built |
 | Redacting `files.kept` removes its blobs; redacting the `agent.message` redacts its `files.kept` in the same append | `internal/server.TestRedactingAnAnswerTakesItsImages`, `session/storetest`'s `RedactAnAnswerWithItsImages` for each store | built |
-| A step that waits on a person keeps nothing while it waits and keeps its images once, in the claim that answers its calls | `harness.TestAWaitingStepKeepsOnceItsCallsAreAnswered` | built |
+| A step that waits on a person keeps nothing while it waits and keeps its images once, in the claim that answers its calls; a redacted answer, an answer whose `files.kept` was redacted, and a claim that opened no machine keep nothing; a resume stopped for spend keeps | `harness.TestAWaitingStepKeepsOnceItsCallsAreAnswered`, `harness.TestAResumedStepKeepsOnlyItsOwnAnswerOnce`, `harness.TestAResumeStoppedForSpendKeepsItsStep` | built |
+| An answer redacted while its step runs keeps nothing, and a redaction sent again takes a `files.kept` that landed after the first | `harness.TestAnAnswerRedactedWhileItsStepRunsKeepsNothing`, `session/storetest`'s `RedactAnAnswerWithItsImages` | built |
+| A destination's backslash escapes and character references are resolved, and an `img`'s `src` is trimmed | `harness.TestADestinationIsReadAsCommonMarkReadsIt` | built |
 | The width and height of each format are read from its header, and a header that holds none is no image | `harness.TestImageSizesFromHeaders` | built |
 | The blob route answers an image blob with its type, `inline`, `nosniff`, the sandbox policy, the immutable private cache and the digest as `ETag`, and any other blob as an `attachment` of `application/octet-stream` | `internal/server.TestABlobAnswersByItsBytes` | built |
 | A build that knows `files.kept` folds a log holding it without `schema_too_new`, and the type is redactable | `session.TestFilesKeptIsKnownAndRedactable`, `session.TestAwaitingAndRedactable` | built |
@@ -284,18 +286,41 @@ answers by a blob's bytes, and the second starts with the move of
   a confirmation, a client's result, a question or a thread's pause, is
   committed when its calls are answered, so it keeps nothing when it goes
   idle and keeps its images in the claim that answers them, unless a
-  `files.kept` already names its answer. A step stopped by a refusal for
-  spend keeps before its closing status; a step that fails with an
-  error of the harness keeps nothing.
+  `files.kept` already names its answer, a redacted one included. A step
+  stopped by a refusal for spend keeps before its closing status, in a
+  step and in a resume alike; a step that fails with an error of the
+  harness keeps nothing.
+- **A claim that answers a waiting step without opening its machine
+  keeps nothing and records nothing**, such as a denial: the step ran on
+  a machine, so `no_machine` would be untrue, and that claim may not
+  open one. Its images are not kept; a client reads the files route,
+  which answers while the session's machine runs. Keeping at the moment
+  the step goes idle would record a picture the waiting call was about
+  to draw as `not_found`, the common case under an approval mode that
+  confirms commands.
+- **A redaction takes what it could not see.** An answer a person
+  redacts while its step runs keeps nothing, since the turn reads the
+  `event.redacted` another writer appended. A runner that appends its
+  `files.kept` between that read and the redaction leaves one; the
+  redaction sent again takes it, since `Redact` of a redacted event plans
+  the companions it gained since. A `files.kept`'s tombstone keeps the id
+  of the answer it named, no content of it, so its images are never kept
+  again after a person removed them.
+- **A blob a redaction deletes while a runner names it again.** A runner
+  stores an image before it appends the `files.kept` that names it; a
+  redaction of another event naming the same digest between the two
+  removes the bytes, and the blob route answers that image `not_found`.
+  A message's attachments already share this window.
 - **What else skips.** A directory is `not_an_image`, a path the
   credential deny-list names is `unavailable`, and a symbolic link a
   host machine's root refuses is `outside_workdir`. A destination that
   starts with `//`, a `file:` URL of a host other than `localhost`, and
   one that is empty once its query and fragment are dropped name no file
   of the machine and are not recorded.
-- **`path` is the parser's destination**: backslash escapes and
-  character references resolved and percent-encoding kept, as a
-  CommonMark renderer reads it. The parser is goldmark, an HTML
+- **`path` is the destination as CommonMark reads it**: backslash
+  escapes and character references resolved and percent-encoding kept;
+  an `img`'s `src` has its surrounding white space stripped, as a browser
+  reads it. The parser is goldmark, an HTML
   fragment's `img` is read with `golang.org/x/net/html`, and a
   reference-style image's definition may sit in any text block of the
   message. goldmark is a new row of both binaries' `depcheck` lists and
