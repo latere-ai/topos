@@ -10,6 +10,56 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- `publish` with `release: true` puts a change live in one call: it
+  publishes the folder, or an attached app's checkout, waits for the
+  build, and releases the commit it built, so a person approves a change
+  once. A build that fails or is canceled releases nothing, and the
+  result says why with the end of the build log; a build the host has
+  not started when the wait ends releases nothing yet; one still running
+  is tagged, and the host releases it once it is ready. A release right
+  after a ready preview, with nothing changed, releases that preview.
+  The tool's description is `tools/publish-v3`: one release call is the
+  way to put a change live, and a preview first is for a person who
+  wants to look. After a `behind_live` refusal the model is told to
+  merge and release again in one call.
+- A release that names neither `app` nor `path` takes the app whose
+  preview stands, else the one app the session has published to, and is
+  refused `app_required` when that is several apps, or none in a session
+  that was attached apps. A `path` given with `release` chooses the app
+  as it does for a preview, and is refused `not_in_checkout` outside the
+  named app's checkout. A call to the session's own app with no `path`
+  publishes the folder it published last, else the working directory.
+- A call a tool can tell is bound to be refused is answered before it is
+  decided, so in `confirm` and `progressive` no person is asked to
+  approve it. A tool offers this through `tools.Checker`; `publish`
+  refuses `app_not_attached`, `app_required`, `not_in_checkout`, and a
+  drive with no credential for the app host this way. The check sees the
+  thread's state before the step, so a call after another of the same
+  tool in its step is left to run and is refused there.
+
+### Added
+
+- `meta.publish.folder` names the folder a publish result published,
+  relative to the working directory when it is inside it: an attached
+  app's checkout, or the folder of the session's own app.
+
+### Upgrading
+
+- A `publish` call refused before it is decided has a `tool.result`
+  and no `agent.tool_use`, as a call whose input fails its schema has
+  none. A client that pairs each result with its `agent.tool_use` shows
+  it as it shows such a call. A release's result may carry its build's
+  `failed`, `canceled` or `building` status with no `release`: nothing
+  was released.
+- Agent instructions that tell the model to publish a preview and then
+  release keep working, at two approvals per change; they can say
+  instead that one call with `release: true` puts a change live.
+- A result recorded before this release names no `folder`: a release of
+  the session's own app that names no `path` then releases its standing
+  preview as before.
+
 ## v0.25.0 - 2026-10-07
 
 ### Added
