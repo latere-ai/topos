@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 007-models.md, 008-tools.m
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-06
+updated: 2026-10-08
 author: changkun
 ---
 
@@ -132,9 +132,13 @@ fold refuses the log, [[004-session-log]]) and ends the turn idle with
       that stops at the output cap is sent again at the model's output
       limit, in its place (Output limits).
    4. Commit point one: append `model.request`, `agent.message`, and
-      one `agent.tool_use` per call that passed validation, each with
-      its risk and verdict ([[012-permissions-and-approvals]]). Nothing
-      runs before this batch is durable.
+      one `agent.tool_use` per call that passed validation and its
+      tool's check, each with its risk and verdict
+      ([[012-permissions-and-approvals]]). A call its tool's check
+      refuses on its input is answered with that refusal, with no
+      `agent.tool_use`, as an invalid one is
+      ([[059-publishing-to-a-chosen-app]]). Nothing runs before this
+      batch is durable.
    5. Dispatch on the IR stop reason (the table below).
    6. Run the calls whose verdict is allow or flag; commit point two
       is each `tool.result`, appended when its call returns.

@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-04
+updated: 2026-10-08
 author: changkun
 ---
 
@@ -154,7 +154,11 @@ A call on `always_confirm` is `ask` in `confirm` and `progressive` and
 `block` in `plan`. The thresholds come from the authorizer's `limits`
 or the agent's `spec.approvals.thresholds`, and a learned source may
 later set them per person and per agent. The order of evaluation is:
-hard boundary, `always_confirm`, the mode, then hooks. Verdicts are
+hard boundary, `always_confirm`, the mode, then hooks. Before any of
+them, a tool that can tell from a call's input alone that the call
+would be refused answers it, so no person approves a call bound to
+fail; such a call is never decided and has no `agent.tool_use`
+([[059-publishing-to-a-chosen-app]]). Verdicts are
 ordered allow, flag, ask, block from most to least permissive, and the
 final verdict is the least permissive of the mode's and every hook's.
 `agent.tool_use` records the verdict, the reason, and the mode. A
