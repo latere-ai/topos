@@ -6,6 +6,8 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/yuin/goldmark v1.8.2
+	golang.org/x/net v0.58.0
 	golang.org/x/sys v0.47.0
 	latere.ai/x/cella v0.8.0
 	latere.ai/x/pkg v0.91.0
@@ -39,7 +41,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	golang.org/x/mod v0.38.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/text v0.41.0 // indirect

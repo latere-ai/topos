@@ -735,10 +735,16 @@ func (t *turn) resume(ctx context.Context) error {
 			return err
 		}
 	}
+	reason, waiting := w.reason()
+	if !waiting {
+		if err := t.keepResumed(ctx, open); err != nil {
+			return err
+		}
+	}
 	if interrupted {
 		return t.finish(ctx, session.StopInterrupted, "")
 	}
-	if reason, waiting := w.reason(); waiting {
+	if waiting {
 		return t.finish(ctx, reason, "")
 	}
 	return nil
@@ -1286,9 +1292,18 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 			if err != nil {
 				return err
 			}
-			return t.finish(ctx, session.StopOutputLimit, "", append(batch, se)...)
+			if err := t.commit(ctx, batch...); err != nil {
+				return err
+			}
+			if err := t.keepAnswer(ctx, msgEvent); err != nil {
+				return err
+			}
+			return t.finish(ctx, session.StopOutputLimit, "", se)
 		}
-		return t.commit(ctx, batch...)
+		if err := t.commit(ctx, batch...); err != nil {
+			return err
+		}
+		return t.keepAnswer(ctx, msgEvent)
 	}
 	t.continuations = 0
 
@@ -1310,6 +1325,9 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 		if res.StopReason == ir.StopRefusal {
 			detail = "refusal"
 		}
+		if err := t.keepAnswer(ctx, msgEvent); err != nil {
+			return err
+		}
 		return t.finish(ctx, session.StopEndTurn, detail)
 	}
 	// A call that waits for a person leaves the step's other calls to
@@ -1317,6 +1335,11 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 	// call, on a question, or on the pause a thread's call returned.
 	w := waits{confirmation: len(planned.ask) > 0, result: len(planned.client) > 0}
 	if err := t.runCalls(ctx, planned.run, &w); err != nil {
+		if _, spent := models.SpendRefused(err); spent {
+			if err := t.keepAnswer(ctx, msgEvent); err != nil {
+				return err
+			}
+		}
 		return t.callsStopped(ctx, err)
 	}
 	interrupted := t.cut.Load()
@@ -1332,10 +1355,19 @@ func (t *turn) commitStep(ctx context.Context, res models.Result, si sendInfo) e
 		w.question = by == ""
 		interrupted = interrupted || by == session.ClosedByInterrupt
 	}
+	// The step is committed once every call of it is answered: a step
+	// that waits on a person keeps its images when a later claim answers
+	// its calls (keepResumed).
+	reason, waiting := w.reason()
+	if !waiting {
+		if err := t.keepAnswer(ctx, msgEvent); err != nil {
+			return err
+		}
+	}
 	if interrupted {
 		return t.finish(ctx, session.StopInterrupted, "")
 	}
-	if reason, waiting := w.reason(); waiting {
+	if waiting {
 		return t.finish(ctx, reason, "")
 	}
 	return nil
