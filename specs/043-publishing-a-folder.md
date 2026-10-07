@@ -99,7 +99,9 @@ makes a release of its commit, whose status is `pending`, then
 ([[039-questions]]): the runner adds it to the registry when the
 agent's `spec.tools` names it, the installation configures an app host
 and the session runs on a Cella machine; a thread a spawn started
-holds none, so a session has one app. The manifest takes `publish` by
+holds none, so a session has one app. Amended by
+[[059-publishing-to-a-chosen-app]]: a thread publishes to its own app
+and to each app its session's repositories attach, chosen by `app`. The manifest takes `publish` by
 its name alone, like `question`; `topos run` refuses an agent that
 names it, since a local run has no app host and no sandbox.
 
