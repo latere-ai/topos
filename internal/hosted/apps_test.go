@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -82,8 +83,14 @@ func release(t *testing.T, clone, branch, file, tag string) string {
 // attached the app slug, on the app host and the git host of a.
 func (a *apps) attached(t *testing.T, slug string) *cloud {
 	t.Helper()
+	return a.attachedAs(t, slug, publisherAgent)
+}
+
+// attachedAs is attached with the agent the document defines.
+func (a *apps) attachedAs(t *testing.T, slug, agentDoc string) *cloud {
+	t.Helper()
 	c := newCloud(t, nil)
-	rs, err := manifest.Resolve(t.Context(), []byte(publisherAgent), manifest.Options{})
+	rs, err := manifest.Resolve(t.Context(), []byte(agentDoc), manifest.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,8 +215,8 @@ func TestASessionPublishesAnAttachedApp(t *testing.T) {
 // with nothing live is tagged at once; once another session's release is
 // live, a release whose commit does not hold it is refused behind_live,
 // no tag is pushed, and the text names the merge; after the merge the
-// commands name, a publish and a release are tagged on a commit that
-// holds both.
+// commands name, one release call publishes the merge and tags a commit
+// that holds both.
 func TestAReleaseBehindTheLiveVersionIsRefused(t *testing.T) {
 	a := newApps(t)
 	clone := a.seed(t, "tide")
@@ -243,8 +250,7 @@ func TestAReleaseBehindTheLiveVersionIsRefused(t *testing.T) {
 
 	c.drive("Merge the live release and release again.",
 		bash("toolu_7", `git -C tide fetch -q origin --tags && git -C tide merge -q --no-edit `+theirs[:7]),
-		publishCall("toolu_8", map[string]any{"app": "tide"}),
-		publishCall("toolu_9", map[string]any{"app": "tide", "release": true}),
+		publishCall("toolu_8", map[string]any{"app": "tide", "release": true}),
 		said("Released."))
 	r, _ := lastResult(t, c)
 	if r.Status != session.PublishReleased || r.Release != "v3" {
@@ -295,5 +301,72 @@ func TestTwoSessionsBuildOneApp(t *testing.T) {
 	tagged := gitIn(t, bare, "rev-parse", "refs/tags/v2^{commit}")
 	if files := gitIn(t, bare, "ls-tree", "-r", "--name-only", tagged); files != "index.html\none.html\ntwo.html" {
 		t.Fatalf("v2 holds %q", files)
+	}
+}
+
+// confirmingPublisher is the publisher agent without an approval of its
+// own, so each publish call waits for a person, as in confirm mode.
+var confirmingPublisher = strings.Replace(publisherAgent, "  approvals: {alwaysAllow: [publish]}\n", "", 1)
+
+// TestAChangeGoesLiveWithOneApproval: in confirm mode, a publish call that
+// names an app the session was not attached is refused before it is
+// decided, so nobody is asked to approve it; a release of a change with
+// no preview of it asks once, and once allowed commits the checkout,
+// pushes it, waits for its build and releases the commit it built, in
+// that one call (spec 059).
+func TestAChangeGoesLiveWithOneApproval(t *testing.T) {
+	a := newApps(t)
+	a.seed(t, "tide")
+	if !strings.Contains(publisherAgent, "alwaysAllow: [publish]") || strings.Contains(confirmingPublisher, "approvals") {
+		t.Fatal("the confirming agent still allows publish")
+	}
+	c := a.attachedAs(t, "tide", confirmingPublisher)
+	bare := filepath.Join(a.root, "tide.git")
+	c.driveAfter(session.StopToolConfirmation, []session.Event{c.message("Put a hello page live.")},
+		bash("toolu_1", `printf '<h1>Hello</h1>\n' > tide/index.html`),
+		publishCall("toolu_2", map[string]any{"app": "slice-ffa610", "path": "slice-ffa610", "release": true}),
+		publishCall("toolu_3", map[string]any{"app": "tide", "path": "tide", "release": true}))
+	refused, text := lastResult(t, c)
+	if refused.Error == nil || refused.Error.Code != session.PublishAppNotAttached || refused.App != "" || !strings.Contains(text, "slice-ffa610 is not an app this session may publish to") {
+		t.Fatalf("the call naming another app recorded %+v: %q", refused, text)
+	}
+	asked := func() []string {
+		var out []string
+		for _, e := range c.events(session.TypeAgentToolUse) {
+			var use session.AgentToolUse
+			if err := e.Decode(&use); err != nil {
+				t.Fatal(err)
+			}
+			if use.Name == publish.Name {
+				out = append(out, use.ToolUseID+" "+use.Verdict)
+			}
+		}
+		return out
+	}
+	if got := asked(); len(got) != 1 || got[0] != "toolu_3 ask" {
+		t.Fatalf("the publish calls decided: %v, want toolu_3 asked alone", got)
+	}
+	if _, err := exec.Command("git", "-C", bare, "rev-parse", "--verify", "--quiet", "refs/heads/"+session.Branch(c.s)).Output(); err == nil {
+		t.Fatal("the checkout was pushed before the person answered")
+	}
+
+	c.driveAfter(session.StopEndTurn, []session.Event{c.confirmation(session.UserToolConfirmation{ToolUseID: "toolu_3", Decision: session.DecisionAllow})}, said("It is live."))
+	released, _ := lastResult(t, c)
+	head := gitIn(t, bare, "rev-parse", "refs/heads/"+session.Branch(c.s))
+	if released.Status != session.PublishReleased || released.Release != "v1" || released.Commit != head || !released.Attached || released.Folder != "tide" ||
+		released.Preview != "https://d"+head[:7]+"--tide.apps.example" {
+		t.Fatalf("the release recorded %+v, the branch is at %s", released, head)
+	}
+	if tagged := gitIn(t, bare, "rev-parse", "refs/tags/v1^{commit}"); tagged != head {
+		t.Fatalf("v1 is on %s, want %s", tagged, head)
+	}
+	if page := gitIn(t, bare, "show", head+":index.html"); page != "<h1>Hello</h1>" {
+		t.Fatalf("the released page reads %q", page)
+	}
+	if got := asked(); len(got) != 1 {
+		t.Fatalf("the publish calls decided: %v, want one", got)
+	}
+	if n := len(c.events(session.TypeUserToolConfirmation)); n != 1 {
+		t.Fatalf("%d confirmations, want one", n)
 	}
 }
