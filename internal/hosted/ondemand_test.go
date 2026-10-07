@@ -25,6 +25,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
+	"latere.ai/x/topos/internal/publish"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/manifest"
@@ -177,6 +178,11 @@ func (c *cloud) driveAfter(want session.StopReason, evs []session.Event, replies
 		c.t.Fatal(err)
 	}
 	o := runner.Options{Store: c.st, Harness: h, ID: "run_" + session.NewID("x"), Kind: runner.KindServe, CheckpointHost: c.checkpointHost}
+	// The runner reads an app's served commits from the app host as
+	// toposd's does (spec 058).
+	if c.o.Publish.Configured() {
+		o.Apps = publish.Served(c.o.Publish)
+	}
 	if c.creds != nil {
 		o.Credentials = func(string, session.Lease) runner.Credentials { return c.creds }
 	}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -121,9 +122,31 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 	return h
 }
 
+// app is the app resource of slug: its current deploy the commit of its
+// highest v tag, and its newest preview its newest branch head, each nil
+// when it has none.
 func (h *appHost) app(slug, name string) map[string]any {
-	return map[string]any{"slug": slug, "name": name, "url": "https://" + slug + ".apps.example",
-		"repository": map[string]string{"push_url": h.git + "/" + slug + ".git"}}
+	a := map[string]any{"slug": slug, "name": name, "url": "https://" + slug + ".apps.example",
+		"repository": map[string]string{"push_url": h.git + "/" + slug + ".git"}, "current_deploy": nil, "latest_preview": nil}
+	if !h.exists(slug) {
+		return a
+	}
+	best := 0
+	for _, line := range h.refs(slug, "refs/tags/") {
+		sha, ref, _ := strings.Cut(line, " ")
+		if n, err := strconv.Atoi(strings.TrimPrefix(ref, "refs/tags/v")); err == nil && n > best {
+			best, a["current_deploy"] = n, map[string]any{"id": "d" + sha[:8], "commit_sha": sha}
+		}
+	}
+	out, err := exec.Command("git", "-C", filepath.Join(h.root, slug+".git"), "for-each-ref", "--sort=-committerdate", "--count=1", "--format=%(objectname)", "refs/heads/").Output()
+	if err != nil {
+		h.t.Errorf("the newest branch of %s: %v", slug, err)
+		return a
+	}
+	if sha := strings.TrimSpace(string(out)); sha != "" {
+		a["latest_preview"] = map[string]any{"id": "d" + sha[:8], "commit_sha": sha}
+	}
+	return a
 }
 
 func (h *appHost) exists(slug string) bool {
