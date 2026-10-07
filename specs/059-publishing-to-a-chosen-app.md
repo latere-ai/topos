@@ -1,12 +1,12 @@
 ---
-title: "Publishing to a chosen app: the app input, an attached app published from its own checkout on the session's branch, a release refused while the live version holds work the release lacks, and a standing preview per app"
+title: "Publishing to a chosen app: the app input, an attached app published from its own checkout on the session's branch, a release refused while the live version holds work the release lacks, a standing preview per app, and a change put live with one approval"
 status: testing
 track: core
 depends_on: [008-tools.md, 012-permissions-and-approvals.md, 019-git.md, 043-publishing-a-folder.md, 058-what-a-create-allow-attaches.md]
-affects: [internal/publish/, harness/tools/, session/, prompts/, internal/hosted/, docs/]
+affects: [internal/publish/, harness/, harness/tools/, session/, prompts/, internal/hosted/, docs/]
 effort: medium
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-10-08
 author: changkun
 ---
 
@@ -39,6 +39,22 @@ at once. Three things change in the tool:
 
 The thread's standing preview is kept per app, so a release of one app
 never takes another app's preview.
+
+A fourth change came from the first sessions that used it. A session in
+`confirm` asked its person three times to put one change live: a
+release with no preview to release, which the tool then refused; a
+preview; and the release of it. Every `publish` call asks, so a flow of
+two calls costs two approvals, and a call bound to be refused costs one
+for nothing. So:
+
+4. **A change goes live in one call.** `release: true` publishes the
+   folder, waits for its build and releases the commit it built. A
+   preview first is for a person who wants to look before the change
+   goes live.
+5. **A call bound to be refused is refused before it is decided.** The
+   refusals the tool can tell from the call's input and the thread's
+   state answer before the harness decides the call, so no person
+   approves a call that cannot run.
 
 ## Current state
 
@@ -77,8 +93,9 @@ flowchart TD
   OWN2 --> P2
   P1 --> WAIT[wait for the preview, as 043]
   P2 --> WAIT
-  C -->|release| S[standing preview of the chosen app]
-  S --> L{live commit an ancestor?}
+  C -->|release| P3[commit and push the folder, wait for its build]
+  P3 -->|failed, canceled or not started| R3[nothing released, the build's reason]
+  P3 -->|ready, or still building| L{live commit an ancestor?}
   L -->|yes, or nothing live| T[push the next tag, wait, as 043]
   L -->|no| R2[behind_live: merge the live version, publish again]
 ```
@@ -87,9 +104,9 @@ flowchart TD
 
 | Field | Required | Meaning |
 |---|---|---|
-| `path` | no | the folder to publish, as in 043; for an attached app, its checkout or a folder inside it, default the checkout |
+| `path` | no | the folder to publish, as in 043; for an attached app, its checkout or a folder inside it, default the checkout; for the thread's own app, default the folder its last result records, else the working directory |
 | `app` | no | the slug of the app to publish to or release |
-| `release` | no | as in 043 |
+| `release` | no | publish the folder, wait for its build, and release it, in one call |
 
 ```json
 {"app": "tide-tables"}
@@ -107,8 +124,12 @@ The tool resolves the app before it makes any request:
 | `app` is any other slug | refused: outcome `error`, `meta.publish.error.code` `app_not_attached`, no request |
 | no `app`, `path` inside an attached app's checkout | that attached app |
 | no `app`, `path` outside every checkout | the thread's own app as 043 finds it, created when there is none |
-| `release`, no `app`, standing previews of one app | that app |
-| `release`, no `app`, standing previews of several apps | refused: `app_required`, the text naming the apps that have one |
+| `release`, no `app`, a `path` | the app the path chooses, as for a preview |
+| `release`, neither `app` nor `path`, standing previews of one app | that app |
+| `release`, neither, no standing preview, results of the thread naming one app | that app |
+| `release`, neither, standing previews, or else results, naming several apps | refused: `app_required`, the text naming them |
+| `release`, neither, no result naming an app, the session attached apps | refused: `app_required`, the text naming the attached apps |
+| `release`, neither, no result naming an app, no attached app | the thread's own app, as a preview finds it |
 
 A slug outside the session's attachments and its own creations may be
 an app the person owns that this session was not given; the app host
@@ -118,7 +139,13 @@ push the git host refuses.
 
 `app` given with a `path` outside that app's checkout is refused:
 `not_in_checkout`, the text naming the checkout's directory, because
-publishing an attached app means publishing its repository.
+publishing an attached app means publishing its repository. A release
+is refused the same way, since it publishes the path too.
+
+A release that names neither is refused rather than given the
+session's own app when the session attached apps and the thread has
+published none: the model most likely meant an attached app, and the
+own app would be created and put live from the working directory.
 
 ### Publishing an attached app
 
@@ -142,9 +169,23 @@ already works in.
 
 ### Releasing
 
-`release: true` takes the standing preview of the chosen app, the
-newest of that app's previews in the thread that is `ready` or
-`building`. Before the tag:
+`release: true` publishes the chosen app as a call without it would:
+an attached app's checkout is committed and pushed on the session's
+branch, and the thread's own app's folder through the session's git
+directory. A folder unchanged since the last publish pushes no new
+commit, as 043 says, so a release right after a ready preview releases
+that preview. The call then waits for the build of the pushed commit,
+for at most `Wait`, as a preview's does:
+
+| The build | The result |
+|---|---|
+| `ready` | released as below |
+| still `building` when the wait ends | released as below; the host releases it once it is ready, as 043 lets a release of a preview still building |
+| `failed` or `canceled` | outcome `error`, `meta.publish.status` the build's, its `error`, `commit`, `deploy` and `preview`, the end of a failed build's log, and no tag: the text (`results/publish/release-build-failed-v1`) says nothing was released and why |
+| not started when the wait ends | outcome `ok`, `status` `building`, and no tag: the text (`results/publish/release-not-started-v1`) says nothing was released yet and to call again |
+
+The release then reads the app again, so the check below sees the live
+commit as it is after the wait. Before the tag:
 
 1. The tool reads the app (`GET {root}/apps/{slug}`). `current_deploy`
    `null` means nothing is live, and the tag goes ahead.
@@ -166,13 +207,49 @@ work does not include. Another session probably released it. Merge it
 into tide-tables/ first:
   git -C tide-tables fetch origin --tags
   git -C tide-tables merge 4b1e2c0
-Resolve any conflict, check the result, then call publish with
-app "tide-tables" and, once the preview is ready, release again.
+Resolve any conflict and check the result, then call publish with app
+"tide-tables" and release set to true again: that one call publishes
+the merge and releases it.
 ```
+
+(`results/publish/behind-live-v2`; v1 asked for a preview and then a
+release.)
 
 For an own app the same text names the session's git directory with
 `--git-dir` and `--work-tree`. The person reads the refusal in the
 client like any refused release ([[043-publishing-a-folder]]).
+
+**The thread's own app's folder.** A release of the own app that names
+no `path` publishes the folder the thread's last result for the app
+records in `meta.publish.folder`, which every result that pushes
+records: an attached app's checkout, or the own app's folder, relative
+to the working directory when it is inside it. A result recorded before
+this field has none; a release that finds none releases the app's
+standing preview as it is, as 043 did, and with no standing preview
+answers that there is none.
+
+### Refused before the call is decided
+
+The harness ([[012-permissions-and-approvals]]) decides a call after
+its schema and before it runs, and a call with an external effect asks
+in `confirm` and `progressive`. The tool's own refusals ran inside
+`Run`, after the person had approved the call. A tool may now offer
+`Check(call) *Result` (`tools.Checker`): the harness calls it after the
+schema and before the decision, and a call it answers is answered with
+that result at once, with no `agent.tool_use`, as a call whose input
+fails its schema is. Check reads the call's input, the thread's state
+and the machine's `Info`, and reaches neither the machine nor a
+service. Since its state is the thread's before the step, the harness
+checks a call only when no earlier call of the step went to the same
+tool, whose result could change the answer.
+
+`publish` refuses in `Check` what `Run` refuses on the input alone:
+`app_not_attached`, `app_required`, `not_in_checkout`, and a drive with
+no token source for the app host. `not_in_checkout` needs the working
+directory only for an absolute path or one that climbs out with `..`;
+on a machine not yet open such a path is left to `Run`. A folder that
+does not exist is left to `Run` too, since an earlier call of the step
+may make it.
 
 ### The thread's state
 
@@ -214,6 +291,9 @@ rule needs no change here.
 | Concurrent work on one app | each session on its own branch; a release refused unless the live commit is an ancestor | last release wins: one session's release silently removes another's work; a lock per app: one session would wait on another that may never release |
 | Where the check runs | in the machine, with git, before the tag | at the host when the tag arrives: closes the race but needs an ancestry walk and a policy there, the alternative named above; in the runner over the git host's API: the core would learn one git host's read routes |
 | A release's choice of preview | per app | the thread's newest whatever its app: a session with two apps would release the wrong one |
+| What a release puts live | the folder as it is now, published, built and released in one call | the standing preview, after a separate call: two approvals per change, and a release with no preview is a call bound to fail; a release that tags before the build ends: a failed build would leave a failed release and spend a version |
+| Where a refusal on the input is decided | before the call is decided, in a check the tool offers | in `Run`: the person approves a call that cannot run; in the authorizer: it does not hold the thread's state or the session's attachments as the tool reads them |
+| The own app's folder for a release with no path | recorded on each result | the working directory: a release after a preview of `site` would publish the whole directory; a file in the machine: lost with the machine, and not in the log a client reads |
 
 ### Roll order
 
@@ -226,6 +306,13 @@ rule needs no change here.
    as before.
 3. Clients read `app` on each `meta.publish`, as they already do, to
    tell two apps' cards apart.
+4. One approval per change needs nothing rolled first. A client shows a
+   `publish` result with no `agent.tool_use`, a call refused before it
+   was decided, as it shows a call whose input failed its schema, and a
+   release's result that carries a failed build's `status` as a release
+   that did not happen. An installation's own instructions that tell the
+   model to publish a preview and then release still work, at two
+   approvals; they can say that one release puts a change live.
 
 ## Not in this spec
 
@@ -244,6 +331,11 @@ person who does not own it.
 | A release whose commit descends from the live commit tags it; one that does not is refused `behind_live` with no tag pushed and the merge commands in its text; nothing live tags at once | `internal/hosted.TestAReleaseBehindTheLiveVersionIsRefused`, `internal/publish.TestAReleaseIsCheckedAgainstTheLiveVersion` | built |
 | Two sessions attached to one app each publish on their own branch; the second's release is refused until it merges the first's release, then released | `internal/hosted.TestTwoSessionsBuildOneApp` | built |
 | The state keeps the last result and the standing preview per app, `attached` marks an attached app's results, and a result without `attached` reads as the thread's own | `harness/tools.TestStateOfFoldsPublishPerApp` | built |
+| `release: true` with no preview of the change publishes the folder, waits for its build and releases the commit it built in one call, for an attached app and an own app; a build still running when the wait ends is tagged; one not started tags nothing; a release that names no path publishes the folder the thread's last result records | `internal/publish.TestAReleaseBuildsWhatItReleases`, `internal/hosted.TestAChangeGoesLiveWithOneApproval` | built |
+| A release whose build fails or is canceled tags nothing and reads no release; its error result says nothing was released, with the build's code, sentence and log | `internal/publish.TestAFailedBuildReleasesNothing` | built |
+| In `confirm`, a call naming an app the session was not attached is answered with `app_not_attached` and no `agent.tool_use`, and a change goes live with one approval | `internal/hosted.TestAChangeGoesLiveWithOneApproval` | built |
+| A call a tool's check refuses gets no `agent.tool_use`, does not run, and the model reads the refusal; a call after another of the same tool in the step is not checked | `harness.TestACallRefusedOnItsInputIsNotAsked` | built |
+| `Check` refuses what `Run` refuses on the input, with the same result, before any request and without opening the machine, and leaves a path it cannot place to `Run` | `internal/publish.TestCheckRefusesBeforeTheCallIsDecided` | built |
 | A model told its release was refused `behind_live` merges the live version and releases | a task of the suite ([[025-task-suite]]) against a stub app host | not built |
 
 ## Open questions
@@ -299,3 +391,36 @@ differs from the draft in these points:
   both machines before either publishes to show the refusal and the
   merge.
 
+### One approval per change
+
+Built on 2026-10-08, in no release yet, after a session of v0.25.0 in
+`confirm` asked three times to put one change of an attached app live:
+a release with no preview, which the person allowed and the tool then
+refused; a preview; and its release. What shipped:
+
+- **A release publishes first.** `release: true` commits and pushes the
+  folder, waits for its build, and releases the commit it built, so one
+  approval puts a change live. A failed or canceled build tags nothing
+  and says why with the end of its log; a build not started by the end
+  of the wait tags nothing; a build still running is tagged and released
+  by the host once it is ready. The live check reads the app again after
+  the wait. The description is `tools/publish-v3`, which says a single
+  release is the way to put a change live and a preview first is for a
+  person who wants to look; `behind-live-v2` asks for one release after
+  the merge, and `app-required-v2` covers the new cases below.
+- **The folder is recorded.** `meta.publish.folder` names the folder a
+  result published, so a release, or a preview, of the thread's own app
+  that names no path publishes the folder it published last rather than
+  the working directory. A result before the field releases the
+  standing preview as it is.
+- **A release that names neither app nor path** takes the app whose
+  preview stands, else the one app the thread published to, and is
+  refused `app_required` when that is several, or none in a session
+  that attached apps. A `path` given with `release` chooses the app as
+  for a preview, and is checked against an attached app's checkout.
+- **Refusals come before the decision.** `tools.Checker` lets a tool
+  answer a call before the harness decides it; `publish` refuses
+  `app_not_attached`, `app_required`, `not_in_checkout` and a drive with
+  no token source there, so such a call has no `agent.tool_use` and no
+  person is asked. A call after another `publish` call of the same step
+  is not checked, and `Run` keeps every refusal for it.

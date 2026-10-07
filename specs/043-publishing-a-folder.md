@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 008-tools.md, 010-context.md, 012-permissions-a
 affects: [internal/publish/, internal/hosted/, internal/config/, cmd/toposd/, harness/, harness/tools/, manifest/, session/, prompts/, internal/toposcli/, docs/]
 effort: medium
 created: 2026-10-05
-updated: 2026-10-05
+updated: 2026-10-08
 author: changkun
 ---
 
@@ -150,6 +150,15 @@ meaning the host has not seen the tag yet, until it is `released`,
 may release is the host's question to the installation's authorizer,
 asked for the tag's pusher.
 
+Amended by [[059-publishing-to-a-chosen-app]]: a release no longer
+needs a preview before it. `release: true` publishes the folder as a
+call without it would, waits for the build, and releases the commit it
+built, so one approval puts a change live; a build that fails releases
+nothing. A release right after a ready preview, with the folder
+unchanged, pushes nothing new and releases that preview. The preview
+the paragraph above takes is what a release of a thread whose results
+record no folder still releases.
+
 | Limit | Value |
 |---|---|
 | `Wait`, the longest a call waits for a preview or a release | 10 minutes |
@@ -161,7 +170,9 @@ asked for the tag's pusher.
 
 The text is the model's: what was published, the address, and the next
 step. A ready preview's text tells the model to call `publish` with
-`release: true` next, which waits for the person: in `confirm` the
+`release: true` next, which waits for the person (a release needs no
+preview before it since [[059-publishing-to-a-chosen-app]]; the
+preview's text still names the release as the next step): in `confirm` the
 release is an ask, and a person's message in its place denies it with
 the message as the note ([[012-permissions-and-approvals]]), so asking
 for a change is the other answer.
@@ -185,7 +196,12 @@ and `error` for the others and for every failure before a deploy
 exists: a path that is no folder, a release with no preview, an
 app host or git host that refused or could not be reached, and an
 installation that mints no token for the app host. Those carry no
-`meta.publish`, or one with the app alone once it exists.
+`meta.publish`, or one with the app alone once it exists. Since
+[[059-publishing-to-a-chosen-app]], a release with no preview publishes
+first, so only a release of an own app whose results record no folder
+answers that there is no preview; an installation that mints no token
+is answered before the call is decided, with no approval asked; and a
+`meta.publish` names the `folder` published.
 
 ### The route a session runs by
 
