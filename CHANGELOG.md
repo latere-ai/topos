@@ -52,7 +52,10 @@ committed: the commit log already holds that.
   into no prompt, so a log that holds one runs, and it is redactable.
   Redacting an `agent.message` redacts the `files.kept` that names it in
   the same append, one `event.redacted` each, and deletes an image no
-  other event names. No runner of this release appends it.
+  other event names; a redaction sent again for a redacted answer takes
+  a `files.kept` that landed since. A redacted `files.kept` keeps the id
+  of the answer it named, and no image. No runner of this release
+  appends it.
 
 ### Changed
 
