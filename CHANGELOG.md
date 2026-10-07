@@ -29,6 +29,23 @@ committed: the commit log already holds that.
   and `current_metadata`, the values the named keys hold now.
 - Postgres keeps each entry in `session_metadata`; migration 0009 adds
   the table and fills it from the sessions already stored.
+- The authorizer's allow of `session.create` attaches what a session
+  starts with beyond its request. `repositories`, each `{url, ref, app}`,
+  follow the request's resources marked `attached`, at most 8 together;
+  one with `app {slug, name, url}` is the source of that app at the
+  installation's app host, checked out into `<workdir>/<slug>` on the
+  session's branch at the commit the app serves
+  (`current_deploy.commit_sha`, else `latest_preview.commit_sha`, else
+  the default branch), fetched with its tags. `session.machine` records
+  each app's `app`, `base` and, when the host could not be used,
+  `base_error`. `context`, titled text of at most 32768 bytes together
+  (`session.MaxContext`), is read by the model after the initiator's
+  instructions for the session's life, and an attachments block names
+  each app's checkout, name, address and slug. A fork carries what its
+  parent's request named and what its own allow attaches. A request that
+  names a repository's `app` or `attached` is `invalid_request`. An
+  allow that breaks a member's rule is `authorizer_unavailable`, and the
+  refusal's detail now names the member that did not decode.
 
 ### Upgrading
 
@@ -42,6 +59,12 @@ committed: the commit log already holds that.
   release: a session a replica of an earlier release creates writes no
   `session_metadata` rows, and a filtered list on Postgres misses it
   until its metadata changes.
+- Have the authorizer send `repositories` and `context` only once every
+  replica and runner runs this release; an earlier one ignores them and
+  the session starts without them. This release does not read `files`.
+  An app's checkout starts at the commit the app host serves once the
+  host answers `commit_sha` on `current_deploy` and `latest_preview`,
+  and at the default branch until then.
 
 ## v0.24.0 - 2026-10-07
 
