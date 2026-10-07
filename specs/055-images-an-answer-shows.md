@@ -1,12 +1,12 @@
 ---
 title: "Images an answer shows: each local image an agent message names is kept from the machine as a blob of the session, recorded beside the message, and served by the blob route as an image"
-status: drafted
+status: testing
 track: core
 depends_on: [016-runners.md, 044-reading-a-sessions-files.md]
-affects: [session/, harness/, runner/, internal/server/, internal/hosted/, api/openapi.yaml, prompts/]
+affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -237,21 +237,74 @@ answer names, a PDF or a spreadsheet: a later spec. The files route, which stays
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A step whose `agent.message` names a local PNG, by Markdown and by an `img` element, appends `files.kept` with the blob, the sniffed type and the header's size, after the step's tool results and before the turn's status | `harness.TestAnAnswersImageIsKept`, `runner.TestFilesKeptBeforeTheTurnCloses` | not built |
-| An image the same step's command draws is kept, since the keep runs after the step's calls | `harness.TestAnImageDrawnInTheSameStepIsKept` | not built |
-| A reference in a code span or a fenced block, a link that is no image, and a URL of another scheme keep nothing and record nothing | `harness.TestOnlyImageReferencesAreRead` | not built |
-| A path outside the working directory, a symbolic link out of it, a missing file, an SVG, a file whose bytes are no image under a `.png` name, a file past `MaxImageBytes`, and a header past `MaxKeptImageSide` or `MaxKeptImagePixels` are each skipped with their reason | `harness.TestKeptImageRefusals` | not built |
-| A message naming more images than `MaxImages` keeps the first ones and skips the rest `limit` | `harness.TestKeptImagesAreBounded` | not built |
-| A step in a turn with no open machine keeps nothing, skips `no_machine`, and opens no machine | `runner.TestKeepingOpensNoMachine` | not built |
-| A Cella machine's image is read through the sandbox's file routes, inside the workspace only | `machine/cella.TestKeepReadsTheWorkspace` (stub Cella) | not built |
-| A fork copies the blobs its copied `files.kept` events name | `session.TestAForkCopiesKeptImages` | not built |
-| Redacting `files.kept` removes its blobs; redacting the `agent.message` redacts its `files.kept` in the same append | `internal/server.TestRedactingAnAnswerTakesItsImages` | not built |
-| The blob route answers an image blob with its type, `inline`, `nosniff`, the sandbox policy, the immutable private cache and the digest as `ETag`, and any other blob as an `attachment` of `application/octet-stream` | `internal/server.TestABlobAnswersByItsBytes` | not built |
-| A build that knows `files.kept` folds a log holding it without `schema_too_new`, and the type is redactable | `session.TestFilesKeptIsKnownAndRedactable`, `session.TestAwaitingAndRedactable` | not built |
-| The OpenAPI document carries `files.kept` and the blob route's headers | `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestOpenAPIIsGenerated` | not built |
+| A step whose `agent.message` names a local PNG, by Markdown and by an `img` element, appends `files.kept` with the blob, the sniffed type and the header's size, after the step's tool results and before the turn's status | `harness.TestAnAnswersImageIsKept`, `runner.TestFilesKeptBeforeTheTurnCloses` | built |
+| An image the same step's command draws is kept, since the keep runs after the step's calls | `harness.TestAnImageDrawnInTheSameStepIsKept` | built |
+| A reference in a code span or a fenced block, a link that is no image, and a URL of another scheme keep nothing and record nothing | `harness.TestOnlyImageReferencesAreRead` | built |
+| A path outside the working directory, a symbolic link out of it, a missing file, an SVG, a file whose bytes are no image under a `.png` name, a file past `MaxImageBytes`, and a header past `MaxKeptImageSide` or `MaxKeptImagePixels` are each skipped with their reason | `harness.TestKeptImageRefusals` | built |
+| A message naming more images than `MaxImages` keeps the first ones and skips the rest `limit` | `harness.TestKeptImagesAreBounded` | built |
+| A step in a turn with no open machine keeps nothing, skips `no_machine`, and opens no machine | `runner.TestKeepingOpensNoMachine` | built |
+| A Cella machine's image is read through the sandbox's file routes, inside the workspace only | `machine/cella.TestKeepReadsTheWorkspace` (stub Cella) | built |
+| A fork copies the blobs its copied `files.kept` events name | `session.TestAForkCopiesKeptImages` | built |
+| Redacting `files.kept` removes its blobs; redacting the `agent.message` redacts its `files.kept` in the same append | `internal/server.TestRedactingAnAnswerTakesItsImages`, `session/storetest`'s `RedactAnAnswerWithItsImages` for each store | built |
+| A step that waits on a person keeps nothing while it waits and keeps its images once, in the claim that answers its calls | `harness.TestAWaitingStepKeepsOnceItsCallsAreAnswered` | built |
+| The width and height of each format are read from its header, and a header that holds none is no image | `harness.TestImageSizesFromHeaders` | built |
+| The blob route answers an image blob with its type, `inline`, `nosniff`, the sandbox policy, the immutable private cache and the digest as `ETag`, and any other blob as an `attachment` of `application/octet-stream` | `internal/server.TestABlobAnswersByItsBytes` | built |
+| A build that knows `files.kept` folds a log holding it without `schema_too_new`, and the type is redactable | `session.TestFilesKeptIsKnownAndRedactable`, `session.TestAwaitingAndRedactable` | built |
+| The OpenAPI document carries `files.kept` and the blob route's headers | `internal/server.TestTheDocumentStatesKeptImages`, `internal/server.TestOpenAPIMatchesHandlers`, `internal/server.TestOpenAPIIsGenerated` | built |
 
 ## Open questions
 
 None. The draft's three questions, SVG, opening a machine to keep an
 image, and files of other kinds, are decided above (2026-10-06,
 reversible).
+
+## Outcome
+
+Built on 2026-10-07, in no release yet, and not yet run against a
+model gateway or a Cella installation; the Cella machine is proven
+against the stub. Every criterion has its test. The two releases of the
+roll order are two runs of commits on the branch: the first ends with
+the changelog entry that says `files.kept` is read and the blob route
+answers by a blob's bytes, and the second starts with the move of
+`MaxImages`. What shipped differs from the draft in these points:
+
+- **The redaction of an answer's images is the store's.** Each store's
+  `Redact` plans its writes with `session.Redact`: the event, its
+  companions (`session.Companions`, the `files.kept` of an
+  `agent.message`), a tombstone and an `event.redacted` for each, all in
+  one append, and the blobs none of the rest of the log names. Any
+  caller of a store redacts an answer with its images, and a redaction
+  sent again plans nothing.
+- **The bound counts references.** The first `MaxImages` local
+  references of a message are read, whatever becomes of them, and every
+  later one is skipped `limit`, so one message never costs more than
+  `MaxImages` reads of the machine. A reference refused for its path
+  counts too.
+- **A step that waits keeps later.** A step whose call waits on a person,
+  a confirmation, a client's result, a question or a thread's pause, is
+  committed when its calls are answered, so it keeps nothing when it goes
+  idle and keeps its images in the claim that answers them, unless a
+  `files.kept` already names its answer. A step stopped by a refusal for
+  spend keeps before its closing status; a step that fails with an
+  error of the harness keeps nothing.
+- **What else skips.** A directory is `not_an_image`, a path the
+  credential deny-list names is `unavailable`, and a symbolic link a
+  host machine's root refuses is `outside_workdir`. A destination that
+  starts with `//`, a `file:` URL of a host other than `localhost`, and
+  one that is empty once its query and fragment are dropped name no file
+  of the machine and are not recorded.
+- **`path` is the parser's destination**: backslash escapes and
+  character references resolved and percent-encoding kept, as a
+  CommonMark renderer reads it. The parser is goldmark, an HTML
+  fragment's `img` is read with `golang.org/x/net/html`, and a
+  reference-style image's definition may sit in any text block of the
+  message.
+- **Sizes.** PNG, JPEG and GIF are sized by the standard library's
+  header read, which must agree with the sniffed type; WebP by its first
+  chunk, `VP8X`, `VP8L` or `VP8 `.
+- **The keep runs past a canceled step** under a bound of its own of 30
+  seconds, as the step's other records are kept after an interrupt.
+- **One constant.** `MaxImages` moved to `harness/tools`, beside
+  `ReadMaxImage`, and the server's `MaxImages` names it.
+- **`files.kept` carries its answer's turn and step**, so a client
+  places it with the step that drew the picture.

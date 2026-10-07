@@ -110,7 +110,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [052](052-a-sessions-network.md) | A session's network: an egress mode beside the machine's hosts, the authorizer's network at create and at send, a first contact that asks the person, and the machine widened by their allow | large | testing | 003, 004, 006, 008, 009, 012, 015, 016, 018, 038, 039 |
 | [053](053-the-initiators-instructions.md) | The initiator's instructions: an allow of session.create may carry standing instructions from the person who starts the session, read after the agent's own | small | testing | 004, 006, 010, 011, 015, 038 |
 | [054](054-a-sessions-title-and-filing.md) | A session's title and its filing: the title member of PATCH, session.title_changed, and an archive of an idle session | small | testing | 004, 006, 015, 017, 041 |
-| [055](055-images-an-answer-shows.md) | Images an answer shows: each local image an agent message names is kept from the machine as a blob, recorded by `files.kept`, and served by the blob route as an image | medium | drafted | 016, 044 |
+| [055](055-images-an-answer-shows.md) | Images an answer shows: each local image an agent message names is kept from the machine as a blob, recorded by `files.kept`, and served by the blob route as an image | medium | testing | 016, 044 |
 | [056](056-editing-a-message-and-the-branches-of-a-session.md) | A fork before a person's message, the replacement message in the same call, and the tree of a session's forks read in one list: `before_seq`, `message`, `title` and `tree` on the fork, the Session's `root`, the list's `root`, `parent` and `group=tree`, a fork's own spend, the tree's cache key | medium | testing | 017, 038 |
 
 ## Dependency graph
