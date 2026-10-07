@@ -1,6 +1,6 @@
 ---
 title: "What a create's allow attaches: repositories with the app each one publishes, read-only files fetched by the runner, and context text, each fixed for the session's life"
-status: drafted
+status: in-progress
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 010-context.md, 011-instructions-and-skills.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 019-git.md, 043-publishing-a-folder.md, 053-the-initiators-instructions.md, 057-a-sessions-metadata-in-its-questions-and-lists.md]
 affects: [authorizer/, internal/server/, session/, runner/, harness/, prompts/, internal/hosted/, internal/config/, api/, docs/]
@@ -322,12 +322,12 @@ attachments after create.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| An allow's `repositories`, `files` and `context` are decoded with their rules and bounds, appended after the request's resources with a repeated URL dropped, and stored on the session; an allow past a bound or breaking a rule, and files with no `TOPOS_FILES_AUDIENCE`, refuse the create `authorizer_unavailable` naming the member | `authorizer.TestTheAttachMembers`, `internal/server.TestACreateTakesTheAllowsAttachments` | not built |
-| A request naming a `file` resource or a repository's `app` is `invalid_request` | `internal/server.TestARequestCannotAttach` | not built |
-| A fork's attachments are its own allow's, not its parent's | `internal/server.TestAForkIsAttachedByItsOwnAllow` | not built |
-| A repository with `app` is delivered into `<workdir>/<slug>`, never the working directory, on the session's branch at the host's `current_deploy.commit_sha`, else `latest_preview.commit_sha`, else the default branch, and `DeliveredRepository` records `app`, `base` and the commit | `runner.TestAnAppsCheckoutStartsAtItsLiveCommit` over a stub app host and git's http backend | not built |
-| Each file is fetched with the session's token for `TOPOS_FILES_AUDIENCE`, written at `$HOME/files/<path>` mode `0444`, a redirect followed without the header, a size mismatch refused, and `files.delivered` with one `file_unavailable` error names what is missing; no token reaches the machine | `runner.TestFilesAreFetchedIntoEachMachine` over the stub Cella | not built |
-| The context parts follow the initiator's instructions in every request, unchanged across turns; the attachments block names each app's directory, name, address and slug and each file, and the repositories block names no repository with `app` | `harness.TestTheAllowsContextAndTheAttachmentsBlock` | not built |
+| An allow's `repositories`, `files` and `context` are decoded with their rules and bounds, appended after the request's resources with a repeated URL dropped, and stored on the session; an allow past a bound or breaking a rule, and files with no `TOPOS_FILES_AUDIENCE`, refuse the create `authorizer_unavailable` naming the member | `authorizer.TestTheAttachMembers`, `internal/server.TestACreateTakesTheAllowsAttachments`, `session.TestAttach`, `session.TestCheckApp`, `session.TestCheckContext` | built for `repositories` and `context`; `files` not built |
+| A request naming a `file` resource or a repository's `app` is `invalid_request` | `internal/server.TestARequestCannotAttach` | built |
+| A fork's attachments are its own allow's, not its parent's | `internal/server.TestAForkIsAttachedByItsOwnAllow` | built |
+| A repository with `app` is delivered into `<workdir>/<slug>`, never the working directory, on the session's branch at the host's `current_deploy.commit_sha`, else `latest_preview.commit_sha`, else the default branch, and `DeliveredRepository` records `app`, `base` and the commit | `runner.TestAnAppsCheckoutStartsAtItsLiveCommit` over local repositories and a stub reader, `internal/publish.TestServedReadsTheCommitsAnAppServes` over a stub app host, `session.TestAnAppsCheckoutIsItsSlug` | built |
+| Each file is fetched with the session's token for `TOPOS_FILES_AUDIENCE`, written at `$HOME/files/<path>` mode `0444`, a redirect followed without the header, a size mismatch refused, and `files.delivered` with one `file_unavailable` error names what is missing; no token reaches the machine | `runner.TestFilesAreFetchedIntoEachMachine` over the stub Cella | not built: `files` is a later release |
+| The context parts follow the initiator's instructions in every request, unchanged across turns; the attachments block names each app's directory, name, address and slug and each file, and the repositories block names no repository with `app` | `harness.TestTheAllowsContextAndTheAttachmentsBlock`, `harness.TestHeaderBlocksOfASubagent` | built, with no files in the block |
 | A model given an attached app and asked to change it edits its checkout and not the working directory | a task of the suite ([[025-task-suite]]) | not built |
 
 ## Open questions
@@ -335,3 +335,54 @@ attachments after create.
 None. What a session is given, and from where, is the installation's
 decision; the core fixes only how each member is applied, bounded and
 shown.
+
+## Outcome
+
+`repositories` and `context` built on 2026-10-07, in no release yet, and
+not yet run against a live authorizer. **`files` and
+`TOPOS_FILES_AUDIENCE` are not built and are left for a later release**:
+this release reads no `files` member, so an allow that names one is read
+as an older core reads any unknown member and the session starts without
+them, and an authorizer sends `files` only to a core whose release notes
+say it reads them. The attachments block has no files section until
+then, so `context/attachments-v1` names apps alone and the files will
+come with a new version of the text. The task of the suite is not
+built, as for [[043-publishing-a-folder]].
+
+What shipped differs from the draft in these points:
+
+- **An attached resource is marked.** `session.Resource` gains
+  `attached`, set on each resource the allow attached, so a fork drops
+  what its parent's allow attached before its own question
+  (`session.Requested`) and holds only what its own allow attaches. A
+  request that names `attached` or a repository's `app` is
+  `invalid_request`, and a `file` resource stays refused as any type but
+  `repository` is.
+- **The allow's own rules.** Beside the draft's bounds, an allow that
+  names one URL or one app's slug twice does not decode, since two
+  checkouts of one app would make `publish`'s `app` ambiguous. The
+  combined bound, the request's repositories and the allow's together at
+  most `session.MaxRepositories`, is held at the create after a repeated
+  URL is dropped, and refused `authorizer_unavailable` like any member
+  that does not decode.
+- **The refusal names the member.** `auth.Guard.Limits` now carries the
+  decode error in the refusal's detail, for every member, so the
+  operator reads which member did not decode.
+- **Bounds.** `session.MaxContext` (32768 bytes), `session.MaxContextTitle`
+  (100 characters) and `session.MaxAppName` (200 characters), one
+  constant each.
+- **Where the app host is read.** `runner.Options.Apps`, which toposd
+  sets to `publish.Served` when `TOPOS_APPS_URL` is set, reads
+  `GET {TOPOS_APPS_URL}/apps/{slug}` with the drive's token for
+  `TOPOS_APPS_AUDIENCE`. A commit the host names that is not a commit's
+  id, or one the repository does not hold after a fetch with its tags
+  and a fetch of the commit itself, starts the checkout at the default
+  branch. `DeliveredRepository` gains `base_error` beside `app` and
+  `base`, saying why a checkout that had an app host started at the
+  default branch, so the reason is in the log rather than dropped.
+- **The context on a subagent's thread.** The context parts are rendered
+  on the session's own thread only, as the initiator's instructions are,
+  since they speak to the session's agent; the attachments block is on
+  every thread, since every thread works in the same machine. Each part
+  is its own system block, and the first opens with what the parts are.
+
