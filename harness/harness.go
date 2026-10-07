@@ -1495,6 +1495,11 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 	// asked reports that the step already holds a question call that is
 	// asked; each later one is refused.
 	asked := false
+	// passed are the tools a call of the step went to past its check, and
+	// state the thread's tool state before the step, read once a tool
+	// checks a call.
+	passed := map[string]bool{}
+	var state *tools.State
 	for _, b := range res.Message.Blocks {
 		if b.Type != ir.BlockToolUse || b.ToolUse == nil {
 			continue
@@ -1512,6 +1517,21 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			answered = append(answered, answeredCall{id, *bad})
 			continue
 		}
+		// A call bound to fail on its input is answered before it is
+		// decided, so no person approves it. A call after another of the
+		// same tool in the step is left to run: the earlier one's result
+		// may change what the later one would be refused for.
+		if c, ok := tool.(tools.Checker); ok && !passed[name] {
+			if state == nil {
+				st := t.toolState()
+				state = &st
+			}
+			if refused := c.Check(tools.Call{ID: id, Input: input, Machine: t.h.c.Machine, State: *state}); refused != nil {
+				answered = append(answered, answeredCall{id, *refused})
+				continue
+			}
+		}
+		passed[name] = true
 		props := tool.Properties()
 		policy := t.h.c.Policy
 		policy.Mode = mode

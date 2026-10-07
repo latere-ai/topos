@@ -65,6 +65,23 @@ type Tool interface {
 	Run(ctx context.Context, c Call) (Result, error)
 }
 
+// Checker is the optional interface of a tool that can tell from a
+// call's input alone that the call would be refused when it ran: an app
+// the session may not publish to, say (spec 012). The harness checks a
+// call after its schema and before the call is decided, and a call Check
+// answers is answered with that result at once: it gets no
+// agent.tool_use, so no person is asked to approve a call bound to fail,
+// and it never runs. Check reaches no machine and no service; it reads
+// the call's input, its State, and the machine's Info, which a machine
+// not yet opened answers without opening. It refuses only what Run would
+// refuse with the same State, and answers nil for every other call. The
+// State is the thread's before the step, so the harness checks a call
+// only when no earlier call of its step went to the same tool, whose
+// result could change it.
+type Checker interface {
+	Check(c Call) *Result
+}
+
 // Call is one call of a tool.
 type Call struct {
 	ID      string
