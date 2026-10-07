@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.24.0 - 2026-10-07
+
 ### Added
 
 - An answer's images are kept. Once a step of the session's own thread
