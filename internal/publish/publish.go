@@ -173,8 +173,11 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 			return tools.Result{}, fmt.Errorf("publish: read the input: %w", err)
 		}
 	}
-	g, refused := t.which(c, in)
-	if refused != nil {
+	g, refused, err := t.which(ctx, c, in)
+	switch {
+	case err != nil:
+		return failure(cmp.Or(in.App, in.Path, "."), err, nil)
+	case refused != nil:
 		return *refused, nil
 	}
 	if t.tokens == nil {
@@ -203,40 +206,72 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 // folder outside the named attached app's checkout, and a release that
 // names no app while previews of several stand are refused, each with a
 // result whose meta names no app, so the thread's state folds none.
-func (t *Tool) which(c tools.Call, in input) (target, *tools.Result) {
-	workdir := c.Machine.Info().Workdir
+//
+// The machine's working directory is read only where a checkout's path
+// is, opening a machine that has not opened, so a call refused for its
+// app opens none.
+func (t *Tool) which(ctx context.Context, c tools.Call, in input) (target, *tools.Result, error) {
+	workdir := func() (string, error) {
+		if w := c.Machine.Info().Workdir; w != "" {
+			return w, nil
+		}
+		if err := machine.Open(ctx, c.Machine); err != nil {
+			return "", err
+		}
+		return c.Machine.Info().Workdir, nil
+	}
 	if in.App != "" {
-		if g, ok := t.attachedApp(workdir, in.App); ok {
-			if p := in.Path; !in.Release && p != "" && !inside(abs(workdir, p), g.dir) {
-				return g, refusal(session.PublishNotInCheckout, prompts.Render(prompts.PublishNotInCheckout, prompts.Data{"Path": p, "Dir": g.rel, "App": g.slug}))
+		if _, _, ok := session.App(t.s, in.App); ok {
+			w, err := workdir()
+			if err != nil {
+				return target{}, nil, err
 			}
-			return g, nil
+			g, _ := t.attachedApp(w, in.App)
+			if p := in.Path; !in.Release && p != "" && !inside(abs(w, p), g.dir) {
+				return g, refusal(session.PublishNotInCheckout, prompts.Render(prompts.PublishNotInCheckout, prompts.Data{"Path": p, "Dir": g.rel, "App": g.slug})), nil
+			}
+			return g, nil, nil
 		}
 		if m := c.State.Apps[in.App]; m != nil && !m.Attached {
-			return target{slug: in.App, last: m}, nil
+			return target{slug: in.App, last: m}, nil, nil
 		}
-		return target{}, refusal(session.PublishAppNotAttached, prompts.Render(prompts.PublishNotAttached, prompts.Data{"App": in.App, "Apps": strings.Join(t.publishable(c.State), ", ")}))
+		return target{}, refusal(session.PublishAppNotAttached, prompts.Render(prompts.PublishNotAttached, prompts.Data{"App": in.App, "Apps": strings.Join(t.publishable(c.State), ", ")})), nil
 	}
 	if in.Release {
 		slugs := slices.Sorted(maps.Keys(c.State.Standing))
 		switch len(slugs) {
 		case 0:
-			return target{}, nil
+			return target{}, nil, nil
 		case 1:
-			return t.targetOf(workdir, c.State, slugs[0]), nil
+			if _, _, ok := session.App(t.s, slugs[0]); !ok {
+				return target{slug: slugs[0], last: c.State.Apps[slugs[0]]}, nil, nil
+			}
+			w, err := workdir()
+			if err != nil {
+				return target{}, nil, err
+			}
+			g, _ := t.attachedApp(w, slugs[0])
+			return g, nil, nil
 		}
-		return target{}, refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAppRequired, prompts.Data{"Apps": strings.Join(slugs, ", ")}))
+		return target{}, refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAppRequired, prompts.Data{"Apps": strings.Join(slugs, ", ")})), nil
 	}
-	folder := abs(workdir, cmp.Or(in.Path, "."))
+	if !slices.ContainsFunc(session.Repositories(t.s), func(r session.Resource) bool { return r.App != nil }) {
+		return target{last: c.State.App}, nil, nil
+	}
+	w, err := workdir()
+	if err != nil {
+		return target{}, nil, err
+	}
+	folder := abs(w, cmp.Or(in.Path, "."))
 	for _, r := range session.Repositories(t.s) {
 		if r.App == nil {
 			continue
 		}
-		if g, ok := t.attachedApp(workdir, r.App.Slug); ok && inside(folder, g.dir) {
-			return g, nil
+		if g, ok := t.attachedApp(w, r.App.Slug); ok && inside(folder, g.dir) {
+			return g, nil, nil
 		}
 	}
-	return target{last: c.State.App}, nil
+	return target{last: c.State.App}, nil, nil
 }
 
 // attachedApp is the attached app of slug, with its checkout under
@@ -247,15 +282,6 @@ func (t *Tool) attachedApp(workdir, slug string) (target, bool) {
 		return target{}, false
 	}
 	return target{slug: slug, repo: &r, dir: path.Join(workdir, dir), rel: dir}, true
-}
-
-// targetOf is the app of slug, attached when the session was attached
-// one, the thread's own otherwise.
-func (t *Tool) targetOf(workdir string, st tools.State, slug string) target {
-	if g, ok := t.attachedApp(workdir, slug); ok {
-		return g
-	}
-	return target{slug: slug, last: st.Apps[slug]}
 }
 
 // publishable are the slugs of the apps the session may publish to: the

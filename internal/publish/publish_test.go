@@ -747,3 +747,29 @@ func TestAReleaseIsCheckedAgainstTheLiveVersion(t *testing.T) {
 		t.Fatalf("an own app's refusal reads %q", text)
 	}
 }
+
+// TestARefusalOpensNoMachine: a call refused for the app it names opens
+// no machine that has not opened, and a call that publishes an attached
+// app opens it to find the checkout.
+func TestARefusalOpensNoMachine(t *testing.T) {
+	ctx := t.Context()
+	var opens int
+	deferred := func(m *fakeMachine) machine.Machine {
+		return machine.Defer(ctx, machine.KindCella, func(context.Context) (machine.Machine, error) {
+			opens++
+			return m, nil
+		})
+	}
+	h := newHost(t, nil)
+	res, err := attachedTool(t, h).Run(ctx, call(`{"app":"other"}`, deferred(&fakeMachine{}), tools.State{}))
+	if err != nil || metaOf(res).Error == nil || metaOf(res).Error.Code != session.PublishAppNotAttached || opens != 0 {
+		t.Fatalf("a refused app: %+v %v, %d opens", res, err, opens)
+	}
+	ready := map[string]any{"id": "d2", "status": "ready", "preview": true, "commit_sha": sha2, "preview_url": "https://d2--tide.apps.example"}
+	h = newHost(t, map[string]func(int) (int, any){"GET /apps/tide": app("tide"), "GET /apps/tide/deploys": deploys(ready)})
+	m := &fakeMachine{dirs: map[string]bool{"/work/tide": true}, outputs: []string{"1 " + sha2 + "\n"}}
+	res, err = attachedTool(t, h).Run(ctx, call(`{"app":"tide"}`, deferred(m), tools.State{}))
+	if err != nil || res.IsError() || opens != 1 || !strings.Contains(m.scripts[0], "cd '/work/tide'") {
+		t.Fatalf("an attached app on a machine not yet open: %+v %v, %d opens, %q", res, err, opens, m.scripts)
+	}
+}
