@@ -10,6 +10,39 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A session's `metadata` is a label a client files sessions under.
+  `GET /v1/sessions` and `GET /v1/sessions/summary` take one
+  `metadata.<key>=<value>` filter, which keeps the sessions holding
+  that entry exactly, beside every other filter and under `group=tree`.
+  `PATCH /v1/sessions/{id}` takes `metadata`, a merge in which a string
+  sets a key and `null` deletes it; a body that names `metadata` alone
+  is taken on an idle, a running and an ended session, and appends no
+  event. A key is a letter or digit then at most 62 letters, digits,
+  dots, underscores or hyphens, and a value at most 512 bytes
+  (`session.MaxMetadataValue`) without a control character, at a create
+  and at a change; a change is checked on the merged result.
+- The authorizer reads a session's metadata: `session.create` and
+  `session.fork` carry `metadata`, absent when the session has none, and
+  a change asks `session.update` with `metadata`, the change as sent,
+  and `current_metadata`, the values the named keys hold now.
+- Postgres keeps each entry in `session_metadata`; migration 0009 adds
+  the table and fills it from the sessions already stored.
+
+### Upgrading
+
+- Roll the authorizer first when clients will change a session's
+  metadata: an authorizer that decides `session.update` by the fields it
+  knows answers a change that names `metadata` alone with a deny, so the
+  change is `forbidden` until it accepts `metadata` and
+  `current_metadata`. An authorizer that ignores unknown fields reads the
+  create and fork questions as before.
+- Start filing and listing by a key once every replica runs this
+  release: a session a replica of an earlier release creates writes no
+  `session_metadata` rows, and a filtered list on Postgres misses it
+  until its metadata changes.
+
 ## v0.24.0 - 2026-10-07
 
 ### Added
