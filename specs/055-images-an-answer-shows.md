@@ -298,7 +298,9 @@ answers by a blob's bytes, and the second starts with the move of
   CommonMark renderer reads it. The parser is goldmark, an HTML
   fragment's `img` is read with `golang.org/x/net/html`, and a
   reference-style image's definition may sit in any text block of the
-  message.
+  message. goldmark is a new row of both binaries' `depcheck` lists and
+  of [[001-architecture]]'s Dependencies; `golang.org/x/net` was
+  admitted already.
 - **Sizes.** PNG, JPEG and GIF are sized by the standard library's
   header read, which must agree with the sniffed type; WebP by its first
   chunk, `VP8X`, `VP8L` or `VP8 `.

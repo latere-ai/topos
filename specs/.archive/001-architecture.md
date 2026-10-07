@@ -233,8 +233,10 @@ The build list of `./cmd/toposd` reaches the standard library,
 `llmdialect`, `retry`, `otel`, `health`), `latere.ai/x/cella/client`
 and `latere.ai/x/cella/egress`, the Arca client once it is exported,
 the YAML decoder `manifest` uses, the Postgres driver and migration
-library of [[014-store]], and the OpenTelemetry SDK. No cloud SDK, no
-web framework, no ORM.
+library of [[014-store]], the OpenTelemetry SDK, and the CommonMark
+parser and HTML tokenizer the harness finds the images an answer names
+with ([[055-images-an-answer-shows]]). No cloud SDK, no web framework,
+no ORM.
 
 `./cmd/topos` runs sessions in process, so it reaches what the harness
 reaches: `latere.ai/x/pkg` for the llmdialect codecs, retry and the
@@ -242,7 +244,7 @@ instrumented HTTP client of `pkg/otel` that the family's otel-client
 gate requires for every outbound call, and behind that client the
 OpenTelemetry SDK, its OTLP exporters, grpc and protobuf and their
 dependencies, plus the YAML decoder of scripted-model scripts and
-manifests. A transport-only subpackage of `pkg/otel` would cut that
+manifests and the harness's CommonMark parser. A transport-only subpackage of `pkg/otel` would cut that
 set to the OpenTelemetry API and its HTTP instrumentation.
 
 The `depcheck` gate holds each list in `.lateregate.yaml`, one row per
