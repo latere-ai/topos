@@ -47,6 +47,7 @@ func Run(t *testing.T, open Open) {
 		{"Deltas", testDeltas},
 		{"Blobs", testBlobs},
 		{"Redact", testRedact},
+		{"RedactAnAnswerWithItsImages", testRedactAnAnswerWithItsImages},
 		{"Lease", testLease},
 		{"Delete", testDelete},
 		{"List", testList},
@@ -559,6 +560,94 @@ func testRedact(t *testing.T, st session.Store) {
 	}
 	if err := st.Redact(ctx, s.ID, session.NewID(session.PrefixEvent), by, ""); !errors.Is(err, session.ErrNotFound) {
 		t.Fatalf("redacting a missing event: %v", err)
+	}
+}
+
+// testRedactAnAnswerWithItsImages: redacting an agent.message redacts
+// the files.kept that names it in the same append, one event.redacted
+// each, and deletes the images only it named; redacting a files.kept alone
+// leaves its message and deletes its image (spec 055).
+func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
+	s := create(t, st)
+	ctx := t.Context()
+	chart, err := st.PutBlob(ctx, s.ID, strings.NewReader("\x89PNG\r\n\x1a\nchart"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logo, err := st.PutBlob(ctx, s.ID, strings.NewReader("\x89PNG\r\n\x1a\nlogo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer := func(text string) session.Event {
+		e, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: text}}}}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Turn = 1
+		return e
+	}
+	kept := func(msg session.Event, d session.Digest, name string) session.Event {
+		e, err := session.NewEvent(session.TypeFilesKept, session.FilesKept{Message: msg.ID,
+			Files:   []session.KeptFile{{Path: name, Resolved: "/work/" + name, Blob: d, MediaType: "image/png", Size: 12, Width: 1, Height: 1}},
+			Skipped: []session.SkippedFile{}}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Turn = 1
+		return e
+	}
+	first, second := answer("![Chart](chart.png)"), answer("![Logo](logo.png)")
+	firstKept, secondKept := kept(first, chart, "chart.png"), kept(second, logo, "logo.png")
+	last := appendAll(t, st, s.ID, 0, Message(t, "draw", t0), first, firstKept, second, secondKept)
+	by := session.Sender{Subject: "usr_1", Kind: session.SenderPerson}
+	if err := st.Redact(ctx, s.ID, first.ID, by, "wrong chart"); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := st.Events(ctx, s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != int(last)+2 || !evs[1].Redacted() || !evs[2].Redacted() || evs[3].Redacted() || evs[4].Redacted() {
+		t.Fatalf("after redacting the answer: %d events, want %d, the answer and its files.kept redacted", len(evs), last+2)
+	}
+	var reds []string
+	for _, e := range evs[last:] {
+		var p session.EventRedacted
+		if e.Type != session.TypeEventRedacted || e.Decode(&p) != nil {
+			t.Fatalf("%s at %d after the redaction", e.Type, e.Seq)
+		}
+		reds = append(reds, p.EventID)
+	}
+	if !slices.Equal(reds, []string{first.ID, firstKept.ID}) {
+		t.Fatalf("event.redacted names %v", reds)
+	}
+	if len(evs[2].Blobs()) != 0 {
+		t.Fatalf("a redacted files.kept names %v", evs[2].Blobs())
+	}
+	if _, err := st.Blob(ctx, s.ID, chart); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("the redacted answer's image survives: %v", err)
+	}
+	h, err := st.Get(ctx, s.ID)
+	if err != nil || h.LastSeq != last+2 {
+		t.Fatalf("header last_seq %d, %v", h.LastSeq, err)
+	}
+	if err := st.Redact(ctx, s.ID, secondKept.ID, by, ""); err != nil {
+		t.Fatal(err)
+	}
+	if evs, err = st.Events(ctx, s.ID, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != int(last)+3 || evs[3].Redacted() || !evs[4].Redacted() {
+		t.Fatalf("after redacting a files.kept alone: %d events, its message redacted %t", len(evs), evs[3].Redacted())
+	}
+	if _, err := st.Blob(ctx, s.ID, logo); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("the redacted files.kept's image survives: %v", err)
+	}
+	if err := st.Redact(ctx, s.ID, first.ID, by, "again"); err != nil {
+		t.Fatalf("a redaction sent again: %v", err)
+	}
+	if evs, err = st.Events(ctx, s.ID, 1, 0); err != nil || len(evs) != int(last)+3 {
+		t.Fatalf("a redaction sent again appended: %d events, %v", len(evs), err)
 	}
 }
 

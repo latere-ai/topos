@@ -277,22 +277,16 @@ func (m *memoryStore) Redact(ctx context.Context, id, eventID string, by Sender,
 	if err != nil {
 		return err
 	}
-	i := slices.IndexFunc(ms.events, func(e Event) bool { return e.ID == eventID })
-	if i < 0 {
-		return fmt.Errorf("%w: event %s", ErrNotFound, eventID)
-	}
-	if ms.events[i].Redacted() {
-		return nil
-	}
-	orphans := OrphanBlobs(ms.events[i], ms.events)
-	tomb, red, err := Tombstone(ms.events[i], ms.s.LastSeq, by, reason, m.now())
-	if err != nil {
+	r, err := Redact(ms.events, eventID, ms.s.LastSeq, by, reason, m.now())
+	if err != nil || len(r.Records) == 0 {
 		return err
 	}
-	ms.events[i] = tomb
-	ms.events = append(ms.events, red)
-	ApplyBatch(&ms.s, []Event{red})
-	for _, d := range orphans {
+	for _, tomb := range r.Tombstones {
+		ms.events[slices.IndexFunc(ms.events, func(e Event) bool { return e.ID == tomb.ID })] = tomb
+	}
+	ms.events = append(ms.events, r.Records...)
+	ApplyBatch(&ms.s, r.Records)
+	for _, d := range r.Orphans {
 		delete(ms.blobs, d)
 	}
 	ms.notify()

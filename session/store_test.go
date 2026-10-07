@@ -469,7 +469,7 @@ func TestAwaitingAndRedactable(t *testing.T) {
 	if len(got) != 2 || got["ask"] != AnswerConfirmation || got["client"] != AnswerResult {
 		t.Fatalf("Awaiting = %v", got)
 	}
-	for typ, want := range map[Type]bool{TypeUserMessage: true, TypeUserAnswer: true, TypeToolResult: true, TypeAgentToolUse: true, TypeModelRequest: false, TypeSessionStatus: false, TypeUserToolConfirmation: false, TypeScopeChanged: false} {
+	for typ, want := range map[Type]bool{TypeUserMessage: true, TypeUserAnswer: true, TypeToolResult: true, TypeAgentToolUse: true, TypeModelRequest: false, TypeSessionStatus: false, TypeUserToolConfirmation: false, TypeScopeChanged: false, TypeFilesKept: true} {
 		if Redactable(typ) != want {
 			t.Errorf("Redactable(%s) = %v", typ, !want)
 		}

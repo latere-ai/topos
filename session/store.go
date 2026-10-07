@@ -632,13 +632,28 @@ func (e Event) Blobs() []Digest {
 // OrphanBlobs returns the blobs the redacted event named that no other
 // event of the log names.
 func OrphanBlobs(redacted Event, log []Event) []Digest {
-	named := redacted.Blobs()
+	return orphanBlobs([]Event{redacted}, log)
+}
+
+// orphanBlobs returns the blobs the redacted events named that no event
+// of the log outside them names, each once.
+func orphanBlobs(redacted []Event, log []Event) []Digest {
+	gone := map[string]bool{}
+	var named []Digest
+	for _, e := range redacted {
+		gone[e.ID] = true
+		for _, d := range e.Blobs() {
+			if !slices.Contains(named, d) {
+				named = append(named, d)
+			}
+		}
+	}
 	if len(named) == 0 {
 		return nil
 	}
 	others := map[Digest]bool{}
 	for _, e := range log {
-		if e.ID == redacted.ID {
+		if gone[e.ID] {
 			continue
 		}
 		for _, d := range e.Blobs() {
@@ -652,4 +667,39 @@ func OrphanBlobs(redacted Event, log []Event) []Digest {
 		}
 	}
 	return out
+}
+
+// Redaction is what one redaction writes in one append: the tombstones
+// that replace the event and its Companions, an event.redacted for each,
+// sequenced after the log's last, and the blobs only they named, which
+// the store deletes.
+type Redaction struct {
+	Tombstones []Event
+	Records    []Event
+	Orphans    []Digest
+}
+
+// Redact plans the redaction of the event eventID of log, whose last
+// sequence is last. A log that holds no such event is ErrNotFound, and an
+// event already redacted plans nothing: a redaction sent again is safe.
+func Redact(log []Event, eventID string, last uint64, by Sender, reason string, now time.Time) (Redaction, error) {
+	i := slices.IndexFunc(log, func(e Event) bool { return e.ID == eventID })
+	if i < 0 {
+		return Redaction{}, fmt.Errorf("%w: event %s", ErrNotFound, eventID)
+	}
+	if log[i].Redacted() {
+		return Redaction{}, nil
+	}
+	targets := append([]Event{log[i]}, Companions(log[i], log)...)
+	r := Redaction{Orphans: orphanBlobs(targets, log)}
+	for _, e := range targets {
+		tomb, red, err := Tombstone(e, last, by, reason, now)
+		if err != nil {
+			return Redaction{}, err
+		}
+		last = red.Seq
+		r.Tombstones = append(r.Tombstones, tomb)
+		r.Records = append(r.Records, red)
+	}
+	return r, nil
 }

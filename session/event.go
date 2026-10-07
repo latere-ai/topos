@@ -46,6 +46,7 @@ const (
 	TypeNetworkChanged       Type = "session.network_changed"
 	TypeApprovalRequested    Type = "approval.requested"
 	TypeApprovalDecided      Type = "approval.decided"
+	TypeFilesKept            Type = "files.kept"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -59,6 +60,7 @@ var Known = map[Type]bool{
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
+	TypeFilesKept: true,
 }
 
 // Event is one entry of a session's log.

@@ -531,8 +531,9 @@ func (s *Store) Blob(ctx context.Context, id string, d session.Digest) (io.ReadC
 	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
-// Redact tombstones one event, appends event.redacted, rewrites the log
-// atomically and deletes the blobs only that event named.
+// Redact tombstones one event and its companions (session.Companions),
+// appends an event.redacted for each in one batch, rewrites the log
+// atomically and deletes the blobs only they named.
 func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sender, reason string) error {
 	if err := s.exists(id); err != nil {
 		return err
@@ -543,25 +544,26 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 		if err != nil {
 			return err
 		}
-		i := slices.IndexFunc(log.lines, func(l line) bool { return l.ID == eventID })
-		if i < 0 {
-			return fmt.Errorf("%w: event %s", session.ErrNotFound, eventID)
-		}
-		if log.lines[i].Redacted() {
-			return nil
-		}
-		orphans := session.OrphanBlobs(log.lines[i].Event, log.events())
-		tomb, red, err := session.Tombstone(log.lines[i].Event, hdr.LastSeq, by, reason, s.now())
-		if err != nil {
+		r, err := session.Redact(log.events(), eventID, hdr.LastSeq, by, reason, s.now())
+		if err != nil || len(r.Records) == 0 {
 			return err
 		}
 		lines := slices.Clone(log.lines)
-		lines[i].Event = tomb
-		lines = append(lines, line{Event: red, Batch: 1})
+		for _, tomb := range r.Tombstones {
+			lines[slices.IndexFunc(lines, func(l line) bool { return l.ID == tomb.ID })].Event = tomb
+		}
+		for i, red := range r.Records {
+			l := line{Event: red}
+			if i == len(r.Records)-1 {
+				l.Batch = len(r.Records)
+			}
+			lines = append(lines, l)
+		}
 		if err := rewriteLog(s.eventsPath(id), lines); err != nil {
 			return err
 		}
-		session.ApplyBatch(hdr, []session.Event{red})
+		session.ApplyBatch(hdr, r.Records)
+		orphans := r.Orphans
 		for _, d := range orphans {
 			if s.blobs != nil {
 				if err := s.blobs.DeleteBlob(ctx, id, d); err != nil {
