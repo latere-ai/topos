@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -246,7 +247,10 @@ func TestOutcomes(t *testing.T) {
 		}
 	}
 
-	readyState := tools.State{App: &session.PublishMeta{App: "a-poem"}, Standing: map[string]*session.PublishMeta{"a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady, Preview: "https://d1--a-poem.apps.example"}}}
+	// A thread whose results record no folder, as before results did,
+	// releases its standing preview as it is (spec 043).
+	standing := &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady, Preview: "https://d1--a-poem.apps.example"}
+	readyState := tools.State{App: standing, Apps: map[string]*session.PublishMeta{"a-poem": standing}, Standing: map[string]*session.PublishMeta{"a-poem": standing}}
 	reason := "agents_may_not_release"
 	for name, c := range map[string]struct {
 		release func(int) (int, any)
@@ -287,7 +291,8 @@ func TestOutcomes(t *testing.T) {
 
 	// A preview still building is released: its commit is tagged, and the
 	// host releases it once it is ready.
-	building := tools.State{Standing: map[string]*session.PublishMeta{"a-poem": {App: "a-poem", Commit: sha2, Status: session.PublishBuilding}}}
+	still := &session.PublishMeta{App: "a-poem", Commit: sha2, Status: session.PublishBuilding}
+	building := tools.State{App: still, Apps: map[string]*session.PublishMeta{"a-poem": still}, Standing: map[string]*session.PublishMeta{"a-poem": still}}
 	h = newHost(t, map[string]func(int) (int, any){
 		"GET /apps/a-poem":          app("a-poem"),
 		"GET /apps/a-poem/releases": func(int) (int, any) { return http.StatusOK, map[string]any{"releases": []map[string]any{}} },
@@ -322,8 +327,9 @@ func TestOutcomes(t *testing.T) {
 	}
 }
 
-// TestRefusals: a path that is no folder, a release with no ready
-// preview, a push URL on another host, an app host that refuses, a git
+// TestRefusals: a path that is no folder, a release of an app whose
+// results record no folder and that has no preview, a push URL on
+// another host, an app host that refuses, a git
 // push that fails, and an installation that mints no token for the host
 // each answer an error the model reads; a lost lease stops the turn; and
 // an app the host no longer knows is created again.
@@ -338,7 +344,8 @@ func TestRefusals(t *testing.T) {
 	}{
 		"no such folder": {`{"path":"nope"}`, tools.State{}, "nope is not a folder of the machine"},
 		"a file":         {`{"path":"page.html"}`, tools.State{}, "page.html is not a folder of the machine"},
-		"no preview":     {`{"release":true}`, tools.State{}, prompts.Text(prompts.PublishNoPreview)},
+		"no preview":     {`{"release":true}`, tools.State{App: &session.PublishMeta{App: "a-poem"}, Apps: map[string]*session.PublishMeta{"a-poem": {App: "a-poem"}}}, prompts.Text(prompts.PublishNoPreview)},
+		"no folder":      {`{"release":true}`, tools.State{}, ". is not a folder of the machine"},
 	} {
 		res, err := newTool(t, h, creds{}).Run(ctx, call(c.input, &fakeMachine{dirs: site}, c.st))
 		if err != nil || !res.IsError() || !strings.Contains(resultText(res), c.want) {
@@ -492,7 +499,8 @@ func TestTheHostsAnswers(t *testing.T) {
 		t.Fatalf("an unreadable log: %+v %v", res, err)
 	}
 
-	ready := tools.State{Standing: map[string]*session.PublishMeta{"a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady}}}
+	last := &session.PublishMeta{App: "a-poem", Commit: sha1, Status: session.PublishReady}
+	ready := tools.State{App: last, Apps: map[string]*session.PublishMeta{"a-poem": last}, Standing: map[string]*session.PublishMeta{"a-poem": last}}
 	for name, c := range map[string]struct {
 		answer map[string]func(int) (int, any)
 		want   string
@@ -662,8 +670,13 @@ func TestWhichApp(t *testing.T) {
 		"an attached app as own": {`{"app":"web"}`, tools.State{Apps: map[string]*session.PublishMeta{"web": {App: "web", Attached: true}}}, session.PublishAppNotAttached, "web is not an app"},
 		"a folder outside":       {`{"app":"tide","path":"site"}`, tools.State{}, session.PublishNotInCheckout, "site is outside tide/, the checkout of tide."},
 		"several standing": {`{"release":true}`, tools.State{Standing: map[string]*session.PublishMeta{
-			"tide": {App: "tide", Commit: sha2, Status: session.PublishReady}, "a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady},
-		}}, session.PublishAppRequired, "Previews of several apps stand: a-poem, tide."},
+			"tide": {App: "tide", Commit: sha2, Status: session.PublishReady, Attached: true}, "a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady},
+		}}, session.PublishAppRequired, "app set to one of a-poem, tide, or with path"},
+		"several published": {`{"release":true}`, tools.State{Apps: map[string]*session.PublishMeta{
+			"tide": {App: "tide", Status: session.PublishFailed, Attached: true}, "a-poem": {App: "a-poem", Status: session.PublishReleased},
+		}}, session.PublishAppRequired, "app set to one of a-poem, tide, or with path"},
+		"none published, apps attached": {`{"release":true}`, tools.State{}, session.PublishAppRequired, "app set to one of tide, or with path"},
+		"a release outside":             {`{"app":"tide","path":"site","release":true}`, tools.State{}, session.PublishNotInCheckout, "site is outside tide/"},
 	} {
 		h := newHost(t, nil)
 		m := &fakeMachine{dirs: dirs}
@@ -681,19 +694,22 @@ func TestWhichApp(t *testing.T) {
 	}
 }
 
-// TestAReleaseIsCheckedAgainstTheLiveVersion: a release whose commit
-// descends from the live one is tagged from the attached app's checkout;
-// one that does not is refused behind_live with no tag, its text naming
-// the merge; nothing live tags at once without a check; an answer of git
-// that is neither yes nor no is the call's error and pushes no tag; and
-// an own app is checked in the session's git directory.
+// TestAReleaseIsCheckedAgainstTheLiveVersion: a release of an attached
+// app pushes its checkout and waits for the build, then is tagged from
+// the checkout when its commit descends from the live one; one that does
+// not is refused behind_live with no tag, its text naming the merge and
+// one more release; nothing live tags at once without a check; an answer
+// of git that is neither yes nor no is the call's error and pushes no
+// tag; and an own app is checked in the session's git directory.
 func TestAReleaseIsCheckedAgainstTheLiveVersion(t *testing.T) {
 	ctx := t.Context()
 	const live = "3333333ccccccccccccccccccccccccccccccccc"
+	dirs := map[string]bool{"/work/tide": true}
 	st := tools.State{Standing: map[string]*session.PublishMeta{"tide": {App: "tide", Commit: sha2, Status: session.PublishReady, Attached: true}}}
 	host := func(current string) *host {
 		return newHost(t, map[string]func(int) (int, any){
-			"GET /apps/tide": liveApp("tide", current),
+			"GET /apps/tide":         liveApp("tide", current),
+			"GET /apps/tide/deploys": deploys(map[string]any{"id": "d2", "status": "ready", "preview": true, "commit_sha": sha2, "preview_url": "https://d2--tide.apps.example"}),
 			"GET /apps/tide/releases": func(int) (int, any) {
 				return http.StatusOK, map[string]any{"releases": []map[string]any{{"tag": "v1", "commit_sha": live, "status": "released"}}}
 			},
@@ -703,37 +719,40 @@ func TestAReleaseIsCheckedAgainstTheLiveVersion(t *testing.T) {
 		})
 	}
 
-	m := &fakeMachine{outputs: []string{"ancestry 0\n", ""}}
+	m := &fakeMachine{dirs: dirs, outputs: []string{"0 " + sha2 + "\n", "ancestry 0\n", ""}}
 	res, err := attachedTool(t, host(live)).Run(ctx, call(`{"release":true}`, m, st))
-	if got := metaOf(res); err != nil || res.IsError() || got.Status != session.PublishReleased || got.Release != "v2" || !got.Attached || len(m.scripts) != 2 {
+	if got := metaOf(res); err != nil || res.IsError() || got.Status != session.PublishReleased || got.Release != "v2" || !got.Attached || got.Commit != sha2 || got.Folder != "tide" || len(m.scripts) != 3 {
 		t.Fatalf("a release that holds the live one: %+v %+v %v %q", res, got, err, m.scripts)
 	}
+	if !strings.Contains(m.scripts[0], "cd '/work/tide'") || !strings.Contains(m.scripts[0], `git push --quiet "$url" "HEAD:refs/heads/$branch"`) {
+		t.Fatalf("the push of the checkout:\n%s", m.scripts[0])
+	}
 	for _, want := range []string{"cd '/work/tide'", "live='" + live + "'", `git merge-base --is-ancestor "$live" "$commit"`, `git fetch --quiet "$url" "+refs/tags/*:refs/tags/*"`} {
-		if !strings.Contains(m.scripts[0], want) {
-			t.Fatalf("the check lacks %q:\n%s", want, m.scripts[0])
+		if !strings.Contains(m.scripts[1], want) {
+			t.Fatalf("the check lacks %q:\n%s", want, m.scripts[1])
 		}
 	}
-	if !strings.Contains(m.scripts[1], "cd '/work/tide'") || !strings.Contains(m.scripts[1], "refs/tags/\"'v2'") {
-		t.Fatalf("the tag script:\n%s", m.scripts[1])
+	if !strings.Contains(m.scripts[2], "cd '/work/tide'") || !strings.Contains(m.scripts[2], "refs/tags/\"'v2'") {
+		t.Fatalf("the tag script:\n%s", m.scripts[2])
 	}
 
-	m = &fakeMachine{outputs: []string{"ancestry 1\n"}}
+	m = &fakeMachine{dirs: dirs, outputs: []string{"0 " + sha2 + "\n", "ancestry 1\n"}}
 	res, err = attachedTool(t, host(live)).Run(ctx, call(`{"app":"tide","release":true}`, m, st))
 	got := metaOf(res)
-	if err != nil || !res.IsError() || got.Status != session.PublishRefused || got.Error == nil || got.Error.Code != session.PublishBehindLive || !got.Attached || got.Release != "" || len(m.scripts) != 1 {
+	if err != nil || !res.IsError() || got.Status != session.PublishRefused || got.Error == nil || got.Error.Code != session.PublishBehindLive || !got.Attached || got.Release != "" || len(m.scripts) != 2 {
 		t.Fatalf("a release behind the live one: %+v %+v %v %q", res, got, err, m.scripts)
 	}
-	if text := resultText(res); !strings.Contains(text, "tide is live at 3333333") || !strings.Contains(text, "git -C tide merge 3333333") {
+	if text := resultText(res); !strings.Contains(text, "tide is live at 3333333") || !strings.Contains(text, "git -C tide merge 3333333") || !strings.Contains(text, `call publish with app "tide" and release set to true again`) {
 		t.Fatalf("the refusal reads %q", text)
 	}
 
-	m = &fakeMachine{outputs: []string{""}}
-	if res, err := attachedTool(t, host("")).Run(ctx, call(`{"release":true}`, m, st)); err != nil || res.IsError() || len(m.scripts) != 1 || strings.Contains(m.scripts[0], "merge-base") {
+	m = &fakeMachine{dirs: dirs, outputs: []string{"0 " + sha2 + "\n", ""}}
+	if res, err := attachedTool(t, host("")).Run(ctx, call(`{"release":true}`, m, st)); err != nil || res.IsError() || len(m.scripts) != 2 || strings.Contains(m.scripts[1], "merge-base") {
 		t.Fatalf("nothing live: %+v %v %q", res, err, m.scripts)
 	}
 
-	m = &fakeMachine{outputs: []string{"ancestry 128\nfatal: Not a valid commit name\n"}}
-	if res, err := attachedTool(t, host(live)).Run(ctx, call(`{"release":true}`, m, st)); err != nil || !res.IsError() || metaOf(res).Error != nil || !strings.Contains(resultText(res), "Not a valid commit name") || len(m.scripts) != 1 {
+	m = &fakeMachine{dirs: dirs, outputs: []string{"0 " + sha2 + "\n", "ancestry 128\nfatal: Not a valid commit name\n"}}
+	if res, err := attachedTool(t, host(live)).Run(ctx, call(`{"release":true}`, m, st)); err != nil || !res.IsError() || metaOf(res).Error != nil || !strings.Contains(resultText(res), "Not a valid commit name") || len(m.scripts) != 2 {
 		t.Fatalf("an odd answer of git: %+v %v %q", res, err, m.scripts)
 	}
 
@@ -772,4 +791,211 @@ func TestARefusalOpensNoMachine(t *testing.T) {
 	if err != nil || res.IsError() || opens != 1 || !strings.Contains(m.scripts[0], "cd '/work/tide'") {
 		t.Fatalf("an attached app on a machine not yet open: %+v %v, %d opens, %q", res, err, opens, m.scripts)
 	}
+}
+
+// releases answers an app's releases as none, and its release tag as
+// released on commit.
+func releases(slug, tag, commit string) map[string]func(int) (int, any) {
+	return map[string]func(int) (int, any){
+		"GET /apps/" + slug + "/releases": func(int) (int, any) { return http.StatusOK, map[string]any{"releases": []map[string]any{}} },
+		"GET /apps/" + slug + "/releases/" + tag: func(int) (int, any) {
+			return http.StatusOK, map[string]any{"release": map[string]any{"tag": tag, "commit_sha": commit, "status": "released"}, "deploy": map[string]any{"id": "drel"}}
+		},
+	}
+}
+
+// with is answer and more, more winning.
+func with(answer map[string]func(int) (int, any), more map[string]func(int) (int, any)) map[string]func(int) (int, any) {
+	out := map[string]func(int) (int, any){}
+	maps.Copy(out, answer)
+	maps.Copy(out, more)
+	return out
+}
+
+// TestAReleaseBuildsWhatItReleases: release with no preview standing
+// publishes and releases in one call (spec 059): an attached app's
+// checkout is pushed, its build waited for, and the commit it built
+// tagged; an own app's folder is published through the session's git
+// directory, the app created at once, and its folder recorded, which a
+// later release that names no path publishes again; a build still
+// running when the wait ends is tagged for the host to release once it
+// is ready; and a build the host has not started by then releases
+// nothing.
+func TestAReleaseBuildsWhatItReleases(t *testing.T) {
+	ctx := t.Context()
+	ready := map[string]any{"id": "d2", "status": "ready", "preview": true, "commit_sha": sha2, "preview_url": "https://d2--tide.apps.example"}
+	h := newHost(t, with(releases("tide", "v1", sha2), map[string]func(int) (int, any){
+		"GET /apps/tide": liveApp("tide", ""), "GET /apps/tide/deploys": deploys(ready),
+	}))
+	m := &fakeMachine{dirs: map[string]bool{"/work/tide": true}, outputs: []string{"1 " + sha2 + "\n", ""}}
+	res, err := attachedTool(t, h).Run(ctx, call(`{"app":"tide","path":"tide","release":true}`, m, tools.State{}))
+	got := metaOf(res)
+	if err != nil || res.IsError() || got.Status != session.PublishReleased || got.Release != "v1" || got.Commit != sha2 || !got.Attached || got.Folder != "tide" ||
+		got.Preview != "https://d2--tide.apps.example" || got.Deploy != "drel" {
+		t.Fatalf("an attached app released in one call: %+v %+v %v", res, got, err)
+	}
+	if len(m.scripts) != 2 || !strings.Contains(m.scripts[0], "Publish tide") || !strings.Contains(m.scripts[1], sha2) || !strings.Contains(m.scripts[1], "refs/tags/\"'v1'") {
+		t.Fatalf("the push and the tag: %q", m.scripts)
+	}
+	if !strings.Contains(resultText(res), "Released v1") || h.count("GET /apps/tide/deploys") == 0 {
+		t.Fatalf("the result reads %q, %d reads of the deploys", resultText(res), h.count("GET /apps/tide/deploys"))
+	}
+
+	own := map[string]any{"id": "d1", "status": "ready", "preview": true, "commit_sha": sha1, "preview_url": "https://d1--a-poem.apps.example"}
+	h = newHost(t, with(releases("a-poem", "v1", sha1), map[string]func(int) (int, any){
+		"POST /apps": created("a-poem"), "GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": deploys(own),
+		// v1 is listed once it is made, so a release of the same commit
+		// waits on it rather than tagging again.
+		"GET /apps/a-poem/releases": func(n int) (int, any) {
+			if n == 1 {
+				return http.StatusOK, map[string]any{"releases": []map[string]any{}}
+			}
+			return http.StatusOK, map[string]any{"releases": []map[string]any{{"tag": "v1", "commit_sha": sha1, "status": "released"}}}
+		},
+	}))
+	site := map[string]bool{"/work": true, "/work/site": true}
+	m = &fakeMachine{dirs: site, outputs: []string{"1 " + sha1 + "\n", ""}}
+	res, err = newTool(t, h, creds{}).Run(ctx, call(`{"path":"site","release":true}`, m, tools.State{}))
+	first := metaOf(res)
+	if err != nil || res.IsError() || first.Status != session.PublishReleased || first.Release != "v1" || first.Commit != sha1 || first.Attached || first.Folder != "site" || h.count("POST /apps") != 1 {
+		t.Fatalf("an own app released in one call: %+v %+v %v", res, first, err)
+	}
+	if len(m.scripts) != 2 || !strings.Contains(m.scripts[0], "GIT_WORK_TREE='/work/site'") || !strings.Contains(m.scripts[1], ".topos/publish") {
+		t.Fatalf("the own app's push and tag: %q", m.scripts)
+	}
+	// The thread's state now holds the release, whose folder a release
+	// that names no path publishes again.
+	st := tools.State{App: &first, Apps: map[string]*session.PublishMeta{"a-poem": &first}}
+	m = &fakeMachine{dirs: site, outputs: []string{"0 " + sha1 + "\n"}}
+	res, err = newTool(t, h, creds{}).Run(ctx, call(`{"release":true}`, m, st))
+	if got := metaOf(res); err != nil || res.IsError() || got.Release != "v1" || got.Folder != "site" || len(m.scripts) != 1 || !strings.Contains(m.scripts[0], "GIT_WORK_TREE='/work/site'") {
+		t.Fatalf("a release of the folder released last: %+v %+v %v %q", res, got, err, m.scripts)
+	}
+
+	// Still building when the wait ends: tagged, and the host releases it
+	// once it is ready.
+	building := map[string]any{"id": "d2", "status": "building", "preview": true, "commit_sha": sha2, "preview_url": "https://d2--tide.apps.example"}
+	h = newHost(t, with(releases("tide", "v1", sha2), map[string]func(int) (int, any){"GET /apps/tide": liveApp("tide", ""), "GET /apps/tide/deploys": deploys(building)}))
+	m = &fakeMachine{dirs: map[string]bool{"/work/tide": true}, outputs: []string{"1 " + sha2 + "\n", ""}}
+	res, err = attachedTool(t, h).Run(ctx, call(`{"app":"tide","release":true}`, m, tools.State{}))
+	if got := metaOf(res); err != nil || res.IsError() || got.Status != session.PublishReleased || got.Release != "v1" || len(m.scripts) != 2 {
+		t.Fatalf("a build still running: %+v %+v %v %q", res, got, err, m.scripts)
+	}
+
+	// No build started by the end of the wait: nothing is tagged.
+	h = newHost(t, with(releases("tide", "v1", sha2), map[string]func(int) (int, any){"GET /apps/tide": liveApp("tide", ""), "GET /apps/tide/deploys": deploys()}))
+	m = &fakeMachine{dirs: map[string]bool{"/work/tide": true}, outputs: []string{"1 " + sha2 + "\n"}}
+	res, err = attachedTool(t, h).Run(ctx, call(`{"app":"tide","release":true}`, m, tools.State{}))
+	if got := metaOf(res); err != nil || res.IsError() || got.Status != session.PublishBuilding || got.Release != "" || len(m.scripts) != 1 || h.count("GET /apps/tide/releases") != 0 ||
+		!strings.Contains(resultText(res), "Nothing was released yet: the app host has not started a build of tide") {
+		t.Fatalf("no build started: %+v %+v %v %q", res, got, err, m.scripts)
+	}
+}
+
+// TestAFailedBuildReleasesNothing: a release whose build fails, or is
+// canceled, pushes no tag and reads no release; its result is an error
+// that says nothing was released, with the build's code, its sentence
+// and the end of its log, and its meta records the failed build.
+func TestAFailedBuildReleasesNothing(t *testing.T) {
+	ctx := t.Context()
+	var log strings.Builder
+	for i := 1; i <= 3; i++ {
+		fmt.Fprintf(&log, "{\"seq\":%d,\"line\":\"npm ERR! line %d\"}\n", i, i)
+	}
+	for name, c := range map[string]struct {
+		deploy map[string]any
+		code   string
+		text   []string
+	}{
+		"failed": {map[string]any{"id": "d2", "status": "failed", "preview": true, "commit_sha": sha2,
+			"error": map[string]string{"code": "build_failed", "message": "The build command exited with an error."}}, "build_failed",
+			[]string{"Nothing was released: the build of tide failed: build_failed: The build command exited with an error.", "npm ERR! line 3", "call publish with release set to true again"}},
+		"canceled": {map[string]any{"id": "d2", "status": "canceled", "preview": true, "commit_sha": sha2}, "canceled",
+			[]string{"Nothing was released: the build of tide failed: canceled."}},
+	} {
+		h := newHost(t, with(releases("tide", "v1", sha2), map[string]func(int) (int, any){
+			"GET /apps/tide": liveApp("tide", ""), "GET /apps/tide/deploys": deploys(c.deploy),
+			"GET /apps/tide/deploys/d2/logs": func(int) (int, any) { return http.StatusOK, log.String() },
+		}))
+		m := &fakeMachine{dirs: map[string]bool{"/work/tide": true}, outputs: []string{"1 " + sha2 + "\n"}}
+		res, err := attachedTool(t, h).Run(ctx, call(`{"app":"tide","release":true}`, m, tools.State{}))
+		got := metaOf(res)
+		if err != nil || !res.IsError() || got.Status != c.deploy["status"] || got.Error == nil || got.Error.Code != c.code || got.Release != "" || got.Commit != sha2 || got.Deploy != "d2" {
+			t.Errorf("%s: %+v %+v %v", name, res, got, err)
+		}
+		for _, want := range c.text {
+			if !strings.Contains(resultText(res), want) {
+				t.Errorf("%s: the result lacks %q:\n%s", name, want, resultText(res))
+			}
+		}
+		if len(m.scripts) != 1 || h.count("GET /apps/tide/releases") != 0 {
+			t.Errorf("%s: %d scripts and %d reads of the releases after a failed build", name, len(m.scripts), h.count("GET /apps/tide/releases"))
+		}
+	}
+}
+
+// TestCheckRefusesBeforeTheCallIsDecided: Check answers what Run would
+// refuse on the input alone, with the same result, before any request and
+// without opening the machine: an app not attached, a release that could
+// mean several apps, a folder outside the named checkout whether or not
+// the machine has reported its working directory, and a drive with no
+// token source. Every other call, an absolute folder on a machine not yet
+// open among them, is left to Run.
+func TestCheckRefusesBeforeTheCallIsDecided(t *testing.T) {
+	ctx := t.Context()
+	var opens int
+	unopened := machine.Defer(ctx, machine.KindCella, func(context.Context) (machine.Machine, error) {
+		opens++
+		return &fakeMachine{}, nil
+	})
+	two := tools.State{Standing: map[string]*session.PublishMeta{"tide": {App: "tide", Commit: sha2, Status: session.PublishReady, Attached: true}, "a-poem": {App: "a-poem", Commit: sha1, Status: session.PublishReady}}}
+	for name, c := range map[string]struct {
+		input string
+		m     machine.Machine
+		st    tools.State
+		code  string
+	}{
+		"not attached":                 {`{"app":"other","release":true}`, unopened, tools.State{}, session.PublishAppNotAttached},
+		"several apps":                 {`{"release":true}`, unopened, two, session.PublishAppRequired},
+		"outside, machine not open":    {`{"app":"tide","path":"site","release":true}`, unopened, tools.State{}, session.PublishNotInCheckout},
+		"climbing out, machine open":   {`{"app":"tide","path":"tide/../site"}`, &fakeMachine{}, tools.State{}, session.PublishNotInCheckout},
+		"absolute outside, open":       {`{"app":"tide","path":"/work/site"}`, &fakeMachine{}, tools.State{}, session.PublishNotInCheckout},
+		"absolute, machine not open":   {`{"app":"tide","path":"/work/site"}`, unopened, tools.State{}, ""},
+		"climbing out, machine closed": {`{"app":"tide","path":"../work/site"}`, unopened, tools.State{}, ""},
+		"inside":                       {`{"app":"tide","path":"tide/site","release":true}`, unopened, tools.State{}, ""},
+		"no app":                       {`{"path":"site"}`, unopened, tools.State{}, ""},
+		"one app":                      {`{"release":true}`, unopened, tools.State{Standing: map[string]*session.PublishMeta{"tide": two.Standing["tide"]}}, ""},
+		"not json":                     {`{"app":`, unopened, tools.State{}, ""},
+	} {
+		h := newHost(t, nil)
+		tool := attachedTool(t, h)
+		got := tool.Check(tools.Call{ID: "toolu_1", Input: json.RawMessage(c.input), Machine: c.m, State: c.st})
+		switch {
+		case c.code == "" && got != nil:
+			t.Errorf("%s: refused %+v", name, *got)
+		case c.code != "" && (got == nil || metaOf(*got).Error == nil || metaOf(*got).Error.Code != c.code || metaOf(*got).App != ""):
+			t.Errorf("%s: %+v, want %s", name, got, c.code)
+		case c.code != "":
+			// Run refuses the same call with the same result.
+			m := &fakeMachine{dirs: map[string]bool{"/work/tide": true, "/work/site": true}}
+			res, err := tool.Run(ctx, call(c.input, m, c.st))
+			if err != nil || resultText(res) != resultText(*got) || metaOf(res).Error == nil || metaOf(res).Error.Code != c.code {
+				t.Errorf("%s: Run answered %+v %v, Check %+v", name, res, err, *got)
+			}
+		}
+		h.mu.Lock()
+		calls := len(h.calls)
+		h.mu.Unlock()
+		if calls != 0 {
+			t.Errorf("%s: %d requests", name, calls)
+		}
+	}
+	if opens != 0 {
+		t.Fatalf("Check opened the machine %d times", opens)
+	}
+	none := New(Options{URL: "https://apps.example", GitURL: gitURL}, session.Session{}, nil)
+	if got := none.Check(tools.Call{Input: json.RawMessage(`{"path":"site"}`), Machine: unopened}); got == nil || !strings.Contains(resultText(*got), "mints no credential for its app host") {
+		t.Fatalf("no token source: %+v", got)
+	}
+	var _ tools.Checker = (*Tool)(nil)
 }

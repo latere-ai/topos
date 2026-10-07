@@ -1,0 +1,1 @@
+Nothing was released yet: the app host has not started a build of {{.Path}} after {{.Wait}}. It builds a limited number of pushes an hour for each app. Call publish with release set to true again to keep waiting; nothing new is pushed while the folder is unchanged.

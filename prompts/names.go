@@ -47,9 +47,9 @@ const (
 	// in its text, which a test holds to them (spec 047).
 	ToolWebSearch Name = "tools/web_search-v1"
 	// ToolPublish states the publish tool's wait in its text, which a
-	// test holds to its constant (spec 043), and its app input (spec
-	// 059).
-	ToolPublish Name = "tools/publish-v2"
+	// test holds to its constant (spec 043), its app input, and a
+	// release that publishes and releases in one call (spec 059).
+	ToolPublish Name = "tools/publish-v3"
 )
 
 // The results of the publish tool (spec 043). Path is the folder as the
@@ -82,9 +82,9 @@ const (
 	// PublishNotAttached takes App, the slug a call named, and Apps, the
 	// slugs the session may publish to, joined (spec 059).
 	PublishNotAttached Name = "results/publish/not-attached-v1"
-	// PublishAppRequired takes Apps, the slugs whose previews stand,
-	// joined.
-	PublishAppRequired Name = "results/publish/app-required-v1"
+	// PublishAppRequired takes Apps, the slugs a release that names no
+	// app could mean, joined.
+	PublishAppRequired Name = "results/publish/app-required-v2"
 	// PublishNotInCheckout takes Path, Dir, the checkout's directory under
 	// the working directory, and App.
 	PublishNotInCheckout Name = "results/publish/not-in-checkout-v1"
@@ -92,7 +92,14 @@ const (
 	// Attached, Dir, an attached app's checkout under the working
 	// directory, and URL, the repository the app's git directory fetches
 	// from.
-	PublishBehindLive Name = "results/publish/behind-live-v1"
+	PublishBehindLive Name = "results/publish/behind-live-v2"
+	// PublishReleaseBuildFailed takes Path, Code, Message and Log, as
+	// PublishFailed: the build a release waited for failed, and nothing
+	// was released.
+	PublishReleaseBuildFailed Name = "results/publish/release-build-failed-v1"
+	// PublishReleaseNotStarted takes Path and Wait: the host started no
+	// build of what a release pushed, and nothing was released.
+	PublishReleaseNotStarted Name = "results/publish/release-not-started-v1"
 )
 
 // The results of web_search (spec 047).

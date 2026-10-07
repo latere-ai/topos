@@ -98,7 +98,8 @@ var textCases = func() []textCase {
 		{name: ToolQuestion, wantSHA: "13d1e88094ffe3d9c0c19a1fd102c5fbc539b7f1ad5804a43e6039bf7daa8a63"},
 		{name: ToolWebSearch, wantSHA: "06e451f41ab008ed24de132b0e9ea18488e4092f221284b5a97a15829f5a2ce6"},
 		{name: "tools/publish-v1", wantSHA: "b69d44de4feda666898dd58abeaff8fb58e644894785963965d2255600e7087f"},
-		{name: ToolPublish, wantSHA: "82af1e42d94fe80cd3b3f19f12b92eba9bee2c549c3af36c12353153682360d5"},
+		{name: "tools/publish-v2", wantSHA: "82af1e42d94fe80cd3b3f19f12b92eba9bee2c549c3af36c12353153682360d5"},
+		{name: ToolPublish, wantSHA: "e52335638e8f168acbcf2fdff1c5cd756b0b5744958144c8498988ba3f6663b1"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -246,16 +247,32 @@ var textCases = func() []textCase {
 		{name: PublishError, data: Data{"Path": "site", "Error": "the app host answered 503"}, want: "Publishing site failed: the app host answered 503."},
 		{name: PublishNotAttached, data: Data{"App": "tide", "Apps": "a-poem, tide-tables"}, want: "tide is not an app this session may publish to. It may publish to a-poem, tide-tables. Leave app out to publish to the session's own app."},
 		{name: PublishNotAttached, data: Data{"App": "tide", "Apps": ""}, want: "tide is not an app this session may publish to. Leave app out to publish to the session's own app."},
-		{name: PublishAppRequired, data: Data{"Apps": "a-poem, tide-tables"}, want: "Previews of several apps stand: a-poem, tide-tables. Call publish with release set to true and app naming the one to release."},
+		{name: "results/publish/app-required-v1", data: Data{"Apps": "a-poem, tide-tables"}, want: "Previews of several apps stand: a-poem, tide-tables. Call publish with release set to true and app naming the one to release."},
+		{name: PublishAppRequired, data: Data{"Apps": "a-poem, tide-tables"}, want: "Name the app to release: call publish again with release set to true and app set to one of a-poem, tide-tables, or with path set to the folder to publish."},
 		{name: PublishNotInCheckout, data: Data{"Path": "site", "Dir": "tide-tables", "App": "tide-tables"}, want: "site is outside tide-tables/, the checkout of tide-tables. Publishing tide-tables publishes its repository: leave path out, or name tide-tables or a folder inside it."},
-		{name: PublishBehindLive, data: Data{"App": "tide-tables", "Live": "4b1e2c0", "Attached": true, "Dir": "tide-tables", "URL": "https://git.example/r/1.git"}, want: "The release was not made: tide-tables is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
+		{name: "results/publish/behind-live-v1", data: Data{"App": "tide-tables", "Live": "4b1e2c0", "Attached": true, "Dir": "tide-tables", "URL": "https://git.example/r/1.git"}, want: "The release was not made: tide-tables is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
 			"Merge it into tide-tables/ first:\n" + "  git -C tide-tables fetch origin --tags\n" + "  git -C tide-tables merge 4b1e2c0\n" +
 			`Resolve any conflict, check the result, then call publish with app "tide-tables" and, once the preview is ready, release again.`},
-		{name: PublishBehindLive, data: Data{"App": "a-poem", "Live": "4b1e2c0", "Attached": false, "Dir": "", "URL": "https://git.example/ada/a-poem.git"}, want: "The release was not made: a-poem is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
+		{name: "results/publish/behind-live-v1", data: Data{"App": "a-poem", "Live": "4b1e2c0", "Attached": false, "Dir": "", "URL": "https://git.example/ada/a-poem.git"}, want: "The release was not made: a-poem is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
 			"Merge it into the folder you published first, through the session's git directory for the app, where <folder> is that folder:\n" +
 			`  git --git-dir="$HOME/.topos/publish/a-poem.git" --work-tree=<folder> fetch https://git.example/ada/a-poem.git --tags` + "\n" +
 			`  git --git-dir="$HOME/.topos/publish/a-poem.git" --work-tree=<folder> merge 4b1e2c0` + "\n" +
 			`Resolve any conflict, check the result, then call publish with app "a-poem" and, once the preview is ready, release again.`},
+		{name: PublishBehindLive, data: Data{"App": "tide-tables", "Live": "4b1e2c0", "Attached": true, "Dir": "tide-tables", "URL": "https://git.example/r/1.git"}, want: "The release was not made: tide-tables is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
+			"Merge it into tide-tables/ first:\n" + "  git -C tide-tables fetch origin --tags\n" + "  git -C tide-tables merge 4b1e2c0\n" +
+			`Resolve any conflict and check the result, then call publish with app "tide-tables" and release set to true again: that one call publishes the merge and releases it.`},
+		{name: PublishBehindLive, data: Data{"App": "a-poem", "Live": "4b1e2c0", "Attached": false, "Dir": "", "URL": "https://git.example/ada/a-poem.git"}, want: "The release was not made: a-poem is live at 4b1e2c0, which this work does not include. Another session probably released it.\n" +
+			"Merge it into the folder you published first, through the session's git directory for the app, where <folder> is that folder:\n" +
+			`  git --git-dir="$HOME/.topos/publish/a-poem.git" --work-tree=<folder> fetch https://git.example/ada/a-poem.git --tags` + "\n" +
+			`  git --git-dir="$HOME/.topos/publish/a-poem.git" --work-tree=<folder> merge 4b1e2c0` + "\n" +
+			`Resolve any conflict and check the result, then call publish with app "a-poem" and release set to true again: that one call publishes the merge and releases it.`},
+		{name: PublishReleaseBuildFailed, data: Data{"Path": "tide", "Code": "build_failed", "Message": "The build command exited with an error.", "Log": "npm ERR! missing script: build"},
+			want: "Nothing was released: the build of tide failed: build_failed: The build command exited with an error.\n" + "The end of the build log:\n" + "npm ERR! missing script: build\n" +
+				"Fix the cause, then call publish with release set to true again. If it is not something you can fix, such as a project that needs a server process, tell the person plainly."},
+		{name: PublishReleaseBuildFailed, data: Data{"Path": "site", "Code": "canceled", "Message": "", "Log": ""},
+			want: "Nothing was released: the build of site failed: canceled.\n" + "Fix the cause, then call publish with release set to true again. If it is not something you can fix, such as a project that needs a server process, tell the person plainly."},
+		{name: PublishReleaseNotStarted, data: Data{"Path": "site", "Wait": "10m0s"},
+			want: "Nothing was released yet: the app host has not started a build of site after 10m0s. It builds a limited number of pushes an hour for each app. Call publish with release set to true again to keep waiting; nothing new is pushed while the folder is unchanged."},
 		{name: ContextRoute, data: Data{"Route": "tier/quick"}, want: "<context>\n" + "Model route: tier/quick\n" + "</context>"},
 		{name: ContextInitiator, data: Data{"Text": "Call me Ada."}, want: "<initiator_instructions>\n" +
 			"The person who started this session keeps these standing instructions.\n" +

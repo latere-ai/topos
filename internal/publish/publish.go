@@ -4,7 +4,8 @@
 // Package publish is the publish tool of spec 043: it publishes a folder
 // of a hosted session's sandbox as the session's own app at the
 // installation's app host, waits for the preview the host builds of it,
-// and releases the newest preview to the app's address. The runner
+// and releases it to the app's address, in the same call when it is asked
+// to release (spec 059). The runner
 // reaches the app host with the session's own short token, which never
 // enters the sandbox; the folder is pushed by the sandbox's own git,
 // which reaches the installation's git host with the session's git
@@ -20,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
+
 	"net/http"
 	"net/url"
 	"path"
@@ -68,9 +69,9 @@ const DefaultAudience = "apps"
 var schema = json.RawMessage(`{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the checkout of the app that app names, else the working directory."},
-    "app": {"type": "string", "description": "The slug of the app to publish to or release: one the session was given, or one this session created. Default: the app whose checkout path is in, else this session's own app."},
-    "release": {"type": "boolean", "description": "True to release the app's newest preview to its own address instead of publishing a folder."}
+    "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the checkout of the app that app names, else the folder last published to this session's own app, else the working directory."},
+    "app": {"type": "string", "description": "The slug of the app to publish to or release: one the session was given, or one this session created. Default: the app whose checkout path is in, else this session's own app; a release that names neither app nor path takes the app this session has a preview of, else the one app it has published."},
+    "release": {"type": "boolean", "description": "True to publish the folder, wait for its build, and release it to the app's own address, in one call."}
   },
   "additionalProperties": false
 }`)
@@ -158,20 +159,82 @@ func (g target) meta(a hostApp) *session.PublishMeta {
 	return &session.PublishMeta{App: a.Slug, Name: a.Name, URL: a.URL, Attached: g.attached()}
 }
 
-// Run publishes the folder the call names, or releases the newest
-// preview of the app it names. The app is resolved before any request,
-// and a call that names an app the session may not publish to is
-// refused then. A failure of the app host, the git host or the machine
-// is the call's error result, which the model reads; a Go error is a
-// lost lease or a released machine, which stop the turn.
-func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
+// noCredential is why a drive with no token source cannot publish.
+const noCredential = "this server mints no credential for its app host"
+
+// decode reads a call's input; an empty input is {}.
+func decode(raw json.RawMessage) (input, error) {
 	var in input
-	if len(bytes.TrimSpace(c.Input)) > 0 {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return in, nil
+	}
+	err := json.Unmarshal(raw, &in)
+	return in, err
+}
+
+// Check refuses, before the call is decided, a call Run would refuse on
+// its input alone, so no person approves it (spec 059): a drive with no
+// token source, an app the session may not publish to, a release that
+// names no app while it could mean several, and a folder outside the
+// named attached app's checkout. It reaches neither the machine nor the
+// app host. A folder whose place in the checkout depends on a working
+// directory the machine has not reported yet, an absolute path or one
+// that climbs out with "..", is left to Run.
+func (t *Tool) Check(c tools.Call) *tools.Result {
+	in, err := decode(c.Input)
+	if err != nil {
+		return nil
+	}
+	if t.tokens == nil {
+		r := unavailable(noCredential)
+		return &r
+	}
+	slug, refused := t.pick(c.State, in)
+	if refused != nil || slug == "" || in.Path == "" {
+		return refused
+	}
+	var w string
+	if c.Machine != nil {
+		w = c.Machine.Info().Workdir
+	}
+	if w == "" {
+		if path.IsAbs(in.Path) || climbs(in.Path) {
+			return nil
+		}
+		// A relative path that stays under the working directory is in
+		// the checkout or not whatever that directory is.
+		w = "/"
+	}
+	g, ok := t.attachedApp(w, slug)
+	if !ok {
+		return nil
+	}
+	return outside(g, w, in.Path)
+}
+
+// climbs reports whether the relative path p leaves the directory it is
+// resolved against.
+func climbs(p string) bool {
+	p = path.Clean(p)
+	return p == ".." || strings.HasPrefix(p, "../")
+}
+
+// Run publishes the folder the call names, or with release publishes it
+// and releases what it built. The app is resolved before any request,
+// and a call that names an app the session may not publish to is
+// refused then, as Check refuses it before the call is decided. A
+// failure of the app host, the git host or the machine is the call's
+// error result, which the model reads; a Go error is a lost lease or a
+// released machine, which stop the turn.
+func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
+	in, err := decode(c.Input)
+	if err != nil {
 		// The registry checked the input against the schema, so a failure
 		// here is the harness's.
-		if err := json.Unmarshal(c.Input, &in); err != nil {
-			return tools.Result{}, fmt.Errorf("publish: read the input: %w", err)
-		}
+		return tools.Result{}, fmt.Errorf("publish: read the input: %w", err)
+	}
+	if t.tokens == nil {
+		return unavailable(noCredential), nil
 	}
 	g, refused, err := t.which(ctx, c, in)
 	switch {
@@ -180,32 +243,82 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	case refused != nil:
 		return *refused, nil
 	}
-	if t.tokens == nil {
-		return unavailable("this server mints no credential for its app host"), nil
-	}
 	if _, err := t.bearer(ctx); err != nil {
 		switch {
 		case errors.Is(err, runner.ErrNotMinted):
-			return unavailable("this server mints no credential for its app host"), nil
+			return unavailable(noCredential), nil
 		case errors.Is(err, runner.ErrLeaseLost):
 			return tools.Result{}, err
 		}
 		return unavailable("the session's credential for the app host could not be had: " + err.Error()), nil
 	}
 	if in.Release {
-		return t.release(ctx, c, g)
+		return t.release(ctx, c, g, in.Path)
 	}
 	return t.preview(ctx, c, g, in.Path)
 }
 
+// pick is the app a call names, or the one a release that names neither
+// an app nor a folder takes, before any request (spec 059); "" leaves the
+// app to the folder. A release with neither takes the app whose preview
+// stands, else the app the thread published to, when there is one; it
+// is refused app_required when there are several, and when there are
+// none in a session attached apps, where the thread's own app would be
+// a guess. An app the session was not attached and the thread did not
+// create is refused app_not_attached. Each refusal's meta names no app,
+// so the thread's state folds none.
+func (t *Tool) pick(st tools.State, in input) (string, *tools.Result) {
+	if in.App != "" {
+		if t.may(st, in.App) {
+			return in.App, nil
+		}
+		return "", refusal(session.PublishAppNotAttached, prompts.Render(prompts.PublishNotAttached, prompts.Data{"App": in.App, "Apps": strings.Join(t.publishable(st), ", ")}))
+	}
+	if !in.Release || in.Path != "" {
+		return "", nil
+	}
+	// mine are the slugs of m the session may still publish to: each
+	// attached app, and each the thread created.
+	mine := func(m map[string]*session.PublishMeta) []string {
+		var out []string
+		for slug, r := range m {
+			if _, _, ok := session.App(t.s, slug); ok || !r.Attached {
+				out = append(out, slug)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	slugs := mine(st.Standing)
+	if len(slugs) == 0 {
+		slugs = mine(st.Apps)
+	}
+	switch {
+	case len(slugs) == 1:
+		return slugs[0], nil
+	case len(slugs) == 0:
+		if slugs = t.publishable(st); len(slugs) == 0 {
+			return "", nil
+		}
+	}
+	return "", refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAppRequired, prompts.Data{"Apps": strings.Join(slugs, ", ")}))
+}
+
+// may reports whether the session may publish to slug: an app it was
+// attached, or one the thread created.
+func (t *Tool) may(st tools.State, slug string) bool {
+	if _, _, ok := session.App(t.s, slug); ok {
+		return true
+	}
+	m := st.Apps[slug]
+	return m != nil && !m.Attached
+}
+
 // which resolves the app a call publishes to or releases, before any
-// request (spec 059): the app the call names, one the session was
-// attached or one the thread created; else, for a folder, the attached
-// app whose checkout holds it, or the thread's own; else, for a release,
-// the one app whose preview stands. A call that names any other app, a
-// folder outside the named attached app's checkout, and a release that
-// names no app while previews of several stand are refused, each with a
-// result whose meta names no app, so the thread's state folds none.
+// request (spec 059): the app pick chooses, else the attached app whose
+// checkout holds the folder, else the thread's own. A call pick refuses,
+// and one that names an attached app with a folder outside its checkout,
+// is refused, each with a result whose meta names no app.
 //
 // The machine's working directory is read only where a checkout's path
 // is, opening a machine that has not opened, so a call refused for its
@@ -220,40 +333,25 @@ func (t *Tool) which(ctx context.Context, c tools.Call, in input) (target, *tool
 		}
 		return c.Machine.Info().Workdir, nil
 	}
-	if in.App != "" {
-		if _, _, ok := session.App(t.s, in.App); ok {
-			w, err := workdir()
-			if err != nil {
-				return target{}, nil, err
-			}
-			g, _ := t.attachedApp(w, in.App)
-			if p := in.Path; !in.Release && p != "" && !inside(abs(w, p), g.dir) {
-				return g, refusal(session.PublishNotInCheckout, prompts.Render(prompts.PublishNotInCheckout, prompts.Data{"Path": p, "Dir": g.rel, "App": g.slug})), nil
-			}
-			return g, nil, nil
-		}
-		if m := c.State.Apps[in.App]; m != nil && !m.Attached {
-			return target{slug: in.App, last: m}, nil, nil
-		}
-		return target{}, refusal(session.PublishAppNotAttached, prompts.Render(prompts.PublishNotAttached, prompts.Data{"App": in.App, "Apps": strings.Join(t.publishable(c.State), ", ")})), nil
+	slug, refused := t.pick(c.State, in)
+	if refused != nil {
+		return target{}, refused, nil
 	}
-	if in.Release {
-		slugs := slices.Sorted(maps.Keys(c.State.Standing))
-		switch len(slugs) {
-		case 0:
-			return target{}, nil, nil
-		case 1:
-			if _, _, ok := session.App(t.s, slugs[0]); !ok {
-				return target{slug: slugs[0], last: c.State.Apps[slugs[0]]}, nil, nil
-			}
-			w, err := workdir()
-			if err != nil {
-				return target{}, nil, err
-			}
-			g, _ := t.attachedApp(w, slugs[0])
-			return g, nil, nil
+	if slug != "" {
+		if _, _, ok := session.App(t.s, slug); !ok {
+			return target{slug: slug, last: c.State.Apps[slug]}, nil, nil
 		}
-		return target{}, refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAppRequired, prompts.Data{"Apps": strings.Join(slugs, ", ")})), nil
+		w, err := workdir()
+		if err != nil {
+			return target{}, nil, err
+		}
+		g, _ := t.attachedApp(w, slug)
+		if in.Path != "" {
+			if r := outside(g, w, in.Path); r != nil {
+				return target{}, r, nil
+			}
+		}
+		return g, nil, nil
 	}
 	if !slices.ContainsFunc(session.Repositories(t.s), func(r session.Resource) bool { return r.App != nil }) {
 		return target{last: c.State.App}, nil, nil
@@ -272,6 +370,16 @@ func (t *Tool) which(ctx context.Context, c tools.Call, in input) (target, *tool
 		}
 	}
 	return target{last: c.State.App}, nil, nil
+}
+
+// outside is the refusal of the folder p, under the working directory
+// w, when it is outside the checkout of the attached app g, and nil when
+// it is inside it.
+func outside(g target, w, p string) *tools.Result {
+	if inside(abs(w, p), g.dir) {
+		return nil
+	}
+	return refusal(session.PublishNotInCheckout, prompts.Render(prompts.PublishNotInCheckout, prompts.Data{"Path": p, "Dir": g.rel, "App": g.slug}))
 }
 
 // attachedApp is the attached app of slug, with its checkout under
@@ -349,98 +457,189 @@ func failure(shown string, err error, meta *session.PublishMeta) (tools.Result, 
 	return text(tools.OutcomeError, prompts.Render(prompts.PublishError, prompts.Data{"Path": shown, "Error": err.Error()}), meta), nil
 }
 
-// preview publishes the folder p of the machine to g and waits for its
+// built is what publishing a folder left: the app, the result's meta,
+// the folder as the text names it, and the preview deploy of the pushed
+// commit, found once the host lists it and done once it is ready, failed
+// or canceled.
+type built struct {
+	app         hostApp
+	meta        *session.PublishMeta
+	shown       string
+	deploy      hostDeploy
+	found, done bool
+}
+
+// folder is the folder of the machine a call publishes to g, as the
+// text names it and as an absolute path: the folder p names; with none,
+// an attached app's checkout, or the folder the thread last published to
+// its own app, recorded in that result's meta, else the working
+// directory.
+func folder(w string, g target, p string) (shown, dir string) {
+	switch {
+	case p == "" && g.attached():
+		return g.rel, g.dir
+	case p == "" && g.last != nil && g.last.Folder != "":
+		p = g.last.Folder
+	}
+	shown = cmp.Or(p, ".")
+	return shown, abs(w, shown)
+}
+
+// relative is dir as a result records it: under the working directory
+// w, relative to it, else absolute.
+func relative(w, dir string) string {
+	switch {
+	case dir == w:
+		return "."
+	case strings.HasPrefix(dir, w+"/"):
+		return dir[len(w)+1:]
+	}
+	return dir
+}
+
+// build publishes the folder p of the machine to g and waits for its
 // preview: the thread's own app's folder through the session's git
 // directory (spec 043), or an attached app's checkout, committed and
-// pushed on the session's branch (spec 059).
-func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p string) (tools.Result, error) {
-	shown, dir := cmp.Or(p, "."), abs(c.Machine.Info().Workdir, cmp.Or(p, "."))
-	if g.attached() && p == "" {
-		shown, dir = g.rel, g.dir
+// pushed on the session's branch (spec 059). A failure before the wait
+// ends is the call's result, returned as stop.
+func (t *Tool) build(ctx context.Context, c tools.Call, g target, p string) (b built, stop *tools.Result, err error) {
+	w := c.Machine.Info().Workdir
+	shown, dir := folder(w, g, p)
+	b.shown = shown
+	fail := func(err error, meta *session.PublishMeta) (built, *tools.Result, error) {
+		res, err := failure(shown, err, meta)
+		if err != nil {
+			return b, nil, err
+		}
+		return b, &res, nil
 	}
 	if fi, err := c.Machine.Stat(ctx, dir); err != nil || !fi.IsDir {
 		if harnessError(err) {
-			return tools.Result{}, err
+			return b, nil, err
 		}
-		return text(tools.OutcomeError, prompts.Render(prompts.PublishNotFolder, prompts.Data{"Path": shown}), nil), nil
+		res := text(tools.OutcomeError, prompts.Render(prompts.PublishNotFolder, prompts.Data{"Path": shown}), nil)
+		return b, &res, nil
 	}
-	var a hostApp
-	var meta *session.PublishMeta
 	var push func(empty bool) (pushed, error)
 	if g.attached() {
-		var err error
-		if a, err = t.app(ctx, g.slug); err != nil {
-			return failure(shown, err, &session.PublishMeta{App: g.slug, Attached: true})
+		if b.app, err = t.app(ctx, g.slug); err != nil {
+			return fail(err, &session.PublishMeta{App: g.slug, Attached: true, Folder: g.rel})
 		}
-		meta = g.meta(a)
-		if err := errors.Join(t.onGitHost(a.Repository.PushURL), t.onGitHost(g.repo.URL)); err != nil {
-			return failure(shown, err, meta)
+		b.meta = g.meta(b.app)
+		b.meta.Folder = g.rel
+		if err := errors.Join(t.onGitHost(b.app.Repository.PushURL), t.onGitHost(g.repo.URL)); err != nil {
+			return fail(err, b.meta)
 		}
 		push = func(empty bool) (pushed, error) { return t.pushCheckout(ctx, c.Machine, g, empty) }
 	} else {
-		var err error
-		if a, err = t.ensureApp(ctx, g.last); err != nil {
-			return failure(shown, err, nil)
+		if b.app, err = t.ensureApp(ctx, g.last); err != nil {
+			return fail(err, nil)
 		}
-		meta = g.meta(a)
-		if err := t.onGitHost(a.Repository.PushURL); err != nil {
-			return failure(shown, err, meta)
+		b.meta = g.meta(b.app)
+		b.meta.Folder = relative(w, dir)
+		if err := t.onGitHost(b.app.Repository.PushURL); err != nil {
+			return fail(err, b.meta)
 		}
-		push = func(empty bool) (pushed, error) { return t.push(ctx, c.Machine, a, dir, empty) }
+		push = func(empty bool) (pushed, error) { return t.push(ctx, c.Machine, b.app, dir, empty) }
 	}
 	pushed, err := push(false)
 	if err != nil {
-		return failure(shown, err, meta)
+		return fail(err, b.meta)
 	}
-	d, found, done, err := t.waitDeploy(ctx, a.Slug, pushed.commit)
-	if err == nil && !pushed.changed && done && (d.Status == session.PublishFailed || d.Status == session.PublishCanceled) {
+	b.deploy, b.found, b.done, err = t.waitDeploy(ctx, b.app.Slug, pushed.commit)
+	if err == nil && !pushed.changed && b.done && (b.deploy.Status == session.PublishFailed || b.deploy.Status == session.PublishCanceled) {
 		// Nothing changed since a build that failed or was replaced: an
 		// empty commit builds the same files again.
 		if pushed, err = push(true); err != nil {
-			return failure(shown, err, meta)
+			return fail(err, b.meta)
 		}
-		d, found, done, err = t.waitDeploy(ctx, a.Slug, pushed.commit)
+		b.deploy, b.found, b.done, err = t.waitDeploy(ctx, b.app.Slug, pushed.commit)
 	}
-	meta.Commit = pushed.commit
+	b.meta.Commit = pushed.commit
 	if err != nil {
-		return failure(shown, err, meta)
+		return fail(err, b.meta)
 	}
-	if found {
-		meta.Deploy, meta.Preview = d.ID, d.PreviewURL
+	if b.found {
+		b.meta.Deploy, b.meta.Preview = b.deploy.ID, b.deploy.PreviewURL
 	}
-	wait := t.o.Wait.String()
-	switch {
-	case !done:
-		meta.Status = session.PublishBuilding
-		return text(tools.OutcomeOK, prompts.Render(prompts.PublishBuilding, prompts.Data{"Path": shown, "Wait": wait, "Preview": meta.Preview}), meta), nil
-	case d.Status == session.PublishReady:
-		meta.Status = session.PublishReady
-		return text(tools.OutcomeOK, prompts.Render(prompts.PublishReady, prompts.Data{"Path": shown, "Preview": meta.Preview, "URL": a.URL}), meta), nil
-	}
-	meta.Status = d.Status
-	e := cmp.Or(d.Error, &session.PublishError{Code: d.Status})
-	meta.Error = e
-	log := ""
-	if d.Status == session.PublishFailed {
-		log = t.logTail(ctx, a.Slug, d.ID)
-	}
-	return text(tools.OutcomeError, prompts.Render(prompts.PublishFailed, prompts.Data{"Path": shown, "Code": e.Code, "Message": e.Message, "Log": log}), meta), nil
+	return b, nil, nil
 }
 
-// release puts the commit of g's newest preview that stands in the
-// thread, ready or still building, at the app's address with the next
-// version tag, and waits for the release: the host releases a preview
-// still building once it is ready. Before it tags, it requires the commit
-// the app serves to be an ancestor of the one it releases, and refuses
-// behind_live otherwise (spec 059).
-func (t *Tool) release(ctx context.Context, c tools.Call, g target) (tools.Result, error) {
-	var ready *session.PublishMeta
-	if g.slug != "" {
-		ready = c.State.Standing[g.slug]
+// failedBuild records on b's meta the build that failed or was canceled,
+// and answers the text's data: the folder, the host's code and sentence,
+// and the end of a failed build's log.
+func (t *Tool) failedBuild(ctx context.Context, b built) prompts.Data {
+	b.meta.Status = b.deploy.Status
+	e := cmp.Or(b.deploy.Error, &session.PublishError{Code: b.deploy.Status})
+	b.meta.Error = e
+	log := ""
+	if b.deploy.Status == session.PublishFailed {
+		log = t.logTail(ctx, b.app.Slug, b.deploy.ID)
 	}
-	if ready == nil {
-		return text(tools.OutcomeError, prompts.Text(prompts.PublishNoPreview), nil), nil
+	return prompts.Data{"Path": b.shown, "Code": e.Code, "Message": e.Message, "Log": log}
+}
+
+// preview publishes the folder p of the machine to g and answers how its
+// preview stands.
+func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p string) (tools.Result, error) {
+	b, stop, err := t.build(ctx, c, g, p)
+	switch {
+	case err != nil:
+		return tools.Result{}, err
+	case stop != nil:
+		return *stop, nil
 	}
+	switch {
+	case !b.done:
+		b.meta.Status = session.PublishBuilding
+		return text(tools.OutcomeOK, prompts.Render(prompts.PublishBuilding, prompts.Data{"Path": b.shown, "Wait": t.o.Wait.String(), "Preview": b.meta.Preview}), b.meta), nil
+	case b.deploy.Status == session.PublishReady:
+		b.meta.Status = session.PublishReady
+		return text(tools.OutcomeOK, prompts.Render(prompts.PublishReady, prompts.Data{"Path": b.shown, "Preview": b.meta.Preview, "URL": b.app.URL}), b.meta), nil
+	}
+	return text(tools.OutcomeError, prompts.Render(prompts.PublishFailed, t.failedBuild(ctx, b)), b.meta), nil
+}
+
+// release puts the folder p of the machine live at g's address in one
+// call (spec 059): it publishes the folder as preview does, waits for the
+// build, and releases the commit it built. A build that failed or was
+// canceled, and one the host has not started by the end of the wait,
+// release nothing, and the result says so; a build still running when
+// the wait ends is tagged, and the host releases it once it is ready.
+//
+// A release of the thread's own app that names no folder, while the
+// thread's last result for the app records none, was published by a
+// release before results recorded their folder: it releases the app's
+// standing preview as it is, as spec 043 did.
+func (t *Tool) release(ctx context.Context, c tools.Call, g target, p string) (tools.Result, error) {
+	if !g.attached() && p == "" && g.last != nil && g.last.Folder == "" {
+		ready := c.State.Standing[cmp.Or(g.slug, g.last.App)]
+		if ready == nil {
+			return text(tools.OutcomeError, prompts.Text(prompts.PublishNoPreview), nil), nil
+		}
+		return t.releaseCommit(ctx, c, g, ready)
+	}
+	b, stop, err := t.build(ctx, c, g, p)
+	switch {
+	case err != nil:
+		return tools.Result{}, err
+	case stop != nil:
+		return *stop, nil
+	case !b.found:
+		b.meta.Status = session.PublishBuilding
+		return text(tools.OutcomeOK, prompts.Render(prompts.PublishReleaseNotStarted, prompts.Data{"Path": b.shown, "Wait": t.o.Wait.String()}), b.meta), nil
+	case b.done && b.deploy.Status != session.PublishReady:
+		return text(tools.OutcomeError, prompts.Render(prompts.PublishReleaseBuildFailed, t.failedBuild(ctx, b)), b.meta), nil
+	}
+	return t.releaseCommit(ctx, c, g, b.meta)
+}
+
+// releaseCommit puts ready, a preview's commit, at the app's address
+// with the next version tag, and waits for the release: the host
+// releases a preview still building once it is ready. Before it tags,
+// it requires the commit the app serves to be an ancestor of the one it
+// releases, and refuses behind_live otherwise (spec 059).
+func (t *Tool) releaseCommit(ctx context.Context, c tools.Call, g target, ready *session.PublishMeta) (tools.Result, error) {
 	a, err := t.app(ctx, ready.App)
 	if err != nil {
 		if isNotFound(err) {
@@ -448,12 +647,12 @@ func (t *Tool) release(ctx context.Context, c tools.Call, g target) (tools.Resul
 		}
 		var named *session.PublishMeta
 		if g.attached() {
-			named = &session.PublishMeta{App: g.slug, Attached: true}
+			named = &session.PublishMeta{App: g.slug, Attached: true, Folder: ready.Folder}
 		}
 		return failure(ready.App, err, named)
 	}
 	meta := g.meta(a)
-	meta.Commit, meta.Preview = ready.Commit, ready.Preview
+	meta.Commit, meta.Preview, meta.Folder = ready.Commit, ready.Preview, ready.Folder
 	if err := t.onGitHost(a.Repository.PushURL); err != nil {
 		return failure(a.Slug, err, meta)
 	}
