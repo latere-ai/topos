@@ -10,6 +10,32 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- An answer's images are kept. Once a step of the session's own thread
+  is committed, each local image its `agent.message` names, by a
+  Markdown image or an HTML `img`, a path with no scheme or a `file:`
+  URL inside the working directory, is read from the open machine,
+  stored as a blob of the session, and recorded by `files.kept` before
+  the next request or the turn's closing status. An image is PNG, JPEG,
+  GIF or WebP by its bytes, never SVG, at most 5 MiB, 8192 pixels a side
+  (`harness.MaxKeptImageSide`) and 40,000,000 pixels
+  (`harness.MaxKeptImagePixels`); a message reads its first 8
+  references (`tools.MaxImages`). A reference that is not kept is in
+  `skipped` with its reason. A turn that opened no machine opens none to
+  keep an image, and skips its references `no_machine`; a step that
+  waits on a person keeps its images when its calls are answered.
+
+### Upgrading
+
+- Roll this release only once every runner, the external ones included,
+  runs v0.23.0 or later: a runner before v0.23.0 does not know
+  `files.kept` and stops a session whose log holds one with
+  `schema_too_new`. The authorizer and the store need no change.
+- Roll clients that draw an answer's images after it: a client reads
+  `files.kept` and falls back to `GET /v1/sessions/{id}/files` where
+  none was kept, and a client that does not know the type skips it.
+
 ## v0.23.0 - 2026-10-07
 
 ### Added
@@ -58,19 +84,6 @@ committed: the commit log already holds that.
   a `files.kept` that landed since. A redacted `files.kept` keeps the id
   of the answer it named, and no image. No runner of this release
   appends it.
-- An answer's images are kept. Once a step of the session's own thread
-  is committed, each local image its `agent.message` names, by a
-  Markdown image or an HTML `img`, a path with no scheme or a `file:`
-  URL inside the working directory, is read from the open machine,
-  stored as a blob of the session, and recorded by `files.kept` before
-  the next request or the turn's closing status. An image is PNG, JPEG,
-  GIF or WebP by its bytes, never SVG, at most 5 MiB, 8192 pixels a side
-  (`harness.MaxKeptImageSide`) and 40,000,000 pixels
-  (`harness.MaxKeptImagePixels`); a message reads its first 8
-  references (`tools.MaxImages`). A reference that is not kept is in
-  `skipped` with its reason. A turn that opened no machine opens none to
-  keep an image, and skips its references `no_machine`; a step that
-  waits on a person keeps its images when its calls are answered.
 
 ### Changed
 
@@ -105,9 +118,6 @@ committed: the commit log already holds that.
   does not know `files.kept` stops a session whose log holds one with
   `schema_too_new`, and leases move sessions between runners during a
   rolling update.
-- Images are kept from the release after the one that teaches every
-  runner `files.kept`; a client that draws them reads `files.kept` and
-  falls back to `GET /v1/sessions/{id}/files` where none was kept.
 - Roll clients that edit messages or read trees after the server: an
   earlier server refuses `before_seq`, `message` and `title` in a fork
   body as unknown members and ignores the list's `root`, `parent` and
