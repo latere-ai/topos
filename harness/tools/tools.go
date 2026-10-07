@@ -162,17 +162,21 @@ type State struct {
 	// directory of its parent's machine.
 	DirSeq uint64
 	Todos  []Todo
-	// App is the last publish result that named the session's app, and
-	// Standing the newest preview that stands, ready or still building,
-	// which a release takes its commit from (spec 043): a failed or
-	// canceled preview, a denied call and a release are none. Each is nil
-	// before there is one.
-	App, Standing *session.PublishMeta
+	// App is the last publish result that named an app the thread
+	// created, its own (spec 043), nil before there is one; a result
+	// without attached is the thread's own.
+	App *session.PublishMeta
+	// Apps maps each app's slug to the thread's last publish result that
+	// named it, attached or its own, and Standing maps a slug to the
+	// app's newest preview that stands, ready or still building, which a
+	// release of it takes its commit from (spec 059): a failed or canceled
+	// preview, a denied call, a refusal and a release are none.
+	Apps, Standing map[string]*session.PublishMeta
 }
 
 // StateOf folds the tool.result metas of one thread, in sequence order.
 func StateOf(events []session.Event, thread string) State {
-	st := State{Hashes: map[string]string{}}
+	st := State{Hashes: map[string]string{}, Apps: map[string]*session.PublishMeta{}, Standing: map[string]*session.PublishMeta{}}
 	for _, e := range events {
 		if e.Type != session.TypeToolResult || e.Thread != thread || e.Redacted() {
 			continue
@@ -195,9 +199,12 @@ func StateOf(events []session.Event, thread string) State {
 			st.Todos = m.Todos
 		}
 		if p := m.Publish; p != nil && p.App != "" {
-			st.App = p
+			st.Apps[p.App] = p
+			if !p.Attached {
+				st.App = p
+			}
 			if (p.Status == session.PublishReady || p.Status == session.PublishBuilding) && p.Commit != "" {
-				st.Standing = p
+				st.Standing[p.App] = p
 			}
 		}
 	}

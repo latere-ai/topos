@@ -300,10 +300,50 @@ func TestStateOfFoldsPublish(t *testing.T) {
 		events = append(events, e)
 	}
 	st := StateOf(events, "")
-	if st.App == nil || st.App.Status != session.PublishReleased || st.Standing == nil || st.Standing.Commit != "c1" || st.Standing.Status != session.PublishBuilding {
+	if s := st.Standing["a-poem"]; st.App == nil || st.App.Status != session.PublishReleased || s == nil || s.Commit != "c1" || s.Status != session.PublishBuilding {
 		t.Fatalf("state %+v %+v", st.App, st.Standing)
 	}
-	if st := StateOf(nil, ""); st.App != nil || st.Standing != nil {
+	if st := StateOf(nil, ""); st.App != nil || len(st.Standing) != 0 || len(st.Apps) != 0 {
 		t.Fatalf("an empty log folds %+v", st)
+	}
+}
+
+// TestStateOfFoldsPublishPerApp: the state keeps the last result and the
+// standing preview of each app, an attached app's results marked
+// attached never become the thread's own app, a result without attached
+// reads as the thread's own, and a refusal that names no app folds
+// nothing (spec 059).
+func TestStateOfFoldsPublishPerApp(t *testing.T) {
+	var events []session.Event
+	for i, m := range []*session.PublishMeta{
+		{App: "a-poem", Commit: "p1", Status: session.PublishReady},
+		{App: "tide", Commit: "t1", Status: session.PublishReady, Attached: true},
+		{App: "tide", Commit: "t1", Status: session.PublishRefused, Attached: true, Error: &session.PublishError{Code: session.PublishBehindLive}},
+		{App: "notes", Commit: "n1", Status: session.PublishBuilding, Attached: true},
+		{App: "notes", Commit: "n2", Status: session.PublishFailed, Attached: true},
+		{Error: &session.PublishError{Code: session.PublishAppNotAttached}},
+	} {
+		b, err := json.Marshal(Meta{Publish: m})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := session.NewEvent(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_x", Meta: b}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = uint64(i + 1)
+		events = append(events, e)
+	}
+	st := StateOf(events, "")
+	switch {
+	case st.App == nil || st.App.App != "a-poem" || st.App.Attached:
+		t.Fatalf("the thread's own app %+v", st.App)
+	case len(st.Apps) != 3 || st.Apps["tide"].Status != session.PublishRefused || !st.Apps["tide"].Attached || st.Apps["notes"].Status != session.PublishFailed:
+		t.Fatalf("the apps %+v", st.Apps)
+	case len(st.Standing) != 3 || st.Standing["a-poem"].Commit != "p1" || st.Standing["tide"].Commit != "t1" || st.Standing["notes"].Commit != "n1":
+		t.Fatalf("the standing previews %+v", st.Standing)
+	}
+	if _, ok := st.Apps[""]; ok {
+		t.Fatal("a refusal that names no app was folded")
 	}
 }
