@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -22,11 +23,19 @@ import (
 
 // updateBody is the body of PATCH /sessions/{id}: the fields of the
 // session a request changes, its model, the approval mode of its policy
-// and its title, any of them (spec 054).
+// and its title (spec 054), and its metadata, a merge in which a string
+// sets its key and null deletes it (spec 057), any of them.
 type updateBody struct {
-	Model  *modelChange  `json:"model"`
-	Policy *policyChange `json:"policy"`
-	Title  *string       `json:"title,omitempty"`
+	Model    *modelChange       `json:"model"`
+	Policy   *policyChange      `json:"policy"`
+	Title    *string            `json:"title,omitempty"`
+	Metadata map[string]*string `json:"metadata,omitempty"`
+}
+
+// metadataOnly reports a body that changes the session's metadata and
+// nothing else, which is taken in every status (spec 057).
+func (b updateBody) metadataOnly() bool {
+	return b.Metadata != nil && b.Model == nil && b.Policy == nil && b.Title == nil
 }
 
 // policyChange is what a PATCH changes of the session's policy: the
@@ -92,6 +101,21 @@ func (c *call) updateSession() error {
 	if err != nil {
 		return err
 	}
+	var relabel *relabeling
+	if b.Metadata != nil {
+		if relabel, err = c.s.relabeling(s, b.Metadata); err != nil {
+			return err
+		}
+	}
+	if b.metadataOnly() {
+		if _, err := c.ask(ctx, authorizer.ActionSessionUpdate, sessionResource(s, relabel.fields(map[string]any{"session_id": s.ID}))); err != nil {
+			return err
+		}
+		if s, err = c.s.relabel(ctx, c.caller.Subject, s, relabel); err != nil {
+			return err
+		}
+		return c.replySession(http.StatusOK, s)
+	}
 	if s.Status == session.StatusEnded {
 		return refuse(CodeConflict, "the session ended %s", s.StopReason)
 	}
@@ -126,6 +150,9 @@ func (c *call) updateSession() error {
 	}
 	if b.Title != nil {
 		fields["title"] = *b.Title
+	}
+	if relabel != nil {
+		fields = relabel.fields(fields)
 	}
 	limits, err := c.askLimits(ctx, authorizer.ActionSessionUpdate, sessionResource(s, fields))
 	if err != nil {
@@ -175,24 +202,125 @@ func (c *call) updateSession() error {
 		}
 		batch = append(batch, ev)
 	}
-	if len(batch) == 0 {
-		return c.replySession(http.StatusOK, s)
+	if len(batch) > 0 {
+		if err := c.s.appendBatch(ctx, s.ID, batch); err != nil {
+			return err
+		}
+		if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
+			return err
+		}
 	}
-	if err := c.s.appendBatch(ctx, s.ID, batch); err != nil {
-		return err
-	}
-	if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
-		return err
+	// The metadata is written after the events, so a change refused
+	// because the session ended meanwhile leaves the metadata as it was.
+	if relabel != nil {
+		if s, err = c.s.relabel(ctx, c.caller.Subject, s, relabel); err != nil {
+			return err
+		}
 	}
 	return c.replySession(http.StatusOK, s)
+}
+
+// relabeling is a checked change of a session's metadata: the change as
+// the body sent it and the value each key it names has now.
+type relabeling struct {
+	change  map[string]*string
+	current map[string]string
+}
+
+// relabeling checks a change of s's metadata on the merged result, which
+// holds a session created before the key and value rules to them too
+// (spec 057), and answers it with the values the keys it names hold now.
+func (s *Server) relabeling(sess session.Session, change map[string]*string) (*relabeling, error) {
+	if _, ok := s.o.Sessions.(session.Labeler); !ok {
+		return nil, errors.New("server: the session store does not change metadata")
+	}
+	merged, _ := session.MergeMetadata(sess.Metadata, change)
+	if err := session.CheckMetadata(merged); err != nil {
+		return nil, refuse(CodeInvalidRequest, "the metadata after the change: %v", err)
+	}
+	current := map[string]string{}
+	for k := range change {
+		if v, ok := sess.Metadata[k]; ok {
+			current[k] = v
+		}
+	}
+	return &relabeling{change: change, current: current}, nil
+}
+
+// fields adds the change to a session.update question's fields: metadata,
+// the change as sent with null for a deletion, and current_metadata, the
+// value each key it names holds now, a key the session does not hold left
+// out.
+func (r *relabeling) fields(fields map[string]any) map[string]any {
+	change := make(map[string]any, len(r.change))
+	for k, v := range r.change {
+		if v == nil {
+			change[k] = nil
+		} else {
+			change[k] = *v
+		}
+	}
+	fields["metadata"], fields["current_metadata"] = change, metadataField(r.current)
+	return fields
+}
+
+// relabel writes an allowed change of sess's metadata through the store,
+// with no event, answers the session after, and reports the keys it
+// changed to the installation's sink (spec 057). A change to what the
+// session holds writes and reports nothing.
+func (s *Server) relabel(ctx context.Context, subject string, sess session.Session, r *relabeling) (session.Session, error) {
+	l, ok := s.o.Sessions.(session.Labeler)
+	if !ok {
+		return session.Session{}, errors.New("server: the session store does not change metadata")
+	}
+	after, err := l.SetMetadata(ctx, sess.ID, r.change)
+	if err != nil {
+		return session.Session{}, err
+	}
+	var keys []string
+	for k := range r.change {
+		if old, had := sess.Metadata[k]; had != hasKey(after.Metadata, k) || old != after.Metadata[k] {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) > 0 {
+		slices.Sort(keys)
+		s.report(ctx, SinkEvent{
+			Type: authorizer.ActionSessionUpdate, OccurredAt: s.o.Now().UTC(), Subject: subject,
+			Object: SinkObject{Kind: authorizer.KindSession, ID: sess.ID}, SessionID: sess.ID, Agent: &SinkAgent{ID: sess.Agent.ID, Version: sess.Agent.Version},
+			Outcome: "ok", Attributes: map[string]any{"metadata_keys": keys},
+		})
+	}
+	return after, nil
+}
+
+// hasKey reports whether m holds k.
+func hasKey(m map[string]string, k string) bool {
+	_, ok := m[k]
+	return ok
 }
 
 // check refuses a body that names nothing to change or a value no
 // session takes, before the session is read, and trims the title it
 // names.
 func (b *updateBody) check() error {
-	if (b.Model == nil || (b.Model.Name == nil && b.Model.level() == nil)) && b.Policy == nil && b.Title == nil {
-		return refuse(CodeInvalidRequest, `the body names what changes: {"model": {"name": "...", "reasoning": "..."}}, either member or both, {"policy": {"mode": "..."}}, {"title": "..."}, or more than one`)
+	if (b.Model == nil || (b.Model.Name == nil && b.Model.level() == nil)) && b.Policy == nil && b.Title == nil && b.Metadata == nil {
+		return refuse(CodeInvalidRequest, `the body names what changes: {"model": {"name": "...", "reasoning": "..."}}, either member or both, {"policy": {"mode": "..."}}, {"title": "..."}, {"metadata": {"<key>": "<value>" or null}}, or more than one`)
+	}
+	if b.Metadata != nil {
+		if len(b.Metadata) == 0 {
+			return refuse(CodeInvalidRequest, "metadata names no key to set or delete")
+		}
+		for _, k := range slices.Sorted(maps.Keys(b.Metadata)) {
+			if !session.ValidMetadataKey(k) {
+				return refuse(CodeInvalidRequest, "metadata key %q is not %s", k, session.MetadataKeyRule)
+			}
+			if v := b.Metadata[k]; v != nil {
+				if why := session.CheckMetadataValue(*v); why != "" {
+					return refuse(CodeInvalidRequest, "metadata %q: %s", k, why)
+				}
+			}
+		}
 	}
 	if b.Title != nil {
 		title := strings.TrimSpace(*b.Title)

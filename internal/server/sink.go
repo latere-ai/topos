@@ -57,11 +57,18 @@ func (s *Server) refusedFork(ctx context.Context, q asker, fork session.Session,
 	if reason, ok := refusal.details["reason"].(string); ok {
 		e.Attributes["reason"] = reason
 	}
+	s.report(ctx, e)
+}
+
+// report hands e to the installation's sink, or logs it where there is
+// none. A sink that fails is logged, since the mutation's answer is the
+// same either way.
+func (s *Server) report(ctx context.Context, e SinkEvent) {
 	if s.o.Sink == nil {
-		s.o.Log.InfoContext(ctx, "a fork refused after its allow", "type", e.Type, "session", e.SessionID, "parent", f.parent.ID, "outcome", e.Outcome)
+		s.o.Log.InfoContext(ctx, "a mutation for the sink", "type", e.Type, "session", e.SessionID, "outcome", e.Outcome, "attributes", e.Attributes)
 		return
 	}
 	if err := s.o.Sink(ctx, e); err != nil {
-		s.o.Log.ErrorContext(ctx, "report a fork refused after its allow to the sink", "session", e.SessionID, "outcome", e.Outcome, "err", err)
+		s.o.Log.ErrorContext(ctx, "report a mutation to the sink", "type", e.Type, "session", e.SessionID, "outcome", e.Outcome, "err", err)
 	}
 }

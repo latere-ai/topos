@@ -102,6 +102,23 @@
 // change names nothing else. Neither reaches a model, and an allow's
 // limits are not read for either.
 //
+// A session's metadata is a label the installation files sessions under
+// (spec 057), an object of strings toposd gives no meaning. session.create
+// and session.fork carry metadata, the object the session will hold, a
+// fork's copied from the session it forks, and leave it out when there is
+// none, so an endpoint may refuse a session filed under a label the
+// caller may not use. A change of it is a session.update that carries
+// metadata, the change as the client sent it, a string setting its key
+// and null deleting it, and current_metadata, the value each key it names
+// holds now, a key the session does not hold left out; alone it is taken
+// in every status, an ended session's among them, and beside a change of
+// the model, the mode or the title it is decided with them. No event
+// records it, and an allow's limits are not read for it. An endpoint that
+// decides session.update by the fields it knows rolls out before a server
+// that sends metadata, since it would refuse the change otherwise. A list
+// filtered by one entry asks session.list as any list does: the filter
+// narrows what an allow admits and widens nothing.
+//
 // A third member, network, is what the session's machine may reach (spec
 // 052), read on an allow of session.create and of session.send:
 //

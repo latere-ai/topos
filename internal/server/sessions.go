@@ -9,8 +9,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -159,8 +161,9 @@ func (c *call) createSession() error {
 		return refuse(CodeInvalidRequest, "id is an external session's, and this server runs hosted sessions")
 	case len(b.Machine) > 0:
 		return refuse(CodeInvalidRequest, "a session's machine is its agent's; a request cannot set it yet")
-	case len(b.Metadata) > session.MaxMetadata:
-		return refuse(CodeInvalidRequest, "%d metadata entries, at most %d", len(b.Metadata), session.MaxMetadata)
+	}
+	if err := session.CheckMetadata(b.Metadata); err != nil {
+		return refuse(CodeInvalidRequest, "%v", err)
 	}
 	resources, err := repositories(b.Resources)
 	if err != nil {
@@ -307,6 +310,12 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		if start.Via != "" {
 			fields["model_via"] = start.Via
 		}
+	}
+	// The metadata the session will hold, a fork's copied from the
+	// session it forks, so an authorizer decides by a label it files
+	// sessions under (spec 057).
+	if len(in.metadata) > 0 {
+		fields["metadata"] = metadataField(in.metadata)
 	}
 	// A trigger's session names the trigger and the firing that start it
 	// (spec 022).
@@ -491,6 +500,16 @@ func repositoriesField(rs []session.Resource) []any {
 	return out
 }
 
+// metadataField is a session's metadata as the authorizer reads it, an
+// object of strings.
+func metadataField(m map[string]string) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 // permissionsField is the pinned agent version's permissions as the
 // session.create resource carries them, so the authorizer compares them
 // with what the initiator may do (the initiator cap, spec 006). An agent
@@ -589,11 +608,15 @@ func (c *call) listSessions() error {
 	if err != nil {
 		return err
 	}
+	entry, err := metadataFilter(c.r.URL.Query())
+	if err != nil {
+		return err
+	}
 	o, none, err := c.sessionScope(session.Status(c.r.URL.Query().Get("status")))
 	if err != nil {
 		return err
 	}
-	o.Root, o.Parent, o.Group = tree.Root, tree.Parent, tree.Group
+	o.Root, o.Parent, o.Group, o.Metadata = tree.Root, tree.Parent, tree.Group, entry
 	if none {
 		return c.replyPage([]session.Session{}, "")
 	}
@@ -613,10 +636,15 @@ func (c *call) listSessions() error {
 // status, and how many agents they belong to (spec 015). It is scoped by
 // the list's own scope, so a count reveals nothing the list would not.
 func (c *call) getSessionSummary() error {
+	entry, err := metadataFilter(c.r.URL.Query())
+	if err != nil {
+		return err
+	}
 	o, none, err := c.sessionScope("")
 	if err != nil {
 		return err
 	}
+	o.Metadata = entry
 	if none {
 		return c.reply(http.StatusOK, session.Summary{})
 	}
@@ -710,6 +738,45 @@ func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, e
 		o.AgentID = a.ID
 	}
 	return o, len(o.Agents) == 0 || (o.AgentID != "" && !slices.Contains(o.Agents, o.AgentID)), nil
+}
+
+// MetadataRule is the create route's sentence on a session's metadata
+// (spec 057).
+var MetadataRule = fmt.Sprintf("The body's metadata is an object of at most %d strings, each key %s, each value at most %d bytes without a control character; any other is invalid_request. "+
+	"The session holds it as given, a fork holds the metadata of the session it forks, and the authorizer's session.create and session.fork carry it as metadata, absent when there is none.",
+	session.MaxMetadata, session.MetadataKeyRule, session.MaxMetadataValue)
+
+// MetadataFilterRule is the list route's sentence on its filter by a
+// metadata entry (spec 057).
+var MetadataFilterRule = "metadata.<key>=<value>, one such parameter per request, keeps the sessions whose metadata holds key with exactly value, beside every other filter and within the owners the authorizer's decision names; " +
+	"under group=tree a tree stands for itself when one of its sessions holds the entry. A second such parameter, a key that breaks the key rule of a create's metadata, and an empty value are invalid_request naming the parameter."
+
+// metadataPrefix begins the name of the query parameter that filters a
+// list by one metadata entry, metadata.<key>=<value> (spec 057).
+const metadataPrefix = "metadata."
+
+// metadataFilter reads the list's filter by one metadata entry, nil when
+// the query names none. A second filter, a key outside the key rule and
+// an empty value are refused, each naming the parameter.
+func metadataFilter(q url.Values) (*session.MetadataEntry, error) {
+	var out *session.MetadataEntry
+	for _, name := range slices.Sorted(maps.Keys(q)) {
+		key, ok := strings.CutPrefix(name, metadataPrefix)
+		if !ok {
+			continue
+		}
+		values := q[name]
+		switch {
+		case out != nil || len(values) > 1:
+			return nil, refuse(CodeInvalidRequest, "%s: a list filters by one metadata entry at most", name)
+		case !session.ValidMetadataKey(key):
+			return nil, refuse(CodeInvalidRequest, "%s: the key is not %s", name, session.MetadataKeyRule)
+		case values[0] == "":
+			return nil, refuse(CodeInvalidRequest, "%s: the value is empty", name)
+		}
+		out = &session.MetadataEntry{Key: key, Value: values[0]}
+	}
+	return out, nil
 }
 
 // getSession is GET /sessions/{id}.

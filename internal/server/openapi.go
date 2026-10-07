@@ -292,7 +292,7 @@ var opDescriptions = map[string]string{
 	"listAgentVersions": "List an agent's versions.",
 	"getAgentVersion":   "Get one version of an agent. " + AnsweredSpec,
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
-	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " +
+	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
 		"its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +
@@ -302,7 +302,7 @@ var opDescriptions = map[string]string{
 		"root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. " +
 		"root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, " +
 		"carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, " +
-		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request.",
+		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request. " + MetadataFilterRule,
 	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, "+
 		"and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. "+
 		"Markdown's marks and a link's address are not searched, and a message is searched in its first %d bytes. "+
@@ -416,15 +416,15 @@ var opDescriptions = map[string]string{
 		"and, with a message, session.send of the new session as a send asks it, with model and model_via the model the fork starts on and idle_seconds the whole seconds since the last model request it copied, absent when it copied none. " +
 		"Both are asked before anything is written, and a deny of either is forbidden with nothing written; a send refused after session.fork was allowed is reported to the installation's sink as session.fork of the new id with the refusal's code as outcome, " +
 		"so an authorizer that recorded the fork at its allow closes the record. A session of an archived agent is conflict. " + ForkKeptFiles,
-	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner and archived filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. ` +
+	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner, archived and metadata.<key> filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. ` +
 		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, " +
 		"those idle on question, where a question waits for a person's answer, among them; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",
 	"archiveSession": "The body is empty. An idle or ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, nothing is appended to its log, and an idle one still takes a message, whose turn runs while it stays archived. " +
 		"A running session is conflict: archiving never stops a turn, so interrupt it or wait for it to finish. Archiving an archived session keeps its archived_at. The route asks session.read, then, of a session that is not running, session.update with session_id and archived true; a deny is forbidden.",
 	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",
-	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "reasoning": "<level>"}, "policy": {"mode": "<mode>"}, "title": "<title>"}: the model the session's next turn runs and its reasoning level, either member or both, the approval mode its next steps decide calls under, one of %s, and the session's title. `+
-		"The body names model, policy, title or more than one; any other member is refused. "+
+	"updateSession": fmt.Sprintf(`The body is {"model": {"name": "<model>", "reasoning": "<level>"}, "policy": {"mode": "<mode>"}, "title": "<title>", "metadata": {"<key>": "<value>"}}: the model the session's next turn runs and its reasoning level, either member or both, the approval mode its next steps decide calls under, one of %s, the session's title, and its metadata. `+
+		"The body names model, policy, title, metadata or more than one; any other member is refused. "+
 		"A member left out keeps what the session runs. reasoning is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that does not reason ignores it. "+
 		`The level may still be named "effort", its name before reasoning, which is read through every v0.x release and dropped in v1.0; a body that names both with different levels is invalid_request. `+
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+
@@ -440,7 +440,12 @@ var opDescriptions = map[string]string{
 		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm. "+
 		"A title is trimmed of surrounding white space, and one that is then empty, longer than %d characters, or holds a control character or a line or paragraph separator is invalid_request. "+
 		"A change of the title asks the same session.update with title, the trimmed title, and appends session.title_changed {by, old, new}, the title the session had, empty when it had none, and the one it has, after the other changes of the same body; the Session's title is the new one and its updated_at does not move. "+
-		"A change to the title the session has appends nothing.", strings.Join(modes, ", "), strings.Join(v1.Efforts, ", "), session.MaxTitleLength),
+		"A change to the title the session has appends nothing. "+
+		`metadata is a merge: a string sets its key, null deletes it, and a key the body does not name is kept; {} is invalid_request, and the metadata after the merge is held to the rules of a create's. `+
+		"A change of the metadata asks the same session.update with metadata, the change as sent, null included, and current_metadata, the value each key it names holds now, a key the session does not hold left out. "+
+		"It appends no event: the store writes the metadata, the Session's metadata is the merged one, and a change to what the session holds writes nothing. "+
+		"A body that names metadata alone is taken on an idle, a running and an ended session alike; beside model, policy or title it follows their rule, so on an ended session it is conflict and changes nothing. "+
+		"An allowed change that changes the metadata is reported to the installation's sink as session.update with the keys it changed and none of their values.", strings.Join(modes, ", "), strings.Join(v1.Efforts, ", "), session.MaxTitleLength),
 }
 
 // operation is one route as the document describes it, with shown as
