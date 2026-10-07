@@ -575,7 +575,7 @@ func TestServedReadsTheCommitsAnAppServes(t *testing.T) {
 // working directory.
 func attachedTool(t *testing.T, h *host) *Tool {
 	t.Helper()
-	s := session.Session{ID: "ses_1", Title: "A poem", Agent: session.AgentRef{ID: "agent_1", Name: "latere", Version: 3}, Resources: []session.Resource{
+	s := session.Session{ID: "ses_1", Title: "A poem", Agent: session.AgentRef{ID: "agent_1", Name: "builder", Version: 3}, Resources: []session.Resource{
 		{Type: session.ResourceRepository, URL: gitURL + "/acme/web.git"},
 		{Type: session.ResourceRepository, URL: gitURL + "/r/tide.git", App: &session.ResourceApp{Slug: "tide", Name: "Tide", URL: "https://tide.apps.example"}, Attached: true},
 	}}
