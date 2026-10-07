@@ -46,6 +46,13 @@ committed: the commit log already holds that.
   `root`, for the forks already stored.
 - `docs/editing-a-message.md`: how a client sends an edited message and
   shows its versions.
+- The `files.kept` event, read and not yet written: it follows an
+  `agent.message` and maps each local image the answer names to a blob
+  of the session, `{message, files, skipped}`. This release folds it
+  into no prompt, so a log that holds one runs, and it is redactable.
+  Redacting an `agent.message` redacts the `files.kept` that names it in
+  the same append, one `event.redacted` each, and deletes an image no
+  other event names. No runner of this release appends it.
 
 ### Changed
 
@@ -58,6 +65,13 @@ committed: the commit log already holds that.
   or its id, so a fork and the session it came from share one key.
 - `invalid_fork_point` says "A session is forked only at the end of a
   turn, or before a message of yours that started one."
+- `GET /v1/sessions/{id}/blobs/{digest}` answers by the blob's leading
+  bytes: PNG, JPEG, GIF or WebP as that image type, `inline`, and any
+  other blob, SVG included, as an `application/octet-stream`
+  `attachment`. Every blob carries `X-Content-Type-Options: nosniff`,
+  `Content-Security-Policy: sandbox; default-src 'none'`,
+  `Cache-Control: private, max-age=31536000, immutable` and its digest
+  as `ETag`. An attachment's bytes are unchanged.
 
 ### Upgrading
 
@@ -68,6 +82,11 @@ committed: the commit log already holds that.
   column, and that fork's budget counts its whole log, as before. A fork
   such a replica creates during the roll gets its `root` from the next
   release's migration.
+- Roll every runner, the external ones included, onto this release
+  before any runner onto the release that keeps images. A runner that
+  does not know `files.kept` stops a session whose log holds one with
+  `schema_too_new`, and leases move sessions between runners during a
+  rolling update.
 - Roll clients that edit messages or read trees after the server: an
   earlier server refuses `before_seq`, `message` and `title` in a fork
   body as unknown members and ignores the list's `root`, `parent` and
