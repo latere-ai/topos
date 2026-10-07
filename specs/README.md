@@ -285,7 +285,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 055, 056 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
