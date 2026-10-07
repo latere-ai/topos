@@ -1,6 +1,6 @@
 ---
 title: "Publishing to a chosen app: the app input, an attached app published from its own checkout on the session's branch, a release refused while the live version holds work the release lacks, and a standing preview per app"
-status: drafted
+status: testing
 track: core
 depends_on: [008-tools.md, 012-permissions-and-approvals.md, 019-git.md, 043-publishing-a-folder.md, 058-what-a-create-allow-attaches.md]
 affects: [internal/publish/, harness/tools/, session/, prompts/, internal/hosted/, docs/]
@@ -238,12 +238,12 @@ person who does not own it.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `app` naming an attached app publishes it; naming an app the thread made publishes that one; any other slug is `app_not_attached` with no request; a release with standing previews of several apps and no `app` is `app_required` | `internal/publish.TestWhichApp` | not built |
-| A `path` outside the named app's checkout is `not_in_checkout`; with no `app`, a path inside a checkout publishes that app | `internal/publish.TestWhichApp` | not built |
-| An attached app is committed in its checkout on the session's branch with the session's trailers and pushed to that branch; the session's git directory is not created; nothing changed pushes no new commit, as 043 | `internal/hosted.TestASessionPublishesAnAttachedApp` over the stub Cella, a stub app host and git's http backend | not built |
-| A release whose commit descends from the live commit tags it; one that does not is refused `behind_live` with no tag pushed and the merge commands in its text; nothing live tags at once | `internal/hosted.TestAReleaseBehindTheLiveVersionIsRefused` | not built |
-| Two sessions attached to one app each publish on their own branch; the second's release is refused until it merges the first's release, then released | `internal/hosted.TestTwoSessionsBuildOneApp` | not built |
-| The state keeps the last result and the standing preview per app, `attached` marks an attached app's results, and a result without `attached` reads as the thread's own | `harness/tools.TestStateOfFoldsPublishPerApp` | not built |
+| `app` naming an attached app publishes it; naming an app the thread made publishes that one; any other slug is `app_not_attached` with no request; a release with standing previews of several apps and no `app` is `app_required` | `internal/publish.TestWhichApp` | built |
+| A `path` outside the named app's checkout is `not_in_checkout`; with no `app`, a path inside a checkout publishes that app | `internal/publish.TestWhichApp` | built |
+| An attached app is committed in its checkout on the session's branch with the session's trailers and pushed to that branch; the session's git directory is not created; nothing changed pushes no new commit, as 043 | `internal/hosted.TestASessionPublishesAnAttachedApp` over the stub Cella, a stub app host and git's http backend | built |
+| A release whose commit descends from the live commit tags it; one that does not is refused `behind_live` with no tag pushed and the merge commands in its text; nothing live tags at once | `internal/hosted.TestAReleaseBehindTheLiveVersionIsRefused`, `internal/publish.TestAReleaseIsCheckedAgainstTheLiveVersion` | built |
+| Two sessions attached to one app each publish on their own branch; the second's release is refused until it merges the first's release, then released | `internal/hosted.TestTwoSessionsBuildOneApp` | built |
+| The state keeps the last result and the standing preview per app, `attached` marks an attached app's results, and a result without `attached` reads as the thread's own | `harness/tools.TestStateOfFoldsPublishPerApp` | built |
 | A model told its release was refused `behind_live` merges the live version and releases | a task of the suite ([[025-task-suite]]) against a stub app host | not built |
 
 ## Open questions
@@ -252,3 +252,50 @@ None. Whether a release that drops another's work should be allowed at
 all, and who may override the check, are the app host's and the
 installation's rules; the tool's check only keeps the core from doing
 it unasked.
+
+## Outcome
+
+Built on 2026-10-07, in no release yet, and not yet run against a live
+app host. Every criterion but the task of the suite has its test; the
+task is not built, as for [[043-publishing-a-folder]]. What shipped
+differs from the draft in these points:
+
+- **The push goes to the attached repository, not to `origin`.** The
+  checkout's `origin` is whatever a command in the machine last set, so
+  the tool pushes the session's branch, and fetches and pushes tags, to
+  the URL the session's header holds, which the authorizer attached,
+  after `onGitHost` checks both that URL and the app's
+  `repository.push_url`. The model's merge text still says `origin`,
+  which the delivery set to the same URL.
+- **A refusal before any request names no app.** `app_not_attached`,
+  `app_required` and `not_in_checkout` answer `meta.publish` with
+  `error.code` and `app` empty, so the thread's state folds no app from
+  a slug the model guessed; a client reads `"app": ""` there. Every
+  result of an attached app, a refused release and a failure after the
+  app was read included, carries `attached`, so no attached app is ever
+  folded as the thread's own.
+- **The texts.** The tool's description is `tools/publish-v2`, which
+  names `app` and the live-release check; the four new results are
+  `results/publish/not-attached-v1`, `app-required-v1`,
+  `not-in-checkout-v1` and `behind-live-v1`. The own app's
+  `behind_live` text names the session's git directory and the app's
+  push URL with a `<folder>` placeholder, since a result does not
+  record the folder published.
+- **The check's fetches.** The check fetches the commit to release when
+  the repository no longer holds it, every tag by refspec (a fetch of
+  `--tags` with no refspec asks for the remote's `HEAD`, which an app
+  repository only sessions pushed to does not have; the 043 test's
+  second release found it), and the live commit itself when no tag
+  brought it. The check is skipped when nothing is live, when the live
+  commit is the one released, and when the host already lists a release
+  of the commit, which the tool then waits on.
+- **The standing preview is per app**, in `tools.State.Standing`, a map
+  by slug, and `tools.State.Apps` holds each app's last result.
+  `tools.State.App` stays the thread's own app.
+- **Where an attached app's checkout starts.** With nothing live, a
+  checkout starts at the app's newest ready preview, which may be
+  another session's unreleased work; that is the delivery of
+  [[058-what-a-create-allow-attaches]], and the two-session test opens
+  both machines before either publishes to show the refusal and the
+  merge.
+
