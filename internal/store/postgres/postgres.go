@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -208,6 +210,9 @@ func (s *Store) Create(ctx context.Context, sess session.Session, blobs map[sess
 		}
 		if err != nil {
 			return fmt.Errorf("postgres: create %s: %w", sess.ID, err)
+		}
+		if err := writeMetadata(ctx, tx, sess.ID, sess.Metadata); err != nil {
+			return err
 		}
 		for d, b := range blobs {
 			if err := s.insertBlob(ctx, tx, sess.ID, d, b, false); err != nil {
@@ -471,6 +476,59 @@ func (s *Store) SetArchived(ctx context.Context, id string, at *time.Time) (sess
 		return session.Session{}, err
 	}
 	return out, nil
+}
+
+// SetMetadata merges a change into a session's metadata, in its body and
+// its rows, under the row lock; the log is untouched (spec 057).
+func (s *Store) SetMetadata(ctx context.Context, id string, change map[string]*string) (session.Session, error) {
+	if err := session.CheckID(session.PrefixSession, id); err != nil {
+		return session.Session{}, err
+	}
+	var out session.Session
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		sess, err := locked(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		out = sess
+		changed, err := session.Relabel(&out, change)
+		if err != nil || !changed {
+			return err
+		}
+		body, err := encode(out)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE sessions SET body = $2 WHERE id = $1`, id, body); err != nil {
+			return fmt.Errorf("postgres: relabel session %s: %w", id, err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM session_metadata WHERE session_id = $1`, id); err != nil {
+			return fmt.Errorf("postgres: relabel session %s: %w", id, err)
+		}
+		return writeMetadata(ctx, tx, id, out.Metadata)
+	})
+	if err != nil {
+		return session.Session{}, err
+	}
+	return out, nil
+}
+
+// writeMetadata inserts a session's metadata rows, one per entry, which a
+// list filtered by an entry reads (spec 057).
+func writeMetadata(ctx context.Context, tx pgx.Tx, id string, m map[string]string) error {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := slices.Sorted(maps.Keys(m))
+	values := make([]string, len(keys))
+	for i, k := range keys {
+		values[i] = m[k]
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO session_metadata (session_id, key, value) SELECT $1, k, v FROM unnest($2::text[], $3::text[]) AS e(k, v)`, id, keys, values)
+	if err != nil {
+		return fmt.Errorf("postgres: write the metadata of %s: %w", id, err)
+	}
+	return nil
 }
 
 func insertEvents(ctx context.Context, tx pgx.Tx, events []session.Event) error {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -286,5 +287,118 @@ func TestMigrationBackfillsTheTree(t *testing.T) {
 	}
 	if want := []string{sessions["c"].ID, b, a}; !slices.Equal(listed, want) {
 		t.Fatalf("the tree of a lists %v, want %v", listed, want)
+	}
+}
+
+// metadataRows is the session_metadata rows of a session as a map.
+func metadataRows(t *testing.T, conn *pgx.Conn, id string) map[string]string {
+	t.Helper()
+	rows, err := conn.Query(t.Context(), `SELECT key, value FROM session_metadata WHERE session_id = $1`, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type entry struct{ Key, Value string }
+	read, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entry])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]string
+	for _, e := range read {
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[e.Key] = e.Value
+	}
+	return out
+}
+
+// TestMetadataTableFollowsTheBody: migration 0009 copies the metadata of
+// every header into session_metadata, and a create, a fork's copy and a
+// change keep the table equal to the body, so a list filtered by an
+// entry finds each session the body labels (spec 057).
+func TestMetadataTableFollowsTheBody(t *testing.T) {
+	dsn := database(t)
+	migrateTo(t, dsn, "0008")
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	before := map[string]session.Session{}
+	for name, meta := range map[string]map[string]string{"labeled": {"project": "prj_1", "pinned": "yes"}, "bare": nil} {
+		s := storetest.NewSession()
+		s.Metadata = meta
+		body, err := encode(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Exec(t.Context(), `INSERT INTO sessions (id, agent_id, agent_version, owner, runner, status, turn, last_seq, created_at, updated_at, expires_at, body)
+			VALUES ($1, $2, 1, $3, $4, $5, 0, 0, $6, $6, $7, $8)`, s.ID, s.Agent.ID, s.Initiator.Subject, s.Runner, string(s.Status), s.CreatedAt, s.ExpiresAt, body); err != nil {
+			t.Fatal(err)
+		}
+		before[name] = s
+	}
+	st, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	follows := func(id string) {
+		t.Helper()
+		got, err := st.Get(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rows := metadataRows(t, conn, id); !maps.Equal(rows, got.Metadata) {
+			t.Fatalf("%s: rows %v, body %v", id, rows, got.Metadata)
+		}
+	}
+	follows(before["labeled"].ID)
+	follows(before["bare"].ID)
+	if rows := metadataRows(t, conn, before["labeled"].ID); len(rows) != 2 {
+		t.Fatalf("the migration copied %v", rows)
+	}
+
+	made := storetest.NewSession()
+	made.Metadata = map[string]string{"project": "prj_1"}
+	if err := st.Create(t.Context(), made, nil); err != nil {
+		t.Fatal(err)
+	}
+	follows(made.ID)
+	child := storetest.NewSession()
+	child.Metadata = made.Metadata
+	if _, err := session.Fork(t.Context(), st, child, nil, made, nil); err != nil {
+		t.Fatal(err)
+	}
+	follows(child.ID)
+	if _, err := st.SetMetadata(t.Context(), made.ID, map[string]*string{"project": new("prj_2"), "pinned": new("yes")}); err != nil {
+		t.Fatal(err)
+	}
+	follows(made.ID)
+	if _, err := st.SetMetadata(t.Context(), made.ID, map[string]*string{"project": nil, "pinned": nil}); err != nil {
+		t.Fatal(err)
+	}
+	follows(made.ID)
+	page, _, err := st.List(t.Context(), session.ListOptions{Metadata: &session.MetadataEntry{Key: "project", Value: "prj_1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, s := range page {
+		listed = append(listed, s.ID)
+	}
+	if want := []string{child.ID, before["labeled"].ID}; !slices.Equal(listed, want) {
+		t.Fatalf("listed by project prj_1: %v, want %v", listed, want)
+	}
+	// A deleted session leaves no row behind.
+	if err := st.Delete(t.Context(), child.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rows := metadataRows(t, conn, child.ID); rows != nil {
+		t.Fatalf("a deleted session left %v", rows)
 	}
 }
