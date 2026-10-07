@@ -5,7 +5,8 @@ package session
 
 // ToolPublish is the name of the tool that publishes a folder of the
 // session's machine as the session's own app at the installation's app
-// host, and releases it (spec 043).
+// host, or an attached app from its checkout, and releases it (specs 043
+// and 059).
 const ToolPublish = "publish"
 
 // The statuses a publish result records (spec 043): a preview's, and a
@@ -45,7 +46,28 @@ type PublishMeta struct {
 	// Error is the host's code and sentence for a failed, canceled or
 	// refused deploy or release.
 	Error *PublishError `json:"error,omitempty"`
+	// Attached is true when the app is one an allow attached to the
+	// session, published from its checkout (spec 059); a result without
+	// it names an app the thread created, its own.
+	Attached bool `json:"attached,omitempty"`
 }
+
+// The codes the publish tool refuses a call with before or instead of a
+// request to the app host (spec 059).
+const (
+	// PublishAppNotAttached is an app the session was not attached and the
+	// thread did not create.
+	PublishAppNotAttached = "app_not_attached"
+	// PublishAppRequired is a release that names no app while previews of
+	// several apps stand.
+	PublishAppRequired = "app_required"
+	// PublishNotInCheckout is a folder outside the checkout of the
+	// attached app the call names.
+	PublishNotInCheckout = "not_in_checkout"
+	// PublishBehindLive is a release whose commit does not hold the
+	// commit the app serves.
+	PublishBehindLive = "behind_live"
+)
 
 // PublishError is the app host's code and sentence.
 type PublishError struct {
