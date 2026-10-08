@@ -94,6 +94,33 @@ func TestAFailoverOfARejectedRequestSaysWhy(t *testing.T) {
 	}
 }
 
+// TestAFailoverOfACallWrittenAsTextSaysWhy: a model that wrote a tool call
+// as text, again after a reminder, asks the same session.update with
+// failed_reason tool_as_text and the tool in failed_detail (spec 062), and
+// moves the turn to the model the allow names.
+func TestAFailoverOfACallWrittenAsTextSaysWhy(t *testing.T) {
+	f, _ := checking(t)
+	f.applyModel("quick", "name: "+quick)
+	r := f.route(func(req authz.Request) string {
+		if req.Action == authorizer.ActionSessionCreate {
+			return haiku
+		}
+		return sonnet
+	})
+	s := f.create("alice", "quick")
+	on := session.ModelRef{Name: haiku, Via: quick}
+	const detail = "a call of question was written as text, again after a reminder"
+	next, err := f.api.Failover(t.Context(), s.ID, on, on, harness.FailedToolAsText, detail)
+	if err != nil || next != (session.ModelRef{Name: sonnet, Via: quick}) {
+		t.Fatalf("the failover answered %+v, %v", next, err)
+	}
+	asked := r.last(t, authorizer.ActionSessionUpdate)
+	want := `{"agent":"AGENT","current_model":"claude-haiku-4-5","current_model_via":"tier/quick","failed_detail":"a call of question was written as text, again after a reminder","failed_model":"claude-haiku-4-5","failed_reason":"tool_as_text","id":"SESSION","kind":"session","model":"tier/quick","owner":"https://login.example|alice","runner":"hosted","session_id":"SESSION"}`
+	if got := wire(t, asked, s.ID, "SESSION", s.Agent.ID, "AGENT"); got != want {
+		t.Fatalf("session.update asked about\n%s, want\n%s", got, want)
+	}
+}
+
 // TestAFailoverPassesOnAModelNamedThatCouldNotBeConnected: a turn whose
 // runner could not connect the model an earlier answer named asks again
 // standing on the model the session runs, with the model named as

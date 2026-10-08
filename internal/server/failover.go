@@ -18,7 +18,8 @@ import (
 
 // Failover answers which model a session's turn continues on when the
 // model it runs could not serve now, or its provider rejected the request
-// (spec 051); a hosted runner's harness asks it in the middle of a turn.
+// (spec 051), or it wrote a tool call as text (spec 062); a hosted
+// runner's harness asks it in the middle of a turn.
 // current is the model the turn runs, and failed that model, or a model an
 // earlier answer of the turn named that the runner could not connect, with
 // the same via. It asks the authorizer session.update as the session's
@@ -27,10 +28,12 @@ import (
 // current_model and current_model_via the model the session stands on and
 // that name, failed_model the model that failed, failed_reason, when there
 // is one, why it failed, harness.FailedRejected for a request the provider
-// rejected, and failed_detail, when there is one, the developer detail of
+// rejected and harness.FailedToolAsText for a model that wrote a tool call
+// as text, and failed_detail, when there is one, the developer detail of
 // the failure, at most models.MaxDetail bytes: the gateway's, from which
-// an installation tells a provider's rate limit from its outage, or why
-// the model named could not be connected. An authorizer that routes
+// an installation tells a provider's rate limit from its outage, the tool
+// a call of was written as text, or why the model named could not be
+// connected. An authorizer that routes
 // passes over the failed model and names another in the allow's model, as
 // it answers any switch to a routed name, or keeps the turn on the model a
 // rejected request failed on by naming none; one that reads no

@@ -156,21 +156,24 @@ type Config struct {
 	// for the turns after. Nil runs every turn on the configured model.
 	Connect func(ctx context.Context, name string) (models.Model, models.Connection, models.Entry, error)
 	// Failover asks which model a turn continues on when the model it runs
-	// cannot serve now, or its provider rejected the request (spec 051),
-	// for a session on a routed name alone: standing is the model the turn
-	// runs, with the name it was picked for as via; failed is the model
-	// that failed, standing itself, or a model an earlier answer of the
-	// turn named that could not be connected, with the same via; reason is
-	// FailedRejected when the provider rejected the request on failed, and
-	// "" when failed cannot serve now or could not be connected; and detail
-	// is the developer detail of the failure, the gateway's or the
-	// connection's, "" for none, from which an installation tells a
+	// cannot serve now, or its provider rejected the request (spec 051), or
+	// it wrote a tool call as text again after a reminder (spec 062), for a
+	// session on a routed name alone: standing is the model the turn runs,
+	// with the name it was picked for as via; failed is the model that
+	// failed, standing itself, or a model an earlier answer of the turn
+	// named that could not be connected, with the same via; reason is
+	// FailedRejected when the provider rejected the request on failed,
+	// FailedToolAsText when failed wrote a tool call as text, and "" when
+	// failed cannot serve now or could not be connected; and detail is the
+	// developer detail of the failure, the gateway's, the connection's or
+	// the tool written, "" for none, from which an installation tells a
 	// provider's rate limit from its outage. The answer names the model to
 	// run in its place with the same via, at the reasoning level it
 	// answers, the agent's own resolved; an answer that names standing,
 	// failed or none moves nothing. The runner asks the installation's
 	// authorizer. Nil asks nothing: a model that cannot serve ends the turn
-	// after DownRetry, and a rejected request with the model's error.
+	// after DownRetry, a rejected request with the model's error, and a
+	// call written as text with the response as the answer.
 	Failover func(ctx context.Context, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
 	// Log receives one line per response that wrote a tool call as text
 	// and what the turn did about it (spec 062): the session, thread,

@@ -99,6 +99,23 @@
 // gateway's own refusals, a request it finds invalid, a model the key may
 // not use, a rate limit on the key or a spent budget, ask nothing.
 //
+// A model that writes a tool call as text asks it too (spec 062). When a
+// response calls no tool and its text writes a call of a tool the request
+// offered, as markup named after the tool or a call wrapper naming it,
+// the harness sends the request once more with a reminder to call the
+// tool; when that response does the same, toposd asks with failed_reason
+// tool_as_text, failed_model the model that wrote it, which is also
+// current_model, and failed_detail naming the tool, such as "a call of
+// question was written as text, again after a reminder". The model
+// answers, but cannot use its tools through the request as it is served:
+// whether another model answers, and whether the model is passed over for
+// other sessions, is the endpoint's to decide. An allow that names another
+// model moves the turn, once a turn and within the same bound of moves;
+// an allow that names none, or a deny, keeps the turn on the model, and
+// the response is the turn's answer as it is written. An endpoint that
+// refuses a failed_reason it does not know keeps every such turn where it
+// is.
+//
 // A second member, reasoning, sets the reasoning level the session runs
 // at (spec 049), read where model is: absent keeps the level the session
 // has, one of manifest/v1's Efforts sets it for the next turn, and ""

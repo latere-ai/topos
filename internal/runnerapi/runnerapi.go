@@ -111,16 +111,19 @@ type Token struct {
 
 // FailoverRequest asks, under the lease, which model the session's turn
 // continues on when Failed could not serve now, or its provider rejected
-// the request (spec 051): Failed is the model the turn runs with the
-// routed name it was picked for, or one an earlier answer of the turn
-// named that could not be connected, and Standing, set only when it is
-// another model than Failed, the model the turn runs; Reason is
-// harness.FailedRejected for a request the provider rejected, absent
-// otherwise; Detail is the developer detail of the failure. A request
-// with no Standing stands on Failed, so a server before Standing reads
-// every request but one that passes a model over. A server before Reason
-// refuses a request that carries it as invalid_request, since it decodes
-// no unknown member, and the turn ends with the model's error.
+// the request (spec 051), or it wrote a tool call as text (spec 062):
+// Failed is the model the turn runs with the routed name it was picked
+// for, or one an earlier answer of the turn named that could not be
+// connected, and Standing, set only when it is another model than Failed,
+// the model the turn runs; Reason is harness.FailedRejected for a request
+// the provider rejected, harness.FailedToolAsText for a model that wrote
+// a tool call as text, absent otherwise; Detail is the developer detail
+// of the failure. A request with no Standing stands on Failed, so a
+// server before Standing reads every request but one that passes a model
+// over. A server before a Reason refuses a request that carries it as
+// invalid_request, and the turn ends as it would with no move: with the
+// model's error for a rejected request, with its answer for a call
+// written as text.
 type FailoverRequest struct {
 	Generation int64             `json:"generation"`
 	Standing   *session.ModelRef `json:"standing,omitempty"`
@@ -435,8 +438,8 @@ func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
 	if req.Failed.Name == "" {
 		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a failover request names the failed model"}
 	}
-	if req.Reason != "" && req.Reason != harness.FailedRejected {
-		return &wireError{CodeInvalidRequest, http.StatusBadRequest, fmt.Sprintf("a failover request's reason is %q or absent", harness.FailedRejected)}
+	if req.Reason != "" && req.Reason != harness.FailedRejected && req.Reason != harness.FailedToolAsText {
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, fmt.Sprintf("a failover request's reason is %q, %q or absent", harness.FailedRejected, harness.FailedToolAsText)}
 	}
 	id := r.PathValue("session")
 	c, err := s.held(id, req.Generation)

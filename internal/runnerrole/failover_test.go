@@ -110,17 +110,21 @@ func TestARemoteLeaseAsksTheServerToFailOver(t *testing.T) {
 	if _, err := l.Failover(ctx, failed, failed, harness.FailedRejected, "upstream_rejected: upstream status 404"); err != nil {
 		t.Fatal(err)
 	}
-	if len(asked) != 4 || asked[0] != s.ID+" vendor/model-a vendor/model-a tier/quick  upstream status 429" ||
+	if _, err := l.Failover(ctx, failed, failed, harness.FailedToolAsText, "a call of question was written as text, again after a reminder"); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 5 || asked[0] != s.ID+" vendor/model-a vendor/model-a tier/quick  upstream status 429" ||
 		asked[1] != s.ID+" vendor/model-a vendor/model-c tier/quick  could not be connected" || asked[2] != s.ID+" vendor/model-a vendor/model-a tier/quick  " ||
-		asked[3] != s.ID+" vendor/model-a vendor/model-a tier/quick rejected upstream_rejected: upstream status 404" {
+		asked[3] != s.ID+" vendor/model-a vendor/model-a tier/quick rejected upstream_rejected: upstream status 404" ||
+		asked[4] != s.ID+" vendor/model-a vendor/model-a tier/quick tool_as_text a call of question was written as text, again after a reminder" {
 		t.Fatalf("the server was asked %q", asked)
 	}
-	if b := bodies(); len(b) != 4 || strings.Contains(b[0], `"standing"`) || !strings.Contains(b[1], `"standing":{"name":"vendor/model-a","via":"tier/quick"}`) ||
-		strings.Contains(b[0], `"reason"`) || !strings.Contains(b[3], `"reason":"rejected"`) {
+	if b := bodies(); len(b) != 5 || strings.Contains(b[0], `"standing"`) || !strings.Contains(b[1], `"standing":{"name":"vendor/model-a","via":"tier/quick"}`) ||
+		strings.Contains(b[0], `"reason"`) || !strings.Contains(b[3], `"reason":"rejected"`) || !strings.Contains(b[4], `"reason":"tool_as_text"`) {
 		t.Fatalf("the requests' bodies %q", b)
 	}
 	stale := &lease{c: c, id: s.ID, gen: held.gen + 1, lost: make(chan struct{}), stop: make(chan struct{})}
-	if _, err := stale.Failover(ctx, failed, failed, "", ""); !errors.Is(err, session.ErrLeaseLost) || len(asked) != 4 {
+	if _, err := stale.Failover(ctx, failed, failed, "", ""); !errors.Is(err, session.ErrLeaseLost) || len(asked) != 5 {
 		t.Fatalf("another generation: %v, %d questions", err, len(asked))
 	}
 	refuse = errors.New("model_tier_quick_unavailable")
@@ -130,7 +134,7 @@ func TestARemoteLeaseAsksTheServerToFailOver(t *testing.T) {
 	if err := c.json(ctx, "POST", "/leases/"+s.ID+"/failover", runnerapi.FailoverRequest{Generation: held.gen}, nil); !errors.Is(err, session.ErrInvalid) {
 		t.Fatalf("no failed model: %v", err)
 	}
-	if _, err := l.Failover(ctx, failed, failed, "throttled", ""); !errors.Is(err, session.ErrInvalid) || len(asked) != 5 {
+	if _, err := l.Failover(ctx, failed, failed, "throttled", ""); !errors.Is(err, session.ErrInvalid) || len(asked) != 6 {
 		t.Fatalf("an unknown reason: %v, %d questions", err, len(asked))
 	}
 	if err := claims[0].Lease.Release(); err != nil {

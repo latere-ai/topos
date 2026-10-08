@@ -61,11 +61,12 @@ type Options struct {
 	Credentials func(id string, lease session.Lease) Credentials
 	// Failover asks which model the session id's turn continues on when the
 	// model it runs cannot serve now, or its provider rejected the request
-	// (spec 051), standing, failed, reason and detail as
-	// harness.Config.Failover says: toposd's question to its authorizer,
-	// for the leases of its own runners. A lease that asks it itself
-	// (Failover) is asked instead; with neither, a drive asks nothing, and
-	// such a turn ends after harness.DownRetry or with the model's error.
+	// (spec 051), or it wrote a tool call as text (spec 062), standing,
+	// failed, reason and detail as harness.Config.Failover says: toposd's
+	// question to its authorizer, for the leases of its own runners. A
+	// lease that asks it itself (Failover) is asked instead; with neither,
+	// a drive asks nothing, and such a turn ends after harness.DownRetry,
+	// with the model's error, or with the response written as its answer.
 	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
 	// Apps reads the commits an app is served at from the installation's
 	// app host, with the drive's token source, nil when the drive reaches
@@ -85,8 +86,8 @@ type AppCommits struct {
 
 // Failover is a lease that asks which model its session's turn continues
 // on when the model it runs cannot serve now, or its provider rejected the
-// request (spec 051): a runner process's, which reaches toposd over its
-// internal listener.
+// request (spec 051), or it wrote a tool call as text (spec 062): a runner
+// process's, which reaches toposd over its internal listener.
 type Failover interface {
 	Failover(ctx context.Context, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
 }
