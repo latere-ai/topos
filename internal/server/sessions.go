@@ -13,10 +13,12 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -315,6 +317,14 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		if start.Via != "" {
 			fields["model_via"] = start.Via
 		}
+		if start.Route != "" {
+			fields["model_route"] = start.Route
+		}
+	}
+	// A create that carries its first message, a trigger's, tells the
+	// shape of it, as a send of a message does (spec 061).
+	if in.message != "" && in.fork == nil {
+		maps.Copy(fields, messageShape([]lux.Block{{Type: ir.BlockText, Text: in.message}}, 0, false))
 	}
 	// The metadata the session will hold, a fork's copied from the
 	// session it forks, so an authorizer decides by a label it files
@@ -374,6 +384,9 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		routed := own
 		if limits.Model != "" && limits.Model != cfg.Model.Name {
 			routed.Name, routed.Via = limits.Model, cfg.Model.Name
+		}
+		if limits.Model != "" {
+			routed.Route = limits.Route
 		}
 		if r := limits.Reasoning; r != nil {
 			routed.Effort = cmp.Or(*r, cfg.Effort)
@@ -961,42 +974,141 @@ func (s *Server) appendBatch(ctx context.Context, id string, batch []session.Eve
 // begins.
 const requestWindow = 64
 
-// lastRequest is when the session's last model.request ended, the time
-// its event was appended, on whichever thread it ran; ok is false for a
-// session that has made none.
-func (s *Server) lastRequest(ctx context.Context, sess session.Session) (time.Time, bool, error) {
-	for end, window := sess.LastSeq, uint64(requestWindow); end > 0; window *= 2 {
+// tail is what a send reads of the end of a session's log: when its last
+// model request ended, the time its event was appended, on whichever
+// thread it ran, made false for a session that has made none; and whether
+// its last turn called a tool, on any thread (spec 061).
+type tail struct {
+	at    time.Time
+	made  bool
+	tools bool
+}
+
+// tailOf reads the end of sess's log backward, a window at a time, until
+// it has found the last model request and decided whether the last turn,
+// the header's, called a tool: at an agent.tool_use of that turn, or at an
+// event of an earlier turn. A turn that called no tool is a few events.
+func (s *Server) tailOf(ctx context.Context, sess session.Session) (tail, error) {
+	var out tail
+	scan := tailScan{turn: sess.Turn, toolsKnown: sess.Turn == 0}
+	for end, window := sess.LastSeq, uint64(requestWindow); end > 0 && !scan.done(); window *= 2 {
 		from := uint64(1)
 		if end > window {
 			from = end - window + 1
 		}
 		evs, err := s.o.Sessions.Events(ctx, sess.ID, from, int(end-from+1))
 		if err != nil {
-			return time.Time{}, false, err
+			return tail{}, err
 		}
 		for _, e := range slices.Backward(evs) {
-			if e.Type == session.TypeModelRequest {
-				return e.Time, true, nil
+			if scan.read(e); scan.done() {
+				break
 			}
 		}
 		end = from - 1
 	}
-	return time.Time{}, false, nil
+	out.at, out.made, out.tools = scan.at, scan.made, scan.tools
+	return out, nil
+}
+
+// tailOfCopy is tailOf over the events a fork copied, whose last turn is
+// the one with the highest number among them.
+func tailOfCopy(evs []session.Event) tail {
+	scan := tailScan{}
+	for _, e := range evs {
+		scan.turn = max(scan.turn, e.Turn)
+	}
+	scan.toolsKnown = scan.turn == 0
+	for _, e := range slices.Backward(evs) {
+		if scan.read(e); scan.done() {
+			break
+		}
+	}
+	return tail{at: scan.at, made: scan.made, tools: scan.tools}
+}
+
+// tailScan is one backward read of a log's end: the last model request,
+// and whether turn, the last, called a tool.
+type tailScan struct {
+	turn       int
+	at         time.Time
+	made       bool
+	tools      bool
+	toolsKnown bool
+}
+
+// read takes the next event, going backward.
+func (t *tailScan) read(e session.Event) {
+	if !t.made && e.Type == session.TypeModelRequest {
+		t.at, t.made = e.Time, true
+	}
+	if t.toolsKnown {
+		return
+	}
+	switch {
+	case e.Turn == t.turn && e.Type == session.TypeAgentToolUse:
+		t.tools, t.toolsKnown = true, true
+	case e.Turn != 0 && e.Turn < t.turn:
+		t.toolsKnown = true
+	}
+}
+
+// done reports whether the read has what it looks for.
+func (t *tailScan) done() bool { return t.made && t.toolsKnown }
+
+// shape is a person's message as a question tells it (spec 061): the
+// characters of its text, its files and images, and the web addresses in
+// its text. Its words are never sent.
+type shape struct {
+	chars, attachments, links int
+}
+
+// links finds a web address: http:// or https://, in any case, and at
+// least one character that is not white space.
+var links = regexp.MustCompile(`(?i)https?://\S`)
+
+// shapeOf is the shape of a message of content, attaching files files.
+func shapeOf(content []lux.Block, files int) shape {
+	out := shape{attachments: files}
+	for _, b := range content {
+		switch b.Type {
+		case ir.BlockText:
+			out.chars += utf8.RuneCountInString(b.Text)
+			out.links += len(links.FindAllStringIndex(b.Text, -1))
+		case ir.BlockImage:
+			out.attachments++
+		}
+	}
+	return out
+}
+
+// fields are the shape as a question's fields, with whether the session's
+// last turn called a tool.
+func (sh shape) fields(toolsLastTurn bool) map[string]any {
+	return map[string]any{"message_chars": sh.chars, "attachments": sh.attachments, "links": sh.links, "tools_last_turn": toolsLastTurn}
+}
+
+// messageShape is the fields of a message of content attaching files
+// files, after a last turn that called a tool or not.
+func messageShape(content []lux.Block, files int, toolsLastTurn bool) map[string]any {
+	return shapeOf(content, files).fields(toolsLastTurn)
 }
 
 // sendAs reads a session and asks q's caller session.send about it: the
 // one question the send route and a trigger's firing send by (spec 022).
 // Beside fields the question carries the model the session stands on,
-// the name it was asked by, and the whole seconds since its last model
-// request ended, absent before its first, which is what an authorizer
-// that keeps a session on one model while a provider's cache is warm
-// decides from (spec 038). change is the switch the allow made, nil when
-// the model and the reasoning level it names are the ones the session
+// the name it was asked by and the route chosen on the way, and the whole
+// seconds since its last model request ended, absent before its first,
+// which is what an authorizer that keeps a session on one model while a
+// provider's cache is warm decides from (spec 038); and for a message, sh
+// not nil, its shape and whether the session's last turn called a tool
+// (spec 061). change is the switch the allow made, nil when the model,
+// its route and the reasoning level it names are the ones the session
 // stands on: the model it names, checked by the rule a person's switch is
 // checked by, with the name asked, at the level it names, "" being the
 // agent's own, or the level the session had when it names none (spec
 // 049). A level alone moves the level and keeps the model.
-func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[string]any) (session.Session, sendChanges, error) {
+func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[string]any, sh *shape) (session.Session, sendChanges, error) {
 	sess, err := s.o.Sessions.Get(ctx, id)
 	if err != nil {
 		return session.Session{}, sendChanges{}, err
@@ -1005,11 +1117,15 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 	if err != nil {
 		return session.Session{}, sendChanges{}, err
 	}
-	at, made, err := s.lastRequest(ctx, sess)
+	t, err := s.tailOf(ctx, sess)
 	if err != nil {
 		return session.Session{}, sendChanges{}, err
 	}
-	out, err := s.askSend(ctx, q, sess, cfg, fields, at, made)
+	if sh != nil {
+		fields = maps.Clone(fields)
+		maps.Copy(fields, sh.fields(t.tools))
+	}
+	out, err := s.askSend(ctx, q, sess, cfg, fields, t.at, t.made)
 	if err != nil {
 		return session.Session{}, sendChanges{}, err
 	}
@@ -1027,6 +1143,9 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 	all["model"] = old.Name
 	if old.Via != "" {
 		all["model_via"] = old.Via
+	}
+	if old.Route != "" {
+		all["model_route"] = old.Route
 	}
 	if made {
 		all["idle_seconds"] = max(int(s.o.Now().Sub(at)/time.Second), 0)
@@ -1049,6 +1168,12 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 		if next.Via == next.Name {
 			next.Via = ""
 		}
+	}
+	// The route moves with any allow that names a model, the one the
+	// session stands on included, so a route that moves alone is a change
+	// of its own (spec 061).
+	if limits.Model != "" {
+		next.Route = limits.Route
 	}
 	if r := limits.Reasoning; r != nil {
 		next.Effort = cmp.Or(*r, cfg.Effort)

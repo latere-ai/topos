@@ -392,7 +392,7 @@ func TestASendTellsHowLongTheSessionHasBeenQuiet(t *testing.T) {
 	if a := f.send(s.ID, "Answer."); a.status != http.StatusOK {
 		t.Fatalf("send: %d %s", a.status, a.body)
 	}
-	want := `{"agent":"AGENT","event_type":"user.message","id":"SESSION","kind":"session","model":"claude-haiku-4-5","model_via":"tier/quick","owner":"https://login.example|alice","runner":"hosted","sender":"https://login.example|alice"}`
+	want := `{"agent":"AGENT","attachments":0,"event_type":"user.message","id":"SESSION","kind":"session","links":0,"message_chars":7,"model":"claude-haiku-4-5","model_via":"tier/quick","owner":"https://login.example|alice","runner":"hosted","sender":"https://login.example|alice","tools_last_turn":false}`
 	if got := resource(); got != want {
 		t.Fatalf("a session that has made no request asked\n%s, want\n%s", got, want)
 	}
@@ -416,7 +416,7 @@ func TestASendTellsHowLongTheSessionHasBeenQuiet(t *testing.T) {
 	if a := f.send(s.ID, "And again."); a.status != http.StatusOK {
 		t.Fatalf("send: %d %s", a.status, a.body)
 	}
-	want = `{"agent":"AGENT","event_type":"user.message","id":"SESSION","idle_seconds":450,"kind":"session","model":"claude-haiku-4-5","model_via":"tier/quick","owner":"https://login.example|alice","runner":"hosted","sender":"https://login.example|alice"}`
+	want = `{"agent":"AGENT","attachments":0,"event_type":"user.message","id":"SESSION","idle_seconds":450,"kind":"session","links":0,"message_chars":10,"model":"claude-haiku-4-5","model_via":"tier/quick","owner":"https://login.example|alice","runner":"hosted","sender":"https://login.example|alice","tools_last_turn":false}`
 	if got := resource(); got != want {
 		t.Fatalf("a session quiet for seven and a half minutes asked\n%s, want\n%s", got, want)
 	}

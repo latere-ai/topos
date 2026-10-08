@@ -10,6 +10,26 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A question about a person's message tells the authorizer its shape and
+  never its words: `session.send` of a `user.message`, a fork sent its
+  message and a create that carries a first message carry
+  `message_chars`, the characters of its text; `attachments`, its files
+  and images; `links`, the `http://` and `https://` addresses in its
+  text; and `tools_last_turn`, whether the session's last turn called a
+  tool on any thread. An installation can choose a model by what a
+  message asks.
+- An allow that names a model may name `route`, the routed name the
+  authorizer chose on the way to it. The session keeps it on its model
+  beside `via`, in the header and in both sides of
+  `session.model_changed`; an allow that names a model without one
+  clears it, and a route that moves while the model stays is a change of
+  its own. A turn moved off a model that cannot serve keeps its route,
+  and a fork starts on its parent's. Every question that carries
+  `model_via` carries the route beside it: `model_route` on a send and a
+  fork, `current_model_route` on an update.
+
 ## v0.26.0 - 2026-10-08
 
 ### Changed

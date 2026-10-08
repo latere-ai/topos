@@ -36,9 +36,12 @@ import (
 // rejected request failed on by naming none; one that reads no
 // failed_model answers the model the session stands on.
 //
-// The model the allow names is checked by the rule a switch checks a
-// model by, and its level, "" being the agent's own, is resolved as a
-// send resolves it. The answer keeps the session's via. It is the model
+// The question carries current_model_route, the route the turn began on,
+// while the session has one (spec 061). The model the allow names is
+// checked by the rule a switch checks a model by, and its level, "" being
+// the agent's own, is resolved as a send resolves it. The answer keeps the
+// session's via and its route: the model moves inside the turn, the route
+// the turn began on does not. It is the model
 // the session stands on, so nothing moves, when the allow names none, the
 // same one or the failed one, when current is not the routed model the
 // session stands on, since the harness and the header disagree then about
@@ -66,6 +69,9 @@ func (s *Server) Failover(ctx context.Context, id string, current, failed sessio
 	fields := map[string]any{
 		"session_id": sess.ID, "model": old.Via, "current_model": old.Name, "current_model_via": old.Via,
 		"failed_model": failed.Name,
+	}
+	if old.Route != "" {
+		fields["current_model_route"] = old.Route
 	}
 	if reason != "" {
 		fields["failed_reason"] = reason

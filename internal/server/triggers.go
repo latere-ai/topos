@@ -411,15 +411,16 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 // route sends one, asked as session.send with the trigger as sender.
 func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	from := sender(sd.Trigger)
+	content := []lux.Block{{Type: ir.BlockText, Text: sd.Message}}
 	sess, change, err := a.s.sendAs(ctx, a.s.owner(sd.Trigger), sd.SessionID,
-		map[string]any{"sender": from.Subject, "event_type": string(session.TypeUserMessage)})
+		map[string]any{"sender": from.Subject, "event_type": string(session.TypeUserMessage)}, new(shapeOf(content, 0)))
 	if err != nil {
 		return err
 	}
 	if sess.Status == session.StatusEnded {
 		return triggers.ErrEnded
 	}
-	msg := session.UserMessage{Sender: from, Content: []lux.Block{{Type: ir.BlockText, Text: sd.Message}}, FiringID: sd.FiringID}
+	msg := session.UserMessage{Sender: from, Content: content, FiringID: sd.FiringID}
 	ev, err := session.NewEvent(session.TypeUserMessage, msg, a.s.o.Now())
 	if err != nil {
 		return err

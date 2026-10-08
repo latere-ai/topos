@@ -180,7 +180,12 @@ func (c *call) sendEvent() error {
 	var change sendChanges
 	var err error
 	if action == authorizer.ActionSessionSend {
-		s, change, err = c.s.sendAs(c.r.Context(), c.asker(), c.r.PathValue("id"), fields)
+		// A message tells its shape, never its words (spec 061).
+		var sh *shape
+		if message != nil {
+			sh = new(shapeOf(message.Content, len(files)))
+		}
+		s, change, err = c.s.sendAs(c.r.Context(), c.asker(), c.r.PathValue("id"), fields, sh)
 	} else {
 		s, err = c.session(action, fields)
 	}

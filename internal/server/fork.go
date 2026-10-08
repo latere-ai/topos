@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"slices"
 	"strconv"
 	"time"
 
@@ -91,6 +90,9 @@ type forkMessage struct {
 	payload session.UserMessage
 	files   []file
 }
+
+// shape is the message's shape as its send question tells it (spec 061).
+func (m *forkMessage) shape() shape { return shapeOf(m.payload.Content, len(m.files)) }
 
 // forkSession is POST /sessions/{id}/fork (spec 017): a new session of
 // the same agent version whose log starts as a copy of this one's up to
@@ -225,9 +227,10 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	if f.message == nil {
 		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent, f.events)
 	}
-	at, made := lastCopiedRequest(f.events)
+	t := tailOfCopy(f.events)
 	fields := map[string]any{"sender": q.caller.Subject, "event_type": string(session.TypeUserMessage)}
-	changes, err := s.askSend(ctx, q, sess, cfg, fields, at, made)
+	maps.Copy(fields, f.message.shape().fields(t.tools))
+	changes, err := s.askSend(ctx, q, sess, cfg, fields, t.at, t.made)
 	if err != nil {
 		s.refusedFork(ctx, q, sess, f, err)
 		return session.Session{}, err
@@ -246,18 +249,6 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	}
 	s.o.Notify()
 	return forked, nil
-}
-
-// lastCopiedRequest is when the last model.request among evs ended, the
-// time its event was appended, on whichever thread it ran; made is false
-// when evs hold none.
-func lastCopiedRequest(evs []session.Event) (at time.Time, made bool) {
-	for _, e := range slices.Backward(evs) {
-		if e.Type == session.TypeModelRequest {
-			return e.Time, true
-		}
-	}
-	return time.Time{}, false
 }
 
 // modelAt is the model a session stood on after the first seq events of

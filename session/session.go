@@ -182,7 +182,10 @@ const (
 // at: one of manifest/v1's Efforts, or empty for the model's own default
 // (spec 015). Via is the name that was asked, of the agent, of a person's
 // change or of the session before, when the authorizer answered another,
-// and empty when the session runs the name asked (spec 038).
+// and empty when the session runs the name asked (spec 038). Route is the
+// routed name the authorizer resolved Via to before it named the model,
+// empty when it named none (spec 061): the core keeps it and never reads
+// what it means.
 //
 // The level is stored under effort, the spelling every header and every
 // session.model_changed stored before the rename carries, so an earlier
@@ -194,6 +197,7 @@ type ModelRef struct {
 	Via       string `json:"via,omitempty"`
 	Effort    string `json:"effort,omitempty"`
 	Reasoning string `json:"reasoning,omitempty"`
+	Route     string `json:"route,omitempty"`
 }
 
 // Level is the reasoning level under either name: reasoning, and effort

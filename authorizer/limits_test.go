@@ -105,6 +105,30 @@ func TestTheModelIsOneMemberOnTheWire(t *testing.T) {
 	}
 }
 
+// TestDecodeLimitsReadsARoute: limits.route is read beside limits.model as
+// written, ignored without a model, and refused with space around it or
+// as anything but a string (spec 061).
+func TestDecodeLimitsReadsARoute(t *testing.T) {
+	raw, err := json.Marshal(WireLimits{Model: "vendor/model-b", Route: "tier/thorough"})
+	if err != nil || string(raw) != `{"model":"vendor/model-b","route":"tier/thorough"}` {
+		t.Fatalf("the limits of an allow that names a route are %s, %v", raw, err)
+	}
+	if l, err := DecodeLimits(authz.Decision{Allow: true, Limits: raw}); err != nil || l.Model != "vendor/model-b" || l.Route != "tier/thorough" {
+		t.Fatalf("a route beside a model decoded to %+v, %v", l, err)
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{Route: "tier/thorough"})); err != nil || l.Route != "" {
+		t.Fatalf("a route with no model decoded to %+v, %v", l, err)
+	}
+	for name, w := range map[string]any{
+		"route with space": WireLimits{Model: "vendor/model-b", Route: "tier/thorough "},
+		"route not a name": map[string]any{"model": "vendor/model-b", "route": 3},
+	} {
+		if _, err := DecodeLimits(decision(t, w)); err == nil {
+			t.Errorf("%s: decoded", name)
+		}
+	}
+}
+
 // TestTheReasoningLevelHasThreeStatesOnTheWire: limits.reasoning absent
 // keeps the session's level, a level sets it, and "" returns the session
 // to its agent's own, so the member is a pointer and "" is written out

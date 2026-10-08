@@ -119,6 +119,11 @@ type Limits struct {
 	// Context is the titled text an allow of session.create attaches,
 	// which the model reads for the session's life (spec 058).
 	Context []session.ContextPart
+	// Route is the routed name the authorizer resolved the name asked to
+	// before it named Model (spec 061), read only beside Model: the session
+	// keeps it beside its model, and an allow that names Model without it
+	// clears it. The core never reads what it means.
+	Route string
 }
 
 // WireRepository is one repository an allow of session.create attaches
@@ -149,6 +154,7 @@ type WireLimits struct {
 	Instructions   string                `json:"instructions,omitempty"`
 	Repositories   []WireRepository      `json:"repositories,omitempty"`
 	Context        []session.ContextPart `json:"context,omitempty"`
+	Route          string                `json:"route,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -212,6 +218,13 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		return Limits{}, fmt.Errorf("limits.model is %q, not a model's name", w.Model)
 	}
 	l.Model = w.Model
+	// A route is a name as a model is, kept and sent back as written.
+	if strings.TrimSpace(w.Route) != w.Route {
+		return Limits{}, fmt.Errorf("limits.route is %q, not a routed name", w.Route)
+	}
+	if w.Model != "" {
+		l.Route = w.Route
+	}
 	if r := w.Reasoning; r != nil {
 		if *r != "" && !slices.Contains(v1.Efforts, *r) {
 			return Limits{}, fmt.Errorf("limits.reasoning is %q, not one of %s or empty for the agent's own", *r, strings.Join(v1.Efforts, ", "))

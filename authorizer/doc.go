@@ -43,6 +43,20 @@
 // about which model a name stands for or how long a provider keeps a
 // prompt cache.
 //
+// A name may stand for a choice of other routed names, each standing for
+// models (spec 061). Beside model an allow may name route, the routed
+// name the endpoint resolved the name asked to on the way to the model.
+// toposd keeps it on the session's model beside via, in the header and in
+// session.model_changed, and an allow that names a model without it
+// clears it; a route that moves while the model stays is a change of its
+// own at a send. Every question that carries model_via carries the route
+// beside it: model_route on a send and a fork, current_model_route on an
+// update. A question about a person's message, a send of a user.message
+// and a create that carries a first message, also carries its shape and
+// never its words: message_chars, the characters of its text; attachments,
+// its files and images; links, the web addresses in its text; and
+// tools_last_turn, whether the session's last turn called a tool.
+//
 // A turn may ask for another model in its middle (spec 051). When the
 // model of a session that has a via cannot serve, the gateway answering
 // upstream_error, provider_unavailable or upstream_timeout, toposd asks

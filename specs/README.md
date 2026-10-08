@@ -116,6 +116,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [058](058-what-a-create-allow-attaches.md) | What a create's allow attaches: repositories with the app each publishes, checked out at the app's live commit, read-only files the runner fetches with the session's token, and context text, each fixed for the session's life | medium | in-progress | 004, 006, 010, 011, 015, 016, 018, 019, 043, 053, 057 |
 | [059](059-publishing-to-a-chosen-app.md) | Publishing to a chosen app: the app input, an attached app published from its own checkout on the session's branch, a release refused while the live version holds work it lacks, a standing preview per app, and a change put live with one approval | medium | testing | 008, 012, 019, 043, 058 |
 | [060](060-the-memory-tool.md) | The memory tool: short entries an agent saves, updates and forgets through a memory service the installation configures, with the session's own key, read at the start through the allow's context | medium | drafted | 003, 004, 008, 012, 016, 018, 020, 025, 047, 058 |
+| [061](061-a-messages-shape-and-the-route-an-allow-names.md) | A message's shape and the route an allow names: a send tells the authorizer how long the message is, what it attaches and links, and whether the last turn ran a tool, and an allow may name the routed name it chose on the way to the model, which the session keeps beside it | small | testing | 004, 006, 015, 038, 051, 056 |
 
 ## Dependency graph
 
@@ -185,6 +186,7 @@ flowchart BT
   S058[058 what a create's allow attaches]
   S059[059 publishing to a chosen app]
   S060[060 the memory tool]
+  S061[061 a message's shape and the route]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -290,6 +292,8 @@ flowchart BT
   S060 --> S020
   S060 --> S047
   S060 --> S058
+  S061 --> S051
+  S061 --> S056
 ```
 
 ## Build order

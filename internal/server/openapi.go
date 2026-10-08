@@ -294,7 +294,8 @@ var opDescriptions = map[string]string{
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
 	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
-		"its model is {name, via, reasoning}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, and reasoning the level it runs at. " +
+		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, and route the routed name the authorizer chose on the way, when it names one. " +
+		"A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +
 		NetworkRule,
 	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. " +
@@ -355,10 +356,10 @@ var opDescriptions = map[string]string{
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
 		"The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: "+
-		"session.model_changed {by, old, new}, each {name, via, reasoning}, is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
+		"session.model_changed {by, old, new}, each {name, via, reasoning, route}, is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
 		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level, "+
 		"unless the model cannot serve: on a session whose model has a via, a model the gateway answers upstream_error, provider_unavailable or upstream_timeout is not retried, and the authorizer is asked session.update as the session's initiator, "+
-		"with session_id, model the via, current_model and current_model_via the model that failed and its via, failed_model the model that failed, and failed_detail the gateway's developer detail of the failure when it sent one, at most %d bytes; "+
+		"with session_id, model the via, current_model, current_model_via and current_model_route the model that failed, its via and its route, failed_model the model that failed, and failed_detail the gateway's developer detail of the failure when it sent one, at most %d bytes; "+
 		"the turn then continues on the model the allow names, after session.model_changed {by, old, new, reason, detail} by the service with reason model_busy (%q), at most %d times a turn. "+
 		"A model an allow names that cannot be connected counts as one of those moves: the next question names it as failed_model, beside the model the session stands on as current_model, with why it could not be connected as failed_detail. "+
 		"A turn that cannot move retries such a model once, a second later, and a turn that still fails ends with session.error model_busy (%q). "+
@@ -366,6 +367,10 @@ var opDescriptions = map[string]string{
 		"and moves the turn as one of those moves when the allow names another model; an allow that names none, a deny, and a turn that cannot move end the turn at once with session.error model_error and the gateway's sentence. "+
 		"The gateway's own refusals, such as invalid_request, model_not_allowed, rate_limited and budget_exhausted, ask nothing. "+
 		"A model the installation does not run refuses the send as model_unknown or model_unavailable. "+
+		"session.send carries model, model_via and model_route, the model the session stands on, the name it was asked by and the route chosen on the way, each while it has one, and idle_seconds, the whole seconds since its last model request ended. "+
+		"For a user.message it also carries the message's shape, never its words: message_chars, the characters of its text blocks; attachments, its files and images; links, the http:// and https:// addresses in its text; "+
+		"and tools_last_turn, whether the session's last turn called a tool on any thread. An allow that names a model may name route, the routed name the authorizer chose on the way to it: "+
+		"the session keeps it on its model beside via, an allow that names a model without one clears it, a route that moves while the model stays appends session.model_changed by the service, and a turn moved off a model that cannot serve keeps its route. "+
 		"A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. "+
 		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
 		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
@@ -406,14 +411,14 @@ var opDescriptions = map[string]string{
 		"The answer is the new Session, 201: a new id, parent {session_id, seq}, root, the session at the top of its fork tree, the forked session's root or, where it has none, its id, or its own id with tree new, the same agent version, repositories and capture, " +
 		"title, the body's, none for \"\", or absent the forked session's title marked as its continuation (\"Notes\" gives \"Notes (continued)\", which gives \"Notes (continued 2)\"; no title gives none), " +
 		"status idle with the stop reason at the fork point, end_turn at an end, a lifetime and a budget of its own from now, the caller as initiator, " +
-		"and the model the forked session ran at the fork point, its via included, which is the model the fork is checked by. " +
+		"and the model the forked session ran at the fork point, its via and route included, which is the model the fork is checked by. " +
 		"Its log starts as a copy of events 1 to seq, ids included, a fork point that is an end copied as idle end_turn, with every blob they name, " +
 		"so its first turn has the forked session's history; its spend starts at what the copied model requests cost, which budget.carried_cost_usd_micro holds apart, and its budget holds its own spend alone, spent_cost_usd_micro less carried_cost_usd_micro. " +
 		"With a message the log continues with the message, after any change of model or network the allow of its send made, last_seq is the message's, and the fork runs its turn on it. " +
 		"Its requests carry the tree's root as their prompt cache key, so a provider that keys its cache routes the fork's prefix, which is the forked session's, to that session's cache. " +
 		"The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
 		"recorded as session.machine reason restored; a fork before the opening message has none and starts fresh. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session, owner, parent and seq of the forked one, and root, the root of the tree the new session joins, its own id with tree new, " +
-		"and, with a message, session.send of the new session as a send asks it, with model and model_via the model the fork starts on and idle_seconds the whole seconds since the last model request it copied, absent when it copied none. " +
+		"and, with a message, session.send of the new session as a send asks it, with model, model_via and model_route the model the fork starts on, idle_seconds the whole seconds since the last model request it copied, absent when it copied none, and the message's shape, tools_last_turn read from the turn it copied last. " +
 		"Both are asked before anything is written, and a deny of either is forbidden with nothing written; a send refused after session.fork was allowed is reported to the installation's sink as session.fork of the new id with the refusal's code as outcome, " +
 		"so an authorizer that recorded the fork at its allow closes the record. A session of an archived agent is conflict. " + ForkKeptFiles,
 	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner, archived and metadata.<key> filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. ` +
@@ -428,11 +433,12 @@ var opDescriptions = map[string]string{
 		"A member left out keeps what the session runs. reasoning is one of %s, or empty to return to the agent's own; it holds across a change of the model, and a model that does not reason ignores it. "+
 		`The level may still be named "effort", its name before reasoning, which is read through every v0.x release and dropped in v1.0; a body that names both with different levels is invalid_request. `+
 		"The agent's own model's name is the agent's spec.model as it names it, and any other name is that model through the installation's model connection. "+
-		"The authorizer is asked session.update with session_id, model when the body names one, and the level the next turn runs at when the body names one, under both effort and reasoning, and a deny is forbidden. "+
+		"The authorizer is asked session.update with session_id, model when the body names one, and the level the next turn runs at when the body names one, under both effort and reasoning, "+
+		"beside current_model, current_model_via and current_model_route, the model the session stands on, its via and its route, each while it has one, and a deny is forbidden. "+
 		"Its allow may name the model to run in place of the one the body names: the session then runs that model, and its model's via is the name the body asked, which a client that offers the choice shows; via is absent when the session runs the name asked. "+
-		"Its allow may also name the level the change runs at, empty for the agent's own, in place of the one the body names. "+
+		"Its allow may also name the level the change runs at, empty for the agent's own, in place of the one the body names, and beside a model the route it chose on the way, which the session keeps; a model without one clears it. "+
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. "+
-		"An allowed change appends session.model_changed {by, old, new}, each {name, via, reasoning}, and answers the Session, whose model is the new one; a change to the model and the level the session runs appends nothing. "+
+		"An allowed change appends session.model_changed {by, old, new}, each {name, via, reasoning, route}, and answers the Session, whose model is the new one; a change to the model and the level the session runs appends nothing. "+
 		"A turn already running keeps its model and its level: the change takes effect at the next turn. "+
 		"A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. "+
 		"It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. "+
