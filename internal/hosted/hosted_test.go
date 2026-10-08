@@ -6,6 +6,7 @@ package hosted
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -87,7 +88,8 @@ func TestTheHarnessOfAHostedSession(t *testing.T) {
 	s := newSession(t, st, reviewer)
 	var asked v1.Machine
 	door := luxstub.New(t).URL() + "/anthropic"
-	h, err := Harness(Options{Store: st, ModelsURL: door, ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	log := slog.New(slog.DiscardHandler)
+	h, err := Harness(Options{Store: st, ModelsURL: door, ModelsKey: "k", Machines: hostMachines(t, &asked), Log: log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +98,11 @@ func TestTheHarnessOfAHostedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	// The harness logs what a turn did about a call written as text where
+	// the installation's log is (spec 062).
+	if cfg.Log != log {
+		t.Fatal("the harness does not log to the installation's log")
+	}
 	if asked.Image != "" {
 		t.Fatal("a Cella machine was opened before a tool needed it")
 	}

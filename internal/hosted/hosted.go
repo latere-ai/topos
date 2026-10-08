@@ -102,6 +102,9 @@ type Options struct {
 	// no session is offered the tool.
 	Publish publish.Options
 	Clock   func() time.Time
+	// Log is each session's harness.Config.Log: what a turn did about a
+	// response that wrote a tool call as text (spec 062). Nil discards it.
+	Log *slog.Logger
 }
 
 // Harness is the runner's Harness function for hosted sessions.
@@ -171,6 +174,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		Subagents: ac.Subagents, MaxDepth: ac.MaxDepth, MaxConcurrent: ac.MaxConcurrent, CompactAt: ac.CompactAt,
 		Prompt: prompts.HarnessOptions{Threads: len(ac.Subagents) > 0},
 		Clock:  b.o.Clock,
+		Log:    b.o.Log,
 	}
 	cfg.Policy.Mode = cmp.Or(cfg.Policy.Mode, harness.ModeConfirm)
 	if d, err := time.ParseDuration(s.Limits.TurnTimeout); err == nil {
