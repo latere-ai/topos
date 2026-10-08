@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md]
 affects: [session/, session/dir/, session/storetest/, prompts/transcript/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-01
+updated: 2026-10-08
 author: changkun
 ---
 
@@ -196,7 +196,7 @@ appending and the session stays `running` until the next runner's claim
 | `thread.ended` | the runner | no | `reason` (`completed`, `failed`, `canceled`), `final_text`, `usage`, `cost_usd_micro` |
 | `thread.message` | the runner | yes, in the receiving thread | `from`, `to` (thread ids, absent for the session's thread), `from_name` (the sending thread's agent name), `content`, `tool_use_id` |
 | `context.compacted` | the runner | yes | `kind` (`clear_tool_results` or `summary`), `from_seq`, `to_seq`, `tool_use_ids`, `summary`, `cause` (`threshold` or `redaction`), `request`, `tokens_before`, `tokens_after` ([[010-context]]) |
-| `model.request` | the runner | no | `model`, `family`, `dialect`, `codec`, `prompt_version`, `tools_sha256`, `request_sha256`, `fold_seq`, `request_bytes`, `request_blob`, `response_blob`, `usage` (the Lux wire usage), `cost_usd_micro`, `cost_source`, `latency_ms`, `first_token_ms`, `stop_reason`, `attempts`, `outcome` (`ok`, `error`, `canceled`), `error`, `loss` ([[007-models]]) |
+| `model.request` | the runner | no | `model`, `family`, `dialect`, `codec`, `prompt_version`, `tools_sha256`, `request_sha256`, `fold_seq`, `request_bytes`, `request_blob`, `response_blob`, `usage` (the Lux wire usage), `cost_usd_micro`, `cost_source`, `latency_ms`, `first_token_ms`, `stop_reason`, `attempts`, `outcome` (`ok`, `error`, `canceled`; `escalated` added by [[005-harness-loop]], `tool_as_text` by [[062-a-tool-call-written-as-text]]), `error`, `loss` ([[007-models]]), `reminder` (`{prompt, tool}`, the text a request carried after its fold, added by [[062-a-tool-call-written-as-text]]) |
 | `session.status` | the runner or the server | no | `status`, `stop_reason`, `detail`, `runner` (on `running`: `id`, `kind`), `checkpoint` (on a turn end: `ref`, `commit`, and `remote`, the repository URL that keeps it past the machine, when it was pushed there ([[035-hosted-checkpoints-at-the-git-host]])) |
 | `session.machine` | the runner | yes, as system parts | `machine` (`kind`, `id`, `workdir`, `os`, `arch`, `environment`), `reason` (`attached`, `handoff`, `restored`, `replaced`), `context`, `instructions` (`path`, `sha256`, `blob`), `skills` (`name`, `description`, `path`), `repositories` (on the `attached` of the session's first machine: one `url`, `branch`, `commit` per repository delivered into it, `commit` the branch's HEAD once the delivery finished, absent for a repository with no commit yet) ([[019-git]]), `checkpoint` ([[009-machines]], [[011-instructions-and-skills]]) |
 | `session.resumed` | the server | no | `by` (a Sender), `reason` (`budget_raised`, `credit_restored`, or a client's text), `max_cost_usd_micro` (the session's budget from here on, which the header takes, except in a fork's copied events; absent for none) ([[007-models]]) |

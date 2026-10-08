@@ -117,6 +117,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [059](059-publishing-to-a-chosen-app.md) | Publishing to a chosen app: the app input, an attached app published from its own checkout on the session's branch, a release refused while the live version holds work it lacks, a standing preview per app, and a change put live with one approval | medium | testing | 008, 012, 019, 043, 058 |
 | [060](060-the-memory-tool.md) | The memory tool: short entries an agent saves, updates and forgets through a memory service the installation configures, with the session's own key, read at the start through the allow's context | medium | drafted | 003, 004, 008, 012, 016, 018, 020, 025, 047, 058 |
 | [061](061-a-messages-shape-and-the-route-an-allow-names.md) | A message's shape and the route an allow names: a send tells the authorizer how long the message is, what it attaches and links, and whether the last turn ran a tool, and an allow may name the routed name it chose on the way to the model, which the session keeps beside it | small | testing | 004, 006, 015, 038, 051, 056 |
+| [062](062-a-tool-call-written-as-text.md) | A tool call written as text: a response that writes a call of an offered tool into its text instead of calling it is not kept, its model is reminded once, a routed turn whose model does it again moves once, and the log says which | medium | testing | 005, 007, 008, 039, 051 |
 
 ## Dependency graph
 
@@ -187,6 +188,7 @@ flowchart BT
   S059[059 publishing to a chosen app]
   S060[060 the memory tool]
   S061[061 a message's shape and the route]
+  S062[062 a tool call written as text]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -294,6 +296,8 @@ flowchart BT
   S060 --> S058
   S061 --> S051
   S061 --> S056
+  S062 --> S039
+  S062 --> S051
 ```
 
 ## Build order
@@ -307,7 +311,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,

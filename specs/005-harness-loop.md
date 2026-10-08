@@ -156,6 +156,7 @@ There is no limit on the number of steps.
 | Condition | Stop reason ([[004-session-log]]) | Appended before the status |
 |---|---|---|
 | IR `end_turn` or `stop_sequence` | `end_turn` | nothing |
+| IR `end_turn` or `stop_sequence` with no call, whose text writes a call of an offered tool ([[062-a-tool-call-written-as-text]]) | the same step, its request sent again once with a reminder; a routed turn whose model does it again moves once; otherwise `end_turn` | `model.request` with outcome `tool_as_text`, no `agent.message` |
 | IR `refusal` | `end_turn`, `detail` `refusal` | nothing |
 | IR `tool_use`, every call answered | next step | the `tool.result` events |
 | a call's verdict is ask | `tool_confirmation` | the step's other results |
