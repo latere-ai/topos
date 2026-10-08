@@ -231,6 +231,40 @@ func TestAQuestionWrittenAsTextIsAskedAgainAsACall(t *testing.T) {
 	noWords(t, logs, "Tech Stack", "to-do", "React")
 }
 
+// TestAReminderOnTheChatWire: on the OpenAI Chat Completions dialect,
+// where a step's tool results travel as tool messages and its text as a
+// user message, the reminded request is sent and read back ending with
+// the reminder, after the person's message and after a step's tool
+// results alike, and the call it brings is asked.
+func TestAReminderOnTheChatWire(t *testing.T) {
+	chat := func(c *Config) {
+		c.Connection = models.Connection{BaseURL: strings.TrimSuffix(c.Connection.BaseURL, "/anthropic") + "/openai", Model: model, Family: models.FamilyOther, Dialect: ir.DialectOpenAIChat}
+	}
+	for name, before := range map[string][]luxstub.Reply{
+		"after the person's message": nil,
+		"after tool results":         {reply(ir.StopToolUse, call("toolu_1", "echo", `{"text":"a"}`))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, _ := textEnv(t, nil, chat)
+			ctx := t.Context()
+			again := questionCall(model)
+			again.Expect = func(req *ir.Request) error { return endsWith(req, reminded(ToolQuestion)) }
+			e.stub.Script(model, append(before, written(model, questionAsMarkup), again)...)
+			e.send(ctx, "Help me build it.")
+			if out := e.turn(ctx); out.StopReason != session.StopQuestion {
+				t.Fatalf("outcome %+v", out)
+			}
+			reqs := e.stub.Requests()
+			if last := reqs[len(reqs)-1]; last.Dialect != ir.DialectOpenAIChat || !strings.Contains(string(last.Body), "Your last answer was not shown") {
+				t.Fatalf("the reminded request went as %s: %s", last.Dialect, last.Body)
+			}
+			if mrs := e.requests(ctx); mrs[len(mrs)-1].Dialect != string(ir.DialectOpenAIChat) || mrs[len(mrs)-1].Reminder == nil {
+				t.Fatalf("model.requests %+v", mrs)
+			}
+		})
+	}
+}
+
 // TestAPlanWrittenAsMarkupIsTheAnswerUnlessPlanIsATool: a plan element is
 // markup named after a tool only where a tool is named plan. A chat agent
 // is offered none, plan being an approval mode and not a tool, so its
