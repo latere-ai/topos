@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.27.0 - 2026-10-08
+
 ### Added
 
 - A question about a person's message tells the authorizer its shape and
