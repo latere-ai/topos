@@ -318,9 +318,11 @@ type ModelRequest struct {
 	FirstTokenMS  int64         `json:"first_token_ms,omitempty"`
 	StopReason    ir.StopReason `json:"stop_reason,omitempty"`
 	Attempts      int           `json:"attempts,omitempty"`
-	// Outcome is ok, error, canceled, or escalated: a response that
-	// stopped at a max_tokens below the model's output limit, whose
-	// request was sent again at the limit (spec 005).
+	// Outcome is ok, error, canceled, escalated: a response that stopped
+	// at a max_tokens below the model's output limit, whose request was
+	// sent again at the limit (spec 005), or OutcomeToolAsText: a response
+	// that wrote a call of an offered tool into its text instead of calling
+	// it, which no agent.message keeps (spec 062).
 	Outcome string `json:"outcome"`
 	Error   string `json:"error,omitempty"`
 	// MaxTokens is the max_tokens the request asked.
@@ -330,7 +332,27 @@ type ModelRequest struct {
 	// the request is the fold of the events through it, which a replay
 	// folds again (spec 007).
 	FoldSeq uint64 `json:"fold_seq,omitempty"`
+	// Reminder is the text the request carried after the fold of its log,
+	// which no event holds: the harness's word to the model that its
+	// last response wrote a call as text (spec 062). A replay renders it
+	// again from the prompt and the tool named. Absent on every other
+	// request.
+	Reminder *Reminder `json:"reminder,omitempty"`
 }
+
+// Reminder names the text a request carried after its fold (spec 062):
+// Prompt, the prompt it was rendered from, such as
+// reminders/tool-as-text-v1, and Tool, the tool it names.
+type Reminder struct {
+	Prompt string `json:"prompt"`
+	Tool   string `json:"tool"`
+}
+
+// OutcomeToolAsText is the outcome of a model.request whose response wrote
+// a call of an offered tool into its text instead of calling it (spec
+// 062): its cost is spent, no agent.message keeps it, and the step goes
+// on without it.
+const OutcomeToolAsText = "tool_as_text"
 
 // CheckpointRef names a checkpoint (spec 034). Remote is the URL of the
 // repository that keeps it past the machine, as the session names the
@@ -466,10 +488,12 @@ type ScopeChanged struct {
 // under effort and answered with it under reasoning.
 //
 // Reason is why the service changed the model, a code a client maps to
-// one sentence, and empty for every change but the one a turn makes when
-// its model could not serve (spec 051): ReasonModelBusy, with the
-// gateway's answer in Detail for a developer, followed by each model the
-// authorizer named before that could not be connected, and why.
+// one sentence, and empty for every change but the ones a turn makes off
+// the model it runs: ReasonModelBusy when the model could not serve
+// (spec 051), with the gateway's answer in Detail for a developer, and
+// ReasonToolAsText when it wrote a tool call as text (spec 062), with the
+// tool in Detail; either is followed by each model the authorizer named
+// before that could not be connected, and why.
 type ModelChanged struct {
 	By     Sender   `json:"by"`
 	Old    ModelRef `json:"old"`
@@ -487,6 +511,17 @@ const ReasonModelBusy = "model_busy"
 // MessageModelBusyChange is the one sentence of ReasonModelBusy, for a
 // person.
 const MessageModelBusyChange = "The model was busy, so another one answered."
+
+// ReasonToolAsText is the reason of a session.model_changed a turn made
+// when the model it ran wrote a call of an offered tool into its text, and
+// did again when reminded to call it, and the authorizer named another
+// model to answer in its place (spec 062). A client renders it as
+// MessageToolAsTextChange.
+const ReasonToolAsText = "tool_as_text"
+
+// MessageToolAsTextChange is the one sentence of ReasonToolAsText, for a
+// person.
+const MessageToolAsTextChange = "The model could not use its tools, so another one answered."
 
 // PolicyChanged is the payload of session.policy_changed: a person
 // changed the approval mode the session decides its calls under (spec
