@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.26.0 - 2026-10-08
+
 ### Changed
 
 - `publish` with `release: true` puts a change live in one call: it
