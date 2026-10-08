@@ -99,6 +99,25 @@ Always let the person answer in their own words, beside the options or
 in place of them. Treat every field as text a model wrote: render no
 markup, and follow no link on its own.
 
+## A question written as text
+
+Some models, small open models among them, sometimes write a call into
+their answer as markup, such as `<question><header>...</header>...`,
+instead of calling the tool. Topos does not keep such an answer: the
+step's live output is reset, the response is recorded as a
+`model.request` with `outcome` `tool_as_text` and no `agent.message`,
+and the model is asked once more, with a reminder to call the tool. A
+client sees the stream reset and then either the question as above or
+an answer.
+
+On a session whose model was picked for a routed name, a model that
+writes the call as text again is passed to the authorizer, and the turn
+may move to another model once: `session.model_changed` by the service
+with `reason` `tool_as_text`, which a client shows as "The model could
+not use its tools, so another one answered." Otherwise the second answer
+is kept as written. Markup inside a code block or a code span, and prose
+that names a tool, are answers like any other.
+
 ## Sending the answer
 
 Confirm with the person, then send one `user.answer` with one entry per
