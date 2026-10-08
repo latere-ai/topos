@@ -4,13 +4,165 @@
 package harness
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/prompts"
+	"latere.ai/x/topos/session"
 )
+
+// textNext is what a step does after a response that wrote a tool call as
+// text (spec 062).
+type textNext int
+
+const (
+	// textRemind sends the step's request again with the reminder.
+	textRemind textNext = iota
+	// textMoved sends the step's request, built again, on the model the
+	// turn moved to.
+	textMoved
+	// textAnswer keeps the response as the step's answer.
+	textAnswer
+)
+
+// The actions a line of Config.Log names (spec 062).
+const (
+	actionReminded = "reminded"
+	actionMoved    = "moved"
+	actionKept     = "kept"
+)
+
+// writtenAsText decides what a step does about a response that wrote a
+// call of the offered tool into its text instead of calling it (spec
+// 062), reminder being what the step's request carried, nil for none.
+//
+//   - A request that carried no reminder: the response is recorded as a
+//     model.request with OutcomeToolAsText and no agent.message, so its
+//     cost is spent and the fold never sees it, the Observer discards the
+//     step's output, and the request is sent again with the reminder.
+//   - A reminded request on the session's own thread that may move, and
+//     has not moved for this in the turn: Config.Failover is asked with
+//     FailedToolAsText, standing on the model the turn runs. A move
+//     records the response with OutcomeToolAsText and the change with
+//     session.ReasonToolAsText in one batch, and the step's request is
+//     built again for the model named.
+//   - Otherwise, a router that names no other model among them: the
+//     response is the step's answer, as it was before this rule.
+//
+// Each decision is one line of Config.Log; none holds a word of the
+// response. Any error is a failure to record, which stops the turn.
+func (t *turn) writtenAsText(ctx context.Context, res models.Result, si sendInfo, tool string, reminder *session.Reminder) (textNext, error) {
+	model := t.h.c.Connection.Model
+	if reminder == nil {
+		mr, err := t.modelRequest(ctx, res, si, session.OutcomeToolAsText)
+		if err != nil {
+			return 0, err
+		}
+		if err := t.commit(ctx, mr); err != nil {
+			return 0, err
+		}
+		if o := t.h.c.Observer; o != nil {
+			o.OnReset(t.thread, t.num, t.step)
+		}
+		t.logText(ctx, slog.LevelInfo, model, tool, actionReminded)
+		return textRemind, nil
+	}
+	if why := t.unmovable(); why != "" {
+		t.logText(ctx, slog.LevelWarn, model, tool, actionKept, slog.String("why", why))
+		return textAnswer, nil
+	}
+	detail := fmt.Sprintf("a call of %s was written as text, again after a reminder", tool)
+	err := t.move(ctx, FailedToolAsText, detail, session.ReasonToolAsText, detail, func() (session.Event, error) {
+		return t.modelRequest(ctx, res, si, session.OutcomeToolAsText)
+	})
+	var stay *stayed
+	switch {
+	case err == nil:
+		t.movedOffText = true
+		t.logText(ctx, slog.LevelInfo, model, tool, actionMoved, slog.String("to", t.model.Name))
+		return textMoved, nil
+	case errors.As(err, &stay):
+		t.logText(ctx, slog.LevelWarn, model, tool, actionKept, slog.String("why", stay.why))
+		return textAnswer, nil
+	}
+	return 0, err
+}
+
+// unmovable is why the turn cannot move off a model that wrote a tool call
+// as text, "" when it can: on a thread, on a model named itself, with no
+// router, after one such move in the turn, or out of moves.
+func (t *turn) unmovable() string {
+	switch {
+	case t.thread != "":
+		return "a thread's turn does not move"
+	case t.model.Via == "" || t.model.Name == "":
+		return "the session runs a model named itself"
+	case t.h.c.Failover == nil:
+		return "no router is asked"
+	case t.movedOffText:
+		return "the turn moved off a model for this once already"
+	case !t.switchable():
+		return "the turn ran out of moves"
+	}
+	return ""
+}
+
+// logText writes one line of Config.Log about a response that wrote a call
+// of tool as text on model, and the action the turn took.
+func (t *turn) logText(ctx context.Context, level slog.Level, model, tool, action string, attrs ...slog.Attr) {
+	t.h.c.Log.LogAttrs(ctx, level, "a response wrote a tool call as text", append([]slog.Attr{
+		slog.String("session", t.s.ID), slog.String("thread", t.thread), slog.Int("turn", t.num), slog.Int("step", t.step),
+		slog.String("model", model), slog.String("tool", tool), slog.String("action", action),
+	}, attrs...)...)
+}
+
+// offered are the names of the tools req offers.
+func offered(req *ir.Request) []string {
+	names := make([]string, len(req.Tools))
+	for i, tool := range req.Tools {
+		names[i] = tool.Name
+	}
+	return names
+}
+
+// remind is req with the text of r after its fold (spec 062): a text
+// block added to its last message when that is the user's, else a user
+// message of its own, as a compaction's summary request adds its ask. The
+// messages before it are unchanged, so the prefix a provider cached for
+// the request without it still serves this one.
+func remind(req ir.Request, r session.Reminder) (ir.Request, error) {
+	text, err := reminderText(r)
+	if err != nil {
+		return ir.Request{}, err
+	}
+	block := ir.Block{Type: ir.BlockText, Text: text}
+	msgs := slices.Clone(req.Messages)
+	if n := len(msgs); n > 0 && msgs[n-1].Role == ir.RoleUser {
+		msgs[n-1].Blocks = append(slices.Clip(msgs[n-1].Blocks), block)
+	} else {
+		msgs = append(msgs, ir.Message{Role: ir.RoleUser, Blocks: []ir.Block{block}})
+	}
+	req.Messages = msgs
+	return req, nil
+}
+
+// reminderText renders the reminder r names. A prompt this build does not
+// hold, or one that names no tool, cannot be rendered, and a replay skips
+// the request that carried it.
+func reminderText(r session.Reminder) (string, error) {
+	if prompts.Name(r.Prompt) != prompts.ReminderToolAsText || r.Tool == "" {
+		return "", fmt.Errorf("%w: the request carried the reminder %q of the tool %q, which this build does not render", models.ErrNotRebuilt, r.Prompt, r.Tool)
+	}
+	return prompts.Render(prompts.ReminderToolAsText, prompts.Data{"Tool": r.Tool}), nil
+}
 
 // callWrappers are the elements a model wraps a call in when it writes the
 // call into its answer in another model's call format (spec 062): the

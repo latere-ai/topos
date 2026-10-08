@@ -175,4 +175,5 @@ var released = map[string]string{
 	"results/publish/behind-live-v2.md":          "60a50d54c1bcb165eba87439f531c5fcd4fa30b3e94c0ae27d85078f0ece8db7",
 	"results/publish/release-build-failed-v1.md": "4c30abc100e3146558adffaea2a3e9f99914736544beca492a76491de2a8cf6b",
 	"results/publish/release-not-started-v1.md":  "42c864a7b9111235841e3ae6f9dfb38cba200d61d76556e772620ffa40528a70",
+	"reminders/tool-as-text-v1.md":               "a922843bcac8a1c6acaab10787a1d72e1ea5f8c1557eda118e7dfd22a20985d8",
 }

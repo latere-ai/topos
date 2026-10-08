@@ -14,6 +14,16 @@ const (
 	CompactionV1 Name = "compact/compact-v1"
 )
 
+// The texts the harness adds after a request's fold for that request
+// alone, which no event of the log holds (spec 062). A model.request that
+// carried one names it and its data in its reminder, so a replay renders
+// it again.
+const (
+	// ReminderToolAsText takes Tool, the offered tool the last response
+	// wrote a call of into its text.
+	ReminderToolAsText Name = "reminders/tool-as-text-v1"
+)
+
 // The advisor's texts (spec 013): its instructions when its configuration
 // names none, the caller's transcript as the advisor reads it, and the
 // request that carries the transcript and the caller's question.

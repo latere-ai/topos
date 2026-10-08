@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -171,6 +172,11 @@ type Config struct {
 	// authorizer. Nil asks nothing: a model that cannot serve ends the turn
 	// after DownRetry, and a rejected request with the model's error.
 	Failover func(ctx context.Context, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
+	// Log receives one line per response that wrote a tool call as text
+	// and what the turn did about it (spec 062): the session, thread,
+	// turn, step, model, tool and action, never a word of the response.
+	// Nil discards them.
+	Log *slog.Logger
 
 	// ceiling is the stricter of the modes the agents above a thread name,
 	// empty for the session's own thread: a change of the session's mode
@@ -219,6 +225,14 @@ const MessageModelBusy = "The model is busy right now. Send your message again i
 // since the request itself may be what was refused.
 const FailedRejected = "rejected"
 
+// FailedToolAsText is the reason Config.Failover is asked with when the
+// model the turn runs wrote a call of an offered tool into its text, and
+// did again when reminded to call it (spec 062), and the value of
+// failed_reason in the authorizer's question. The authorizer decides
+// whether another model answers in its place; a turn it keeps on the
+// model ends with that response as its answer.
+const FailedToolAsText = session.ReasonToolAsText
+
 // New checks the configuration: a model, a valid connection, a machine,
 // a registry, and a catalog entry with an output limit.
 func New(c Config) (*Harness, error) {
@@ -244,6 +258,9 @@ func New(c Config) (*Harness, error) {
 	}
 	if c.Sleep == nil {
 		c.Sleep = sleep
+	}
+	if c.Log == nil {
+		c.Log = slog.New(slog.DiscardHandler)
 	}
 	p, err := harnessPrompt(c.PromptVersion, c.Prompt)
 	if err != nil {
@@ -428,6 +445,9 @@ type turn struct {
 	// it runs its own agent's model, which no router picked.
 	model    session.ModelRef
 	switches int
+	// movedOffText is set once the turn moved off a model that wrote a
+	// tool call as text (spec 062): a turn moves for that once.
+	movedOffText bool
 }
 
 func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
@@ -804,12 +824,35 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	t.lastEstimate = tokencount.Estimate(&req)
 	sctx, stop := t.interruptible(ctx)
 	defer stop()
+	// reminder is what the step's request carries after its fold once a
+	// response of the model wrote a tool call as text (spec 062), nil
+	// before: a model is reminded once a step.
+	var reminder *session.Reminder
+	// moved builds the step's request again for the model the turn moved
+	// to: for that model's connection and window, its price held to the
+	// budget again, and with no reminder, since a reminder answers a
+	// response of the model it is sent to.
+	moved := func() error {
+		reminder = nil
+		if err := t.checkBudget(ctx); err != nil {
+			return err
+		}
+		var err error
+		if req, toolsSHA, err = t.request(ctx, tr); err != nil {
+			return err
+		}
+		if req, toolsSHA, err = t.manageContext(ctx, req, toolsSHA); err != nil {
+			return err
+		}
+		t.lastEstimate = tokencount.Estimate(&req)
+		return nil
+	}
 	for {
 		limit := t.h.c.Entry.MaxOutputTokens
 		began := t.h.c.Clock()
 		moves := t.switchable()
 		res, attempts, err := t.send(sctx, req, moves)
-		si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began)}
+		si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began), reminder: reminder}
 		if err != nil {
 			if t.cut.Load() {
 				return t.canceledRequest(ctx, si)
@@ -820,19 +863,10 @@ func (t *turn) stepOnce(ctx context.Context) error {
 				var stay *stayed
 				switch {
 				case ferr == nil:
-					// The step runs again on the model the turn moved to:
-					// its request is built for that model's connection and
-					// window, and its price is held to the budget again.
-					if err := t.checkBudget(ctx); err != nil {
+					// The step runs again on the model the turn moved to.
+					if err := moved(); err != nil {
 						return err
 					}
-					if req, toolsSHA, err = t.request(ctx, tr); err != nil {
-						return err
-					}
-					if req, toolsSHA, err = t.manageContext(ctx, req, toolsSHA); err != nil {
-						return err
-					}
-					t.lastEstimate = tokencount.Estimate(&req)
 					continue
 				case t.cut.Load():
 					return t.canceledRequest(ctx, si)
@@ -845,7 +879,30 @@ func (t *turn) stepOnce(ctx context.Context) error {
 			return t.modelFailed(ctx, err, si, res.RawResponse, why)
 		}
 		if res.StopReason != ir.StopMaxTokens || si.maxTokens >= limit || cutCall(res) != nil {
-			return t.commitStep(sctx, res, si)
+			tool := ""
+			if t.continuations == 0 {
+				tool = writtenCall(res, offered(&req))
+			}
+			if tool == "" {
+				return t.commitStep(sctx, res, si)
+			}
+			switch next, err := t.writtenAsText(sctx, res, si, tool, reminder); {
+			case err != nil:
+				return err
+			case next == textAnswer:
+				return t.commitStep(sctx, res, si)
+			case next == textMoved:
+				if err := moved(); err != nil {
+					return err
+				}
+			default:
+				reminder = &session.Reminder{Prompt: string(prompts.ReminderToolAsText), Tool: tool}
+				if req, err = remind(req, *reminder); err != nil {
+					return err
+				}
+				t.lastEstimate = tokencount.Estimate(&req)
+			}
+			continue
 		}
 		// The response stopped at the cap: the same request goes again
 		// at the model's output limit, once, in its place.
@@ -941,13 +998,15 @@ func (t *turn) checkBudget(ctx context.Context) error {
 }
 
 // sendInfo is how one request was sent, as its model.request records
-// it: the max_tokens it asked, the hash of its tool definitions, and the
-// attempts it took and their time.
+// it: the max_tokens it asked, the hash of its tool definitions, the
+// attempts it took and their time, and the reminder it carried after its
+// fold, nil for none (spec 062).
 type sendInfo struct {
 	maxTokens int64
 	toolsSHA  string
 	attempts  int
 	latency   time.Duration
+	reminder  *session.Reminder
 }
 
 // sentRequest is the model.request of a sent request, before its
@@ -957,6 +1016,7 @@ func (t *turn) sentRequest(si sendInfo) session.ModelRequest {
 	return session.ModelRequest{
 		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
 		ToolsSHA256: si.toolsSHA, MaxTokens: si.maxTokens, LatencyMS: si.latency.Milliseconds(), Attempts: si.attempts,
+		Reminder: si.reminder,
 	}
 }
 
@@ -1168,26 +1228,38 @@ func (t *turn) switchable() bool {
 }
 
 // failover moves the turn off a model that could not serve now, or whose
-// provider rejected the request (spec 051). It asks Config.Failover, the
-// first question with FailedRejected and the gateway's code and detail
-// for a rejected request, connects the model answered as a switch
-// between turns connects one, and records in one batch the failed
-// request and the session.model_changed the service made, with
-// session.ReasonModelBusy; the step then sends its request again on the
-// new model, at the level answered. A model answered that cannot be
-// connected is a move that failed: it counts against MaxModelSwitches,
-// and while moves are left the next question names it as the failed
-// model, with why it could not be connected as the detail, so the
-// authorizer passes over it too; the change's detail then says which
-// models were passed over and why. It is a *stayed, with nothing
-// recorded, when a question fails, an answer names no other model, or
-// the turn runs out of moves; any other error is a failure to record,
-// which stops the turn at once.
+// provider rejected the request (spec 051), by move: the first question
+// carries FailedRejected and the gateway's code and detail for a rejected
+// request, the gateway's detail alone otherwise; the failed request is
+// recorded with outcome error, and the change with
+// session.ReasonModelBusy and the failure in its detail.
 func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byte) error {
-	failed, reason, detail := t.model, "", models.GatewayDetail(cause)
+	reason, detail := "", models.GatewayDetail(cause)
 	if models.Rejected(cause) {
 		reason, detail = FailedRejected, rejectedDetail(cause)
 	}
+	return t.move(ctx, reason, detail, session.ReasonModelBusy, models.Described(cause), func() (session.Event, error) {
+		return t.failedRequest(ctx, cause, si, raw)
+	})
+}
+
+// move moves the turn off the model it runs, which failed for reason
+// with detail (specs 051 and 062). It asks Config.Failover, connects the
+// model answered as a switch between turns connects one, and records in
+// one batch the model.request record returns, of the request the move
+// answers, and the session.model_changed the service made, with the
+// reason change and the detail changed; the step then sends its request
+// again on the new model, at the level answered. A model answered that
+// cannot be connected is a move that failed: it counts against
+// MaxModelSwitches, and while moves are left the next question names it
+// as the failed model, with no reason and why it could not be connected
+// as the detail, so the authorizer passes over it too; the change's
+// detail then says which models were passed over and why. It is a
+// *stayed, with nothing recorded, when a question fails, an answer names
+// no other model, or the turn runs out of moves; any other error is a
+// failure to record, which stops the turn at once.
+func (t *turn) move(ctx context.Context, reason, detail, change, changed string, record func() (session.Event, error)) error {
+	failed := t.model
 	var passed []string
 	stay := func(why string) error { return &stayed{why: strings.Join(append(passed, why), "; ")} }
 	var next session.ModelRef
@@ -1218,22 +1290,21 @@ func (t *turn) failover(ctx context.Context, cause error, si sendInfo, raw []byt
 		failed, reason, detail = next, "", why
 	}
 	scoped.c.Effort = next.Level()
-	mr, err := t.failedRequest(ctx, cause, si, raw)
+	mr, err := record()
 	if err != nil {
 		return err
 	}
-	changed := models.Described(cause)
 	if len(passed) > 0 {
 		changed += "; " + strings.Join(passed, "; ")
 	}
-	change, err := t.event(session.TypeModelChanged, session.ModelChanged{
+	ch, err := t.event(session.TypeModelChanged, session.ModelChanged{
 		By: session.Sender{Subject: session.AuthorizerSubject, Kind: session.SenderService}, Old: t.model, New: next,
-		Reason: session.ReasonModelBusy, Detail: changed,
+		Reason: change, Detail: changed,
 	})
 	if err != nil {
 		return err
 	}
-	if err := t.commit(ctx, mr, change); err != nil {
+	if err := t.commit(ctx, mr, ch); err != nil {
 		return err
 	}
 	t.h, t.model = &scoped, next

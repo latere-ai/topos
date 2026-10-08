@@ -103,15 +103,6 @@ func (e *env) resultOf(id string) (session.ToolResult, session.Event, session.Qu
 	return res, found[0], meta
 }
 
-// offered are the names of the tools a request offers.
-func offered(r *ir.Request) []string {
-	var names []string
-	for _, tool := range r.Tools {
-		names = append(names, tool.Name)
-	}
-	return names
-}
-
 // TestQuestionIsOfferedWhenNamed: the harness offers question to the
 // session's own thread when the agent's tools name it, and to no thread
 // a spawn starts, whatever tools the subagent or the spawn names; an

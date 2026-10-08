@@ -1,0 +1,1 @@
+Your last answer was not shown: it wrote a call of the {{.Tool}} tool into its text instead of calling the tool. Text reaches the person exactly as written, so a call written as markup, XML or JSON never runs and they would see the raw tags. Answer again in full, and make each call, of {{.Tool}} or any other tool, as a tool call.

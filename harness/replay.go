@@ -65,6 +65,13 @@ func (h *Harness) Rebuild(s session.Session, blobs BlobReader) models.Rebuild {
 		if err != nil {
 			return models.Request{}, err
 		}
+		// A request that carried a reminder after its fold carried the text
+		// its model.request names (spec 062).
+		if mr.Reminder != nil {
+			if req, err = remind(req, *mr.Reminder); err != nil {
+				return models.Request{}, err
+			}
+		}
 		// A request asked the max_tokens its model.request records, and one
 		// recorded without it asked the model's output limit.
 		asked := cmp.Or(mr.MaxTokens, cfg.Entry.MaxOutputTokens)
