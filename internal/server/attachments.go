@@ -39,14 +39,26 @@ const (
 // CodeAttachmentTooLarge is an image or a file past its limit.
 const CodeAttachmentTooLarge = "attachment_too_large"
 
+// MaxAnswers bounds a message's answers in bytes (spec 063).
+const MaxAnswers = 512
+
 // messageBody is a user.message as a client sends it: content blocks,
 // text and inline images, and the files it attaches as base64 data,
 // which the server stores as blobs of the session. A sender in the body
 // is read and ignored, since the verified subject is the sender.
+//
+// Askable and Answers are the message's word to the authorizer (spec
+// 063): Askable that the client puts an authorizer's ask on the message
+// to the person, and Answers the ask, as a refusal of an earlier copy of
+// the message named it, that the message is sent in answer to. The core
+// reads nothing into either: each is forwarded on the question about the
+// message and kept in no event.
 type messageBody struct {
 	Sender      json.RawMessage  `json:"sender,omitempty"`
 	Content     []lux.Block      `json:"content"`
 	Attachments []attachmentBody `json:"attachments,omitempty"`
+	Askable     bool             `json:"askable,omitempty"`
+	Answers     *string          `json:"answers,omitempty"`
 }
 
 // attachmentBody is one file as a client sends it: its bytes as base64
@@ -87,10 +99,42 @@ func (m messageBody) check(sender session.Sender, blobs bool) (session.UserMessa
 	if err != nil {
 		return session.UserMessage{}, nil, err
 	}
+	if err := checkAnswers(m.Answers); err != nil {
+		return session.UserMessage{}, nil, err
+	}
 	if m.Content == nil {
 		m.Content = []lux.Block{}
 	}
 	return session.UserMessage{Sender: sender, Content: m.Content}, files, nil
+}
+
+// checkAnswers refuses an answers that is present and names no ask: one
+// that is empty, longer than MaxAnswers bytes, or has space around it.
+func checkAnswers(a *string) error {
+	switch {
+	case a == nil:
+		return nil
+	case *a == "":
+		return refuse(CodeInvalidRequest, "answers is empty; it names the ask the message answers, or is left out")
+	case len(*a) > MaxAnswers:
+		return refuse(CodeInvalidRequest, "answers is %d bytes, more than %d", len(*a), MaxAnswers)
+	case strings.TrimSpace(*a) != *a:
+		return refuse(CodeInvalidRequest, "answers %q has space around it", *a)
+	}
+	return nil
+}
+
+// word is the message's word to the authorizer as the question about the
+// message carries it: askable only when true, and answers when present.
+func (m messageBody) word() map[string]any {
+	out := map[string]any{}
+	if m.Askable {
+		out["askable"] = true
+	}
+	if m.Answers != nil {
+		out["answers"] = *m.Answers
+	}
+	return out
 }
 
 // checkContent refuses content that is not text and inline images: an

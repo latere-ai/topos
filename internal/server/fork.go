@@ -85,10 +85,12 @@ const TreeNew = "new"
 // forkMessage is the message a fork is sent in the same call: its
 // payload without its files, and its files, checked, each new one's
 // bytes or a blob of the session forked with that session's record of
-// it.
+// it; and its word to the authorizer, which its send question carries
+// and no event keeps (spec 063).
 type forkMessage struct {
 	payload session.UserMessage
 	files   []file
+	word    map[string]any
 }
 
 // shape is the message's shape as its send question tells it (spec 061).
@@ -131,7 +133,7 @@ func (c *call) forkSession() error {
 		if err != nil {
 			return err
 		}
-		message = &forkMessage{payload: payload, files: files}
+		message = &forkMessage{payload: payload, files: files, word: b.Message.word()}
 	}
 	ctx := c.r.Context()
 	parent, err := c.session(authorizer.ActionSessionRead, nil)
@@ -228,6 +230,7 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent, f.events)
 	}
 	fields := map[string]any{"sender": q.caller.Subject, "event_type": string(session.TypeUserMessage)}
+	maps.Copy(fields, f.message.word)
 	changes, err := s.askSend(ctx, q, sess, cfg, fields, tailOfCopy(f.events), new(f.message.shape()))
 	if err != nil {
 		s.refusedFork(ctx, q, sess, f, err)

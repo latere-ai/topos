@@ -286,3 +286,68 @@ func TestEveryQuestionAboutAMessageCarriesItsOpening(t *testing.T) {
 		t.Fatalf("a fork's message carried %v", forked.Resource.Fields)
 	}
 }
+
+// TestAMessageForwardsItsWordToTheAuthorizer: a user.message at the send
+// route and in a fork's message may carry askable and answers, which the
+// send question carries under the same names, askable only when true, and
+// no event of the log keeps; a value of another type, and an answers that
+// is empty, past MaxAnswers bytes or has space around it, is refused as
+// invalid_request (spec 063).
+func TestAMessageForwardsItsWordToTheAuthorizer(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	a := f.allowBy(func(authz.Request) authorizer.WireLimits { return authorizer.WireLimits{} })
+	s := f.create("alice", "reviewer")
+	message := func(text, word string) string {
+		return `{"content":[{"type":"text","text":"` + text + `"}]` + word + `}`
+	}
+	send := func(word string) answer {
+		return f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", `{"type":"user.message","payload":`+message("Run it on the costly one.", word)+`}`)
+	}
+	kept := func(id string) {
+		t.Helper()
+		raw, err := json.Marshal(f.log(id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), `"askable"`) || strings.Contains(string(raw), `"answers"`) {
+			t.Fatalf("the log of %s keeps the message's word: %s", id, raw)
+		}
+	}
+	bound := strings.Repeat("a", MaxAnswers)
+	if r := send(`,"askable":true,"answers":"` + bound + `"`); r.status != http.StatusOK {
+		t.Fatalf("send: %d %s", r.status, r.body)
+	}
+	if sent := a.last(t, authorizer.ActionSessionSend); sent.Resource.Fields["askable"] != true || sent.Resource.String("answers") != bound {
+		t.Fatalf("the send carried %v", sent.Resource.Fields)
+	}
+	if r := send(`,"askable":false`); r.status != http.StatusOK {
+		t.Fatalf("send: %d %s", r.status, r.body)
+	}
+	if sent := a.last(t, authorizer.ActionSessionSend); sent.Resource.Fields["askable"] != nil || sent.Resource.Fields["answers"] != nil {
+		t.Fatalf("a message that is not askable carried %v", sent.Resource.Fields)
+	}
+	kept(s.ID)
+	f.turn(s.ID, 1, "Answered.", 1)
+	fork := f.forked(s.ID, `{"message":`+message("Again, on the costly one.", `,"askable":true,"answers":"ask_1"`)+`}`)
+	if sent := a.last(t, authorizer.ActionSessionSend); sent.Resource.Fields["askable"] != true || sent.Resource.String("answers") != "ask_1" {
+		t.Fatalf("the fork's message carried %v", sent.Resource.Fields)
+	}
+	kept(fork.ID)
+	for name, word := range map[string]string{
+		"askable a string":       `,"askable":"yes"`,
+		"askable a number":       `,"askable":1`,
+		"answers a number":       `,"answers":3`,
+		"answers a list":         `,"answers":["ask_1"]`,
+		"answers empty":          `,"answers":""`,
+		"answers with space":     `,"answers":"ask_1 "`,
+		"answers past the bound": `,"answers":"` + bound + `b"`,
+	} {
+		if r := send(word); r.status != http.StatusBadRequest || r.code() != CodeInvalidRequest {
+			t.Errorf("%s at the send route: %d %s", name, r.status, r.body)
+		}
+		if r := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/fork", "alice", `{"message":`+message("Again.", word)+`}`); r.status != http.StatusBadRequest || r.code() != CodeInvalidRequest {
+			t.Errorf("%s in a fork's message: %d %s", name, r.status, r.body)
+		}
+	}
+}

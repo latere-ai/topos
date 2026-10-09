@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -109,6 +110,9 @@ func (c *call) sendEvent() error {
 	// once the session is known to take it.
 	var message *session.UserMessage
 	var files []file
+	// word is what a message says to the authorizer beside its content,
+	// forwarded on its question and kept in no event (spec 063).
+	var word map[string]any
 	action := authorizer.ActionSessionSend
 	switch b.Type {
 	case session.TypeUserMessage:
@@ -120,7 +124,7 @@ func (c *call) sendEvent() error {
 		if err != nil {
 			return err
 		}
-		message, files = &checked, checkedFiles
+		message, files, word = &checked, checkedFiles, m.word()
 		payload = *message
 	case session.TypeUserInterrupt:
 		var p session.UserInterrupt
@@ -176,6 +180,7 @@ func (c *call) sendEvent() error {
 	// A send's allow may move the session to another model before the
 	// turn the event starts (spec 038); an interrupt starts none.
 	fields := map[string]any{"sender": sender.Subject, "event_type": string(b.Type)}
+	maps.Copy(fields, word)
 	var s session.Session
 	var change sendChanges
 	var err error
