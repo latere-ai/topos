@@ -124,6 +124,12 @@ type Limits struct {
 	// keeps it beside its model, and an allow that names Model without it
 	// clears it. The core never reads what it means.
 	Route string
+	// MessageText asks for the opening of each later message on the
+	// session (spec 063), read only beside Model: the session keeps it
+	// beside its route, and an allow that names Model without it clears
+	// it. A question carries the opening only while the operator's
+	// ceiling allows it.
+	MessageText bool
 }
 
 // WireRepository is one repository an allow of session.create attaches
@@ -155,6 +161,7 @@ type WireLimits struct {
 	Repositories   []WireRepository      `json:"repositories,omitempty"`
 	Context        []session.ContextPart `json:"context,omitempty"`
 	Route          string                `json:"route,omitempty"`
+	MessageText    bool                  `json:"message_text,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -223,7 +230,7 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		return Limits{}, fmt.Errorf("limits.route is %q, not a routed name", w.Route)
 	}
 	if w.Model != "" {
-		l.Route = w.Route
+		l.Route, l.MessageText = w.Route, w.MessageText
 	}
 	if r := w.Reasoning; r != nil {
 		if *r != "" && !slices.Contains(v1.Efforts, *r) {

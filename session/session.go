@@ -185,7 +185,10 @@ const (
 // and empty when the session runs the name asked (spec 038). Route is the
 // routed name the authorizer resolved Via to before it named the model,
 // empty when it named none (spec 061): the core keeps it and never reads
-// what it means.
+// what it means. MessageText is the authorizer's ask for the opening of
+// each later message on the session, kept beside the route by the same
+// rules (spec 063); a question carries the opening only while the
+// operator's ceiling allows it.
 //
 // The level is stored under effort, the spelling every header and every
 // session.model_changed stored before the rename carries, so an earlier
@@ -193,11 +196,12 @@ const (
 // reasoning alone: Answered moves it there, and nothing stored sets
 // Reasoning.
 type ModelRef struct {
-	Name      string `json:"name"`
-	Via       string `json:"via,omitempty"`
-	Effort    string `json:"effort,omitempty"`
-	Reasoning string `json:"reasoning,omitempty"`
-	Route     string `json:"route,omitempty"`
+	Name        string `json:"name"`
+	Via         string `json:"via,omitempty"`
+	Effort      string `json:"effort,omitempty"`
+	Reasoning   string `json:"reasoning,omitempty"`
+	Route       string `json:"route,omitempty"`
+	MessageText bool   `json:"message_text,omitempty"`
 }
 
 // Level is the reasoning level under either name: reasoning, and effort

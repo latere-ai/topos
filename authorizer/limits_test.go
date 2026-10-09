@@ -129,6 +129,35 @@ func TestDecodeLimitsReadsARoute(t *testing.T) {
 	}
 }
 
+// TestDecodeLimitsReadsMessageText: limits.message_text is read beside
+// limits.model, ignored without a model, left out of an allow that does
+// not ask for the opening, and refused as anything but a boolean (spec
+// 063).
+func TestDecodeLimitsReadsMessageText(t *testing.T) {
+	raw, err := json.Marshal(WireLimits{Model: "vendor/model-b", Route: "tier/thorough", MessageText: true})
+	if err != nil || string(raw) != `{"model":"vendor/model-b","route":"tier/thorough","message_text":true}` {
+		t.Fatalf("the limits of an allow that asks for the opening are %s, %v", raw, err)
+	}
+	if l, err := DecodeLimits(authz.Decision{Allow: true, Limits: raw}); err != nil || l.Model != "vendor/model-b" || l.Route != "tier/thorough" || !l.MessageText {
+		t.Fatalf("message_text beside a model decoded to %+v, %v", l, err)
+	}
+	if raw, err := json.Marshal(WireLimits{Model: "vendor/model-b"}); err != nil || strings.Contains(string(raw), "message_text") {
+		t.Fatalf("an allow that does not ask for the opening renders %s, %v", raw, err)
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{MessageText: true})); err != nil || l.MessageText {
+		t.Fatalf("message_text with no model decoded to %+v, %v", l, err)
+	}
+	for name, w := range map[string]any{
+		"a string":  map[string]any{"model": "vendor/model-b", "message_text": "yes"},
+		"a number":  map[string]any{"model": "vendor/model-b", "message_text": 1},
+		"an object": map[string]any{"model": "vendor/model-b", "message_text": map[string]any{}},
+	} {
+		if _, err := DecodeLimits(decision(t, w)); err == nil {
+			t.Errorf("%s: decoded", name)
+		}
+	}
+}
+
 // TestTheReasoningLevelHasThreeStatesOnTheWire: limits.reasoning absent
 // keeps the session's level, a level sets it, and "" returns the session
 // to its agent's own, so the member is a pointer and "" is written out
