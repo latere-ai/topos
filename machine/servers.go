@@ -116,11 +116,11 @@ func procGroupSockets(root string, pgid int) (map[string]bool, error) {
 // field after the command name, which is in parentheses and may itself
 // hold spaces and parentheses, so the fields start after the last ")".
 func statGroup(stat []byte) (int, bool) {
-	i := bytes.LastIndexByte(stat, ')')
-	if i < 0 {
+	_, rest, ok := bytes.CutLast(stat, []byte{')'})
+	if !ok {
 		return 0, false
 	}
-	fields := strings.Fields(string(stat[i+1:]))
+	fields := strings.Fields(string(rest))
 	if len(fields) < 3 {
 		return 0, false
 	}
@@ -183,11 +183,11 @@ func lsofPorts(out []byte, low int) []int {
 		if !ok {
 			continue
 		}
-		i := strings.LastIndexByte(name, ':')
-		if i < 0 {
+		_, portText, ok := strings.CutLast(name, ":")
+		if !ok {
 			continue
 		}
-		port, err := strconv.Atoi(name[i+1:])
+		port, err := strconv.Atoi(portText)
 		if err == nil && port > 0 && port < low {
 			ports = append(ports, port)
 		}
