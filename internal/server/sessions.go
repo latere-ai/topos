@@ -1160,8 +1160,8 @@ func opening(content []lux.Block) string {
 // provider's cache is warm decides from (spec 038); and for a message, sh
 // not nil, its shape and whether the session's last turn called a tool
 // (spec 061), and its opening as askSend says (spec 063). change is the
-// switch the allow made, nil when the model,
-// its route and the reasoning level it names are the ones the session
+// switch the allow made, nil when the model, its route, the ask for the
+// opening and the reasoning level it names are the ones the session
 // stands on: the model it names, checked by the rule a person's switch is
 // checked by, with the name asked, at the level it names, "" being the
 // agent's own, or the level the session had when it names none (spec
