@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -348,6 +349,31 @@ func TestAMessageForwardsItsWordToTheAuthorizer(t *testing.T) {
 		}
 		if r := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/fork", "alice", `{"message":`+message("Again.", word)+`}`); r.status != http.StatusBadRequest || r.code() != CodeInvalidRequest {
 			t.Errorf("%s in a fork's message: %d %s", name, r.status, r.body)
+		}
+	}
+}
+
+// TestOpenAPIDocumentsTheOpening: the API document names the allow's
+// message_text, the ceiling, the opening's bounds, a message's askable and
+// answers, and where each is carried and where not (spec 063).
+func TestOpenAPIDocumentsTheOpening(t *testing.T) {
+	doc, err := os.ReadFile(committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, words := range []string{
+		"may also name message_text true, its ask for the opening of each later message",
+		"Where the installation sets TOPOS_AUTHORIZER_MESSAGE_TEXT",
+		"whole up to 2000 code points and otherwise its first 1500, then a line holding …, then its last 500, absent when the message has no text",
+		"askable, true when the client puts an authorizer's ask on the message to the person",
+		"a string of at most 512 bytes with no space around it",
+		"askable only when true, and no event keeps either",
+		"{content, attachments, askable, answers}",
+		"and never its opening, since the session has no allow yet",
+		"and message_text true when its allow asks for the opening of each later message",
+	} {
+		if !strings.Contains(string(doc), words) {
+			t.Errorf("the API document does not say %q", words)
 		}
 	}
 }

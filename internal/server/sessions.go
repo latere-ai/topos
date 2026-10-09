@@ -1111,6 +1111,18 @@ const (
 // openingGap is the line that stands in an opening for the text left out.
 const openingGap = "\n…\n"
 
+// MessageTextRule is the send route's sentence on a message's opening and
+// its word to the authorizer (spec 063).
+var MessageTextRule = fmt.Sprintf("An allow that names a model may also name message_text true, its ask for the opening of each later message: "+
+	"the session keeps it on its model beside route as message_text by the same rules, an allow that names a model without it clears it, and a change of it alone appends session.model_changed by the service. "+
+	"Where the installation sets TOPOS_AUTHORIZER_MESSAGE_TEXT, session.send of a person's user.message on a session whose model holds it carries message_text, "+
+	"the text of the message's text blocks joined by a blank line, whole up to %d code points and otherwise its first %d, then a line holding …, then its last %d, absent when the message has no text; "+
+	"the opening is built for the question and kept nowhere. "+
+	"A user.message's payload may also carry askable, true when the client puts an authorizer's ask on the message to the person, so the authorizer may refuse the message to ask, "+
+	"and answers, the ask, as a refusal of an earlier copy of the message named it, that the message is sent in answer to, a string of at most %d bytes with no space around it; "+
+	"session.send carries each under its name, askable only when true, and no event keeps either. A value of another type, or an answers that is empty, longer or has space around it, is invalid_request.",
+	MaxMessageText, MessageTextHead, MessageTextTail, MaxAnswers)
+
 // opening is the opening of a message of content as a question carries
 // it: the text of its text blocks joined by a blank line, bounded as
 // MaxMessageText says; "" when it has no text. Images and files are not

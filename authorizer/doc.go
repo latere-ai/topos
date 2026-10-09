@@ -57,6 +57,28 @@
 // its files and images; links, the web addresses in its text; and
 // tools_last_turn, whether the session's last turn called a tool.
 //
+// An endpoint that routes by what a message asks may read it (spec 063).
+// Beside model an allow may name message_text true, its ask for the
+// opening of each later message, which toposd keeps on the session's
+// model beside route by the same rules: an allow that names a model
+// without it clears it, and a change of it alone at a send is a change of
+// its own. Where the operator sets TOPOS_AUTHORIZER_MESSAGE_TEXT, a send
+// question about a person's message on such a session, the send route's,
+// a trigger's firing into an open session and a fork sent its message,
+// carries message_text: the text of its text blocks joined by a blank
+// line, whole up to 2,000 code points, and otherwise its first 1,500, a
+// line holding an ellipsis and its last 500. A create's first message
+// carries none, since the session has no allow yet. A message a client
+// sends may also carry askable, true when the client puts an endpoint's
+// ask on the message to the person, so the endpoint may refuse the
+// message to ask; and answers, the ask, as the endpoint's refusal of an
+// earlier copy of the message named it, that the message is sent in
+// answer to. The send question carries each under the same name, askable
+// only when true; no event keeps either, and toposd reads nothing into
+// them. Since answers makes the question about an answer differ from the
+// one refused, the deny toposd's client keeps for 5 seconds does not
+// answer it.
+//
 // A turn may ask for another model in its middle (spec 051). When the
 // model of a session that has a via cannot serve, the gateway answering
 // upstream_error, provider_unavailable or upstream_timeout, toposd asks

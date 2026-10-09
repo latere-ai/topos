@@ -294,8 +294,8 @@ var opDescriptions = map[string]string{
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
 	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
-		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, and route the routed name the authorizer chose on the way, when it names one. " +
-		"A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it. " +
+		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, route the routed name the authorizer chose on the way, when it names one, and message_text true when its allow asks for the opening of each later message. " +
+		"A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it, and never its opening, since the session has no allow yet. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +
 		NetworkRule,
 	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. " +
@@ -375,6 +375,7 @@ var opDescriptions = map[string]string{
 		"For a user.message it also carries the message's shape, never its words: message_chars, the characters of its text blocks; attachments, its files and images; links, the http:// and https:// addresses in its text; "+
 		"and tools_last_turn, whether the session's last turn called a tool on any thread. An allow that names a model may name route, the routed name the authorizer chose on the way to it: "+
 		"the session keeps it on its model beside via, an allow that names a model without one clears it, a route that moves while the model stays appends session.model_changed by the service, and a turn moved off a model that cannot serve keeps its route. "+
+		MessageTextRule+" "+
 		"A denied send is forbidden with the authorizer's reason and its limits in the error's details, so a deny for a bound that resets says when as details.limits.resets_at. "+
 		"A user.tool_confirmation, a user.tool_result and a user.answer each answer one call that waits for exactly that answer, and are appended only after the log they were checked against: "+
 		"of two sent at once one is appended and the other is conflict, and one that names a call nothing waits on, or one something else answered, is conflict. "+
@@ -408,7 +409,7 @@ var opDescriptions = map[string]string{
 		"before_seq names a user.message of the session's own thread from a person that opened a turn, the last session.status of the session's own thread before it being idle, or none before it, as for the opening message; " +
 		"the fork copies events 1 to before_seq - 1, whatever lies between the turn's end and the message included, such as a change of model, and seq 0, nothing, before the opening message. " +
 		"A message sent while a turn ran, a trigger's, a service's or a redacted one, and any other event, is invalid_fork_point; before_seq beside at_seq is invalid_request. " +
-		"message is a user.message's payload as the send route takes it, {content, attachments}, under the same limits and refusals, sent to the fork in the same call; " +
+		"message is a user.message's payload as the send route takes it, {content, attachments, askable, answers}, under the same limits and refusals, sent to the fork in the same call; " +
 		"a file of it is {name, data} as on a send, or {name, blob}, a digest a file a message of the forked session attached names, kept with that message's media type and size without its bytes being sent again; " +
 		"a file with both or neither of data and blob, a blob beside a media_type, and a blob no message of the forked session attaches are invalid_request. " +
 		fmt.Sprintf("A body without a message is at most %d bytes, one with a message at most %d. ", MaxBody, MaxEventBody) +
@@ -423,7 +424,8 @@ var opDescriptions = map[string]string{
 		"Its requests carry the tree's root as their prompt cache key, so a provider that keys its cache routes the fork's prefix, which is the forked session's, to that session's cache. " +
 		"The fork point's checkpoint is restored into its working directory when its first machine opens and the runner can reach it, " +
 		"recorded as session.machine reason restored; a fork before the opening message has none and starts fresh. The route asks session.read, so a caller who may not read the session hears not_found, then session.fork with the fields of a create for the new session, owner, parent and seq of the forked one, and root, the root of the tree the new session joins, its own id with tree new, " +
-		"and, with a message, session.send of the new session as a send asks it, with model, model_via and model_route the model the fork starts on, idle_seconds the whole seconds since the last model request it copied, absent when it copied none, and the message's shape, tools_last_turn read from the turn it copied last. " +
+		"and, with a message, session.send of the new session as a send asks it, with model, model_via and model_route the model the fork starts on, idle_seconds the whole seconds since the last model request it copied, absent when it copied none, and the message's shape, tools_last_turn read from the turn it copied last, " +
+		"its opening as message_text when the model the fork starts on holds message_text and the installation sets TOPOS_AUTHORIZER_MESSAGE_TEXT, and its askable and answers as a send carries them. " +
 		"Both are asked before anything is written, and a deny of either is forbidden with nothing written; a send refused after session.fork was allowed is reported to the installation's sink as session.fork of the new id with the refusal's code as outcome, " +
 		"so an authorizer that recorded the fork at its allow closes the record. A session of an archived agent is conflict. " + ForkKeptFiles,
 	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner, archived and metadata.<key> filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. ` +
@@ -441,7 +443,7 @@ var opDescriptions = map[string]string{
 		"The authorizer is asked session.update with session_id, model when the body names one, and the level the next turn runs at when the body names one, under both effort and reasoning, "+
 		"beside current_model, current_model_via and current_model_route, the model the session stands on, its via and its route, each while it has one, and a deny is forbidden. "+
 		"Its allow may name the model to run in place of the one the body names: the session then runs that model, and its model's via is the name the body asked, which a client that offers the choice shows; via is absent when the session runs the name asked. "+
-		"Its allow may also name the level the change runs at, empty for the agent's own, in place of the one the body names, and beside a model the route it chose on the way, which the session keeps; a model without one clears it. "+
+		"Its allow may also name the level the change runs at, empty for the agent's own, in place of the one the body names, and beside a model the route it chose on the way and message_text, its ask for the opening of each later message, which the session keeps; a model without them clears them. "+
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. "+
 		"An allowed change appends session.model_changed {by, old, new}, each {name, via, reasoning, route}, and answers the Session, whose model is the new one; a change to the model and the level the session runs appends nothing. "+
 		"A turn already running keeps its model and its level: the change takes effect at the next turn. "+
