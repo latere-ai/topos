@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"maps"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/hosted"
 	cellamachine "latere.ai/x/topos/machine/cella"
+	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/cellastub"
 	"latere.ai/x/topos/test/stubs/idpstub"
 	"latere.ai/x/topos/test/stubs/keystub"
@@ -55,6 +57,51 @@ func credentialStubs(t *testing.T, replies ...luxstub.Reply) (map[string]string,
 		"TOPOS_ORIGO_URL": "https://origo.example",
 	})
 	return vars, stubsOf{az: az, idp: idp, keys: keys, lux: lux, cella: cella}
+}
+
+// TestServeOnAnIdentityProviderThatRefuses: when the identity provider
+// refuses its list, the catch-up of archived identities at start (spec
+// 018) fails and is logged, and the server serves on; a read of a hosted
+// session's files asks the provider for the session's own Cella token
+// (spec 044), and with the provider refusing to mint, the read is refused.
+// The app host is configured, as on an installation whose sessions
+// publish, so the runners start with it.
+func TestServeOnAnIdentityProviderThatRefuses(t *testing.T) {
+	vars, stubs := credentialStubs(t)
+	stubs.idp.Fail(idpstub.OpList, idpstub.Failure{Status: http.StatusServiceUnavailable, Code: "unavailable"})
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_RUNNER_CAPACITY": "1", "TOPOS_APPS_URL": "https://apps.example"})
+	oldDrain := drainDelay
+	drainDelay = 10 * time.Millisecond
+	t.Cleanup(func() { drainDelay = oldDrain })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var out, errOut syncBuffer
+	code := make(chan int, 1)
+	go func() { code <- run(ctx, nil, env(vars), &out, &errOut) }()
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(errOut.String(), "reconcile the agents' identities") || !listening.MatchString(out.String()); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("serve did not log a failed catch-up and listen; stdout %q, stderr %q", out.String(), errOut.String())
+		}
+	}
+	send := apiClient(t, "http://"+listening.FindStringSubmatch(out.String())[1], vars)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: poet\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: cella}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/poet", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	c, body := send(http.MethodPost, "/v1/sessions", `{"agent":"poet","message":"Hi."}`)
+	var s session.Session
+	if c != http.StatusCreated || json.Unmarshal([]byte(body), &s) != nil {
+		t.Fatalf("create: %d %s", c, body)
+	}
+	stubs.idp.Fail(idpstub.OpMint, idpstub.Failure{Status: http.StatusServiceUnavailable, Code: "unavailable", Times: 100})
+	mints := stubs.idp.Count(idpstub.OpMint)
+	if c, body := send(http.MethodGet, "/v1/sessions/"+s.ID+"/files?path=poem.txt", ""); c == http.StatusOK || stubs.idp.Count(idpstub.OpMint) == mints {
+		t.Errorf("a read with no token to present: %d %s, %d mint requests before and %d after", c, body, mints, stubs.idp.Count(idpstub.OpMint))
+	}
+	cancel()
+	if c := <-code; c != 0 {
+		t.Errorf("exit %d; stderr %q", c, errOut.String())
+	}
 }
 
 type stubsOf struct {
