@@ -1125,12 +1125,12 @@ var MessageTextRule = fmt.Sprintf("An allow that names a model may also name mes
 
 // opening is the opening of a message of content as a question carries
 // it: the text of its text blocks joined by a blank line, bounded as
-// MaxMessageText says; "" when it has no text. Images and files are not
-// read.
+// MaxMessageText says; "" when it has no text. An empty block holds no
+// text, so it adds no blank line. Images and files are not read.
 func opening(content []lux.Block) string {
 	var texts []string
 	for _, b := range content {
-		if b.Type == ir.BlockText {
+		if b.Type == ir.BlockText && b.Text != "" {
 			texts = append(texts, b.Text)
 		}
 	}

@@ -221,7 +221,8 @@ func TestAMessageCarriesItsOpeningOnlyWhenAsked(t *testing.T) {
 // MaxMessageText code points, whatever their bytes, and past that its
 // first MessageTextHead and its last MessageTextTail around a line that
 // holds an ellipsis; the blank line between two blocks counts toward the
-// bound, and a message with no text has none (spec 063).
+// bound, an empty block adds none, and a message with no text has no
+// opening (spec 063).
 func TestTheOpeningIsBounded(t *testing.T) {
 	text := func(s string) lux.Block { return lux.Block{Type: ir.BlockText, Text: s} }
 	image := lux.Block{Type: ir.BlockImage, Image: &lux.Image{MediaType: "image/png", Data: b64(pngBytes)}}
@@ -246,6 +247,8 @@ func TestTheOpeningIsBounded(t *testing.T) {
 		"a long text":                      {[]lux.Block{text(long)}, strings.Repeat("h", MessageTextHead-1) + "ä\n…\n" + strings.Repeat("t", MessageTextTail-1) + "€"},
 		"blocks joined by a blank line":    {[]lux.Block{text("Here is the log."), image, text("Find why it fails.")}, "Here is the log.\n\nFind why it fails."},
 		"the join counts toward the bound": {[]lux.Block{text(half), text(half)}, cut(half + "\n\n" + half)},
+		"an empty block adds nothing":      {[]lux.Block{text(""), text("Find why it fails."), text("")}, "Find why it fails."},
+		"an image and an empty block":      {[]lux.Block{image, text("")}, ""},
 		"an image alone":                   {[]lux.Block{image}, ""},
 		"no content":                       {nil, ""},
 	} {
