@@ -1058,9 +1058,12 @@ func (t *tailScan) done() bool { return t.made && t.toolsKnown }
 
 // shape is a person's message as a question tells it (spec 061): the
 // characters of its text, its files and images, and the web addresses in
-// its text. Its words are never sent.
+// its text; and its content, whose words a question carries only as its
+// opening, on a session that asks for it under the operator's ceiling
+// (spec 063).
 type shape struct {
 	chars, attachments, links int
+	content                   []lux.Block
 }
 
 // links finds a web address: http:// or https://, in any case, and at
@@ -1069,7 +1072,7 @@ var links = regexp.MustCompile(`(?i)https?://\S`)
 
 // shapeOf is the shape of a message of content, attaching files files.
 func shapeOf(content []lux.Block, files int) shape {
-	out := shape{attachments: files}
+	out := shape{attachments: files, content: content}
 	for _, b := range content {
 		switch b.Type {
 		case ir.BlockText:
@@ -1094,6 +1097,48 @@ func messageShape(content []lux.Block, files int, toolsLastTurn bool) map[string
 	return shapeOf(content, files).fields(toolsLastTurn)
 }
 
+// The bounds of a message's opening (spec 063), in Unicode code points: a
+// text of at most MaxMessageText is sent whole, and a longer one as its
+// first MessageTextHead and its last MessageTextTail around openingGap.
+// Its end is kept because a request often follows what it is about, such
+// as a pasted log and then the question about it.
+const (
+	MaxMessageText  = 2000
+	MessageTextHead = 1500
+	MessageTextTail = 500
+)
+
+// openingGap is the line that stands in an opening for the text left out.
+const openingGap = "\n…\n"
+
+// opening is the opening of a message of content as a question carries
+// it: the text of its text blocks joined by a blank line, bounded as
+// MaxMessageText says; "" when it has no text. Images and files are not
+// read.
+func opening(content []lux.Block) string {
+	var texts []string
+	for _, b := range content {
+		if b.Type == ir.BlockText {
+			texts = append(texts, b.Text)
+		}
+	}
+	text := strings.Join(texts, "\n\n")
+	if utf8.RuneCountInString(text) <= MaxMessageText {
+		return text
+	}
+	head := 0
+	for range MessageTextHead {
+		_, size := utf8.DecodeRuneInString(text[head:])
+		head += size
+	}
+	tail := len(text)
+	for range MessageTextTail {
+		_, size := utf8.DecodeLastRuneInString(text[:tail])
+		tail -= size
+	}
+	return text[:head] + openingGap + text[tail:]
+}
+
 // sendAs reads a session and asks q's caller session.send about it: the
 // one question the send route and a trigger's firing send by (spec 022).
 // Beside fields the question carries the model the session stands on,
@@ -1102,7 +1147,8 @@ func messageShape(content []lux.Block, files int, toolsLastTurn bool) map[string
 // which is what an authorizer that keeps a session on one model while a
 // provider's cache is warm decides from (spec 038); and for a message, sh
 // not nil, its shape and whether the session's last turn called a tool
-// (spec 061). change is the switch the allow made, nil when the model,
+// (spec 061), and its opening as askSend says (spec 063). change is the
+// switch the allow made, nil when the model,
 // its route and the reasoning level it names are the ones the session
 // stands on: the model it names, checked by the rule a person's switch is
 // checked by, with the name asked, at the level it names, "" being the
@@ -1121,11 +1167,7 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 	if err != nil {
 		return session.Session{}, sendChanges{}, err
 	}
-	if sh != nil {
-		fields = maps.Clone(fields)
-		maps.Copy(fields, sh.fields(t.tools))
-	}
-	out, err := s.askSend(ctx, q, sess, cfg, fields, t.at, t.made)
+	out, err := s.askSend(ctx, q, sess, cfg, fields, t, sh)
 	if err != nil {
 		return session.Session{}, sendChanges{}, err
 	}
@@ -1133,11 +1175,14 @@ func (s *Server) sendAs(ctx context.Context, q asker, id string, fields map[stri
 }
 
 // askSend asks q's caller session.send about sess, an agent's session of
-// configuration cfg, whose last model request ended at at, made false
-// before its first, and answers the changes the allow made, as sendAs
-// describes. A fork that is sent its message in the same call asks it of
-// the fork's header before the fork is written (spec 056).
-func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg manifest.AgentConfig, fields map[string]any, at time.Time, made bool) (sendChanges, error) {
+// configuration cfg, the end of whose log is t, and answers the changes
+// the allow made, as sendAs describes. A question about a person's
+// message, sh not nil, carries its shape, and its opening as message_text
+// when the session's model asks for it and the operator's ceiling allows
+// it (spec 063); the opening is built for the question and dropped with
+// it. A fork that is sent its message in the same call asks it of the
+// fork's header before the fork is written (spec 056).
+func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg manifest.AgentConfig, fields map[string]any, t tail, sh *shape) (sendChanges, error) {
 	old := standing(sess, cfg)
 	all := maps.Clone(fields)
 	all["model"] = old.Name
@@ -1147,8 +1192,16 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 	if old.Route != "" {
 		all["model_route"] = old.Route
 	}
-	if made {
-		all["idle_seconds"] = max(int(s.o.Now().Sub(at)/time.Second), 0)
+	if t.made {
+		all["idle_seconds"] = max(int(s.o.Now().Sub(t.at)/time.Second), 0)
+	}
+	if sh != nil {
+		maps.Copy(all, sh.fields(t.tools))
+		if s.o.MessageText && old.MessageText {
+			if text := opening(sh.content); text != "" {
+				all["message_text"] = text
+			}
+		}
 	}
 	limits, err := q.limits(ctx, authorizer.ActionSessionSend, sessionResource(sess, all))
 	if err != nil {

@@ -227,10 +227,8 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	if f.message == nil {
 		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent, f.events)
 	}
-	t := tailOfCopy(f.events)
 	fields := map[string]any{"sender": q.caller.Subject, "event_type": string(session.TypeUserMessage)}
-	maps.Copy(fields, f.message.shape().fields(t.tools))
-	changes, err := s.askSend(ctx, q, sess, cfg, fields, t.at, t.made)
+	changes, err := s.askSend(ctx, q, sess, cfg, fields, tailOfCopy(f.events), new(f.message.shape()))
 	if err != nil {
 		s.refusedFork(ctx, q, sess, f, err)
 		return session.Session{}, err

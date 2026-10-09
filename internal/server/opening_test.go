@@ -13,8 +13,12 @@ import (
 	"testing"
 
 	"latere.ai/x/pkg/authz"
+	"latere.ai/x/pkg/llmdialect/ir"
+	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/store"
+	"latere.ai/x/topos/internal/triggers"
 	"latere.ai/x/topos/session"
 )
 
@@ -80,6 +84,9 @@ func (a *allows) last(t *testing.T, action string) authz.Request {
 	t.Fatalf("%s was never asked", action)
 	return authz.Request{}
 }
+
+// ceiling sets TOPOS_AUTHORIZER_MESSAGE_TEXT on a fixture's server.
+func ceiling(on bool) func(*Options) { return func(o *Options) { o.MessageText = on } }
 
 // TestAnAllowAsksForTheOpening: an allow's message_text is kept on the
 // session's model beside its route at a create, a PATCH and a send, in
@@ -161,5 +168,121 @@ func TestAnAllowAsksForTheOpening(t *testing.T) {
 	f.turn(s.ID, 2, "Answered again.", 1)
 	if fork := f.forked(s.ID, `{}`); fork.Model == nil || *fork.Model != asking {
 		t.Fatalf("the fork starts on %+v", fork.Model)
+	}
+}
+
+// TestAMessageCarriesItsOpeningOnlyWhenAsked: with the ceiling on and the
+// session's model asking, the send question about a person's message
+// carries its opening, the text of its text blocks joined by a blank
+// line, its images not read, and a message without text carries none;
+// with the ceiling off or the session not asking, no question carries
+// one, and the question about any other event never does (spec 063).
+func TestAMessageCarriesItsOpeningOnlyWhenAsked(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		on, asks bool
+	}{
+		{"the ceiling on and the session asking", true, true},
+		{"the ceiling off", false, true},
+		{"the session not asking", true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f, _ := checking(t, ceiling(c.on))
+			f.applyModel("auto", "name: "+auto)
+			a := f.allowBy(func(authz.Request) authorizer.WireLimits {
+				return authorizer.WireLimits{Model: haiku, Route: quickWay, MessageText: c.asks}
+			})
+			s := f.create("alice", "auto")
+			image := `{"type":"image","image":{"media_type":"image/png","data":"` + b64(pngBytes) + `"}}`
+			body := `{"type":"user.message","payload":{"content":[{"type":"text","text":"Here is the log."},` + image + `,{"type":"text","text":"Find why it fails."}]}}`
+			if r := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", body); r.status != http.StatusOK {
+				t.Fatalf("send: %d %s", r.status, r.body)
+			}
+			text, carried := a.last(t, authorizer.ActionSessionSend).Resource.Fields["message_text"]
+			if want := c.on && c.asks; carried != want || (want && text != "Here is the log.\n\nFind why it fails.") {
+				t.Fatalf("the send carried message_text %q, %v", text, carried)
+			}
+			if r := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", `{"type":"user.message","payload":{"content":[`+image+`]}}`); r.status != http.StatusOK {
+				t.Fatalf("send an image: %d %s", r.status, r.body)
+			}
+			if fields := a.last(t, authorizer.ActionSessionSend).Resource.Fields; fields["message_text"] != nil {
+				t.Fatalf("a message without text carried %v", fields)
+			}
+			f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "alice", `{"type":"user.tool_confirmation","payload":{"tool_use_id":"toolu_9","decision":"allow"}}`)
+			if confirm := a.last(t, authorizer.ActionSessionSend); confirm.Resource.String("event_type") != string(session.TypeUserToolConfirmation) || confirm.Resource.Fields["message_text"] != nil {
+				t.Fatalf("a confirmation carried %v", confirm.Resource.Fields)
+			}
+		})
+	}
+}
+
+// TestTheOpeningIsBounded: the opening is the whole text up to
+// MaxMessageText code points, whatever their bytes, and past that its
+// first MessageTextHead and its last MessageTextTail around a line that
+// holds an ellipsis; the blank line between two blocks counts toward the
+// bound, and a message with no text has none (spec 063).
+func TestTheOpeningIsBounded(t *testing.T) {
+	text := func(s string) lux.Block { return lux.Block{Type: ir.BlockText, Text: s} }
+	image := lux.Block{Type: ir.BlockImage, Image: &lux.Image{MediaType: "image/png", Data: b64(pngBytes)}}
+	// cut is the opening of a long text, counted in runes apart from the
+	// code under test.
+	cut := func(s string) string {
+		r := []rune(s)
+		return string(r[:MessageTextHead]) + "\n…\n" + string(r[len(r)-MessageTextTail:])
+	}
+	whole := strings.Repeat("ü", MaxMessageText)
+	emoji := strings.Repeat("😀", MaxMessageText)
+	long := strings.Repeat("h", MessageTextHead-1) + "ä" + "the middle" + strings.Repeat("t", MessageTextTail-1) + "€"
+	half := strings.Repeat("x", MaxMessageText/2)
+	for name, c := range map[string]struct {
+		content []lux.Block
+		want    string
+	}{
+		"a short text":                     {[]lux.Block{text("Find why it fails.")}, "Find why it fails."},
+		"two bytes a code point, whole":    {[]lux.Block{text(whole)}, whole},
+		"four bytes a code point, whole":   {[]lux.Block{text(emoji)}, emoji},
+		"one code point past the bound":    {[]lux.Block{text(whole + "!")}, cut(whole + "!")},
+		"a long text":                      {[]lux.Block{text(long)}, strings.Repeat("h", MessageTextHead-1) + "ä\n…\n" + strings.Repeat("t", MessageTextTail-1) + "€"},
+		"blocks joined by a blank line":    {[]lux.Block{text("Here is the log."), image, text("Find why it fails.")}, "Here is the log.\n\nFind why it fails."},
+		"the join counts toward the bound": {[]lux.Block{text(half), text(half)}, cut(half + "\n\n" + half)},
+		"an image alone":                   {[]lux.Block{image}, ""},
+		"no content":                       {nil, ""},
+	} {
+		if got := opening(c.content); got != c.want {
+			t.Errorf("%s: the opening is %d code points %q..., want %d", name, len([]rune(got)), got[:min(len(got), 24)], len([]rune(c.want)))
+		}
+	}
+	if n := len([]rune(cut(whole + "!"))); n != MessageTextHead+MessageTextTail+3 {
+		t.Fatalf("a cut opening is %d code points", n)
+	}
+}
+
+// TestEveryQuestionAboutAMessageCarriesItsOpening: a trigger's firing into
+// an open session and a fork sent its message carry the opening under the
+// same rule as the send route, the fork on its parent's model at the fork
+// point; a create's first message carries none, since the session has no
+// allow yet (spec 063).
+func TestEveryQuestionAboutAMessageCarriesItsOpening(t *testing.T) {
+	f, _ := checking(t, ceiling(true))
+	f.applyModel("auto", "name: "+auto)
+	a := f.allowBy(func(authz.Request) authorizer.WireLimits {
+		return authorizer.WireLimits{Model: haiku, Route: quickWay, MessageText: true}
+	})
+	s := f.create("alice", "auto")
+	if created := a.last(t, authorizer.ActionSessionCreate); created.Resource.Fields["message_text"] != nil || created.Resource.Fields["message_chars"] == nil {
+		t.Fatalf("a create with its first message carried %v", created.Resource.Fields)
+	}
+	trigger := store.Trigger{ID: session.NewID(session.PrefixTrigger), Owner: "https://login.example|alice"}
+	if err := (actor{f.api}).Send(t.Context(), triggers.Send{Trigger: trigger, SessionID: s.ID, Message: "The nightly build failed."}); err != nil {
+		t.Fatal(err)
+	}
+	if fired := a.last(t, authorizer.ActionSessionSend); fired.Resource.String("message_text") != "The nightly build failed." ||
+		fired.Resource.String("sender") != session.TriggerSubjectPrefix+trigger.ID {
+		t.Fatalf("a trigger's firing carried %v", fired.Resource.Fields)
+	}
+	f.turn(s.ID, 1, "Answered.", 1)
+	f.forked(s.ID, `{"message":{"content":[{"type":"text","text":"Try it another way."}]}}`)
+	if forked := a.last(t, authorizer.ActionSessionSend); forked.Resource.String("message_text") != "Try it another way." || forked.Resource.String("model_route") != quickWay {
+		t.Fatalf("a fork's message carried %v", forked.Resource.Fields)
 	}
 }

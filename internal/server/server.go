@@ -96,6 +96,11 @@ type Options struct {
 	// sandboxes, so a session of an agent that names no machine runs on
 	// one when host sessions are off.
 	Cella bool
+	// MessageText is TOPOS_AUTHORIZER_MESSAGE_TEXT, the ceiling on a
+	// message's words reaching the authorizer (spec 063): set, a question
+	// about a person's message on a session whose model asks for its
+	// opening carries it; unset, no question carries a message's words.
+	MessageText bool
 	// Sink receives, as spec 023's sink envelope carries them, a mutation
 	// the authorizer allowed that the server then refused: a fork whose
 	// message's session.send was refused after its session.fork was
