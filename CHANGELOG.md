@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.28.0 - 2026-10-09
+
 ### Fixed
 
 - A response that writes a tool call into its text instead of calling
