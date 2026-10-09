@@ -10,9 +10,58 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- A response that writes a tool call into its text instead of calling
+  the tool no longer reaches the person as raw markup. Some models, small
+  open models among them, sometimes answer with the call written out,
+  such as `<question><header>...</header>...</question>` or
+  `<tool_call>{"name": "question", ...}</tool_call>`, and no `tool_use`;
+  the turn ended and the person read the tags instead of a question card.
+  When a response calls no tool and, outside code blocks and code spans,
+  holds an element named after a tool its request offered or a call
+  wrapper naming one, the step does not keep it: its `model.request` is
+  recorded with the new `outcome` `tool_as_text` and no `agent.message`,
+  the stream is reset, and the same request goes once more with a short
+  reminder to call the tool, `reminders/tool-as-text-v1`. A tool named in
+  prose, markup named after no offered tool such as `<plan>`, and markup
+  in code are answers as before.
+- A routed turn whose model writes the call as text again after the
+  reminder can move to another model, once a turn. The turn asks the
+  authorizer the `session.update` of a failover with the new
+  `failed_reason: tool_as_text` and the tool in `failed_detail`; an allow
+  that names another model moves the turn there, recorded as
+  `session.model_changed` with the new `reason` `tool_as_text` ("The
+  model could not use its tools, so another one answered."). Otherwise,
+  the reminded response is the answer, as an answer was before.
+  Nothing loops: a step sends at most two requests on each of two models
+  for this.
+
+### Added
+
+- `model.request` carries `reminder` `{prompt, tool}` on a request that
+  carried the reminder, so a replay builds it again to its recorded hash.
+- `harness.Config.Log` receives one line for each response that wrote a
+  tool call as text, `a response wrote a tool call as text`, with the
+  session, thread, turn, step, model, tool and the `action` taken:
+  `reminded`, `moved` with `to`, or `kept` with `why`. It never holds a
+  word of the response. `toposd` writes it to its own log.
+
 ### Security
 
 - Built with Go 1.27.2 and golang.org/x/net v0.60.0, which fix GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
+
+### Upgrading
+
+- An authorizer that refuses a `failed_reason` it does not know keeps
+  every such turn on its model, and the reminded response is the answer;
+  the reminder works with no authorizer change. An authorizer that reads
+  `failed_model` but ignores `failed_reason` would read the question as
+  one about a model that cannot serve, so an installation that wants
+  these turns to move rolls an authorizer that reads `tool_as_text`
+  first, then toposd and every runner. The runner protocol's failover
+  request accepts `reason` `tool_as_text`; a server before it refuses
+  the request as `invalid_request`, and the turn keeps its answer.
 
 ## v0.27.0 - 2026-10-08
 
