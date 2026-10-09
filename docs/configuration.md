@@ -15,6 +15,7 @@ names every problem. This page lists the variables read today; the
 | `TOPOS_OIDC_AUDIENCE` | `topos` | comma-separated audiences a token may carry, the first the primary |
 | `TOPOS_OIDC_INSECURE_ISSUERS` | unset | listed issuers allowed to use `http://` on a host other than loopback |
 | `TOPOS_AUTHORIZER_URL`, `TOPOS_AUTHORIZER_TOKEN` | unset | the installation's authorizer and its bearer; unset, the owner policy decides |
+| `TOPOS_AUTHORIZER_MESSAGE_TEXT` | `false` | `true` lets a person's messages reach the authorizer in words, for an authorizer that picks a model by what a message asks: on a session where the authorizer asked for them, each question about a person's message carries its opening, its text up to 2,000 characters, or its first 1,500 and its last 500 for a longer one. `false` sends no message's words, whatever the authorizer asks. A value that is not `true` or `false` stops the start |
 | `TOPOS_ADMIN_SUBJECTS` | unset | subjects (`<issuer>\|<sub>`) the owner policy lets act on every object |
 | `TOPOS_LOCAL_ISSUER_KEY` | unset | a PEM PKCS#8 ECDSA P-256 or RSA (2048 bits or more) private key; set, toposd accepts the tokens `toposd token` signs and serves its key set at `<TOPOS_PUBLIC_URL>/.well-known/jwks.json` |
 | `TOPOS_DB_URL`, `TOPOS_DB_POOL_URL` | unset | Postgres for sessions, and an optional transaction-pooling URL for queries; unset, agents and sessions are kept in `TOPOS_DATA_DIR` |

@@ -76,6 +76,12 @@ type Config struct {
 	// authorizer; an empty URL selects the owner policy.
 	AuthorizerURL   string
 	AuthorizerToken string
+	// AuthorizerMessageText is TOPOS_AUTHORIZER_MESSAGE_TEXT, the ceiling on
+	// a message's words reaching the authorizer (spec 063): true, a
+	// question about a person's message on a session whose model asks for
+	// its opening carries it; false, the default, no question carries a
+	// message's words whatever an allow asks.
+	AuthorizerMessageText bool
 	// AdminSubjects act on every object under the owner policy.
 	AdminSubjects []string
 	// LocalIssuerKey is the PEM private key of the local issuer; empty
@@ -277,6 +283,7 @@ func Load(role string, getenv Getenv) (Config, error) {
 		}
 		problems = append(problems, c.readBlobs(getenv)...)
 		problems = append(problems, c.readBasePath(getenv)...)
+		problems = append(problems, c.readMessageText(getenv)...)
 	}
 	problems = append(problems, c.checkIdentity()...)
 	return done(c, problems)
@@ -304,6 +311,22 @@ func (c *Config) readBasePath(getenv Getenv) []string {
 	case c.BasePath != "" && have != c.BasePath:
 		return []string{"TOPOS_BASE_PATH is " + c.BasePath + " and the path of TOPOS_PUBLIC_URL is " + strconv.Quote(have) + "; they must be equal"}
 	}
+	return nil
+}
+
+// readMessageText reads TOPOS_AUTHORIZER_MESSAGE_TEXT (spec 063), a
+// boolean as strconv.ParseBool reads one, false when unset. A value that
+// is not one stops the start, since an operator who set it meant either.
+func (c *Config) readMessageText(getenv Getenv) []string {
+	v := strings.TrimSpace(getenv("TOPOS_AUTHORIZER_MESSAGE_TEXT"))
+	if v == "" {
+		return nil
+	}
+	on, err := strconv.ParseBool(v)
+	if err != nil {
+		return []string{"TOPOS_AUTHORIZER_MESSAGE_TEXT is " + strconv.Quote(v) + ", either true or false"}
+	}
+	c.AuthorizerMessageText = on
 	return nil
 }
 

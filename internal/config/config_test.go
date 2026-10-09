@@ -555,3 +555,24 @@ func TestSearchVariables(t *testing.T) {
 		}
 	}
 }
+
+// TestAuthorizerMessageTextIsTheCeiling (spec 063): the ceiling on a
+// message's words reaching the authorizer is read as a boolean, false
+// when unset or blank, and a value that is not a boolean stops the start.
+func TestAuthorizerMessageTextIsTheCeiling(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "  ": false, "false": false, "0": false, " true ": true, "1": true} {
+		c, err := Load(RoleServe, serve(map[string]string{"TOPOS_AUTHORIZER_MESSAGE_TEXT": v}))
+		if err != nil || c.AuthorizerMessageText != want {
+			t.Fatalf("TOPOS_AUTHORIZER_MESSAGE_TEXT=%q: %v, %v", v, c.AuthorizerMessageText, err)
+		}
+	}
+	for _, v := range []string{"on", "yes", "sometimes"} {
+		if _, err := Load(RoleServe, serve(map[string]string{"TOPOS_AUTHORIZER_MESSAGE_TEXT": v})); err == nil ||
+			!strings.Contains(err.Error(), "TOPOS_AUTHORIZER_MESSAGE_TEXT is "+`"`+v+`", either true or false`) {
+			t.Errorf("TOPOS_AUTHORIZER_MESSAGE_TEXT=%q: %v", v, err)
+		}
+	}
+	if c, err := Load(RoleCheck, serve(map[string]string{"TOPOS_AUTHORIZER_MESSAGE_TEXT": "true"})); err != nil || !c.AuthorizerMessageText {
+		t.Fatalf("the check role reads it as serve does: %v, %v", c.AuthorizerMessageText, err)
+	}
+}
