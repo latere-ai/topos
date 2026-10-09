@@ -166,7 +166,7 @@ func (c *call) updateSession() error {
 	// names no model, and an allow that names one for it moves nothing.
 	if b.Model != nil && b.Model.Name != nil {
 		asked := *b.Model.Name
-		next.Name, next.Via, next.Route = cmp.Or(limits.Model, asked), "", limits.Route
+		next.Name, next.Via, next.Route, next.MessageText = cmp.Or(limits.Model, asked), "", limits.Route, limits.MessageText
 		if next.Name != asked {
 			next.Via = asked
 		}
@@ -384,7 +384,8 @@ func (s *Server) agentConfig(ctx context.Context, sess session.Session) (manifes
 }
 
 // standing is the model s runs as it stands, with the name it was asked
-// by, the route the authorizer chose on the way (spec 061) and the
+// by, the route the authorizer chose on the way (spec 061), whether the
+// authorizer asked for each message's opening (spec 063) and the
 // reasoning level its next turn runs at: its header's, or its
 // agent's until a first change. A header written before changes carried
 // a level names none, and its turns run at the agent's.
@@ -392,7 +393,7 @@ func standing(s session.Session, cfg manifest.AgentConfig) session.ModelRef {
 	if s.Model == nil {
 		return session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
 	}
-	return session.ModelRef{Name: s.Model.Name, Via: s.Model.Via, Effort: cmp.Or(s.Model.Effort, cfg.Effort), Route: s.Model.Route}
+	return session.ModelRef{Name: s.Model.Name, Via: s.Model.Via, Effort: cmp.Or(s.Model.Effort, cfg.Effort), Route: s.Model.Route, MessageText: s.Model.MessageText}
 }
 
 // runnable refuses a session's model the installation does not run

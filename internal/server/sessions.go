@@ -386,7 +386,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 			routed.Name, routed.Via = limits.Model, cfg.Model.Name
 		}
 		if limits.Model != "" {
-			routed.Route = limits.Route
+			routed.Route, routed.MessageText = limits.Route, limits.MessageText
 		}
 		if r := limits.Reasoning; r != nil {
 			routed.Effort = cmp.Or(*r, cfg.Effort)
@@ -1171,9 +1171,11 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 	}
 	// The route moves with any allow that names a model, the one the
 	// session stands on included, so a route that moves alone is a change
-	// of its own (spec 061).
+	// of its own (spec 061); the ask for each message's opening moves with
+	// it, so the log says when a session's words began and stopped
+	// reaching the authorizer (spec 063).
 	if limits.Model != "" {
-		next.Route = limits.Route
+		next.Route, next.MessageText = limits.Route, limits.MessageText
 	}
 	if r := limits.Reasoning; r != nil {
 		next.Effort = cmp.Or(*r, cfg.Effort)
