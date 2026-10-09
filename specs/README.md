@@ -118,6 +118,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [060](060-the-memory-tool.md) | The memory tool: short entries an agent saves, updates and forgets through a memory service the installation configures, with the session's own key, read at the start through the allow's context | medium | drafted | 003, 004, 008, 012, 016, 018, 020, 025, 047, 058 |
 | [061](061-a-messages-shape-and-the-route-an-allow-names.md) | A message's shape and the route an allow names: a send tells the authorizer how long the message is, what it attaches and links, and whether the last turn ran a tool, and an allow may name the routed name it chose on the way to the model, which the session keeps beside it | small | testing | 004, 006, 015, 038, 051, 056 |
 | [062](062-a-tool-call-written-as-text.md) | A tool call written as text: a response that writes a call of an offered tool into its text instead of calling it is not kept, its model is reminded once, a routed turn whose model does it again moves once, and the log says which | medium | testing | 005, 007, 008, 039, 051 |
+| [063](063-a-messages-opening-for-an-authorizer-that-routes-by-it.md) | A message's opening for an authorizer that routes by it: an allow may ask for each later message's opening, which the session keeps beside its route under the operator's ceiling; and a message may say its client shows an authorizer's ask, and name the ask it answers | medium | testing | 006, 015, 038, 056, 061 |
 
 ## Dependency graph
 
@@ -189,6 +190,7 @@ flowchart BT
   S060[060 the memory tool]
   S061[061 a message's shape and the route]
   S062[062 a tool call written as text]
+  S063[063 a message's opening]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -298,6 +300,7 @@ flowchart BT
   S061 --> S056
   S062 --> S039
   S062 --> S051
+  S063 --> S061
 ```
 
 ## Build order

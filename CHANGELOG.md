@@ -46,6 +46,25 @@ committed: the commit log already holds that.
   session, thread, turn, step, model, tool and the `action` taken:
   `reminded`, `moved` with `to`, or `kept` with `why`. It never holds a
   word of the response. `toposd` writes it to its own log.
+- An authorizer that picks a model by what a message asks can read the
+  message, where the operator allows it. An allow that names a model may
+  name `message_text: true`, which the session keeps on its model beside
+  `route` by the same rules, in the header and in both sides of
+  `session.model_changed`. With the new `TOPOS_AUTHORIZER_MESSAGE_TEXT`
+  set to `true`, each later `session.send` about a person's message on
+  that session, from the send route, a trigger firing into an open
+  session or a fork sent its message, carries `message_text`: the
+  message's text, whole up to 2,000 characters, or its first 1,500 and
+  its last 500 around a line holding `…`. The variable is `false` by
+  default, and then no question carries a message's words, whatever an
+  allow asks. A create's first message never carries them.
+- A `user.message` a client sends, and a fork's `message`, may carry
+  `askable: true`, saying the client shows an authorizer's ask on the
+  message to the person, and `answers`, the ask it is sent in answer to,
+  at most 512 bytes. `session.send` carries both under the same names;
+  no event keeps them. A server before this release refuses a message
+  that carries either as `invalid_request`, so a client sends them only
+  to a server that documents them.
 
 ### Security
 
