@@ -10,6 +10,23 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A turn after the first in a session starts its model request without
+  registering a new Lux key. Each turn is a drive under a lease of its
+  own, and each drive generated a new key value that the authorizer
+  registered with Lux before the turn's first model request. A drive of
+  `serve`'s own runners now takes up the key of the session's last drive
+  when its Postgres lease shows that every lease of the session since
+  was taken by the same process, so no other runner can have replaced
+  the key. A drive after another process or a remote runner held the
+  session, and a store whose leases do not count (the directory and
+  memory stores), generate a new key as before. With the session key
+  routes answering in 250 ms, the time from `session.status running` to
+  the model request of a warm turn went from 261 ms to 7 ms at the median
+  on a local Postgres, and a nine-turn session registered one key where
+  it registered nine.
+
 ## v0.28.0 - 2026-10-09
 
 ### Fixed
