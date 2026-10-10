@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.29.0 - 2026-10-10
+
 ### Changed
 
 - A turn after the first in a session starts its model request without
