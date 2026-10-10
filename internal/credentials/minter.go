@@ -95,10 +95,31 @@ type Minter struct {
 }
 
 // key is a generated Lux key: its value, the hash the authorizer holds,
-// the lease it was generated for, and when it expires.
+// the lease it was last answered to, and when it expires. gen is that
+// lease's generation when it is a drive of serve's own runners whose
+// lease counts the session's leases, and 0 otherwise.
 type key struct {
 	value, hash, lease string
+	gen                int64
 	expires            time.Time
+}
+
+// holder is who asks for a credential: the lease's tag, and for a drive of
+// serve's own runners whose lease counts the session's leases
+// (session.Lineage), its generation and the generation its process's run
+// of the session's leases started at.
+type holder struct {
+	lease      string
+	gen, since int64
+}
+
+// follows reports whether h is a drive that takes k up: k was answered to
+// a drive of this process at an earlier generation of the session's lease,
+// and every lease since was taken in this process, so no other runner held
+// the session and replaced k at the authorizer. The drive before ended,
+// since h holds the lease now.
+func (h holder) follows(k *key) bool {
+	return k.gen > 0 && h.gen > k.gen && k.gen >= h.since
 }
 
 // New builds the minter. With neither Tokens nor Keys it mints nothing,
@@ -118,18 +139,18 @@ func New(o Options) (*Minter, error) {
 // key for the audience runner.AudienceLux, and a hosted-agent token for
 // any other. The caller has checked that the lease is held.
 func (m *Minter) Credential(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error) {
-	c, err := m.credential(ctx, id, lease, audience, workload)
+	c, err := m.credential(ctx, id, holder{lease: lease}, audience, workload)
 	return c, coded(err)
 }
 
-func (m *Minter) credential(ctx context.Context, id, lease, audience, workload string) (runner.Credential, error) {
+func (m *Minter) credential(ctx context.Context, id string, h holder, audience, workload string) (runner.Credential, error) {
 	switch {
 	case workload != runner.WorkloadSession && workload != runner.WorkloadSandbox:
 		return runner.Credential{}, fmt.Errorf("credentials: the workload %q is neither session nor sandbox", workload)
 	case audience == "":
 		return runner.Credential{}, errors.New("credentials: no audience")
 	case audience == runner.AudienceLux:
-		return m.key(ctx, id, lease, workload)
+		return m.key(ctx, id, h, workload)
 	case m.o.Tokens == nil:
 		return runner.Credential{}, runner.ErrNotMinted
 	}
@@ -174,8 +195,12 @@ func (m *Minter) subject(ctx context.Context, id string) (string, error) {
 // lease with RenewBefore left is answered as it is; one with less is
 // renewed by registering its hash again; a lease with no key of its own
 // gets a new value, whose hash replaces the key another lease held, so a
-// runner that lost the session loses its key.
-func (m *Minter) key(ctx context.Context, id, lease, workload string) (runner.Credential, error) {
+// runner that lost the session loses its key. A drive that follows the
+// drive the key was answered to (holder.follows) takes the key up as its
+// own: each turn of a session is a drive, and a new value each turn cost
+// a registration the turn waited for before its first model request.
+func (m *Minter) key(ctx context.Context, id string, h holder, workload string) (runner.Credential, error) {
+	lease := h.lease
 	if m.o.Keys == nil {
 		return runner.Credential{}, runner.ErrNotMinted
 	}
@@ -191,10 +216,13 @@ func (m *Minter) key(ctx context.Context, id, lease, workload string) (runner.Cr
 	}
 	slot := [2]string{id, workload}
 	k := m.keys[slot]
+	if k != nil && k.lease != lease && h.follows(k) {
+		k.lease, k.gen = lease, h.gen
+	}
 	if k != nil && k.lease == lease && k.expires.Sub(now) >= RenewBefore {
 		return runner.Credential{Value: k.value, ExpiresAt: k.expires}, nil
 	}
-	next := key{lease: lease}
+	next := key{lease: lease, gen: h.gen}
 	if k != nil && k.lease == lease {
 		next.value, next.hash = k.value, k.hash
 	} else {
@@ -215,16 +243,23 @@ func (m *Minter) key(ctx context.Context, id, lease, workload string) (runner.Cr
 
 // Local is the credentials of a drive of serve's own runners that holds
 // lease on the session id: each lease is a lease of its own to the
-// minter, and a lost one is answered runner.ErrLeaseLost.
+// minter, and a lost one is answered runner.ErrLeaseLost. A lease that
+// counts the session's leases (session.Lineage) also says whether the
+// drive follows an earlier drive of this process with no other holder
+// between, which takes up that drive's Lux key.
 func (m *Minter) Local(id string, lease session.Lease) runner.Credentials {
-	return &local{m: m, id: id, lease: lease, tag: "local:" + strconv.FormatInt(m.leases.Add(1), 10)}
+	h := holder{lease: "local:" + strconv.FormatInt(m.leases.Add(1), 10)}
+	if l, ok := lease.(session.Lineage); ok {
+		h.gen, h.since = l.Generation(), l.Since()
+	}
+	return &local{m: m, id: id, lease: lease, holder: h}
 }
 
 type local struct {
-	m     *Minter
-	id    string
-	lease session.Lease
-	tag   string
+	m      *Minter
+	id     string
+	lease  session.Lease
+	holder holder
 }
 
 func (l *local) Credential(ctx context.Context, audience, workload string) (runner.Credential, error) {
@@ -233,7 +268,8 @@ func (l *local) Credential(ctx context.Context, audience, workload string) (runn
 		return runner.Credential{}, runner.ErrLeaseLost
 	default:
 	}
-	return l.m.Credential(ctx, l.id, l.tag, audience, workload)
+	c, err := l.m.credential(ctx, l.id, l.holder, audience, workload)
+	return c, coded(err)
 }
 
 // keyAlphabet is [A-Za-z0-9_-], 64 letters, so one random byte's low six

@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 003-manifes
 affects: [internal/credentials/, internal/identity/, internal/egressproxy/, session/inputcheck/, runner/, machine/cella/, manifest/, internal/hosted/, internal/runnerapi/, internal/runnerrole/, internal/server/, internal/config/, test/stubs/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-10
 author: changkun
 ---
 
@@ -185,7 +185,19 @@ workload); the value lives in toposd's memory and in the runner's. A
 request for a key with less than 10 minutes left sends the same hash
 again, which renews it; a new lease generation or a new toposd process
 generates a new value, whose hash replaces the old key, so a runner
-that lost its lease loses its key at the next claim. The runner
+that lost its lease loses its key at the next claim. One exception, from
+2026-10-10: each turn is a drive under a lease of its own, and a drive of
+serve's own runners whose lease generation follows an earlier drive of
+the same process, with every lease of the session between taken by that
+process's store (`session.Lineage`, which a Postgres lease answers),
+takes up the key that drive held instead of generating one. No other
+runner held the session in between, so none can have replaced the key,
+and the drive before has ended. A turn then registers nothing before its
+first model request, where a registration is a round trip to the
+authorizer and the authorizer's write of the key to Lux that the turn
+waited for. A store whose leases do not count, a remote runner's lease
+and a lease after another process held the session generate a new
+value as before. The runner
 presents its key as the model connection's credential, asked again for
 every model request, and as the bearer of each `web_search` sent to
 `TOPOS_SEARCH_URL`, asked again for every search
@@ -373,6 +385,7 @@ egress swapping a Secret by host and path.
 | The stub identity provider answers the host's token, create, archive, disable, list and mint with the host contract's codes, and the stub session keys answer the key routes | `test/stubs/idpstub.TestTheStubAnswersTheHostContract`, `test/stubs/keystub.TestTheStubAnswersTheKeyRoutes` | built |
 | The identity provider's and the session keys' variables are read; each URL needs its partners and the authorizer, and neither installation credential is accepted beside them | `internal/config.TestTheCredentialVariables` | built |
 | A manifest naming `spec.identity` is refused, and an agent's personal or organization standing follows its owner | `manifest.TestValidationRules`, `internal/server.TestAgentIdentityLifecycle`, `authorizer.TestDecodeLimitsReadsEveryMember` | built |
+| A drive of serve's own runners that follows the session's last drive in the same process, with every lease between taken there, takes up that drive's Lux key and registers nothing; a drive after another process held the session, a lease that does not count the session's leases, and a remote runner's key each get a new value; a Postgres lease answers its generation and the generation its process's run of leases started at | `internal/credentials.TestAFollowingDriveTakesUpTheSessionsKey`, `internal/store/postgres.TestALeaseSaysWhetherThisProcessHeldEveryLeaseBefore` | built |
 | A session reaches models with its own Lux key and its sandbox with a second one swapped in at egress; neither is the installation's key when an authorizer is configured | `internal/credentials.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestSessionAndSandboxLuxKeys`, `internal/hosted.TestAnInstallationThatMintsNothingActsAsToday`, `internal/config.TestTheCredentialVariables` | built against the stub key routes, with the refusal of the installation's key tied to `TOPOS_SESSION_KEYS_URL` rather than to the authorizer; the swap itself is Cella's egress gateway's, the Secret is scoped by host until Cella scopes one by path, and the run against the real authorizer waits for its deployment |
 | At a session's end in a drive the runner stops the sandbox's renewals, deletes the sandbox, then each of its Secrets, the installation's git credential's included; a drive's end keeps them; a refused delete fails the release and the next release deletes what is left without deleting the sandbox again | `internal/hosted.TestTheSessionsEndDeletesItsSecrets`, `internal/hosted.TestASecretCellaCouldNotDeleteIsDeletedAtTheNextEnd` | built against the stub Cella, under the session-bound rule written out in the test |
 | Every Secret the runner applies for a sandbox names the session and the agent in their labels, at its create and at each renewal, so an authorizer that admits only what names the session admits the create, the mount and the renewal, and refuses a Secret without the session's label or with a label it reserves | `internal/hosted.TestSessionSecretsNameTheSession`, `test/stubs/cellastub.TestAuthorize` | built against the stub Cella with the rule written out in the test; the hosting platform's own decider is not importable here |

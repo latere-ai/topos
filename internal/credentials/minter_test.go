@@ -154,6 +154,78 @@ func TestSessionAndSandboxLuxKeys(t *testing.T) {
 	}
 }
 
+// counted is a lease that counts the session's leases, at generation gen
+// of a run of this process's leases that started at since.
+type counted struct {
+	lease
+	gen, since int64
+}
+
+func (l *counted) Generation() int64 { return l.gen }
+func (l *counted) Since() int64      { return l.since }
+
+// TestAFollowingDriveTakesUpTheSessionsKey: each turn is a drive under a
+// lease of its own, and a drive that follows the session's last drive in
+// this process, with every lease between taken here, answers the key that
+// drive held, so the turn registers nothing before its first model
+// request. A drive after another process held the session, a lease that
+// does not count, and a key held for a remote runner each get a new value,
+// whose hash replaces the old one; a key taken up with under ten minutes
+// left is renewed under its hash.
+func TestAFollowingDriveTakesUpTheSessionsKey(t *testing.T) {
+	f := newFixture(t, true)
+	ctx := t.Context()
+	ask := func(c runner.Credentials) string {
+		t.Helper()
+		k, err := c.Credential(ctx, runner.AudienceLux, runner.WorkloadSession)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k.Value
+	}
+	puts := func() int {
+		t.Helper()
+		k, _ := f.keys.Key(f.session, runner.WorkloadSession)
+		return k.Puts + len(k.Replaced)
+	}
+	drive := func(gen, since int64) runner.Credentials {
+		return f.m.Local(f.session, &counted{lost: make(chan struct{}), gen: gen, since: since})
+	}
+	first := ask(drive(3, 3))
+	// A probe of the queue took generation 4 here and drove nothing.
+	if got := ask(drive(5, 3)); got != first || puts() != 1 {
+		t.Fatalf("the following drive got a new key: same %v, registrations %d", got == first, puts())
+	}
+	f.now = f.now.Add(7 * time.Minute)
+	if got := ask(drive(6, 3)); got != first {
+		t.Fatal("a renewal of a key taken up changed its value")
+	}
+	if k, _ := f.keys.Key(f.session, runner.WorkloadSession); k.Puts != 2 || len(k.Replaced) != 0 {
+		t.Fatalf("a key taken up with under ten minutes left was not renewed under its hash: %+v", k)
+	}
+	// Another process held generation 7.
+	afterOther := ask(drive(8, 8))
+	if afterOther == first {
+		t.Fatal("a drive after another process held the session took up the old key")
+	}
+	if k, _ := f.keys.Key(f.session, runner.WorkloadSession); k.Hash != HashKeyValue(afterOther) || len(k.Replaced) != 1 {
+		t.Fatalf("the new key did not replace the old one: %+v", k)
+	}
+	// A lease that does not count the session's leases.
+	plain := ask(f.m.Local(f.session, &lease{lost: make(chan struct{})}))
+	if plain == afterOther {
+		t.Fatal("a lease that does not count took up a key")
+	}
+	// A remote runner's key is never taken up by a local drive.
+	remote, err := f.m.Credential(ctx, f.session, "claim:1", runner.AudienceLux, runner.WorkloadSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ask(drive(9, 8)); got == remote.Value {
+		t.Fatal("a local drive took up a remote runner's key")
+	}
+}
+
 // TestTokensOnlyForTheLeaseHolder, the in-process half: a drive's
 // credentials mint the agent's token with the session claim while its
 // lease is held, and nothing once it is lost, with no call reaching the
