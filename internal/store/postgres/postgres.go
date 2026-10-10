@@ -81,6 +81,38 @@ type Store struct {
 	// server has indexed, and indexed is closed once it has ended.
 	stopIndex context.CancelFunc
 	indexed   chan struct{}
+	// lineages is, by session, the run of lease generations this store
+	// took one after another (session.Lineage).
+	lineageMu sync.Mutex
+	lineages  map[string]lineage
+}
+
+// lineage is a run of a session's lease generations this store took with
+// none between them: from since to last.
+type lineage struct{ since, last int64 }
+
+// maxLineages bounds the runs a store remembers. Past it the record starts
+// over, which costs only the runs it forgets: a lease whose run is
+// forgotten reads as the first of a new one.
+const maxLineages = 1 << 16
+
+// lineageOf records that this store took gen of id's lease and answers the
+// generation its run starts at: the run goes on when gen follows the last
+// generation this store took, and starts at gen when another process took
+// one between, or the store took none before.
+func (s *Store) lineageOf(id string, gen int64) int64 {
+	s.lineageMu.Lock()
+	defer s.lineageMu.Unlock()
+	if s.lineages == nil || len(s.lineages) >= maxLineages {
+		s.lineages = map[string]lineage{}
+	}
+	l, ok := s.lineages[id]
+	if !ok || gen != l.last+1 {
+		l.since = gen
+	}
+	l.last = gen
+	s.lineages[id] = l
+	return l.since
 }
 
 // Open applies the migrations on dsn and connects.
@@ -844,10 +876,17 @@ func (s *Store) Acquire(ctx context.Context, id string, holder session.Holder) (
 	if err != nil {
 		return nil, fmt.Errorf("postgres: acquire %s: %w", id, err)
 	}
-	l := &lease{s: s, id: id, gen: gen, lost: make(chan struct{}), stop: make(chan struct{})}
+	l := &lease{s: s, id: id, gen: gen, since: s.lineageOf(id, gen), lost: make(chan struct{}), stop: make(chan struct{})}
 	go l.keep(context.WithoutCancel(ctx), l.stop)
 	return l, nil
 }
+
+// Generation is the lease's generation, and Since the generation its
+// store's run of this session's leases started at (session.Lineage).
+func (l *lease) Generation() int64 { return l.gen }
+func (l *lease) Since() int64      { return l.since }
+
+var _ session.Lineage = (*lease)(nil)
 
 // Append writes a batch under this lease, fenced by its generation.
 func (l *lease) Append(ctx context.Context, afterSeq uint64, events []session.Event) (uint64, error) {
@@ -857,14 +896,15 @@ func (l *lease) Append(ctx context.Context, afterSeq uint64, events []session.Ev
 var _ session.Fence = (*lease)(nil)
 
 type lease struct {
-	s    *Store
-	id   string
-	gen  int64
-	lost chan struct{}
-	stop chan struct{}
-	once sync.Once
-	mu   sync.Mutex
-	done bool
+	s     *Store
+	id    string
+	gen   int64
+	since int64
+	lost  chan struct{}
+	stop  chan struct{}
+	once  sync.Once
+	mu    sync.Mutex
+	done  bool
 }
 
 // keep renews the lease until stop closes: at release or loss. Its

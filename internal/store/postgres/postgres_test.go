@@ -373,6 +373,54 @@ func TestAnExpiredLeaseIsTakenOverAndTheOldHolderLosesIt(t *testing.T) {
 	}
 }
 
+// TestALeaseSaysWhetherThisProcessHeldEveryLeaseBefore is session.Lineage
+// on Postgres: each lease of a session is one generation more than the one
+// before, and its Since is the generation from which this store took every
+// lease of the session; a lease another store, another process, took
+// between starts the run again.
+func TestALeaseSaysWhetherThisProcessHeldEveryLeaseBefore(t *testing.T) {
+	dsn := database(t)
+	here, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(here.Close)
+	other, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(other.Close)
+	s := storetest.NewSession()
+	if err := here.Create(t.Context(), s, nil); err != nil {
+		t.Fatal(err)
+	}
+	take := func(st *Store) session.Lineage {
+		t.Helper()
+		l, err := st.Acquire(t.Context(), s.ID, session.Holder{Runner: "run"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := l.Release(); err != nil {
+			t.Fatal(err)
+		}
+		lin, ok := l.(session.Lineage)
+		if !ok {
+			t.Fatal("a Postgres lease does not count the session's leases")
+		}
+		return lin
+	}
+	first := take(here)
+	second := take(here)
+	if second.Generation() != first.Generation()+1 || second.Since() != first.Generation() {
+		t.Fatalf("two leases in a row: %d since %d, then %d since %d", first.Generation(), first.Since(), second.Generation(), second.Since())
+	}
+	take(other)
+	after := take(here)
+	if after.Since() != after.Generation() {
+		t.Fatalf("a lease after another process held one reads since %d at %d", after.Since(), after.Generation())
+	}
+}
+
 func TestACorruptBlobIsRefused(t *testing.T) {
 	st := fresh(t, Options{})
 	s := storetest.NewSession()

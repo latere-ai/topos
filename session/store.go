@@ -101,6 +101,18 @@ type Fence interface {
 	Append(ctx context.Context, afterSeq uint64, events []Event) (uint64, error)
 }
 
+// Lineage is the optional interface of a lease that counts a session's
+// leases, as a Postgres lease does. Generation is this lease's number,
+// one more than the lease before it. Since is the generation from which
+// every lease of the session up to this one was taken through this store
+// in this process, so no other process held the session in between and
+// nothing it held the session for, such as a credential, can have
+// replaced what this process holds for it.
+type Lineage interface {
+	Generation() int64
+	Since() int64
+}
+
 // ListOptions filter and page List. Sessions list newest first; Cursor
 // is the value a previous page returned. Owners, when set, keeps the
 // sessions whose initiator's subject is one of them, the narrowing an
