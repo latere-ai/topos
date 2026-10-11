@@ -74,6 +74,9 @@ started again with its files rather than replaced, a command that was
 running when its machine stopped says what happened, and a session
 whose machine was replaced, or a fork with no checkpoint, gets its
 working directory rebuilt from its own log.
+A session's app is created with no visibility of its own, so it starts
+as the app host makes it, and `publish` opens an app to anyone who has
+its link, or closes it again, in a call the person approves every time.
 
 Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite
