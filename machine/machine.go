@@ -129,6 +129,11 @@ type ExecResult struct {
 	// move needs could not be made. The command went on under its
 	// timeout.
 	ServerErr error
+	// Stopped is set when the machine stopped under the command, which
+	// then has no exit of its own: Output is what it wrote before, and
+	// ExitCode the code its session ended with, ExitKilled for a kill and
+	// -1 when none is known.
+	Stopped *Stop
 }
 
 // ExecStream is a running command whose output arrives as it is
@@ -187,6 +192,11 @@ var (
 	ErrDenied = errors.New("machine: the path holds credentials and is not readable by tools")
 	// ErrReleased is a call after Release.
 	ErrReleased = errors.New("machine: the machine was released")
+	// ErrLost is a machine that is gone, or that failed and cannot be
+	// started again: every call answers it until the machine is opened
+	// anew, and what a call could not do for it is the loss's, not a
+	// failure of its own (spec 009).
+	ErrLost = errors.New("machine: the session's machine is gone")
 )
 
 // The error codes of spec 009.
