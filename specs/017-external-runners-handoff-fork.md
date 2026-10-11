@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 016-runners.md, 034-checkpoints-and-rewind.md]
 affects: [runner/, client/, internal/server/, internal/toposcli/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-04
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -88,7 +88,10 @@ The runner reads the copied part of the log as history only: the old
 session's `session.machine` events do not count as a machine the new
 session has, so its first machine is opened afresh, gets its
 repositories, and is recorded with reason `attached`, or `restored`
-when the fork point's files were put in it. A new session's first
+when the fork point's files were put in it: from the fork point's
+checkpoint, or, where it kept none or it cannot be had, from what the
+copied log holds of the working directory, on a machine made new
+([[065-a-working-directory-rebuilt-from-the-log]]). A new session's first
 checkpoint chains to the fork point's commit only when that commit was
 restored.
 

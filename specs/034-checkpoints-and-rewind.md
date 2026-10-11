@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [runner/checkpoint/, machine/host/, machine/cella/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -117,7 +117,7 @@ server `POST /v1/sessions/{id}/rewind` ([[015-api]]).
 
 | Operation | Restores |
 |---|---|
-| fork at a sequence | the checkpoint named by the `session.status` at that sequence ([[017-external-runners-handoff-fork]]), when the new session's machine reaches it: from the working directory's repository, from the old session's repository under the runner's checkpoint directory, or, for a hosted session, by its id from the repository on the git host that kept it ([[035-hosted-checkpoints-at-the-git-host]]); one it reaches nowhere leaves the fork `attached` with `session.error` `checkpoint_missing` |
+| fork at a sequence | the checkpoint named by the `session.status` at that sequence ([[017-external-runners-handoff-fork]]), when the new session's machine reaches it: from the working directory's repository, from the old session's repository under the runner's checkpoint directory, or, for a hosted session, by its id from the repository on the git host that kept it ([[035-hosted-checkpoints-at-the-git-host]]); one it reaches nowhere leaves the fork `attached` with `session.error` `checkpoint_missing`, or, on a machine made new, `restored` from what its copied log holds ([[065-a-working-directory-rebuilt-from-the-log]]) |
 | handoff | the latest checkpoint, pushed by the writer that hands off and fetched by the one that takes over |
 | a lost sandbox | the latest checkpoint ([[009-machines]]) |
 

@@ -259,9 +259,12 @@ a fresh workspace otherwise. When a runner finds the
 sandbox gone, it creates one again, restores the latest checkpoint
 ([[034-checkpoints-and-rewind]]) with `ImportTar`, and appends
 `session.machine` with reason `restored`; with no checkpoint to
-restore it appends `session.machine` with reason `replaced` and a
-`session.error` `machine_lost`, so the model and the person know the
-files are gone. The control plane never dials a sandbox or a worker:
+restore it rebuilds the working directory from the session's log and
+records the machine as `restored` from the log
+([[065-a-working-directory-rebuilt-from-the-log]]); and when the log
+holds no file either, it appends `session.machine` with reason
+`replaced` and a `session.error` `machine_lost`, so the model and the
+person know the files are gone. The control plane never dials a sandbox or a worker:
 every call goes to Cella's API, and a self-hosted Environment's
 workers connect out to Cella (invariant 10 of [[001-architecture]]).
 
@@ -321,9 +324,11 @@ reason `restarted`, the machine the session had, and `cause`
 the instruction files and the skills of the machine's last record,
 which the kept files still hold, so the system prompt does not move.
 The runner appends it beside the call that met the restart, at an open
-or in a turn. A machine made new in the place of one of its kind is
-recorded with the reason `replaced`, never `handoff`, followed in the
-same append by `session.error` `machine_lost` with the sentence "The
+or in a turn. A machine made new in the place of one of its kind, with
+nothing put back into it
+([[065-a-working-directory-rebuilt-from-the-log]]), is recorded with
+the reason `replaced`, never `handoff`, followed in the same append by
+`session.error` `machine_lost` with the sentence "The
 session's machine was lost and replaced with a new one. The files that
 were in its working directory are gone." The fold renders both into the
 session's own thread where they happened ([[004-session-log]]): a
@@ -339,7 +344,7 @@ none to read ([[052-a-sessions-network]]).
 | Code | Retryable | Meaning |
 |---|---|---|
 | `machine_unavailable` | no | the machine kind is not configured (a `host` machine on a server without `TOPOS_HOST_SESSIONS=on`, or one whose agent names `machine.roots` or `machine.readPaths`), the runner carries no helper for the sandbox's platform, or Cella refused the sandbox: its Environment, its image, a secret it names, or the session's credential; a Cella that could not answer, a 5xx, a 429 or no answer, is transient and carries no code; a Cella answer carrying `budget_exhausted` or `spend_exceeded`, whatever its status, is a refusal for spend and not this code: it stops the turn `budget` ([[007-models]]) |
-| `machine_lost` | yes | the session's sandbox was gone, or failed and Cella did not start it again, and no checkpoint could restore its files |
+| `machine_lost` | yes | the session's sandbox was gone, or failed and Cella did not start it again, and neither a checkpoint nor the session's log could put back its files |
 
 ## Not in this spec
 
