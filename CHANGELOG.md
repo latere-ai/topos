@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.31.0 - 2026-10-12
+
 ### Fixed
 
 - A session's sandbox that failed is started again, not replaced. A
