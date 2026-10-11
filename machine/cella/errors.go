@@ -20,9 +20,10 @@ var (
 	// configured, or it refused the sandbox, its Environment, its image
 	// or a secret it names. It is not retryable.
 	ErrUnavailable = errors.New("machine: the cella machine is unavailable")
-	// ErrLost is a sandbox that is gone. The machine answers it for every
-	// call until Recreate.
-	ErrLost = errors.New("machine: the session's sandbox is gone")
+	// ErrLost is a sandbox that is gone, or that failed and Cella does not
+	// start again. The machine answers it for every call until Recreate.
+	// It is machine.ErrLost, which a caller that knows no Cella reads.
+	ErrLost = machine.ErrLost
 )
 
 // Code is the spec 009 code of an error: machine_unavailable,

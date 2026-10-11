@@ -69,7 +69,7 @@ func under(p, root string) bool {
 // returns for the same failure: not_found is the path's, because call has
 // already told a sandbox that is gone.
 func routeErr(op, p string, err error) error {
-	if err == nil || errors.Is(err, ErrLost) || errors.Is(err, machine.ErrReleased) {
+	if err == nil || errors.Is(err, ErrLost) || errors.Is(err, machine.ErrReleased) || errors.Is(err, errStoppedAgain) {
 		return err
 	}
 	if _, spent := models.SpendRefused(err); spent {

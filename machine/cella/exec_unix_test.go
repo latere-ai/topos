@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/test/stubs/cellastub"
 )
 
 func TestAHelperThatDoesNotAnswerACancelIsClosed(t *testing.T) {
@@ -44,5 +45,35 @@ func TestAHelperThatDoesNotAnswerACancelIsClosed(t *testing.T) {
 	res, err := st.Wait()
 	if err != nil || !res.Canceled || res.ExitCode != -1 {
 		t.Errorf("a helper that did not answer = %+v %v", res, err)
+	}
+}
+
+// TestAHelperKilledAloneIsAKilledCommand: a command whose helper is
+// killed while its sandbox runs on ends as a killed command does, with
+// the exit code of a kill and what it wrote before, and says nothing of
+// the machine: nothing stopped, and nothing says the machine ran out of
+// memory (spec 009).
+func TestAHelperKilledAloneIsAKilledCommand(t *testing.T) {
+	f := open(t)
+	st, err := f.m.ExecStream(t.Context(), machine.ExecRequest{Command: "echo $PPID; sleep 0.3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(readUntil(t, st, "\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	res, err := st.Wait()
+	if err != nil || res.ExitCode != machine.ExitKilled || res.Stopped != nil || res.Canceled || res.TimedOut {
+		t.Fatalf("a command whose helper was killed = %+v %v", res, err)
+	}
+	if sb, _ := f.stub.Sandbox(f.m.Info().ID); sb.Status.Phase != "Running" || f.stub.Count(cellastub.OpStart) != 0 {
+		t.Errorf("the sandbox is %s after %d starts", sb.Status.Phase, f.stub.Count(cellastub.OpStart))
+	}
+	if err := execErr(t, f.m); err != nil {
+		t.Errorf("the next command: %v", err)
 	}
 }

@@ -143,7 +143,8 @@ func (m *Machine) start(ctx context.Context, r machine.ExecRequest) (*stream, er
 			return err
 		}
 		st = &stream{sess: sess, w: &sender{s: sess}, done: make(chan struct{}), inputDone: make(chan error, 1),
-			check: func(err error) error { return m.check(context.WithoutCancel(ctx), id, err) }}
+			check: func(err error) error { return m.check(context.WithoutCancel(ctx), id, err) },
+			ended: func(code int, cause error) (*machine.Stop, bool, error) { return m.ended(ctx, id, code, cause) }}
 		return nil
 	})
 	if err != nil {
@@ -235,6 +236,9 @@ type stream struct {
 	w     *sender
 	done  chan struct{}
 	check func(error) error
+	// ended says what became of a command whose session closed with no
+	// exit from the helper, as Machine.ended does.
+	ended func(code int, cause error) (*machine.Stop, bool, error)
 
 	mu       sync.Mutex
 	pending  []byte
@@ -318,7 +322,7 @@ func (st *stream) Read(p []byte) (int, error) {
 func (st *stream) next() {
 	kind, payload, err := readFrame(st.sess)
 	if err != nil {
-		st.end(err)
+		st.cut(err)
 		return
 	}
 	switch kind {
@@ -350,18 +354,53 @@ func (st *stream) next() {
 	}
 }
 
+// cut finishes a stream whose session ended before the helper sent the
+// command's exit: the helper is gone, killed alone or with its sandbox,
+// and ended says which. The caller holds mu.
+func (st *stream) cut(err error) {
+	st.forceMu.Lock()
+	forced := st.forced
+	st.forceMu.Unlock()
+	if forced {
+		st.end(err)
+		return
+	}
+	code := -1
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		// The session's exit code says how the helper ended, when the
+		// session closed in order.
+		c, werr := st.sess.Wait()
+		if werr == nil {
+			code = c
+		}
+		err = errors.Join(fmt.Errorf("machine: the command's session ended before its exit (exit code %d)", c), werr)
+	}
+	stop, killed, err := st.ended(code, err)
+	switch {
+	case err != nil:
+		st.finish(err)
+	case killed:
+		// The helper was killed and the sandbox runs: the command ended
+		// as a killed command does, with what it wrote before.
+		st.res.ExitCode = machine.ExitKilled
+		st.finish(nil)
+	default:
+		if code <= 0 {
+			// A command its machine stopped did not succeed, whatever the
+			// session's end reported.
+			code = -1
+		}
+		st.res.Stopped, st.res.ExitCode = stop, code
+		st.finish(nil)
+	}
+}
+
 // end finishes the stream with err, closes the session, and releases
 // Wait. The caller holds mu.
 func (st *stream) end(err error) {
 	st.forceMu.Lock()
 	forced := st.forced
 	st.forceMu.Unlock()
-	if err != nil && !forced && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
-		// The session ended with no exit from the helper: the helper
-		// was killed, and the session's exit code says how.
-		code, werr := st.sess.Wait()
-		err = errors.Join(fmt.Errorf("machine: the command's session ended before its exit (exit code %d)", code), werr)
-	}
 	cerr := st.close()
 	switch {
 	case forced:
@@ -375,6 +414,16 @@ func (st *stream) end(err error) {
 	if err != nil {
 		err = st.check(err)
 	}
+	st.finished, st.err = true, err
+	close(st.done)
+}
+
+// finish ends a stream whose session is already over, with err as it is,
+// and releases Wait. The caller holds mu.
+func (st *stream) finish(err error) {
+	// The session ended on its own, so how its close goes says nothing
+	// more about the command.
+	_ = st.close()
 	st.finished, st.err = true, err
 	close(st.done)
 }

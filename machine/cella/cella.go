@@ -4,8 +4,10 @@
 // Package cella is the Cella machine of spec 009: one Cella sandbox per
 // session, reached through latere.ai/x/cella/client. The sandbox is
 // named after the session, so a runner that claims the session later
-// finds it by name, starts it when Cella stopped it for idleness, and
-// creates it again when it is gone.
+// finds it by name, starts it when Cella stopped it for idleness or when
+// it failed, and creates it again when it is gone. A failed sandbox is
+// deleted only when Cella refuses to start it, since the delete is what
+// removes its workspace.
 //
 // Files inside the sandbox's workspace go through Cella's file routes.
 // Everything else goes through the helper topos-machine, which the
@@ -172,6 +174,12 @@ type Machine struct {
 	workspace string
 	roots     []string
 	created   bool
+	// restart is the restart the last attach made, nil when it found the
+	// sandbox running, stopped or absent.
+	restart *machine.Restart
+	// onRestart is the hook told of each restart a call makes after the
+	// attach.
+	onRestart func(ctx context.Context, r machine.Restart) error
 	lost      bool
 	released  bool
 	// asked is the egress this machine last created or updated the
@@ -262,10 +270,47 @@ func (m *Machine) Created() bool {
 	return m.created
 }
 
-// Recreate creates the sandbox again after an operation answered ErrLost,
-// with a fresh workspace and the helper uploaded; the machine is usable
-// again and Info names the new sandbox. Restoring the files is the
-// runner's, through ImportTar.
+// Restarted reports the restart the last Open or Recreate made: it found
+// the sandbox failed and Cella started it again on the same workspace, so
+// its files are kept and every process that ran in it is gone.
+func (m *Machine) Restarted() (machine.Restart, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.restart == nil {
+		return machine.Restart{}, false
+	}
+	return *m.restart, true
+}
+
+// OnRestart sets the hook called after each restart a call makes once
+// the machine is open: a call that found the sandbox failed and had it
+// started again, or a command whose sandbox stopped under it and came
+// back. The hook runs when the sandbox runs again with the helper in it,
+// before the call goes on, and its failure is the call's.
+func (m *Machine) OnRestart(hook func(ctx context.Context, r machine.Restart) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onRestart = hook
+}
+
+// tell hands a restart to the hook, when one is set.
+func (m *Machine) tell(ctx context.Context, r machine.Restart) error {
+	m.mu.Lock()
+	hook := m.onRestart
+	m.mu.Unlock()
+	if hook == nil {
+		return nil
+	}
+	return hook(ctx, r)
+}
+
+// Recreate brings the session's sandbox back after an operation answered
+// ErrLost, as Open does: a sandbox that is gone is created again with a
+// fresh workspace, and one that failed is started again when Cella takes
+// the start, and replaced only when it does not. The helper is uploaded,
+// the machine is usable again, and Info names the sandbox it has.
+// Restoring the files of a replaced one is the runner's, through
+// ImportTar.
 func (m *Machine) Recreate(ctx context.Context) error {
 	m.wake.Lock()
 	defer m.wake.Unlock()
@@ -343,17 +388,21 @@ func (m *Machine) Release(ctx context.Context, end bool) error {
 	return nil
 }
 
-// attach finds the sandbox by name, starting it when it is stopped, or
-// creates it, and makes sure the helper is in it.
+// attach finds the sandbox by name, starting it when it is stopped or
+// failed, or creates it, and makes sure the helper is in it. The helper
+// lives outside the workspace, so a start may have lost it.
 func (m *Machine) attach(ctx context.Context) error {
 	sb, _, err := m.c.GetSandbox(ctx, m.name)
 	created := false
+	var restart *machine.Restart
 	switch {
 	case err == nil:
-		sb, err = m.running(ctx, sb)
+		sb, restart, err = m.running(ctx, sb)
 		if errors.Is(err, errFailed) {
-			// A failed sandbox cannot be started again; it is replaced,
-			// and the runner restores its files as for a lost one.
+			// Cella starts no failed sandbox, or not this one. Only then
+			// is it replaced: the delete removes its workspace, so the
+			// session's files are gone, which the runner records as a
+			// loss.
 			if _, derr := m.c.Delete(ctx, client.KindSandbox, sb.Status.ID); derr != nil && client.CodeOf(derr) != "not_found" {
 				return refused("delete the failed sandbox "+m.name, derr)
 			}
@@ -377,7 +426,7 @@ func (m *Machine) attach(ctx context.Context) error {
 			return err
 		}
 	}
-	m.set(sb, created)
+	m.set(sb, created, restart)
 	return m.ensureHelper(ctx, sb.Status.ID)
 }
 
@@ -397,19 +446,22 @@ func (m *Machine) create(ctx context.Context) (v1.Sandbox, bool, error) {
 	if err != nil {
 		return v1.Sandbox{}, false, refused("create the sandbox "+m.name, err)
 	}
-	sb, err = m.running(ctx, sb)
-	if errors.Is(err, errFailed) || errors.Is(err, errGone) {
+	// A sandbox just created holds nothing a restart could keep, so a
+	// start that brought it up is its creation.
+	sb, _, err = m.running(ctx, sb)
+	if errors.Is(err, errFailed) || errors.Is(err, errFailedAgain) || errors.Is(err, errGone) {
 		return v1.Sandbox{}, false, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	return sb, created, err
 }
 
-// set records the running sandbox.
-func (m *Machine) set(sb v1.Sandbox, created bool) {
+// set records the running sandbox, and how the attach found it.
+func (m *Machine) set(sb v1.Sandbox, created bool, restart *machine.Restart) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.id = sb.Status.ID
 	m.created = created
+	m.restart = restart
 	m.workspace = sb.Spec.Workspace.Path
 	workdir := cmpOr(m.o.Workdir, sb.Spec.Workdir, m.workspace)
 	m.info = machine.Info{Kind: machine.KindCella, ID: sb.Status.ID, Workdir: workdir, Environment: sb.Status.Environment,
@@ -431,23 +483,80 @@ func cmpOr(values ...string) string {
 	return ""
 }
 
+// reasonOutOfMemory is the reason Cella gives a sandbox whose container
+// was killed for memory.
+const reasonOutOfMemory = "OOMKilled"
+
 // Errors of a wait for a sandbox to run.
 var (
-	errFailed = errors.New("the sandbox failed")
-	errGone   = errors.New("the sandbox is gone")
+	// errFailed is a failed sandbox Cella refuses to start: a core through
+	// v0.12.0 starts none, and no core starts one whose failure left no
+	// workspace.
+	errFailed = errors.New("the sandbox failed and Cella does not start it again")
+	// errFailedAgain is a failed sandbox that Cella started and that failed
+	// again before it ran. Nothing of it is deleted, and the next call
+	// starts it again.
+	errFailedAgain = errors.New("machine: the sandbox failed again right after it was started; nothing of it was deleted, and the next call starts it again")
+	errGone        = errors.New("the sandbox is gone")
+	// errStoppedAgain is a sandbox that a call started and that did not
+	// run any more when the call's operation went again.
+	errStoppedAgain = errors.New("machine: the sandbox stopped again right after it was started; nothing of it was deleted, and the next call starts it again")
 )
 
 // running holds until the sandbox runs: a stopped one is started, one on
-// its way up or down is read again until it settles, a failed one is
-// errFailed and a deleted one errGone.
-func (m *Machine) running(ctx context.Context, sb v1.Sandbox) (v1.Sandbox, error) {
+// its way up or down is read again until it settles, and a deleted one is
+// errGone.
+//
+// A failed one is started too, and the restart is returned: a core after
+// v0.12.0 starts a failed sandbox whose workspace is kept, on that
+// workspace. One wait starts a sandbox out of Failed once. One that fails
+// again after the start is errFailedAgain, so a sandbox that dies as soon
+// as it is up cannot spin. A start refused with phase_conflict is read
+// again, since a start that raced another caller's, or the core's own
+// restart, answers the same: a sandbox on its way up is waited for as a
+// restart, and one that still reads Failed is asked once more, so a
+// sandbox that failed again in that moment is not taken for one Cella
+// will not start. The second refusal is errFailed, the only answer a
+// caller replaces the sandbox for.
+func (m *Machine) running(ctx context.Context, sb v1.Sandbox) (v1.Sandbox, *machine.Restart, error) {
 	deadline := time.Now().Add(m.o.StartTimeout)
+	var restart *machine.Restart
+	declined := false
 	for {
 		switch sb.Status.Phase {
 		case "Running":
-			return sb, nil
+			return sb, restart, nil
 		case "Failed":
-			return sb, fmt.Errorf("%w: %s: %s", errFailed, m.name, cmpOr(sb.Status.Reason, "no reason given"))
+			reason := cmpOr(sb.Status.Reason, "no reason given")
+			if restart != nil {
+				return sb, nil, fmt.Errorf("%w: %s: %s", errFailedAgain, m.name, reason)
+			}
+			failed := machine.Restart{OutOfMemory: sb.Status.Reason == reasonOutOfMemory}
+			started, _, err := m.c.StartSandbox(ctx, sb.Status.ID)
+			switch {
+			case err == nil:
+				sb, restart = started, &failed
+				continue
+			case client.CodeOf(err) == "not_found":
+				return sb, nil, errGone
+			case client.CodeOf(err) != "phase_conflict":
+				return sb, nil, refused("start the failed sandbox "+m.name, err)
+			}
+			next, _, err := m.c.GetSandbox(ctx, sb.Status.ID)
+			switch {
+			case client.CodeOf(err) == "not_found":
+				return sb, nil, errGone
+			case err != nil:
+				return sb, nil, refused("read the sandbox "+m.name, err)
+			case next.Status.Phase != "Failed":
+				// Another start took it out of Failed first.
+				sb, restart = next, &failed
+				continue
+			case declined:
+				return next, nil, fmt.Errorf("%w: %s: %s", errFailed, m.name, reason)
+			}
+			sb, declined = next, true
+			continue
 		case "Stopped":
 			started, _, err := m.c.StartSandbox(ctx, sb.Status.ID)
 			switch {
@@ -455,25 +564,25 @@ func (m *Machine) running(ctx context.Context, sb v1.Sandbox) (v1.Sandbox, error
 				sb = started
 				continue
 			case client.CodeOf(err) == "not_found":
-				return sb, errGone
+				return sb, nil, errGone
 			case client.CodeOf(err) != "phase_conflict":
 				// A conflict is a start that raced another; the read
 				// below settles it.
-				return sb, refused("start the sandbox "+m.name, err)
+				return sb, nil, refused("start the sandbox "+m.name, err)
 			}
 		}
 		if !time.Now().Before(deadline) {
-			return sb, fmt.Errorf("%w: the sandbox %s is %s after %s", ErrUnavailable, m.name, sb.Status.Phase, m.o.StartTimeout)
+			return sb, nil, fmt.Errorf("%w: the sandbox %s is %s after %s", ErrUnavailable, m.name, sb.Status.Phase, m.o.StartTimeout)
 		}
 		if err := sleep(ctx, m.o.PollInterval); err != nil {
-			return sb, err
+			return sb, nil, err
 		}
 		next, _, err := m.c.GetSandbox(ctx, sb.Status.ID)
 		if client.CodeOf(err) == "not_found" {
-			return sb, errGone
+			return sb, nil, errGone
 		}
 		if err != nil {
-			return sb, refused("read the sandbox "+m.name, err)
+			return sb, nil, refused("read the sandbox "+m.name, err)
 		}
 		sb = next
 	}
@@ -669,10 +778,23 @@ func platform(sys, arch string) (string, string) {
 	}
 }
 
-// wakeUp brings the sandbox back after a call found it stopped, or found
-// no helper in it: it starts the sandbox, holds until it runs, and puts
-// the helper back. A sandbox that is gone marks the machine lost.
+// wakeUp brings the sandbox back after a call found it not running, or
+// found no helper in it: it starts the sandbox, a failed one included,
+// holds until it runs, and puts the helper back. A restart out of a
+// failure is told to the hook before the call goes on. A sandbox that is
+// gone, or that failed and Cella does not start again, marks the machine
+// lost: a call deletes nothing.
 func (m *Machine) wakeUp(ctx context.Context, id string) error {
+	restart, err := m.wake1(ctx, id)
+	if err != nil || restart == nil {
+		return err
+	}
+	return m.tell(ctx, *restart)
+}
+
+// wake1 is wakeUp's work under the wake lock, and returns the restart it
+// made, nil for a sandbox it found running or stopped.
+func (m *Machine) wake1(ctx context.Context, id string) (*machine.Restart, error) {
 	m.wake.Lock()
 	defer m.wake.Unlock()
 	m.mu.Lock()
@@ -680,23 +802,82 @@ func (m *Machine) wakeUp(ctx context.Context, id string) error {
 	m.mu.Unlock()
 	if current != id {
 		// Another call already brought a sandbox back.
-		return nil
+		return nil, nil
 	}
 	sb, _, err := m.c.GetSandbox(ctx, id)
 	if client.CodeOf(err) == "not_found" {
-		return m.markLost()
+		return nil, m.markLost()
 	}
 	if err != nil {
-		return fmt.Errorf("machine: read the sandbox %s: %w", m.name, err)
+		return nil, fmt.Errorf("machine: read the sandbox %s: %w", m.name, err)
 	}
-	sb, err = m.running(ctx, sb)
-	if errors.Is(err, errGone) || errors.Is(err, errFailed) {
-		return m.markLost()
+	sb, restart, err := m.running(ctx, sb)
+	switch {
+	case errors.Is(err, errGone):
+		return nil, m.markLost()
+	case errors.Is(err, errFailed):
+		return nil, fmt.Errorf("%w: %w", m.markLost(), err)
+	case err != nil:
+		return nil, err
 	}
-	if err != nil {
-		return err
+	return restart, m.ensureHelper(ctx, sb.Status.ID)
+}
+
+// ended says what became of a command whose session closed with no exit
+// from the helper: code is the exit code the session ended with, -1 when
+// it gave none, and cause the session's end as an error.
+//
+// A sandbox that runs and names no failure lost the command's helper
+// alone: a kill is reported as one, with true, and anything else is
+// cause. A sandbox that stopped, or that Cella says ran out of memory,
+// took the command with it, and is brought back within this call, so the
+// command's result says what is true of its files: the Stop is restarted
+// when the sandbox runs again, lost when it is gone or Cella does not
+// start it, and carries the error otherwise. A restart is told to the
+// hook, as wakeUp's is.
+func (m *Machine) ended(ctx context.Context, id string, code int, cause error) (*machine.Stop, bool, error) {
+	if se, ok := spent("act in the sandbox "+m.name, cause); ok {
+		return nil, false, se
 	}
-	return m.ensureHelper(ctx, sb.Status.ID)
+	// The command may have ended with its call's context; what became of
+	// the machine is read and recorded all the same.
+	settled := context.WithoutCancel(ctx)
+	sb, _, err := m.c.GetSandbox(settled, id)
+	switch {
+	case client.CodeOf(err) == "not_found":
+		// The marking is what the call answers: the Stop says it.
+		_ = m.markLost()
+		return &machine.Stop{Lost: true}, false, nil
+	case err != nil:
+		return nil, false, errors.Join(cause, fmt.Errorf("machine: read the sandbox %s: %w", m.name, err))
+	}
+	oom := sb.Status.Reason == reasonOutOfMemory
+	if sb.Status.Phase == "Running" && !oom {
+		if code == machine.ExitKilled {
+			return nil, true, nil
+		}
+		return nil, false, cause
+	}
+	stop := &machine.Stop{OutOfMemory: oom}
+	restart, err := m.wake1(ctx, id)
+	switch {
+	case errors.Is(err, ErrLost):
+		stop.Lost = true
+	case err != nil:
+		stop.Err = err
+	default:
+		stop.Restarted = true
+		// The sandbox stopped under a command, so it restarted whether
+		// this call's start or Cella's own brought it back.
+		r := machine.Restart{OutOfMemory: oom}
+		if restart != nil {
+			r.OutOfMemory = r.OutOfMemory || restart.OutOfMemory
+		}
+		if err := m.tell(settled, r); err != nil {
+			return nil, false, err
+		}
+	}
+	return stop, false, nil
 }
 
 // markLost records that the sandbox is gone and answers ErrLost; every
@@ -708,11 +889,13 @@ func (m *Machine) markLost() error {
 	return fmt.Errorf("%w: %s", ErrLost, m.name)
 }
 
-// call runs one operation on the sandbox. A sandbox Cella stopped for
-// idleness is started and the operation runs once more; a not_found is
-// the sandbox's when the sandbox is gone, which is ErrLost, and the
-// path's otherwise. retry is false for an operation whose request body
-// cannot be sent twice.
+// call runs one operation on the sandbox. A sandbox that does not run,
+// one Cella stopped for idleness or one that failed, is started and the
+// operation runs once more; a not_found is the sandbox's when the sandbox
+// is gone, which is ErrLost, and the path's otherwise. One call wakes the
+// sandbox once: when it stopped again before the operation ran, the call
+// fails and the next one wakes it. retry is false for an operation whose
+// request body cannot be sent twice.
 func (m *Machine) call(ctx context.Context, retry bool, f func(id string) error) error {
 	id, err := m.usable()
 	if err != nil {
@@ -726,7 +909,9 @@ func (m *Machine) call(ctx context.Context, retry bool, f func(id string) error)
 		if id, err = m.usable(); err != nil {
 			return err
 		}
-		err = f(id)
+		if err = f(id); client.CodeOf(err) == "phase_conflict" {
+			return fmt.Errorf("%w: %s: %w", errStoppedAgain, m.name, err)
+		}
 	}
 	return m.check(ctx, id, err)
 }

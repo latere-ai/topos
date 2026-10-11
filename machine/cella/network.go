@@ -167,6 +167,12 @@ func (m *Machine) Refused(ctx context.Context, since time.Time) ([]machine.Conne
 		return nil, err
 	}
 	recs, _, err := m.c.EgressRecords(ctx, id, MaxEgressRecords)
+	if client.CodeOf(err) == "phase_conflict" {
+		// A sandbox that does not run has no records to read now, and a
+		// read does not start one: the command that stopped with it says
+		// what happened.
+		return nil, nil
+	}
 	if err != nil {
 		return nil, refused("read the egress records of the sandbox "+m.name, err)
 	}

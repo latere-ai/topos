@@ -91,7 +91,10 @@ func (f fixture) stream(t *testing.T, frames ...raw) *stream {
 		t.Fatal(err)
 	}
 	st := &stream{sess: sess, w: &sender{s: sess}, done: make(chan struct{}), inputDone: make(chan error, 1),
-		check: func(err error) error { return err }}
+		check: func(err error) error { return err },
+		ended: func(code int, cause error) (*machine.Stop, bool, error) {
+			return f.m.ended(t.Context(), f.m.Info().ID, code, cause)
+		}}
 	st.inputDone <- nil
 	return st
 }

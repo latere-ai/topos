@@ -233,8 +233,9 @@ func TestOpenFindsTheSandboxByName(t *testing.T) {
 	}
 	f.stub.StartAfter(0)
 
-	// A failed sandbox cannot be started; it is replaced, and reported
-	// created, so the runner restores its files.
+	// A failed sandbox the core does not start again, as released cores
+	// start none, is replaced, and reported created, so the runner
+	// records that its files are gone.
 	f.stub.SetFailed(id, "OOMKilled")
 	again, err = Open(t.Context(), f.o)
 	if err != nil {
