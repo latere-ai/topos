@@ -10,6 +10,66 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- An answer's linked files are kept. An agent that made a report or an
+  archive with a command and linked it in its answer, as in
+  `[Download the report](report.pdf)`, named the file nowhere in the
+  session's log: a client had nothing behind the link, a copy of the
+  conversation held none of the file, and the file was gone with the
+  machine. Once a step of the session's own thread is committed, each
+  local file its `agent.message` links, by a Markdown link or an HTML
+  `a` element, is read from the open machine, stored as a blob of the
+  session, and recorded in the message's `files.kept` beside the images
+  it shows. A destination is local when it has no scheme, the `file:`
+  scheme, or the prefix `sandbox:` some models write before a path, and
+  lies inside the working directory. A linked file's entry has the
+  members of an image's: `path` as the message wrote it, `resolved`,
+  `blob`, `media_type` by the file name's extension and otherwise by its
+  leading bytes, `size`, and `width` and `height` 0. A message keeps its
+  first 16 links (`harness.MaxKeptFiles`), each a regular file of any
+  type of at most 32 MiB (`harness.MaxKeptFileBytes`), 64 MiB together
+  (`harness.MaxKeptFilesBytes`), counted apart from its 8 images. A
+  destination both shown as an image and linked is kept once, as the
+  image. A link to a directory is skipped with the new reason
+  `not_a_file`, a link past the count or the bytes of its message
+  `limit`, and a file the credential deny-list names `unavailable`. The
+  blob route answers a kept file that is no image as an
+  `application/octet-stream` download with `nosniff`, as it answers any
+  such blob, so no file an agent wrote opens as a page. Redacting an
+  answer removes its linked files with its images.
+
+### Changed
+
+- `GET /v1/sessions/{id}/files` answers a file of at most 32 MiB, up
+  from 10 MiB: its bound is the bound of a file an answer links. The
+  route copies the file from the machine as it reads it, so the bound
+  costs the server no memory.
+- A runner in its own process stores a blob of at most 32 MiB through
+  the runner protocol, up from 8 MiB, so it stores a kept file.
+- Keeping one message's files is bounded at 104 seconds, up from 30:
+  the time its images and linked files take together at 1 MiB a second.
+- For a program that embeds the harness: `harness.KeepImages` is
+  `harness.KeepFiles`, which takes the media type rule as its last
+  argument, and `harness.Config.MediaType` hands a harness that rule. A
+  drive of `runner` sets `runner.MediaType`, the rule the files route
+  answers by; a harness given none types every linked file
+  `application/octet-stream`.
+
+### Upgrading
+
+- A client that draws an answer's images from `files.kept` needs no
+  change: an entry it matches to no image is skipped. To offer a linked
+  file, match a link's destination to an entry's `path` and fetch its
+  `blob`; an image's entry has a positive `width`, a linked file's 0.
+- No store takes a blob as a stream. A process that keeps a linked file
+  holds about twice its size while it stores it, and a fork reads every
+  blob its copied events name before it writes them. Four sessions that
+  each keep a 32 MiB file in the same moment hold about 256 MiB in the
+  server that drives them.
+- Every runner has known `files.kept` since v0.23.0, so this release
+  rolls in any order. The store and the authorizer need no change.
+
 ## v0.29.0 - 2026-10-10
 
 ### Changed
