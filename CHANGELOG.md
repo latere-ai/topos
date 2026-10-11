@@ -56,8 +56,41 @@ committed: the commit log already holds that.
   answers by; a harness given none types every linked file
   `application/octet-stream`.
 
+### Fixed
+
+- A model knows today's date on every turn. The date reached a model
+  only in the context block a machine records when it attaches. A turn
+  that opened no machine, one that only searched the web for example,
+  told its model no date, so a model asked for the latest of anything
+  answered from the months its training ended in; and a session whose
+  machine stood for days read the day it attached as the date. Every
+  request now ends its system prompt with a part of its own,
+  `context/date-v1`:
+
+  ```
+  <context>
+  Today's date: 2026-10-13 (UTC)
+  </context>
+  ```
+
+  The day is the UTC day of the `session.status` `running` that opened
+  the request's turn, read from the log and never from a clock, so every
+  request of a turn carries the same bytes, a subagent's included. The
+  part follows the system prompt's cache breakpoint and carries none: a
+  new day changes nothing a provider cached before it. A machine's
+  context block no longer names a date (`context/context-v2`). A block
+  recorded before this release keeps its `Date` line, and a request over
+  one from another day adds a line saying that it is the day the machine
+  attached, not today. The harness prompt is unchanged, and
+  `prompt_version` stays `harness/1`.
+
 ### Upgrading
 
+- The date part adds no event and no member, so a client changes
+  nothing for it. A program that replays a recorded session with
+  `models.Replay` reads `mismatch` for the requests an earlier release
+  recorded, which carried no date part; requests recorded from this
+  release on are built again to their hash.
 - A client that draws an answer's images from `files.kept` needs no
   change: an entry it matches to no image is skipped. To offer a linked
   file, match a link's destination to an entry's `path` and fetch its
