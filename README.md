@@ -42,7 +42,7 @@ embeddable runtime, are gone from `main` and stay available at their tags
 through the Go module proxy; [docs/history](docs/history) holds their specs.
 
 The core's releases start at v0.9.0 (2026-09-29). Built and released as
-of v0.29.0 (2026-10-10):
+of v0.30.0 (2026-10-11):
 
 - the session log, kept in memory, in a directory or in Postgres, and the
   harness: the built-in tools, the permission modes, subagents, context
@@ -60,23 +60,26 @@ of v0.29.0 (2026-10-10):
   what sessions said, and delete;
 - more for the agent to work with: `web_search` through the search service
   the installation configures, `publish` of a folder as an app, a
-  session's files and the images an answer shows served to a client, and
-  the sites a session's machine may reach set per session;
+  session's files, the images an answer shows and the files it links
+  served to a client, today's date on every turn, and the sites a
+  session's machine may reach set per session;
 - models an authorizer chooses: a routed model name, how much a model
   reasons, and a move to another model inside the turn when one cannot
   serve;
 - a connection to a decision service: `topos run` can get a suggested
   verdict for each tool call from an external service.
 
-Built since and in no release yet: the files an answer links are kept
-with it and served to a client as downloads, as its images are, and a
-model is told today's date on every turn.
+Built since and in no release yet: a session's sandbox that failed is
+started again with its files rather than replaced, a command that was
+running when its machine stopped says what happened, and a session
+whose machine was replaced, or a fork with no checkpoint, gets its
+working directory rebuilt from its own log.
 
 Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite
 and the release archives. The task suite runs, but no release has measured
 its bar against a pinned model yet. In the [specs](specs) deck, 22 specs are
-complete, 32 in progress or in testing and 9 drafted or vague, none of those
+complete, 33 in progress or in testing and 9 drafted or vague, none of those
 9 built yet; [specs/README.md](specs/README.md) says which build phases are
 closed.
 
