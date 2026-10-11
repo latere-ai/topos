@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [machine/, machine/host/, machine/cella/, cmd/topos-machine/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-05
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -200,13 +200,15 @@ command's session are bounded by their contexts.
 
 Open reads the sandbox by name. One that runs is used; one Cella
 stopped is started; one queued, pending, starting, stopping or
-recovering is read again until it runs; one that failed cannot be
-started and is deleted and created again; one being deleted is waited
-out and created again. A sandbox that is not there is created, and the
-create is held until the sandbox runs (`CreateSandbox` with the wait
-option); a create that loses a race with another runner's takes that
-runner's sandbox. The machine reports whether it created the sandbox,
-which is how a runner that expected one learns its files are gone.
+recovering is read again until it runs; one that failed is started
+again, and deleted and created again only when Cella refuses the start
+(below); one being deleted is waited out and created again. A sandbox
+that is not there is created, and the create is held until the sandbox
+runs (`CreateSandbox` with the wait option); a create that loses a race
+with another runner's takes that runner's sandbox. The machine reports
+whether it created the sandbox, which is how a runner that expected one
+learns its files are gone, and whether it started a failed one, which
+kept them.
 
 The helper `topos-machine` is a static binary of this module
 (`cmd/topos-machine`, built for `linux/amd64` and `linux/arm64` and
@@ -245,13 +247,15 @@ back to the working directory as on the host.
 
 Lifetime: the sandbox is the session's. `Release(ctx, false)` leaves
 it: while the session is idle for 15 minutes Cella stops it and keeps
-its workspace, and a call on a machine whose sandbox Cella stopped
-starts it and runs once more. The next runner that claims the session
-finds it by name and starts it. `Release(ctx, true)` deletes it when
+its workspace, and a call on a machine whose sandbox Cella stopped, or
+whose sandbox failed, starts it and runs once more. The next runner
+that claims the session finds it by name and starts it. `Release(ctx, true)` deletes it when
 the session ends, and a delete Cella could not do leaves the machine
-to be released again. A call that finds the sandbox gone answers
-`machine_lost`, as every call does after it, until `Recreate` creates
-the sandbox again with a fresh workspace. When a runner finds the
+to be released again. A call that finds the sandbox gone, or failed
+and refused its start, answers `machine_lost`, as every call does
+after it, until `Recreate` or the next drive's open brings a sandbox
+back: the one that failed if Cella starts it then, and a new one with
+a fresh workspace otherwise. When a runner finds the
 sandbox gone, it creates one again, restores the latest checkpoint
 ([[034-checkpoints-and-rewind]]) with `ImportTar`, and appends
 `session.machine` with reason `restored`; with no checkpoint to
@@ -261,12 +265,81 @@ files are gone. The control plane never dials a sandbox or a worker:
 every call goes to Cella's API, and a self-hosted Environment's
 workers connect out to Cella (invariant 10 of [[001-architecture]]).
 
+### A sandbox that failed
+
+A sandbox fails when its container exits or is killed, for memory
+among other reasons (`Failed`, with the reason `Exited` or
+`OOMKilled`). Its workspace is still there: the delete of the sandbox
+is what removes it. So a failed sandbox is started, not replaced. A
+Cella core after v0.12.0 takes `POST /v1/sandboxes/{id}/start` on a
+failed sandbox whose workspace is kept and runs it again on that
+workspace; a core through v0.12.0 answers `phase_conflict`, as every
+core does for a failure that left no workspace.
+
+| The sandbox reads | Cella answers the start | The machine does |
+|---|---|---|
+| `Running` | none sent | uses it |
+| `Stopped` | started | waits until it runs, puts the helper back |
+| `Queued`, `Pending`, `Starting`, `Stopping`, `Recovering` | none sent | reads again until it settles |
+| `Failed` | started | waits until it runs, puts the helper back, and reports a restart: the same sandbox, the same files, no process left |
+| `Failed` | `phase_conflict`, and the next read is no longer `Failed` | another start, a second caller's or Cella's own, came first: waits as for a start it made, and reports a restart |
+| `Failed` | `phase_conflict` twice, the sandbox `Failed` at the read between | Cella does not start it. At an open: deletes it and creates a new one, reported created. In a call: marks the machine lost, and deletes nothing |
+| `Failed` | `not_found` | the sandbox is gone: created again at an open, lost in a call |
+| `Failed` | any other refusal, or no answer | the open or the call fails with it; nothing is deleted, and the next one sends the start again |
+| `Failed` again, after a start this wait made | none sent | the open or the call fails, saying the sandbox failed again right after it was started; nothing is deleted, the machine is not lost, and the next call sends one start again |
+
+One wait starts a sandbox out of `Failed` once, so a sandbox that dies
+as soon as it is up cannot spin: each call that finds it failed sends
+one start, and a tool call on such a sandbox ends with a result the
+model reads. The refusal is asked for twice before a delete because a
+start that lost a race answers `phase_conflict` too, and a sandbox
+that failed again in that moment must not be taken for one Cella will
+not start. A sandbox is deleted in two places only: `Release(ctx,
+true)` at the session's end, and an open that found it `Failed` and
+was refused the start twice.
+
+The helper lives outside the workspace and does not outlive a restart,
+so it is put back after every start, as after an idle stop.
+
+**A command that was running.** A command whose session ends with no
+exit from the helper lost its helper. The machine reads the sandbox to
+say why, in the same call:
+
+| The sandbox reads | The command's result |
+|---|---|
+| `Running`, no failure named, and the session ended with exit code 137 | the helper alone was killed: the command's output, and exit code 137, as a killed command reads |
+| `Running`, no failure named, any other end | the error of the session's end, as before |
+| anything else, or the reason `OOMKilled` | the machine stopped under the command: its output, and a stop that says whether the machine ran out of memory, and whether it runs again (brought back by the table above, within the call), is lost, or does not run yet and why |
+
+Only Cella's own reason names a cause: `OOMKilled` is out of memory,
+and an exit code of 137 alone is a kill of unknown cause. `bash`
+renders a stop and a kill in words the model acts on ([[008-tools]]).
+
+**The record.** A restart is recorded as `session.machine` with the
+reason `restarted`, the machine the session had, and `cause`
+`out_of_memory` when Cella named it; the record restates the context,
+the instruction files and the skills of the machine's last record,
+which the kept files still hold, so the system prompt does not move.
+The runner appends it beside the call that met the restart, at an open
+or in a turn. A machine made new in the place of one of its kind is
+recorded with the reason `replaced`, never `handoff`, followed in the
+same append by `session.error` `machine_lost` with the sentence "The
+session's machine was lost and replaced with a new one. The files that
+were in its working directory are gone." The fold renders both into the
+session's own thread where they happened ([[004-session-log]]): a
+restart as a note that the machine stopped and was started again with
+its files and without its processes, and a replacement as a note that
+the files are gone and that the person is to be told so. A call that
+finds the machine lost reads no failure of the network: the connections
+of a lost machine are not read, and a sandbox that does not run has
+none to read ([[052-a-sessions-network]]).
+
 ### Error codes
 
 | Code | Retryable | Meaning |
 |---|---|---|
 | `machine_unavailable` | no | the machine kind is not configured (a `host` machine on a server without `TOPOS_HOST_SESSIONS=on`, or one whose agent names `machine.roots` or `machine.readPaths`), the runner carries no helper for the sandbox's platform, or Cella refused the sandbox: its Environment, its image, a secret it names, or the session's credential; a Cella that could not answer, a 5xx, a 429 or no answer, is transient and carries no code; a Cella answer carrying `budget_exhausted` or `spend_exceeded`, whatever its status, is a refusal for spend and not this code: it stops the turn `budget` ([[007-models]]) |
-| `machine_lost` | yes | the session's sandbox was gone and no checkpoint could restore its files |
+| `machine_lost` | yes | the session's sandbox was gone, or failed and Cella did not start it again, and no checkpoint could restore its files |
 
 ## Not in this spec
 
@@ -294,7 +367,13 @@ repository delivery and git credentials ([[019-git]]); named secrets
 | A sandboxed host runs each command as a stage with the session's roots, denials, egress and environment, keeps the host's exec contract (output, exit code, final directory, input, timeout, cancel, process group, background jobs, a script past 64 KiB), and fetches only its egress hosts | `machine/host.TestExec`, `machine/host.TestExecTimeoutAndCancel`, `machine/host.TestExecStream`, `machine/host.TestBackgroundJobsEndWithTheSession`, `machine/host.TestAScriptPastTheArgumentLimitRuns`, `machine/host.TestAStageRunsWithTheSessionsPolicy`, `machine/host.TestAStrayChildEndsWithItsCommand`, `machine/host.TestASandboxedFetchReachesOnlyTheEgress` | built |
 | A Cella machine creates the session's sandbox by name on the Environment the session names, with the labels, the allowlist with the secrets' hosts, the named secrets and the persistent lifecycle held inside the ttl, holds the create until it runs, and uploads the helper; each Cella refusal at open is `machine_unavailable` and a Cella that could not answer is not | `machine/cella.TestOpenCreatesTheSandbox`, `machine/cella.TestTheLifecycleStaysInsideTheTTL`, `machine/cella.TestOpenRefusals`, `machine/cella.TestCode` | built |
 | A Cella machine is created on the Environment the session names and reports it in its machine record; that an Environment served by a worker outside the cluster runs such a sandbox, with no connection from the runner to the worker, is Cella's to prove | `machine/cella.TestOpenCreatesTheSandbox` | built |
-| Open finds the sandbox by name and uploads nothing again, starts one Cella stopped and waits for one starting, replaces a failed one as created, and takes the sandbox of a runner whose create won a race; a sandbox Cella stopped under a running machine is started by its next call, and a missing helper is put back | `machine/cella.TestOpenFindsTheSandboxByName`, `machine/cella.TestAStoppedSandboxIsStartedByTheNextCall`, `machine/cella.TestTheHelperIsPutBackWhenMissing`, `machine/cella.TestWaitsAndRaces` | built |
+| Open finds the sandbox by name and uploads nothing again, starts one Cella stopped and waits for one starting, replaces a failed one Cella does not start as created, and takes the sandbox of a runner whose create won a race; a sandbox Cella stopped under a running machine is started by its next call, and a missing helper is put back | `machine/cella.TestOpenFindsTheSandboxByName`, `machine/cella.TestAStoppedSandboxIsStartedByTheNextCall`, `machine/cella.TestTheHelperIsPutBackWhenMissing`, `machine/cella.TestWaitsAndRaces` | built |
+| A failed sandbox Cella starts keeps its id and its files at an open and in a call, gets its helper back, is reported restarted with the cause Cella named, tells the hook once for each failure, and is never deleted | `machine/cella.TestAFailedSandboxIsStartedAndNeverDeleted`, `internal/hosted.TestAFailedSandboxIsStartedWithItsFiles`, `test/stubs/cellastub.TestAFailedSandboxAndItsStart` | built |
+| A core that answers `phase_conflict` gets the old path: an open asks twice, then replaces the sandbox as created; a call marks the machine lost and deletes nothing; a start that lost a race, one refused for another reason and a sandbox gone at its start are not taken for the refusal | `machine/cella.TestACoreThatStartsNoFailedSandbox` | built |
+| A sandbox that fails again right after a start gets one start from each call that finds it failed, the call fails in words that say so, nothing is deleted and the machine is not lost; a sandbox that stops again before the call's second try fails that call the same way | `machine/cella.TestASandboxThatFailsAgainDoesNotSpin` | built |
+| A command whose sandbox is killed under it ends with what it wrote and a stop: restarted, for memory when Cella says so, with its files and helper back and the hook told; lost on a core that does not start it; with the reason when the sandbox fails again; a helper killed alone ends the command with exit code 137 and no stop | `machine/cella.TestACommandThatDiesWithItsSandbox`, `machine/cella.TestACommandWhoseSandboxDoesNotComeBack`, `machine/cella.TestAHelperKilledAloneIsAKilledCommand` | built |
+| A restart is recorded as `session.machine` `restarted` with its cause, beside the call that met it, restating the machine's context, with no error; a machine made new in the place of one of its kind is `replaced` with `session.error` `machine_lost`, and a machine the session moved to stays `handoff`; the model reads each where it happened, in the session's own thread alone | `runner.TestAMachineRestartedAtItsOpenIsRecorded`, `runner.TestAMachineThatRestartsUnderACommandIsRecorded`, `runner.TestAReplacedMachineIsRecordedAsALoss`, `session.TestAMachineThatCameBackOrWasReplacedIsSaid`, `internal/hosted.TestAFailedSandboxAnOlderCoreDoesNotStartIsReplacedAndSaid` | built |
+| A command killed with its sandbox reads as one that did not finish, with the cause when it is known and where the machine and its files stand, never as one that did not start; a lost machine's next call records no error of the network | `harness/tools.TestBashSaysWhatBecameOfAMachineThatStopped`, `internal/hosted.TestACommandKilledWithItsSandboxSaysSo`, `internal/hosted.TestACommandKilledOnACoreThatStartsNoFailedSandbox` | built |
 | A sandbox that is gone answers `machine_lost` on every call until `Recreate` creates it again, reported created with a fresh workspace, and `ImportTar` and `ExportTar` carry the workspace as tar | `machine/cella.TestALostSandboxIsRecreated`, `machine/cella.TestTar` | built |
 | `Release(ctx, false)` leaves the sandbox to Cella's idle stop and `Release(ctx, true)` deletes it, after which every call answers `ErrReleased` | `machine/cella.TestRelease` | built |
 | A runner restarted mid-session finds the sandbox by name, starts it if stopped, and continues without creating another | `cmd/toposd.TestCellaMachineSurvivesRunnerRestart`, `internal/hosted.TestARestartedRunnerReattachesTheSandboxByName` | built |
@@ -339,7 +418,8 @@ checks of a server's host run where `srt` is installed.
 | a worktree that is neither merged nor pushed stays 30 days and is then removed, and `topos sessions prune` removes the rest | such a worktree stays; nothing removes it later yet | the later removal and the prune command are [[024-client-cli-skill]]'s |
 | the host needs `git` 2.30 or later, and without it `session.machine` says checkpoints are off | a host without `git` writes in place; no version is checked, and `session.machine` does not say whether checkpoints are on | not built |
 | the helper builds are embedded in the runner | the runner reads them at start from `TOPOS_MACHINE_HELPERS`, where the image puts them | the builds are other platforms' binaries, which the release image carries beside `toposd` |
-| a runner that finds the sandbox gone creates one, restores the latest checkpoint, and appends `session.machine` `restored`, or `replaced` with a `session.error` `machine_lost` | the machine answers `machine_lost` until `Recreate`; the runner's replacement is a row of [[016-runners]] and the restore one of [[034-checkpoints-and-rewind]], neither built | the mechanisms are the runner's and the checkpoints' |
+| a runner that finds the sandbox gone creates one, restores the latest checkpoint, and appends `session.machine` `restored`, or `replaced` with a `session.error` `machine_lost` | the machine answers `machine_lost` until `Recreate` or the next drive's open; a drive whose open made the machine new records `replaced` with `machine_lost`, where builds through v0.30.0 recorded `handoff` and no error; restoring the session's own latest checkpoint into it is [[034-checkpoints-and-rewind]]'s, not built | the restore is the checkpoints' |
+| a failed sandbox cannot be started and is deleted and created again | a failed sandbox is started again, and deleted only when Cella refuses the start twice, since a Cella core after v0.12.0 starts one whose workspace is kept and the delete is what removed a session's files; a restart is recorded with the new reason `restarted` | a session with no repository has no checkpoint, so the delete lost its work |
 | `ExecRequest` has `Command`, `Dir`, `Env`, `Stdin`, `Timeout` and `Background` | it also has `ReportDir`, which asks for the command's final directory, and `ServerGrace`, after which a server the command started moves to the background ([[045-a-server-cannot-hold-a-turn]]) | `bash` keeps the directory a command changed to, and a foreground server does not hold the turn |
 | a runner attaches the machine before it runs a turn, and a hosted session's sandbox exists from its first claim | a hosted session's Cella sandbox starts when the model's response begins a call of a tool that acts on it, and is recorded at the first tool that acts on it ([[048-the-machine-starts-at-the-first-tool-call]]); the host is still opened with the harness | the sandbox's start overlaps the call's arguments, and a session that only talks creates no sandbox |
 

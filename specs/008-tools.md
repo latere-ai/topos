@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-05
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -108,7 +108,21 @@ persist between calls. A `background` call starts the command detached
 in its own process group, writes its output to a job log in the spill
 directory, and returns at once with the pid and the log's path; the
 model reads the log with `read` and stops the job with `bash`. The
-machine kills background jobs when the session ends. A foreground
+machine kills background jobs when the session ends.
+
+A command that ends with exit code 137 was killed, and its result says
+so after the code: that a machine out of memory kills a process this
+way, that nothing says this is why, and that the machine still runs
+with its files. A command whose machine stopped under it
+([[009-machines]]) has no exit of its own: its result is `error`, with
+what it wrote, that it did not finish, that the machine ran out of
+memory only when its provider said so, and where the machine stands:
+running again with the files of the working directory kept and every
+process gone, so the command can be run again; lost, with its files
+out of reach; or not running yet, with the reason, nothing deleted and
+the next command starting it. The texts are
+`prompts/results/bash/killed-v1.md` and
+`prompts/results/bash/machine-stopped-v1.md`. A foreground
 command still running after 3 seconds whose process group listens on a
 port it chose, a server, is moved to the background the same way and
 the call says so ([[045-a-server-cannot-hold-a-turn]]).
@@ -226,6 +240,7 @@ routes, the credential deny-list and the environment
 | `write` and `edit` refuse a file changed since this thread last read it, with the hash taken from the log, and a fresh harness enforces the same rule | `harness/tools.TestWriteRequiresCurrentContent`, `harness/tools.TestStateOfFoldsMetas`, `harness.TestMetaIsRecordedAndFoldedIntoState` | built |
 | `edit` refuses an `old_string` that occurs zero or two times without `replace_all` | `harness/tools.TestEditRequiresUniqueMatch` | built |
 | `bash` keeps its directory between calls across a harness restart, keeps no variable, and kills its process group on timeout | `harness/tools.TestBashPersistentDirectory`, `harness/tools.TestBashTimeoutKillsGroup`, `harness/tools.TestBashCanceled` | built |
+| A command whose machine stopped under it reads as one that did not finish, with its output, a cause only when the provider named one, and where the machine and its files stand; a command killed on a machine that runs on reads with exit code 137 and what the code means | `harness/tools.TestBashSaysWhatBecameOfAMachineThatStopped`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | A `background` command returns at once with a pid and a log path, keeps running across steps, and is killed at session end | `harness/tools.TestBashBackgroundJob`, `machine/host.TestBackgroundJobsEndWithTheSession` | built |
 | A foreground server moves to the background after the grace with its port, pid and log, and a listener the system placed stays in the foreground ([[045-a-server-cannot-hold-a-turn]]) | `harness/tools.TestBashMovesAServerToTheBackground`, `harness/tools.TestBashLeavesAListenerTheSystemPlacedInTheForeground` | built |
 | `grep` and `glob` run with no external binary | `harness/tools.TestGrepNeedsNoBinary`, `harness/tools.TestGlobNeedsNoBinary` | built |

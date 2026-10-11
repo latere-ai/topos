@@ -83,7 +83,12 @@ one (`ErrNotFound`).
    the first tool that acts on it, and does this step then, appending
    `session.machine` beside the running turn through its log, so the
    turn's next request carries the machine's context. A session whose
-   log records a machine has it opened here, by name. Once the machine
+   log records a machine has it opened here, by name. A machine whose
+   open started it again after a failure, and one that restarts under
+   a call of the turn, is recorded with reason `restarted`; one made
+   new in the place of the session's last is recorded with reason
+   `replaced` and a `session.error` `machine_lost`
+   ([[009-machines]]). Once the machine
    is recorded, the runner writes the files of the session's messages
    the machine has not been given and appends `attachments.delivered`
    ([[015-api]]); while a turn runs on an open machine the harness does
@@ -301,7 +306,7 @@ columns and migrations ([[014-store]]); credential resolution
 | A runner's deltas on one replica reach a stream with `deltas=1` on another through Postgres, in the order published, packed into notifications under 8000 bytes; every store that carries deltas passes the conformance suite's deltas | `internal/store/postgres.TestARunnersDeltasReachAStreamOnAnotherReplica`, `internal/store/postgres.TestDeltasCrossReplicas`, `internal/store/postgres.TestDeltasPackIntoNotifications` (postgres tier), `session/storetest` `Deltas` | built |
 | The runner role's deltas reach the server's streams over the internal listener under a live claim only; a delta without a claim, past the queue or of a failed send is dropped and counted | `internal/runnerrole.TestARemoteRunnersDeltasReachTheServersStreams`, `internal/runnerrole.TestTheDeltasRoute` | built |
 | toposd opens no connection to a runner: every runner connection is outbound from the runner | `TestServerOpensNoConnectionToARunner` | not built |
-| A runner that finds its session's sandbox gone, with no checkpoint to restore, creates a new one and appends `session.machine` with reason `replaced` and a `session.error` `machine_lost` ([[009-machines]]) | `TestALostSandboxIsReplaced` | not built |
+| A runner whose open made its session's machine new in the place of one the log records appends `session.machine` with reason `replaced` and a `session.error` `machine_lost`, and one whose machine restarted with its files appends reason `restarted` ([[009-machines]]) | `runner.TestAReplacedMachineIsRecordedAsALoss`, `runner.TestAMachineRestartedAtItsOpenIsRecorded`, `runner.TestAMachineThatRestartsUnderACommandIsRecorded` | built |
 | The `topos` CLI drives a local session over the directory store with no server | `internal/toposcli.TestRunATurnInTheWorkingDirectory`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
 
 ## Outcome
