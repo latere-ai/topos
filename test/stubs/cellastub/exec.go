@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"latere.ai/x/pkg/httpjson"
@@ -37,6 +39,45 @@ const inputGrace = 2 * time.Second
 // MaxBodyBytes is Cella's default bound on a JSON body, the exec route's
 // and the exec socket's first message alike.
 const MaxBodyBytes = 64 << 10
+
+// killedExit is the exit code of a command ended by SIGKILL, as a shell
+// and a container runtime report it: 128 and the signal's number.
+const killedExit = 128 + int(syscall.SIGKILL)
+
+// session is one exec session open on a sandbox: its command and its
+// socket, which Kill ends under the command.
+type session struct {
+	cmd *exec.Cmd
+	c   *wsConn
+	// ended is set once the session's exit was sent, by the command's own
+	// end or by a kill of its sandbox, whichever came first.
+	ended atomic.Bool
+}
+
+// cut ends the session with the exit code and no word from the command,
+// then kills the command, as the end of its container does.
+func (se *session) cut(code int) error {
+	if !se.ended.CompareAndSwap(false, true) {
+		return nil
+	}
+	frame, err := json.Marshal(map[string]int{"exit": code})
+	if err == nil {
+		err = se.c.write(opText, frame)
+	}
+	if err == nil {
+		err = se.c.closeWith(closeNormal, "")
+	}
+	return errors.Join(err, kill(se.cmd))
+}
+
+// exitCode is how a command ended as Cella reports it: its own exit code,
+// or 128 and the number of the signal that ended it.
+func exitCode(state *os.ProcessState) int {
+	if ws, ok := state.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return 128 + int(ws.Signal())
+	}
+	return state.ExitCode()
+}
 
 // envPattern is the name a command's variable must have.
 var envPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -202,6 +243,19 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 	s.drive(r.Context(), c, sb, req, timeout)
 }
 
+// open registers an exec session on its sandbox, and close forgets it.
+func (s *Server) open(id string, se *session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[id] = append(s.sessions[id], se)
+}
+
+func (s *Server) close(id string, se *session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[id] = slices.DeleteFunc(s.sessions[id], func(o *session) bool { return o == se })
+}
+
 // fail sends the error frame and closes with 1011.
 func (s *Server) fail(c *wsConn, code, detail string) {
 	frame, err := json.Marshal(map[string]any{"error": map[string]any{
@@ -240,6 +294,9 @@ func (s *Server) drive(ctx context.Context, c *wsConn, sb sandbox, req execReque
 		s.fail(c, "driver_unavailable", err.Error())
 		return
 	}
+	se := &session{cmd: cmd, c: c}
+	s.open(sb.obj.Status.ID, se)
+	defer s.close(sb.obj.Status.ID, se)
 	var once sync.Once
 	gone := make(chan struct{})
 	leave := func() { once.Do(func() { close(gone) }) }
@@ -284,7 +341,7 @@ func (s *Server) drive(ctx context.Context, c *wsConn, sb sandbox, req execReque
 	buf := make([]byte, 32<<10)
 	for {
 		n, rerr := outR.Read(buf)
-		if n > 0 && delivered {
+		if n > 0 && delivered && !se.ended.Load() {
 			if err := c.write(opBinary, buf[:n]); err != nil {
 				delivered = false
 				leave()
@@ -296,10 +353,12 @@ func (s *Server) drive(ctx context.Context, c *wsConn, sb sandbox, req execReque
 	}
 	werr := cmd.Wait()
 	cerr := outR.Close()
-	if !delivered {
+	if !delivered || !se.ended.CompareAndSwap(false, true) {
+		// The client is gone, or a kill of the sandbox already ended the
+		// session.
 		return
 	}
-	code := cmd.ProcessState.ExitCode()
+	code := exitCode(cmd.ProcessState)
 	select {
 	case <-timedOut:
 		code = 124

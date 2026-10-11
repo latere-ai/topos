@@ -11,7 +11,10 @@
 // the workspace path a sandbox reports is a real path and a command and
 // a file route see the same files. It injects refusals, asks a test's
 // authorizer what cellad asks its own, holds a sandbox in Starting, stops
-// one as Cella's idle stop does, and loses one. It is a test artifact.
+// one as Cella's idle stop does, fails one, kills one under its commands,
+// and loses one. A start of a failed sandbox is refused, as cores through
+// v0.12.0 refuse it, unless RestartFailed says the core starts one whose
+// workspace is kept. It is a test artifact.
 package cellastub
 
 import (
@@ -111,6 +114,14 @@ type Server struct {
 	refusing map[string]int
 	failures map[string][]Failure
 	starting int
+	// restartFailed is whether a start of a failed sandbox is taken,
+	// refailing how many of the next such starts leave the sandbox failed
+	// again at its next read, and refailReason with what reason.
+	restartFailed bool
+	refailing     int
+	refailReason  string
+	// sessions are the exec sessions open on each sandbox, by its id.
+	sessions map[string][]*session
 	requests []Recorded
 	errs     []error
 	seq      int
@@ -123,7 +134,10 @@ type sandbox struct {
 	obj      v1.Sandbox
 	dir      string
 	starting int
-	records  []client.EgressRecord
+	// refail is the reason the sandbox fails with at its next read, after
+	// a start that RefailAfterStart turned into a failure.
+	refail  string
+	records []client.EgressRecord
 }
 
 func (sb *sandbox) workspace() string { return sb.obj.Spec.Workspace.Path }
@@ -144,6 +158,7 @@ func New(t testing.TB) *Server {
 		sandboxes: map[string]*sandbox{},
 		failures:  map[string][]Failure{},
 		refusing:  map[string]int{},
+		sessions:  map[string][]*session{},
 	}
 	s.srv = httptest.NewServer(s.routes())
 	t.Cleanup(s.srv.Close)
@@ -254,8 +269,48 @@ func (s *Server) Workspace(ref string) string {
 // workspace.
 func (s *Server) Stop(ref string) bool { return s.setPhase(ref, "Stopped", "Idle") }
 
-// SetFailed fails a sandbox with a reason.
+// SetFailed fails a sandbox with a reason, its workspace kept.
 func (s *Server) SetFailed(ref, reason string) bool { return s.setPhase(ref, "Failed", reason) }
+
+// RestartFailed sets whether a start of a failed sandbox is taken, as a
+// core after v0.12.0 takes it for a failure that kept its workspace: the
+// sandbox starts again on the same workspace. Off, the default, such a
+// start is phase_conflict, as released cores answer it.
+func (s *Server) RestartFailed(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.restartFailed = on
+}
+
+// RefailAfterStart makes the next n starts of a failed sandbox leave it
+// failed again with reason at its next read, as a sandbox that dies as
+// soon as it is up does.
+func (s *Server) RefailAfterStart(n int, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refailing, s.refailReason = n, reason
+}
+
+// Kill fails a sandbox the way a container killed under its commands
+// fails: the sandbox is Failed with reason and the exit code of a kill,
+// and every exec session open on it ends with that exit code and no word
+// from its command, whose process is killed.
+func (s *Server) Kill(ref, reason string) bool {
+	s.mu.Lock()
+	sb := s.find(ref)
+	var open []*session
+	if sb != nil {
+		code := killedExit
+		sb.obj.Status.Phase, sb.obj.Status.Reason, sb.obj.Status.ExitCode = "Failed", reason, &code
+		open = s.sessions[sb.obj.Status.ID]
+		delete(s.sessions, sb.obj.Status.ID)
+	}
+	s.mu.Unlock()
+	for _, se := range open {
+		s.record(se.cut(killedExit))
+	}
+	return sb != nil
+}
 
 // Remove deletes a sandbox behind its user's back, as a sandbox lost to
 // an operator or a ttl is.
@@ -547,6 +602,9 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	if sb == nil {
 		return
 	}
+	if sb.refail != "" {
+		sb.obj.Status.Phase, sb.obj.Status.Reason, sb.refail, sb.starting = "Failed", sb.refail, "", 0
+	}
 	if sb.starting > 0 {
 		sb.starting--
 		if sb.starting == 0 && sb.obj.Status.Phase == "Starting" {
@@ -581,14 +639,21 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	if sb == nil {
 		return
 	}
-	if sb.obj.Status.Phase != "Stopped" {
+	failed := sb.obj.Status.Phase == "Failed"
+	if sb.obj.Status.Phase != "Stopped" && (!failed || !s.restartFailed) {
 		refuse(w, http.StatusConflict, "phase_conflict", "the sandbox is "+sb.obj.Status.Phase)
 		return
 	}
-	sb.obj.Status.Phase, sb.obj.Status.Reason = "Running", ""
+	sb.obj.Status.Phase, sb.obj.Status.Reason, sb.obj.Status.ExitCode = "Running", "", nil
 	sb.starting = s.starting
 	if sb.starting > 0 {
 		sb.obj.Status.Phase = "Starting"
+	}
+	if failed && s.refailing > 0 {
+		// The sandbox comes up and dies at once: it reads Starting to the
+		// start's answer and Failed to the read after it.
+		s.refailing--
+		sb.obj.Status.Phase, sb.refail = "Starting", s.refailReason
 	}
 	sb.obj.Status.StartedAt = time.Now().UTC()
 	httpjson.Write(w, http.StatusOK, sb.obj)

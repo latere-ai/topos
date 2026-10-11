@@ -171,6 +171,81 @@ func TestSandboxLifecycle(t *testing.T) {
 	}
 }
 
+// TestAFailedSandboxAndItsStart: a start of a failed sandbox is
+// phase_conflict, as released cores answer it, until RestartFailed says
+// the core starts one on its kept workspace; RefailAfterStart leaves a
+// started sandbox failed again at its next read; and Kill fails a sandbox
+// under an open session, which ends with the exit code of a kill and no
+// more of its command's output.
+func TestAFailedSandboxAndItsStart(t *testing.T) {
+	s := New(t)
+	c, sb := create(t, s, "ses-one")
+	id := sb.Status.ID
+	kept := filepath.Join(s.Workspace(id), "kept.txt")
+	if err := os.WriteFile(kept, []byte("kept"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.SetFailed(id, "Exited")
+	_, _, err := c.StartSandbox(t.Context(), id)
+	code(t, err, "phase_conflict")
+
+	s.RestartFailed(true)
+	started, _, err := c.StartSandbox(t.Context(), id)
+	if err != nil || started.Status.Phase != "Running" || started.Status.Reason != "" || started.Status.ID != id {
+		t.Fatalf("a start of a failed sandbox = %+v %v", started.Status, err)
+	}
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "kept" {
+		t.Errorf("the workspace after the start = %q %v", b, err)
+	}
+
+	s.SetFailed(id, "Exited")
+	s.RefailAfterStart(1, "OOMKilled")
+	started, _, err = c.StartSandbox(t.Context(), id)
+	if err != nil || started.Status.Phase != "Starting" {
+		t.Fatalf("a start that fails again = %+v %v", started.Status, err)
+	}
+	if got, _, err := c.GetSandbox(t.Context(), id); err != nil || got.Status.Phase != "Failed" || got.Status.Reason != "OOMKilled" {
+		t.Errorf("the read after it = %+v %v", got.Status, err)
+	}
+	if started, _, err = c.StartSandbox(t.Context(), id); err != nil || started.Status.Phase != "Running" {
+		t.Fatalf("the start after the one that failed again = %+v %v", started.Status, err)
+	}
+
+	sess, err := c.ExecSession(t.Context(), id, client.ExecRequest{Command: []string{"/bin/sh", "-c", "echo up; sleep 1; echo late"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := make([]byte, 3)
+	if _, err := io.ReadFull(sess, up); err != nil || string(up) != "up\n" {
+		t.Fatalf("the command's first output = %q %v", up, err)
+	}
+	if !s.Kill(id, "OOMKilled") || s.Kill("ses-none", "OOMKilled") {
+		t.Error("Kill found no sandbox, or one that is not there")
+	}
+	rest, rerr := io.ReadAll(sess)
+	exit, werr := sess.Wait()
+	if err := errors.Join(rerr, werr, sess.Close()); err != nil || len(rest) != 0 || exit != killedExit {
+		t.Errorf("a session of a killed sandbox = %q exit %d %v", rest, exit, err)
+	}
+	if got, _ := s.Sandbox(id); got.Status.Phase != "Failed" || got.Status.Reason != "OOMKilled" || got.Status.ExitCode == nil || *got.Status.ExitCode != killedExit {
+		t.Errorf("a killed sandbox = %+v", got.Status)
+	}
+	// A command a signal ended reports 128 and the signal's number.
+	sess, err = c.ExecSession(t.Context(), id, client.ExecRequest{Command: []string{"/bin/sh", "-c", "kill -KILL $$"}})
+	code(t, err, "phase_conflict")
+	if started, _, err = c.StartSandbox(t.Context(), id); err != nil || started.Status.ExitCode != nil {
+		t.Fatalf("the start after the kill = %+v %v", started.Status, err)
+	}
+	if sess, err = c.ExecSession(t.Context(), id, client.ExecRequest{Command: []string{"/bin/sh", "-c", "kill -KILL $$"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, rerr = io.ReadAll(sess)
+	exit, werr = sess.Wait()
+	if err := errors.Join(rerr, werr, sess.Close()); err != nil || exit != killedExit {
+		t.Errorf("a command that killed itself = exit %d %v", exit, err)
+	}
+}
+
 func TestTokenFailuresAndRecords(t *testing.T) {
 	s := New(t)
 	s.RequireToken("right")
