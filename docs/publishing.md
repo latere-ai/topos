@@ -111,7 +111,11 @@ This is stricter than a release, which an agent whose `alwaysAllow`
 names `publish` makes without asking.
 
 Whether the session may change the app is the app host's question to
-the installation's authorizer, asked with the session's token. A
+the installation's authorizer, asked with the session's token. The
+token names the session and not the person who approved the call, so
+an installation that lets several people send to one session decides,
+where it answers `session.send` for a `user.tool_confirmation`, that
+nobody approves a change they could not make themselves. A
 refusal is the call's error result: the model is told why, to tell the
 person, and not to try another way. When the host names the reason
 `role_insufficient`, the app belongs to an organization and the

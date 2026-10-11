@@ -204,7 +204,9 @@ pushes, builds and releases nothing.
    `link` and `private` for `private`, with the session's token as
    every other request. It never sends `public`. Whether the session
    may change the app is the host's question to the installation's
-   authorizer.
+   authorizer. The token names the session and not who approved the
+   call, so who may approve it is the authorizer's too, where it
+   answers `session.send` for the confirmation.
 5. **The result.** Outcome `ok`, with `meta.publish` naming the app,
    its address, the `visibility` the host answers, the `folder` of the
    thread's last result for the app, and no `status`, `commit`,
