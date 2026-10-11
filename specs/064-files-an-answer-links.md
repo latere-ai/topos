@@ -266,6 +266,7 @@ skips them.
 | The blob route answers a kept PDF, archive and HTML page as an `application/octet-stream` attachment with `nosniff` and the sandboxing policy; redacting its `files.kept` removes the file, and redacting the `agent.message` redacts its `files.kept` in the same append and removes the file | `internal/server.TestAKeptFileIsADownloadRedactedWithItsAnswer`, `session/storetest`'s `RedactAnAnswerWithItsImages` for each store | built |
 | The files route answers a file of `MaxKeptFileBytes` whole and refuses one byte more | `internal/server.TestAFileAtTheBoundIsAnswered`, `internal/server.TestAFileReadIsRefused` | built |
 | A runner in its own process stores a blob of `MaxKeptFileBytes` through the runner protocol, and one byte more is refused | `internal/runnerrole.TestARunnerStoresAKeptFile` | built |
+| A Postgres store with no blob store keeps a blob of `MaxKeptFileBytes` in its row and reads it back whole | `internal/store/postgres.TestPostgresKeepsAFileAtTheBoundInTheDatabase` (postgres tier) | built |
 | The OpenAPI document states a linked file's entry, `not_a_file`, the `sandbox:` prefix, the bounds and the files route's bound | `internal/server.TestTheDocumentStatesKeptImages`, `internal/server.TestOpenAPIIsGenerated` | built |
 
 ## Outcome

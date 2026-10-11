@@ -16,6 +16,7 @@ import (
 
 	"latere.ai/x/pkg/s3/s3test"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/internal/blob"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/session/storetest"
@@ -27,6 +28,37 @@ func TestPostgresStoreConformanceWithObjectBlobs(t *testing.T) {
 	storetest.Run(t, func(t *testing.T) session.Store {
 		return fresh(t, Options{Poll: 200 * time.Millisecond, Blobs: blob.NewS3(s3test.New(t, "bucket").Client(true), "topos")})
 	})
+}
+
+// TestPostgresKeepsAFileAtTheBoundInTheDatabase: a blob as large as a
+// file an answer links is stored in its row, with no blob store, and
+// reads back whole, so the bound of a kept file holds for a store that
+// keeps bodies in the database (spec 064).
+func TestPostgresKeepsAFileAtTheBoundInTheDatabase(t *testing.T) {
+	ctx := t.Context()
+	st := fresh(t, Options{})
+	s := storetest.NewSession()
+	if err := st.Create(ctx, s, nil); err != nil {
+		t.Fatal(err)
+	}
+	file := bytes.Repeat([]byte("kept "), harness.MaxKeptFileBytes/5+1)[:harness.MaxKeptFileBytes]
+	d, err := st.PutBlob(ctx, s.ID, bytes.NewReader(file))
+	if err != nil || d != session.DigestOf(file) {
+		t.Fatalf("PutBlob %s, %v", d, err)
+	}
+	var location string
+	var size int64
+	if err := st.pool.QueryRow(ctx, `SELECT location, size FROM blobs WHERE session_id = $1 AND digest = $2`, s.ID, string(d)).Scan(&location, &size); err != nil || location != "db" || size != harness.MaxKeptFileBytes {
+		t.Fatalf("the row: %q of %d bytes, %v", location, size, err)
+	}
+	rc, err := st.Blob(ctx, s.ID, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, rerr := io.ReadAll(rc)
+	if err := errors.Join(rerr, rc.Close()); err != nil || !bytes.Equal(got, file) {
+		t.Fatalf("read back %d bytes, %v", len(got), err)
+	}
 }
 
 // TestPostgresBlobsOutsideTheDatabase: a body kept outside has a row of
