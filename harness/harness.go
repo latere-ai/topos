@@ -175,6 +175,13 @@ type Config struct {
 	// after DownRetry, a rejected request with the model's error, and a
 	// call written as text with the response as the answer.
 	Failover func(ctx context.Context, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
+	// MediaType names the media type of a file an answer links, from its
+	// base name and its leading bytes, at most tools.SniffBytes of them,
+	// for the file's files.kept entry (spec 064). The runner sets the rule
+	// the files route answers a file by. Nil types every linked file
+	// application/octet-stream: the harness tree reaches no package that
+	// reads a type from bytes (spec 001).
+	MediaType func(name string, head []byte) string
 	// Log receives one line per response that wrote a tool call as text
 	// and what the turn did about it (spec 062): the session, thread,
 	// turn, step, model, tool and action, never a word of the response.

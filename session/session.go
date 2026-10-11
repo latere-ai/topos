@@ -524,7 +524,7 @@ func Awaiting(evs []Event) map[string]Answer {
 // model request, a status, a scope change, is not redactable, so no
 // redaction rewrites the audit or the budget. An answer to a question
 // holds a person's own words and is redactable, and so are the images an
-// answer showed, files.kept (spec 055).
+// answer showed and the files it linked, files.kept (specs 055 and 064).
 func Redactable(typ Type) bool {
 	switch typ {
 	case TypeUserMessage, TypeUserToolResult, TypeUserAnswer, TypeAgentMessage, TypeAgentToolUse, TypeToolResult, TypeContextCompacted, TypeFilesKept:

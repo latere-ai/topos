@@ -255,11 +255,22 @@ func TestAnImageDrawnInTheSameStepIsKept(t *testing.T) {
 	}
 }
 
+// shown are the destinations refs shows as images, in order.
+func shown(refs []ref) []string {
+	var out []string
+	for _, r := range refs {
+		if r.Image {
+			out = append(out, r.Dest)
+		}
+	}
+	return out
+}
+
 // TestOnlyImageReferencesAreRead: a reference in a code span or a fenced
-// block, a link that is no image, an image by a URL of another scheme and
-// one that names no path keep nothing and record nothing; an image
-// reference of every other form is read, once per destination, as the
-// message wrote it (spec 055).
+// block, an image by a URL of another scheme and one that names no path
+// keep nothing and record nothing; an image reference of every other
+// form is read, once per destination, as the message wrote it, and a
+// link is no image (spec 055).
 func TestOnlyImageReferencesAreRead(t *testing.T) {
 	src := strings.Join([]string{
 		"Here: `![code](code.png)` and [the report](report.pdf).",
@@ -270,7 +281,7 @@ func TestOnlyImageReferencesAreRead(t *testing.T) {
 		"<p>\n<img src=\"block.png\">\n</p>",
 		"[chart]: c.png",
 	}, "\n\n")
-	refs := imageRefs(src)
+	refs := shown(fileRefs(src))
 	want := []string{"https://example.com/w.png", "data:image/png;base64,AAAA", "//example.com/n.png", "#top", "a.png", "my chart.png", "c.png", "d.png", "e.png?v=2#x", "file:///work/f.png", "g%20h.png", "block.png"}
 	if !slices.Equal(refs, want) {
 		t.Fatalf("references %q, want %q", refs, want)
@@ -292,13 +303,13 @@ func TestOnlyImageReferencesAreRead(t *testing.T) {
 	// nothing and reads nothing: the fake machine fails any read.
 	e := setup(t, nil)
 	ctx := t.Context()
-	e.stub.Script(model, reply(ir.StopEndTurn, text("See `![x](x.png)`, [y](y.png) and ![z](https://example.com/z.png).")))
+	e.stub.Script(model, reply(ir.StopEndTurn, text("See `![x](x.png)`, `[y](y.pdf)`, [the site](https://example.com/y) and ![z](https://example.com/z.png).")))
 	e.send(ctx, "Show me.")
 	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
 		t.Fatalf("outcome %+v", out)
 	}
 	if got := e.events(ctx, session.TypeFilesKept); len(got) != 0 {
-		t.Fatalf("files.kept for no local image: %s", got[0].Payload)
+		t.Fatalf("files.kept for no local file: %s", got[0].Payload)
 	}
 }
 
@@ -328,9 +339,9 @@ func TestKeptImageRefusals(t *testing.T) {
 	e := setup(t, func(c *Config) { c.Machine = m })
 	msg := answerEvent(t, "![a](../secret.png) ![b](link.png) ![c](missing.png) ![d](dir) ![e](drawing.svg) ![f](fake.png)",
 		"![g](big.png) ![h](wide.png)\n\n<img src=\"pixels.png\">")
-	p, ok, err := KeepImages(t.Context(), m, e.log, msg)
+	p, ok, err := KeepFiles(t.Context(), m, e.log, msg, nil)
 	if err != nil || !ok {
-		t.Fatalf("KeepImages: %t, %v", ok, err)
+		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
 	want := []session.SkippedFile{
 		{Path: "../secret.png", Reason: session.KeptOutsideWorkdir}, {Path: "link.png", Reason: session.KeptOutsideWorkdir},
@@ -343,7 +354,7 @@ func TestKeptImageRefusals(t *testing.T) {
 		t.Fatalf("files.kept %+v", p)
 	}
 	msg = answerEvent(t, "<img src=\"pixels.png\"> ![](/etc/hosts)")
-	if p, _, err = KeepImages(t.Context(), m, e.log, msg); err != nil {
+	if p, _, err = KeepFiles(t.Context(), m, e.log, msg, nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := []session.SkippedFile{{Path: "pixels.png", Reason: session.KeptTooLarge}, {Path: "/etc/hosts", Reason: session.KeptOutsideWorkdir}}; !slices.Equal(p.Skipped, want) {
@@ -369,9 +380,9 @@ func TestKeptImagesAreBounded(t *testing.T) {
 	m, _ := workMachine(t, files)
 	e := setup(t, func(c *Config) { c.Machine = m })
 	msg := answerEvent(t, strings.Join(refs, " "))
-	p, ok, err := KeepImages(t.Context(), m, e.log, msg)
+	p, ok, err := KeepFiles(t.Context(), m, e.log, msg, nil)
 	if err != nil || !ok {
-		t.Fatalf("KeepImages: %t, %v", ok, err)
+		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
 	if len(p.Files) != tools.MaxImages || len(p.Skipped) != 2 {
 		t.Fatalf("kept %d, skipped %+v", len(p.Files), p.Skipped)
@@ -386,7 +397,7 @@ func TestKeptImagesAreBounded(t *testing.T) {
 			t.Fatalf("skipped %+v", s)
 		}
 	}
-	p, _, err = KeepImages(t.Context(), nil, e.log, answerEvent(t, "![a](a.png) ![w](https://example.com/w.png)"))
+	p, _, err = KeepFiles(t.Context(), nil, e.log, answerEvent(t, "![a](a.png) ![w](https://example.com/w.png)"), nil)
 	if err != nil || len(p.Files) != 0 || !slices.Equal(p.Skipped, []session.SkippedFile{{Path: "a.png", Reason: session.KeptNoMachine}}) {
 		t.Fatalf("with no machine: %+v, %v", p, err)
 	}
@@ -522,7 +533,7 @@ func TestAResumedStepKeepsOnlyItsOwnAnswerOnce(t *testing.T) {
 			}
 		}, nil},
 		{"redacted files.kept", func(e *env, _, waiting session.Event) {
-			p, _, err := KeepImages(t.Context(), m, e.log, waiting)
+			p, _, err := KeepFiles(t.Context(), m, e.log, waiting, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -631,14 +642,14 @@ func TestAResumeStoppedForSpendKeepsItsStep(t *testing.T) {
 // resolved, and an img's src its surrounding white space stripped, so
 // the file the message names is the one read (spec 055).
 func TestADestinationIsReadAsCommonMarkReadsIt(t *testing.T) {
-	got := imageRefs(`![a](a\(b\).png) ![b](my\_chart.png) ![c](x&amp;y.png) ![d](&#x41;.png) <img src=" spaced.png ">`)
+	got := shown(fileRefs(`![a](a\(b\).png) ![b](my\_chart.png) ![c](x&amp;y.png) ![d](&#x41;.png) <img src=" spaced.png ">`))
 	if want := []string{"a(b).png", "my_chart.png", "x&y.png", "A.png", "spaced.png"}; !slices.Equal(got, want) {
 		t.Fatalf("references %q, want %q", got, want)
 	}
 	png := encoded(t, "png", 3, 3)
 	m, _ := workMachine(t, map[string][]byte{"a(b).png": png})
 	e := setup(t, func(c *Config) { c.Machine = m })
-	p, _, err := KeepImages(t.Context(), m, e.log, answerEvent(t, `![a](a\(b\).png)`))
+	p, _, err := KeepFiles(t.Context(), m, e.log, answerEvent(t, `![a](a\(b\).png)`), nil)
 	if err != nil || len(p.Files) != 1 || p.Files[0].Path != "a(b).png" {
 		t.Fatalf("files.kept %+v, %v", p, err)
 	}

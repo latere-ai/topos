@@ -46,26 +46,80 @@ const (
 	MaxKeptImagePixels = 40_000_000
 )
 
-// keepTimeout bounds the reads and the stores of one message's images,
-// so a machine that stops answering holds the turn no longer. The keep
-// runs past a canceled step, as the step's other records are kept.
-const keepTimeout = 30 * time.Second
+// The bounds of the files an answer links (spec 064), counted apart from
+// the images it shows. No store takes a blob as a stream: each holds a
+// blob's bytes whole while it writes them, and a database store once more
+// as the statement's parameter, so one linked file costs a runner about
+// twice its size while it is kept, and a process that drives several
+// sessions that much for each of them at once.
+const (
+	// MaxKeptFiles is the most linked files one message keeps: twice
+	// tools.MaxImages, since a link costs an answer less than a picture
+	// does and an answer that lists a set of files links each.
+	MaxKeptFiles = 16
+	// MaxKeptFileBytes is the most bytes one linked file is kept at, which
+	// is also the largest file the files route answers.
+	MaxKeptFileBytes = 32 << 20
+	// MaxKeptFilesBytes is the most bytes the linked files of one message
+	// are kept at together.
+	MaxKeptFilesBytes = 64 << 20
+)
 
-// imageRefs are the destinations of the images the Markdown of text
-// names, in order, each once: an inline or reference-style image and the
-// src of an HTML img element, read with a CommonMark parser, so a
-// reference in a code span or a fenced block is text and no image, and a
-// link that is no image is not read.
-func imageRefs(src string) []string {
+// keepRate is the slowest a machine's file read and the store's write are
+// planned for, in bytes a second.
+const keepRate = 1 << 20
+
+// keepTimeout bounds the reads and the stores of one message's images
+// and linked files, so a machine that stops answering holds the turn no
+// longer: the time the most bytes a message keeps take at keepRate. The
+// keep runs past a canceled step, as the step's other records are kept.
+const keepTimeout = (tools.MaxImages*tools.ReadMaxImage + MaxKeptFilesBytes) / keepRate * time.Second
+
+// sandboxScheme is the prefix some models write before a path of the
+// machine, as in sandbox:/workspace/report.pdf: what follows it is read
+// as a destination with no scheme.
+const sandboxScheme = "sandbox"
+
+// errPastBound is a read that passed the bytes its file is kept at.
+var errPastBound = errors.New("harness: the file is past the bytes it is kept at")
+
+// ref is one reference of a message's text: Dest the destination as the
+// message wrote it, and Image whether the message shows it as an image,
+// which a destination it also links still is.
+type ref struct {
+	Dest  string
+	Image bool
+}
+
+// fileRefs are the destinations the Markdown of text shows or links, in
+// the order of their first mention, each once: an inline or
+// reference-style image and the src of an HTML img element as an image,
+// and an inline or reference-style link and the href of an HTML a element
+// as a link, read with a CommonMark parser, so a reference in a code span
+// or a fenced block is text and no reference. A destination shown as an
+// image anywhere in the text is an image. An autolink names a URL with a
+// scheme, never a file of the machine, and is not read.
+func fileRefs(src string) []ref {
 	source := []byte(src)
 	doc := goldmark.New().Parser().Parse(mdtext.NewReader(source))
-	var out []string
-	seen := map[string]bool{}
-	add := func(dest string) {
-		if dest != "" && !seen[dest] {
-			seen[dest] = true
-			out = append(out, dest)
+	var out []ref
+	at := map[string]int{}
+	add := func(r ref) {
+		if r.Dest == "" {
+			return
 		}
+		if i, seen := at[r.Dest]; seen {
+			out[i].Image = out[i].Image || r.Image
+			return
+		}
+		at[r.Dest] = len(out)
+		out = append(out, r)
+	}
+	// The destination as CommonMark reads it: backslash escapes and
+	// character references resolved, which the parser leaves to its
+	// renderer.
+	resolved := func(dest []byte) string {
+		return string(util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(dest))))
 	}
 	// Walk never fails: the walker returns no error.
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -74,18 +128,17 @@ func imageRefs(src string) []string {
 		}
 		switch n := n.(type) {
 		case *ast.Image:
-			// The destination as CommonMark reads it: backslash escapes
-			// and character references resolved, which the parser leaves
-			// to its renderer.
-			add(string(util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(n.Destination)))))
+			add(ref{Dest: resolved(n.Destination), Image: true})
+		case *ast.Link:
+			add(ref{Dest: resolved(n.Destination)})
 		case *ast.RawHTML:
 			var b bytes.Buffer
 			for i := range n.Segments.Len() {
 				s := n.Segments.At(i)
 				b.Write(s.Value(source))
 			}
-			for _, d := range imgSources(b.Bytes()) {
-				add(d)
+			for _, r := range htmlRefs(b.Bytes()) {
+				add(r)
 			}
 		case *ast.HTMLBlock:
 			var b bytes.Buffer
@@ -96,8 +149,8 @@ func imageRefs(src string) []string {
 			if n.HasClosure() {
 				b.Write(n.ClosureLine.Value(source))
 			}
-			for _, d := range imgSources(b.Bytes()) {
-				add(d)
+			for _, r := range htmlRefs(b.Bytes()) {
+				add(r)
 			}
 		}
 		return ast.WalkContinue, nil
@@ -105,10 +158,11 @@ func imageRefs(src string) []string {
 	return out
 }
 
-// imgSources are the src attributes of the img elements of an HTML
-// fragment, entities decoded.
-func imgSources(fragment []byte) []string {
-	var out []string
+// htmlRefs are the references of an HTML fragment, entities decoded: the
+// src of each img element as an image and the href of each a element as a
+// link.
+func htmlRefs(fragment []byte) []ref {
+	var out []ref
 	z := html.NewTokenizer(bytes.NewReader(fragment))
 	for {
 		switch z.Next() {
@@ -116,14 +170,20 @@ func imgSources(fragment []byte) []string {
 			return out
 		case html.StartTagToken, html.SelfClosingTagToken:
 			tok := z.Token()
-			if tok.Data != "img" {
+			key, image := "", false
+			switch tok.Data {
+			case "img":
+				key, image = "src", true
+			case "a":
+				key = "href"
+			default:
 				continue
 			}
 			for _, a := range tok.Attr {
-				if a.Namespace == "" && a.Key == "src" {
-					// A src is a URL with its surrounding white space
-					// stripped, as a browser reads it.
-					out = append(out, strings.TrimSpace(a.Val))
+				if a.Namespace == "" && a.Key == key {
+					// A src and an href are URLs with their surrounding white
+					// space stripped, as a browser reads them.
+					out = append(out, ref{Dest: strings.TrimSpace(a.Val), Image: image})
 					break
 				}
 			}
@@ -133,23 +193,38 @@ func imgSources(fragment []byte) []string {
 
 // localPath is the machine path a destination names, false for one that
 // names no file of the machine: a destination with a scheme other than
-// file, a network-path reference, and one that is empty once its query
-// and fragment are dropped. A file: URL names its path, and any other
-// destination its percent-decoded path.
+// file and sandbox, a network-path reference, and one that is empty once
+// its query and fragment are dropped. A file: URL names its path, a
+// sandbox: destination what follows the prefix, read as a destination
+// with no scheme of its own, and any other destination its
+// percent-decoded path.
 func localPath(dest string) (string, bool) {
 	if strings.HasPrefix(dest, "//") {
 		return "", false
 	}
-	if scheme, _, ok := strings.Cut(dest, ":"); ok && isScheme(scheme) {
-		if !strings.EqualFold(scheme, "file") {
-			return "", false
+	if scheme, rest, ok := strings.Cut(dest, ":"); ok && isScheme(scheme) {
+		switch {
+		case strings.EqualFold(scheme, "file"):
+			u, err := url.Parse(dest)
+			if err != nil || (u.Host != "" && u.Host != "localhost") || u.Path == "" {
+				return "", false
+			}
+			return u.Path, true
+		case strings.EqualFold(scheme, sandboxScheme):
+			if inner, _, ok := strings.Cut(rest, ":"); ok && isScheme(inner) {
+				return "", false
+			}
+			return plainPath(rest)
 		}
-		u, err := url.Parse(dest)
-		if err != nil || (u.Host != "" && u.Host != "localhost") || u.Path == "" {
-			return "", false
-		}
-		return u.Path, true
+		return "", false
 	}
+	return plainPath(dest)
+}
+
+// plainPath is the path of a destination with no scheme: its query and
+// fragment dropped and its percent-encoding decoded, false when nothing
+// is left.
+func plainPath(dest string) (string, bool) {
 	p := dest
 	if i := strings.IndexAny(p, "?#"); i >= 0 {
 		p = p[:i]
@@ -195,33 +270,45 @@ func messageText(m session.AgentMessage) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// KeepImages reads the local images msg, an agent.message, names from m,
-// the session's machine, and stores each as a blob through log, the
-// first tools.MaxImages references only. It returns the payload of the
-// files.kept that records them, and false when msg names no local image.
-// m is nil for a turn that opened no machine: every reference is then
-// skipped no_machine and nothing is read, since keeping an image never
-// opens one. A reference is resolved against m's working directory and
-// read through m, which refuses a symbolic link that leads out of the
-// root it is in.
-func KeepImages(ctx context.Context, m machine.Machine, log Log, msg session.Event) (session.FilesKept, bool, error) {
+// KeepFiles reads the local files msg, an agent.message, shows as images
+// or links from m, the session's machine, and stores each as a blob
+// through log: the first tools.MaxImages image references, and the first
+// MaxKeptFiles links up to MaxKeptFilesBytes together. It returns the
+// payload of the files.kept that records them, and false when msg names
+// no local file. m is nil for a turn that opened no machine: every
+// reference is then skipped no_machine and nothing is read, since keeping
+// a file never opens one. A reference is resolved against m's working
+// directory and read through m, which refuses a symbolic link that leads
+// out of the root it is in. typeOf names a linked file's media type from
+// its base name and its leading bytes, at most tools.SniffBytes of them;
+// nil types every linked file application/octet-stream.
+func KeepFiles(ctx context.Context, m machine.Machine, log Log, msg session.Event, typeOf func(name string, head []byte) string) (session.FilesKept, bool, error) {
 	var am session.AgentMessage
 	if err := msg.Decode(&am); err != nil {
 		return session.FilesKept{}, false, err
 	}
+	if typeOf == nil {
+		typeOf = func(string, []byte) string { return "application/octet-stream" }
+	}
 	kept := session.FilesKept{Message: msg.ID, Files: []session.KeptFile{}, Skipped: []session.SkippedFile{}}
-	n := 0
-	for _, dest := range imageRefs(messageText(am)) {
-		p, ok := localPath(dest)
+	var images, links int
+	// linked is the bytes of the linked files kept so far.
+	var linked int64
+	for _, r := range fileRefs(messageText(am)) {
+		p, ok := localPath(r.Dest)
 		if !ok {
 			continue
 		}
-		n++
 		skip := func(reason string) {
-			kept.Skipped = append(kept.Skipped, session.SkippedFile{Path: dest, Reason: reason})
+			kept.Skipped = append(kept.Skipped, session.SkippedFile{Path: r.Dest, Reason: reason})
 		}
+		n, most := &links, MaxKeptFiles
+		if r.Image {
+			n, most = &images, tools.MaxImages
+		}
+		*n++
 		switch {
-		case n > tools.MaxImages:
+		case *n > most:
 			skip(session.KeptLimit)
 			continue
 		case m == nil:
@@ -237,25 +324,32 @@ func KeepImages(ctx context.Context, m machine.Machine, log Log, msg session.Eve
 			skip(session.KeptOutsideWorkdir)
 			continue
 		}
-		f, reason := keepOne(ctx, m, log, resolved)
+		var f session.KeptFile
+		var reason string
+		if r.Image {
+			f, reason = keepImage(ctx, m, log, resolved)
+		} else {
+			f, reason = keepLinked(ctx, m, log, resolved, MaxKeptFilesBytes-linked, typeOf)
+			linked += f.Size
+		}
 		if reason != "" {
 			skip(reason)
 			continue
 		}
-		f.Path = dest
+		f.Path = r.Dest
 		kept.Files = append(kept.Files, f)
 	}
 	return kept, len(kept.Files)+len(kept.Skipped) > 0, nil
 }
 
-// keepOne reads the image at resolved and stores it, or says why not.
-func keepOne(ctx context.Context, m machine.Machine, log Log, resolved string) (session.KeptFile, string) {
+// keepImage reads the image at resolved and stores it, or says why not.
+func keepImage(ctx context.Context, m machine.Machine, log Log, resolved string) (session.KeptFile, string) {
 	fi, err := m.Stat(ctx, resolved)
 	if err != nil {
 		return session.KeptFile{}, readReason(err)
 	}
 	switch {
-	case fi.IsDir:
+	case !regular(fi):
 		return session.KeptFile{}, session.KeptNotAnImage
 	case fi.Size > tools.ReadMaxImage:
 		return session.KeptFile{}, session.KeptTooLarge
@@ -287,6 +381,72 @@ func keepOne(ctx context.Context, m machine.Machine, log Log, resolved string) (
 		return session.KeptFile{}, session.KeptUnavailable
 	}
 	return session.KeptFile{Resolved: resolved, Blob: d, MediaType: media, Size: int64(len(data)), Width: w, Height: h}, ""
+}
+
+// keepLinked stores the regular file at resolved, or says why not. room
+// is the bytes the message's linked files may still take. The file is
+// handed to the store as it is read from the machine, so the harness
+// holds none of it but the leading bytes that type it; the store holds it
+// whole while it writes it. A file that grew past its bound since its
+// stat fails the store's read, and nothing of it is stored.
+func keepLinked(ctx context.Context, m machine.Machine, log Log, resolved string, room int64, typeOf func(name string, head []byte) string) (session.KeptFile, string) {
+	fi, err := m.Stat(ctx, resolved)
+	if err != nil {
+		return session.KeptFile{}, readReason(err)
+	}
+	switch {
+	case !regular(fi):
+		return session.KeptFile{}, session.KeptNotAFile
+	case fi.Size > MaxKeptFileBytes:
+		return session.KeptFile{}, session.KeptTooLarge
+	case fi.Size > room:
+		return session.KeptFile{}, session.KeptLimit
+	}
+	rc, err := m.ReadFile(ctx, resolved)
+	if err != nil {
+		return session.KeptFile{}, readReason(err)
+	}
+	src := &boundedReader{r: rc, max: min(MaxKeptFileBytes, room)}
+	d, err := log.PutBlob(ctx, src)
+	if err = errors.Join(err, rc.Close()); err != nil {
+		switch {
+		case !errors.Is(err, errPastBound):
+			return session.KeptFile{}, readReason(err)
+		case src.max < MaxKeptFileBytes:
+			return session.KeptFile{}, session.KeptLimit
+		}
+		return session.KeptFile{}, session.KeptTooLarge
+	}
+	return session.KeptFile{Resolved: resolved, Blob: d, MediaType: typeOf(path.Base(resolved), src.head), Size: src.n}, ""
+}
+
+// regular reports whether fi is a regular file: no directory, and
+// nothing a read would wait on or that holds no bytes of its own, such as
+// a named pipe or a device.
+func regular(fi machine.FileInfo) bool {
+	return !fi.IsDir && fi.Mode.Type() == 0
+}
+
+// boundedReader reads r up to max bytes and fails with errPastBound at
+// the byte after. n counts the bytes read, and head keeps the leading
+// tools.SniffBytes of them.
+type boundedReader struct {
+	r    io.Reader
+	max  int64
+	n    int64
+	head []byte
+}
+
+func (b *boundedReader) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if room := tools.SniffBytes - len(b.head); room > 0 {
+		b.head = append(b.head, p[:min(n, room)]...)
+	}
+	b.n += int64(n)
+	if b.n > b.max {
+		return n, errPastBound
+	}
+	return n, err
 }
 
 // readReason is the reason a failed stat or read skips a reference.
@@ -378,9 +538,9 @@ func redactedSince(evs []session.Event, id string) bool {
 }
 
 // keepAnswer appends the files.kept of msg, an agent.message of the
-// session's own thread whose step is committed, when it names a local
-// image. It reads only a machine that is open: a machine opened on
-// demand that no call of the turn opened is not opened to keep an image.
+// session's own thread whose step is committed, when it shows or links a
+// local file. It reads only a machine that is open: a machine opened on
+// demand that no call of the turn opened is not opened to keep a file.
 // An answer a person redacted while its step ran keeps nothing.
 func (t *turn) keepAnswer(ctx context.Context, msg session.Event) error {
 	if t.thread != "" || redactedSince(t.events(), msg.ID) {
@@ -389,12 +549,12 @@ func (t *turn) keepAnswer(ctx context.Context, msg session.Event) error {
 	return t.keep(ctx, t.openMachine(), msg)
 }
 
-// keep reads msg's images from m, nil for none, and appends their
-// files.kept.
+// keep reads msg's images and linked files from m, nil for none, and
+// appends their files.kept.
 func (t *turn) keep(ctx context.Context, m machine.Machine, msg session.Event) error {
 	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), keepTimeout)
 	defer cancel()
-	p, ok, err := KeepImages(kctx, m, t.l, msg)
+	p, ok, err := KeepFiles(kctx, m, t.l, msg, t.h.c.MediaType)
 	if err != nil || !ok {
 		return err
 	}
@@ -406,14 +566,14 @@ func (t *turn) keep(ctx context.Context, m machine.Machine, msg session.Event) e
 	return t.commit(ctx, e)
 }
 
-// keepResumed keeps the images of the step whose open calls a resume
+// keepResumed keeps the files of the step whose open calls a resume
 // settled, the agent.message last before the first of them: the step is
 // committed once its calls are answered, which for a call that waited on
 // a person is in this claim. A message that is redacted, or that a
 // files.kept names already, a redacted one included, keeps nothing
 // again. A claim that settled the calls without opening the machine
 // reads nothing and records nothing, since the step did run on a machine
-// and its images may be in it.
+// and its files may be in it.
 func (t *turn) keepResumed(ctx context.Context, open []pendingCall) error {
 	if t.thread != "" || len(open) == 0 {
 		return nil

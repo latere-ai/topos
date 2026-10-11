@@ -5,23 +5,27 @@ package session
 
 import "encoding/json"
 
-// FilesKept is the payload of files.kept (spec 055): the local images an
-// agent.message of the session's own thread names, read from the open
-// machine once the message's step was committed and stored as blobs of
-// the session. Message is the agent.message's event id. Files are the
-// images kept and Skipped the references that were not, each with why;
-// either may be empty, and an event with both empty is never appended.
-// The event renders into no prompt.
+// FilesKept is the payload of files.kept (specs 055 and 064): the local
+// files an agent.message of the session's own thread shows as images or
+// links, read from the open machine once the message's step was committed
+// and stored as blobs of the session. Message is the agent.message's
+// event id. Files are the files kept and Skipped the references that were
+// not, each with why; either may be empty, and an event with both empty
+// is never appended. The event renders into no prompt.
 type FilesKept struct {
 	Message string        `json:"message"`
 	Files   []KeptFile    `json:"files"`
 	Skipped []SkippedFile `json:"skipped"`
 }
 
-// KeptFile is one image files.kept stored. Path is the destination as the
+// KeptFile is one file files.kept stored. Path is the destination as the
 // message wrote it, Resolved the absolute path read inside the working
-// directory, MediaType the format its bytes are, never its name's, and
-// Width and Height the size its format's header gives.
+// directory, and Size its bytes. For a file the message shows as an
+// image, MediaType is the format its bytes are, never its name's, and
+// Width and Height the size its format's header gives. For a file the
+// message links, MediaType is the type its name's extension names and
+// otherwise the one its leading bytes give, and Width and Height are 0,
+// whatever its bytes are.
 type KeptFile struct {
 	Path      string `json:"path"`
 	Resolved  string `json:"resolved"`
@@ -42,19 +46,25 @@ type SkippedFile struct {
 const (
 	// KeptNotFound is a path nothing exists at.
 	KeptNotFound = "not_found"
-	// KeptTooLarge is a file past the bytes, a side or the pixels an image
-	// is kept at.
+	// KeptTooLarge is a file past the bytes one file is kept at, or an
+	// image past the side or the pixels an image is kept at.
 	KeptTooLarge = "too_large"
-	// KeptNotAnImage is a file whose bytes are none of PNG, JPEG, GIF and
-	// WebP, an SVG included, or a directory.
+	// KeptNotAnImage is a file shown as an image whose bytes are none of
+	// PNG, JPEG, GIF and WebP, an SVG included, or that is no regular
+	// file, such as a directory.
 	KeptNotAnImage = "not_an_image"
+	// KeptNotAFile is a link to something that is no regular file, such
+	// as a directory.
+	KeptNotAFile = "not_a_file"
 	// KeptOutsideWorkdir is a path outside the working directory, or a
 	// symbolic link that leads out of it.
 	KeptOutsideWorkdir = "outside_workdir"
 	// KeptNoMachine is a reference of a step in a turn that opened no
-	// machine: keeping an image never opens one.
+	// machine: keeping a file never opens one.
 	KeptNoMachine = "no_machine"
-	// KeptLimit is a reference past the images one message keeps.
+	// KeptLimit is a reference past the images or the linked files one
+	// message keeps, or a linked file past the bytes its message's linked
+	// files are kept at together.
 	KeptLimit = "limit"
 	// KeptUnavailable is a read or a store that failed, which the turn
 	// runs past.
@@ -63,8 +73,8 @@ const (
 
 // Companions are the events a redaction of e takes with it, in the same
 // append: the files.kept of an agent.message, since a person who removes
-// an answer removes its pictures with it. A redacted companion is not
-// one, and an event of any other type has none.
+// an answer removes its pictures and its linked files with it. A redacted
+// companion is not one, and an event of any other type has none.
 func Companions(e Event, log []Event) []Event {
 	if e.Type != TypeAgentMessage {
 		return nil
@@ -83,7 +93,7 @@ func Companions(e Event, log []Event) []Event {
 }
 
 // KeptFor reports whether a files.kept of log names the message id, one a
-// redaction tombstoned included: an answer's images are kept once.
+// redaction tombstoned included: an answer's files are kept once.
 func KeptFor(id string, log []Event) bool {
 	for _, e := range log {
 		var p struct {

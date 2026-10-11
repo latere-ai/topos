@@ -38,6 +38,12 @@ const (
 // answer (spec 055), each at most ReadMaxImage bytes.
 const MaxImages = 8
 
+// SniffBytes is how many leading bytes of a file name its media type
+// when its name's extension names none: what http.DetectContentType
+// reads. The files route and a kept file read no more of a file to type
+// it (specs 044 and 064).
+const SniffBytes = 512
+
 // readSchema states the default from ReadDefaultLimit, so the schema
 // cannot drift from what runRead does.
 var readSchema = fmt.Sprintf(`{

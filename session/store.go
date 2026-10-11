@@ -592,7 +592,7 @@ func Tombstone(e Event, last uint64, by Sender, reason string, now time.Time) (E
 		}
 	}
 	// A files.kept's tombstone keeps the id of the answer it named, no
-	// content of it, so a runner never keeps the answer's images again
+	// content of it, so a runner never keeps the answer's files again
 	// after a person removed them (spec 055).
 	if e.Type == TypeFilesKept {
 		var p FilesKept

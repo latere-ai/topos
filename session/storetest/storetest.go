@@ -567,8 +567,9 @@ func testRedact(t *testing.T, st session.Store) {
 
 // testRedactAnAnswerWithItsImages: redacting an agent.message redacts
 // the files.kept that names it in the same append, one event.redacted
-// each, and deletes the images only it named; redacting a files.kept alone
-// leaves its message and deletes its image (spec 055).
+// each, and deletes the files only it named, an image and a linked file
+// of another type alike; redacting a files.kept alone leaves its message
+// and deletes its files (specs 055 and 064).
 func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
 	s := create(t, st)
 	ctx := t.Context()
@@ -580,6 +581,14 @@ func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	report, err := st.PutBlob(ctx, s.ID, strings.NewReader("%PDF-1.7 report"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	papers, err := st.PutBlob(ctx, s.ID, strings.NewReader("PK\x03\x04papers"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	answer := func(text string) session.Event {
 		e, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: text}}}}, t0)
 		if err != nil {
@@ -588,18 +597,23 @@ func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
 		e.Turn = 1
 		return e
 	}
-	kept := func(msg session.Event, d session.Digest, name string) session.Event {
-		e, err := session.NewEvent(session.TypeFilesKept, session.FilesKept{Message: msg.ID,
-			Files:   []session.KeptFile{{Path: name, Resolved: "/work/" + name, Blob: d, MediaType: "image/png", Size: 12, Width: 1, Height: 1}},
-			Skipped: []session.SkippedFile{}}, t0)
+	image := func(d session.Digest, name string) session.KeptFile {
+		return session.KeptFile{Path: name, Resolved: "/work/" + name, Blob: d, MediaType: "image/png", Size: 12, Width: 1, Height: 1}
+	}
+	linked := func(d session.Digest, name, media string) session.KeptFile {
+		return session.KeptFile{Path: name, Resolved: "/work/" + name, Blob: d, MediaType: media, Size: 15}
+	}
+	kept := func(msg session.Event, files ...session.KeptFile) session.Event {
+		e, err := session.NewEvent(session.TypeFilesKept, session.FilesKept{Message: msg.ID, Files: files, Skipped: []session.SkippedFile{}}, t0)
 		if err != nil {
 			t.Fatal(err)
 		}
 		e.Turn = 1
 		return e
 	}
-	first, second := answer("![Chart](chart.png)"), answer("![Logo](logo.png)")
-	firstKept, secondKept := kept(first, chart, "chart.png"), kept(second, logo, "logo.png")
+	first, second := answer("![Chart](chart.png) [Report](report.pdf)"), answer("![Logo](logo.png) [Papers](papers.zip)")
+	firstKept := kept(first, image(chart, "chart.png"), linked(report, "report.pdf", "application/pdf"))
+	secondKept := kept(second, image(logo, "logo.png"), linked(papers, "papers.zip", "application/zip"))
 	last := appendAll(t, st, s.ID, 0, Message(t, "draw", t0), first, firstKept, second, secondKept)
 	by := session.Sender{Subject: "usr_1", Kind: session.SenderPerson}
 	if err := st.Redact(ctx, s.ID, first.ID, by, "wrong chart"); err != nil {
@@ -626,8 +640,19 @@ func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
 	if len(evs[2].Blobs()) != 0 {
 		t.Fatalf("a redacted files.kept names %v", evs[2].Blobs())
 	}
-	if _, err := st.Blob(ctx, s.ID, chart); !errors.Is(err, session.ErrNotFound) {
-		t.Fatalf("the redacted answer's image survives: %v", err)
+	for name, d := range map[string]session.Digest{"image": chart, "linked file": report} {
+		if _, err := st.Blob(ctx, s.ID, d); !errors.Is(err, session.ErrNotFound) {
+			t.Fatalf("the redacted answer's %s survives: %v", name, err)
+		}
+	}
+	for name, d := range map[string]session.Digest{"image": logo, "linked file": papers} {
+		rc, err := st.Blob(ctx, s.ID, d)
+		if err != nil {
+			t.Fatalf("the %s of the answer left standing: %v", name, err)
+		}
+		if err := rc.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	h, err := st.Get(ctx, s.ID)
 	if err != nil || h.LastSeq != last+2 {
@@ -642,8 +667,10 @@ func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
 	if len(evs) != int(last)+3 || evs[3].Redacted() || !evs[4].Redacted() {
 		t.Fatalf("after redacting a files.kept alone: %d events, its message redacted %t", len(evs), evs[3].Redacted())
 	}
-	if _, err := st.Blob(ctx, s.ID, logo); !errors.Is(err, session.ErrNotFound) {
-		t.Fatalf("the redacted files.kept's image survives: %v", err)
+	for name, d := range map[string]session.Digest{"image": logo, "linked file": papers} {
+		if _, err := st.Blob(ctx, s.ID, d); !errors.Is(err, session.ErrNotFound) {
+			t.Fatalf("the redacted files.kept's %s survives: %v", name, err)
+		}
 	}
 	if err := st.Redact(ctx, s.ID, first.ID, by, "again"); err != nil {
 		t.Fatalf("a redaction sent again: %v", err)
@@ -661,7 +688,7 @@ func testRedactAnAnswerWithItsImages(t *testing.T, st session.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lateKept := kept(first, late, "late.png")
+	lateKept := kept(first, image(late, "late.png"))
 	appendAll(t, st, s.ID, last+3, lateKept)
 	if err := st.Redact(ctx, s.ID, first.ID, by, "again"); err != nil {
 		t.Fatal(err)
