@@ -4,6 +4,7 @@
 package hosted
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,12 +12,15 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/ir"
+
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/cellastub"
+	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
 // reasons are the reasons of the session's session.machine records, in
@@ -234,5 +238,75 @@ func TestACommandKilledOnACoreThatStartsNoFailedSandbox(t *testing.T) {
 	var lost session.SessionError
 	if errs := c.events(session.TypeSessionError); len(errs) != 1 || errs[0].Decode(&lost) != nil || lost.Code != machine.CodeLost {
 		t.Fatalf("session.error events %s", c.dump())
+	}
+}
+
+// writer is an agent that writes, edits and reads files and runs
+// commands in a Cella sandbox.
+const writerAgent = `apiVersion: topos.latere.ai/v1
+kind: Agent
+metadata:
+  name: writer
+spec:
+  model: {name: anthropic/claude-haiku-4.5}
+  tools: [bash, write, edit, read]
+  machine: {kind: cella}
+`
+
+// tool is a reply that calls a tool with input.
+func tool(t *testing.T, id, name string, input map[string]any) luxstub.Reply {
+	t.Helper()
+	args, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return luxstub.Reply{Response: ir.Response{Model: haiku, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: args}}}, StopReason: ir.StopToolUse}}
+}
+
+// TestAReplacedSandboxIsRebuiltFromTheLog: a hosted session with no
+// repository whose sandbox failed on a core that does not start it again
+// gets a new sandbox with the files its log holds: what it wrote and
+// edited, and the file its answer linked, which a command had made and
+// files.kept stored, sent to the sandbox as one archive. The file only a
+// command made is not back. The machine is recorded as restored from the
+// log, with no machine_lost, and the model reads what is back and what
+// is not before its first command (spec 065).
+func TestAReplacedSandboxIsRebuiltFromTheLog(t *testing.T) {
+	c := newCloudOf(t, writerAgent, nil)
+	c.drive("Build the app.",
+		tool(t, "toolu_1", "write", map[string]any{"path": "src/app.js", "content": "console.log('hello');\n"}),
+		tool(t, "toolu_2", "edit", map[string]any{"path": "src/app.js", "old_string": "hello", "new_string": "tide tables"}),
+		tool(t, "toolu_3", "bash", map[string]any{"command": "mkdir -p out && printf 'tide report\\n' > out/report.txt && echo generated > out/data.bin"}),
+		said("The app is built.\n\n[The report](out/report.txt)"),
+	)
+	name := cella.SandboxName(c.s.ID)
+	before, _ := c.cella.Sandbox(name)
+	c.cella.SetFailed(name, "OOMKilled")
+	c.drive("Show me the app.", bash("toolu_4", "cat src/app.js out/report.txt; ls out"), said("The app and the report are back; the data is not."))
+	after, _ := c.cella.Sandbox(name)
+	if after.Status.ID == before.Status.ID || c.cella.Count(cellastub.OpDelete) != 1 {
+		t.Fatalf("the sandbox is %s, was %s, after %d deletes", after.Status.ID, before.Status.ID, c.cella.Count(cellastub.OpDelete))
+	}
+	got := c.results()
+	if last := got[len(got)-1]; !strings.Contains(last, "console.log('tide tables');\ntide report\nreport.txt\n") || strings.Contains(last, "data.bin") {
+		t.Fatalf("the new sandbox's files read %q", last)
+	}
+	machines := c.events(session.TypeSessionMachine)
+	var rebuilt session.SessionMachine
+	if len(machines) != 2 || machines[1].Decode(&rebuilt) != nil || rebuilt.Reason != session.MachineRestored || rebuilt.Restore == nil {
+		t.Fatalf("session.machine events %s", c.dump())
+	}
+	if r := rebuilt.Restore; r.Source != session.RestoreFromLog || r.Files != 2 || r.Unverified != 0 || r.Omitted != 0 || r.Commands != 1 ||
+		!slices.Equal(r.Paths, []string{"out/report.txt", "src/app.js"}) {
+		t.Fatalf("the restore record %+v", r)
+	}
+	if n := len(c.events(session.TypeSessionError)); n != 0 {
+		t.Fatalf("%d session.error events\n%s", n, c.dump())
+	}
+	// The record, and so the note, precede the result of the command
+	// that opened the sandbox.
+	results := c.events(session.TypeToolResult)
+	if machines[1].Seq >= results[len(results)-1].Seq || !c.lastSaid("was rebuilt from this conversation's record") || !c.lastSaid("- out/report.txt\n- src/app.js\n") {
+		t.Fatal("the model does not read what is back before it goes on")
 	}
 }
