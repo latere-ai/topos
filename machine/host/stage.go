@@ -35,7 +35,8 @@ type Sandbox struct {
 	Driver hostsandbox.Sandbox
 	// StageDir holds one directory per command with its log, the
 	// driver's settings and its exit status. It lies outside every root,
-	// so a command neither reads nor rewrites its own transcript.
+	// so a command never rewrites its own transcript, and of the
+	// directory it reads its own log alone.
 	StageDir string
 	// Denied are paths no command may read though nothing else denies
 	// them: the data directory, whose roots are granted back, and the
@@ -133,7 +134,11 @@ type launched struct {
 // launch starts argv as a stage in dir, relative to the working
 // directory, with env added to HOME set to the working directory. Every
 // root is readable and writable, the sandbox's denied paths are not
-// readable, and the network is the sandbox's egress.
+// readable, and the network is the sandbox's egress. The stage's own
+// log, its standard output, is readable: it lies under a denied path
+// when the stage directory does, and Seatbelt on macOS refuses an fstat
+// of a descriptor whose file the stage may not read, which fails cat,
+// dd and node before they write a byte.
 func (h *Host) launch(ctx context.Context, argv []string, dir string, env map[string]string) (launched, error) {
 	sb := h.opts.Sandbox
 	stageDir, err := os.MkdirTemp(sb.StageDir, "cmd-*")
@@ -146,14 +151,16 @@ func (h *Host) launch(ctx context.Context, argv []string, dir string, env map[st
 	}
 	stageEnv := map[string]string{"HOME": h.info.Workdir, srtTempDir: tmp}
 	maps.Copy(stageEnv, env)
-	paths := make([]hostsandbox.Path, len(h.roots))
+	log := filepath.Join(stageDir, "out.log")
+	paths := make([]hostsandbox.Path, len(h.roots), len(h.roots)+1)
 	for i, r := range h.roots {
 		paths[i] = hostsandbox.Path{Host: r.dir, Access: hostsandbox.ReadWrite}
 	}
+	paths = append(paths, hostsandbox.Path{Host: log, Access: hostsandbox.ReadOnly})
 	spec := hostsandbox.StageSpec{
 		Name: filepath.Base(stageDir), Argv: argv, Env: stageEnv, Workdir: h.dir(dir),
 		Paths: paths, Denied: sb.Denied, Network: stageNetwork(sb.Egress),
-		LogPath: filepath.Join(stageDir, "out.log"),
+		LogPath: log,
 	}
 	// A stage outlives the call that started it until the machine stops
 	// it, so the call's context never ends it.

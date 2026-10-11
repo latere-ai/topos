@@ -147,9 +147,10 @@ func staging(t *testing.T, egress ...string) (*Host, *recorder, string) {
 
 // TestAStageRunsWithTheSessionsPolicy: each command is a stage whose
 // roots are readable and writable, whose denied paths are the
-// sandbox's, whose log lies outside every root, whose network is the
-// egress, and whose environment is HOME, the private temporary
-// directory and the request's variables, none of the machine's own.
+// sandbox's, whose log lies outside every root and is its own to read,
+// whose network is the egress, and whose environment is HOME, the
+// private temporary directory and the request's variables, none of the
+// machine's own.
 func TestAStageRunsWithTheSessionsPolicy(t *testing.T) {
 	h, rec, base := staging(t, "api.example.com")
 	if h.Info().Sandbox != string(hostsandbox.Host) {
@@ -174,8 +175,12 @@ func TestAStageRunsWithTheSessionsPolicy(t *testing.T) {
 		}
 	}
 	spec := rec.last()
+	n := len(spec.Paths) - 1
+	if n < 0 || spec.Paths[n] != (hostsandbox.Path{Host: spec.LogPath, Access: hostsandbox.ReadOnly}) {
+		t.Fatalf("the stage's own log is not readable to it and no more: %+v", spec.Paths)
+	}
 	var paths []string
-	for _, p := range spec.Paths {
+	for _, p := range spec.Paths[:n] {
 		if p.Access != hostsandbox.ReadWrite {
 			t.Fatalf("a root is not writable: %+v", p)
 		}
