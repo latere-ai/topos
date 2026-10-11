@@ -436,12 +436,38 @@ const (
 	BaseDefault = "default"
 )
 
+// The reasons of a session.machine (specs 004 and 009).
+const (
+	// MachineAttached is the session's first machine, or the first of a
+	// fork.
+	MachineAttached = "attached"
+	// MachineHandoff is a machine other than the one the session had,
+	// which the session moved to.
+	MachineHandoff = "handoff"
+	// MachineRestored is a new machine given the files of a checkpoint.
+	MachineRestored = "restored"
+	// MachineReplaced is a new, empty machine in the place of one that
+	// was lost: the files of the working directory are gone.
+	MachineReplaced = "replaced"
+	// MachineRestarted is the machine the session had, which stopped on a
+	// failure and runs again: the files of its working directory are
+	// kept, and every process that ran on it is gone.
+	MachineRestarted = "restarted"
+)
+
+// MachineOutOfMemory is the cause of a session.machine whose machine is
+// known to have stopped because it ran out of memory.
+const MachineOutOfMemory = "out_of_memory"
+
 // SessionMachine is the payload of session.machine. Repositories are set
 // on the attachment of the session's first machine, the one its
-// repositories are delivered into, in the session's order.
+// repositories are delivered into, in the session's order. Cause says
+// why a restarted machine had stopped, when its provider says: it is
+// MachineOutOfMemory or absent.
 type SessionMachine struct {
 	Machine      AttachedMachine       `json:"machine"`
 	Reason       string                `json:"reason"`
+	Cause        string                `json:"cause,omitempty"`
 	Context      string                `json:"context,omitempty"`
 	Instructions []Instructions        `json:"instructions,omitempty"`
 	Skills       []Skill               `json:"skills,omitempty"`

@@ -208,6 +208,62 @@ func TestBashMachineFailures(t *testing.T) {
 	}
 }
 
+// stoppedMachine is a machine whose commands end as its exec answers.
+type stoppedMachine struct {
+	machine.Machine
+	res machine.ExecResult
+}
+
+func (m stoppedMachine) Exec(context.Context, machine.ExecRequest) (machine.ExecResult, error) {
+	return m.res, nil
+}
+
+// TestBashSaysWhatBecameOfAMachineThatStopped: a command whose machine
+// stopped under it reads as one that did not finish, with what it wrote
+// before, why when the machine's provider says, and where the machine
+// and its files stand: running again with them, lost, or not running yet
+// with nothing deleted. A command killed on a machine that runs on reads
+// with its exit code and what the code means, and claims no cause (spec
+// 009).
+func TestBashSaysWhatBecameOfAMachineThatStopped(t *testing.T) {
+	f := open(t)
+	ctx := t.Context()
+	bash := builtinTool(t, NameBash)
+	for name, c := range map[string]struct {
+		stop machine.Stop
+		want string
+	}{
+		"out of memory, restarted": {machine.Stop{OutOfMemory: true, Restarted: true},
+			"The command did not finish: the machine ran out of memory and stopped under it. The machine is running again. The files in the working directory are kept. Every process that was running on it, background jobs and servers included, is gone. You can run the command again, in smaller steps if it needs as much memory again."},
+		"no cause, restarted": {machine.Stop{Restarted: true},
+			"The command did not finish: the machine stopped under it. The machine is running again. The files in the working directory are kept. Every process that was running on it, background jobs and servers included, is gone. You can run the command again."},
+		"lost": {machine.Stop{Lost: true},
+			"The command did not finish: the machine stopped under it. The machine could not be started again, so its files cannot be reached and may be lost, and the commands and file tools of this turn will fail. Tell the person plainly what happened."},
+		"not running yet": {machine.Stop{OutOfMemory: true, Err: errors.New("machine: the sandbox failed again right after it was started")},
+			"The command did not finish: the machine ran out of memory and stopped under it. The machine is not running yet: machine: the sandbox failed again right after it was started. Nothing of it was deleted, so its files are kept, and your next command starts it again."},
+	} {
+		m := stoppedMachine{Machine: f.h, res: machine.ExecResult{Output: []byte("added 12 packages\n"), ExitCode: machine.ExitKilled, Stopped: &c.stop}}
+		res := run(ctx, t, bash, m, State{}, `{"command":"npm install"}`)
+		if res.Outcome != OutcomeError || !res.IsError() || text(res) != "added 12 packages\n"+c.want {
+			t.Errorf("%s: %s %q", name, res.Outcome, text(res))
+		}
+		if strings.Contains(text(res), "did not start") || (!c.stop.OutOfMemory && strings.Contains(text(res), "memory")) {
+			t.Errorf("%s: the result misstates what happened: %q", name, text(res))
+		}
+	}
+	// A command killed while its machine runs on: the shell reports the
+	// kill of what it ran as 128 and the signal's number.
+	res := run(ctx, t, bash, f.h, State{}, `{"command":"echo before; sh -c 'kill -KILL $$'"}`)
+	// The shell may say what it saw of the kill between the two.
+	want := fmt.Sprintf("Exit code: %d\nExit code %d means the command was killed. A machine that runs out of memory kills a process this way, but nothing here says that this is why. The machine is still running, and its files are kept.", machine.ExitKilled, machine.ExitKilled)
+	if res.Outcome != OutcomeOK || !strings.HasPrefix(text(res), "before\n") || !strings.HasSuffix(text(res), want) || res.Meta == nil || *res.Meta.ExitCode != machine.ExitKilled {
+		t.Errorf("a killed command: %s %q", res.Outcome, text(res))
+	}
+	if res := run(ctx, t, bash, f.h, State{}, `{"command":"exit 1"}`); strings.Contains(text(res), "killed") {
+		t.Errorf("a command that failed reads as killed: %q", text(res))
+	}
+}
+
 func TestOutputSpill(t *testing.T) {
 	f := open(t)
 	ctx := t.Context()

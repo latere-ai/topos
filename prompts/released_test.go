@@ -178,4 +178,8 @@ var released = map[string]string{
 	"reminders/tool-as-text-v1.md":               "a922843bcac8a1c6acaab10787a1d72e1ea5f8c1557eda118e7dfd22a20985d8",
 	"context/context-v2.md":                      "d2fcaa3f531005facfdbabce9e9ed8b4753a839d4c82d769da093eb10f8fe0bd",
 	"context/date-v1.md":                         "936fdfa6413b035c97df7f333dc854e1c01c385a2d093b5b4565532621a2ca31",
+	"results/bash/machine-stopped-v1.md":         "4318c6cbdbfe41f3909a1739cc4da23d9965bd76b8a19281ae1b1acd11bc72fe",
+	"results/bash/killed-v1.md":                  "c072366f3046ae85f555e3b534dc4a4b7cb30a885f4c2d36e6d689e0bc13b27a",
+	"transcript/machine-restarted-v1.md":         "abc17992bd5cf2f03d683c2b03d65c9d068f4b090f4650d6b6df06f28f15787c",
+	"transcript/machine-replaced-v1.md":          "23e788af6436a5705f775a1196e26a897513e79c50b8663e89e4e4dc7f1fca07",
 }

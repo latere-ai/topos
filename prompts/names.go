@@ -187,6 +187,13 @@ const (
 	TranscriptApprovalAllowed     Name = "transcript/approval-allowed-v1"
 	TranscriptApprovalDenied      Name = "transcript/approval-denied-v1"
 	TranscriptApprovalUnavailable Name = "transcript/approval-unavailable-v1"
+	// TranscriptMachineRestarted takes OutOfMemory, whether the machine is
+	// known to have stopped for memory: the session's machine stopped and
+	// runs again with its files (spec 009).
+	TranscriptMachineRestarted Name = "transcript/machine-restarted-v1"
+	// TranscriptMachineReplaced is a machine that was lost and replaced
+	// with an empty one, whose files are gone (spec 009).
+	TranscriptMachineReplaced Name = "transcript/machine-replaced-v1"
 )
 
 // The results the harness gives a call it does not run, or whose run
@@ -295,6 +302,14 @@ const (
 	// BashUnchecked takes Error: why a command that passed its timeout
 	// was never checked for a server.
 	BashUnchecked Name = "results/bash/unchecked-v1"
+	// BashMachineStopped takes OutOfMemory, Restarted, Lost and Error: a
+	// command that did not finish because its machine stopped under it,
+	// and where the machine stands, running again with its files, lost,
+	// or not running yet for the reason Error gives (spec 009).
+	BashMachineStopped Name = "results/bash/machine-stopped-v1"
+	// BashKilled takes Code, the exit code of a kill: a command that was
+	// killed on a machine that runs on, for a cause nothing names.
+	BashKilled Name = "results/bash/killed-v1"
 )
 
 // The results of grep, glob, todo and web_fetch (spec 008).

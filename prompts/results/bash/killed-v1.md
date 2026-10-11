@@ -1,0 +1,1 @@
+Exit code {{.Code}} means the command was killed. A machine that runs out of memory kills a process this way, but nothing here says that this is why. The machine is still running, and its files are kept.

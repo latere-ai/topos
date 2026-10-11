@@ -1,0 +1,1 @@
+The session's machine was lost and replaced with a new, empty one. The files that commands and file tools put in the working directory before this point are gone, and so is every process that was running. Tell the person plainly that the files are gone before you go on.

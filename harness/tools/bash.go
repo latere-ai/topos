@@ -128,6 +128,18 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 	}
 	outcome := OutcomeOK
 	switch {
+	case res.Stopped != nil:
+		// The machine stopped under the command, which has no exit of its
+		// own: the model reads what became of the machine and its files,
+		// and no cause its provider did not name.
+		outcome = OutcomeError
+		reason := ""
+		if res.Stopped.Err != nil {
+			reason = res.Stopped.Err.Error()
+		}
+		out.WriteString(prompts.Render(prompts.BashMachineStopped, prompts.Data{
+			"OutOfMemory": res.Stopped.OutOfMemory, "Restarted": res.Stopped.Restarted, "Lost": res.Stopped.Lost, "Error": reason,
+		}))
 	case res.TimedOut:
 		outcome = OutcomeTimeout
 		out.WriteString(prompts.Render(prompts.BashTimeout, prompts.Data{"Timeout": (time.Duration(timeout) * time.Millisecond).String()}))
@@ -141,6 +153,11 @@ func runBash(ctx context.Context, b *builtin, c Call) (Result, error) {
 		out.WriteString(prompts.Text(prompts.BashCanceled))
 	default:
 		out.WriteString(prompts.Render(prompts.BashExitCode, prompts.Data{"Code": code}))
+		if code == machine.ExitKilled {
+			// A kill has more than one cause, and the code alone names
+			// none: the model is told what the code means and no more.
+			out.WriteString("\n" + prompts.Render(prompts.BashKilled, prompts.Data{"Code": code}))
+		}
 	}
 	return b.result(ctx, c, outcome, out.String(), meta)
 }

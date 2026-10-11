@@ -266,6 +266,26 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				return Transcript{}, err
 			}
 			user(text(prompts.Render(prompts.TranscriptRewound, prompts.Data{"Turn": p.ToTurn})))
+		case TypeSessionMachine:
+			// A machine that stopped and came back, or that was replaced
+			// by an empty one, reads where it happened, in the session's
+			// own thread: its agent is the one that says so to the person,
+			// and a thread's command that stopped with the machine says it
+			// in its own result. Any other record renders nothing here;
+			// its context is a system part.
+			if thread != "" {
+				break
+			}
+			var p SessionMachine
+			if err := e.Decode(&p); err != nil {
+				return Transcript{}, err
+			}
+			switch p.Reason {
+			case MachineRestarted:
+				user(text(prompts.Render(prompts.TranscriptMachineRestarted, prompts.Data{"OutOfMemory": p.Cause == MachineOutOfMemory})))
+			case MachineReplaced:
+				user(text(prompts.Text(prompts.TranscriptMachineReplaced)))
+			}
 		case TypeApprovalRequested:
 			// A refused connection reads after the result of the call that
 			// made it, which its event follows, in the same user message.

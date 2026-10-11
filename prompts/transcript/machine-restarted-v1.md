@@ -1,0 +1,1 @@
+The session's machine stopped{{if .OutOfMemory}} because it ran out of memory{{end}} and was started again. The files in the working directory are kept. Every process that was running on it, background jobs and servers included, is gone, so start again what you still need.
