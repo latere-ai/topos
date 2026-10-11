@@ -233,6 +233,8 @@ func TestTheDocumentStatesKeptImages(t *testing.T) {
 		{"/sessions/{id}/events", "get", "restarted for the machine the session had"},
 		{"/sessions/{id}/events", "get", "replaced for a new, empty one"},
 		{"/sessions/{id}/events", "get", "code: machine_lost"},
+		{"/sessions/{id}/events", "get", "restore {source: log, files, bytes, unverified, omitted, commands, paths, unverified_paths, omitted_files}"},
+		{"/sessions/{id}/events", "get", "unknown_content, edit_not_applied, limit and blob_unavailable"},
 		{"/sessions/{id}/blobs/{digest}", "get", "nosniff"},
 		{"/sessions/{id}/blobs/{digest}", "get", blobCache},
 		{"/sessions/{id}/blobs/{digest}", "get", "Content-Disposition inline"},

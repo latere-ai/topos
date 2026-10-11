@@ -491,14 +491,21 @@ var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agen
 // MachineRule is the sentence the event routes state session.machine by
 // (specs 004 and 009): what a client tells a machine that restarted with
 // its files from one that was replaced without them by.
-var MachineRule = fmt.Sprintf("session.machine {machine, reason, cause, context, instructions, skills, repositories, checkpoint} records the machine a session works on. "+
-	"reason is %s for the session's first machine, %s for one the session moved to, %s for a new one given the files of a checkpoint, "+
+var MachineRule = fmt.Sprintf("session.machine {machine, reason, cause, context, instructions, skills, repositories, checkpoint, restore} records the machine a session works on. "+
+	"reason is %s for the session's first machine, %s for one the session moved to, %s for a new one whose files were put back, "+
 	"%s for the machine the session had, which stopped on a failure and runs again with the files of its working directory kept and every process that ran on it gone, "+
-	"and %s for a new, empty one in the place of one that was lost, whose files are gone. "+
+	"and %s for a new, empty one in the place of one that was lost, with nothing put back, whose files are gone. "+
 	"cause is %s on a %s record whose machine is known to have stopped because it ran out of memory, and absent otherwise; a %s record restates the context, instructions and skills of the machine's last record. "+
-	"A %s record is followed in the same append by session.error {code: %s, message: %q}.",
+	"A %s record is followed in the same append by session.error {code: %s, message: %q}. "+
+	"A %s record names what gave the files back: checkpoint, or restore {source: %s, files, bytes, unverified, omitted, commands, paths, unverified_paths, omitted_files} for a working directory rebuilt from the session's own log, "+
+	"its writes and edits, the files its answers showed or linked, and the files read in full, into a machine made new for a session that lost its own or for a fork with no checkpoint. "+
+	"files and bytes are what was written back, unverified how many of those a command changed after the log last held them, omitted how many files the log shows and could not rebuild, "+
+	"and commands how many commands ran after the first of the files was made, whose own files are not back; paths, unverified_paths and omitted_files name the first %d of each, omitted_files each {path, reason}, "+
+	"reason one of %s, %s, %s and %s. A rebuild holds at most %d files of %d bytes together.",
 	session.MachineAttached, session.MachineHandoff, session.MachineRestored, session.MachineRestarted, session.MachineReplaced,
-	session.MachineOutOfMemory, session.MachineRestarted, session.MachineRestarted, session.MachineReplaced, machine.CodeLost, runner.MessageMachineLost)
+	session.MachineOutOfMemory, session.MachineRestarted, session.MachineRestarted, session.MachineReplaced, machine.CodeLost, runner.MessageMachineLost,
+	session.MachineRestored, session.RestoreFromLog, session.MaxRestoreNames,
+	session.OmittedUnknown, session.OmittedEdit, session.OmittedLimit, session.OmittedBlob, tools.MaxRebuiltFiles, tools.MaxRebuiltBytes)
 
 // blobCache is a blob's Cache-Control: its bytes never change under its
 // digest, so a client keeps it as long as it likes, and private keeps it
