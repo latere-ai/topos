@@ -100,3 +100,47 @@ func TestAMachineThatCameBackOrWasReplacedIsSaid(t *testing.T) {
 		t.Fatalf("a thread's transcript reads %q", got)
 	}
 }
+
+// TestARebuiltWorkingDirectoryIsSaid: a session.machine with reason
+// restored whose restore names the log reads, in the session's own
+// thread, as a working directory rebuilt from the conversation's record,
+// with the files that are back, the ones that may be out of date, the
+// ones that are missing, how many more of each the record counts than it
+// names, and how many commands ran since. A machine a checkpoint
+// restored holds every file and reads as nothing (spec 065).
+func TestARebuiltWorkingDirectoryIsSaid(t *testing.T) {
+	b := &logb{t: t}
+	b.user(ada, "Go on.", 1)
+	b.add(session.TypeSessionMachine, "", 1, session.SessionMachine{
+		Machine: session.AttachedMachine{Kind: "cella", ID: "sbx_2", Workdir: "/workspace"}, Reason: session.MachineRestored,
+		Checkpoint: &session.CheckpointRef{Commit: "1a2b3c4"},
+	})
+	b.add(session.TypeSessionMachine, "", 1, session.SessionMachine{
+		Machine: session.AttachedMachine{Kind: "cella", ID: "sbx_3", Workdir: "/workspace"}, Reason: session.MachineRestored,
+		Restore: &session.Restore{
+			Source: session.RestoreFromLog, Files: 5, Bytes: 1200, Unverified: 3, Omitted: 1, Commands: 2,
+			Paths: []string{"app.js", "package.json"}, UnverifiedPaths: []string{"package.json"},
+			OmittedFiles: []session.OmittedFile{{Path: "rows.csv", Reason: session.OmittedUnknown}},
+		},
+	})
+	sub := b.thread("", "Review it.", 1)
+	tr, err := session.Fold(b.events, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"user: Go on.", "user: The working directory is on a new machine and was rebuilt from this conversation's record: what the write and edit tools wrote, the files an answer showed or linked, and files that were read in full. 5 files are back:\n" +
+		"- app.js\n- package.json\n- and 3 more\n" +
+		"A command changed these after the record last held them, so they may be out of date:\n- package.json\n- and 2 more\n" +
+		"These were there and could not be rebuilt, so they are missing:\n- rows.csv\n" +
+		"Nothing that only a command made is back: generated files, downloads, installed packages and build output are missing, and so is every process that was running. 2 commands ran after the first of these files was made. Regenerate what you need before you rely on it, and tell the person what is back and what is not."}
+	if got := texts(tr); !slices.Equal(got, want) {
+		t.Fatalf("the transcript reads\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	thread, err := session.Fold(b.events, sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := texts(thread); !slices.Equal(got, []string{"user: Review it."}) {
+		t.Fatalf("a thread's transcript reads %q", got)
+	}
+}

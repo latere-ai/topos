@@ -349,6 +349,16 @@ var textCases = func() []textCase {
 		{name: TranscriptApprovalUnavailable, data: Data{"Host": "api.example.com", "Note": ""}, want: "The person allowed connections to api.example.com, but the session's network could not be widened to it, so it is still out of reach."},
 		{name: TranscriptMachineRestarted, data: Data{"OutOfMemory": true}, want: "The session's machine stopped because it ran out of memory and was started again. The files in the working directory are kept. Every process that was running on it, background jobs and servers included, is gone, so start again what you still need."},
 		{name: TranscriptMachineRestarted, data: Data{"OutOfMemory": false}, want: "The session's machine stopped and was started again. The files in the working directory are kept. Every process that was running on it, background jobs and servers included, is gone, so start again what you still need."},
+		{name: TranscriptMachineRebuilt, data: Data{"Files": 3, "Paths": []string{"app.js", "package.json"}, "More": 1, "Unverified": []string{"package.json"}, "UnverifiedMore": 0, "Omitted": []string{"data/rows.csv"}, "OmittedMore": 2, "Commands": 14},
+			want: "The working directory is on a new machine and was rebuilt from this conversation's record: what the write and edit tools wrote, the files an answer showed or linked, and files that were read in full. 3 files are back:\n" +
+				"- app.js\n- package.json\n- and 1 more\n" +
+				"A command changed these after the record last held them, so they may be out of date:\n- package.json\n" +
+				"These were there and could not be rebuilt, so they are missing:\n- data/rows.csv\n- and 2 more\n" +
+				"Nothing that only a command made is back: generated files, downloads, installed packages and build output are missing, and so is every process that was running. 14 commands ran after the first of these files was made. Regenerate what you need before you rely on it, and tell the person what is back and what is not."},
+		{name: TranscriptMachineRebuilt, data: Data{"Files": 1, "Paths": []string{"notes.md"}, "More": 0, "Unverified": []string(nil), "UnverifiedMore": 0, "Omitted": []string(nil), "OmittedMore": 0, "Commands": 0},
+			want: "The working directory is on a new machine and was rebuilt from this conversation's record: what the write and edit tools wrote, the files an answer showed or linked, and files that were read in full. 1 file is back:\n" +
+				"- notes.md\n" +
+				"Nothing that only a command made is back: generated files, downloads, installed packages and build output are missing, and so is every process that was running. Regenerate what you need before you rely on it, and tell the person what is back and what is not."},
 		{name: TranscriptMachineReplaced, want: "The session's machine was lost and replaced with a new, empty one. The files that commands and file tools put in the working directory before this point are gone, and so is every process that was running. Tell the person plainly that the files are gone before you go on."},
 		{name: ContextRepositories, data: Data{"Repositories": []repository{
 			{"https://git.example/acme/web.git", "main", "agents/coder/ses_1", ""},

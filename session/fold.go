@@ -285,6 +285,14 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				user(text(prompts.Render(prompts.TranscriptMachineRestarted, prompts.Data{"OutOfMemory": p.Cause == MachineOutOfMemory})))
 			case MachineReplaced:
 				user(text(prompts.Text(prompts.TranscriptMachineReplaced)))
+			case MachineRestored:
+				// A working directory rebuilt from the log is said with
+				// what is back and what is not (spec 065); one a
+				// checkpoint restored holds all its files and reads as
+				// nothing.
+				if r := p.Restore; r != nil && r.Source == RestoreFromLog {
+					user(text(prompts.Render(prompts.TranscriptMachineRebuilt, rebuiltData(*r))))
+				}
 			}
 		case TypeApprovalRequested:
 			// A refused connection reads after the result of the call that
@@ -346,6 +354,22 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 		t.Messages = append(t.Messages, lux.Message{Role: it.role, Blocks: slices.Clone(it.blocks)})
 	}
 	return t, nil
+}
+
+// rebuiltData are the values the note of a rebuilt working directory is
+// rendered with: the paths a Restore names, and how many more of each
+// kind it counts than it names.
+func rebuiltData(r Restore) prompts.Data {
+	omitted := make([]string, len(r.OmittedFiles))
+	for i, f := range r.OmittedFiles {
+		omitted[i] = f.Path
+	}
+	return prompts.Data{
+		"Files": r.Files, "Paths": r.Paths, "More": max(r.Files-len(r.Paths), 0),
+		"Unverified": r.UnverifiedPaths, "UnverifiedMore": max(r.Unverified-len(r.UnverifiedPaths), 0),
+		"Omitted": omitted, "OmittedMore": max(r.Omitted-len(omitted), 0),
+		"Commands": r.Commands,
+	}
 }
 
 // inView reports whether e belongs to the fold of thread: the events

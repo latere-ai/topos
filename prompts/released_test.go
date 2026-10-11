@@ -182,4 +182,5 @@ var released = map[string]string{
 	"results/bash/killed-v1.md":                  "c072366f3046ae85f555e3b534dc4a4b7cb30a885f4c2d36e6d689e0bc13b27a",
 	"transcript/machine-restarted-v1.md":         "abc17992bd5cf2f03d683c2b03d65c9d068f4b090f4650d6b6df06f28f15787c",
 	"transcript/machine-replaced-v1.md":          "23e788af6436a5705f775a1196e26a897513e79c50b8663e89e4e4dc7f1fca07",
+	"transcript/machine-rebuilt-v1.md":           "0c6eb659d4cd2fc409142920aa3331eac25c8596b502e6ff9fb71efd81e3cccb",
 }

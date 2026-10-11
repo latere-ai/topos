@@ -194,6 +194,13 @@ const (
 	// TranscriptMachineReplaced is a machine that was lost and replaced
 	// with an empty one, whose files are gone (spec 009).
 	TranscriptMachineReplaced Name = "transcript/machine-replaced-v1"
+	// TranscriptMachineRebuilt takes Files, Paths, More, Unverified,
+	// UnverifiedMore, Omitted, OmittedMore and Commands: a new machine
+	// whose working directory was rebuilt from the session's log, with
+	// the files that are back, the ones that may be out of date, the ones
+	// that are missing, each list followed by how many more it leaves
+	// unnamed, and how many commands ran since the first file (spec 065).
+	TranscriptMachineRebuilt Name = "transcript/machine-rebuilt-v1"
 )
 
 // The results the harness gives a call it does not run, or whose run
