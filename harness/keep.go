@@ -53,9 +53,10 @@ const (
 // twice its size while it is kept, and a process that drives several
 // sessions that much for each of them at once.
 const (
-	// MaxKeptFiles is the most linked files one message keeps: twice
-	// tools.MaxImages, since a link costs an answer less than a picture
-	// does and an answer that lists a set of files links each.
+	// MaxKeptFiles is the most linked files one message keeps. It bounds
+	// the reads of the machine one message costs, as tools.MaxImages does
+	// for its images, at twice that count, since an answer that hands over
+	// a set of files links each of them.
 	MaxKeptFiles = 16
 	// MaxKeptFileBytes is the most bytes one linked file is kept at, which
 	// is also the largest file the files route answers.
@@ -170,20 +171,17 @@ func htmlRefs(fragment []byte) []ref {
 			return out
 		case html.StartTagToken, html.SelfClosingTagToken:
 			tok := z.Token()
-			key, image := "", false
-			switch tok.Data {
-			case "img":
-				key, image = "src", true
-			case "a":
-				key = "href"
-			default:
+			// address is the attribute that holds the element's
+			// destination, for the two elements that are read.
+			address, read := map[string]string{"img": "src", "a": "href"}[tok.Data]
+			if !read {
 				continue
 			}
 			for _, a := range tok.Attr {
-				if a.Namespace == "" && a.Key == key {
+				if a.Namespace == "" && a.Key == address {
 					// A src and an href are URLs with their surrounding white
 					// space stripped, as a browser reads them.
-					out = append(out, ref{Dest: strings.TrimSpace(a.Val), Image: image})
+					out = append(out, ref{Dest: strings.TrimSpace(a.Val), Image: tok.Data == "img"})
 					break
 				}
 			}
