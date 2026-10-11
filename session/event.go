@@ -444,10 +444,12 @@ const (
 	// MachineHandoff is a machine other than the one the session had,
 	// which the session moved to.
 	MachineHandoff = "handoff"
-	// MachineRestored is a new machine given the files of a checkpoint.
+	// MachineRestored is a new machine given the files of a checkpoint,
+	// or the files the session's log holds (spec 065).
 	MachineRestored = "restored"
 	// MachineReplaced is a new, empty machine in the place of one that
-	// was lost: the files of the working directory are gone.
+	// was lost, with nothing restored: the files of the working directory
+	// are gone.
 	MachineReplaced = "replaced"
 	// MachineRestarted is the machine the session had, which stopped on a
 	// failure and runs again: the files of its working directory are
@@ -459,11 +461,62 @@ const (
 // known to have stopped because it ran out of memory.
 const MachineOutOfMemory = "out_of_memory"
 
+// RestoreFromLog is the source of a Restore that rebuilt a working
+// directory from the session's own log (spec 065).
+const RestoreFromLog = "log"
+
+// MaxRestoreNames is the most paths each list of a Restore names; its
+// counts say how many there are in all.
+const MaxRestoreNames = 100
+
+// Restore is what a new machine's working directory was rebuilt with
+// from the session's log (spec 065), on a session.machine with reason
+// restored. Files and Bytes are the files written back and their sizes
+// together; Unverified how many of them a command changed after the log
+// last held them, so they may be out of date; Omitted how many files the
+// log shows were there and could not be rebuilt; and Commands how many
+// commands ran after the first of the files was made, whose own files
+// the log never held. Paths, UnverifiedPaths and OmittedFiles name the
+// first MaxRestoreNames of each, by path.
+type Restore struct {
+	Source          string        `json:"source"`
+	Files           int           `json:"files"`
+	Bytes           int64         `json:"bytes"`
+	Unverified      int           `json:"unverified"`
+	Omitted         int           `json:"omitted"`
+	Commands        int           `json:"commands"`
+	Paths           []string      `json:"paths,omitempty"`
+	UnverifiedPaths []string      `json:"unverified_paths,omitempty"`
+	OmittedFiles    []OmittedFile `json:"omitted_files,omitempty"`
+}
+
+// OmittedFile is one file a Restore could not rebuild, with the reason.
+type OmittedFile struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// The reasons of an OmittedFile.
+const (
+	// OmittedUnknown is a file no event holds the content of: a command
+	// made it, and the log shows it only through an edit or a read of a
+	// part of it.
+	OmittedUnknown = "unknown_content"
+	// OmittedEdit is a file whose edit does not apply to it as rebuilt: a
+	// command changed it between two events of the log.
+	OmittedEdit = "edit_not_applied"
+	// OmittedLimit is a file past the files or the bytes a rebuild holds.
+	OmittedLimit = "limit"
+	// OmittedBlob is a kept file whose blob could not be read.
+	OmittedBlob = "blob_unavailable"
+)
+
 // SessionMachine is the payload of session.machine. Repositories are set
 // on the attachment of the session's first machine, the one its
 // repositories are delivered into, in the session's order. Cause says
 // why a restarted machine had stopped, when its provider says: it is
-// MachineOutOfMemory or absent.
+// MachineOutOfMemory or absent. A restored machine names what gave its
+// files back: Checkpoint, or Restore for a rebuild from the log.
 type SessionMachine struct {
 	Machine      AttachedMachine       `json:"machine"`
 	Reason       string                `json:"reason"`
@@ -473,6 +526,7 @@ type SessionMachine struct {
 	Skills       []Skill               `json:"skills,omitempty"`
 	Repositories []DeliveredRepository `json:"repositories,omitempty"`
 	Checkpoint   *CheckpointRef        `json:"checkpoint,omitempty"`
+	Restore      *Restore              `json:"restore,omitempty"`
 }
 
 // SessionError is the payload of session.error.
