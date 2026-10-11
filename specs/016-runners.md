@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [runner/, internal/queue/, internal/runnerrole/, internal/runnerapi/, internal/serve/, internal/store/postgres/, session/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -98,9 +98,10 @@ one (`ErrNotFound`).
    and cancels the turn's context on a `user.interrupt`, which brings
    the step boundary forward ([[005-harness-loop]]). Once a step of
    the session's own thread is committed, the local images its answer
-   names are read from the open machine, stored as blobs and recorded
-   by `files.kept`; a machine the turn did not open is not opened for
-   it ([[055-images-an-answer-shows]]).
+   shows and the local files it links are read from the open machine,
+   stored as blobs and recorded by `files.kept`; a machine the turn did
+   not open is not opened for it ([[055-images-an-answer-shows]],
+   [[064-files-an-answer-links]]).
 6. Idle: `Release(false)` on the machine, then release the lease. A
    waiting session holds nothing.
 7. Ended: append `thread.ended` for each thread that has not ended,

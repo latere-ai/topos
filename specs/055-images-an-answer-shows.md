@@ -6,7 +6,7 @@ depends_on: [016-runners.md, 044-reading-a-sessions-files.md]
 affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-07
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -93,7 +93,7 @@ image.
 | an HTML `img` element's `src` in the message's text | yes |
 | a destination with no scheme (`chart.png`, `./out/chart.png`, `/work/out/chart.png`) or the `file:` scheme | yes, after percent-decoding, with any query and fragment dropped |
 | a destination with another scheme (`https:`, `data:`) | no: not a file of the machine, and nothing is recorded for it |
-| a Markdown link that is no image, `[report](report.pdf)` | no |
+| a Markdown link that is no image, `[report](report.pdf)` | not as an image; kept as a linked file by [[064-files-an-answer-links]] |
 
 A relative destination resolves against the working directory the
 session's latest `session.machine` names; an absolute one is kept only
@@ -207,7 +207,7 @@ today, and nothing else.
 | Where the bytes go | a blob of the session | a checkpoint: only a session in a repository keeps one, per turn and not per answer, and it holds the whole directory |
 | Which formats | the four raster formats a model and a browser both take; no SVG, decided 2026-10-06, reversible | SVG: a document that runs script when opened as one, which a client would have to sanitize, or served only as a download or through a sanitizer |
 | A step with no open machine | keeps nothing and never opens a machine to keep an image, decided 2026-10-06, reversible | opening the machine to keep it: the session spends a machine's time on a read, against [[044-reading-a-sessions-files]]'s rule |
-| Files of other kinds an answer links | not kept here; a later spec, decided 2026-10-06, reversible | a PDF report or a spreadsheet kept the same way now, under bounds of their own |
+| Files of other kinds an answer links | not kept here; [[064-files-an-answer-links]] keeps them, decided 2026-10-06, reversible | a PDF report or a spreadsheet kept the same way now, under bounds of their own |
 | The blob route's type | sniffed from the bytes at each read | a type stored with the blob: the store keeps bytes by digest alone, and the same bytes have one type |
 
 ## Not in this spec
@@ -215,8 +215,9 @@ today, and nothing else.
 How a client draws a kept image beside the reference, and what it shows
 for a skipped one. Images on the web that an answer links by URL: a
 client's to fetch, and not the session's. Files of other kinds an
-answer names, a PDF or a spreadsheet: a later spec. The files route, which stays a live read
-([[044-reading-a-sessions-files]]).
+answer links, a PDF or a spreadsheet
+([[064-files-an-answer-links]]). The files route, which stays a live
+read ([[044-reading-a-sessions-files]]).
 
 ## Roll order
 
@@ -239,7 +240,7 @@ answer names, a PDF or a spreadsheet: a later spec. The files route, which stays
 |---|---|---|
 | A step whose `agent.message` names a local PNG, by Markdown and by an `img` element, appends `files.kept` with the blob, the sniffed type and the header's size, after the step's tool results and before the turn's status | `harness.TestAnAnswersImageIsKept`, `runner.TestFilesKeptBeforeTheTurnCloses` | built |
 | An image the same step's command draws is kept, since the keep runs after the step's calls | `harness.TestAnImageDrawnInTheSameStepIsKept` | built |
-| A reference in a code span or a fenced block, a link that is no image, and a URL of another scheme keep nothing and record nothing | `harness.TestOnlyImageReferencesAreRead` | built |
+| A reference in a code span or a fenced block and a URL of another scheme keep nothing and record nothing, and a link that is no image is no image reference | `harness.TestOnlyImageReferencesAreRead` | built |
 | A path outside the working directory, a symbolic link out of it, a missing file, an SVG, a file whose bytes are no image under a `.png` name, a file past `MaxImageBytes`, and a header past `MaxKeptImageSide` or `MaxKeptImagePixels` are each skipped with their reason | `harness.TestKeptImageRefusals` | built |
 | A message naming more images than `MaxImages` keeps the first ones and skips the rest `limit` | `harness.TestKeptImagesAreBounded` | built |
 | A step in a turn with no open machine keeps nothing, skips `no_machine`, and opens no machine | `runner.TestKeepingOpensNoMachine` | built |
@@ -335,3 +336,9 @@ in these points:
   `ReadMaxImage`, and the server's `MaxImages` names it.
 - **`files.kept` carries its answer's turn and step**, so a client
   places it with the step that drew the picture.
+
+[[064-files-an-answer-links]] has since generalized the keep: the same
+`files.kept` records the files a message links, the exported keep is
+`harness.KeepFiles`, the keep's bound of 30 seconds is the time a
+message's images and linked files take together, and an image
+reference to anything that is no regular file is `not_an_image`.
