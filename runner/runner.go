@@ -411,7 +411,69 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 			return errors.Join(err, delivered)
 		}
 	}
+	// A machine that restarts after this is recorded where it happens, in
+	// a call of the turn the harness runs.
+	if rec, ok := m.(machine.Recovering); ok {
+		rec.OnRestart(func(ctx context.Context, rs machine.Restart) error {
+			return r.restarted(ctx, s, m, log, true, rs)
+		})
+	}
 	return errors.Join(r.attachments(ctx, m, log, beside), delivered)
+}
+
+// restarted appends the session.machine of a machine that stopped on a
+// failure and runs again as the same machine (spec 009): reason
+// restarted, and the cause its provider named. The record restates the
+// context, the instruction files and the skills of the machine's last
+// record: the files they were read from are kept, so the system prompt a
+// provider cached holds, and a fold that takes the latest record for its
+// system parts finds them there.
+func (r *Runner) restarted(ctx context.Context, s session.Session, m machine.Machine, log *Log, beside bool, rs machine.Restart) error {
+	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
+	if err != nil {
+		return err
+	}
+	info := m.Info()
+	p := session.SessionMachine{Reason: session.MachineRestarted}
+	if rs.OutOfMemory {
+		p.Cause = session.MachineOutOfMemory
+	}
+	recorded := false
+	for _, ev := range slices.Backward(evs) {
+		if s.Copied(ev) {
+			break
+		}
+		if ev.Type != session.TypeSessionMachine || ev.Redacted() {
+			continue
+		}
+		var last session.SessionMachine
+		if err := ev.Decode(&last); err != nil {
+			return err
+		}
+		if last.Machine.Kind == info.Kind && last.Machine.ID == info.ID && last.Machine.Workdir == info.Workdir {
+			p.Machine, p.Context, p.Instructions, p.Skills = last.Machine, last.Context, last.Instructions, last.Skills
+			recorded = true
+		}
+		break
+	}
+	if !recorded {
+		// The log holds no record of this machine to restate, so it is
+		// read as at an attachment.
+		a, err := attach(ctx, m, log, attachOptions{PersonalInstructions: r.o.PersonalInstructions, PersonalSkills: r.o.PersonalSkills})
+		if err != nil {
+			return err
+		}
+		p.Machine, p.Context, p.Instructions, p.Skills = a.Machine, a.Context, a.Instructions, a.Skills
+	}
+	e, err := session.NewEvent(session.TypeSessionMachine, p, r.o.Clock())
+	if err != nil {
+		return err
+	}
+	if beside {
+		return log.appendBeside(ctx, []session.Event{e})
+	}
+	_, err = log.Append(ctx, []session.Event{e})
+	return err
 }
 
 // checkpointMissing appends the session.error of a fork whose fork
@@ -450,21 +512,33 @@ func (r *Runner) attachments(ctx context.Context, m machine.Machine, log *Log, b
 	return err
 }
 
+// MessageMachineLost is the one sentence of a session.error machine_lost,
+// for a person (spec 009).
+const MessageMachineLost = "The session's machine was lost and replaced with a new one. The files that were in its working directory are gone."
+
 // attach appends session.machine when the session has none for this
-// machine yet: a first attachment, or a machine other than the last one.
-// repos are the repositories delivered into the machine, set only at the
-// session's first, and restored the checkpoint a fork's first machine was
-// given, recorded with reason restored. A fork's copied machines are its
-// parent's, so its first machine is a first attachment.
+// machine yet, or when the machine says its open brought it back: a
+// first attachment, a machine other than the last one, or the last one
+// restarted. repos are the repositories delivered into the machine, set
+// only at the session's first, and restored the checkpoint a fork's first
+// machine was given, recorded with reason restored. A fork's copied
+// machines are its parent's, so its first machine is a first attachment.
+//
+// A machine other than the last one is a handoff, the session moved,
+// unless the machine says its open made it new in the place of one of
+// its kind: the one the session had is gone and its files with it, which
+// is recorded as replaced with a session.error machine_lost, so the log
+// says the files are gone and the model reads it (spec 009).
 func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machine, log *Log, beside bool, repos []session.DeliveredRepository, restored *session.CheckpointRef) error {
 	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
 	if err != nil {
 		return err
 	}
 	info := m.Info()
-	reason := "attached"
+	rec, recovering := m.(machine.Recovering)
+	reason := session.MachineAttached
 	if restored != nil {
-		reason = "restored"
+		reason = session.MachineRestored
 	}
 	for _, ev := range slices.Backward(evs) {
 		if s.Copied(ev) {
@@ -478,9 +552,18 @@ func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machin
 			return err
 		}
 		if p.Machine.Kind == info.Kind && p.Machine.ID == info.ID && p.Machine.Workdir == info.Workdir {
+			if !recovering {
+				return nil
+			}
+			if rs, ok := rec.Restarted(); ok {
+				return r.restarted(ctx, s, m, log, beside, rs)
+			}
 			return nil
 		}
-		reason = "handoff"
+		reason = session.MachineHandoff
+		if recovering && rec.Created() && p.Machine.Kind == info.Kind {
+			reason = session.MachineReplaced
+		}
 		break
 	}
 	a, err := attach(ctx, m, log, attachOptions{PersonalInstructions: r.o.PersonalInstructions, PersonalSkills: r.o.PersonalSkills})
@@ -493,10 +576,21 @@ func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machin
 	if err != nil {
 		return err
 	}
-	if beside {
-		return log.appendBeside(ctx, []session.Event{e})
+	batch := []session.Event{e}
+	if reason == session.MachineReplaced {
+		lost, err := session.NewEvent(session.TypeSessionError, session.SessionError{
+			Code: machine.CodeLost, Message: MessageMachineLost, Retryable: true,
+			Detail: fmt.Sprintf("the %s machine %s is new and empty; the one the session had is gone", info.Kind, info.ID),
+		}, r.o.Clock())
+		if err != nil {
+			return err
+		}
+		batch = append(batch, lost)
 	}
-	_, err = log.Append(ctx, []session.Event{e})
+	if beside {
+		return log.appendBeside(ctx, batch)
+	}
+	_, err = log.Append(ctx, batch)
 	return err
 }
 

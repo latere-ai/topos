@@ -45,6 +45,9 @@ type demand struct {
 	opening func()
 	// apps is the runner's reader of the commits an app is served at.
 	apps func(ctx context.Context, tokens *TokenSource, slug string) (AppCommits, error)
+	// wrap stands the opened machine behind another, such as one that
+	// says its open restarted or replaced it.
+	wrap func(machine.Machine) machine.Machine
 }
 
 func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
@@ -66,7 +69,11 @@ func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
 				if d.opening != nil {
 					d.opening()
 				}
-				return host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
+				h, err := host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(base, "spill", s.ID), Environ: []string{"PATH=" + os.Getenv("PATH")}})
+				if err != nil || d.wrap == nil {
+					return h, err
+				}
+				return d.wrap(h), nil
 			})
 			return harness.Config{
 				Model: &dialect.Model{}, Connection: models.Connection{BaseURL: f.stub.URL() + "/anthropic", Model: model, Family: models.FamilyAnthropic},
