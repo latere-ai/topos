@@ -52,6 +52,33 @@ committed: the commit log already holds that.
 
 ### Added
 
+- A working directory is rebuilt from the session's log. A session with
+  no repository has no checkpoint, so its files lived in its sandbox
+  alone: a sandbox the core could not start again, one whose lifetime
+  ended, and a fork all left the person with the conversation and none
+  of the files. When a machine's open made it new for a session that
+  had one, or for a fork whose fork point kept no checkpoint, the runner
+  now replays the log into it before the turn's first tool runs: each
+  successful `write`, each `edit` applied in order, each file a
+  `files.kept` stored, and each file a `read` returned in full, which is
+  how a file a command made and the agent then read comes back. Each
+  file is held to the last hash the log recorded for it. A file a
+  command changed after the log last held it is put back and counted as
+  possibly out of date; a file whose edit no longer applies, and a file
+  the log shows only in part, is left out and named; a redacted event
+  gives nothing. Files that only a command made, generated data,
+  downloads, installed packages and build output, are not in the log
+  and do not come back. A rebuild holds at most 2,000 files
+  (`tools.MaxRebuiltFiles`) of 64 MiB together
+  (`tools.MaxRebuiltBytes`), written into the machine as one archive.
+  The machine is recorded as `session.machine` with reason `restored`
+  and the new member `restore {source: "log", files, bytes, unverified,
+  omitted, commands, paths, unverified_paths, omitted_files}`, with no
+  `machine_lost`, and the model reads there which files are back, which
+  may be out of date, which are missing, and that nothing a command made
+  is back. A fork whose checkpoint the runner can reach is restored from
+  it as before. A machine that does not say it is new, such as a
+  directory on a person's host, is never written over.
 - `session.machine` has the reason `restarted`: the machine the session
   had stopped on a failure and runs again, with the files of its working
   directory kept and every process that ran on it gone. The record
@@ -67,10 +94,14 @@ committed: the commit log already holds that.
   older core this release behaves as before, a failed sandbox is
   replaced at the next turn, except that the loss is now recorded and
   said.
-- A client that draws the log tells the two apart by `reason`:
-  `restarted` keeps the files, `replaced` loses them and comes with
-  `machine_lost`. A client that lists the reasons it knows should read
-  `restarted` as a machine that is still the session's.
+- A client that draws the log tells the cases apart by `reason`:
+  `restarted` keeps the files, `restored` with `restore` put back the
+  ones the log holds and names the rest, and `replaced` lost them all
+  and comes with `machine_lost`. A client that lists the reasons it
+  knows should read `restarted` as a machine that is still the
+  session's. A fork whose checkpoint was missing now records
+  `checkpoint_missing` with a second sentence when its directory was
+  rebuilt from the log instead.
 - For a program that embeds the machines: `machine.Recovering` is what a
   machine reports its open and its restarts through, `machine.ExecResult`
   has `Stopped` for a command whose machine stopped under it,
