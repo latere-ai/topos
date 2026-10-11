@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/session"
 )
@@ -161,6 +162,21 @@ func TestAFileIsAnsweredAsADownload(t *testing.T) {
 		if id != s.ID {
 			t.Errorf("the reader was asked for %s", id)
 		}
+	}
+}
+
+// TestAFileAtTheBoundIsAnswered: a file as large as a file an answer
+// links is answered whole with its length, since the route's bound is
+// that file's (spec 064).
+func TestAFileAtTheBoundIsAnswered(t *testing.T) {
+	if MaxFileBytes != harness.MaxKeptFileBytes {
+		t.Fatalf("the files route answers %d bytes and a linked file is kept at %d", MaxFileBytes, harness.MaxKeptFileBytes)
+	}
+	m := &memFiles{files: map[string][]byte{"/workspace/papers.zip": append([]byte("PK\x03\x04"), make([]byte, MaxFileBytes-4)...)}}
+	f, s := filesFixture(t, m)
+	a := f.do(http.MethodGet, fileURL(s.ID, "papers.zip"), "alice", "")
+	if a.status != http.StatusOK || len(a.body) != MaxFileBytes || a.header.Get("Content-Length") != strconv.Itoa(MaxFileBytes) {
+		t.Fatalf("a file at the bound: %d, %d bytes, Content-Length %s", a.status, len(a.body), a.header.Get("Content-Length"))
 	}
 }
 

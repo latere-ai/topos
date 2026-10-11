@@ -16,6 +16,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/session"
 )
 
@@ -131,6 +132,83 @@ func TestRedactingAnAnswerTakesItsImages(t *testing.T) {
 	}
 }
 
+// TestAKeptFileIsADownloadRedactedWithItsAnswer: a file an answer linked
+// that is no image, a PDF, an archive and an HTML page, is answered by
+// the blob route as an application/octet-stream attachment with nosniff
+// and the sandboxing policy, never inline and never as a document;
+// redacting its files.kept alone removes it and leaves the answer, and
+// redacting the answer redacts its files.kept in the same append and
+// removes the file (spec 064).
+func TestAKeptFileIsADownloadRedactedWithItsAnswer(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	answerWith := func(name, media, body string) (session.Event, session.Event, session.Digest) {
+		t.Helper()
+		d := f.putBlob(s.ID, []byte(body))
+		msg := ev(t, session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: "[Download](" + name + ")"}}}, StopReason: ir.StopEndTurn})
+		kept := ev(t, session.TypeFilesKept, session.FilesKept{Message: msg.ID,
+			Files:   []session.KeptFile{{Path: name, Resolved: "/work/" + name, Blob: d, MediaType: media, Size: int64(len(body))}},
+			Skipped: []session.SkippedFile{}})
+		f.put(s.ID, msg, kept)
+		return msg, kept, d
+	}
+	read := func(d session.Digest) answer {
+		return f.do(http.MethodGet, "/v1/sessions/"+s.ID+"/blobs/"+string(d), "alice", "")
+	}
+	redact := func(id string) {
+		t.Helper()
+		if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events/"+id+"/redact", "alice", `{"reason":"the wrong file"}`); a.status != http.StatusNoContent {
+			t.Fatalf("redact %s: %d %s", id, a.status, a.body)
+		}
+	}
+	redacted := func(id string) bool {
+		for _, e := range f.log(s.ID) {
+			if e.ID == id {
+				return e.Redacted()
+			}
+		}
+		t.Fatalf("no event %s", id)
+		return false
+	}
+	for _, c := range []struct{ name, media, body string }{
+		{"report.pdf", "application/pdf", "%PDF-1.7 report"},
+		{"papers.zip", "application/zip", "PK\x03\x04papers"},
+		{"page.html", "text/html; charset=utf-8", "<!doctype html><script>alert(1)</script>"},
+	} {
+		_, _, d := answerWith(c.name, c.media, c.body)
+		a := read(d)
+		if a.status != http.StatusOK || string(a.body) != c.body {
+			t.Fatalf("%s: %d, %q", c.name, a.status, a.body)
+		}
+		for h, want := range map[string]string{
+			"Content-Type":            "application/octet-stream",
+			"Content-Disposition":     "attachment",
+			"X-Content-Type-Options":  "nosniff",
+			"Content-Security-Policy": "sandbox; default-src 'none'",
+		} {
+			if got := a.header.Get(h); got != want {
+				t.Errorf("%s: %s is %q, want %q", c.name, h, got, want)
+			}
+		}
+	}
+
+	msg, kept, first := answerWith("first.pdf", "application/pdf", "%PDF-1.7 first")
+	redact(kept.ID)
+	if !redacted(kept.ID) || redacted(msg.ID) || read(first).status != http.StatusNotFound {
+		t.Fatalf("redacting files.kept alone: kept %t, message %t, file %d", redacted(kept.ID), redacted(msg.ID), read(first).status)
+	}
+	msg, kept, second := answerWith("second.pdf", "application/pdf", "%PDF-1.7 second")
+	before := len(f.log(s.ID))
+	redact(msg.ID)
+	if !redacted(msg.ID) || !redacted(kept.ID) || read(second).status != http.StatusNotFound {
+		t.Fatalf("redacting the answer: message %t, kept %t, file %d", redacted(msg.ID), redacted(kept.ID), read(second).status)
+	}
+	if after := f.log(s.ID); len(after) != before+2 || after[before].Type != session.TypeEventRedacted || after[before+1].Type != session.TypeEventRedacted {
+		t.Fatalf("redacting the answer appended %d events", len(after)-before)
+	}
+}
+
 // TestTheDocumentStatesKeptImages: the OpenAPI document states files.kept
 // on the event routes, the blob route's headers, and the redaction of an
 // answer's images with it (spec 055).
@@ -153,6 +231,10 @@ func TestTheDocumentStatesKeptImages(t *testing.T) {
 		{"/sessions/{id}/blobs/{digest}", "get", "nosniff"},
 		{"/sessions/{id}/blobs/{digest}", "get", blobCache},
 		{"/sessions/{id}/blobs/{digest}", "get", "Content-Disposition inline"},
+		{"/sessions/{id}/blobs/{digest}", "get", "a file an answer linked"},
+		{"/sessions/{id}/events", "get", "not_a_file"},
+		{"/sessions/{id}/events", "get", "sandbox:"},
+		{"/sessions/{id}/files", "get", strconv.Itoa(harness.MaxKeptFileBytes) + " bytes is file_too_large"},
 		{"/sessions/{id}/events/{event_id}/redact", "post", "redacts the files.kept that names it in the same append"},
 	} {
 		if !strings.Contains(doc.Paths[c.path][c.method].Description, c.want) {

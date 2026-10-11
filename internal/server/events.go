@@ -470,15 +470,21 @@ func ends(ev session.Event) bool {
 	return ev.Decode(&p) == nil && p.Status == session.StatusEnded
 }
 
-// KeptRule is the sentence the event routes state files.kept by (spec
-// 055): what a client draws an answer's images from.
-var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agent.message of the session's own thread that names local images, once the message's step is committed and before the turn's session.status: "+
-	"message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for an image kept as a blob of the session, path the destination as the message wrote it, "+
-	"and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, outside_workdir, no_machine, limit and unavailable. "+
-	"An image is named by a Markdown image or an HTML img element's src whose destination has no scheme or the file: scheme, inside the working directory; "+
-	"the first %d of a message are read, each PNG, JPEG, GIF or WebP by its bytes, never an SVG, at most %d bytes, %d pixels a side and %d pixels, from a machine the turn opened, never one opened to keep it. "+
-	"A client draws a reference from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it.",
-	tools.MaxImages, tools.ReadMaxImage, harness.MaxKeptImageSide, harness.MaxKeptImagePixels)
+// KeptRule is the sentence the event routes state files.kept by (specs
+// 055 and 064): what a client draws an answer's images and offers its
+// linked files from.
+var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agent.message of the session's own thread that shows a local image or links a local file, once the message's step is committed and before the turn's session.status: "+
+	"message is the agent.message's id, files each {path, resolved, blob, media_type, size, width, height} for a file kept as a blob of the session, path the destination as the message wrote it, "+
+	"and skipped each {path, reason}, reason one of not_found, too_large, not_an_image, not_a_file, outside_workdir, no_machine, limit and unavailable. "+
+	"A destination names a file of the machine when it has no scheme, the file: scheme, or the prefix sandbox: before a path with no scheme, and lies inside the working directory; a reference in a code span or a fenced block is not read. "+
+	"An image is shown by a Markdown image or an HTML img element's src: the first %d of a message are read, each PNG, JPEG, GIF or WebP by its bytes, never an SVG, at most %d bytes, %d pixels a side and %d pixels, "+
+	"and its entry carries the media_type of its bytes and the width and height of its header. "+
+	"A file is linked by a Markdown link or an HTML a element's href: the first %d of a message are read, each a regular file of any type of at most %d bytes, %d bytes together, "+
+	"and its entry carries the media_type its name's extension names, or its leading bytes where the extension names none, its size in bytes, and width and height 0. "+
+	"A destination both shown and linked is kept once, as the image. A link to a directory is not_a_file, an image reference to one not_an_image, and limit is a reference past its count or a linked file past the bytes of its message. "+
+	"Files are read from a machine the turn opened, never one opened to keep them. "+
+	"A client draws an image and offers a linked file from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it.",
+	tools.MaxImages, tools.ReadMaxImage, harness.MaxKeptImageSide, harness.MaxKeptImagePixels, harness.MaxKeptFiles, harness.MaxKeptFileBytes, harness.MaxKeptFilesBytes)
 
 // blobCache is a blob's Cache-Control: its bytes never change under its
 // digest, so a client keeps it as long as it likes, and private keeps it
@@ -488,9 +494,10 @@ const blobCache = "private, max-age=31536000, immutable"
 
 // blob is GET /sessions/{id}/blobs/{digest}. The blob is answered by its
 // leading bytes (spec 055): PNG, JPEG, GIF or WebP as its image type,
-// inline, and any other blob as an application/octet-stream attachment,
-// each with nosniff and the sandboxing policy of a file's answer, so no
-// blob is ever a document of the API's origin.
+// inline, and any other blob, a file an answer linked among them (spec
+// 064), as an application/octet-stream attachment, each with nosniff and
+// the sandboxing policy of a file's answer, so no blob is ever a document
+// of the API's origin.
 func (c *call) blob() error {
 	d := session.Digest(c.r.PathValue("digest"))
 	if !d.Valid() {
@@ -509,8 +516,8 @@ func (c *call) blob() error {
 			c.s.o.Log.WarnContext(c.r.Context(), "close a blob", "session", s.ID, "err", err)
 		}
 	}()
-	br := bufio.NewReaderSize(rc, sniffBytes)
-	head, err := br.Peek(sniffBytes)
+	br := bufio.NewReaderSize(rc, tools.SniffBytes)
+	head, err := br.Peek(tools.SniffBytes)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}

@@ -320,8 +320,9 @@ var opDescriptions = map[string]string{
 		"interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
 	"listEvents": "List a session's events from a sequence. " + KeptRule,
-	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, the agent's bundle. The answer is read by the blob's leading bytes: "+
+	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. The answer is read by the blob's leading bytes: "+
 		"PNG, JPEG, GIF or WebP is that image type with Content-Disposition inline, and any other blob, an SVG included, application/octet-stream with Content-Disposition attachment. "+
+		"A file an answer linked that is no such image is a download here whatever its type, which the media_type of its files.kept entry names. "+
 		"Both carry X-Content-Type-Options nosniff, Content-Security-Policy %q, Cache-Control %q, since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag.",
 		filePolicy, blobCache),
 	"getFile": fmt.Sprintf("Get one file of the session's working directory as it is now, such as a file the agent wrote, by its path. "+
@@ -333,7 +334,7 @@ var opDescriptions = map[string]string{
 	"redactEvent": "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. " +
 		"A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. " +
 		"The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first. " +
-		"A files.kept is redactable, and its tombstone names no image; redacting an agent.message redacts the files.kept that names it in the same append, one event.redacted each, and an image no other event names is deleted.",
+		"A files.kept is redactable, and its tombstone names no file; redacting an agent.message redacts the files.kept that names it in the same append, one event.redacted each, and a kept file no other event names, an image or a linked file of any type, is deleted.",
 	"listTriggers":  "List triggers.",
 	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
 	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running.",

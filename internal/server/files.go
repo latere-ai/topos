@@ -14,12 +14,19 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/runner"
 )
 
 // MaxFileBytes bounds a file GET /sessions/{id}/files answers (spec
-// 044): a larger one is refused file_too_large, never cut short.
-const MaxFileBytes = 10 << 20
+// 044): a larger one is refused file_too_large, never cut short. It is
+// the bound of a file an answer links (spec 064), so a file too large to
+// read here is one no files.kept keeps either. The route copies a file
+// from the machine to the answer as it reads it and holds none of it but
+// its leading bytes.
+const MaxFileBytes = harness.MaxKeptFileBytes
 
 // The codes of spec 044.
 const (
@@ -37,10 +44,6 @@ const (
 // act as a page of the API's origin, even when a browser opens the
 // address directly.
 const filePolicy = "sandbox; default-src 'none'"
-
-// sniffBytes is how much of a file names its media type when its
-// extension does not: what http.DetectContentType reads.
-const sniffBytes = 512
 
 // file is GET /sessions/{id}/files?path=: one file of the session's
 // working directory as it is now (spec 044), asked as session.read. The
@@ -88,7 +91,7 @@ func (c *call) file() error {
 			c.s.o.Log.WarnContext(ctx, "close a session's file", "session", s.ID, "path", p, "err", err)
 		}
 	}()
-	head := make([]byte, min(fi.Size, sniffBytes))
+	head := make([]byte, min(fi.Size, tools.SniffBytes))
 	if _, err := io.ReadFull(rc, head); err != nil {
 		return err
 	}
@@ -97,7 +100,7 @@ func (c *call) file() error {
 		name = path.Base(p)
 	}
 	h := c.w.Header()
-	h.Set("Content-Type", mediaOf(name, head))
+	h.Set("Content-Type", runner.MediaType(name, head))
 	h.Set("Content-Length", strconv.FormatInt(fi.Size, 10))
 	h.Set("Content-Disposition", disposition(name))
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -130,15 +133,6 @@ func fileErr(p string, err error) error {
 		return &apiError{code: CodeInvalidRequest, detail: p + " holds credentials, which no reader of the session reads", err: err}
 	}
 	return err
-}
-
-// mediaOf is a file's media type: its extension's, and otherwise the one
-// its first bytes give.
-func mediaOf(name string, head []byte) string {
-	if t := mime.TypeByExtension(path.Ext(name)); t != "" {
-		return t
-	}
-	return http.DetectContentType(head)
 }
 
 // disposition labels the answer a download of name. A name the header
