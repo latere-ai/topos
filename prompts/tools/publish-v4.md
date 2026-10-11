@@ -1,4 +1,4 @@
-Publishes a folder of the machine as a web app at an address of its own, and releases it.
+Publishes a folder of the machine as a web app at an address of its own, releases it, and changes who can open it.
 
 With a folder, it puts the folder's files online as a preview of an app. The first call creates this session's own app, named after the session; every later call publishes to the same app. When the session was given apps to keep building, each is a checkout of its source in the working directory, named with its slug in your context: name it with `app` to publish its checkout, which commits it on your branch and pushes it. It waits until the preview is built and returns its address, or why the build failed with the end of the build log. The app host serves static files: a folder with an index.html is served as it is, and a project with a build script, such as a Vite or Astro project, is built first. It runs no server process.
 
@@ -6,12 +6,15 @@ With `release` set to true, one call puts a change live: it publishes the folder
 
 Use it whenever the person wants to open, share or deploy a page or a site. Never start a web server on the machine for them instead: nothing on the machine can be reached from outside it.
 
-Who can open an app is the app's own setting, which the person changes and this tool does not. A new app may be private: only the person and the people they share it with open its addresses, after signing in. A result says so when it is. Then tell the person that the address opens for them once they sign in, and that they choose who else can open it from the app's sharing. Do not call a private app public or tell the person to send its address to others as it is.
+Who can open an app is the app's own setting. A new app may be private: only the person and the people they share it with open its addresses, after signing in. A result says so when it is. Then tell the person that it is online and private: its address opens for them once they sign in, and for no one they have not shared it with. Offer to open it to anyone with the link. Do not call a private app public or tell the person to send its address to others as it is.
+
+With `access`, a call changes who can open an app and does nothing else: it publishes and releases nothing. `link` lets anyone who has the app's address open it, without signing in. `private` lets only the person and the people they share it with open it. Every call with `access` waits for the person, who approves it with one click, whatever else runs without asking. Call it with `link` when the person asks to share the site, show it to others, send it to someone or make it public. When they said so before the site was published, call it once the publish call has answered, without asking again. Call it with `private` when they ask to close the site again. Never call it for a site the person did not ask to share, and never only because a result says the app is private. After `link`, say that anyone with the link can open it, and give the address; never say that the app is public. When the change is refused, tell the person why, and that they can change who can open it from the app's sharing.
 
 Inputs:
 - `path`: the folder to publish; a relative path resolves against the working directory. Default: the checkout of the app `app` names, else the folder last published to this session's own app, else the working directory.
-- `app`: the slug of the app to publish to or release: one the session was given, or one this session created. Default: the app whose checkout `path` is in, else this session's own app. A release that names neither `app` nor `path` takes the app this session has a preview of, else the one app it has published; when there are several, name one.
+- `app`: the slug of the app to publish to, release or change the access of: one the session was given, or one this session created. Default: the app whose checkout `path` is in, else this session's own app. A release that names neither `app` nor `path`, and a call with `access` that names no `app`, takes the app this session has a preview of, else the one app it has published; when there are several, name one.
 - `release`: true to publish and release in one call.
+- `access`: `link` or `private`, to change who can open the app. It goes with `app` alone: a call with `access` and `path` or `release` is refused.
 
 Limits:
 - A call waits at most 10 minutes for a build, and a release at most 10 minutes more for the release itself. When it is not done by then, call publish again the same way to keep waiting; nothing new is pushed while the folder is unchanged.

@@ -1,0 +1,1 @@
+{{if .Apps}}Name the app whose access to change: call publish again with access set to {{.Access}} and app set to one of {{.Apps}}.{{else}}There is no app to change yet: this session has published none. Publish the folder first, then call publish again with access set to {{.Access}}.{{end}}

@@ -1,0 +1,1 @@
+{{if eq .Visibility "private"}}{{.App}} is private: only the person and the people they share it with can open its addresses, after signing in. Tell the person so.{{else}}Anyone who has the address can open {{.App}}, without signing in: {{.URL}}. Tell the person that anyone with the link can open it, and give them the address. Do not say that the app is public.{{end}}

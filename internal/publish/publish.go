@@ -5,10 +5,12 @@
 // of a hosted session's sandbox as the session's own app at the
 // installation's app host, waits for the preview the host builds of it,
 // and releases it to the app's address, in the same call when it is asked
-// to release (spec 059). The runner reaches the app host with the
-// session's own short token, which never enters the sandbox; the folder
-// is pushed by the sandbox's own git, which reaches the installation's
-// git host with the session's git credential (spec 019).
+// to release (spec 059). A call with access publishes nothing and changes
+// who can open an app, once a person approved it. The runner reaches the
+// app host with the session's own short token, which never enters the
+// sandbox; the folder is pushed by the sandbox's own git, which reaches
+// the installation's git host with the session's git credential (spec
+// 019).
 package publish
 
 import (
@@ -68,8 +70,9 @@ var schema = json.RawMessage(`{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the checkout of the app that app names, else the folder last published to this session's own app, else the working directory."},
-    "app": {"type": "string", "description": "The slug of the app to publish to or release: one the session was given, or one this session created. Default: the app whose checkout path is in, else this session's own app; a release that names neither app nor path takes the app this session has a preview of, else the one app it has published."},
-    "release": {"type": "boolean", "description": "True to publish the folder, wait for its build, and release it to the app's own address, in one call."}
+    "app": {"type": "string", "description": "The slug of the app to publish to, release or change the access of: one the session was given, or one this session created. Default: the app whose checkout path is in, else this session's own app; a release that names neither app nor path, and a call with access that names no app, takes the app this session has a preview of, else the one app it has published."},
+    "release": {"type": "boolean", "description": "True to publish the folder, wait for its build, and release it to the app's own address, in one call."},
+    "access": {"type": "string", "enum": ["link", "private"], "description": "Changes who can open the app and does nothing else: link lets anyone who has the app's address open it without signing in, private only the person and the people they share it with. The call waits for the person's approval. Not with path or release."}
   },
   "additionalProperties": false
 }`)
@@ -126,10 +129,29 @@ func (t *Tool) Properties() tools.Properties {
 	return tools.Properties{Effect: tools.EffectExternal}
 }
 
+// confirmAccess is why a call with access waits for a person, as its
+// agent.tool_use records it.
+const confirmAccess = "changes who can open the app, which a person approves every time"
+
+// Confirm holds every call with access for a person (spec 043): who can
+// open an app changes only once a person approved that call, whatever the
+// agent's lists, an earlier answer or the mode would run without asking. A
+// call that names access beside a folder or a release is held too, so one
+// the harness did not check never runs unasked before Run refuses it.
+func (t *Tool) Confirm(c tools.Call) string {
+	if in, err := decode(c.Input); err != nil || in.Access == "" {
+		return ""
+	}
+	return confirmAccess
+}
+
 type input struct {
 	Path    string `json:"path"`
 	App     string `json:"app"`
 	Release bool   `json:"release"`
+	// Access is session.PublishAccessLink or PublishAccessPrivate, empty
+	// for a call that publishes.
+	Access string `json:"access"`
 }
 
 // target is the app a call publishes to or releases (spec 059): an
@@ -173,11 +195,12 @@ func decode(raw json.RawMessage) (input, error) {
 // Check refuses, before the call is decided, a call Run would refuse on
 // its input alone, so no person approves it (spec 059): a drive with no
 // token source, an app the session may not publish to, a release that
-// names no app while it could mean several, and a folder outside the
-// named attached app's checkout. It reaches neither the machine nor the
-// app host. A folder whose place in the checkout depends on a working
-// directory the machine has not reported yet, an absolute path or one
-// that climbs out with "..", is left to Run.
+// names no app while it could mean several, a folder outside the named
+// attached app's checkout, and a call with access that also names a
+// folder or a release, or that has no app to change. It reaches neither
+// the machine nor the app host. A folder whose place in the checkout
+// depends on a working directory the machine has not reported yet, an
+// absolute path or one that climbs out with "..", is left to Run.
 func (t *Tool) Check(c tools.Call) *tools.Result {
 	in, err := decode(c.Input)
 	if err != nil {
@@ -186,6 +209,10 @@ func (t *Tool) Check(c tools.Call) *tools.Result {
 	if t.tokens == nil {
 		r := unavailable(noCredential)
 		return &r
+	}
+	if in.Access != "" {
+		_, refused := t.accessApp(c.State, in)
+		return refused
 	}
 	slug, refused := t.pick(c.State, in)
 	if refused != nil || slug == "" || in.Path == "" {
@@ -234,6 +261,16 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	if t.tokens == nil {
 		return unavailable(noCredential), nil
 	}
+	if in.Access != "" {
+		slug, refused := t.accessApp(c.State, in)
+		if refused != nil {
+			return *refused, nil
+		}
+		if stop, err := t.credential(ctx); stop != nil || err != nil {
+			return answered(stop), err
+		}
+		return t.access(ctx, c.State, slug, in.Access)
+	}
 	g, refused, err := t.which(ctx, c, in)
 	switch {
 	case err != nil:
@@ -241,19 +278,41 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	case refused != nil:
 		return *refused, nil
 	}
-	if _, err := t.bearer(ctx); err != nil {
-		switch {
-		case errors.Is(err, runner.ErrNotMinted):
-			return unavailable(noCredential), nil
-		case errors.Is(err, runner.ErrLeaseLost):
-			return tools.Result{}, err
-		}
-		return unavailable("the session's credential for the app host could not be had: " + err.Error()), nil
+	if stop, err := t.credential(ctx); stop != nil || err != nil {
+		return answered(stop), err
 	}
 	if in.Release {
 		return t.release(ctx, c, g, in.Path)
 	}
 	return t.preview(ctx, c, g, in.Path)
+}
+
+// answered is the result stop points to, and none for nil.
+func answered(stop *tools.Result) tools.Result {
+	if stop == nil {
+		return tools.Result{}
+	}
+	return *stop
+}
+
+// credential mints the session's token for the app host before a call's
+// first request, and answers the call's result when there is none to be
+// had: stop is nil when the call goes on. A lost lease is the error that
+// stops the turn.
+func (t *Tool) credential(ctx context.Context) (stop *tools.Result, err error) {
+	if _, err := t.bearer(ctx); err != nil {
+		var res tools.Result
+		switch {
+		case errors.Is(err, runner.ErrNotMinted):
+			res = unavailable(noCredential)
+		case errors.Is(err, runner.ErrLeaseLost):
+			return nil, err
+		default:
+			res = unavailable("the session's credential for the app host could not be had: " + err.Error())
+		}
+		return &res, nil
+	}
+	return nil, nil
 }
 
 // pick is the app a call names, or the one a release that names neither
@@ -262,9 +321,10 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 // stands, else the app the thread published to, when there is one; it
 // is refused app_required when there are several, and when there are
 // none in a session attached apps, where the thread's own app would be
-// a guess. An app the session was not attached and the thread did not
-// create is refused app_not_attached. Each refusal's meta names no app,
-// so the thread's state folds none.
+// a guess. A call with access takes its app as such a release does. An
+// app the session was not attached and the thread did not create is
+// refused app_not_attached. Each refusal's meta names no app, so the
+// thread's state folds none.
 func (t *Tool) pick(st tools.State, in input) (string, *tools.Result) {
 	if in.App != "" {
 		if t.may(st, in.App) {
@@ -272,7 +332,7 @@ func (t *Tool) pick(st tools.State, in input) (string, *tools.Result) {
 		}
 		return "", refusal(session.PublishAppNotAttached, prompts.Render(prompts.PublishNotAttached, prompts.Data{"App": in.App, "Apps": strings.Join(t.publishable(st), ", ")}))
 	}
-	if !in.Release || in.Path != "" {
+	if in.Access == "" && (!in.Release || in.Path != "") {
 		return "", nil
 	}
 	// mine are the slugs of m the session may still publish to: each
@@ -299,7 +359,114 @@ func (t *Tool) pick(st tools.State, in input) (string, *tools.Result) {
 			return "", nil
 		}
 	}
+	if in.Access != "" {
+		return "", refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAccessApp, prompts.Data{"Access": in.Access, "Apps": strings.Join(slugs, ", ")}))
+	}
 	return "", refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAppRequired, prompts.Data{"Apps": strings.Join(slugs, ", ")}))
+}
+
+// accessApp is the app a call with access changes, before any request
+// (spec 043): the app pick chooses, as for a release that names no
+// folder. The call is refused access_alone when it also names a folder
+// or a release, and app_required when the thread has published no app
+// and the session was attached none, since there is nothing to open: a
+// call with access creates no app. Each refusal's meta names no app.
+func (t *Tool) accessApp(st tools.State, in input) (string, *tools.Result) {
+	if in.Path != "" || in.Release {
+		return "", refusal(session.PublishAccessAlone, prompts.Render(prompts.PublishAccessAlone, prompts.Data{"Access": in.Access}))
+	}
+	slug, refused := t.pick(st, in)
+	if refused != nil {
+		return "", refused
+	}
+	if slug == "" {
+		return "", refusal(session.PublishAppRequired, prompts.Render(prompts.PublishAccessApp, prompts.Data{"Access": in.Access, "Apps": ""}))
+	}
+	return slug, nil
+}
+
+// access changes who can open the app slug and nothing else of it (spec
+// 043): it reads the app, and when the app is not as the call asks
+// already, asks the host to make it unlisted for link or private for
+// private, never public. An app anyone with its address opens already,
+// unlisted or public, is left as it is for link, so a public app keeps
+// what being public gives it at its host. The result names the app with
+// the visibility the host answers and no status; the host's refusal, and
+// an answer that names another visibility than the one asked, is the
+// call's error result, with the host's code and the reason its refusal
+// names.
+func (t *Tool) access(ctx context.Context, st tools.State, slug, access string) (tools.Result, error) {
+	var want string
+	switch access {
+	case session.PublishAccessLink:
+		want = session.VisibilityUnlisted
+	case session.PublishAccessPrivate:
+		want = session.VisibilityPrivate
+	default:
+		// The registry checked the input against the schema, so a value
+		// outside it is the harness's failure, and is never read as link.
+		return tools.Result{}, fmt.Errorf("publish: access %q is neither %s nor %s", access, session.PublishAccessLink, session.PublishAccessPrivate)
+	}
+	g := target{slug: slug}
+	if r, _, ok := session.App(t.s, slug); ok {
+		g.repo = &r
+	}
+	// The folder the thread last published to the app goes on every
+	// result, so the thread's state, which folds this one as the app's
+	// last, still knows what a release that names no path publishes.
+	var folder string
+	if last := st.Apps[slug]; last != nil {
+		folder = last.Folder
+	}
+	a, err := t.app(ctx, slug)
+	if err != nil {
+		return accessRefused(slug, err, &session.PublishMeta{App: slug, Attached: g.attached(), Folder: folder})
+	}
+	meta := g.meta(a)
+	meta.Folder = folder
+	// For link, an app anyone with its address opens is as asked whether
+	// it is unlisted or public.
+	asked := a.Visibility == want || (want == session.VisibilityUnlisted && a.Visibility == session.VisibilityPublic)
+	if !asked {
+		var changed hostApp
+		if err := t.do(ctx, http.MethodPatch, "/apps/"+url.PathEscape(slug), map[string]string{"visibility": want}, &changed); err != nil {
+			return accessRefused(slug, err, meta)
+		}
+		// The host's answer is what the result says, so one that names
+		// another visibility than the one asked is a change that failed,
+		// never read as the one asked.
+		switch changed.Visibility {
+		case want:
+		case "":
+			return accessRefused(slug, errors.New("the app host answered the change without saying who can open the app now"), meta)
+		default:
+			meta.Visibility = changed.Visibility
+			return accessRefused(slug, fmt.Errorf("the app host was asked to make the app %s and answered that it is %s", want, changed.Visibility), meta)
+		}
+		a.Visibility, meta.Visibility = want, want
+	}
+	return text(tools.OutcomeOK, prompts.Render(prompts.PublishAccessChanged, prompts.Data{"App": a.Slug, "URL": a.URL, "Visibility": a.Visibility}), meta), nil
+}
+
+// accessRefused is the error result of a call with access that changed
+// nothing because of err, or err itself when it stops the turn. The text
+// says why in words the model passes on: that only an organization's
+// owners and admins change who can open its app, when the host's refusal
+// names that reason, and otherwise what the host or the tool said. When
+// the host refused in its envelope, the meta carries its code, the reason
+// its refusal names, and its sentence.
+func accessRefused(slug string, err error, meta *session.PublishMeta) (tools.Result, error) {
+	if harnessError(err) {
+		return tools.Result{}, err
+	}
+	var reason string
+	if he, ok := errors.AsType[*hostError](err); ok && he.Code != "" {
+		reason = he.Reason
+		meta.Error = &session.PublishError{Code: he.Code, Reason: he.Reason, Message: he.Message}
+	}
+	return text(tools.OutcomeError, prompts.Render(prompts.PublishAccessRefused, prompts.Data{
+		"App": slug, "Role": reason == session.PublishRoleInsufficient, "Error": err.Error(), "Reason": reason,
+	}), meta), nil
 }
 
 // may reports whether the session may publish to slug: an app it was
@@ -729,6 +896,10 @@ func deref(s *string) string {
 	return *s
 }
 
+// reasonToken is the form of the reason an app host's refusal names in
+// its details: a lower-case word of letters, digits and underscores.
+var reasonToken = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
 // versionTag is a release tag this tool counts: v and a number.
 var versionTag = regexp.MustCompile(`^v([0-9]{1,9})$`)
 
@@ -788,10 +959,12 @@ type (
 	}
 )
 
-// hostError is a refusal of the app host in its envelope.
+// hostError is a refusal of the app host in its envelope. Reason is the
+// token its details name for why, "" when they name none.
 type hostError struct {
 	Status  int
 	Code    string
+	Reason  string
 	Message string
 }
 
@@ -859,10 +1032,18 @@ func (t *Tool) do(ctx context.Context, method, p string, body, out any) error {
 			Error struct {
 				Code    string `json:"code"`
 				Message string `json:"message"`
+				Details struct {
+					Reason any `json:"reason"`
+				} `json:"details"`
 			} `json:"error"`
 		}
 		if json.Unmarshal(b, &env) == nil {
 			he.Code, he.Message = env.Error.Code, env.Error.Message
+			// A reason is a token; one that is anything else is left out,
+			// since it goes into a result's meta and the model's text.
+			if reason, ok := env.Error.Details.Reason.(string); ok && reasonToken.MatchString(reason) {
+				he.Reason = reason
+			}
 		}
 		return he
 	}

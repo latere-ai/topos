@@ -3,8 +3,9 @@
 
 package prompts
 
-// released is the SHA-256 of every released file. A new version of a
-// text adds its file and its line; a line is never changed.
+// released is the SHA-256 of every file of the tree. A new version of a
+// text adds its file and its line; the line of a file a release carries
+// is never changed.
 var released = map[string]string{
 	"tools/write-v2.md":                          "57a5df42ba6c03616c20b1856c790a565860889b1530b457c6ae3866c5d4d9eb",
 	"tools/edit-v2.md":                           "7bac9b8dd0c1ed5c20cab7cf9454d461835fec48e8f9f79fc9bfb0273d053b7f",
@@ -171,9 +172,9 @@ var released = map[string]string{
 	"results/publish/not-in-checkout-v1.md":      "d0916c0c2ffce99488eddee4ace9361a1251bef149bee8a388bfd433c8d65ea2",
 	"results/publish/behind-live-v1.md":          "458d463a354d06e71d569f880758a81a378fe86521542bab5b722a81d02d8102",
 	"tools/publish-v3.md":                        "d5576d6d384224667f6a26809ef262fe40107db24b0a01f713479035dbfc7d9d",
-	"tools/publish-v4.md":                        "851d8ce194bdb380e794bdf371bc86d53b7a0f3e809a0bc1d1faf0949f1a8c5f",
-	"results/publish/ready-v2.md":                "2f4fb6b6e4cca0b4b5ac755f0c7f2624c20668f511a349219c46426b6ed5d6ee",
-	"results/publish/released-v2.md":             "d3d3eb2909c43e3063e0c99de9ac693a97f7d932a7afd1d42a8755c258504c4e",
+	"tools/publish-v4.md":                        "c0277c0de1038d8415164eda1f495b4296be213979072f38c1068bd3c25b912f",
+	"results/publish/ready-v2.md":                "c8ca7e787dc9be765bf018c78606fec630beef2f4ddf0ac5e0152aeb4bac15ec",
+	"results/publish/released-v2.md":             "a2ffad375e768d7e7f17c42de44467fa8fe6b196b159cc1d09dbabd63a63ba3d",
 	"results/publish/app-required-v2.md":         "efe1dc803908cbeb7794dfdaf6db0f32319a201a251090ec7aeadac83db8f245",
 	"results/publish/behind-live-v2.md":          "60a50d54c1bcb165eba87439f531c5fcd4fa30b3e94c0ae27d85078f0ece8db7",
 	"results/publish/release-build-failed-v1.md": "4c30abc100e3146558adffaea2a3e9f99914736544beca492a76491de2a8cf6b",
@@ -186,4 +187,8 @@ var released = map[string]string{
 	"transcript/machine-restarted-v1.md":         "abc17992bd5cf2f03d683c2b03d65c9d068f4b090f4650d6b6df06f28f15787c",
 	"transcript/machine-replaced-v1.md":          "23e788af6436a5705f775a1196e26a897513e79c50b8663e89e4e4dc7f1fca07",
 	"transcript/machine-rebuilt-v1.md":           "0c6eb659d4cd2fc409142920aa3331eac25c8596b502e6ff9fb71efd81e3cccb",
+	"results/publish/access-changed-v1.md":       "d5cbd7e24613543e8b3920b17c113d82a72fe782074f26f5f63b87c360d18f84",
+	"results/publish/access-refused-v1.md":       "184764d976a366e3e09a85f6c89bdeaa0f915e6d2f7f1db058158ec2d1a9d762",
+	"results/publish/access-alone-v1.md":         "de4789b922987607c1d9f4ab0a9385077da772c8a90347842d885ab11adfe618",
+	"results/publish/access-app-v1.md":           "eafd0c68554b2f1022bf3de8bd66df9f71ba3f0a33e0c53bb494cadb2ad2bdf9",
 }

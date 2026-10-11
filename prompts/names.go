@@ -60,7 +60,8 @@ const (
 	// test holds to its constant (spec 043), its app input, and a
 	// release that publishes and releases in one call (spec 059). It
 	// promises no public address: who may open an app is the app's own
-	// setting, which a result names.
+	// setting, which a result names and a call with access changes once
+	// the person approves it (spec 043).
 	ToolPublish Name = "tools/publish-v4"
 )
 
@@ -113,6 +114,22 @@ const (
 	// PublishReleaseNotStarted takes Path and Wait: the host started no
 	// build of what a release pushed, and nothing was released.
 	PublishReleaseNotStarted Name = "results/publish/release-not-started-v1"
+	// PublishAccessChanged takes App, URL and Visibility, who can open the
+	// app as the host names it after a call with access (spec 043).
+	PublishAccessChanged Name = "results/publish/access-changed-v1"
+	// PublishAccessRefused takes App; Role, true when the host refused
+	// because the app is an organization's and the caller's role there
+	// does not reach the change; Error, why else nothing was changed; and
+	// Reason, the token the host's refusal names, empty when it names
+	// none.
+	PublishAccessRefused Name = "results/publish/access-refused-v1"
+	// PublishAccessAlone takes Access, the value a call named beside a
+	// folder or a release.
+	PublishAccessAlone Name = "results/publish/access-alone-v1"
+	// PublishAccessApp takes Access and Apps, the slugs a call with access
+	// that names no app could mean, joined, empty when the thread has
+	// published none.
+	PublishAccessApp Name = "results/publish/access-app-v1"
 )
 
 // The results of web_search (spec 047).

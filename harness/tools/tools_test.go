@@ -308,6 +308,41 @@ func TestStateOfFoldsPublish(t *testing.T) {
 	}
 }
 
+// TestStateOfFoldsAnAccessChange: the result of a call that changed who
+// can open an app names the app with no status and no commit, so it
+// becomes the app's last result, with the visibility it answered and the
+// folder it repeats, and leaves the app's standing preview where it was,
+// which a release still takes (spec 043).
+func TestStateOfFoldsAnAccessChange(t *testing.T) {
+	var events []session.Event
+	for i, m := range []*session.PublishMeta{
+		{App: "a-poem", Folder: "site", Commit: "c1", Status: session.PublishReady, Visibility: session.VisibilityPrivate},
+		{App: "a-poem", Folder: "site", Visibility: session.VisibilityUnlisted},
+		{App: "tide", Folder: "tide", Commit: "t1", Status: session.PublishBuilding, Attached: true},
+		{App: "tide", Folder: "tide", Visibility: session.VisibilityPrivate, Attached: true, Error: &session.PublishError{Code: "forbidden", Reason: session.PublishRoleInsufficient}},
+	} {
+		b, err := json.Marshal(Meta{Publish: m})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := session.NewEvent(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_x", Meta: b}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = uint64(i + 1)
+		events = append(events, e)
+	}
+	st := StateOf(events, "")
+	switch {
+	case st.App == nil || st.App.App != "a-poem" || st.App.Visibility != session.VisibilityUnlisted || st.App.Folder != "site" || st.App.Status != "":
+		t.Fatalf("the thread's own app %+v", st.App)
+	case len(st.Standing) != 2 || st.Standing["a-poem"].Commit != "c1" || st.Standing["tide"].Commit != "t1":
+		t.Fatalf("the standing previews %+v", st.Standing)
+	case st.Apps["tide"].Error == nil || st.Apps["tide"].Error.Reason != session.PublishRoleInsufficient || !st.Apps["tide"].Attached || st.Apps["tide"].Folder != "tide":
+		t.Fatalf("the attached app's last result %+v", st.Apps["tide"])
+	}
+}
+
 // TestStateOfFoldsPublishPerApp: the state keeps the last result and the
 // standing preview of each app, an attached app's results marked
 // attached never become the thread's own app, a result without attached

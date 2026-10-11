@@ -4,8 +4,10 @@
 package hosted
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -45,7 +47,8 @@ spec:
 
 // appHost is a stub app host over the bare repositories under root,
 // served by git's http backend at git: an app's preview deploys are its
-// branches' heads, each ready at once, and its releases its v tags.
+// branches' heads, each ready at once, and its releases its v tags. An
+// app is private until a PATCH changes its visibility.
 type appHost struct {
 	t    *testing.T
 	root string
@@ -55,13 +58,22 @@ type appHost struct {
 	mu      sync.Mutex
 	created []map[string]string
 	bearers []string
+	// visibility is who may open each app the host was asked to change,
+	// by slug, and patched every change it was asked for, "<slug>
+	// <body>", with the bearer each came with.
+	visibility     map[string]string
+	patched        []string
+	patchedBearers []string
+	// refuse, when set, is the reason the host's authorizer refuses every
+	// change of who can open an app with.
+	refuse string
 }
 
 var slugWord = regexp.MustCompile(`[^a-z0-9]+`)
 
 func newAppHost(t *testing.T, root, git string) *appHost {
 	t.Helper()
-	h := &appHost{t: t, root: root, git: git}
+	h := &appHost{t: t, root: root, git: git, visibility: map[string]string{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /apps", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
@@ -88,6 +100,41 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 			h.write(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "app_not_found"}})
 			return
 		}
+		h.write(w, http.StatusOK, h.app(slug, slug))
+	})
+	// A change of who can open an app, as the app host of spec 043 takes
+	// it: a body that names visibility alone, unlisted or private, answered
+	// with the app, or refused 403 forbidden with the authorizer's reason
+	// in the error's details.
+	mux.HandleFunc("PATCH /apps/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		h.mu.Lock()
+		h.patched = append(h.patched, slug+" "+string(raw))
+		h.patchedBearers = append(h.patchedBearers, r.Header.Get("Authorization"))
+		refuse := h.refuse
+		h.mu.Unlock()
+		if !h.exists(slug) {
+			h.write(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "app_not_found"}})
+			return
+		}
+		if refuse != "" {
+			h.write(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": "forbidden", "message": "You do not have permission to do that.",
+				"details": map[string]any{"action": "app.settings", "reason": refuse}}})
+			return
+		}
+		var body map[string]string
+		if err := json.Unmarshal(raw, &body); err != nil || len(body) != 1 || (body["visibility"] != "unlisted" && body["visibility"] != "private") {
+			h.write(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_request"}})
+			return
+		}
+		h.mu.Lock()
+		h.visibility[slug] = body["visibility"]
+		h.mu.Unlock()
 		h.write(w, http.StatusOK, h.app(slug, slug))
 	})
 	mux.HandleFunc("GET /apps/{slug}/deploys", func(w http.ResponseWriter, r *http.Request) {
@@ -123,11 +170,14 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 }
 
 // app is the app resource of slug: private, as this host makes an app
-// whose create names no visibility, its current deploy the commit of its
-// highest v tag, and its newest preview its newest branch head, each nil
-// when it has none.
+// whose create names no visibility, until a change made it otherwise, its
+// current deploy the commit of its highest v tag, and its newest preview
+// its newest branch head, each nil when it has none.
 func (h *appHost) app(slug, name string) map[string]any {
-	a := map[string]any{"slug": slug, "name": name, "url": "https://" + slug + ".apps.example", "visibility": "private",
+	h.mu.Lock()
+	visibility := cmp.Or(h.visibility[slug], "private")
+	h.mu.Unlock()
+	a := map[string]any{"slug": slug, "name": name, "url": "https://" + slug + ".apps.example", "visibility": visibility,
 		"repository": map[string]string{"push_url": h.git + "/" + slug + ".git"}, "current_deploy": nil, "latest_preview": nil}
 	if !h.exists(slug) {
 		return a
@@ -382,5 +432,191 @@ func TestPublishIsOfferedWhenConfigured(t *testing.T) {
 		if asked != c.want {
 			t.Errorf("%s: offered %v, want %v", name, asked, c.want)
 		}
+	}
+}
+
+// publishUses are the session's agent.tool_use events of the publish tool,
+// by the call's id.
+func publishUses(t *testing.T, c *cloud) map[string]session.AgentToolUse {
+	t.Helper()
+	out := map[string]session.AgentToolUse{}
+	for _, e := range c.events(session.TypeAgentToolUse) {
+		var use session.AgentToolUse
+		if err := e.Decode(&use); err != nil {
+			t.Fatal(err)
+		}
+		if use.Name == publish.Name {
+			out[use.ToolUseID] = use
+		}
+	}
+	return out
+}
+
+// publishResult is the tool.result of the call id.
+func publishResult(t *testing.T, c *cloud, id string) session.ToolResult {
+	t.Helper()
+	for _, e := range c.events(session.TypeToolResult) {
+		var p session.ToolResult
+		if err := e.Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		if p.ToolUseID == id {
+			return p
+		}
+	}
+	t.Fatalf("no result of %s\nevents %s", id, c.dump())
+	return session.ToolResult{}
+}
+
+// TestASessionChangesWhoCanOpenItsApp: a call with access waits for the
+// person in a session whose agent always allows publish, where a preview
+// and a release run without asking, and after the person's allow of an
+// earlier one added publish to the session's own patterns; until the
+// person allows it, the app host is asked for no change. Allowed, it asks
+// the host for unlisted on link and private on private with the session's
+// token and nothing else, and its result names the app with the visibility
+// the host answers and no status. A denied call changes nothing, a call
+// that also asks for a release is refused before it is asked, the host's
+// refusal says that only an organization's owners and admins change who
+// can open its app, and a release after all of it still publishes the
+// folder the thread published (spec 043).
+func TestASessionChangesWhoCanOpenItsApp(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	host := &gitHost{}
+	host.srv = httptest.NewServer(placeholders(t, host, root, func(n string) bool { return n == name }))
+	t.Cleanup(host.srv.Close)
+	apps := newAppHost(t, root, host.srv.URL)
+	if !strings.Contains(publisherAgent, "alwaysAllow: [publish]") {
+		t.Fatal("the publisher agent no longer always allows publish")
+	}
+	c := newCloudOf(t, publisherAgent, func(s *session.Session) { s.Title = "A poem" })
+	name = cella.SandboxName(c.s.ID)
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.o.Machines = Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir, OrigoURL: host.srv.URL})
+	c.o.Publish = publish.Options{URL: apps.srv.URL, Audience: "apps", GitURL: host.srv.URL, PollEvery: 10 * time.Millisecond}
+	c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	asked := func() []string {
+		apps.mu.Lock()
+		defer apps.mu.Unlock()
+		return slices.Clone(apps.patched)
+	}
+	const held = "changes who can open the app, which a person approves every time"
+
+	// The publish runs unasked, and the change of who can open the app
+	// waits: the host is asked for nothing.
+	c.driveAfter(session.StopToolConfirmation, []session.Event{c.message("Publish a poem and share it with my friends.")},
+		bash("toolu_1", `mkdir -p site && printf '<h1>A poem</h1>\n' > site/index.html`),
+		publishCall("toolu_2", map[string]any{"path": "site"}),
+		publishCall("toolu_3", map[string]any{"access": "link"}))
+	uses := publishUses(t, c)
+	if uses["toolu_2"].Verdict != "allow" || uses["toolu_3"].Verdict != "ask" || uses["toolu_3"].Reason != held || string(uses["toolu_3"].Input) != `{"access":"link"}` {
+		t.Fatalf("the calls were decided %+v and %+v", uses["toolu_2"], uses["toolu_3"])
+	}
+	if first := lastPublish(t, c); first.Status != session.PublishReady || first.Visibility != "private" || first.Folder != "site" {
+		t.Fatalf("the publish recorded %+v", first)
+	}
+	if got := asked(); len(got) != 0 {
+		t.Fatalf("the host was asked for %q before the person answered", got)
+	}
+
+	// The person allows it and lets later publish calls run without
+	// asking: the host makes the app unlisted, for the session's token.
+	c.driveAfter(session.StopEndTurn, []session.Event{c.confirmation(session.UserToolConfirmation{ToolUseID: "toolu_3", Decision: session.DecisionAllow, Remember: publish.Name})},
+		said("Anyone with the link can open it."))
+	if got := asked(); !slices.Equal(got, []string{`a-poem {"visibility":"unlisted"}`}) {
+		t.Fatalf("the host was asked for %q", got)
+	}
+	opened := publishResult(t, c, "toolu_3")
+	var meta struct {
+		Publish session.PublishMeta `json:"publish"`
+	}
+	if err := json.Unmarshal(opened.Meta, &meta); err != nil {
+		t.Fatal(err)
+	}
+	want := session.PublishMeta{App: "a-poem", Name: "a-poem", URL: "https://a-poem.apps.example", Visibility: "unlisted", Folder: "site"}
+	if opened.IsError || opened.Outcome != "ok" || meta.Publish != want || !strings.Contains(opened.Content[0].Text, "Anyone who has the address can open a-poem, without signing in: https://a-poem.apps.example.") {
+		t.Fatalf("the change recorded %+v with %+v", opened, meta.Publish)
+	}
+
+	// The next change waits again, whatever the agent always allows and
+	// the person's earlier answer remembered, and a denial changes nothing.
+	c.driveAfter(session.StopToolConfirmation, []session.Event{c.message("Make it private again.")}, publishCall("toolu_4", map[string]any{"access": "private"}))
+	if use := publishUses(t, c)["toolu_4"]; use.Verdict != "ask" || use.Reason != held {
+		t.Fatalf("a change after a remembered allow was decided %+v", use)
+	}
+	c.driveAfter(session.StopEndTurn, []session.Event{c.confirmation(session.UserToolConfirmation{ToolUseID: "toolu_4", Decision: session.DecisionDeny, Note: "leave it"})},
+		said("It stays as it is."))
+	if got := publishResult(t, c, "toolu_4"); got.Outcome != "denied" || len(asked()) != 1 {
+		t.Fatalf("a denied change recorded %+v, the host was asked for %q", got, asked())
+	}
+	c.driveAfter(session.StopToolConfirmation, []session.Event{c.message("Private, please.")}, publishCall("toolu_5", map[string]any{"access": "private", "app": "a-poem"}))
+	c.driveAfter(session.StopEndTurn, []session.Event{c.confirmation(session.UserToolConfirmation{ToolUseID: "toolu_5", Decision: session.DecisionAllow})}, said("It is private."))
+	if got, _ := lastResult(t, c); !slices.Equal(asked(), []string{`a-poem {"visibility":"unlisted"}`, `a-poem {"visibility":"private"}`}) || got.Visibility != "private" || got.Status != "" || got.Error != nil {
+		t.Fatalf("the change back recorded %+v, the host was asked for %q", got, asked())
+	}
+
+	// A call that asks for a release beside the change is refused before
+	// it is decided: nobody is asked, and nothing is published or changed.
+	c.drive("Release it for everyone.", publishCall("toolu_6", map[string]any{"access": "link", "release": true}), said("That takes two calls."))
+	if _, decided := publishUses(t, c)["toolu_6"]; decided {
+		t.Fatal("a call with access and release was put to a decision")
+	}
+	if got, text := lastResult(t, c); got.Error == nil || got.Error.Code != session.PublishAccessAlone || got.App != "" || !strings.Contains(text, "it takes neither path nor release") || len(asked()) != 2 {
+		t.Fatalf("a call with access and release recorded %+v: %q", got, text)
+	}
+
+	// The host's authorizer refuses the change of an organization's app
+	// for a member, and the result says so.
+	apps.mu.Lock()
+	apps.refuse = "role_insufficient"
+	apps.mu.Unlock()
+	c.driveAfter(session.StopToolConfirmation, []session.Event{c.message("Share it.")}, publishCall("toolu_7", map[string]any{"access": "link"}))
+	c.driveAfter(session.StopEndTurn, []session.Event{c.confirmation(session.UserToolConfirmation{ToolUseID: "toolu_7", Decision: session.DecisionAllow})}, said("Only an owner or an admin can."))
+	refused, text := lastResult(t, c)
+	if refused.Error == nil || refused.Error.Code != "forbidden" || refused.Error.Reason != session.PublishRoleInsufficient || refused.Visibility != "private" || refused.Status != "" ||
+		!strings.Contains(text, "only the organization's owners and admins change who can open it") {
+		t.Fatalf("a refused change recorded %+v: %q", refused, text)
+	}
+	if got := publishResult(t, c, "toolu_7"); !got.IsError || got.Outcome != "error" {
+		t.Fatalf("a refused change is recorded %+v", got)
+	}
+
+	// Every change went with the session's own token for the app host, and
+	// none asked for public.
+	apps.mu.Lock()
+	bearers, changes, creates := slices.Clone(apps.patchedBearers), slices.Clone(apps.patched), len(apps.created)
+	apps.refuse = ""
+	apps.mu.Unlock()
+	if len(bearers) != 3 || slices.ContainsFunc(bearers, func(b string) bool { return !strings.HasPrefix(b, "Bearer apps-session-") }) {
+		t.Fatalf("the changes came with %q, want the session's own token for the app host", bearers)
+	}
+	if slices.ContainsFunc(changes, func(c string) bool { return strings.Contains(c, "public") }) || creates != 1 {
+		t.Fatalf("the host was asked for %q and to create %d apps", changes, creates)
+	}
+
+	// A release that names no folder still publishes the folder the thread
+	// published, as it is now, past the results that changed who can open
+	// the app.
+	preview := gitIn(t, filepath.Join(root, "a-poem.git"), "rev-parse", "refs/heads/"+session.Branch(c.s))
+	c.drive("Add a line and release it.",
+		bash("toolu_8", `printf '<h1>A poem</h1>\n<p>Two lines.</p>\n' > site/index.html`),
+		publishCall("toolu_9", map[string]any{"release": true}), said("Released."))
+	released, _ := lastResult(t, c)
+	head := gitIn(t, filepath.Join(root, "a-poem.git"), "rev-parse", "refs/heads/"+session.Branch(c.s))
+	if released.Release != "v1" || released.Status != session.PublishReleased || released.Commit != head || head == preview || released.Folder != "site" || released.Visibility != "private" {
+		t.Fatalf("the release recorded %+v, the branch is at %s and the preview was %s", released, head, preview)
+	}
+	if page := gitIn(t, filepath.Join(root, "a-poem.git"), "show", "refs/tags/v1:index.html"); !strings.Contains(page, "Two lines.") {
+		t.Fatalf("the released page reads %q", page)
+	}
+	if strings.Contains(c.dump(), "apps-session-") {
+		t.Fatal("an event carries the app host's token")
 	}
 }

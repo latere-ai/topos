@@ -107,7 +107,7 @@ var textCases = func() []textCase {
 		{name: "tools/publish-v1", wantSHA: "b69d44de4feda666898dd58abeaff8fb58e644894785963965d2255600e7087f"},
 		{name: "tools/publish-v2", wantSHA: "82af1e42d94fe80cd3b3f19f12b92eba9bee2c549c3af36c12353153682360d5"},
 		{name: "tools/publish-v3", wantSHA: "e52335638e8f168acbcf2fdff1c5cd756b0b5744958144c8498988ba3f6663b1"},
-		{name: ToolPublish, wantSHA: "038d2c1252dc063a5e362039cf6f464fa8a814b8a0018f8398a5ed0374b43fbc"},
+		{name: ToolPublish, wantSHA: "3f6fad0db8fb9a34d78556c4ef32549048254939fa1fc2dd39cc16c7e7ce6954"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -248,7 +248,7 @@ var textCases = func() []textCase {
 			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it.\n" +
 				"Next, call publish with release set to true. It waits for the person, who releases this preview with one click or asks for a change instead."},
 		{name: PublishReady, data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site", "Visibility": "private"},
-			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it. The app is private: only the person and the people they share it with can open its addresses, after signing in. Say so when you give an address, and that the person chooses who else can open it from the app's sharing.\n" +
+			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it. The app is private: only the person and the people they share it with can open its addresses, after signing in. Say so when you give an address, and offer to open it to anyone with the link. When the person already asked to share it, call publish with access set to link now; it waits for their approval.\n" +
 				"Next, call publish with release set to true. It waits for the person, who releases this preview with one click or asks for a change instead."},
 		{name: PublishReady, data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site", "Visibility": "unlisted"},
 			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it. Anyone who has an address can open it.\n" +
@@ -266,9 +266,27 @@ var textCases = func() []textCase {
 		{name: PublishFailed, data: Data{"Path": "site", "Code": "canceled", "Message": "", "Log": ""},
 			want: "The preview of site failed: canceled.\n" + "Fix the cause and publish again. If it is not something you can fix, such as a project that needs a server process, tell the person plainly."},
 		{name: "results/publish/released-v1", data: Data{"Tag": "v2", "URL": "https://a-poem.example.site"}, want: "Released v2: https://a-poem.example.site now serves the preview published last."},
-		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site", "Visibility": "private"}, want: "Released v2: https://a-poem.example.site now serves the preview published last. The app is private: only the person and the people they share it with can open its addresses, after signing in. Say so when you give an address, and that the person chooses who else can open it from the app's sharing."},
+		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site", "Visibility": "private"}, want: "Released v2: https://a-poem.example.site now serves the preview published last. The app is private: only the person and the people they share it with can open its addresses, after signing in. Say so when you give an address, and offer to open it to anyone with the link. When the person already asked to share it, call publish with access set to link now; it waits for their approval."},
 		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site", "Visibility": "public"}, want: "Released v2: https://a-poem.example.site now serves the preview published last. Anyone who has an address can open it."},
 		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site", "Visibility": ""}, want: "Released v2: https://a-poem.example.site now serves the preview published last."},
+		{name: PublishAccessChanged, data: Data{"App": "a-poem", "URL": "https://a-poem.example.site", "Visibility": "unlisted"},
+			want: "Anyone who has the address can open a-poem, without signing in: https://a-poem.example.site. Tell the person that anyone with the link can open it, and give them the address. Do not say that the app is public."},
+		{name: PublishAccessChanged, data: Data{"App": "a-poem", "URL": "https://a-poem.example.site", "Visibility": "public"},
+			want: "Anyone who has the address can open a-poem, without signing in: https://a-poem.example.site. Tell the person that anyone with the link can open it, and give them the address. Do not say that the app is public."},
+		{name: PublishAccessChanged, data: Data{"App": "a-poem", "URL": "https://a-poem.example.site", "Visibility": "private"},
+			want: "a-poem is private: only the person and the people they share it with can open its addresses, after signing in. Tell the person so."},
+		{name: PublishAccessRefused, data: Data{"App": "tide", "Role": true, "Error": "the app host refused with forbidden: You do not have permission to do that", "Reason": "role_insufficient"},
+			want: "Who can open tide was not changed: the app belongs to an organization, and only the organization's owners and admins change who can open it. Tell the person so; an owner or an admin can change it from the app's sharing. Do not try another way to change it."},
+		{name: PublishAccessRefused, data: Data{"App": "a-poem", "Role": false, "Error": "the app host refused with forbidden: You do not have permission to do that", "Reason": "agent_permissions"},
+			want: "Who can open a-poem was not changed: the app host refused with forbidden: You do not have permission to do that (agent_permissions). Tell the person so, and that they can change it themselves from the app's sharing. Do not try another way to change it."},
+		{name: PublishAccessRefused, data: Data{"App": "a-poem", "Role": false, "Error": "the app host answered 502", "Reason": ""},
+			want: "Who can open a-poem was not changed: the app host answered 502. Tell the person so, and that they can change it themselves from the app's sharing. Do not try another way to change it."},
+		{name: PublishAccessAlone, data: Data{"Access": "link"},
+			want: "A call with access changes who can open an app and nothing else, so it takes neither path nor release. Publish or release first when that is wanted, then call publish again with access set to link and nothing beside it but app."},
+		{name: PublishAccessApp, data: Data{"Access": "link", "Apps": "slice, tide"},
+			want: "Name the app whose access to change: call publish again with access set to link and app set to one of slice, tide."},
+		{name: PublishAccessApp, data: Data{"Access": "private", "Apps": ""},
+			want: "There is no app to change yet: this session has published none. Publish the folder first, then call publish again with access set to private."},
 		{name: PublishPending, data: Data{"Tag": "v2", "Wait": "10m0s"}, want: "The release v2 is not done after 10m0s. Call publish with release set to true again to keep waiting."},
 		{name: PublishRefused, data: Data{"Tag": "v2", "Reason": "agents_may_not_release"}, want: "The app host refused the release v2: agents_may_not_release. Tell the person; do not try another way to release it."},
 		{name: PublishReleaseFailed, data: Data{"Tag": "v2", "Code": "build_failed", "Message": "The build failed."}, want: "The release v2 failed: build_failed: The build failed."},
