@@ -308,8 +308,9 @@ func (c *Client) PutBlob(ctx context.Context, id string, r io.Reader) (session.D
 	return d, nil
 }
 
-// Blob reads a blob, whole: a session's blobs are its agent bundle and
-// its captured bodies, each small enough to hold.
+// Blob reads a blob, whole: a runner reads a session's agent bundle and
+// its instruction files, each small enough to hold, and never a file an
+// answer linked.
 func (c *Client) Blob(ctx context.Context, id string, d session.Digest) (io.ReadCloser, error) {
 	var buf bytes.Buffer
 	err := c.do(ctx, http.MethodGet, sessionPath(id)+"/blobs/"+string(d), nil, "", func(r io.Reader) error {

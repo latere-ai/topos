@@ -37,6 +37,9 @@ const (
 	DefaultTTL   = 60 * time.Second
 	MaxClaimWait = 20 * time.Second
 	maxBody      = 8 << 20
+	// maxBlob bounds the body of a blob a runner stores, which is sent
+	// whole: the largest is a file an answer links (spec 064).
+	maxBlob = max(maxBody, harness.MaxKeptFileBytes)
 )
 
 // The error codes of the runner protocol.
@@ -226,18 +229,21 @@ func New(o Options) (*Server, error) {
 // Handler serves the routes under Root.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	route := func(pattern string, h func(w http.ResponseWriter, r *http.Request) error) {
+	bounded := func(pattern string, limit int64, h func(w http.ResponseWriter, r *http.Request) error) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			tok, ok := bearer.FromRequest(r)
 			if !ok || !s.accepts(tok) {
 				write(w, CodeRunnerUnauthorized, http.StatusUnauthorized, "no bearer, or one TOPOS_RUNNER_TOKEN does not name")
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 			if err := h(w, r); err != nil && !errors.Is(err, errHungUp) {
 				s.fail(w, r, err)
 			}
 		})
+	}
+	route := func(pattern string, h func(w http.ResponseWriter, r *http.Request) error) {
+		bounded(pattern, maxBody, h)
 	}
 	route("POST "+Root+"/claims", s.claim)
 	route("POST "+Root+"/leases/{session}/renew", s.renew)
@@ -249,7 +255,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET "+Root+"/sessions/{session}/events", s.events)
 	route("GET "+Root+"/sessions/{session}/stream", s.stream)
 	route("POST "+Root+"/deltas", s.deltas)
-	route("PUT "+Root+"/sessions/{session}/blobs/{digest}", s.putBlob)
+	bounded("PUT "+Root+"/sessions/{session}/blobs/{digest}", maxBlob, s.putBlob)
 	route("GET "+Root+"/sessions/{session}/blobs/{digest}", s.blob)
 	return mux
 }

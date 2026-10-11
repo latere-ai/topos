@@ -4,6 +4,7 @@
 package runnerrole
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -212,6 +213,32 @@ func TestTheProtocolsLeases(t *testing.T) {
 		t.Fatalf("another runner's claim after the reap: %+v, %v", next, err)
 	}
 	cancel()
+}
+
+// TestARunnerStoresAKeptFile: a blob as large as a file an answer links
+// is stored through the protocol, whole, and one byte more is refused
+// with nothing stored (spec 064).
+func TestARunnerStoresAKeptFile(t *testing.T) {
+	f := setup(t, 0)
+	s := hosted(t, f.st, "Go.")
+	file := bytes.Repeat([]byte("k"), harness.MaxKeptFileBytes+1)
+	d, err := f.client.PutBlob(t.Context(), s.ID, bytes.NewReader(file[:harness.MaxKeptFileBytes]))
+	if err != nil || d != session.DigestOf(file[:harness.MaxKeptFileBytes]) {
+		t.Fatalf("a file at the bound: %s, %v", d, err)
+	}
+	rc, err := f.st.Blob(t.Context(), s.ID, d)
+	if err != nil {
+		t.Fatalf("the file is no blob of the session: %v", err)
+	}
+	if err := rc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client.PutBlob(t.Context(), s.ID, bytes.NewReader(file)); err == nil {
+		t.Fatal("a body past the bound was stored")
+	}
+	if _, err := f.st.Blob(t.Context(), s.ID, session.DigestOf(file)); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("the body past the bound: %v", err)
+	}
 }
 
 // TestTheProtocolsReads: a session, its events, its stream and its blobs
