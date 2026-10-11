@@ -1,8 +1,12 @@
 # Publishing: putting a session's folder online
 
 An agent that holds the `publish` tool can put a folder of its sandbox
-online as a web app, at an address anyone can open, and release it to
-the app's own address when the person says so. This page is for the
+online as a web app, at an address of its own, and release it to the
+app's own address when the person says so. Who can open the app is the
+app host's to keep: the tool asks for no visibility when it creates an
+app, records the one the host answers, and tells the model when the app
+is private, so the agent does not hand out an address others cannot
+open. This page is for the
 operator who connects an app host, and for the client that shows what
 was published. Everything here is on the wire of `/v1`.
 
@@ -119,6 +123,7 @@ Every `tool.result` of a `publish` call carries `meta.publish`:
 |---|---|
 | `app`, `name` | the app's slug and its name |
 | `url` | the app's own address |
+| `visibility` | who may open the app, as the host named it when the call ran; absent where the host names none |
 | `preview` | the preview's own address, once the host names it |
 | `folder` | the folder published, relative to the working directory when it is inside it: an attached app's checkout, or the folder of the session's own app |
 | `commit` | the commit published or released |
@@ -154,7 +159,7 @@ The host answers this contract under its root:
 
 | Request | Answer |
 |---|---|
-| `POST /apps` with `{"name", "visibility"}` | `201` with the app: `slug`, `name`, `url`, `repository.push_url` |
+| `POST /apps` with `{"name"}` | `201` with the app: `slug`, `name`, `url`, `repository.push_url`, and `visibility` when the host keeps one |
 | `GET /apps/{slug}` | the app, or `404`; with `current_deploy` and `latest_preview`, each `{"id", "commit_sha"}` or `null`, the commit its address serves and its newest ready preview's, which the start of an attached app's checkout and the check before a release read |
 | `GET /apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` and `error` |
 | `GET /apps/{slug}/deploys/{id}/logs` | the build log, one JSON object with its `line` per line |

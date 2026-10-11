@@ -159,6 +159,20 @@ committed: the commit log already holds that.
   answers by; a harness given none types every linked file
   `application/octet-stream`.
 
+- **The publish tool no longer asks for a public app.** The first
+  `publish` of a session created its app with `visibility: public`, so
+  the app was open to anyone before its person chose that. The create
+  now names no visibility, and who may open a new app is the app host's
+  default. A `publish` result records the app's `visibility` in
+  `meta.publish` when the host names one, so a client can show who can
+  open the site, and the result's text tells the model when the app is
+  private: the agent then says that the address opens for the person
+  once they sign in and that they choose who else can open it, instead
+  of handing out an address others cannot open. The tool's description
+  is `tools/publish-v4`, and the ready and released results are
+  `results/publish/ready-v2` and `released-v2`; the earlier versions
+  stay as they were. An app host that keeps no visibility is unaffected.
+
 ### Fixed
 
 - A model knows today's date on every turn. The date reached a model

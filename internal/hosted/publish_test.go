@@ -122,11 +122,12 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 	return h
 }
 
-// app is the app resource of slug: its current deploy the commit of its
+// app is the app resource of slug: private, as this host makes an app
+// whose create names no visibility, its current deploy the commit of its
 // highest v tag, and its newest preview its newest branch head, each nil
 // when it has none.
 func (h *appHost) app(slug, name string) map[string]any {
-	a := map[string]any{"slug": slug, "name": name, "url": "https://" + slug + ".apps.example",
+	a := map[string]any{"slug": slug, "name": name, "url": "https://" + slug + ".apps.example", "visibility": "private",
 		"repository": map[string]string{"push_url": h.git + "/" + slug + ".git"}, "current_deploy": nil, "latest_preview": nil}
 	if !h.exists(slug) {
 		return a
@@ -193,8 +194,10 @@ func publishCall(id string, input map[string]any) luxstub.Reply {
 }
 
 // TestASessionPublishesAFolderAndReleasesIt: a session whose agent names
-// publish creates its app with its title, public, with its token for the
-// app host and the workload session; its sandbox's git pushes the folder
+// publish creates its app with its title, naming no visibility, so who
+// may open it is the host's default, which the result records, with its
+// token for the app host and the workload session; its sandbox's git
+// pushes the folder
 // to the session's branch with the session's author and trailers; the
 // result names the preview's address; a second publish reuses the app and
 // pushes a new commit on the branch, and one with nothing changed pushes
@@ -245,8 +248,11 @@ func TestASessionPublishesAFolderAndReleasesIt(t *testing.T) {
 		first.Preview != "https://d"+head[:7]+"--a-poem.apps.example" || first.Deploy != "d"+head[:8] {
 		t.Fatalf("the first publish recorded %+v, the branch is at %s", first, head)
 	}
-	if len(apps.created) != 1 || apps.created[0]["name"] != "A poem" || apps.created[0]["visibility"] != "public" {
+	if _, named := apps.created[0]["visibility"]; len(apps.created) != 1 || apps.created[0]["name"] != "A poem" || named {
 		t.Fatalf("the app host was asked to create %v", apps.created)
+	}
+	if first.Visibility != "private" {
+		t.Fatalf("the first publish recorded the visibility %q, want the host's private", first.Visibility)
 	}
 	msg := gitIn(t, filepath.Join(root, "a-poem.git"), "log", "-1", "--format=%an <%ae>%n%B", head)
 	if !strings.Contains(msg, "builder <builder@agents.topos.invalid>") || !strings.Contains(msg, runner.TrailerSession+": "+c.s.ID) || !strings.Contains(msg, runner.TrailerAgent+": "+c.s.Agent.ID+"@1") {

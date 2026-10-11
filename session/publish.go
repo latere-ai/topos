@@ -29,8 +29,13 @@ type PublishMeta struct {
 	// App is the app's slug at the app host, and Name its name.
 	App  string `json:"app"`
 	Name string `json:"name,omitempty"`
-	// URL is the app's public address.
+	// URL is the app's own address.
 	URL string `json:"url,omitempty"`
+	// Visibility is who may open the app, as the app host named it when
+	// the call ran: private, unlisted or public at a host that speaks
+	// those words. Empty where the host names none. Nothing here reads
+	// it; a client shows it.
+	Visibility string `json:"visibility,omitempty"`
 	// Preview is the preview deploy's own address, once the host names
 	// it.
 	Preview string `json:"preview,omitempty"`

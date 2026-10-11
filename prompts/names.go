@@ -58,24 +58,27 @@ const (
 	ToolWebSearch Name = "tools/web_search-v1"
 	// ToolPublish states the publish tool's wait in its text, which a
 	// test holds to its constant (spec 043), its app input, and a
-	// release that publishes and releases in one call (spec 059).
-	ToolPublish Name = "tools/publish-v3"
+	// release that publishes and releases in one call (spec 059). It
+	// promises no public address: who may open an app is the app's own
+	// setting, which a result names.
+	ToolPublish Name = "tools/publish-v4"
 )
 
 // The results of the publish tool (spec 043). Path is the folder as the
 // call named it, Wait a duration, Tag a release's tag, and Code and
 // Message the app host's code and sentence.
 const (
-	// PublishReady takes Path, Preview and URL.
-	PublishReady Name = "results/publish/ready-v1"
+	// PublishReady takes Path, Preview, URL and Visibility, who may open
+	// the app as the host names it, empty when it names none.
+	PublishReady Name = "results/publish/ready-v2"
 	// PublishBuilding takes Path, Wait and Preview, empty when the host
 	// started no build.
 	PublishBuilding Name = "results/publish/building-v1"
 	// PublishFailed takes Path, Code, Message and Log, the end of the
 	// build log, empty when there is none.
 	PublishFailed Name = "results/publish/failed-v1"
-	// PublishReleased takes Tag and URL.
-	PublishReleased Name = "results/publish/released-v1"
+	// PublishReleased takes Tag, URL and Visibility.
+	PublishReleased Name = "results/publish/released-v2"
 	// PublishPending takes Tag and Wait.
 	PublishPending Name = "results/publish/pending-v1"
 	// PublishRefused takes Tag and Reason.

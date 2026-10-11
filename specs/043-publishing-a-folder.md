@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 008-tools.md, 010-context.md, 012-permissions-a
 affects: [internal/publish/, internal/hosted/, internal/config/, cmd/toposd/, harness/, harness/tools/, manifest/, session/, prompts/, internal/toposcli/, docs/]
 effort: medium
 created: 2026-10-05
-updated: 2026-10-08
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -20,7 +20,7 @@ sandbox reaches that server, and a path in the sandbox is no address a
 person can open. An installation may run an app host beside the core:
 a service that keeps one git repository per app, builds a preview of
 every push at an address of its own, and puts a commit at the app's
-public address when a version tag is pushed. Reaching it from the
+own address when a version tag is pushed. Reaching it from the
 sandbox takes several steps, each of which a weak model can get wrong:
 create the app, add a remote, commit, push, poll for the build, read
 its log, and tag.
@@ -70,7 +70,7 @@ The app host is a service with this contract, under one root URL:
 
 | Request | Answer |
 |---|---|
-| `POST {root}/apps` with `{"name", "visibility"}` | `201` with the app: `slug`, `name`, `url` (its public address), `repository.push_url` |
+| `POST {root}/apps` with `{"name"}` | `201` with the app: `slug`, `name`, `url` (its own address), `visibility` (who may open it, when the host says), `repository.push_url` |
 | `GET {root}/apps/{slug}` | the app, or `404` |
 | `GET {root}/apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` (the deploy's own address) and `error` (`{code, message}` or null) |
 | `GET {root}/apps/{slug}/deploys/{id}/logs` | the build log, one JSON object per line with its `line` |
@@ -111,7 +111,14 @@ names it, since a local run has no app host and no sandbox.
    `publish` result records. The runner reads it (`GET`); a slug the
    host no longer knows, and a session with none, creates one: `POST
    {root}/apps` with the session's title as `name`, from which the host
-   derives the slug, and `visibility: public`. The request carries the
+   derives the slug. The create names no visibility: who may open a new
+   app is the host's default, and the person changes it at the host,
+   never through this tool (amended 2026-10-11; the create asked for
+   `public` before, which put every session's app online for anyone
+   without its person choosing so). The tool's text is
+   `tools/publish-v4`, which promises no public address, and the ready
+   and released results are `results/publish/ready-v2` and
+   `released-v2`, which say when the app is private. The request carries the
    session's token for `TOPOS_APPS_AUDIENCE` and the workload
    `session`: the sandbox never holds it, and the authorizer decides
    the create as the session's agent within its initiator's reach.
@@ -183,7 +190,8 @@ state folds and a client reads:
 | Field | Value |
 |---|---|
 | `app`, `name` | the app's slug and its name |
-| `url` | the app's public address |
+| `url` | the app's own address |
+| `visibility` | who may open the app, as the host named it when the call ran (`private`, `unlisted` or `public` at a host that speaks those words); absent where the host names none. Nothing in Topos reads it; a client shows it, and the result's text tells the model when the app is private |
 | `preview` | the preview deploy's own address, once the host names it |
 | `commit` | the commit published or released |
 | `deploy` | the deploy's id |
@@ -224,7 +232,7 @@ reads; previews served beside the session in a client.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A session whose agent names `publish` publishes a folder of its sandbox: the app is created with the session's title and `public`, with the session's token for the app host's audience and the workload `session`, the sandbox's git pushes the folder to the session's branch with the session's author and trailers, the result names the preview's address with `meta.publish` status `ready`, and no token reaches the sandbox, an event or a tool result | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` over the stub Cella, a stub app host and git's own http backend | built |
+| A session whose agent names `publish` publishes a folder of its sandbox: the app is created with the session's title and no visibility, the result records the one the host answers, with the session's token for the app host's audience and the workload `session`, the sandbox's git pushes the folder to the session's branch with the session's author and trailers, the result names the preview's address with `meta.publish` status `ready`, and no token reaches the sandbox, an event or a tool result | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` over the stub Cella, a stub app host and git's own http backend | built |
 | A second publish reuses the app, pushes a new commit on the same branch, and a publish with nothing changed pushes no new commit | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt` | built |
 | `release: true` pushes `v1` on the newest standing preview's commit, the next release `v2`, and the result is `released` with the app's address; a preview still building is released, and a failed one is passed over | `internal/hosted.TestASessionPublishesAFolderAndReleasesIt`, `harness/tools.TestStateOfFoldsPublish`, `internal/publish.TestOutcomes` | built |
 | A `publish` call on a Cella machine in `confirm` waits for a person, a release included, since its effect is external and not inside the sandbox; the tool's effect is `external` | `harness.TestAPublishCallAsksInConfirm`, `internal/publish.TestTheDescriptionStatesTheWait` | built |

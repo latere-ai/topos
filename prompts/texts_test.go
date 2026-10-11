@@ -106,7 +106,8 @@ var textCases = func() []textCase {
 		{name: ToolWebSearch, wantSHA: "06e451f41ab008ed24de132b0e9ea18488e4092f221284b5a97a15829f5a2ce6"},
 		{name: "tools/publish-v1", wantSHA: "b69d44de4feda666898dd58abeaff8fb58e644894785963965d2255600e7087f"},
 		{name: "tools/publish-v2", wantSHA: "82af1e42d94fe80cd3b3f19f12b92eba9bee2c549c3af36c12353153682360d5"},
-		{name: ToolPublish, wantSHA: "e52335638e8f168acbcf2fdff1c5cd756b0b5744958144c8498988ba3f6663b1"},
+		{name: "tools/publish-v3", wantSHA: "e52335638e8f168acbcf2fdff1c5cd756b0b5744958144c8498988ba3f6663b1"},
+		{name: ToolPublish, wantSHA: "038d2c1252dc063a5e362039cf6f464fa8a814b8a0018f8398a5ed0374b43fbc"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -243,7 +244,16 @@ var textCases = func() []textCase {
 		{name: TodoList, data: Data{"Done": 1, "Total": 2, "Items": []todo{{"a", "first", "completed"}, {"b", "second", "pending"}}},
 			want: fmt.Sprintf("The todo list, %d of %d completed:\n", 1, 2) + fmt.Sprintf("[%s] %s: %s\n", "completed", "a", "first") + fmt.Sprintf("[%s] %s: %s\n", "pending", "b", "second")},
 
-		{name: PublishReady, data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site"},
+		{name: "results/publish/ready-v1", data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site"},
+			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it.\n" +
+				"Next, call publish with release set to true. It waits for the person, who releases this preview with one click or asks for a change instead."},
+		{name: PublishReady, data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site", "Visibility": "private"},
+			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it. The app is private: only the person and the people they share it with can open its addresses, after signing in. Say so when you give an address, and that the person chooses who else can open it from the app's sharing.\n" +
+				"Next, call publish with release set to true. It waits for the person, who releases this preview with one click or asks for a change instead."},
+		{name: PublishReady, data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site", "Visibility": "unlisted"},
+			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it. Anyone who has an address can open it.\n" +
+				"Next, call publish with release set to true. It waits for the person, who releases this preview with one click or asks for a change instead."},
+		{name: PublishReady, data: Data{"Path": "site", "Preview": "https://9a21ee1c--a-poem.example.site", "URL": "https://a-poem.example.site", "Visibility": ""},
 			want: "Published site as a preview at https://9a21ee1c--a-poem.example.site. The app's own address is https://a-poem.example.site; it serves a preview once the person releases it.\n" +
 				"Next, call publish with release set to true. It waits for the person, who releases this preview with one click or asks for a change instead."},
 		{name: PublishBuilding, data: Data{"Path": "site", "Wait": "10m0s", "Preview": "https://9a21ee1c--a-poem.example.site"},
@@ -255,7 +265,10 @@ var textCases = func() []textCase {
 				"Fix the cause and publish again. If it is not something you can fix, such as a project that needs a server process, tell the person plainly."},
 		{name: PublishFailed, data: Data{"Path": "site", "Code": "canceled", "Message": "", "Log": ""},
 			want: "The preview of site failed: canceled.\n" + "Fix the cause and publish again. If it is not something you can fix, such as a project that needs a server process, tell the person plainly."},
-		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site"}, want: "Released v2: https://a-poem.example.site now serves the preview published last."},
+		{name: "results/publish/released-v1", data: Data{"Tag": "v2", "URL": "https://a-poem.example.site"}, want: "Released v2: https://a-poem.example.site now serves the preview published last."},
+		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site", "Visibility": "private"}, want: "Released v2: https://a-poem.example.site now serves the preview published last. The app is private: only the person and the people they share it with can open its addresses, after signing in. Say so when you give an address, and that the person chooses who else can open it from the app's sharing."},
+		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site", "Visibility": "public"}, want: "Released v2: https://a-poem.example.site now serves the preview published last. Anyone who has an address can open it."},
+		{name: PublishReleased, data: Data{"Tag": "v2", "URL": "https://a-poem.example.site", "Visibility": ""}, want: "Released v2: https://a-poem.example.site now serves the preview published last."},
 		{name: PublishPending, data: Data{"Tag": "v2", "Wait": "10m0s"}, want: "The release v2 is not done after 10m0s. Call publish with release set to true again to keep waiting."},
 		{name: PublishRefused, data: Data{"Tag": "v2", "Reason": "agents_may_not_release"}, want: "The app host refused the release v2: agents_may_not_release. Tell the person; do not try another way to release it."},
 		{name: PublishReleaseFailed, data: Data{"Tag": "v2", "Code": "build_failed", "Message": "The build failed."}, want: "The release v2 failed: build_failed: The build failed."},

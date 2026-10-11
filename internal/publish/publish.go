@@ -154,7 +154,7 @@ func (g target) attached() bool { return g.repo != nil }
 // attached app, so the thread's state never folds an attached app as its
 // own.
 func (g target) meta(a hostApp) *session.PublishMeta {
-	return &session.PublishMeta{App: a.Slug, Name: a.Name, URL: a.URL, Attached: g.attached()}
+	return &session.PublishMeta{App: a.Slug, Name: a.Name, URL: a.URL, Visibility: a.Visibility, Attached: g.attached()}
 }
 
 // noCredential is why a drive with no token source cannot publish.
@@ -593,7 +593,7 @@ func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p string) (t
 		return text(tools.OutcomeOK, prompts.Render(prompts.PublishBuilding, prompts.Data{"Path": b.shown, "Wait": t.o.Wait.String(), "Preview": b.meta.Preview}), b.meta), nil
 	case b.deploy.Status == session.PublishReady:
 		b.meta.Status = session.PublishReady
-		return text(tools.OutcomeOK, prompts.Render(prompts.PublishReady, prompts.Data{"Path": b.shown, "Preview": b.meta.Preview, "URL": b.app.URL}), b.meta), nil
+		return text(tools.OutcomeOK, prompts.Render(prompts.PublishReady, prompts.Data{"Path": b.shown, "Preview": b.meta.Preview, "URL": b.app.URL, "Visibility": b.app.Visibility}), b.meta), nil
 	}
 	return text(tools.OutcomeError, prompts.Render(prompts.PublishFailed, t.failedBuild(ctx, b)), b.meta), nil
 }
@@ -706,7 +706,7 @@ func (t *Tool) releaseCommit(ctx context.Context, c tools.Call, g target, ready 
 		return text(tools.OutcomeOK, prompts.Render(prompts.PublishPending, prompts.Data{"Tag": tag, "Wait": t.o.Wait.String()}), meta), nil
 	case r.Release.Status == session.PublishReleased || r.Release.Status == "superseded":
 		meta.Status = session.PublishReleased
-		return text(tools.OutcomeOK, prompts.Render(prompts.PublishReleased, prompts.Data{"Tag": tag, "URL": a.URL}), meta), nil
+		return text(tools.OutcomeOK, prompts.Render(prompts.PublishReleased, prompts.Data{"Tag": tag, "URL": a.URL, "Visibility": a.Visibility}), meta), nil
 	case r.Release.Status == session.PublishRefused:
 		meta.Status = session.PublishRefused
 		reason := cmp.Or(deref(r.Release.Reason), "no reason given")
@@ -748,9 +748,11 @@ func nextTag(releases []hostRelease) string {
 // The app host's objects, as much of them as the tool reads.
 type (
 	hostApp struct {
-		Slug       string `json:"slug"`
-		Name       string `json:"name"`
-		URL        string `json:"url"`
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+		URL  string `json:"url"`
+		// Visibility is who may open the app, as the host names it.
+		Visibility string `json:"visibility"`
 		Repository struct {
 			PushURL string `json:"push_url"`
 		} `json:"repository"`
@@ -923,7 +925,9 @@ func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta) (hostAp
 			return a, err
 		}
 	}
-	body := map[string]string{"visibility": "public"}
+	// The create names no visibility: who may open a new app is the
+	// host's default, which the person changes there.
+	body := map[string]string{}
 	if name := strings.TrimSpace(t.s.Title); name != "" {
 		body["name"] = name
 	}
