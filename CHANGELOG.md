@@ -28,7 +28,7 @@ committed: the commit log already holds that.
   `blob`, `media_type` by the file name's extension and otherwise by its
   leading bytes, `size`, and `width` and `height` 0. A message keeps its
   first 16 links (`harness.MaxKeptFiles`), each a regular file of any
-  type of at most 32 MiB (`harness.MaxKeptFileBytes`), 64 MiB together
+  type of at most 16 MiB (`harness.MaxKeptFileBytes`), 32 MiB together
   (`harness.MaxKeptFilesBytes`), counted apart from its 8 images. A
   destination both shown as an image and linked is kept once, as the
   image. A link to a directory is skipped with the new reason
@@ -41,13 +41,14 @@ committed: the commit log already holds that.
 
 ### Changed
 
-- `GET /v1/sessions/{id}/files` answers a file of at most 32 MiB, up
-  from 10 MiB: its bound is the bound of a file an answer links. The
-  route copies the file from the machine as it reads it, so the bound
-  costs the server no memory.
-- A runner in its own process stores a blob of at most 32 MiB through
+- `GET /v1/sessions/{id}/files` answers a file of at most 32 MiB
+  (`server.MaxFileBytes`), up from 10 MiB. The route copies the file
+  from the machine as it reads it and holds none of it, so its bound is
+  its own and larger than the bytes a linked file is kept at, which the
+  session's store holds whole.
+- A runner in its own process stores a blob of at most 16 MiB through
   the runner protocol, up from 8 MiB, so it stores a kept file.
-- Keeping one message's files is bounded at 104 seconds, up from 30:
+- Keeping one message's files is bounded at 72 seconds, up from 30:
   the time its images and linked files take together at 1 MiB a second.
 - For a program that embeds the harness: `harness.KeepImages` is
   `harness.KeepFiles`, which takes the media type rule as its last
@@ -98,8 +99,10 @@ committed: the commit log already holds that.
 - No store takes a blob as a stream. A process that keeps a linked file
   holds about twice its size while it stores it, and a fork reads every
   blob its copied events name before it writes them. Four sessions that
-  each keep a 32 MiB file in the same moment hold about 256 MiB in the
-  server that drives them.
+  each keep a file of the most bytes in the same moment hold about
+  128 MiB in the server that drives them. The bounds are sized for a
+  store that keeps blobs in Postgres rows, where an answer's linked
+  files add up to 32 MiB to the database.
 - Every runner has known `files.kept` since v0.23.0, so this release
   rolls in any order. The store and the authorizer need no change.
 
