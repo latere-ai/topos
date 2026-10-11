@@ -3,7 +3,10 @@
 
 package machine
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // ExitKilled is the exit code of a command a kill signal ended, as a
 // shell and a container runtime report it: 128 and the number of SIGKILL.
@@ -57,4 +60,12 @@ type Recovering interface {
 	// goes on. A failed hook fails that operation; the machine stays as
 	// it is.
 	OnRestart(hook func(ctx context.Context, r Restart) error)
+}
+
+// Importer is the optional interface of a machine that takes many files
+// in one call: ImportTar extracts a tar stream of regular files and
+// directories below dest, a directory of the machine, creating it and
+// what the archive names.
+type Importer interface {
+	ImportTar(ctx context.Context, dest string, r io.Reader) error
 }

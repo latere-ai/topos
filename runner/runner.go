@@ -403,11 +403,23 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 	if first && s.Parent != nil {
 		restored, missing = r.restoreFork(ctx, s, m)
 	}
-	if err := r.attach(ctx, s, m, log, beside, repos, restored); err != nil {
+	// A machine made new that no checkpoint filled gets back what the
+	// session's log holds of its working directory, before the call that
+	// opened it runs (spec 065).
+	var rebuilt *session.Restore
+	var unbuilt error
+	if restored == nil {
+		if rebuilt, unbuilt = r.rebuildNew(ctx, s, m, first); unbuilt != nil && first {
+			// A fork's files that could not be written back are missing
+			// as a checkpoint's are.
+			missing = errors.Join(missing, unbuilt)
+		}
+	}
+	if err := r.attach(ctx, s, m, log, beside, repos, restored, rebuilt, unbuilt); err != nil {
 		return errors.Join(err, delivered)
 	}
 	if missing != nil {
-		if err := r.checkpointMissing(ctx, log, beside, missing); err != nil {
+		if err := r.checkpointMissing(ctx, log, beside, missing, rebuilt != nil); err != nil {
 			return errors.Join(err, delivered)
 		}
 	}
@@ -476,13 +488,27 @@ func (r *Runner) restarted(ctx context.Context, s session.Session, m machine.Mac
 	return err
 }
 
+// The sentences of a session.error checkpoint_missing, for a person: a
+// fork that starts on its repositories alone, and one whose working
+// directory was rebuilt from its log in the checkpoint's place (spec
+// 065).
+const (
+	MessageCheckpointMissing = "The files of the session this one continues could not be restored; it starts from its repositories."
+	MessageCheckpointRebuilt = "The files of the session this one continues could not be restored from its checkpoint; its working directory was rebuilt from the conversation's record instead."
+)
+
 // checkpointMissing appends the session.error of a fork whose fork
 // point's files could not be restored (spec 035): the fork goes on with
-// its conversation and its repositories, so the error is not retryable
+// its conversation and its repositories, or, when rebuilt says so, with
+// the working directory its log holds, so the error is not retryable
 // and stops nothing.
-func (r *Runner) checkpointMissing(ctx context.Context, log *Log, beside bool, why error) error {
+func (r *Runner) checkpointMissing(ctx context.Context, log *Log, beside bool, why error, rebuilt bool) error {
+	message := MessageCheckpointMissing
+	if rebuilt {
+		message = MessageCheckpointRebuilt
+	}
 	e, err := session.NewEvent(session.TypeSessionError, session.SessionError{
-		Code: checkpoint.CodeMissing, Message: "The files of the session this one continues could not be restored; it starts from its repositories.", Detail: why.Error(),
+		Code: checkpoint.CodeMissing, Message: message, Detail: why.Error(),
 	}, r.o.Clock())
 	if err != nil {
 		return err
@@ -529,7 +555,13 @@ const MessageMachineLost = "The session's machine was lost and replaced with a n
 // its kind: the one the session had is gone and its files with it, which
 // is recorded as replaced with a session.error machine_lost, so the log
 // says the files are gone and the model reads it (spec 009).
-func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machine, log *Log, beside bool, repos []session.DeliveredRepository, restored *session.CheckpointRef) error {
+//
+// rebuilt is what the session's log gave back of the working directory
+// of a machine made new (spec 065): the machine is then recorded as
+// restored, with the rebuild's record and no machine_lost. unbuilt is
+// why such a rebuild could not be written, which a replaced machine's
+// machine_lost carries.
+func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machine, log *Log, beside bool, repos []session.DeliveredRepository, restored *session.CheckpointRef, rebuilt *session.Restore, unbuilt error) error {
 	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
 	if err != nil {
 		return err
@@ -566,21 +598,27 @@ func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machin
 		}
 		break
 	}
+	if rebuilt != nil {
+		reason = session.MachineRestored
+	}
 	a, err := attach(ctx, m, log, attachOptions{PersonalInstructions: r.o.PersonalInstructions, PersonalSkills: r.o.PersonalSkills})
 	if err != nil {
 		return err
 	}
 	e, err := session.NewEvent(session.TypeSessionMachine, session.SessionMachine{
-		Machine: a.Machine, Reason: reason, Context: a.Context, Instructions: a.Instructions, Skills: a.Skills, Repositories: repos, Checkpoint: restored,
+		Machine: a.Machine, Reason: reason, Context: a.Context, Instructions: a.Instructions, Skills: a.Skills, Repositories: repos, Checkpoint: restored, Restore: rebuilt,
 	}, r.o.Clock())
 	if err != nil {
 		return err
 	}
 	batch := []session.Event{e}
 	if reason == session.MachineReplaced {
+		detail := fmt.Sprintf("the %s machine %s is new and empty; the one the session had is gone", info.Kind, info.ID)
+		if unbuilt != nil {
+			detail += "; " + unbuilt.Error()
+		}
 		lost, err := session.NewEvent(session.TypeSessionError, session.SessionError{
-			Code: machine.CodeLost, Message: MessageMachineLost, Retryable: true,
-			Detail: fmt.Sprintf("the %s machine %s is new and empty; the one the session had is gone", info.Kind, info.ID),
+			Code: machine.CodeLost, Message: MessageMachineLost, Retryable: true, Detail: detail,
 		}, r.o.Clock())
 		if err != nil {
 			return err

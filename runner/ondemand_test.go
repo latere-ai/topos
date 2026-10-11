@@ -48,6 +48,8 @@ type demand struct {
 	// wrap stands the opened machine behind another, such as one that
 	// says its open restarted or replaced it.
 	wrap func(machine.Machine) machine.Machine
+	// files offers the write, edit and read tools beside bash.
+	files bool
 }
 
 func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
@@ -58,7 +60,13 @@ func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
 		Harness: func(ctx context.Context, s session.Session) (harness.Config, error) {
 			reg := tools.NewRegistry()
 			for _, t := range append([]tools.Tool{echo{}}, tools.Builtins()...) {
-				if n := t.Definition().Name; !d.noTools && (n == "echo" || n == tools.NameBash) {
+				n := t.Definition().Name
+				if d.files && (n == tools.NameWrite || n == tools.NameEdit || n == tools.NameRead) {
+					if err := reg.AddBuiltin(t); err != nil {
+						return harness.Config{}, err
+					}
+				}
+				if !d.noTools && (n == "echo" || n == tools.NameBash) {
 					if err := reg.AddBuiltin(t); err != nil {
 						return harness.Config{}, err
 					}
@@ -78,7 +86,7 @@ func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
 			return harness.Config{
 				Model: &dialect.Model{}, Connection: models.Connection{BaseURL: f.stub.URL() + "/anthropic", Model: model, Family: models.FamilyAnthropic},
 				Entry: models.Entry{InputWindow: 100_000, MaxOutputTokens: 8_000}, Machine: m, Tools: reg,
-				Policy: harness.Policy{AlwaysAllow: []string{"bash"}},
+				Policy: harness.Policy{AlwaysAllow: []string{"bash", tools.NameWrite, tools.NameEdit}},
 				Clock:  func() time.Time { return t0 }, Sleep: func(context.Context, time.Duration) error { return nil },
 			}, nil
 		},
