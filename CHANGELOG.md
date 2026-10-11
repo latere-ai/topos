@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.30.0 - 2026-10-11
+
 ### Added
 
 - An answer's linked files are kept. An agent that made a report or an
