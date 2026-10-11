@@ -242,7 +242,10 @@ func (t *turn) admitFetch(ctx context.Context, use session.AgentToolUse) (*tools
 // more (spec 052). The verdict is ask in the session's own thread of a
 // session whose network asks and that a person attends, which leaves the
 // step waiting for a confirmation; block otherwise, recorded with nothing
-// waiting. A read that fails is a session.error, and the call stands.
+// waiting. A read that fails is a session.error, and the call stands; a
+// machine that is lost has no connections to read, and its loss is said
+// by the call's result and by the machine's own record, not as a failure
+// of the network.
 func (t *turn) refusals(ctx context.Context, toolUseID string, since time.Time, w *waits) error {
 	n := t.network()
 	nm, ok := t.h.c.Machine.(machine.Networked)
@@ -250,6 +253,9 @@ func (t *turn) refusals(ctx context.Context, toolUseID string, since time.Time, 
 		return nil
 	}
 	conns, err := nm.Refused(ctx, since)
+	if errors.Is(err, machine.ErrLost) {
+		return nil
+	}
 	if err != nil {
 		se, eerr := t.sessionError(CodeNetworkUnavailable, "The connections the command made could not be read.", true, err.Error())
 		if eerr != nil {
