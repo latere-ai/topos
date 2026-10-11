@@ -53,7 +53,6 @@ type attachOptions struct {
 	PersonalInstructions string
 	// PersonalSkills is the person's own skills folder on the host.
 	PersonalSkills string
-	Now            time.Time
 }
 
 // attach computes a machine's attachment, storing each instruction file
@@ -66,7 +65,7 @@ func attach(ctx context.Context, m machine.Machine, l *Log, o attachOptions) (At
 	if inRepo {
 		root = top
 	}
-	a.Context = contextBlock(ctx, m, info, inRepo, o.Now)
+	a.Context = contextBlock(ctx, m, info, inRepo)
 
 	total := 0
 	add := func(p string, b []byte) error {
@@ -288,8 +287,11 @@ func gitTop(ctx context.Context, m machine.Machine) (string, bool) {
 	return git(ctx, m, "rev-parse --show-toplevel")
 }
 
-// contextBlock is the context block of spec 011.
-func contextBlock(ctx context.Context, m machine.Machine, info machine.Info, inRepo bool, now time.Time) string {
+// contextBlock is the context block of spec 011: where the machine is
+// and what its repository holds, as it attached. It names no date: the
+// block is recorded once and read for as long as the machine stands, and
+// every request states the date of its own turn after it.
+func contextBlock(ctx context.Context, m machine.Machine, info machine.Info, inRepo bool) string {
 	var branch, head string
 	var modified, untracked int
 	var commits []string
@@ -313,7 +315,7 @@ func contextBlock(ctx context.Context, m machine.Machine, info machine.Info, inR
 	return prompts.Render(prompts.ContextBlock, prompts.Data{
 		"Workdir": info.Workdir, "OS": info.OS, "Arch": info.Arch,
 		"Cella": info.Kind == machine.KindCella, "Environment": info.Environment,
-		"Date": now.UTC().Format("2006-01-02"), "Git": inRepo, "Branch": branch, "Head": head,
+		"Git": inRepo, "Branch": branch, "Head": head,
 		"Modified": modified, "Untracked": untracked, "Commits": commits,
 	})
 }

@@ -296,8 +296,10 @@ func TestTheContextBlock(t *testing.T) {
 	if !ok || top != "/work" {
 		t.Fatalf("top %q %v", top, ok)
 	}
-	got := contextBlock(t.Context(), m, m.Info(), true, t0)
-	want := "<context>\nWorking directory: /work/app\nPlatform: linux/arm64\nMachine: Cella sandbox (gpu)\nDate: 2026-09-27\nGit: branch agents/builder/ses_1 at 1a2b3c4, 2 modified, 1 untracked\nRecent commits:\n- 1a2b3c4 parse: reject empty input\n- 0f0f0f0 init\n</context>"
+	// The block names no date: it is recorded once and read on every later
+	// day, and each request states the date of its own turn (spec 011).
+	got := contextBlock(t.Context(), m, m.Info(), true)
+	want := "<context>\nWorking directory: /work/app\nPlatform: linux/arm64\nMachine: Cella sandbox (gpu)\nGit: branch agents/builder/ses_1 at 1a2b3c4, 2 modified, 1 untracked\nRecent commits:\n- 1a2b3c4 parse: reject empty input\n- 0f0f0f0 init\n</context>"
 	if got != want {
 		t.Fatalf("context block:\n%s\nwant\n%s", got, want)
 	}
@@ -399,7 +401,7 @@ func TestAttachInARepository(t *testing.T) {
 			"/repo/.agents/skills/deploy/notes.md": "x",
 		},
 	}
-	a, err := attach(t.Context(), m, l, attachOptions{PersonalInstructions: "/nonexistent/AGENTS.md", Now: t0})
+	a, err := attach(t.Context(), m, l, attachOptions{PersonalInstructions: "/nonexistent/AGENTS.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +436,7 @@ func TestAttachInARepository(t *testing.T) {
 			big.files[d+"/"+n] = strings.Repeat(string(rune('a'+i)), maxInstructionFile-10)
 		}
 	}
-	a, err = attach(t.Context(), big, l, attachOptions{Now: t0})
+	a, err = attach(t.Context(), big, l, attachOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +445,7 @@ func TestAttachInARepository(t *testing.T) {
 	}
 	for _, fail := range []string{"/repo/svc/CLAUDE.md", "/repo/.agents/skills", "/repo/.claude/skills/deploy/SKILL.md"} {
 		m.fail = fail
-		if _, err := attach(t.Context(), m, l, attachOptions{Now: t0}); err == nil {
+		if _, err := attach(t.Context(), m, l, attachOptions{}); err == nil {
 			t.Fatalf("a failing read of %s was skipped", fail)
 		}
 	}

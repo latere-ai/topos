@@ -107,6 +107,20 @@ func TestBreakpointsRollWithTheConversation(t *testing.T) {
 	if len(defs) != 0 {
 		t.Fatal("tools from nothing")
 	}
+
+	// The date is the system prompt's last block and follows its
+	// breakpoint, so a new day changes nothing a provider cached before
+	// it; a request with no date ends with the marked block.
+	dated, err := buildRequest(requestParts{Model: "m", System: []lux.Block{{Type: ir.BlockText, Text: "a"}, {Type: ir.BlockText, Text: "b"}}, Date: "the date", Messages: msgs[:1], MaxTokens: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(dated.System); n != 3 || dated.System[0].CacheHint || !dated.System[1].CacheHint || dated.System[2].Text != "the date" || dated.System[2].CacheHint {
+		t.Fatalf("a dated request's system prompt %+v", dated.System)
+	}
+	if n := len(req.System); n != 1 || !req.System[0].CacheHint {
+		t.Fatalf("an undated request's system prompt %+v", req.System)
+	}
 }
 
 func TestBuildRequestCarriesTheReasoningReplayAsk(t *testing.T) {

@@ -303,7 +303,10 @@ func TestATurnRunsToolsAndEnds(t *testing.T) {
 	if first.MaxTokens == nil || *first.MaxTokens != OutputCap || mr.MaxTokens != OutputCap {
 		t.Fatalf("max_tokens %v, recorded %d, want the output cap %d", first.MaxTokens, mr.MaxTokens, OutputCap)
 	}
-	if len(first.System) == 0 || !strings.Contains(first.System[0].Text, "You are an agent") || !first.System[len(first.System)-1].CacheHint {
+	// The system prompt ends with the date its turn opened on, after the
+	// cache breakpoint on the block before it (spec 011).
+	if n := len(first.System); n < 2 || !strings.Contains(first.System[0].Text, "You are an agent") || !first.System[n-2].CacheHint ||
+		first.System[n-1].Text != dated(t0) || first.System[n-1].CacheHint {
 		t.Fatalf("system prompt %+v", first.System)
 	}
 }

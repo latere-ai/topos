@@ -1041,9 +1041,13 @@ func (t *turn) maxTokens() int64 {
 	return min(OutputCap, limit)
 }
 
-// request builds the step's IR request from the fold.
+// request builds the step's IR request from the fold. Its date is read
+// from the log through the sequence the fold was built from, t.seen, and
+// never from the clock, so the request is a function of the log and the
+// session's header.
 func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, string, error) {
-	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, headerBlocks(t.s, t.thread == ""), withRoute(withRepositories(tr.System, t.s), t.s), t.l)
+	parts := withRoute(withRepositories(tr.System, t.s), t.s)
+	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, headerBlocks(t.s, t.thread == ""), parts, t.l)
 	if err != nil {
 		return ir.Request{}, "", err
 	}
@@ -1057,7 +1061,7 @@ func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, 
 		messages = withoutImages(messages)
 	}
 	req, err := buildRequest(requestParts{
-		Model: t.h.c.Connection.Model, System: system, Messages: messages, Tools: defs,
+		Model: t.h.c.Connection.Model, System: system, Date: dateBlock(dateOf(t.events(), t.seen), parts), Messages: messages, Tools: defs,
 		MaxTokens: t.maxTokens(), Effort: t.h.c.Effort, CacheKey: t.s.TreeRoot(),
 		ReasoningReplay: t.h.c.Connection.EffectiveDialect() == ir.DialectOpenAIResponses,
 	})

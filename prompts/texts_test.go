@@ -65,8 +65,15 @@ var textCases = func() []textCase {
 	contextData := func(cella bool, env string, git bool, commits []string) Data {
 		return Data{
 			"Workdir": "/work/app", "OS": "linux", "Arch": "arm64", "Cella": cella, "Environment": env,
-			"Date": "2026-09-27", "Git": git, "Branch": "main", "Head": "1a2b3c4", "Modified": 2, "Untracked": 1, "Commits": commits,
+			"Git": git, "Branch": "main", "Head": "1a2b3c4", "Modified": 2, "Untracked": 1, "Commits": commits,
 		}
+	}
+	// contextV1 is contextData with the Date the first version of the
+	// context block reads.
+	contextV1 := func(cella bool, env string, git bool, commits []string) Data {
+		d := contextData(cella, env, git, commits)
+		d["Date"] = "2026-09-27"
+		return d
 	}
 	page := func(ctype string, truncated bool) Data {
 		return Data{"URL": "https://example.com/final", "Status": 404, "ContentType": ctype, "Body": "no such page\n", "Truncated": truncated, "Max": 10}
@@ -303,14 +310,26 @@ var textCases = func() []textCase {
 		{name: WebSearchUnavailable, want: "Web search is not available on this server."},
 
 		{name: ContextBlock, data: contextData(false, "", false, nil), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
-			fmt.Sprintf("Machine: %s\n", "host") + fmt.Sprintf("Date: %s\n", "2026-09-27") + "</context>"},
+			fmt.Sprintf("Machine: %s\n", "host") + "</context>"},
 		{name: ContextBlock, data: contextData(true, "gpu", true, []string{"1a2b3c4 parse: reject empty input", "0f0f0f0 init"}), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
-			fmt.Sprintf("Machine: %s\n", "Cella sandbox"+" ("+"gpu"+")") + fmt.Sprintf("Date: %s\n", "2026-09-27") +
+			fmt.Sprintf("Machine: %s\n", "Cella sandbox"+" ("+"gpu"+")") +
 			fmt.Sprintf("Git: branch %s at %s, %s modified, %s untracked\n", "main", "1a2b3c4", strconv.Itoa(2), strconv.Itoa(1)) +
 			"Recent commits:\n" + "- " + "1a2b3c4 parse: reject empty input" + "\n" + "- " + "0f0f0f0 init" + "\n" + "</context>"},
 		{name: ContextBlock, data: contextData(true, "", true, nil), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
+			fmt.Sprintf("Machine: %s\n", "Cella sandbox") +
+			fmt.Sprintf("Git: branch %s at %s, %s modified, %s untracked\n", "main", "1a2b3c4", strconv.Itoa(2), strconv.Itoa(1)) + "</context>"},
+		{name: "context/context-v1", data: contextV1(false, "", false, nil), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
+			fmt.Sprintf("Machine: %s\n", "host") + fmt.Sprintf("Date: %s\n", "2026-09-27") + "</context>"},
+		{name: "context/context-v1", data: contextV1(true, "gpu", true, []string{"1a2b3c4 parse: reject empty input", "0f0f0f0 init"}), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
+			fmt.Sprintf("Machine: %s\n", "Cella sandbox"+" ("+"gpu"+")") + fmt.Sprintf("Date: %s\n", "2026-09-27") +
+			fmt.Sprintf("Git: branch %s at %s, %s modified, %s untracked\n", "main", "1a2b3c4", strconv.Itoa(2), strconv.Itoa(1)) +
+			"Recent commits:\n" + "- " + "1a2b3c4 parse: reject empty input" + "\n" + "- " + "0f0f0f0 init" + "\n" + "</context>"},
+		{name: "context/context-v1", data: contextV1(true, "", true, nil), want: "<context>\n" + fmt.Sprintf("Working directory: %s\n", "/work/app") + fmt.Sprintf("Platform: %s/%s\n", "linux", "arm64") +
 			fmt.Sprintf("Machine: %s\n", "Cella sandbox") + fmt.Sprintf("Date: %s\n", "2026-09-27") +
 			fmt.Sprintf("Git: branch %s at %s, %s modified, %s untracked\n", "main", "1a2b3c4", strconv.Itoa(2), strconv.Itoa(1)) + "</context>"},
+		{name: ContextDate, data: Data{"Date": "2026-10-13", "Attached": ""}, want: "<context>\n" + "Today's date: 2026-10-13 (UTC)\n" + "</context>"},
+		{name: ContextDate, data: Data{"Date": "2026-10-13", "Attached": "2026-10-06"}, want: "<context>\n" + "Today's date: 2026-10-13 (UTC)\n" +
+			"The line \"Date: 2026-10-06\" above is the day this session's machine attached, not today.\n" + "</context>"},
 		{name: TranscriptAttachments, data: Data{"Attachments": []attachment{{"attachments/sales.csv", "text/csv", 1204}, {"attachments/notes-2.md", "text/markdown", 9}}},
 			want: "Attached files, in the working directory:\n" + "- attachments/sales.csv (text/csv, 1204 bytes)\n" + "- attachments/notes-2.md (text/markdown, 9 bytes)\n"},
 		{name: TranscriptImageUnseen, want: "[An image is attached here, but this model does not take images, so it cannot see it.]"},

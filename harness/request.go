@@ -12,6 +12,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
@@ -30,12 +31,14 @@ type BlobReader interface {
 	Blob(ctx context.Context, d session.Digest) (io.ReadCloser, error)
 }
 
-// systemBlocks renders a request's system prompt (spec 010, parts 2 to
-// 8): the harness prompt, the agent's instructions, the blocks the
-// session's header gives (headerBlocks), then the system parts in order,
-// the fold's and the route after them. Every block is in the prefix a
-// provider caches, and the header's blocks are of what no event changes,
-// so their bytes are the same on every request.
+// systemBlocks renders a request's system prompt but for its date (spec
+// 010, parts 2 to 8): the harness prompt, the agent's instructions, the
+// blocks the session's header gives (headerBlocks), then the system
+// parts in order, the fold's and the route after them. Every block is in
+// the prefix a provider caches, and the header's blocks are of what no
+// event changes, so their bytes are the same on every request. The date
+// follows them as the request's last system block (dateBlock), after the
+// cache breakpoint.
 func systemBlocks(ctx context.Context, harnessPrompt, agentInstructions string, header []string, parts []session.Part, blobs BlobReader) ([]lux.Block, error) {
 	blocks := []lux.Block{{Type: ir.BlockText, Text: harnessPrompt}}
 	if s := strings.TrimSpace(agentInstructions); s != "" {
@@ -175,6 +178,76 @@ func withRoute(parts []session.Part, s session.Session) []session.Part {
 	return append(slices.Clip(parts), route)
 }
 
+// dateOf is the date a request built from the events of evs through the
+// sequence through states as the current one (spec 011), as time.DateOnly
+// in UTC: the day of the event that opened the request's turn, the last
+// session.status running among them. The turn's runner appends that
+// status before the turn and nothing appends one while it runs, so every
+// request of a turn states the same day, and a replay that folds the log
+// through the request's fold point reads the same event. A log that holds
+// no running status is dated by its last event, and one that holds no
+// event by nothing, "".
+func dateOf(evs []session.Event, through uint64) string {
+	var opened, last *session.Event
+	for i := range evs {
+		e := &evs[i]
+		if e.Seq > through {
+			continue
+		}
+		if last == nil || e.Seq > last.Seq {
+			last = e
+		}
+		var p session.SessionStatus
+		if e.Type == session.TypeSessionStatus && e.Decode(&p) == nil && p.Status == session.StatusRunning && (opened == nil || e.Seq > opened.Seq) {
+			opened = e
+		}
+	}
+	switch {
+	case opened != nil:
+		return opened.Time.UTC().Format(time.DateOnly)
+	case last != nil:
+		return last.Time.UTC().Format(time.DateOnly)
+	}
+	return ""
+}
+
+// attachedDateLine opens the line of a context block that names the day
+// its machine attached. The first version of the context prompt wrote
+// it, and a session.machine recorded with that version carries it for as
+// long as the machine stands.
+const attachedDateLine = "Date: "
+
+// attachedDate is the day the context block among parts names as the day
+// its machine attached, "" for a block that names none.
+func attachedDate(parts []session.Part) string {
+	for _, p := range parts {
+		if p.Kind != session.PartContext {
+			continue
+		}
+		for line := range strings.SplitSeq(p.Context, "\n") {
+			if day, ok := strings.CutPrefix(line, attachedDateLine); ok {
+				return day
+			}
+		}
+	}
+	return ""
+}
+
+// dateBlock is the text of a request's date part (spec 011), "" for a
+// request with no date: today's date, and, where a recorded context
+// block among parts names another day as its machine's, a line that says
+// what that day is, so the model reads one date as the current one.
+func dateBlock(date string, parts []session.Part) string {
+	if date == "" {
+		return ""
+	}
+	attached := attachedDate(parts)
+	if attached == date {
+		attached = ""
+	}
+	return prompts.Render(prompts.ContextDate, prompts.Data{"Date": date, "Attached": attached})
+}
+
 // withoutImages are the messages with every image a message carries
 // replaced by a note that the model cannot see it, for a model whose
 // figures say it takes no images (spec 015): the model reads that an
@@ -223,10 +296,11 @@ func toolsHash(defs []lux.Tool) (string, error) {
 }
 
 // placeBreakpoints marks the cache breakpoints of spec 010 that the IR
-// can carry: the last system block, and the last block of the final user
-// message and of the user message before the latest assistant message.
-// The prefix a provider caches runs tools, then system, then messages,
-// so the system breakpoint covers the tool definitions too.
+// can carry: the last block of system, the system prompt before its
+// date, and the last block of the final user message and of the user
+// message before the latest assistant message. The prefix a provider
+// caches runs tools, then system, then messages, so the system
+// breakpoint covers the tool definitions too.
 func placeBreakpoints(system []lux.Block, messages []lux.Message) {
 	if n := len(system); n > 0 {
 		system[n-1].CacheHint = true
@@ -244,8 +318,16 @@ func placeBreakpoints(system []lux.Block, messages []lux.Message) {
 
 // requestParts are what one step's request is built from.
 type requestParts struct {
-	Model     string
-	System    []lux.Block
+	Model string
+	// System is the system prompt before its date: the blocks whose bytes
+	// a day's turn does not change, the last of which takes the system
+	// cache breakpoint.
+	System []lux.Block
+	// Date is the text of the date part, the system prompt's last block,
+	// "" for none. It follows the breakpoint and takes none, so a new day
+	// changes no byte of the tool definitions and the blocks before it,
+	// which stay a cached prefix.
+	Date      string
 	Messages  []lux.Message
 	Tools     []lux.Tool
 	MaxTokens int64
@@ -267,6 +349,9 @@ func buildRequest(p requestParts) (ir.Request, error) {
 	}
 	system := append([]lux.Block(nil), p.System...)
 	placeBreakpoints(system, msgs)
+	if p.Date != "" {
+		system = append(system, lux.Block{Type: ir.BlockText, Text: p.Date})
+	}
 	limit := p.MaxTokens
 	req := lux.Request{Model: p.Model, System: system, Messages: msgs, Tools: p.Tools, MaxTokens: &limit, Stream: true, CacheKey: p.CacheKey, ReasoningReplay: p.ReasoningReplay}
 	if p.Effort != "" {

@@ -5,6 +5,7 @@ package harness
 
 import (
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 
@@ -12,20 +13,32 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// systemTexts are the system blocks of every request the stub received,
-// and whether each request's last system block carries the cache hint.
+// dated is the date part of a request whose turn opened on day, with no
+// recorded context block that names another day.
+func dated(day time.Time) string {
+	return prompts.Render(prompts.ContextDate, prompts.Data{"Date": day.Format(time.DateOnly), "Attached": ""})
+}
+
+// systemTexts are the system blocks of every request the stub received
+// before its date part, and whether each request's cache breakpoint is
+// on the last of them. Every request ends with the date its turn opened
+// on, which a fixture's events put at t0, after the breakpoint and with
+// no hint of its own.
 func (e *env) systemTexts() ([][]string, []bool) {
 	e.t.Helper()
 	var texts [][]string
 	var cached []bool
-	for _, r := range e.stub.Requests() {
+	for i, r := range e.stub.Requests() {
 		var blocks []string
 		for _, b := range r.Request.System {
 			blocks = append(blocks, b.Text)
 		}
-		texts = append(texts, blocks)
-		n := len(r.Request.System)
-		cached = append(cached, n > 0 && r.Request.System[n-1].CacheHint)
+		n := len(blocks)
+		if n < 2 || blocks[n-1] != dated(t0) || r.Request.System[n-1].CacheHint {
+			e.t.Fatalf("request %d does not end with its date, unmarked: %q", i, blocks)
+		}
+		texts = append(texts, blocks[:n-1])
+		cached = append(cached, r.Request.System[n-2].CacheHint)
 	}
 	return texts, cached
 }

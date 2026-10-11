@@ -44,7 +44,9 @@ func (h *Harness) Rebuild(s session.Session, blobs BlobReader) models.Rebuild {
 				prefix = append(prefix, e)
 			}
 		}
-		root := &turn{h: h, s: s, sh: &shared{events: prefix}, l: replayLog{blobs}, root: h.c.Tools}
+		// The request was built from the log through its fold point, which
+		// its date is read through as well.
+		root := &turn{h: h, s: s, sh: &shared{events: prefix}, l: replayLog{blobs}, root: h.c.Tools, seen: mr.FoldSeq}
 		var err error
 		if root.reg, err = root.registry(h.c.Tools.Names()); err != nil {
 			return models.Request{}, err

@@ -329,12 +329,20 @@ const (
 // The system parts of a request (spec 011): the context block a machine
 // records when it attaches, the block that names a session's
 // repositories before its first machine does, an instruction file, the
-// skills index and a memory store, and the lines that mark instructions
-// cut at their limits.
+// skills index and a memory store, the lines that mark instructions cut
+// at their limits, and the date every request states.
 const (
-	// ContextBlock takes Workdir, OS, Arch, Cella, Environment, Date,
-	// Git, Branch, Head, Modified, Untracked and Commits.
-	ContextBlock Name = "context/context-v1"
+	// ContextBlock takes Workdir, OS, Arch, Cella, Environment, Git,
+	// Branch, Head, Modified, Untracked and Commits. Version 2 drops the
+	// Date line of version 1, the day the machine attached, which a
+	// session.machine recorded with version 1 still carries: ContextDate
+	// states the date.
+	ContextBlock Name = "context/context-v2"
+	// ContextDate takes Date, the UTC day of the event that opened the
+	// request's turn, and Attached, the day a context block recorded with
+	// version 1 names when it is another day, empty otherwise: the date a
+	// request states as today's, in its last system block.
+	ContextDate Name = "context/date-v1"
 	// ContextRepositories takes Repositories, each with URL, Ref, Branch
 	// and Dir, the directory under the working directory, empty for the
 	// working directory itself.

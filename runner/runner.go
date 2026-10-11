@@ -483,7 +483,7 @@ func (r *Runner) attach(ctx context.Context, s session.Session, m machine.Machin
 		reason = "handoff"
 		break
 	}
-	a, err := attach(ctx, m, log, attachOptions{PersonalInstructions: r.o.PersonalInstructions, PersonalSkills: r.o.PersonalSkills, Now: r.o.Clock()})
+	a, err := attach(ctx, m, log, attachOptions{PersonalInstructions: r.o.PersonalInstructions, PersonalSkills: r.o.PersonalSkills})
 	if err != nil {
 		return err
 	}
