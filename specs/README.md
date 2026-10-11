@@ -67,7 +67,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [008](008-tools.md) | Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule | large | in-progress | 001, 004, 009 |
 | [009](.archive/009-machines.md) | Machines: the Machine interface, the host directory and its worktrees, the Cella sandbox | large | complete | 001, 002, 004 |
 | [010](010-context.md) | Context: the order of the prompt's parts, cache breakpoints, token accounting, clearing, compaction | medium | in-progress | 004, 005, 007, 011 |
-| [011](011-instructions-and-skills.md) | Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills | medium | in-progress | 004, 005, 009 |
+| [011](011-instructions-and-skills.md) | Instructions and skills: the versioned harness prompt, the context block, the date, project instruction files, Agent Skills | medium | in-progress | 004, 005, 009 |
 | [012](012-permissions-and-approvals.md) | Permissions, approvals and hooks: the boundary, the layers, the risk score and verdict, the modes | large | in-progress | 001, 004, 005, 008, 009 |
 | [013](013-threads-and-subagents.md) | Threads, subagents and the advisor: the session's graph, spawn and message, worktree isolation, narrowing, depth | large | in-progress | 001, 004, 005, 008, 009, 012 |
 | [014](.archive/014-store.md) | The server's store: the Postgres schema, toposd on the directory store, the blob store, retention and deletion | medium | complete | 002, 004, 006 |

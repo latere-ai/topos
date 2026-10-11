@@ -1,12 +1,12 @@
 ---
-title: "Instructions and skills: the versioned harness prompt, the context block, project instruction files, Agent Skills"
+title: "Instructions and skills: the versioned harness prompt, the context block, the date, project instruction files, Agent Skills"
 status: in-progress
 track: core
 depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [harness/, runner/, prompts/, test/tasks/instructions/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -17,10 +17,11 @@ author: changkun
 What the model is told before the conversation: the harness prompt, a
 versioned file that says how an agent works in this harness; the
 context block, which says where it is (working directory, platform,
-date, machine, git state); the agent's own instructions; the project's
+machine, git state); the agent's own instructions; the project's
 instruction files, found from the working directory up to the
-repository root; the index of the Agent Skills it may load; and a note
-for each attached memory store. This spec owns the text each of these
+repository root; the index of the Agent Skills it may load; a note for
+each attached memory store; and today's date, stated on every
+request. This spec owns the text each of these
 renders to, the search order of instruction files, the skill sources,
 and progressive disclosure, and the `prompts` tree that holds every
 text a model reads as a versioned file. Their order and cache placement
@@ -62,7 +63,7 @@ and the data holds exactly the keys the template reads.
 | `tools/` | the descriptions of the built-in tools and of `spawn`, `message` and `advisor` ([[008-tools]], [[013-threads-and-subagents]]) |
 | `transcript/` | the texts the fold writes into a transcript ([[004-session-log]]) |
 | `results/` | the results the harness, the tools and the thread tools write, by producer ([[005-harness-loop]], [[008-tools]], [[012-permissions-and-approvals]], [[013-threads-and-subagents]]) |
-| `context/` | the context block, the instruction file wrapper and its cut lines, the skills index, and the memory note |
+| `context/` | the context block, the instruction file wrapper and its cut lines, the skills index, the memory note, and the date |
 
 A change of wording is a new file with the next version, never an edit
 of a released one, and every released version stays embedded so a
@@ -112,7 +113,6 @@ Computed when a machine attaches and recorded as the `context` of
 Working directory: /home/p/src/app
 Platform: linux/amd64
 Machine: host
-Date: 2026-09-27
 Git: branch agents/reviewer/ses_01J9Z3P9D2F6H8K0M2Q4S6U8W0 at 1a2b3c4, 2 modified, 1 untracked
 Recent commits:
 - 1a2b3c4 parse: reject empty input
@@ -124,13 +124,19 @@ Recent commits:
 | `Working directory` | the machine's working directory |
 | `Platform` | `GOOS/GOARCH` of the machine |
 | `Machine` | `host`, or `Cella sandbox` with the Environment's name |
-| `Date` | the date the machine attached, in UTC |
 | `Git` | absent outside a repository; the branch, the short HEAD, and counts of modified and untracked paths |
 | `Recent commits` | up to five, short hash and subject |
 
 The block is the template `prompts/context/context-v<N>.md`; the
 instruction wrapper, its cut lines, the skills index and the memory
 note below are templates of `prompts/context/` too.
+
+The block names no date. It is recorded once and read for as long as
+its machine stands, so a date in it is the day the machine attached and
+is wrong from the next day on. Version 1 of the template carried such a
+`Date` line; version 2, which every new `session.machine` is rendered
+with, drops it. A `session.machine` recorded with version 1 keeps its
+line, since a recorded event does not change.
 
 A machine opened on demand is recorded only when a tool first acts on
 it ([[009-machines]]), so until then the log holds no context block.
@@ -157,6 +163,50 @@ attaches. The block is rendered from the session header and the log
 alone, so a rebuilt request carries the same bytes; the first requests
 of a session an earlier build ran went without it, and a replay of them
 builds it in and differs there ([[007-models]]).
+
+### The date
+
+Every request states today's date, whether or not a machine has
+attached: a turn that only searches the web opens none, and a model
+asked for the latest of anything needs the day to answer. The date is
+the last block of the system prompt, the template
+`prompts/context/date-v<N>.md`:
+
+```
+<context>
+Today's date: 2026-10-13 (UTC)
+</context>
+```
+
+The day is read from the log and never from a clock: it is the UTC day
+of the event that opened the request's turn, the last `session.status`
+`running` at or before the sequence the request was folded through
+([[004-session-log]]). A runner appends that status before each turn
+and nothing appends one while a turn runs ([[016-runners]]), so every
+request of a turn, a subagent's and a compaction's included, states the
+same day in the same bytes, a turn that runs past midnight keeps the
+day it opened on, and a turn that resumes after a wait states the day
+it resumed. A log that holds no `running` status is dated by its last
+event, and a request over an empty log states no date. A request stays
+a function of the session's log and header, so a replay builds the same
+date from the same events ([[007-models]]).
+
+Where the context block above it was recorded with version 1 and names
+another day, the part says what that line is, so the model reads one
+date as the current one:
+
+```
+<context>
+Today's date: 2026-10-13 (UTC)
+The line "Date: 2026-10-06" above is the day this session's machine attached, not today.
+</context>
+```
+
+A block that names the same day, and a block of version 2, get no such
+line. The part's place after the system prompt's cache breakpoint is
+[[010-context]]'s. A request an earlier build recorded went without the
+part, and a replay of it builds the part in and differs there, as with
+the repositories block above.
 
 ### Project instruction files
 
@@ -233,6 +283,9 @@ tree; what memory stores are ([[020-memory-stores]]).
 | The runner sets the git and memory sections from the log, and a later machine outside a repository drops the git section | `runner.TestAttachedSetsThePromptSections` | built |
 | A session with repositories whose machine has not opened names each repository, its ref, the session's branch and its directory from its first request; a session without repositories names none; the first `session.machine` replaces the block with the machine's context | `runner.TestTheFirstMachineGetsTheSessionsRepositories`, `runner.TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | A released prompt file, the harness prompt's among them, is never changed: its hash is pinned in the test | `prompts.TestReleasedPromptsAreImmutable` | built |
+| Every request of a turn, a later step's and a subagent's included, states the UTC day of the `session.status` `running` that opened the turn as its last system block, whatever the clock says and with no machine attached, and the next turn states the day it opened on; a log with no `running` status is dated by its last event | `harness.TestEveryRequestStatesTheDateItsTurnOpenedOn`, `harness.TestDateOf` | built |
+| A context block names no date, and a request over a block recorded with version 1 says what its `Date` line is where it names another day, and nothing where it names the same day | `runner.TestTheContextBlock`, `harness.TestTheDateOutranksTheDayARecordedBlockNames`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| A replay builds a request's date from the log to the recorded hash, whatever its clock says | `harness.TestAReplayReadsTheDateFromTheLog`, `harness.TestReplayReproducesRequestHash` | built |
 | The context block reports the branch, the git counts and five commits in the documented lines, is recorded once in `session.machine`, and is the same on a second drive | `runner.TestTheContextBlock`, `runner.TestDriveAttachesTheMachineAndRunsATurn` | built |
 | Instruction files are found from the repository root to the working directory, `AGENTS.md` before `CLAUDE.md`, the person's first and the nearest last, cut at 64 KiB each and 256 KiB in all; a Cella machine reads no personal file | `runner.TestDriveAttachesTheMachineAndRunsATurn`, `runner.TestAttachInARepository`, `runner.TestChainAndSkills` | built |
 | The skills index lists each source's skills with the first source winning a name, refuses a skill without valid frontmatter, and holds at most 100 | `runner.TestAttachInARepository`, `runner.TestChainAndSkills`, `runner.TestLocalSkillsReportsAnUnreadableFolder` | built |
@@ -246,6 +299,16 @@ a versioned file under `prompts/`, the harness prompt's sections, the
 context block, `AGENTS.md` and `CLAUDE.md` from the repository root to
 the working directory, and the skills index. v0.9.3 (2026-09-30) names a
 session's repositories from its first request, before its machine opens.
+
+Built on 2026-10-11, in no release yet: the date moved out of the
+context block into a part of its own that every request states. Before,
+a model read a date only in the context block of a machine, so a turn
+that opened none had no date at all, and a session read the day its
+machine attached on every later day. The harness prompt did not change,
+so `prompt_version` stays `harness/1`; `context/context-v2` and
+`context/date-v1` are the new texts. Nothing is recorded for the part:
+it is rebuilt from the log, and a replay of a request recorded before
+it differs by the part.
 
 Open: skill folders as read-only roots, and the two instruction tests
 against a real model.
