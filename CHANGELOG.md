@@ -203,6 +203,13 @@ committed: the commit log already holds that.
 
 ### Upgrading
 
+- Roll this release after any client that frames a published site has
+  learned to show a private one another way. A session's new app now
+  follows the app host's default, and where that is private, a frame of
+  the app ends at the host's sign-in page instead of the site. A client
+  reads `visibility` in `meta.publish` to tell. An app host whose
+  default is open, and the app host's own release order, need no care:
+  the create asks for nothing either way.
 - The date part adds no event and no member, so a client changes
   nothing for it. A program that replays a recorded session with
   `models.Replay` reads `mismatch` for the requests an earlier release
