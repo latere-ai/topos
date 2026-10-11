@@ -10,6 +10,87 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A tool can hold a call for a person. A tool that implements
+  `tools.Confirmer` names, from a call's input, a call a person approves
+  every time, with the reason its `agent.tool_use` records. Such a call
+  waits for a person wherever an `alwaysAllow` pattern, an answer a
+  person gave earlier with `remember`, the `progressive` mode's score or
+  a decision service would have run it without asking; `plan` blocks it
+  as before. For a program that embeds the harness: `harness.Call` has
+  `Confirm`, the reason, which `harness.Rules` and `Policy.Settle`
+  answer with an ask, and the harness applies the hold after any
+  `Decider`.
+
+### Changed
+
+- **The publish tool no longer asks for a public app, and opens an app
+  to others once the person approves.** The first `publish` of a
+  session created its app with `visibility: public`, so the app was
+  open to anyone before its person chose that. The create now names no
+  visibility, and who may open a new app is the app host's default. A
+  `publish` result records the app's `visibility` in `meta.publish`
+  when the host names one, so a client can show who can open the site,
+  and the result's text tells the model when the app is private: the
+  agent then says that the app is online and private, and offers to
+  open it to anyone with the link, instead of handing out an address
+  others cannot open.
+
+  `publish` takes `access` for that: `link` lets anyone who has the
+  app's address open it without signing in, and `private` only the
+  person and the people they share it with. A call with `access`
+  changes who can open one app and does nothing else. It reads the app
+  and asks the host, `PATCH {root}/apps/{slug}`, for `unlisted` or
+  `private`; it never asks for `public`, and sends nothing when the app
+  is as asked already, an `unlisted` or a `public` app for `link`. It
+  takes its app as a release that names no folder does, and is refused
+  before it is asked when it also names `path` or `release`
+  (`access_alone`) or has no app to change (`app_required`). Every such
+  call waits for the person, whatever the agent's `alwaysAllow` or an
+  earlier answer would run without asking, so a session nobody attends
+  opens nothing. Its result is `ok` and names the app with the
+  visibility the host answers and no `status`. A change the host
+  refuses is an error result that tells the model why, and for an
+  organization's app that only its owners and admins change who can
+  open it; `meta.publish.error` then carries the host's code, its
+  sentence and the new member `reason`, the token the host's refusal
+  names in `details.reason`.
+
+  The tool's description is `tools/publish-v4`, the ready and released
+  results are `results/publish/ready-v2` and `released-v2`, and the
+  results of a call with `access` are `results/publish/access-changed-v1`,
+  `access-refused-v1`, `access-alone-v1` and `access-app-v1`; the earlier
+  versions stay as they were. An app host that keeps no visibility is
+  unaffected until a call asks it to change one.
+
+### Upgrading
+
+- Roll this release after any client that frames a published site has
+  learned to show a private one another way. A session's new app now
+  follows the app host's default, and where that is private, a frame of
+  the app ends at the host's sign-in page instead of the site. A client
+  reads `visibility` in `meta.publish` to tell. An app host whose
+  default is open, and the app host's own release order, need no care:
+  the create asks for nothing either way.
+- Roll this release after any client that asks a waiting `publish` call
+  in words of its own has learned to read the call's input. A call with
+  `access` waits like a preview or a release and is neither: a client
+  that asks it as putting a folder online would have the person approve
+  something else than what runs. The call has `access` in the input of
+  its `agent.tool_use` and neither `path` nor `release`, and its result
+  has `meta.publish` with no `status`.
+- An installation whose authorizer decides a session's requests at the
+  app host rolls the rule that lets a session change who can open an
+  app before this release, and gives the agents that should do it the
+  permission the rule reads. In another order nothing is opened: the
+  host refuses the call, and the model tells the person to change it
+  from the app's sharing.
+- An app host answers `PATCH {root}/apps/{slug}` with
+  `{"visibility": "unlisted"}` or `{"visibility": "private"}` with the
+  app and its `visibility` after the change. A host that does not is
+  answered as a failed change, and nothing else of the tool changes.
+
 ## v0.31.0 - 2026-10-12
 
 ### Fixed
@@ -159,20 +240,6 @@ committed: the commit log already holds that.
   answers by; a harness given none types every linked file
   `application/octet-stream`.
 
-- **The publish tool no longer asks for a public app.** The first
-  `publish` of a session created its app with `visibility: public`, so
-  the app was open to anyone before its person chose that. The create
-  now names no visibility, and who may open a new app is the app host's
-  default. A `publish` result records the app's `visibility` in
-  `meta.publish` when the host names one, so a client can show who can
-  open the site, and the result's text tells the model when the app is
-  private: the agent then says that the address opens for the person
-  once they sign in and that they choose who else can open it, instead
-  of handing out an address others cannot open. The tool's description
-  is `tools/publish-v4`, and the ready and released results are
-  `results/publish/ready-v2` and `released-v2`; the earlier versions
-  stay as they were. An app host that keeps no visibility is unaffected.
-
 ### Fixed
 
 - A model knows today's date on every turn. The date reached a model
@@ -203,13 +270,6 @@ committed: the commit log already holds that.
 
 ### Upgrading
 
-- Roll this release after any client that frames a published site has
-  learned to show a private one another way. A session's new app now
-  follows the app host's default, and where that is private, a frame of
-  the app ends at the host's sign-in page instead of the site. A client
-  reads `visibility` in `meta.publish` to tell. An app host whose
-  default is open, and the app host's own release order, need no care:
-  the create asks for nothing either way.
 - The date part adds no event and no member, so a client changes
   nothing for it. A program that replays a recorded session with
   `models.Replay` reads `mismatch` for the requests an earlier release
