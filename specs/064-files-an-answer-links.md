@@ -104,8 +104,8 @@ to keep a file: in a turn that opened none, a link is skipped
 | Check | Bound | Constant |
 |---|---|---|
 | linked files kept from one message | at most 16, counted apart from its images; a link past it is skipped `limit` | `MaxKeptFiles` |
-| one linked file's bytes | at most 33,554,432 (32 MiB), read by `Stat` before the read; a file past it is skipped `too_large` | `MaxKeptFileBytes` |
-| the linked files of one message together | at most 67,108,864 bytes (64 MiB); a file that would pass it is skipped `limit`, and a smaller one after it is still kept | `MaxKeptFilesBytes` |
+| one linked file's bytes | at most 16,777,216 (16 MiB), read by `Stat` before the read; a file past it is skipped `too_large` | `MaxKeptFileBytes` |
+| the linked files of one message together | at most 33,554,432 bytes (32 MiB); a file that would pass it is skipped `limit`, and a smaller one after it is still kept | `MaxKeptFilesBytes` |
 | the kind | a regular file of any type; a directory, a named pipe or a device is skipped `not_a_file` | none |
 | the media type | the type the file name's extension names, and otherwise the type its leading 512 bytes give | `SniffBytes` |
 
@@ -161,34 +161,48 @@ reference it draws, or by `width`, which is positive for every image.
 ### How the bytes move
 
 The harness hands a linked file to the store as it reads it from the
-machine and holds none of it but the leading bytes that type it. No
-store takes a blob as a stream: the directory store, the Postgres
-store, an object store behind either, and the client of a runner in
-its own process each hold a blob whole while they write it, and a
-database store holds it once more as the statement's parameter. One
-linked file therefore costs the process that keeps it about twice its
-size while it is kept, files are kept one at a time, and a process that
-drives several sessions pays for each of them at once. The bounds are
-set by that cost: at 32 MiB a file, a server that drives four sessions
-in one process spends at most about 256 MiB on four files kept in the
-same moment, which a process limited to 1 GiB affords. A file that grew
-past its bound between its `Stat` and its read fails the store's read,
-and nothing of it is stored.
-
-A read of a blob holds it whole as well, and a fork reads every blob
-its copied events name before it writes them
-([[017-external-runners-handoff-fork]]), so the bytes a session keeps
-are what its fork holds at once. The bound of a message keeps that near
-what its images alone could already reach.
+machine and holds none of it but the leading bytes that type it. Files
+are kept one at a time. A file that grew past its bound between its
+`Stat` and its read fails the store's read, and nothing of it is
+stored.
 
 The keep's reads and stores run past a canceled step under one bound,
 the time the most bytes a message keeps take at 1 MiB a second: the
-bytes of `MaxImages` images and `MaxKeptFilesBytes` together, 104
+bytes of `MaxImages` images and `MaxKeptFilesBytes` together, 72
 seconds. The bound is computed from those constants.
 
 A runner in its own process stores a blob through the runner protocol
 ([[016-runners]]), whose blob route takes a body as large as
 `MaxKeptFileBytes`; every other route of the protocol keeps its bound.
+
+### Storage
+
+A kept file is stored whole in the session's store and stays there for
+as long as the session does ([[014-store]]).
+
+| What a keep costs | How much |
+|---|---|
+| bytes stored for one answer | up to `MaxKeptFilesBytes`, 32 MiB, of linked files, beside up to 40 MiB of images, `MaxImages` of them at `MaxImageBytes` each |
+| memory while one file is stored | about twice the file's size: every store takes a blob's whole body, and a store that keeps blobs in database rows holds it once more as the statement's parameter |
+| memory across sessions | one file at a time for each session a process drives: four sessions that each store a file of `MaxKeptFileBytes` in the same moment hold about 128 MiB |
+
+The bounds are sized for a store that keeps blobs in Postgres rows,
+which is what a server does when no blob store is configured. There
+every kept byte is a byte of the database, and a file is written as one
+statement parameter. An installation that configures an object store
+with `TOPOS_BLOB_URL` ([[014-store]]) keeps the bodies outside the
+database and could raise the bounds. The memory a keep takes is the
+same with either, since the object store takes a whole body as well.
+
+Open:
+
+- No bound on the bytes one session keeps in all. Each answer is
+  bounded, and a session of many answers is not.
+- A fork reads every blob its copied events name into memory before it
+  writes them ([[017-external-runners-handoff-fork]]), so a fork of a
+  session that kept many files holds them all at once.
+- A read of a blob through the blob route holds the whole blob in
+  memory while it answers.
 
 ### The blob route
 
@@ -203,11 +217,16 @@ under the name and the type its `files.kept` entry gives.
 
 ### The files route
 
-`GET /v1/sessions/{id}/files` answers a file of at most
-`MaxKeptFileBytes`, in place of 10 MiB. The route copies a file from
-the machine to the answer as it reads it and holds none of it but its
-leading bytes, so the bound costs it no memory, and one bound means a
-file too large to read live is one no `files.kept` keeps either.
+`GET /v1/sessions/{id}/files` answers a file of at most 33,554,432
+bytes (32 MiB), `MaxFileBytes`, in place of 10 MiB. The bound is the
+route's own and not the bound of a kept file, because the two cost
+different things: the route copies a file from the machine to the
+answer as it reads it and holds none of it but its leading bytes, while
+a keep stores the whole file in the session's store. A read therefore
+answers a larger file than a keep stores. It is never the smaller of
+the two, so a file a keep could have stored is also read live while the
+machine runs, and a linked file skipped `too_large` can still be read
+there up to the route's bound.
 
 ### Redaction
 
@@ -226,7 +245,8 @@ kept file of any type.
 | The media type | the name's extension, then the leading bytes, the files route's rule | the bytes alone: a client would label a kept file other than the same file read live |
 | A link to an image file | a linked file, with `width` and `height` 0, unless the message also shows it | the image's rules: a large picture linked for download would be refused at the 5 MiB an image is kept at |
 | The count | 16, apart from the images | one count for both: an answer with a few pictures and a list of files would lose files to its pictures |
-| The bytes | 32 MiB a file and 64 MiB a message | larger: every store holds a blob whole, and a fork holds a session's blobs together; smaller: an archive of a handful of papers is past 10 MiB |
+| The bytes | 16 MiB a file and 32 MiB a message | larger: every store holds a blob whole, a store in database rows keeps every kept byte in the database, and a fork holds a session's blobs together; smaller: an archive of a handful of papers is past 10 MiB |
+| The files route's bound | its own, 32 MiB, above a kept file's | one bound for both: a read that holds nothing would be held to what a store can take |
 | The `sandbox:` prefix | read as a path | refused as an unknown scheme: the file the model meant would not be kept, for a prefix that names nothing else |
 | A step with no open machine | keeps nothing and opens nothing | opening the machine to keep a file: the session spends a machine's time on a read ([[044-reading-a-sessions-files]]) |
 
@@ -234,10 +254,9 @@ kept file of any type.
 
 How a client draws a linked file, and what it shows for a skipped one.
 A store that takes a blob as a stream, which would lift what a kept
-file costs in memory, and a fork that copies blobs one at a time. A
-bound on the bytes one session keeps in all. A link to a directory kept
-as an archive of it. Files on the web that an answer links by URL: a
-client's to fetch, and not the session's.
+file costs in memory. A link to a directory kept as an archive of it.
+Files on the web that an answer links by URL: a client's to fetch, and
+not the session's.
 
 ## Roll order
 
@@ -264,7 +283,7 @@ skips them.
 | A step in a turn with no open machine keeps no linked file and opens no machine | `runner.TestKeepingALinkedFileOpensNoMachine` | built |
 | A Cella machine's linked file is read through the sandbox's file routes, inside the workspace only, and a directory is `not_a_file` | `machine/cella.TestKeepReadsALinkedFileFromTheWorkspace` (stub Cella) | built |
 | The blob route answers a kept PDF, archive and HTML page as an `application/octet-stream` attachment with `nosniff` and the sandboxing policy; redacting its `files.kept` removes the file, and redacting the `agent.message` redacts its `files.kept` in the same append and removes the file | `internal/server.TestAKeptFileIsADownloadRedactedWithItsAnswer`, `session/storetest`'s `RedactAnAnswerWithItsImages` for each store | built |
-| The files route answers a file of `MaxKeptFileBytes` whole and refuses one byte more | `internal/server.TestAFileAtTheBoundIsAnswered`, `internal/server.TestAFileReadIsRefused` | built |
+| The files route answers a file of `MaxFileBytes` whole and refuses one byte more, and its bound is never under `MaxKeptFileBytes` | `internal/server.TestAFileAtTheBoundIsAnswered`, `internal/server.TestAFileReadIsRefused` | built |
 | A runner in its own process stores a blob of `MaxKeptFileBytes` through the runner protocol, and one byte more is refused | `internal/runnerrole.TestARunnerStoresAKeptFile` | built |
 | A Postgres store with no blob store keeps a blob of `MaxKeptFileBytes` in its row and reads it back whole | `internal/store/postgres.TestPostgresKeepsAFileAtTheBoundInTheDatabase` (postgres tier) | built |
 | The OpenAPI document states a linked file's entry, `not_a_file`, the `sandbox:` prefix, the bounds and the files route's bound | `internal/server.TestTheDocumentStatesKeptImages`, `internal/server.TestOpenAPIIsGenerated` | built |
@@ -284,13 +303,16 @@ from the first draft in these points:
   `Config.MediaType`; a harness given none types every linked file
   `application/octet-stream`.
 - **No store takes a stream**, so the bounds are the ones the cost of
-  holding a file whole allows, as the design above states. The harness
+  storing a file whole allows, as Storage above states. The harness
   still hands the file over as it reads it, which saves the one copy a
   buffer of its own would add.
+- **The files route's bound is its own constant**, `MaxFileBytes`, and
+  not the bound of a kept file, since a read holds nothing and a keep is
+  stored whole.
 - **The exported keep is `harness.KeepFiles`**, in place of
   `KeepImages`, with the media type rule as its last argument.
 - **An image reference to something that is no regular file**, a named
   pipe as well as a directory, is `not_an_image`, as a link to one is
   `not_a_file`, so a keep never opens a file a read would wait on.
 - **The keep's bound moved** from 30 seconds for a message's images to
-  the 104 seconds its images and linked files take at 1 MiB a second.
+  the 72 seconds its images and linked files take at 1 MiB a second.
