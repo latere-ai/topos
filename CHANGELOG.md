@@ -14,6 +14,19 @@ committed: the commit log already holds that.
 
 - **A connection can tell the model more about its API.** An installation may give each connected service a short note, such as how a document's text is read or where an upload goes, and the model is told it beside the service's example call, with the connection's own variable written in. Version 4 of the connections block carries it.
 
+### Fixed
+
+- On a macOS server with `TOPOS_HOST_SESSIONS=on`, a session's command
+  that checks its output before it writes to it, `cat`, `dd` and `node`
+  among them, no longer fails. A command's output goes to a log
+  beside the session's directory, inside the data directory the sandbox
+  denies to every command, and Seatbelt refuses an `fstat` of an open
+  file the command may not read: `cat` answered `stdout: Operation not
+  permitted` and `node` aborted as it started. Each command may now read
+  the log of its own output, which it still cannot write by its path,
+  and no other command's. A Linux server was not affected, since
+  Bubblewrap hides the path and leaves the open file as it was.
+
 ## v0.38.1 - 2026-10-14
 
 ### Fixed
