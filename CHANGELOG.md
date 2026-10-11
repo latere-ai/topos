@@ -10,6 +10,73 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- A session's sandbox that failed is started again, not replaced. A
+  sandbox whose container was killed, for memory for example, read
+  `Failed`, and the next turn deleted it and created an empty one: the
+  delete removed the workspace, so a session with no repository lost
+  every file it had made. The workspace was intact until that delete.
+  An open and a call that find the sandbox `Failed` now ask Cella to
+  start it, wait until it runs, put the helper back, and go on in the
+  same sandbox with the same files. A Cella core after v0.12.0 takes
+  that start for a failure that kept its workspace. A core that answers
+  `phase_conflict`, an older one or any core for a failure with no
+  workspace, is asked twice, and only then is the sandbox replaced at an
+  open; a call never deletes one. A sandbox that fails again right after
+  a start gets one start from each call that finds it failed, and that
+  call fails in words that say so, so nothing spins and nothing is
+  deleted.
+- A command that was running when its machine was killed says what
+  happened. Its result read "The command did not start: machine: the
+  command's session ended before its exit (exit code 137)". It now holds
+  what the command wrote, that it did not finish, that the machine ran
+  out of memory when Cella said so and never otherwise, and where the
+  machine stands: running again with the files of the working directory
+  kept and every process gone, so the command can be run again; lost; or
+  not running yet, with the reason and nothing deleted. A command that
+  ends with exit code 137 on a machine that runs on is told what the
+  code means, with no cause claimed.
+- A machine that replaced a lost one is recorded as one. The log named
+  it `session.machine` with reason `handoff` and appended no error, so
+  neither the model nor a client was told the files were gone. A machine
+  made new in the place of the session's last is now reason `replaced`,
+  followed by `session.error` `machine_lost` ("The session's machine was
+  lost and replaced with a new one. The files that were in its working
+  directory are gone."), and the model reads at that point that the
+  files are gone and that the person is to be told.
+- A command on a lost machine no longer appends `session.error`
+  `network_unavailable` ("The connections the command made could not be
+  read."): a machine that is lost, or not running, has no connections to
+  read.
+
+### Added
+
+- `session.machine` has the reason `restarted`: the machine the session
+  had stopped on a failure and runs again, with the files of its working
+  directory kept and every process that ran on it gone. The record
+  restates the machine's context, instruction files and skills, and
+  carries the new member `cause`, `out_of_memory` when the machine is
+  known to have stopped for memory and absent otherwise. It is appended
+  beside the call that met the restart, and the model reads there that
+  the machine restarted with its files.
+
+### Upgrading
+
+- Starting a failed sandbox needs a Cella core after v0.12.0. Against an
+  older core this release behaves as before, a failed sandbox is
+  replaced at the next turn, except that the loss is now recorded and
+  said.
+- A client that draws the log tells the two apart by `reason`:
+  `restarted` keeps the files, `replaced` loses them and comes with
+  `machine_lost`. A client that lists the reasons it knows should read
+  `restarted` as a machine that is still the session's.
+- For a program that embeds the machines: `machine.Recovering` is what a
+  machine reports its open and its restarts through, `machine.ExecResult`
+  has `Stopped` for a command whose machine stopped under it,
+  `cella.ErrLost` is `machine.ErrLost`, and a `cella.Machine` no longer
+  deletes a failed sandbox unless Cella refuses to start it.
+
 ## v0.30.0 - 2026-10-11
 
 ### Added
