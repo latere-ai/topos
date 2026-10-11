@@ -260,7 +260,6 @@ func (h *holdingTool) Confirm(c tools.Call) string {
 // does not hold runs as the policy says. Plan mode blocks the held call,
 // and once the person allows it, it runs (spec 012).
 func TestACallItsToolHoldsWaitsForAPerson(t *testing.T) {
-	ctx := t.Context()
 	uses := func(e *env) map[string]session.AgentToolUse {
 		t.Helper()
 		out := map[string]session.AgentToolUse{}
@@ -300,6 +299,7 @@ func TestACallItsToolHoldsWaitsForAPerson(t *testing.T) {
 				}
 				policy(c)
 			})
+			ctx := t.Context()
 			e.stub.Script(model,
 				reply(ir.StopToolUse, call("toolu_go", session.ToolPublish, `{"text":"go"}`), call("toolu_hold", session.ToolPublish, `{"text":"hold"}`)),
 				reply(ir.StopEndTurn, text("Done.")))
@@ -335,65 +335,71 @@ func TestACallItsToolHoldsWaitsForAPerson(t *testing.T) {
 		})
 	}
 
-	// A pattern the person's answer added to the session allows a later
-	// call of the tool, and never one the tool holds: not the answer to the
-	// first call, nor the answer to a held one.
-	pub := &holdingTool{&fakeTool{name: session.ToolPublish, props: tools.Properties{Effect: tools.EffectExternal}}}
-	e := setup(t, func(c *Config) {
-		if err := c.Tools.Add(pub); err != nil {
-			t.Fatal(err)
+	t.Run("a pattern the person's answer added", func(t *testing.T) {
+		// A pattern the person's answer added to the session allows a later
+		// call of the tool, and never one the tool holds: not the answer to the
+		// first call, nor the answer to a held one.
+		pub := &holdingTool{&fakeTool{name: session.ToolPublish, props: tools.Properties{Effect: tools.EffectExternal}}}
+		e := setup(t, func(c *Config) {
+			if err := c.Tools.Add(pub); err != nil {
+				t.Fatal(err)
+			}
+		})
+		ctx := t.Context()
+		e.stub.Script(model,
+			reply(ir.StopToolUse, call("toolu_1", session.ToolPublish, `{"text":"go"}`)),
+			reply(ir.StopToolUse, call("toolu_2", session.ToolPublish, `{"text":"go"}`), call("toolu_3", session.ToolPublish, `{"text":"hold"}`)),
+			reply(ir.StopToolUse, call("toolu_4", session.ToolPublish, `{"text":"hold"}`)),
+		)
+		allow := func(id string) {
+			t.Helper()
+			conf, err := session.NewEvent(session.TypeUserToolConfirmation, session.UserToolConfirmation{Sender: e.s.Initiator, ToolUseID: id, Decision: session.DecisionAllow, Remember: session.ToolPublish}, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.appendEvents(ctx, conf)
+			e.running(ctx)
+		}
+		e.send(ctx, "Publish, then open it.")
+		if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
+			t.Fatalf("the first call: %+v, want a wait", out)
+		}
+		allow("toolu_1")
+		if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation || !slices.Equal(pub.ran(), []string{"toolu_1", "toolu_2"}) {
+			t.Fatalf("after a remembered allow: %+v, ran %v; want the second call run and the held one waiting", out, pub.ran())
+		}
+		if got := uses(e); got["toolu_2"].Verdict != string(VerdictAllow) || got["toolu_3"].Verdict != string(VerdictAsk) || got["toolu_3"].Reason != heldReason {
+			t.Fatalf("recorded %+v and %+v", got["toolu_2"], got["toolu_3"])
+		}
+		allow("toolu_3")
+		if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation || !slices.Equal(pub.ran(), []string{"toolu_1", "toolu_2", "toolu_3"}) {
+			t.Fatalf("after the held call's remembered allow: %+v, ran %v; want the next held call waiting", out, pub.ran())
+		}
+		if got := uses(e)["toolu_4"]; got.Verdict != string(VerdictAsk) || got.Reason != heldReason {
+			t.Fatalf("a held call after a remembered allow of one is recorded %+v", got)
 		}
 	})
-	e.stub.Script(model,
-		reply(ir.StopToolUse, call("toolu_1", session.ToolPublish, `{"text":"go"}`)),
-		reply(ir.StopToolUse, call("toolu_2", session.ToolPublish, `{"text":"go"}`), call("toolu_3", session.ToolPublish, `{"text":"hold"}`)),
-		reply(ir.StopToolUse, call("toolu_4", session.ToolPublish, `{"text":"hold"}`)),
-	)
-	allow := func(id string) {
-		t.Helper()
-		conf, err := session.NewEvent(session.TypeUserToolConfirmation, session.UserToolConfirmation{Sender: e.s.Initiator, ToolUseID: id, Decision: session.DecisionAllow, Remember: session.ToolPublish}, t0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		e.appendEvents(ctx, conf)
-		e.running(ctx)
-	}
-	e.send(ctx, "Publish, then open it.")
-	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation {
-		t.Fatalf("the first call: %+v, want a wait", out)
-	}
-	allow("toolu_1")
-	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation || !slices.Equal(pub.ran(), []string{"toolu_1", "toolu_2"}) {
-		t.Fatalf("after a remembered allow: %+v, ran %v; want the second call run and the held one waiting", out, pub.ran())
-	}
-	if got := uses(e); got["toolu_2"].Verdict != string(VerdictAllow) || got["toolu_3"].Verdict != string(VerdictAsk) || got["toolu_3"].Reason != heldReason {
-		t.Fatalf("recorded %+v and %+v", got["toolu_2"], got["toolu_3"])
-	}
-	allow("toolu_3")
-	if out := e.turn(ctx); out.StopReason != session.StopToolConfirmation || !slices.Equal(pub.ran(), []string{"toolu_1", "toolu_2", "toolu_3"}) {
-		t.Fatalf("after the held call's remembered allow: %+v, ran %v; want the next held call waiting", out, pub.ran())
-	}
-	if got := uses(e)["toolu_4"]; got.Verdict != string(VerdictAsk) || got.Reason != heldReason {
-		t.Fatalf("a held call after a remembered allow of one is recorded %+v", got)
-	}
 
-	// Plan mode blocks the held call as it blocks every call that is not
-	// read-only, and a block is never turned into an ask.
-	blocked := &holdingTool{&fakeTool{name: session.ToolPublish, props: tools.Properties{Effect: tools.EffectExternal}}}
-	p := setup(t, func(c *Config) {
-		if err := c.Tools.Add(blocked); err != nil {
-			t.Fatal(err)
+	t.Run("plan mode", func(t *testing.T) {
+		// Plan mode blocks the held call as it blocks every call that is not
+		// read-only, and a block is never turned into an ask.
+		blocked := &holdingTool{&fakeTool{name: session.ToolPublish, props: tools.Properties{Effect: tools.EffectExternal}}}
+		p := setup(t, func(c *Config) {
+			if err := c.Tools.Add(blocked); err != nil {
+				t.Fatal(err)
+			}
+			c.Policy = Policy{Mode: ModePlan, AlwaysAllow: []string{session.ToolPublish}}
+		})
+		ctx := t.Context()
+		p.stub.Script(model, reply(ir.StopToolUse, call("toolu_hold", session.ToolPublish, `{"text":"hold"}`)), reply(ir.StopEndTurn, text("It is blocked.")))
+		p.send(ctx, "Open it.")
+		if out := p.turn(ctx); out.StopReason != session.StopEndTurn || len(blocked.ran()) != 0 {
+			t.Fatalf("plan mode: %+v, ran %v", out, blocked.ran())
 		}
-		c.Policy = Policy{Mode: ModePlan, AlwaysAllow: []string{session.ToolPublish}}
+		if got := uses(p)["toolu_hold"]; got.Verdict != string(VerdictBlock) {
+			t.Fatalf("plan mode recorded %+v, want block", got)
+		}
 	})
-	p.stub.Script(model, reply(ir.StopToolUse, call("toolu_hold", session.ToolPublish, `{"text":"hold"}`)), reply(ir.StopEndTurn, text("It is blocked.")))
-	p.send(ctx, "Open it.")
-	if out := p.turn(ctx); out.StopReason != session.StopEndTurn || len(blocked.ran()) != 0 {
-		t.Fatalf("plan mode: %+v, ran %v", out, blocked.ran())
-	}
-	if got := uses(p)["toolu_hold"]; got.Verdict != string(VerdictBlock) {
-		t.Fatalf("plan mode recorded %+v, want block", got)
-	}
 }
 
 // TestTheRulesHoldACallForAPerson: the built-in decider and the rules a
