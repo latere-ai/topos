@@ -228,6 +228,11 @@ func TestTheDocumentStatesKeptImages(t *testing.T) {
 	for _, c := range []struct{ path, method, want string }{
 		{"/sessions/{id}/events", "get", KeptRule},
 		{"/sessions/{id}/stream", "get", KeptRule},
+		{"/sessions/{id}/events", "get", MachineRule},
+		{"/sessions/{id}/stream", "get", MachineRule},
+		{"/sessions/{id}/events", "get", "restarted for the machine the session had"},
+		{"/sessions/{id}/events", "get", "replaced for a new, empty one"},
+		{"/sessions/{id}/events", "get", "code: machine_lost"},
 		{"/sessions/{id}/blobs/{digest}", "get", "nosniff"},
 		{"/sessions/{id}/blobs/{digest}", "get", blobCache},
 		{"/sessions/{id}/blobs/{digest}", "get", "Content-Disposition inline"},

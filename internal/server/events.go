@@ -25,6 +25,8 @@ import (
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/store"
+	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
 
@@ -485,6 +487,18 @@ var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agen
 	"Files are read from a machine the turn opened, never one opened to keep them. "+
 	"A client draws an image and offers a linked file from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it.",
 	tools.MaxImages, tools.ReadMaxImage, harness.MaxKeptImageSide, harness.MaxKeptImagePixels, harness.MaxKeptFiles, harness.MaxKeptFileBytes, harness.MaxKeptFilesBytes)
+
+// MachineRule is the sentence the event routes state session.machine by
+// (specs 004 and 009): what a client tells a machine that restarted with
+// its files from one that was replaced without them by.
+var MachineRule = fmt.Sprintf("session.machine {machine, reason, cause, context, instructions, skills, repositories, checkpoint} records the machine a session works on. "+
+	"reason is %s for the session's first machine, %s for one the session moved to, %s for a new one given the files of a checkpoint, "+
+	"%s for the machine the session had, which stopped on a failure and runs again with the files of its working directory kept and every process that ran on it gone, "+
+	"and %s for a new, empty one in the place of one that was lost, whose files are gone. "+
+	"cause is %s on a %s record whose machine is known to have stopped because it ran out of memory, and absent otherwise; a %s record restates the context, instructions and skills of the machine's last record. "+
+	"A %s record is followed in the same append by session.error {code: %s, message: %q}.",
+	session.MachineAttached, session.MachineHandoff, session.MachineRestored, session.MachineRestarted, session.MachineReplaced,
+	session.MachineOutOfMemory, session.MachineRestarted, session.MachineRestarted, session.MachineReplaced, machine.CodeLost, runner.MessageMachineLost)
 
 // blobCache is a blob's Cache-Control: its bytes never change under its
 // digest, so a client keeps it as long as it likes, and private keeps it
