@@ -6,7 +6,8 @@ app's own address when the person says so. Who can open the app is the
 app host's to keep: the tool asks for no visibility when it creates an
 app, records the one the host answers, and tells the model when the app
 is private, so the agent does not hand out an address others cannot
-open. This page is for the
+open. The agent can open the app to anyone with its link, or close it
+again, in a call the person approves every time. This page is for the
 operator who connects an app host, and for the client that shows what
 was published. Everything here is on the wire of `/v1`.
 
@@ -74,6 +75,58 @@ call, and to each app the installation attached to the session. `topos
 run` refuses an agent that names it, since a run on a person's machine
 has no app host and no sandbox.
 
+## Opening an app to others
+
+`access` changes who can open an app, and nothing else:
+
+```json
+{"access": "link"}
+{"access": "private", "app": "tide-tables"}
+```
+
+| `access` | Who opens the app | What the app host is asked for |
+|---|---|---|
+| `link` | anyone who has its address, without signing in | `unlisted` |
+| `private` | the person and the people they share it with | `private` |
+
+The call publishes and releases nothing, and opens no sandbox. It reads
+the app, and when the app is not as asked already, asks the host for
+the change and records the visibility the host answers. It never asks
+for `public`, and for `link` it leaves an app that is `unlisted` or
+`public` already as it is.
+
+`app` names the app. With none, the call takes its app as a release
+that names no folder does: the app the session has a preview of, else
+the one app it has published. It is refused `app_required` when that
+could be several or the session has published none, since it creates no
+app, and `access_alone` when it also names `path` or `release`. Each is
+refused before the call is decided.
+
+**Every call with `access` waits for a person.** Nothing runs it without
+one: not an `alwaysAllow` pattern of the agent, not an answer a person
+gave earlier with `remember`, not the `progressive` mode's score, and
+not a decision service. In `plan` it is blocked, as every call that is
+not read-only is. A session nobody attends waits, and changes nothing.
+This is stricter than a release, which an agent whose `alwaysAllow`
+names `publish` makes without asking.
+
+Whether the session may change the app is the app host's question to
+the installation's authorizer, asked with the session's token. A
+refusal is the call's error result: the model is told why, to tell the
+person, and not to try another way. When the host names the reason
+`role_insufficient`, the app belongs to an organization and the
+person's role there does not reach its settings, and the model is told
+that only the organization's owners and admins change who can open it.
+
+The tool's description gives the model the behavior. After it
+publishes a private app, it says that the app is online and private and
+offers to open it to anyone with the link. It calls `access` with
+`link` when the person asks to share the site, show it to others, send
+it to someone or make it public, and once the publish has answered when
+they said so before. It never calls it for a site the person did not
+ask to share. After `link` it says that anyone with the link can open
+the site, and never that the site is public.
+
 ## Keeping an app going across sessions
 
 An installation's authorizer may attach existing apps to a session,
@@ -123,20 +176,65 @@ Every `tool.result` of a `publish` call carries `meta.publish`:
 |---|---|
 | `app`, `name` | the app's slug and its name |
 | `url` | the app's own address |
-| `visibility` | who may open the app, as the host named it when the call ran; absent where the host names none |
+| `visibility` | who may open the app, as the host named it when the call ran; absent where the host names none. On the result of a call with `access`, the host's answer to the change, or what the app still has when the change was refused |
 | `preview` | the preview's own address, once the host names it |
-| `folder` | the folder published, relative to the working directory when it is inside it: an attached app's checkout, or the folder of the session's own app |
+| `folder` | the folder published, relative to the working directory when it is inside it: an attached app's checkout, or the folder of the session's own app. The result of a call with `access` repeats the folder of the session's last result for the app |
 | `commit` | the commit published or released |
 | `deploy` | the deploy's id at the host |
-| `status` | `ready`, `building`, `failed` or `canceled` for a preview; `released`, `pending`, `refused` or `failed` for a release, or the status of its build when the build failed, was canceled or had not started, and nothing was released |
+| `status` | `ready`, `building`, `failed` or `canceled` for a preview; `released`, `pending`, `refused` or `failed` for a release, or the status of its build when the build failed, was canceled or had not started, and nothing was released. Absent on the result of a call with `access` |
 | `release` | the tag, on a release |
-| `error` | `{code, message}` for `failed`, `canceled` and `refused`, and the code of a call refused before any request: `app_not_attached`, `app_required` or `not_in_checkout`, whose `app` is empty and which has no `agent.tool_use` |
+| `error` | `{code, message}` for `failed`, `canceled` and `refused`; `{code, reason, message}` for a change of who can open the app that the host refused, `reason` being the token the host names, such as `role_insufficient`, absent when it names none; and the code of a call refused before any request: `app_not_attached`, `app_required`, `not_in_checkout` or `access_alone`, whose `app` is empty and which has no `agent.tool_use` |
 | `attached` | true for an app the installation attached, absent for the session's own |
 
 A client shows a `ready` preview with its address, and may frame it
 beside the conversation. A `publish` call with `release: true` that
 waits for the person's approval is the release a person makes with one
 answer.
+
+A client tells the three calls apart by the input of the call's
+`agent.tool_use`: `access` set is a change of who can open the app,
+`release` true is a release, and neither is a preview. A call with
+`access` names neither `path` nor `release`.
+
+A call with `access` that waits is a question to the person. Its
+`agent.tool_use` has `verdict` `ask`, and the session is idle with
+`stop_reason` `tool_confirmation`:
+
+```json
+{"type": "agent.tool_use", "payload": {"tool_use_id": "toolu_3", "name": "publish", "input": {"access": "link"}, "verdict": "ask", "reason": "changes who can open the app, which a person approves every time", "mode": "confirm"}}
+{"type": "session.status", "payload": {"status": "idle", "stop_reason": "tool_confirmation"}}
+```
+
+A client asks it in the person's words: for `link`, whether anyone with
+the link may open the app; for `private`, whether only the person and
+the people they share it with may. The app is the one `input.app`
+names, else the app of the session's last `publish` result that names
+one. The person's answer is a `user.tool_confirmation` for the call,
+`POST /v1/sessions/{id}/events`:
+
+```json
+{"type": "user.tool_confirmation", "payload": {"tool_use_id": "toolu_3", "decision": "allow"}}
+{"type": "user.tool_confirmation", "payload": {"tool_use_id": "toolu_3", "decision": "deny", "note": "leave it"}}
+```
+
+A client offers nothing to remember with it: a remembered pattern never
+runs a later call with `access`, and one that names `publish` would run
+later previews and releases without asking. The call's result names the
+app and who can open it now, with no `status`, which is how a client
+tells it from a preview's and a release's:
+
+```json
+{"type": "tool.result", "payload": {"tool_use_id": "toolu_3", "outcome": "ok", "meta": {"publish": {"app": "a-poem", "name": "A poem", "url": "https://a-poem.apps.example", "visibility": "unlisted", "folder": "site"}}}}
+```
+
+A refused change is an error result whose `meta.publish` keeps the
+visibility the app still has and carries the host's refusal:
+
+```json
+{"type": "tool.result", "payload": {"tool_use_id": "toolu_7", "is_error": true, "outcome": "error", "meta": {"publish": {"app": "a-poem", "name": "A poem", "url": "https://a-poem.apps.example", "visibility": "private", "folder": "site", "error": {"code": "forbidden", "reason": "role_insufficient", "message": "You do not have permission to do that."}}}}}
+```
+
+A denied call's result has outcome `denied` and no `meta.publish`.
 
 Every request of a session that runs by a routed name, such as a tier
 an installation declares, carries that name to the model as
@@ -161,6 +259,7 @@ The host answers this contract under its root:
 |---|---|
 | `POST /apps` with `{"name"}` | `201` with the app: `slug`, `name`, `url`, `repository.push_url`, and `visibility` when the host keeps one |
 | `GET /apps/{slug}` | the app, or `404`; with `current_deploy` and `latest_preview`, each `{"id", "commit_sha"}` or `null`, the commit its address serves and its newest ready preview's, which the start of an attached app's checkout and the check before a release read |
+| `PATCH /apps/{slug}` with `{"visibility": "unlisted"}` or `{"visibility": "private"}` | the app, with its `visibility` after the change |
 | `GET /apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` and `error` |
 | `GET /apps/{slug}/deploys/{id}/logs` | the build log, one JSON object with its `line` per line |
 | `GET /apps/{slug}/releases` | `{"releases": [...]}`, each with `tag`, `commit_sha`, `status` and `reason` |
@@ -169,4 +268,14 @@ The host answers this contract under its root:
 A push of a branch builds a preview deploy, which ends `ready`,
 `failed` or `canceled`; a pushed `v` tag releases its commit, which
 ends `released`, `refused` or `failed`. A refusal answers
-`{"error": {"code", "message"}}`.
+`{"error": {"code", "message"}}`, and may name why in `details.reason`,
+a lower-case token of letters, digits and underscores, which a result
+records beside the code. The tool reads one such reason itself:
+`role_insufficient`, for an organization's app whose settings the
+caller's role there does not reach.
+
+`unlisted` is an app anyone with its address opens, `private` one that
+opens for its owner and the people it is shared with, and `public` one
+the host also shows or lists, which the tool reads and never asks for.
+A change answers the visibility that was asked; an answer that names
+another one, or none, is a change that failed.
