@@ -41,8 +41,8 @@ The repository restarted on 2026-09-26. The Go packages of v0.7.0, an
 embeddable runtime, are gone from `main` and stay available at their tags
 through the Go module proxy; [docs/history](docs/history) holds their specs.
 
-The core's releases start at v0.9.0 (2026-09-29); the latest is v0.11.1
-(2026-10-02). Built and released:
+The core's releases start at v0.9.0 (2026-09-29). Built and released as
+of v0.29.0 (2026-10-10):
 
 - the session log, kept in memory, in a directory or in Postgres, and the
   harness: the built-in tools, the permission modes, subagents, context
@@ -54,15 +54,27 @@ The core's releases start at v0.9.0 (2026-09-29); the latest is v0.11.1
   separate runners: agents owned by a person or an organization, sessions
   that can be forked, archived and summarized, and triggers that fire on a
   schedule or on delivered events;
+- sessions a person attends: a `question` tool that waits for the person's
+  answer, an approval mode and a title that change after a session starts,
+  a message edited with the session's forks kept as a tree, search over
+  what sessions said, and delete;
+- more for the agent to work with: `web_search` through the search service
+  the installation configures, `publish` of a folder as an app, a
+  session's files and the images an answer shows served to a client, and
+  the sites a session's machine may reach set per session;
+- models an authorizer chooses: a routed model name, how much a model
+  reasons, and a move to another model inside the turn when one cannot
+  serve;
 - a connection to a decision service: `topos run` can get a suggested
   verdict for each tool call from an external service.
 
 Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite
 and the release archives. The task suite runs, but no release has measured
-its bar against a pinned model yet. In the [specs](specs) deck, 13 specs are
-complete, 18 in progress and 8 drafted or vague, none of those 8 built yet;
-[specs/README.md](specs/README.md) says which build phases are closed.
+its bar against a pinned model yet. In the [specs](specs) deck, 22 specs are
+complete, 31 in progress or in testing and 9 drafted or vague, none of those
+9 built yet; [specs/README.md](specs/README.md) says which build phases are
+closed.
 
 ## Try it
 
