@@ -82,6 +82,20 @@ type Checker interface {
 	Check(c Call) *Result
 }
 
+// Confirmer is the optional interface of a tool some of whose calls a
+// person approves every time: a call that changes who can open a
+// published app, say (spec 012). The harness asks it about a call after
+// the call's check and before the call is decided, and a call it names
+// waits for a person whatever would run it without one: an always_allow
+// pattern, a pattern a person's answer added to the session, the
+// progressive mode's score, or a decider's verdict. Plan mode blocks it,
+// as it blocks every call that is not read-only, and a block stays a
+// block. Confirm reads the call's input alone and answers the reason the
+// call's agent.tool_use records, or "" for a call decided as any other.
+type Confirmer interface {
+	Confirm(c Call) string
+}
+
 // Call is one call of a tool.
 type Call struct {
 	ID      string

@@ -1633,12 +1633,20 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 			}
 			asked, policy = true, withoutConfirm(policy)
 		}
+		var confirm string
+		if c, ok := tool.(tools.Confirmer); ok {
+			confirm = c.Confirm(tools.Call{ID: id, Input: input})
+		}
 		risk, d, err := decider.Decide(ctx, Call{
-			Policy: policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered,
+			Policy: policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered, Confirm: confirm,
 		})
 		if err != nil {
 			return stepPlan{}, nil, nil, err
 		}
+		// A call its tool holds for a person waits for one whatever the
+		// decider answered: no list, pattern, score or service runs it
+		// without them.
+		d = held(d, confirm)
 		if question && d.Verdict == VerdictAsk {
 			// A decider that asks all the same is overruled: the call is
 			// itself put to a person, and is never held for a confirmation.

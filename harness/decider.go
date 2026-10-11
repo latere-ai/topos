@@ -30,6 +30,10 @@ type Call struct {
 	// Remembered are the session's own allow patterns, from confirmations
 	// answered with remember.
 	Remembered []string
+	// Confirm is why the call's tool holds it for a person whatever the
+	// lists, the patterns and the mode's score allow (tools.Confirmer);
+	// empty for a call decided as any other.
+	Confirm string
 }
 
 // Decider decides a validated call: its risk score and its verdict. The
@@ -52,9 +56,19 @@ func (Rules) Decide(_ context.Context, c Call) (session.Risk, Decision, error) {
 		named = n.Inside
 	}
 	risk := score(c.Name, c.Props, c.Input, c.MachineKind, named)
-	d := c.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered)
+	d := held(c.Policy.Decide(c.Name, c.Props, c.Input, risk, c.MachineKind, c.Remembered), c.Confirm)
 	_, d.ReviewProbability = verdict.Decide(d.Verdict, VerdictAllow, 0, 0)
 	return risk, d, nil
+}
+
+// held is d for a call its tool holds for a person, why: a verdict that
+// would run the call without one becomes an ask with that reason, and an
+// ask or a block stays as it is. An empty why holds nothing.
+func held(d Decision, why string) Decision {
+	if why == "" || Stricter(d.Verdict, VerdictAsk) == d.Verdict {
+		return d
+	}
+	return Decision{Verdict: VerdictAsk, Reason: why, ReviewProbability: 1, Suggestion: d.Suggestion}
 }
 
 // decider is the configured decider, or the rules.
@@ -68,10 +82,10 @@ func (h *Harness) decider() Decider {
 // Settle reports whether the rules decide the call whatever a decision
 // service would suggest (spec 037), and their decision when they do: a
 // fetch outside the session's network asks or is blocked as the network
-// says, a call on always_confirm asks, a score at or above block_at is
-// blocked, and a read-only call, or one an always_allow or remembered
-// pattern matches, is allowed. Every other call is open to the service,
-// under a ceiling of allow.
+// says, a call on always_confirm and one its tool holds for a person ask,
+// a score at or above block_at is blocked, and a read-only call, or one an
+// always_allow or remembered pattern matches, is allowed. Every other call
+// is open to the service, under a ceiling of allow.
 func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
 	// A fetch outside the session's network is the network's to decide,
 	// which no service suggests past (spec 052).
@@ -89,6 +103,8 @@ func (p Policy) Settle(c Call, risk session.Risk) (Decision, bool) {
 	switch {
 	case matchAny(p.AlwaysConfirm, c.Name, subject):
 		return Decision{Verdict: VerdictAsk, Reason: "on the organization's always-confirm list", ReviewProbability: 1}, true
+	case c.Confirm != "":
+		return Decision{Verdict: VerdictAsk, Reason: c.Confirm, ReviewProbability: 1}, true
 	case risk.Score >= t.BlockAt:
 		return Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallAboveBlock)}, true
 	case c.Props.Effect == tools.EffectNone || c.Props.Effect == tools.EffectRead:
