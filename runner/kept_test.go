@@ -104,3 +104,87 @@ func TestKeepingOpensNoMachine(t *testing.T) {
 		t.Fatalf("files.kept %d: %+v", len(kept), p)
 	}
 }
+
+// TestLinkedFilesAreKeptBeforeTheTurnCloses: a drive whose answer links
+// the report and the archive its own step's command writes, on a machine
+// opened on demand by that command, appends files.kept after the
+// command's result and before the turn's closing status. Each file is a
+// blob of the session, typed by the rule of the files route: the report
+// by its name's extension, and the archive, whose name has none, by its
+// leading bytes (spec 064).
+func TestLinkedFilesAreKeptBeforeTheTurnCloses(t *testing.T) {
+	f := setup(t)
+	ctx := t.Context()
+	var opens atomic.Int32
+	f.onDemand(f.work, &opens)
+	report, papers := []byte("%PDF-1.7\nthe report"), []byte("PK\x03\x04the papers")
+	src := t.TempDir()
+	write(t, filepath.Join(src, "report.pdf"), string(report))
+	write(t, filepath.Join(src, "papers"), string(papers))
+	f.stub.Script(model,
+		reply(ir.Block{Type: ir.BlockText, Text: "Both are ready.\n\n[Download the report](out/report.pdf)\n\n<a href=\"sandbox:out/papers\">All papers</a>"},
+			toolUse("toolu_1", "bash", `{"command":"mkdir -p out && cp '`+src+`'/* out/"}`)),
+		reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
+	)
+	f.message(ctx, "Fetch the papers.")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := slices.IndexFunc(evs, func(e session.Event) bool { return e.Type == session.TypeFilesKept })
+	result := slices.IndexFunc(evs, func(e session.Event) bool { return e.Type == session.TypeToolResult })
+	closing := len(evs) - 1
+	if at < 0 || result < 0 || at < result || evs[closing].Type != session.TypeSessionStatus || at > closing {
+		t.Fatalf("files.kept at %d, the result at %d, the closing status at %d", at, result, closing)
+	}
+	var p session.FilesKept
+	if err := evs[at].Decode(&p); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.ToSlash(filepath.Join(f.work, "out"))
+	want := []session.KeptFile{
+		{Path: "out/report.pdf", Resolved: out + "/report.pdf", Blob: session.DigestOf(report), MediaType: "application/pdf", Size: int64(len(report))},
+		{Path: "sandbox:out/papers", Resolved: out + "/papers", Blob: session.DigestOf(papers), MediaType: "application/zip", Size: int64(len(papers))},
+	}
+	if !slices.Equal(p.Files, want) || len(p.Skipped) != 0 {
+		t.Fatalf("files.kept %+v", p)
+	}
+	for _, file := range p.Files {
+		rc, err := f.store.Blob(ctx, f.s.ID, file.Blob)
+		if err != nil {
+			t.Fatalf("%s is no blob of the session: %v", file.Path, err)
+		}
+		if err := rc.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestKeepingALinkedFileOpensNoMachine: an answer that links a file in a
+// turn that opened no machine opens none to keep it: its link is skipped
+// no_machine, nothing is stored, and the machine's open count stays zero
+// (spec 064).
+func TestKeepingALinkedFileOpensNoMachine(t *testing.T) {
+	f := setup(t)
+	ctx := t.Context()
+	write(t, filepath.Join(f.work, "report.pdf"), "%PDF-1.7")
+	var opens atomic.Int32
+	f.onDemandWith(f.work, &opens, demand{noTools: true})
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "As before: [the report](report.pdf)"}))
+	f.message(ctx, "Where is the report?")
+	if _, err := f.r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if opens.Load() != 0 || f.count(ctx, session.TypeSessionMachine) != 0 {
+		t.Fatalf("keeping a linked file opened %d machines", opens.Load())
+	}
+	kept := f.events(ctx, session.TypeFilesKept)
+	var p session.FilesKept
+	if len(kept) != 1 || kept[0].Decode(&p) != nil || len(p.Files) != 0 ||
+		!slices.Equal(p.Skipped, []session.SkippedFile{{Path: "report.pdf", Reason: session.KeptNoMachine}}) {
+		t.Fatalf("files.kept %d: %+v", len(kept), p)
+	}
+}

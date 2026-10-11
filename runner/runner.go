@@ -225,6 +225,11 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	if cfg.Failover == nil {
 		cfg.Failover = r.failover(id, lease)
 	}
+	// A file an answer links is typed by the rule the files route answers
+	// a file by (spec 064).
+	if cfg.MediaType == nil {
+		cfg.MediaType = MediaType
+	}
 	evs, err := st.Events(ctx, id, 1, 0)
 	if err != nil {
 		return harness.Outcome{}, err
