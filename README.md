@@ -68,6 +68,10 @@ of v0.29.0 (2026-10-10):
 - a connection to a decision service: `topos run` can get a suggested
   verdict for each tool call from an external service.
 
+Built since and in no release yet: the files an answer links are kept
+with it and served to a client as downloads, as its images are, and a
+model is told today's date on every turn.
+
 Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite
 and the release archives. The task suite runs, but no release has measured
