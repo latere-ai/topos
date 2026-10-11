@@ -1169,6 +1169,9 @@ func TestARefusedAccessSaysWhy(t *testing.T) {
 			[]string{"the app host refused with forbidden"}},
 		"a reason that is no string": {map[string]func(int) (int, any){get: private, patch: forbidden(7)}, "forbidden", "", "private",
 			[]string{"the app host refused with forbidden"}},
+		"details that are no object": {map[string]func(int) (int, any){get: private, patch: func(int) (int, any) {
+			return http.StatusForbidden, map[string]any{"error": map[string]any{"code": "forbidden", "message": "You do not have permission to do that.", "details": "role_insufficient"}}
+		}}, "forbidden", "", "private", []string{"the app host refused with forbidden: You do not have permission to do that. Tell the person so"}},
 		"a public app the host keeps": {map[string]func(int) (int, any){get: visible("a-poem", "public"), patch: forbidden("session_read_only")}, "forbidden", "session_read_only", "public",
 			[]string{"Who can open a-poem was not changed", "(session_read_only)"}},
 		"an app that is gone": {map[string]func(int) (int, any){get: refused(http.StatusNotFound, "app_not_found")}, "app_not_found", "", "",

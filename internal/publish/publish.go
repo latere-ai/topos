@@ -1030,19 +1030,21 @@ func (t *Tool) do(ctx context.Context, method, p string, body, out any) error {
 		he := &hostError{Status: resp.StatusCode}
 		var env struct {
 			Error struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-				Details struct {
-					Reason any `json:"reason"`
-				} `json:"details"`
+				Code    string          `json:"code"`
+				Message string          `json:"message"`
+				Details json.RawMessage `json:"details"`
 			} `json:"error"`
 		}
 		if json.Unmarshal(b, &env) == nil {
 			he.Code, he.Message = env.Error.Code, env.Error.Message
-			// A reason is a token; one that is anything else is left out,
-			// since it goes into a result's meta and the model's text.
-			if reason, ok := env.Error.Details.Reason.(string); ok && reasonToken.MatchString(reason) {
-				he.Reason = reason
+			// A reason is a token; details of another shape, and a reason
+			// that is anything else, are left out, since the reason goes
+			// into a result's meta and the model's text.
+			var details struct {
+				Reason string `json:"reason"`
+			}
+			if json.Unmarshal(env.Error.Details, &details) == nil && reasonToken.MatchString(details.Reason) {
+				he.Reason = details.Reason
 			}
 		}
 		return he
