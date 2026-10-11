@@ -165,12 +165,13 @@ func TestAFileIsAnsweredAsADownload(t *testing.T) {
 	}
 }
 
-// TestAFileAtTheBoundIsAnswered: a file as large as a file an answer
-// links is answered whole with its length, since the route's bound is
-// that file's (spec 064).
+// TestAFileAtTheBoundIsAnswered: a file of the route's bound is answered
+// whole with its length. The bound is the route's own and never under
+// the bytes a linked file is kept at, so a file a keep could have stored
+// is also read here (spec 064).
 func TestAFileAtTheBoundIsAnswered(t *testing.T) {
-	if MaxFileBytes != harness.MaxKeptFileBytes {
-		t.Fatalf("the files route answers %d bytes and a linked file is kept at %d", MaxFileBytes, harness.MaxKeptFileBytes)
+	if MaxFileBytes < harness.MaxKeptFileBytes {
+		t.Fatalf("the files route answers %d bytes, under the %d a linked file is kept at", MaxFileBytes, harness.MaxKeptFileBytes)
 	}
 	m := &memFiles{files: map[string][]byte{"/workspace/papers.zip": append([]byte("PK\x03\x04"), make([]byte, MaxFileBytes-4)...)}}
 	f, s := filesFixture(t, m)

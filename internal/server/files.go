@@ -14,19 +14,23 @@ import (
 	"strings"
 
 	"latere.ai/x/topos/authorizer"
-	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/runner"
 )
 
 // MaxFileBytes bounds a file GET /sessions/{id}/files answers (spec
-// 044): a larger one is refused file_too_large, never cut short. It is
-// the bound of a file an answer links (spec 064), so a file too large to
-// read here is one no files.kept keeps either. The route copies a file
-// from the machine to the answer as it reads it and holds none of it but
-// its leading bytes.
-const MaxFileBytes = harness.MaxKeptFileBytes
+// 044): a larger one is refused file_too_large, never cut short. It is a
+// bound of its own, apart from harness.MaxKeptFileBytes, the bytes a
+// file an answer links is kept at (spec 064), because the two cost
+// different things: this route copies a file from the machine to the
+// answer as it reads it and holds none of it but its leading bytes,
+// while a keep stores the whole file in the session's store, which holds
+// it in memory to write it and keeps it for the session's life. A read
+// can therefore answer a larger file than a keep stores, and it is never
+// the smaller of the two, so a file a keep could have stored can also be
+// read here while the machine runs.
+const MaxFileBytes = 32 << 20
 
 // The codes of spec 044.
 const (

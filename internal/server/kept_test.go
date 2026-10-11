@@ -234,7 +234,8 @@ func TestTheDocumentStatesKeptImages(t *testing.T) {
 		{"/sessions/{id}/blobs/{digest}", "get", "a file an answer linked"},
 		{"/sessions/{id}/events", "get", "not_a_file"},
 		{"/sessions/{id}/events", "get", "sandbox:"},
-		{"/sessions/{id}/files", "get", strconv.Itoa(harness.MaxKeptFileBytes) + " bytes is file_too_large"},
+		{"/sessions/{id}/files", "get", strconv.Itoa(MaxFileBytes) + " bytes is file_too_large"},
+		{"/sessions/{id}/events", "get", strconv.Itoa(harness.MaxKeptFileBytes) + " bytes, " + strconv.Itoa(harness.MaxKeptFilesBytes) + " bytes together"},
 		{"/sessions/{id}/events/{event_id}/redact", "post", "redacts the files.kept that names it in the same append"},
 	} {
 		if !strings.Contains(doc.Paths[c.path][c.method].Description, c.want) {

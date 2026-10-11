@@ -387,7 +387,7 @@ func TestKeptFilesAreBounded(t *testing.T) {
 // linked file from the machine only as the store reads it, holding none
 // of it ahead, so a file is in memory once, in the store (spec 064).
 func TestALinkedFileIsHandedToTheStoreAsItIsRead(t *testing.T) {
-	const size = 4 << 20
+	const size = MaxKeptFileBytes / 4
 	m := &oneFile{size: size, body: func() io.Reader { return io.LimitReader(zeros{}, size) }}
 	log := &countingLog{}
 	log.put = func(r io.Reader) error {

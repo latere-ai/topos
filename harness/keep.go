@@ -47,23 +47,25 @@ const (
 )
 
 // The bounds of the files an answer links (spec 064), counted apart from
-// the images it shows. No store takes a blob as a stream: each holds a
-// blob's bytes whole while it writes them, and a database store once more
-// as the statement's parameter, so one linked file costs a runner about
-// twice its size while it is kept, and a process that drives several
-// sessions that much for each of them at once.
+// the images it shows. They are sized for what a keep costs the session's
+// store. No store takes a blob as a stream: each holds a blob's bytes
+// whole while it writes them, and a store that keeps blobs in database
+// rows holds them once more as the statement's parameter and then keeps
+// them in a row for the session's life. One linked file therefore costs
+// the process that keeps it about twice its size while it is stored, and
+// a process that drives several sessions that much for each of them at
+// once.
 const (
 	// MaxKeptFiles is the most linked files one message keeps. It bounds
 	// the reads of the machine one message costs, as tools.MaxImages does
 	// for its images, at twice that count, since an answer that hands over
 	// a set of files links each of them.
 	MaxKeptFiles = 16
-	// MaxKeptFileBytes is the most bytes one linked file is kept at, which
-	// is also the largest file the files route answers.
-	MaxKeptFileBytes = 32 << 20
+	// MaxKeptFileBytes is the most bytes one linked file is kept at.
+	MaxKeptFileBytes = 16 << 20
 	// MaxKeptFilesBytes is the most bytes the linked files of one message
 	// are kept at together.
-	MaxKeptFilesBytes = 64 << 20
+	MaxKeptFilesBytes = 32 << 20
 )
 
 // keepRate is the slowest a machine's file read and the store's write are
