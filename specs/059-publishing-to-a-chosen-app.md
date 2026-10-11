@@ -6,7 +6,7 @@ depends_on: [008-tools.md, 012-permissions-and-approvals.md, 019-git.md, 043-pub
 affects: [internal/publish/, harness/, harness/tools/, session/, prompts/, internal/hosted/, docs/]
 effort: medium
 created: 2026-10-07
-updated: 2026-10-08
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -250,6 +250,13 @@ directory only for an absolute path or one that climbs out with `..`;
 on a machine not yet open such a path is left to `Run`. A folder that
 does not exist is left to `Run` too, since an earlier call of the step
 may make it.
+
+Amended 2026-10-11 by [[043-publishing-a-folder]]: a call with `access`
+is refused in `Check` too, `access_alone` when it also names `path` or
+`release`, `app_not_attached` for an app the session may not publish
+to, and `app_required` when it names no app while the thread has
+published none or several could be meant. It takes its app by the rule
+of a release that names no folder.
 
 ### The thread's state
 

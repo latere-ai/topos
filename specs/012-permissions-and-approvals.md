@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-08
+updated: 2026-10-11
 author: changkun
 ---
 
@@ -158,7 +158,18 @@ hard boundary, `always_confirm`, the mode, then hooks. Before any of
 them, a tool that can tell from a call's input alone that the call
 would be refused answers it, so no person approves a call bound to
 fail; such a call is never decided and has no `agent.tool_use`
-([[059-publishing-to-a-chosen-app]]). Verdicts are
+([[059-publishing-to-a-chosen-app]]).
+
+A tool may hold a call for a person (`tools.Confirmer`, added
+2026-10-11): from the call's input it names a call a person approves
+every time, with the reason `agent.tool_use` records. Such a call is
+`ask` wherever an `always_allow` pattern, a session pattern, the
+`progressive` mode's score or a decider would run it without asking,
+and stays `ask` or `block` where the rules reached either first, so
+`plan` blocks it. The harness applies the hold after the decider, so no
+decider, a decision service's included, runs the call without a person
+([[037-decision-services]]). `publish` holds every call that changes
+who can open an app ([[043-publishing-a-folder]]). Verdicts are
 ordered allow, flag, ask, block from most to least permissive, and the
 final verdict is the least permissive of the mode's and every hook's.
 `agent.tool_use` records the verdict, the reason, and the mode. A
@@ -171,7 +182,8 @@ that is refused routes around the refusal. An unattended session that
 reaches an ask waits for a person or its age. A
 `user.tool_confirmation` answers one call; with `remember` it also adds
 a pattern to the session's allow list for the rest of the session,
-recorded in the log so any runner applies it. Every decision, the
+recorded in the log so any runner applies it; a pattern never runs a
+call its tool holds for a person. Every decision, the
 automatic ones included, is in the log with its score and the person's
 answer, which is the approve and deny record a learned threshold needs;
 nothing in the core sends that record anywhere, and its use outside
@@ -325,6 +337,7 @@ authorizer's one-shot grant.
 | A command hook receives the documented payload, exit code 2 blocks with stderr as the reason, and a timeout blocks | `TestCommandHookContract` | not built |
 | `progressive` on a host without a sandbox is refused with `sandbox_unavailable` | `harness.TestProgressiveNeedsASandbox`; the CLI refuses it on a Windows host, which records `sandbox: none` ([[009-machines]]); a Linux or macOS host, whose sandbox the CLI does not yet apply, records no driver and is not refused | built for Windows hosts |
 | `remember` adds a pattern that the next turn, on a fresh harness, applies to the next matching call | `harness.TestConfirmationsAndDenials` | built |
+| A call its tool holds for a person is `ask` with the tool's reason under an `always_allow` pattern, a remembered pattern, a score below every threshold and a decider that allows or flags every call; the same tool's other calls run as the policy says; `plan` blocks the held call; the person's allow runs it | `harness.TestACallItsToolHoldsWaitsForAPerson`, `harness.TestTheRulesHoldACallForAPerson` | built |
 | The authorizer's and the agent's lists merge so neither loosens the other: confirm is the union, allow the intersection, thresholds the lower, and the merged policy is in the Session | `harness.TestPolicyMergeNeverLoosens`, `internal/server.TestLimitListsReachThePolicy`, `harness.TestTheSessionsPolicyDecides` | built |
 | A sandbox command refused `confirmation_required` yields one `approval.requested` scored 0.9; an allow grants a one-shot scope the retried request uses once, a deny leaves it refused, and a restart between the two keeps the approval pending | `TestEgressStepUp` over the stub Cella and a stub authorizer | not built |
 | `bash` in a sandbox holding a swapped-in credential scores 0.4 | `harness.TestScoreFollowsTheRuleFeatures` | not built |
@@ -338,6 +351,13 @@ that survive a restart, and `remember`. A Windows host records `sandbox:
 none` and refuses `progressive`. v0.11.0 (2026-10-02) decides every call
 through the `Decider` of [[037-decision-services]], and the verdicts are
 those of `latere.ai/x/pkg/verdict`.
+
+Built on 2026-10-11, in no release yet: a tool holds a call for a
+person. `tools.Confirmer` names the call from its input, `harness.Call`
+carries the reason to the decider, the rules and what a decision
+service cannot suggest past both ask for it, and `plan` applies the
+hold once more after the decider. Its first use is the `publish` call
+that changes who can open an app ([[043-publishing-a-folder]]).
 
 Open: the operating-system sandbox on a macOS or Linux host (its driver
 is in `machine/host`, and `topos` does not apply it yet), hooks, an ask
