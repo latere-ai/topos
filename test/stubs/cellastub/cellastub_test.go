@@ -231,7 +231,7 @@ func TestAFailedSandboxAndItsStart(t *testing.T) {
 		t.Errorf("a killed sandbox = %+v", got.Status)
 	}
 	// A command a signal ended reports 128 and the signal's number.
-	sess, err = c.ExecSession(t.Context(), id, client.ExecRequest{Command: []string{"/bin/sh", "-c", "kill -KILL $$"}})
+	_, err = c.ExecSession(t.Context(), id, client.ExecRequest{Command: []string{"/bin/sh", "-c", "kill -KILL $$"}})
 	code(t, err, "phase_conflict")
 	if started, _, err = c.StartSandbox(t.Context(), id); err != nil || started.Status.ExitCode != nil {
 		t.Fatalf("the start after the kill = %+v %v", started.Status, err)
