@@ -9,10 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -135,6 +138,20 @@ type Limits struct {
 	// and the fork's are the session's, and a send's replace them, none
 	// when the allow names none.
 	Connections []session.Connection
+	// Folder is the folder of the installation's files store the
+	// session's attachments and kept files are written in, read on an
+	// allow of session.create and session.fork (spec 068); nil keeps them
+	// as blobs. The core reads nothing into its parts.
+	Folder *session.Folder
+}
+
+// WireFolder is a folder an allow names (spec 068): the root of an
+// Arca-compatible files API, the space the folder is in, and the folder's
+// path in that space.
+type WireFolder struct {
+	URL   string `json:"url"`
+	Owner string `json:"owner"`
+	Path  string `json:"path"`
 }
 
 // WireRepository is one repository an allow of session.create attaches
@@ -168,6 +185,7 @@ type WireLimits struct {
 	Route          string                `json:"route,omitempty"`
 	MessageText    bool                  `json:"message_text,omitempty"`
 	Connections    []session.Connection  `json:"connections,omitempty"`
+	Folder         *WireFolder           `json:"folder,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -295,7 +313,35 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 	if l.Connections, err = session.CheckConnections(w.Connections); err != nil {
 		return Limits{}, fmt.Errorf("limits.%w", err)
 	}
+	if f := w.Folder; f != nil {
+		if err := checkFolder(*f); err != nil {
+			return Limits{}, err
+		}
+		l.Folder = &session.Folder{URL: f.URL, Owner: f.Owner, Path: f.Path}
+	}
 	return l, nil
+}
+
+// checkFolder holds an allow's folder to what a files store can address
+// (spec 068): an absolute http or https URL with no user, query or
+// fragment; an owner; and a clean relative path of at least two segments,
+// none empty, "." or "..". None of them holds a control character.
+func checkFolder(f WireFolder) error {
+	u, err := url.Parse(f.URL)
+	switch {
+	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "":
+		return fmt.Errorf("limits.folder.url %q is not an http or https URL with no user, query or fragment", f.URL)
+	case f.Owner == "" || strings.ContainsFunc(f.Owner, unicode.IsControl):
+		return fmt.Errorf("limits.folder.owner %q is not a space", f.Owner)
+	case strings.ContainsFunc(f.Path, unicode.IsControl) || path.Clean(f.Path) != f.Path || strings.Count(f.Path, "/") < 1:
+		return fmt.Errorf("limits.folder.path %q is not a clean path of two segments or more", f.Path)
+	}
+	for seg := range strings.SplitSeq(f.Path, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return fmt.Errorf("limits.folder.path %q holds the segment %q", f.Path, seg)
+		}
+	}
+	return nil
 }
 
 // attachedRepositories reads an allow's repositories (spec 058): at most

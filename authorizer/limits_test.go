@@ -398,3 +398,39 @@ func TestTheConnectionsMember(t *testing.T) {
 		}
 	}
 }
+
+// TestAnAllowNamesAFolder: an allow's folder is read as the session's
+// folder of the files store, its three members as written; one whose URL
+// is not an http or https URL of its own, whose owner is empty, or whose
+// path is not a clean path of two segments or more is refused, since the
+// core cannot address it; an allow with none names none (spec 068).
+func TestAnAllowNamesAFolder(t *testing.T) {
+	good := WireFolder{URL: "https://files.example.com/v1", Owner: "https://issuer.example|ada", Path: "files/sessions/ses_1"}
+	l, err := DecodeLimits(decision(t, WireLimits{Folder: &good}))
+	if err != nil || l.Folder == nil || *l.Folder != (session.Folder{URL: good.URL, Owner: good.Owner, Path: good.Path}) {
+		t.Fatalf("the folder %+v, %v", l.Folder, err)
+	}
+	if l, err := DecodeLimits(decision(t, WireLimits{})); err != nil || l.Folder != nil {
+		t.Fatalf("an allow with no folder: %+v, %v", l.Folder, err)
+	}
+	for name, f := range map[string]WireFolder{
+		"no scheme":       {URL: "files.example.com/v1", Owner: good.Owner, Path: good.Path},
+		"another scheme":  {URL: "ftp://files.example.com/v1", Owner: good.Owner, Path: good.Path},
+		"a user":          {URL: "https://u:p@files.example.com/v1", Owner: good.Owner, Path: good.Path},
+		"a query":         {URL: "https://files.example.com/v1?x=1", Owner: good.Owner, Path: good.Path},
+		"a fragment":      {URL: "https://files.example.com/v1#x", Owner: good.Owner, Path: good.Path},
+		"no owner":        {URL: good.URL, Path: good.Path},
+		"a control owner": {URL: good.URL, Owner: "a\nb", Path: good.Path},
+		"one segment":     {URL: good.URL, Owner: good.Owner, Path: "files"},
+		"a parent":        {URL: good.URL, Owner: good.Owner, Path: "files/../x"},
+		"absolute":        {URL: good.URL, Owner: good.Owner, Path: "/files/x"},
+		"a trailing /":    {URL: good.URL, Owner: good.Owner, Path: "files/x/"},
+		"empty segment":   {URL: good.URL, Owner: good.Owner, Path: "files//x"},
+		"dot":             {URL: good.URL, Owner: good.Owner, Path: "./x"},
+		"control path":    {URL: good.URL, Owner: good.Owner, Path: "files/x\x00"},
+	} {
+		if _, err := DecodeLimits(decision(t, WireLimits{Folder: &f})); err == nil || !strings.Contains(err.Error(), "limits.folder") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
