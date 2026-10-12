@@ -10,6 +10,28 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A session reaches the services a person connected, without their
+  credentials.** An installation that keeps its people's connections in
+  a connection service of its own names each session's connections in
+  its authorizer's allow of the create, the fork and every send, so a
+  service connected in the middle of a conversation is there from the
+  next message. A connection of kind `http`, such as a code host, is
+  reached from the sandbox: `git clone` of the usual URL, fetches and
+  pushes go through the connection service, and the service's API is at
+  `$<NAME>_API_URL` with `$CONNECTIONS_TOKEN` as the bearer, a
+  placeholder Cella's egress gateway swaps for the session's token. A
+  connection of kind `mcp` is a remote MCP server whose tools the model
+  is offered as `mcp__<name>__<tool>`, read or external by the
+  allow's `read_only`, and asked about as any tool is. The model is told
+  each connection and how to use it, and a connection the person has to
+  connect again fails its call with a result the model relays and a
+  `connection.requested` event a client shows as "connect this service".
+  Set `TOPOS_CONNECTIONS_URL` and `TOPOS_CONNECTIONS_AUDIENCE`, and let
+  the identity provider mint those audiences for the runner. See
+  [Connections](docs/connections.md).
+
 ### Fixed
 
 - **A file rebuilt into a new machine carries the time it was written

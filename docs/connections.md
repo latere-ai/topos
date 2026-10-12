@@ -20,7 +20,10 @@ The authorizer names the connections in the limits of its allow of
     {"name": "github", "kind": "http", "title": "GitHub", "audience": "connections",
      "address": "https://connections.example.com/v1/connections/c_1/http",
      "git_address": "https://connections.example.com/v1/connections/c_1/git",
-     "git_url": "https://github.com"}
+     "git_url": "https://github.com"},
+    {"name": "tracker", "kind": "mcp", "title": "Issue tracker", "audience": "connections",
+     "address": "https://connections.example.com/v1/connections/c_2/mcp",
+     "read_only": ["list_*", "get_*"]}
   ]
 }
 ```
@@ -28,11 +31,12 @@ The authorizer names the connections in the limits of its allow of
 | Member | Meaning |
 |---|---|
 | `name` | a lowercase DNS label that starts with a letter, at most 32 characters, unique in the list |
-| `kind` | `http`: an API and, optionally, a git host reached from the session's sandbox |
+| `kind` | `http`: an API and, optionally, a git host reached from the session's sandbox; `mcp`: a remote MCP server the runner reaches |
 | `title` | what the model and a person call the connection, one line of at most 100 characters |
 | `audience` | the audience of the session token the connection service accepts |
-| `address` | the connection's forwarding address, an `https` URL with no query or fragment |
-| `git_address`, `git_url` | both or neither: the connection's git address, and the git host the person's repositories live at |
+| `address` | the connection's forwarding address for `http`, its MCP address for `mcp`; an `https` URL with no query or fragment |
+| `git_address`, `git_url` | `http` alone, both or neither: the connection's git address, and the git host the person's repositories live at |
+| `read_only` | `mcp` alone: globs over the server's tool names; a tool one matches reads, and every other reaches outside |
 
 At most 32 connections. A connection that breaks a rule refuses the
 request with `authorizer_unavailable`, naming the member in the
@@ -76,17 +80,50 @@ with an `http` connection. A session on a host machine uses the
 person's own git and environment, and is told nothing of its `http`
 connections.
 
+## Remote MCP servers
+
+For a connection of kind `mcp`, the runner reaches `address` as a Model
+Context Protocol server over streamable HTTP, with the session's token
+for `audience` and the workload `session` as its bearer, and lists its
+tools when the runner starts driving the session, as each message does.
+It speaks revision 2026-07-28, and falls back to
+the `initialize` handshake of revision 2025-11-25 for a server that
+answers `400` with no error of the current revision. Each tool is
+offered to the model as `mcp__<name>__<tool>`, and is checked, scored
+and asked about as any tool is: a tool a `read_only` glob matches reads,
+and every other is an external call, which a session in `confirm`
+asks the person about. A server's tools never start the session's
+sandbox.
+
 ## A connection that is not connected
 
 The connection service answers `409` with the code
 `connection_not_connected` for a connection the person has to connect
-again. The sandbox's tools read that answer as the service gave it, and
-the model is told to relay it to the person, naming the service. The
-session goes on.
+again. The session goes on in each case:
+
+- **`http`.** The sandbox's tools read that answer as the service gave
+  it, and the model is told to relay it to the person, naming the
+  service.
+- **`mcp`.** The call fails with a result that names the connection and
+  the reason, and `connection.requested` follows it:
+
+  ```json
+  {"type": "connection.requested", "payload": {"name": "tracker", "title": "Issue tracker", "kind": "mcp", "reason": "revoked", "tool_use_id": "toolu_01"}}
+  ```
+
+  A client shows it as "connect this service" and starts the connection
+  service's reconnect. A listing that meets the answer at the start of a
+  drive offers none of the server's tools and appends the same event
+  without `tool_use_id`, and the model is told the service is not
+  connected. `scopes`, when present, are the ones the other service
+  asked for.
 
 ## What the installation lets its identity provider mint
 
 The runner's host client asks for the session's token for
-`TOPOS_CONNECTIONS_AUDIENCE` with the workload `sandbox`. The identity
-provider must mint that audience for it. Without it no placeholder is
-mounted, and the sandbox reaches no connection.
+`TOPOS_CONNECTIONS_AUDIENCE` with the workload `sandbox`, and for each
+`mcp` connection's `audience` with the workload `session`. The identity
+provider must mint those audiences for it. Without the first no
+placeholder is mounted and the sandbox reaches no connection; without
+the second the server's tools are not listed, and the session records
+`mcp_unavailable`.

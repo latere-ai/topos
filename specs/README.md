@@ -77,7 +77,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [018](018-credentials-and-secrets.md) | Credentials, connections and secrets: write-only credentials, the agent's identity and its session tokens, injection outside the machine, scrubbing, named secrets, the input check, redaction, session scope | large | in-progress | 001, 002, 003, 004, 006, 009 |
 | [019](019-git.md) | Git in a session: repositories as inputs, plain git in the sandbox, the token at the egress gateway, ref rules, attribution, the git cache | medium | in-progress | 001, 002, 004, 009, 018 |
 | [020](020-memory-stores.md) | Memory stores: the resource, attachment, the directory and Arca backends, sync into the machine, preconditions and conflicts | medium | drafted | 002, 003, 004, 008, 009, 018 |
-| [021](021-mcp-servers.md) | MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials | medium | drafted | 003, 008, 009, 012, 018 |
+| [021](021-mcp-servers.md) | MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials | medium | in-progress | 003, 008, 009, 012, 018 |
 | [022](.archive/022-triggers.md) | Triggers: schedules and delivered events that start or continue sessions, filters, the message template, the session policy, the limits | medium | complete | 003, 004, 006, 014 |
 | [023](023-events-and-observability.md) | Events and observability: the content-free sink, spans derived from the log, metrics | medium | drafted | 002, 004, 006, 014, 015 |
 | [024](024-client-cli-skill.md) | The client, the topos command and the agent skill: the API client, print mode, the supported import set | medium | in-progress | 002, 004, 005, 016 |
@@ -122,7 +122,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [064](064-files-an-answer-links.md) | Files an answer links: each local file an agent message links is kept from the machine as a blob, recorded by `files.kept` beside the images the message shows, and answered by the blob route as a download | medium | testing | 044, 055 |
 | [065](065-a-working-directory-rebuilt-from-the-log.md) | A working directory rebuilt from the log: a machine made new for a session that lost its own, or for a fork with no checkpoint, gets back the files the session's log holds, recorded as `restored` with what is back and what is not, and the model is told | medium | testing | 008, 009, 017, 034, 064 |
 | [067](067-a-name-and-an-address-for-a-published-site.md) | A name and an address for a published site: the `publish` call that creates a session's app gives the app its name and asks for its address, in place of the session's title, creates it without the address when the host cannot give it, and a call that creates no app ignores both | small | testing | 043, 059 |
-| [069](069-connections-an-allow-names.md) | Connections an allow names: git and a service's API reached from the sandbox through a connection service, and remote MCP servers, read at create and fork and replaced at every send | large | drafted | 004, 006, 008, 009, 012, 015, 016, 018, 019, 021, 052, 053, 058 |
+| [069](069-connections-an-allow-names.md) | Connections an allow names: git and a service's API reached from the sandbox through a connection service, and remote MCP servers, read at create and fork and replaced at every send | large | testing | 004, 006, 008, 009, 012, 015, 016, 018, 019, 021, 052, 053, 058 |
 
 ## Dependency graph
 

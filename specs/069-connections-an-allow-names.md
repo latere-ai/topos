@@ -1,6 +1,6 @@
 ---
 title: "Connections an allow names: git and a service's API reached from the sandbox through a connection service, and remote MCP servers, read at create and fork and replaced at every send"
-status: drafted
+status: testing
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 019-git.md, 021-mcp-servers.md, 052-a-sessions-network.md, 053-the-initiators-instructions.md, 058-what-a-create-allow-attaches.md]
 affects: [authorizer/, session/, internal/server/, internal/config/, internal/hosted/, machine/, harness/, harness/tools/mcp/, prompts/, cmd/toposd/, api/, docs/]
@@ -297,6 +297,9 @@ person has to connect again.
   relay it. The runner sees no request of the sandbox's, so it appends
   nothing.
 
+A turn whose sandbox cannot take the list of `http` connections appends
+`session.error` `connections_unavailable`, retryable, and goes on.
+
 ### Pushes
 
 The connection service holds a push to the refs the installation's
@@ -350,13 +353,41 @@ no mount for the Secret and reaches no `http` connection.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `connections` is decoded with its rules and bounds on an allow; a connection that breaks a rule, an unknown kind, and a list past its bound refuse `authorizer_unavailable` naming the member, and an unknown member of a connection is ignored | `authorizer.TestTheConnectionsMember`, `session.TestCheckConnections` | not built |
-| A create and a fork hold their own allow's list; a send whose allow names another list appends `session.connections_changed` before what it sent, one that names the same appends nothing, and one that names none empties it; the header takes the change except in a fork's copied events | `internal/server.TestConnectionsAreTheAllows`, `session.TestTheHeaderTakesTheConnections` | not built |
-| An `http` connection on an installation without `TOPOS_CONNECTIONS_URL`, of another audience, or on another host is refused `authorizer_unavailable` | `internal/server.TestConnectionsAreTheAllows` | not built |
-| The variables are read with their default, need the identity provider, and are refused on the model's or the git host's host | `internal/config.TestTheConnectionsVariables` | not built |
-| Every sandbox of an installation with `TOPOS_CONNECTIONS_URL` mounts `-connections` as `CONNECTIONS_TOKEN`, scoped to its host, holding the session's token for the audience and workload `sandbox`, labeled with the session and the agent, renewed before it expires and deleted at the session's end after the sandbox | `internal/hosted.TestTheConnectionsSecret` over the stub Cella | not built |
-| The git configuration and each command's `<NAME>_API_URL` follow the session's list at open and at each turn, a removed connection leaving no entry | `internal/hosted.TestHTTPConnectionsFollowTheList` over the stub Cella | not built |
-| A session's sandbox clones `<git_url>/acme/app` through a stub git address that admits only the placeholder of `-connections`, and no command or event carries the token | `internal/hosted.TestASandboxClonesThroughAConnection` over the stub Cella and git's own http backend | not built |
-| The block names each connection the machine reaches, says how to clone, push and call the API, or the tools' prefix, and how to relay a `409`, and changes only with the list | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes` | not built |
-| An `mcp` connection's tools are offered as `mcp__<name>__<tool>`, read for a `read_only` match and external otherwise, gated and scored like a built-in; a streamed answer is read to its response; an earlier revision's server is reached after its `400`; the bearer is the session's token for the audience | `harness/tools/mcp.TestStreamableHTTP` against a stub server, `internal/hosted.TestMCPConnectionsAreOffered` | not built |
-| A `409` `connection_not_connected` fails the call with a result naming the connection and the reason, appends `connection.requested`, and the session goes on | `harness/tools/mcp.TestANotConnectedServer`, `internal/hosted.TestMCPConnectionsAreOffered` | not built |
+| `connections` is decoded with its rules and bounds on an allow; a connection that breaks a rule, an unknown kind, a title that is not UTF-8 and a list past its bound refuse `authorizer_unavailable` naming the member, and an unknown member of a connection is ignored | `authorizer.TestTheConnectionsMember`, `session.TestCheckConnections`, `session.TestAConnectionsVariableAndTools` | built |
+| A create and a fork hold their own allow's list; a send whose allow names another list appends `session.connections_changed` before what it sent, one that names the same appends nothing, and one that names none empties it; the header takes the change except in a fork's copied events | `internal/server.TestConnectionsAreTheAllows`, `session.TestTheHeaderTakesTheConnections` | built |
+| An `http` connection on an installation without `TOPOS_CONNECTIONS_URL`, of another audience, or on another host is refused `authorizer_unavailable`, at a create and at a send, and an `mcp` connection is taken there | `internal/server.TestConnectionsAreTheAllows`, `internal/server.TestAnHTTPConnectionNeedsAConnectionService` | built |
+| The variables are read with their default in `serve` and in the runner role, need the identity provider, and are refused on the model's or the git host's host | `internal/config.TestTheConnectionsVariables` | built |
+| Every sandbox of an installation with `TOPOS_CONNECTIONS_URL` mounts `-connections` as `CONNECTIONS_TOKEN`, scoped to its host, holding the session's token for the audience and workload `sandbox`, labeled with the session and the agent, renewed before it expires and deleted at the session's end after the sandbox; an audience nothing mints for mounts none | `internal/hosted.TestTheConnectionsSecret` over the stub Cella | built |
+| The git configuration and each command's `<NAME>_API_URL` follow the session's list at open and when a list is applied, a removed connection leaving no entry, the same list running nothing, and a request's own variable winning; a turn gives an open machine the list at its start, and a machine that cannot take it appends `connections_unavailable` while the turn goes on | `internal/hosted.TestHTTPConnectionsFollowTheList` over the stub Cella, `harness.TestTheConnectionsBlock`, `harness.TestConnectionsOnAMachineThatCannotTakeThem`, `machine.TestADeferredMachinePassesItsConnectionsOn` | built |
+| A session's sandbox clones `<git_url>/acme/app` from bash, pushes its own branch, and calls the API at its variable, through a stub connection service that admits only the placeholder of `-connections`, and no event carries the token | `internal/hosted.TestASandboxClonesThroughAConnection` over the stub Cella and git's own http backend | built |
+| The block names each connection the machine reaches, says how to clone, push and call the API, or the tools' prefix, or that one is not connected, and how to relay a `409`, on every thread, and changes only with the list | `harness.TestTheConnectionsBlock`, `harness.TestAConnectionThatIsNotConnected`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| An `mcp` connection's tools are offered as `mcp__<name>__<tool>`, read for a `read_only` match and external otherwise, remote, gated and scored like a built-in, a write waiting for the person in `confirm`; a streamed answer is read past its notification to its response; a server of an earlier revision is reached after its `400`, and a session it ended is opened again; the bearer is the session's token for the audience; a tool with no tool name or a broken header mark is left out, and a reduced schema is named | `harness/tools/mcp.TestStreamableHTTP`, `harness/tools/mcp.TestAnEarlierRevision`, `harness/tools/mcp.TestWhatAResultHolds`, `harness/tools/mcp.TestTheClientsErrors`, `internal/hosted.TestMCPConnectionsAreOffered` against the stub MCP server | built |
+| A `409` `connection_not_connected` fails the call with a result naming the connection and the reason and appends `connection.requested` with the call's id; a listing that meets it offers no tool, records `connection.requested` without one at the drive's first turn, and the block says so; the session goes on | `harness/tools/mcp.TestANotConnectedServer`, `harness.TestAConnectionThatIsNotConnected`, `internal/hosted.TestMCPConnectionsAreOffered` | built |
+| An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
+
+## Outcome
+
+Built on 2026-10-12, in no release yet, and not yet run against a live
+connection service or a model. Every criterion but the task of the
+suite has its test. What shipped, beyond the design above:
+
+- **A machine that cannot take the list.** A turn whose open sandbox
+  refuses the git configuration appends `session.error`
+  `connections_unavailable`, retryable, and goes on; the next turn gives
+  the list again.
+- **The listing's records.** A drive's first turn appends, for each
+  `mcp` connection whose listing did not offer every tool, a
+  `connection.requested` for one not connected, `session.error`
+  `mcp_unavailable` for one that failed otherwise, and `session.error`
+  `mcp_schema_reduced` naming the tools whose schema the validator does
+  not wholly read. A schema is reduced to the keywords the validator
+  reads, and the model reads the reduced one.
+- **A server's tool runs outside the machine.** Its calls never open a
+  sandbox opened on demand (`tools.Properties.Remote`).
+- **An earlier revision's session is not ended.** The client sends no
+  `DELETE` at a drive's end; a server ends an idle session itself.
+- **The proof of the whole path is two tests.** The allow to the header
+  is `internal/server`'s; the header to the sandbox and to a server is
+  `internal/hosted`'s drives over the stub Cella, git's own http backend
+  and the stub MCP server, as [[019-git]] proves its push. No test runs
+  `toposd` with an authorizer that names `connections`.

@@ -1,6 +1,6 @@
 ---
 title: "MCP servers: stdio on the host and in the sandbox, streamable HTTP anywhere, tool naming, credentials"
-status: drafted
+status: in-progress
 track: core
 depends_on: [003-manifest.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md, 018-credentials-and-secrets.md]
 affects: [harness/tools/mcp/]
@@ -102,7 +102,7 @@ the verdict ([[012-permissions-and-approvals]]); the manifest fields
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| An MCP tool is offered, called, and permission-gated like a built-in: it carries a score and verdict, an ask pauses the session, and a block does not run it | `TestMCPToolGatedLikeABuiltin` against a stub server | not built |
+| An MCP tool is offered, called, and permission-gated like a built-in: it carries a score and verdict, an ask pauses the session, and a block does not run it | `TestMCPToolGatedLikeABuiltin` against a stub server | built for a connection's streamable HTTP server by `internal/hosted.TestMCPConnectionsAreOffered` ([[069-connections-an-allow-names]]); `spec.mcpServers` is not read yet |
 | A stdio server on the host runs inside the host sandbox, and on a Cella machine inside the sandbox | `TestStdioServerRunsOnTheMachine` | not built |
 | An HTTP server's credential is injected by the runner and appears in no event and no machine | `TestHTTPServerCredentialOutsideMachine` | not built |
 | An MCP call with no result is closed `unknown_effect` after a runner restart and never repeated | `TestMCPCallNeverRepeated` | not built |
