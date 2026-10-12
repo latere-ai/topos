@@ -491,7 +491,7 @@ paths:
     get:
       operationId: listSessions
       summary: List sessions
-      description: "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. A fork names the session it was forked from as parent {session_id, seq} and the session at the top of its fork tree as root; a session no fork made has neither, and its tree is keyed by its own id. root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, so a fork moves its tree to the head of the list. A group other than tree is invalid_request. metadata.<key>=<value>, one such parameter per request, keeps the sessions whose metadata holds key with exactly value, beside every other filter and within the owners the authorizer's decision names; under group=tree a tree stands for itself when one of its sessions holds the entry. A second such parameter, a key that breaks the key rule of a create's metadata, and an empty value are invalid_request naming the parameter."
+      description: "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. A fork names the session it was forked from as parent {session_id, seq} and the session at the top of its fork tree as root; a session no fork made has neither, and its tree is keyed by its own id. root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, so a fork moves its tree to the head of the list. A group other than tree is invalid_request. metadata.<key>=<value>, one such parameter per request, keeps the sessions whose metadata holds key with exactly value, beside every other filter and within the owners the authorizer's decision names; under group=tree a tree stands for itself when one of its sessions holds the entry. A second such parameter, a key that breaks the key rule of a create's metadata, and an empty value are invalid_request naming the parameter. trigger=<id>, a trigger's id, keeps the sessions that trigger started, those whose trigger_id it is, beside every other filter and the cursor, within the agents of the caller's context and the owners the authorizer's decision names; under group=tree a tree stands for itself when one of its sessions the trigger started, and a fork, which no trigger starts, is not kept by it. The id of no trigger, and of another context's trigger, keeps none of the caller's sessions. A value that is not a trigger's id is invalid_request."
       x-topos-actions:
         - session.list
       parameters:
@@ -541,6 +541,11 @@ paths:
             type: string
             enum:
               - tree
+        - name: trigger
+          in: query
+          description: "A trigger's id: the sessions that trigger started."
+          schema:
+            type: string
       responses:
         "200":
           description: OK
@@ -594,7 +599,7 @@ paths:
     get:
       operationId: getSessionSummary
       summary: Count sessions
-      description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner, archived and metadata.<key> filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, those idle on question, where a question waits for a person's answer, among them; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
+      description: "The answer is {\"sessions\": {\"running\", \"waiting_for_approval\", \"idle\", \"ended\"}, \"agents\"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner, archived, trigger and metadata.<key> filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, those idle on question, where a question waits for a person's answer, among them; agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero."
       x-topos-actions:
         - session.list
       parameters:
@@ -619,6 +624,11 @@ paths:
               - "false"
               - "true"
               - any
+        - name: trigger
+          in: query
+          description: "A trigger's id: the sessions that trigger started."
+          schema:
+            type: string
       responses:
         "200":
           description: OK

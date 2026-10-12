@@ -156,6 +156,12 @@ var (
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{"false", "true", "any"}}}}}
 )
 
+// triggerParam keeps the sessions a trigger started (spec 070), in the
+// list and the summary; a search does not take it.
+var triggerParam = yaml.MapSlice{{Key: "name", Value: "trigger"}, {Key: "in", Value: "query"},
+	{Key: "description", Value: "A trigger's id: the sessions that trigger started."},
+	{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
+
 // rootParam, parentParam and groupParam read a session's fork tree
 // from the list (spec 056); a search and a summary take none of them.
 var (
@@ -172,7 +178,7 @@ var (
 
 // queryParams are the query parameters of the routes that read any.
 var queryParams = map[string][]yaml.MapSlice{
-	"listSessions": {agentParam, statusParam, runnerParam, archivedParam, rootParam, parentParam, groupParam},
+	"listSessions": {agentParam, statusParam, runnerParam, archivedParam, rootParam, parentParam, groupParam, triggerParam},
 	"searchSessions": {
 		{{Key: "name", Value: "q"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
 			{Key: "description", Value: "The words to search for. Each is found as the start of a word, whatever its case; characters of Han, Hiragana and Katakana typed in a row are found as those characters in a row."},
@@ -183,7 +189,7 @@ var queryParams = map[string][]yaml.MapSlice{
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}},
 		agentParam, statusParam, runnerParam, archivedParam,
 	},
-	"getSessionSummary": {agentParam, runnerParam, archivedParam},
+	"getSessionSummary": {agentParam, runnerParam, archivedParam, triggerParam},
 	"getFile": {
 		{{Key: "name", Value: "path"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
 			{Key: "description", Value: "The file: an absolute path inside the session's working directory, as a write or edit tool.result's meta.path names it, or a path relative to the working directory."},
@@ -303,7 +309,7 @@ var opDescriptions = map[string]string{
 		"root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. " +
 		"root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, " +
 		"carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, " +
-		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request. " + MetadataFilterRule,
+		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request. " + MetadataFilterRule + " " + TriggerFilterRule,
 	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, "+
 		"and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. "+
 		"Markdown's marks and a link's address are not searched, and a message is searched in its first %d bytes. "+
@@ -429,7 +435,7 @@ var opDescriptions = map[string]string{
 		"its opening as message_text when the model the fork starts on holds message_text and the installation sets TOPOS_AUTHORIZER_MESSAGE_TEXT, and its askable and answers as a send carries them. " +
 		"Both are asked before anything is written, and a deny of either is forbidden with nothing written; a send refused after session.fork was allowed is reported to the installation's sink as session.fork of the new id with the refusal's code as outcome, " +
 		"so an authorizer that recorded the fork at its allow closes the record. A session of an archived agent is conflict. " + ForkKeptFiles,
-	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner, archived and metadata.<key> filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. ` +
+	"getSessionSummary": `The answer is {"sessions": {"running", "waiting_for_approval", "idle", "ended"}, "agents"}, counts of the sessions GET /sessions would list for the caller under the same agent, runner, archived, trigger and metadata.<key> filters, archived sessions left out unless archived asks for them; it counts sessions, and takes none of the list's root, parent and group. ` +
 		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, " +
 		"those idle on question, where a question waits for a person's answer, among them; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",

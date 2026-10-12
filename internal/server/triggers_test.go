@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -1037,5 +1038,89 @@ func TestAnOwnerOfNoIssuerIsAskedAsItsSubject(t *testing.T) {
 	out := f.fired("root", tr.ID, "", store.OutcomeRefused)
 	if out.Reason != auth.CodeForbidden || len(creates) != 1 || creates[0].Sub != "service-account" || creates[0].Issuer != "" {
 		t.Fatalf("the firing %+v, asked %+v", out, creates)
+	}
+}
+
+// TestListFiltersByTheTriggerThatStartedASession: trigger=<id> lists the
+// sessions that trigger started and no other, newest first a page at a
+// time, beside the other filters, under group=tree, where a fork of a
+// run, which no trigger started, leaves its tree to the run; another
+// account's trigger lists none of the caller's sessions and none of its
+// own; the summary counts the same set; and a value that is not a
+// trigger's id is invalid_request, in the list and the summary (spec
+// 070).
+func TestListFiltersByTheTriggerThatStartedASession(t *testing.T) {
+	f := newTriggerFixture(t)
+	triage := f.applyTrigger("alice", "triage", eventSpec("")).Status.ID
+	digest := f.applyTrigger("alice", "digest", eventSpec("")).Status.ID
+	r1 := f.fired("alice", "triage", f.envelope("1", "issue.opened", "o/r#1", "Crash"), store.OutcomeStarted).SessionID
+	f.fired("alice", "digest", f.envelope("2", "issue.opened", "o/r#2", "Docs"), store.OutcomeStarted)
+	r2 := f.fired("alice", "triage", f.envelope("3", "issue.opened", "o/r#3", "Hang"), store.OutcomeStarted).SessionID
+	plain := f.create("alice", "reviewer").ID
+	f.apply("bob", "reviewer", "Review.")
+	if a := f.do(http.MethodPut, "/v1/triggers/triage", "bob", triggerYAML("triage", eventSpec(""))); a.status != http.StatusCreated {
+		t.Fatalf("bob's trigger: %d %s", a.status, a.body)
+	}
+	theirs := f.get("bob", "triage").Status.ID
+	f.fired("bob", "triage", f.envelope("4", "issue.opened", "o/r#4", "Theirs"), store.OutcomeStarted)
+	f.turn(r1, 1, "Triaged.", 1)
+	fork := f.forked(r1, "")
+
+	for _, c := range []struct {
+		name, q string
+		want    []string
+	}{
+		{"one trigger", "?trigger=" + triage, []string{r2, r1}},
+		{"another trigger", "?trigger=" + digest, []string{f.sessionsOf(digest)[0].ID}},
+		{"beside an agent", "?trigger=" + triage + "&agent=reviewer", []string{r2, r1}},
+		{"beside a root", "?trigger=" + triage + "&root=" + r1, []string{r1}},
+		{"grouped by tree", "?trigger=" + triage + "&group=tree", []string{r2, r1}},
+		{"beside archived", "?trigger=" + triage + "&archived=true", []string{}},
+		{"another account's trigger", "?trigger=" + theirs, []string{}},
+		{"no trigger's id", "?trigger=" + session.NewID(session.PrefixTrigger), []string{}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := listedBy(t, f.fixture, "alice", c.q); !slices.Equal(got, c.want) {
+				t.Fatalf("listed %v, want %v", got, c.want)
+			}
+		})
+	}
+	if got := listedBy(t, f.fixture, "bob", "?trigger="+triage); len(got) != 0 {
+		t.Fatalf("bob listed alice's runs %v", got)
+	}
+	if all := listedBy(t, f.fixture, "alice", ""); !slices.Contains(all, plain) || !slices.Contains(all, fork.ID) {
+		t.Fatalf("the list without the filter: %v", all)
+	}
+
+	// A page at a time, the cursor carrying the filter on.
+	a := f.do(http.MethodGet, "/v1/sessions?trigger="+triage+"&limit=1", "alice", "")
+	var page struct {
+		Items      []session.Session `json:"items"`
+		NextCursor string            `json:"next_cursor"`
+	}
+	a.decode(t, &page)
+	if a.status != http.StatusOK || len(page.Items) != 1 || page.Items[0].ID != r2 || page.NextCursor == "" {
+		t.Fatalf("the first page: %d %s", a.status, a.body)
+	}
+	if got := listedBy(t, f.fixture, "alice", "?trigger="+triage+"&limit=1&cursor="+page.NextCursor); !slices.Equal(got, []string{r1}) {
+		t.Fatalf("the second page: %v", got)
+	}
+	// Under group=tree the fork's tree stands for itself without the filter.
+	if got := listedBy(t, f.fixture, "alice", "?group=tree&root="+r1); !slices.Equal(got, []string{fork.ID}) {
+		t.Fatalf("the run's tree, unfiltered: %v", got)
+	}
+
+	sum := f.summary("alice", "?trigger="+triage)
+	if n := sum.Sessions.Running + sum.Sessions.WaitingForApproval + sum.Sessions.Idle + sum.Sessions.Ended; n != 2 || sum.Agents != 1 {
+		t.Fatalf("the summary of the trigger: %+v", sum)
+	}
+
+	for _, v := range []string{"nope", r1, "trg_", "TRG_01M34HGBA0JR98WKKXWZGAX6VA", url.QueryEscape(triage + " ")} {
+		for _, route := range []string{"/v1/sessions", "/v1/sessions/summary"} {
+			a := f.do(http.MethodGet, route+"?trigger="+v, "alice", "")
+			if a.status != http.StatusBadRequest || a.code() != CodeInvalidRequest || !strings.Contains(string(a.body), "trigger") {
+				t.Errorf("%s?trigger=%s: %d %s, want invalid_request naming trigger", route, v, a.status, a.body)
+			}
+		}
 	}
 }

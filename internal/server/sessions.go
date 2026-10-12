@@ -628,8 +628,9 @@ func lowest(field, requested string, agent, authorizer time.Duration) (time.Dura
 
 // listSessions is GET /sessions, filtered by agent, status, runner and
 // whether a session is archived, leaving archived ones out unless asked,
-// by fork tree and parent, grouped by tree when asked (spec 056), and
-// narrowed to the owners the authorizer's allow names.
+// by fork tree and parent, grouped by tree when asked (spec 056), by a
+// metadata entry (spec 057) and by the trigger that started a session
+// (spec 070), and narrowed to the owners the authorizer's allow names.
 func (c *call) listSessions() error {
 	limit, cursor, err := c.pageParams()
 	if err != nil {
@@ -643,11 +644,15 @@ func (c *call) listSessions() error {
 	if err != nil {
 		return err
 	}
+	trigger, err := triggerFilter(c.r.URL.Query())
+	if err != nil {
+		return err
+	}
 	o, none, err := c.sessionScope(session.Status(c.r.URL.Query().Get("status")))
 	if err != nil {
 		return err
 	}
-	o.Root, o.Parent, o.Group, o.Metadata = tree.Root, tree.Parent, tree.Group, entry
+	o.Root, o.Parent, o.Group, o.Metadata, o.Trigger = tree.Root, tree.Parent, tree.Group, entry, trigger
 	if none {
 		return c.replyPage([]session.Session{}, "")
 	}
@@ -671,11 +676,15 @@ func (c *call) getSessionSummary() error {
 	if err != nil {
 		return err
 	}
+	trigger, err := triggerFilter(c.r.URL.Query())
+	if err != nil {
+		return err
+	}
 	o, none, err := c.sessionScope("")
 	if err != nil {
 		return err
 	}
-	o.Metadata = entry
+	o.Metadata, o.Trigger = entry, trigger
 	if none {
 		return c.reply(http.StatusOK, session.Summary{})
 	}
@@ -817,6 +826,29 @@ func metadataFilter(q url.Values) (*session.MetadataEntry, error) {
 		out = &session.MetadataEntry{Key: key, Value: values[0]}
 	}
 	return out, nil
+}
+
+// TriggerFilterRule is the list route's sentence on its filter by the
+// trigger that started a session (spec 070), which the summary takes as
+// well.
+var TriggerFilterRule = "trigger=<id>, a trigger's id, keeps the sessions that trigger started, those whose trigger_id it is, beside every other filter and the cursor, within the agents of the caller's context and the owners the authorizer's decision names; " +
+	"under group=tree a tree stands for itself when one of its sessions the trigger started, and a fork, which no trigger starts, is not kept by it. " +
+	"The id of no trigger, and of another context's trigger, keeps none of the caller's sessions. A value that is not a trigger's id is invalid_request."
+
+// triggerFilter reads the list's filter by the trigger that started a
+// session, "" when the query names none. A value that is not a trigger's
+// id is refused as a malformed filter is; a trigger's id is not looked
+// up, so one of no trigger, or of a trigger the caller may not read,
+// lists nothing rather than telling the two apart.
+func triggerFilter(q url.Values) (string, error) {
+	v := q.Get("trigger")
+	if v == "" {
+		return "", nil
+	}
+	if session.CheckID(session.PrefixTrigger, v) != nil {
+		return "", refuse(CodeInvalidRequest, "trigger is %q, not a trigger's id", v)
+	}
+	return v, nil
 }
 
 // getSession is GET /sessions/{id}.
