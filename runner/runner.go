@@ -248,10 +248,10 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	switch {
 	case onDemand:
 		deferred.OnOpen(func(ctx context.Context, m machine.Machine) error {
-			return r.opened(ctx, s, m, log, first, true, tokens)
+			return r.opened(ctx, s, m, log, first, true, tokens, cfg.Files)
 		})
 	default:
-		if err := r.opened(ctx, s, cfg.Machine, log, first, false, tokens); err != nil {
+		if err := r.opened(ctx, s, cfg.Machine, log, first, false, tokens, cfg.Files); err != nil {
 			return harness.Outcome{}, r.setupFailed(ctx, log, err)
 		}
 	}
@@ -391,7 +391,7 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 // the session keeps the machine and learns what is missing; a file that
 // could not be written is a session.error, and the call that opened the
 // machine runs.
-func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool, tokens *TokenSource) error {
+func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool, tokens *TokenSource, files harness.Files) error {
 	var repos []session.DeliveredRepository
 	var delivered error
 	if first && len(session.Repositories(s)) > 0 {
@@ -411,7 +411,7 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 	var rebuilt *session.Restore
 	var unbuilt error
 	if restored == nil {
-		if rebuilt, unbuilt = r.rebuildNew(ctx, s, m, first); unbuilt != nil && first {
+		if rebuilt, unbuilt = r.rebuildNew(ctx, s, m, first, files); unbuilt != nil && first {
 			// A fork's files that could not be written back are missing
 			// as a checkpoint's are.
 			missing = errors.Join(missing, unbuilt)
@@ -432,7 +432,7 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 			return r.restarted(ctx, s, m, log, true, rs)
 		})
 	}
-	return errors.Join(r.attachments(ctx, m, log, beside), delivered)
+	return errors.Join(r.attachments(ctx, m, log, files, beside), delivered)
 }
 
 // restarted appends the session.machine of a machine that stopped on a
@@ -523,13 +523,14 @@ func (r *Runner) checkpointMissing(ctx context.Context, log *Log, beside bool, w
 }
 
 // attachments writes the files of the session's messages the machine
-// has not been given, and appends what it wrote and what it could not.
-func (r *Runner) attachments(ctx context.Context, m machine.Machine, log *Log, beside bool) error {
+// has not been given, those of its folder of a files store from files
+// (spec 068), and appends what it wrote and what it could not.
+func (r *Runner) attachments(ctx context.Context, m machine.Machine, log *Log, files harness.Files, beside bool) error {
 	evs, err := r.o.Store.Events(ctx, log.id, 1, 0)
 	if err != nil {
 		return err
 	}
-	written, _, err := harness.DeliverAttachments(ctx, m, log, evs, nil, r.o.Clock())
+	written, _, err := harness.DeliverAttachments(ctx, m, log, files, evs, nil, r.o.Clock())
 	if err != nil || len(written) == 0 {
 		return err
 	}

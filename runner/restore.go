@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/session"
@@ -38,7 +39,7 @@ const restoreTimeout = tools.MaxRebuiltBytes / restoreRate * time.Second
 // new is left as it is, since its directory may hold the session's own
 // files, newer than the log's; and a session's own first machine has
 // nothing before it.
-func (r *Runner) rebuildNew(ctx context.Context, s session.Session, m machine.Machine, first bool) (*session.Restore, error) {
+func (r *Runner) rebuildNew(ctx context.Context, s session.Session, m machine.Machine, first bool, files harness.Files) (*session.Restore, error) {
 	rec, ok := m.(machine.Recovering)
 	if !ok || !rec.Created() {
 		return nil, nil
@@ -50,7 +51,7 @@ func (r *Runner) rebuildNew(ctx context.Context, s session.Session, m machine.Ma
 	if err != nil {
 		return nil, err
 	}
-	return r.rebuild(ctx, s, m, evs)
+	return r.rebuild(ctx, s, m, evs, files)
 }
 
 // rebuild puts back into m, a machine made new for a session whose log
@@ -60,8 +61,8 @@ func (r *Runner) rebuildNew(ctx context.Context, s session.Session, m machine.Ma
 // ran since. It returns nil when the log holds no file to write, and an
 // error when the files could not be written, in which case the machine
 // holds none or some of them.
-func (r *Runner) rebuild(ctx context.Context, s session.Session, m machine.Machine, evs []session.Event) (*session.Restore, error) {
-	blob := func(d session.Digest) ([]byte, error) { return r.blob(ctx, s.ID, d) }
+func (r *Runner) rebuild(ctx context.Context, s session.Session, m machine.Machine, evs []session.Event, files harness.Files) (*session.Restore, error) {
+	blob := func(d session.Digest) ([]byte, error) { return r.blob(ctx, s.ID, evs, files, d) }
 	rb := tools.Rebuild(evs, blob)
 	if len(rb.Files) == 0 {
 		return nil, nil
@@ -75,7 +76,7 @@ func (r *Runner) rebuild(ctx context.Context, s session.Session, m machine.Machi
 		if f.Blob == "" {
 			return f.Content, true, nil
 		}
-		b, err := r.blob(wctx, s.ID, f.Blob)
+		b, err := r.blob(wctx, s.ID, evs, files, f.Blob)
 		if errors.Is(err, session.ErrNotFound) {
 			missing = append(missing, f.Path)
 			return nil, false, nil
@@ -120,9 +121,23 @@ func (r *Runner) rebuild(ctx context.Context, s session.Session, m machine.Machi
 }
 
 // blob reads a blob of the session whole, at most the bytes a rebuild
-// holds.
-func (r *Runner) blob(ctx context.Context, id string, d session.Digest) ([]byte, error) {
-	rc, err := r.o.Store.Blob(ctx, id, d)
+// holds: a file its log, evs, names by ref from files, the session's
+// folder of a files store (spec 068), and any other from its store. A
+// file of a folder this runner does not reach is not found.
+func (r *Runner) blob(ctx context.Context, id string, evs []session.Event, files harness.Files, d session.Digest) ([]byte, error) {
+	var rc io.ReadCloser
+	var err error
+	ref, kept := session.FindFile(evs, d)
+	switch {
+	case kept && files == nil:
+		return nil, fmt.Errorf("%w: %s is in the session's folder of a files store, which this runner does not reach", session.ErrNotFound, ref)
+	case kept:
+		if rc, _, err = files.Open(ctx, ref); errors.Is(err, harness.ErrFileNotFound) {
+			err = fmt.Errorf("%w: %w", session.ErrNotFound, err)
+		}
+	default:
+		rc, err = r.o.Store.Blob(ctx, id, d)
+	}
 	if err != nil {
 		return nil, err
 	}
