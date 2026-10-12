@@ -70,7 +70,7 @@ The app host is a service with this contract, under one root URL:
 
 | Request | Answer |
 |---|---|
-| `POST {root}/apps` with `{"name"}` | `201` with the app: `slug`, `name`, `url` (its own address), `visibility` (who may open it, when the host says), `repository.push_url` |
+| `POST {root}/apps` with `{"name"}`, and with `{"name", "slug"}` since [[067-a-name-and-an-address-for-a-published-site]] | `201` with the app: `slug`, `name`, `url` (its own address), `visibility` (who may open it, when the host says), `repository.push_url` |
 | `GET {root}/apps/{slug}` | the app, or `404` |
 | `PATCH {root}/apps/{slug}` with `{"visibility": "unlisted"}` or `{"visibility": "private"}` | the app, with its `visibility` after the change (amended 2026-10-11, below) |
 | `GET {root}/apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` (the deploy's own address) and `error` (`{code, message}` or null) |
@@ -95,7 +95,7 @@ makes a release of its commit, whose status is `pending`, then
 
 | Name | Parallel | Effect | Input | Limits |
 |---|---|---|---|---|
-| `publish` | no | external | `path` (the folder; a relative path resolves against the working directory; default the working directory), `release` (default false), `access` (`link` or `private`, amended 2026-10-11, below), `name` (the new app's name, [[067-a-name-for-a-published-site]]) | the wait below |
+| `publish` | no | external | `path` (the folder; a relative path resolves against the working directory; default the working directory), `release` (default false), `access` (`link` or `private`, amended 2026-10-11, below), `name` and `address` (the new app's name and the address asked for it, [[067-a-name-and-an-address-for-a-published-site]]) | the wait below |
 
 `publish` is a tool of the session's own thread, as `question` is
 ([[039-questions]]): the runner adds it to the registry when the
@@ -125,9 +125,10 @@ names it, since a local run has no app host and no sandbox.
    session's token for `TOPOS_APPS_AUDIENCE` and the workload
    `session`: the sandbox never holds it, and the authorizer decides
    the create as the session's agent within its initiator's reach.
-   Amended by [[067-a-name-for-a-published-site]]: the call that creates
-   the app gives the app its name, the session's title is what a call
-   that gives none sends, and the tool's text is `tools/publish-v5`.
+   Amended by [[067-a-name-and-an-address-for-a-published-site]]: the
+   call that creates the app gives the app its name and asks for its
+   address, the session's title is what a call that gives no name
+   sends, and the tool's text is `tools/publish-v5`.
 2. **The push.** A push URL on another host than `TOPOS_ORIGO_URL`'s
    is refused before anything runs, since the sandbox's git sends its
    credential to that host alone. In the sandbox, a git directory of

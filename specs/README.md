@@ -121,7 +121,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [063](063-a-messages-opening-for-an-authorizer-that-routes-by-it.md) | A message's opening for an authorizer that routes by it: an allow may ask for each later message's opening, which the session keeps beside its route under the operator's ceiling; and a message may say its client shows an authorizer's ask, and name the ask it answers | medium | testing | 006, 015, 038, 056, 061 |
 | [064](064-files-an-answer-links.md) | Files an answer links: each local file an agent message links is kept from the machine as a blob, recorded by `files.kept` beside the images the message shows, and answered by the blob route as a download | medium | testing | 044, 055 |
 | [065](065-a-working-directory-rebuilt-from-the-log.md) | A working directory rebuilt from the log: a machine made new for a session that lost its own, or for a fork with no checkpoint, gets back the files the session's log holds, recorded as `restored` with what is back and what is not, and the model is told | medium | testing | 008, 009, 017, 034, 064 |
-| [067](067-a-name-for-a-published-site.md) | A name for a published site: the `publish` call that creates a session's app gives the app its name, from which the app host makes its address, in place of the session's title; a call that creates no app ignores it | small | testing | 043, 059 |
+| [067](067-a-name-and-an-address-for-a-published-site.md) | A name and an address for a published site: the `publish` call that creates a session's app gives the app its name and asks for its address, in place of the session's title, creates it without the address when the host cannot give it, and a call that creates no app ignores both | small | testing | 043, 059 |
 
 ## Dependency graph
 
@@ -196,7 +196,7 @@ flowchart BT
   S063[063 a message's opening]
   S064[064 files an answer links]
   S065[065 a working directory rebuilt from the log]
-  S067[067 a name for a published site]
+  S067[067 a name and an address for a published site]
   S002 --> S001
   S003 --> S001
   S004 --> S002
