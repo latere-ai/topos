@@ -113,7 +113,7 @@ func TestDeliverAttachments(t *testing.T) {
 		message(session.Attachment{Name: "gone.bin", Blob: session.DigestOf([]byte("gone")), Path: "attachments/gone.bin"},
 			session.Attachment{Name: "sales.csv", MediaType: "text/csv", Size: int64(len(csv)), Blob: session.DigestOf(csv), Path: "attachments/sales.csv"}),
 	}
-	evs, failed, err := DeliverAttachments(ctx, m, blobs, log, nil, t0)
+	evs, failed, err := DeliverAttachments(ctx, m, blobs, nil, log, nil, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestDeliverAttachments(t *testing.T) {
 	if pending := session.PendingAttachments(log); len(pending) != 1 || pending[0].Path != "attachments/gone.bin" {
 		t.Fatalf("pending after the delivery: %+v", pending)
 	}
-	if evs, _, err := DeliverAttachments(ctx, m, blobs, log, map[string]bool{"attachments/gone.bin": true}, t0); err != nil || len(evs) != 0 {
+	if evs, _, err := DeliverAttachments(ctx, m, blobs, nil, log, map[string]bool{"attachments/gone.bin": true}, t0); err != nil || len(evs) != 0 {
 		t.Fatalf("a skipped path was tried: %+v, %v", evs, err)
 	}
 	// A later machine is given every file again, and the exclude line is
@@ -149,7 +149,7 @@ func TestDeliverAttachments(t *testing.T) {
 	}
 	delete(blobs, session.DigestOf(csv))
 	blobs[session.DigestOf([]byte("gone"))] = []byte("gone")
-	if _, _, err := DeliverAttachments(ctx, m, blobs, log, nil, t0); err != nil {
+	if _, _, err := DeliverAttachments(ctx, m, blobs, nil, log, nil, t0); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(filepath.Join(work, ".git", "info", "exclude")); err != nil || strings.Count(string(got), "/attachments/") != 1 {
@@ -170,7 +170,7 @@ func TestAttachmentsOutsideARepositoryAreNotExcluded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	evs, _, err := DeliverAttachments(t.Context(), m, blobLog{session.DigestOf(body): body}, []session.Event{msg}, nil, t0)
+	evs, _, err := DeliverAttachments(t.Context(), m, blobLog{session.DigestOf(body): body}, nil, []session.Event{msg}, nil, t0)
 	if err != nil || len(evs) != 1 {
 		t.Fatalf("%+v, %v", evs, err)
 	}

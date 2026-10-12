@@ -67,7 +67,7 @@ func TestKeepReadsTheWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := blobLog{}
-	p, ok, err := harness.KeepFiles(ctx, f.m, log, msg, nil)
+	p, ok, err := harness.KeepFiles(ctx, f.m, log, nil, msg, nil)
 	if err != nil || !ok {
 		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
@@ -108,7 +108,7 @@ func TestKeepReadsALinkedFileFromTheWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := blobLog{}
-	p, ok, err := harness.KeepFiles(ctx, f.m, log, msg, func(name string, head []byte) string { return name + " " + string(head[:4]) })
+	p, ok, err := harness.KeepFiles(ctx, f.m, log, nil, msg, func(name string, head []byte) string { return name + " " + string(head[:4]) })
 	if err != nil || !ok {
 		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}

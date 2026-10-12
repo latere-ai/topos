@@ -37,15 +37,18 @@ const maxExclude = 1 << 20
 // in skip is not tried. When the working directory is a repository, the
 // directory is added to its .git/info/exclude, so the session's commits
 // take a file only when the agent adds it by force. Nothing pending
-// returns no events.
-func DeliverAttachments(ctx context.Context, m machine.Machine, blobs BlobReader, log []session.Event, skip map[string]bool, now time.Time) ([]session.Event, []string, error) {
+// returns no events. A file whose record names a ref is read from files,
+// the session's folder of a files store (spec 068), and one with no ref
+// from blobs; with files nil, a file with a ref cannot be read and stays
+// pending.
+func DeliverAttachments(ctx context.Context, m machine.Machine, blobs BlobReader, files Files, log []session.Event, skip map[string]bool, now time.Time) ([]session.Event, []string, error) {
 	var written, failed []string
 	var errs []error
 	for _, a := range session.PendingAttachments(log) {
 		if skip[a.Path] {
 			continue
 		}
-		if err := writeAttachment(ctx, m, blobs, a); err != nil {
+		if err := writeAttachment(ctx, m, blobs, files, a); err != nil {
 			failed = append(failed, a.Path)
 			errs = append(errs, fmt.Errorf("%s: %w", a.Path, err))
 			continue
@@ -73,12 +76,25 @@ func DeliverAttachments(ctx context.Context, m machine.Machine, blobs BlobReader
 	return out, failed, nil
 }
 
-// writeAttachment writes one file from its blob.
-func writeAttachment(ctx context.Context, m machine.Machine, blobs BlobReader, a session.Attachment) error {
+// errNoFiles is a file of a session's folder of a files store on a
+// runner that reaches none.
+var errNoFiles = errors.New("the file is in the session's folder of a files store, which this runner does not reach")
+
+// writeAttachment writes one file from its folder's ref, or its blob.
+func writeAttachment(ctx context.Context, m machine.Machine, blobs BlobReader, files Files, a session.Attachment) error {
 	if !strings.HasPrefix(a.Path, session.AttachmentDir+"/") || path.Clean(a.Path) != a.Path {
 		return fmt.Errorf("the path is not under %s/", session.AttachmentDir)
 	}
-	rc, err := blobs.Blob(ctx, a.Blob)
+	var rc io.ReadCloser
+	var err error
+	switch {
+	case a.Ref != "" && files == nil:
+		err = errNoFiles
+	case a.Ref != "":
+		rc, _, err = files.Open(ctx, a.Ref)
+	default:
+		rc, err = blobs.Blob(ctx, a.Blob)
+	}
 	if err != nil {
 		return err
 	}
@@ -135,7 +151,7 @@ func (t *turn) deliverAttachments(ctx context.Context) error {
 	if len(session.PendingAttachments(t.events())) == 0 {
 		return nil
 	}
-	evs, failed, err := DeliverAttachments(ctx, m, t.l, t.events(), t.sh.undeliverable, t.h.c.Clock())
+	evs, failed, err := DeliverAttachments(ctx, m, t.l, t.h.c.Files, t.events(), t.sh.undeliverable, t.h.c.Clock())
 	if err != nil || len(evs) == 0 {
 		return err
 	}

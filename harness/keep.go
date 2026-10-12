@@ -6,7 +6,9 @@ package harness
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -282,7 +284,16 @@ func messageText(m session.AgentMessage) string {
 // out of the root it is in. typeOf names a linked file's media type from
 // its base name and its leading bytes, at most tools.SniffBytes of them;
 // nil types every linked file application/octet-stream.
-func KeepFiles(ctx context.Context, m machine.Machine, log Log, msg session.Event, typeOf func(name string, head []byte) string) (session.FilesKept, bool, error) {
+//
+// files, when not nil, is the session's folder of a files store (spec
+// 068): each file is written there in place of a blob, at its path
+// inside the working directory under results/<msg's turn>/, and its entry
+// names it by ref. A linked file is then bounded by what the files store
+// takes, not by MaxKeptFileBytes or MaxKeptFilesBytes, and each file's
+// read and write by keepTimeout and the time its bytes take at keepRate,
+// in place of one bound for the message, which the caller then leaves
+// off.
+func KeepFiles(ctx context.Context, m machine.Machine, log Log, files Files, msg session.Event, typeOf func(name string, head []byte) string) (session.FilesKept, bool, error) {
 	var am session.AgentMessage
 	if err := msg.Decode(&am); err != nil {
 		return session.FilesKept{}, false, err
@@ -326,9 +337,17 @@ func KeepFiles(ctx context.Context, m machine.Machine, log Log, msg session.Even
 		}
 		var f session.KeptFile
 		var reason string
-		if r.Image {
+		switch {
+		case files != nil:
+			k := keeper{m: m, files: files, resolved: resolved, ref: session.KeptRef(msg.Turn, strings.TrimPrefix(resolved, strings.TrimSuffix(workdir, "/")+"/"))}
+			if r.Image {
+				f, reason = k.image(ctx)
+			} else {
+				f, reason = k.linked(ctx, typeOf)
+			}
+		case r.Image:
 			f, reason = keepImage(ctx, m, log, resolved)
-		} else {
+		default:
 			f, reason = keepLinked(ctx, m, log, resolved, MaxKeptFilesBytes-linked, typeOf)
 			linked += f.Size
 		}
@@ -344,43 +363,55 @@ func KeepFiles(ctx context.Context, m machine.Machine, log Log, msg session.Even
 
 // keepImage reads the image at resolved and stores it, or says why not.
 func keepImage(ctx context.Context, m machine.Machine, log Log, resolved string) (session.KeptFile, string) {
-	fi, err := m.Stat(ctx, resolved)
-	if err != nil {
-		return session.KeptFile{}, readReason(err)
-	}
-	switch {
-	case !regular(fi):
-		return session.KeptFile{}, session.KeptNotAnImage
-	case fi.Size > tools.ReadMaxImage:
-		return session.KeptFile{}, session.KeptTooLarge
-	}
-	rc, err := m.ReadFile(ctx, resolved)
-	if err != nil {
-		return session.KeptFile{}, readReason(err)
-	}
-	data, err := io.ReadAll(io.LimitReader(rc, tools.ReadMaxImage+1))
-	if err = errors.Join(err, rc.Close()); err != nil {
-		return session.KeptFile{}, readReason(err)
-	}
-	if len(data) > tools.ReadMaxImage {
-		return session.KeptFile{}, session.KeptTooLarge
-	}
-	media := tools.ImageType(data)
-	if media == "" {
-		return session.KeptFile{}, session.KeptNotAnImage
-	}
-	w, h, err := imageSize(media, data)
-	if err != nil {
-		return session.KeptFile{}, session.KeptNotAnImage
-	}
-	if w > MaxKeptImageSide || h > MaxKeptImageSide || int64(w)*int64(h) > MaxKeptImagePixels {
-		return session.KeptFile{}, session.KeptTooLarge
+	f, data, reason := readImage(ctx, m, resolved)
+	if reason != "" {
+		return session.KeptFile{}, reason
 	}
 	d, err := log.PutBlob(ctx, bytes.NewReader(data))
 	if err != nil {
 		return session.KeptFile{}, session.KeptUnavailable
 	}
-	return session.KeptFile{Resolved: resolved, Blob: d, MediaType: media, Size: int64(len(data)), Width: w, Height: h}, ""
+	f.Blob = d
+	return f, ""
+}
+
+// readImage reads the image at resolved and checks it against the bounds
+// of an image an answer shows, answering its entry without its blob and
+// its bytes, or why it is not kept.
+func readImage(ctx context.Context, m machine.Machine, resolved string) (session.KeptFile, []byte, string) {
+	fi, err := m.Stat(ctx, resolved)
+	if err != nil {
+		return session.KeptFile{}, nil, readReason(err)
+	}
+	switch {
+	case !regular(fi):
+		return session.KeptFile{}, nil, session.KeptNotAnImage
+	case fi.Size > tools.ReadMaxImage:
+		return session.KeptFile{}, nil, session.KeptTooLarge
+	}
+	rc, err := m.ReadFile(ctx, resolved)
+	if err != nil {
+		return session.KeptFile{}, nil, readReason(err)
+	}
+	data, err := io.ReadAll(io.LimitReader(rc, tools.ReadMaxImage+1))
+	if err = errors.Join(err, rc.Close()); err != nil {
+		return session.KeptFile{}, nil, readReason(err)
+	}
+	if len(data) > tools.ReadMaxImage {
+		return session.KeptFile{}, nil, session.KeptTooLarge
+	}
+	media := tools.ImageType(data)
+	if media == "" {
+		return session.KeptFile{}, nil, session.KeptNotAnImage
+	}
+	w, h, err := imageSize(media, data)
+	if err != nil {
+		return session.KeptFile{}, nil, session.KeptNotAnImage
+	}
+	if w > MaxKeptImageSide || h > MaxKeptImageSide || int64(w)*int64(h) > MaxKeptImagePixels {
+		return session.KeptFile{}, nil, session.KeptTooLarge
+	}
+	return session.KeptFile{Resolved: resolved, MediaType: media, Size: int64(len(data)), Width: w, Height: h}, data, ""
 }
 
 // keepLinked stores the regular file at resolved, or says why not. room
@@ -418,6 +449,127 @@ func keepLinked(ctx context.Context, m machine.Machine, log Log, resolved string
 		return session.KeptFile{}, session.KeptTooLarge
 	}
 	return session.KeptFile{Resolved: resolved, Blob: d, MediaType: typeOf(path.Base(resolved), src.head), Size: src.n}, ""
+}
+
+// keeper keeps one file of a message into the session's folder of a
+// files store (spec 068): the file at resolved on m, written at ref.
+type keeper struct {
+	m        machine.Machine
+	files    Files
+	resolved string
+	ref      string
+}
+
+// keepFor is how long one file's read and write in a files store may
+// take: keepTimeout, and the time its bytes take at keepRate.
+func keepFor(size int64) time.Duration {
+	return keepTimeout + time.Duration(size/keepRate)*time.Second
+}
+
+// image keeps the image at k.resolved, held to the bounds of an image an
+// answer shows, or says why not.
+func (k keeper) image(ctx context.Context) (session.KeptFile, string) {
+	ctx, cancel := context.WithTimeout(ctx, keepTimeout)
+	defer cancel()
+	f, data, reason := readImage(ctx, k.m, k.resolved)
+	if reason != "" {
+		return session.KeptFile{}, reason
+	}
+	d, err := k.files.Put(ctx, k.ref, f.MediaType, int64(len(data)), bytes.NewReader(data))
+	if errors.Is(err, ErrFileExists) {
+		d, err = k.same(ctx, session.DigestOf(data))
+	}
+	if err != nil {
+		return session.KeptFile{}, putReason(err)
+	}
+	f.Blob, f.Ref = d, k.ref
+	return f, ""
+}
+
+// linked keeps the regular file at k.resolved, of any size the files
+// store takes, as it is read from the machine, or says why not. Its
+// media type is read from its name and its leading bytes before it is
+// written, and a file whose size changed since its stat fails its write.
+func (k keeper) linked(ctx context.Context, typeOf func(name string, head []byte) string) (session.KeptFile, string) {
+	sctx, cancel := context.WithTimeout(ctx, keepTimeout)
+	fi, err := k.m.Stat(sctx, k.resolved)
+	cancel()
+	if err != nil {
+		return session.KeptFile{}, readReason(err)
+	}
+	if !regular(fi) {
+		return session.KeptFile{}, session.KeptNotAFile
+	}
+	ctx, cancel = context.WithTimeout(ctx, keepFor(fi.Size))
+	defer cancel()
+	rc, err := k.m.ReadFile(ctx, k.resolved)
+	if err != nil {
+		return session.KeptFile{}, readReason(err)
+	}
+	head := make([]byte, min(int64(tools.SniffBytes), fi.Size))
+	n, err := io.ReadFull(rc, head)
+	if err != nil {
+		return session.KeptFile{}, readReason(errors.Join(err, rc.Close()))
+	}
+	media := typeOf(path.Base(k.resolved), head[:n])
+	d, err := k.files.Put(ctx, k.ref, media, fi.Size, io.MultiReader(bytes.NewReader(head[:n]), rc))
+	err = errors.Join(err, rc.Close())
+	if errors.Is(err, ErrFileExists) {
+		d, err = k.same(ctx, "")
+	}
+	if err != nil {
+		return session.KeptFile{}, putReason(err)
+	}
+	return session.KeptFile{Resolved: k.resolved, Blob: d, MediaType: media, Size: fi.Size, Ref: k.ref}, ""
+}
+
+// same answers the digest of the file the files store holds at k.ref
+// when it holds the bytes of the machine's file at k.resolved, whose
+// digest is known when known is set, and an error otherwise: a path an
+// earlier answer of the turn took keeps its file, or a keep sent again
+// after the write finds its own, and a file that changed between the two
+// is not written over.
+func (k keeper) same(ctx context.Context, known session.Digest) (session.Digest, error) {
+	rc, _, err := k.files.Open(ctx, k.ref)
+	if err != nil {
+		return "", err
+	}
+	stored, err := digestOf(rc)
+	if err != nil {
+		return "", err
+	}
+	if known == "" {
+		if rc, err = k.m.ReadFile(ctx, k.resolved); err != nil {
+			return "", err
+		}
+		if known, err = digestOf(rc); err != nil {
+			return "", err
+		}
+	}
+	if stored != known {
+		return "", fmt.Errorf("%w: %s holds other bytes than %s", ErrFileExists, k.ref, k.resolved)
+	}
+	return stored, nil
+}
+
+// digestOf reads rc to its end through a digest and closes it.
+func digestOf(rc io.ReadCloser) (session.Digest, error) {
+	h := sha256.New()
+	_, err := io.Copy(h, rc)
+	if err = errors.Join(err, rc.Close()); err != nil {
+		return "", err
+	}
+	return session.Digest("sha256:" + hex.EncodeToString(h.Sum(nil))), nil
+}
+
+// putReason is the reason a write into a files store that failed skips a
+// reference: too_large for a refusal of its size, the read's reason for a
+// machine's read that failed, and unavailable otherwise.
+func putReason(err error) string {
+	if FileTooLarge(err) {
+		return session.KeptTooLarge
+	}
+	return readReason(err)
 }
 
 // regular reports whether fi is a regular file: no directory, and
@@ -550,11 +702,15 @@ func (t *turn) keepAnswer(ctx context.Context, msg session.Event) error {
 }
 
 // keep reads msg's images and linked files from m, nil for none, and
-// appends their files.kept.
+// appends their files.kept. A keep into blobs is bounded as a whole by
+// keepTimeout, and one into a files store by each file's own bound.
 func (t *turn) keep(ctx context.Context, m machine.Machine, msg session.Event) error {
-	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), keepTimeout)
+	kctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	if t.h.c.Files == nil {
+		kctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), keepTimeout)
+	}
 	defer cancel()
-	p, ok, err := KeepFiles(kctx, m, t.l, msg, t.h.c.MediaType)
+	p, ok, err := KeepFiles(kctx, m, t.l, t.h.c.Files, msg, t.h.c.MediaType)
 	if err != nil || !ok {
 		return err
 	}

@@ -182,6 +182,10 @@ type Config struct {
 	// application/octet-stream: the harness tree reaches no package that
 	// reads a type from bytes (spec 001).
 	MediaType func(name string, head []byte) string
+	// Files is the session's folder of the installation's files store
+	// (spec 068), where the files its answers show or link are kept and
+	// the files of its messages are read from; nil keeps them as blobs.
+	Files Files
 	// Log receives one line per response that wrote a tool call as text
 	// and what the turn did about it (spec 062): the session, thread,
 	// turn, step, model, tool and action, never a word of the response.

@@ -210,7 +210,7 @@ func TestAnAnswersLinkedFilesAreKept(t *testing.T) {
 
 	// With no rule configured a linked file is typed as bytes of no known
 	// type.
-	bare, _, err := KeepFiles(ctx, m, e.log, answerEvent(t, "[The report](report.pdf)"), nil)
+	bare, _, err := KeepFiles(ctx, m, e.log, nil, answerEvent(t, "[The report](report.pdf)"), nil)
 	if err != nil || len(bare.Files) != 1 || bare.Files[0].MediaType != "application/octet-stream" {
 		t.Fatalf("with no rule: %+v, %v", bare, err)
 	}
@@ -226,7 +226,7 @@ func TestAFileShownAndLinkedIsKeptOnceAsTheImage(t *testing.T) {
 	e := setup(t, func(c *Config) { c.Machine = m })
 	msg := answerEvent(t, "[![Sales](chart.png)](chart.png) and [the chart again](chart.png).",
 		"[The data](data.csv), [the notes](notes.txt), and the data as a picture: ![Data](data.csv)")
-	p, ok, err := KeepFiles(t.Context(), m, e.log, msg, nil)
+	p, ok, err := KeepFiles(t.Context(), m, e.log, nil, msg, nil)
 	if err != nil || !ok {
 		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
@@ -294,7 +294,7 @@ func TestKeptFileRefusals(t *testing.T) {
 	log := &countingLog{}
 	msg := answerEvent(t, "[a](../secret.pdf) [b](link.pdf) [c](missing.pdf) [d](dir) [e](big.bin)",
 		"[f](sandbox:/etc/hosts) [g](sandbox:../secret.pdf) <a href=\"/etc/hosts\">h</a> [i](.env)")
-	p, ok, err := KeepFiles(t.Context(), m, log, msg, nil)
+	p, ok, err := KeepFiles(t.Context(), m, log, nil, msg, nil)
 	if err != nil || !ok {
 		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
@@ -334,7 +334,7 @@ func TestKeptFilesAreBounded(t *testing.T) {
 	}
 	m, work := workMachine(t, files)
 	e := setup(t, func(c *Config) { c.Machine = m })
-	p, ok, err := KeepFiles(t.Context(), m, e.log, answerEvent(t, strings.Join(refs, " ")), nil)
+	p, ok, err := KeepFiles(t.Context(), m, e.log, nil, answerEvent(t, strings.Join(refs, " ")), nil)
 	if err != nil || !ok {
 		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
@@ -362,7 +362,7 @@ func TestKeptFilesAreBounded(t *testing.T) {
 		t.Fatalf("the test fills the total with two files; the bounds are %d and %d", MaxKeptFileBytes, MaxKeptFilesBytes)
 	}
 	log := &countingLog{}
-	p, _, err = KeepFiles(t.Context(), m, log, answerEvent(t, "[a](a.bin) [b](b.bin) [c](c.bin) [f](f00.txt) [e](empty.bin)"), nil)
+	p, _, err = KeepFiles(t.Context(), m, log, nil, answerEvent(t, "[a](a.bin) [b](b.bin) [c](c.bin) [f](f00.txt) [e](empty.bin)"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestKeptFilesAreBounded(t *testing.T) {
 		t.Fatalf("skipped %+v", p.Skipped)
 	}
 
-	p, _, err = KeepFiles(t.Context(), nil, e.log, answerEvent(t, "[a](f00.txt) [w](https://example.com/w.pdf) ![i](i00.png)"), nil)
+	p, _, err = KeepFiles(t.Context(), nil, e.log, nil, answerEvent(t, "[a](f00.txt) [w](https://example.com/w.pdf) ![i](i00.png)"), nil)
 	if err != nil || len(p.Files) != 0 || !slices.Equal(p.Skipped, []session.SkippedFile{{Path: "f00.txt", Reason: session.KeptNoMachine}, {Path: "i00.png", Reason: session.KeptNoMachine}}) {
 		t.Fatalf("with no machine: %+v, %v", p, err)
 	}

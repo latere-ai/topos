@@ -339,7 +339,7 @@ func TestKeptImageRefusals(t *testing.T) {
 	e := setup(t, func(c *Config) { c.Machine = m })
 	msg := answerEvent(t, "![a](../secret.png) ![b](link.png) ![c](missing.png) ![d](dir) ![e](drawing.svg) ![f](fake.png)",
 		"![g](big.png) ![h](wide.png)\n\n<img src=\"pixels.png\">")
-	p, ok, err := KeepFiles(t.Context(), m, e.log, msg, nil)
+	p, ok, err := KeepFiles(t.Context(), m, e.log, nil, msg, nil)
 	if err != nil || !ok {
 		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
@@ -354,7 +354,7 @@ func TestKeptImageRefusals(t *testing.T) {
 		t.Fatalf("files.kept %+v", p)
 	}
 	msg = answerEvent(t, "<img src=\"pixels.png\"> ![](/etc/hosts)")
-	if p, _, err = KeepFiles(t.Context(), m, e.log, msg, nil); err != nil {
+	if p, _, err = KeepFiles(t.Context(), m, e.log, nil, msg, nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := []session.SkippedFile{{Path: "pixels.png", Reason: session.KeptTooLarge}, {Path: "/etc/hosts", Reason: session.KeptOutsideWorkdir}}; !slices.Equal(p.Skipped, want) {
@@ -380,7 +380,7 @@ func TestKeptImagesAreBounded(t *testing.T) {
 	m, _ := workMachine(t, files)
 	e := setup(t, func(c *Config) { c.Machine = m })
 	msg := answerEvent(t, strings.Join(refs, " "))
-	p, ok, err := KeepFiles(t.Context(), m, e.log, msg, nil)
+	p, ok, err := KeepFiles(t.Context(), m, e.log, nil, msg, nil)
 	if err != nil || !ok {
 		t.Fatalf("KeepFiles: %t, %v", ok, err)
 	}
@@ -397,7 +397,7 @@ func TestKeptImagesAreBounded(t *testing.T) {
 			t.Fatalf("skipped %+v", s)
 		}
 	}
-	p, _, err = KeepFiles(t.Context(), nil, e.log, answerEvent(t, "![a](a.png) ![w](https://example.com/w.png)"), nil)
+	p, _, err = KeepFiles(t.Context(), nil, e.log, nil, answerEvent(t, "![a](a.png) ![w](https://example.com/w.png)"), nil)
 	if err != nil || len(p.Files) != 0 || !slices.Equal(p.Skipped, []session.SkippedFile{{Path: "a.png", Reason: session.KeptNoMachine}}) {
 		t.Fatalf("with no machine: %+v, %v", p, err)
 	}
@@ -533,7 +533,7 @@ func TestAResumedStepKeepsOnlyItsOwnAnswerOnce(t *testing.T) {
 			}
 		}, nil},
 		{"redacted files.kept", func(e *env, _, waiting session.Event) {
-			p, _, err := KeepFiles(t.Context(), m, e.log, waiting, nil)
+			p, _, err := KeepFiles(t.Context(), m, e.log, nil, waiting, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -649,7 +649,7 @@ func TestADestinationIsReadAsCommonMarkReadsIt(t *testing.T) {
 	png := encoded(t, "png", 3, 3)
 	m, _ := workMachine(t, map[string][]byte{"a(b).png": png})
 	e := setup(t, func(c *Config) { c.Machine = m })
-	p, _, err := KeepFiles(t.Context(), m, e.log, answerEvent(t, `![a](a\(b\).png)`), nil)
+	p, _, err := KeepFiles(t.Context(), m, e.log, nil, answerEvent(t, `![a](a\(b\).png)`), nil)
 	if err != nil || len(p.Files) != 1 || p.Files[0].Path != "a(b).png" {
 		t.Fatalf("files.kept %+v, %v", p, err)
 	}
