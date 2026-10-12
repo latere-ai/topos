@@ -1,0 +1,62 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
+package server
+
+import (
+	"fmt"
+	"net/url"
+	"strings"
+
+	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/session"
+)
+
+// ConnectionsRule is what the create and the send routes state of a
+// session's connections (spec 069).
+var ConnectionsRule = fmt.Sprintf("The authorizer's allow of session.create, session.fork and session.send may name the session's connections, at most %d, "+
+	"each {name, kind, title, audience, address, git_address, git_url, read_only}: kind http, an API at address and a git host at git_url reached through git_address from the session's sandbox, "+
+	"or mcp, a remote MCP server at address whose tools the model is offered as mcp__<name>__<tool>. "+
+	"A create's and a fork's are the session's, a fork's never its parent's, and the session answers them as connections; "+
+	"a send's allow replaces them, appending session.connections_changed {connections} straight before the event when the list differs, and an allow that names none leaves the session with none. "+
+	"An http connection names the audience of TOPOS_CONNECTIONS_AUDIENCE and addresses on the host of TOPOS_CONNECTIONS_URL, and a connection that breaks a rule is authorizer_unavailable naming it.",
+	session.MaxConnections)
+
+// connections are an allow's connections as a session holds them (spec
+// 069): an http connection, which a sandbox reaches through the one
+// Secret mounted for the installation's connection service, names that
+// service's audience and addresses on its host, and an installation with
+// none refuses it. A connection the server cannot apply refuses the
+// request authorizer_unavailable, as a member that does not decode does.
+func (s *Server) connections(cs []session.Connection) ([]session.Connection, error) {
+	host := ""
+	if u, err := url.Parse(s.o.ConnectionsURL); err == nil {
+		host = strings.ToLower(u.Hostname())
+	}
+	for i, c := range cs {
+		if c.Kind != session.ConnectionHTTP {
+			continue
+		}
+		var why string
+		switch {
+		case host == "":
+			why = "is of kind http, and this server names no connection service (TOPOS_CONNECTIONS_URL)"
+		case c.Audience != s.o.ConnectionsAudience:
+			why = fmt.Sprintf("names the audience %q, not the connection service's, %q", c.Audience, s.o.ConnectionsAudience)
+		case !onHost(c.Address, host) || (c.GitAddress != "" && !onHost(c.GitAddress, host)):
+			why = "names an address on another host than the connection service's, " + host
+		}
+		if why != "" {
+			err := fmt.Errorf("limits.connections[%d] %s %s", i, c.Name, why)
+			return nil, &apiError{code: auth.CodeAuthorizerUnavailable, detail: err.Error(), err: err}
+		}
+	}
+	return cs, nil
+}
+
+// onHost reports whether raw, an address CheckConnections accepted, is on
+// host.
+func onHost(raw, host string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && strings.ToLower(u.Hostname()) == host
+}

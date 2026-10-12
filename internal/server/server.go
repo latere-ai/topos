@@ -101,6 +101,13 @@ type Options struct {
 	// about a person's message on a session whose model asks for its
 	// opening carries it; unset, no question carries a message's words.
 	MessageText bool
+	// ConnectionsURL and ConnectionsAudience are TOPOS_CONNECTIONS_URL and
+	// TOPOS_CONNECTIONS_AUDIENCE (spec 069): an allow's http connection is
+	// held to that audience and that URL's host, since a sandbox reaches it
+	// through the one Secret mounted for them; an empty URL refuses every
+	// http connection.
+	ConnectionsURL      string
+	ConnectionsAudience string
 	// Sink receives, as spec 023's sink envelope carries them, a mutation
 	// the authorizer allowed that the server then refused: a fork whose
 	// message's session.send was refused after its session.fork was

@@ -460,6 +460,11 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		return session.Session{}, &apiError{code: auth.CodeAuthorizerUnavailable, detail: "limits.repositories: " + err.Error(), err: err}
 	}
 	sess.Context = limits.Context
+	// The allow's connections are the session's, a fork's its own allow's
+	// and never its parent's (spec 069).
+	if sess.Connections, err = s.connections(limits.Connections); err != nil {
+		return session.Session{}, err
+	}
 	if f := in.fork; f != nil {
 		sess.Root = f.root(sess.ID)
 		return s.writeFork(ctx, q, sess, cfg, blobs, f)
@@ -1223,6 +1228,16 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 	// base network before the next turn (spec 052); its instructions are
 	// not read, since they sit in the prompt's cached prefix (spec 053).
 	out := sendChanges{network: sentNetwork(sess, limits.Network)}
+	// Its connections replace the session's, none when it names none, so
+	// a service connected or disconnected since reaches the next turn
+	// (spec 069).
+	conns, err := s.connections(limits.Connections)
+	if err != nil {
+		return sendChanges{}, err
+	}
+	if !session.SameConnections(sess.Connections, conns) {
+		out.connections = &session.ConnectionsChanged{Connections: append([]session.Connection{}, conns...)}
+	}
 	next := old
 	if limits.Model != "" && limits.Model != old.Name {
 		m, overlay := cfg.SessionModel(limits.Model)
@@ -1254,15 +1269,18 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 }
 
 // sendChanges are the changes an allow of a send made: the model, nil
-// when it names the one the session stands on, and the network, nil when
-// it names none or the one the session runs.
+// when it names the one the session stands on, the network, nil when it
+// names none or the one the session runs, and the connections, nil when
+// they are the session's.
 type sendChanges struct {
-	model   *session.ModelChanged
-	network *session.NetworkChanged
+	model       *session.ModelChanged
+	network     *session.NetworkChanged
+	connections *session.ConnectionsChanged
 }
 
 // events are the changes as the events a send appends before what it
-// sent, each at time at: the model's change, then the network's.
+// sent, each at time at: the model's change, the network's, then the
+// connections'.
 func (c sendChanges) events(at time.Time) ([]session.Event, error) {
 	var out []session.Event
 	if c.model != nil {
@@ -1274,6 +1292,13 @@ func (c sendChanges) events(at time.Time) ([]session.Event, error) {
 	}
 	if c.network != nil {
 		changed, err := session.NewEvent(session.TypeNetworkChanged, *c.network, at)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, changed)
+	}
+	if c.connections != nil {
+		changed, err := session.NewEvent(session.TypeConnectionsChanged, *c.connections, at)
 		if err != nil {
 			return nil, err
 		}
