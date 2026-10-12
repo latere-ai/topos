@@ -174,6 +174,13 @@ type Config struct {
 	// their own.
 	SearchURL string
 	SearchKey string
+	// FilesAudience is TOPOS_FILES_AUDIENCE, the audience of every token
+	// toposd presents to the files API of a session's folder (spec 068):
+	// a session's own for its writes and a fork's copies, and the
+	// server's own, its host client's, for the blob route's reads. Empty
+	// configures no files store, and an allow that names a folder is then
+	// refused.
+	FilesAudience string
 }
 
 // Defaults of the runner variables.
@@ -430,6 +437,7 @@ func (c *Config) readRunner(getenv Getenv) []string {
 	} else if c.SearchKey != "" {
 		problems = append(problems, "TOPOS_SEARCH_KEY needs TOPOS_SEARCH_URL, the search service it is sent to")
 	}
+	c.FilesAudience = strings.TrimSpace(getenv("TOPOS_FILES_AUDIENCE"))
 	c.AppsURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_APPS_URL")), "/")
 	c.AppsAudience = strings.TrimSpace(getenv("TOPOS_APPS_AUDIENCE"))
 	if c.AppsURL != "" {
@@ -512,6 +520,9 @@ func (c *Config) readCredentials(getenv Getenv) []string {
 	}
 	if c.ConnectionsURL != "" && c.IdentityURL == "" {
 		problems = append(problems, "TOPOS_CONNECTIONS_URL needs TOPOS_IDENTITY_URL, which mints the session tokens a sandbox reaches the connection service with")
+	}
+	if c.FilesAudience != "" && c.IdentityURL == "" {
+		problems = append(problems, "TOPOS_FILES_AUDIENCE needs TOPOS_IDENTITY_URL, which mints the tokens a session's folder is written and read with")
 	}
 	if c.SessionKeysURL != "" {
 		if err := checkURL(c.SessionKeysURL); err != nil {

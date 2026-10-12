@@ -621,3 +621,27 @@ func TestAuthorizerMessageTextIsTheCeiling(t *testing.T) {
 		t.Fatalf("the check role reads it as serve does: %v, %v", c.AuthorizerMessageText, err)
 	}
 }
+
+// TestTheFilesAudience: TOPOS_FILES_AUDIENCE is read in serve and in the
+// runner role alike, unset by default; serve needs the identity provider
+// that mints the tokens it names, and a runner role, which asks its
+// server for them, does not (spec 068).
+func TestTheFilesAudience(t *testing.T) {
+	minting := map[string]string{"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a",
+		"TOPOS_IDENTITY_URL": "https://auth.example", "TOPOS_IDENTITY_CLIENT_ID": "topos-host", "TOPOS_IDENTITY_SECRET_FILE": "/run/secret"}
+	if c, err := Load(RoleServe, serve(minting)); err != nil || c.FilesAudience != "" {
+		t.Fatalf("no files store: %+v %v", c, err)
+	}
+	vars := maps.Clone(minting)
+	vars["TOPOS_FILES_AUDIENCE"] = " arca "
+	if c, err := Load(RoleServe, serve(vars)); err != nil || c.FilesAudience != "arca" {
+		t.Fatalf("a files store: %+v %v", c, err)
+	}
+	if _, err := Load(RoleServe, serve(map[string]string{"TOPOS_FILES_AUDIENCE": "arca"})); err == nil || !strings.Contains(err.Error(), "TOPOS_FILES_AUDIENCE needs TOPOS_IDENTITY_URL") {
+		t.Fatalf("a files store with no identity provider: %v", err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example", "TOPOS_FILES_AUDIENCE": "arca"}))
+	if err != nil || r.FilesAudience != "arca" {
+		t.Fatalf("a runner role's files audience: %+v %v", r, err)
+	}
+}
