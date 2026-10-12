@@ -130,6 +130,11 @@ type Limits struct {
 	// it. A question carries the opening only while the operator's
 	// ceiling allows it.
 	MessageText bool
+	// Connections are the session's connections, read on an allow of
+	// session.create, session.fork and session.send (spec 069): the create's
+	// and the fork's are the session's, and a send's replace them, none
+	// when the allow names none.
+	Connections []session.Connection
 }
 
 // WireRepository is one repository an allow of session.create attaches
@@ -162,6 +167,7 @@ type WireLimits struct {
 	Context        []session.ContextPart `json:"context,omitempty"`
 	Route          string                `json:"route,omitempty"`
 	MessageText    bool                  `json:"message_text,omitempty"`
+	Connections    []session.Connection  `json:"connections,omitempty"`
 }
 
 // DecodeLimits reads a decision's limits object. A decision with none is
@@ -256,6 +262,9 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 			Title json.RawMessage `json:"title"`
 			Text  json.RawMessage `json:"text"`
 		} `json:"context"`
+		Connections []struct {
+			Title json.RawMessage `json:"title"`
+		} `json:"connections"`
 	}
 	if err := d.DecodeLimits(&raw); err != nil {
 		return Limits{}, fmt.Errorf("limits: %w", err)
@@ -278,6 +287,14 @@ func DecodeLimits(d authz.Decision) (Limits, error) {
 		return Limits{}, fmt.Errorf("limits.%w", err)
 	}
 	l.Context = w.Context
+	for i, c := range raw.Connections {
+		if !validString(c.Title) {
+			return Limits{}, fmt.Errorf("limits.connections[%d].title is not valid UTF-8", i)
+		}
+	}
+	if l.Connections, err = session.CheckConnections(w.Connections); err != nil {
+		return Limits{}, fmt.Errorf("limits.%w", err)
+	}
 	return l, nil
 }
 

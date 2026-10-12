@@ -336,3 +336,55 @@ func TestTheAttachMembers(t *testing.T) {
 		}
 	}
 }
+
+// TestTheConnectionsMember: an allow's connections are read with their
+// rules, a git URL without its trailing "/", and a member of a connection
+// the core does not know is ignored; a connection that breaks a rule, an
+// unknown kind, a title that is not UTF-8 and a list past its bound do not
+// decode, and the error names the member (spec 069).
+func TestTheConnectionsMember(t *testing.T) {
+	raw := `{"connections":[
+		{"name":"github","kind":"http","title":"GitHub","audience":"connections",
+		 "address":"https://connections.example.com/v1/connections/c_1/http",
+		 "git_address":"https://connections.example.com/v1/connections/c_1/git",
+		 "git_url":"https://git.example.com/","icon":"https://example.com/icon.svg"},
+		{"name":"tracker","kind":"mcp","title":"Issue tracker","audience":"connections",
+		 "address":"https://connections.example.com/v1/connections/c_2/mcp","read_only":["list_*"]}]}`
+	l, err := DecodeLimits(authz.Decision{Allow: true, Limits: []byte(raw)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []session.Connection{
+		{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", Audience: "connections",
+			Address:    "https://connections.example.com/v1/connections/c_1/http",
+			GitAddress: "https://connections.example.com/v1/connections/c_1/git", GitURL: "https://git.example.com"},
+		{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "connections",
+			Address: "https://connections.example.com/v1/connections/c_2/mcp", ReadOnly: []string{"list_*"}},
+	}
+	if !session.SameConnections(l.Connections, want) {
+		t.Fatalf("connections %+v", l.Connections)
+	}
+	if l, err := DecodeLimits(authz.Decision{Allow: true}); err != nil || l.Connections != nil {
+		t.Fatalf("an allow with no connections: %+v, %v", l.Connections, err)
+	}
+	many := make([]session.Connection, session.MaxConnections+1)
+	for i := range many {
+		many[i] = want[1]
+		many[i].Name = fmt.Sprintf("c%d", i)
+	}
+	for name, c := range map[string]struct {
+		w     any
+		names string
+	}{
+		"too many":             {WireLimits{Connections: many}, "limits.connections names"},
+		"an unknown kind":      {json.RawMessage(`{"connections":[{"name":"a","kind":"ssh","title":"A","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"no address":           {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x"}]}`), "limits.connections[0]"},
+		"a repeated name":      {WireLimits{Connections: []session.Connection{want[1], want[1]}}, "limits.connections[1]"},
+		"a lone surrogate":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"\ud800","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0].title"},
+		"a connections object": {json.RawMessage(`{"connections":{"name":"a"}}`), "limits"},
+	} {
+		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
+			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)
+		}
+	}
+}
