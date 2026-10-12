@@ -475,7 +475,8 @@ func SameEvent(a, b Event) bool {
 // model of the last session.model_changed, the approval mode of the last
 // session.policy_changed, the title of the last session.title_changed,
 // the base network each authorizer's session.network_changed replaces,
-// and the spend, which each model.request's and each charged
+// the connections of the last session.connections_changed, and the
+// spend, which each model.request's and each charged
 // tool.result's cost adds to as Spent counts it. A title change does not
 // move the update time, so a list ordered by it keeps a renamed session
 // in its place (spec 054).
@@ -540,6 +541,16 @@ func ApplyBatch(s *Session, events []Event) {
 			var p NetworkChanged
 			if e.Decode(&p) == nil && p.Source == NetworkFromAuthorizer {
 				s.Network = p.Apply(s.Network)
+			}
+			continue
+		}
+		// A send's allow replaces the session's connections; a fork's copied
+		// change replaced its parent's, and the fork holds what its own allow
+		// named (spec 069).
+		if e.Type == TypeConnectionsChanged && !e.Redacted() && !s.Copied(e) {
+			var p ConnectionsChanged
+			if e.Decode(&p) == nil {
+				s.Connections = p.Connections
 			}
 			continue
 		}

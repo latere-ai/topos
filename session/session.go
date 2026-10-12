@@ -288,7 +288,11 @@ type Session struct {
 	// its order, which the model reads after the initiator's instructions
 	// (spec 058); no event changes it.
 	Context []ContextPart `json:"context,omitempty"`
-	Parent  *Parent       `json:"parent,omitempty"`
+	// Connections are the connections the allow of the session's create or
+	// fork named, as each send's allow has replaced them since (spec 069);
+	// empty for none.
+	Connections []Connection `json:"connections,omitempty"`
+	Parent      *Parent      `json:"parent,omitempty"`
 	// Root is the id of the session at the top of this session's fork
 	// tree: its parent's root, or its parent's id where the parent has
 	// none; its own id on a fork that started a tree of its own; empty on

@@ -44,6 +44,7 @@ const (
 	TypeSessionRewound       Type = "session.rewound"
 	TypeAttachmentsDelivered Type = "attachments.delivered"
 	TypeNetworkChanged       Type = "session.network_changed"
+	TypeConnectionsChanged   Type = "session.connections_changed"
 	TypeApprovalRequested    Type = "approval.requested"
 	TypeApprovalDecided      Type = "approval.decided"
 	TypeFilesKept            Type = "files.kept"
@@ -60,7 +61,7 @@ var Known = map[Type]bool{
 	TypeSessionError: true, TypeMemoryAttached: true, TypeMemorySynced: true,
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
-	TypeFilesKept: true,
+	TypeFilesKept: true, TypeConnectionsChanged: true,
 }
 
 // Event is one entry of a session's log.
