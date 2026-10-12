@@ -277,7 +277,11 @@ server a session reaches with its own session token
 no credential of another service and trades no `oauth_refresh`, one
 party refreshes a connection however many sessions use it, and a person
 holds no Credential object here for a `person` connection. An
-installation that serves none keeps the table above.
+installation that serves none keeps the table above. Its authorizer
+names a session's connections in the allow of each create, fork and
+send, and a sandbox reaches a connection of kind `http` through one more
+Secret, `-connections`, mounted at every sandbox's create
+([[069-connections-an-allow-names]]).
 
 Injection is always outside the machine. For a call the runner makes
 itself (an HTTP MCP server, [[021-mcp-servers]]), the runner adds the

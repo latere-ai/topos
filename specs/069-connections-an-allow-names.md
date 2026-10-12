@@ -1,0 +1,362 @@
+---
+title: "Connections an allow names: git and a service's API reached from the sandbox through a connection service, and remote MCP servers, read at create and fork and replaced at every send"
+status: drafted
+track: core
+depends_on: [004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 019-git.md, 021-mcp-servers.md, 052-a-sessions-network.md, 053-the-initiators-instructions.md, 058-what-a-create-allow-attaches.md]
+affects: [authorizer/, session/, internal/server/, internal/config/, internal/hosted/, machine/, harness/, harness/tools/mcp/, prompts/, cmd/toposd/, api/, docs/]
+effort: large
+created: 2026-10-12
+updated: 2026-10-12
+author: changkun
+---
+
+# Connections an allow names
+
+## Overview
+
+A person connects the services they work with, such as a code host or
+an issue tracker, at an installation that keeps those connections. The
+installation's connection service holds each service's credential,
+serves the connection at addresses of its own, and adds the credential
+on the way out ([[018-credentials-and-secrets]]). A session reaches
+those addresses with its own session token and never holds a
+credential of another service.
+
+This spec says how a session learns which connections it has and how
+it uses them:
+
+| Kind | What the session gets |
+|---|---|
+| `http` | git in the sandbox clones and pushes through the connection's git address with the usual URL, and the service's API is one environment variable away, both with a placeholder of the session's token that Cella's egress gateway swaps in |
+| `mcp` | the remote Model Context Protocol server at the connection's address, its tools offered to the model, gated, scored and logged like any tool ([[021-mcp-servers]]) |
+
+The installation's authorizer names the connections in its allow, at
+the create, at a fork and at every send, so a person who connects a
+service in the middle of a conversation has it from their next message.
+A block of the system prompt names each connection and says how to use
+it.
+
+## Current state
+
+- An allow of `session.create` carries members the core applies
+  (`authorizer.Limits`, `DecodeLimits`): a model, a network, a scope,
+  the initiator's instructions ([[053-the-initiators-instructions]]),
+  and the repositories and context of [[058-what-a-create-allow-attaches]].
+  An allow of `session.send` may name the model and the network, which a
+  send records as `session.model_changed` and `session.network_changed`
+  before what it sent ([[052-a-sessions-network]]). A member the core
+  does not know is ignored, and a known member that does not decode
+  refuses the request `authorizer_unavailable`.
+- A hosted session's sandbox holds Cella Secrets as placeholders the
+  egress gateway swaps: its Lux key (`-lux`, `LUX_KEY`) and its git
+  host's token (`-origo`, `ORIGO_TOKEN`), applied at each open, renewed
+  while a drive runs and deleted at the session's end
+  (`internal/hosted`, [[018-credentials-and-secrets]]). The git host's
+  placeholder is written into git's global configuration in the
+  sandbox's `HOME` when the sandbox opens, before any repository is
+  delivered ([[019-git]]).
+- A Cella sandbox's `spec.env` cannot change after its create, and the
+  placeholder of a Secret mounted later reaches the gateway's map but
+  never the running sandbox's environment: Cella's update recompiles the
+  boundary and does not call the driver, and no read returns a
+  placeholder (Cella's manifest contract, the mutability of `env` and
+  `secrets[]`; its egress and secrets design).
+- `harness/tools/mcp` does not exist. 018 and 021 say an installation
+  that keeps connections serves them itself and the runner sends the
+  session's own token, and leave how an allow names them to this spec.
+
+## Design
+
+```mermaid
+sequenceDiagram
+  participant C as client
+  participant T as toposd
+  participant A as authorizer
+  participant R as runner
+  participant S as sandbox
+  participant P as connection service
+  participant G as other service
+  C->>T: POST /v1/sessions/{id}/events (a message)
+  T->>A: session.send
+  A-->>T: allow {connections: [{name: github, kind: http, ...}, {name: tracker, kind: mcp, ...}]}
+  T->>T: session.connections_changed, then the message
+  R->>S: git configuration and each command's environment for the http connections
+  R->>P: tools/list, tools/call at the mcp address (session token)
+  S->>P: git clone https://git.example.com/acme/app, rewritten to the git address (placeholder swapped at egress)
+  P->>G: the request, with the person's credential added
+```
+
+### The member
+
+An allow of `session.create`, `session.fork` and `session.send` may
+carry `connections`:
+
+```json
+{
+  "connections": [
+    {"name": "github", "kind": "http", "title": "GitHub", "audience": "connections",
+     "address": "https://connections.example.com/v1/connections/c_1/http",
+     "git_address": "https://connections.example.com/v1/connections/c_1/git",
+     "git_url": "https://git.example.com"},
+    {"name": "tracker", "kind": "mcp", "title": "Issue tracker", "audience": "connections",
+     "address": "https://connections.example.com/v1/connections/c_2/mcp",
+     "read_only": ["list_*", "get_*", "search"]}
+  ]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `name` | a lowercase DNS label that starts with a letter, at most `session.MaxConnectionName` (32) characters, unique in the list; it names the connection's environment variable and its tools |
+| `kind` | `http` or `mcp`; any other value does not decode |
+| `title` | one line, 1 to `session.MaxConnectionTitle` (100) characters, no control character; what the model and a client call the connection |
+| `audience` | the core a session token for the connection is addressed to: 1 to 256 bytes, no space and no control character |
+| `address` | an absolute `https` URL with a host, no user information, no query and no fragment: the forwarding address for `http`, the MCP address for `mcp` |
+| `git_address`, `git_url` | `http` alone, both or neither: `git_address` the connection's git address, as `address` is held; `git_url` the git host the person's repositories live at, such as `https://git.example.com`, an `https` URL as `address` is held, unique in the list, a trailing `/` dropped |
+| `read_only` | `mcp` alone: at most `session.MaxReadOnlyTools` (64) globs over the server's tool names, in `path.Match` syntax, each 1 to 128 bytes; a tool a glob matches reads |
+
+At most `session.MaxConnections` (32) connections. A member of a
+connection the core does not know is ignored. A connection that breaks
+a rule, or a list past its bound, does not decode, and the request is
+refused `authorizer_unavailable` with the member named in the developer
+detail, as `DecodeLimits` refuses any member.
+
+### Where it is kept, and when it changes
+
+- `Session.Connections []session.Connection`, in the header.
+- **Create and fork.** The allow's list is the session's. A fork is
+  asked as a create is and holds its own allow's list, never its
+  parent's, as [[058-what-a-create-allow-attaches]] does for what an
+  allow attaches.
+- **Send.** The allow's list replaces the session's. A send whose allow
+  names a list other than the header's appends
+  `session.connections_changed` in the send's batch, after the model's
+  and the network's changes and before what it sent, so the turn the
+  send starts runs with it. An allow that names no `connections` member
+  leaves the session with none: the installation's authorizer answers
+  every send the same way, and a disconnected service must stop being
+  reached at the next message.
+- `session.connections_changed`: appended by the server, not visible,
+  payload `connections`, the session's list from here on, empty for
+  none. The header takes it, except in a fork's copied events
+  ([[004-session-log]]).
+- The Session object of [[015-api]] carries `connections`. Nothing in it
+  is a credential: an address answers only a caller with a token the
+  connection service accepts.
+
+**At the server.** A connection of kind `http` reaches the sandbox
+through the one Secret below, so the server holds it to the
+installation's connection service: an allow with an `http` connection
+on an installation without `TOPOS_CONNECTIONS_URL`, or whose `audience`
+is not `TOPOS_CONNECTIONS_AUDIENCE`, or whose `address` or
+`git_address` is on another host than `TOPOS_CONNECTIONS_URL`'s, is
+refused `authorizer_unavailable` naming the connection. A connection
+of kind `mcp` is reached by the runner, which may address any audience
+the installation mints for.
+
+### Kind `http`, in a Cella sandbox
+
+**One Secret per session.** On an installation with
+`TOPOS_CONNECTIONS_URL`, the runner applies a Cella Secret for every
+sandbox it opens, whether or not the session has a connection yet:
+named after the sandbox with `-connections`, holding the session's
+token for `TOPOS_CONNECTIONS_AUDIENCE` and the workload `sandbox`
+(`TokenSource.Token(ctx, audience, "sandbox")`), scoped to the host of
+`TOPOS_CONNECTIONS_URL`, injected as a bearer in `Authorization`,
+mounted as `CONNECTIONS_TOKEN`, labeled, renewed and deleted with the
+session as the sandbox's other Secrets are
+([[018-credentials-and-secrets]]). Its placeholder is the only value of
+it the sandbox holds. An installation that mints nothing for the
+audience (`not_minted`) mounts none, and an `http` connection's
+requests then carry no bearer.
+
+The Secret is mounted at every sandbox's creation because a Cella
+sandbox takes its mounts' placeholders into its environment at its
+create and never later. A Secret mounted only once a session had a
+connection would leave every sandbox opened before the person's first
+connection without the placeholder for the rest of the session.
+
+**git.** When the sandbox opens, and at the start of each turn, the
+runner rewrites one file of git configuration in
+the sandbox, `$HOME/.config/topos/connections.gitconfig`, whole, and
+names it once in git's global configuration as an `include.path`
+([[019-git]] puts the git host's header in the same global
+configuration). For each `http` connection with a `git_address`:
+
+```
+[url "<git_address>/"]
+	insteadOf = <git_url>/
+[http "<git_address>/"]
+	extraHeader = Authorization: Bearer <placeholder of CONNECTIONS_TOKEN>
+```
+
+so `git clone <git_url>/acme/app` goes through the connection, and a
+repository a session names on that host is delivered through it, since
+the file is written before any delivery. A connection the list no
+longer names leaves no entry, because the file is written whole. A
+sandbox without git has nothing to configure.
+
+**The API.** Each command the runner runs in the sandbox carries, in
+its own environment, `<NAME>_API_URL` naming each `http` connection's
+`address`, `<NAME>` the connection's name upper-cased with each `-` as
+`_`, from the session's list at the turn's start. It is not in the
+sandbox's environment, which is fixed at the sandbox's create. The
+bearer is `$CONNECTIONS_TOKEN`.
+
+**Egress.** The connection service's host is the Secret's, which Cella
+admits under an allowlist as every mounted Secret's host. Nothing
+reaches `git_url`'s host itself.
+
+**A host machine.** An `http` connection is applied in a Cella sandbox
+alone: a host machine's git and environment are the person's own
+([[009-machines]]), and the block below does not name it there.
+
+### The model is told
+
+`context/connections-v1`, rendered from the session's header on every
+request, on every thread, after the attachments block of
+[[058-what-a-create-allow-attaches]], when the session has a connection
+the block names:
+
+```
+<connections>
+Services the person connected. Their credentials are added on the way
+out and are not in this machine.
+- GitHub: `git clone https://git.example.com/<owner>/<repository>` and push work as usual and go through the connection. Push your own branch, agents/assistant/ses_01..., and no other. Its API is at $GITHUB_API_URL, with the header `Authorization: Bearer $CONNECTIONS_TOKEN`.
+- Issue tracker: its tools are named mcp__tracker__<tool>.
+A request that answers 409 with the code connection_not_connected means
+the person has to connect that service again: tell them so, naming it,
+and go on without it.
+</connections>
+```
+
+The block changes only when a send changes the list, so the prompt's
+cached prefix moves once per change and not per turn ([[010-context]]).
+
+### Kind `mcp`
+
+The runner reaches each `mcp` connection as a streamable HTTP server of
+[[021-mcp-servers]], at `address`, with `Authorization: Bearer` and the
+session's token for `audience` and the workload `session`, asked of the
+drive's token source for every request, so a renewed token reaches the
+next one and none outlives its scope.
+
+**Protocol.** Revision 2026-07-28 of the Model Context Protocol. Every
+message is its own `POST` with `Accept: application/json,
+text/event-stream`, `Content-Type: application/json`,
+`MCP-Protocol-Version: 2026-07-28`, `Mcp-Method`, and for `tools/call`
+`Mcp-Name`, in the transport's base64 form when the name is not plain
+ASCII, and an `Mcp-Param-{Name}` header for each argument a tool's
+schema marks with `x-mcp-header`. Every request's `_meta` carries the
+protocol version, `clientInfo` `{name: topos, version}` and empty
+`clientCapabilities`. An answer is one JSON object, or an event stream
+read until the response that carries the request's id; notifications
+on it are read past.
+
+**An earlier revision.** A `400` whose body is not a JSON-RPC error with
+a code the current revision defines (`-32020` to `-32099`) is a server
+of an earlier revision, as the transport's backward compatibility says.
+The runner then makes that revision's `initialize`, with protocol
+version `2025-11-25`, keeps the `Mcp-Session-Id` the answer names and
+sends it and the negotiated version on every later request of the
+drive, after `notifications/initialized`. A `404` to a request that
+carries the session id opens a new session once.
+
+**Tools.** At each drive's start the runner lists each connection's
+tools, following `nextCursor` for at most 16 pages, and registers each
+as `mcp__<name>__<tool>` with its description and input schema. A tool
+whose full name is not a tool name ([[008-tools]]: letters, digits, `_`
+and `-`, at most 64), or whose `x-mcp-header` breaks the transport's
+rules, is not offered. Each is called like any tool: validated, scored,
+given a verdict and logged, its pattern its full name
+([[012-permissions-and-approvals]]); `Parallel` yes, `Repeatable` never,
+and `Effect` `read` for a tool a `read_only` glob matches and
+`external` otherwise. The server's own annotations are not read. A
+result's text and image content are the tool's result, and `isError`
+makes it an error; a result that asks for input (`input_required`) is
+an error result saying the session cannot give the server input.
+
+### A connection that is not connected
+
+The connection service answers `409` with the code
+`connection_not_connected` and `details.reason` for a connection the
+person has to connect again.
+
+- **`mcp`.** A call that meets it fails with an error result naming the
+  connection's title and the reason, which the model relays, and the
+  runner appends `connection.requested`, which a client shows as
+  "connect this service": runner, not visible, payload `name`, `title`,
+  `kind`, `reason`, `scopes` when the service named them, and
+  `tool_use_id`. A listing that meets it at a drive's start offers none
+  of the connection's tools, appends `connection.requested` without a
+  `tool_use_id`, and the block names the connection as one to connect
+  again. Any other failure of a listing is `session.error`
+  `mcp_unavailable` naming the connection. The session goes on.
+- **`http`.** The sandbox's tools read the connection service's `409`
+  body as the service answered it, and the block tells the model to
+  relay it. The runner sees no request of the sandbox's, so it appends
+  nothing.
+
+### Pushes
+
+The connection service holds a push to the refs the installation's
+authorizer grants, such as the session's own branches. The core changes
+nothing for it; the block tells the model to push its own branch,
+`agents/<agent>/<session>` ([[019-git]]), and no other.
+
+### Configuration
+
+| Variable | Read by | Default | Meaning |
+|---|---|---|---|
+| `TOPOS_CONNECTIONS_URL` | `serve`, `runner` | unset | the connection service's root; its host is the scope of every sandbox's `-connections` Secret and the one host an `http` connection's addresses may name. Unset, a sandbox mounts no such Secret and an allow with an `http` connection is refused. Needs `TOPOS_IDENTITY_URL`, which mints the token, and refused on the host of `TOPOS_MODELS_URL` or `TOPOS_ORIGO_URL`, since Cella refuses two mounted Secrets on one host |
+| `TOPOS_CONNECTIONS_AUDIENCE` | `serve`, `runner` | `connections` | the audience of the session token the sandbox's Secret holds, and the one an `http` connection names |
+
+### Decisions
+
+| Decision | Chosen | Alternatives and why not |
+|---|---|---|
+| Who names the connections | the allow of `session.create`, `session.fork` and `session.send` | the agent's `spec.mcpServers`: a person's connections are theirs, not the agent's; a client's request: the core would send the session's token to an address the client chose |
+| When they change | replaced at every send | fixed at create, as 058's members are: a person who connects a service mid-conversation would have it only in a new session; the cost is one cache miss when the list changes |
+| A send whose allow names none | the session has none | kept as it was: a service the person disconnected would still be offered |
+| The sandbox's credential | one Secret per session for the installation's connection service, mounted at every sandbox's create | one Secret per audience the connections name, mounted when they first name it: a Cella sandbox takes a mount's placeholder into its environment at create alone, so a sandbox opened before the first connection would never reach one |
+| An `http` connection's audience and host | held to `TOPOS_CONNECTIONS_AUDIENCE` and `TOPOS_CONNECTIONS_URL`'s host | any the allow names: no Secret but the one mounted at create can carry it |
+| `<NAME>_API_URL` | in each command's environment, set by the runner per turn | the sandbox's environment: fixed at its create; a file the agent sources: one more step the model has to take |
+| git's configuration | one included file, rewritten whole | `git config --global` per key: a connection removed by a send would leave its entries behind |
+| "Connect this service" for `mcp` | `connection.requested`, beside the call's error result | `session.error` `connection_not_connected`: an error is the session's failure, while this asks the person to act, as `approval.requested` does |
+| "Connect this service" for `http` | the service's `409` reaches the sandbox's tool, and the model relays it | the runner reading the sandbox's traffic: it sees none of it |
+| An `mcp` connection's audience | any the allow names | held to the variable: the runner holds the token, never the sandbox, so no mount limits it |
+
+### Roll order
+
+1. This release reads `connections` and the variables.
+2. The installation sets `TOPOS_CONNECTIONS_URL` and lets its identity
+   provider mint for the runner's host client the audience of
+   `TOPOS_CONNECTIONS_AUDIENCE`, workloads `sandbox` and `session`, and
+   any other audience its `mcp` connections name, workload `session`.
+3. Its authorizer sends `connections` only to a core whose release notes
+   say it reads them. An older core ignores the member, and its
+   sessions start without connections.
+
+## Not in this spec
+
+Which connections a person has and their sign-in: the connection
+service's. The refs a push may update: the authorizer's, held by the
+connection service. A stdio MCP server and `spec.mcpServers`
+([[021-mcp-servers]]). A host machine's `http` connections. A sandbox
+opened before the installation set `TOPOS_CONNECTIONS_URL`, which has
+no mount for the Secret and reaches no `http` connection.
+
+## Acceptance criteria
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| `connections` is decoded with its rules and bounds on an allow; a connection that breaks a rule, an unknown kind, and a list past its bound refuse `authorizer_unavailable` naming the member, and an unknown member of a connection is ignored | `authorizer.TestTheConnectionsMember`, `session.TestCheckConnections` | not built |
+| A create and a fork hold their own allow's list; a send whose allow names another list appends `session.connections_changed` before what it sent, one that names the same appends nothing, and one that names none empties it; the header takes the change except in a fork's copied events | `internal/server.TestConnectionsAreTheAllows`, `session.TestTheHeaderTakesTheConnections` | not built |
+| An `http` connection on an installation without `TOPOS_CONNECTIONS_URL`, of another audience, or on another host is refused `authorizer_unavailable` | `internal/server.TestConnectionsAreTheAllows` | not built |
+| The variables are read with their default, need the identity provider, and are refused on the model's or the git host's host | `internal/config.TestTheConnectionsVariables` | not built |
+| Every sandbox of an installation with `TOPOS_CONNECTIONS_URL` mounts `-connections` as `CONNECTIONS_TOKEN`, scoped to its host, holding the session's token for the audience and workload `sandbox`, labeled with the session and the agent, renewed before it expires and deleted at the session's end after the sandbox | `internal/hosted.TestTheConnectionsSecret` over the stub Cella | not built |
+| The git configuration and each command's `<NAME>_API_URL` follow the session's list at open and at each turn, a removed connection leaving no entry | `internal/hosted.TestHTTPConnectionsFollowTheList` over the stub Cella | not built |
+| A session's sandbox clones `<git_url>/acme/app` through a stub git address that admits only the placeholder of `-connections`, and no command or event carries the token | `internal/hosted.TestASandboxClonesThroughAConnection` over the stub Cella and git's own http backend | not built |
+| The block names each connection the machine reaches, says how to clone, push and call the API, or the tools' prefix, and how to relay a `409`, and changes only with the list | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes` | not built |
+| An `mcp` connection's tools are offered as `mcp__<name>__<tool>`, read for a `read_only` match and external otherwise, gated and scored like a built-in; a streamed answer is read to its response; an earlier revision's server is reached after its `400`; the bearer is the session's token for the audience | `harness/tools/mcp.TestStreamableHTTP` against a stub server, `internal/hosted.TestMCPConnectionsAreOffered` | not built |
+| A `409` `connection_not_connected` fails the call with a result naming the connection and the reason, appends `connection.requested`, and the session goes on | `harness/tools/mcp.TestANotConnectedServer`, `internal/hosted.TestMCPConnectionsAreOffered` | not built |

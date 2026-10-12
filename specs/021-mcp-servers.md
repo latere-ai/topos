@@ -32,8 +32,12 @@ installation that keeps its people's connections
 ([[018-credentials-and-secrets]]) also says, for the person who starts a
 session, which further servers the session reaches, and serves them
 itself: the runner sends the session's own token as the bearer and no
-credential of another service. How an allow carries them is not
-designed yet; the HTTP transport below is what both use.
+credential of another service. The allow of each create, fork and send
+names them, as connections of kind `mcp`, and
+[[069-connections-an-allow-names]] fixes the revision of the protocol
+the runner speaks, its fallback to an earlier one, and what a server
+that is not connected answers; the HTTP transport below is what both
+use.
 
 ## Design
 
