@@ -53,6 +53,15 @@ installation attached, and a call with `access` ignore them, and none
 is refused for them: the tool renames no app and moves none to another
 address, and a person changes theirs at the app host.
 
+A person who renames the app keeps the session publishing to it. Each
+result records the app's id beside its slug, and every later call
+finds the app by that id, so the session publishes to and releases the
+renamed app, and its next result names the new slug and address. The
+slug the session knew before still names the app in a call. An app
+host that does not find an app by its id answers the id as an unknown
+slug, and the tool then finds the app by its slug, as before: there a
+rename still loses the app, and the next publish creates a new one.
+
 `release` puts a change live in one call:
 
 ```json
@@ -185,6 +194,13 @@ refused before the call is decided, so nobody is asked to approve it.
 The thread keeps a standing preview per app, so releasing one app never
 takes another's.
 
+An attached app is given to a session by its slug, which also names its
+checkout. Once a result of the session has read the app, the session
+finds it by the id that result records, so a rename by its person after
+that keeps the checkout publishing to it, and the app's new slug names
+it in a call as the slug it was given does. An app renamed before the
+session first read it is not found by the slug the session was given.
+
 Several sessions may build one app at once, each on its own branch.
 Before it tags a release, the tool requires the commit the app serves
 to be an ancestor of the commit it releases. Otherwise the release is
@@ -201,7 +217,8 @@ Every `tool.result` of a `publish` call carries `meta.publish`:
 
 | Field | Value |
 |---|---|
-| `app`, `name` | the app's slug and its name |
+| `app`, `name` | the app's slug and its name, as the host answered them when the call ran |
+| `app_id` | the app's id at the host, which a rename leaves as it is; absent where the host names none. A client that keeps an app across results keys it by `app_id`, since `app` changes when the app's owner renames it |
 | `url` | the app's own address |
 | `visibility` | who may open the app, as the host named it when the call ran; absent where the host names none. On the result of a call with `access`, the host's answer to the change, or what the app still has when the change was refused |
 | `preview` | the preview's own address, once the host names it |
@@ -283,17 +300,20 @@ on, since the sandbox's git sends the session's credential to that host
 alone, and an identity provider, since the runner reaches the host with
 a token minted for the session. The token never enters the sandbox.
 
-The host answers this contract under its root:
+The host answers this contract under its root. `{app}` is the app's
+slug, or its id where the tool has one: a host finds the app by either,
+and answers an id it does not know, or one it does not read in that
+place, `404` as it answers a slug it does not know.
 
 | Request | Answer |
 |---|---|
-| `POST /apps` with `{"name", "slug"}`, each optional | `201` with the app: `slug`, `name`, `url`, `repository.push_url`, and `visibility` when the host keeps one. With no `slug` the host makes the app's address, from the name when it can. A `slug` the host cannot give is refused `invalid_slug`, `slug_taken`, `slug_reserved`, `slug_held` or `repository_name_taken`, and the tool sends the create once more without it |
-| `GET /apps/{slug}` | the app, or `404`; with `current_deploy` and `latest_preview`, each `{"id", "commit_sha"}` or `null`, the commit its address serves and its newest ready preview's, which the start of an attached app's checkout and the check before a release read |
-| `PATCH /apps/{slug}` with `{"visibility": "unlisted"}` or `{"visibility": "private"}` | the app, with its `visibility` after the change |
-| `GET /apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` and `error` |
-| `GET /apps/{slug}/deploys/{id}/logs` | the build log, one JSON object with its `line` per line |
-| `GET /apps/{slug}/releases` | `{"releases": [...]}`, each with `tag`, `commit_sha`, `status` and `reason` |
-| `GET /apps/{slug}/releases/{tag}` | `{"release": ..., "deploy": ...}`, or `404` until the host has seen the tag |
+| `POST /apps` with `{"name", "slug"}`, each optional | `201` with the app: `id`, `slug`, `name`, `url`, `repository.push_url`, and `visibility` when the host keeps one. With no `slug` the host makes the app's address, from the name when it can. A `slug` the host cannot give is refused `invalid_slug`, `slug_taken`, `slug_reserved`, `slug_held` or `repository_name_taken`, and the tool sends the create once more without it |
+| `GET /apps/{app}` | the app, or `404`, with its `id` and its `slug` as it is now; with `current_deploy` and `latest_preview`, each `{"id", "commit_sha"}` or `null`, the commit its address serves and its newest ready preview's, which the start of an attached app's checkout and the check before a release read |
+| `PATCH /apps/{app}` with `{"visibility": "unlisted"}` or `{"visibility": "private"}` | the app, with its `visibility` after the change |
+| `GET /apps/{app}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` and `error` |
+| `GET /apps/{app}/deploys/{id}/logs` | the build log, one JSON object with its `line` per line |
+| `GET /apps/{app}/releases` | `{"releases": [...]}`, each with `tag`, `commit_sha`, `status` and `reason` |
+| `GET /apps/{app}/releases/{tag}` | `{"release": ..., "deploy": ...}`, or `404` until the host has seen the tag |
 
 A push of a branch builds a preview deploy, which ends `ready`,
 `failed` or `canceled`; a pushed `v` tag releases its commit, which

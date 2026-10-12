@@ -89,6 +89,12 @@ func (a *apps) attached(t *testing.T, slug string) *cloud {
 // attachedAs is attached with the agent the document defines.
 func (a *apps) attachedAs(t *testing.T, slug, agentDoc string) *cloud {
 	t.Helper()
+	return a.attachedFrom(t, slug, a.git.srv.URL+"/"+slug+".git", agentDoc)
+}
+
+// attachedFrom is attachedAs with the app's repository at url.
+func (a *apps) attachedFrom(t *testing.T, slug, url, agentDoc string) *cloud {
+	t.Helper()
 	c := newCloud(t, nil)
 	rs, err := manifest.Resolve(t.Context(), []byte(agentDoc), manifest.Options{})
 	if err != nil {
@@ -99,7 +105,7 @@ func (a *apps) attachedAs(t *testing.T, slug, agentDoc string) *cloud {
 		t.Fatal(err)
 	}
 	c.s = session.New(ref, session.Sender{Subject: "usr_ada", Kind: session.SenderPerson}, session.RunnerHosted, session.Machine{Kind: session.MachineCella}, time.Now())
-	c.s.Resources = []session.Resource{{Type: session.ResourceRepository, URL: a.git.srv.URL + "/" + slug + ".git", Attached: true,
+	c.s.Resources = []session.Resource{{Type: session.ResourceRepository, URL: url, Attached: true,
 		App: &session.ResourceApp{Slug: slug, Name: "Tide tables", URL: "https://" + slug + ".apps.example"}}}
 	if err := c.st.Create(t.Context(), c.s, blobs); err != nil {
 		t.Fatal(err)

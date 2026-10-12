@@ -6,11 +6,13 @@ package hosted
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -49,7 +51,11 @@ spec:
 // appHost is a stub app host over the bare repositories under root,
 // served by git's http backend at git: an app's preview deploys are its
 // branches' heads, each ready at once, and its releases its v tags. An
-// app is private until a PATCH changes its visibility.
+// app is private until a PATCH changes its visibility. Every route that
+// names an app finds it by its slug or by its id in the slug's place,
+// unless noIDs makes the host one that reads no id there and answers it
+// 404 as a slug it does not know; a rename moves an app's repository to
+// its new slug, and the old slug answers 404 at once.
 type appHost struct {
 	t    *testing.T
 	root string
@@ -71,13 +77,17 @@ type appHost struct {
 	// refuse, when set, is the reason the host's authorizer refuses every
 	// change of who can open an app with.
 	refuse string
+	// ids are the apps' ids by slug, and noIDs makes the host read no id
+	// in a slug's place.
+	ids   map[string]string
+	noIDs bool
 }
 
 var slugWord = regexp.MustCompile(`[^a-z0-9]+`)
 
 func newAppHost(t *testing.T, root, git string) *appHost {
 	t.Helper()
-	h := &appHost{t: t, root: root, git: git, visibility: map[string]string{}}
+	h := &appHost{t: t, root: root, git: git, visibility: map[string]string{}, ids: map[string]string{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /apps", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
@@ -92,6 +102,7 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 		h.mu.Lock()
 		h.created = append(h.created, body)
 		taken := h.taken[slug]
+		id := fmt.Sprintf("123e4567-e89b-42d3-a456-%012d", len(h.created))
 		h.mu.Unlock()
 		if taken {
 			h.write(w, http.StatusConflict, map[string]any{"error": map[string]any{"code": "slug_taken", "message": "This slug is already in use.", "details": map[string]string{"slug": slug}}})
@@ -107,10 +118,13 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 				return
 			}
 		}
+		h.mu.Lock()
+		h.ids[slug] = id
+		h.mu.Unlock()
 		h.write(w, http.StatusCreated, h.app(slug, body["name"]))
 	})
 	mux.HandleFunc("GET /apps/{slug}", func(w http.ResponseWriter, r *http.Request) {
-		slug := r.PathValue("slug")
+		slug := h.slug(r.PathValue("slug"))
 		if !h.exists(slug) {
 			h.write(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "app_not_found"}})
 			return
@@ -122,7 +136,7 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 	// with the app, or refused 403 forbidden with the authorizer's reason
 	// in the error's details.
 	mux.HandleFunc("PATCH /apps/{slug}", func(w http.ResponseWriter, r *http.Request) {
-		slug := r.PathValue("slug")
+		slug := h.slug(r.PathValue("slug"))
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -153,7 +167,7 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 		h.write(w, http.StatusOK, h.app(slug, slug))
 	})
 	mux.HandleFunc("GET /apps/{slug}/deploys", func(w http.ResponseWriter, r *http.Request) {
-		slug := r.PathValue("slug")
+		slug := h.slug(r.PathValue("slug"))
 		var deploys []map[string]any
 		for _, line := range h.refs(slug, "refs/heads/") {
 			sha, _, _ := strings.Cut(line, " ")
@@ -163,10 +177,10 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 		h.write(w, http.StatusOK, map[string]any{"deploys": deploys})
 	})
 	mux.HandleFunc("GET /apps/{slug}/releases", func(w http.ResponseWriter, r *http.Request) {
-		h.write(w, http.StatusOK, map[string]any{"releases": h.releases(r.PathValue("slug"))})
+		h.write(w, http.StatusOK, map[string]any{"releases": h.releases(h.slug(r.PathValue("slug")))})
 	})
 	mux.HandleFunc("GET /apps/{slug}/releases/{tag}", func(w http.ResponseWriter, r *http.Request) {
-		for _, rel := range h.releases(r.PathValue("slug")) {
+		for _, rel := range h.releases(h.slug(r.PathValue("slug"))) {
 			if rel["tag"] == r.PathValue("tag") {
 				h.write(w, http.StatusOK, map[string]any{"release": rel})
 				return
@@ -191,8 +205,9 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 func (h *appHost) app(slug, name string) map[string]any {
 	h.mu.Lock()
 	visibility := cmp.Or(h.visibility[slug], "private")
+	id := h.ids[slug]
 	h.mu.Unlock()
-	a := map[string]any{"slug": slug, "name": name, "url": "https://" + slug + ".apps.example", "visibility": visibility,
+	a := map[string]any{"id": id, "slug": slug, "name": name, "url": "https://" + slug + ".apps.example", "visibility": visibility,
 		"repository": map[string]string{"push_url": h.git + "/" + slug + ".git"}, "current_deploy": nil, "latest_preview": nil}
 	if !h.exists(slug) {
 		return a
@@ -213,6 +228,61 @@ func (h *appHost) app(slug, name string) map[string]any {
 		a["latest_preview"] = map[string]any{"id": "d" + sha[:8], "commit_sha": sha}
 	}
 	return a
+}
+
+// slug is the slug of the app v names in a route: v itself, or the slug
+// of the app whose id it is at a host that reads ids. A value that names
+// no app is answered as it is, which no repository has.
+func (h *appHost) slug(v string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.ids[v]; ok || h.noIDs {
+		return v
+	}
+	for slug, id := range h.ids {
+		if id == v {
+			return slug
+		}
+	}
+	return v
+}
+
+// rename gives the app old the slug to, as its owner does at the host:
+// its repository moves with it, so its push URL names the new slug, and
+// its id stays, so does the address of its repository by id when it has
+// one.
+func (h *appHost) rename(old, to string) {
+	h.t.Helper()
+	if err := os.Rename(filepath.Join(h.root, old+".git"), filepath.Join(h.root, to+".git")); err != nil {
+		h.t.Fatal(err)
+	}
+	h.mu.Lock()
+	id := h.ids[old]
+	h.ids[to], h.visibility[to] = id, h.visibility[old]
+	delete(h.ids, old)
+	delete(h.visibility, old)
+	h.mu.Unlock()
+	byID := filepath.Join(h.root, "r", id+".git")
+	if _, err := os.Lstat(byID); err == nil {
+		if err := errors.Join(os.Remove(byID), os.Symlink(filepath.Join(h.root, to+".git"), byID)); err != nil {
+			h.t.Fatal(err)
+		}
+	}
+}
+
+// identify gives the app slug an id, and its repository an address by
+// that id under r/, which a rename leaves as it is, as a git host that
+// serves a repository by its app's id does; it answers the id.
+func (h *appHost) identify(slug string) string {
+	h.t.Helper()
+	h.mu.Lock()
+	id := fmt.Sprintf("7c9e6679-7425-40de-944b-%012d", len(h.ids)+1)
+	h.ids[slug] = id
+	h.mu.Unlock()
+	if err := errors.Join(os.MkdirAll(filepath.Join(h.root, "r"), 0o755), os.Symlink(filepath.Join(h.root, slug+".git"), filepath.Join(h.root, "r", id+".git"))); err != nil {
+		h.t.Fatal(err)
+	}
+	return id
 }
 
 func (h *appHost) exists(slug string) bool {
@@ -488,6 +558,138 @@ func TestASessionNamesTheSiteItPublishes(t *testing.T) {
 	}
 }
 
+// TestASessionKeepsPublishingToItsRenamedApp: a session's publish records
+// the id the app host answers for its app; after the app's owner renames
+// it, the session's next publish finds the app by that id, pushes to the
+// renamed app's repository on the branch it built before, creates no app,
+// and records the new slug with the same id; a release releases the
+// renamed app; and against a host that reads no id in a slug's place the
+// app is found by its slug, as before (spec 069).
+func TestASessionKeepsPublishingToItsRenamedApp(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	host := &gitHost{}
+	host.srv = httptest.NewServer(placeholders(t, host, root, func(n string) bool { return n == name }))
+	t.Cleanup(host.srv.Close)
+	apps := newAppHost(t, root, host.srv.URL)
+	c := newCloudOf(t, publisherAgent, func(s *session.Session) { s.Title = "A poem" })
+	name = cella.SandboxName(c.s.ID)
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.o.Machines = Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir, OrigoURL: host.srv.URL})
+	c.o.Publish = publish.Options{URL: apps.srv.URL, Audience: "apps", GitURL: host.srv.URL, PollEvery: 10 * time.Millisecond}
+	c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	creates := func() int {
+		apps.mu.Lock()
+		defer apps.mu.Unlock()
+		return len(apps.created)
+	}
+
+	c.drive("Publish a poem.",
+		bash("toolu_1", `mkdir -p site && printf '<h1>A poem</h1>\n' > site/index.html`),
+		publishCall("toolu_2", map[string]any{"path": "site", "address": "a-poem"}),
+		said("Published."))
+	first := lastPublish(t, c)
+	if first.App != "a-poem" || first.AppID == "" || creates() != 1 {
+		t.Fatalf("the first publish recorded %+v, %d creates", first, creates())
+	}
+
+	apps.rename("a-poem", "tide-tables")
+	c.drive("Add a line.",
+		bash("toolu_3", `printf '<h1>A poem</h1>\n<p>Two lines.</p>\n' > site/index.html`),
+		publishCall("toolu_4", map[string]any{"path": "site"}),
+		said("Published again."))
+	second := lastPublish(t, c)
+	bare := filepath.Join(root, "tide-tables.git")
+	branch := session.Branch(c.s)
+	head := gitIn(t, bare, "rev-parse", "refs/heads/"+branch)
+	if second.App != "tide-tables" || second.AppID != first.AppID || second.URL != "https://tide-tables.apps.example" || second.Commit != head || creates() != 1 {
+		t.Fatalf("the publish after the rename recorded %+v, the branch is at %s, %d creates", second, head, creates())
+	}
+	if parent := gitIn(t, bare, "rev-parse", head+"^"); parent != first.Commit {
+		t.Fatalf("the commit after the rename builds on %s, want %s", parent, first.Commit)
+	}
+
+	c.drive("Release it.", publishCall("toolu_5", map[string]any{"release": true}), said("Released."))
+	released := lastPublish(t, c)
+	if released.Release != "v1" || released.App != "tide-tables" || released.AppID != first.AppID || released.URL != "https://tide-tables.apps.example" {
+		t.Fatalf("the release recorded %+v", released)
+	}
+	if tagged := gitIn(t, bare, "rev-parse", "refs/tags/v1^{commit}"); tagged != head {
+		t.Fatalf("v1 is on %s, want %s", tagged, head)
+	}
+
+	// A host that reads no id in a slug's place answers the id 404, and
+	// the app is found by its slug.
+	apps.mu.Lock()
+	apps.noIDs = true
+	apps.mu.Unlock()
+	c.drive("Add another line.",
+		bash("toolu_6", `printf '<h1>A poem</h1>\n<p>Three.</p>\n' > site/index.html`),
+		publishCall("toolu_7", map[string]any{"path": "site"}),
+		said("Published."))
+	if third := lastPublish(t, c); third.App != "tide-tables" || third.AppID != first.AppID || third.Commit == head || creates() != 1 {
+		t.Fatalf("a publish at a host that reads no id recorded %+v, %d creates", third, creates())
+	}
+}
+
+// TestASessionKeepsPublishingItsRenamedAttachedApp: a session the allow
+// attached an app by its slug, from a repository addressed by the app's
+// id, records the id the host answers for it; after the app's owner
+// renames it, the next publish of the checkout finds the app by that id,
+// pushes the checkout to the repository the session was given and
+// records the new slug with the same id; a release that names no app
+// releases it, and one that names its new slug does too (spec 069).
+func TestASessionKeepsPublishingItsRenamedAttachedApp(t *testing.T) {
+	a := newApps(t)
+	a.seed(t, "tide")
+	id := a.host.identify("tide")
+	c := a.attachedFrom(t, "tide", a.git.srv.URL+"/r/"+id+".git", publisherAgent)
+	c.drive("Make the page say hello.",
+		bash("toolu_1", `printf '<h1>Hello</h1>\n' > tide/index.html`),
+		publishCall("toolu_2", map[string]any{"app": "tide"}),
+		said("Published."))
+	first, _ := lastResult(t, c)
+	if first.App != "tide" || first.AppID != id || !first.Attached || first.Status != session.PublishReady {
+		t.Fatalf("the first publish recorded %+v", first)
+	}
+
+	a.host.rename("tide", "tides")
+	c.drive("Add a page and release it.",
+		bash("toolu_3", `printf 'two\n' > tide/two.html`),
+		publishCall("toolu_4", map[string]any{"app": "tide"}),
+		publishCall("toolu_5", map[string]any{"release": true}),
+		said("Released."))
+	bare := filepath.Join(a.root, "tides.git")
+	head := gitIn(t, bare, "rev-parse", "refs/heads/"+session.Branch(c.s))
+	released, _ := lastResult(t, c)
+	if released.App != "tides" || released.AppID != id || !released.Attached || released.Release != "v1" || released.Commit != head || released.Folder != "tide" {
+		t.Fatalf("the release after the rename recorded %+v, the branch is at %s", released, head)
+	}
+	if files := gitIn(t, bare, "ls-tree", "-r", "--name-only", "refs/tags/v1"); files != "index.html\ntwo.html" {
+		t.Fatalf("v1 holds %q", files)
+	}
+
+	c.drive("Change it and release it.",
+		bash("toolu_6", `printf 'three\n' > tide/two.html`),
+		publishCall("toolu_7", map[string]any{"app": "tides", "release": true}),
+		said("Released."))
+	if r, _ := lastResult(t, c); r.App != "tides" || r.Release != "v2" || r.Status != session.PublishReleased {
+		t.Fatalf("a release that names the new slug recorded %+v", r)
+	}
+	a.host.mu.Lock()
+	creates := len(a.host.created)
+	a.host.mu.Unlock()
+	if creates != 0 {
+		t.Fatalf("the host was asked to create %d apps", creates)
+	}
+}
+
 // lastPublish is the meta of the session's last publish result, which
 // must have succeeded.
 func lastPublish(t *testing.T, c *cloud) session.PublishMeta {
@@ -653,7 +855,7 @@ func TestASessionChangesWhoCanOpenItsApp(t *testing.T) {
 	if err := json.Unmarshal(opened.Meta, &meta); err != nil {
 		t.Fatal(err)
 	}
-	want := session.PublishMeta{App: "a-poem", Name: "a-poem", URL: "https://a-poem.apps.example", Visibility: "unlisted", Folder: "site"}
+	want := session.PublishMeta{App: "a-poem", AppID: "123e4567-e89b-42d3-a456-000000000001", Name: "a-poem", URL: "https://a-poem.apps.example", Visibility: "unlisted", Folder: "site"}
 	if opened.IsError || opened.Outcome != "ok" || meta.Publish != want || !strings.Contains(opened.Content[0].Text, "Anyone who has the address can open a-poem, without signing in: https://a-poem.apps.example.") {
 		t.Fatalf("the change recorded %+v with %+v", opened, meta.Publish)
 	}

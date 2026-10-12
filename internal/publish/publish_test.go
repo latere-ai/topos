@@ -4,6 +4,7 @@
 package publish
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -175,10 +176,16 @@ func refused(status int, code string) func(int) (int, any) {
 	}
 }
 
-func newTool(t *testing.T, h *host, c runner.Credentials) *Tool {
+// stub is an app host a test serves.
+type stub interface{ root() string }
+
+func (h *host) root() string   { return h.srv.URL }
+func (h *idHost) root() string { return h.srv.URL }
+
+func newTool(t *testing.T, h stub, c runner.Credentials) *Tool {
 	t.Helper()
 	s := session.Session{ID: "ses_1", Title: "A poem", Agent: session.AgentRef{ID: "agent_1", Name: "latere", Version: 3}}
-	return New(Options{URL: h.srv.URL, Audience: "apps", GitURL: gitURL, Wait: 50 * time.Millisecond, PollEvery: 5 * time.Millisecond}, s, runner.NewTokenSource(c, nil, nil))
+	return New(Options{URL: h.root(), Audience: "apps", GitURL: gitURL, Wait: 50 * time.Millisecond, PollEvery: 5 * time.Millisecond}, s, runner.NewTokenSource(c, nil, nil))
 }
 
 func call(input string, m machine.Machine, st tools.State) tools.Call {
@@ -603,13 +610,13 @@ func TestServedReadsTheCommitsAnAppServes(t *testing.T) {
 // attachedSession is newTool's session attached the app tide, whose
 // checkout is /work/tide, beside a repository of its request in the
 // working directory.
-func attachedTool(t *testing.T, h *host) *Tool {
+func attachedTool(t *testing.T, h stub) *Tool {
 	t.Helper()
 	s := session.Session{ID: "ses_1", Title: "A poem", Agent: session.AgentRef{ID: "agent_1", Name: "builder", Version: 3}, Resources: []session.Resource{
 		{Type: session.ResourceRepository, URL: gitURL + "/acme/web.git"},
 		{Type: session.ResourceRepository, URL: gitURL + "/r/tide.git", App: &session.ResourceApp{Slug: "tide", Name: "Tide", URL: "https://tide.apps.example"}, Attached: true},
 	}}
-	return New(Options{URL: h.srv.URL, Audience: "apps", GitURL: gitURL, Wait: 50 * time.Millisecond, PollEvery: 5 * time.Millisecond}, s, runner.NewTokenSource(creds{}, nil, nil))
+	return New(Options{URL: h.root(), Audience: "apps", GitURL: gitURL, Wait: 50 * time.Millisecond, PollEvery: 5 * time.Millisecond}, s, runner.NewTokenSource(creds{}, nil, nil))
 }
 
 // liveApp answers the app slug with its current deploy at live, none
@@ -1736,5 +1743,368 @@ func TestThePublishingPageStatesTheBounds(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("docs/publishing.md does not say %q", want)
 		}
+	}
+}
+
+// idHost is a stub app host that keeps its apps by id: every route that
+// names an app finds it by its slug and, when byID is set, by its id in
+// the slug's place, as a host that reads ids there does; one that does
+// not answers an id 404 app_not_found, as it answers a slug it does not
+// know. A rename gives an app another slug, after which the old one
+// answers 404 at once; a removed app answers 404 by either. Each app's
+// preview deploys are ready at sha1 and sha2, its address serves nothing,
+// and a tag is released once the host is asked for it.
+type idHost struct {
+	t    *testing.T
+	srv  *httptest.Server
+	byID bool
+
+	mu sync.Mutex
+	// slugs are the apps' slugs by id, visibility who may open each, and
+	// creates the bodies of the creates the host was sent.
+	slugs, visibility map[string]string
+	creates           []string
+	// asked are the requests, "METHOD /path", in order.
+	asked []string
+}
+
+// appID is the id idHost gives its nth app.
+func appID(n int) string { return fmt.Sprintf("123e4567-e89b-42d3-a456-%012d", n) }
+
+func newIDHost(t *testing.T, byID bool, slugs map[string]string) *idHost {
+	h := &idHost{t: t, byID: byID, slugs: maps.Clone(slugs), visibility: map[string]string{}}
+	if h.slugs == nil {
+		h.slugs = map[string]string{}
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /apps", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("read a create: %v", err)
+		}
+		h.mu.Lock()
+		h.creates = append(h.creates, body["name"])
+		id := appID(100 + len(h.creates))
+		h.slugs[id] = cmp.Or(body["slug"], "a-poem")
+		h.mu.Unlock()
+		h.write(w, http.StatusCreated, h.doc(id))
+	})
+	mux.HandleFunc("GET /apps/{app}", func(w http.ResponseWriter, r *http.Request) {
+		if id, ok := h.find(w, r); ok {
+			h.write(w, http.StatusOK, h.doc(id))
+		}
+	})
+	mux.HandleFunc("PATCH /apps/{app}", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("read a change: %v", err)
+		}
+		if id, ok := h.find(w, r); ok {
+			h.mu.Lock()
+			h.visibility[id] = body["visibility"]
+			h.mu.Unlock()
+			h.write(w, http.StatusOK, h.doc(id))
+		}
+	})
+	mux.HandleFunc("GET /apps/{app}/deploys", func(w http.ResponseWriter, r *http.Request) {
+		if id, ok := h.find(w, r); ok {
+			var list []map[string]any
+			for i, sha := range []string{sha2, sha1} {
+				d := "d" + strconv.Itoa(2-i)
+				list = append(list, map[string]any{"id": d, "status": "ready", "preview": true, "commit_sha": sha, "preview_url": "https://" + d + "--" + h.slug(id) + ".apps.example"})
+			}
+			h.write(w, http.StatusOK, map[string]any{"deploys": list})
+		}
+	})
+	mux.HandleFunc("GET /apps/{app}/releases", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := h.find(w, r); ok {
+			h.write(w, http.StatusOK, map[string]any{"releases": []map[string]any{}})
+		}
+	})
+	mux.HandleFunc("GET /apps/{app}/releases/{tag}", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := h.find(w, r); ok {
+			h.write(w, http.StatusOK, map[string]any{"release": map[string]any{"tag": r.PathValue("tag"), "commit_sha": sha1, "status": "released"}})
+		}
+	})
+	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer apps-session" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		h.mu.Lock()
+		h.asked = append(h.asked, r.Method+" "+r.URL.Path)
+		h.mu.Unlock()
+		mux.ServeHTTP(w, r)
+	}))
+	t.Cleanup(h.srv.Close)
+	return h
+}
+
+// find is the id of the app the request's path names, or false once it
+// answered 404 app_not_found.
+func (h *idHost) find(w http.ResponseWriter, r *http.Request) (string, bool) {
+	v := r.PathValue("app")
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, slug := range h.slugs {
+		if slug == v || (h.byID && id == v) {
+			return id, true
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	if err := json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "app_not_found", "details": map[string]string{"slug": v}}}); err != nil {
+		h.t.Errorf("write: %v", err)
+	}
+	return "", false
+}
+
+func (h *idHost) slug(id string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.slugs[id]
+}
+
+// doc is the app id as the host answers it, every address naming its
+// slug as it is now.
+func (h *idHost) doc(id string) map[string]any {
+	slug := h.slug(id)
+	h.mu.Lock()
+	visibility := cmp.Or(h.visibility[id], session.VisibilityPrivate)
+	h.mu.Unlock()
+	return map[string]any{"id": id, "slug": slug, "name": "A poem", "url": "https://" + slug + ".apps.example", "visibility": visibility,
+		"repository": map[string]string{"push_url": gitURL + "/ada/" + slug + ".git"}, "current_deploy": nil}
+}
+
+// rename gives the app id the slug to; remove deletes the app.
+func (h *idHost) rename(id, to string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.slugs[id] = to
+}
+
+func (h *idHost) remove(id string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.slugs, id)
+}
+
+// requests are the requests since the last call, which it forgets.
+func (h *idHost) requests() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := h.asked
+	h.asked = nil
+	return out
+}
+
+func (h *idHost) created() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.creates)
+}
+
+func (h *idHost) write(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		h.t.Errorf("write: %v", err)
+	}
+}
+
+// fold is the thread's state after results, in order, as the harness
+// folds their metas.
+func fold(t *testing.T, results ...tools.Result) tools.State {
+	t.Helper()
+	var events []session.Event
+	for i, r := range results {
+		b, err := json.Marshal(r.Meta)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := session.NewEvent(session.TypeToolResult, session.ToolResult{ToolUseID: fmt.Sprintf("toolu_%d", i), Meta: b}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = uint64(i + 1)
+		events = append(events, e)
+	}
+	return tools.StateOf(events, "")
+}
+
+// TestARenamedAppIsFoundByItsID: a result records the id the host answers
+// for the app beside its slug; after the app's owner renames it, the
+// thread's next publish reads the app by that id, publishes to it under
+// its new slug and creates nothing, and its record names the new slug and
+// the same id. A release and a change of who can open it reach the app
+// by its id, each request of the call names the app as the read found
+// it, and a call that names the slug the app had before the rename
+// reaches it too. The texts name the slug the host answered (spec 069).
+func TestARenamedAppIsFoundByItsID(t *testing.T) {
+	ctx := t.Context()
+	site := map[string]bool{"/work": true, "/work/site": true}
+	h := newIDHost(t, true, nil)
+	tool := newTool(t, h, creds{})
+	first, err := tool.Run(ctx, call(`{"path":"site","address":"a-poem"}`, &fakeMachine{dirs: site, outputs: []string{"1 " + sha1 + "\n"}}, tools.State{}))
+	id := appID(101)
+	if got := metaOf(first); err != nil || first.IsError() || got.App != "a-poem" || got.AppID != id || h.created() != 1 {
+		t.Fatalf("the first publish: %+v %+v %v", first, got, err)
+	}
+	h.requests()
+
+	h.rename(id, "tide-tables")
+	m := &fakeMachine{dirs: site, outputs: []string{"1 " + sha2 + "\n"}}
+	second, err := tool.Run(ctx, call(`{"path":"site"}`, m, fold(t, first)))
+	got := metaOf(second)
+	if err != nil || second.IsError() || got.App != "tide-tables" || got.AppID != id || got.URL != "https://tide-tables.apps.example" || got.Folder != "site" || h.created() != 1 {
+		t.Fatalf("a publish after the rename: %+v %+v %v, %d creates", second, got, err, h.created())
+	}
+	if got, want := h.requests(), []string{"GET /apps/" + id, "GET /apps/" + id + "/deploys"}; !slices.Equal(got, want) {
+		t.Fatalf("the host was asked %v, want %v", got, want)
+	}
+	if !strings.Contains(m.scripts[0], "url='"+gitURL+"/ada/tide-tables.git'") {
+		t.Fatalf("the push went elsewhere than the renamed app's repository:\n%s", m.scripts[0])
+	}
+
+	// A release reads the app and its releases by the id.
+	m = &fakeMachine{dirs: site, outputs: []string{"0 " + sha1 + "\n", ""}}
+	released, err := tool.Run(ctx, call(`{"release":true}`, m, fold(t, first, second)))
+	if got := metaOf(released); err != nil || released.IsError() || got.App != "tide-tables" || got.AppID != id || got.Release != "v1" || h.created() != 1 ||
+		!strings.Contains(resultText(released), "https://tide-tables.apps.example") {
+		t.Fatalf("a release after the rename: %+v %+v %v", released, got, err)
+	}
+	for _, r := range h.requests() {
+		if !strings.HasPrefix(r, "GET /apps/"+id) {
+			t.Fatalf("a release asked %q, not by the app's id", r)
+		}
+	}
+
+	// A change of who can open the app reads and changes it by the id, and
+	// one that names the slug the app had finds it as well; the text names
+	// the slug the host answered.
+	st := fold(t, first, second, released)
+	for _, input := range []string{`{"access":"link"}`, `{"access":"private","app":"a-poem"}`} {
+		if stop := tool.Check(call(input, &fakeMachine{}, st)); stop != nil {
+			t.Fatalf("%s: refused %+v", input, *stop)
+		}
+		res, err := tool.Run(ctx, call(input, &fakeMachine{}, st))
+		if got := metaOf(res); err != nil || res.Outcome != tools.OutcomeOK || got.App != "tide-tables" || got.AppID != id || !strings.Contains(resultText(res), "tide-tables") || strings.Contains(resultText(res), "a-poem") {
+			t.Fatalf("%s: %+v %+v %v", input, res, got, err)
+		}
+		if got, want := h.requests(), []string{"GET /apps/" + id, "PATCH /apps/" + id}; !slices.Equal(got, want) {
+			t.Fatalf("%s: the host was asked %v, want %v", input, got, want)
+		}
+		st = fold(t, first, second, released, res)
+	}
+	if h.created() != 1 {
+		t.Fatalf("%d creates", h.created())
+	}
+}
+
+// TestAnAppIsFoundByItsSlugWhenItsIDIsNot: a record from before results
+// named an id is read by its slug and the result then names the id; a
+// host that does not read an id in a slug's place answers it 404, and the
+// app is read by its slug once and published to, every later request of
+// the call naming the slug; an app gone by its id and its slug alike is
+// created again, as one the host lost always was (spec 069).
+func TestAnAppIsFoundByItsSlugWhenItsIDIsNot(t *testing.T) {
+	ctx := t.Context()
+	site := map[string]bool{"/work": true, "/work/site": true}
+	id := appID(1)
+	for name, c := range map[string]struct {
+		byID bool
+		last session.PublishMeta
+		want []string
+	}{
+		"a record without an id":  {true, session.PublishMeta{App: "a-poem", Folder: "site"}, []string{"GET /apps/a-poem", "GET /apps/a-poem/deploys"}},
+		"a host that reads no id": {false, session.PublishMeta{App: "a-poem", AppID: id, Folder: "site"}, []string{"GET /apps/" + id, "GET /apps/a-poem", "GET /apps/a-poem/deploys"}},
+	} {
+		h := newIDHost(t, c.byID, map[string]string{id: "a-poem"})
+		last := c.last
+		res, err := newTool(t, h, creds{}).Run(ctx, call(`{"path":"site"}`, &fakeMachine{dirs: site, outputs: []string{"1 " + sha1 + "\n"}}, tools.State{App: &last, Apps: map[string]*session.PublishMeta{"a-poem": &last}}))
+		if got := metaOf(res); err != nil || res.IsError() || got.App != "a-poem" || got.AppID != id || h.created() != 0 {
+			t.Errorf("%s: %+v %+v %v, %d creates", name, res, got, err, h.created())
+		}
+		if got := h.requests(); !slices.Equal(got, c.want) {
+			t.Errorf("%s: the host was asked %v, want %v", name, got, c.want)
+		}
+	}
+
+	// Gone by its id and its slug: the app is created again.
+	h := newIDHost(t, true, map[string]string{id: "a-poem"})
+	h.remove(id)
+	last := session.PublishMeta{App: "a-poem", AppID: id, Folder: "site"}
+	res, err := newTool(t, h, creds{}).Run(ctx, call(`{"path":"site"}`, &fakeMachine{dirs: site, outputs: []string{"1 " + sha1 + "\n"}}, tools.State{App: &last, Apps: map[string]*session.PublishMeta{"a-poem": &last}}))
+	if got := metaOf(res); err != nil || res.IsError() || got.AppID != appID(101) || h.created() != 1 {
+		t.Fatalf("an app that is gone: %+v %+v %v, %d creates", res, got, err, h.created())
+	}
+	if got, want := h.requests()[:3], []string{"GET /apps/" + id, "GET /apps/a-poem", "POST /apps"}; !slices.Equal(got, want) {
+		t.Fatalf("the host was asked %v, want %v first", got, want)
+	}
+
+	// A host that fails the read by id otherwise fails the call: the slug
+	// is read only for a 404.
+	down := newHost(t, map[string]func(int) (int, any){"GET /apps/" + id: refused(http.StatusServiceUnavailable, "unavailable"), "GET /apps/a-poem": app("a-poem")})
+	res, err = newTool(t, down, creds{}).Run(ctx, call(`{"path":"site"}`, &fakeMachine{dirs: site}, tools.State{App: &last, Apps: map[string]*session.PublishMeta{"a-poem": &last}}))
+	if err != nil || !res.IsError() || !strings.Contains(resultText(res), "refused with unavailable") || down.count("GET /apps/a-poem") != 0 || down.count("POST /apps") != 0 {
+		t.Fatalf("a read by id that failed: %+v %v", res, err)
+	}
+}
+
+// TestAnAttachedAppIsFoundAfterARename: the session was given the app
+// tide by its slug, which names its checkout; once a result read it and
+// named its id, the app's owner renames it, and the next publish of the
+// checkout reads the app by that id, pushes the checkout to the
+// repository the session was given and records the new slug with the
+// same id. The new slug, the slug the session was given, and a release
+// that names no app all find the one attached app (spec 069).
+func TestAnAttachedAppIsFoundAfterARename(t *testing.T) {
+	ctx := t.Context()
+	dirs := map[string]bool{"/work": true, "/work/tide": true}
+	id := appID(2)
+	h := newIDHost(t, true, map[string]string{id: "tide"})
+	tool := attachedTool(t, h)
+	first, err := tool.Run(ctx, call(`{"app":"tide"}`, &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}, tools.State{}))
+	if got := metaOf(first); err != nil || first.IsError() || got.App != "tide" || got.AppID != id || !got.Attached {
+		t.Fatalf("the first publish: %+v %+v %v", first, got, err)
+	}
+	h.rename(id, "tides")
+	h.requests()
+
+	m := &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha2 + "\n"}}
+	second, err := tool.Run(ctx, call(`{"app":"tide"}`, m, fold(t, first)))
+	got := metaOf(second)
+	if err != nil || second.IsError() || got.App != "tides" || got.AppID != id || !got.Attached || got.Folder != "tide" || h.created() != 0 {
+		t.Fatalf("a publish after the rename: %+v %+v %v", second, got, err)
+	}
+	if got, want := h.requests(), []string{"GET /apps/" + id, "GET /apps/" + id + "/deploys"}; !slices.Equal(got, want) {
+		t.Fatalf("the host was asked %v, want %v", got, want)
+	}
+	if !strings.Contains(m.scripts[0], "cd '/work/tide'") || !strings.Contains(m.scripts[0], "url='"+gitURL+"/r/tide.git'") {
+		t.Fatalf("the push of the checkout:\n%s", m.scripts[0])
+	}
+
+	st := fold(t, first, second)
+	for _, input := range []string{`{"app":"tides"}`, `{"app":"tide","path":"tide"}`, `{"path":"tide"}`, `{"release":true}`, `{"app":"tides","release":true}`} {
+		if stop := tool.Check(call(input, &fakeMachine{}, st)); stop != nil {
+			t.Errorf("%s: refused %+v", input, *stop)
+			continue
+		}
+		m := &fakeMachine{dirs: dirs, outputs: []string{"0 " + sha1 + "\n", ""}}
+		res, err := tool.Run(ctx, call(input, m, st))
+		if got := metaOf(res); err != nil || res.IsError() || got.App != "tides" || got.AppID != id || !got.Attached || !strings.Contains(m.scripts[0], "cd '/work/tide'") {
+			t.Errorf("%s: %+v %+v %v", input, res, got, err)
+		}
+		for _, r := range h.requests() {
+			if !strings.HasPrefix(r, "GET /apps/"+id) {
+				t.Errorf("%s: asked %q, not by the app's id", input, r)
+			}
+		}
+	}
+	// The session may publish to the attached app and none other, by any
+	// of its slugs.
+	res, err := tool.Run(ctx, call(`{"app":"other"}`, &fakeMachine{dirs: dirs}, st))
+	if err != nil || metaOf(res).Error == nil || metaOf(res).Error.Code != session.PublishAppNotAttached || !strings.Contains(resultText(res), "It may publish to tide.") {
+		t.Fatalf("another app: %+v %v", res, err)
 	}
 }

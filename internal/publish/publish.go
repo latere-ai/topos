@@ -193,8 +193,13 @@ type input struct {
 // checkout, or the thread's own, with the thread's last result for it.
 type target struct {
 	// slug is the app's slug, "" for the thread's own app when the call
-	// names none, which ensureApp finds or creates.
+	// names none, which ensureApp finds or creates. An attached app's is
+	// the slug the session was given it by, which names its checkout.
 	slug string
+	// id is an attached app's id at the app host, from the thread's last
+	// result for it, "" before a result named one (spec 069). The thread's
+	// own app's is in last.
+	id string
 	// repo is an attached app's repository, nil for an own app, and dir
 	// its checkout's absolute path and rel that path under the working
 	// directory.
@@ -206,11 +211,11 @@ type target struct {
 
 func (g target) attached() bool { return g.repo != nil }
 
-// meta is a result's meta for the app a, marked attached for an
-// attached app, so the thread's state never folds an attached app as its
-// own.
+// meta is a result's meta for the app a, as the host answered it, marked
+// attached for an attached app, so the thread's state never folds an
+// attached app as its own.
 func (g target) meta(a hostApp) *session.PublishMeta {
-	return &session.PublishMeta{App: a.Slug, Name: a.Name, URL: a.URL, Visibility: a.Visibility, Attached: g.attached()}
+	return &session.PublishMeta{App: a.Slug, AppID: a.ID, Name: a.Name, URL: a.URL, Visibility: a.Visibility, Attached: g.attached()}
 }
 
 // noCredential is why a drive with no token source cannot publish.
@@ -264,7 +269,7 @@ func (t *Tool) Check(c tools.Call) *tools.Result {
 		// the checkout or not whatever that directory is.
 		w = "/"
 	}
-	g, ok := t.attachedApp(w, slug)
+	g, ok := t.attachedApp(c.State, w, slug)
 	if !ok {
 		return nil
 	}
@@ -358,7 +363,8 @@ func (t *Tool) credential(ctx context.Context) (stop *tools.Result, err error) {
 // a guess. A call with access takes its app as such a release does. An
 // app the session was not attached and the thread did not create is
 // refused app_not_attached. Each refusal's meta names no app, so the
-// thread's state folds none.
+// thread's state folds none. An app the thread's results name by several
+// slugs, as one its owner renamed, is one app, named by its handle.
 func (t *Tool) pick(st tools.State, in input) (string, *tools.Result) {
 	if in.App != "" {
 		if t.may(st, in.App) {
@@ -369,17 +375,17 @@ func (t *Tool) pick(st tools.State, in input) (string, *tools.Result) {
 	if in.Access == "" && (!in.Release || in.Path != "") {
 		return "", nil
 	}
-	// mine are the slugs of m the session may still publish to: each
-	// attached app, and each the thread created.
+	// mine are the handles of the apps of m the session may still publish
+	// to: each attached app, and each the thread created.
 	mine := func(m map[string]*session.PublishMeta) []string {
 		var out []string
 		for slug, r := range m {
-			if _, _, ok := session.App(t.s, slug); ok || !r.Attached {
-				out = append(out, slug)
+			if _, _, ok := t.attachment(st, slug); ok || !r.Attached {
+				out = append(out, t.handle(st, slug))
 			}
 		}
 		slices.Sort(out)
-		return out
+		return slices.Compact(out)
 	}
 	slugs := mine(st.Standing)
 	if len(slugs) == 0 {
@@ -442,19 +448,20 @@ func (t *Tool) access(ctx context.Context, st tools.State, slug, access string) 
 		return tools.Result{}, fmt.Errorf("publish: access %q is neither %s nor %s", access, session.PublishAccessLink, session.PublishAccessPrivate)
 	}
 	g := target{slug: slug}
-	if r, _, ok := session.App(t.s, slug); ok {
+	if r, _, ok := t.attachment(st, slug); ok {
 		g.repo = &r
 	}
 	// The folder the thread last published to the app goes on every
 	// result, so the thread's state, which folds this one as the app's
-	// last, still knows what a release that names no path publishes.
-	var folder string
+	// last, still knows what a release that names no path publishes. The
+	// app is found by the id that result names, when it names one.
+	var folder, id string
 	if last := st.Apps[slug]; last != nil {
-		folder = last.Folder
+		folder, id = last.Folder, last.AppID
 	}
-	a, err := t.app(ctx, slug)
+	a, err := t.find(ctx, id, slug)
 	if err != nil {
-		return accessRefused(slug, err, &session.PublishMeta{App: slug, Attached: g.attached(), Folder: folder})
+		return accessRefused(slug, err, &session.PublishMeta{App: slug, AppID: id, Attached: g.attached(), Folder: folder})
 	}
 	meta := g.meta(a)
 	meta.Folder = folder
@@ -463,8 +470,8 @@ func (t *Tool) access(ctx context.Context, st tools.State, slug, access string) 
 	asked := a.Visibility == want || (want == session.VisibilityUnlisted && a.Visibility == session.VisibilityPublic)
 	if !asked {
 		var changed hostApp
-		if err := t.do(ctx, http.MethodPatch, "/apps/"+url.PathEscape(slug), map[string]string{"visibility": want}, &changed); err != nil {
-			return accessRefused(slug, err, meta)
+		if err := t.do(ctx, http.MethodPatch, a.path(), map[string]string{"visibility": want}, &changed); err != nil {
+			return accessRefused(a.Slug, err, meta)
 		}
 		// The host's answer is what the result says, so one that names
 		// another visibility than the one asked is a change that failed,
@@ -472,10 +479,10 @@ func (t *Tool) access(ctx context.Context, st tools.State, slug, access string) 
 		switch changed.Visibility {
 		case want:
 		case "":
-			return accessRefused(slug, errors.New("the app host answered the change without saying who can open the app now"), meta)
+			return accessRefused(a.Slug, errors.New("the app host answered the change without saying who can open the app now"), meta)
 		default:
 			meta.Visibility = changed.Visibility
-			return accessRefused(slug, fmt.Errorf("the app host was asked to make the app %s and answered that it is %s", want, changed.Visibility), meta)
+			return accessRefused(a.Slug, fmt.Errorf("the app host was asked to make the app %s and answered that it is %s", want, changed.Visibility), meta)
 		}
 		a.Visibility, meta.Visibility = want, want
 	}
@@ -504,13 +511,54 @@ func accessRefused(slug string, err error, meta *session.PublishMeta) (tools.Res
 }
 
 // may reports whether the session may publish to slug: an app it was
-// attached, or one the thread created.
+// attached, or one the thread created, by any slug the thread's results
+// name it by.
 func (t *Tool) may(st tools.State, slug string) bool {
-	if _, _, ok := session.App(t.s, slug); ok {
+	if _, _, ok := t.attachment(st, slug); ok {
 		return true
 	}
 	m := st.Apps[slug]
 	return m != nil && !m.Attached
+}
+
+// attachment is the repository resource of the attached app slug finds,
+// and the directory it is delivered into: the resource whose app has
+// slug, or the one whose app the thread's last result for slug names by
+// its id, since its owner may have renamed the app after the session was
+// given it by its old slug (spec 069). The thread's results name an
+// attached app's id once one of them read the app. ok is false when slug
+// finds no attached app.
+func (t *Tool) attachment(st tools.State, slug string) (session.Resource, string, bool) {
+	if r, dir, ok := session.App(t.s, slug); ok {
+		return r, dir, true
+	}
+	m := st.Apps[slug]
+	if m == nil || !m.Attached || m.AppID == "" {
+		return session.Resource{}, "", false
+	}
+	for _, r := range session.Repositories(t.s) {
+		if r.App == nil {
+			continue
+		}
+		if given := st.Apps[r.App.Slug]; given != nil && given.Attached && given.AppID == m.AppID {
+			return session.App(t.s, r.App.Slug)
+		}
+	}
+	return session.Resource{}, "", false
+}
+
+// handle is the slug a text names the app slug finds by: an attached
+// app's slug as the session was given it, which names its checkout, and
+// for an app the thread created the slug its host last answered, which
+// the thread's last result for it names.
+func (t *Tool) handle(st tools.State, slug string) string {
+	if r, _, ok := t.attachment(st, slug); ok {
+		return r.App.Slug
+	}
+	if m := st.Apps[slug]; m != nil && m.App != "" {
+		return m.App
+	}
+	return slug
 }
 
 // which resolves the app a call publishes to or releases, before any
@@ -537,14 +585,14 @@ func (t *Tool) which(ctx context.Context, c tools.Call, in input) (target, *tool
 		return target{}, refused, nil
 	}
 	if slug != "" {
-		if _, _, ok := session.App(t.s, slug); !ok {
+		if _, _, ok := t.attachment(c.State, slug); !ok {
 			return target{slug: slug, last: c.State.Apps[slug]}, nil, nil
 		}
 		w, err := workdir()
 		if err != nil {
 			return target{}, nil, err
 		}
-		g, _ := t.attachedApp(w, slug)
+		g, _ := t.attachedApp(c.State, w, slug)
 		if in.Path != "" {
 			if r := outside(g, w, in.Path); r != nil {
 				return target{}, r, nil
@@ -564,7 +612,7 @@ func (t *Tool) which(ctx context.Context, c tools.Call, in input) (target, *tool
 		if r.App == nil {
 			continue
 		}
-		if g, ok := t.attachedApp(w, r.App.Slug); ok && inside(folder, g.dir) {
+		if g, ok := t.attachedApp(c.State, w, r.App.Slug); ok && inside(folder, g.dir) {
 			return g, nil, nil
 		}
 	}
@@ -581,18 +629,23 @@ func outside(g target, w, p string) *tools.Result {
 	return refusal(session.PublishNotInCheckout, prompts.Render(prompts.PublishNotInCheckout, prompts.Data{"Path": p, "Dir": g.rel, "App": g.slug}))
 }
 
-// attachedApp is the attached app of slug, with its checkout under
-// workdir, and whether the session was attached one.
-func (t *Tool) attachedApp(workdir, slug string) (target, bool) {
-	r, dir, ok := session.App(t.s, slug)
+// attachedApp is the attached app slug finds, with its checkout under
+// workdir and the id the thread's last result for it names, and whether
+// slug finds one.
+func (t *Tool) attachedApp(st tools.State, workdir, slug string) (target, bool) {
+	r, dir, ok := t.attachment(st, slug)
 	if !ok {
 		return target{}, false
 	}
-	return target{slug: slug, repo: &r, dir: path.Join(workdir, dir), rel: dir}, true
+	g := target{slug: r.App.Slug, repo: &r, dir: path.Join(workdir, dir), rel: dir}
+	if last := st.Apps[r.App.Slug]; last != nil && last.Attached {
+		g.id = last.AppID
+	}
+	return g, true
 }
 
-// publishable are the slugs of the apps the session may publish to: the
-// attached ones and those the thread created, sorted.
+// publishable are the handles of the apps the session may publish to:
+// the attached ones and those the thread created, each once, sorted.
 func (t *Tool) publishable(st tools.State) []string {
 	var out []string
 	for _, r := range session.Repositories(t.s) {
@@ -601,12 +654,12 @@ func (t *Tool) publishable(st tools.State) []string {
 		}
 	}
 	for slug, m := range st.Apps {
-		if !m.Attached && !slices.Contains(out, slug) {
-			out = append(out, slug)
+		if !m.Attached {
+			out = append(out, cmp.Or(m.App, slug))
 		}
 	}
 	slices.Sort(out)
-	return out
+	return slices.Compact(out)
 }
 
 // refusal is a call's error result refused with code before any
@@ -723,8 +776,8 @@ func (t *Tool) build(ctx context.Context, c tools.Call, g target, in input) (b b
 	}
 	var push func(empty bool) (pushed, error)
 	if g.attached() {
-		if b.app, err = t.app(ctx, g.slug); err != nil {
-			return fail(err, &session.PublishMeta{App: g.slug, Attached: true, Folder: g.rel})
+		if b.app, err = t.find(ctx, g.id, g.slug); err != nil {
+			return fail(err, &session.PublishMeta{App: g.slug, AppID: g.id, Attached: true, Folder: g.rel})
 		}
 		b.meta = g.meta(b.app)
 		b.meta.Folder = g.rel
@@ -747,14 +800,14 @@ func (t *Tool) build(ctx context.Context, c tools.Call, g target, in input) (b b
 	if err != nil {
 		return fail(err, b.meta)
 	}
-	b.deploy, b.found, b.done, err = t.waitDeploy(ctx, b.app.Slug, pushed.commit)
+	b.deploy, b.found, b.done, err = t.waitDeploy(ctx, b.app, pushed.commit)
 	if err == nil && !pushed.changed && b.done && (b.deploy.Status == session.PublishFailed || b.deploy.Status == session.PublishCanceled) {
 		// Nothing changed since a build that failed or was replaced: an
 		// empty commit builds the same files again.
 		if pushed, err = push(true); err != nil {
 			return fail(err, b.meta)
 		}
-		b.deploy, b.found, b.done, err = t.waitDeploy(ctx, b.app.Slug, pushed.commit)
+		b.deploy, b.found, b.done, err = t.waitDeploy(ctx, b.app, pushed.commit)
 	}
 	b.meta.Commit = pushed.commit
 	if err != nil {
@@ -775,7 +828,7 @@ func (t *Tool) failedBuild(ctx context.Context, b built) prompts.Data {
 	b.meta.Error = e
 	log := ""
 	if b.deploy.Status == session.PublishFailed {
-		log = t.logTail(ctx, b.app.Slug, b.deploy.ID)
+		log = t.logTail(ctx, b.app, b.deploy.ID)
 	}
 	return prompts.Data{"Path": b.shown, "Code": e.Code, "Message": e.Message, "Log": log}
 }
@@ -841,14 +894,14 @@ func (t *Tool) release(ctx context.Context, c tools.Call, g target, in input) (t
 // it requires the commit the app serves to be an ancestor of the one it
 // releases, and refuses behind_live otherwise (spec 059).
 func (t *Tool) releaseCommit(ctx context.Context, c tools.Call, g target, ready *session.PublishMeta) (tools.Result, error) {
-	a, err := t.app(ctx, ready.App)
+	a, err := t.find(ctx, ready.AppID, ready.App)
 	if err != nil {
 		if isNotFound(err) {
 			err = fmt.Errorf("the app %s no longer exists at the app host; publish the folder again", ready.App)
 		}
 		var named *session.PublishMeta
 		if g.attached() {
-			named = &session.PublishMeta{App: g.slug, Attached: true, Folder: ready.Folder}
+			named = &session.PublishMeta{App: g.slug, AppID: ready.AppID, Attached: true, Folder: ready.Folder}
 		}
 		return failure(ready.App, err, named)
 	}
@@ -867,7 +920,7 @@ func (t *Tool) releaseCommit(ctx context.Context, c tools.Call, g target, ready 
 	var list struct {
 		Releases []hostRelease `json:"releases"`
 	}
-	if err := t.do(ctx, http.MethodGet, "/apps/"+url.PathEscape(a.Slug)+"/releases", nil, &list); err != nil {
+	if err := t.do(ctx, http.MethodGet, a.path()+"/releases", nil, &list); err != nil {
 		return failure(a.Slug, err, meta)
 	}
 	tag := ""
@@ -896,7 +949,7 @@ func (t *Tool) releaseCommit(ctx context.Context, c tools.Call, g target, ready 
 		}
 	}
 	meta.Release = tag
-	r, done, err := t.waitRelease(ctx, a.Slug, tag)
+	r, done, err := t.waitRelease(ctx, a, tag)
 	if err != nil {
 		return failure(a.Slug, err, meta)
 	}
@@ -955,6 +1008,9 @@ func nextTag(releases []hostRelease) string {
 // The app host's objects, as much of them as the tool reads.
 type (
 	hostApp struct {
+		// ID is the app's id, which a rename leaves as it is, "" where the
+		// host names none; Slug is the app's slug as it is now.
+		ID   string `json:"id"`
 		Slug string `json:"slug"`
 		Name string `json:"name"`
 		URL  string `json:"url"`
@@ -968,6 +1024,9 @@ type (
 		// none or the host does not name it (spec 058).
 		CurrentDeploy *hostServed `json:"current_deploy"`
 		LatestPreview *hostServed `json:"latest_preview"`
+		// by is what found the app in its route, its id or its slug, ""
+		// for an app the call created, which its slug finds.
+		by string
 	}
 	// hostServed is a deploy as the app resource names it, with the
 	// commit it serves.
@@ -1127,22 +1186,56 @@ func (a hostApp) live() string {
 	return a.CurrentDeploy.CommitSHA
 }
 
-// app reads one app by its slug.
-func (t *Tool) app(ctx context.Context, slug string) (hostApp, error) {
+// app reads one app by the value in its route, its slug or, at a host
+// that reads one there, its id.
+func (t *Tool) app(ctx context.Context, slugOrID string) (hostApp, error) {
 	var a hostApp
-	err := t.do(ctx, http.MethodGet, "/apps/"+url.PathEscape(slug), nil, &a)
+	err := t.do(ctx, http.MethodGet, "/apps/"+url.PathEscape(slugOrID), nil, &a)
 	return a, err
 }
 
+// path is the app's route at the host, named by what found it, so every
+// later request of the call reaches the same app whatever its slug
+// becomes meanwhile.
+func (a hostApp) path() string {
+	return "/apps/" + url.PathEscape(cmp.Or(a.by, a.Slug))
+}
+
+// find reads the app a result or an attachment names (spec 069): by its
+// id when one is known, which finds it whatever its owner renamed it to,
+// and by its slug when none is or when the read by id answers 404. A
+// host answers 404 for an app that is gone and, before it reads an id in
+// a slug's place, for every id, so the slug is read once then, and an app
+// the read by its slug misses too is gone. Any other failure of the read
+// by id is the error.
+func (t *Tool) find(ctx context.Context, id, slug string) (hostApp, error) {
+	if id != "" {
+		a, err := t.app(ctx, id)
+		if err == nil {
+			a.by = id
+			return a, nil
+		}
+		if !isNotFound(err) || slug == "" {
+			return hostApp{}, err
+		}
+	}
+	a, err := t.app(ctx, slug)
+	if err != nil {
+		return hostApp{}, err
+	}
+	a.by = slug
+	return a, nil
+}
+
 // ensureApp is the session's app: the one the thread last published to,
-// or a new one when there is none or the host no longer knows it. A new
-// app takes the name in gives it, and the session's title when in gives
-// none, and is asked for at the address in gives (spec 067). An app that
-// exists keeps its name and its address: changing them is its person's,
-// at the host.
+// found by its id and then its slug, or a new one when there is none or
+// the host knows it by neither. A new app takes the name in gives it,
+// and the session's title when in gives none, and is asked for at the
+// address in gives (spec 067). An app that exists keeps its name and its
+// address: changing them is its person's, at the host.
 func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta, in input) (hostApp, error) {
 	if last != nil {
-		a, err := t.app(ctx, last.App)
+		a, err := t.find(ctx, last.AppID, last.App)
 		if err == nil || !isNotFound(err) {
 			return a, err
 		}
@@ -1407,16 +1500,16 @@ func run(ctx context.Context, m machine.Machine, script string) (string, error) 
 	return string(res.Output), nil
 }
 
-// waitDeploy reads the app's deploys until the preview deploy of commit
-// is done or the wait passes. found reports a deploy of the commit, and
-// done that it is ready, failed or canceled.
-func (t *Tool) waitDeploy(ctx context.Context, slug, commit string) (d hostDeploy, found, done bool, err error) {
+// waitDeploy reads the deploys of the app a until the preview deploy of
+// commit is done or the wait passes. found reports a deploy of the
+// commit, and done that it is ready, failed or canceled.
+func (t *Tool) waitDeploy(ctx context.Context, a hostApp, commit string) (d hostDeploy, found, done bool, err error) {
 	deadline := time.Now().Add(t.o.Wait)
 	for {
 		var list struct {
 			Deploys []hostDeploy `json:"deploys"`
 		}
-		if err := t.do(ctx, http.MethodGet, "/apps/"+url.PathEscape(slug)+"/deploys", nil, &list); err != nil {
+		if err := t.do(ctx, http.MethodGet, a.path()+"/deploys", nil, &list); err != nil {
 			return hostDeploy{}, false, false, err
 		}
 		for _, x := range list.Deploys {
@@ -1440,13 +1533,13 @@ func (t *Tool) waitDeploy(ctx context.Context, slug, commit string) (d hostDeplo
 	}
 }
 
-// waitRelease reads the release of tag until it is released, refused or
-// failed, or the wait passes. A tag the host has not seen yet is not
-// found, and read again.
-func (t *Tool) waitRelease(ctx context.Context, slug, tag string) (r hostReleaseDetail, done bool, err error) {
+// waitRelease reads the release of tag of the app a until it is
+// released, refused or failed, or the wait passes. A tag the host has not
+// seen yet is not found, and read again.
+func (t *Tool) waitRelease(ctx context.Context, a hostApp, tag string) (r hostReleaseDetail, done bool, err error) {
 	deadline := time.Now().Add(t.o.Wait)
 	for {
-		err := t.do(ctx, http.MethodGet, "/apps/"+url.PathEscape(slug)+"/releases/"+url.PathEscape(tag), nil, &r)
+		err := t.do(ctx, http.MethodGet, a.path()+"/releases/"+url.PathEscape(tag), nil, &r)
 		switch {
 		case err == nil && r.Release.Status != "" && r.Release.Status != session.PublishPending:
 			return r, true, nil
@@ -1475,12 +1568,12 @@ func sleep(ctx context.Context, deadline time.Time, every time.Duration) bool {
 	}
 }
 
-// logTail is the last LogTail lines of a deploy's build log, or a line
-// saying why it could not be read.
-func (t *Tool) logTail(ctx context.Context, slug, id string) string {
+// logTail is the last LogTail lines of the build log of the deploy id of
+// the app a, or a line saying why it could not be read.
+func (t *Tool) logTail(ctx context.Context, a hostApp, id string) string {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.o.URL+"/apps/"+url.PathEscape(slug)+"/deploys/"+url.PathEscape(id)+"/logs", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.o.URL+a.path()+"/deploys/"+url.PathEscape(id)+"/logs", nil)
 	if err != nil {
 		return "[the build log could not be read: " + err.Error() + "]"
 	}
