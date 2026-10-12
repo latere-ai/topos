@@ -1373,10 +1373,14 @@ func asked(h *host) []string {
 // app sends the name its input gives, on one line with no whitespace around
 // it, cut to MaxName characters and never inside one; the session's title
 // when the input gives none, or whitespace alone, as a call did before the
-// input was there; and no name when the session has no title either. A
-// release that creates the app names it the same way. The create names
-// nothing else, and the result names the app as the host answered it,
-// whatever the call named (spec 067).
+// input was there; and no name when the session has no title either. It
+// sends the address its input asks for as the create's slug when that is
+// at most MaxAddress characters of lowercase Latin letters and digits in
+// words joined by single hyphens, beside a name in any script, and no slug
+// for an address of any other form, which is dropped and refuses nothing.
+// A release that creates the app does the same. The create names nothing
+// else, and the result names the app as the host answered it, whatever the
+// call named (spec 067).
 func TestTheCallNamesTheAppItCreates(t *testing.T) {
 	ctx := t.Context()
 	site := map[string]bool{"/work/site": true}
@@ -1401,6 +1405,26 @@ func TestTheCallNamesTheAppItCreates(t *testing.T) {
 		"a release":                  {chatTitle, map[string]any{"path": "site", "release": true, "name": "Tide Tables"}, map[string]string{"name": "Tide Tables"}},
 		"a name and no title":        {"", map[string]any{"path": "site", "name": "Tide Tables"}, map[string]string{"name": "Tide Tables"}},
 		"neither a name nor a title": {"", map[string]any{"path": "site"}, map[string]string{}},
+
+		"a name in another script, a Latin address": {chatTitle, map[string]any{"path": "site", "name": "潮汐表", "address": "tide-tables"}, map[string]string{"name": "潮汐表", "slug": "tide-tables"}},
+		"an address and no name":                    {chatTitle, map[string]any{"path": "site", "address": "tide-tables"}, map[string]string{"name": chatTitle, "slug": "tide-tables"}},
+		"an address and neither name nor title":     {"", map[string]any{"path": "site", "address": "tide-tables"}, map[string]string{"slug": "tide-tables"}},
+		"an address of one word":                    {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "tides"}, map[string]string{"name": "Tides", "slug": "tides"}},
+		"an address with digits":                    {chatTitle, map[string]any{"path": "site", "name": "Class of 2009", "address": "class-of-2009"}, map[string]string{"name": "Class of 2009", "slug": "class-of-2009"}},
+		"an address at its bound":                   {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": strings.Repeat("a", MaxAddress)}, map[string]string{"name": "Tides", "slug": strings.Repeat("a", MaxAddress)}},
+		"a release with both":                       {chatTitle, map[string]any{"path": "site", "release": true, "name": "潮汐表", "address": "tide-tables"}, map[string]string{"name": "潮汐表", "slug": "tide-tables"}},
+		"an address past its bound":                 {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": strings.Repeat("a", MaxAddress+1)}, map[string]string{"name": "Tides"}},
+		"an address with capitals":                  {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "Tide-Tables"}, map[string]string{"name": "Tides"}},
+		"an address with a space":                   {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "tide tables"}, map[string]string{"name": "Tides"}},
+		"an address with a space before it":         {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": " tide-tables"}, map[string]string{"name": "Tides"}},
+		"an address with a line break after it":     {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "tide-tables\n"}, map[string]string{"name": "Tides"}},
+		"an address with two hyphens together":      {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "tide--tables"}, map[string]string{"name": "Tides"}},
+		"an address that begins with a hyphen":      {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "-tide-tables"}, map[string]string{"name": "Tides"}},
+		"an address that ends with a hyphen":        {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "tide-tables-"}, map[string]string{"name": "Tides"}},
+		"an address in another script":              {chatTitle, map[string]any{"path": "site", "name": "潮汐表", "address": "潮汐表"}, map[string]string{"name": "潮汐表"}},
+		"an address with an underscore":             {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "tide_tables"}, map[string]string{"name": "Tides"}},
+		"an address that is a URL":                  {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": "https://tide-tables.apps.example"}, map[string]string{"name": "Tides"}},
+		"an empty address":                          {chatTitle, map[string]any{"path": "site", "name": "Tides", "address": ""}, map[string]string{"name": "Tides"}},
 	} {
 		h := newHost(t, with(releases("a-poem", "v1", sha1), map[string]func(int) (int, any){
 			"POST /apps": created("a-poem"), "GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": deploys(ready),
@@ -1461,16 +1485,92 @@ func TestTheCallNamesTheAppItCreates(t *testing.T) {
 	}
 }
 
-// TestANameChangesNoAppThatExists: a name on a call that creates no app is
-// ignored and never refused. A later publish or release of the thread's
-// own app, and a publish of an attached app, send no create and no change
-// of the app, and their results name the app as the host has it. A call
-// with access and a name changes who can open the app and nothing else,
-// passes the check and waits for a person as one without a name, and with
-// no app to change is app_required still, since it creates none. An app
-// the host no longer knows is created again, with the call's name (spec
-// 067).
-func TestANameChangesNoAppThatExists(t *testing.T) {
+// TestAnAddressTheHostRefusesDoesNotFailThePublish: a create the host
+// refuses for the address it names, with each of the codes a host refuses
+// a slug by, is sent once more with the same name and no address, and the
+// call goes on: one call publishes, and its result names the address the
+// app got. The create is sent again once, so a second refusal is the
+// call's error result. A refusal with any other code, a host that is down,
+// and a slug's code on a create that named no address, an address the tool
+// dropped among them, are the call's error with one create, as before
+// (spec 067).
+func TestAnAddressTheHostRefusesDoesNotFailThePublish(t *testing.T) {
+	ctx := t.Context()
+	site := map[string]bool{"/work/site": true}
+	const input = `{"path":"site","name":"潮汐表","address":"tide-tables"}`
+	ready := deploys(map[string]any{"id": "d1", "status": "ready", "preview": true, "commit_sha": sha1, "preview_url": "https://d1--calm-otter-4821.apps.example"})
+	// codes are the codes a host refuses a slug by, each with its status.
+	codes := map[string]int{
+		"invalid_slug":          http.StatusBadRequest,
+		"slug_taken":            http.StatusConflict,
+		"slug_reserved":         http.StatusConflict,
+		"slug_held":             http.StatusConflict,
+		"repository_name_taken": http.StatusConflict,
+	}
+	for code, status := range codes {
+		h := newHost(t, map[string]func(int) (int, any){
+			"POST /apps": func(n int) (int, any) {
+				if n == 1 {
+					return refused(status, code)(n)
+				}
+				return created("calm-otter-4821")(n)
+			},
+			"GET /apps/calm-otter-4821/deploys": ready,
+		})
+		m := &fakeMachine{dirs: site, outputs: []string{"1 " + sha1 + "\n"}}
+		res, err := titledTool(t, h, chatTitle).Run(ctx, call(input, m, tools.State{}))
+		got := metaOf(res)
+		if err != nil || res.IsError() || got.Status != session.PublishReady || got.App != "calm-otter-4821" || got.URL != "https://calm-otter-4821.apps.example" || len(m.scripts) != 1 {
+			t.Errorf("%s: %+v %+v %v, %d scripts", code, res, got, err, len(m.scripts))
+			continue
+		}
+		if text := resultText(res); !strings.Contains(text, "The app's own address is https://calm-otter-4821.apps.example") || strings.Contains(text, "tide-tables") {
+			t.Errorf("%s: the text gives another address than the app's: %q", code, text)
+		}
+		if sent, want := creates(t, h), []map[string]string{{"name": "潮汐表", "slug": "tide-tables"}, {"name": "潮汐表"}}; !slices.EqualFunc(sent, want, maps.Equal[map[string]string]) {
+			t.Errorf("%s: the host was asked to create %q, want %q", code, sent, want)
+		}
+	}
+	if got, want := slices.Sorted(slices.Values(addressRefused)), slices.Sorted(maps.Keys(codes)); !slices.Equal(got, want) {
+		t.Errorf("the tool sends a create again for %q, and %q are tried here", got, want)
+	}
+
+	for name, c := range map[string]struct {
+		input  string
+		answer func(int) (int, any)
+		// creates is how many creates the host is asked for, and says what
+		// the call's error result reads.
+		creates int
+		says    string
+	}{
+		"a host that refuses the create without an address too": {input, refused(http.StatusConflict, "slug_taken"), 2, "the app host refused with slug_taken: No"},
+		"a refusal that is not the address's":                   {input, refused(http.StatusForbidden, "forbidden"), 1, "the app host refused with forbidden: No"},
+		"a host that is down":                                   {input, func(int) (int, any) { return http.StatusBadGateway, "bad gateway" }, 1, "the app host answered 502"},
+		"a slug's code and no address":                          {`{"path":"site","name":"Tide Tables"}`, refused(http.StatusConflict, "slug_taken"), 1, "the app host refused with slug_taken: No"},
+		"a slug's code and an address the tool dropped":         {`{"path":"site","name":"Tide Tables","address":"Tide Tables"}`, refused(http.StatusConflict, "slug_taken"), 1, "the app host refused with slug_taken: No"},
+	} {
+		h := newHost(t, map[string]func(int) (int, any){"POST /apps": c.answer})
+		m := &fakeMachine{dirs: site}
+		res, err := titledTool(t, h, chatTitle).Run(ctx, call(c.input, m, tools.State{}))
+		if err != nil || !res.IsError() || !strings.Contains(resultText(res), c.says) || metaOf(res).App != "" || len(m.scripts) != 0 {
+			t.Errorf("%s: %+v %v, %q", name, res, err, m.scripts)
+		}
+		if n := h.count("POST /apps"); n != c.creates {
+			t.Errorf("%s: %d creates, want %d", name, n, c.creates)
+		}
+	}
+}
+
+// TestANameAndAnAddressChangeNoAppThatExists: a name and an address on a
+// call that creates no app are ignored and never refused. A later publish
+// or release of the thread's own app, and a publish of an attached app,
+// send no create and no change of the app, and their results name the app
+// as the host has it. A call with access, a name and an address changes
+// who can open the app and nothing else, passes the check and waits for a
+// person as one without them, and with no app to change is app_required
+// still, since it creates none. An app the host no longer knows is created
+// again, with the call's name and at the address it asks for (spec 067).
+func TestANameAndAnAddressChangeNoAppThatExists(t *testing.T) {
 	ctx := t.Context()
 	dirs := map[string]bool{"/work": true, "/work/site": true, "/work/tide": true}
 	ready := func(slug string) func(int) (int, any) {
@@ -1484,16 +1584,16 @@ func TestANameChangesNoAppThatExists(t *testing.T) {
 		// routes are the routes the host is asked, sorted.
 		routes []string
 	}{
-		"a later publish": {`{"path":"site","name":"Another Name"}`, false, published(),
+		"a later publish": {`{"path":"site","name":"Another Name","address":"another-address"}`, false, published(),
 			map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": ready("a-poem")},
 			[]string{"GET /apps/a-poem", "GET /apps/a-poem/deploys"}},
-		"the thread's app, named by its slug": {`{"app":"a-poem","path":"site","name":"Another Name"}`, false, published(),
+		"the thread's app, named by its slug": {`{"app":"a-poem","path":"site","name":"Another Name","address":"another-address"}`, false, published(),
 			map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": ready("a-poem")},
 			[]string{"GET /apps/a-poem", "GET /apps/a-poem/deploys"}},
-		"a later release": {`{"release":true,"name":"Another Name"}`, false, published(),
+		"a later release": {`{"release":true,"name":"Another Name","address":"another-address"}`, false, published(),
 			with(releases("a-poem", "v1", sha1), map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": ready("a-poem")}),
 			[]string{"GET /apps/a-poem", "GET /apps/a-poem/deploys", "GET /apps/a-poem/releases", "GET /apps/a-poem/releases/v1"}},
-		"an attached app": {`{"app":"tide","name":"Another Name"}`, true, tools.State{},
+		"an attached app": {`{"app":"tide","name":"Another Name","address":"another-address"}`, true, tools.State{},
 			map[string]func(int) (int, any){"GET /apps/tide": app("tide"), "GET /apps/tide/deploys": ready("tide")},
 			[]string{"GET /apps/tide", "GET /apps/tide/deploys"}},
 	} {
@@ -1508,7 +1608,7 @@ func TestANameChangesNoAppThatExists(t *testing.T) {
 			continue
 		}
 		res, err := tool.Run(ctx, in)
-		if got := metaOf(res); err != nil || res.IsError() || got.Name != "A poem" {
+		if got := metaOf(res); err != nil || res.IsError() || got.Name != "A poem" || strings.Contains(got.URL, "another-address") {
 			t.Errorf("%s: %+v %+v %v", name, res, got, err)
 		}
 		if got := asked(h); !slices.Equal(got, c.routes) {
@@ -1516,17 +1616,17 @@ func TestANameChangesNoAppThatExists(t *testing.T) {
 		}
 	}
 
-	// With access, the name is ignored as the app exists: the one change
-	// the host is asked for is who can open it.
+	// With access, the name and the address are ignored as the app exists:
+	// the one change the host is asked for is who can open it.
 	h := newHost(t, map[string]func(int) (int, any){"GET /apps/a-poem": visible("a-poem", "private"), "PATCH /apps/a-poem": visible("a-poem", "unlisted")})
 	tool := newTool(t, h, creds{})
-	in := call(`{"access":"link","name":"Another Name"}`, &fakeMachine{}, published())
+	in := call(`{"access":"link","name":"Another Name","address":"another-address"}`, &fakeMachine{}, published())
 	if stop := tool.Check(in); stop != nil || tool.Confirm(in) != confirmAccess {
-		t.Fatalf("a call with access and a name: refused %+v, held %q", stop, tool.Confirm(in))
+		t.Fatalf("a call with access, a name and an address: refused %+v, held %q", stop, tool.Confirm(in))
 	}
 	res, err := tool.Run(ctx, in)
-	if got := metaOf(res); err != nil || res.Outcome != tools.OutcomeOK || got.Name != "A poem" || got.Visibility != session.VisibilityUnlisted || got.Status != "" {
-		t.Fatalf("a call with access and a name: %+v %+v %v", res, got, err)
+	if got := metaOf(res); err != nil || res.Outcome != tools.OutcomeOK || got.Name != "A poem" || got.URL != "https://a-poem.apps.example" || got.Visibility != session.VisibilityUnlisted || got.Status != "" {
+		t.Fatalf("a call with access, a name and an address: %+v %+v %v", res, got, err)
 	}
 	if sent := h.sent("PATCH /apps/a-poem"); !slices.Equal(sent, []string{`{"visibility":"unlisted"}`}) || !slices.Equal(asked(h), []string{"GET /apps/a-poem", "PATCH /apps/a-poem"}) {
 		t.Fatalf("the host was asked %v and sent %q", asked(h), sent)
@@ -1535,45 +1635,53 @@ func TestANameChangesNoAppThatExists(t *testing.T) {
 	// with access alone is, the same before the call is decided and in Run.
 	h = newHost(t, nil)
 	tool = newTool(t, h, creds{})
-	in = call(`{"access":"link","name":"Tide Tables"}`, &fakeMachine{}, tools.State{})
+	in = call(`{"access":"link","name":"Tide Tables","address":"tide-tables"}`, &fakeMachine{}, tools.State{})
 	stop := tool.Check(in)
 	if stop == nil || metaOf(*stop).Error == nil || metaOf(*stop).Error.Code != session.PublishAppRequired {
-		t.Fatalf("a call with access and a name, nothing published: %+v", stop)
+		t.Fatalf("a call with access, a name and an address, nothing published: %+v", stop)
 	}
 	if res, err := tool.Run(ctx, in); err != nil || resultText(res) != resultText(*stop) || len(asked(h)) != 0 {
 		t.Fatalf("Run answered %+v %v, Check %+v, and the host was asked %v", res, err, *stop, asked(h))
 	}
 
 	// An app the host no longer knows is created again, and that call
-	// creates it: its name is the call's.
+	// creates it: its name is the call's, at the address the call asks for.
 	h = newHost(t, map[string]func(int) (int, any){
 		"GET /apps/a-poem": refused(http.StatusNotFound, "app_not_found"), "POST /apps": created("tide-tables"), "GET /apps/tide-tables/deploys": ready("tide-tables"),
 	})
-	res, err = newTool(t, h, creds{}).Run(ctx, call(`{"path":"site","name":"Tide Tables"}`, &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}, published()))
-	if sent := creates(t, h); err != nil || res.IsError() || metaOf(res).App != "tide-tables" || len(sent) != 1 || sent[0]["name"] != "Tide Tables" {
+	res, err = newTool(t, h, creds{}).Run(ctx, call(`{"path":"site","name":"Tide Tables","address":"tide-tables"}`, &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}, published()))
+	if sent := creates(t, h); err != nil || res.IsError() || metaOf(res).App != "tide-tables" || len(sent) != 1 || !maps.Equal(sent[0], map[string]string{"name": "Tide Tables", "slug": "tide-tables"}) {
 		t.Fatalf("an app the host lost: %+v %v, created %q", res, err, sent)
 	}
 }
 
-// TestTheDescriptionAsksForAName: the tool's description tells the model
-// to name the site the first time it publishes one, what a name is, that
-// the app's address is made from it, that it is used once, and to give the
-// person the address a result gives; it no longer says the app is named
-// after the session; and the schema takes name as a string, bounds it
-// nowhere, since a long one is cut and not refused, and still refuses a
-// field it does not know (spec 067).
-func TestTheDescriptionAsksForAName(t *testing.T) {
+// TestTheDescriptionAsksForANameAndAnAddress: the tool's description tells
+// the model to name the site and give it an address the first time it
+// publishes one, what each is, that the address is in plain Latin letters
+// whatever the site's script, that both are used once, that an address that
+// is not free does not stop the publish, and to give the person the address
+// the result names; it states the bound of an address as MaxAddress holds
+// it, and no longer says the app is named after the session. The schema
+// takes name and address as strings and bounds neither, since a long name
+// is cut and an address that does not fit is dropped, not refused, and it
+// still refuses a field it does not know (spec 067).
+func TestTheDescriptionAsksForANameAndAnAddress(t *testing.T) {
 	tool := newTool(t, newHost(t, nil), creds{})
 	def := tool.Definition()
 	for _, want := range []string{
-		"The first call creates this session's own app, with the `name` the call gives it; every later call publishes to the same app.",
-		"Name the site the first time you publish it.",
-		"a short name for the site, two to four words, in the language of the site, as a person would call it: `Class of 2009`, `Tide Tables`",
-		"It becomes the app's name, and the app's address is made from it, so name what the site is, not what the conversation was about.",
-		"Without one, the app takes the session's title.",
-		"It is used once, by the call that creates the app: a `name` on a later call changes nothing, and renaming an app is the person's to do.",
-		"give the person that address, never one you worked out from the name",
+		"The first call creates this session's own app, from the `name` and the `address` the call gives it; every later call publishes to the same app.",
+		"Name the site the first time you publish it, and give it an address.",
+		"`name` is a short name for the site, two to four words, in the language of the site, as a person would call it: `Class of 2009`, `Tide Tables`. It becomes the app's name.",
+		"`address` is a short address for the site, two to four words in lowercase Latin letters and digits joined by single hyphens: `class-of-2009`, `tide-tables`.",
+		"Write the address in plain Latin letters even when the site is in another script.",
+		"Make both from what the site is, not from what the conversation was about.",
+		"Without a `name`, the app takes the session's title; without an `address`, the app's address is made from its name.",
+		"Both are used once, by the call that creates the app: on a later call they change nothing, and renaming an app or moving it to another address is the person's to do.",
+		"The app gets the address you asked for when it is free; when it is not, the app gets another and the publish goes on.",
+		"The result names the address that exists, which may differ from the one you asked for: give the person that address, never one you worked out yourself.",
 		"A call that creates no app ignores it: one that publishes to an app that exists, and one with `access`.",
+		fmt.Sprintf("`address`: a short address for a new site, at most %d characters: words of lowercase Latin letters and digits, joined by single hyphens.", MaxAddress),
+		"Give it with `name`; a call that ignores `name` ignores it too.",
 	} {
 		if !strings.Contains(def.Description, want) {
 			t.Errorf("the description does not say %q", want)
@@ -1588,19 +1696,28 @@ func TestTheDescriptionAsksForAName(t *testing.T) {
 	if err := json.Unmarshal(def.InputSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if got := schema.Properties["name"]; got["type"] != "string" || got["maxLength"] != nil || !strings.Contains(fmt.Sprint(got["description"]), "the app's address is made from it") {
-		t.Errorf("the schema's name is %v", got)
+	for field, says := range map[string]string{"name": "it becomes the app's name", "address": "the result names the address the app has, which may be another"} {
+		got := schema.Properties[field]
+		if got["type"] != "string" || got["maxLength"] != nil || got["pattern"] != nil || !strings.Contains(fmt.Sprint(got["description"]), says) {
+			t.Errorf("the schema's %s is %v", field, got)
+		}
 	}
 	reg := tools.NewRegistry()
 	if err := reg.Add(tool); err != nil {
 		t.Fatal(err)
 	}
-	for _, input := range []string{`{"path":"site","name":"Tide Tables"}`, `{"name":"潮汐表","release":true}`, `{"access":"link","name":"Tide Tables"}`, `{"name":"` + strings.Repeat("a", 4*MaxName) + `"}`} {
+	for _, input := range []string{
+		`{"path":"site","name":"Tide Tables","address":"tide-tables"}`, `{"name":"潮汐表","address":"tide-tables","release":true}`, `{"access":"link","name":"Tide Tables","address":"tide-tables"}`,
+		`{"name":"` + strings.Repeat("a", 4*MaxName) + `"}`, `{"address":"Tide Tables"}`, `{"address":"` + strings.Repeat("a", 4*MaxAddress) + `"}`,
+	} {
 		if _, bad := reg.Validate(Name, []byte(input)); bad != nil {
 			t.Errorf("%s is refused by the schema: %+v", input, bad)
 		}
 	}
-	for _, input := range []string{`{"path":"site","title":"Tide Tables"}`, `{"path":"site","slug":"tide-tables"}`, `{"name":"Tide Tables","visibility":"public"}`, `{"name":7}`, `{"name":["Tide Tables"]}`, `{"name":null}`} {
+	for _, input := range []string{
+		`{"path":"site","title":"Tide Tables"}`, `{"path":"site","slug":"tide-tables"}`, `{"name":"Tide Tables","visibility":"public"}`, `{"name":7}`, `{"name":["Tide Tables"]}`, `{"name":null}`,
+		`{"address":7}`, `{"address":["tide-tables"]}`, `{"address":null}`,
+	} {
 		if _, bad := reg.Validate(Name, []byte(input)); bad == nil || bad.Outcome != tools.OutcomeInvalidInput {
 			t.Errorf("%s passed the schema: %+v", input, bad)
 		}

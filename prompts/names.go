@@ -62,7 +62,9 @@ const (
 	// promises no public address: who may open an app is the app's own
 	// setting, which a result names and a call with access changes once
 	// the person approves it (spec 043). It tells the model to name the
-	// site the first time it publishes one (spec 067).
+	// site and to give it an address the first time it publishes one, and
+	// states the bound of an address, which a test holds to its constant
+	// (spec 067).
 	ToolPublish Name = "tools/publish-v5"
 )
 

@@ -108,7 +108,7 @@ var textCases = func() []textCase {
 		{name: "tools/publish-v2", wantSHA: "82af1e42d94fe80cd3b3f19f12b92eba9bee2c549c3af36c12353153682360d5"},
 		{name: "tools/publish-v3", wantSHA: "e52335638e8f168acbcf2fdff1c5cd756b0b5744958144c8498988ba3f6663b1"},
 		{name: "tools/publish-v4", wantSHA: "3f6fad0db8fb9a34d78556c4ef32549048254939fa1fc2dd39cc16c7e7ce6954"},
-		{name: ToolPublish, wantSHA: "3194ff1ef36defa8dc02e0d504e57794fa02e6692b22855322ceeb0367c73d4f"},
+		{name: ToolPublish, wantSHA: "6e161ec2b5d782edff78d90e9de28b8d635e366e4c4f56f218f73df73902f443"},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},

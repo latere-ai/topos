@@ -5,12 +5,13 @@
 // of a hosted session's sandbox as the session's own app at the
 // installation's app host, waits for the preview the host builds of it,
 // and releases it to the app's address, in the same call when it is asked
-// to release (spec 059). The call that creates the app names it (spec
-// 067). A call with access publishes nothing and changes who can open an
-// app, once a person approved it. The runner reaches the app host with the
-// session's own short token, which never enters the sandbox; the folder is
-// pushed by the sandbox's own git, which reaches the installation's git
-// host with the session's git credential (spec 019).
+// to release (spec 059). The call that creates the app names it and asks
+// for its address (spec 067). A call with access publishes nothing and
+// changes who can open an app, once a person approved it. The runner
+// reaches the app host with the session's own short token, which never
+// enters the sandbox; the folder is pushed by the sandbox's own git, which
+// reaches the installation's git host with the session's git credential
+// (spec 019).
 package publish
 
 import (
@@ -69,6 +70,24 @@ const (
 // of the sentence a model may write in a name's place.
 const MaxName = 80
 
+// MaxAddress is the most characters of the address a call asks for the app
+// it creates (spec 067): the longest slug an app host takes (spec 043).
+const MaxAddress = 40
+
+// addressForm is the form of such an address: words of lowercase Latin
+// letters and digits joined by single hyphens, with no hyphen at either
+// end. With MaxAddress it is the rule an app host holds a slug to, so the
+// host refuses an address the tool sends only for what the host alone
+// knows.
+var addressForm = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// addressRefused are the codes an app host refuses a create with for the
+// slug the create names (spec 067): a slug that is no address there, one
+// another app has, one the host reserves, one it holds for the owner of
+// an app that had it, and one whose repository name the owner already
+// has.
+var addressRefused = []string{"invalid_slug", "slug_taken", "slug_reserved", "slug_held", "repository_name_taken"}
+
 // DefaultAudience is TOPOS_APPS_AUDIENCE's default.
 const DefaultAudience = "apps"
 
@@ -77,7 +96,8 @@ var schema = json.RawMessage(`{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the checkout of the app that app names, else the folder last published to this session's own app, else the working directory."},
-    "name": {"type": "string", "description": "A short name for a new site, two to four words, in the language of the site, as a person would call it: Class of 2009, Tide Tables. Used once, by the call that creates this session's own app: it becomes the app's name, and the app's address is made from it. Leave it out once the app exists: it renames nothing. Without one, a new app takes the session's title."},
+    "name": {"type": "string", "description": "A short name for a new site, two to four words, in the language of the site, as a person would call it: Class of 2009, Tide Tables. Used once, by the call that creates this session's own app: it becomes the app's name. Leave it out once the app exists: it renames nothing. Without one, a new app takes the session's title."},
+    "address": {"type": "string", "description": "A short address for a new site, two to four words in lowercase Latin letters and digits joined by single hyphens, made from what the site is: class-of-2009, tide-tables. In plain Latin letters even when the site is in another script. Used once, by the call that creates this session's own app, beside name: the app is created at this address when it is free, and the result names the address the app has, which may be another. Leave it out once the app exists: it moves no app. Without one, the app's address is made from its name."},
     "app": {"type": "string", "description": "The slug of the app to publish to, release or change the access of: one the session was given, or one this session created. Default: the app whose checkout path is in, else this session's own app; a release that names neither app nor path, and a call with access that names no app, takes the app this session has a preview of, else the one app it has published."},
     "release": {"type": "boolean", "description": "True to publish the folder, wait for its build, and release it to the app's own address, in one call."},
     "access": {"type": "string", "enum": ["link", "private"], "description": "Changes who can open the app and does nothing else: link lets anyone who has the app's address open it without signing in, private only the person and the people they share it with. The call waits for the person's approval. Not with path or release."}
@@ -158,9 +178,11 @@ type input struct {
 	App     string `json:"app"`
 	Release bool   `json:"release"`
 	// Name is the name the call gives the thread's own app when it creates
-	// it (spec 067). A call that creates none ignores it: one that
-	// publishes to an app that exists, and one with access.
-	Name string `json:"name"`
+	// it, and Address the address it asks for it (spec 067). A call that
+	// creates none ignores both: one that publishes to an app that exists,
+	// and one with access.
+	Name    string `json:"name"`
+	Address string `json:"address"`
 	// Access is session.PublishAccessLink or PublishAccessPrivate, empty
 	// for a call that publishes.
 	Access string `json:"access"`
@@ -294,9 +316,9 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 		return answered(stop), err
 	}
 	if in.Release {
-		return t.release(ctx, c, g, in.Path, in.Name)
+		return t.release(ctx, c, g, in)
 	}
-	return t.preview(ctx, c, g, in.Path, in.Name)
+	return t.preview(ctx, c, g, in)
 }
 
 // answered is the result stop points to, and none for nil.
@@ -674,16 +696,16 @@ func relative(w, dir string) string {
 	return dir
 }
 
-// build publishes the folder p of the machine to g and waits for its
-// preview: the thread's own app's folder through the session's git
+// build publishes the folder in names of the machine to g and waits for
+// its preview: the thread's own app's folder through the session's git
 // directory (spec 043), or an attached app's checkout, committed and
-// pushed on the session's branch (spec 059). name is the name the call
-// gives the thread's own app, read only when the call creates it (spec
+// pushed on the session's branch (spec 059). The name and the address in
+// gives the thread's own app are read only when the call creates it (spec
 // 067). A failure before the wait ends is the call's result, returned as
 // stop.
-func (t *Tool) build(ctx context.Context, c tools.Call, g target, p, name string) (b built, stop *tools.Result, err error) {
+func (t *Tool) build(ctx context.Context, c tools.Call, g target, in input) (b built, stop *tools.Result, err error) {
 	w := c.Machine.Info().Workdir
-	shown, dir := folder(w, g, p)
+	shown, dir := folder(w, g, in.Path)
 	b.shown = shown
 	fail := func(err error, meta *session.PublishMeta) (built, *tools.Result, error) {
 		res, err := failure(shown, err, meta)
@@ -711,7 +733,7 @@ func (t *Tool) build(ctx context.Context, c tools.Call, g target, p, name string
 		}
 		push = func(empty bool) (pushed, error) { return t.pushCheckout(ctx, c.Machine, g, empty) }
 	} else {
-		if b.app, err = t.ensureApp(ctx, g.last, name); err != nil {
+		if b.app, err = t.ensureApp(ctx, g.last, in); err != nil {
 			return fail(err, nil)
 		}
 		b.meta = g.meta(b.app)
@@ -758,10 +780,10 @@ func (t *Tool) failedBuild(ctx context.Context, b built) prompts.Data {
 	return prompts.Data{"Path": b.shown, "Code": e.Code, "Message": e.Message, "Log": log}
 }
 
-// preview publishes the folder p of the machine to g, named name when the
-// call creates it, and answers how its preview stands.
-func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p, name string) (tools.Result, error) {
-	b, stop, err := t.build(ctx, c, g, p, name)
+// preview publishes the folder in names of the machine to g and answers
+// how its preview stands.
+func (t *Tool) preview(ctx context.Context, c tools.Call, g target, in input) (tools.Result, error) {
+	b, stop, err := t.build(ctx, c, g, in)
 	switch {
 	case err != nil:
 		return tools.Result{}, err
@@ -779,27 +801,26 @@ func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p, name stri
 	return text(tools.OutcomeError, prompts.Render(prompts.PublishFailed, t.failedBuild(ctx, b)), b.meta), nil
 }
 
-// release puts the folder p of the machine live at g's address in one
-// call (spec 059): it publishes the folder as preview does, creating the
-// app with name when there is none, waits for the build, and releases the
-// commit it built. A build that failed or was canceled, and one the host
-// has not started by the end of the wait, release nothing, and the result
-// says so; a build still running when the wait ends is tagged, and the
-// host releases it once it is ready.
+// release puts the folder in names of the machine live at g's address in
+// one call (spec 059): it publishes the folder as preview does, waits for
+// the build, and releases the commit it built. A build that failed or was
+// canceled, and one the host has not started by the end of the wait,
+// release nothing, and the result says so; a build still running when
+// the wait ends is tagged, and the host releases it once it is ready.
 //
 // A release of the thread's own app that names no folder, while the
 // thread's last result for the app records none, was published by a
 // release before results recorded their folder: it releases the app's
 // standing preview as it is, as spec 043 did.
-func (t *Tool) release(ctx context.Context, c tools.Call, g target, p, name string) (tools.Result, error) {
-	if !g.attached() && p == "" && g.last != nil && g.last.Folder == "" {
+func (t *Tool) release(ctx context.Context, c tools.Call, g target, in input) (tools.Result, error) {
+	if !g.attached() && in.Path == "" && g.last != nil && g.last.Folder == "" {
 		ready := c.State.Standing[cmp.Or(g.slug, g.last.App)]
 		if ready == nil {
 			return text(tools.OutcomeError, prompts.Text(prompts.PublishNoPreview), nil), nil
 		}
 		return t.releaseCommit(ctx, c, g, ready)
 	}
-	b, stop, err := t.build(ctx, c, g, p, name)
+	b, stop, err := t.build(ctx, c, g, in)
 	switch {
 	case err != nil:
 		return tools.Result{}, err
@@ -1115,10 +1136,11 @@ func (t *Tool) app(ctx context.Context, slug string) (hostApp, error) {
 
 // ensureApp is the session's app: the one the thread last published to,
 // or a new one when there is none or the host no longer knows it. A new
-// app is named name, the name the call gives it, and after the session
-// when the call gives none (spec 067). An app that exists keeps the name
-// it has: renaming it is its person's, at the host.
-func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta, name string) (hostApp, error) {
+// app takes the name in gives it, and the session's title when in gives
+// none, and is asked for at the address in gives (spec 067). An app that
+// exists keeps its name and its address: changing them is its person's,
+// at the host.
+func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta, in input) (hostApp, error) {
 	if last != nil {
 		a, err := t.app(ctx, last.App)
 		if err == nil || !isNotFound(err) {
@@ -1126,16 +1148,28 @@ func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta, name st
 		}
 	}
 	// The create names no visibility: who may open a new app is the
-	// host's default, which the person changes there. The host makes the
-	// app's address from the name, so the call's own comes first: the
-	// session's title says what the conversation was about, not what the
-	// site is.
+	// host's default, which the person changes there. The call's own name
+	// comes before the session's title, which says what the conversation
+	// was about and not what the site is.
 	body := map[string]string{}
-	if name = cmp.Or(appName(name), strings.TrimSpace(t.s.Title)); name != "" {
+	if name := cmp.Or(appName(in.Name), strings.TrimSpace(t.s.Title)); name != "" {
 		body["name"] = name
 	}
+	slug := appAddress(in.Address)
+	if slug != "" {
+		body["slug"] = slug
+	}
 	var a hostApp
-	if err := t.do(ctx, http.MethodPost, "/apps", body, &a); err != nil {
+	err := t.do(ctx, http.MethodPost, "/apps", body, &a)
+	if he, ok := errors.AsType[*hostError](err); ok && slug != "" && slices.Contains(addressRefused, he.Code) {
+		// The host cannot give the app the address asked for. The create is
+		// sent once more with no address, so the host makes one: an address
+		// another app has never fails a publish, and the result names the
+		// address the app got.
+		delete(body, "slug")
+		err = t.do(ctx, http.MethodPost, "/apps", body, &a)
+	}
+	if err != nil {
 		return hostApp{}, err
 	}
 	if a.Slug == "" || a.Repository.PushURL == "" {
@@ -1154,6 +1188,18 @@ func appName(s string) string {
 		return s
 	}
 	return strings.TrimRight(string([]rune(s)[:MaxName]), " ")
+}
+
+// appAddress is the address a call asks for the app it creates, as the
+// create names it: s when it is at most MaxAddress characters in
+// addressForm, and "" otherwise. An address that does not fit is dropped,
+// neither refused nor repaired: the host then makes the app's address, as
+// for a call that asks for none.
+func appAddress(s string) string {
+	if len(s) > MaxAddress || !addressForm.MatchString(s) {
+		return ""
+	}
+	return s
 }
 
 // onGitHost refuses a push URL on another host than the git host's,
