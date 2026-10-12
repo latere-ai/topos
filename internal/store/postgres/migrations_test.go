@@ -402,3 +402,90 @@ func TestMetadataTableFollowsTheBody(t *testing.T) {
 		t.Fatalf("a deleted session left %v", rows)
 	}
 }
+
+// TestTriggerColumnFollowsTheBody: a database at migration 0009 holding a
+// session a trigger started and one no trigger started migrates with the
+// trigger column read from each body, and a list by the trigger reads it;
+// a session a replica of the earlier release inserts afterwards without
+// the column gains it when a later batch saves its header; a create
+// writes it; and a session no trigger started keeps none (spec 070).
+func TestTriggerColumnFollowsTheBody(t *testing.T) {
+	dsn := database(t)
+	migrateTo(t, dsn, "0009")
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	trigger := session.NewID(session.PrefixTrigger)
+	// insert writes s's row as a replica before the trigger column does.
+	insert := func(s session.Session) {
+		t.Helper()
+		body, err := encode(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Exec(t.Context(), `INSERT INTO sessions (id, agent_id, agent_version, owner, runner, status, turn, last_seq, created_at, updated_at, expires_at, body)
+			VALUES ($1, $2, 1, $3, $4, $5, 0, 0, $6, $6, $7, $8)`, s.ID, s.Agent.ID, s.Initiator.Subject, s.Runner, string(s.Status), s.CreatedAt, s.ExpiresAt, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fired, plain := storetest.NewSession(), storetest.NewSession()
+	fired.TriggerID = trigger
+	insert(fired)
+	insert(plain)
+	st, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	column := func(id string) *string {
+		t.Helper()
+		var v *string
+		if err := conn.QueryRow(t.Context(), `SELECT trigger_id FROM sessions WHERE id = $1`, id).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if got := column(fired.ID); got == nil || *got != trigger {
+		t.Fatalf("the migration filled the trigger column with %v, want %s", got, trigger)
+	}
+	if got := column(plain.ID); got != nil {
+		t.Fatalf("a session no trigger started has the trigger %q", *got)
+	}
+
+	late := storetest.NewSession()
+	late.TriggerID = trigger
+	insert(late)
+	if got := column(late.ID); got != nil {
+		t.Fatalf("a row written without the column has %q", *got)
+	}
+	run := []session.Event{storetest.Message(t, "Run.", time.Now())}
+	session.Stamp(late.ID, 0, run)
+	if _, err := st.Append(t.Context(), late.ID, 0, run); err != nil {
+		t.Fatal(err)
+	}
+	if got := column(late.ID); got == nil || *got != trigger {
+		t.Fatalf("a saved header filled the trigger column with %v, want %s", got, trigger)
+	}
+	made := storetest.NewSession()
+	made.TriggerID = trigger
+	if err := st.Create(t.Context(), made, nil); err != nil {
+		t.Fatal(err)
+	}
+	page, _, err := st.List(t.Context(), session.ListOptions{Trigger: trigger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, s := range page {
+		listed = append(listed, s.ID)
+	}
+	if want := []string{made.ID, late.ID, fired.ID}; !slices.Equal(listed, want) {
+		t.Fatalf("listed by the trigger: %v, want %v", listed, want)
+	}
+}

@@ -60,6 +60,9 @@ func filters(alias string, o session.ListOptions, args *[]any) string {
 	if e := o.Metadata; e != nil {
 		conds = append(conds, "EXISTS (SELECT 1 FROM session_metadata sm WHERE sm.session_id = "+alias+"id AND sm.key = "+arg(args, e.Key)+" AND sm.value = "+arg(args, e.Value)+")")
 	}
+	if o.Trigger != "" {
+		conds = append(conds, alias+"trigger_id = "+arg(args, o.Trigger))
+	}
 	return strings.Join(conds, " AND ")
 }
 

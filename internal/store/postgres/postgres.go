@@ -233,10 +233,11 @@ func (s *Store) Create(ctx context.Context, sess session.Session, blobs map[sess
 		}
 		parentID, parentSeq, rootID := treeColumns(sess)
 		_, err := tx.Exec(ctx, `INSERT INTO sessions (id, agent_id, agent_version, owner, runner, status, stop_reason, turn, last_seq,
-			created_at, updated_at, expires_at, body, writer_kind, writer_subject, parent_id, parent_seq, root_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+			created_at, updated_at, expires_at, body, writer_kind, writer_subject, parent_id, parent_seq, root_id, trigger_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 			sess.ID, sess.Agent.ID, sess.Agent.Version, sess.Initiator.Subject, sess.Runner, string(sess.Status), string(sess.StopReason),
-			sess.Turn, int64(sess.LastSeq), sess.CreatedAt, sess.UpdatedAt, sess.ExpiresAt, body, writerKind, writerSubject, parentID, parentSeq, rootID)
+			sess.Turn, int64(sess.LastSeq), sess.CreatedAt, sess.UpdatedAt, sess.ExpiresAt, body, writerKind, writerSubject, parentID, parentSeq, rootID,
+			triggerColumn(sess))
 		if isUnique(err) {
 			return fmt.Errorf("%w: %s", session.ErrExists, sess.ID)
 		}
@@ -276,6 +277,16 @@ func (s *Store) insertBlob(ctx context.Context, q interface {
 		return fmt.Errorf("postgres: store blob %s: %w", d, err)
 	}
 	return nil
+}
+
+// triggerColumn is a session's trigger column, the id of the trigger
+// that started it, nil for a session no trigger started (spec 070).
+func triggerColumn(sess session.Session) *string {
+	if sess.TriggerID == "" {
+		return nil
+	}
+	id := sess.TriggerID
+	return &id
 }
 
 // treeColumns are a session's tree columns as its insert writes them,
@@ -456,9 +467,10 @@ func locked(ctx context.Context, tx pgx.Tx, id string) (session.Session, error) 
 }
 
 // saveHeader writes a session's header back with its filter columns. A
-// tree column is set where the header names it and never cleared, so a
-// fork an earlier replica inserted without them gains its parent here
-// (spec 056).
+// tree column, and the trigger column, is set where the header names it
+// and never cleared, so a fork an earlier replica inserted without them
+// gains its parent here (spec 056), and a session it inserted without
+// the trigger column gains its trigger (spec 070).
 func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 	body, err := encode(sess)
 	if err != nil {
@@ -471,8 +483,9 @@ func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 	parentID, parentSeq, rootID := treeColumns(sess)
 	_, err = tx.Exec(ctx, `UPDATE sessions SET body = $2, status = $3, stop_reason = $4, turn = $5, last_seq = $6, updated_at = $7,
 		ended_at = COALESCE(ended_at, $8), parent_id = COALESCE($9, parent_id), parent_seq = COALESCE($10, parent_seq),
-		root_id = COALESCE($11, root_id) WHERE id = $1`,
-		sess.ID, body, string(sess.Status), string(sess.StopReason), sess.Turn, int64(sess.LastSeq), sess.UpdatedAt, ended, parentID, parentSeq, rootID)
+		root_id = COALESCE($11, root_id), trigger_id = COALESCE($12, trigger_id) WHERE id = $1`,
+		sess.ID, body, string(sess.Status), string(sess.StopReason), sess.Turn, int64(sess.LastSeq), sess.UpdatedAt, ended, parentID, parentSeq, rootID,
+		triggerColumn(sess))
 	if err != nil {
 		return fmt.Errorf("postgres: save session %s: %w", sess.ID, err)
 	}
