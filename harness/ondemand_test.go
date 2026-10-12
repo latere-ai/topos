@@ -201,7 +201,8 @@ func TestTheMachineStartsWhenAToolCallBegins(t *testing.T) {
 }
 
 // TestOpensMachine: a call opens the machine when its tool has an effect
-// and the runner, not a client, runs it.
+// and the runner, not a client, runs it on the machine, not outside it as
+// a remote server's tool runs (spec 069).
 func TestOpensMachine(t *testing.T) {
 	for _, tc := range []struct {
 		props tools.Properties
@@ -212,6 +213,8 @@ func TestOpensMachine(t *testing.T) {
 		{tools.Properties{Effect: tools.EffectWrite}, true},
 		{tools.Properties{Effect: tools.EffectExternal}, true},
 		{tools.Properties{Effect: tools.EffectWrite, Client: true}, false},
+		{tools.Properties{Effect: tools.EffectExternal, Remote: true}, false},
+		{tools.Properties{Effect: tools.EffectRead, Remote: true}, false},
 	} {
 		if got := opensMachine(tc.props); got != tc.want {
 			t.Errorf("opensMachine(%+v) = %v, want %v", tc.props, got, tc.want)

@@ -187,11 +187,11 @@ type Config struct {
 	// turn, step, model, tool and action, never a word of the response.
 	// Nil discards them.
 	Log *slog.Logger
-	// MCP names each connection of kind mcp the drive listed the tools of
-	// (spec 069), with why it is not connected, "" when its tools are
-	// offered: the connections block names these mcp connections and no
-	// other.
-	MCP map[string]string
+	// MCP is how the drive's listing of each connection of kind mcp ended,
+	// by the connection's name (spec 069): the connections block names
+	// these mcp connections and no other, and the drive's first turn
+	// records the listings that did not offer every tool.
+	MCP map[string]MCPListing
 
 	// ceiling is the stricter of the modes the agents above a thread name,
 	// empty for the session's own thread: a change of the session's mode
@@ -206,6 +206,9 @@ type Harness struct {
 	// switched is the model the session last switched to as Connect
 	// answered it, shared by the copies a turn makes.
 	switched *switchedModel
+	// listed is set once the session's log records how the listing of its
+	// mcp connections ended, which a drive's first turn appends (spec 069).
+	listed *atomic.Bool
 }
 
 // switchedModel is one model Connect answered.
@@ -284,7 +287,7 @@ func New(c Config) (*Harness, error) {
 	if c.PromptVersion == 0 {
 		c.PromptVersion = prompts.HarnessCurrent
 	}
-	return &Harness{c: c, prompt: p, switched: &switchedModel{}}, nil
+	return &Harness{c: c, prompt: p, switched: &switchedModel{}, listed: &atomic.Bool{}}, nil
 }
 
 // on points the harness's configuration at the model name, which the
@@ -669,6 +672,9 @@ func (t *turn) resume(ctx context.Context) error {
 			return err
 		}
 		if err := t.applyConnections(ctx); err != nil {
+			return err
+		}
+		if err := t.recordListings(ctx); err != nil {
 			return err
 		}
 	}
@@ -1154,9 +1160,10 @@ func (t *turn) startMachine(ev ir.Event) {
 // opensMachine reports whether a call of a tool with these properties
 // acts on the machine, which the harness opens before running it: every
 // tool with an effect, and no tool a client runs, since that call never
-// runs here.
+// runs here, nor a remote one, which runs outside the machine (spec
+// 069).
 func opensMachine(p tools.Properties) bool {
-	return !p.Client && p.Effect != tools.EffectNone
+	return !p.Client && !p.Remote && p.Effect != tools.EffectNone
 }
 
 // modelFailed records a request that failed after its attempts and ends
@@ -1931,5 +1938,17 @@ func (t *turn) result(ctx context.Context, id string, res tools.Result, dur time
 	if err != nil {
 		return err
 	}
-	return t.commit(context.WithoutCancel(ctx), e)
+	batch := []session.Event{e}
+	// A connection the call found not connected follows its result, for a
+	// client to offer the person to connect it again (spec 069).
+	if r := res.Requested; r != nil {
+		req := *r
+		req.ToolUseID = id
+		then, err := t.event(session.TypeConnectionRequested, req)
+		if err != nil {
+			return err
+		}
+		batch = append(batch, then)
+	}
+	return t.commit(context.WithoutCancel(ctx), batch...)
 }

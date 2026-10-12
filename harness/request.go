@@ -101,7 +101,7 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 // on every thread the attachments block, which names the checkout of
 // each app an allow attached, and the connections block (spec 069),
 // since every thread works in the same machine.
-func headerBlocks(s session.Session, own bool, mcp map[string]string) []string {
+func headerBlocks(s session.Session, own bool, mcp map[string]MCPListing) []string {
 	var out []string
 	if own && s.Instructions != "" {
 		out = append(out, prompts.Render(prompts.ContextInitiator, prompts.Data{"Text": s.Instructions}))
