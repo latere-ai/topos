@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A file rebuilt into a new machine carries the time it was written
+  back.** When a lost machine's files were rebuilt from the log into a
+  new one, the archive they arrived in carried no time, so every file
+  and folder was dated 1 January 1970, and a tool that refuses such a
+  date failed on them, as Python's `zipfile` does on one before 1980.
+  Each now carries the time the rebuild wrote it.
+
 ## v0.33.0 - 2026-10-12
 
 ### Changed
