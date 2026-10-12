@@ -17,7 +17,7 @@ import (
 
 // CodeFilesUnavailable is spec 068's code for a file of a session's
 // folder of the files store that could not be written, read or copied.
-const CodeFilesUnavailable = "files_unavailable"
+const CodeFilesUnavailable = harness.CodeFilesUnavailable
 
 // FolderRule is the create route's sentence on the folder of a files
 // store an allow names (spec 068).

@@ -55,7 +55,7 @@ const (
 	CodeSearchUnavailable = "search_unavailable"
 	// CodeFilesUnavailable is a session that keeps its files in a folder
 	// of a files store, driven by a runner that reaches none (spec 068).
-	CodeFilesUnavailable = "files_unavailable"
+	CodeFilesUnavailable = harness.CodeFilesUnavailable
 )
 
 // DoorSettle is how long a runner reads a door's model list again when

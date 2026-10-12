@@ -33,6 +33,11 @@ type Files interface {
 	CopyFolder(ctx context.Context, from session.Folder, dir string) error
 }
 
+// CodeFilesUnavailable is the code of a file of a session's folder of a
+// files store that could not be written, read or copied, or a session
+// with a folder on a runner that reaches no files store (spec 068).
+const CodeFilesUnavailable = "files_unavailable"
+
 // The answers of Files besides a refusal.
 var (
 	// ErrFileExists is a create-only write onto a path that is taken.
