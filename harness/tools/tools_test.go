@@ -382,3 +382,50 @@ func TestStateOfFoldsPublishPerApp(t *testing.T) {
 		t.Fatal("a refusal that names no app was folded")
 	}
 }
+
+// TestStateOfFoldsARenamedApp: a result that names an app by a new slug
+// and the id an earlier result named becomes that app's last result
+// under every slug the thread named it by, so the slug it had before its
+// owner renamed it still finds it; its preview that stands is found by
+// the new slug as by the old one, until a preview of the new one stands
+// under both; a result with another id, and one with none, are other
+// apps, folded by their slug alone (spec 069).
+func TestStateOfFoldsARenamedApp(t *testing.T) {
+	const id, other = "123e4567-e89b-42d3-a456-426614174000", "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+	fold := func(metas ...*session.PublishMeta) State {
+		t.Helper()
+		var events []session.Event
+		for i, m := range metas {
+			b, err := json.Marshal(Meta{Publish: m})
+			if err != nil {
+				t.Fatal(err)
+			}
+			e, err := session.NewEvent(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_x", Meta: b}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.Seq = uint64(i + 1)
+			events = append(events, e)
+		}
+		return StateOf(events, "")
+	}
+	ready := &session.PublishMeta{App: "a-poem", AppID: id, Folder: "site", Commit: "c1", Status: session.PublishReady}
+	shared := &session.PublishMeta{App: "tide-tables", AppID: id, Folder: "site", Visibility: session.VisibilityUnlisted}
+	st := fold(ready, shared, &session.PublishMeta{App: "notes", AppID: other, Commit: "n1", Status: session.PublishReady}, &session.PublishMeta{App: "old", Commit: "o1", Status: session.PublishReady})
+	switch {
+	case st.App == nil || st.App.App != "old":
+		t.Fatalf("the thread's own app %+v", st.App)
+	case len(st.Apps) != 4 || st.Apps["a-poem"] != st.Apps["tide-tables"] || st.Apps["a-poem"].App != "tide-tables" || st.Apps["a-poem"].Visibility != session.VisibilityUnlisted:
+		t.Fatalf("the apps %+v", st.Apps)
+	case st.Apps["notes"].AppID != other || st.Apps["old"].AppID != "":
+		t.Fatalf("another app's results %+v %+v", st.Apps["notes"], st.Apps["old"])
+	case len(st.Standing) != 4 || st.Standing["a-poem"] != st.Standing["tide-tables"] || st.Standing["a-poem"].Commit != "c1" || st.Standing["notes"].Commit != "n1":
+		t.Fatalf("the standing previews %+v", st.Standing)
+	}
+
+	built := &session.PublishMeta{App: "tide-tables", AppID: id, Folder: "site", Commit: "c2", Status: session.PublishBuilding}
+	st = fold(ready, shared, built)
+	if st.Standing["a-poem"] != st.Standing["tide-tables"] || st.Standing["a-poem"].Commit != "c2" || st.Apps["a-poem"] != st.Standing["a-poem"] || len(st.Apps) != 2 {
+		t.Fatalf("a preview of the renamed app: %+v %+v", st.Apps, st.Standing)
+	}
+}

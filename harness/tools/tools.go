@@ -210,6 +210,13 @@ type State struct {
 	// app's newest preview that stands, ready or still building, which a
 	// release of it takes its commit from (spec 059): a failed or canceled
 	// preview, a denied call, a refusal and a release are none.
+	//
+	// A result names an app by the slug its host answered, which the
+	// app's owner may change. Every slug a result named for an app id is
+	// kept, each mapped to that app's last result and its preview that
+	// stands, so a slug the thread knew the app by before a rename finds
+	// the app as its new slug does (spec 069). A result's App is the
+	// app's slug as the host last answered it.
 	Apps, Standing map[string]*session.PublishMeta
 }
 
@@ -238,16 +245,44 @@ func StateOf(events []session.Event, thread string) State {
 			st.Todos = m.Todos
 		}
 		if p := m.Publish; p != nil && p.App != "" {
+			for _, slug := range sameApp(st.Apps, p.AppID) {
+				st.Apps[slug] = p
+			}
 			st.Apps[p.App] = p
 			if !p.Attached {
 				st.App = p
 			}
-			if (p.Status == session.PublishReady || p.Status == session.PublishBuilding) && p.Commit != "" {
+			standing := sameApp(st.Standing, p.AppID)
+			switch {
+			case (p.Status == session.PublishReady || p.Status == session.PublishBuilding) && p.Commit != "":
+				for _, slug := range standing {
+					st.Standing[slug] = p
+				}
 				st.Standing[p.App] = p
+			case len(standing) > 0:
+				// The app's preview that stands is found by the slug this
+				// result names as well.
+				st.Standing[p.App] = st.Standing[standing[0]]
 			}
 		}
 	}
 	return st
+}
+
+// sameApp are the slugs of m whose result names the app id, none for an
+// empty id, sorted.
+func sameApp(m map[string]*session.PublishMeta, id string) []string {
+	var out []string
+	if id == "" {
+		return out
+	}
+	for slug, r := range m {
+		if r.AppID == id {
+			out = append(out, slug)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Output caps of spec 008.
