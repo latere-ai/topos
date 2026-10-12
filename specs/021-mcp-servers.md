@@ -6,7 +6,7 @@ depends_on: [003-manifest.md, 008-tools.md, 009-machines.md, 012-permissions-and
 affects: [harness/tools/mcp/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-12
 author: changkun
 ---
 
@@ -26,6 +26,13 @@ injected outside the machine.
 ## Current state
 
 v0.7.0 had no MCP client. Nothing is borrowed.
+
+`spec.mcpServers` names the servers an agent brings itself. An
+installation that keeps its people's connections
+([[018-credentials-and-secrets]]) also says, for the person who starts a
+session, which further servers the session reaches. How an allow
+carries them is not designed yet; the HTTP transport below is what both
+use.
 
 ## Design
 
