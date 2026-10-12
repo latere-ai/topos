@@ -131,6 +131,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   versions.
 - [docs/network.md](docs/network.md): where a session's sandbox may
   reach, how a person widens it, and the initiator's instructions.
+- [docs/connections.md](docs/connections.md): the services a person
+  connected, reached from a session without their credentials.
 
 ## Contributing
 
