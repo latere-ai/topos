@@ -5,6 +5,7 @@ package runner
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
@@ -314,5 +316,37 @@ func TestAForksFirstMachineIsRebuiltFromTheLog(t *testing.T) {
 	}
 	if own := ownMachine(t, other, forked); own.Reason != session.MachineAttached || own.Restore != nil {
 		t.Fatalf("its machine is recorded %+v", own)
+	}
+}
+
+// TestRebuiltFilesCarryTheTimeTheyWereWrittenBack: the archive a rebuilt
+// working directory reaches a machine in dates every directory and every
+// file at the runner's clock, so no file comes back dated 1970, which
+// tools refuse: Python's zipfile raises on a date before 1980.
+func TestRebuiltFilesCarryTheTimeTheyWereWrittenBack(t *testing.T) {
+	now := time.Date(2026, 10, 12, 9, 30, 0, 0, time.UTC)
+	files := []tools.RebuiltFile{{Path: "src/app.js", Content: []byte("x\n")}, {Path: "notes.txt", Content: []byte("y\n")}}
+	open := func(f tools.RebuiltFile) ([]byte, bool, error) { return f.Content, true, nil }
+	var buf bytes.Buffer
+	if err := writeTar(&buf, files, open, now); err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(&buf)
+	var names []string
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, h.Name)
+		if !h.ModTime.Equal(now) {
+			t.Fatalf("%s is dated %s, want the runner's clock %s", h.Name, h.ModTime, now)
+		}
+	}
+	if !slices.Equal(names, []string{"src/", "src/app.js", "notes.txt"}) {
+		t.Fatalf("the archive holds %q", names)
 	}
 }

@@ -84,7 +84,7 @@ func (r *Runner) rebuild(ctx context.Context, s session.Session, m machine.Machi
 	}
 	var err error
 	if im, ok := m.(machine.Importer); ok {
-		err = importFiles(wctx, im, m.Info().Workdir, rb.Files, open)
+		err = importFiles(wctx, im, m.Info().Workdir, rb.Files, open, r.o.Clock())
 	} else {
 		err = writeFiles(wctx, m, rb.Files, open)
 	}
@@ -138,12 +138,13 @@ func (r *Runner) blob(ctx context.Context, id string, d session.Digest) ([]byte,
 
 // importFiles writes the files below dir in one archive, which the
 // machine extracts as it arrives: each file's directories first, then
-// the files, so the archive is never held whole.
-func importFiles(ctx context.Context, im machine.Importer, dir string, files []tools.RebuiltFile, open func(tools.RebuiltFile) ([]byte, bool, error)) error {
+// the files, so the archive is never held whole. Every entry is dated
+// now.
+func importFiles(ctx context.Context, im machine.Importer, dir string, files []tools.RebuiltFile, open func(tools.RebuiltFile) ([]byte, bool, error), now time.Time) error {
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		err := writeTar(pw, files, open)
+		err := writeTar(pw, files, open, now)
 		done <- err
 		// The reader ends with the archive, or with why it could not be
 		// written; CloseWithError never fails.
@@ -164,8 +165,10 @@ func importFiles(ctx context.Context, im machine.Importer, dir string, files []t
 }
 
 // writeTar writes the directories of files and then the files to w as a
-// tar archive of paths under the working directory.
-func writeTar(w io.Writer, files []tools.RebuiltFile, open func(tools.RebuiltFile) ([]byte, bool, error)) error {
+// tar archive of paths under the working directory, each dated now, the
+// time it is written back: a header with no time extracts as 1970, a date
+// tools refuse, as Python's zipfile does one before 1980.
+func writeTar(w io.Writer, files []tools.RebuiltFile, open func(tools.RebuiltFile) ([]byte, bool, error), now time.Time) error {
 	tw := tar.NewWriter(w)
 	made := map[string]bool{}
 	var dirs []string
@@ -177,7 +180,7 @@ func writeTar(w io.Writer, files []tools.RebuiltFile, open func(tools.RebuiltFil
 	}
 	slices.Sort(dirs)
 	for _, d := range dirs {
-		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: d + "/", Mode: 0o755}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: d + "/", Mode: 0o755, ModTime: now}); err != nil {
 			return err
 		}
 	}
@@ -189,7 +192,7 @@ func writeTar(w io.Writer, files []tools.RebuiltFile, open func(tools.RebuiltFil
 		if !ok {
 			continue
 		}
-		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: f.Path, Mode: 0o644, Size: int64(len(b))}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: f.Path, Mode: 0o644, Size: int64(len(b)), ModTime: now}); err != nil {
 			return err
 		}
 		if _, err := tw.Write(b); err != nil {
