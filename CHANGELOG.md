@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.33.0 - 2026-10-12
+
 ### Changed
 
 - **A published site gets a name and an address of its own.** The first
