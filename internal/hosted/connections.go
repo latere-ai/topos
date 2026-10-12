@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"latere.ai/x/pkg/hostsandbox"
-
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/session"
 )
@@ -45,13 +43,18 @@ func connectionsScript(cs []machine.HTTPConnection) string {
 			continue
 		}
 		base := strings.TrimSuffix(c.GitAddress, "/") + "/"
-		fmt.Fprintf(&b, "git config -f \"$t\" %s %s\n", hostsandbox.ShellQuote("url."+base+".insteadOf"), hostsandbox.ShellQuote(strings.TrimSuffix(c.GitURL, "/")+"/"))
-		fmt.Fprintf(&b, "git config -f \"$t\" %s \"Authorization: Bearer $%s\"\n", hostsandbox.ShellQuote("http."+base+".extraHeader"), session.ConnectionsToken)
+		fmt.Fprintf(&b, "git config -f \"$t\" %s %s\n", quote("url."+base+".insteadOf"), quote(strings.TrimSuffix(c.GitURL, "/")+"/"))
+		fmt.Fprintf(&b, "git config -f \"$t\" %s \"Authorization: Bearer $%s\"\n", quote("http."+base+".extraHeader"), session.ConnectionsToken)
 	}
 	b.WriteString(`mv -f "$t" "$f"` + "\n")
 	b.WriteString(`git config --global --get-all include.path | grep -qxF "$f" || git config --global --add include.path "$f"` + "\n")
 	return b.String()
 }
+
+// quote is s as one word of the sandbox's shell. The host sandbox's quoting
+// is not imported here, since its package builds on Unix alone and this
+// file builds wherever the runner does.
+func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // ApplyConnections gives the sandbox the session's http connections (spec
 // 069): it writes the git configuration of their git addresses, and
