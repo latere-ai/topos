@@ -48,6 +48,7 @@ func Run(t *testing.T, open Open) {
 		{"Blobs", testBlobs},
 		{"Redact", testRedact},
 		{"RedactAnAnswerWithItsImages", testRedactAnAnswerWithItsImages},
+		{"FileIndex", testFileIndex},
 		{"Lease", testLease},
 		{"Delete", testDelete},
 		{"List", testList},
@@ -1219,5 +1220,92 @@ func testListGroupedByTree(t *testing.T, st session.Store) {
 				t.Fatalf("listed %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// testFileIndex: a session whose create names a folder keeps it with the
+// header, marked stored by the first event that records a file there; a
+// file of the folder an attachment or a files.kept records is found by
+// its digest, the first ref recorded for a digest answering it, and one
+// whose recording events were all redacted, or one of a deleted session,
+// is not found (spec 068).
+func testFileIndex(t *testing.T, st session.Store) {
+	ctx := t.Context()
+	s := NewSession()
+	s.Folder = &session.Folder{URL: "https://files.example.com/v1", Owner: "https://issuer.example|ada", Path: "files/sessions/" + s.ID}
+	if err := st.Create(ctx, s, nil); err != nil {
+		t.Fatal(err)
+	}
+	if h, err := st.Get(ctx, s.ID); err != nil || h.Folder == nil || *h.Folder != *s.Folder {
+		t.Fatalf("the folder read back %+v, %v", h.Folder, err)
+	}
+	notes, report := session.DigestOf([]byte("notes")), session.DigestOf([]byte("%PDF-1.7 report"))
+	plain := Message(t, "no file", t0)
+	last := appendAll(t, st, s.ID, 0, plain)
+	if h, err := st.Get(ctx, s.ID); err != nil || h.Folder.Stored {
+		t.Fatalf("a message with no file marked the folder stored: %+v, %v", h.Folder, err)
+	}
+	msg, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{
+		Sender: session.Sender{Subject: "usr_1", Kind: session.SenderPerson}, Content: []lux.Block{},
+		Attachments: []session.Attachment{{Name: "notes.txt", MediaType: "text/plain", Size: 5, Blob: notes, Path: "attachments/x/notes.txt", Ref: "attachments/x/notes.txt"}},
+	}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := session.NewEvent(session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: "[Report](report.pdf)"}}}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer.Turn = 1
+	keptFile := func(ref string) session.KeptFile {
+		return session.KeptFile{Path: "report.pdf", Resolved: "/work/report.pdf", Blob: report, MediaType: "application/pdf", Size: 15, Ref: ref}
+	}
+	kept, err := session.NewEvent(session.TypeFilesKept, session.FilesKept{Message: answer.ID, Files: []session.KeptFile{keptFile("results/1/report.pdf")}, Skipped: []session.SkippedFile{}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept.Turn = 1
+	last = appendAll(t, st, s.ID, last, msg, answer, kept)
+	if h, err := st.Get(ctx, s.ID); err != nil || !h.Folder.Stored || h.Folder.Path != s.Folder.Path {
+		t.Fatalf("the folder after a stored file %+v, %v", h.Folder, err)
+	}
+	for d, want := range map[session.Digest]string{notes: "attachments/x/notes.txt", report: "results/1/report.pdf"} {
+		if ref, err := session.FileRefOf(ctx, st, s.ID, d); err != nil || ref != want {
+			t.Fatalf("the ref of %s: %q, %v; want %q", d, ref, err, want)
+		}
+	}
+	if _, err := session.FileRefOf(ctx, st, s.ID, session.DigestOf([]byte("absent"))); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("a digest no event records: %v", err)
+	}
+	// A later answer keeps the same bytes again; the digest still reads
+	// the first ref, and survives a redaction of either answer alone.
+	again, err := session.NewEvent(session.TypeFilesKept, session.FilesKept{Message: answer.ID, Files: []session.KeptFile{keptFile("results/2/report.pdf")}, Skipped: []session.SkippedFile{}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again.Turn = 2
+	last = appendAll(t, st, s.ID, last, again)
+	by := session.Sender{Subject: "usr_1", Kind: session.SenderPerson}
+	if err := st.Redact(ctx, s.ID, again.ID, by, ""); err != nil {
+		t.Fatal(err)
+	}
+	if ref, err := session.FileRefOf(ctx, st, s.ID, report); err != nil || ref != "results/1/report.pdf" {
+		t.Fatalf("a file another event still records: %q, %v", ref, err)
+	}
+	if err := st.Redact(ctx, s.ID, answer.ID, by, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.FileRefOf(ctx, st, s.ID, report); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("a file whose every record was redacted: %v", err)
+	}
+	if ref, err := session.FileRefOf(ctx, st, s.ID, notes); err != nil || ref != "attachments/x/notes.txt" {
+		t.Fatalf("the attachment after the answer's redaction: %q, %v", ref, err)
+	}
+	_ = last
+	if err := st.Delete(ctx, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.FileRefOf(ctx, st, s.ID, notes); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("a file of a deleted session: %v", err)
 	}
 }

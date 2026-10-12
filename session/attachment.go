@@ -15,13 +15,16 @@ const AttachmentDir = "attachments"
 // Attachment is one file a user.message carries (spec 015): its bytes
 // are the session's blob Blob, and the runner writes them at Path,
 // relative to the working directory, under AttachmentDir in a directory
-// named after the message's event id.
+// named after the message's event id. Ref, when set, is where the file
+// is in the session's files store folder (spec 068), and Blob is then
+// its digest alone.
 type Attachment struct {
 	Name      string `json:"name"`
 	MediaType string `json:"media_type"`
 	Size      int64  `json:"size"`
 	Blob      Digest `json:"blob"`
 	Path      string `json:"path"`
+	Ref       string `json:"ref,omitempty"`
 }
 
 // AttachmentsDelivered is the payload of attachments.delivered: the

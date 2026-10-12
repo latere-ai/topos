@@ -312,6 +312,23 @@ type Session struct {
 	// Tree is set only on the sessions a List grouped by tree answers,
 	// each the one that stands for its tree (spec 056).
 	Tree *Tree `json:"tree,omitempty"`
+	// Folder is the folder of a files store the allow of the session's
+	// create named (spec 068), where its attachments and kept files are
+	// written; nil keeps them as blobs. It is fixed at the create, and
+	// Stored is set by the first event that records a file there.
+	Folder *Folder `json:"folder,omitempty"`
+}
+
+// Folder is a folder of an Arca-compatible files API (spec 068): the
+// API's root URL, the space it is in, and its path in that space. The
+// core reads nothing into its parts. Stored reports whether the session
+// has recorded a file there; the API answers the folder, without its
+// URL, only once it has.
+type Folder struct {
+	URL    string `json:"url,omitempty"`
+	Owner  string `json:"owner"`
+	Path   string `json:"path"`
+	Stored bool   `json:"stored,omitempty"`
 }
 
 // TreeRoot is the id that keys s's fork tree: its root, or its own id

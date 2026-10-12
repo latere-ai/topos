@@ -593,8 +593,35 @@ func insertEvents(ctx context.Context, tx pgx.Tx, events []session.Event) error 
 		if err != nil {
 			return fmt.Errorf("postgres: append event %s: %w", e.ID, err)
 		}
+		// The files the event records in the session's folder join the
+		// digest index (spec 068). A ref is written once, so an entry that
+		// names one already indexed, as a fork's message naming its parent's
+		// file does, adds nothing.
+		for _, f := range e.Files() {
+			if _, err := tx.Exec(ctx, `INSERT INTO session_files (session_id, ref, digest) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+				e.SessionID, f.Ref, string(f.Digest)); err != nil {
+				return fmt.Errorf("postgres: index the file %s of event %s: %w", f.Ref, e.ID, err)
+			}
+		}
 	}
 	return nil
+}
+
+// FileRef answers the ref of the file of the session id whose digest is
+// d from the digest index (spec 068).
+func (s *Store) FileRef(ctx context.Context, id string, d session.Digest) (string, error) {
+	if err := session.CheckID(session.PrefixSession, id); err != nil {
+		return "", err
+	}
+	var ref string
+	err := s.pool.QueryRow(ctx, `SELECT ref FROM session_files WHERE session_id = $1 AND digest = $2 ORDER BY ref LIMIT 1`, id, string(d)).Scan(&ref)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("%w: no file of %s has the digest %s", session.ErrNotFound, id, d)
+	}
+	if err != nil {
+		return "", fmt.Errorf("postgres: read the file of %s with the digest %s: %w", id, d, err)
+	}
+	return ref, nil
 }
 
 func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events []session.Event) (uint64, error) {
@@ -831,6 +858,11 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 		for _, d := range r.Orphans {
 			if _, err := tx.Exec(ctx, `DELETE FROM blobs WHERE session_id = $1 AND digest = $2`, id, string(d)); err != nil {
 				return fmt.Errorf("postgres: delete blob %s: %w", d, err)
+			}
+			// A file of the folder no live event names is no longer read
+			// by its digest; the file itself stays in the folder (spec 068).
+			if _, err := tx.Exec(ctx, `DELETE FROM session_files WHERE session_id = $1 AND digest = $2`, id, string(d)); err != nil {
+				return fmt.Errorf("postgres: drop the indexed file %s: %w", d, err)
 			}
 		}
 		removed = r.Orphans

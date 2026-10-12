@@ -25,7 +25,9 @@ type FilesKept struct {
 // Width and Height the size its format's header gives. For a file the
 // message links, MediaType is the type its name's extension names and
 // otherwise the one its leading bytes give, and Width and Height are 0,
-// whatever its bytes are.
+// whatever its bytes are. Ref, when set, is where the file is in the
+// session's files store folder (spec 068), and Blob is then its digest
+// alone.
 type KeptFile struct {
 	Path      string `json:"path"`
 	Resolved  string `json:"resolved"`
@@ -34,6 +36,7 @@ type KeptFile struct {
 	Size      int64  `json:"size"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
+	Ref       string `json:"ref,omitempty"`
 }
 
 // SkippedFile is one reference files.kept did not store, with the reason.

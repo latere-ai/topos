@@ -479,11 +479,11 @@ func SameEvent(a, b Event) bool {
 // model of the last session.model_changed, the approval mode of the last
 // session.policy_changed, the title of the last session.title_changed,
 // the base network each authorizer's session.network_changed replaces,
-// the connections of the last session.connections_changed, and the
-// spend, which each model.request's and each charged
-// tool.result's cost adds to as Spent counts it. A title change does not
-// move the update time, so a list ordered by it keeps a renamed session
-// in its place (spec 054).
+// the connections of the last session.connections_changed, whether the
+// session's folder holds a file (spec 068), and the spend, which each
+// model.request's and each charged tool.result's cost adds to as Spent
+// counts it. A title change does not move the update time, so a list
+// ordered by it keeps a renamed session in its place (spec 054).
 func ApplyBatch(s *Session, events []Event) {
 	for _, e := range events {
 		if e.Seq > s.LastSeq {
@@ -492,6 +492,7 @@ func ApplyBatch(s *Session, events []Event) {
 		if e.Turn > s.Turn {
 			s.Turn = e.Turn
 		}
+		s.stored(e)
 		// A fork's copied change renamed its parent; the fork keeps the
 		// title its own create gave it.
 		if e.Type == TypeTitleChanged {

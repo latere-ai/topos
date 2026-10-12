@@ -401,6 +401,10 @@ func cloneSession(s Session) Session {
 		t := *s.Tree
 		s.Tree = &t
 	}
+	if s.Folder != nil {
+		f := *s.Folder
+		s.Folder = &f
+	}
 	if s.ArchivedAt != nil {
 		t := *s.ArchivedAt
 		s.ArchivedAt = &t
