@@ -429,3 +429,54 @@ func TestADeferredMachinePassesItsNetworkOn(t *testing.T) {
 		t.Fatalf("the open machine took %v, %v", m.applied, err)
 	}
 }
+
+// connected is a fake that takes a session's connections.
+type connected struct {
+	fake
+	applied [][]HTTPConnection
+}
+
+func (c *connected) ApplyConnections(_ context.Context, cs []HTTPConnection) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.applied = append(c.applied, cs)
+	return nil
+}
+
+// TestADeferredMachinePassesItsConnectionsOn: connections applied before
+// the machine opens apply to nothing, since the opener reads them; once a
+// Start opened the machine or an operation did, they reach it, and a
+// machine that is not connected takes none (spec 069).
+func TestADeferredMachinePassesItsConnectionsOn(t *testing.T) {
+	ctx := t.Context()
+	m := &connected{}
+	d := Defer(ctx, KindCella, func(context.Context) (Machine, error) { return m, nil })
+	cs := []HTTPConnection{{Env: "CODE_HOST_API_URL", Address: "https://connections.example.com/c/http"}}
+	if err := d.ApplyConnections(ctx, cs); err != nil || len(m.applied) != 0 {
+		t.Fatalf("an unopened machine took connections: %v, %v", m.applied, err)
+	}
+	d.Start()
+	if err := d.ApplyConnections(ctx, cs); err != nil || len(m.applied) != 1 || m.applied[0][0] != cs[0] {
+		t.Fatalf("the machine a start prepared did not take them: %v, %v", m.applied, err)
+	}
+	if err := d.Open(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ApplyConnections(ctx, nil); err != nil || len(m.applied) != 2 || m.applied[1] != nil {
+		t.Fatalf("the open machine took %v, %v", m.applied, err)
+	}
+	plain := Defer(ctx, KindCella, func(context.Context) (Machine, error) { return &fake{}, nil })
+	if err := plain.Open(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := plain.ApplyConnections(ctx, cs); err != nil {
+		t.Fatalf("a machine that is not connected: %v", err)
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	slow := Defer(ctx, KindCella, func(ctx context.Context) (Machine, error) { <-ctx.Done(); return nil, ctx.Err() })
+	slow.Start()
+	cancel()
+	if err := slow.ApplyConnections(canceled, cs); err == nil {
+		t.Fatal("a canceled wait for a start applied connections")
+	}
+}

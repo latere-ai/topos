@@ -409,6 +409,20 @@ func (d *Deferred) Release(ctx context.Context, end bool) error {
 // the network as it was then. A machine not opened yet has nothing to
 // apply it to: its opener reads the session's network when it opens.
 func (d *Deferred) ApplyNetwork(ctx context.Context, n Network) error {
+	m, err := d.settled(ctx)
+	if err != nil {
+		return err
+	}
+	if nm, ok := m.(Networked); ok {
+		return nm.ApplyNetwork(ctx, n)
+	}
+	return nil
+}
+
+// settled is the open machine, or the one a Start opened that no
+// operation took yet, once an open Start began has finished; nil when
+// neither is.
+func (d *Deferred) settled(ctx context.Context) (Machine, error) {
 	d.mu.Lock()
 	starting := d.starting
 	d.mu.Unlock()
@@ -416,17 +430,29 @@ func (d *Deferred) ApplyNetwork(ctx context.Context, n Network) error {
 		select {
 		case <-starting:
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 	d.mu.Lock()
-	m := d.m
-	if m == nil {
-		m = d.prepared
+	defer d.mu.Unlock()
+	if d.m != nil {
+		return d.m, nil
 	}
-	d.mu.Unlock()
-	if nm, ok := m.(Networked); ok {
-		return nm.ApplyNetwork(ctx, n)
+	return d.prepared, nil
+}
+
+// ApplyConnections gives the open machine the session's connections
+// when it is connected, as ApplyNetwork gives it the network: to one a
+// Start opened that no operation took yet, after an open Start began has
+// finished. A machine not opened yet has nothing to apply them to: its
+// opener reads the session's connections when it opens (spec 069).
+func (d *Deferred) ApplyConnections(ctx context.Context, cs []HTTPConnection) error {
+	m, err := d.settled(ctx)
+	if err != nil {
+		return err
+	}
+	if cm, ok := m.(Connected); ok {
+		return cm.ApplyConnections(ctx, cs)
 	}
 	return nil
 }
@@ -443,6 +469,7 @@ func (d *Deferred) Refused(ctx context.Context, since time.Time) ([]Connection, 
 var (
 	_ Machine   = (*Deferred)(nil)
 	_ Networked = (*Deferred)(nil)
+	_ Connected = (*Deferred)(nil)
 	_ Opener    = (*Deferred)(nil)
 	_ Starter   = (*Deferred)(nil)
 	_ Fetcher   = (*Deferred)(nil)

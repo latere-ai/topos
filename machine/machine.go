@@ -67,6 +67,28 @@ type Networked interface {
 	Refused(ctx context.Context, since time.Time) ([]Connection, error)
 }
 
+// HTTPConnection is a session's connection of kind http as its machine
+// reaches it (spec 069): Env names Address, the connection's forwarding
+// address, in each command's environment, and git rewrites GitURL, the
+// git host the person's repositories live at, to GitAddress, the
+// connection's git address; both are empty for a connection with no git.
+type HTTPConnection struct {
+	Env        string
+	Address    string
+	GitAddress string
+	GitURL     string
+}
+
+// Connected is the optional interface of a machine that reaches a
+// session's connections of kind http through the installation's
+// connection service (spec 069). ApplyConnections gives the machine the
+// session's list as it stands, which replaces the one it had: a
+// connection the list no longer names leaves nothing behind. It does
+// nothing when the machine runs that list already.
+type Connected interface {
+	ApplyConnections(ctx context.Context, cs []HTTPConnection) error
+}
+
 // SandboxNone is the Sandbox of a host with none of the mechanisms the
 // host sandbox is built on, Seatbelt, Bubblewrap and Landlock, which is
 // every Windows host. A session on it runs only in plan or confirm
