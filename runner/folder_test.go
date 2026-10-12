@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"latere.ai/x/topos/harness"
@@ -77,5 +78,36 @@ func TestARebuildReadsKeptFilesFromTheFolder(t *testing.T) {
 	none, err := f.r.rebuild(ctx, f.s, m, evs, nil)
 	if err != nil || none != nil {
 		t.Fatalf("a rebuild on a runner with no files store: %+v, %v", none, err)
+	}
+}
+
+// awayFiles is a files store that answers every read with an outage.
+type awayFiles struct{ folderFiles }
+
+func (awayFiles) Open(context.Context, string) (io.ReadCloser, int64, error) {
+	return nil, 0, errors.New("the files store is away")
+}
+
+// TestARebuildWhoseFolderIsAwayFails: a rebuild whose files store fails a
+// read is an error, not a file omitted, so the session learns the files
+// could not be written back (spec 068).
+func TestARebuildWhoseFolderIsAwayFails(t *testing.T) {
+	f := setup(t)
+	m, err := host.Open(host.Options{Workdir: fresh(t), SpillDir: filepath.Join(t.TempDir(), "spill")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attached, err := session.NewEvent(session.TypeSessionMachine, session.SessionMachine{Machine: session.AttachedMachine{Kind: "host", ID: "m1", Workdir: "/workspace"}, Reason: session.MachineAttached}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := session.NewEvent(session.TypeFilesKept, session.FilesKept{Message: "evt_x", Files: []session.KeptFile{
+		{Path: "a.pdf", Resolved: "/workspace/a.pdf", Blob: session.DigestOf([]byte("a")), Size: 1, Ref: "results/1/a.pdf"},
+	}, Skipped: []session.SkippedFile{}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.r.rebuild(t.Context(), f.s, m, []session.Event{attached, kept}, awayFiles{}); err == nil || !strings.Contains(err.Error(), "away") {
+		t.Fatalf("a rebuild whose files store is away: %v", err)
 	}
 }

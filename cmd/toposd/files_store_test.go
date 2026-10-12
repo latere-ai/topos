@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,10 @@ import (
 	"latere.ai/x/pkg/authz/stub"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/internal/config"
+	"latere.ai/x/topos/internal/credentials"
+	idp "latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/arcastub"
 )
@@ -189,5 +194,35 @@ func TestASessionsFilesLiveInTheFilesStore(t *testing.T) {
 	read(fork.ID)
 	if code := stop(); code != 0 {
 		t.Fatalf("serve exited %d", code)
+	}
+}
+
+// TestTheAPIOpensAFolderOnlyWhereItIsConfigured: the API keeps no files
+// store without TOPOS_FILES_AUDIENCE or without the identity provider
+// that mints its tokens, and with both it opens no folder for a session
+// that names none (spec 068).
+func TestTheAPIOpensAFolderOnlyWhereItIsConfigured(t *testing.T) {
+	minter, err := credentials.New(credentials.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ic, err := idp.New(idp.Options{URL: "https://auth.example", ClientID: "topos-host", SecretFile: "/run/secret", HTTP: http.DefaultClient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := files(config.Config{}, minter, ic); f != nil {
+		t.Fatal("a files store with no audience")
+	}
+	if f := files(config.Config{FilesAudience: "arca"}, nil, nil); f != nil {
+		t.Fatal("a files store with no identity provider")
+	}
+	f := files(config.Config{FilesAudience: "arca"}, minter, ic)
+	if f == nil {
+		t.Fatal("no files store")
+	}
+	for name, open := range map[string]func(context.Context, session.Session) (harness.Files, error){"write": f.Write, "read": f.Read} {
+		if _, err := open(t.Context(), session.Session{ID: "ses_x"}); err == nil {
+			t.Errorf("%s opened a folder for a session with none", name)
+		}
 	}
 }
