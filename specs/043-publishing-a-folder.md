@@ -324,7 +324,7 @@ reads; previews served beside the session in a client.
 
 ## Outcome
 
-Built on 2026-10-11, in no release yet: a call with `access` changes
+Built on 2026-10-11, released in v0.32.0: a call with `access` changes
 who can open an app once a person approved it. The spec stays
 in-progress for the tasks of the suite, which are not built.
 
