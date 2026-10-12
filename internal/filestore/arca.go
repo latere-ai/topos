@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/session"
@@ -91,14 +92,22 @@ func (a *Arca) fileURL(p string) string {
 func (a *Arca) at(ref string) string { return a.folder.Path + "/" + ref }
 
 // send sends one request to the files API with the bearer.
+// A body the request never reaches the transport with is closed here, as
+// the transport closes one it took.
 func (a *Arca) send(ctx context.Context, method, u string, body io.Reader, size int64, header http.Header) (*http.Response, error) {
+	unsent := func(err error) (*http.Response, error) {
+		if c, ok := body.(io.Closer); ok {
+			err = errors.Join(err, c.Close())
+		}
+		return nil, err
+	}
 	tok, err := a.token(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("filestore: the files store's token: %w", err)
+		return unsent(fmt.Errorf("filestore: the files store's token: %w", err))
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, body)
 	if err != nil {
-		return nil, err
+		return unsent(err)
 	}
 	maps.Copy(req.Header, header)
 	if body != nil {
@@ -158,6 +167,7 @@ func closeBody(resp *http.Response) { _ = resp.Body.Close() }
 // end of r.
 type counted struct {
 	r   io.Reader
+	mu  sync.Mutex
 	h   io.Writer
 	n   int64
 	eof bool
@@ -165,6 +175,8 @@ type counted struct {
 
 func (c *counted) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.n += int64(n)
 	c.eof = c.eof || errors.Is(err, io.EOF)
 	// A hash's Write never fails.
@@ -175,6 +187,8 @@ func (c *counted) Read(p []byte) (int, error) {
 // failed is err of a write of src, which named size bytes: a source that
 // ended before them is harness.ErrFileSizeChanged.
 func (c *counted) failed(err error, ref string, size int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.eof && c.n < size {
 		return fmt.Errorf("%w: %s ended at %d of the %d bytes its write named: %w", harness.ErrFileSizeChanged, ref, c.n, size, err)
 	}
@@ -215,26 +229,70 @@ func (a *Arca) Put(ctx context.Context, ref, mediaType string, size int64, r io.
 	return session.Digest("sha256:" + hex.EncodeToString(h.Sum(nil))), nil
 }
 
-// body is a request body of exactly n bytes of src: http.NoBody for none,
-// since a request with a body and a length of 0 is sent chunked.
-func body(src io.Reader, n int64) io.Reader {
+// sentBody is a request body of exactly n bytes of a source that says
+// when the transport is done with it. net/http may go on reading a body
+// after the response arrives, as when a refusal comes before the body is
+// sent, and closes it once it has stopped; a write waits for that before
+// it reads the source's count or hands the source back, so the source is
+// read by one goroutine at a time.
+type sentBody struct {
+	r    io.Reader
+	once sync.Once
+	done chan struct{}
+}
+
+// body is a request body of exactly n bytes of src.
+func body(src io.Reader, n int64) *sentBody {
+	b := &sentBody{r: io.LimitReader(src, n), done: make(chan struct{})}
 	if n == 0 {
+		b.r = http.NoBody
+		b.once.Do(func() { close(b.done) })
+	}
+	return b
+}
+
+// request is the body as a request carries it: http.NoBody for none,
+// since a request with a body and a length of 0 is sent chunked.
+func (b *sentBody) request() io.Reader {
+	if b.r == http.NoBody {
 		return http.NoBody
 	}
-	return io.LimitReader(src, n)
+	return b
+}
+
+func (b *sentBody) Read(p []byte) (int, error) { return b.r.Read(p) }
+
+// Close records that the transport is done with the body.
+func (b *sentBody) Close() error {
+	b.once.Do(func() { close(b.done) })
+	return nil
+}
+
+// sent waits until the transport is done with the body, or ctx ends.
+func (b *sentBody) sent(ctx context.Context) {
+	select {
+	case <-b.done:
+	case <-ctx.Done():
+	}
 }
 
 // putOnce writes the file in one create-only PUT.
 func (a *Arca) putOnce(ctx context.Context, ref, mediaType string, size int64, src *counted) error {
-	resp, err := a.send(ctx, http.MethodPut, a.fileURL(a.at(ref)), body(src, size), size,
+	b := body(src, size)
+	resp, err := a.send(ctx, http.MethodPut, a.fileURL(a.at(ref)), b.request(), size,
 		http.Header{"Content-Type": {mediaType}, "If-None-Match": {"*"}})
 	if err != nil {
+		b.sent(ctx)
 		return src.failed(err, ref, size)
 	}
-	defer closeBody(resp)
 	if resp.StatusCode/100 != 2 {
-		return refusal("put", resp)
+		err := refusal("put", resp)
+		closeBody(resp)
+		b.sent(ctx)
+		return err
 	}
+	closeBody(resp)
+	b.sent(ctx)
 	return nil
 }
 
@@ -308,7 +366,7 @@ func presigned(u *url.URL) error {
 
 // putPart writes one part to its presigned address, with no bearer, and
 // answers the ETag the bucket gave it.
-func (a *Arca) putPart(ctx context.Context, address string, b io.Reader, n int64) (string, error) {
+func (a *Arca) putPart(ctx context.Context, address string, b *sentBody, n int64) (string, error) {
 	u, err := url.Parse(address)
 	if err != nil {
 		return "", fmt.Errorf("filestore: a part's address: %w", err)
@@ -323,12 +381,17 @@ func (a *Arca) putPart(ctx context.Context, address string, b io.Reader, n int64
 	req.ContentLength = n
 	resp, err := a.api.Do(req)
 	if err != nil {
+		b.sent(ctx)
 		return "", err
 	}
-	defer closeBody(resp)
 	if resp.StatusCode/100 != 2 {
-		return "", refusal("part", resp)
+		err := refusal("part", resp)
+		closeBody(resp)
+		b.sent(ctx)
+		return "", err
 	}
+	closeBody(resp)
+	b.sent(ctx)
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
 		return "", errors.New("filestore: the bucket answered a part with no ETag")

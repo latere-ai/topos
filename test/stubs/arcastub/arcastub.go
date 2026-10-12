@@ -199,17 +199,21 @@ func (s *Server) Uploads() int {
 
 // refuse writes the files API's error envelope.
 func refuse(w http.ResponseWriter, status int, code, detail string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	// A write to a closed connection is the client's to notice.
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": code, "message": "The stub refused the request.", "details": map[string]any{"detail": detail}}})
+	reply(w, status, map[string]any{"error": map[string]any{"code": code, "message": "The stub refused the request.", "details": map[string]any{"detail": detail}}})
 }
 
+// reply writes v as JSON with status; a value that does not encode is a
+// fault of the stub, answered 500.
 func reply(w http.ResponseWriter, status int, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, "the stub's answer does not encode: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	// A write to a closed connection is the client's to notice.
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(append(b, '\n'))
 }
 
 // begin records r as op and answers false, having refused it, when a
