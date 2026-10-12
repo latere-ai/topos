@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -372,6 +373,68 @@ func TestASessionPublishesAFolderAndReleasesIt(t *testing.T) {
 	}
 	if strings.Contains(c.dump(), "apps-session-") {
 		t.Fatal("an event carries the app host's token")
+	}
+}
+
+// TestASessionNamesTheSiteItPublishes: a session whose title says what the
+// conversation was about creates its app with the name its first publish
+// gives, so the host makes the app's address from the site's name and not
+// from the title; the call a client shows the person carries the name;
+// the result records the app as the host made it; and a later publish
+// that gives another name creates no app and changes nothing of the one
+// there is (spec 067).
+func TestASessionNamesTheSiteItPublishes(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	host := &gitHost{}
+	host.srv = httptest.NewServer(placeholders(t, host, root, func(n string) bool { return n == name }))
+	t.Cleanup(host.srv.Close)
+	apps := newAppHost(t, root, host.srv.URL)
+	c := newCloudOf(t, publisherAgent, func(s *session.Session) { s.Title = "Compare the weather between Munich and Stockholm" })
+	name = cella.SandboxName(c.s.ID)
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.o.Machines = Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir, OrigoURL: host.srv.URL})
+	c.o.Publish = publish.Options{URL: apps.srv.URL, Audience: "apps", GitURL: host.srv.URL, PollEvery: 10 * time.Millisecond}
+	c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	asked := func() (created []map[string]string, patched []string) {
+		apps.mu.Lock()
+		defer apps.mu.Unlock()
+		return slices.Clone(apps.created), slices.Clone(apps.patched)
+	}
+
+	c.drive("Compare the weather between Munich and Stockholm.",
+		bash("toolu_1", `mkdir -p site && printf '<h1>Two cities</h1>\n' > site/index.html`),
+		publishCall("toolu_2", map[string]any{"path": "site", "name": "Two Cities Weather"}),
+		said("Published."))
+	created, _ := asked()
+	if len(created) != 1 || !maps.Equal(created[0], map[string]string{"name": "Two Cities Weather"}) {
+		t.Fatalf("the app host was asked to create %v", created)
+	}
+	first := lastPublish(t, c)
+	if first.App != "two-cities-weather" || first.Name != "Two Cities Weather" || first.URL != "https://two-cities-weather.apps.example" || first.Status != session.PublishReady {
+		t.Fatalf("the first publish recorded %+v", first)
+	}
+	if text := publishResult(t, c, "toolu_2").Content[0].Text; !strings.Contains(text, "The app's own address is https://two-cities-weather.apps.example") {
+		t.Fatalf("the result reads %q", text)
+	}
+	if use := publishUses(t, c)["toolu_2"]; string(use.Input) != `{"name":"Two Cities Weather","path":"site"}` {
+		t.Fatalf("the call was recorded with the input %s", use.Input)
+	}
+
+	c.drive("Add Oslo.",
+		bash("toolu_3", `printf '<h1>Three cities</h1>\n' > site/index.html`),
+		publishCall("toolu_4", map[string]any{"path": "site", "name": "Three Cities Weather"}),
+		said("Published again."))
+	second := lastPublish(t, c)
+	created, patched := asked()
+	if second.App != "two-cities-weather" || second.URL != first.URL || second.Commit == first.Commit || len(created) != 1 || len(patched) != 0 {
+		t.Fatalf("the second publish recorded %+v, with the creates %v and the changes %q", second, created, patched)
 	}
 }
 
