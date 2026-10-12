@@ -414,4 +414,10 @@ const (
 	// each with Dir, Name, URL and Slug: the apps whose source an allow
 	// attached (spec 058).
 	ContextAttachments Name = "context/attachments-v1"
+	// ContextConnections takes Branch, the session's branch, Token, the
+	// variable of the connection service's placeholder, HTTP, each with
+	// Title, GitURL and Env, and MCP, each with Title, Name and Reason,
+	// why the connection is not connected, empty when it is: the
+	// connections an allow named for the session (spec 069).
+	ContextConnections Name = "context/connections-v1"
 )

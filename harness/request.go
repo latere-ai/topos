@@ -99,9 +99,9 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 // attached, a block per part (spec 058), on the session's own thread,
 // since they speak to its agent and a subagent works from its task; and
 // on every thread the attachments block, which names the checkout of
-// each app an allow attached, since every thread works in the same
-// machine.
-func headerBlocks(s session.Session, own bool) []string {
+// each app an allow attached, and the connections block (spec 069),
+// since every thread works in the same machine.
+func headerBlocks(s session.Session, own bool, mcp map[string]string) []string {
 	var out []string
 	if own && s.Instructions != "" {
 		out = append(out, prompts.Render(prompts.ContextInitiator, prompts.Data{"Text": s.Instructions}))
@@ -113,6 +113,9 @@ func headerBlocks(s session.Session, own bool) []string {
 	}
 	if apps := attachedApps(s); len(apps) > 0 {
 		out = append(out, prompts.Render(prompts.ContextAttachments, prompts.Data{"Branch": session.Branch(s), "Apps": apps}))
+	}
+	if block := connectionsBlock(s, mcp); block != "" {
+		out = append(out, block)
 	}
 	return out
 }

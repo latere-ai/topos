@@ -187,6 +187,11 @@ type Config struct {
 	// turn, step, model, tool and action, never a word of the response.
 	// Nil discards them.
 	Log *slog.Logger
+	// MCP names each connection of kind mcp the drive listed the tools of
+	// (spec 069), with why it is not connected, "" when its tools are
+	// offered: the connections block names these mcp connections and no
+	// other.
+	MCP map[string]string
 
 	// ceiling is the stricter of the modes the agents above a thread name,
 	// empty for the session's own thread: a change of the session's mode
@@ -663,6 +668,9 @@ func (t *turn) resume(ctx context.Context) error {
 		if err := t.applyNetwork(ctx); err != nil {
 			return err
 		}
+		if err := t.applyConnections(ctx); err != nil {
+			return err
+		}
 	}
 	if err := t.settleApprovals(ctx, &w); err != nil {
 		return err
@@ -1047,7 +1055,7 @@ func (t *turn) maxTokens() int64 {
 // session's header.
 func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, string, error) {
 	parts := withRoute(withRepositories(tr.System, t.s), t.s)
-	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, headerBlocks(t.s, t.thread == ""), parts, t.l)
+	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, headerBlocks(t.s, t.thread == "", t.h.c.MCP), parts, t.l)
 	if err != nil {
 		return ir.Request{}, "", err
 	}
