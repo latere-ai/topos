@@ -31,15 +31,56 @@ committed: the commit log already holds that.
   Set `TOPOS_CONNECTIONS_URL` and `TOPOS_CONNECTIONS_AUDIENCE`, and let
   the identity provider mint those audiences for the runner. See
   [Connections](docs/connections.md).
+- **The sessions list filters by the trigger that started a session.**
+  `GET /v1/sessions?trigger=<id>` lists only the sessions that trigger
+  started, newest first, a page at a time, beside every other filter
+  and under `group=tree`, where a fork of a run, which no trigger
+  started, leaves its tree to the run. `GET /v1/sessions/summary` takes
+  the same filter and counts those sessions by status. A client can now
+  show a routine's runs, and how many there are, without paging through
+  every session. The filter narrows only what the caller may list: the
+  id of another context's trigger, or of no trigger, lists none of the
+  caller's sessions. A value that is not a trigger's id is
+  `invalid_request`. The search route does not take it.
 
 ### Fixed
 
+- **A conversation keeps publishing to its app after the app is
+  renamed.** `publish` remembered the app a conversation published to
+  by its slug alone. Once the app's owner renamed it, the old slug
+  answered not found, and the next publish created a second app beside
+  the first: the conversation forked the site without anyone asking.
+  Every publish result now records the app's id as `app_id` beside its
+  slug, and every later call finds the app by that id before its slug:
+  it publishes to the renamed app, releases it and changes who can open
+  it, and its result names the new slug and address. An app a session
+  was started on is found by its id once a result of the session read
+  it. The slug the conversation knew before still names the app in a
+  call. A conversation whose results predate `app_id` finds its app by
+  its slug, as before.
 - **A file rebuilt into a new machine carries the time it was written
   back.** When a lost machine's files were rebuilt from the log into a
   new one, the archive they arrived in carried no time, so every file
   and folder was dated 1 January 1970, and a tool that refuses such a
   date failed on them, as Python's `zipfile` does on one before 1980.
   Each now carries the time the rebuild wrote it.
+
+### Upgrading
+
+- A client that shows a conversation's app reads `meta.publish.app_id`
+  beside `app`, and keeps an app across results by `app_id` where one
+  is recorded, since `app` changes when the app's owner renames it.
+- Finding an app by its id needs an app host that takes an app's id in
+  the slug's place on every app route, answering an id it does not know
+  `404`. An older host answers every id `404`, and the tool then reads
+  the app by its slug once, as before, at the cost of one more request
+  a call; a rename there still loses the app. The two roll in either
+  order; a rename is survived once both run.
+- The Postgres store adds the column `sessions.trigger_id`, filled from
+  each session's body, and an index on it (migration `0010`). While an
+  earlier release runs beside this one, a session it creates enters a
+  list by trigger once a batch of its log saves its header, which its
+  first turn does.
 
 ## v0.33.0 - 2026-10-12
 
