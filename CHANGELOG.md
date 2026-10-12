@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.32.0 - 2026-10-12
+
 ### Added
 
 - A tool can hold a call for a person. A tool that implements
