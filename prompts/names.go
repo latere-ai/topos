@@ -240,6 +240,14 @@ const (
 	// CallMachineUnavailable takes the Error of a machine opened on
 	// demand that could not be had (spec 009).
 	CallMachineUnavailable Name = "results/call/machine-unavailable-v1"
+	// CallNotConnected takes the Title of a connection the connection
+	// service answered is not connected, and its Reason (spec 069).
+	CallNotConnected Name = "results/call/not-connected-v1"
+	// CallInputRequired takes the Title of a connection whose server asked
+	// for input a session cannot give (spec 069).
+	CallInputRequired Name = "results/call/input-required-v1"
+	// CallNoContent is a server's result with no content (spec 069).
+	CallNoContent Name = "results/call/no-content-v1"
 	// CallPlanMode and CallAboveBlock are the reasons of a blocked call,
 	// recorded on its agent.tool_use and read by the model as its result.
 	CallPlanMode   Name = "results/call/plan-mode-v1"
