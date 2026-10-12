@@ -20,6 +20,52 @@ committed: the commit log already holds that.
   client to show as "connect this service", and ends its turn saying
   what it will do once connected.
 
+- **A conversation's files can live in the installation's files
+  service.** The files a person attaches to a message, and the files an
+  answer shows or links, were kept in the session's own storage, where
+  nobody found them outside the answer that named them. An installation
+  that runs an Arca-compatible files service can now keep them there
+  instead, in a folder of the conversation's own, where they count and
+  are found like any other file of that space. The authorizer decides
+  per session: its allow of `session.create` or `session.fork` names
+  `folder: {"url", "owner", "path"}`, the files API's root, the space
+  and the folder. With a folder:
+
+  - A message's file is written to `attachments/<event id>/<name>` and
+    an answer's file to `results/<turn>/<path>`, each once, with the
+    session's own token. The record gains `ref`, the file's path in the
+    folder, beside `blob`, its digest.
+  - A file an answer links is no longer held to 16 MiB, or to 32 MiB
+    for one answer's files together; the files service's own bound
+    applies, and a file it refuses is skipped `too_large` or
+    `unavailable` without failing the turn. A message whose file it
+    refuses is refused, `attachment_too_large` or the new
+    `files_unavailable`, before it is appended.
+  - `GET /v1/sessions/{id}/blobs/{digest}` still answers by digest. A
+    file of the folder is streamed from the files service with its
+    `Content-Length`, read with toposd's own token, so a conversation
+    stays readable after it ends.
+  - The session answers `folder: {"owner", "path"}` from the first file
+    stored there.
+  - A fork copies the folders its copied history and its message name
+    into its own folder, on the server.
+
+  A session whose allow names no folder, and every session of an
+  installation that configures none, keeps its files as before.
+
+### Upgrading
+
+- Set `TOPOS_FILES_AUDIENCE` to the audience your identity provider
+  mints tokens for the files service under, on the server and on every
+  runner, before your authorizer names a folder. It needs
+  `TOPOS_IDENTITY_URL`, and the identity provider must let toposd's own
+  client ask a token for that audience. A server without it refuses an
+  allow that names a folder as `authorizer_unavailable`, and a runner
+  without it fails the turn of such a session with `files_unavailable`.
+- The files of sessions that exist stay where they are. A redaction no
+  longer answers a file of a folder by its digest, and the file stays in
+  the folder until the installation removes the folder.
+
 ## v0.34.0 - 2026-10-13
 
 ### Added
