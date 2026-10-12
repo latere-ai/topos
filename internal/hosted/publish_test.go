@@ -58,6 +58,9 @@ type appHost struct {
 
 	mu      sync.Mutex
 	created []map[string]string
+	// taken are the slugs another app has: a create that names one is
+	// refused slug_taken.
+	taken   map[string]bool
 	bearers []string
 	// visibility is who may open each app the host was asked to change,
 	// by slug, and patched every change it was asked for, "<slug>
@@ -82,10 +85,21 @@ func newAppHost(t *testing.T, root, git string) *appHost {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// A create that names a slug gets it unless another app has it.
+		// One that names none gets the slug this host makes from the name,
+		// and a generated one when the name leaves nothing to make it of.
+		slug := body["slug"]
 		h.mu.Lock()
 		h.created = append(h.created, body)
+		taken := h.taken[slug]
 		h.mu.Unlock()
-		slug := strings.Trim(slugWord.ReplaceAllString(strings.ToLower(body["name"]), "-"), "-")
+		if taken {
+			h.write(w, http.StatusConflict, map[string]any{"error": map[string]any{"code": "slug_taken", "message": "This slug is already in use.", "details": map[string]string{"slug": slug}}})
+			return
+		}
+		if slug == "" {
+			slug = cmp.Or(strings.Trim(slugWord.ReplaceAllString(strings.ToLower(body["name"]), "-"), "-"), "calm-otter-4821")
+		}
 		repo := filepath.Join(root, slug+".git")
 		for _, args := range [][]string{{"init", "--quiet", "--bare", "-b", "main", repo}, {"-C", repo, "config", "http.receivepack", "true"}} {
 			if out, err := exec.CommandContext(r.Context(), "git", args...).CombinedOutput(); err != nil {
@@ -377,64 +391,100 @@ func TestASessionPublishesAFolderAndReleasesIt(t *testing.T) {
 }
 
 // TestASessionNamesTheSiteItPublishes: a session whose title says what the
-// conversation was about creates its app with the name its first publish
-// gives, so the host makes the app's address from the site's name and not
-// from the title; the call a client shows the person carries the name;
-// the result records the app as the host made it; and a later publish
-// that gives another name creates no app and changes nothing of the one
-// there is (spec 067).
+// conversation was about creates its app with the name and at the address
+// its first publish gives, a name in the site's own script and an address
+// in Latin letters, so neither comes from the title; the call a client
+// shows the person carries both; the result records the app as the host
+// made it; and a later publish that gives others creates no app and
+// changes nothing of the one there is. Where another app has the address,
+// the same one call creates the app without it and publishes: the host is
+// asked twice, the person once, and the result names the address the app
+// got (spec 067).
 func TestASessionNamesTheSiteItPublishes(t *testing.T) {
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+	// publisher is a session of the publisher agent, titled as its
+	// conversation began, with an app host where other apps have taken.
+	publisher := func(taken ...string) (*cloud, *appHost) {
+		root, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var name string
+		host := &gitHost{}
+		host.srv = httptest.NewServer(placeholders(t, host, root, func(n string) bool { return n == name }))
+		t.Cleanup(host.srv.Close)
+		apps := newAppHost(t, root, host.srv.URL)
+		apps.taken = map[string]bool{}
+		for _, slug := range taken {
+			apps.taken[slug] = true
+		}
+		c := newCloudOf(t, publisherAgent, func(s *session.Session) { s.Title = "Compare the weather between Munich and Stockholm" })
+		name = cella.SandboxName(c.s.ID)
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.o.Machines = Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir, OrigoURL: host.srv.URL})
+		c.o.Publish = publish.Options{URL: apps.srv.URL, Audience: "apps", GitURL: host.srv.URL, PollEvery: 10 * time.Millisecond}
+		c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+		return c, apps
 	}
-	var name string
-	host := &gitHost{}
-	host.srv = httptest.NewServer(placeholders(t, host, root, func(n string) bool { return n == name }))
-	t.Cleanup(host.srv.Close)
-	apps := newAppHost(t, root, host.srv.URL)
-	c := newCloudOf(t, publisherAgent, func(s *session.Session) { s.Title = "Compare the weather between Munich and Stockholm" })
-	name = cella.SandboxName(c.s.ID)
-	dir, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.o.Machines = Cella(CellaOptions{URL: c.cella.URL(), Token: client.StaticToken("installation-bearer"), Helpers: helpers(t), Dir: dir, OrigoURL: host.srv.URL})
-	c.o.Publish = publish.Options{URL: apps.srv.URL, Audience: "apps", GitURL: host.srv.URL, PollEvery: 10 * time.Millisecond}
-	c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
-	asked := func() (created []map[string]string, patched []string) {
+	asked := func(apps *appHost) (created []map[string]string, patched []string) {
 		apps.mu.Lock()
 		defer apps.mu.Unlock()
 		return slices.Clone(apps.created), slices.Clone(apps.patched)
 	}
+	named := map[string]any{"path": "site", "name": "两城天气", "address": "two-cities-weather"}
 
+	c, apps := publisher()
 	c.drive("Compare the weather between Munich and Stockholm.",
 		bash("toolu_1", `mkdir -p site && printf '<h1>Two cities</h1>\n' > site/index.html`),
-		publishCall("toolu_2", map[string]any{"path": "site", "name": "Two Cities Weather"}),
+		publishCall("toolu_2", named),
 		said("Published."))
-	created, _ := asked()
-	if len(created) != 1 || !maps.Equal(created[0], map[string]string{"name": "Two Cities Weather"}) {
+	created, _ := asked(apps)
+	if len(created) != 1 || !maps.Equal(created[0], map[string]string{"name": "两城天气", "slug": "two-cities-weather"}) {
 		t.Fatalf("the app host was asked to create %v", created)
 	}
 	first := lastPublish(t, c)
-	if first.App != "two-cities-weather" || first.Name != "Two Cities Weather" || first.URL != "https://two-cities-weather.apps.example" || first.Status != session.PublishReady {
+	if first.App != "two-cities-weather" || first.Name != "两城天气" || first.URL != "https://two-cities-weather.apps.example" || first.Status != session.PublishReady {
 		t.Fatalf("the first publish recorded %+v", first)
 	}
 	if text := publishResult(t, c, "toolu_2").Content[0].Text; !strings.Contains(text, "The app's own address is https://two-cities-weather.apps.example") {
 		t.Fatalf("the result reads %q", text)
 	}
-	if use := publishUses(t, c)["toolu_2"]; string(use.Input) != `{"name":"Two Cities Weather","path":"site"}` {
+	if use := publishUses(t, c)["toolu_2"]; string(use.Input) != `{"address":"two-cities-weather","name":"两城天气","path":"site"}` {
 		t.Fatalf("the call was recorded with the input %s", use.Input)
 	}
 
 	c.drive("Add Oslo.",
 		bash("toolu_3", `printf '<h1>Three cities</h1>\n' > site/index.html`),
-		publishCall("toolu_4", map[string]any{"path": "site", "name": "Three Cities Weather"}),
+		publishCall("toolu_4", map[string]any{"path": "site", "name": "三城天气", "address": "three-cities-weather"}),
 		said("Published again."))
 	second := lastPublish(t, c)
-	created, patched := asked()
+	created, patched := asked(apps)
 	if second.App != "two-cities-weather" || second.URL != first.URL || second.Commit == first.Commit || len(created) != 1 || len(patched) != 0 {
 		t.Fatalf("the second publish recorded %+v, with the creates %v and the changes %q", second, created, patched)
+	}
+
+	// Another app has the address: the call creates the app without it,
+	// and publishes.
+	c, apps = publisher("two-cities-weather")
+	c.drive("Compare the weather between Munich and Stockholm.",
+		bash("toolu_1", `mkdir -p site && printf '<h1>Two cities</h1>\n' > site/index.html`),
+		publishCall("toolu_2", named),
+		said("Published."))
+	created, _ = asked(apps)
+	if want := []map[string]string{{"name": "两城天气", "slug": "two-cities-weather"}, {"name": "两城天气"}}; !slices.EqualFunc(created, want, maps.Equal[map[string]string]) {
+		t.Fatalf("the app host was asked to create %v, want %v", created, want)
+	}
+	got := lastPublish(t, c)
+	if got.App != "calm-otter-4821" || got.Name != "两城天气" || got.URL != "https://calm-otter-4821.apps.example" || got.Status != session.PublishReady {
+		t.Fatalf("the publish recorded %+v", got)
+	}
+	if uses := publishUses(t, c); len(uses) != 1 || uses["toolu_2"].Verdict != "allow" {
+		t.Fatalf("the publish was decided %+v, want the one call", uses)
+	}
+	if text := publishResult(t, c, "toolu_2").Content[0].Text; !strings.Contains(text, "The app's own address is https://calm-otter-4821.apps.example") || strings.Contains(text, "two-cities-weather") {
+		t.Fatalf("the result reads %q", text)
 	}
 }
 
