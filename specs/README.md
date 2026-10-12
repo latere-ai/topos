@@ -122,6 +122,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [064](064-files-an-answer-links.md) | Files an answer links: each local file an agent message links is kept from the machine as a blob, recorded by `files.kept` beside the images the message shows, and answered by the blob route as a download | medium | testing | 044, 055 |
 | [065](065-a-working-directory-rebuilt-from-the-log.md) | A working directory rebuilt from the log: a machine made new for a session that lost its own, or for a fork with no checkpoint, gets back the files the session's log holds, recorded as `restored` with what is back and what is not, and the model is told | medium | testing | 008, 009, 017, 034, 064 |
 | [067](067-a-name-and-an-address-for-a-published-site.md) | A name and an address for a published site: the `publish` call that creates a session's app gives the app its name and asks for its address, in place of the session's title, creates it without the address when the host cannot give it, and a call that creates no app ignores both | small | testing | 043, 059 |
+| [068](068-a-sessions-files-in-a-files-store.md) | A session's files in a files store: an allow names a folder at an Arca-compatible files API, where a message's attachments and an answer's kept files are written by the session and named by `ref`, the blob route reads them by digest as a stream, and a fork copies them on the server | large | drafted | 015, 017, 018, 055, 056, 058, 064, 065 |
 | [069](069-connections-an-allow-names.md) | Connections an allow names: git and a service's API reached from the sandbox through a connection service, and remote MCP servers, read at create and fork and replaced at every send | large | testing | 004, 006, 008, 009, 012, 015, 016, 018, 019, 021, 052, 053, 058 |
 | [071](071-a-published-app-found-by-its-id.md) | A published app found by its id: a `publish` result records the app's id beside its slug, an allow may attach an app with its id, and every later call finds the app by that id before its slug, so a rename at the app host keeps a conversation publishing to the same app | small | testing | 043, 058, 059, 067 |
 | [072](072-the-sessions-a-trigger-started.md) | The sessions a trigger started: the sessions list and its summary take `trigger=<id>`, beside every other filter, the cursor and `group=tree`, read from an indexed column in Postgres | small | testing | 014, 015, 022, 056, 057 |
@@ -200,6 +201,7 @@ flowchart BT
   S064[064 files an answer links]
   S065[065 a working directory rebuilt from the log]
   S067[067 a name and an address for a published site]
+  S068[068 a session's files in a files store]
   S069[069 connections an allow names]
   S071[071 a published app found by its id]
   S072[072 the sessions a trigger started]
@@ -317,6 +319,14 @@ flowchart BT
   S065 --> S017
   S065 --> S064
   S067 --> S059
+  S068 --> S015
+  S068 --> S017
+  S068 --> S018
+  S068 --> S055
+  S068 --> S056
+  S068 --> S058
+  S068 --> S064
+  S068 --> S065
   S069 --> S021
   S069 --> S052
   S069 --> S058
@@ -336,6 +346,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063, 064, 065, 067, 068 | each is drafted against a caller when one exists, and then carries its own tests |
 | 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063, 064, 065, 067, 071, 072 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
