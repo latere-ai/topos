@@ -30,9 +30,10 @@ v0.7.0 had no MCP client. Nothing is borrowed.
 `spec.mcpServers` names the servers an agent brings itself. An
 installation that keeps its people's connections
 ([[018-credentials-and-secrets]]) also says, for the person who starts a
-session, which further servers the session reaches. How an allow
-carries them is not designed yet; the HTTP transport below is what both
-use.
+session, which further servers the session reaches, and serves them
+itself: the runner sends the session's own token as the bearer and no
+credential of another service. How an allow carries them is not
+designed yet; the HTTP transport below is what both use.
 
 ## Design
 

@@ -270,15 +270,14 @@ A Connection ([[003-manifest]]) names a service, its hosts and a mode.
 | `agent` | the Connection's own credential, one for every session |
 | `person` | the credential of the person running the session, its initiator: a `token` or `oauth_refresh` that person owns with `connection` set to the Connection; absent, the call fails with `connection_not_connected` and the client offers to connect |
 
-An installation may keep its people's connections itself, beside their
-accounts, as a hosted one does. It then answers a `person` connection's
-credential for a session the way it answers a session's model keys: the
-runner asks through its `TokenSource` and receives an access token and
-its expiry, never a refresh token, so one party refreshes a connection
-however many sessions use it. On such an installation a person holds no
-Credential object here for a `person` connection, and the runner trades
-no `oauth_refresh`. The call the installation answers is not designed
-yet. An installation that answers none keeps the table above.
+An installation may keep its people's connections itself, in a service
+of its own, as a hosted one does. It then serves each connection as a
+server a session reaches with its own session token
+([[021-mcp-servers]]), and adds the credential there. The runner holds
+no credential of another service and trades no `oauth_refresh`, one
+party refreshes a connection however many sessions use it, and a person
+holds no Credential object here for a `person` connection. An
+installation that serves none keeps the table above.
 
 Injection is always outside the machine. For a call the runner makes
 itself (an HTTP MCP server, [[021-mcp-servers]]), the runner adds the
@@ -422,7 +421,5 @@ sandbox Secrets at its end in a drive.
 
 Open: the Credential object, its routes and its envelope encryption
 (`TOPOS_CREDENTIALS_KEY` is not read), connections, scrubbing, named
-secrets on the host, the input check, the scope route, the call
-through which an installation that keeps its people's connections
-answers a `person` connection's credential, and the canary run against
-a real Cella's egress gateway.
+secrets on the host, the input check, the scope route, and the
+canary run against a real Cella's egress gateway.
