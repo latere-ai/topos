@@ -54,6 +54,10 @@ type Properties struct {
 	Effect     Effect
 	// Client tools are executed by the client, not the runner.
 	Client bool
+	// Remote marks a tool that runs outside the session's machine, such as
+	// an MCP server's (spec 069): its calls never open a machine opened on
+	// demand.
+	Remote bool
 	// OutputLimit caps the result text in bytes; zero is DefaultOutputLimit.
 	OutputLimit int
 }
@@ -134,6 +138,10 @@ type Result struct {
 	// CostUSDMicro is what a service the call reached charged for it, a
 	// web search's (spec 047); nil for a call that cost nothing.
 	CostUSDMicro *int64
+	// Requested is a connection the call found not connected (spec 069),
+	// which the harness records as connection.requested after the call's
+	// result; nil for none.
+	Requested *session.ConnectionRequested
 }
 
 // IsError reports whether the outcome is one the model sees as an error:
@@ -326,7 +334,9 @@ func (r *Registry) Add(t Tool) error {
 // AddBuiltin registers a built-in tool.
 func (r *Registry) AddBuiltin(t Tool) error { return r.add(t) }
 
-var namePattern = func(n string) bool {
+// ValidName reports whether n is a tool name: letters, digits, _ and -,
+// at most 64.
+func ValidName(n string) bool {
 	if n == "" || len(n) > 64 {
 		return false
 	}
@@ -346,7 +356,7 @@ func nameChar(c rune) bool {
 
 func (r *Registry) add(t Tool) error {
 	d := t.Definition()
-	if !namePattern(d.Name) {
+	if !ValidName(d.Name) {
 		return fmt.Errorf("tools: %q is not a tool name: letters, digits, _ and -, at most 64", d.Name)
 	}
 	if _, ok := r.byName[d.Name]; ok {

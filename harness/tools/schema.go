@@ -371,3 +371,74 @@ func pointer(at string) string {
 func escape(k string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(k, "~", "~0"), "/", "~1")
 }
+
+// keywords are the keywords CompileSchema reads; every other keyword but
+// an annotation is refused.
+var keywords = []string{"type", "properties", "required", "additionalProperties", "items", "enum", "const",
+	"minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems", "pattern", "oneOf", "anyOf"}
+
+// ReduceSchema is raw without the keywords CompileSchema does not read, at
+// every depth it reads, and whether any was dropped: a remote server's
+// tool whose schema uses one is offered with it ignored (spec 021), and
+// the model reads the schema the validator holds the call to. A schema
+// that is not JSON is an error.
+func ReduceSchema(raw json.RawMessage) (json.RawMessage, bool, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return raw, false, nil
+	}
+	var v any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&v); err != nil {
+		return nil, false, fmt.Errorf("not JSON: %w", err)
+	}
+	cut := false
+	out, err := json.Marshal(reduce(v, &cut))
+	if err != nil {
+		return nil, false, err
+	}
+	return out, cut, nil
+}
+
+// reduce is one schema without the keywords CompileSchema does not read,
+// cut set when it dropped one; a value that is no schema object is kept.
+func reduce(v any, cut *bool) any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	out := map[string]any{}
+	for k, val := range m {
+		switch {
+		case k == "properties":
+			props, ok := val.(map[string]any)
+			if !ok {
+				out[k] = val
+				continue
+			}
+			reduced := map[string]any{}
+			for name, p := range props {
+				reduced[name] = reduce(p, cut)
+			}
+			out[k] = reduced
+		case k == "items" || k == "additionalProperties":
+			out[k] = reduce(val, cut)
+		case k == "oneOf" || k == "anyOf":
+			subs, ok := val.([]any)
+			if !ok {
+				out[k] = val
+				continue
+			}
+			reduced := make([]any, len(subs))
+			for i, s := range subs {
+				reduced[i] = reduce(s, cut)
+			}
+			out[k] = reduced
+		case slices.Contains(keywords, k) || slices.Contains(annotations, k):
+			out[k] = val
+		default:
+			*cut = true
+		}
+	}
+	return out
+}

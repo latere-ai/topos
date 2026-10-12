@@ -219,3 +219,18 @@ func SameConnections(a, b []Connection) bool {
 type ConnectionsChanged struct {
 	Connections []Connection `json:"connections"`
 }
+
+// ConnectionRequested is the payload of connection.requested (spec 069):
+// a connection the connection service answered is not connected, which a
+// client shows the person as one to connect again. ToolUseID names the
+// call that met it, and is absent when the listing of a server's tools
+// did; Scopes are the ones the other service asked for, when it named
+// them.
+type ConnectionRequested struct {
+	Name      string   `json:"name"`
+	Title     string   `json:"title"`
+	Kind      string   `json:"kind"`
+	Reason    string   `json:"reason,omitempty"`
+	Scopes    []string `json:"scopes,omitempty"`
+	ToolUseID string   `json:"tool_use_id,omitempty"`
+}

@@ -173,3 +173,45 @@ func TestSchemaArrayLengths(t *testing.T) {
 		}
 	}
 }
+
+// TestReduceSchema: a remote server's schema keeps every keyword the
+// validator reads, at every depth it reads, drops the others and says so,
+// and compiles after; a schema with none to drop is kept whole, and one
+// that is not JSON is an error (spec 021).
+func TestReduceSchema(t *testing.T) {
+	raw := json.RawMessage(`{"type":"object","$defs":{"x":{}},"minProperties":1,"description":"d",
+		"properties":{"a":{"type":"string","x-mcp-header":"A","format":"email"},
+			"b":{"type":"array","uniqueItems":true,"items":{"type":"integer","multipleOf":2}},
+			"c":{"anyOf":[{"type":"string","not":{}},{"type":"null"}]},
+			"d":{"type":"object","additionalProperties":{"type":"string","contentEncoding":"base64"}}},
+		"required":["a"],"oneOf":"not a list","items":true}`)
+	out, cut, err := ReduceSchema(raw)
+	if err != nil || !cut {
+		t.Fatalf("reduced: %s %v %v", out, cut, err)
+	}
+	for _, gone := range []string{"$defs", "minProperties", "x-mcp-header", "uniqueItems", "multipleOf", `"not"`, "contentEncoding"} {
+		if strings.Contains(string(out), gone) {
+			t.Errorf("%s was kept: %s", gone, out)
+		}
+	}
+	for _, kept := range []string{`"format":"email"`, `"description":"d"`, `"required":["a"]`, `"oneOf":"not a list"`} {
+		if !strings.Contains(string(out), kept) {
+			t.Errorf("%s was dropped: %s", kept, out)
+		}
+	}
+	plain := json.RawMessage(`{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}`)
+	if out, cut, err := ReduceSchema(plain); err != nil || cut {
+		t.Fatalf("a schema with nothing to drop: %s %v %v", out, cut, err)
+	} else if _, err := CompileSchema(out); err != nil {
+		t.Fatal(err)
+	}
+	if out, cut, err := ReduceSchema(nil); err != nil || cut || out != nil {
+		t.Fatalf("no schema: %s %v %v", out, cut, err)
+	}
+	if _, _, err := ReduceSchema(json.RawMessage(`{`)); err == nil {
+		t.Fatal("a schema that is not JSON was reduced")
+	}
+	if !ValidName("mcp__tracker__list_issues") || ValidName("mcp__tracker__admin.reset") || ValidName(strings.Repeat("a", 65)) {
+		t.Fatal("a tool name was judged wrong")
+	}
+}
