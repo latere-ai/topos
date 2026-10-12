@@ -61,8 +61,9 @@ const (
 	// release that publishes and releases in one call (spec 059). It
 	// promises no public address: who may open an app is the app's own
 	// setting, which a result names and a call with access changes once
-	// the person approves it (spec 043).
-	ToolPublish Name = "tools/publish-v4"
+	// the person approves it (spec 043). It tells the model to name the
+	// site the first time it publishes one (spec 067).
+	ToolPublish Name = "tools/publish-v5"
 )
 
 // The results of the publish tool (spec 043). Path is the folder as the

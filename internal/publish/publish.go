@@ -5,12 +5,12 @@
 // of a hosted session's sandbox as the session's own app at the
 // installation's app host, waits for the preview the host builds of it,
 // and releases it to the app's address, in the same call when it is asked
-// to release (spec 059). A call with access publishes nothing and changes
-// who can open an app, once a person approved it. The runner reaches the
-// app host with the session's own short token, which never enters the
-// sandbox; the folder is pushed by the sandbox's own git, which reaches
-// the installation's git host with the session's git credential (spec
-// 019).
+// to release (spec 059). The call that creates the app names it (spec
+// 067). A call with access publishes nothing and changes who can open an
+// app, once a person approved it. The runner reaches the app host with the
+// session's own short token, which never enters the sandbox; the folder is
+// pushed by the sandbox's own git, which reaches the installation's git
+// host with the session's git credential (spec 019).
 package publish
 
 import (
@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
@@ -62,6 +63,12 @@ const (
 	maxAnswer = 4 << 20
 )
 
+// MaxName is the most characters of the name a call gives the app it
+// creates (spec 067). The app host's contract states no bound for a name,
+// so the tool keeps its own: room for a few words in any script, and short
+// of the sentence a model may write in a name's place.
+const MaxName = 80
+
 // DefaultAudience is TOPOS_APPS_AUDIENCE's default.
 const DefaultAudience = "apps"
 
@@ -70,6 +77,7 @@ var schema = json.RawMessage(`{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "The folder to publish; a relative path resolves against the working directory. Default: the checkout of the app that app names, else the folder last published to this session's own app, else the working directory."},
+    "name": {"type": "string", "description": "A short name for a new site, two to four words, in the language of the site, as a person would call it: Class of 2009, Tide Tables. Used once, by the call that creates this session's own app: it becomes the app's name, and the app's address is made from it. Leave it out once the app exists: it renames nothing. Without one, a new app takes the session's title."},
     "app": {"type": "string", "description": "The slug of the app to publish to, release or change the access of: one the session was given, or one this session created. Default: the app whose checkout path is in, else this session's own app; a release that names neither app nor path, and a call with access that names no app, takes the app this session has a preview of, else the one app it has published."},
     "release": {"type": "boolean", "description": "True to publish the folder, wait for its build, and release it to the app's own address, in one call."},
     "access": {"type": "string", "enum": ["link", "private"], "description": "Changes who can open the app and does nothing else: link lets anyone who has the app's address open it without signing in, private only the person and the people they share it with. The call waits for the person's approval. Not with path or release."}
@@ -149,6 +157,10 @@ type input struct {
 	Path    string `json:"path"`
 	App     string `json:"app"`
 	Release bool   `json:"release"`
+	// Name is the name the call gives the thread's own app when it creates
+	// it (spec 067). A call that creates none ignores it: one that
+	// publishes to an app that exists, and one with access.
+	Name string `json:"name"`
 	// Access is session.PublishAccessLink or PublishAccessPrivate, empty
 	// for a call that publishes.
 	Access string `json:"access"`
@@ -282,9 +294,9 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 		return answered(stop), err
 	}
 	if in.Release {
-		return t.release(ctx, c, g, in.Path)
+		return t.release(ctx, c, g, in.Path, in.Name)
 	}
-	return t.preview(ctx, c, g, in.Path)
+	return t.preview(ctx, c, g, in.Path, in.Name)
 }
 
 // answered is the result stop points to, and none for nil.
@@ -665,9 +677,11 @@ func relative(w, dir string) string {
 // build publishes the folder p of the machine to g and waits for its
 // preview: the thread's own app's folder through the session's git
 // directory (spec 043), or an attached app's checkout, committed and
-// pushed on the session's branch (spec 059). A failure before the wait
-// ends is the call's result, returned as stop.
-func (t *Tool) build(ctx context.Context, c tools.Call, g target, p string) (b built, stop *tools.Result, err error) {
+// pushed on the session's branch (spec 059). name is the name the call
+// gives the thread's own app, read only when the call creates it (spec
+// 067). A failure before the wait ends is the call's result, returned as
+// stop.
+func (t *Tool) build(ctx context.Context, c tools.Call, g target, p, name string) (b built, stop *tools.Result, err error) {
 	w := c.Machine.Info().Workdir
 	shown, dir := folder(w, g, p)
 	b.shown = shown
@@ -697,7 +711,7 @@ func (t *Tool) build(ctx context.Context, c tools.Call, g target, p string) (b b
 		}
 		push = func(empty bool) (pushed, error) { return t.pushCheckout(ctx, c.Machine, g, empty) }
 	} else {
-		if b.app, err = t.ensureApp(ctx, g.last); err != nil {
+		if b.app, err = t.ensureApp(ctx, g.last, name); err != nil {
 			return fail(err, nil)
 		}
 		b.meta = g.meta(b.app)
@@ -744,10 +758,10 @@ func (t *Tool) failedBuild(ctx context.Context, b built) prompts.Data {
 	return prompts.Data{"Path": b.shown, "Code": e.Code, "Message": e.Message, "Log": log}
 }
 
-// preview publishes the folder p of the machine to g and answers how its
-// preview stands.
-func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p string) (tools.Result, error) {
-	b, stop, err := t.build(ctx, c, g, p)
+// preview publishes the folder p of the machine to g, named name when the
+// call creates it, and answers how its preview stands.
+func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p, name string) (tools.Result, error) {
+	b, stop, err := t.build(ctx, c, g, p, name)
 	switch {
 	case err != nil:
 		return tools.Result{}, err
@@ -766,17 +780,18 @@ func (t *Tool) preview(ctx context.Context, c tools.Call, g target, p string) (t
 }
 
 // release puts the folder p of the machine live at g's address in one
-// call (spec 059): it publishes the folder as preview does, waits for the
-// build, and releases the commit it built. A build that failed or was
-// canceled, and one the host has not started by the end of the wait,
-// release nothing, and the result says so; a build still running when
-// the wait ends is tagged, and the host releases it once it is ready.
+// call (spec 059): it publishes the folder as preview does, creating the
+// app with name when there is none, waits for the build, and releases the
+// commit it built. A build that failed or was canceled, and one the host
+// has not started by the end of the wait, release nothing, and the result
+// says so; a build still running when the wait ends is tagged, and the
+// host releases it once it is ready.
 //
 // A release of the thread's own app that names no folder, while the
 // thread's last result for the app records none, was published by a
 // release before results recorded their folder: it releases the app's
 // standing preview as it is, as spec 043 did.
-func (t *Tool) release(ctx context.Context, c tools.Call, g target, p string) (tools.Result, error) {
+func (t *Tool) release(ctx context.Context, c tools.Call, g target, p, name string) (tools.Result, error) {
 	if !g.attached() && p == "" && g.last != nil && g.last.Folder == "" {
 		ready := c.State.Standing[cmp.Or(g.slug, g.last.App)]
 		if ready == nil {
@@ -784,7 +799,7 @@ func (t *Tool) release(ctx context.Context, c tools.Call, g target, p string) (t
 		}
 		return t.releaseCommit(ctx, c, g, ready)
 	}
-	b, stop, err := t.build(ctx, c, g, p)
+	b, stop, err := t.build(ctx, c, g, p, name)
 	switch {
 	case err != nil:
 		return tools.Result{}, err
@@ -1099,9 +1114,11 @@ func (t *Tool) app(ctx context.Context, slug string) (hostApp, error) {
 }
 
 // ensureApp is the session's app: the one the thread last published to,
-// or a new one named after the session when there is none or the host no
-// longer knows it.
-func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta) (hostApp, error) {
+// or a new one when there is none or the host no longer knows it. A new
+// app is named name, the name the call gives it, and after the session
+// when the call gives none (spec 067). An app that exists keeps the name
+// it has: renaming it is its person's, at the host.
+func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta, name string) (hostApp, error) {
 	if last != nil {
 		a, err := t.app(ctx, last.App)
 		if err == nil || !isNotFound(err) {
@@ -1109,9 +1126,12 @@ func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta) (hostAp
 		}
 	}
 	// The create names no visibility: who may open a new app is the
-	// host's default, which the person changes there.
+	// host's default, which the person changes there. The host makes the
+	// app's address from the name, so the call's own comes first: the
+	// session's title says what the conversation was about, not what the
+	// site is.
 	body := map[string]string{}
-	if name := strings.TrimSpace(t.s.Title); name != "" {
+	if name = cmp.Or(appName(name), strings.TrimSpace(t.s.Title)); name != "" {
 		body["name"] = name
 	}
 	var a hostApp
@@ -1122,6 +1142,18 @@ func (t *Tool) ensureApp(ctx context.Context, last *session.PublishMeta) (hostAp
 		return hostApp{}, errors.New("the app host created an app without a slug or a push URL")
 	}
 	return a, nil
+}
+
+// appName is the name a call gives the app it creates: s on one line,
+// its runs of whitespace each one space and none around it, cut to
+// MaxName characters and never inside one. It is "" for a call that gives
+// no name.
+func appName(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= MaxName {
+		return s
+	}
+	return strings.TrimRight(string([]rune(s)[:MaxName]), " ")
 }
 
 // onGitHost refuses a push URL on another host than the git host's,

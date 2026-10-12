@@ -191,4 +191,5 @@ var released = map[string]string{
 	"results/publish/access-refused-v1.md":       "184764d976a366e3e09a85f6c89bdeaa0f915e6d2f7f1db058158ec2d1a9d762",
 	"results/publish/access-alone-v1.md":         "de4789b922987607c1d9f4ab0a9385077da772c8a90347842d885ab11adfe618",
 	"results/publish/access-app-v1.md":           "eafd0c68554b2f1022bf3de8bd66df9f71ba3f0a33e0c53bb494cadb2ad2bdf9",
+	"tools/publish-v5.md":                        "2bb6c90a8e45a5592d16616975d71251ff0952bc798c6e316a06a70d255bae83",
 }

@@ -20,6 +20,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
@@ -1331,5 +1332,276 @@ func TestTheDescriptionExplainsAccess(t *testing.T) {
 	}
 	if got := schema.Properties["access"].Enum; !slices.Equal(got, []string{session.PublishAccessLink, session.PublishAccessPrivate}) {
 		t.Errorf("the schema offers access %v", got)
+	}
+}
+
+// chatTitle is a session's title as a conversation leaves it: what the
+// person first asked, which says what the conversation was about and not
+// what the site is.
+const chatTitle = "Compare the weather between Munich and Stockholm"
+
+// titledTool is newTool's tool for a session with title.
+func titledTool(t *testing.T, h *host, title string) *Tool {
+	t.Helper()
+	s := session.Session{ID: "ses_1", Title: title, Agent: session.AgentRef{ID: "agent_1", Name: "latere", Version: 3}}
+	return New(Options{URL: h.srv.URL, Audience: "apps", GitURL: gitURL, Wait: 50 * time.Millisecond, PollEvery: 5 * time.Millisecond}, s, runner.NewTokenSource(creds{}, nil, nil))
+}
+
+// creates are the bodies of the creates the host was asked for, in order.
+func creates(t *testing.T, h *host) []map[string]string {
+	t.Helper()
+	var out []map[string]string
+	for _, raw := range h.sent("POST /apps") {
+		var body map[string]string
+		if err := json.Unmarshal([]byte(raw), &body); err != nil {
+			t.Fatalf("the create %s: %v", raw, err)
+		}
+		out = append(out, body)
+	}
+	return out
+}
+
+// asked are the routes the host was asked, sorted.
+func asked(h *host) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Sorted(maps.Keys(h.calls))
+}
+
+// TestTheCallNamesTheAppItCreates: the call that creates the session's own
+// app sends the name its input gives, on one line with no whitespace around
+// it, cut to MaxName characters and never inside one; the session's title
+// when the input gives none, or whitespace alone, as a call did before the
+// input was there; and no name when the session has no title either. A
+// release that creates the app names it the same way. The create names
+// nothing else, and the result names the app as the host answered it,
+// whatever the call named (spec 067).
+func TestTheCallNamesTheAppItCreates(t *testing.T) {
+	ctx := t.Context()
+	site := map[string]bool{"/work/site": true}
+	ready := map[string]any{"id": "d1", "status": "ready", "preview": true, "commit_sha": sha1, "preview_url": "https://d1--a-poem.apps.example"}
+	// Three times the bound, in a script of three bytes a character.
+	long := strings.Repeat("潮汐表", MaxName)
+	for name, c := range map[string]struct {
+		title string
+		input map[string]any
+		// want is the body of the create.
+		want map[string]string
+	}{
+		"a name":                     {chatTitle, map[string]any{"path": "site", "name": "Tide Tables"}, map[string]string{"name": "Tide Tables"}},
+		"no name":                    {chatTitle, map[string]any{"path": "site"}, map[string]string{"name": chatTitle}},
+		"an empty name":              {chatTitle, map[string]any{"path": "site", "name": ""}, map[string]string{"name": chatTitle}},
+		"whitespace alone":           {chatTitle, map[string]any{"path": "site", "name": " \n\t  "}, map[string]string{"name": chatTitle}},
+		"whitespace around and in":   {chatTitle, map[string]any{"path": "site", "name": "  Tide\n  Tables\t"}, map[string]string{"name": "Tide Tables"}},
+		"another script":             {chatTitle, map[string]any{"path": "site", "name": "潮汐表"}, map[string]string{"name": "潮汐表"}},
+		"at the bound":               {chatTitle, map[string]any{"path": "site", "name": strings.Repeat("潮", MaxName)}, map[string]string{"name": strings.Repeat("潮", MaxName)}},
+		"past the bound":             {chatTitle, map[string]any{"path": "site", "name": long}, map[string]string{"name": string([]rune(long)[:MaxName])}},
+		"past the bound, at a space": {chatTitle, map[string]any{"path": "site", "name": strings.Repeat("a", MaxName-1) + " and more"}, map[string]string{"name": strings.Repeat("a", MaxName-1)}},
+		"a release":                  {chatTitle, map[string]any{"path": "site", "release": true, "name": "Tide Tables"}, map[string]string{"name": "Tide Tables"}},
+		"a name and no title":        {"", map[string]any{"path": "site", "name": "Tide Tables"}, map[string]string{"name": "Tide Tables"}},
+		"neither a name nor a title": {"", map[string]any{"path": "site"}, map[string]string{}},
+	} {
+		h := newHost(t, with(releases("a-poem", "v1", sha1), map[string]func(int) (int, any){
+			"POST /apps": created("a-poem"), "GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": deploys(ready),
+		}))
+		input, err := json.Marshal(c.input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := titledTool(t, h, c.title).Run(ctx, call(string(input), &fakeMachine{dirs: site, outputs: []string{"1 " + sha1 + "\n", ""}}, tools.State{}))
+		if err != nil || res.IsError() {
+			t.Errorf("%s: %+v %v", name, res, err)
+			continue
+		}
+		got := creates(t, h)
+		if len(got) != 1 || !maps.Equal(got[0], c.want) {
+			t.Errorf("%s: the host was asked to create %q, want %q", name, got, c.want)
+			continue
+		}
+		if sent := got[0]["name"]; !utf8.ValidString(sent) || utf8.RuneCountInString(sent) > MaxName {
+			t.Errorf("%s: the name sent is %d characters, valid UTF-8 %v: %q", name, utf8.RuneCountInString(sent), utf8.ValidString(sent), sent)
+		}
+		if h.count("PATCH /apps/a-poem") != 0 {
+			t.Errorf("%s: the app was changed after its create", name)
+		}
+	}
+
+	// The host answers the app it made: the address it gave a name whose
+	// own was taken, and the name as it keeps it. The result records those,
+	// and its text gives that address.
+	h := newHost(t, map[string]func(int) (int, any){
+		"POST /apps": func(int) (int, any) {
+			return http.StatusCreated, map[string]any{"slug": "tide-tables-4821", "name": "Tide Tables", "url": "https://tide-tables-4821.apps.example", "visibility": "private",
+				"repository": map[string]string{"push_url": gitURL + "/ada/tide-tables-4821.git"}}
+		},
+		"GET /apps/tide-tables-4821/deploys": deploys(map[string]any{"id": "d1", "status": "ready", "preview": true, "commit_sha": sha1, "preview_url": "https://d1--tide-tables-4821.apps.example"}),
+	})
+	res, err := titledTool(t, h, chatTitle).Run(ctx, call(`{"path":"site","name":"tide tables"}`, &fakeMachine{dirs: site, outputs: []string{"1 " + sha1 + "\n"}}, tools.State{}))
+	got := metaOf(res)
+	if err != nil || res.IsError() || got.App != "tide-tables-4821" || got.Name != "Tide Tables" || got.URL != "https://tide-tables-4821.apps.example" {
+		t.Fatalf("the result names %+v, %v", got, err)
+	}
+	if text := resultText(res); !strings.Contains(text, "The app's own address is https://tide-tables-4821.apps.example") || strings.Contains(text, "tide-tables.apps.example") {
+		t.Fatalf("the text gives another address than the host's: %q", text)
+	}
+	if sent := creates(t, h); len(sent) != 1 || sent[0]["name"] != "tide tables" {
+		t.Fatalf("the host was asked to create %q", sent)
+	}
+
+	// The host's refusal of a create with a name is the call's error
+	// result, as that of any create is, and nothing is pushed.
+	h = newHost(t, map[string]func(int) (int, any){"POST /apps": func(int) (int, any) {
+		return http.StatusConflict, map[string]any{"error": map[string]any{"code": "slug_taken", "message": "This slug is already in use.", "details": map[string]string{"slug": "tide-tables"}}}
+	}})
+	m := &fakeMachine{dirs: site}
+	res, err = titledTool(t, h, chatTitle).Run(ctx, call(`{"path":"site","name":"Tide Tables"}`, m, tools.State{}))
+	if err != nil || !res.IsError() || !strings.Contains(resultText(res), "the app host refused with slug_taken: This slug is already in use") || metaOf(res).App != "" || len(m.scripts) != 0 || h.count("POST /apps") != 1 {
+		t.Fatalf("a refused create: %+v %v, %d creates, %q", res, err, h.count("POST /apps"), m.scripts)
+	}
+}
+
+// TestANameChangesNoAppThatExists: a name on a call that creates no app is
+// ignored and never refused. A later publish or release of the thread's
+// own app, and a publish of an attached app, send no create and no change
+// of the app, and their results name the app as the host has it. A call
+// with access and a name changes who can open the app and nothing else,
+// passes the check and waits for a person as one without a name, and with
+// no app to change is app_required still, since it creates none. An app
+// the host no longer knows is created again, with the call's name (spec
+// 067).
+func TestANameChangesNoAppThatExists(t *testing.T) {
+	ctx := t.Context()
+	dirs := map[string]bool{"/work": true, "/work/site": true, "/work/tide": true}
+	ready := func(slug string) func(int) (int, any) {
+		return deploys(map[string]any{"id": "d1", "status": "ready", "preview": true, "commit_sha": sha1, "preview_url": "https://d1--" + slug + ".apps.example"})
+	}
+	for name, c := range map[string]struct {
+		input    string
+		attached bool
+		st       tools.State
+		answer   map[string]func(int) (int, any)
+		// routes are the routes the host is asked, sorted.
+		routes []string
+	}{
+		"a later publish": {`{"path":"site","name":"Another Name"}`, false, published(),
+			map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": ready("a-poem")},
+			[]string{"GET /apps/a-poem", "GET /apps/a-poem/deploys"}},
+		"the thread's app, named by its slug": {`{"app":"a-poem","path":"site","name":"Another Name"}`, false, published(),
+			map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": ready("a-poem")},
+			[]string{"GET /apps/a-poem", "GET /apps/a-poem/deploys"}},
+		"a later release": {`{"release":true,"name":"Another Name"}`, false, published(),
+			with(releases("a-poem", "v1", sha1), map[string]func(int) (int, any){"GET /apps/a-poem": app("a-poem"), "GET /apps/a-poem/deploys": ready("a-poem")}),
+			[]string{"GET /apps/a-poem", "GET /apps/a-poem/deploys", "GET /apps/a-poem/releases", "GET /apps/a-poem/releases/v1"}},
+		"an attached app": {`{"app":"tide","name":"Another Name"}`, true, tools.State{},
+			map[string]func(int) (int, any){"GET /apps/tide": app("tide"), "GET /apps/tide/deploys": ready("tide")},
+			[]string{"GET /apps/tide", "GET /apps/tide/deploys"}},
+	} {
+		h := newHost(t, c.answer)
+		tool := newTool(t, h, creds{})
+		if c.attached {
+			tool = attachedTool(t, h)
+		}
+		in := call(c.input, &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n", ""}}, c.st)
+		if stop := tool.Check(in); stop != nil {
+			t.Errorf("%s: refused before it ran: %+v", name, *stop)
+			continue
+		}
+		res, err := tool.Run(ctx, in)
+		if got := metaOf(res); err != nil || res.IsError() || got.Name != "A poem" {
+			t.Errorf("%s: %+v %+v %v", name, res, got, err)
+		}
+		if got := asked(h); !slices.Equal(got, c.routes) {
+			t.Errorf("%s: the host was asked %v, want %v", name, got, c.routes)
+		}
+	}
+
+	// With access, the name is ignored as the app exists: the one change
+	// the host is asked for is who can open it.
+	h := newHost(t, map[string]func(int) (int, any){"GET /apps/a-poem": visible("a-poem", "private"), "PATCH /apps/a-poem": visible("a-poem", "unlisted")})
+	tool := newTool(t, h, creds{})
+	in := call(`{"access":"link","name":"Another Name"}`, &fakeMachine{}, published())
+	if stop := tool.Check(in); stop != nil || tool.Confirm(in) != confirmAccess {
+		t.Fatalf("a call with access and a name: refused %+v, held %q", stop, tool.Confirm(in))
+	}
+	res, err := tool.Run(ctx, in)
+	if got := metaOf(res); err != nil || res.Outcome != tools.OutcomeOK || got.Name != "A poem" || got.Visibility != session.VisibilityUnlisted || got.Status != "" {
+		t.Fatalf("a call with access and a name: %+v %+v %v", res, got, err)
+	}
+	if sent := h.sent("PATCH /apps/a-poem"); !slices.Equal(sent, []string{`{"visibility":"unlisted"}`}) || !slices.Equal(asked(h), []string{"GET /apps/a-poem", "PATCH /apps/a-poem"}) {
+		t.Fatalf("the host was asked %v and sent %q", asked(h), sent)
+	}
+	// It creates no app, so with none to change it is refused as a call
+	// with access alone is, the same before the call is decided and in Run.
+	h = newHost(t, nil)
+	tool = newTool(t, h, creds{})
+	in = call(`{"access":"link","name":"Tide Tables"}`, &fakeMachine{}, tools.State{})
+	stop := tool.Check(in)
+	if stop == nil || metaOf(*stop).Error == nil || metaOf(*stop).Error.Code != session.PublishAppRequired {
+		t.Fatalf("a call with access and a name, nothing published: %+v", stop)
+	}
+	if res, err := tool.Run(ctx, in); err != nil || resultText(res) != resultText(*stop) || len(asked(h)) != 0 {
+		t.Fatalf("Run answered %+v %v, Check %+v, and the host was asked %v", res, err, *stop, asked(h))
+	}
+
+	// An app the host no longer knows is created again, and that call
+	// creates it: its name is the call's.
+	h = newHost(t, map[string]func(int) (int, any){
+		"GET /apps/a-poem": refused(http.StatusNotFound, "app_not_found"), "POST /apps": created("tide-tables"), "GET /apps/tide-tables/deploys": ready("tide-tables"),
+	})
+	res, err = newTool(t, h, creds{}).Run(ctx, call(`{"path":"site","name":"Tide Tables"}`, &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}, published()))
+	if sent := creates(t, h); err != nil || res.IsError() || metaOf(res).App != "tide-tables" || len(sent) != 1 || sent[0]["name"] != "Tide Tables" {
+		t.Fatalf("an app the host lost: %+v %v, created %q", res, err, sent)
+	}
+}
+
+// TestTheDescriptionAsksForAName: the tool's description tells the model
+// to name the site the first time it publishes one, what a name is, that
+// the app's address is made from it, that it is used once, and to give the
+// person the address a result gives; it no longer says the app is named
+// after the session; and the schema takes name as a string, bounds it
+// nowhere, since a long one is cut and not refused, and still refuses a
+// field it does not know (spec 067).
+func TestTheDescriptionAsksForAName(t *testing.T) {
+	tool := newTool(t, newHost(t, nil), creds{})
+	def := tool.Definition()
+	for _, want := range []string{
+		"The first call creates this session's own app, with the `name` the call gives it; every later call publishes to the same app.",
+		"Name the site the first time you publish it.",
+		"a short name for the site, two to four words, in the language of the site, as a person would call it: `Class of 2009`, `Tide Tables`",
+		"It becomes the app's name, and the app's address is made from it, so name what the site is, not what the conversation was about.",
+		"Without one, the app takes the session's title.",
+		"It is used once, by the call that creates the app: a `name` on a later call changes nothing, and renaming an app is the person's to do.",
+		"give the person that address, never one you worked out from the name",
+		"A call that creates no app ignores it: one that publishes to an app that exists, and one with `access`.",
+	} {
+		if !strings.Contains(def.Description, want) {
+			t.Errorf("the description does not say %q", want)
+		}
+	}
+	if strings.Contains(def.Description, "named after the session") {
+		t.Error("the description still says the app is named after the session")
+	}
+	var schema struct {
+		Properties map[string]map[string]any `json:"properties"`
+	}
+	if err := json.Unmarshal(def.InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if got := schema.Properties["name"]; got["type"] != "string" || got["maxLength"] != nil || !strings.Contains(fmt.Sprint(got["description"]), "the app's address is made from it") {
+		t.Errorf("the schema's name is %v", got)
+	}
+	reg := tools.NewRegistry()
+	if err := reg.Add(tool); err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{`{"path":"site","name":"Tide Tables"}`, `{"name":"潮汐表","release":true}`, `{"access":"link","name":"Tide Tables"}`, `{"name":"` + strings.Repeat("a", 4*MaxName) + `"}`} {
+		if _, bad := reg.Validate(Name, []byte(input)); bad != nil {
+			t.Errorf("%s is refused by the schema: %+v", input, bad)
+		}
+	}
+	for _, input := range []string{`{"path":"site","title":"Tide Tables"}`, `{"path":"site","slug":"tide-tables"}`, `{"name":"Tide Tables","visibility":"public"}`, `{"name":7}`, `{"name":["Tide Tables"]}`, `{"name":null}`} {
+		if _, bad := reg.Validate(Name, []byte(input)); bad == nil || bad.Outcome != tools.OutcomeInvalidInput {
+			t.Errorf("%s passed the schema: %+v", input, bad)
+		}
 	}
 }
