@@ -10,6 +10,47 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **A published site gets a name of its own.** The first `publish` of a
+  session created its app with the session's title as the app's name,
+  and the app host makes the app's address from the name. A title says
+  what the conversation was about, often the person's first message, so
+  a site came out named by a sentence, at an address made of that
+  sentence's first words. `publish` now takes `name`: a short name for
+  the site as a person would call it, two to four words, such as "Tide
+  Tables". The call that creates the app sends it, so the app's name is
+  the site's and its address is made from it, and the tool's description
+  tells the model to give one the first time it publishes a site, and
+  to pass on the address the result gives.
+
+  The name is put on one line and cut to 80 characters. A call that
+  gives none, or whitespace alone, creates the app with the session's
+  title, as before. `name` is read by the call that creates the app and
+  by no other: a later publish or release, a publish of an app the
+  installation attached, and a call with `access` ignore it, and none
+  is refused for it. The tool renames no app; a person renames theirs
+  at the app host. Every result names the app in `meta.publish` with
+  the `name` and the `url` the host answers, as before.
+
+  The tool's description is `tools/publish-v5`; `tools/publish-v4`
+  stays as it was.
+
+### Upgrading
+
+- Nothing has to change for an agent to name its sites. An agent
+  definition names `publish` in `spec.tools` and pins no version of the
+  tool's description, so every agent that holds the tool reads
+  `tools/publish-v5` and is offered `name` from this release on. An
+  agent whose own instructions tell it how to name what it publishes
+  keeps working either way.
+- An app host needs no change: the create is `POST {root}/apps` with
+  `{"name"}`, as before, and the host makes the address from the name
+  by its own rule. An app that exists keeps its name and its address.
+- A client that puts a waiting `publish` call to the person in words of
+  its own may show `name`, which the call that creates the app carries
+  in its input. One that does not shows what it showed before.
+
 ## v0.32.0 - 2026-10-12
 
 ### Added
