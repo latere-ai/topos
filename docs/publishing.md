@@ -16,12 +16,12 @@ was published. Everything here is on the wire of `/v1`.
 One call publishes a folder:
 
 ```json
-{"path": "site", "name": "Tide Tables"}
+{"path": "site", "name": "Tide Tables", "address": "tide-tables"}
 ```
 
 The first call creates the session's app at the installation's app
-host, with the name the call gives it; every later call of the session
-publishes to the same app. The folder is committed in the sandbox and
+host, from the name and the address the call gives it; every later call
+of the session publishes to the same app. The folder is committed in the sandbox and
 pushed to the session's own branch of the app's repository, the host
 builds a preview of the push, and the call waits until the preview is
 built. It answers with the preview's address, or with why the build
@@ -30,21 +30,28 @@ publish again. A call whose wait runs out says the preview is still
 building; calling it again with the same folder waits on the same
 build.
 
-`name` is the site's name, as a person would call it: two to four
-words, in the language of the site. The agent gives it the first time
-it publishes a site. It becomes the app's name, and the app host makes
-the app's address from it, so a site about tide tables is not named
-after the question that started the conversation. The name is put on
-one line and cut to 80 characters. A call that gives none creates the
-app with the session's title.
+The agent gives a site a name and an address the first time it
+publishes it, so a site about tide tables is not named after the
+question that started the conversation:
 
-The name is read once, by the call that creates the app. A later
-publish or release of the session, a call that publishes an app the
-installation attached, and a call with `access` ignore it, and none is
-refused for it: the tool renames no app, and a person renames theirs at
-the app host. The result names the app as the host made it, and the
-agent gives the person the address the result gives, which may differ
-from the name where the host had to choose another.
+| Input | What it is | What the tool does with it |
+|---|---|---|
+| `name` | the site's name, as a person would call it: two to four words, in the language of the site | puts it on one line, cuts it to 80 characters, and creates the app with it. A call that gives none creates the app with the session's title |
+| `address` | a short address for the site: at most 40 characters, words of lowercase Latin letters and digits joined by single hyphens, such as `class-of-2009`. It is written in Latin letters whatever the site's language, so a site named `潮汐表` can ask for `tide-tables` | asks the app host to create the app at it. An address of any other form is left out, and the host makes the app's address from the name, as it does for a call that gives none |
+
+An address may be one the host cannot give: another app has it, the
+host reserves or holds it, or it is no address there. The tool then
+creates the app once more without it, and the host makes the address
+itself. The publish goes on in the same call, with nothing more for the
+person to approve. The result names the app as the host made it, and
+the agent gives the person the address the result gives, which may
+differ from the one it asked for.
+
+Both are read once, by the call that creates the app. A later publish
+or release of the session, a call that publishes an app the
+installation attached, and a call with `access` ignore them, and none
+is refused for them: the tool renames no app and moves none to another
+address, and a person changes theirs at the app host.
 
 `release` puts a change live in one call:
 
@@ -215,9 +222,9 @@ A client tells the three calls apart by the input of the call's
 `agent.tool_use`: `access` set is a change of who can open the app,
 `release` true is a release, and neither is a preview. A call with
 `access` names neither `path` nor `release`. The input of the call that
-creates the session's app may carry `name`, the name the app is created
-with; `meta.publish.name` and `url` of its result are the name and the
-address the app has.
+creates the session's app may carry `name` and `address`, what the call
+asks the app to be named and where; `meta.publish.name`, `app` and
+`url` of its result are the name, the slug and the address the app has.
 
 A call with `access` that waits is a question to the person. Its
 `agent.tool_use` has `verdict` `ask`, and the session is idle with
@@ -280,7 +287,7 @@ The host answers this contract under its root:
 
 | Request | Answer |
 |---|---|
-| `POST /apps` with `{"name"}` | `201` with the app: `slug`, `name`, `url`, `repository.push_url`, and `visibility` when the host keeps one |
+| `POST /apps` with `{"name", "slug"}`, each optional | `201` with the app: `slug`, `name`, `url`, `repository.push_url`, and `visibility` when the host keeps one. With no `slug` the host makes the app's address, from the name when it can. A `slug` the host cannot give is refused `invalid_slug`, `slug_taken`, `slug_reserved`, `slug_held` or `repository_name_taken`, and the tool sends the create once more without it |
 | `GET /apps/{slug}` | the app, or `404`; with `current_deploy` and `latest_preview`, each `{"id", "commit_sha"}` or `null`, the commit its address serves and its newest ready preview's, which the start of an attached app's checkout and the check before a release read |
 | `PATCH /apps/{slug}` with `{"visibility": "unlisted"}` or `{"visibility": "private"}` | the app, with its `visibility` after the change |
 | `GET /apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` and `error` |

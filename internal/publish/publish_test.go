@@ -1724,14 +1724,17 @@ func TestTheDescriptionAsksForANameAndAnAddress(t *testing.T) {
 	}
 }
 
-// TestThePublishingPageStatesTheNameBound holds docs/publishing.md to
-// MaxName.
-func TestThePublishingPageStatesTheNameBound(t *testing.T) {
+// TestThePublishingPageStatesTheBounds holds docs/publishing.md to MaxName
+// and MaxAddress.
+func TestThePublishingPageStatesTheBounds(t *testing.T) {
 	raw, err := os.ReadFile("../../docs/publishing.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := fmt.Sprintf("cut to %d characters", MaxName); !strings.Contains(strings.Join(strings.Fields(string(raw)), " "), want) {
-		t.Fatalf("docs/publishing.md does not say that a name is %s", want)
+	page := strings.Join(strings.Fields(string(raw)), " ")
+	for _, want := range []string{fmt.Sprintf("cuts it to %d characters", MaxName), fmt.Sprintf("at most %d characters", MaxAddress)} {
+		if !strings.Contains(page, want) {
+			t.Errorf("docs/publishing.md does not say %q", want)
+		}
 	}
 }
