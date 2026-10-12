@@ -180,9 +180,10 @@ func hostOf(raw string) (string, error) {
 }
 
 // sandboxSecrets are the secrets of the session's sandbox: its Lux key
-// when the installation has session keys, and its git host's token when
-// it has an identity provider and a git host, or else its own git host
-// credential, OrigoToken, when it has one. Each is applied to Cella
+// when the installation has session keys, its git host's token when it
+// has an identity provider and a git host, or else its own git host
+// credential, OrigoToken, when it has one, and its token for the
+// connection service when the installation names one. Each is applied to Cella
 // before the sandbox is opened, so its mount resolves, and is labeled as
 // the sandbox is, with the session's and the agent's labels beside the
 // installation's, since an authorizer that binds the session's token to
@@ -209,6 +210,19 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, s session.Session, c *
 			return nil, setup(CodeMachineUnavailable, fmt.Errorf("TOPOS_ORIGO_URL %w", err))
 		}
 		want = append(want, &sandboxSecret{name: name + "-origo", env: EnvOrigoToken, audience: AudienceOrigo, host: host, labels: labels})
+	}
+	// The connection service's Secret is mounted whether or not the session
+	// has a connection yet: a sandbox takes a mount's placeholder at its
+	// create alone, and a person may connect a service later (spec 069).
+	if o.ConnectionsURL != "" {
+		host, err := hostOf(o.ConnectionsURL)
+		if err != nil {
+			return nil, setup(CodeMachineUnavailable, fmt.Errorf("TOPOS_CONNECTIONS_URL %w", err))
+		}
+		if o.ConnectionsAudience == "" {
+			return nil, setup(CodeMachineUnavailable, errors.New("TOPOS_CONNECTIONS_URL is set with no audience"))
+		}
+		want = append(want, &sandboxSecret{name: name + SecretConnections, env: session.ConnectionsToken, audience: o.ConnectionsAudience, host: host, labels: labels})
 	}
 	var out []*sandboxSecret
 	for _, sec := range want {

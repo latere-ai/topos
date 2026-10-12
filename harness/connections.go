@@ -16,15 +16,11 @@ import (
 // start (spec 069). The turn goes on, and the next one gives them again.
 const CodeConnectionsUnavailable = "connections_unavailable"
 
-// HTTPConnections are s's connections of kind http as its machine reaches
-// them (spec 069), none on a session whose machine is not a Cella
-// sandbox: a host machine's git and environment are the person's own.
-func HTTPConnections(s session.Session) []machine.HTTPConnection {
-	if s.Machine.Kind != session.MachineCella {
-		return nil
-	}
+// HTTPConnections are the connections of cs of kind http as a Cella
+// machine reaches them (spec 069).
+func HTTPConnections(cs []session.Connection) []machine.HTTPConnection {
 	var out []machine.HTTPConnection
-	for _, c := range session.HTTPConnections(s.Connections) {
+	for _, c := range session.HTTPConnections(cs) {
 		out = append(out, machine.HTTPConnection{Env: c.APIEnv(), Address: c.Address, GitAddress: c.GitAddress, GitURL: c.GitURL})
 	}
 	return out
@@ -33,15 +29,17 @@ func HTTPConnections(s session.Session) []machine.HTTPConnection {
 // applyConnections gives the session's machine its connections of kind
 // http as the session holds them at the turn's start, which a send may
 // have replaced since the machine last took them (spec 069). A machine
-// not opened yet takes them when it opens. A machine that cannot take
-// them appends a session.error and the turn goes on: a connection is one
-// service the session reaches, not the boundary it runs within.
+// not opened yet takes them when it opens, and one that is not a Cella
+// sandbox takes none: a host machine's git and environment are the
+// person's own. A machine that cannot take them appends a session.error
+// and the turn goes on: a connection is one service the session reaches,
+// not the boundary it runs within.
 func (t *turn) applyConnections(ctx context.Context) error {
 	cm, ok := t.h.c.Machine.(machine.Connected)
 	if !ok || t.h.c.Machine.Info().Kind != machine.KindCella {
 		return nil
 	}
-	err := cm.ApplyConnections(ctx, HTTPConnections(t.s))
+	err := cm.ApplyConnections(ctx, HTTPConnections(t.s.Connections))
 	if err == nil {
 		return nil
 	}

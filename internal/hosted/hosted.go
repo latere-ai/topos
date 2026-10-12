@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -224,10 +225,14 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	// 009), under the drive's context, so a session whose agent never
 	// needs one has none.
 	cfg.Machine = machine.Defer(ctx, machine.KindCella, func(ctx context.Context) (machine.Machine, error) {
-		spec, err := b.withNetwork(ctx, s, ac.Machine)
+		cur, spec, err := b.withNetwork(ctx, s, ac.Machine)
 		if err != nil {
 			return nil, &machine.OpenError{Code: CodeMachineUnavailable, Err: err}
 		}
+		// The sandbox takes the connections the session holds when it opens,
+		// which a send since the drive began may have replaced (spec 069).
+		s := s
+		s.Connections = cur.Connections
 		m, err := b.o.Machines(ctx, s, spec)
 		if err == nil {
 			return m, nil
@@ -238,24 +243,24 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	return cfg, nil
 }
 
-// withNetwork is the agent's spec.machine with its egress replaced by the
-// session's network as the store holds it when the machine opens (spec
-// 052): the header's base network, or the agent's, with the hosts a
+// withNetwork is the session's header as the store holds it when the
+// machine opens, and the agent's spec.machine with its egress replaced by
+// the session's network then (spec 052): the header's base network, or the agent's, with the hosts a
 // person allowed, the agent's and the repositories' joined under
 // allowlist. A sandbox created or found by a runner that claims the
 // session later takes the same network from the same log.
-func (b builder) withNetwork(ctx context.Context, s session.Session, m v1.Machine) (v1.Machine, error) {
+func (b builder) withNetwork(ctx context.Context, s session.Session, m v1.Machine) (session.Session, v1.Machine, error) {
 	cur, err := b.o.Store.Get(ctx, s.ID)
 	if err != nil {
-		return v1.Machine{}, fmt.Errorf("read the session's network: %w", err)
+		return session.Session{}, v1.Machine{}, fmt.Errorf("read the session's network: %w", err)
 	}
 	evs, err := b.o.Store.Events(ctx, s.ID, 1, 0)
 	if err != nil {
-		return v1.Machine{}, fmt.Errorf("read the session's network: %w", err)
+		return session.Session{}, v1.Machine{}, fmt.Errorf("read the session's network: %w", err)
 	}
 	n := harness.EffectiveNetwork(cur, evs, m.Mode(), m.Egress)
 	m.EgressMode, m.Egress = n.Mode, n.Hosts
-	return m, nil
+	return cur, m, nil
 }
 
 // machineSetup is a machine that could not be had as the setup error a
@@ -446,6 +451,13 @@ type CellaOptions struct {
 	// server mints no git host token for the session; it is read at each
 	// sandbox's open, and nil sends none.
 	OrigoToken client.TokenSource
+	// ConnectionsURL and ConnectionsAudience are TOPOS_CONNECTIONS_URL and
+	// TOPOS_CONNECTIONS_AUDIENCE (spec 069): every sandbox mounts a Secret
+	// scoped to the URL's host holding the session's token for the
+	// audience, through which its git and its commands reach the session's
+	// http connections. An empty URL mounts none.
+	ConnectionsURL      string
+	ConnectionsAudience string
 	// Labels are TOPOS_CELLA_LABELS, which every sandbox and every Secret
 	// the runner applies for it carry beside the session's and the
 	// agent's labels.
@@ -506,11 +518,15 @@ func Cella(o CellaOptions) Machines {
 		if err != nil {
 			return nil, err
 		}
+		reaches := false
 		for _, sec := range secrets {
-			if sec.audience == AudienceOrigo {
+			switch {
+			case sec.audience == AudienceOrigo:
 				if err := gitConfig(ctx, mach, o.OrigoURL); err != nil {
 					return nil, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false))
 				}
+			case sec.env == session.ConnectionsToken:
+				reaches = true
 			}
 		}
 		var minted []*sandboxSecret
@@ -526,7 +542,14 @@ func Cella(o CellaOptions) Machines {
 		if len(secrets) == 0 {
 			return mach, nil
 		}
-		return &sessionMachine{Machine: mach, c: c, secrets: secrets, stop: stop}, nil
+		sm := &sessionMachine{Machine: mach, c: c, secrets: secrets, stop: stop, reaches: reaches}
+		// The session's connections are given before the runner delivers a
+		// repository, so one on a connected git host is cloned through it.
+		if err := sm.ApplyConnections(ctx, harness.HTTPConnections(s.Connections)); err != nil {
+			stop()
+			return nil, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false))
+		}
+		return sm, nil
 	}
 }
 
@@ -540,6 +563,15 @@ type sessionMachine struct {
 	c       *client.Client
 	secrets []*sandboxSecret
 	stop    func()
+	// reaches is whether the sandbox mounts the connection service's
+	// Secret, without which it reaches no http connection (spec 069).
+	reaches bool
+
+	mu sync.Mutex
+	// script is the configuration last written for the session's http
+	// connections, and env the variables each command carries for them.
+	script string
+	env    map[string]string
 }
 
 // Release at the session's end deletes the sandbox before its Secrets, so
