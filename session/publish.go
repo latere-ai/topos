@@ -49,9 +49,15 @@ const (
 // names the app, its address and its visibility after the call, with no
 // status, commit or deploy: it published nothing.
 type PublishMeta struct {
-	// App is the app's slug at the app host, and Name its name.
+	// App is the app's slug at the app host, and Name its name, as the
+	// host answered them when the call ran.
 	App  string `json:"app"`
 	Name string `json:"name,omitempty"`
+	// AppID is the app's id at the app host, which its owner's rename of
+	// the app leaves as it is while App changes, so a later call finds
+	// the app by it (spec 069). Empty where the host named none, and on a
+	// result recorded before results carried it.
+	AppID string `json:"app_id,omitempty"`
 	// URL is the app's own address.
 	URL string `json:"url,omitempty"`
 	// Visibility is who may open the app, as the app host named it when
