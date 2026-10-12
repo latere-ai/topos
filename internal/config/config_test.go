@@ -421,6 +421,51 @@ func TestTheAppHost(t *testing.T) {
 	}
 }
 
+// TestTheConnectionsVariables: the connection service's root and audience
+// are read in serve and in the runner role alike, the audience with its
+// default; the root needs the identity provider in serve, and is refused
+// on the host of the model gateway or the git host (spec 069).
+func TestTheConnectionsVariables(t *testing.T) {
+	base := map[string]string{
+		"TOPOS_AUTHORIZER_URL": "https://platform.example/authorize", "TOPOS_AUTHORIZER_TOKEN": "a",
+		"TOPOS_IDENTITY_URL": "https://login.example", "TOPOS_IDENTITY_CLIENT_ID": "host", "TOPOS_IDENTITY_SECRET_FILE": "/run/host/secret",
+		"TOPOS_CELLA_URL": "https://cella.example", "TOPOS_ORIGO_URL": "https://origo.example",
+	}
+	vars := maps.Clone(base)
+	vars["TOPOS_CONNECTIONS_URL"] = " https://connections.example/v1/ "
+	c, err := Load(RoleServe, serve(vars))
+	if err != nil || c.ConnectionsURL != "https://connections.example/v1" || c.ConnectionsAudience != DefaultConnectionsAudience {
+		t.Fatalf("serve: %+v %v", c, err)
+	}
+	vars["TOPOS_CONNECTIONS_AUDIENCE"] = " pons "
+	if c, err := Load(RoleServe, serve(vars)); err != nil || c.ConnectionsAudience != "pons" {
+		t.Fatalf("an audience: %q %v", c.ConnectionsAudience, err)
+	}
+	if c, err := Load(RoleServe, serve(base)); err != nil || c.ConnectionsURL != "" {
+		t.Fatalf("no connection service: %+v %v", c, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example",
+		"TOPOS_CONNECTIONS_URL": "https://connections.example", "TOPOS_CONNECTIONS_AUDIENCE": "pons"}))
+	if err != nil || r.ConnectionsURL != "https://connections.example" || r.ConnectionsAudience != "pons" {
+		t.Fatalf("a runner role's connection service: %+v %v", r, err)
+	}
+	for name, c := range map[string]struct {
+		mut  map[string]string
+		want string
+	}{
+		"not a url":           {map[string]string{"TOPOS_CONNECTIONS_URL": "connections"}, "TOPOS_CONNECTIONS_URL is"},
+		"no identity":         {map[string]string{"TOPOS_CONNECTIONS_URL": "https://connections.example", "TOPOS_IDENTITY_URL": "", "TOPOS_CELLA_TOKEN_FILE": "/run/cella/token"}, "needs TOPOS_IDENTITY_URL"},
+		"the models host":     {map[string]string{"TOPOS_CONNECTIONS_URL": "https://LUX.example/connections"}, "host of TOPOS_MODELS_URL"},
+		"the git host's host": {map[string]string{"TOPOS_CONNECTIONS_URL": "https://origo.example:8443"}, "host of TOPOS_ORIGO_URL"},
+	} {
+		v := maps.Clone(base)
+		maps.Copy(v, c.mut)
+		if _, err := Load(RoleServe, serve(v)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 // TestTheOrigoTokenFile: an installation without an identity provider
 // names the file of its git host's credential, read in serve and in the
 // runner role alike; the file needs the git host it is sent to, and an

@@ -143,6 +143,14 @@ type Config struct {
 	// runner presents there; empty is the tool's default.
 	AppsURL      string
 	AppsAudience string
+	// ConnectionsURL is the root of the installation's connection service
+	// (spec 069): its host scopes every sandbox's -connections Secret and is
+	// the one host an http connection's addresses may name; empty mounts no
+	// such Secret and refuses an allow with an http connection.
+	// ConnectionsAudience is the audience of the session token that Secret
+	// holds, and the one an http connection names.
+	ConnectionsURL      string
+	ConnectionsAudience string
 	// OrigoTokenFile is the file holding the git host's credential of an
 	// installation without an identity provider, which each sandbox's git
 	// sends to OrigoURL in the place of an agent's token; read at each
@@ -172,6 +180,8 @@ type Config struct {
 const (
 	DefaultRunnerCapacity = 16
 	DefaultMachineHelpers = "/usr/local/lib/topos"
+	// DefaultConnectionsAudience is TOPOS_CONNECTIONS_AUDIENCE's default.
+	DefaultConnectionsAudience = "connections"
 )
 
 // DataDir is TOPOS_DATA_DIR, or $XDG_STATE_HOME/topos, or
@@ -430,7 +440,39 @@ func (c *Config) readRunner(getenv Getenv) []string {
 			problems = append(problems, "TOPOS_APPS_URL needs TOPOS_ORIGO_URL, the git host an app's repository is on")
 		}
 	}
+	return append(problems, c.readConnections(getenv)...)
+}
+
+// readConnections reads the installation's connection service (spec 069).
+// Its host may not be the model gateway's or the git host's, since Cella
+// refuses a sandbox that mounts two Secrets scoped to one host.
+func (c *Config) readConnections(getenv Getenv) []string {
+	c.ConnectionsURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_CONNECTIONS_URL")), "/")
+	c.ConnectionsAudience = strings.TrimSpace(withDefault(getenv("TOPOS_CONNECTIONS_AUDIENCE"), DefaultConnectionsAudience))
+	if c.ConnectionsURL == "" {
+		return nil
+	}
+	if err := checkURL(c.ConnectionsURL); err != nil {
+		return []string{"TOPOS_CONNECTIONS_URL " + err.Error()}
+	}
+	var problems []string
+	host := hostOf(c.ConnectionsURL)
+	for name, other := range map[string]string{"TOPOS_MODELS_URL": c.ModelsURL, "TOPOS_ORIGO_URL": c.OrigoURL} {
+		if other != "" && hostOf(other) == host {
+			problems = append(problems, "TOPOS_CONNECTIONS_URL is on the host of "+name+", "+host+"; a sandbox cannot mount two Secrets scoped to one host")
+		}
+	}
+	slices.Sort(problems)
 	return problems
+}
+
+// hostOf is the lowercase host of a URL checkURL accepted.
+func hostOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
 }
 
 // readCredentials reads the variables of a server whose sessions act
@@ -467,6 +509,9 @@ func (c *Config) readCredentials(getenv Getenv) []string {
 		}
 	} else if c.CellaURL != "" && c.CellaTokenFile == "" {
 		problems = append(problems, "TOPOS_CELLA_URL needs TOPOS_CELLA_TOKEN_FILE, the bearer toposd presents to Cella, unless TOPOS_IDENTITY_URL mints its sessions' tokens")
+	}
+	if c.ConnectionsURL != "" && c.IdentityURL == "" {
+		problems = append(problems, "TOPOS_CONNECTIONS_URL needs TOPOS_IDENTITY_URL, which mints the session tokens a sandbox reaches the connection service with")
 	}
 	if c.SessionKeysURL != "" {
 		if err := checkURL(c.SessionKeysURL); err != nil {
