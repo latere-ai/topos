@@ -12,26 +12,47 @@ committed: the commit log already holds that.
 
 ### Changed
 
-- **A published site gets a name of its own.** The first `publish` of a
-  session created its app with the session's title as the app's name,
-  and the app host makes the app's address from the name. A title says
-  what the conversation was about, often the person's first message, so
-  a site came out named by a sentence, at an address made of that
-  sentence's first words. `publish` now takes `name`: a short name for
-  the site as a person would call it, two to four words, such as "Tide
-  Tables". The call that creates the app sends it, so the app's name is
-  the site's and its address is made from it, and the tool's description
-  tells the model to give one the first time it publishes a site, and
-  to pass on the address the result gives.
+- **A published site gets a name and an address of its own.** The first
+  `publish` of a session created its app with the session's title as
+  the app's name, and the app host made the app's address from the
+  name. A title says what the conversation was about, often the
+  person's first message, so a site came out named by a sentence, at an
+  address made of that sentence's first words, and a site whose name is
+  in a script an address holds none of got an address the host
+  generated. `publish` now takes two more inputs, and the tool's
+  description tells the model to give both the first time it publishes
+  a site:
 
-  The name is put on one line and cut to 80 characters. A call that
-  gives none, or whitespace alone, creates the app with the session's
-  title, as before. `name` is read by the call that creates the app and
-  by no other: a later publish or release, a publish of an app the
-  installation attached, and a call with `access` ignore it, and none
-  is refused for it. The tool renames no app; a person renames theirs
-  at the app host. Every result names the app in `meta.publish` with
-  the `name` and the `url` the host answers, as before.
+  - `name`, a short name for the site as a person would call it, two to
+    four words in the language of the site, such as "Tide Tables" or
+    "潮汐表". The call that creates the app sends it as the app's name,
+    put on one line and cut to 80 characters. A call that gives none,
+    or whitespace alone, creates the app with the session's title, as
+    before.
+  - `address`, a short address in Latin letters whatever the site's
+    language, such as `tide-tables`: at most 40 characters, in words of
+    lowercase letters and digits joined by single hyphens. The call
+    that creates the app sends it as the create's `slug`. An address of
+    any other form is left out, and the host makes the address from the
+    name, as it does for a call that gives none.
+
+  An address the host cannot give does not fail the publish. When the
+  host refuses the create for its slug, with `invalid_slug`,
+  `slug_taken`, `slug_reserved`, `slug_held` or
+  `repository_name_taken`, the tool sends the create once more without
+  one, the host makes the address, and the same call goes on: the
+  person is asked nothing more. Any other refusal of a create is the
+  call's error result, as before.
+
+  Both inputs are read by the call that creates the app and by no
+  other: a later publish or release, a publish of an app the
+  installation attached, and a call with `access` ignore them, and none
+  is refused for them. The tool renames no app and moves none to
+  another address; a person changes theirs at the app host. Every
+  result names the app in `meta.publish` with the `name`, the slug and
+  the `url` the host answers, as before, so the address the agent
+  passes on is the one that exists, which may differ from the one it
+  asked for.
 
   The tool's description is `tools/publish-v5`; `tools/publish-v4`
   stays as it was.
@@ -41,15 +62,25 @@ committed: the commit log already holds that.
 - Nothing has to change for an agent to name its sites. An agent
   definition names `publish` in `spec.tools` and pins no version of the
   tool's description, so every agent that holds the tool reads
-  `tools/publish-v5` and is offered `name` from this release on. An
-  agent whose own instructions tell it how to name what it publishes
-  keeps working either way.
-- An app host needs no change: the create is `POST {root}/apps` with
-  `{"name"}`, as before, and the host makes the address from the name
-  by its own rule. An app that exists keeps its name and its address.
+  `tools/publish-v5` and is offered `name` and `address` from this
+  release on. An agent whose own instructions tell it how to name what
+  it publishes keeps working either way.
+- An app host takes `slug` beside `name` in `POST {root}/apps`, gives
+  the app that slug, and refuses one it cannot give with one of the
+  five codes above. A host that makes every address itself may ignore
+  the member. A host that refuses a body with a member it does not
+  know, with another code, fails the first publish of every call that
+  asks for an address: roll such a host's reading of `slug` before this
+  release. An app that exists keeps its name and its address.
+- An installation whose authorizer decides an app's create by what the
+  create names is asked about a create with a slug by its app host as
+  that host asks it. Where it refuses a session such a create, the
+  call's error result carries the refusal and no app is created, so
+  check the rule before this release.
 - A client that puts a waiting `publish` call to the person in words of
-  its own may show `name`, which the call that creates the app carries
-  in its input. One that does not shows what it showed before.
+  its own may show `name` and `address`, which the call that creates
+  the app carries in its input. One that does not shows what it showed
+  before.
 
 ## v0.32.0 - 2026-10-12
 
