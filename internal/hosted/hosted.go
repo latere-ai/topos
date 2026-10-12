@@ -200,6 +200,9 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 			return harness.Config{}, err
 		}
 	}
+	// The tools of each connection of kind mcp are listed at the drive's
+	// start and offered beside the agent's own (spec 069).
+	cfg.MCP = b.mcp(ctx, s, reg)
 	cfg.Tools = reg
 	// The question tool is the harness's own, offered when the agent names
 	// it (spec 039).

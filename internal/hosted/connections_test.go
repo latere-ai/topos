@@ -5,6 +5,7 @@ package hosted
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"net/http"
 	"net/http/cgi"
@@ -20,12 +21,16 @@ import (
 
 	"latere.ai/x/cella/client"
 	cellav1 "latere.ai/x/cella/manifest/v1"
+	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/cellastub"
+	"latere.ai/x/topos/test/stubs/luxstub"
+	"latere.ai/x/topos/test/stubs/mcpstub"
 )
 
 // withConnectionService names the connection service of
@@ -337,5 +342,79 @@ func TestASandboxClonesThroughAConnection(t *testing.T) {
 	}
 	if strings.Contains(c.dump(), value) {
 		t.Fatal("an event carries the connection service's token")
+	}
+}
+
+// toolCall is a reply that calls a tool by its name with args.
+func toolCall(id, name, args string) luxstub.Reply {
+	return luxstub.Reply{Response: ir.Response{Model: haiku, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: name, Args: json.RawMessage(args)}}}, StopReason: ir.StopToolUse}}
+}
+
+// TestMCPConnectionsAreOffered: a session's mcp connection is listed at
+// each drive's start with the session's token for its audience and the
+// workload session, its tools offered under mcp__<name>__<tool> beside
+// the agent's own and named in the block; a read tool runs at once, a
+// write tool waits for the person as an external call does and runs on
+// their allow, neither opens a sandbox; once the service answers the
+// connection is not connected, a call fails with a result the model
+// relays and connection.requested follows it, and the next drive's
+// listing records it again and offers none of its tools (spec 069).
+func TestMCPConnectionsAreOffered(t *testing.T) {
+	stub := mcpstub.New(t, mcpstub.Options{Admit: func(b string) bool { return strings.HasPrefix(b, "tracker-core-session-") }, Tools: []mcpstub.Tool{
+		{Name: "list_issues", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: func(json.RawMessage) any {
+			return map[string]any{"content": []any{map[string]any{"type": "text", "text": "#1 The build is broken"}}}
+		}},
+		{Name: "create_issue", Stream: true, InputSchema: json.RawMessage(`{"type":"object","properties":{"title":{"type":"string"}}}`), Answer: func(json.RawMessage) any {
+			return map[string]any{"content": []any{map[string]any{"type": "text", "text": "Opened #2"}}}
+		}},
+		{Name: "get_private", InputSchema: json.RawMessage(`{"type":"object"}`), NotConnected: "scope_insufficient"},
+	}})
+	tracker := session.Connection{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "tracker-core", Address: stub.URL(), ReadOnly: []string{"list_*", "get_*"}}
+	c := newCloud(t, func(s *session.Session) { s.Connections = []session.Connection{tracker} })
+	creds := &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	c.creds = creds
+	c.driveAfter(session.StopToolConfirmation, []session.Event{c.message("What is open?")},
+		toolCall("toolu_1", "mcp__tracker__list_issues", `{}`), toolCall("toolu_2", "mcp__tracker__create_issue", `{"title":"Fix it"}`))
+	if got := c.results(); len(got) != 1 || got[0] != "#1 The build is broken" {
+		t.Fatalf("the read tool answered %q", got)
+	}
+	reqs := c.lux.Requests()
+	if body := string(reqs[0].Body); !strings.Contains(body, "mcp__tracker__create_issue") || !strings.Contains(body, "mcp__tracker__\\u003ctool\\u003e") {
+		t.Fatal("the request neither offers the server's tools nor names them in the block")
+	}
+	var use session.AgentToolUse
+	if uses := c.events(session.TypeAgentToolUse); len(uses) != 2 || uses[1].Decode(&use) != nil || use.Verdict != "ask" {
+		t.Fatalf("the write tool's call %+v", use)
+	}
+	c.driveAfter(session.StopEndTurn, []session.Event{c.confirmation(session.UserToolConfirmation{ToolUseID: "toolu_2", Decision: "allow"})}, said("Opened."))
+	if got := c.results(); len(got) != 2 || got[1] != "Opened #2" {
+		t.Fatalf("the write tool answered %q", got)
+	}
+	if n := c.cella.Count(cellastub.OpCreate); n != 0 {
+		t.Fatalf("a server's tools created %d sandboxes", n)
+	}
+	if !slices.Contains(creds.calls, "tracker-core/session") {
+		t.Fatalf("the tokens asked %v", creds.calls)
+	}
+
+	c.drive("Read the private one.", toolCall("toolu_3", "mcp__tracker__get_private", `{}`), said("Connect it again."))
+	var res session.ToolResult
+	if rs := c.events(session.TypeToolResult); len(rs) != 3 || rs[2].Decode(&res) != nil || !res.IsError ||
+		res.Content[0].Text != prompts.Render(prompts.CallNotConnected, prompts.Data{"Title": "Issue tracker", "Reason": "scope_insufficient"}) {
+		t.Fatalf("the call to a connection not connected answered %+v", res)
+	}
+	var req session.ConnectionRequested
+	if rs := c.events(session.TypeConnectionRequested); len(rs) != 1 || rs[0].Decode(&req) != nil || req.ToolUseID != "toolu_3" || req.Reason != "scope_insufficient" || req.Name != "tracker" {
+		t.Fatalf("connection.requested %+v", req)
+	}
+
+	stub.Disconnect("revoked")
+	c.drive("Open another.", toolCall("toolu_4", "mcp__tracker__create_issue", `{"title":"Again"}`), said("Connect it."))
+	var listed session.ConnectionRequested
+	if rs := c.events(session.TypeConnectionRequested); len(rs) != 2 || rs[1].Decode(&listed) != nil || listed.ToolUseID != "" || listed.Reason != "revoked" {
+		t.Fatalf("connection.requested at a drive whose listing failed %+v", listed)
+	}
+	if body := string(c.lux.Requests()[len(c.lux.Requests())-1].Body); !strings.Contains(body, "Issue tracker: not connected (revoked)") {
+		t.Fatal("the block does not say the connection is not connected")
 	}
 }

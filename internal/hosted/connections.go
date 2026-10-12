@@ -5,12 +5,22 @@ package hosted
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
+	"sync"
 	"time"
 
+	"latere.ai/x/pkg/otel"
+
+	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/harness/tools/mcp"
+	"latere.ai/x/topos/internal/version"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 )
 
@@ -116,3 +126,76 @@ func (m *sessionMachine) ExecStream(ctx context.Context, r machine.ExecRequest) 
 }
 
 var _ machine.Connected = (*sessionMachine)(nil)
+
+// MCPListTimeout bounds a drive's listing of one connection's tools.
+const MCPListTimeout = 30 * time.Second
+
+// mcp lists the tools of each of s's connections of kind mcp, at once,
+// with the session's token for the connection's audience and the
+// workload session, asked of the drive's token source for every request,
+// and adds them to reg (spec 069). It answers how each listing ended,
+// which the harness records and names in the connections block; a
+// listing that fails offers none of the connection's tools, and the
+// session goes on.
+func (b builder) mcp(ctx context.Context, s session.Session, reg *tools.Registry) map[string]harness.MCPListing {
+	var conns []session.Connection
+	for _, c := range s.Connections {
+		if c.Kind == session.ConnectionMCP {
+			conns = append(conns, c)
+		}
+	}
+	if len(conns) == 0 {
+		return nil
+	}
+	src := runner.TokensFrom(ctx)
+	type listing struct {
+		tools []tools.Tool
+		l     harness.MCPListing
+	}
+	results := make([]listing, len(conns))
+	var wg sync.WaitGroup
+	for i, c := range conns {
+		wg.Go(func() {
+			token := func(ctx context.Context) (string, error) {
+				if src == nil {
+					return "", errors.New("this server mints no session tokens")
+				}
+				cred, err := src.Token(ctx, c.Audience, runner.WorkloadSession)
+				return cred.Value, err
+			}
+			server := mcp.Server{Connection: c, Client: mcp.NewClient(c.Address, token, otel.HTTPClient(), version.Version)}
+			lctx, cancel := context.WithTimeout(ctx, MCPListTimeout)
+			defer cancel()
+			ts, reduced, err := server.Tools(lctx)
+			var nc *mcp.NotConnected
+			switch {
+			case errors.As(err, &nc):
+				results[i].l = harness.MCPListing{NotConnected: true, Reason: nc.Reason, Scopes: nc.Scopes}
+			case err != nil:
+				results[i].l = harness.MCPListing{Err: err.Error()}
+			default:
+				results[i] = listing{tools: ts, l: harness.MCPListing{Reduced: reduced}}
+			}
+		})
+	}
+	wg.Wait()
+	out := make(map[string]harness.MCPListing, len(conns))
+	for i, c := range conns {
+		for _, t := range results[i].tools {
+			// A server that lists two tools of one name offers the first.
+			if err := reg.Add(t); err != nil {
+				b.log().WarnContext(ctx, "a server's tool is not offered", "session", s.ID, "connection", c.Name, "err", err)
+			}
+		}
+		out[c.Name] = results[i].l
+	}
+	return out
+}
+
+// log is the harness's logger, one that discards when none is set.
+func (b builder) log() *slog.Logger {
+	if b.o.Log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return b.o.Log
+}
