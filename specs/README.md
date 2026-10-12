@@ -121,6 +121,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [063](063-a-messages-opening-for-an-authorizer-that-routes-by-it.md) | A message's opening for an authorizer that routes by it: an allow may ask for each later message's opening, which the session keeps beside its route under the operator's ceiling; and a message may say its client shows an authorizer's ask, and name the ask it answers | medium | testing | 006, 015, 038, 056, 061 |
 | [064](064-files-an-answer-links.md) | Files an answer links: each local file an agent message links is kept from the machine as a blob, recorded by `files.kept` beside the images the message shows, and answered by the blob route as a download | medium | testing | 044, 055 |
 | [065](065-a-working-directory-rebuilt-from-the-log.md) | A working directory rebuilt from the log: a machine made new for a session that lost its own, or for a fork with no checkpoint, gets back the files the session's log holds, recorded as `restored` with what is back and what is not, and the model is told | medium | testing | 008, 009, 017, 034, 064 |
+| [067](067-a-name-for-a-published-site.md) | A name for a published site: the `publish` call that creates a session's app gives the app its name, from which the app host makes its address, in place of the session's title; a call that creates no app ignores it | small | testing | 043, 059 |
 
 ## Dependency graph
 
@@ -195,6 +196,7 @@ flowchart BT
   S063[063 a message's opening]
   S064[064 files an answer links]
   S065[065 a working directory rebuilt from the log]
+  S067[067 a name for a published site]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -308,6 +310,7 @@ flowchart BT
   S064 --> S055
   S065 --> S017
   S065 --> S064
+  S067 --> S059
 ```
 
 ## Build order
@@ -321,7 +324,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063, 064, 065 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063, 064, 065, 067 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,
