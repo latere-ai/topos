@@ -32,6 +32,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/internal/filestore"
 	"latere.ai/x/topos/internal/publish"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
@@ -52,6 +53,9 @@ const (
 	// CodeSearchUnavailable is a search service whose URL the client
 	// refuses, which configuration checks first (spec 047).
 	CodeSearchUnavailable = "search_unavailable"
+	// CodeFilesUnavailable is a session that keeps its files in a folder
+	// of a files store, driven by a runner that reaches none (spec 068).
+	CodeFilesUnavailable = "files_unavailable"
 )
 
 // DoorSettle is how long a runner reads a door's model list again when
@@ -102,7 +106,12 @@ type Options struct {
 	// reaches for a session whose agent names it (spec 043); unconfigured,
 	// no session is offered the tool.
 	Publish publish.Options
-	Clock   func() time.Time
+	// FilesAudience is TOPOS_FILES_AUDIENCE, the audience of the token a
+	// session's folder of a files store is written and read with (spec
+	// 068); empty reaches no files store, and a session that keeps its
+	// files in one is a setup error.
+	FilesAudience string
+	Clock         func() time.Time
 	// Log is each session's harness.Config.Log: what a turn did about a
 	// response that wrote a tool call as text (spec 062). Nil discards it.
 	Log *slog.Logger
@@ -178,6 +187,9 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		Log:    b.o.Log,
 	}
 	cfg.Policy.Mode = cmp.Or(cfg.Policy.Mode, harness.ModeConfirm)
+	if cfg.Files, err = b.files(ctx, s); err != nil {
+		return harness.Config{}, err
+	}
 	if d, err := time.ParseDuration(s.Limits.TurnTimeout); err == nil {
 		cfg.TurnTimeout = d
 	}
@@ -244,6 +256,32 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		return nil, &machine.OpenError{Code: se.Code, Err: se.Err}
 	})
 	return cfg, nil
+}
+
+// files is the session's folder of the files store its create's allow
+// named (spec 068), reached with the session's own token for
+// FilesAudience and the workload session, asked of the drive's token
+// source at each request, so a renewed token reaches the next one and no
+// token reaches the sandbox; nil for a session with no folder. A session
+// with one, on a runner with no audience or no token source, is a setup
+// error: its files would otherwise land where its installation does not
+// look for them.
+func (b builder) files(ctx context.Context, s session.Session) (harness.Files, error) {
+	if s.Folder == nil {
+		return nil, nil
+	}
+	src := runner.TokensFrom(ctx)
+	if b.o.FilesAudience == "" || src == nil {
+		return nil, setup(CodeFilesUnavailable, fmt.Errorf("session %s keeps its files in a folder of a files store, and this runner reaches none: TOPOS_FILES_AUDIENCE is unset or it mints no session token", s.ID))
+	}
+	f, err := filestore.New(*s.Folder, func(ctx context.Context) (string, error) {
+		c, err := src.Token(ctx, b.o.FilesAudience, runner.WorkloadSession)
+		return c.Value, err
+	}, otel.HTTPClient())
+	if err != nil {
+		return nil, setup(CodeFilesUnavailable, err)
+	}
+	return f, nil
 }
 
 // withNetwork is the session's header as the store holds it when the

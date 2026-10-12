@@ -31,10 +31,12 @@ import (
 	"latere.ai/x/pkg/health"
 	"latere.ai/x/pkg/otel"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/blob"
 	"latere.ai/x/topos/internal/config"
 	"latere.ai/x/topos/internal/credentials"
+	"latere.ai/x/topos/internal/filestore"
 	"latere.ai/x/topos/internal/hosted"
 	idp "latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/publish"
@@ -172,6 +174,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		so.Deleted = func(id string) error { return hosted.RemoveHostSession(cfg.DataDir, id) }
 	}
 	so.Workspaces = workspaces(cfg, minter)
+	so.Files = files(cfg, minter, identities)
 	api, err := server.New(so)
 	if err != nil {
 		return fail(stderr, err)
@@ -404,6 +407,37 @@ func workspaces(cfg config.Config, minter *credentials.Minter) func(context.Cont
 	return hosted.Workspaces(o)
 }
 
+// files opens a session's folder of the files store for the API (spec
+// 068), nil when TOPOS_FILES_AUDIENCE is unset: written with the session's
+// own token for that audience, as the API's holder, and read with the
+// host client's own token for it, so a session that ended stays readable.
+// Configuration requires the identity provider beside the audience.
+func files(cfg config.Config, minter *credentials.Minter, identities *idp.Client) *server.Files {
+	if cfg.FilesAudience == "" || minter == nil || identities == nil {
+		return nil
+	}
+	open := func(token filestore.Token) func(context.Context, session.Session) (harness.Files, error) {
+		return func(_ context.Context, s session.Session) (harness.Files, error) {
+			if s.Folder == nil {
+				return nil, fmt.Errorf("session %s names no folder", s.ID)
+			}
+			return filestore.New(*s.Folder, token, otel.HTTPClient())
+		}
+	}
+	return &server.Files{
+		Write: func(ctx context.Context, s session.Session) (harness.Files, error) {
+			return open(func(ctx context.Context) (string, error) {
+				c, err := minter.Credential(ctx, s.ID, "api", cfg.FilesAudience, runner.WorkloadSession)
+				return c.Value, err
+			})(ctx, s)
+		},
+		Read: open(func(ctx context.Context) (string, error) {
+			t, err := identities.ServiceToken(ctx, cfg.FilesAudience)
+			return t.Value, err
+		}),
+	}
+}
+
 // reapInterval is how often serve frees the claims of remote runners
 // that stopped renewing them.
 var reapInterval = 5 * time.Second
@@ -454,7 +488,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	// The app host a session publishes to (spec 043), reached by the
 	// runner with the session's own token.
 	apps := publish.Options{URL: cfg.AppsURL, Audience: cfg.AppsAudience, GitURL: cfg.OrigoURL}
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, Log: log})
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, FilesAudience: cfg.FilesAudience, Log: log})
 	if err != nil {
 		return nil, err
 	}
