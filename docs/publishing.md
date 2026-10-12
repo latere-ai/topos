@@ -16,11 +16,11 @@ was published. Everything here is on the wire of `/v1`.
 One call publishes a folder:
 
 ```json
-{"path": "site"}
+{"path": "site", "name": "Tide Tables"}
 ```
 
 The first call creates the session's app at the installation's app
-host, named after the session's title; every later call of the session
+host, with the name the call gives it; every later call of the session
 publishes to the same app. The folder is committed in the sandbox and
 pushed to the session's own branch of the app's repository, the host
 builds a preview of the push, and the call waits until the preview is
@@ -29,6 +29,22 @@ failed and the end of the build log, so the agent can fix it and
 publish again. A call whose wait runs out says the preview is still
 building; calling it again with the same folder waits on the same
 build.
+
+`name` is the site's name, as a person would call it: two to four
+words, in the language of the site. The agent gives it the first time
+it publishes a site. It becomes the app's name, and the app host makes
+the app's address from it, so a site about tide tables is not named
+after the question that started the conversation. The name is put on
+one line and cut to 80 characters. A call that gives none creates the
+app with the session's title.
+
+The name is read once, by the call that creates the app. A later
+publish or release of the session, a call that publishes an app the
+installation attached, and a call with `access` ignore it, and none is
+refused for it: the tool renames no app, and a person renames theirs at
+the app host. The result names the app as the host made it, and the
+agent gives the person the address the result gives, which may differ
+from the name where the host had to choose another.
 
 `release` puts a change live in one call:
 
@@ -198,7 +214,10 @@ answer.
 A client tells the three calls apart by the input of the call's
 `agent.tool_use`: `access` set is a change of who can open the app,
 `release` true is a release, and neither is a preview. A call with
-`access` names neither `path` nor `release`.
+`access` names neither `path` nor `release`. The input of the call that
+creates the session's app may carry `name`, the name the app is created
+with; `meta.publish.name` and `url` of its result are the name and the
+address the app has.
 
 A call with `access` that waits is a question to the person. Its
 `agent.tool_use` has `verdict` `ask`, and the session is idle with

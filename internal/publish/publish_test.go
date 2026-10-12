@@ -13,6 +13,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"slices"
 	"strconv"
@@ -1603,5 +1604,17 @@ func TestTheDescriptionAsksForAName(t *testing.T) {
 		if _, bad := reg.Validate(Name, []byte(input)); bad == nil || bad.Outcome != tools.OutcomeInvalidInput {
 			t.Errorf("%s passed the schema: %+v", input, bad)
 		}
+	}
+}
+
+// TestThePublishingPageStatesTheNameBound holds docs/publishing.md to
+// MaxName.
+func TestThePublishingPageStatesTheNameBound(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/publishing.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := fmt.Sprintf("cut to %d characters", MaxName); !strings.Contains(strings.Join(strings.Fields(string(raw)), " "), want) {
+		t.Fatalf("docs/publishing.md does not say that a name is %s", want)
 	}
 }

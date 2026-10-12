@@ -77,6 +77,8 @@ working directory rebuilt from its own log.
 A session's app is created with no visibility of its own, so it starts
 as the app host makes it, and `publish` opens an app to anyone who has
 its link, or closes it again, in a call the person approves every time.
+The agent names a site the first time it publishes one, so a new app's
+name and address come from the site and not from the session's title.
 
 Not built yet: write-only credentials and connections, memory stores, MCP
 servers, external runners and handoff, the event sink, the conformance suite
