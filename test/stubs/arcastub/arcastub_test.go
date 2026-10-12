@@ -226,3 +226,13 @@ type recorder struct {
 }
 
 func (r *recorder) Errorf(string, ...any) { r.failed = true }
+
+// TestATestRemovesAnObject: an object a test removes is gone.
+func TestATestRemovesAnObject(t *testing.T) {
+	s := New(t)
+	s.Put("o", "files/a", Object{Data: []byte("a")})
+	s.Remove("o", "files/a")
+	if _, ok := s.Object("o", "files/a"); ok {
+		t.Fatal("the object is still there")
+	}
+}

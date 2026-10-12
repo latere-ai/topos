@@ -298,7 +298,7 @@ var opDescriptions = map[string]string{
 	"listAgentVersions": "List an agent's versions.",
 	"getAgentVersion":   "Get one version of an agent. " + AnsweredSpec,
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
-	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " +
+	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " + FolderRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
 		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, route the routed name the authorizer chose on the way, when it names one, and message_text true when its allow asks for the opening of each later message. " +
 		"A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it, and never its opening, since the session has no allow yet. " +
@@ -320,7 +320,7 @@ var opDescriptions = map[string]string{
 		"a session the caller may not read is left out, so a page may hold fewer sessions than limit while next_cursor remains. "+
 		"A fork holds its parent's events, so a session and the session it was forked from can both match. A q that is empty, holds no word, or is longer than %d characters is invalid_request.",
 		session.MaxSearchText, session.MaxSearchMatches, session.SearchExcerpt, session.MaxSearchQuery),
-	"getSession":    "Get a session.",
+	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there.",
 	"resumeSession": "Resume a session idle on its budget once the cap is raised.",
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
 		"interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. " +
@@ -329,7 +329,9 @@ var opDescriptions = map[string]string{
 	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. The answer is read by the blob's leading bytes: "+
 		"PNG, JPEG, GIF or WebP is that image type with Content-Disposition inline, and any other blob, an SVG included, application/octet-stream with Content-Disposition attachment. "+
 		"A file an answer linked that is no such image is a download here whatever its type, which the media_type of its files.kept entry names. "+
-		"Both carry X-Content-Type-Options nosniff, Content-Security-Policy %q, Cache-Control %q, since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag.",
+		"Both carry X-Content-Type-Options nosniff, Content-Security-Policy %q, Cache-Control %q, since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag. "+
+		"A file a session keeps in its folder of the files store is read by its digest from there, with the server's own credential, so a session that ended stays readable, and is answered as it streams, with its Content-Length; "+
+		"a file the folder no longer holds is not_found, a read the files service fails files_unavailable, and a file whose every record was redacted not_found, while the file stays in the folder.",
 		filePolicy, blobCache),
 	"getFile": fmt.Sprintf("Get one file of the session's working directory as it is now, such as a file the agent wrote, by its path. "+
 		"The answer is the file's bytes as a download: Content-Type from its extension or its first bytes, Content-Length, Content-Disposition attachment with its name, "+
@@ -360,6 +362,8 @@ var opDescriptions = map[string]string{
 		"A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most %d of at most %d bytes each), "+
 		"and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most %d of at most %d bytes each, the name one path segment of at most %d bytes). "+
 		"The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; "+
+		"a session with a folder of the files store writes each file there at that path instead, with the session's own token, and its record names it by ref, the same path, beside blob, its digest; "+
+		"a file the files service refuses for its size is attachment_too_large and any other failure files_unavailable, and the message is then not appended; "+
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
 		"The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: "+
@@ -419,6 +423,8 @@ var opDescriptions = map[string]string{
 		"message is a user.message's payload as the send route takes it, {content, attachments, askable, answers}, under the same limits and refusals, sent to the fork in the same call; " +
 		"a file of it is {name, data} as on a send, or {name, blob}, a digest a file a message of the forked session attached names, kept with that message's media type and size without its bytes being sent again; " +
 		"a file with both or neither of data and blob, a blob beside a media_type, and a blob no message of the forked session attaches are invalid_request. " +
+		"A fork of a session that keeps files in a folder of the files store copies, on the server and with the fork's own token, each folder of the parent's that its copied events and its message name into the fork's own folder, which its allow names, before its log is written, " +
+		"and writes its message's new files there; a copied record keeps its ref, which then names the file in the fork's folder. A fork whose allow names no folder of such a session, and one whose copy fails, is files_unavailable, and no fork is left. " +
 		fmt.Sprintf("A body without a message is at most %d bytes, one with a message at most %d. ", MaxBody, MaxEventBody) +
 		"tree new starts a fork tree of the new session's own, a new conversation from the fork point: its root is its own id, its parent stays the session forked, and a list by the forked session's root leaves it out; absent, the fork joins the forked session's tree; any other tree is invalid_request. " +
 		"The answer is the new Session, 201: a new id, parent {session_id, seq}, root, the session at the top of its fork tree, the forked session's root or, where it has none, its id, or its own id with tree new, the same agent version, repositories and capture, " +

@@ -70,6 +70,7 @@ var codes = map[string]struct {
 	CodeIdentityUnavailable:         {http.StatusServiceUnavailable, "The identity provider did not answer; try again."},
 	CodeAgentIdentityMissing:        {http.StatusConflict, "The agent has no identity yet; apply a changed version of it."},
 	CodeInternal:                    {http.StatusInternalServerError, "The server failed to answer; try again."},
+	CodeFilesUnavailable:            {http.StatusServiceUnavailable, "The conversation's files could not be stored or read now; try again."},
 }
 
 // apiError is a refusal the API renders: a code of the table and the

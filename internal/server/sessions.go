@@ -465,6 +465,11 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if sess.Connections, err = s.connections(limits.Connections); err != nil {
 		return session.Session{}, err
 	}
+	// The folder of the files store the allow names keeps the session's
+	// attachments and kept files, fixed for its life (spec 068).
+	if sess.Folder, err = s.folderOf(limits.Folder); err != nil {
+		return session.Session{}, err
+	}
 	if f := in.fork; f != nil {
 		sess.Root = f.root(sess.ID)
 		return s.writeFork(ctx, q, sess, cfg, blobs, f)

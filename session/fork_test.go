@@ -4,9 +4,11 @@
 package session_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -352,5 +354,46 @@ func TestRootOfAFork(t *testing.T) {
 	if grandchild.Root != top.ID || grandchild.Parent.SessionID != child.ID || grandchild.Parent.Seq != 0 || grandchild.LastSeq != 0 ||
 		grandchild.Status != session.StatusIdle || grandchild.StopReason != "" || grandchild.Turn != 0 || grandchild.Budget.CarriedCostUSDMicro != 0 {
 		t.Fatalf("a fork of the fork that copies nothing: %+v", grandchild)
+	}
+}
+
+// TestAForkIsPreparedBeforeItsLogIsWritten: a fork's prepare sees the
+// fork's record written and its log not yet copied, and a prepare that
+// fails leaves no fork (spec 068).
+func TestAForkIsPreparedBeforeItsLogIsWritten(t *testing.T) {
+	ctx := t.Context()
+	st := session.NewMemoryStore()
+	parent := storetest.NewSession()
+	parent.ID = session.NewID(session.PrefixSession)
+	if err := st.Create(ctx, parent, nil); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	evs := []session.Event{storetest.Message(t, "Hi.", at), storetest.Status(t, session.StatusIdle, session.StopEndTurn, at.Add(time.Second))}
+	session.Stamp(parent.ID, 0, evs)
+	if _, err := st.Append(ctx, parent.ID, 0, evs); err != nil {
+		t.Fatal(err)
+	}
+	child := storetest.NewSession()
+	child.ID = session.NewID(session.PrefixSession)
+	var seen uint64 = 99
+	forked, err := session.ForkWith(ctx, st, child, nil, parent, evs, func(ctx context.Context, c session.Session) error {
+		got, err := st.Get(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+		seen = got.LastSeq
+		return nil
+	})
+	if err != nil || seen != 0 || forked.LastSeq != 2 {
+		t.Fatalf("prepare saw last_seq %d; the fork %+v, %v", seen, forked.LastSeq, err)
+	}
+	failed := storetest.NewSession()
+	failed.ID = session.NewID(session.PrefixSession)
+	if _, err := session.ForkWith(ctx, st, failed, nil, parent, evs, func(context.Context, session.Session) error { return errors.New("no copy") }); err == nil || !strings.Contains(err.Error(), "no copy") {
+		t.Fatalf("a failed prepare: %v", err)
+	}
+	if _, err := st.Get(ctx, failed.ID); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("a failed prepare left the fork: %v", err)
 	}
 }

@@ -83,12 +83,14 @@ func asAnswer(v any) (any, error) {
 	return v, nil
 }
 
-// sessionAnswer is a session with its model's level under reasoning.
+// sessionAnswer is a session with its model's level under reasoning,
+// and its folder of the files store as folderAnswer answers it.
 func sessionAnswer(s session.Session) session.Session {
 	if s.Model != nil {
 		m := s.Model.Answered()
 		s.Model = &m
 	}
+	s.Folder = folderAnswer(s.Folder)
 	return s
 }
 

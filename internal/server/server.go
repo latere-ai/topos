@@ -29,6 +29,7 @@ import (
 	"latere.ai/x/pkg/ratelimit"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/internal/triggers"
@@ -139,6 +140,20 @@ type Options struct {
 	// hosted.Workspaces is the one toposd runs; nil answers every read
 	// file_unavailable.
 	Workspaces func(ctx context.Context, s session.Session) (machine.FileReader, error)
+	// Files opens a session's folder of the installation's files store
+	// (spec 068); nil keeps no files store, and an allow that names a
+	// folder is refused.
+	Files *Files
+}
+
+// Files opens a session's folder of the files store (spec 068), each with
+// its own credential: Write with the session's own token, for a message's
+// attachments and a fork's copies, and Read with the server's own, for
+// the blob route, so a session that ended, or whose agent was archived,
+// stays readable.
+type Files struct {
+	Write func(ctx context.Context, s session.Session) (harness.Files, error)
+	Read  func(ctx context.Context, s session.Session) (harness.Files, error)
 }
 
 // Server answers the API.

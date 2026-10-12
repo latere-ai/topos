@@ -483,6 +483,9 @@ var KeptRule = fmt.Sprintf("files.kept {message, files, skipped} follows an agen
 	"and its entry carries the media_type of its bytes and the width and height of its header. "+
 	"A file is linked by a Markdown link or an HTML a element's href: the first %d of a message are read, each a regular file of any type of at most %d bytes, %d bytes together, "+
 	"and its entry carries the media_type its name's extension names, or its leading bytes where the extension names none, its size in bytes, and width and height 0. "+
+	"A session with a folder of the files store keeps each file there in place of a blob, at results/<turn>/<path>, path its place in the working directory, written once, and its entry carries ref, that path, beside blob, its digest; "+
+	"a linked file is then bounded by what the files service takes and not by the two byte figures above, the counts are as above, a file the files service refuses for its size is too_large and one it refuses otherwise unavailable, "+
+	"and a path an earlier answer of the turn took is kept by its ref when the file is the same and unavailable when it changed. "+
 	"A destination both shown and linked is kept once, as the image. A link to a directory is not_a_file, an image reference to one not_an_image, and limit is a reference past its count or a linked file past the bytes of its message. "+
 	"Files are read from a machine the turn opened, never one opened to keep them. "+
 	"A client draws an image and offers a linked file from the blob its path names, and reads the files route for one no files.kept recorded; a client that does not know the type skips it.",
@@ -518,7 +521,9 @@ const blobCache = "private, max-age=31536000, immutable"
 // inline, and any other blob, a file an answer linked among them (spec
 // 064), as an application/octet-stream attachment, each with nosniff and
 // the sandboxing policy of a file's answer, so no blob is ever a document
-// of the API's origin.
+// of the API's origin. A file the session keeps in its folder of the
+// files store is read from there with the server's own token, as the
+// files store streams it, with its length (spec 068).
 func (c *call) blob() error {
 	d := session.Digest(c.r.PathValue("digest"))
 	if !d.Valid() {
@@ -528,9 +533,15 @@ func (c *call) blob() error {
 	if err != nil {
 		return err
 	}
-	rc, err := c.s.o.Sessions.Blob(c.r.Context(), s.ID, d)
+	rc, size, kept, err := c.s.openFile(c.r.Context(), s, d)
 	if err != nil {
 		return err
+	}
+	if !kept {
+		size = -1
+		if rc, err = c.s.o.Sessions.Blob(c.r.Context(), s.ID, d); err != nil {
+			return err
+		}
 	}
 	defer func() {
 		if err := rc.Close(); err != nil {
@@ -554,6 +565,9 @@ func (c *call) blob() error {
 	h.Set("Content-Security-Policy", filePolicy)
 	h.Set("Cache-Control", blobCache)
 	h.Set("ETag", strconv.Quote(string(d)))
+	if size >= 0 {
+		h.Set("Content-Length", strconv.FormatInt(size, 10))
+	}
 	c.w.WriteHeader(http.StatusOK)
 	_, err = io.Copy(c.w, br)
 	return err

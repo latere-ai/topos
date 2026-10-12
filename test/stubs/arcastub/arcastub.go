@@ -183,6 +183,13 @@ func (s *Server) Put(owner, path string, o Object) {
 	s.objects[owner][path] = o
 }
 
+// Remove removes an object as a test takes one away.
+func (s *Server) Remove(owner, path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects[owner], path)
+}
+
 // Uploads is how many upload sessions are open.
 func (s *Server) Uploads() int {
 	s.mu.Lock()

@@ -74,12 +74,13 @@ type attachmentBody struct {
 
 // file is one attached file checked and decoded, before it is stored:
 // its bytes, or the blob a message of the session forked names, whose
-// media type and size are that message's record of it.
+// media type, size and ref are that message's record of it.
 type file struct {
 	name, media string
 	data        []byte
 	blob        session.Digest
 	size        int64
+	ref         string
 }
 
 // check reads a person's user.message: content or attachments, the
@@ -263,9 +264,21 @@ func checkName(name string) error {
 
 // storeAttachments stores each file as a blob of the session and names
 // the path it is written at, in the directory of the message whose event
-// id is message.
+// id is message. A session with a folder of the files store writes each
+// there instead, at that same path, and its record names it by ref (spec
+// 068).
 func (c *call) storeAttachments(ctx context.Context, s session.Session, message string, files []file) ([]session.Attachment, error) {
 	out := make([]session.Attachment, 0, len(files))
+	if s.Folder != nil {
+		for _, f := range files {
+			p := session.AttachmentPath(message, f.name)
+			out = append(out, session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: session.DigestOf(f.data), Path: p, Ref: p})
+		}
+		if err := c.s.putAttachments(ctx, s, files, out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
 	for _, f := range files {
 		d, err := c.s.o.Sessions.PutBlob(ctx, s.ID, bytes.NewReader(f.data))
 		if err != nil {

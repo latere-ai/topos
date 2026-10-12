@@ -163,6 +163,15 @@ func restate(e Event) (Event, error) {
 // its own, a new conversation from the fork point, and keeps parent as
 // its lineage alone.
 func Fork(ctx context.Context, st Store, child Session, blobs map[Digest][]byte, parent Session, events []Event, then ...Event) (Session, error) {
+	return ForkWith(ctx, st, child, blobs, parent, events, nil, then...)
+}
+
+// ForkWith is Fork with prepare, when not nil, called with the fork once
+// its record is written and before its log is: where the fork's files are
+// put in place, as the copy of a parent's files store folders (spec 068)
+// needs the fork's record to ask for the fork's own token. A prepare that
+// fails deletes the fork, as a failed copy of the log does.
+func ForkWith(ctx context.Context, st Store, child Session, blobs map[Digest][]byte, parent Session, events []Event, prepare func(context.Context, Session) error, then ...Event) (Session, error) {
 	child.Parent = &Parent{SessionID: parent.ID, Seq: uint64(len(events))}
 	if child.Root != child.ID {
 		child.Root = parent.TreeRoot()
@@ -202,6 +211,11 @@ func Fork(ctx context.Context, st Store, child Session, blobs map[Digest][]byte,
 	Stamp(child.ID, uint64(len(events)), batch[len(events):])
 	if err := st.Create(ctx, child, all); err != nil {
 		return Session{}, err
+	}
+	if prepare != nil {
+		if err := prepare(ctx, child); err != nil {
+			return Session{}, errors.Join(err, st.Delete(context.WithoutCancel(ctx), child.ID))
+		}
 	}
 	if len(batch) > 0 {
 		if _, err := st.Append(ctx, child.ID, 0, batch); err != nil {

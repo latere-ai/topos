@@ -186,24 +186,47 @@ func (m *forkMessage) keep(kept map[session.Digest]session.Attachment) error {
 		if !ok {
 			return refuse(CodeInvalidRequest, "attachments[%d] names the blob %s, which no message of the session forked attaches", i, f.blob)
 		}
-		m.files[i].media, m.files[i].size = a.MediaType, a.Size
+		m.files[i].media, m.files[i].size, m.files[i].ref = a.MediaType, a.Size, a.Ref
 	}
 	return nil
+}
+
+// refs are the refs of the files the message names by blob that their
+// message kept in its session's folder (spec 068).
+func (m *forkMessage) refs() []string {
+	var out []string
+	for _, f := range m.files {
+		if f.ref != "" {
+			out = append(out, f.ref)
+		}
+	}
+	return out
 }
 
 // events are the message as the events the fork appends after its copy:
 // the changes the allow of its send made, then the message, its files
 // recorded under its event's id, each new file's bytes added to blobs.
-func (m *forkMessage) events(changes sendChanges, now time.Time, blobs map[session.Digest][]byte) ([]session.Event, error) {
+// A fork with a folder of the files store, folder set, adds no bytes:
+// each new file's record names it by ref, the place the fork writes it,
+// and puts answers those files with their records (spec 068). A file
+// named by blob keeps the ref its message recorded, which the fork's copy
+// makes resolve.
+func (m *forkMessage) events(changes sendChanges, now time.Time, blobs map[session.Digest][]byte, folder bool) ([]session.Event, *forkFiles, error) {
 	out, err := changes.events(now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	id := session.NewID(session.PrefixEvent)
 	payload := m.payload
+	puts := &forkFiles{}
 	for _, f := range m.files {
-		a := session.Attachment{Name: f.name, MediaType: f.media, Size: f.size, Blob: f.blob, Path: session.AttachmentPath(id, f.name)}
-		if f.blob == "" {
+		a := session.Attachment{Name: f.name, MediaType: f.media, Size: f.size, Blob: f.blob, Path: session.AttachmentPath(id, f.name), Ref: f.ref}
+		switch {
+		case f.blob != "":
+		case folder:
+			a.Size, a.Blob, a.Ref = int64(len(f.data)), session.DigestOf(f.data), a.Path
+			puts.files, puts.refs = append(puts.files, f), append(puts.refs, a)
+		default:
 			a.Size, a.Blob = int64(len(f.data)), session.DigestOf(f.data)
 			blobs[a.Blob] = f.data
 		}
@@ -211,10 +234,10 @@ func (m *forkMessage) events(changes sendChanges, now time.Time, blobs map[sessi
 	}
 	ev, err := session.NewEvent(session.TypeUserMessage, payload, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ev.ID = id
-	return append(out, ev), nil
+	return append(out, ev), puts, nil
 }
 
 // writeFork writes the fork sess of f, with blobs, the agent's. A fork
@@ -225,9 +248,22 @@ func (m *forkMessage) events(changes sendChanges, now time.Time, blobs map[sessi
 // the authorizer allowed session.fork writes nothing and is reported to
 // the sink, so an authorizer that recorded the fork at that allow closes
 // the record.
+//
+// A fork whose copied events or message name files of its parent's folder
+// of the files store copies their folders into its own before its log is
+// written, and one whose allow names a folder writes its message's new
+// files there (spec 068).
 func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, cfg manifest.AgentConfig, blobs map[session.Digest][]byte, f *forkOrigin) (session.Session, error) {
+	var refs []string
+	if f.message != nil {
+		refs = f.message.refs()
+	}
+	ff, err := forkFilesOf(f.parent, sess, f.events, refs)
+	if err != nil {
+		return session.Session{}, err
+	}
 	if f.message == nil {
-		return session.Fork(ctx, s.o.Sessions, sess, blobs, f.parent, f.events)
+		return session.ForkWith(ctx, s.o.Sessions, sess, blobs, f.parent, f.events, s.prepareFork(ff))
 	}
 	fields := map[string]any{"sender": q.caller.Subject, "event_type": string(session.TypeUserMessage)}
 	maps.Copy(fields, f.message.word)
@@ -240,11 +276,17 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	if all == nil {
 		all = map[session.Digest][]byte{}
 	}
-	then, err := f.message.events(changes, s.o.Now(), all)
+	then, puts, err := f.message.events(changes, s.o.Now(), all, sess.Folder != nil)
 	if err != nil {
 		return session.Session{}, err
 	}
-	forked, err := session.Fork(ctx, s.o.Sessions, sess, all, f.parent, f.events, then...)
+	if len(puts.files) > 0 {
+		if ff == nil {
+			ff = &forkFiles{}
+		}
+		ff.files, ff.refs = puts.files, puts.refs
+	}
+	forked, err := session.ForkWith(ctx, s.o.Sessions, sess, all, f.parent, f.events, s.prepareFork(ff), then...)
 	if err != nil {
 		return session.Session{}, err
 	}
