@@ -109,10 +109,13 @@ type Options struct {
 // for concurrent use.
 type Client struct {
 	o       Options
-	fetch   func(ctx context.Context, url, id, secret string) (string, time.Time, error)
+	fetch   func(ctx context.Context, url, id, secret, audience string) (string, time.Time, error)
 	mu      sync.Mutex
 	host    string
 	hostExp time.Time
+	// service holds the host's own tokens for other services, by
+	// audience.
+	service map[string]Token
 }
 
 // New builds the client.
@@ -127,8 +130,8 @@ func New(o Options) (*Client, error) {
 		o.Now = time.Now
 	}
 	o.URL = strings.TrimRight(o.URL, "/")
-	return &Client{o: o, fetch: func(ctx context.Context, url, id, secret string) (string, time.Time, error) {
-		return oidc.ClientCredentials(ctx, url, id, secret, "", nil)
+	return &Client{o: o, service: map[string]Token{}, fetch: func(ctx context.Context, url, id, secret, audience string) (string, time.Time, error) {
+		return oidc.ClientCredentials(ctx, url, id, secret, audience, nil)
 	}}, nil
 }
 
@@ -140,16 +143,48 @@ func (c *Client) hostToken(ctx context.Context) (string, error) {
 	if c.host != "" && c.o.Now().Add(hostTokenMargin).Before(c.hostExp) {
 		return c.host, nil
 	}
-	b, err := os.ReadFile(c.o.SecretFile)
+	tok, exp, err := c.grant(ctx, "")
 	if err != nil {
-		return "", fmt.Errorf("identity: read the host's secret: %w", err)
-	}
-	tok, exp, err := c.fetch(ctx, c.o.URL, c.o.ClientID, strings.TrimSpace(string(b)))
-	if err != nil {
-		return "", fmt.Errorf("%w: the host's token: %w", ErrUnavailable, err)
+		return "", err
 	}
 	c.host, c.hostExp = tok, exp
 	return tok, nil
+}
+
+// grant asks the provider for the host's own token for audience, "" for
+// the provider's own routes, with the secret read from its file.
+func (c *Client) grant(ctx context.Context, audience string) (string, time.Time, error) {
+	b, err := os.ReadFile(c.o.SecretFile)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("identity: read the host's secret: %w", err)
+	}
+	tok, exp, err := c.fetch(ctx, c.o.URL, c.o.ClientID, strings.TrimSpace(string(b)), audience)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("%w: the host's token for %q: %w", ErrUnavailable, audience, err)
+	}
+	return tok, exp, nil
+}
+
+// ServiceToken is the host's own token for another service, audience:
+// the client credentials grant of its client asked for that audience, a
+// token that names no agent and no session (spec 068). It is held until
+// hostTokenMargin before its expiry.
+func (c *Client) ServiceToken(ctx context.Context, audience string) (Token, error) {
+	if audience == "" {
+		return Token{}, errors.New("identity: a service token names its audience")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if t, ok := c.service[audience]; ok && c.o.Now().Add(hostTokenMargin).Before(t.ExpiresAt) {
+		return t, nil
+	}
+	tok, exp, err := c.grant(ctx, audience)
+	if err != nil {
+		return Token{}, err
+	}
+	t := Token{Value: tok, ExpiresAt: exp}
+	c.service[audience] = t
+	return t, nil
 }
 
 // forget drops the host's token, which the provider no longer accepts.

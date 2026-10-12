@@ -107,11 +107,14 @@ type Server struct {
 	audiences  []string
 	hostTTL    time.Duration
 	hostTokens map[string]time.Time
-	agents     []*Agent
-	minted     map[string]Minted
-	failures   map[string][]Failure
-	requests   []Recorded
-	now        func() time.Time
+	// serviceTokens are the host's own tokens for another service, each
+	// with the audience it was asked for.
+	serviceTokens map[string]string
+	agents        []*Agent
+	minted        map[string]Minted
+	failures      map[string][]Failure
+	requests      []Recorded
+	now           func() time.Time
 }
 
 // New starts a stub whose one host client is clientID with secret, and
@@ -120,12 +123,13 @@ type Server struct {
 func New(t testing.TB, clientID, secret string) *Server {
 	s := &Server{
 		clientID: clientID, clientSecret: secret,
-		audiences:  []string{"cella", "origo", "arca"},
-		hostTTL:    time.Hour,
-		hostTokens: map[string]time.Time{},
-		minted:     map[string]Minted{},
-		failures:   map[string][]Failure{},
-		now:        time.Now,
+		audiences:     []string{"cella", "origo", "arca"},
+		hostTTL:       time.Hour,
+		hostTokens:    map[string]time.Time{},
+		serviceTokens: map[string]string{},
+		minted:        map[string]Minted{},
+		failures:      map[string][]Failure{},
+		now:           time.Now,
 	}
 	s.srv = httptest.NewServer(s.routes())
 	t.Cleanup(s.srv.Close)
@@ -165,6 +169,15 @@ func (s *Server) Agents() []Agent {
 		out[i] = *a
 	}
 	return out
+}
+
+// ServiceToken reports the audience the host's own token tok was asked
+// for, false for a token the stub did not issue for another service.
+func (s *Server) ServiceToken(tok string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	aud, ok := s.serviceTokens[tok]
+	return aud, ok
 }
 
 // HostTokens returns every host token the stub issued.
@@ -277,7 +290,8 @@ func (s *Server) admit(op string, host bool, next func(w http.ResponseWriter, r 
 // token is the client_credentials grant, authenticated with HTTP Basic.
 func (s *Server) token(w http.ResponseWriter, r *http.Request, body []byte) {
 	id, secret, ok := r.BasicAuth()
-	if form, err := url.ParseQuery(string(body)); err != nil || form.Get("grant_type") != "client_credentials" {
+	form, err := url.ParseQuery(string(body))
+	if err != nil || form.Get("grant_type") != "client_credentials" {
 		refuse(w, http.StatusBadRequest, "unsupported_grant_type", "only client_credentials is served")
 		return
 	}
@@ -288,7 +302,13 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request, body []byte) {
 	tok := "host_" + random()
 	s.mu.Lock()
 	ttl := s.hostTTL
-	s.hostTokens[tok] = s.now().Add(ttl)
+	// A token asked for another service's audience is the host's own
+	// token there, and not one this provider's routes take.
+	if aud := form.Get("audience"); aud != "" {
+		s.serviceTokens[tok] = aud
+	} else {
+		s.hostTokens[tok] = s.now().Add(ttl)
+	}
 	s.mu.Unlock()
 	reply(w, http.StatusOK, map[string]any{"access_token": tok, "token_type": "Bearer", "expires_in": int64(ttl / time.Second)})
 }

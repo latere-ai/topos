@@ -158,3 +158,40 @@ func TestAnUnansweredProviderIsUnavailable(t *testing.T) {
 		t.Fatal("built without an HTTP client")
 	}
 }
+
+// TestServiceTokenAsksTheAudience: the host's own token for another
+// service is the client credentials grant asked for that audience, held
+// while it lives, apart from the host's token at the provider; an empty
+// audience and a provider that refuses are errors (spec 068).
+func TestServiceTokenAsksTheAudience(t *testing.T) {
+	c, idp, file := newClient(t)
+	ctx := t.Context()
+	tok, err := c.ServiceToken(ctx, "arca")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aud, ok := idp.ServiceToken(tok.Value); !ok || aud != "arca" || tok.ExpiresAt.IsZero() {
+		t.Fatalf("the token %+v was asked for %q %t", tok, aud, ok)
+	}
+	if again, err := c.ServiceToken(ctx, "arca"); err != nil || again != tok || idp.Count(idpstub.OpToken) != 1 {
+		t.Fatalf("a live token was not held: %v, %d fetches", err, idp.Count(idpstub.OpToken))
+	}
+	if _, err := c.Archived(ctx); err != nil || idp.Count(idpstub.OpToken) != 2 {
+		t.Fatalf("the provider's own routes took the service token: %v", err)
+	}
+	if _, err := c.ServiceToken(ctx, ""); err == nil {
+		t.Fatal("a token for no audience")
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ServiceToken(ctx, "other"); err == nil {
+		t.Fatal("a token with no secret")
+	}
+	if err := os.WriteFile(file, []byte("wrong"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ServiceToken(ctx, "other"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("a refused grant: %v", err)
+	}
+}

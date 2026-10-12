@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -173,5 +174,40 @@ func TestTheStubAnswersTheHostContract(t *testing.T) {
 	}
 	if n := s.Count(OpList); n < 4 || len(s.Requests()) == 0 {
 		t.Fatalf("%d lists recorded", n)
+	}
+}
+
+// TestAServiceTokenNamesItsAudience: a host token asked for another
+// service's audience is recorded with that audience, and is not a host
+// token this provider's routes take.
+func TestAServiceTokenNamesItsAudience(t *testing.T) {
+	s := New(t, "host", "secret")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL()+"/token", strings.NewReader(url.Values{"grant_type": {"client_credentials"}, "audience": {"arca"}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("host", "secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := out["access_token"].(string)
+	if aud, ok := s.ServiceToken(tok); !ok || aud != "arca" {
+		t.Fatalf("the service token %q: %q %t", tok, aud, ok)
+	}
+	if slices.Contains(s.HostTokens(), tok) {
+		t.Fatal("a service token is a host token")
+	}
+	if _, ok := s.ServiceToken(hostToken(t, s, "secret").body["access_token"].(string)); ok {
+		t.Fatal("a host token is a service token")
+	}
+	if a := send(t, http.MethodGet, s.URL()+"/hosted-agents", tok, ""); a.status != http.StatusUnauthorized {
+		t.Fatalf("a service token at the provider's routes: %d", a.status)
 	}
 }
