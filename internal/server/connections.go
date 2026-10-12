@@ -19,7 +19,8 @@ var ConnectionsRule = fmt.Sprintf("The authorizer's allow of session.create, ses
 	"or mcp, a remote MCP server at address whose tools the model is offered as mcp__<name>__<tool>. "+
 	"A create's and a fork's are the session's, a fork's never its parent's, and the session answers them as connections; "+
 	"a send's allow replaces them, appending session.connections_changed {connections} straight before the event when the list differs, and an allow that names none leaves the session with none. "+
-	"An http connection names the audience of TOPOS_CONNECTIONS_AUDIENCE and addresses on the host of TOPOS_CONNECTIONS_URL, and a connection that breaks a rule is authorizer_unavailable naming it.",
+	"An http connection names the audience of TOPOS_CONNECTIONS_AUDIENCE and addresses on the host of TOPOS_CONNECTIONS_URL, and a connection that breaks a rule is authorizer_unavailable naming it. "+
+	"A call of an mcp connection's tool that the connection service answers 409 connection_not_connected, and a drive's listing of its tools that meets it, append connection.requested {name, title, kind, reason, scopes, tool_use_id}, tool_use_id absent for a listing, which a client shows the person as a service to connect again.",
 	session.MaxConnections)
 
 // connections are an allow's connections as a session holds them (spec
