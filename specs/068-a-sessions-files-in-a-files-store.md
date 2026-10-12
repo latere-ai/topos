@@ -1,9 +1,9 @@
 ---
 title: "A session's files in a files store: an allow of a create names a folder at an Arca-compatible files API, a message's attachments and an answer's kept files are written there by the session and named by ref, the blob route reads them by digest as a stream, and a fork copies them on the server"
-status: drafted
+status: testing
 track: core
 depends_on: [015-api.md, 017-external-runners-handoff-fork.md, 018-credentials-and-secrets.md, 055-images-an-answer-shows.md, 056-editing-a-message-and-the-branches-of-a-session.md, 058-what-a-create-allow-attaches.md, 064-files-an-answer-links.md, 065-a-working-directory-rebuilt-from-the-log.md]
-affects: [authorizer/, session/, filestore/, harness/, runner/, internal/hosted/, internal/server/, internal/identity/, internal/config/, internal/store/postgres/, session/dir/, cmd/toposd/, test/stubs/arcastub/, test/stubs/idpstub/, api/openapi.yaml, docs/configuration.md]
+affects: [authorizer/, session/, harness/, internal/filestore/, runner/, internal/hosted/, internal/server/, internal/identity/, internal/config/, internal/store/postgres/, session/dir/, cmd/toposd/, test/stubs/arcastub/, test/stubs/idpstub/, api/openapi.yaml, docs/configuration.md]
 effort: large
 created: 2026-10-12
 updated: 2026-10-12
@@ -101,8 +101,10 @@ digest, which stays the name a client reads a file by. An entry with no
 
 ### The files store
 
-`filestore.Store` is the interface, in a package of its own that dials
-only the files API it is given:
+`harness.Files` is the interface, beside the harness's blob seam, so a
+harness that dials nothing names it; its one backend is in a package of
+its own, `internal/filestore`, that dials only the files API it is
+given:
 
 | Method | Does |
 |---|---|
@@ -113,7 +115,7 @@ only the files API it is given:
 Nothing deletes: a session's folder goes with the session, by the
 installation that named it.
 
-`filestore.Arca` is the one backend. Each call:
+`filestore.Arca` is that backend, a client of Topos's own: an Arca-compatible files API exports none. Each call:
 
 | Call | Request | Headers |
 |---|---|---|
@@ -123,9 +125,10 @@ installation that named it.
 | a copy | `POST {url}/files/{owner}/{from path}/{dir}` `{"copy_to": "{path}/{dir}", "recursive": true}` | the bearer |
 
 `{owner}` and each segment of a path are percent-encoded. A refusal of
-the files API is a `filestore.Error` with its status and code; a
-create-only write onto a taken path is `filestore.ErrExists`, and a
-read or a copy of nothing is `filestore.ErrNotFound`.
+the files API is a `harness.FileError` with its status and code; a
+create-only write onto a taken path is `harness.ErrFileExists`, a read
+or a copy of nothing is `harness.ErrFileNotFound`, and a source of
+another size than its write named is `harness.ErrFileSizeChanged`.
 
 ### Credentials
 
@@ -247,12 +250,48 @@ read `ref` reads every file by digest as before.
 
 | # | Criterion | Test | State |
 |---|---|---|---|
-| 1 | The allow's `folder` is decoded and checked, kept on the record, answered as `{owner, path}` from the first stored file and never with its address; an allow naming one with no files store is `authorizer_unavailable` | `authorizer.TestAnAllowNamesAFolder`, `internal/server.TestTheAllowsFolderIsKeptAndAnsweredOnceUsed` | |
-| 2 | The Arca backend puts at or below the bound with `Content-Length` and `If-None-Match: *`, above it through an upload session whose parts carry no bearer, reads through a redirect that receives no bearer, copies a folder, and maps refusals | `filestore.TestArcaPutsReadsAndCopies` against `test/stubs/arcastub` | |
-| 3 | A message's attachments are put at `attachments/<event id>/<name>` with the session's token and carry `ref`; a refused put refuses the message and appends nothing | `internal/server.TestAttachmentsGoToTheSessionsFolder` | |
-| 4 | An answer's images and linked files are put at `results/<turn>/<path>` and carry `ref`; a linked file past 32 MiB is kept; a refusal is a skipped entry; a taken path with the same bytes keeps the existing `ref` | `harness.TestKeptFilesGoToTheFilesStore` | |
-| 5 | The blob route answers a digest the index names from the folder with the core's own token, as a stream with `Content-Length`, and the blob store's digests as before; a redacted file's digest is `not_found` | `internal/server.TestTheBlobRouteStreamsAFileOfTheFolder`, `session/storetest`'s `FileIndex` for each store | |
-| 6 | The runner delivers an attachment with `ref` from the folder, and a rebuild reads a kept file with `ref` from it | `runner.TestAnAttachmentWithARefIsDeliveredFromTheFolder`, `runner.TestARebuildReadsKeptFilesFromTheFolder` | |
-| 7 | A fork copies each folder its copied events and its message name, with its own token, and its copied `ref`s resolve in its own folder; a failed copy leaves no fork | `internal/server.TestAForkCopiesItsFoldersOnTheServer` | |
-| 8 | The core's own token is asked with the audience by the client credentials grant | `internal/identity.TestServiceTokenAsksTheAudience` | |
-| 9 | End to end, on the stubs: a message with an attachment and an answer that links a file land under the folder, the blob route answers both by digest as a stream, the core's own token reads them, and a fork reads them from its own folder | `cmd/toposd.TestASessionsFilesLiveInTheFilesStore` | |
+| 1 | The allow's `folder` is decoded and checked, kept on the record, answered as `{owner, path}` from the first stored file and never with its address; an allow naming one with no files store is `authorizer_unavailable` | `authorizer.TestAnAllowNamesAFolder`, `internal/server.TestTheAllowsFolderIsKeptAndAnsweredOnceUsed` |built |
+| 2 | The Arca backend puts at or below the bound with `Content-Length` and `If-None-Match: *`, above it through an upload session whose parts carry no bearer, reads through a redirect that receives no bearer, copies a folder, and maps refusals | `internal/filestore.TestArcaPutsReadsAndCopies`, `TestArcaRefusals` and `TestArcaDistrustsWhatTheFilesAPIHandsOut` against `test/stubs/arcastub` |built |
+| 3 | A message's attachments are put at `attachments/<event id>/<name>` with the session's token and carry `ref`; a refused put refuses the message and appends nothing | `internal/server.TestAttachmentsGoToTheSessionsFolder` |built |
+| 4 | An answer's images and linked files are put at `results/<turn>/<path>` and carry `ref`; a linked file past 32 MiB is kept; a refusal is a skipped entry; a taken path with the same bytes keeps the existing `ref` | `harness.TestKeptFilesGoToTheFilesStore` |built |
+| 5 | The blob route answers a digest the index names from the folder with the core's own token, as a stream with `Content-Length`, and the blob store's digests as before; a redacted file's digest is `not_found` | `internal/server.TestTheBlobRouteStreamsAFileOfTheFolder`, `session/storetest`'s `FileIndex` for each store |built |
+| 6 | The runner delivers an attachment with `ref` from the folder, and a rebuild reads a kept file with `ref` from it | `harness.TestAnAttachmentWithARefIsDeliveredFromTheFolder`, `harness.TestATurnKeepsIntoItsFilesStore`, `runner.TestARebuildReadsKeptFilesFromTheFolder` |built |
+| 7 | A fork copies each folder its copied events and its message name, with its own token, and its copied `ref`s resolve in its own folder; a failed copy leaves no fork | `internal/server.TestAForkCopiesItsFoldersOnTheServer`, `TestAFolderThatCannotBeOpened` |built |
+| 8 | The core's own token is asked with the audience by the client credentials grant | `internal/identity.TestServiceTokenAsksTheAudience` |built |
+| 9 | End to end, on the stubs: a message with an attachment and an answer that links a file land under the folder, the blob route answers both by digest as a stream, the core's own token reads them, and a fork reads them from its own folder | `cmd/toposd.TestASessionsFilesLiveInTheFilesStore` |built |
+
+## Outcome
+
+Built on 2026-10-12, in no release yet, and run against the stub files
+API, the stub identity provider and the stub Cella alone, not against an
+installation's files service. Every criterion has its test. Where the
+build differs from the design as first written:
+
+- **The interface is the harness's.** The harness and the session
+  schema dial nothing (spec 001), so `Files` and its errors sit in
+  `harness` beside `BlobReader`, and the client of the files API in
+  `internal/filestore`. A runner that embeds the harness passes any
+  implementation in `Config.Files`.
+- **The digest index is written by the append.** The append that
+  records a file with a `ref` writes its row in the same transaction,
+  in Postgres the table `session_files` (migration 0010); the directory
+  and memory stores answer the same question from the log
+  (`session.FileRefOf`). A runner in its own process needs no route of
+  its own for it.
+- **A fork's message that names a parent's file by blob keeps the
+  parent's `ref`**, under the parent message's event id, and the fork
+  copies that folder; the record's `path`, where the runner writes the
+  file, is under the fork message's own id. Ref and path then differ.
+- **A runner that drives a session with a folder and reaches no files
+  store** fails the turn's setup with `files_unavailable`, rather than
+  keeping the session's files as blobs where its installation does not
+  look for them.
+- **Redaction** removes the index rows of a digest no live event names,
+  so the blob route answers it `not_found`; the file itself stays in the
+  folder, since the files store deletes nothing.
+- **What is left for an installation.** The single-request bound is a
+  constant, 16 MiB, since the files API does not publish its own; an
+  installation that lowers it refuses a put between the two as
+  `object_too_large`. `results/<turn>/` is written once a turn, so a
+  file that changed between two answers of one turn keeps the first
+  answer's copy and the second answer's link is skipped `unavailable`.

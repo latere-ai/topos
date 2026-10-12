@@ -71,6 +71,11 @@ request.
   app with `slug`, `name`, `url` and `repository.push_url`, and says
   nothing of which commit the app serves.
 
+
+Amended 2026-10-12 by [[068-a-sessions-files-in-a-files-store]]: an
+allow of `session.create` or `session.fork` may also name `folder`, the
+folder of a files store the session's attachments and kept files are
+written in.
 ## Design
 
 ```mermaid

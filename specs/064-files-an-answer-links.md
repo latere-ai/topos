@@ -204,6 +204,14 @@ Open:
 - A read of a blob through the blob route holds the whole blob in
   memory while it answers.
 
+### With a files store
+
+Amended 2026-10-12 by [[068-a-sessions-files-in-a-files-store]]: a
+session whose create's allow names a folder of a files store keeps its
+answers' files there, at `results/<turn>/<path>` with `ref`, and the two
+byte bounds above hold for the blob store alone; the count holds for
+both.
+
 ### The blob route
 
 Unchanged. `GET /v1/sessions/{id}/blobs/{digest}` answers by the blob's
