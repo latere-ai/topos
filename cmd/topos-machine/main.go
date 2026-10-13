@@ -5,7 +5,8 @@
 // sandbox (spec 009). It is a static binary of the standard library and
 // the machine package, so a sandbox needs nothing in its image for the
 // tools: search runs the Go-native grep and glob of spec 008 where the
-// files are, run gives a command its own process group, a timeout, an
+// files are, walk lists and hashes the working directory's files for its
+// copy (spec 073), run gives a command its own process group, a timeout, an
 // input that ends and a report of its final directory, and moves a
 // server to the background (spec 045), job starts a background job, pump
 // drains a moved command's output into its job log, and fs reaches the
@@ -36,7 +37,7 @@ func main() {
 
 // usage is the one line a mistaken invocation prints. The machine never
 // makes one; a person running the helper by hand reads it.
-const usage = "usage: topos-machine sum | search <root> | run [flags] -- <script> | job [flags] -- <script> | pump -job <pid> | fs <op> <root> <path> [<arg>]"
+const usage = "usage: topos-machine sum | search <root> | walk <root> | run [flags] -- <script> | job [flags] -- <script> | pump -job <pid> | fs <op> <root> <path> [<arg>]"
 
 // run dispatches the mode and returns the exit code: 0 once a mode has
 // answered, whatever the answer, and 2 for a usage error.
@@ -49,6 +50,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return sum(stdout, stderr, os.Executable)
 	case "search":
 		return search(ctx, args[1:], stdin, stdout, stderr)
+	case "walk":
+		return walk(ctx, args[1:], stdin, stdout, stderr)
 	case "run":
 		return runCommand(ctx, args[1:], stdin, stdout, stderr)
 	case "job":

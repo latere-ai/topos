@@ -261,3 +261,45 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 	w.n--
 	return len(p), nil
 }
+
+// TestTheWalkMode: walk lists the root's regular files with their
+// digests, the deny-list's hidden and a directory the request leaves out
+// skipped, and answers a request that does not decode, a relative root
+// and a missing one with an error (spec 073).
+func TestTheWalkMode(t *testing.T) {
+	root := tempDir(t)
+	writeFile(t, filepath.Join(root, "a.txt"), "a")
+	writeFile(t, filepath.Join(root, ".env"), "SECRET=1\n")
+	writeFile(t, filepath.Join(root, "sub", "key.pem"), "key")
+	writeFile(t, filepath.Join(root, "node_modules", "dep.js"), "dep")
+	query := func(body string, args ...string) response {
+		t.Helper()
+		var stdout bytes.Buffer
+		if code := run(t.Context(), append([]string{"walk"}, args...), strings.NewReader(body), &stdout, io.Discard); code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+		return decode(t, &stdout)
+	}
+	q, err := json.Marshal(machine.WalkRequest{LeftOut: []string{"node_modules"}, MaxFiles: 10, MaxBytes: 1 << 20, MaxFileBytes: 1 << 20, MaxListed: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := query(string(q), root)
+	sum := sha256.Sum256([]byte("a"))
+	if res.Error != nil || res.Walk == nil || len(res.Walk.Files) != 1 || res.Walk.Files[0] != (machine.WalkedFile{Path: "a.txt", Size: 1, Mode: 0o644, SHA256: hex.EncodeToString(sum[:])}) {
+		t.Fatalf("walk = %+v %+v", res.Walk, res.Error)
+	}
+	if res := query("{", root); res.Error == nil || !strings.Contains(res.Error.Message, "the walk request") {
+		t.Errorf("a request that does not decode: %+v", res.Error)
+	}
+	if res := query(string(q), "relative"); res.Error == nil {
+		t.Error("a relative root was walked")
+	}
+	if res := query(string(q), filepath.Join(root, "gone")); res.Error == nil || res.Error.Kind != kindNotExist {
+		t.Errorf("a missing root: %+v", res.Error)
+	}
+	var stderr bytes.Buffer
+	if code := run(t.Context(), []string{"walk"}, strings.NewReader(""), io.Discard, &stderr); code != 2 {
+		t.Errorf("walk with no root: exit %d", code)
+	}
+}

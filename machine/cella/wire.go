@@ -130,6 +130,7 @@ func (e entry) info() machine.FileInfo {
 // response is the helper's one JSON answer.
 type response struct {
 	Result  *machine.SearchResult `json:"result,omitempty"`
+	Walk    *machine.WalkResult   `json:"walk,omitempty"`
 	Entries []entry               `json:"entries,omitempty"`
 	Job     *struct {
 		PID int    `json:"pid"`

@@ -174,6 +174,7 @@ type jobBody struct {
 // its fields is set.
 type response struct {
 	Result  *machine.SearchResult `json:"result,omitempty"`
+	Walk    *machine.WalkResult   `json:"walk,omitempty"`
 	Entries []entry               `json:"entries,omitempty"`
 	Job     *jobBody              `json:"job,omitempty"`
 	Done    bool                  `json:"done,omitempty"`
