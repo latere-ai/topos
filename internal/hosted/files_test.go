@@ -86,7 +86,7 @@ func TestASandboxIsRestoredFromTheSessionsFolder(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("the folder's work/ holds %v, want %v\n%s", got, want, c.dump())
 	}
-	if o, _ := arca.Object("o", folder+"/work/dist/index.html"); !strings.HasPrefix(o.Token, "arca-session-") || string(o.Data) != "<h1>Tides</h1>\n" {
+	if o, _ := arca.Object("o", folder+"/work/dist/index.html"); !strings.HasPrefix(o.Token, "arca-session-") || string(o.Data) != "<h1>Tides</h1>\n" || !strings.HasPrefix(o.ContentType, "text/html") {
 		t.Fatalf("the copy's file %+v", o)
 	}
 	name := cella.SandboxName(c.s.ID)
