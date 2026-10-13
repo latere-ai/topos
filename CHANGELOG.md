@@ -91,7 +91,7 @@ committed: the commit log already holds that.
   is given the attached app, `session.ResourceApp`, in place of its
   slug, so a reader finds the app by its id.
 - The Postgres store adds the column `sessions.trigger_id`, filled from
-  each session's body, and an index on it (migration `0011`). While an
+  each session's body, and an index on it (migration `0010`). While an
   earlier release runs beside this one, a session it creates enters a
   list by trigger once a batch of its log saves its header, which its
   first turn does.

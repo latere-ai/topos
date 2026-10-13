@@ -79,7 +79,7 @@ in List and in Summarize.
 
 ### The column
 
-Migration `0011_session_trigger`:
+Migration `0010_session_trigger`:
 
 ```sql
 ALTER TABLE sessions ADD COLUMN trigger_id text;
