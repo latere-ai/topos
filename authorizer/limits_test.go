@@ -339,10 +339,12 @@ func TestTheAttachMembers(t *testing.T) {
 }
 
 // TestTheConnectionsMember: an allow's connections are read with their
-// rules, a git URL without its trailing "/", and a member of a connection
-// the core does not know is ignored; a connection that breaks a rule, an
-// unknown kind, a title that is not UTF-8 and a list past its bound do not
-// decode, and the error names the member (spec 069).
+// rules, a git URL without its trailing "/", an available connection with
+// its name, kind and title alone, and a member of a connection the core
+// does not know is ignored; a connection that breaks a rule, an unknown
+// kind or state, an available connection with an address, a title that
+// is not UTF-8 and a list past its bound do not decode, and the error
+// names the member (spec 069).
 func TestTheConnectionsMember(t *testing.T) {
 	raw := `{"connections":[
 		{"name":"github","kind":"http","title":"GitHub","audience":"connections",
@@ -368,6 +370,11 @@ func TestTheConnectionsMember(t *testing.T) {
 	if l, err := DecodeLimits(authz.Decision{Allow: true}); err != nil || l.Connections != nil {
 		t.Fatalf("an allow with no connections: %+v, %v", l.Connections, err)
 	}
+	available := `{"connections":[{"name":"github","kind":"http","title":"GitHub","state":"available"}]}`
+	if l, err := DecodeLimits(authz.Decision{Allow: true, Limits: []byte(available)}); err != nil ||
+		!session.SameConnections(l.Connections, []session.Connection{{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", State: session.ConnectionAvailable}}) {
+		t.Fatalf("an available connection: %+v, %v", l.Connections, err)
+	}
 	many := make([]session.Connection, session.MaxConnections+1)
 	for i := range many {
 		many[i] = want[1]
@@ -383,6 +390,8 @@ func TestTheConnectionsMember(t *testing.T) {
 		"a repeated name":      {WireLimits{Connections: []session.Connection{want[1], want[1]}}, "limits.connections[1]"},
 		"a lone surrogate":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"\ud800","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0].title"},
 		"a connections object": {json.RawMessage(`{"connections":{"name":"a"}}`), "limits"},
+		"an available address": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"an unknown state":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"connected","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
 	} {
 		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
 			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)

@@ -192,3 +192,66 @@ func TestTheHeaderTakesTheConnections(t *testing.T) {
 		t.Fatal("session.connections_changed is redactable or unknown")
 	}
 }
+
+// TestAnAvailableConnection: a connection of state available, one the
+// installation offers and the person has not connected, takes a name, a
+// kind and a title and nothing a connected one is reached by; any other
+// state, and a connected one without its address, do not decode; the
+// bound counts both; and a session reaches no available connection.
+func TestAnAvailableConnection(t *testing.T) {
+	gh := Connection{Name: "github", Kind: ConnectionHTTP, Title: "GitHub", State: ConnectionAvailable}
+	tr := Connection{Name: "wiki", Kind: ConnectionMCP, Title: "Wiki", State: ConnectionAvailable}
+	got, err := CheckConnections([]Connection{httpConnection(), gh, tr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[1].Connected() || !got[0].Connected() {
+		t.Fatalf("connected: %v, %v", got[0].Connected(), got[1].Connected())
+	}
+	if h := HTTPConnections(got); len(h) != 1 || h[0].Name != "code-host" {
+		t.Fatalf("the http connections are %+v", h)
+	}
+	for name, change := range map[string]func(*Connection){
+		"an audience":     func(c *Connection) { c.Audience = "connections" },
+		"an address":      func(c *Connection) { c.Address = "https://connections.example.com/v1/connections/c_1/http" },
+		"a git address":   func(c *Connection) { c.GitAddress = "https://connections.example.com/v1/connections/c_1/git" },
+		"a git URL":       func(c *Connection) { c.GitURL = "https://git.example.com" },
+		"a read_only":     func(c *Connection) { c.ReadOnly = []string{"list_*"} },
+		"another state":   func(c *Connection) { c.State = "connected" },
+		"an empty title":  func(c *Connection) { c.Title = "" },
+		"an unknown kind": func(c *Connection) { c.Kind = "ssh" },
+	} {
+		c := gh
+		change(&c)
+		if _, err := CheckConnections([]Connection{c}); err == nil {
+			t.Errorf("an available connection with %s was accepted", name)
+		}
+	}
+	bare := httpConnection()
+	bare.Address = ""
+	if _, err := CheckConnections([]Connection{bare}); err == nil {
+		t.Fatal("a connected connection without an address was accepted")
+	}
+	if _, err := CheckConnections([]Connection{httpConnection(), {Name: "code-host", Kind: ConnectionMCP, Title: "Code host", State: ConnectionAvailable}}); err == nil || !strings.Contains(err.Error(), "second time") {
+		t.Fatalf("a name connected and available: %v", err)
+	}
+	many := make([]Connection, MaxConnections+1)
+	for i := range many {
+		many[i] = tr
+		many[i].Name = fmt.Sprintf("c%d", i)
+	}
+	many[0] = mcpConnection()
+	if _, err := CheckConnections(many); err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Fatalf("%d connections, connected and available: %v", len(many), err)
+	}
+	if SameConnections([]Connection{gh}, []Connection{{Name: "github", Kind: ConnectionHTTP, Title: "GitHub"}}) {
+		t.Fatal("an available connection is the same as a connected one")
+	}
+	b, err := Marshal(gh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{"name":"github","kind":"http","title":"GitHub","state":"available"}` {
+		t.Fatalf("an available connection is %s", b)
+	}
+}

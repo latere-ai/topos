@@ -25,6 +25,18 @@ const (
 // ConnectionKinds are the kinds a connection takes.
 var ConnectionKinds = []string{ConnectionHTTP, ConnectionMCP}
 
+// ConnectionAvailable is the state of a connection the installation
+// offers and the initiator has not connected (spec 069): the session
+// cannot reach it, and the model may ask the person to connect it. A
+// connection with no state is connected.
+const ConnectionAvailable = "available"
+
+// ToolRequestConnection is the name of the tool that asks the person to
+// connect a service the installation offers (spec 069). The harness
+// offers it to the session's own thread while the session has a
+// connection it may ask for, and no client tool takes the name.
+const ToolRequestConnection = "request_connection"
+
 // The bounds of a session's connections (spec 069).
 const (
 	// MaxConnections is the most connections an allow names.
@@ -40,6 +52,9 @@ const (
 	MaxReadOnlyTools = 64
 	// MaxReadOnlyGlob is the most bytes of one read_only glob.
 	MaxReadOnlyGlob = 128
+	// MaxConnectionReason is the most characters of the reason a
+	// request_connection call gives the person.
+	MaxConnectionReason = 200
 )
 
 // ConnectionsToken is the variable a sandbox holds the placeholder of its
@@ -60,12 +75,16 @@ type Connection struct {
 	Kind string `json:"kind"`
 	// Title is what the model and a person call the connection.
 	Title string `json:"title"`
+	// State is ConnectionAvailable for a service the installation offers
+	// and the initiator has not connected, which names no audience and no
+	// address, and empty for a connected one.
+	State string `json:"state,omitempty"`
 	// Audience is the core the session's token for the connection is
-	// addressed to.
-	Audience string `json:"audience"`
+	// addressed to; empty on an available connection.
+	Audience string `json:"audience,omitempty"`
 	// Address is the forwarding address of an http connection and the MCP
-	// address of an mcp one.
-	Address string `json:"address"`
+	// address of an mcp one; empty on an available connection.
+	Address string `json:"address,omitempty"`
 	// GitAddress is an http connection's git address, and GitURL the git
 	// host the person's repositories live at, which git in the sandbox
 	// reaches through GitAddress; both or neither.
@@ -79,6 +98,9 @@ type Connection struct {
 // connectionName is a lowercase DNS label that starts with a letter, so
 // it names an environment variable too.
 var connectionName = regexp.MustCompile(`^[a-z]([a-z0-9-]*[a-z0-9])?$`)
+
+// Connected reports whether c is connected, so the session reaches it.
+func (c Connection) Connected() bool { return c.State == "" }
 
 // APIEnv is the variable that names an http connection's forwarding
 // address in the sandbox's commands: its name upper-cased with each "-"
@@ -98,11 +120,13 @@ func (c Connection) ReadsOnly(tool string) bool {
 }
 
 // CheckConnections reports why cs cannot be a session's connections: at
-// most MaxConnections, each with a name, a kind, a title, an audience and
-// an address of the rules spec 069 gives, its git address and git URL on
-// an http connection alone and both or neither, its read_only globs on an
-// mcp connection alone, and no name or git URL named twice. A git URL is
-// written without a trailing "/" in the list it answers, which is a copy.
+// most MaxConnections, connected and available together, each with a
+// name, a kind and a title of the rules spec 069 gives; a connected one
+// with an audience and an address, its git address and git URL on an
+// http connection alone and both or neither, and its read_only globs on
+// an mcp connection alone; an available one with none of those; and no
+// name or git URL named twice. A git URL is written without a trailing
+// "/" in the list it answers, which is a copy.
 func CheckConnections(cs []Connection) ([]Connection, error) {
 	if len(cs) > MaxConnections {
 		return nil, fmt.Errorf("connections names %d connections, more than %d", len(cs), MaxConnections)
@@ -138,6 +162,19 @@ func checkConnection(c *Connection) error {
 	}
 	if why := oneLine(c.Title, MaxConnectionTitle); why != "" {
 		return fmt.Errorf("the title of %s: %s", c.Name, why)
+	}
+	switch c.State {
+	case "":
+	case ConnectionAvailable:
+		// An available connection is one the person has not connected: the
+		// connection service serves no address for it yet, and a session
+		// reaches nothing of it.
+		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 {
+			return fmt.Errorf("%s is available and names audience, address, git_address, git_url or read_only, which only a connected connection takes", c.Name)
+		}
+		return nil
+	default:
+		return fmt.Errorf("the state of %s is %q, not %s or absent for a connected one", c.Name, c.State, ConnectionAvailable)
 	}
 	if c.Audience == "" || len(c.Audience) > MaxConnectionAudience || strings.ContainsFunc(c.Audience, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 		return fmt.Errorf("the audience of %s is not 1 to %d bytes with no space or control character", c.Name, MaxConnectionAudience)
@@ -194,11 +231,12 @@ func checkAddress(raw string) error {
 	return nil
 }
 
-// HTTPConnections are the connections of cs of kind http, in order.
+// HTTPConnections are the connected connections of cs of kind http, in
+// order.
 func HTTPConnections(cs []Connection) []Connection {
 	var out []Connection
 	for _, c := range cs {
-		if c.Kind == ConnectionHTTP {
+		if c.Kind == ConnectionHTTP && c.Connected() {
 			out = append(out, c)
 		}
 	}
@@ -208,7 +246,7 @@ func HTTPConnections(cs []Connection) []Connection {
 // SameConnections reports whether a and b are the same list, in order.
 func SameConnections(a, b []Connection) bool {
 	return slices.EqualFunc(a, b, func(x, y Connection) bool {
-		return x.Name == y.Name && x.Kind == y.Kind && x.Title == y.Title && x.Audience == y.Audience &&
+		return x.Name == y.Name && x.Kind == y.Kind && x.Title == y.Title && x.State == y.State && x.Audience == y.Audience &&
 			x.Address == y.Address && x.GitAddress == y.GitAddress && x.GitURL == y.GitURL && slices.Equal(x.ReadOnly, y.ReadOnly)
 	})
 }
@@ -221,11 +259,13 @@ type ConnectionsChanged struct {
 }
 
 // ConnectionRequested is the payload of connection.requested (spec 069):
-// a connection the connection service answered is not connected, which a
-// client shows the person as one to connect again. ToolUseID names the
-// call that met it, and is absent when the listing of a server's tools
-// did; Scopes are the ones the other service asked for, when it named
-// them.
+// a connection the person is asked to connect, which a client shows as a
+// service to connect. It is one the connection service answered is not
+// connected, Reason the service's reason, or one the model asked for with
+// request_connection, Reason the model's words on why the task needs it.
+// ToolUseID names the call that met it or asked for it, and is absent
+// when the listing of a server's tools met it; Scopes are the ones the
+// other service asked for, when it named them.
 type ConnectionRequested struct {
 	Name      string   `json:"name"`
 	Title     string   `json:"title"`
