@@ -466,6 +466,33 @@ func TestTheConnectionsVariables(t *testing.T) {
 	}
 }
 
+// TestTheConnectionsHostAndTheModelsRoot: the connection service may not
+// be on the host the model gateway publishes its doors under, which every
+// sandbox's Lux key is scoped to, whatever TOPOS_MODELS_URL's own host is;
+// the refusal names the service's URL, the root and their host. Another
+// host, no root and no connection service pass (spec 069).
+func TestTheConnectionsHostAndTheModelsRoot(t *testing.T) {
+	c := Config{ConnectionsURL: "https://api.example.com/v1/connections", ModelsURL: "http://lux.internal:8080"}
+	err := c.CheckModelsRoot("https://API.example.com/v1/models")
+	if err == nil {
+		t.Fatal("a connection service on the published root's host was taken")
+	}
+	for _, want := range []string{"TOPOS_CONNECTIONS_URL, https://api.example.com/v1/connections", "host api.example.com", "https://API.example.com/v1/models", "two Secrets scoped to one host"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal %q does not say %q", err, want)
+		}
+	}
+	if err := c.CheckModelsRoot("https://models.example.com/v1"); err != nil {
+		t.Errorf("another host: %v", err)
+	}
+	if err := c.CheckModelsRoot(""); err != nil {
+		t.Errorf("no published root: %v", err)
+	}
+	if err := (Config{}).CheckModelsRoot("https://api.example.com/v1/models"); err != nil {
+		t.Errorf("no connection service: %v", err)
+	}
+}
+
 // TestTheOrigoTokenFile: an installation without an identity provider
 // names the file of its git host's credential, read in serve and in the
 // runner role alike; the file needs the git host it is sent to, and an

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -276,6 +277,49 @@ func TestLuxIsReachedAtItsConfiguredRootAndPublishedToTheSandbox(t *testing.T) {
 	if code := stop(); code != 0 {
 		t.Fatalf("serve exited %d", code)
 	}
+}
+
+// TestAConnectionServiceOnLuxsPublishedHostStopsTheStart: with
+// TOPOS_MODELS_URL an address of Lux's own and Lux publishing its doors
+// under the host TOPOS_CONNECTIONS_URL is on, serve and the runner role
+// each refuse to start, naming the connection service, the published
+// root and their host, since every sandbox would mount its Lux key and
+// the connection service's token on one host and Cella refuses every such
+// create (spec 069). The configuration alone passes, as the hosts it
+// names differ.
+func TestAConnectionServiceOnLuxsPublishedHostStopsTheStart(t *testing.T) {
+	const (
+		published   = "https://api.example.com/v1/models"
+		connections = "https://api.example.com/v1/connections"
+	)
+	refused := func(t *testing.T, args []string, vars map[string]string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+		var errOut syncBuffer
+		code := run(ctx, args, env(vars), io.Discard, &errOut)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1; stderr %q", code, errOut.String())
+		}
+		for _, want := range []string{"TOPOS_CONNECTIONS_URL, " + connections, "host api.example.com", published} {
+			if !strings.Contains(errOut.String(), want) {
+				t.Errorf("stderr %q does not say %q", errOut.String(), want)
+			}
+		}
+	}
+	t.Run("serve", func(t *testing.T) {
+		vars, s := credentialStubs(t)
+		s.lux.Publish(published)
+		maps.Copy(vars, map[string]string{"TOPOS_MODELS_URL": s.lux.URL(), "TOPOS_CONNECTIONS_URL": connections,
+			"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_RUNNER_CAPACITY": "1"})
+		refused(t, nil, vars)
+	})
+	t.Run("runner", func(t *testing.T) {
+		lux := luxstub.New(t)
+		lux.Publish(published)
+		refused(t, []string{"runner"}, map[string]string{"TOPOS_INTERNAL_URL": "http://127.0.0.1:1", "TOPOS_RUNNER_TOKEN": "t",
+			"TOPOS_MODELS_URL": lux.URL(), "TOPOS_CONNECTIONS_URL": connections, "TOPOS_INTERNAL_ADDR": "127.0.0.1:0"})
+	})
 }
 
 // TestASelfHosterPushesWithItsGitCredential: on an installation with no

@@ -522,11 +522,16 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 // discoverDoors reads the family doors TOPOS_MODELS_URL names when it
 // is a Lux root, whose discovery document names each family's door; a
 // URL that does not answer stops the start, as an issuer that does not
-// answer does.
+// answer does. The root the doors are published under is the host every
+// sandbox's Lux key is scoped to, so a connection service on that host
+// stops the start too: every sandbox's create would be refused (spec 069).
 func discoverDoors(ctx context.Context, cfg config.Config) (models.Doors, error) {
 	doors, err := dialect.Discover(ctx, &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}, cfg.ModelsURL)
 	if err != nil {
 		return nil, fmt.Errorf("TOPOS_MODELS_URL: %w", err)
+	}
+	if err := cfg.CheckModelsRoot(doors.Root()); err != nil {
+		return nil, err
 	}
 	return doors, nil
 }

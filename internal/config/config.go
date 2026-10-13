@@ -474,6 +474,27 @@ func (c *Config) readConnections(getenv Getenv) []string {
 	return problems
 }
 
+// CheckModelsRoot checks TOPOS_CONNECTIONS_URL against root, the address
+// the model gateway publishes its doors under, which serve and the runner
+// role learn by discovery at their start (spec 018). Every sandbox's Lux
+// key is scoped to root's host, and Cella refuses a sandbox that mounts
+// two Secrets scoped to one host, so a connection service on that host
+// would fail every sandbox's create. Load checks the hosts it reads
+// itself, TOPOS_MODELS_URL's and TOPOS_ORIGO_URL's; root is the one only
+// discovery knows, and may differ from TOPOS_MODELS_URL, as an in-cluster
+// address does. An empty root, a gateway that publishes no root, leaves
+// TOPOS_MODELS_URL's host as the Lux key's, which Load checked.
+func (c Config) CheckModelsRoot(root string) error {
+	if c.ConnectionsURL == "" || root == "" {
+		return nil
+	}
+	host := hostOf(c.ConnectionsURL)
+	if host == "" || hostOf(root) != host {
+		return nil
+	}
+	return fmt.Errorf("TOPOS_CONNECTIONS_URL, %s, is on the host %s, which the model gateway at TOPOS_MODELS_URL publishes its doors under, at %s, and which every sandbox's Lux key is scoped to; a sandbox cannot mount two Secrets scoped to one host, so serve the connection service on a host of its own", c.ConnectionsURL, host, root)
+}
+
 // hostOf is the lowercase host of a URL checkURL accepted.
 func hostOf(raw string) string {
 	u, err := url.Parse(raw)
