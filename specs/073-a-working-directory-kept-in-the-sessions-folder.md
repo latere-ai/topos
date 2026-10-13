@@ -278,6 +278,7 @@ first machine is restored from that copy.
 | its parent's `work` holds nothing | skipped; the files the event names are not found at the restore and the log may give them back |
 | the copy is refused | the fork is `files_unavailable` and is not made, as for the other folders |
 | its allow names no folder | no copy; its first machine is rebuilt from its log, as before |
+| it is a fork before the first message | no copy: it continues nothing, and its first machine starts empty, as before |
 
 ### What the model reads
 
@@ -361,7 +362,7 @@ without a folder.
 | 4 | The replay with a copy takes the copy at `covers`, the log's later events over it, an edit applied to the copy's bytes, a file removed after the log's write left out and one written again after the removal back, a redacted write not taken from the copy, the commands counted from `covers`, and the copy again after a later replacement | `harness/tools.TestRebuildOverACopy` | built |
 | 5 | A machine made new for a session with a copy is restored from it, files and modes, a dependency directory absent, then from the log for a file the copy does not hold, and recorded `restored` with `source: "folder"`; a file the folder no longer holds is omitted `copy_unavailable`; the next turn end writes what the copy lacked and deletes what it holds that the directory does not; a copy that cannot be read leaves the log alone with `copy.failed` | `runner.TestANewMachineIsRestoredFromTheCopy`, `runner.TestACopyThatCannotBeReadLeavesTheLog` | built |
 | 6 | The model reads what came back from the copy and from the log, what was left out, what the copy does not keep, and that dependencies are reinstalled from manifests; a copy that could not be written reads as a rebuild from the log | `session.TestARestoreFromTheCopyIsSaid`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
-| 7 | A fork copies its parent's `work` on the server with its own token and appends, after its copied events and before a message it is sent, a `whole` `work.saved` of the parent's latest copy with `covers` at most the fork point; a fork with no folder copies none; a parent whose `work/` holds nothing is skipped; a refused copy leaves no fork | `internal/server.TestAForkCopiesItsParentsWorkingDirectory` | built |
+| 7 | A fork copies its parent's `work` on the server with its own token and appends, after its copied events and before a message it is sent, a `whole` `work.saved` of the parent's latest copy with `covers` at most the fork point; a fork before the first message and a fork with no folder copy none; a parent whose `work/` holds nothing is skipped; a refused copy leaves no fork | `internal/server.TestAForkCopiesItsParentsWorkingDirectory` | built |
 | 8 | Over the stub Cella and the stub files API: a command's file and its mode are in `work/` after the turn, written with the session's token, a dependency directory left out; the sandbox fails and is replaced, and the new sandbox has them back before its first command, recorded `restored` from the folder, and the model reads it | `internal/hosted.TestASandboxIsRestoredFromTheSessionsFolder` | built |
 | 9 | The OpenAPI document states `work.saved`, the folder's `work/` and the restore from the folder | `internal/server.TestTheDocumentStatesKeptImages`, `internal/server.TestOpenAPIIsGenerated` | built |
 
