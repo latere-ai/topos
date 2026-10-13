@@ -262,8 +262,8 @@ func headerParams(raw json.RawMessage) ([]headerParam, bool) {
 			return
 		}
 		for k, sub := range m {
-			switch {
-			case k == "x-mcp-header":
+			switch k {
+			case "x-mcp-header":
 				name, isStr := sub.(string)
 				typ, _ := m["type"].(string)
 				if !reachable || !isStr || !token(name) || !slices.Contains([]string{"string", "integer", "boolean"}, typ) ||
@@ -272,7 +272,7 @@ func headerParams(raw json.RawMessage) ([]headerParam, bool) {
 					continue
 				}
 				out = append(out, headerParam{header: name, path: slices.Clone(path)})
-			case k == "properties":
+			case "properties":
 				if props, isObj := sub.(map[string]any); isObj {
 					for name, p := range props {
 						walk(p, append(slices.Clone(path), name), reachable)
@@ -293,12 +293,17 @@ func token(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0) {
+		if !tchar(s[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// tchar reports whether c may appear in a token: a letter, a digit, or one
+// of RFC 9110's symbols.
+func tchar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0
 }
 
 // headersFor are the Mcp-Param headers of a call's arguments: each marked

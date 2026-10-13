@@ -17,7 +17,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
-	"latere.ai/x/topos/harness/tools/mcp"
+	"latere.ai/x/topos/internal/mcp"
 	"latere.ai/x/topos/internal/version"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/runner"

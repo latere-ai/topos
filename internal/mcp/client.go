@@ -333,8 +333,7 @@ func readStream(r io.Reader, id string) (response, error) {
 		line = strings.TrimRight(line, "\r\n")
 		switch {
 		case line == "" && len(data) > 0:
-			var resp response
-			if json.Unmarshal([]byte(strings.Join(data, "\n")), &resp) == nil && string(bytes.TrimSpace(resp.ID)) == id && (resp.Result != nil || resp.Error != nil) {
+			if resp, ok := answers(data, id); ok {
 				return resp, nil
 			}
 			data = data[:0]
@@ -348,6 +347,16 @@ func readStream(r io.Reader, id string) (response, error) {
 			return response{}, fmt.Errorf("mcp: read the stream: %w", err)
 		}
 	}
+}
+
+// answers reports whether the data lines of one event are the response
+// to the request of id, and the response when they are.
+func answers(data []string, id string) (response, bool) {
+	var resp response
+	if json.Unmarshal([]byte(strings.Join(data, "\n")), &resp) != nil {
+		return response{}, false
+	}
+	return resp, string(bytes.TrimSpace(resp.ID)) == id && (resp.Result != nil || resp.Error != nil)
 }
 
 // conflict is a 409: a connection service's connection_not_connected, or
@@ -409,7 +418,7 @@ func cmpOr(a, b string) string {
 // is when it is visible ASCII and spaces with none at either end and not
 // the base64 sentinel's form, and in the sentinel's form otherwise.
 func headerValue(v string) string {
-	safe := v != "" && strings.TrimSpace(v) == v && !(strings.HasPrefix(v, "=?base64?") && strings.HasSuffix(v, "?="))
+	safe := v != "" && strings.TrimSpace(v) == v && (!strings.HasPrefix(v, "=?base64?") || !strings.HasSuffix(v, "?="))
 	for i := 0; safe && i < len(v); i++ {
 		safe = v[i] == '\t' || (v[i] >= 0x20 && v[i] <= 0x7e)
 	}
