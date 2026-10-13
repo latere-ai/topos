@@ -545,6 +545,16 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 		}
 		before = append(before, se)
 	}
+	// The copy of the working directory in the session's folder is
+	// written before the status that ends the turn (spec 073); a copy that
+	// could not be written is recorded in its own event and ends nothing.
+	ws, saved, err := t.saveWork(ctx)
+	if err != nil {
+		return err
+	}
+	if saved {
+		before = append(before, ws)
+	}
 	e, err := t.event(session.TypeSessionStatus, session.SessionStatus{Status: status, StopReason: reason, Detail: detail, Checkpoint: cp})
 	if err != nil {
 		return err
