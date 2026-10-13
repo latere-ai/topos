@@ -34,8 +34,9 @@ import (
 // runner delivers the attachment into the sandbox from there; the session
 // answers its folder; the blob route answers both by digest, read with
 // toposd's own token through the files API's redirect, as a stream with
-// its length; and a fork copies them into its own folder with its own
-// token and reads them from there (spec 068).
+// its length; the turn keeps the working directory under work/; and a
+// fork copies them and the working directory's copy into its own folder
+// with its own token and reads them from there (specs 068 and 073).
 func TestASessionsFilesLiveInTheFilesStore(t *testing.T) {
 	vars, s := credentialStubs(t,
 		bashReply("toolu_1", "mkdir -p out && printf '%%PDF-1.7 report' > out/report.pdf && cat attachments/*/notes.txt"),
@@ -183,10 +184,22 @@ func TestASessionsFilesLiveInTheFilesStore(t *testing.T) {
 		copies = append(copies, r.Path[strings.Index(r.Path, "/files/sessions/first/")+len("/files/sessions/first/"):])
 	}
 	slices.Sort(copies)
-	if !slices.Equal(copies, []string{"attachments/" + sent.ID, "results/1"}) {
+	if !slices.Equal(copies, []string{"attachments/" + sent.ID, "results/1", "work"}) {
 		t.Fatalf("the fork copied %v", copies)
 	}
-	if got := arca.Paths(owner, "files/sessions/fork/"); !slices.Equal(got, []string{"files/sessions/fork/attachments/" + sent.ID + "/notes.txt", "files/sessions/fork/results/1/out/report.pdf"}) {
+	// The session's turn kept its working directory under work/, the file
+	// its command made and the attachment delivered into it, and the fork
+	// holds the same copy (spec 073).
+	work := []string{"work/attachments/" + sent.ID + "/notes.txt", "work/out/report.pdf"}
+	var forkWork, firstWork []string
+	for _, p := range work {
+		firstWork, forkWork = append(firstWork, "files/sessions/first/"+p), append(forkWork, "files/sessions/fork/"+p)
+	}
+	if got := arca.Paths(owner, "files/sessions/first/work/"); !slices.Equal(got, firstWork) {
+		t.Fatalf("the session's work/ holds %v", got)
+	}
+	want := append([]string{"files/sessions/fork/attachments/" + sent.ID + "/notes.txt", "files/sessions/fork/results/1/out/report.pdf"}, forkWork...)
+	if got := arca.Paths(owner, "files/sessions/fork/"); !slices.Equal(got, want) {
 		t.Fatalf("the fork's folder holds %v", got)
 	}
 	arca.Remove(owner, attachment)
