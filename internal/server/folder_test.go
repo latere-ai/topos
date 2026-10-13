@@ -548,3 +548,84 @@ func TestARedactionDeletesItsFilesFromTheFolder(t *testing.T) {
 		t.Fatal("a refused delete undid the redaction")
 	}
 }
+
+// TestAForksRefsResolveInItsOwnFolder: every ref a fork's log records,
+// copied from its parent or written by the fork's own message, opens in
+// the fork's own folder and is answered by the fork's blob route, after
+// the folder of the session it was forked from is emptied, as the
+// installation's sweep empties a deleted conversation's: a fork at the
+// last turn, a fork before a later message that attaches that message's
+// file again by its digest, and a fork of a fork, whose own parent's
+// folder is then emptied too (specs 068 and 073).
+func TestAForksRefsResolveInItsOwnFolder(t *testing.T) {
+	f := newFolderFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	parent := f.create("alice", "reviewer")
+	f.turn(parent.ID, 1, "Hello.", 1)
+	_, first := f.attach(parent.ID, "notes.txt", "my notes")
+	f.keep(parent.ID, 2, "results/2/report.pdf", "%PDF report")
+	_, later := f.attach(parent.ID, "later.txt", "a later file")
+	f.keep(parent.ID, 3, "results/3/later.pdf", "%PDF later")
+	blobOf := func(e session.Event) session.Digest {
+		var m session.UserMessage
+		if err := e.Decode(&m); err != nil {
+			t.Fatal(err)
+		}
+		return m.Attachments[0].Blob
+	}
+	fork := func(id, body string) session.Session {
+		a := f.do(http.MethodPost, "/v1/sessions/"+id+"/fork", "alice", body)
+		if a.status != http.StatusCreated {
+			t.Fatalf("fork of %s: %d %s", id, a.status, a.body)
+		}
+		var s session.Session
+		a.decode(t, &s)
+		return s
+	}
+	whole := fork(parent.ID, ``)
+	before := fork(parent.ID, `{"before_seq":`+strconv.FormatUint(later.Seq, 10)+`,"message":{"content":[{"type":"text","text":"Instead."}],"attachments":[`+
+		`{"name":"later.txt","blob":"`+string(blobOf(later))+`"},{"name":"notes.txt","blob":"`+string(blobOf(first))+`"}]}}`)
+	grand := fork(whole.ID, ``)
+
+	empty := func(id string) {
+		for _, p := range f.arca.Paths(space, folderPath(id)+"/") {
+			f.arca.Remove(space, p)
+		}
+	}
+	resolves := func(s session.Session, want int) {
+		t.Helper()
+		store, err := filestore.New(*f.stored(s.ID).Folder, func(context.Context) (string, error) { return "session:" + s.ID, nil }, &http.Client{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		evs, err := f.sessions.Events(t.Context(), s.ID, 1, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, e := range evs {
+			for _, file := range e.Files() {
+				n++
+				rc, _, err := store.Open(t.Context(), file.Ref)
+				if err != nil {
+					t.Fatalf("%s's %s does not open in its own folder: %v", s.ID, file.Ref, err)
+				}
+				if err := rc.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if a := f.do(http.MethodGet, "/v1/sessions/"+s.ID+"/blobs/"+string(file.Digest), "alice", ""); a.status != http.StatusOK || session.DigestOf(a.body) != file.Digest {
+					t.Fatalf("%s's blob route for %s: %d", s.ID, file.Ref, a.status)
+				}
+			}
+		}
+		if n != want {
+			t.Fatalf("%s's log records %d files, want %d", s.ID, n, want)
+		}
+	}
+	empty(parent.ID)
+	resolves(whole, 4)
+	resolves(before, 4)
+	resolves(grand, 4)
+	empty(whole.ID)
+	resolves(grand, 4)
+}
