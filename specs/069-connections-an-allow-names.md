@@ -271,7 +271,7 @@ the block names:
 The person connected these services, and you can use them now. You need no sign-in or key of theirs: the connection adds their credentials to each call. When a task needs one of them, use it rather than saying you cannot reach it.
 - GitHub, connected as ada: $GITHUB_API_URL stands in for https://api.git.example.com; put the whole path its documentation gives after it, with any version prefix: `curl -s -H "Authorization: Bearer $CONNECTIONS_TOKEN" "$GITHUB_API_URL/v3/user"` calls https://api.git.example.com/v3/user. `git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_01..., and no other.
 - Issue tracker: its tools are named mcp__tracker__<tool>.
-A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it. Any other error is about the request, such as a path the service does not have: check the path against the service's documentation before you tell the person you cannot reach the service.
+A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it. One that answers 403 with the code forbidden is something this connection does not let you do, such as sending mail or merging a change: do not try it another way; tell the person, who can do it themselves. Any other error is about the request, such as a path the service does not have: check the path against the service's documentation before you tell the person you cannot reach the service.
 </connections>
 ```
 

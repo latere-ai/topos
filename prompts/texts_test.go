@@ -486,6 +486,7 @@ var textCases = func() []textCase {
 			"- Issue tracker, connected as ada: its tools are named mcp__tracker__<tool>.\n" +
 			"- Wiki: not connected (revoked): tell the person to connect it again before you need it.\n" +
 			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it. " +
+			"One that answers 403 with the code forbidden is something this connection does not let you do, such as sending mail or merging a change: do not try it another way; tell the person, who can do it themselves. " +
 			"Any other error is about the request, such as a path the service does not have: check the path against the service's documentation before you tell the person you cannot reach the service.\n" +
 			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
 			"- Files, named files\n" + "</connections>"},
