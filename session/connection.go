@@ -55,6 +55,9 @@ const (
 	// MaxConnectionReason is the most characters of the reason a
 	// request_connection call gives the person.
 	MaxConnectionReason = 200
+	// MaxConnectionAccount is the most characters of the account a
+	// connection acts as.
+	MaxConnectionAccount = 256
 )
 
 // ConnectionsToken is the variable a sandbox holds the placeholder of its
@@ -93,6 +96,15 @@ type Connection struct {
 	// ReadOnly are an mcp connection's globs over its tool names; a tool a
 	// glob matches reads, and every other tool reaches outside.
 	ReadOnly []string `json:"read_only,omitempty"`
+	// Account is the account at the other service the connection acts as,
+	// such as a login or an email address, which the model is told; empty
+	// when the allow names none, and on an available connection.
+	Account string `json:"account,omitempty"`
+	// APIURL is an http connection's service's own API base URL, which
+	// Address stands in for, so the model can map the service's documented
+	// calls onto the connection's variable; empty when the allow names
+	// none, and on an available connection.
+	APIURL string `json:"api_url,omitempty"`
 }
 
 // connectionName is a lowercase DNS label that starts with a letter, so
@@ -123,10 +135,11 @@ func (c Connection) ReadsOnly(tool string) bool {
 // most MaxConnections, connected and available together, each with a
 // name, a kind and a title of the rules spec 069 gives; a connected one
 // with an audience and an address, its git address and git URL on an
-// http connection alone and both or neither, and its read_only globs on
-// an mcp connection alone; an available one with none of those; and no
-// name or git URL named twice. A git URL is written without a trailing
-// "/" in the list it answers, which is a copy.
+// http connection alone and both or neither, its API URL on an http
+// connection alone, its read_only globs on an mcp connection alone, and
+// an account on one line; an available one with none of those; and no
+// name or git URL named twice. A git URL and an API URL are written
+// without a trailing "/" in the list it answers, which is a copy.
 func CheckConnections(cs []Connection) ([]Connection, error) {
 	if len(cs) > MaxConnections {
 		return nil, fmt.Errorf("connections names %d connections, more than %d", len(cs), MaxConnections)
@@ -169,8 +182,8 @@ func checkConnection(c *Connection) error {
 		// An available connection is one the person has not connected: the
 		// connection service serves no address for it yet, and a session
 		// reaches nothing of it.
-		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 {
-			return fmt.Errorf("%s is available and names audience, address, git_address, git_url or read_only, which only a connected connection takes", c.Name)
+		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 || c.Account != "" || c.APIURL != "" {
+			return fmt.Errorf("%s is available and names audience, address, git_address, git_url, read_only, account or api_url, which only a connected connection takes", c.Name)
 		}
 		return nil
 	default:
@@ -182,10 +195,21 @@ func checkConnection(c *Connection) error {
 	if err := checkAddress(c.Address); err != nil {
 		return fmt.Errorf("the address of %s %w", c.Name, err)
 	}
+	if c.Account != "" {
+		if why := oneLine(c.Account, MaxConnectionAccount); why != "" {
+			return fmt.Errorf("the account of %s: %s", c.Name, why)
+		}
+	}
 	switch c.Kind {
 	case ConnectionHTTP:
 		if len(c.ReadOnly) > 0 {
 			return fmt.Errorf("%s is of kind http and names read_only, which only an mcp connection takes", c.Name)
+		}
+		if c.APIURL != "" {
+			c.APIURL = strings.TrimSuffix(c.APIURL, "/")
+			if err := checkAddress(c.APIURL); err != nil {
+				return fmt.Errorf("the api_url of %s %w", c.Name, err)
+			}
 		}
 		if (c.GitAddress == "") != (c.GitURL == "") {
 			return fmt.Errorf("%s names one of git_address and git_url; it names both or neither", c.Name)
@@ -201,8 +225,8 @@ func checkConnection(c *Connection) error {
 			return fmt.Errorf("the git_url of %s %w", c.Name, err)
 		}
 	case ConnectionMCP:
-		if c.GitAddress != "" || c.GitURL != "" {
-			return fmt.Errorf("%s is of kind mcp and names git_address or git_url, which only an http connection takes", c.Name)
+		if c.GitAddress != "" || c.GitURL != "" || c.APIURL != "" {
+			return fmt.Errorf("%s is of kind mcp and names git_address, git_url or api_url, which only an http connection takes", c.Name)
 		}
 		if len(c.ReadOnly) > MaxReadOnlyTools {
 			return fmt.Errorf("%s names %d read_only globs, more than %d", c.Name, len(c.ReadOnly), MaxReadOnlyTools)
@@ -247,7 +271,8 @@ func HTTPConnections(cs []Connection) []Connection {
 func SameConnections(a, b []Connection) bool {
 	return slices.EqualFunc(a, b, func(x, y Connection) bool {
 		return x.Name == y.Name && x.Kind == y.Kind && x.Title == y.Title && x.State == y.State && x.Audience == y.Audience &&
-			x.Address == y.Address && x.GitAddress == y.GitAddress && x.GitURL == y.GitURL && slices.Equal(x.ReadOnly, y.ReadOnly)
+			x.Address == y.Address && x.GitAddress == y.GitAddress && x.GitURL == y.GitURL && slices.Equal(x.ReadOnly, y.ReadOnly) &&
+			x.Account == y.Account && x.APIURL == y.APIURL
 	})
 }
 

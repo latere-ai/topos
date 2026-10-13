@@ -350,7 +350,8 @@ func TestTheConnectionsMember(t *testing.T) {
 		{"name":"github","kind":"http","title":"GitHub","audience":"connections",
 		 "address":"https://connections.example.com/v1/connections/c_1/http",
 		 "git_address":"https://connections.example.com/v1/connections/c_1/git",
-		 "git_url":"https://git.example.com/","icon":"https://example.com/icon.svg"},
+		 "git_url":"https://git.example.com/","icon":"https://example.com/icon.svg",
+		 "account":"ada","api_url":"https://api.git.example.com/"},
 		{"name":"tracker","kind":"mcp","title":"Issue tracker","audience":"connections",
 		 "address":"https://connections.example.com/v1/connections/c_2/mcp","read_only":["list_*"]}]}`
 	l, err := DecodeLimits(authz.Decision{Allow: true, Limits: []byte(raw)})
@@ -360,7 +361,8 @@ func TestTheConnectionsMember(t *testing.T) {
 	want := []session.Connection{
 		{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", Audience: "connections",
 			Address:    "https://connections.example.com/v1/connections/c_1/http",
-			GitAddress: "https://connections.example.com/v1/connections/c_1/git", GitURL: "https://git.example.com"},
+			GitAddress: "https://connections.example.com/v1/connections/c_1/git", GitURL: "https://git.example.com",
+			Account: "ada", APIURL: "https://api.git.example.com"},
 		{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "connections",
 			Address: "https://connections.example.com/v1/connections/c_2/mcp", ReadOnly: []string{"list_*"}},
 	}
@@ -392,6 +394,8 @@ func TestTheConnectionsMember(t *testing.T) {
 		"a connections object": {json.RawMessage(`{"connections":{"name":"a"}}`), "limits"},
 		"an available address": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
 		"an unknown state":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"connected","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"an mcp api_url":       {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_url":"https://api.example.com"}]}`), "limits.connections[0]"},
+		"an available account": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","account":"ada"}]}`), "limits.connections[0]"},
 	} {
 		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
 			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)

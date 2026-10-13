@@ -17,6 +17,7 @@ func httpConnection() Connection {
 		Address:    "https://connections.example.com/v1/connections/c_1/http",
 		GitAddress: "https://connections.example.com/v1/connections/c_1/git",
 		GitURL:     "https://git.example.com/",
+		Account:    "ada", APIURL: "https://api.git.example.com/",
 	}
 }
 
@@ -28,7 +29,8 @@ func mcpConnection() Connection {
 }
 
 // TestCheckConnections: each rule of spec 069's member, its bounds, and
-// the copy it answers, a git URL without its trailing "/".
+// the copy it answers, a git URL and an API URL without their trailing
+// "/".
 func TestCheckConnections(t *testing.T) {
 	in := []Connection{httpConnection(), mcpConnection()}
 	got, err := CheckConnections(in)
@@ -37,6 +39,20 @@ func TestCheckConnections(t *testing.T) {
 	}
 	if got[0].GitURL != "https://git.example.com" || in[0].GitURL != "https://git.example.com/" {
 		t.Fatalf("the git URL is %q, the input's %q", got[0].GitURL, in[0].GitURL)
+	}
+	if got[0].APIURL != "https://api.git.example.com" || in[0].APIURL != "https://api.git.example.com/" || got[0].Account != "ada" {
+		t.Fatalf("the API URL is %q, the input's %q, the account %q", got[0].APIURL, in[0].APIURL, got[0].Account)
+	}
+	withAccount := mcpConnection()
+	withAccount.Account = strings.Repeat("é", MaxConnectionAccount)
+	if _, err := CheckConnections([]Connection{withAccount}); err != nil {
+		t.Fatalf("an mcp connection with an account at its bound: %v", err)
+	}
+	// Two services of one provider share an API base URL.
+	sibling := httpConnection()
+	sibling.Name, sibling.GitAddress, sibling.GitURL = "drive", "", ""
+	if _, err := CheckConnections([]Connection{httpConnection(), sibling}); err != nil {
+		t.Fatalf("two connections of one API URL: %v", err)
 	}
 	got[1].ReadOnly[0] = "changed"
 	if in[1].ReadOnly[0] != "list_*" {
@@ -87,6 +103,9 @@ func TestCheckConnections(t *testing.T) {
 		"a broken read_only glob":      func(c *Connection) { c.ReadOnly = []string{"list_["} },
 		"a long read_only glob":        func(c *Connection) { c.ReadOnly = []string{strings.Repeat("a", MaxReadOnlyGlob+1)} },
 		"too many read_only globs":     func(c *Connection) { c.ReadOnly = slices.Repeat([]string{"a"}, MaxReadOnlyTools+1) },
+		"an mcp api_url":               func(c *Connection) { c.APIURL = "https://api.example.com" },
+		"an account of two lines":      func(c *Connection) { c.Account = "ada\nlovelace" },
+		"an account past its bound":    func(c *Connection) { c.Account = strings.Repeat("é", MaxConnectionAccount+1) },
 	} {
 		c := mcpConnection()
 		change(&c)
@@ -100,6 +119,10 @@ func TestCheckConnections(t *testing.T) {
 		"a git URL alone":          func(c *Connection) { c.GitAddress = "" },
 		"a plain http git address": func(c *Connection) { c.GitAddress = "http://connections.example.com/git" },
 		"a git URL with a query":   func(c *Connection) { c.GitURL = "https://git.example.com/?x" },
+		"a plain http api_url":     func(c *Connection) { c.APIURL = "http://api.git.example.com" },
+		"an api_url with a query":  func(c *Connection) { c.APIURL = "https://api.git.example.com/?x" },
+		"a relative api_url":       func(c *Connection) { c.APIURL = "/v1" },
+		"an account with a tab":    func(c *Connection) { c.Account = "ada\tlovelace" },
 	} {
 		c := httpConnection()
 		change(&c)
@@ -142,6 +165,16 @@ func TestAConnectionsVariableAndTools(t *testing.T) {
 	d.ReadOnly = []string{"list_*"}
 	if SameConnections([]Connection{c}, []Connection{d}) || !SameConnections([]Connection{c}, []Connection{mcpConnection()}) {
 		t.Fatal("a changed read_only is the same list, or an equal one is not")
+	}
+	for name, change := range map[string]func(*Connection){
+		"account": func(c *Connection) { c.Account = "grace" },
+		"api_url": func(c *Connection) { c.APIURL = "https://api.other.example.com" },
+	} {
+		e := httpConnection()
+		change(&e)
+		if SameConnections([]Connection{httpConnection()}, []Connection{e}) {
+			t.Errorf("a changed %s is the same list", name)
+		}
 	}
 }
 
@@ -217,6 +250,8 @@ func TestAnAvailableConnection(t *testing.T) {
 		"a git address":   func(c *Connection) { c.GitAddress = "https://connections.example.com/v1/connections/c_1/git" },
 		"a git URL":       func(c *Connection) { c.GitURL = "https://git.example.com" },
 		"a read_only":     func(c *Connection) { c.ReadOnly = []string{"list_*"} },
+		"an account":      func(c *Connection) { c.Account = "ada" },
+		"an api_url":      func(c *Connection) { c.APIURL = "https://api.git.example.com" },
 		"another state":   func(c *Connection) { c.State = "connected" },
 		"an empty title":  func(c *Connection) { c.Title = "" },
 		"an unknown kind": func(c *Connection) { c.Kind = "ssh" },
