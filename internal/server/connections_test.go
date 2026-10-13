@@ -154,3 +154,44 @@ func TestAnHTTPConnectionNeedsAConnectionService(t *testing.T) {
 		t.Fatalf("a refused send changed the connections to %+v", h.Connections)
 	}
 }
+
+// TestAnAvailableConnectionIsTakenAsNamed: a connection of state available,
+// one the person has not connected, names no audience and no address, so
+// a server with no connection service takes it at a create and at a send,
+// and the Session answers it with its state; on a server with one, a send
+// whose allow names it connected appends session.connections_changed
+// (spec 069).
+func TestAnAvailableConnectionIsTakenAsNamed(t *testing.T) {
+	available := session.Connection{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", State: session.ConnectionAvailable}
+	for _, opts := range [][]func(*Options){nil, {withConnections}} {
+		f := newFixture(t, opts...)
+		f.apply("alice", "reviewer", "Review.")
+		answer := &authorizer.WireLimits{Connections: []session.Connection{available, trackerConnection}}
+		f.level(func(authz.Request) *authorizer.WireLimits { return answer })
+		a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer"}`)
+		if a.status != http.StatusCreated {
+			t.Fatalf("an available http connection: %d %s", a.status, a.body)
+		}
+		if !strings.Contains(string(a.body), `{"name":"github","kind":"http","title":"GitHub","state":"available"}`) {
+			t.Fatalf("the Session answers %s", a.body)
+		}
+		var s session.Session
+		a.decode(t, &s)
+		if !session.SameConnections(f.header(s.ID).Connections, answer.Connections) {
+			t.Fatalf("the session holds %+v", f.header(s.ID).Connections)
+		}
+		if a := f.send(s.ID, "Again."); a.status >= http.StatusBadRequest {
+			t.Fatalf("a send of an available http connection: %d %s", a.status, a.body)
+		}
+		if len(opts) == 0 {
+			continue
+		}
+		answer = &authorizer.WireLimits{Connections: []session.Connection{githubConnection, trackerConnection}}
+		if a := f.send(s.ID, "Connected."); a.status >= http.StatusBadRequest {
+			t.Fatalf("a send that connects it: %d %s", a.status, a.body)
+		}
+		if h := f.header(s.ID); !session.SameConnections(h.Connections, answer.Connections) {
+			t.Fatalf("the header after it was connected %+v", h.Connections)
+		}
+	}
+}

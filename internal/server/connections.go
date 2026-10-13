@@ -24,10 +24,10 @@ var ConnectionsRule = fmt.Sprintf("The authorizer's allow of session.create, ses
 	session.MaxConnections)
 
 // connections are an allow's connections as a session holds them (spec
-// 069): an http connection, which a sandbox reaches through the one
-// Secret mounted for the installation's connection service, names that
-// service's audience and addresses on its host, and an installation with
-// none refuses it. A connection the server cannot apply refuses the
+// 069): a connected http connection, which a sandbox reaches through the
+// one Secret mounted for the installation's connection service, names
+// that service's audience and addresses on its host, and an installation
+// with none refuses it. A connection the server cannot apply refuses the
 // request authorizer_unavailable, as a member that does not decode does.
 func (s *Server) connections(cs []session.Connection) ([]session.Connection, error) {
 	host := ""
@@ -35,7 +35,9 @@ func (s *Server) connections(cs []session.Connection) ([]session.Connection, err
 		host = strings.ToLower(u.Hostname())
 	}
 	for i, c := range cs {
-		if c.Kind != session.ConnectionHTTP {
+		// An available connection names no audience and no address: the
+		// session reaches nothing of it until the person connects it.
+		if c.Kind != session.ConnectionHTTP || !c.Connected() {
 			continue
 		}
 		var why string

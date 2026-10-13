@@ -130,17 +130,17 @@ var _ machine.Connected = (*sessionMachine)(nil)
 // MCPListTimeout bounds a drive's listing of one connection's tools.
 const MCPListTimeout = 30 * time.Second
 
-// mcp lists the tools of each of s's connections of kind mcp, at once,
-// with the session's token for the connection's audience and the
-// workload session, asked of the drive's token source for every request,
-// and adds them to reg (spec 069). It answers how each listing ended,
-// which the harness records and names in the connections block; a
+// mcp lists the tools of each of s's connected connections of kind mcp,
+// at once, with the session's token for the connection's audience and
+// the workload session, asked of the drive's token source for every
+// request, and adds them to reg (spec 069). It answers how each listing
+// ended, which the harness records and names in the connections block; a
 // listing that fails offers none of the connection's tools, and the
-// session goes on.
+// session goes on. An available connection has no server to list.
 func (b builder) mcp(ctx context.Context, s session.Session, reg *tools.Registry) map[string]harness.MCPListing {
 	var conns []session.Connection
 	for _, c := range s.Connections {
-		if c.Kind == session.ConnectionMCP {
+		if c.Kind == session.ConnectionMCP && c.Connected() {
 			conns = append(conns, c)
 		}
 	}
