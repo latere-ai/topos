@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 008-tools.md, 010-context.md, 012-permissions-a
 affects: [internal/publish/, internal/hosted/, internal/config/, cmd/toposd/, harness/, harness/tools/, manifest/, session/, prompts/, internal/toposcli/, docs/]
 effort: medium
 created: 2026-10-05
-updated: 2026-10-12
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -183,17 +183,20 @@ conversation: the agent asks, and the person approves.
 
 `access` takes two values. `link`: anyone who has the app's address
 opens it, without signing in. `private`: only the person and the people
-they share the app with. A call with `access` changes who can open one
-app and does nothing else: it opens no machine, creates no app, and
-pushes, builds and releases nothing.
+they share the app with. A call with `access` alone, with `app` at most,
+changes who can open one app and does nothing else: it opens no
+machine, creates no app, and pushes, builds and releases nothing.
 
-1. **Alone.** `access` goes with `app` and nothing else. A call that
-   also names `path` or `release` is refused `access_alone`.
+1. **Alone, or after a publish.** With neither `path` nor `release`, a
+   call with `access` changes who can open the app and nothing else.
+   Beside `path` or `release`, it publishes or releases first and then
+   changes who can open the app it published to, below (amended
+   2026-10-13; such a call was refused `access_alone` before).
 2. **The app.** The one `app` names, by the rule of a release that
    names no folder ([[059-publishing-to-a-chosen-app]]): with no `app`,
    the app whose preview stands, else the one app the thread published
    to; `app_required` when that could be several, and when the thread
-   has published none, since a call with `access` creates no app;
+   has published none, since a call with `access` alone creates no app;
    `app_not_attached` for an app the session may not publish to.
    Each of these is refused before the call is decided.
 3. **The approval.** Every call with `access` waits for a person. The
@@ -215,10 +218,10 @@ pushes, builds and releases nothing.
    authorizer. The token names the session and not who approved the
    call, so who may approve it is the authorizer's too, where it
    answers `session.send` for the confirmation.
-5. **The result.** Outcome `ok`, with `meta.publish` naming the app,
-   its address, the `visibility` the host answers, the `folder` of the
-   thread's last result for the app, and no `status`, `commit`,
-   `deploy` or `release`. The thread's state folds it as the app's last
+5. **The result.** Of a call with `access` alone: outcome `ok`, with
+   `meta.publish` naming the app, its address, the `visibility` the
+   host answers, the `folder` of the thread's last result for the app,
+   and no `status`, `commit`, `deploy` or `release`. The thread's state folds it as the app's last
    result and keeps the app's standing preview, so a later release that
    names no folder publishes the same folder. The text is
    `results/publish/access-changed-v1`: for `link`, that anyone who has
@@ -237,14 +240,61 @@ pushes, builds and releases nothing.
    Every such text tells the model to pass it on and not to try another
    way.
 
+**One call that publishes and changes who can open the app** (amended
+2026-10-13). A call with `access` beside `path` or `release` does both,
+in that order.
+
+1. **The check.** `Check` takes the call as the publish it starts with:
+   it is refused what the same call without `access` is refused
+   (`app_not_attached`, `app_required` with the release's text,
+   `not_in_checkout`), and a call that creates the thread's own app is
+   not refused `app_required`, since the app exists once the publish
+   ran. `name` and `address` name the app such a call creates
+   ([[067-a-name-and-an-address-for-a-published-site]]).
+2. **The approval.** The tool holds the call as every call with
+   `access` (rule 3 above), once: its `agent.tool_use` reason is
+   `publishes and changes who can open the app, which a person approves
+   every time`, and that one approval runs the publish and the change.
+3. **The publish first.** The publish or the release runs exactly as
+   the call without `access` does. When its outcome is `error`, a build
+   that failed or was canceled, a release refused, failed or
+   `behind_live`, or any failure before them, that result is the
+   call's, and who can open the app is not changed. When it is `ok`,
+   `ready`, `building`, `released`, `pending`, or a release whose build
+   had not started, the app exists, and the runner reads the app the
+   result names, by its id and then its slug, and changes it as rule 4
+   above does.
+4. **The result.** Outcome `ok`. `meta.publish` is the publish's, the
+   app, its id, name and address, the `folder`, `commit`, `deploy`,
+   `preview`, `status` and `release`, with the `visibility` the host
+   answered for the change, so the thread's state folds it as the
+   app's last result, and its preview as the standing one when it is
+   `ready` or `building`. The text is the publish's, rendered with no
+   sentence of who can open the app, followed by
+   `results/publish/access-changed-v1`.
+5. **A change that fails after the publish.** Outcome `error`.
+   `meta.publish` is still the publish's, with the visibility the app
+   still has, or the one the host's answer named, and, when the host
+   refused in its envelope, `error` `{code, reason, message}` beside
+   the publish's `status`. The text is the publish's followed by
+   `results/publish/access-not-changed-v1`: the site is published, who
+   can open it was not changed and why, who can open it now, to tell
+   the person, and not to call publish again for it or try another
+   way. A lost lease stops the turn, as everywhere.
+
 The description tells the model the behavior: after publishing a
 private app, say that it is online and private and offer to open it to
-anyone with the link; call `access: "link"` when the person asks to
+anyone with the link; set `access: "link"` when the person asks to
 share the site, show it to others, send it to someone or make it
-public, and once the publish call has answered when they said so
-before; call `private` to close it again; never call it for a site the
+public, and `private` when they ask to keep it to themselves or close
+it again; when they said so before the site was published, set
+`access` on the call that publishes it; never set it for a site the
 person did not ask to share; after `link`, say that anyone with the
-link can open it, and never that the app is public.
+link can open it, and never that the app is public; when a change is
+refused, the publish stands and is not made again. The text is
+`tools/publish-v6` (amended 2026-10-13; `tools/publish-v4` and `v5`
+said that a call with `access` goes with `app` alone, and to call it
+once the publish had answered).
 
 | Limit | Value |
 |---|---|
@@ -276,9 +326,9 @@ state folds and a client reads:
 | `preview` | the preview deploy's own address, once the host names it |
 | `commit` | the commit published or released |
 | `deploy` | the deploy's id |
-| `status` | `ready`, `building` (the wait ran out), `failed`, `canceled`; for a release `released`, `pending` (the wait ran out), `refused`, `failed`; absent on the result of a call with `access` |
+| `status` | `ready`, `building` (the wait ran out), `failed`, `canceled`; for a release `released`, `pending` (the wait ran out), `refused`, `failed`; absent on the result of a call with `access` alone |
 | `release` | the tag, on a release |
-| `error` | `{code, message}` for `failed`, `canceled` and `refused`; `{code, reason, message}` for a change of who can open the app that the host refused |
+| `error` | `{code, message}` for `failed`, `canceled` and `refused`; `{code, reason, message}` for a change of who can open the app that the host refused, beside the publish's `status` when the same call published first |
 
 The outcome is `ok` for `ready`, `building`, `released` and `pending`,
 and `error` for the others and for every failure before a deploy
@@ -325,10 +375,14 @@ reads; previews served beside the session in a client.
 | A model given a request for a page publishes it and answers with its address, instead of starting a server in its sandbox | a task of the suite ([[025-task-suite]]) against a stub app host | not built |
 | A call with `access` asks the host for `unlisted` on `link` and `private` on `private` with the session's token, never `public`, and nothing when the app is as asked already, an unlisted or a public app for `link`; it opens no machine, creates no app and pushes nothing; its result is `ok` and names the app with the visibility the host answers, the thread's folder, and no status | `internal/publish.TestAccessChangesWhoCanOpenTheApp`, `internal/hosted.TestASessionChangesWhoCanOpenItsApp` | built |
 | A call with `access` waits for a person in a session whose agent always allows `publish`, after a remembered allow, under a score below every threshold and under a decider that allows every call; `plan` blocks it; until the person allows it the host is asked for nothing; a denial changes nothing | `harness.TestACallItsToolHoldsWaitsForAPerson`, `harness.TestTheRulesHoldACallForAPerson`, `internal/hosted.TestASessionChangesWhoCanOpenItsApp`, `internal/publish.TestAccessIsRefusedBeforeItIsAsked` | built |
-| A call with `access` and `path` or `release` is `access_alone`, one with no app to change or several `app_required`, and one naming another's app `app_not_attached`, each before the call is decided, with no request and no app in its meta | `internal/publish.TestAccessIsRefusedBeforeItIsAsked`, `internal/hosted.TestASessionChangesWhoCanOpenItsApp` | built |
+| A call with `access` alone with no app to change or several is `app_required`, and one naming another's app `app_not_attached`, each before the call is decided, with no request and no app in its meta | `internal/publish.TestAccessIsRefusedBeforeItIsAsked`, `internal/hosted.TestASessionChangesWhoCanOpenItsApp` | built |
+| A call with `access` beside `path` or `release` is checked as the publish it starts with: refused what that publish is refused, with its codes and texts, and not refused when it creates the thread's own app; it waits for the person once, with a reason that names both, in a session whose agent always allows `publish`, and a denial publishes nothing and changes nothing | `internal/publish.TestACallThatPublishesAndChangesAccessIsCheckedAsItsPublish`, `internal/hosted.TestASessionChangesWhoCanOpenItsApp`, `internal/hosted.TestASessionPublishesAndOpensItsAppInOneCall` | built |
+| Such a call publishes or releases as it would without `access`, a new app with the call's name among them, then changes who can open the app it published to; its result is `ok`, keeps the publish's meta with the visibility after the change, and its text is the publish's followed by the change's; a wait that ran out changes it too, and the thread's state folds it as the app's last result and its preview as the standing one | `internal/publish.TestOneCallPublishesAndChangesWhoCanOpenTheApp`, `internal/hosted.TestASessionPublishesAndOpensItsAppInOneCall` | built |
+| Such a call whose publish fails answers that failure and asks the host for no change | `internal/publish.TestAPublishThatFailsChangesNoAccess` | built |
+| Such a call whose change fails after the publish is an `error` whose text says the site is published, why who can open it was not changed, who can open it now and not to publish again, and whose meta keeps the publish's with the visibility the app still has and the host's refusal; a lost lease then stops the turn | `internal/publish.TestAChangeThatFailsAfterAPublishSaysThePublishIsDone`, `internal/hosted.TestASessionPublishesAndOpensItsAppInOneCall` | built |
 | The host's refusal is an `error` result that names the app with the visibility it still has and the host's code, reason and sentence; for `role_insufficient` the text says that only the organization's owners and admins change who can open it; a reason that is no token is left out | `internal/publish.TestARefusedAccessSaysWhy`, `internal/hosted.TestASessionChangesWhoCanOpenItsApp` | built |
 | The result of a call with `access` becomes the app's last result in the thread's state and leaves its standing preview, and a release after it that names no folder publishes the folder the thread published | `harness/tools.TestStateOfFoldsAnAccessChange`, `internal/hosted.TestASessionChangesWhoCanOpenItsApp` | built |
-| The description says what `access` does, that the person approves it, when to call it and when not to, and never to call `link` public; the schema offers `link` and `private` alone; every text renders its bytes and none holds an em dash | `internal/publish.TestTheDescriptionExplainsAccess`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestNoTextHasAnEmDash` | built |
+| The description says what `access` does, alone and beside a folder or a release, that the person approves it, when to set it and when not to, to set it on the call that publishes a site the person asked to share before, and never to call `link` public; the schema offers `link` and `private` alone; every text renders its bytes and none holds an em dash | `internal/publish.TestTheDescriptionExplainsAccess`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestNoTextHasAnEmDash` | built |
 | A model that published a private site offers to open it, opens it when the person asked to share it, and never unprompted | a task of the suite ([[025-task-suite]]) against a stub app host | not built |
 
 ## Outcome
@@ -360,3 +414,30 @@ in-progress for the tasks of the suite, which are not built.
   texts of `access` are new files.
 - **`meta.publish.error` gains `reason`**, the token an app host's
   refusal names in `details.reason`, beside its code and sentence.
+
+Amended on 2026-10-13: a call with `access` beside `path` or `release`
+publishes or releases and then changes who can open the app.
+
+- **The refusal `access_alone` is gone.** It refused a call that named
+  `access` with a folder or a release, and told the model to split it.
+  A model that sent the two together repeated the refused call instead,
+  and the site was never published. A person who asks to put a site
+  online and share it, or keep it private, means one thing, so the
+  call now does both, with one approval.
+- **The publish goes first.** A change of who can open an app that does
+  not exist yet has nothing to change, and a new app exists only once
+  the publish created it. A publish that fails changes nothing else; a
+  change that fails after a publish leaves the publish standing and
+  says so, so the model does not publish again. A new app is open to
+  whoever the host's default lets in from the publish until the change,
+  as it is for a publish followed by a call with `access` alone.
+- **What became dead was removed.** `session.PublishAccessAlone` and
+  `prompts.PublishAccessAlone` are gone; no call is refused
+  `access_alone`, and a result recorded before may still carry it.
+  `results/publish/access-alone-v1` stays in the tree, which keeps
+  every released text, as a text no call sends.
+- **New texts.** `tools/publish-v6` and
+  `results/publish/access-not-changed-v1`. The ready and released
+  results of such a call are rendered with no visibility: their
+  sentence for a private app tells the model to call `access` with
+  `link`, which the call has just done or refused.

@@ -6,7 +6,7 @@ depends_on: [008-tools.md, 012-permissions-and-approvals.md, 019-git.md, 043-pub
 affects: [internal/publish/, harness/, harness/tools/, session/, prompts/, internal/hosted/, docs/]
 effort: medium
 created: 2026-10-07
-updated: 2026-10-11
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -252,11 +252,13 @@ does not exist is left to `Run` too, since an earlier call of the step
 may make it.
 
 Amended 2026-10-11 by [[043-publishing-a-folder]]: a call with `access`
-is refused in `Check` too, `access_alone` when it also names `path` or
-`release`, `app_not_attached` for an app the session may not publish
-to, and `app_required` when it names no app while the thread has
-published none or several could be meant. It takes its app by the rule
-of a release that names no folder.
+alone is refused in `Check` too, `app_not_attached` for an app the
+session may not publish to, and `app_required` when it names no app
+while the thread has published none or several could be meant. It takes
+its app by the rule of a release that names no folder. Amended
+2026-10-13: a call with `access` beside `path` or `release` is checked
+as the publish it starts with, and is no longer refused
+`access_alone`.
 
 ### The thread's state
 

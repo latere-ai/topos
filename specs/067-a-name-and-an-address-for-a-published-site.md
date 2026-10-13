@@ -6,7 +6,7 @@ depends_on: [043-publishing-a-folder.md, 059-publishing-to-a-chosen-app.md]
 affects: [internal/publish/, internal/hosted/, prompts/, docs/]
 effort: small
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -72,14 +72,16 @@ other.
 | publishes or releases, and the host no longer knows the app the thread published to, so the call creates one again | sent with the create |
 | publishes to or releases the thread's own app, which exists | ignored |
 | publishes to or releases an app the installation attached | ignored |
-| names `access` | ignored: such a call creates no app |
+| names `access` and neither `path` nor `release` | ignored: such a call creates no app |
 
-No call is refused for either. The tool refuses a call whose inputs
-contradict each other: `access` beside `path` or `release` asks for two
-things of a call that does one, and is refused `access_alone`. A name
-and an address ask nothing of a call that creates no app, so they
-contradict nothing there, and a model that repeats them on every call
-still publishes.
+A call with `access` beside `path` or `release` is the publish or the
+release it starts with, by the rows above, and then changes who can
+open the app ([[043-publishing-a-folder]], amended 2026-10-13), so the
+call that creates the app with access names it too.
+
+No call is refused for either. A name and an address ask nothing of a
+call that creates no app, so they contradict nothing there, and a model
+that repeats them on every call still publishes.
 
 The tool renames no app and moves none to another address. Both are
 the person's to change after the create, at the app host; a later call
@@ -200,7 +202,7 @@ it.
 | How often the create is sent again | once | until one is taken: a host that refuses every create is asked without end |
 | Which refusals send it again | the five codes a host refuses a slug by | every refusal: a create the host refuses for the owner's plan or its permissions would be sent twice, and its second refusal is no clearer than its first |
 | A name or an address on a call that creates no app | ignored | refused: a person would be asked to approve a call again for an input that changes nothing; changing the app: a later call would rename an app or move it unasked |
-| Either with `access` | ignored | `access_alone`: that refusal is for a call that asks for two actions, and these ask for none |
+| Either with `access` and neither `path` nor `release` | ignored | refused: a person would be asked to approve a call again for an input that changes nothing |
 | A name past the bound | cut | refused by the schema: the model reads an invalid input and the site is not published |
 | The result's text | unchanged, it gives the address the host answered | a text that also names the app: every result text of a publish and a release would need a new version to say what `meta.publish.name` already records |
 
