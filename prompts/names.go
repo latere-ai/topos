@@ -441,5 +441,6 @@ const (
 	// connection is not connected, empty when it is, and Available, each
 	// with Title and Name, the connections the person may be asked to
 	// connect: the connections an allow named for the session (spec 069).
-	ContextConnections Name = "context/connections-v1"
+	// Version 2 adds the connections the person may be asked to connect.
+	ContextConnections Name = "context/connections-v2"
 )

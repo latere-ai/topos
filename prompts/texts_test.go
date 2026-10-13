@@ -423,10 +423,19 @@ var textCases = func() []textCase {
 		}}, want: "<attachments>\n" + "Apps, each a checkout of its source in the working directory, on your branch agents/assistant/ses_1:\n" +
 			`- tide-tables/ : Tide tables, published at https://tide-tables.apps.example.com (publish with app "tide-tables")` + "\n" +
 			`- notes-2/ : Notes, published at https://notes.apps.example.com (publish with app "notes")` + "\n" + "</attachments>"},
+		{name: "context/connections-v1", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+			"HTTP": []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},
+			"MCP":  []mcpConnection{{"Issue tracker", "tracker", ""}, {"Wiki", "wiki", "revoked"}},
+		}, want: "<connections>\n" + "Services the person connected. The installation adds their credentials on the way out, and this machine holds none of them.\n" +
+			"- Code host: its API's base URL is $CODE_HOST_API_URL, in place of the service's own, with the header `Authorization: Bearer $CONNECTIONS_TOKEN`. " +
+			"`git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_1, and no other.\n" +
+			"- Calendar: its API's base URL is $CALENDAR_API_URL, in place of the service's own, with the header `Authorization: Bearer $CONNECTIONS_TOKEN`.\n" +
+			"- Issue tracker: its tools are named mcp__tracker__<tool>.\n" +
+			"- Wiki: not connected (revoked): tell the person to connect it again before you need it.\n" +
+			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.\n" + "</connections>"},
 		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
-			"HTTP":      []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},
-			"MCP":       []mcpConnection{{"Issue tracker", "tracker", ""}, {"Wiki", "wiki", "revoked"}},
-			"Available": []availableConnection(nil),
+			"HTTP": []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},
+			"MCP":  []mcpConnection{{"Issue tracker", "tracker", ""}, {"Wiki", "wiki", "revoked"}}, "Available": []availableConnection(nil),
 		}, want: "<connections>\n" + "Services the person connected. The installation adds their credentials on the way out, and this machine holds none of them.\n" +
 			"- Code host: its API's base URL is $CODE_HOST_API_URL, in place of the service's own, with the header `Authorization: Bearer $CONNECTIONS_TOKEN`. " +
 			"`git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_1, and no other.\n" +

@@ -169,7 +169,7 @@ var released = map[string]string{
 	"tools/publish-v1.md":                        "4d5bd6bd0d3a9580f660faf4ccccf3cbefe96323b542d2a6d29486370f0d8075",
 	"context/attached-v1.md":                     "c5e9526c281d30066af721f06ef9a346c30b6dc66886b6aa866d26c061bed7e7",
 	"context/attachments-v1.md":                  "9890465ce02dafa98bec031eecae159feeab97707e738b8f613b54a8cc1b480c",
-	"context/connections-v1.md":                  "67eaf78627af01bb638bd463605c8ac4112e6bfe9dcaa81e576551043f86b1cb",
+	"context/connections-v1.md":                  "c3edf319167d512b231dfd16176e5b93bf2fa27f97545aab24beebc72e482844",
 	"tools/publish-v2.md":                        "279a5226e532df993e4011906d96243988a65984fa61b0a8a6d97aadbfa2b5de",
 	"results/publish/not-attached-v1.md":         "c91432d6a47ca7fd27ac64ddbc0e3dca2a726111af6117b0e3394ca7c099672a",
 	"results/publish/app-required-v1.md":         "f13431d8e221b6ca8afc8c2116b4051bc095abab435cf422187f9a1cf3d562f1",
@@ -197,6 +197,7 @@ var released = map[string]string{
 	"results/publish/access-app-v1.md":           "eafd0c68554b2f1022bf3de8bd66df9f71ba3f0a33e0c53bb494cadb2ad2bdf9",
 	"tools/publish-v5.md":                        "daa30d3abbb7d0ebcb259f8af4cae931764326916f5f9088a8a9ac619b7a514d",
 
+	"context/connections-v2.md":                      "67eaf78627af01bb638bd463605c8ac4112e6bfe9dcaa81e576551043f86b1cb",
 	"tools/request_connection-v1.md":                 "5b5805b424c87237d6ae7230d4259f464fc8cbd5d0a6a4dfe723a717dae6bd99",
 	"results/request_connection/asked-v1.md":         "df5b56049887a93b1b1c18217d4f43b8ac3028b77872aadd8cf88534fff2610f",
 	"results/request_connection/not-available-v1.md": "d8f6f9e048825f30c2cc744012facbddd8f20f9cac70677087fe06bb77095ac3",

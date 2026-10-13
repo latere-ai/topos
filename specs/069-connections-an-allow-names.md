@@ -216,10 +216,11 @@ alone: a host machine's git and environment are the person's own
 
 ### The model is told
 
-`context/connections-v1`, rendered from the session's header on every
-request, on every thread, after the attachments block of
-[[058-what-a-create-allow-attaches]], when the session has a connection
-the block names:
+`context/connections-v2` (version 1 until the available connections
+[below](#a-service-the-person-has-not-connected)), rendered from the
+session's header on every request, on every thread, after the
+attachments block of [[058-what-a-create-allow-attaches]], when the
+session has a connection the block names:
 
 ```
 <connections>
@@ -333,13 +334,14 @@ service as an available connection:
   `http` on a Cella machine, is one the person may be asked to connect.
   An available `http` connection on a host machine is not, as a
   connected one is not given to it.
-- **The block.** On the session's own thread, `context/connections-v1`
+- **The block.** On the session's own thread, `context/connections-v2`
   lists the requestable connections after the connected ones, a line
   each, `- <title>, named <name>`, under one sentence that says the
   model may ask the person to connect one with `request_connection`
   when the task needs it. The block renders with requestable connections
   alone. A thread a spawn started is told of none, since it holds no
-  such tool.
+  such tool. Version 1, which v0.34.0 carries, names connected ones
+  alone.
 - **`request_connection`.** A harness tool, as `question` is
   ([[039-questions]]), offered to the session's own thread while the
   session has a requestable connection, and to no thread a spawn
@@ -435,7 +437,7 @@ no mount for the Secret and reaches no `http` connection.
 
 ## Outcome
 
-Built on 2026-10-12, in no release yet, and not yet run against a live
+Built on 2026-10-12, shipped in v0.34.0, and not yet run against a live
 connection service or a model. Every criterion but the task of the
 suite has its test. What shipped, beyond the design above:
 
