@@ -100,7 +100,7 @@ carry `connections`:
      "address": "https://connections.example.com/v1/connections/c_1/http",
      "git_address": "https://connections.example.com/v1/connections/c_1/git",
      "git_url": "https://git.example.com",
-     "account": "ada", "api_url": "https://api.git.example.com"},
+     "account": "ada", "api_url": "https://api.git.example.com", "api_example": "/v3/user"},
     {"name": "tracker", "kind": "mcp", "title": "Issue tracker", "audience": "connections",
      "address": "https://connections.example.com/v1/connections/c_2/mcp",
      "read_only": ["list_*", "get_*", "search"]}
@@ -119,6 +119,7 @@ carry `connections`:
 | `read_only` | `mcp` alone: at most `session.MaxReadOnlyTools` (64) globs over the server's tool names, in `path.Match` syntax, each 1 to 128 bytes; a tool a glob matches reads |
 | `account` | optional: the account at the other service the connection acts as, such as a login or an email address, one line of 1 to `session.MaxConnectionAccount` (256) characters, no control character |
 | `api_url` | optional, `http` alone: the service's own API base URL, which `address` stands in for, such as `https://api.example.com`, an `https` URL as `address` is held, a trailing `/` dropped; two connections may name one, as two services of one provider do |
+| `api_example` | optional, `http` alone: the whole path of one call of the service's API after `api_url`, as its documentation writes it, version prefix included, such as `/v1/users/me/messages`; it starts with `/`, is at most `session.MaxConnectionAPIExample` (256) bytes, and holds no space, control character, `?`, `#`, `$`, `"`, `` ` `` or `\`, since the block writes it into a shell command; the call should be one the connection service lets a session make |
 
 At most `session.MaxConnections` (32) connections, connected and
 available ([below](#a-service-the-person-has-not-connected)) together. A
@@ -268,16 +269,17 @@ the block names:
 ```
 <connections>
 The person connected these services, and you can use them now. You need no sign-in or key of theirs: the connection adds their credentials to each call. When a task needs one of them, use it rather than saying you cannot reach it.
-- GitHub, connected as ada: $GITHUB_API_URL stands in for https://api.git.example.com, so call https://api.git.example.com/<path> as `curl -s -H "Authorization: Bearer $CONNECTIONS_TOKEN" "$GITHUB_API_URL/<path>"`. `git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_01..., and no other.
+- GitHub, connected as ada: $GITHUB_API_URL stands in for https://api.git.example.com; put the whole path its documentation gives after it, with any version prefix: `curl -s -H "Authorization: Bearer $CONNECTIONS_TOKEN" "$GITHUB_API_URL/v3/user"` calls https://api.git.example.com/v3/user. `git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_01..., and no other.
 - Issue tracker: its tools are named mcp__tracker__<tool>.
-A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.
+A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it. Any other error is about the request, such as a path the service does not have: check the path against the service's documentation before you tell the person you cannot reach the service.
 </connections>
 ```
 
-An `http` connection without `account` names no account, and one
-without `api_url` says its variable stands in for the service's own API
-base URL and calls its API's `<path>`, so a block of an authorizer that
-names neither still tells the model what to call.
+An `http` connection without `account` names no account; one without
+`api_url` says its variable stands in for the service's own API base
+URL; and one without `api_example` writes the call with `/<path>`, so a
+block of an authorizer that names none of them still tells the model
+what to call.
 
 Version 2, which v0.35.0 to v0.36.1 carry, opened with "Services the
 person connected. The installation adds their credentials on the way
@@ -290,7 +292,15 @@ their mail and asked them to connect it with `request_connection`,
 which refused, since the service was connected. A larger model called
 the service through the same block. Version 3 says the services can be
 used now, names the account, the service's own base URL the variable
-stands in for, and one call written out. Version 1, which v0.34.0
+stands in for, and one call written out. A first draft of it wrote the
+call as `$GMAIL_API_URL/<path>` for `https://gmail.googleapis.com/<path>`:
+a small model then called `$GMAIL_API_URL/users/me/messages`, without
+the API's documented `/gmail/v1`, the connection service refused the
+path, and the model told the person the service was not connected. So
+the block writes one documented call whole when the authorizer names
+`api_example`, tells the model to put the whole documented path, version
+prefix included, after the variable, and says that an error other than
+`connection_not_connected` is about the request. Version 1, which v0.34.0
 carries, names connected connections alone.
 
 The block changes only when a send changes the list, or when the
@@ -381,7 +391,7 @@ service as an available connection:
   did; any other value does not decode. An available connection takes
   `name`, `kind` and `title` by the rules above and nothing else: one
   that names `audience`, `address`, `git_address`, `git_url`,
-  `read_only`, `account` or `api_url` does not decode, and a connected one without `audience`
+  `read_only`, `account`, `api_url` or `api_example` does not decode, and a connected one without `audience`
   or `address` does not decode, as before. Names are unique across both,
   and `session.MaxConnections` bounds both together. The header keeps
   it, a send replaces it as any connection, and `SameConnections`
@@ -451,7 +461,8 @@ nothing for it; the block tells the model to push its own branch,
 | "Connect this service" for `http` | the service's `409` reaches the sandbox's tool, and the model relays it | the runner reading the sandbox's traffic: it sees none of it |
 | A service never connected | the allow names it with `state` `available`, and the model asks with `request_connection`, which appends `connection.requested` | a send that fails before the model knows the service: the model cannot ask for what it was never told of; a new event type: `connection.requested` already means "connect this service" to a client |
 | Where an available entry reaches | the session's own thread's block and tool | every thread: a thread a spawn started does not hold the conversation with the person, as with `question` |
-| What the block says of an `http` connection | that it can be used now with no sign-in or key, the account it acts as, the service's own API base URL its variable stands in for, and one `curl` call with the header and the variable | the variable alone, as version 2 said it: a small model read "this machine holds none of them" as having no access, and was given no call to copy |
+| What the block says of an `http` connection | that it can be used now with no sign-in or key, the account it acts as, the service's own API base URL its variable stands in for, and one documented call written whole with `curl`, the header and the variable | the variable alone, as version 2 said it: a small model read "this machine holds none of them" as having no access, and was given no call to copy; a call written with `/<path>` alone: a small model left out the API's version prefix |
+| Where the example call's path comes from | `api_example`, which the installation's authorizer names, a call its connection service lets a session make | a path the core writes for each service: the core names no service; a list of the API's paths: the block stays one line per connection |
 | Where the service's API base URL comes from | `api_url`, which the installation's authorizer names from its catalog | a table of services in the core: the core names no service, and each installation offers its own |
 | An available `http` connection on a host machine | not named and not requestable | named: connecting it would give the session nothing, since a host machine takes no `http` connection |
 | The turn after `request_connection` | the model ends it, told so by the result | the harness pausing the session as `question` does: the person connects outside the conversation, and their next message, whose send names the connected entry, is what resumes it |
@@ -469,9 +480,9 @@ nothing for it; the block tells the model to push its own branch,
 3. Its authorizer sends `connections` only to a core whose release notes
    say it reads them. An older core ignores the member, and its
    sessions start without connections.
-4. Its authorizer names `account` and `api_url` once the core reads
-   them. An older core ignores both, as it ignores any member of a
-   connection it does not know, and its block names neither.
+4. Its authorizer names `account`, `api_url` and `api_example` once the
+   core reads them. An older core ignores them, as it ignores any member
+   of a connection it does not know, and its block names none of them.
 
 ## Not in this spec
 
@@ -506,8 +517,8 @@ before the installation set `TOPOS_CONNECTIONS_URL`: it reaches no
 | A connection never fails a sandbox: a `-connections` Secret on the host of another the sandbox mounts is not applied, Cella is asked one create without it, and one error names both Secrets' hosts and no value; a create Cella refuses `secret_host_conflict` is made once more without it, and that Secret is not renewed while the others are and is deleted at the session's end; such a sandbox, and a later drive that finds it by name, takes no git configuration and no variable of an `http` connection | `internal/hosted.TestConnectionsNeverFailASandbox` over the stub Cella, which refuses two mounted Secrets on one host as Cella does (`test/stubs/cellastub.TestSandboxLifecycle`), `machine/cella.TestMountsAreTheSandboxs` | built |
 | A sandbox that reaches no connection service is told of none of the session's `http` connections, connected or available, and `request_connection` asks for none, while `mcp` ones are named and asked for; a deferred machine answers whether it reaches the service once open, and yes before, without opening it | `harness.TestConnectionsInASandboxThatReachesNoConnectionService`, `machine.TestADeferredMachinePassesItsConnectionsOn` | built |
 | An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person; an agent given an available code host calls `request_connection` and ends its turn | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
-| `account` and `api_url` decode on a connected connection, `api_url` on `http` alone and held as `address` is with a trailing `/` dropped, `account` on one line within its bound; an available connection with either, an `mcp` connection with `api_url`, and either past its rule do not decode; a send that changes either appends `session.connections_changed` | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestAConnectionsVariableAndTools`, `authorizer.TestTheConnectionsMember` | built |
-| The block says the connected services can be used now with no sign-in or key, names each `http` connection's account and the API base URL its variable stands in for, gives one `curl` call with the header and the variable, and reads whole without either member; version 2 stays as released | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | built |
+| `account`, `api_url` and `api_example` decode on a connected connection, `api_url` and `api_example` on `http` alone, `api_url` held as `address` is with a trailing `/` dropped, `api_example` a path within its bound and its characters, `account` on one line within its bound; an available connection with any of them, an `mcp` connection with `api_url` or `api_example`, and any past its rule do not decode; a send that changes any appends `session.connections_changed` | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestAConnectionsVariableAndTools`, `authorizer.TestTheConnectionsMember` | not built |
+| The block says the connected services can be used now with no sign-in or key, names each `http` connection's account and the API base URL its variable stands in for, says to put the whole documented path after the variable with any version prefix, writes the `api_example` call whole with the header and the variable, says an error other than `connection_not_connected` is about the request, and reads whole without any of the three members; version 2 stays as released | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | not built |
 
 ## Outcome
 
@@ -553,8 +564,8 @@ doors under passed the configuration's check, which compared it with
 create, so no hosted session could open its machine.
 
 **What the model is told of a connected service**, built on 2026-10-13,
-in no release yet: `account` and `api_url` on a connection, and
-`context/connections-v3`, each criterion with its test. The block also
+in no release yet: `account`, `api_url` and `api_example` on a
+connection, and `context/connections-v3`, each criterion with its test. The block also
 names an `mcp` connection's account when the allow names one. Not yet
 run against a model: whether a small model now calls a connected
 service from the block alone is the task of the suite's to show, with
