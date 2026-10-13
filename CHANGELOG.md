@@ -19,12 +19,16 @@ committed: the commit log already holds that.
   it could not reach it and asked the person to connect it again. The
   block now says the connected services can be used now, with no sign-in
   or key, and gives each `http` connection the account it acts as, the
-  service's own API base URL its variable stands in for, and one `curl`
-  call with the header and the variable (`context/connections-v3`).
-- **A connection may name its `account` and `api_url`.** An authorizer
-  can name the account a connection acts as, and, for an `http`
-  connection, the service's own API base URL, which the block names. Both
-  are optional; an available connection names neither.
+  service's own API base URL its variable stands in for, and one
+  documented call written whole with `curl`, the header and the
+  variable, version prefix included; it says an error other than
+  `connection_not_connected` is about the request, not the connection
+  (`context/connections-v3`).
+- **A connection may name its `account`, `api_url` and `api_example`.**
+  An authorizer can name the account a connection acts as, and, for an
+  `http` connection, the service's own API base URL and the path of one
+  documented call, which the block names. All are optional; an available
+  connection names none of them.
 
 ## v0.36.1 - 2026-10-13
 
