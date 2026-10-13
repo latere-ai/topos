@@ -95,11 +95,13 @@ func TestBashTimeoutKillsGroup(t *testing.T) {
 	th.call(ctx, t, bash, f.h, `{"command":"cd /"}`)
 	start := time.Now()
 	pgid := filepath.Join(f.work, "pgid")
-	res := th.call(ctx, t, bash, f.h, mustInput(t, map[string]any{"command": "echo $$ > " + pgid + "; echo started; /bin/sleep 30 & /bin/sleep 30", "timeout_ms": 200}))
+	// A second leaves the shell time to print before the kill on a busy
+	// machine, where 200ms let the timeout land before it started.
+	res := th.call(ctx, t, bash, f.h, mustInput(t, map[string]any{"command": "echo $$ > " + pgid + "; echo started; /bin/sleep 30 & /bin/sleep 30", "timeout_ms": 1000}))
 	if res.Outcome != OutcomeTimeout || !res.IsError() || time.Since(start) > 10*time.Second {
 		t.Fatalf("timeout %s after %s", res.Outcome, time.Since(start))
 	}
-	if text(res) != "started\nThe command passed its timeout of 200ms and was killed with its process group." {
+	if text(res) != "started\nThe command passed its timeout of 1s and was killed with its process group." {
 		t.Fatalf("timeout text %q", text(res))
 	}
 	// The shell leads its own process group, so its pid names the group;
