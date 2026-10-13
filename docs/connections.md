@@ -20,7 +20,8 @@ The authorizer names the connections in the limits of its allow of
     {"name": "github", "kind": "http", "title": "GitHub", "audience": "connections",
      "address": "https://connections.example.com/v1/connections/c_1/http",
      "git_address": "https://connections.example.com/v1/connections/c_1/git",
-     "git_url": "https://github.com"},
+     "git_url": "https://github.com",
+     "account": "octocat", "api_url": "https://api.github.com"},
     {"name": "tracker", "kind": "mcp", "title": "Issue tracker", "audience": "connections",
      "address": "https://connections.example.com/v1/connections/c_2/mcp",
      "read_only": ["list_*", "get_*"]}
@@ -37,6 +38,8 @@ The authorizer names the connections in the limits of its allow of
 | `address` | the connection's forwarding address for `http`, its MCP address for `mcp`; an `https` URL with no query or fragment |
 | `git_address`, `git_url` | `http` alone, both or neither: the connection's git address, and the git host the person's repositories live at |
 | `read_only` | `mcp` alone: globs over the server's tool names; a tool one matches reads, and every other reaches outside |
+| `account` | optional: the account at the other service the connection acts as, such as a login or an email address, one line of at most 256 characters |
+| `api_url` | optional, `http` alone: the service's own API base URL, which `address` stands in for; an `https` URL with no query or fragment |
 
 At most 32 connections, connected and available together. A connection
 that breaks a rule refuses the request with `authorizer_unavailable`,
@@ -52,7 +55,8 @@ with `state` `available`, and with its name, kind and title alone:
 ```
 
 An available connection names no `audience`, `address`, `git_address`,
-`git_url` or `read_only`, and one that does refuses the request. A
+`git_url`, `read_only`, `account` or `api_url`, and one that does
+refuses the request. A
 connection without `state` is connected, and needs its `audience` and
 `address`. The session reaches nothing of an available connection, so
 it needs no connection service on the installation, and a session's
@@ -86,9 +90,15 @@ For each connection:
 - **The API.** Each command carries `<NAME>_API_URL`, here
   `GITHUB_API_URL`, naming the forwarding address. The agent calls
   `$GITHUB_API_URL/user` with `Authorization: Bearer $CONNECTIONS_TOKEN`.
-- **The model is told.** A block of the system prompt names each
-  connection, how to clone, push and call its API, and that the agent
-  pushes its own branch, `agents/<agent>/<session>`.
+- **The model is told.** A block of the system prompt says the agent can
+  use the connected services now, with no sign-in or key, and names each
+  connection with the account it acts as. For an `http` connection it
+  names the service's own API base URL the variable stands in for, one
+  `curl` call with the header and the variable, how to clone and push,
+  and that the agent pushes its own branch, `agents/<agent>/<session>`.
+  Name `account` and `api_url`: without `api_url` the agent is told only
+  that the variable stands in for the service's own base URL, and has to
+  know that URL itself.
 
 An `http` connection must name the audience of
 `TOPOS_CONNECTIONS_AUDIENCE` and addresses on the host of
