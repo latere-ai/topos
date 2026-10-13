@@ -271,6 +271,10 @@ const (
 	// CallNetworkUnavailable takes Host and Error: an allowed fetch whose
 	// widening of the session's network was refused (spec 052).
 	CallNetworkUnavailable Name = "results/call/network-unavailable-v1"
+	// CallRepeated follows the error a call got when the same call, with
+	// the same input, got the same error earlier in its thread's turn
+	// (spec 005).
+	CallRepeated Name = "results/call/repeated-v1"
 )
 
 // The results of the thread tools (spec 013). Each takes the values its

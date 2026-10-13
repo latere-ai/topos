@@ -470,6 +470,9 @@ type turn struct {
 	// movedOffText is set once the turn moved off a model that wrote a
 	// tool call as text (spec 062): a turn moves for that once.
 	movedOffText bool
+	// repeats tells a call made again unchanged after an error, which the
+	// turn ends on once it repeats MaxRepeatedCalls times.
+	repeats repeats
 }
 
 func (t *turn) event(typ session.Type, payload any) (session.Event, error) {
@@ -689,6 +692,7 @@ func (t *turn) resume(ctx context.Context) error {
 	var run, threads []pendingCall
 	interrupted := false
 	for _, c := range open {
+		t.repeats.made(c.use.ToolUseID, c.use.Name, c.use.Input)
 		switch {
 		case c.use.Client:
 			w.result = true
@@ -813,6 +817,9 @@ func (t *turn) stepOnce(ctx context.Context) error {
 	t.step++
 	if t.interrupted() || t.signaled() {
 		return t.finish(ctx, session.StopInterrupted, "")
+	}
+	if t.repeats.stuck != "" {
+		return t.stopRepeated(ctx)
 	}
 	if !t.h.c.Clock().Before(t.deadline) {
 		return t.finish(ctx, session.StopTurnLimit, "")
@@ -1612,6 +1619,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		if raw, broken := res.InvalidArgs[id]; broken {
 			input = []byte(raw)
 		}
+		t.repeats.made(id, name, input)
 		if cut := cutCall(res); cut != nil && cut.ID == id {
 			answered = append(answered, answeredCall{id, tools.CutInput(name, input, limit)})
 			continue
@@ -1928,8 +1936,15 @@ func settle(ctx context.Context, res tools.Result, err error) tools.Result {
 	return res
 }
 
-// result appends one tool.result, commit point two.
+// result appends one tool.result, commit point two. Every answer of a
+// call passes here, whether the call ran or was refused before it was
+// decided, so a call made again unchanged after an error is told here
+// (repeated).
 func (t *turn) result(ctx context.Context, id string, res tools.Result, dur time.Duration) error {
+	res, err := t.repeated(id, res)
+	if err != nil {
+		return err
+	}
 	p := session.ToolResult{ToolUseID: id, Content: res.Content, IsError: res.IsError(), Outcome: res.Outcome, DurationMS: dur.Milliseconds(), Spill: res.Spill, CostUSDMicro: res.CostUSDMicro}
 	if res.Meta != nil {
 		b, err := session.Marshal(res.Meta)
