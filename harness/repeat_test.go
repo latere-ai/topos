@@ -261,3 +261,35 @@ func TestAThreadCountsItsOwnRepeats(t *testing.T) {
 		t.Fatalf("%d session.status events; a thread's turn appends none", n)
 	}
 }
+
+// TestCanonicalInputComparesJSONAndKeepsOtherBytes: an input that is one
+// JSON value is compared compact with its keys sorted, its numbers as
+// written; one that is not, broken off or followed by more, is compared
+// as it was sent.
+func TestCanonicalInputComparesJSONAndKeepsOtherBytes(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{`{ "b": [1, 2], "a" : "x" }`, `{"a":"x","b":[1,2]}`},
+		{`{"n":12345678901234567890}`, `{"n":12345678901234567890}`},
+		{`{"n":1.0}`, `{"n":1.0}`},
+		{`{"text":"rm a`, `{"text":"rm a`},
+		{`{"text":"a"} {"text":"b"}`, `{"text":"a"} {"text":"b"}`},
+	} {
+		if got := string(canonicalInput([]byte(c.in))); got != c.want {
+			t.Errorf("canonicalInput(%s) = %s, want %s", c.in, got, c.want)
+		}
+	}
+	var r repeats
+	r.made("a", "echo", []byte(`{"text":"rm a`))
+	r.made("b", "echo", []byte(`{"text":"rm a`))
+	r.made("c", "echo", []byte(`{"text":"rm b`))
+	failed := tools.Text(tools.OutcomeInvalidInput, "not valid JSON")
+	for i, id := range []string{"a", "b", "c"} {
+		want := 0
+		if i == 1 {
+			want = 1
+		}
+		if _, n, err := r.answered(id, failed); err != nil || n != want {
+			t.Errorf("call %s answered as repeat %d, %v; want %d", id, n, err, want)
+		}
+	}
+}
