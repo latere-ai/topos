@@ -506,8 +506,8 @@ before the installation set `TOPOS_CONNECTIONS_URL`: it reaches no
 | A connection never fails a sandbox: a `-connections` Secret on the host of another the sandbox mounts is not applied, Cella is asked one create without it, and one error names both Secrets' hosts and no value; a create Cella refuses `secret_host_conflict` is made once more without it, and that Secret is not renewed while the others are and is deleted at the session's end; such a sandbox, and a later drive that finds it by name, takes no git configuration and no variable of an `http` connection | `internal/hosted.TestConnectionsNeverFailASandbox` over the stub Cella, which refuses two mounted Secrets on one host as Cella does (`test/stubs/cellastub.TestSandboxLifecycle`), `machine/cella.TestMountsAreTheSandboxs` | built |
 | A sandbox that reaches no connection service is told of none of the session's `http` connections, connected or available, and `request_connection` asks for none, while `mcp` ones are named and asked for; a deferred machine answers whether it reaches the service once open, and yes before, without opening it | `harness.TestConnectionsInASandboxThatReachesNoConnectionService`, `machine.TestADeferredMachinePassesItsConnectionsOn` | built |
 | An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person; an agent given an available code host calls `request_connection` and ends its turn | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
-| `account` and `api_url` decode on a connected connection, `api_url` on `http` alone and held as `address` is with a trailing `/` dropped, `account` on one line within its bound; an available connection with either, an `mcp` connection with `api_url`, and either past its rule do not decode; a send that changes either appends `session.connections_changed` | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestAConnectionsVariableAndTools`, `authorizer.TestTheConnectionsMember` | not built |
-| The block says the connected services can be used now with no sign-in or key, names each `http` connection's account and the API base URL its variable stands in for, gives one `curl` call with the header and the variable, and reads whole without either member; version 2 stays as released | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | not built |
+| `account` and `api_url` decode on a connected connection, `api_url` on `http` alone and held as `address` is with a trailing `/` dropped, `account` on one line within its bound; an available connection with either, an `mcp` connection with `api_url`, and either past its rule do not decode; a send that changes either appends `session.connections_changed` | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestAConnectionsVariableAndTools`, `authorizer.TestTheConnectionsMember` | built |
+| The block says the connected services can be used now with no sign-in or key, names each `http` connection's account and the API base URL its variable stands in for, gives one `curl` call with the header and the variable, and reads whole without either member; version 2 stays as released | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | built |
 
 ## Outcome
 
@@ -551,3 +551,11 @@ tests. Before it, a connection service on the host Lux publishes its
 doors under passed the configuration's check, which compared it with
 `TOPOS_MODELS_URL`'s host alone, and Cella refused every sandbox's
 create, so no hosted session could open its machine.
+
+**What the model is told of a connected service**, built on 2026-10-13,
+in no release yet: `account` and `api_url` on a connection, and
+`context/connections-v3`, each criterion with its test. The block also
+names an `mcp` connection's account when the allow names one. Not yet
+run against a model: whether a small model now calls a connected
+service from the block alone is the task of the suite's to show, with
+the open criterion above.
