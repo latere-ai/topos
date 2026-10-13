@@ -77,6 +77,16 @@ neither, or a `blob` no message of the session attached is
 A refused call creates nothing: there is no new session to clean up, and
 the original conversation is unchanged.
 
+### The new version's working directory
+
+Where the installation keeps a conversation's files in its files
+service, the new version starts from a copy of the conversation's
+latest working directory, the files its agent and its commands made,
+and not from the files as they were at the edited message, so it may
+hold files and changes made after that message. Its agent is told so
+when its machine opens. A conversation whose files are not kept there
+gets back what its record holds up to the edited message, as before.
+
 ## Drawing the versions
 
 A session made by a fork names where it came from:
