@@ -102,8 +102,9 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 // each app an allow attached, and the connections block (spec 069),
 // since every thread works in the same machine. The connections block
 // names the services the person may be asked to connect on the session's
-// own thread alone, which holds the conversation with the person.
-func headerBlocks(s session.Session, own bool, mcp map[string]MCPListing) []string {
+// own thread alone, which holds the conversation with the person, and
+// the http connections only when the machine is given them, http.
+func headerBlocks(s session.Session, own, http bool, mcp map[string]MCPListing) []string {
 	var out []string
 	if own && s.Instructions != "" {
 		out = append(out, prompts.Render(prompts.ContextInitiator, prompts.Data{"Text": s.Instructions}))
@@ -116,7 +117,7 @@ func headerBlocks(s session.Session, own bool, mcp map[string]MCPListing) []stri
 	if apps := attachedApps(s); len(apps) > 0 {
 		out = append(out, prompts.Render(prompts.ContextAttachments, prompts.Data{"Branch": session.Branch(s), "Apps": apps}))
 	}
-	if block := connectionsBlock(s, own, mcp); block != "" {
+	if block := connectionsBlock(s, own, http, mcp); block != "" {
 		out = append(out, block)
 	}
 	return out

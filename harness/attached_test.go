@@ -79,11 +79,11 @@ func TestHeaderBlocksOfASubagent(t *testing.T) {
 	app := &session.ResourceApp{Slug: "tide", Name: "Tide", URL: "https://tide.apps.example.com"}
 	s := session.Session{ID: "ses_1", Agent: session.AgentRef{Name: "assistant"}, Instructions: "Call me Ada.", Context: []session.ContextPart{{Title: "Project", Text: "P."}},
 		Resources: []session.Resource{{Type: session.ResourceRepository, URL: "https://git.example.com/r/1.git", App: app, Attached: true}}}
-	own, sub := headerBlocks(s, true, nil), headerBlocks(s, false, nil)
+	own, sub := headerBlocks(s, true, false, nil), headerBlocks(s, false, false, nil)
 	if len(own) != 3 || len(sub) != 1 || sub[0] != own[2] || !strings.HasPrefix(sub[0], "<attachments>") || !strings.Contains(sub[0], "- tide/ : Tide") {
 		t.Fatalf("own %q, subagent %q", own, sub)
 	}
-	if got := headerBlocks(session.Session{ID: "ses_2"}, true, nil); got != nil {
+	if got := headerBlocks(session.Session{ID: "ses_2"}, true, false, nil); got != nil {
 		t.Fatalf("a bare session's header blocks %q", got)
 	}
 	if got := withRepositories(nil, s); got != nil {

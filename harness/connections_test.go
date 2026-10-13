@@ -97,7 +97,7 @@ func TestTheConnectionsBlock(t *testing.T) {
 	if len(m.applied) != 1 || len(m.applied[0]) != 1 || m.applied[0][0] != want {
 		t.Fatalf("the machine took %+v", m.applied)
 	}
-	if own, sub := headerBlocks(e.s, true, e.cfg.MCP), headerBlocks(e.s, false, e.cfg.MCP); len(own) != 1 || len(sub) != 1 || own[0] != sub[0] {
+	if own, sub := headerBlocks(e.s, true, true, e.cfg.MCP), headerBlocks(e.s, false, true, e.cfg.MCP); len(own) != 1 || len(sub) != 1 || own[0] != sub[0] {
 		t.Fatalf("own %q, subagent %q", own, sub)
 	}
 
@@ -144,7 +144,7 @@ func TestConnectionsOnAMachineThatCannotTakeThem(t *testing.T) {
 	if len(host.applied) != 0 || strings.Contains(unescaped(h.stub.Requests()[0].Body), "<connections>") {
 		t.Fatalf("a host machine took %+v", host.applied)
 	}
-	if got := connectionsBlock(session.Session{Machine: session.Machine{Kind: session.MachineCella}}, true, nil); got != "" {
+	if got := connectionsBlock(session.Session{Machine: session.Machine{Kind: session.MachineCella}}, true, true, nil); got != "" {
 		t.Fatalf("a session with none renders %q", got)
 	}
 }
@@ -299,10 +299,10 @@ func TestRequestConnection(t *testing.T) {
 	}
 
 	host := session.Session{Machine: session.Machine{Kind: session.MachineHost}, Connections: []session.Connection{github, notes}}
-	if got := connectionsBlock(host, true, nil); strings.Contains(got, "GitHub") || !strings.Contains(got, "- Notes, named notes") {
+	if got := connectionsBlock(host, true, reachesHTTP(host, nil), nil); strings.Contains(got, "GitHub") || !strings.Contains(got, "- Notes, named notes") {
 		t.Fatalf("a host machine's block %q", got)
 	}
-	if got := connectionsBlock(e.s, false, e.cfg.MCP); strings.Contains(got, "GitHub") || strings.Contains(got, ToolRequestConnection) {
+	if got := connectionsBlock(e.s, false, true, e.cfg.MCP); strings.Contains(got, "GitHub") || strings.Contains(got, ToolRequestConnection) {
 		t.Fatalf("a subagent's block %q", got)
 	}
 	registry := func(s session.Session, thread string) []string {
@@ -325,5 +325,70 @@ func TestRequestConnection(t *testing.T) {
 	}
 	if names := registry(e.s, ""); !strings.Contains(strings.Join(names, " "), ToolRequestConnection) {
 		t.Fatalf("the session's own thread is offered %v", names)
+	}
+}
+
+// TestConnectionsInASandboxThatReachesNoConnectionService: a sandbox that
+// opened without the connection service's Secret, because its host was
+// another Secret's, says it reaches no connection service, and the model
+// is told of none of the session's http connections: the block names no
+// connected one and no available one, request_connection is not offered
+// for an http service alone, and a call for one answers that it is not
+// available; mcp connections are named and asked for as before. The same
+// session in a sandbox that reaches the service is told of them (spec
+// 069).
+func TestConnectionsInASandboxThatReachesNoConnectionService(t *testing.T) {
+	ctx := t.Context()
+	github := session.Connection{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", State: session.ConnectionAvailable}
+	notes := session.Connection{Name: "notes", Kind: session.ConnectionMCP, Title: "Notes", State: session.ConnectionAvailable}
+	m := &conMachine{kind: machine.KindCella, unreached: true}
+	e := setupSession(t, func(c *Config) {
+		c.Machine = m
+		c.MCP = map[string]MCPListing{"tracker": {}}
+	}, func(s *session.Session) {
+		s.Machine.Kind = session.MachineCella
+		s.Connections = []session.Connection{codeHost, tracker, github, notes}
+	})
+	e.stub.Script(model,
+		reply(ir.StopToolUse, call("toolu_1", ToolRequestConnection, `{"name":"github","reason":"to clone acme/app"}`)),
+		reply(ir.StopEndTurn, text("GitHub cannot be reached from here.")))
+	e.send(ctx, "Clone acme/app.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	body := unescaped(e.stub.Requests()[0].Body)
+	for _, want := range []string{"<connections>", "Issue tracker: its tools are named mcp__tracker__<tool>", "- Notes, named notes"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the request lacks %q", want)
+		}
+	}
+	for _, unwanted := range []string{"Code host", "$CODE_HOST_API_URL", "git clone", "GitHub"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("the request names %q, which the sandbox cannot reach", unwanted)
+		}
+	}
+	var res session.ToolResult
+	if results := e.events(ctx, session.TypeToolResult); len(results) != 1 || results[0].Decode(&res) != nil || !res.IsError ||
+		res.Content[0].Text != prompts.Render(prompts.RequestConnectionNotAvailable, prompts.Data{"Name": "github", "Names": "notes"}) {
+		t.Fatalf("a request for an http service the sandbox cannot reach answered %+v", res)
+	}
+	if n := len(e.events(ctx, session.TypeConnectionRequested)); n != 0 {
+		t.Fatalf("%d connection.requested for a service the sandbox cannot reach", n)
+	}
+
+	s := session.Session{Machine: session.Machine{Kind: session.MachineCella}, Connections: []session.Connection{codeHost, github}}
+	if got := connectionsBlock(s, true, reachesHTTP(s, m), nil); got != "" {
+		t.Fatalf("a session whose connections are http alone renders %q", got)
+	}
+	r, err := (&turn{h: e.h, s: s, root: e.cfg.Tools}).registry(e.cfg.Tools.Names())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := r.Names(); strings.Contains(strings.Join(names, " "), ToolRequestConnection) {
+		t.Fatalf("an http service alone is offered %v", names)
+	}
+	m.unreached = false
+	if got := connectionsBlock(s, true, reachesHTTP(s, m), nil); !strings.Contains(got, "Code host") || !strings.Contains(got, "- GitHub, named github") {
+		t.Fatalf("a sandbox that reaches the service renders %q", got)
 	}
 }

@@ -128,19 +128,31 @@ type (
 	availableLine  struct{ Title, Name string }
 )
 
+// reachesHTTP reports whether s's machine m is given the session's
+// connections of kind http (spec 069): a Cella machine, unless it says it
+// reaches no connection service, as a sandbox that opened without the
+// service's Secret does. The model is then told of none of them.
+func reachesHTTP(s session.Session, m machine.Machine) bool {
+	if s.Machine.Kind != session.MachineCella {
+		return false
+	}
+	cm, ok := m.(machine.Connected)
+	return !ok || cm.ReachesConnections()
+}
+
 // connectionsBlock is the system block that names s's connections (spec
-// 069), "" when it names none: each connected one of kind http on a Cella
-// machine, with how to clone, push and call its API, and each of kind mcp
-// whose listing mcp holds, by its tools' prefix or why it is not
-// connected, one whose listing failed otherwise offering nothing to name;
-// and, on the session's own thread, which holds request_connection, each
-// the person may be asked to connect.
-func connectionsBlock(s session.Session, own bool, mcp map[string]MCPListing) string {
-	var http []connectionLine
+// 069), "" when it names none: each connected one of kind http when the
+// machine is given them, http, with how to clone, push and call its API,
+// and each of kind mcp whose listing mcp holds, by its tools' prefix or
+// why it is not connected, one whose listing failed otherwise offering
+// nothing to name; and, on the session's own thread, which holds
+// request_connection, each the person may be asked to connect.
+func connectionsBlock(s session.Session, own, http bool, mcp map[string]MCPListing) string {
+	var lines []connectionLine
 	var tools []mcpLine
 	var available []availableLine
 	if own {
-		for _, c := range requestable(s) {
+		for _, c := range requestable(s, http) {
 			available = append(available, availableLine{Title: c.Title, Name: c.Name})
 		}
 	}
@@ -150,8 +162,8 @@ func connectionsBlock(s session.Session, own bool, mcp map[string]MCPListing) st
 		}
 		switch c.Kind {
 		case session.ConnectionHTTP:
-			if s.Machine.Kind == session.MachineCella {
-				http = append(http, connectionLine{Title: c.Title, GitURL: c.GitURL, Env: c.APIEnv()})
+			if http {
+				lines = append(lines, connectionLine{Title: c.Title, GitURL: c.GitURL, Env: c.APIEnv()})
 			}
 		case session.ConnectionMCP:
 			switch l, listed := mcp[c.Name]; {
@@ -163,23 +175,24 @@ func connectionsBlock(s session.Session, own bool, mcp map[string]MCPListing) st
 			}
 		}
 	}
-	if len(http) == 0 && len(tools) == 0 && len(available) == 0 {
+	if len(lines) == 0 && len(tools) == 0 && len(available) == 0 {
 		return ""
 	}
 	return prompts.Render(prompts.ContextConnections, prompts.Data{
-		"Branch": session.Branch(s), "Token": session.ConnectionsToken, "HTTP": http, "MCP": tools, "Available": available,
+		"Branch": session.Branch(s), "Token": session.ConnectionsToken, "HTTP": lines, "MCP": tools, "Available": available,
 	})
 }
 
 // requestable are s's available connections the person may be asked to
-// connect (spec 069): each of kind mcp, and each of kind http on a Cella
-// machine, the one machine an http connection is given to, so a session
-// on a host machine is never told of a service connecting would not give
-// it.
-func requestable(s session.Session) []session.Connection {
+// connect (spec 069): each of kind mcp, and each of kind http when the
+// machine is given them, http, as a Cella machine that reaches the
+// connection service is, so a session on a host machine, or in a sandbox
+// that opened without the service's Secret, is never told of a service
+// connecting would not give it.
+func requestable(s session.Session, http bool) []session.Connection {
 	var out []session.Connection
 	for _, c := range s.Connections {
-		if !c.Connected() && (c.Kind == session.ConnectionMCP || s.Machine.Kind == session.MachineCella) {
+		if !c.Connected() && (c.Kind == session.ConnectionMCP || http) {
 			out = append(out, c)
 		}
 	}
@@ -232,7 +245,7 @@ func (r requestConnectionTool) Run(_ context.Context, c tools.Call) (tools.Resul
 	if err := json.Unmarshal(c.Input, &in); err != nil {
 		return tools.Result{}, fmt.Errorf("harness: decode a request_connection call: %w", err)
 	}
-	offered := requestable(r.t.s)
+	offered := requestable(r.t.s, reachesHTTP(r.t.s, r.t.h.c.Machine))
 	i := slices.IndexFunc(offered, func(c session.Connection) bool { return c.Name == in.Name })
 	if i < 0 {
 		names := make([]string, len(offered))

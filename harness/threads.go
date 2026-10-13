@@ -168,7 +168,7 @@ func (t *turn) registry(names []string) (*tools.Registry, error) {
 	// person may be asked to connect (spec 069). An agent stored before
 	// the name was reserved may hold a client tool of the name, which is
 	// that client's.
-	if _, held := r.Get(ToolRequestConnection); !held && t.thread == "" && len(requestable(t.s)) > 0 {
+	if _, held := r.Get(ToolRequestConnection); !held && t.thread == "" && len(requestable(t.s, reachesHTTP(t.s, t.h.c.Machine))) > 0 {
 		extra = append(extra, requestConnectionTool{t})
 	}
 	for _, tool := range extra {

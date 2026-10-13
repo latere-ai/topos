@@ -1072,7 +1072,7 @@ func (t *turn) maxTokens() int64 {
 // session's header.
 func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, string, error) {
 	parts := withRoute(withRepositories(tr.System, t.s), t.s)
-	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, headerBlocks(t.s, t.thread == "", t.h.c.MCP), parts, t.l)
+	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, headerBlocks(t.s, t.thread == "", reachesHTTP(t.s, t.h.c.Machine), t.h.c.MCP), parts, t.l)
 	if err != nil {
 		return ir.Request{}, "", err
 	}
