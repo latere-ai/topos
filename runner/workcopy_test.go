@@ -6,6 +6,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/machine/host"
 	"latere.ai/x/topos/session"
 )
 
@@ -262,5 +264,109 @@ func TestACopyThatCannotBeReadLeavesTheLog(t *testing.T) {
 	r := ms[len(ms)-1].Restore
 	if r == nil || r.Source != session.RestoreFromLog || r.Copy == nil || r.Copy.Failed == "" || r.Copy.Files != 0 {
 		t.Fatalf("the restore record %+v", r)
+	}
+}
+
+// unsizedFolder is a live folder that answers some reads with no length,
+// as a files API may.
+type unsizedFolder struct {
+	*liveFolder
+	unsized map[string]bool
+}
+
+func (f unsizedFolder) Open(ctx context.Context, ref string) (io.ReadCloser, int64, error) {
+	rc, n, err := f.liveFolder.Open(ctx, ref)
+	if err == nil && f.unsized[ref] {
+		n = -1
+	}
+	return rc, n, err
+}
+
+// TestARestoreFromTheCopyTakesWhatTheLogGives: a restore from the copy
+// writes the copy's files, an edit after the copy applied to the copy's
+// bytes read whole where the folder answers no length; a file the copy
+// holds that the folder no longer has is the log's where the log gives one
+// and omitted copy_unavailable where it does not; a kept file of the log
+// whose blob is gone is omitted blob_unavailable; a copied file a later
+// read of part of it shows changed is unverified; and a copy and a log
+// that give nothing restore nothing (spec 073).
+func TestARestoreFromTheCopyTakesWhatTheLogGives(t *testing.T) {
+	f := setup(t)
+	ctx := t.Context()
+	work := fresh(t)
+	m, err := host.Open(host.Options{Workdir: work, SpillDir: filepath.Join(t.TempDir(), "spill")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evs []session.Event
+	add := func(typ session.Type, payload any) {
+		t.Helper()
+		e, err := session.NewEvent(typ, payload, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Seq = uint64(len(evs) + 1)
+		evs = append(evs, e)
+	}
+	sum := func(s string) string { return session.DigestOf([]byte(s)).Hex() }
+	call := func(id, name string, input map[string]any, path, after string) {
+		t.Helper()
+		in, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		meta, err := json.Marshal(tools.Meta{Path: path, SHA256: after})
+		if err != nil {
+			t.Fatal(err)
+		}
+		add(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: name, Input: in, Verdict: "allow"})
+		add(session.TypeToolResult, session.ToolResult{ToolUseID: id, Outcome: tools.OutcomeOK, Meta: meta})
+	}
+	add(session.TypeSessionMachine, session.SessionMachine{Machine: session.AttachedMachine{Kind: "host", ID: "m1", Workdir: "/workspace"}, Reason: session.MachineAttached})
+	call("toolu_1", tools.NameWrite, map[string]any{"path": "gone.md", "content": "log gone\n"}, "/workspace/gone.md", sum("log gone\n"))
+	gone := []byte("a kept file")
+	add(session.TypeFilesKept, session.FilesKept{Message: "evt_x", Skipped: []session.SkippedFile{}, Files: []session.KeptFile{
+		{Path: "kept.bin", Resolved: "/workspace/kept.bin", Blob: session.DigestOf(gone), Size: int64(len(gone))},
+	}})
+	covers := uint64(len(evs))
+	call("toolu_2", tools.NameEdit, map[string]any{"path": "edit.txt", "old_string": "x", "new_string": "y"}, "/workspace/edit.txt", sum("y\n"))
+	add(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_3", Name: tools.NameRead, Input: json.RawMessage(`{"path":"a.txt","limit":1}`), Verdict: "allow"})
+	meta, err := json.Marshal(tools.Meta{Path: "/workspace/a.txt", SHA256: sum("changed by a command\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	add(session.TypeToolResult, session.ToolResult{ToolUseID: "toolu_3", Outcome: tools.OutcomeOK, Meta: meta})
+
+	folder := unsizedFolder{liveFolder: newLiveFolder(), unsized: map[string]bool{"work/edit.txt": true}}
+	folder.files["work/a.txt"] = []byte("copy a\n")
+	folder.files["work/edit.txt"] = []byte("x\n")
+	c := session.WorkCopy{Saved: true, Covers: covers, Turn: 4, Files: map[string]session.WorkFile{
+		"a.txt":    {Path: "a.txt", Size: 7, Mode: 0o644, SHA256: sum("copy a\n")},
+		"edit.txt": {Path: "edit.txt", Size: 2, Mode: 0o755, SHA256: sum("x\n")},
+		"gone.md":  {Path: "gone.md", Size: 9, Mode: 0o644, SHA256: sum("copy gone\n")},
+		"lost.txt": {Path: "lost.txt", Size: 4, Mode: 0o644, SHA256: sum("lost")},
+	}, Removed: map[string]uint64{}, Stale: map[string]bool{}}
+	r, err := f.r.restoreCopy(ctx, f.s, m, evs, folder, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := on(t, work); got["a.txt"] != "copy a\n" || got["edit.txt"] != "y\n" || got["gone.md"] != "log gone\n" || len(got) != 3 {
+		t.Fatalf("the machine holds %q", got)
+	}
+	if fi, err := os.Stat(filepath.Join(work, "edit.txt")); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Fatalf("the edited file's mode %v, %v", fi.Mode(), err)
+	}
+	wantOmitted := []session.OmittedFile{{Path: "kept.bin", Reason: session.OmittedBlob}, {Path: "lost.txt", Reason: session.OmittedCopy}}
+	if r == nil || r.Source != session.RestoreFromFolder || r.Copy.Files != 1 || r.Copy.Turn != 4 || r.Files != 2 || !slices.Equal(r.Paths, []string{"edit.txt", "gone.md"}) ||
+		r.Unverified != 1 || !slices.Equal(r.UnverifiedPaths, []string{"a.txt"}) || !slices.Equal(r.OmittedFiles, wantOmitted) {
+		t.Fatalf("the restore record %+v, copy %+v", r, r.Copy)
+	}
+
+	empty := session.WorkCopy{Saved: true, Files: map[string]session.WorkFile{}, Removed: map[string]uint64{}, Stale: map[string]bool{}}
+	if r, err := f.r.restoreCopy(ctx, f.s, m, evs[:1], newLiveFolder(), empty); err != nil || r != nil {
+		t.Fatalf("a copy and a log that give nothing: %+v, %v", r, err)
+	}
+	if _, err := readCopied(ctx, folder, "nowhere.txt"); !errors.Is(err, harness.ErrFileNotFound) {
+		t.Fatalf("a copied file the folder does not hold: %v", err)
 	}
 }
