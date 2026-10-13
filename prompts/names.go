@@ -66,6 +66,19 @@ const (
 	// states the bound of an address, which a test holds to its constant
 	// (spec 067).
 	ToolPublish Name = "tools/publish-v5"
+	// ToolRequestConnection states the bound of a reason, which a test
+	// holds to its constant (spec 069).
+	ToolRequestConnection Name = "tools/request_connection-v1"
+)
+
+// The results of request_connection (spec 069).
+const (
+	// RequestConnectionAsked takes the Title of the connection the person
+	// is asked to connect.
+	RequestConnectionAsked Name = "results/request_connection/asked-v1"
+	// RequestConnectionNotAvailable takes the Name a call named and Names,
+	// the names of the connections the session may ask for, joined.
+	RequestConnectionNotAvailable Name = "results/request_connection/not-available-v1"
 )
 
 // The results of the publish tool (spec 043). Path is the folder as the
@@ -424,8 +437,9 @@ const (
 	ContextAttachments Name = "context/attachments-v1"
 	// ContextConnections takes Branch, the session's branch, Token, the
 	// variable of the connection service's placeholder, HTTP, each with
-	// Title, GitURL and Env, and MCP, each with Title, Name and Reason,
-	// why the connection is not connected, empty when it is: the
-	// connections an allow named for the session (spec 069).
+	// Title, GitURL and Env, MCP, each with Title, Name and Reason, why the
+	// connection is not connected, empty when it is, and Available, each
+	// with Title and Name, the connections the person may be asked to
+	// connect: the connections an allow named for the session (spec 069).
 	ContextConnections Name = "context/connections-v1"
 )

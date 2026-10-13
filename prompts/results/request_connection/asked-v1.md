@@ -1,0 +1,1 @@
+The person is asked to connect {{.Title}}. It reaches this session from their next message, not in this turn. End your turn now with one sentence that says what you will do once {{.Title}} is connected.

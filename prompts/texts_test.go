@@ -32,8 +32,9 @@ type attachedApp struct{ Dir, Name, URL, Slug string }
 // httpConnection and mcpConnection stand in for the harness's lines of
 // the connections block.
 type (
-	httpConnection struct{ Title, GitURL, Env string }
-	mcpConnection  struct{ Title, Name, Reason string }
+	httpConnection      struct{ Title, GitURL, Env string }
+	mcpConnection       struct{ Title, Name, Reason string }
+	availableConnection struct{ Title, Name string }
 )
 
 // attachment stands in for session.Attachment.
@@ -116,6 +117,9 @@ var textCases = func() []textCase {
 		{name: "tools/publish-v3", wantSHA: "e52335638e8f168acbcf2fdff1c5cd756b0b5744958144c8498988ba3f6663b1"},
 		{name: "tools/publish-v4", wantSHA: "3f6fad0db8fb9a34d78556c4ef32549048254939fa1fc2dd39cc16c7e7ce6954"},
 		{name: ToolPublish, wantSHA: "6e161ec2b5d782edff78d90e9de28b8d635e366e4c4f56f218f73df73902f443"},
+		{name: ToolRequestConnection, wantSHA: "69ccc468c5f89386227de3aff7c72b59ab2f3e57a4a67f7af225bb74296d3995"},
+		{name: RequestConnectionAsked, data: Data{"Title": "GitHub"}, want: "The person is asked to connect GitHub. It reaches this session from their next message, not in this turn. End your turn now with one sentence that says what you will do once GitHub is connected."},
+		{name: RequestConnectionNotAvailable, data: Data{"Name": "gitlab", "Names": "github, wiki"}, want: "gitlab is not a service you can ask the person to connect. The ones you can ask for are github, wiki. A service the connections block lists as connected needs no request: use it."},
 
 		{name: QuestionAnswered, data: Data{"Questions": []Data{
 			{"Number": 1, "Header": "Storage", "Question": "Which database should the new service keep its records in?", "Chosen": "SQLite", "Text": "we have nobody to run a second schema", "Left": false},
@@ -420,8 +424,9 @@ var textCases = func() []textCase {
 			`- tide-tables/ : Tide tables, published at https://tide-tables.apps.example.com (publish with app "tide-tables")` + "\n" +
 			`- notes-2/ : Notes, published at https://notes.apps.example.com (publish with app "notes")` + "\n" + "</attachments>"},
 		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
-			"HTTP": []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},
-			"MCP":  []mcpConnection{{"Issue tracker", "tracker", ""}, {"Wiki", "wiki", "revoked"}},
+			"HTTP":      []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},
+			"MCP":       []mcpConnection{{"Issue tracker", "tracker", ""}, {"Wiki", "wiki", "revoked"}},
+			"Available": []availableConnection(nil),
 		}, want: "<connections>\n" + "Services the person connected. The installation adds their credentials on the way out, and this machine holds none of them.\n" +
 			"- Code host: its API's base URL is $CODE_HOST_API_URL, in place of the service's own, with the header `Authorization: Bearer $CONNECTIONS_TOKEN`. " +
 			"`git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_1, and no other.\n" +
@@ -429,6 +434,20 @@ var textCases = func() []textCase {
 			"- Issue tracker: its tools are named mcp__tracker__<tool>.\n" +
 			"- Wiki: not connected (revoked): tell the person to connect it again before you need it.\n" +
 			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.\n" + "</connections>"},
+		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+			"HTTP":      []httpConnection(nil),
+			"MCP":       []mcpConnection{{"Issue tracker", "tracker", ""}},
+			"Available": []availableConnection{{"GitHub", "github"}, {"Wiki", "wiki"}},
+		}, want: "<connections>\n" + "Services the person connected. The installation adds their credentials on the way out, and this machine holds none of them.\n" +
+			"- Issue tracker: its tools are named mcp__tracker__<tool>.\n" +
+			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.\n" +
+			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
+			"- GitHub, named github\n" + "- Wiki, named wiki\n" + "</connections>"},
+		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+			"HTTP": []httpConnection(nil), "MCP": []mcpConnection(nil), "Available": []availableConnection{{"GitHub", "github"}},
+		}, want: "<connections>\n" +
+			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
+			"- GitHub, named github\n" + "</connections>"},
 		{name: ContextInstructions, data: Data{"Path": `/w/AGENTS "x".md`, "Body": "Be terse."}, want: fmt.Sprintf("<instructions path=%q>\n%s\n</instructions>", `/w/AGENTS "x".md`, "Be terse.")},
 		{name: InstructionCut, want: strings.TrimPrefix("\n[the file is longer than 64 KiB and was cut here]", "\n")},
 		{name: InstructionsTotalCut, want: strings.TrimPrefix("\n[the instruction files pass 256 KiB together and were cut here]", "\n")},

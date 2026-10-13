@@ -593,6 +593,22 @@ func TestPublishIsAKnownToolName(t *testing.T) {
 	}
 }
 
+// TestRequestConnectionIsReserved: no client tool takes the name of the
+// harness's request_connection, and no agent names it, since the harness
+// offers it while a session has a service to connect (spec 069).
+func TestRequestConnectionIsReserved(t *testing.T) {
+	const m = "model: {name: m}"
+	for _, c := range []struct{ body, path, detail string }{
+		{agent("a", m, "tools: [{name: request_connection, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "reserved for the harness's request_connection tool"},
+		{agent("a", m, "tools: [request_connection]"), "spec.tools[0].name", "not a built-in tool"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, Options{})
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: %s", c.body, e.Detail())
+		}
+	}
+}
+
 func TestQuestionIsAKnownToolName(t *testing.T) {
 	const m = "model: {name: m}"
 	r := one(t, agent("asker", m, "tools: [read, question]"), fixed(newStore()))

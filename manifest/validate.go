@@ -323,7 +323,10 @@ func (v *validator) model(at string, m v1.AgentModel) {
 
 // reservedFor names the tool each name that is no built-in's is kept
 // for.
-var reservedFor = map[string]string{harness.ToolQuestion: "harness's question tool", session.ToolPublish: "hosted runner's publish tool"}
+var reservedFor = map[string]string{
+	harness.ToolQuestion: "harness's question tool", session.ToolPublish: "hosted runner's publish tool",
+	harness.ToolRequestConnection: "harness's request_connection tool",
+}
 
 func (v *validator) tools(at string, list []v1.Tool) {
 	names := make([]string, 0, len(list))
@@ -349,7 +352,10 @@ func (v *validator) tools(at string, list []v1.Tool) {
 		switch {
 		case t.Client && builtin:
 			v.add(tp+".name", "a client tool may not take a built-in's name")
-		case t.Client && harnessTool:
+		// request_connection is offered by the harness while a session has a
+		// service the person may be asked to connect, and no agent names it
+		// (spec 069); a client tool of the name would take its place.
+		case t.Client && (harnessTool || t.Name == harness.ToolRequestConnection):
 			v.add(tp+".name", "the name "+t.Name+" is reserved for the "+reservedFor[t.Name]+"; rename the client tool")
 		case harnessTool && (t.Description != "" || len(t.InputSchema) > 0 || t.OutputLimit != 0):
 			v.add(tp, "the "+t.Name+" tool takes only its name")

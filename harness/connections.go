@@ -6,8 +6,13 @@ package harness
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
+	"unicode"
 
+	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
@@ -115,22 +120,34 @@ func (t *turn) recordListings(ctx context.Context) error {
 	return nil
 }
 
-// connectionLine and mcpLine are one connection as the connections block
-// names it.
+// connectionLine, mcpLine and availableLine are one connection as the
+// connections block names it.
 type (
 	connectionLine struct{ Title, GitURL, Env string }
 	mcpLine        struct{ Title, Name, Reason string }
+	availableLine  struct{ Title, Name string }
 )
 
 // connectionsBlock is the system block that names s's connections (spec
-// 069), "" when it names none: each of kind http on a Cella machine, with
-// how to clone, push and call its API, and each of kind mcp whose listing
-// mcp holds, by its tools' prefix or why it is not connected; one whose
-// listing failed otherwise offers nothing to name.
-func connectionsBlock(s session.Session, mcp map[string]MCPListing) string {
+// 069), "" when it names none: each connected one of kind http on a Cella
+// machine, with how to clone, push and call its API, and each of kind mcp
+// whose listing mcp holds, by its tools' prefix or why it is not
+// connected, one whose listing failed otherwise offering nothing to name;
+// and, on the session's own thread, which holds request_connection, each
+// the person may be asked to connect.
+func connectionsBlock(s session.Session, own bool, mcp map[string]MCPListing) string {
 	var http []connectionLine
 	var tools []mcpLine
+	var available []availableLine
+	if own {
+		for _, c := range requestable(s) {
+			available = append(available, availableLine{Title: c.Title, Name: c.Name})
+		}
+	}
 	for _, c := range s.Connections {
+		if !c.Connected() {
+			continue
+		}
 		switch c.Kind {
 		case session.ConnectionHTTP:
 			if s.Machine.Kind == session.MachineCella {
@@ -146,10 +163,100 @@ func connectionsBlock(s session.Session, mcp map[string]MCPListing) string {
 			}
 		}
 	}
-	if len(http) == 0 && len(tools) == 0 {
+	if len(http) == 0 && len(tools) == 0 && len(available) == 0 {
 		return ""
 	}
 	return prompts.Render(prompts.ContextConnections, prompts.Data{
-		"Branch": session.Branch(s), "Token": session.ConnectionsToken, "HTTP": http, "MCP": tools,
+		"Branch": session.Branch(s), "Token": session.ConnectionsToken, "HTTP": http, "MCP": tools, "Available": available,
 	})
+}
+
+// requestable are s's available connections the person may be asked to
+// connect (spec 069): each of kind mcp, and each of kind http on a Cella
+// machine, the one machine an http connection is given to, so a session
+// on a host machine is never told of a service connecting would not give
+// it.
+func requestable(s session.Session) []session.Connection {
+	var out []session.Connection
+	for _, c := range s.Connections {
+		if !c.Connected() && (c.Kind == session.ConnectionMCP || s.Machine.Kind == session.MachineCella) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// ToolRequestConnection is the name of the tool that asks the person to
+// connect a service the installation offers (spec 069). It is a harness
+// tool, as question is: the harness adds it to the registry of the
+// session's own thread while the session has a connection the person may
+// be asked to connect, and no thread a spawn starts holds it.
+const ToolRequestConnection = session.ToolRequestConnection
+
+// RequestConnectionSchema is the input schema of request_connection, its
+// bound on a reason stated from session's constant.
+var RequestConnectionSchema = json.RawMessage(fmt.Sprintf(`{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string", "minLength": 1, "description": "The service's name, as the connections block lists it."},
+    "reason": {"type": "string", "minLength": 1, "maxLength": %d, "pattern": "\\S", "description": "One sentence for the person: what you need the service for."}
+  },
+  "required": ["name", "reason"],
+  "additionalProperties": false
+}`, session.MaxConnectionReason))
+
+// requestConnectionTool is request_connection on one turn of the session's
+// own thread.
+type requestConnectionTool struct{ t *turn }
+
+func (r requestConnectionTool) Definition() tools.Definition {
+	return tools.Definition{Name: ToolRequestConnection, Description: prompts.Text(prompts.ToolRequestConnection), InputSchema: RequestConnectionSchema}
+}
+
+// Properties: the call reaches nothing and changes nothing, so it opens no
+// machine, scores 0.0 and is allowed in every mode, plan included, and it
+// runs beside the step's other calls.
+func (r requestConnectionTool) Properties() tools.Properties {
+	return tools.Properties{Parallel: true, Effect: tools.EffectNone}
+}
+
+// Run asks the person to connect the service the call names: its result
+// tells the model to end the turn, and connection.requested follows the
+// result for a client to show the person (spec 069). A name the session
+// may not ask for is an error result naming those it may.
+func (r requestConnectionTool) Run(_ context.Context, c tools.Call) (tools.Result, error) {
+	var in struct {
+		Name   string `json:"name"`
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(c.Input, &in); err != nil {
+		return tools.Result{}, fmt.Errorf("harness: decode a request_connection call: %w", err)
+	}
+	offered := requestable(r.t.s)
+	i := slices.IndexFunc(offered, func(c session.Connection) bool { return c.Name == in.Name })
+	if i < 0 {
+		names := make([]string, len(offered))
+		for j, c := range offered {
+			names[j] = c.Name
+		}
+		return tools.Text(tools.OutcomeError, prompts.Render(prompts.RequestConnectionNotAvailable, prompts.Data{"Name": in.Name, "Names": strings.Join(names, ", ")})), nil
+	}
+	conn := offered[i]
+	res := tools.Text(tools.OutcomeOK, prompts.Render(prompts.RequestConnectionAsked, prompts.Data{"Title": conn.Title}))
+	res.Requested = &session.ConnectionRequested{Name: conn.Name, Title: conn.Title, Kind: conn.Kind, Reason: oneLineReason(in.Reason)}
+	return res, nil
+}
+
+// oneLineReason is a call's reason as a client shows the person: on one
+// line, its runs of white space as one space and no control character.
+func oneLineReason(s string) string {
+	return strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsSpace(r):
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		}
+		return r
+	}, s)), " ")
 }

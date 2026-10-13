@@ -6,6 +6,7 @@ package harness
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 )
 
@@ -138,7 +140,7 @@ func TestConnectionsOnAMachineThatCannotTakeThem(t *testing.T) {
 	if len(host.applied) != 0 || strings.Contains(unescaped(h.stub.Requests()[0].Body), "<connections>") {
 		t.Fatalf("a host machine took %+v", host.applied)
 	}
-	if got := connectionsBlock(session.Session{Machine: session.Machine{Kind: session.MachineCella}}, nil); got != "" {
+	if got := connectionsBlock(session.Session{Machine: session.Machine{Kind: session.MachineCella}}, true, nil); got != "" {
 		t.Fatalf("a session with none renders %q", got)
 	}
 }
@@ -222,5 +224,102 @@ func TestAConnectionThatIsNotConnected(t *testing.T) {
 	e.turn(ctx)
 	if n, m := len(e.events(ctx, session.TypeConnectionRequested)), len(e.events(ctx, session.TypeSessionError)); n != 2 || m != 2 {
 		t.Fatalf("a later turn recorded the listings again: %d, %d", n, m)
+	}
+}
+
+// TestRequestConnection: a session with an available connection is
+// offered request_connection on its own thread, and its block names each
+// service the person may be asked to connect, apart from the connected
+// ones; a call for one appends connection.requested with the call's id,
+// the service's title and kind, and the reason on one line, answers the
+// model that the person was asked and the turn should end, and opens no
+// machine; a call for another name is an error result naming the ones it
+// may ask for and appends nothing; an available http connection on a
+// host machine is neither named nor asked for, a thread a spawn started
+// is offered no request_connection and is told of no available service,
+// and a session with none is offered no tool (spec 069).
+func TestRequestConnection(t *testing.T) {
+	ctx := t.Context()
+	github := session.Connection{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", State: session.ConnectionAvailable}
+	notes := session.Connection{Name: "notes", Kind: session.ConnectionMCP, Title: "Notes", State: session.ConnectionAvailable}
+	e := setupSession(t, func(c *Config) {
+		c.Machine = machine.Defer(ctx, machine.KindCella, func(context.Context) (machine.Machine, error) {
+			t.Error("request_connection opened the machine")
+			return &conMachine{kind: machine.KindCella}, nil
+		})
+		c.MCP = map[string]MCPListing{"tracker": {}}
+	}, func(s *session.Session) {
+		s.Machine.Kind = session.MachineCella
+		s.Connections = []session.Connection{tracker, github, notes}
+	})
+	e.stub.Script(model,
+		reply(ir.StopToolUse, call("toolu_1", ToolRequestConnection, `{"name":"gitlab","reason":"to clone the app"}`)),
+		reply(ir.StopToolUse, call("toolu_2", ToolRequestConnection, `{"name":"github","reason":"to clone acme/app\nand open a pull request"}`)),
+		reply(ir.StopEndTurn, text("Once GitHub is connected, I will clone acme/app and open the pull request.")))
+	e.send(ctx, "Fix the bug in acme/app and open a pull request.")
+	if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+		t.Fatalf("outcome %+v", out)
+	}
+	body := unescaped(e.stub.Requests()[0].Body)
+	for _, want := range []string{
+		`"name":"` + ToolRequestConnection + `"`, "Issue tracker: its tools are named mcp__tracker__<tool>",
+		"Services the installation offers that the person has not connected.", "- GitHub, named github", "- Notes, named notes",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the request lacks %q", want)
+		}
+	}
+	var results []session.ToolResult
+	for _, ev := range e.events(ctx, session.TypeToolResult) {
+		var r session.ToolResult
+		if err := ev.Decode(&r); err != nil {
+			t.Fatal(err)
+		}
+		results = append(results, r)
+	}
+	if len(results) != 2 || !results[0].IsError || results[0].Content[0].Text != prompts.Render(prompts.RequestConnectionNotAvailable, prompts.Data{"Name": "gitlab", "Names": "github, notes"}) ||
+		results[1].IsError || results[1].Content[0].Text != prompts.Render(prompts.RequestConnectionAsked, prompts.Data{"Title": "GitHub"}) {
+		t.Fatalf("the results %+v", results)
+	}
+	var req session.ConnectionRequested
+	if reqs := e.events(ctx, session.TypeConnectionRequested); len(reqs) != 1 || reqs[0].Decode(&req) != nil ||
+		req.Name != "github" || req.Title != "GitHub" || req.Kind != session.ConnectionHTTP || req.Reason != "to clone acme/app and open a pull request" || req.ToolUseID != "toolu_2" || req.Scopes != nil {
+		t.Fatalf("connection.requested %+v", req)
+	}
+	var use session.AgentToolUse
+	if uses := e.events(ctx, session.TypeAgentToolUse); len(uses) != 2 || uses[1].Decode(&use) != nil || use.Verdict != string(VerdictAllow) {
+		t.Fatalf("the call's verdict %+v", use)
+	}
+	if !strings.Contains(prompts.Text(prompts.ToolRequestConnection), fmt.Sprintf("at most %d characters", session.MaxConnectionReason)) {
+		t.Error("the description does not state the bound of a reason")
+	}
+
+	host := session.Session{Machine: session.Machine{Kind: session.MachineHost}, Connections: []session.Connection{github, notes}}
+	if got := connectionsBlock(host, true, nil); strings.Contains(got, "GitHub") || !strings.Contains(got, "- Notes, named notes") {
+		t.Fatalf("a host machine's block %q", got)
+	}
+	if got := connectionsBlock(e.s, false, e.cfg.MCP); strings.Contains(got, "GitHub") || strings.Contains(got, ToolRequestConnection) {
+		t.Fatalf("a subagent's block %q", got)
+	}
+	registry := func(s session.Session, thread string) []string {
+		t.Helper()
+		r, err := (&turn{h: e.h, s: s, root: e.cfg.Tools, thread: thread}).registry(e.cfg.Tools.Names())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Names()
+	}
+	only := session.Session{Machine: session.Machine{Kind: session.MachineHost}, Connections: []session.Connection{github}}
+	for name, names := range map[string][]string{
+		"a thread a spawn started": registry(e.s, "evt_thread"),
+		"a host machine's session": registry(only, ""),
+		"a session with none":      registry(session.Session{}, ""),
+	} {
+		if strings.Contains(strings.Join(names, " "), ToolRequestConnection) {
+			t.Errorf("%s is offered %v", name, names)
+		}
+	}
+	if names := registry(e.s, ""); !strings.Contains(strings.Join(names, " "), ToolRequestConnection) {
+		t.Fatalf("the session's own thread is offered %v", names)
 	}
 }

@@ -145,11 +145,13 @@ func stricterMode(a, b Mode) Mode {
 
 // registry builds a thread's registry: the root registry's tools that
 // the thread holds, spawn and message when the thread has subagents and
-// is below the depth limit, the advisor when the agent has one, and the
-// question tool for the session's own thread when the agent names it.
-// A thread a spawn started holds no question tool: it ends its turn
-// saying what it needs decided, and its parent, which holds the
-// conversation with the person, asks (spec 039).
+// is below the depth limit, the advisor when the agent has one, the
+// question tool for the session's own thread when the agent names it, and
+// request_connection for the session's own thread when the session has a
+// service the person may be asked to connect. A thread a spawn started
+// holds neither: it ends its turn saying what it needs decided or
+// connected, and its parent, which holds the conversation with the
+// person, asks (specs 039 and 069).
 func (t *turn) registry(names []string) (*tools.Registry, error) {
 	r := t.root.Subset(names)
 	var extra []tools.Tool
@@ -161,6 +163,13 @@ func (t *turn) registry(names []string) (*tools.Registry, error) {
 	}
 	if t.h.c.Question && t.thread == "" {
 		extra = append(extra, questionTool{t})
+	}
+	// request_connection is offered while the session has a service the
+	// person may be asked to connect (spec 069). An agent stored before
+	// the name was reserved may hold a client tool of the name, which is
+	// that client's.
+	if _, held := r.Get(ToolRequestConnection); !held && t.thread == "" && len(requestable(t.s)) > 0 {
+		extra = append(extra, requestConnectionTool{t})
 	}
 	for _, tool := range extra {
 		if err := r.AddBuiltin(tool); err != nil {
@@ -393,10 +402,11 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	held := t.reg.Names()
 	var names []string
 	for _, n := range held {
-		// The question and publish tools are the session's own thread's:
-		// the thread that holds the conversation with the person asks,
-		// and a session has one app (specs 039 and 043).
-		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion || n == session.ToolPublish {
+		// The question, request_connection and publish tools are the
+		// session's own thread's: the thread that holds the conversation
+		// with the person asks, and a session has one app (specs 039, 069
+		// and 043).
+		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion || n == ToolRequestConnection || n == session.ToolPublish {
 			continue
 		}
 		if sub.Tools != nil && !slices.Contains(sub.Tools, n) {

@@ -23,6 +23,7 @@ import (
 	cellav1 "latere.ai/x/cella/manifest/v1"
 	"latere.ai/x/pkg/llmdialect/ir"
 
+	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/prompts"
@@ -416,5 +417,37 @@ func TestMCPConnectionsAreOffered(t *testing.T) {
 	}
 	if body := string(c.lux.Requests()[len(c.lux.Requests())-1].Body); !strings.Contains(body, "Issue tracker: not connected (revoked)") {
 		t.Fatal("the block does not say the connection is not connected")
+	}
+}
+
+// TestARequestedConnectionOpensNothing: a hosted session whose allow named
+// a code host and a server the person has not connected lists no server,
+// asks no token for either, configures no git and opens no sandbox; the
+// model is offered request_connection, and its call appends
+// connection.requested naming the code host with the call's id (spec
+// 069).
+func TestARequestedConnectionOpensNothing(t *testing.T) {
+	github := session.Connection{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", State: session.ConnectionAvailable}
+	notes := session.Connection{Name: "notes", Kind: session.ConnectionMCP, Title: "Notes", State: session.ConnectionAvailable}
+	c := newCloud(t, func(s *session.Session) { s.Connections = []session.Connection{github, notes} })
+	creds := &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	c.creds = creds
+	c.drive("Open a pull request on acme/app.",
+		toolCall("toolu_1", harness.ToolRequestConnection, `{"name":"github","reason":"to clone acme/app and open a pull request"}`),
+		said("Once GitHub is connected, I will open the pull request."))
+	if body := string(c.lux.Requests()[0].Body); !strings.Contains(body, `"name":"request_connection"`) || !strings.Contains(body, "GitHub, named github") {
+		t.Fatal("the request neither offers request_connection nor names the available services")
+	}
+	var req session.ConnectionRequested
+	if rs := c.events(session.TypeConnectionRequested); len(rs) != 1 || rs[0].Decode(&req) != nil || req.Name != "github" || req.Kind != session.ConnectionHTTP || req.ToolUseID != "toolu_1" ||
+		req.Reason != "to clone acme/app and open a pull request" {
+		t.Fatalf("connection.requested %+v", req)
+	}
+	if n := c.cella.Count(cellastub.OpCreate); n != 0 {
+		t.Fatalf("request_connection created %d sandboxes", n)
+	}
+	// The model's own token is the one the drive asks for.
+	if slices.ContainsFunc(creds.calls, func(c string) bool { return !strings.HasPrefix(c, runner.AudienceLux+"/") }) {
+		t.Fatalf("an available connection asked the tokens %v", creds.calls)
 	}
 }
