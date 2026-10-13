@@ -1,12 +1,12 @@
 ---
-title: "The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls"
+title: "The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls, repeated calls"
 status: in-progress
 track: core
 depends_on: [001-architecture.md, 004-session-log.md, 007-models.md, 008-tools.md]
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-08
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -121,9 +121,11 @@ fold refuses the log, [[004-session-log]]) and ends the turn idle with
    reason.
 3. Loop over steps:
    1. Boundary checks, in order: a `user.interrupt` since the turn
-      began stops with `interrupted`; the turn deadline passed stops
-      with `turn_limit`; the budget's pre-request check
-      ([[007-models]]) failing stops with `budget`.
+      began stops with `interrupted`; a call the thread repeated
+      `harness.MaxRepeatedCalls` times with the same error (Repeated
+      calls) stops with `error`; the turn deadline passed stops with
+      `turn_limit`; the budget's pre-request check ([[007-models]])
+      failing stops with `budget`.
    2. Build the request: the fold, the context management of
       [[010-context]], the prompt parts of [[011-instructions-and-skills]],
       the tool definitions of the registry, `max_tokens` as Output
@@ -165,6 +167,7 @@ There is no limit on the number of steps.
 | IR `max_tokens` at the output cap, below the model's output limit | the same step, its request sent again at the output limit | `model.request` with outcome `escalated`, no `agent.message` |
 | IR `max_tokens` at the output limit, continued fewer than twice in a row | next step, a continuation | nothing |
 | IR `max_tokens` at the output limit a third time in a row | `output_limit` | `session.error` `output_truncated` |
+| a call repeated 3 times (`harness.MaxRepeatedCalls`) after an error, with the same input and the same error each time (Repeated calls) | `error` | `session.error` `repeated_call` |
 | the turn deadline | `turn_limit` | nothing |
 | the budget's pre-request check | `budget` | nothing |
 | `user.interrupt` | `interrupted` | the canceled calls' results |
@@ -308,6 +311,53 @@ appended as calls return; the fold orders them by the model's order.
 Several `spawn` calls in one step run their threads at once
 ([[013-threads-and-subagents]]).
 
+### Repeated calls
+
+A model that sends a call again unchanged after it was answered with an
+error reads the same answer, and one that keeps sending it spends a
+whole request over a growing context on every repeat: a model can send
+one refused call hundreds of times in a turn, until the session's budget
+runs out. The harness tells such a call and ends the turn on it.
+
+A call is a repeat when an earlier call of the same thread in the same
+turn named the same tool with the same input, compared as JSON (compact,
+object keys sorted, so other spacing or key order is the same input;
+arguments that are not one JSON value are compared as sent), was
+answered with an error, any outcome but `ok` and `unanswered`, and the
+call is answered with the same error again: the same outcome and the
+same content. Every answer counts the same way, whether its call ran and
+returned the error or was refused before it ran: an unknown tool, input
+its schema refuses, a call cut at the output limit, a refusal of its
+tool's check, a `block` verdict. The count is kept where every
+`tool.result` of a turn is appended, `turn.result`, so no path past it
+is missed. A call that is answered `ok` clears its count, since the
+call can succeed. A call whose input or whose error differs is not a
+repeat: a command run again after a file changed, a read that polls a
+background job's log.
+
+Each repeat is still answered as its call was, with the error, and the
+text of `prompts/results/call/repeated-v1.md` after it as a text block of
+its own: the call already got that answer in the turn, so repeating it
+cannot succeed, and the model should change the call or tell the person
+what blocks it. After 3 repeats of one call (`harness.MaxRepeatedCalls`),
+the next step boundary ends the turn, once every call of the step that
+made the last has its result: `session.error` `repeated_call`, not
+retryable, with a fixed sentence for the person in `message` and the
+tool, the count, the outcome and the last call's `tool_use_id` in
+`detail`, then idle `error` with `repeated_call` as `detail`, the
+checkpoint taken and the runner's lease and machine handled as for any
+turn that ends `error`. A person's next message starts a turn as any
+does. A step that also waits for a person, or that an interrupt cut,
+ends as it would without the repeat, and the turn after it counts
+afresh.
+
+Each thread counts its own calls, since each runs its own turn: a
+subagent's repeats end its turn alone, its `session.error` on its
+thread, and the call that drove it is answered `Thread <id> stopped:
+error repeated_call`, which the parent reads and goes on from. The count
+lives with the turn, as the count of continuations does, and a turn a
+later claim starts counts afresh.
+
 ### Interrupt
 
 A `user.interrupt` takes effect at the next step boundary. The harness
@@ -342,6 +392,7 @@ streams of attached clients ([[016-runners]], [[015-api]]).
 | Limit | Default | Set by |
 |---|---|---|
 | steps per turn | none | nothing |
+| repeats of one call answered with the same error, per thread and turn | 3 (`harness.MaxRepeatedCalls`) | nothing |
 | turn wall clock | `2h` | the agent's `limits.turnTimeout` ([[003-manifest]]), the session's `limits.turn_timeout`, the authorizer's `limits`; the lowest wins |
 | session budget | none | the agent's `budget`, the session's `budget`, the authorizer's `limits`; the lowest wins ([[007-models]]) |
 | session age | `168h` | the same three, into `expires_at` ([[004-session-log]]) |
@@ -353,6 +404,7 @@ streams of attached clients ([[016-runners]], [[015-api]]).
 | `model_error` | as the failure's class: true after retries of a retryable failure, false for one that is not retried | the model answered with an error after retries, or with one that is not retried; `detail` carries the provider's status and error type, and the gateway's developer detail when it sent one |
 | `model_busy` | yes | the model could not serve now and the turn could not move to another, or ran out of moves ([[051-a-turn-moves-off-a-model-that-cannot-serve]]); `message` is "The model is busy right now. Send your message again in a moment." and `detail` carries the gateway's answer and why the turn did not move |
 | `output_truncated` | yes | three `max_tokens` stops at the output limit in a row |
+| `repeated_call` | no | a thread made one call 3 more times (`harness.MaxRepeatedCalls`) after it was answered with an error, with the same input and the same error each time (Repeated calls); `message` is "The agent kept repeating an action that failed the same way each time, so it stopped. Tell it what to do next." and `detail` names the tool, the count, the outcome and the last call's `tool_use_id` |
 | `internal` | no | a failure of the harness itself, for example an instruction blob it cannot read; `message` carries the error |
 
 ### The eight failures of v0.7.0
@@ -408,6 +460,10 @@ hooks ([[012-permissions-and-approvals]]); context management
 | Deltas never appear in the log | `runner.TestDeltasAreNotAppended` | built |
 | A turn past its wall-clock limit ends `turn_limit` at the next boundary | `harness.TestTheTurnDeadline` | built |
 | The turn wall clock takes the lowest of agent, session and authorizer limits | `TestTurnLimitTakesTheLowest` | not built |
+| A call refused before it is decided and sent again unchanged, its input compared as JSON, is answered with the refusal and the note on each repeat, and its third repeat ends the turn idle `error` with `session.error` `repeated_call`, every call answered and no further request sent | `harness.TestARefusedCallMadeAgainEndsTheTurnAtTheBound` | built |
+| A call that ran and failed, made again unchanged and failing the same way, is answered with the failure and the note, which the next request carries | `harness.TestTheFirstRepeatOfAFailedCallCarriesTheNote` | built |
+| A call whose input differs, whose error differs, or that succeeds is no repeat, and a success clears the call's count | `harness.TestCallsThatChangeOrSucceedAreNotRepeats`, `harness.TestNoStepCap` | built |
+| A subagent's thread counts its own repeats: its turn ends `repeated_call` alone, and the parent's identical calls are counted apart | `harness.TestAThreadCountsItsOwnRepeats` | built |
 
 ## Outcome
 
@@ -420,6 +476,11 @@ flight. v0.9.7 (2026-10-01) answers a call whose arguments are not valid
 JSON, or are cut at the output limit, with `invalid_input` so the model
 sends it again, keeps the bytes of a stream that fails part way, and
 publishes the deltas of a response as it arrives.
+
+Built after v0.35.0 on 2026-10-13, in no release yet: a call made again
+unchanged after an error and answered with the same error carries a
+note that it cannot succeed, and its third repeat ends the turn with
+`repeated_call` (Repeated calls).
 
 Open: the check that `harness/` holds no numeric step cap, the test that
 no call runs before its `agent.tool_use` is durable, a test of the

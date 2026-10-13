@@ -61,7 +61,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [002](.archive/002-scaffold-and-configuration.md) | Scaffold and configuration reference: layout, the toposd roles, listeners, every TOPOS_* variable | small | complete | 001 |
 | [003](.archive/003-manifest.md) | manifest/v1: the Agent, Trigger, MemoryStore and Connection kinds, references, versioning, one resolver | large | complete | 001 |
 | [004](.archive/004-session-log.md) | The session log: schema v1, event types, status and stop reasons, the fold, the directory store | large | complete | 001, 002 |
-| [005](005-harness-loop.md) | The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls | large | in-progress | 001, 004, 007, 008 |
+| [005](005-harness-loop.md) | The harness loop: turns and steps, stops, output limits, retries, interrupt, validation, parallel calls, repeated calls | large | in-progress | 001, 004, 007, 008 |
 | [006](.archive/006-identity.md) | Identity: subjects, verification, the authorizer question, the action vocabulary, the owner policy, the local issuer | medium | complete | 001, 002, 004 |
 | [007](.archive/007-models.md) | Models: the connection, the IR in the log, llmdialect's codecs, raw capture, cost and the budget | large | complete | 001, 002, 004 |
 | [008](008-tools.md) | Tools: the built-in set, schemas and descriptions, paths, output caps and spill files, the repeat rule | large | in-progress | 001, 004, 009 |
