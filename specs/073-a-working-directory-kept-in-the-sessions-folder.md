@@ -249,6 +249,11 @@ runner restores before the call that opened the machine runs:
 | `files`, `bytes`, `paths` | the files the log wrote over the copy or beside it |
 | `unverified`, `omitted`, `commands` and their lists | as for a rebuild from the log, counted from the copy: `commands` is how many commands ran after it; `omitted_files` reason `copy_unavailable` is a file the copy holds that the folder no longer had and the log could not give back |
 
+A fork whose first machine was given its fork point's checkpoint
+([[034-checkpoints-and-rewind]]) takes no copy and no replay, as
+[[065-a-working-directory-rebuilt-from-the-log]] has it: the checkpoint
+holds every file.
+
 A copy that cannot be written at all, a read the files store refuses or
 an archive the machine does not take, leaves the machine to the rebuild
 from the log alone, recorded as before with `source: "log"`, and with
@@ -379,7 +384,8 @@ build differs from the design as first written, or adds to it:
 - **The whole `work.saved` of a fork** names the paths its parent's
   folder may hold an older file at, in `unsaved`, since the fork's copy
   holds them too and a later save of the fork deletes or writes over
-  them.
+  them. It is appended with turn 0, which is why a fork's restore record
+  names no `copy.turn`.
 - **A session with a repository delivered into its working directory**
   keeps that repository's files in the copy as plain files, with no
   history; its checkpoints at the git host are unchanged.
