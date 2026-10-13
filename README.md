@@ -42,7 +42,7 @@ embeddable runtime, are gone from `main` and stay available at their tags
 through the Go module proxy; [docs/history](docs/history) holds their specs.
 
 The core's releases start at v0.9.0 (2026-09-29). Built and released as
-of v0.30.0 (2026-10-11):
+of v0.36.0 (2026-10-13):
 
 - the session log, kept in memory, in a directory or in Postgres, and the
   harness: the built-in tools, the permission modes, subagents, context
@@ -59,35 +59,46 @@ of v0.30.0 (2026-10-11):
   a message edited with the session's forks kept as a tree, search over
   what sessions said, and delete;
 - more for the agent to work with: `web_search` through the search service
-  the installation configures, `publish` of a folder as an app, a
-  session's files, the images an answer shows and the files it links
-  served to a client, today's date on every turn, and the sites a
+  the installation configures, a session's files, the images an answer
+  shows and the files it links served to a client and, where the
+  installation runs a files service, kept in a folder of the
+  conversation's own, today's date on every turn, and the sites a
   session's machine may reach set per session;
+- `publish` of a folder as a site: the agent gives a site its name and
+  address the first time it publishes it, a session's app starts as the
+  app host makes it, and opening an app to anyone who has its link, or
+  closing it again, is a call the person approves every time;
+- a machine that recovers: a session's sandbox that failed is started
+  again with its files rather than replaced, a command that was running
+  when its machine stopped says what happened, and a session whose
+  machine was replaced, or a fork with no checkpoint, gets its working
+  directory rebuilt from its own log;
 - models an authorizer chooses: a routed model name, how much a model
   reasons, and a move to another model inside the turn when one cannot
   serve;
+- connections: the services a person connected, named by the authorizer
+  at the create, a fork and every message. A service such as a code host
+  is reached from the sandbox, `git` and the service's API through the
+  installation's connection service, with no credential in the machine;
+  a remote MCP server's tools are offered to the model; and
+  `request_connection` asks the person to connect a service the session
+  needs;
 - a connection to a decision service: `topos run` can get a suggested
   verdict for each tool call from an external service.
 
-Built since and in no release yet: a session's sandbox that failed is
-started again with its files rather than replaced, a command that was
-running when its machine stopped says what happened, and a session
-whose machine was replaced, or a fork with no checkpoint, gets its
-working directory rebuilt from its own log.
-A session's app is created with no visibility of its own, so it starts
-as the app host makes it, and `publish` opens an app to anyone who has
-its link, or closes it again, in a call the person approves every time.
-The agent names a site and gives it an address the first time it
-publishes one, so a new app's name and address come from the site and
-not from the session's title.
+Built since and in no release yet: a connection service on the host the
+model gateway publishes under no longer stops every hosted session. Serve
+and the runner refuse that configuration at their start, and a sandbox
+whose connections token would share a host with another of its secrets
+opens without it.
 
-Not built yet: write-only credentials and connections, memory stores, MCP
-servers, external runners and handoff, the event sink, the conformance suite
-and the release archives. The task suite runs, but no release has measured
-its bar against a pinned model yet. In the [specs](specs) deck, 22 specs are
-complete, 33 in progress or in testing and 9 drafted or vague, none of those
-9 built yet; [specs/README.md](specs/README.md) says which build phases are
-closed.
+Not built yet: write-only credentials, memory stores, MCP servers an
+agent's definition names, external runners and handoff, the event sink,
+the conformance suite and the release archives. The task suite runs, but
+no release has measured its bar against a pinned model yet. In the
+[specs](specs) deck, 22 specs are complete, 39 in progress or in testing
+and 8 drafted or vague, none of those 8 built yet;
+[specs/README.md](specs/README.md) says which build phases are closed.
 
 ## Try it
 
