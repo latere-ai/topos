@@ -123,7 +123,7 @@ func (t *turn) recordListings(ctx context.Context) error {
 // connectionLine, mcpLine and availableLine are one connection as the
 // connections block names it.
 type (
-	connectionLine struct{ Title, Account, APIURL, GitURL, Env string }
+	connectionLine struct{ Title, Account, APIURL, APIExample, GitURL, Env string }
 	mcpLine        struct{ Title, Account, Name, Reason string }
 	availableLine  struct{ Title, Name string }
 )
@@ -143,7 +143,8 @@ func reachesHTTP(s session.Session, m machine.Machine) bool {
 // connectionsBlock is the system block that names s's connections (spec
 // 069), "" when it names none: each connected one of kind http when the
 // machine is given them, http, with the account it acts as, the API base
-// URL its variable stands in for and how to call it, clone and push, and
+// URL its variable stands in for, its example call written whole, and how
+// to clone and push, and
 // each of kind mcp whose listing mcp holds, by its account and its tools'
 // prefix or why it is not connected, one whose listing failed otherwise
 // offering nothing to name; and, on the session's own thread, which holds
@@ -164,7 +165,7 @@ func connectionsBlock(s session.Session, own, http bool, mcp map[string]MCPListi
 		switch c.Kind {
 		case session.ConnectionHTTP:
 			if http {
-				lines = append(lines, connectionLine{Title: c.Title, Account: c.Account, APIURL: c.APIURL, GitURL: c.GitURL, Env: c.APIEnv()})
+				lines = append(lines, connectionLine{Title: c.Title, Account: c.Account, APIURL: c.APIURL, APIExample: c.APIExample, GitURL: c.GitURL, Env: c.APIEnv()})
 			}
 		case session.ConnectionMCP:
 			switch l, listed := mcp[c.Name]; {
