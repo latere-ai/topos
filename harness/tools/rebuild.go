@@ -445,8 +445,12 @@ func (r *replay) content(rel string) ([]byte, bool) {
 	return b, err == nil
 }
 
-// set gives a path its file, or omits it when the rebuild is full.
+// set gives a path its file, or omits it when the rebuild is full. A
+// file the log changed after the copy keeps the copy's mode.
 func (r *replay) set(rel string, f RebuiltFile) {
+	if prev, ok := r.paths[rel]; ok && prev.file.Copied {
+		f.Mode = prev.file.Mode
+	}
 	r.forget(rel)
 	f.Path = rel
 	if f.Blob == "" {

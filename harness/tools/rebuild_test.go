@@ -332,8 +332,8 @@ func TestRebuildHoldsToItsBounds(t *testing.T) {
 // digest and mode, over what the log gave it before; a file a save removed
 // after the log last wrote it is dropped, and one the log writes again
 // after the removal is back; a file whose latest write was redacted is not
-// taken from the copy; an edit after covers applies to the copy's bytes;
-// a file the log writes after covers is the log's; the commands are
+// taken from the copy; an edit after covers applies to the copy's bytes
+// and keeps its mode; a file the log writes after covers is the log's; the commands are
 // counted from covers; and a machine replaced after covers has the copy
 // again (spec 073).
 func TestRebuildOverACopy(t *testing.T) {
@@ -387,6 +387,11 @@ func TestRebuildOverACopy(t *testing.T) {
 	want := []string{"a.txt copied " + sum("copy a\n") + " 644", "back.txt=again\n", "cmd.txt=say new\n", "new.txt=new\n"}
 	if !slices.Equal(paths, want) || len(got.Omitted) != 0 || got.Commands != 1 {
 		t.Fatalf("rebuilt %q, omitted %v, %d commands; want %q", paths, got.Omitted, got.Commands, want)
+	}
+	// The edited file keeps the copy's mode; a file only the log gave has
+	// none of its own.
+	if got.Files[2].Mode != 0o755 || got.Files[3].Mode != 0 {
+		t.Fatalf("the modes %o and %o", got.Files[2].Mode, got.Files[3].Mode)
 	}
 	// Without a reader of the copy, the edit has nothing to apply to.
 	c.Read = nil
