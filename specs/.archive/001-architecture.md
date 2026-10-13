@@ -117,7 +117,7 @@ is under `internal/`.
 | `session/inputcheck` | the check for well-known token formats and high-entropy strings that clients and the manifest resolver share | nothing | [[018-credentials-and-secrets]] |
 | `harness` | one agent's loop over a session: request building, streaming, tool dispatch, permissions, hooks, context management, subagent threads | nothing itself; it calls a `models.Model` and a `machine.Machine` it is given | [[005-harness-loop]], [[010-context]], [[011-instructions-and-skills]], [[012-permissions-and-approvals]], [[013-threads-and-subagents]] |
 | `harness/tools` | the built-in tools and the registry | nothing; tools act through the machine | [[008-tools]] |
-| `harness/tools/mcp` | MCP servers as tools | the MCP server a manifest names, or the process it starts on the host | [[021-mcp-servers]] |
+| `internal/mcp` | MCP servers as tools, outside the `harness` tree since it dials | the MCP server a manifest names, or the process it starts on the host | [[021-mcp-servers]] |
 | `prompts` | every text a model reads that the core writes: the harness prompt and its sections, the compaction prompt, the advisor's texts, the tool descriptions, the texts the fold writes into a transcript, the results of calls, tools and threads, and the context block, instruction, skills and memory renderings; each is a versioned file embedded in the build, rendered with `text/template` | nothing; it imports no package of this module | [[004-session-log]], [[008-tools]], [[010-context]], [[011-instructions-and-skills]], [[013-threads-and-subagents]] |
 | `models`, `models/dialect` | the `Model` interface, the model connection, the catalog entry, cost and the budget meter; one implementation over `latere.ai/x/pkg/llmdialect`'s backend codecs | `models/dialect` dials only the connection's base URL | [[007-models]] |
 | `models/scripted` | the scripted model for tests | nothing | [[026-stubs-and-tiers]] |
@@ -341,6 +341,5 @@ the day it lands.
 
 | Open | Why |
 |---|---|
-| `harness/tools/mcp` dials an MCP server over streamable HTTP, and it sits in the `harness` tree that `TestRootPackagesDialNothing` holds to dialing nothing | the rule refuses it the day it lands; whether the package moves out of `harness` or the rule admits it with its client is [[021-mcp-servers]]'s decision |
 | `machine/host` has no allow list | it dials the URLs `web_fetch` names through its `Fetcher` by design, and no import rule tells that dial from another |
 | `client` is held by name | the tree does not exist; its allow list is the transport alone until [[024-client-cli-skill]] builds it |

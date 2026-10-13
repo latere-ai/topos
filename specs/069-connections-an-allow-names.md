@@ -3,7 +3,7 @@ title: "Connections an allow names: git and a service's API reached from the san
 status: testing
 track: core
 depends_on: [004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 019-git.md, 021-mcp-servers.md, 052-a-sessions-network.md, 053-the-initiators-instructions.md, 058-what-a-create-allow-attaches.md]
-affects: [authorizer/, session/, internal/server/, internal/config/, internal/hosted/, machine/, harness/, harness/tools/mcp/, prompts/, cmd/toposd/, api/, docs/]
+affects: [authorizer/, session/, internal/server/, internal/config/, internal/hosted/, machine/, harness/, internal/mcp/, prompts/, cmd/toposd/, api/, docs/]
 effort: large
 created: 2026-10-12
 updated: 2026-10-12
@@ -61,7 +61,7 @@ it.
   boundary and does not call the driver, and no read returns a
   placeholder (Cella's manifest contract, the mutability of `env` and
   `secrets[]`; its egress and secrets design).
-- `harness/tools/mcp` does not exist. 018 and 021 say an installation
+- No MCP client exists. 018 and 021 say an installation
   that keeps connections serves them itself and the runner sends the
   session's own token, and leave how an allow names them to this spec.
 
@@ -361,8 +361,8 @@ no mount for the Secret and reaches no `http` connection.
 | The git configuration and each command's `<NAME>_API_URL` follow the session's list at open and when a list is applied, a removed connection leaving no entry, the same list running nothing, and a request's own variable winning; a turn gives an open machine the list at its start, and a machine that cannot take it appends `connections_unavailable` while the turn goes on | `internal/hosted.TestHTTPConnectionsFollowTheList` over the stub Cella, `harness.TestTheConnectionsBlock`, `harness.TestConnectionsOnAMachineThatCannotTakeThem`, `machine.TestADeferredMachinePassesItsConnectionsOn` | built |
 | A session's sandbox clones `<git_url>/acme/app` from bash, pushes its own branch, and calls the API at its variable, through a stub connection service that admits only the placeholder of `-connections`, and no event carries the token | `internal/hosted.TestASandboxClonesThroughAConnection` over the stub Cella and git's own http backend | built |
 | The block names each connection the machine reaches, says how to clone, push and call the API, or the tools' prefix, or that one is not connected, and how to relay a `409`, on every thread, and changes only with the list | `harness.TestTheConnectionsBlock`, `harness.TestAConnectionThatIsNotConnected`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
-| An `mcp` connection's tools are offered as `mcp__<name>__<tool>`, read for a `read_only` match and external otherwise, remote, gated and scored like a built-in, a write waiting for the person in `confirm`; a streamed answer is read past its notification to its response; a server of an earlier revision is reached after its `400`, and a session it ended is opened again; the bearer is the session's token for the audience; a tool with no tool name or a broken header mark is left out, and a reduced schema is named | `harness/tools/mcp.TestStreamableHTTP`, `harness/tools/mcp.TestAnEarlierRevision`, `harness/tools/mcp.TestWhatAResultHolds`, `harness/tools/mcp.TestTheClientsErrors`, `internal/hosted.TestMCPConnectionsAreOffered` against the stub MCP server | built |
-| A `409` `connection_not_connected` fails the call with a result naming the connection and the reason and appends `connection.requested` with the call's id; a listing that meets it offers no tool, records `connection.requested` without one at the drive's first turn, and the block says so; the session goes on | `harness/tools/mcp.TestANotConnectedServer`, `harness.TestAConnectionThatIsNotConnected`, `internal/hosted.TestMCPConnectionsAreOffered` | built |
+| An `mcp` connection's tools are offered as `mcp__<name>__<tool>`, read for a `read_only` match and external otherwise, remote, gated and scored like a built-in, a write waiting for the person in `confirm`; a streamed answer is read past its notification to its response; a server of an earlier revision is reached after its `400`, and a session it ended is opened again; the bearer is the session's token for the audience; a tool with no tool name or a broken header mark is left out, and a reduced schema is named | `internal/mcp.TestStreamableHTTP`, `internal/mcp.TestAnEarlierRevision`, `internal/mcp.TestWhatAResultHolds`, `internal/mcp.TestTheClientsErrors`, `internal/hosted.TestMCPConnectionsAreOffered` against the stub MCP server | built |
+| A `409` `connection_not_connected` fails the call with a result naming the connection and the reason and appends `connection.requested` with the call's id; a listing that meets it offers no tool, records `connection.requested` without one at the drive's first turn, and the block says so; the session goes on | `internal/mcp.TestANotConnectedServer`, `harness.TestAConnectionThatIsNotConnected`, `internal/hosted.TestMCPConnectionsAreOffered` | built |
 | An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
 
 ## Outcome
