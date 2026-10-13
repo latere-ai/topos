@@ -97,6 +97,17 @@ with an `http` connection. A session on a host machine uses the
 person's own git and environment, and is told nothing of its `http`
 connections.
 
+Serve the connection service on a host of its own. A sandbox cannot
+hold two placeholders for one host, so the service's host may be
+neither the git host's nor the model gateway's, whether the address
+`TOPOS_MODELS_URL` names or the one the gateway publishes its doors
+under: the server refuses to start on such a configuration. A
+sandbox that still cannot hold the service's placeholder, because Cella
+refuses it beside another, opens without it, the server logs an error
+naming both hosts, and the session works on without its `http`
+connections: the agent is told of none of them and asks the person to
+connect none. Its `mcp` connections are unaffected.
+
 ## Remote MCP servers
 
 For a connection of kind `mcp`, the runner reaches `address` as a Model

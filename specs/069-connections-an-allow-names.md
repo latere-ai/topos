@@ -214,6 +214,47 @@ reaches `git_url`'s host itself.
 alone: a host machine's git and environment are the person's own
 ([[009-machines]]), and the block below does not name it there.
 
+### A Secret on another Secret's host
+
+Cella refuses a sandbox that mounts two Secrets whose scopes can match
+one host, `secret_host_conflict`. A sandbox's Lux key is scoped to the
+host Lux publishes its doors under ([[018-credentials-and-secrets]]),
+its git host's token to `TOPOS_ORIGO_URL`'s host, and `-connections` to
+`TOPOS_CONNECTIONS_URL`'s. A connection service on either other host
+would fail every sandbox's create, and with it every hosted session
+that opens a machine. Two layers keep a connection from doing that:
+
+- **At the start.** Configuration refuses `TOPOS_CONNECTIONS_URL` on the
+  host of `TOPOS_MODELS_URL` or `TOPOS_ORIGO_URL`. The host Lux
+  publishes its doors under is known only once serve and the runner
+  role discover Lux's doors at their start, and may differ from
+  `TOPOS_MODELS_URL`'s, as an address inside the installation's network
+  does. A connection service on that host stops the start, with a
+  message that names the service's URL, the published root and their
+  host.
+- **At a sandbox's open.** A connection never fails a sandbox. A
+  `-connections` Secret whose host can match a host another Secret the
+  sandbox mounts is scoped to, by Cella's own rule, is not applied, and
+  the runner logs one error naming both Secrets and their hosts, never a
+  value. A create that mounts it and that Cella still refuses
+  `secret_host_conflict` is made once more without it, after one error
+  that names its host, the other Secrets' hosts and Cella's refusal; the
+  Secret is then not renewed, and the session's end deletes it with the
+  others.
+
+A sandbox without the mount reaches none of the session's `http`
+connections for as long as it lives: it takes no git configuration and
+no `<NAME>_API_URL`, the block names none of them, connected or
+available, and `request_connection` asks for none, as on a host
+machine. Whether it has the mount is read from the sandbox Cella holds,
+so a later drive that finds it by name reaches none either, and neither
+does a sandbox opened before the installation set
+`TOPOS_CONNECTIONS_URL`. Connections of kind `mcp` are the runner's and
+are named and listed as before. A request sent before the sandbox
+opened names its `http` connections, since only an open sandbox can say
+it does not reach them; the next request names none, one move of the
+cached prefix.
+
 ### The model is told
 
 `context/connections-v2` (version 1 until the available connections
@@ -234,8 +275,10 @@ and go on without it.
 </connections>
 ```
 
-The block changes only when a send changes the list, so the prompt's
-cached prefix moves once per change and not per turn ([[010-context]]).
+The block changes only when a send changes the list, or when the
+session's sandbox opens without the connection service's Secret
+([above](#a-secret-on-another-secrets-host)), so the prompt's cached
+prefix moves once per change and not per turn ([[010-context]]).
 
 ### Kind `mcp`
 
@@ -372,7 +415,7 @@ nothing for it; the block tells the model to push its own branch,
 
 | Variable | Read by | Default | Meaning |
 |---|---|---|---|
-| `TOPOS_CONNECTIONS_URL` | `serve`, `runner` | unset | the connection service's root; its host is the scope of every sandbox's `-connections` Secret and the one host an `http` connection's addresses may name. Unset, a sandbox mounts no such Secret and an allow with an `http` connection is refused. Needs `TOPOS_IDENTITY_URL`, which mints the token, and refused on the host of `TOPOS_MODELS_URL` or `TOPOS_ORIGO_URL`, since Cella refuses two mounted Secrets on one host |
+| `TOPOS_CONNECTIONS_URL` | `serve`, `runner` | unset | the connection service's root; its host is the scope of every sandbox's `-connections` Secret and the one host an `http` connection's addresses may name. Unset, a sandbox mounts no such Secret and an allow with an `http` connection is refused. Needs `TOPOS_IDENTITY_URL`, which mints the token, and refused on the host of `TOPOS_MODELS_URL` or `TOPOS_ORIGO_URL`, and at the start on the host Lux publishes its doors under, since Cella refuses two mounted Secrets on one host |
 | `TOPOS_CONNECTIONS_AUDIENCE` | `serve`, `runner` | `connections` | the audience of the session token the sandbox's Secret holds, and the one an `http` connection names |
 
 ### Decisions
@@ -393,6 +436,8 @@ nothing for it; the block tells the model to push its own branch,
 | An available `http` connection on a host machine | not named and not requestable | named: connecting it would give the session nothing, since a host machine takes no `http` connection |
 | The turn after `request_connection` | the model ends it, told so by the result | the harness pausing the session as `question` does: the person connects outside the conversation, and their next message, whose send names the connected entry, is what resumes it |
 | An `mcp` connection's audience | any the allow names | held to the variable: the runner holds the token, never the sandbox, so no mount limits it |
+| A `-connections` Secret on another Secret's host | refused at the start where the host is known, and left out of the sandbox otherwise, which then reaches no `http` connection | the sandbox's create failing: one variable would then stop every hosted session from opening its machine, while the session works on without its `http` connections |
+| Whether a sandbox reaches the connection service | the mounts of the sandbox Cella holds | the Secrets the drive applied: a sandbox found by name mounts what its create named, and a Secret applied after it never reaches its environment |
 
 ### Roll order
 
@@ -410,9 +455,10 @@ nothing for it; the block tells the model to push its own branch,
 Which connections a person has and their sign-in: the connection
 service's. The refs a push may update: the authorizer's, held by the
 connection service. A stdio MCP server and `spec.mcpServers`
-([[021-mcp-servers]]). A host machine's `http` connections. A sandbox
-opened before the installation set `TOPOS_CONNECTIONS_URL`, which has
-no mount for the Secret and reaches no `http` connection.
+([[021-mcp-servers]]). A host machine's `http` connections. Giving the
+Secret's mount to a sandbox created without it, such as one opened
+before the installation set `TOPOS_CONNECTIONS_URL`: it reaches no
+`http` connection, and is told of none, for as long as it lives.
 
 ## Acceptance criteria
 
@@ -433,6 +479,9 @@ no mount for the Secret and reaches no `http` connection.
 | The session's own thread is offered `request_connection` while it has a requestable connection, and a spawned thread, a session with none and a host machine's session with only an available `http` one are not; the block lists the requestable ones apart from the connected ones, on the own thread alone; a call appends `connection.requested` with the call's id and the reason on one line, answers the asked text, is allowed in `confirm` and opens no machine; another name is an error naming the requestable ones | `harness.TestRequestConnection`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | A hosted session with an available code host and server lists no server, asks no token for them and opens no sandbox, offers `request_connection`, and its call appends `connection.requested` | `internal/hosted.TestARequestedConnectionOpensNothing` over the stub Cella | built |
 | No client tool takes the name `request_connection`, and no agent names it | `manifest.TestRequestConnectionIsReserved` | built |
+| `TOPOS_CONNECTIONS_URL` on the host Lux publishes its doors under stops serve and the runner role at their start, naming the service's URL, the published root and their host, while the configuration alone passes | `internal/config.TestTheConnectionsHostAndTheModelsRoot`, `cmd/toposd.TestAConnectionServiceOnLuxsPublishedHostStopsTheStart` | built |
+| A connection never fails a sandbox: a `-connections` Secret on the host of another the sandbox mounts is not applied, Cella is asked one create without it, and one error names both Secrets' hosts and no value; a create Cella refuses `secret_host_conflict` is made once more without it, and that Secret is not renewed while the others are and is deleted at the session's end; such a sandbox, and a later drive that finds it by name, takes no git configuration and no variable of an `http` connection | `internal/hosted.TestConnectionsNeverFailASandbox` over the stub Cella, which refuses two mounted Secrets on one host as Cella does (`test/stubs/cellastub.TestSandboxLifecycle`), `machine/cella.TestMountsAreTheSandboxs` | built |
+| A sandbox that reaches no connection service is told of none of the session's `http` connections, connected or available, and `request_connection` asks for none, while `mcp` ones are named and asked for; a deferred machine answers whether it reaches the service once open, and yes before, without opening it | `harness.TestConnectionsInASandboxThatReachesNoConnectionService`, `machine.TestADeferredMachinePassesItsConnectionsOn` | built |
 | An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person; an agent given an available code host calls `request_connection` and ends its turn | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
 
 ## Outcome
@@ -470,3 +519,10 @@ connection also refuses `read_only`, since it names nothing a session
 reaches; the tool skips a session whose agent, stored before the name
 was reserved, holds a client tool of the name; and a reason's white
 space, a line break included, is one space in the event.
+
+**A Secret on another Secret's host**, built on 2026-10-13, in no
+release yet: both layers of the section, each with its criterion's
+tests. Before it, a connection service on the host Lux publishes its
+doors under passed the configuration's check, which compared it with
+`TOPOS_MODELS_URL`'s host alone, and Cella refused every sandbox's
+create, so no hosted session could open its machine.
