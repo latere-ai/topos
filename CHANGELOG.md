@@ -10,6 +10,23 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A connection service on the model gateway's public host no longer
+  stops every hosted session from opening its machine.** With
+  `TOPOS_CONNECTIONS_URL` on the host the model gateway publishes its
+  doors under, while `TOPOS_MODELS_URL` named another address of the
+  gateway, the configuration check passed, and Cella then refused every
+  sandbox's create, since the sandbox's model key and its connections
+  token were scoped to one host: no hosted session could open its
+  machine. Serve and the runner now refuse to start on that
+  configuration, naming both addresses and their host. A sandbox whose
+  connections token would still share a host with another of its
+  secrets, or that Cella refuses for it, opens without it: the server
+  logs one error naming both hosts, and the session works on without its
+  `http` connections, which the agent is then not told of. Its `mcp`
+  connections are unaffected.
+
 ## v0.36.0 - 2026-10-13
 
 ### Changed
