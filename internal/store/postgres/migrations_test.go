@@ -408,7 +408,7 @@ func TestMetadataTableFollowsTheBody(t *testing.T) {
 // trigger column read from each body, and a list by the trigger reads it;
 // a session a replica of the earlier release inserts afterwards without
 // the column gains it when a later batch saves its header; a create
-// writes it; and a session no trigger started keeps none (spec 070).
+// writes it; and a session no trigger started keeps none (spec 072).
 func TestTriggerColumnFollowsTheBody(t *testing.T) {
 	dsn := database(t)
 	migrateTo(t, dsn, "0009")

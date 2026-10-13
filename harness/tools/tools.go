@@ -215,7 +215,7 @@ type State struct {
 	// app's owner may change. Every slug a result named for an app id is
 	// kept, each mapped to that app's last result and its preview that
 	// stands, so a slug the thread knew the app by before a rename finds
-	// the app as its new slug does (spec 069). A result's App is the
+	// the app as its new slug does (spec 071). A result's App is the
 	// app's slug as the host last answered it.
 	Apps, Standing map[string]*session.PublishMeta
 }

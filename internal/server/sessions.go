@@ -630,7 +630,7 @@ func lowest(field, requested string, agent, authorizer time.Duration) (time.Dura
 // whether a session is archived, leaving archived ones out unless asked,
 // by fork tree and parent, grouped by tree when asked (spec 056), by a
 // metadata entry (spec 057) and by the trigger that started a session
-// (spec 070), and narrowed to the owners the authorizer's allow names.
+// (spec 072), and narrowed to the owners the authorizer's allow names.
 func (c *call) listSessions() error {
 	limit, cursor, err := c.pageParams()
 	if err != nil {
@@ -787,7 +787,7 @@ var MetadataRule = fmt.Sprintf("The body's metadata is an object of at most %d s
 	session.MaxMetadata, session.MetadataKeyRule, session.MaxMetadataValue)
 
 // AttachRule is the create route's sentence on what the authorizer's
-// allow attaches (spec 058), and the app's id it may name (spec 069).
+// allow attaches (spec 058), and the app's id it may name (spec 071).
 var AttachRule = fmt.Sprintf("The authorizer's allow of session.create or session.fork may attach repositories, each {url, ref, app}, app {id, slug, name, url} the app at the installation's app host it is the source of, "+
 	"which follow the request's resources marked attached, one whose url the request names left out, at most %d repositories together; "+
 	"and context, titled text {title, text} of at most %d bytes together, which the model reads after the initiator's instructions for the session's whole life. "+
@@ -830,7 +830,7 @@ func metadataFilter(q url.Values) (*session.MetadataEntry, error) {
 }
 
 // TriggerFilterRule is the list route's sentence on its filter by the
-// trigger that started a session (spec 070), which the summary takes as
+// trigger that started a session (spec 072), which the summary takes as
 // well.
 var TriggerFilterRule = "trigger=<id>, a trigger's id, keeps the sessions that trigger started, those whose trigger_id it is, beside every other filter and the cursor, within the agents of the caller's context and the owners the authorizer's decision names; " +
 	"under group=tree a tree stands for itself when one of its sessions the trigger started, and a fork, which no trigger starts, is not kept by it. " +

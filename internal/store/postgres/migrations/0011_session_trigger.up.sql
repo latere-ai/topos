@@ -1,4 +1,4 @@
--- The trigger that started a session (spec 070), as a column a list
+-- The trigger that started a session (spec 072), as a column a list
 -- filtered by trigger reads an index by instead of every header. The
 -- body keeps trigger_id as before; a create writes the column beside it,
 -- and a save of the header fills it where a replica of an earlier

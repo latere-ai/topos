@@ -71,7 +71,7 @@ The app host is a service with this contract, under one root URL:
 | Request | Answer |
 |---|---|
 | `POST {root}/apps` with `{"name"}`, and with `{"name", "slug"}` since [[067-a-name-and-an-address-for-a-published-site]] | `201` with the app: `slug`, `name`, `url` (its own address), `visibility` (who may open it, when the host says), `repository.push_url` |
-| `GET {root}/apps/{slug}` | the app, or `404`. Since [[069-a-published-app-found-by-its-id]] every route here that names an app takes the app's `id` in the slug's place at a host that reads one, and the tool reads by the id first |
+| `GET {root}/apps/{slug}` | the app, or `404`. Since [[071-a-published-app-found-by-its-id]] every route here that names an app takes the app's `id` in the slug's place at a host that reads one, and the tool reads by the id first |
 | `PATCH {root}/apps/{slug}` with `{"visibility": "unlisted"}` or `{"visibility": "private"}` | the app, with its `visibility` after the change (amended 2026-10-11, below) |
 | `GET {root}/apps/{slug}/deploys` | `{"deploys": [...]}`, newest first, each with `id`, `status`, `preview`, `commit_sha`, `preview_url` (the deploy's own address) and `error` (`{code, message}` or null) |
 | `GET {root}/apps/{slug}/deploys/{id}/logs` | the build log, one JSON object per line with its `line` |
@@ -129,7 +129,7 @@ names it, since a local run has no app host and no sandbox.
    call that creates the app gives the app its name and asks for its
    address, the session's title is what a call that gives no name
    sends, and the tool's text is `tools/publish-v5`. Amended by
-   [[069-a-published-app-found-by-its-id]]: the result records the
+   [[071-a-published-app-found-by-its-id]]: the result records the
    app's id, and the app is read by that id first and by its slug once
    when the id answers `404`, so a rename at the host does not create a
    second app.
@@ -270,7 +270,7 @@ state folds and a client reads:
 | Field | Value |
 |---|---|
 | `app`, `name` | the app's slug and its name |
-| `app_id` | the app's id at the host, which a rename leaves as it is ([[069-a-published-app-found-by-its-id]]) |
+| `app_id` | the app's id at the host, which a rename leaves as it is ([[071-a-published-app-found-by-its-id]]) |
 | `url` | the app's own address |
 | `visibility` | who may open the app, as the host named it when the call ran (`private`, `unlisted` or `public` at a host that speaks those words); absent where the host names none. On the result of a call with `access`, the host's answer to the change, or what the app still has when the change was refused. A client shows it, and the result's text tells the model when the app is private |
 | `preview` | the preview deploy's own address, once the host names it |

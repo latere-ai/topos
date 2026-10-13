@@ -1048,7 +1048,7 @@ func TestAnOwnerOfNoIssuerIsAskedAsItsSubject(t *testing.T) {
 // account's trigger lists none of the caller's sessions and none of its
 // own; the summary counts the same set; and a value that is not a
 // trigger's id is invalid_request, in the list and the summary (spec
-// 070).
+// 072).
 func TestListFiltersByTheTriggerThatStartedASession(t *testing.T) {
 	f := newTriggerFixture(t)
 	triage := f.applyTrigger("alice", "triage", eventSpec("")).Status.ID

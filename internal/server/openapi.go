@@ -156,7 +156,7 @@ var (
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{"false", "true", "any"}}}}}
 )
 
-// triggerParam keeps the sessions a trigger started (spec 070), in the
+// triggerParam keeps the sessions a trigger started (spec 072), in the
 // list and the summary; a search does not take it.
 var triggerParam = yaml.MapSlice{{Key: "name", Value: "trigger"}, {Key: "in", Value: "query"},
 	{Key: "description", Value: "A trigger's id: the sessions that trigger started."},

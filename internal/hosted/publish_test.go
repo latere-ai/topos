@@ -564,7 +564,7 @@ func TestASessionNamesTheSiteItPublishes(t *testing.T) {
 // renamed app's repository on the branch it built before, creates no app,
 // and records the new slug with the same id; a release releases the
 // renamed app; and against a host that reads no id in a slug's place the
-// app is found by its slug, as before (spec 069).
+// app is found by its slug, as before (spec 071).
 func TestASessionKeepsPublishingToItsRenamedApp(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -644,7 +644,7 @@ func TestASessionKeepsPublishingToItsRenamedApp(t *testing.T) {
 // renames it, the next publish of the checkout finds the app by that id,
 // pushes the checkout to the repository the session was given and
 // records the new slug with the same id; a release that names no app
-// releases it, and one that names its new slug does too (spec 069).
+// releases it, and one that names its new slug does too (spec 071).
 func TestASessionKeepsPublishingItsRenamedAttachedApp(t *testing.T) {
 	a := newApps(t)
 	a.seed(t, "tide")
@@ -695,7 +695,7 @@ func TestASessionKeepsPublishingItsRenamedAttachedApp(t *testing.T) {
 // tides before the session's first turn. The checkout still starts at the
 // commit the app serves, read by the id, and the session publishes and
 // releases its checkout to the app by the id, under its new slug, through
-// the repository the session was given, creating no app (spec 069).
+// the repository the session was given, creating no app (spec 071).
 func TestASessionFindsItsAttachedAppRenamedBeforeItStarts(t *testing.T) {
 	a := newApps(t)
 	clone := a.seed(t, "tide")

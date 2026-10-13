@@ -198,7 +198,7 @@ type target struct {
 	slug string
 	// id is an attached app's id at the app host: the one the session was
 	// given it with, else the one the thread's last result for it names,
-	// "" while neither names one (spec 069). The thread's own app's is in
+	// "" while neither names one (spec 071). The thread's own app's is in
 	// last.
 	id string
 	// repo is an attached app's repository, nil for an own app, and dir
@@ -530,7 +530,7 @@ func (t *Tool) may(st tools.State, slug string) bool {
 // and the directory it is delivered into: the resource whose app has
 // slug, or the one whose app the thread's last result for slug names by
 // its id, since its owner may have renamed the app after the session was
-// given it by its old slug (spec 069). That id is the one the session was
+// given it by its old slug (spec 071). That id is the one the session was
 // given the app with, or, for an attachment that names none, the one the
 // thread's last result for the given slug names once a result read the
 // app. ok is false when slug finds no attached app.
@@ -1166,7 +1166,7 @@ func (t *Tool) do(ctx context.Context, method, p string, body, out any) error {
 // (spec 058): the app host's answer for the app, read with the drive's
 // token for the app host, its current deploy's commit as Live and its
 // newest ready preview's as Preview, each "" when the host names none.
-// The app is found as the tool finds an attached app (spec 069): by the id
+// The app is found as the tool finds an attached app (spec 071): by the id
 // the session was given it with, when it names one, so an app renamed
 // before the session starts is read, and by its slug otherwise or once
 // the read by id answers 404.
@@ -1214,7 +1214,7 @@ func (a hostApp) path() string {
 	return "/apps/" + url.PathEscape(cmp.Or(a.by, a.Slug))
 }
 
-// find reads the app a result or an attachment names (spec 069): by its
+// find reads the app a result or an attachment names (spec 071): by its
 // id when one is known, which finds it whatever its owner renamed it to,
 // and by its slug when none is or when the read by id answers 404. A
 // host answers 404 for an app that is gone and, before it reads an id in

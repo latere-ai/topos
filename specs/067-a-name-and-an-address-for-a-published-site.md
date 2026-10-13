@@ -226,7 +226,7 @@ carries the refusal.
 
 Renaming an app, and moving one to another address; a rename the
 person makes at the host keeps the conversation publishing to the app
-since [[069-a-published-app-found-by-its-id]]. An address for an
+since [[071-a-published-app-found-by-its-id]]. An address for an
 attached app, which has one. Telling the model in a result that the
 address it asked for was not the one the app got: the result names the
 address the app has, and the description tells the model to pass that

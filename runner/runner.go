@@ -71,7 +71,7 @@ type Options struct {
 	// Apps reads the commits an app is served at from the installation's
 	// app host, with the drive's token source, nil when the drive reaches
 	// no session credentials (spec 058). app is the app as the session was
-	// given it, with its id when the allow named one (spec 069). Nil
+	// given it, with its id when the allow named one (spec 071). Nil
 	// starts the checkout of every app a session is attached at its
 	// repository's default branch.
 	Apps  func(ctx context.Context, tokens *TokenSource, app session.ResourceApp) (AppCommits, error)

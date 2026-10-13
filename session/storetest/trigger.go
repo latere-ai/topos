@@ -10,7 +10,7 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// testListByTrigger holds a store to spec 070's filter: a list keeps the
+// testListByTrigger holds a store to spec 072's filter: a list keeps the
 // sessions the trigger started, a page at a time, beside every other
 // filter, within the owners and within a tree, and under a grouping by
 // tree, where a fork the trigger did not start leaves its tree to the

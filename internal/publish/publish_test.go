@@ -612,7 +612,7 @@ func TestServedReadsTheCommitsAnAppServes(t *testing.T) {
 // owner renamed after the allow, whose old slug the host no longer
 // answers, are read; at a host that reads no id the id answers 404 and
 // the slug is read once; a read by id that fails otherwise is the error,
-// and the slug is not read (spec 069).
+// and the slug is not read (spec 071).
 func TestServedFindsAnAppByItsID(t *testing.T) {
 	id := appID(3)
 	served := func(slug string) func(int) (int, any) {
@@ -1989,7 +1989,7 @@ func fold(t *testing.T, results ...tools.Result) tools.State {
 // the same id. A release and a change of who can open it reach the app
 // by its id, each request of the call names the app as the read found
 // it, and a call that names the slug the app had before the rename
-// reaches it too. The texts name the slug the host answered (spec 069).
+// reaches it too. The texts name the slug the host answered (spec 071).
 func TestARenamedAppIsFoundByItsID(t *testing.T) {
 	ctx := t.Context()
 	site := map[string]bool{"/work": true, "/work/site": true}
@@ -2056,7 +2056,7 @@ func TestARenamedAppIsFoundByItsID(t *testing.T) {
 // host that does not read an id in a slug's place answers it 404, and the
 // app is read by its slug once and published to, every later request of
 // the call naming the slug; an app gone by its id and its slug alike is
-// created again, as one the host lost always was (spec 069).
+// created again, as one the host lost always was (spec 071).
 func TestAnAppIsFoundByItsSlugWhenItsIDIsNot(t *testing.T) {
 	ctx := t.Context()
 	site := map[string]bool{"/work": true, "/work/site": true}
@@ -2107,7 +2107,7 @@ func TestAnAppIsFoundByItsSlugWhenItsIDIsNot(t *testing.T) {
 // checkout reads the app by that id, pushes the checkout to the
 // repository the session was given and records the new slug with the
 // same id. The new slug, the slug the session was given, and a release
-// that names no app all find the one attached app (spec 069).
+// that names no app all find the one attached app (spec 071).
 func TestAnAttachedAppIsFoundAfterARename(t *testing.T) {
 	ctx := t.Context()
 	dirs := map[string]bool{"/work": true, "/work/tide": true}
@@ -2176,7 +2176,7 @@ func attachedWithID(t *testing.T, h stub, id string) *Tool {
 // was given and records the new slug with the id. After it, the new slug,
 // the given slug and a release that names no app find it by that id. At a
 // host that reads no id the id answers 404 and the given slug is read once
-// (spec 069).
+// (spec 071).
 func TestAnAttachedAppRenamedBeforeTheSessionReadsItIsFound(t *testing.T) {
 	ctx := t.Context()
 	dirs := map[string]bool{"/work": true, "/work/tide": true}

@@ -6,7 +6,7 @@ depends_on: [014-store.md, 015-api.md, 022-triggers.md, 056-editing-a-message-an
 affects: [session/, internal/server/, internal/store/postgres/, internal/store/postgres/migrations/, api/]
 effort: small
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -79,7 +79,7 @@ in List and in Summarize.
 
 ### The column
 
-Migration `0010_session_trigger`:
+Migration `0011_session_trigger`:
 
 ```sql
 ALTER TABLE sessions ADD COLUMN trigger_id text;

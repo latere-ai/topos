@@ -55,7 +55,7 @@ type PublishMeta struct {
 	Name string `json:"name,omitempty"`
 	// AppID is the app's id at the app host, which its owner's rename of
 	// the app leaves as it is while App changes, so a later call finds
-	// the app by it (spec 069). Empty where the host named none, and on a
+	// the app by it (spec 071). Empty where the host named none, and on a
 	// result recorded before results carried it.
 	AppID string `json:"app_id,omitempty"`
 	// URL is the app's own address.

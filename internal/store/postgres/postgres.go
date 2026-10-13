@@ -280,7 +280,7 @@ func (s *Store) insertBlob(ctx context.Context, q interface {
 }
 
 // triggerColumn is a session's trigger column, the id of the trigger
-// that started it, nil for a session no trigger started (spec 070).
+// that started it, nil for a session no trigger started (spec 072).
 func triggerColumn(sess session.Session) *string {
 	if sess.TriggerID == "" {
 		return nil
@@ -470,7 +470,7 @@ func locked(ctx context.Context, tx pgx.Tx, id string) (session.Session, error) 
 // tree column, and the trigger column, is set where the header names it
 // and never cleared, so a fork an earlier replica inserted without them
 // gains its parent here (spec 056), and a session it inserted without
-// the trigger column gains its trigger (spec 070).
+// the trigger column gains its trigger (spec 072).
 func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 	body, err := encode(sess)
 	if err != nil {

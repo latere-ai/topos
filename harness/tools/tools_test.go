@@ -389,7 +389,7 @@ func TestStateOfFoldsPublishPerApp(t *testing.T) {
 // owner renamed it still finds it; its preview that stands is found by
 // the new slug as by the old one, until a preview of the new one stands
 // under both; a result with another id, and one with none, are other
-// apps, folded by their slug alone (spec 069).
+// apps, folded by their slug alone (spec 071).
 func TestStateOfFoldsARenamedApp(t *testing.T) {
 	const id, other = "123e4567-e89b-42d3-a456-426614174000", "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 	fold := func(metas ...*session.PublishMeta) State {

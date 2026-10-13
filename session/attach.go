@@ -16,7 +16,7 @@ import (
 // the source of (spec 058): its id at the host, when the allow names it,
 // its slug, the name a person reads, and its public address. The id
 // never changes, so the publish tool and the start of the app's checkout
-// find the app by it after its owner renamed it (spec 069); the slug
+// find the app by it after its owner renamed it (spec 071); the slug
 // names the app's checkout and the app in the model's context.
 type ResourceApp struct {
 	ID   string `json:"id,omitempty"`

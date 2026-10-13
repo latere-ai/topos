@@ -76,7 +76,7 @@ func TestAnAppsCheckoutStartsAtItsLiveCommit(t *testing.T) {
 	app := func(slug string) *session.ResourceApp {
 		return &session.ResourceApp{Slug: slug, Name: slug, URL: "https://" + slug + ".apps.example.com"}
 	}
-	// The id lets the reader find an app renamed since the allow (spec 069).
+	// The id lets the reader find an app renamed since the allow (spec 071).
 	tide := app("tide")
 	tide.ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 	s := session.New(session.AgentRef{ID: session.NewID(session.PrefixAgent), Name: "builder", Version: 3}, f.s.Initiator, session.RunnerHosted, session.Machine{Kind: machine.KindCella}, t0)

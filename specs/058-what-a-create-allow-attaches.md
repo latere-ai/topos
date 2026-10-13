@@ -115,7 +115,7 @@ sequenceDiagram
 | Member | Field | Rule |
 |---|---|---|
 | `repositories[]` | `url`, `ref` | as a request's repository: `session.CheckRepository` with `https` |
-| | `app.id` | optional, the app's id at the app host, by which the session finds the app after a rename ([[069-a-published-app-found-by-its-id]]): at most 64 ASCII letters, digits, hyphens and underscores, starting with a letter or a digit |
+| | `app.id` | optional, the app's id at the app host, by which the session finds the app after a rename ([[071-a-published-app-found-by-its-id]]): at most 64 ASCII letters, digits, hyphens and underscores, starting with a letter or a digit |
 | | `app.slug` | the app's slug at the app host: `^[a-z0-9][a-z0-9-]{0,62}$` |
 | | `app.name` | one line, at most 200 characters, no control character |
 | | `app.url` | the app's public address, an absolute `https` URL |

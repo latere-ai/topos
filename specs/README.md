@@ -123,8 +123,8 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [065](065-a-working-directory-rebuilt-from-the-log.md) | A working directory rebuilt from the log: a machine made new for a session that lost its own, or for a fork with no checkpoint, gets back the files the session's log holds, recorded as `restored` with what is back and what is not, and the model is told | medium | testing | 008, 009, 017, 034, 064 |
 | [067](067-a-name-and-an-address-for-a-published-site.md) | A name and an address for a published site: the `publish` call that creates a session's app gives the app its name and asks for its address, in place of the session's title, creates it without the address when the host cannot give it, and a call that creates no app ignores both | small | testing | 043, 059 |
 | [069](069-connections-an-allow-names.md) | Connections an allow names: git and a service's API reached from the sandbox through a connection service, and remote MCP servers, read at create and fork and replaced at every send | large | testing | 004, 006, 008, 009, 012, 015, 016, 018, 019, 021, 052, 053, 058 |
-| [069](069-a-published-app-found-by-its-id.md) | A published app found by its id: a `publish` result records the app's id beside its slug, an allow may attach an app with its id, and every later call finds the app by that id before its slug, so a rename at the app host keeps a conversation publishing to the same app | small | testing | 043, 058, 059, 067 |
-| [070](070-the-sessions-a-trigger-started.md) | The sessions a trigger started: the sessions list and its summary take `trigger=<id>`, beside every other filter, the cursor and `group=tree`, read from an indexed column in Postgres | small | testing | 014, 015, 022, 056, 057 |
+| [071](071-a-published-app-found-by-its-id.md) | A published app found by its id: a `publish` result records the app's id beside its slug, an allow may attach an app with its id, and every later call finds the app by that id before its slug, so a rename at the app host keeps a conversation publishing to the same app | small | testing | 043, 058, 059, 067 |
+| [072](072-the-sessions-a-trigger-started.md) | The sessions a trigger started: the sessions list and its summary take `trigger=<id>`, beside every other filter, the cursor and `group=tree`, read from an indexed column in Postgres | small | testing | 014, 015, 022, 056, 057 |
 
 ## Dependency graph
 
@@ -201,8 +201,8 @@ flowchart BT
   S065[065 a working directory rebuilt from the log]
   S067[067 a name and an address for a published site]
   S069[069 connections an allow names]
-  S069[069 a published app found by its id]
-  S070[070 the sessions a trigger started]
+  S071[071 a published app found by its id]
+  S072[072 the sessions a trigger started]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -320,9 +320,9 @@ flowchart BT
   S069 --> S021
   S069 --> S052
   S069 --> S058
-  S069 --> S067
-  S070 --> S022
-  S070 --> S057
+  S071 --> S067
+  S072 --> S022
+  S072 --> S057
 ```
 
 ## Build order
@@ -336,7 +336,7 @@ Each phase ends in a test or a release job, not a statement.
 | 2: the server | 006, 014, 015, 016 (server), 022, 023, 024 (client), 027, 028, 029, 030 | a self-hosted `toposd` against the local issuer and the owner policy runs the suite's tasks as server sessions on the host machine, and the release job's conformance suite passes against the released image |
 | 3: hosted sessions on Cella | 009 (Cella), 018, 019, 020, 021, 034 (sandbox), 035 | the Cella tier's `TestCloudSessionPushesWithNoCredentialInSandbox`, `TestMemoryFollowsTheAgent` and `TestCellaMachineOnNamedEnvironment` pass: a hosted session pushes to a private repository with no credential in the sandbox, reads a memory store another session wrote, and runs on an Environment whose worker is outside the cluster |
 | 4: external runners and handoff | 017 | the e2e tier's `TestExternalRunnerWithClientOnly` and `TestHandoffRoundTrip` pass: a program using only `client` and a key runs a session as an external runner, and one session moves laptop to cloud to laptop with an identical fold |
-| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063, 064, 065, 067, 069, 070 | each is drafted against a caller when one exists, and then carries its own tests |
+| 5 | 031, 032, 033, 037, 038, 039, 040, 041, 043, 044, 045, 046, 047, 048, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063, 064, 065, 067, 071, 072 | each is drafted against a caller when one exists, and then carries its own tests |
 
 Phases run in order; specs inside a phase may run in parallel where
 their `depends_on` allows. A spec that spans phases (009, 013, 016,

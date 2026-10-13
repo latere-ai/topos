@@ -142,7 +142,7 @@ type ListOptions struct {
 	// with exactly its value (spec 057).
 	Metadata *MetadataEntry
 	// Trigger, when set, keeps the sessions the trigger of that id
-	// started, those whose TriggerID it is (spec 070).
+	// started, those whose TriggerID it is (spec 072).
 	Trigger string
 	Limit   int
 	Cursor  string
