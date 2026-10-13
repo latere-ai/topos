@@ -70,9 +70,11 @@ type Options struct {
 	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
 	// Apps reads the commits an app is served at from the installation's
 	// app host, with the drive's token source, nil when the drive reaches
-	// no session credentials (spec 058). Nil starts the checkout of every
-	// app a session is attached at its repository's default branch.
-	Apps  func(ctx context.Context, tokens *TokenSource, slug string) (AppCommits, error)
+	// no session credentials (spec 058). app is the app as the session was
+	// given it, with its id when the allow named one (spec 069). Nil
+	// starts the checkout of every app a session is attached at its
+	// repository's default branch.
+	Apps  func(ctx context.Context, tokens *TokenSource, app session.ResourceApp) (AppCommits, error)
 	Clock func() time.Time
 }
 

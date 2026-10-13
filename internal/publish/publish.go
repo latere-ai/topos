@@ -196,9 +196,10 @@ type target struct {
 	// names none, which ensureApp finds or creates. An attached app's is
 	// the slug the session was given it by, which names its checkout.
 	slug string
-	// id is an attached app's id at the app host, from the thread's last
-	// result for it, "" before a result named one (spec 069). The thread's
-	// own app's is in last.
+	// id is an attached app's id at the app host: the one the session was
+	// given it with, else the one the thread's last result for it names,
+	// "" while neither names one (spec 069). The thread's own app's is in
+	// last.
 	id string
 	// repo is an attached app's repository, nil for an own app, and dir
 	// its checkout's absolute path and rel that path under the working
@@ -454,10 +455,14 @@ func (t *Tool) access(ctx context.Context, st tools.State, slug, access string) 
 	// The folder the thread last published to the app goes on every
 	// result, so the thread's state, which folds this one as the app's
 	// last, still knows what a release that names no path publishes. The
-	// app is found by the id that result names, when it names one.
+	// app is found by its id: an attached app's as the session was given
+	// it, else the one that result names, when either names one.
 	var folder, id string
 	if last := st.Apps[slug]; last != nil {
 		folder, id = last.Folder, last.AppID
+	}
+	if g.attached() {
+		id = cmp.Or(g.repo.App.ID, id)
 	}
 	a, err := t.find(ctx, id, slug)
 	if err != nil {
@@ -525,9 +530,10 @@ func (t *Tool) may(st tools.State, slug string) bool {
 // and the directory it is delivered into: the resource whose app has
 // slug, or the one whose app the thread's last result for slug names by
 // its id, since its owner may have renamed the app after the session was
-// given it by its old slug (spec 069). The thread's results name an
-// attached app's id once one of them read the app. ok is false when slug
-// finds no attached app.
+// given it by its old slug (spec 069). That id is the one the session was
+// given the app with, or, for an attachment that names none, the one the
+// thread's last result for the given slug names once a result read the
+// app. ok is false when slug finds no attached app.
 func (t *Tool) attachment(st tools.State, slug string) (session.Resource, string, bool) {
 	if r, dir, ok := session.App(t.s, slug); ok {
 		return r, dir, true
@@ -540,7 +546,8 @@ func (t *Tool) attachment(st tools.State, slug string) (session.Resource, string
 		if r.App == nil {
 			continue
 		}
-		if given := st.Apps[r.App.Slug]; given != nil && given.Attached && given.AppID == m.AppID {
+		given := st.Apps[r.App.Slug]
+		if r.App.ID == m.AppID || (r.App.ID == "" && given != nil && given.Attached && given.AppID == m.AppID) {
 			return session.App(t.s, r.App.Slug)
 		}
 	}
@@ -630,15 +637,17 @@ func outside(g target, w, p string) *tools.Result {
 }
 
 // attachedApp is the attached app slug finds, with its checkout under
-// workdir and the id the thread's last result for it names, and whether
-// slug finds one.
+// workdir and its id, and whether slug finds one. The id is the one the
+// session was given the app with, which names the app the session was
+// started on whatever its slug is now; for an attachment that names none,
+// it is the one the thread's last result for the app names.
 func (t *Tool) attachedApp(st tools.State, workdir, slug string) (target, bool) {
 	r, dir, ok := t.attachment(st, slug)
 	if !ok {
 		return target{}, false
 	}
-	g := target{slug: r.App.Slug, repo: &r, dir: path.Join(workdir, dir), rel: dir}
-	if last := st.Apps[r.App.Slug]; last != nil && last.Attached {
+	g := target{slug: r.App.Slug, id: r.App.ID, repo: &r, dir: path.Join(workdir, dir), rel: dir}
+	if last := st.Apps[r.App.Slug]; g.id == "" && last != nil && last.Attached {
 		g.id = last.AppID
 	}
 	return g, true
@@ -1157,12 +1166,16 @@ func (t *Tool) do(ctx context.Context, method, p string, body, out any) error {
 // (spec 058): the app host's answer for the app, read with the drive's
 // token for the app host, its current deploy's commit as Live and its
 // newest ready preview's as Preview, each "" when the host names none.
-func Served(o Options) func(ctx context.Context, tokens *runner.TokenSource, slug string) (runner.AppCommits, error) {
-	return func(ctx context.Context, tokens *runner.TokenSource, slug string) (runner.AppCommits, error) {
+// The app is found as the tool finds an attached app (spec 069): by the id
+// the session was given it with, when it names one, so an app renamed
+// before the session starts is read, and by its slug otherwise or once
+// the read by id answers 404.
+func Served(o Options) func(ctx context.Context, tokens *runner.TokenSource, app session.ResourceApp) (runner.AppCommits, error) {
+	return func(ctx context.Context, tokens *runner.TokenSource, app session.ResourceApp) (runner.AppCommits, error) {
 		if tokens == nil {
 			return runner.AppCommits{}, errors.New("this server mints no credential for its app host")
 		}
-		a, err := New(o, session.Session{}, tokens).app(ctx, slug)
+		a, err := New(o, session.Session{}, tokens).find(ctx, app.ID, app.Slug)
 		if err != nil {
 			return runner.AppCommits{}, err
 		}

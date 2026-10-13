@@ -44,7 +44,7 @@ type demand struct {
 	// sandbox takes to come up.
 	opening func()
 	// apps is the runner's reader of the commits an app is served at.
-	apps func(ctx context.Context, tokens *TokenSource, slug string) (AppCommits, error)
+	apps func(ctx context.Context, tokens *TokenSource, app session.ResourceApp) (AppCommits, error)
 	// wrap stands the opened machine behind another, such as one that
 	// says its open restarted or replaced it.
 	wrap func(machine.Machine) machine.Machine

@@ -195,11 +195,14 @@ The thread keeps a standing preview per app, so releasing one app never
 takes another's.
 
 An attached app is given to a session by its slug, which also names its
-checkout. Once a result of the session has read the app, the session
-finds it by the id that result records, so a rename by its person after
-that keeps the checkout publishing to it, and the app's new slug names
-it in a call as the slug it was given does. An app renamed before the
-session first read it is not found by the slug the session was given.
+checkout, and by its id at the app host when the installation names it.
+The session finds the app by that id, so a rename by its person, before
+the session starts or while it runs, keeps the checkout starting at the
+commit the app serves and publishing to it, and the app's new slug names
+it in a call as the slug it was given does. An app given without its id
+is found by the id a result of the session records once one has read
+the app; renamed before then, it is not found by the slug the session
+was given.
 
 Several sessions may build one app at once, each on its own branch.
 Before it tags a release, the tool requires the commit the app serves

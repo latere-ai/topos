@@ -1,12 +1,12 @@
 ---
-title: "A published app found by its id: a publish result records the app's id, and every later call finds the app by it, so a rename of the app at its host keeps a conversation publishing to the same app"
+title: "A published app found by its id: a publish result records the app's id, an allow may attach an app with its id, and every later call finds the app by it, so a rename of the app at its host keeps a conversation publishing to the same app"
 status: testing
 track: core
-depends_on: [043-publishing-a-folder.md, 059-publishing-to-a-chosen-app.md, 067-a-name-and-an-address-for-a-published-site.md]
-affects: [session/, harness/tools/, internal/publish/, internal/hosted/, docs/]
+depends_on: [043-publishing-a-folder.md, 058-what-a-create-allow-attaches.md, 059-publishing-to-a-chosen-app.md, 067-a-name-and-an-address-for-a-published-site.md]
+affects: [session/, authorizer/, harness/tools/, internal/publish/, internal/hosted/, internal/server/, runner/, api/, docs/]
 effort: small
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -28,11 +28,16 @@ well ([[059-publishing-to-a-chosen-app]]), and is lost the same way.
 An app's id never changes. An app host that finds an app by its id in
 the slug's place, on every route that names an app, lets a client keep
 the id and find the app after any rename. This spec has the tool keep
-the id beside the slug and address the app by it.
+the id beside the slug and address the app by it, and lets an allow
+attach an app with its id.
 
 | Capability | What a client reads |
 |---|---|
 | the app a result names, across a rename | `meta.publish.app_id`, the app's id at its host, beside `app`, its slug as the host answered it when the call ran |
+
+| Capability | What an authorizer sends |
+|---|---|
+| an app a session is started on, found across a rename | `repositories[].app.id` in the allow of `session.create` or `session.fork`, beside `slug`, `name` and `url` |
 
 ## Current state
 
@@ -133,16 +138,36 @@ slug pointing at the app's last result, keeps each lookup a map read.
 
 ### The attached app
 
-The platform attaches an app by its slug, with no id, so the tool has
-no id for an attached app until a result of the session read it. From
-then on the thread's last result for the attachment's slug names the
-id, and the tool finds the attached app by it: a rename after that
-keeps the checkout publishing to it, its new slug names it in a call as
-the slug the session was given does, and the checkout is still pushed
-to the repository the session was given. An app renamed before the
-session's first result read it is not found by the slug the session was
-given; an attachment that carries the app's id would close that, and is
-not in this spec.
+An allow attaches an app as `{id, slug, name, url}`
+([[058-what-a-create-allow-attaches]]). `id` is optional: the app's id
+at the app host, at most `session.MaxAppID` (64) ASCII letters, digits,
+hyphens and underscores, starting with a letter or a digit, since the
+tool puts it in a slug's place in the host's routes. An allow whose id
+breaks that is not decoded, as one whose slug breaks its form is not.
+`session.ResourceApp` holds it as `ID`.
+
+The id an attachment names is the attached app's id from the start, so
+the tool finds the app by it on the session's first call: a rename
+before the session starts, or before its first result read the app,
+loses nothing. The start of the app's checkout reads the commit the app
+serves the same way: the runner's reader is given the app as the
+session was, and `publish.Served` reads it by its id, then by its slug
+once on a `404`, as every read of this spec does. A call with `access`
+on an attached app reads it by that id too.
+
+An attachment that names no id, as an allow before this release sends
+it, has no id until a result of the session read the app. From then on
+the thread's last result for the attachment's slug names the id, and the
+tool finds the attached app by it. An app renamed before that is not
+found by the slug the session was given, as before.
+
+Either way a rename keeps the checkout publishing to the app, its new
+slug names it in a call as the slug the session was given does, and the
+checkout is still pushed to the repository the session was given. Where
+both name one, the attachment's id is read first: it names the app the
+session was started on, while a result's id names the app a read found,
+which a read by slug after a `404` may have found in another app's
+place.
 
 ### The session's git directory
 
@@ -172,7 +197,9 @@ template, `access-refused-v1`.
 | A failure of the read by id other than `404` | the call's error | the slug read anyway: a host that is down for one read is down for the next, and a `403` is not a missing app |
 | The state's keys | slugs, every slug of an app pointing at its last result | ids: a record from before has none, and every check speaks slugs |
 | The requests after the read | by what found the app | by the slug of the answer: a rename while a build is polled loses the build |
-| An attached app | its id from the thread's results | from the repository's URL: an address is the platform's, not a contract of the core |
+| An attached app | the id its attachment names, else its id from the thread's results | from the repository's URL: an address is the platform's, not a contract of the core; from the thread's results alone: an app renamed before the first read is lost |
+| The attachment's id | optional, ASCII letters, digits, hyphens and underscores, at most 64 | required: an authorizer before this release sends none, and its sessions would be refused; any string: it goes into a route of the app host, where a slash or a dot segment names another path |
+| The runner's reader of an app's commits | given the app, `session.ResourceApp`, in place of its slug | its id and its slug as two strings: the attachment is what the session holds, and a reader that wants more of it later needs no new change |
 
 ## Compatibility
 
@@ -188,10 +215,11 @@ still loses the app, as before. A host that answers no `id` gives no
 
 ## Not in this spec
 
-The app host's reading of an id. An id in the attachment a platform
-sends. Renaming an app from a conversation. An app whose id is gone
-while another app of the account took its slug: the read by slug finds
-that app, as the one read did before.
+The app host's reading of an id. An authorizer's sending of the id in
+its allow, which is the authorizer's change. Renaming an app from a
+conversation. An app whose id is gone while another app of the account
+took its slug: the read by slug finds that app, as the one read did
+before.
 
 ## Acceptance criteria
 
@@ -204,18 +232,27 @@ that app, as the one read did before.
 | An app gone by its id and its slug is created again; a read by id that fails otherwise fails the call, reads no slug and creates nothing | `internal/publish.TestAnAppIsFoundByItsSlugWhenItsIDIsNot` | built |
 | An attached app a result read is found by its id after a rename: the checkout is pushed to the repository the session was given, the result names the new slug and the id, and the new slug, the given slug and a release that names no app each find it once | `internal/publish.TestAnAttachedAppIsFoundAfterARename`, `internal/hosted.TestASessionKeepsPublishingItsRenamedAttachedApp` | built |
 | The thread's state maps every slug a result named for an app id to that app's last result and its standing preview; results with another id or none are other apps | `harness/tools.TestStateOfFoldsARenamedApp` | built |
+| An allow's `repositories[].app.id` is decoded into the attachment, and one that is longer than 64 characters, starts with a hyphen, or holds a slash, a dot, a space or a percent sign is not | `authorizer.TestTheAttachMembers`, `session.TestCheckApp` | built |
+| An app attached with its id and renamed before the session read it: a call with `access` and a publish of its checkout read it by the id, the publish pushes the checkout to the repository the session was given and records the new slug with the id, and then the new slug, the given slug and a release that names no app find it by the id; at a host that reads no id the given slug is read once | `internal/publish.TestAnAttachedAppRenamedBeforeTheSessionReadsItIsFound` | built |
+| The runner's reader is given each app as the session was, its id included, and `publish.Served` reads the app by its id, by its slug once on a `404`, never after another failure | `runner.TestAnAppsCheckoutStartsAtItsLiveCommit`, `internal/publish.TestServedFindsAnAppByItsID` | built |
+| A session given an app with its id, renamed before its first turn, starts its checkout at the commit the app serves and publishes and releases to the app under its new slug, creating none | `internal/hosted.TestASessionFindsItsAttachedAppRenamedBeforeItStarts` | built |
 
 ## Outcome
 
-Built on 2026-10-12, in no release yet, and not yet run against a live
-app host. Every criterion has its test, and each new test failed
-against the tool before the change. What shipped beyond the design
-above:
+Built on 2026-10-12, and the attachment's id on 2026-10-13, in no
+release yet, and not yet run against a live app host. Every criterion
+has its test, and each new test failed against the tool before the
+change. What shipped beyond the design above:
 
-- **The attachment carries no id.** The platform's allow sends an
-  attached app as `{slug, name, url}`, so an attached app renamed before
-  the session's first result read it is not found; the slug path works
-  as before for it.
+- **The attachment's id is optional.** An allow that names no id, as one
+  before this release, attaches the app as before; such an app renamed
+  before the session's first result read it is not found, and the slug
+  path works as before for it. An allow that names an id is read by a
+  core before this release as one that names none, since a member of the
+  limits a core does not know is ignored.
+- **The runner's reader takes the app.** `runner.Options.Apps` is given
+  the attached `session.ResourceApp` in place of its slug, a change to
+  the runner package's API.
 - **A read by slug answers whichever app has the slug.** When the read
   by id answers `404` because the app is gone and another app of the
   account took its slug, the read by slug finds that app, and the

@@ -690,6 +690,45 @@ func TestASessionKeepsPublishingItsRenamedAttachedApp(t *testing.T) {
 	}
 }
 
+// TestASessionFindsItsAttachedAppRenamedBeforeItStarts: the allow gave
+// the session the app tide with its id, and the app's owner renamed it to
+// tides before the session's first turn. The checkout still starts at the
+// commit the app serves, read by the id, and the session publishes and
+// releases its checkout to the app by the id, under its new slug, through
+// the repository the session was given, creating no app (spec 069).
+func TestASessionFindsItsAttachedAppRenamedBeforeItStarts(t *testing.T) {
+	a := newApps(t)
+	clone := a.seed(t, "tide")
+	live := release(t, clone, "agents/builder/ses_other", "released.html", "v1")
+	id := a.host.identify("tide")
+	c := a.attachedWith(t, session.ResourceApp{ID: id, Slug: "tide", Name: "Tide tables", URL: "https://tide.apps.example"}, a.git.srv.URL+"/r/"+id+".git", publisherAgent)
+	a.host.rename("tide", "tides")
+
+	c.drive("Make the page say hello and release it.",
+		bash("toolu_1", `printf '<h1>Hello</h1>\n' > tide/index.html`),
+		publishCall("toolu_2", map[string]any{"app": "tide"}),
+		publishCall("toolu_3", map[string]any{"app": "tides", "release": true}),
+		said("Released."))
+	var started session.SessionMachine
+	if ms := c.events(session.TypeSessionMachine); len(ms) == 0 || ms[0].Decode(&started) != nil || len(started.Repositories) != 1 ||
+		started.Repositories[0].Base != session.BaseLive || started.Repositories[0].Commit != live {
+		t.Fatalf("the checkout started at %+v, want the live release %s", started.Repositories, live)
+	}
+	bare := filepath.Join(a.root, "tides.git")
+	head := gitIn(t, bare, "rev-parse", "refs/heads/"+session.Branch(c.s))
+	gitIn(t, bare, "merge-base", "--is-ancestor", live, head)
+	released, _ := lastResult(t, c)
+	if released.App != "tides" || released.AppID != id || !released.Attached || released.Release != "v2" || released.Status != session.PublishReleased || released.Commit != head || released.Folder != "tide" {
+		t.Fatalf("the release recorded %+v, the branch is at %s", released, head)
+	}
+	a.host.mu.Lock()
+	creates := len(a.host.created)
+	a.host.mu.Unlock()
+	if creates != 0 {
+		t.Fatalf("the host was asked to create %d apps", creates)
+	}
+}
+
 // lastPublish is the meta of the session's last publish result, which
 // must have succeeded.
 func lastPublish(t *testing.T, c *cloud) session.PublishMeta {

@@ -787,13 +787,14 @@ var MetadataRule = fmt.Sprintf("The body's metadata is an object of at most %d s
 	session.MaxMetadata, session.MetadataKeyRule, session.MaxMetadataValue)
 
 // AttachRule is the create route's sentence on what the authorizer's
-// allow attaches (spec 058).
-var AttachRule = fmt.Sprintf("The authorizer's allow of session.create or session.fork may attach repositories, each {url, ref, app}, app {slug, name, url} the app at the installation's app host it is the source of, "+
+// allow attaches (spec 058), and the app's id it may name (spec 069).
+var AttachRule = fmt.Sprintf("The authorizer's allow of session.create or session.fork may attach repositories, each {url, ref, app}, app {id, slug, name, url} the app at the installation's app host it is the source of, "+
 	"which follow the request's resources marked attached, one whose url the request names left out, at most %d repositories together; "+
 	"and context, titled text {title, text} of at most %d bytes together, which the model reads after the initiator's instructions for the session's whole life. "+
+	"An app's id is optional, at most %d letters, digits, hyphens and underscores, and the session finds the app by it after the app's owner renames it. "+
 	"An app's repository is delivered into the directory of its slug under the working directory, on the session's branch at the commit the app serves. "+
 	"A fork carries the repositories its parent's request named, and what its own allow attaches; a request that names a repository's app or marks one attached is invalid_request.",
-	session.MaxRepositories, session.MaxContext)
+	session.MaxRepositories, session.MaxContext, session.MaxAppID)
 
 // MetadataFilterRule is the list route's sentence on its filter by a
 // metadata entry (spec 057).

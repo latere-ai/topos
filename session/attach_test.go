@@ -43,12 +43,34 @@ func TestAnAppsCheckoutIsItsSlug(t *testing.T) {
 	}
 }
 
-// TestCheckApp holds an attached app to its rules: a slug of the host's
+// TestCheckApp holds an attached app to its rules: an id, when it names
+// one, of letters, digits, hyphens and underscores, a slug of the host's
 // form, a name on one line, and an absolute https address.
 func TestCheckApp(t *testing.T) {
 	ok := ResourceApp{Slug: "tide-tables", Name: "Tide tables", URL: "https://tide-tables.apps.example"}
 	if err := CheckApp(ok); err != nil {
 		t.Fatal(err)
+	}
+	for _, id := range []string{"7c9e6679-7425-40de-944b-e07fc1f90ae7", "app_01J9Z", strings.Repeat("a", MaxAppID)} {
+		withID := ok
+		withID.ID = id
+		if err := CheckApp(withID); err != nil {
+			t.Errorf("the id %q: %v", id, err)
+		}
+	}
+	for name, id := range map[string]string{
+		"a long id":                 strings.Repeat("a", MaxAppID+1),
+		"an id with a slash":        "a/b",
+		"an id of dots":             "..",
+		"an id with a space":        "a b",
+		"an id with a hyphen first": "-a",
+		"an id with a percent":      "a%2F",
+	} {
+		withID := ok
+		withID.ID = id
+		if err := CheckApp(withID); err == nil {
+			t.Errorf("%s passed", name)
+		}
 	}
 	for name, a := range map[string]ResourceApp{
 		"an upper-case slug":  {Slug: "Tide", Name: "T", URL: ok.URL},

@@ -278,12 +278,12 @@ func TestInstructionsEscapesAreHeldToUTF8(t *testing.T) {
 }
 
 // TestTheAttachMembers: an allow's repositories are read as repository
-// resources marked attached, each with its app, and its context as it is;
-// a member past its bound or breaking its rule does not decode, and the
-// error names it. files is not read by this release, so it is ignored as
-// any unknown member is.
+// resources marked attached, each with its app, its id included, and its
+// context as it is; a member past its bound or breaking its rule does not
+// decode, and the error names it. files is not read by this release, so it
+// is ignored as any unknown member is.
 func TestTheAttachMembers(t *testing.T) {
-	app := &session.ResourceApp{Slug: "tide-tables", Name: "Tide tables", URL: "https://tide-tables.apps.example.com"}
+	app := &session.ResourceApp{ID: "7c9e6679-7425-40de-944b-e07fc1f90ae7", Slug: "tide-tables", Name: "Tide tables", URL: "https://tide-tables.apps.example.com"}
 	w := WireLimits{
 		Repositories: []WireRepository{{URL: "https://git.example.com/r/7f3c.git", App: app}, {URL: "https://git.example.com/acme/lib.git", Ref: "main"}},
 		Context:      []session.ContextPart{{Title: "Project", Text: "Tide tables for the harbor club."}, {Title: "Memory", Text: "- ent_01: The club's color is navy.\n"}},
@@ -314,14 +314,15 @@ func TestTheAttachMembers(t *testing.T) {
 		w     any
 		names string
 	}{
-		"too many repositories": {WireLimits{Repositories: many}, "limits.repositories"},
-		"an http repository":    {WireLimits{Repositories: []WireRepository{{URL: "http://git.example.com/r.git"}}}, "limits.repositories[0]"},
-		"a credential":          {WireLimits{Repositories: []WireRepository{{URL: "https://u:p@git.example.com/r.git"}}}, "limits.repositories[0]"},
-		"a ref of git's syntax": {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", Ref: "--upload-pack=x"}}}, "limits.repositories[0]"},
-		"a repeated url":        {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git"}, {URL: "https://git.example.com/r.git"}}}, "limits.repositories[1]"},
-		"a bad slug":            {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "Tide", Name: "T", URL: app.URL}}}}, "limits.repositories[0].app"},
-		"an app with no name":   {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "tide", URL: app.URL}}}}, "limits.repositories[0].app"},
-		"an http app":           {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "tide", Name: "T", URL: "http://tide.example"}}}}, "limits.repositories[0].app"},
+		"too many repositories":    {WireLimits{Repositories: many}, "limits.repositories"},
+		"an http repository":       {WireLimits{Repositories: []WireRepository{{URL: "http://git.example.com/r.git"}}}, "limits.repositories[0]"},
+		"a credential":             {WireLimits{Repositories: []WireRepository{{URL: "https://u:p@git.example.com/r.git"}}}, "limits.repositories[0]"},
+		"a ref of git's syntax":    {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", Ref: "--upload-pack=x"}}}, "limits.repositories[0]"},
+		"a repeated url":           {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git"}, {URL: "https://git.example.com/r.git"}}}, "limits.repositories[1]"},
+		"a bad slug":               {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "Tide", Name: "T", URL: app.URL}}}}, "limits.repositories[0].app"},
+		"an app with no name":      {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "tide", URL: app.URL}}}}, "limits.repositories[0].app"},
+		"an http app":              {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{Slug: "tide", Name: "T", URL: "http://tide.example"}}}}, "limits.repositories[0].app"},
+		"an app's id with a slash": {WireLimits{Repositories: []WireRepository{{URL: "https://git.example.com/r.git", App: &session.ResourceApp{ID: "../x", Slug: "tide", Name: "T", URL: app.URL}}}}, "limits.repositories[0].app"},
 		"a repeated app": {WireLimits{Repositories: []WireRepository{
 			{URL: "https://git.example.com/r/1.git", App: app}, {URL: "https://git.example.com/r/2.git", App: app},
 		}}, "limits.repositories[1]"},

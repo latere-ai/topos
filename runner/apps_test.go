@@ -44,7 +44,8 @@ func releasedRepo(t *testing.T, name string) (string, string) {
 // on the session's branch at the app's live commit, which only a tag
 // holds; else at its newest ready preview's; else at the default branch,
 // when the host has neither, cannot be read, or names a commit the
-// repository does not hold; a ref the allow named wins. The attachment
+// repository does not hold; a ref the allow named wins. The host's reader
+// is given each app as the session was, its id included. The attachment
 // records each app's slug, the base it started from and its commit.
 func TestAnAppsCheckoutStartsAtItsLiveCommit(t *testing.T) {
 	f := setup(t)
@@ -63,22 +64,25 @@ func TestAnAppsCheckoutStartsAtItsLiveCommit(t *testing.T) {
 		"gone":    {Live: strings.Repeat("ab", 20)},
 		"pinned":  {Live: released},
 	}
-	var asked []string
+	var asked []session.ResourceApp
 	var opens atomic.Int32
-	f.onDemandWith(work, &opens, demand{apps: func(_ context.Context, _ *TokenSource, slug string) (AppCommits, error) {
-		asked = append(asked, slug)
-		if slug == "down" {
+	f.onDemandWith(work, &opens, demand{apps: func(_ context.Context, _ *TokenSource, a session.ResourceApp) (AppCommits, error) {
+		asked = append(asked, a)
+		if a.Slug == "down" {
 			return AppCommits{}, errors.New("the app host answered 503")
 		}
-		return served[slug], nil
+		return served[a.Slug], nil
 	}})
 	app := func(slug string) *session.ResourceApp {
 		return &session.ResourceApp{Slug: slug, Name: slug, URL: "https://" + slug + ".apps.example.com"}
 	}
+	// The id lets the reader find an app renamed since the allow (spec 069).
+	tide := app("tide")
+	tide.ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 	s := session.New(session.AgentRef{ID: session.NewID(session.PrefixAgent), Name: "builder", Version: 3}, f.s.Initiator, session.RunnerHosted, session.Machine{Kind: machine.KindCella}, t0)
 	s.Resources = []session.Resource{
 		{Type: session.ResourceRepository, URL: "file://" + web},
-		{Type: session.ResourceRepository, URL: "file://" + live, App: app("tide"), Attached: true},
+		{Type: session.ResourceRepository, URL: "file://" + live, App: tide, Attached: true},
 		{Type: session.ResourceRepository, URL: "file://" + preview, App: app("preview"), Attached: true},
 		{Type: session.ResourceRepository, URL: "file://" + gone, App: app("gone"), Attached: true},
 		{Type: session.ResourceRepository, URL: "file://" + down, App: app("down"), Attached: true},
@@ -103,8 +107,8 @@ func TestAnAppsCheckoutStartsAtItsLiveCommit(t *testing.T) {
 	if got := gitRun(t, filepath.Join(work, "tide"), "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
 		t.Fatalf("the app's checkout is on %q, want %q", got, branch)
 	}
-	if !slices.Equal(asked, []string{"tide", "preview", "gone", "down"}) {
-		t.Fatalf("the host was asked about %v; an app with a ref is not asked", asked)
+	if want := []session.ResourceApp{*tide, *app("preview"), *app("gone"), *app("down")}; !slices.Equal(asked, want) {
+		t.Fatalf("the host was asked about %+v, want %+v; an app with a ref is not asked", asked, want)
 	}
 	machines := f.events(ctx, session.TypeSessionMachine)
 	var attached session.SessionMachine
@@ -135,15 +139,20 @@ func TestAnAppsCheckoutStartsAtItsLiveCommit(t *testing.T) {
 // default branch and nothing is wrong; a commit that is no commit's id
 // is not used.
 func TestBaseWithNoAppHost(t *testing.T) {
-	if c, kind, why := base(t.Context(), nil, "tide"); c != "" || kind != session.BaseDefault || why != "" {
+	tide := session.ResourceApp{Slug: "tide", Name: "Tide", URL: "https://tide.apps.example.com"}
+	if c, kind, why := base(t.Context(), nil, tide); c != "" || kind != session.BaseDefault || why != "" {
 		t.Fatalf("no app host: %q %q %q", c, kind, why)
 	}
-	odd := func(context.Context, string) (AppCommits, error) { return AppCommits{Live: "main; rm -rf /"}, nil }
-	if c, kind, why := base(t.Context(), odd, "tide"); c != "" || kind != session.BaseDefault || !strings.Contains(why, "no commit's id") {
+	odd := func(context.Context, session.ResourceApp) (AppCommits, error) {
+		return AppCommits{Live: "main; rm -rf /"}, nil
+	}
+	if c, kind, why := base(t.Context(), odd, tide); c != "" || kind != session.BaseDefault || !strings.Contains(why, "no commit's id") {
 		t.Fatalf("an odd live commit: %q %q %q", c, kind, why)
 	}
-	oddPreview := func(context.Context, string) (AppCommits, error) { return AppCommits{Preview: "HEAD"}, nil }
-	if c, kind, why := base(t.Context(), oddPreview, "tide"); c != "" || kind != session.BaseDefault || !strings.Contains(why, "no commit's id") {
+	oddPreview := func(context.Context, session.ResourceApp) (AppCommits, error) {
+		return AppCommits{Preview: "HEAD"}, nil
+	}
+	if c, kind, why := base(t.Context(), oddPreview, tide); c != "" || kind != session.BaseDefault || !strings.Contains(why, "no commit's id") {
 		t.Fatalf("an odd preview commit: %q %q %q", c, kind, why)
 	}
 }

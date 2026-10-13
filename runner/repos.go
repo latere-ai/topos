@@ -33,26 +33,28 @@ const deliverTimeout = 15 * time.Minute
 
 // served reads the commits an app is served at with the drive's tokens,
 // nil when the runner has no app host to read.
-func (r *Runner) served(tokens *TokenSource) func(ctx context.Context, slug string) (AppCommits, error) {
+func (r *Runner) served(tokens *TokenSource) func(ctx context.Context, app session.ResourceApp) (AppCommits, error) {
 	if r.o.Apps == nil {
 		return nil
 	}
-	return func(ctx context.Context, slug string) (AppCommits, error) { return r.o.Apps(ctx, tokens, slug) }
+	return func(ctx context.Context, app session.ResourceApp) (AppCommits, error) {
+		return r.o.Apps(ctx, tokens, app)
+	}
 }
 
 // commitForm is a commit's id as git names it in full or abbreviated.
 var commitForm = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 
-// base is the commit an app's checkout starts at and the base it is, read
-// from the app host by served (spec 058): the live commit, else the newest
-// ready preview's, else the default branch, "" for the commit; why says
-// why the host's answer could not be used, "" when it could or when there
-// is no app host.
-func base(ctx context.Context, served func(context.Context, string) (AppCommits, error), slug string) (commit, kind, why string) {
+// base is the commit the checkout of app starts at and the base it is,
+// read from the app host by served (spec 058): the live commit, else the
+// newest ready preview's, else the default branch, "" for the commit; why
+// says why the host's answer could not be used, "" when it could or when
+// there is no app host.
+func base(ctx context.Context, served func(context.Context, session.ResourceApp) (AppCommits, error), app session.ResourceApp) (commit, kind, why string) {
 	if served == nil {
 		return "", session.BaseDefault, ""
 	}
-	c, err := served(ctx, slug)
+	c, err := served(ctx, app)
 	switch {
 	case err != nil:
 		return "", session.BaseDefault, "the app host could not be read: " + err.Error()
@@ -79,7 +81,7 @@ func base(ctx context.Context, served func(context.Context, string) (AppCommits,
 // again. A failure is an OpenError repository_unavailable beside the
 // repositories that were delivered: the machine stays, and the session
 // learns which repository is missing.
-func deliver(ctx context.Context, s session.Session, m machine.Machine, served func(context.Context, string) (AppCommits, error)) ([]session.DeliveredRepository, error) {
+func deliver(ctx context.Context, s session.Session, m machine.Machine, served func(context.Context, session.ResourceApp) (AppCommits, error)) ([]session.DeliveredRepository, error) {
 	repos := session.Repositories(s)
 	if len(repos) > session.MaxRepositories {
 		return nil, &machine.OpenError{Code: CodeRepositoryUnavailable, Err: fmt.Errorf("the session names %d repositories, at most %d", len(repos), session.MaxRepositories)}
@@ -96,7 +98,7 @@ func deliver(ctx context.Context, s session.Session, m machine.Machine, served f
 		if repo.App != nil {
 			got.App = repo.App.Slug
 			if repo.Ref == "" {
-				start, got.Base, got.BaseError = base(ctx, served, repo.App.Slug)
+				start, got.Base, got.BaseError = base(ctx, served, *repo.App)
 			}
 		}
 		commit, err := deliverOne(ctx, s, m, repo, dir, start)

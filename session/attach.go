@@ -13,9 +13,13 @@ import (
 )
 
 // ResourceApp is the app at the installation's app host a repository is
-// the source of (spec 058): its slug, the name a person reads, and its
-// public address.
+// the source of (spec 058): its id at the host, when the allow names it,
+// its slug, the name a person reads, and its public address. The id
+// never changes, so the publish tool and the start of the app's checkout
+// find the app by it after its owner renamed it (spec 069); the slug
+// names the app's checkout and the app in the model's context.
 type ResourceApp struct {
+	ID   string `json:"id,omitempty"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
@@ -33,6 +37,8 @@ type ContextPart struct {
 const (
 	// MaxAppName is the most characters of an attached app's name.
 	MaxAppName = 200
+	// MaxAppID is the most characters of an attached app's id.
+	MaxAppID = 64
 	// MaxContextTitle is the most characters of a context part's title.
 	MaxContextTitle = 100
 	// MaxContext is the most bytes of a session's context, every part's
@@ -45,6 +51,13 @@ var appSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // ValidAppSlug reports whether slug has the form of an app's slug.
 func ValidAppSlug(slug string) bool { return appSlug.MatchString(slug) }
+
+// appIDForm is the form of an attached app's id: ASCII letters, digits,
+// hyphens and underscores, starting with a letter or a digit, as a uuid's
+// text is. The publish tool puts the id in a slug's place in the app
+// host's routes, so it holds nothing a path segment would read as more
+// than a name.
+var appIDForm = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // oneLine reports why s cannot be a line a person reads, "" when it can:
 // empty, longer than limit characters, or holding a control character or
@@ -64,12 +77,16 @@ func oneLine(s string, limit int) string {
 	return ""
 }
 
-// CheckApp reports why a is not an app a repository can name: a slug of
-// the app host's form, a name on one line of at most MaxAppName
-// characters, and an absolute https address with no credential.
+// CheckApp reports why a is not an app a repository can name: an id, when
+// it names one, of at most MaxAppID characters in appIDForm, a slug of the
+// app host's form, a name on one line of at most MaxAppName characters,
+// and an absolute https address with no credential.
 func CheckApp(a ResourceApp) error {
 	if !ValidAppSlug(a.Slug) {
 		return fmt.Errorf("the slug %q is not an app's slug", a.Slug)
+	}
+	if a.ID != "" && (len(a.ID) > MaxAppID || !appIDForm.MatchString(a.ID)) {
+		return fmt.Errorf("the id of %s is not an app's id: at most %d letters, digits, hyphens and underscores, starting with a letter or a digit", a.Slug, MaxAppID)
 	}
 	if why := oneLine(a.Name, MaxAppName); why != "" {
 		return fmt.Errorf("the name of %s: %s", a.Slug, why)

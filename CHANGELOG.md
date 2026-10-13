@@ -54,10 +54,15 @@ committed: the commit log already holds that.
   slug, and every later call finds the app by that id before its slug:
   it publishes to the renamed app, releases it and changes who can open
   it, and its result names the new slug and address. An app a session
-  was started on is found by its id once a result of the session read
-  it. The slug the conversation knew before still names the app in a
-  call. A conversation whose results predate `app_id` finds its app by
-  its slug, as before.
+  was started on is found by its id from the start when the
+  authorizer's allow names it, as `repositories[].app.id` beside the
+  app's slug, so an app renamed before the session first reads it is
+  still found, and its checkout still starts at the commit the app
+  serves. An allow that names no id attaches the app as before, and the
+  session finds it by its id once a result of the session read it. The
+  slug the conversation knew before still names the app in a call. A
+  conversation whose results predate `app_id` finds its app by its
+  slug, as before.
 - **A file rebuilt into a new machine carries the time it was written
   back.** When a lost machine's files were rebuilt from the log into a
   new one, the archive they arrived in carried no time, so every file
@@ -76,6 +81,15 @@ committed: the commit log already holds that.
   the app by its slug once, as before, at the cost of one more request
   a call; a rename there still loses the app. The two roll in either
   order; a rename is survived once both run.
+- An authorizer may name an attached app's id in its allow as
+  `repositories[].app.id`: at most 64 ASCII letters, digits, hyphens
+  and underscores, starting with a letter or a digit. An allow whose id
+  breaks that is refused as an allow toposd cannot read. An earlier
+  release ignores the member, so an authorizer may send it before this
+  release rolls.
+- `runner.Options.Apps`, the reader of the commits an app is served at,
+  is given the attached app, `session.ResourceApp`, in place of its
+  slug, so a reader finds the app by its id.
 - The Postgres store adds the column `sessions.trigger_id`, filled from
   each session's body, and an index on it (migration `0010`). While an
   earlier release runs beside this one, a session it creates enters a

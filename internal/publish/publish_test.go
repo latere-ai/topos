@@ -594,16 +594,66 @@ func TestServedReadsTheCommitsAnAppServes(t *testing.T) {
 		{"fresh", runner.AppCommits{}},
 		{"draft", runner.AppCommits{Preview: sha2}},
 	} {
-		got, err := read(t.Context(), tokens, c.slug)
+		got, err := read(t.Context(), tokens, session.ResourceApp{Slug: c.slug})
 		if err != nil || got != c.want {
 			t.Fatalf("%s: %+v, %v; want %+v", c.slug, got, err, c.want)
 		}
 	}
-	if _, err := read(t.Context(), tokens, "gone"); err == nil || !strings.Contains(err.Error(), "not_found") {
+	if _, err := read(t.Context(), tokens, session.ResourceApp{Slug: "gone"}); err == nil || !strings.Contains(err.Error(), "not_found") {
 		t.Fatalf("a refused read: %v", err)
 	}
-	if _, err := read(t.Context(), nil, "tide"); err == nil {
+	if _, err := read(t.Context(), nil, session.ResourceApp{Slug: "tide"}); err == nil {
 		t.Fatal("a drive with no token source read the host")
+	}
+}
+
+// TestServedFindsAnAppByItsID: the runner's reader finds an app the
+// session was given with its id by that id, so the commits of an app its
+// owner renamed after the allow, whose old slug the host no longer
+// answers, are read; at a host that reads no id the id answers 404 and
+// the slug is read once; a read by id that fails otherwise is the error,
+// and the slug is not read (spec 069).
+func TestServedFindsAnAppByItsID(t *testing.T) {
+	id := appID(3)
+	served := func(slug string) func(int) (int, any) {
+		return func(int) (int, any) {
+			_, body := app(slug)(1)
+			m := body.(map[string]any)
+			m["id"], m["current_deploy"], m["latest_preview"] = id, map[string]any{"id": "d4", "commit_sha": sha1}, nil
+			return http.StatusOK, m
+		}
+	}
+	given := session.ResourceApp{ID: id, Slug: "tide", Name: "Tide", URL: "https://tide.apps.example"}
+	unnamed := given
+	unnamed.ID = ""
+	tokens := runner.NewTokenSource(creds{}, nil, nil)
+	for name, c := range map[string]struct {
+		app    session.ResourceApp
+		answer map[string]func(int) (int, any)
+		want   []string
+	}{
+		"renamed":                  {given, map[string]func(int) (int, any){"GET /apps/" + id: served("tides")}, []string{"GET /apps/" + id}},
+		"a host of no id":          {given, map[string]func(int) (int, any){"GET /apps/tide": served("tide")}, []string{"GET /apps/" + id, "GET /apps/tide"}},
+		"an attachment with no id": {unnamed, map[string]func(int) (int, any){"GET /apps/tide": served("tide")}, []string{"GET /apps/tide"}},
+	} {
+		h := newHost(t, c.answer)
+		got, err := Served(Options{URL: h.srv.URL, Audience: "apps", GitURL: gitURL})(t.Context(), tokens, c.app)
+		if err != nil || got != (runner.AppCommits{Live: sha1}) {
+			t.Errorf("%s: %+v, %v", name, got, err)
+		}
+		var asked []string
+		for _, key := range []string{"GET /apps/" + id, "GET /apps/tide"} {
+			if h.count(key) > 0 {
+				asked = append(asked, key)
+			}
+		}
+		if !slices.Equal(asked, c.want) {
+			t.Errorf("%s: the host was asked %v, want %v", name, asked, c.want)
+		}
+	}
+	down := newHost(t, map[string]func(int) (int, any){"GET /apps/" + id: refused(http.StatusServiceUnavailable, "unavailable"), "GET /apps/tide": served("tide")})
+	if _, err := Served(Options{URL: down.srv.URL, Audience: "apps", GitURL: gitURL})(t.Context(), tokens, given); err == nil || down.count("GET /apps/tide") != 0 {
+		t.Fatalf("a read by id that failed: %v, the slug read %d times", err, down.count("GET /apps/tide"))
 	}
 }
 
@@ -2106,5 +2156,88 @@ func TestAnAttachedAppIsFoundAfterARename(t *testing.T) {
 	res, err := tool.Run(ctx, call(`{"app":"other"}`, &fakeMachine{dirs: dirs}, st))
 	if err != nil || metaOf(res).Error == nil || metaOf(res).Error.Code != session.PublishAppNotAttached || !strings.Contains(resultText(res), "It may publish to tide.") {
 		t.Fatalf("another app: %+v %v", res, err)
+	}
+}
+
+// attachedWithID is attachedTool with the app tide given by its id, as an
+// allow that names the app's id gives it.
+func attachedWithID(t *testing.T, h stub, id string) *Tool {
+	t.Helper()
+	tool := attachedTool(t, h)
+	tool.s.Resources[1].App.ID = id
+	return tool
+}
+
+// TestAnAttachedAppRenamedBeforeTheSessionReadsItIsFound: the session was
+// given the app tide with its id, and the app's owner renamed it to tides
+// before any result of the session read it. A change of who can open it
+// and a publish of its checkout each read it by the id the session was
+// given; the publish pushes the checkout to the repository the session
+// was given and records the new slug with the id. After it, the new slug,
+// the given slug and a release that names no app find it by that id. At a
+// host that reads no id the id answers 404 and the given slug is read once
+// (spec 069).
+func TestAnAttachedAppRenamedBeforeTheSessionReadsItIsFound(t *testing.T) {
+	ctx := t.Context()
+	dirs := map[string]bool{"/work": true, "/work/tide": true}
+	id := appID(4)
+	h := newIDHost(t, true, map[string]string{id: "tides"})
+	tool := attachedWithID(t, h, id)
+
+	access := `{"app":"tide","access":"link"}`
+	if stop := tool.Check(call(access, &fakeMachine{}, tools.State{})); stop != nil {
+		t.Fatalf("%s: refused %+v", access, *stop)
+	}
+	opened, err := tool.Run(ctx, call(access, &fakeMachine{}, tools.State{}))
+	if got := metaOf(opened); err != nil || opened.Outcome != tools.OutcomeOK || got.App != "tides" || got.AppID != id || !got.Attached {
+		t.Fatalf("%s: %+v %+v %v", access, opened, got, err)
+	}
+	if got, want := h.requests(), []string{"GET /apps/" + id, "PATCH /apps/" + id}; !slices.Equal(got, want) {
+		t.Fatalf("%s: the host was asked %v, want %v", access, got, want)
+	}
+
+	m := &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}
+	first, err := tool.Run(ctx, call(`{"app":"tide"}`, m, tools.State{}))
+	got := metaOf(first)
+	if err != nil || first.IsError() || got.App != "tides" || got.AppID != id || !got.Attached || got.Folder != "tide" || h.created() != 0 {
+		t.Fatalf("the first publish: %+v %+v %v", first, got, err)
+	}
+	if got, want := h.requests(), []string{"GET /apps/" + id, "GET /apps/" + id + "/deploys"}; !slices.Equal(got, want) {
+		t.Fatalf("the host was asked %v, want %v", got, want)
+	}
+	if !strings.Contains(m.scripts[0], "cd '/work/tide'") || !strings.Contains(m.scripts[0], "url='"+gitURL+"/r/tide.git'") {
+		t.Fatalf("the push of the checkout:\n%s", m.scripts[0])
+	}
+
+	st := fold(t, first)
+	for _, input := range []string{`{"app":"tides"}`, `{"app":"tide"}`, `{"release":true}`, `{"app":"tides","release":true}`} {
+		if stop := tool.Check(call(input, &fakeMachine{}, st)); stop != nil {
+			t.Errorf("%s: refused %+v", input, *stop)
+			continue
+		}
+		m := &fakeMachine{dirs: dirs, outputs: []string{"0 " + sha1 + "\n", ""}}
+		res, err := tool.Run(ctx, call(input, m, st))
+		if got := metaOf(res); err != nil || res.IsError() || got.App != "tides" || got.AppID != id || !got.Attached || !strings.Contains(m.scripts[0], "cd '/work/tide'") {
+			t.Errorf("%s: %+v %+v %v", input, res, got, err)
+		}
+		for _, r := range h.requests() {
+			if !strings.HasPrefix(r, "GET /apps/"+id) {
+				t.Errorf("%s: asked %q, not by the app's id", input, r)
+			}
+		}
+	}
+	if h.created() != 0 {
+		t.Fatalf("%d creates", h.created())
+	}
+
+	// A host that reads no id: the given slug finds the app once its id
+	// does not.
+	old := newIDHost(t, false, map[string]string{id: "tide"})
+	res, err := attachedWithID(t, old, id).Run(ctx, call(`{"app":"tide"}`, &fakeMachine{dirs: dirs, outputs: []string{"1 " + sha1 + "\n"}}, tools.State{}))
+	if got := metaOf(res); err != nil || res.IsError() || got.App != "tide" || got.AppID != id || !got.Attached {
+		t.Fatalf("a host that reads no id: %+v %+v %v", res, got, err)
+	}
+	if got, want := old.requests(), []string{"GET /apps/" + id, "GET /apps/tide", "GET /apps/tide/deploys"}; !slices.Equal(got, want) {
+		t.Fatalf("a host that reads no id was asked %v, want %v", got, want)
 	}
 }
