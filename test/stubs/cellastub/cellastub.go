@@ -12,7 +12,8 @@
 // a file route see the same files. It injects refusals, asks a test's
 // authorizer what cellad asks its own, holds a sandbox in Starting, stops
 // one as Cella's idle stop does, fails one, kills one under its commands,
-// and loses one. A start of a failed sandbox is refused, as cores through
+// and loses one. A create that mounts two secrets whose scopes match one
+// host is refused secret_host_conflict, as Cella refuses it. A start of a failed sandbox is refused, as cores through
 // v0.12.0 refuse it, unless RestartFailed says the core starts one whose
 // workspace is kept. It is a test artifact.
 package cellastub
@@ -464,6 +465,25 @@ var messages = map[string]string{
 	"admission_refused":      "The request was refused by this server's policy.",
 	"driver_unavailable":     "The environment is unavailable; retry shortly.",
 	"quota_exceeded":         "You have reached your limit of running sandboxes. Stop one to start another.",
+	"secret_host_conflict":   "Two mounted secrets apply to the same host.",
+}
+
+// sharedScope names the first two of secrets whose scopes can match one
+// host, "" when none do: Cella refuses such a sandbox, since its egress
+// gateway would have no answer for which value to substitute there.
+func sharedScope(secrets []v1.Secret) string {
+	for i := range secrets {
+		for j := i + 1; j < len(secrets); j++ {
+			for _, a := range secrets[i].Spec.Scope.Hosts {
+				for _, b := range secrets[j].Spec.Scope.Hosts {
+					if v1.HostPatternCovers(a, b) || v1.HostPatternCovers(b, a) {
+						return "the secrets " + secrets[i].Metadata.Name + " and " + secrets[j].Metadata.Name + " both apply to " + v1.NormalizeHost(a)
+					}
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // refuse writes Cella's error envelope.
@@ -526,6 +546,7 @@ func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 		refuse(w, http.StatusForbidden, "forbidden", authorizer.ActionSandboxCreate+": "+reason)
 		return
 	}
+	var mounted []v1.Secret
 	for _, m := range obj.Spec.Secrets {
 		sec, ok := s.secrets[m.Name]
 		if ok && s.refused(authorizer.ActionSecretMount, secretResource(sec)) != "" {
@@ -535,6 +556,11 @@ func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 			refuse(w, http.StatusNotFound, "not_found", "no secret named "+m.Name)
 			return
 		}
+		mounted = append(mounted, sec)
+	}
+	if detail := sharedScope(mounted); detail != "" {
+		refuse(w, http.StatusConflict, "secret_host_conflict", detail)
+		return
 	}
 	if s.find(name) != nil {
 		refuse(w, http.StatusConflict, "name_taken", "a sandbox is named "+name)

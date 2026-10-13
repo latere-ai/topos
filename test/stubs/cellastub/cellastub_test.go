@@ -98,6 +98,13 @@ func TestSandboxLifecycle(t *testing.T) {
 		sb.Spec.Secrets = []v1.SecretMount{{Name: "missing", Env: "X"}}
 	}))
 	code(t, err, "not_found")
+	// Two mounted secrets whose scopes match one host are refused, as Cella
+	// refuses them.
+	s.AddSecret("gh-app", "API.github.com.")
+	_, _, err = c.CreateSandbox(t.Context(), manifest(t, "other", func(sb *v1.Sandbox) {
+		sb.Spec.Secrets = []v1.SecretMount{{Name: "gh", Env: "GH_TOKEN"}, {Name: "gh-app", Env: "GH_APP_TOKEN"}}
+	}))
+	code(t, err, "secret_host_conflict")
 	_, _, err = c.CreateSandbox(t.Context(), manifest(t, "other", func(sb *v1.Sandbox) { sb.Kind = "Secret" }))
 	code(t, err, "invalid_field")
 	_, _, err = c.CreateSandbox(t.Context(), client.JSON([]byte(`{"apiVersion":"x","surprise":1}`)))
