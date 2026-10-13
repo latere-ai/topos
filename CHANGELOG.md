@@ -55,6 +55,10 @@ committed: the commit log already holds that.
   turn still links, and one a fork's copied message still names, stays.
   A delete the files service refuses is logged, and the redaction
   stands.
+- **`harness.Files` has two more methods.** A program that embeds the
+  harness and passes its own files store in `harness.Config.Files` adds
+  `Overwrite`, a write in place of what a path holds, and `Delete`, a
+  removal for good that answers no error for a path already empty.
 
 ## v0.37.0 - 2026-10-13
 
