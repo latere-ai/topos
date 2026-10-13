@@ -144,11 +144,11 @@ func reachesHTTP(s session.Session, m machine.Machine) bool {
 // 069), "" when it names none: each connected one of kind http when the
 // machine is given them, http, with the account it acts as, the API base
 // URL its variable stands in for, its example call written whole, and how
-// to clone and push, and
-// each of kind mcp whose listing mcp holds, by its account and its tools'
-// prefix or why it is not connected, one whose listing failed otherwise
-// offering nothing to name; and, on the session's own thread, which holds
-// request_connection, each the person may be asked to connect.
+// to clone and push; each of kind mcp whose listing mcp holds, by its
+// account and its tools' prefix or why it is not connected, one whose
+// listing failed otherwise offering nothing to name; and, on the
+// session's own thread, which holds request_connection, each the person
+// may be asked to connect.
 func connectionsBlock(s session.Session, own, http bool, mcp map[string]MCPListing) string {
 	var lines []connectionLine
 	var tools []mcpLine
