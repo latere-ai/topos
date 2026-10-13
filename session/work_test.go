@@ -72,19 +72,3 @@ func TestTheCopyIsTheFoldOfItsSaves(t *testing.T) {
 		t.Fatalf("the fold of work.saved: %+v, %v", tr, err)
 	}
 }
-
-// TestTheCopyLeavesOutDependencies: a path inside a directory WorkLeftOut
-// names, at any depth, is left out; a file of that name, and a build's
-// output, are kept (spec 073).
-func TestTheCopyLeavesOutDependencies(t *testing.T) {
-	for _, p := range []string{"node_modules/react/index.js", "app/node_modules/x.js", ".git/config", "sub/repo/.git/HEAD", "src/__pycache__/a.pyc", ".venv/bin/python", "target/debug/app"} {
-		if !LeftOutOfWork(p) {
-			t.Errorf("%q is kept", p)
-		}
-	}
-	for _, p := range []string{"node_modules", ".git", "dist/index.html", "build/app.js", ".next/server/page.js", "out/site.html", "src/target.go", "notes/venv.md"} {
-		if LeftOutOfWork(p) {
-			t.Errorf("%q is left out", p)
-		}
-	}
-}

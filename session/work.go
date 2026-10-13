@@ -4,7 +4,6 @@
 package session
 
 import (
-	"path"
 	"slices"
 	"strings"
 )
@@ -38,16 +37,6 @@ var WorkLeftOut = []string{
 	".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox", ".cache",
 	".npm", ".pnpm-store", ".yarn", ".gradle", ".m2", "target", ".terraform",
 	".turbo", ".parcel-cache",
-}
-
-// LeftOutOfWork reports whether rel, a slash-separated path relative to
-// the working directory, is inside a directory WorkLeftOut names.
-func LeftOutOfWork(rel string) bool {
-	dir := path.Dir(rel)
-	if dir == "." {
-		return false
-	}
-	return slices.ContainsFunc(strings.Split(dir, "/"), func(seg string) bool { return slices.Contains(WorkLeftOut, seg) })
 }
 
 // The reasons of a file the copy leaves out, and of a file a restore
