@@ -64,12 +64,23 @@ func constants(t *testing.T, dir string) map[string]string {
 	return out
 }
 
+// retired are the texts a release carried that no call sends any longer
+// and no later version replaces. The tree keeps every released file as it
+// was (TestReleasedPromptsAreImmutable), so each stays, named by no
+// constant.
+var retired = map[string]bool{
+	// The refusal of a call with access beside a folder or a release: such
+	// a call now publishes and then changes who can open the app.
+	"results/publish/access-alone-v1": true,
+}
+
 // TestEveryCallNamesAText reads every Go file of the module outside this
 // package and its tests, and checks each call of Text, Render and Execute:
 // the name is a constant of this package whose file exists, a static text
 // is asked for with Text, and a Data literal holds exactly the keys the
 // template reads. It then checks that every constant is asked for and
-// every file is named, included, or superseded by a later version.
+// every file is named, included, superseded by a later version, or
+// retired, and that no retired text is still named.
 func TestEveryCallNamesAText(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -187,8 +198,16 @@ func TestEveryCallNamesAText(t *testing.T) {
 		}
 	}
 	for _, n := range names(texts) {
-		if !reachable[n] && !superseded(n) {
+		switch {
+		case retired[n] && reachable[n]:
+			t.Errorf("%s is retired and still named", n)
+		case !reachable[n] && !superseded(n) && !retired[n]:
 			t.Errorf("%s is named by no constant, included by no text, and superseded by no later version", n)
+		}
+	}
+	for _, n := range slices.Sorted(maps.Keys(retired)) {
+		if texts.set.Lookup(n) == nil {
+			t.Errorf("%s is retired and no file holds it", n)
 		}
 	}
 }

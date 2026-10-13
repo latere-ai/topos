@@ -106,13 +106,9 @@ const (
 	// PublishAppRequired is a release that names neither an app nor a
 	// folder while the thread's previews, or its results, name several
 	// apps, or name none in a session attached apps; and a call with
-	// access that names no app while they name several, or while the
-	// thread has published none.
+	// access and neither a folder nor a release that names no app while
+	// they name several, or while the thread has published none.
 	PublishAppRequired = "app_required"
-	// PublishAccessAlone is a call with access that also names a folder
-	// or asks for a release: a change of who can open an app is a call of
-	// its own (spec 043).
-	PublishAccessAlone = "access_alone"
 	// PublishNotInCheckout is a folder outside the checkout of the
 	// attached app the call names.
 	PublishNotInCheckout = "not_in_checkout"

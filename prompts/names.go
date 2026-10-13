@@ -64,8 +64,11 @@ const (
 	// the person approves it (spec 043). It tells the model to name the
 	// site and to give it an address the first time it publishes one, and
 	// states the bound of an address, which a test holds to its constant
-	// (spec 067).
-	ToolPublish Name = "tools/publish-v5"
+	// (spec 067). It tells the model that one call publishes or releases
+	// and then changes who can open the app, and to set access on the call
+	// that publishes a site the person already asked to share or keep
+	// private (spec 043).
+	ToolPublish Name = "tools/publish-v6"
 	// ToolRequestConnection states the bound of a reason, which a test
 	// holds to its constant (spec 069).
 	ToolRequestConnection Name = "tools/request_connection-v1"
@@ -139,13 +142,16 @@ const (
 	// Reason, the token the host's refusal names, empty when it names
 	// none.
 	PublishAccessRefused Name = "results/publish/access-refused-v1"
-	// PublishAccessAlone takes Access, the value a call named beside a
-	// folder or a release.
-	PublishAccessAlone Name = "results/publish/access-alone-v1"
 	// PublishAccessApp takes Access and Apps, the slugs a call with access
 	// that names no app could mean, joined, empty when the thread has
 	// published none.
 	PublishAccessApp Name = "results/publish/access-app-v1"
+	// PublishAccessNotChanged follows the text of a publish or a release
+	// that succeeded when the change of who can open the app the same call
+	// asked for failed. It takes App, Role, Error and Reason, as
+	// PublishAccessRefused, and Visibility, who can open the app as far as
+	// the call read it, empty when the host names none.
+	PublishAccessNotChanged Name = "results/publish/access-not-changed-v1"
 )
 
 // The results of web_search (spec 047).

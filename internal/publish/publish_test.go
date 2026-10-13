@@ -1283,13 +1283,13 @@ func TestARefusedAccessSaysWhy(t *testing.T) {
 	}
 }
 
-// TestAccessIsRefusedBeforeItIsAsked: a call with access that also names a
-// folder or a release is refused access_alone, one that names an app the
-// session may not publish to app_not_attached, and one that names no app
-// while the thread has published none, or could mean several, app_required;
-// each before the call is decided, with no request, no machine opened and
-// no app in its meta, and Run refuses the same call the same way. Every
-// call with access is held for a person, and a call without it is not.
+// TestAccessIsRefusedBeforeItIsAsked: a call with access alone that names
+// an app the session may not publish to is refused app_not_attached, and
+// one that names no app while the thread has published none, or could mean
+// several, app_required; each before the call is decided, with no request,
+// no machine opened and no app in its meta, and Run refuses the same call
+// the same way. Every call with access is held for a person, and a call
+// without it is not.
 func TestAccessIsRefusedBeforeItIsAsked(t *testing.T) {
 	ctx := t.Context()
 	var opens int
@@ -1305,9 +1305,6 @@ func TestAccessIsRefusedBeforeItIsAsked(t *testing.T) {
 		code     string
 		says     string
 	}{
-		"with a release":           {`{"access":"link","release":true}`, false, published(), session.PublishAccessAlone, "it takes neither path nor release"},
-		"with a folder":            {`{"access":"link","path":"site"}`, false, published(), session.PublishAccessAlone, "access set to link and nothing beside it but app"},
-		"with both":                {`{"access":"private","app":"a-poem","path":"site","release":true}`, false, published(), session.PublishAccessAlone, "access set to private"},
 		"an app of another":        {`{"access":"link","app":"other"}`, false, published(), session.PublishAppNotAttached, "other is not an app this session may publish to"},
 		"nothing published":        {`{"access":"link"}`, false, tools.State{}, session.PublishAppRequired, "There is no app to change yet"},
 		"an attached app, unnamed": {`{"access":"link"}`, true, tools.State{}, session.PublishAppRequired, "app set to one of tide"},
@@ -1354,42 +1351,381 @@ func TestAccessIsRefusedBeforeItIsAsked(t *testing.T) {
 }
 
 // TestTheDescriptionExplainsAccess: the tool's description says what
-// access does, that the person approves it, when to call it and when not
-// to, and that link is never called public; it no longer says that the
-// tool does not change who can open an app; and the schema offers link and
-// private alone.
+// access does, alone and beside a folder or a release, that the person
+// approves it, when to set it and when not to, that a site the person
+// asked to share before it was published is published with it, and that
+// link is never called public; it no longer says that the tool does not
+// change who can open an app, or that a call with access and a folder or a
+// release is refused; and the schema offers link and private alone.
 func TestTheDescriptionExplainsAccess(t *testing.T) {
 	def := newTool(t, newHost(t, nil), creds{}).Definition()
 	for _, want := range []string{
 		"changes who can open it",
-		"With `access`, a call changes who can open an app and does nothing else: it publishes and releases nothing.",
+		"With `path` or `release`, one call does both: it publishes or releases as above, then changes who can open the app it published to, and its result says both.",
+		"When the publish fails, who can open the app is not changed.",
+		"With neither `path` nor `release`, a call with `access` changes who can open an app and does nothing else: it publishes and releases nothing.",
 		"`link` lets anyone who has the app's address open it, without signing in.",
 		"`private` lets only the person and the people they share it with open it.",
 		"Every call with `access` waits for the person, who approves it with one click, whatever else runs without asking.",
 		"when the person asks to share the site, show it to others, send it to someone or make it public",
-		"call it once the publish call has answered, without asking again",
-		"Never call it for a site the person did not ask to share",
+		"set `access` on the call that publishes it, without asking again",
+		"Never set it for a site the person did not ask to share",
 		"say that anyone with the link can open it, and give the address; never say that the app is public",
+		"what was published stays published, so do not publish again for it",
 		"Offer to open it to anyone with the link.",
-		"a call with `access` and `path` or `release` is refused",
 	} {
 		if !strings.Contains(def.Description, want) {
 			t.Errorf("the description does not say %q", want)
 		}
 	}
-	if strings.Contains(def.Description, "this tool does not") {
-		t.Error("the description still says the tool does not change who can open an app")
+	for _, gone := range []string{"this tool does not", "`path` or `release` is refused", "It goes with `app` alone"} {
+		if strings.Contains(def.Description, gone) {
+			t.Errorf("the description still says %q", gone)
+		}
 	}
 	var schema struct {
 		Properties map[string]struct {
-			Enum []string `json:"enum"`
+			Enum        []string `json:"enum"`
+			Description string   `json:"description"`
 		} `json:"properties"`
 	}
 	if err := json.Unmarshal(def.InputSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if got := schema.Properties["access"].Enum; !slices.Equal(got, []string{session.PublishAccessLink, session.PublishAccessPrivate}) {
-		t.Errorf("the schema offers access %v", got)
+	access := schema.Properties["access"]
+	if !slices.Equal(access.Enum, []string{session.PublishAccessLink, session.PublishAccessPrivate}) {
+		t.Errorf("the schema offers access %v", access.Enum)
+	}
+	if !strings.Contains(access.Description, "With path or release, the call publishes first and then changes who can open the app it published to") || strings.Contains(access.Description, "Not with path or release") {
+		t.Errorf("the schema describes access as %q", access.Description)
+	}
+}
+
+// readyText is the text of a ready preview of site at the app a-poem as a
+// call that also changes who can open the app says it: with no sentence of
+// who can open it, which the text of the change says.
+func readyText(deploy string) string {
+	return prompts.Render(prompts.PublishReady, prompts.Data{"Path": "site", "Preview": "https://" + deploy + "--a-poem.apps.example", "URL": "https://a-poem.apps.example", "Visibility": ""})
+}
+
+// changedText is the text of a change of who can open the app slug to
+// visibility.
+func changedText(slug, visibility string) string {
+	return prompts.Render(prompts.PublishAccessChanged, prompts.Data{"App": slug, "URL": "https://" + slug + ".apps.example", "Visibility": visibility})
+}
+
+// TestOneCallPublishesAndChangesWhoCanOpenTheApp: a call with access beside
+// a folder or a release publishes or releases as the same call without
+// access does, then reads the app it published to and asks the host for
+// unlisted on link and private on private, or nothing when the app is as
+// asked already. Its result is ok, keeps what the publish learned, the
+// app, its folder, commit, deploy, status and release, with who can open
+// the app after the change, and its text is the publish's, with no
+// sentence of who can open the app, followed by the change's. A preview
+// whose wait ran out has an app to change and changes it. The thread's
+// state folds the result as the app's last, and a preview ready or still
+// building as the one that stands (spec 043).
+func TestOneCallPublishesAndChangesWhoCanOpenTheApp(t *testing.T) {
+	ctx := t.Context()
+	site := map[string]bool{"/work": true, "/work/site": true}
+	ready := func(id, commit, slug string) map[string]any {
+		return map[string]any{"id": id, "status": "ready", "preview": true, "commit_sha": commit, "preview_url": "https://" + id + "--" + slug + ".apps.example"}
+	}
+	createdAs := func(visibility string) func(int) (int, any) {
+		return func(n int) (int, any) {
+			_, body := visible("a-poem", visibility)(n)
+			return http.StatusCreated, body
+		}
+	}
+	const get, patch = "GET /apps/a-poem", "PATCH /apps/a-poem"
+	for name, c := range map[string]struct {
+		input   string
+		tool    func(*testing.T, stub) *Tool
+		st      tools.State
+		answer  map[string]func(int) (int, any)
+		outputs []string
+		// want is the result's meta, text its text, sent the bodies of the
+		// changes the host was asked for, and gets its reads of the app.
+		want  session.PublishMeta
+		text  string
+		sent  []string
+		gets  int
+		patch string
+	}{
+		"a new app, private": {
+			input: `{"path":"site","name":"A poem","access":"private"}`, st: tools.State{},
+			answer:  map[string]func(int) (int, any){"POST /apps": createdAs("unlisted"), "GET /apps/a-poem/deploys": deploys(ready("d1", sha1, "a-poem")), get: visible("a-poem", "unlisted"), patch: visible("a-poem", "private")},
+			outputs: []string{"1 " + sha1 + "\n"},
+			want: session.PublishMeta{App: "a-poem", Name: "A poem", URL: "https://a-poem.apps.example", Visibility: "private", Folder: "site",
+				Commit: sha1, Deploy: "d1", Preview: "https://d1--a-poem.apps.example", Status: session.PublishReady},
+			text: readyText("d1") + "\n" + changedText("a-poem", "private"), sent: []string{`{"visibility":"private"}`}, gets: 1, patch: patch,
+		},
+		"an app that exists, link": {
+			input: `{"path":"site","access":"link"}`, st: published(),
+			answer:  map[string]func(int) (int, any){get: visible("a-poem", "private"), "GET /apps/a-poem/deploys": deploys(ready("d2", sha2, "a-poem")), patch: visible("a-poem", "unlisted")},
+			outputs: []string{"1 " + sha2 + "\n"},
+			want: session.PublishMeta{App: "a-poem", Name: "A poem", URL: "https://a-poem.apps.example", Visibility: "unlisted", Folder: "site",
+				Commit: sha2, Deploy: "d2", Preview: "https://d2--a-poem.apps.example", Status: session.PublishReady},
+			text: readyText("d2") + "\n" + changedText("a-poem", "unlisted"), sent: []string{`{"visibility":"unlisted"}`}, gets: 2, patch: patch,
+		},
+		"an app as asked already": {
+			input: `{"path":"site","access":"link"}`, st: published(),
+			answer:  map[string]func(int) (int, any){get: visible("a-poem", "public"), "GET /apps/a-poem/deploys": deploys(ready("d2", sha2, "a-poem"))},
+			outputs: []string{"1 " + sha2 + "\n"},
+			want: session.PublishMeta{App: "a-poem", Name: "A poem", URL: "https://a-poem.apps.example", Visibility: "public", Folder: "site",
+				Commit: sha2, Deploy: "d2", Preview: "https://d2--a-poem.apps.example", Status: session.PublishReady},
+			text: readyText("d2") + "\n" + changedText("a-poem", "public"), gets: 2, patch: patch,
+		},
+		"a release, link": {
+			input: `{"release":true,"access":"link"}`, st: published(),
+			answer: with(releases("a-poem", "v1", sha2), map[string]func(int) (int, any){
+				get: visible("a-poem", "private"), "GET /apps/a-poem/deploys": deploys(ready("d2", sha2, "a-poem")), patch: visible("a-poem", "unlisted"),
+			}),
+			outputs: []string{"1 " + sha2 + "\n", ""},
+			want: session.PublishMeta{App: "a-poem", Name: "A poem", URL: "https://a-poem.apps.example", Visibility: "unlisted", Folder: "site",
+				Commit: sha2, Deploy: "drel", Preview: "https://d2--a-poem.apps.example", Status: session.PublishReleased, Release: "v1"},
+			text: prompts.Render(prompts.PublishReleased, prompts.Data{"Tag": "v1", "URL": "https://a-poem.apps.example", "Visibility": ""}) + "\n" + changedText("a-poem", "unlisted"),
+			sent: []string{`{"visibility":"unlisted"}`}, gets: 3, patch: patch,
+		},
+		"an attached app's release, private": {
+			input: `{"app":"tide","release":true,"access":"private"}`, tool: attachedTool, st: tools.State{},
+			answer: with(releases("tide", "v1", sha2), map[string]func(int) (int, any){
+				"GET /apps/tide": visible("tide", "unlisted"), "GET /apps/tide/deploys": deploys(ready("d2", sha2, "tide")), "PATCH /apps/tide": visible("tide", "private"),
+			}),
+			outputs: []string{"1 " + sha2 + "\n", ""},
+			want: session.PublishMeta{App: "tide", Name: "A poem", URL: "https://tide.apps.example", Visibility: "private", Folder: "tide", Attached: true,
+				Commit: sha2, Deploy: "drel", Preview: "https://d2--tide.apps.example", Status: session.PublishReleased, Release: "v1"},
+			text: prompts.Render(prompts.PublishReleased, prompts.Data{"Tag": "v1", "URL": "https://tide.apps.example", "Visibility": ""}) + "\n" + changedText("tide", "private"),
+			sent: []string{`{"visibility":"private"}`}, gets: 3, patch: "PATCH /apps/tide",
+		},
+		"a build not started by the end of the wait": {
+			input: `{"path":"site","access":"private"}`, st: tools.State{},
+			answer:  map[string]func(int) (int, any){"POST /apps": createdAs("unlisted"), "GET /apps/a-poem/deploys": deploys(), get: visible("a-poem", "unlisted"), patch: visible("a-poem", "private")},
+			outputs: []string{"1 " + sha1 + "\n"},
+			want: session.PublishMeta{App: "a-poem", Name: "A poem", URL: "https://a-poem.apps.example", Visibility: "private", Folder: "site",
+				Commit: sha1, Status: session.PublishBuilding},
+			text: prompts.Render(prompts.PublishBuilding, prompts.Data{"Path": "site", "Wait": "50ms", "Preview": ""}) + "\n" + changedText("a-poem", "private"),
+			sent: []string{`{"visibility":"private"}`}, gets: 1, patch: patch,
+		},
+	} {
+		h := newHost(t, c.answer)
+		tool := newTool(t, h, creds{})
+		if c.tool != nil {
+			tool = c.tool(t, h)
+		}
+		dirs := maps.Clone(site)
+		dirs["/work/tide"] = true
+		res, err := tool.Run(ctx, call(c.input, &fakeMachine{dirs: dirs, outputs: c.outputs}, c.st))
+		if err != nil || res.Outcome != tools.OutcomeOK {
+			t.Errorf("%s: %+v %v", name, res, err)
+			continue
+		}
+		if got := metaOf(res); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: meta %+v, want %+v", name, got, c.want)
+		}
+		if got := resultText(res); got != c.text {
+			t.Errorf("%s: the text\n%s\nwant\n%s", name, got, c.text)
+		}
+		if got := h.sent(c.patch); !slices.Equal(got, c.sent) {
+			t.Errorf("%s: the host was sent %q, want %q", name, got, c.sent)
+		}
+		appGet := strings.Replace(c.patch, "PATCH", "GET", 1)
+		if got := h.count(appGet); got != c.gets {
+			t.Errorf("%s: the app was read %d times, want %d", name, got, c.gets)
+		}
+		st := fold(t, res)
+		last, standing := st.Apps[c.want.App], st.Standing[c.want.App]
+		if last == nil || last.Folder != c.want.Folder || last.Visibility != c.want.Visibility {
+			t.Errorf("%s: the thread's last result for the app is %+v", name, last)
+		}
+		if wantStanding := c.want.Status == session.PublishReady || c.want.Status == session.PublishBuilding; (standing != nil) != wantStanding || (standing != nil && standing.Commit != c.want.Commit) {
+			t.Errorf("%s: the standing preview is %+v", name, standing)
+		}
+	}
+}
+
+// TestAPublishThatFailsChangesNoAccess: a call with access beside a folder
+// or a release whose publish fails answers the publish's failure as the
+// same call without access does, and asks the host for no change, nor
+// reads the app to change it: a folder that is not one, a build that
+// failed, a release whose build failed, and a release the host refused.
+func TestAPublishThatFailsChangesNoAccess(t *testing.T) {
+	ctx := t.Context()
+	site := map[string]bool{"/work": true, "/work/site": true}
+	failedBuild := map[string]any{"id": "d2", "status": "failed", "preview": true, "commit_sha": sha2, "error": map[string]string{"code": "build_failed", "message": "The build command exited with an error."}}
+	for name, c := range map[string]struct {
+		input   string
+		answer  map[string]func(int) (int, any)
+		outputs []string
+		says    string
+		gets    int
+	}{
+		"not a folder": {`{"path":"nope","access":"private"}`, nil, nil, "nope is not a folder of the machine", 0},
+		"a failed build": {`{"path":"site","access":"link"}`, map[string]func(int) (int, any){
+			"GET /apps/a-poem": visible("a-poem", "private"), "GET /apps/a-poem/deploys": deploys(failedBuild),
+		}, []string{"1 " + sha2 + "\n"}, "The preview of site failed: build_failed", 1},
+		"a release whose build failed": {`{"release":true,"access":"link"}`, map[string]func(int) (int, any){
+			"GET /apps/a-poem": visible("a-poem", "private"), "GET /apps/a-poem/deploys": deploys(failedBuild),
+		}, []string{"1 " + sha2 + "\n"}, "Nothing was released: the build of site failed", 1},
+		"a refused release": {`{"release":true,"access":"link"}`, with(releases("a-poem", "v1", sha2), map[string]func(int) (int, any){
+			"GET /apps/a-poem": visible("a-poem", "private"), "GET /apps/a-poem/deploys": deploys(map[string]any{"id": "d2", "status": "ready", "preview": true, "commit_sha": sha2}),
+			"GET /apps/a-poem/releases/v1": func(int) (int, any) {
+				return http.StatusOK, map[string]any{"release": map[string]any{"tag": "v1", "commit_sha": sha2, "status": "refused", "reason": "agents_may_not_release"}}
+			},
+		}), []string{"1 " + sha2 + "\n", ""}, "The app host refused the release v1: agents_may_not_release", 2},
+	} {
+		h := newHost(t, c.answer)
+		res, err := newTool(t, h, creds{}).Run(ctx, call(c.input, &fakeMachine{dirs: site, outputs: c.outputs}, published()))
+		if err != nil || res.Outcome != tools.OutcomeError || !strings.Contains(resultText(res), c.says) || strings.Contains(resultText(res), "who can open") {
+			t.Errorf("%s: %+v %v", name, res, err)
+		}
+		if got := metaOf(res); got.Visibility == "unlisted" || (got.Error != nil && got.Error.Code == "forbidden") {
+			t.Errorf("%s: meta %+v", name, got)
+		}
+		if h.count("PATCH /apps/a-poem") != 0 || h.count("GET /apps/a-poem") != c.gets {
+			t.Errorf("%s: the host was asked %v", name, h.calls)
+		}
+	}
+}
+
+// TestAChangeThatFailsAfterAPublishSaysThePublishIsDone: when the publish
+// of a call with access succeeded and the change of who can open the app
+// failed, the result is an error whose text is the publish's followed by
+// one that says the site is published, why who can open it was not
+// changed, who can open it now, and not to publish again. Its meta keeps
+// what the publish learned, with the visibility the app still has, or the
+// one the host named, and the host's code, reason and sentence when it
+// refused in its envelope; the thread's state folds it as the app's last
+// result, with its folder and its standing preview.
+func TestAChangeThatFailsAfterAPublishSaysThePublishIsDone(t *testing.T) {
+	ctx := t.Context()
+	site := map[string]bool{"/work": true, "/work/site": true}
+	const get, patch = "GET /apps/a-poem", "PATCH /apps/a-poem"
+	deployed := deploys(map[string]any{"id": "d2", "status": "ready", "preview": true, "commit_sha": sha2, "preview_url": "https://d2--a-poem.apps.example"})
+	for name, c := range map[string]struct {
+		access string
+		answer map[string]func(int) (int, any)
+		// visibility is who the meta says can open the app, err the
+		// host's refusal it carries, and data the second text's.
+		visibility string
+		err        *session.PublishError
+		data       prompts.Data
+	}{
+		"an organization's app, a member": {"link", map[string]func(int) (int, any){get: visible("a-poem", "private"), "GET /apps/a-poem/deploys": deployed, patch: forbidden("role_insufficient")},
+			"private", &session.PublishError{Code: "forbidden", Reason: "role_insufficient", Message: "You do not have permission to do that."},
+			prompts.Data{"App": "a-poem", "Role": true, "Error": "the app host refused with forbidden: You do not have permission to do that", "Reason": "role_insufficient", "Visibility": "private"}},
+		"a refusal of private, open to anyone with the link": {"private", map[string]func(int) (int, any){get: visible("a-poem", "unlisted"), "GET /apps/a-poem/deploys": deployed, patch: forbidden("agent_permissions")},
+			"unlisted", &session.PublishError{Code: "forbidden", Reason: "agent_permissions", Message: "You do not have permission to do that."},
+			prompts.Data{"App": "a-poem", "Role": false, "Error": "the app host refused with forbidden: You do not have permission to do that", "Reason": "agent_permissions", "Visibility": "unlisted"}},
+		"a host down for the read": {"link", map[string]func(int) (int, any){get: func(n int) (int, any) {
+			if n == 1 {
+				return visible("a-poem", "private")(n)
+			}
+			return http.StatusBadGateway, "bad gateway"
+		}, "GET /apps/a-poem/deploys": deployed},
+			"private", nil,
+			prompts.Data{"App": "a-poem", "Role": false, "Error": "the app host answered 502", "Reason": "", "Visibility": "private"}},
+		"an answer that names another visibility": {"link", map[string]func(int) (int, any){get: visible("a-poem", "private"), "GET /apps/a-poem/deploys": deployed, patch: visible("a-poem", "members")},
+			"members", nil,
+			prompts.Data{"App": "a-poem", "Role": false, "Error": "the app host was asked to make the app unlisted and answered that it is members", "Reason": "", "Visibility": "members"}},
+	} {
+		h := newHost(t, c.answer)
+		res, err := newTool(t, h, creds{}).Run(ctx, call(`{"path":"site","access":"`+c.access+`"}`, &fakeMachine{dirs: site, outputs: []string{"1 " + sha2 + "\n"}}, published()))
+		if err != nil || res.Outcome != tools.OutcomeError {
+			t.Errorf("%s: %+v %v, want an error result", name, res, err)
+			continue
+		}
+		if want := readyText("d2") + "\n" + prompts.Render(prompts.PublishAccessNotChanged, c.data); resultText(res) != want {
+			t.Errorf("%s: the text\n%s\nwant\n%s", name, resultText(res), want)
+		}
+		want := session.PublishMeta{App: "a-poem", Name: "A poem", URL: "https://a-poem.apps.example", Visibility: c.visibility, Folder: "site",
+			Commit: sha2, Deploy: "d2", Preview: "https://d2--a-poem.apps.example", Status: session.PublishReady, Error: c.err}
+		if got := metaOf(res); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: meta %+v, want %+v", name, got, want)
+		}
+		st := fold(t, res)
+		if last, standing := st.Apps["a-poem"], st.Standing["a-poem"]; last == nil || last.Folder != "site" || standing == nil || standing.Commit != sha2 {
+			t.Errorf("%s: the thread's state holds %+v and the standing preview %+v", name, last, standing)
+		}
+	}
+
+	// The lease is lost once the host answered the build, so the change's
+	// read of the app is the first request that finds it lost.
+	lost := make(chan struct{})
+	var once sync.Once
+	h := newHost(t, map[string]func(int) (int, any){get: visible("a-poem", "private"), "GET /apps/a-poem/deploys": func(n int) (int, any) {
+		once.Do(func() { close(lost) })
+		return deployed(n)
+	}})
+	tool := newTool(t, h, creds{})
+	tool.tokens = runner.NewTokenSource(creds{}, lost, nil)
+	if _, err := tool.Run(ctx, call(`{"path":"site","access":"link"}`, &fakeMachine{dirs: site, outputs: []string{"1 " + sha2 + "\n"}}, published())); !errors.Is(err, runner.ErrLeaseLost) {
+		t.Fatalf("a lease lost after the publish: %v", err)
+	}
+}
+
+// TestACallThatPublishesAndChangesAccessIsCheckedAsItsPublish: Check takes
+// a call with access beside a folder or a release for the publish it
+// starts with: it refuses none that the same call without access would
+// run, one that creates the thread's own app among them, and refuses
+// those the publish refuses, with the publish's codes and texts, as Run
+// does. Every such call is held for a person once, with a reason that
+// names both.
+func TestACallThatPublishesAndChangesAccessIsCheckedAsItsPublish(t *testing.T) {
+	ctx := t.Context()
+	var opens int
+	unopened := machine.Defer(ctx, machine.KindCella, func(context.Context) (machine.Machine, error) {
+		opens++
+		return &fakeMachine{}, nil
+	})
+	for name, c := range map[string]struct {
+		input    string
+		attached bool
+		st       tools.State
+		m        machine.Machine
+		code     string
+		says     string
+	}{
+		"a folder, a name and private, nothing published": {`{"path":"site","name":"Tide Tables","address":"tide-tables","access":"private"}`, false, tools.State{}, unopened, "", ""},
+		"a folder and link, nothing published":            {`{"path":"site","access":"link"}`, false, tools.State{}, unopened, "", ""},
+		"a release and link, nothing published":           {`{"release":true,"access":"link"}`, false, tools.State{}, unopened, "", ""},
+		"a release and private, an app published":         {`{"release":true,"access":"private"}`, false, published(), unopened, "", ""},
+		"a folder in a session given an app":              {`{"path":"site","access":"private"}`, true, tools.State{}, unopened, "", ""},
+		"a release in a session given an app": {`{"release":true,"access":"link"}`, true, tools.State{}, unopened, session.PublishAppRequired,
+			"Name the app to release: call publish again with release set to true and app set to one of tide, or with path set to the folder to publish."},
+		"a folder outside the checkout": {`{"app":"tide","path":"site","access":"private"}`, true, tools.State{}, &fakeMachine{}, session.PublishNotInCheckout, "site is outside tide/, the checkout of tide."},
+		"an app of another":             {`{"app":"other","path":"site","access":"link"}`, false, published(), unopened, session.PublishAppNotAttached, "other is not an app this session may publish to"},
+	} {
+		h := newHost(t, nil)
+		tool := newTool(t, h, creds{})
+		if c.attached {
+			tool = attachedTool(t, h)
+		}
+		in := tools.Call{ID: "toolu_1", Input: json.RawMessage(c.input), Machine: c.m, State: c.st}
+		got := tool.Check(in)
+		switch {
+		case c.code == "" && got != nil:
+			t.Errorf("%s: refused %+v", name, *got)
+		case c.code != "" && (got == nil || metaOf(*got).Error == nil || metaOf(*got).Error.Code != c.code || metaOf(*got).App != "" || !strings.Contains(resultText(*got), c.says)):
+			t.Errorf("%s: %+v, want %s saying %q", name, got, c.code, c.says)
+		case c.code != "":
+			res, err := tool.Run(ctx, call(c.input, &fakeMachine{dirs: map[string]bool{"/work/tide": true, "/work/site": true}}, c.st))
+			if err != nil || resultText(res) != resultText(*got) || metaOf(res).Error == nil || metaOf(res).Error.Code != c.code {
+				t.Errorf("%s: Run answered %+v %v, Check %+v", name, res, err, *got)
+			}
+		}
+		if why := tool.Confirm(in); why != confirmPublishAccess {
+			t.Errorf("%s: held with %q", name, why)
+		}
+		if len(h.calls) != 0 {
+			t.Errorf("%s: %d requests", name, len(h.calls))
+		}
+	}
+	if opens != 0 {
+		t.Fatalf("a check opened the machine %d times", opens)
+	}
+	if confirmPublishAccess == confirmAccess || !strings.Contains(confirmPublishAccess, "publishes") || !strings.Contains(confirmPublishAccess, "who can open the app") {
+		t.Fatalf("a call that publishes and changes access is held with %q", confirmPublishAccess)
 	}
 }
 
@@ -1736,7 +2072,7 @@ func TestTheDescriptionAsksForANameAndAnAddress(t *testing.T) {
 		"Both are used once, by the call that creates the app: on a later call they change nothing, and renaming an app or moving it to another address is the person's to do.",
 		"The app gets the address you asked for when it is free; when it is not, the app gets another and the publish goes on.",
 		"The result names the address that exists, which may differ from the one you asked for: give the person that address, never one you worked out yourself.",
-		"A call that creates no app ignores it: one that publishes to an app that exists, and one with `access`.",
+		"A call that creates no app ignores it: one that publishes to an app that exists, and one with `access` and neither `path` nor `release`.",
 		fmt.Sprintf("`address`: a short address for a new site, at most %d characters: words of lowercase Latin letters and digits, joined by single hyphens.", MaxAddress),
 		"Give it with `name`; a call that ignores `name` ignores it too.",
 	} {
