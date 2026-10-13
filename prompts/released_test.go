@@ -191,6 +191,7 @@ var released = map[string]string{
 	"transcript/machine-restarted-v1.md":         "abc17992bd5cf2f03d683c2b03d65c9d068f4b090f4650d6b6df06f28f15787c",
 	"transcript/machine-replaced-v1.md":          "23e788af6436a5705f775a1196e26a897513e79c50b8663e89e4e4dc7f1fca07",
 	"transcript/machine-rebuilt-v1.md":           "0c6eb659d4cd2fc409142920aa3331eac25c8596b502e6ff9fb71efd81e3cccb",
+	"transcript/machine-work-restored-v1.md":     "74faff07b39b79061c295b1cbb73991cb970ba9713fcc307d14260ed2a99c5ac",
 	"results/publish/access-changed-v1.md":       "d5cbd7e24613543e8b3920b17c113d82a72fe782074f26f5f63b87c360d18f84",
 	"results/publish/access-refused-v1.md":       "184764d976a366e3e09a85f6c89bdeaa0f915e6d2f7f1db058158ec2d1a9d762",
 	"results/publish/access-alone-v1.md":         "de4789b922987607c1d9f4ab0a9385077da772c8a90347842d885ab11adfe618",

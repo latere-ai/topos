@@ -418,6 +418,30 @@ var textCases = func() []textCase {
 			want: "The working directory is on a new machine and was rebuilt from this conversation's record: what the write and edit tools wrote, the files an answer showed or linked, and files that were read in full. 1 file is back:\n" +
 				"- notes.md\n" +
 				"Nothing that only a command made is back: generated files, downloads, installed packages and build output are missing, and so is every process that was running. Regenerate what you need before you rely on it, and tell the person what is back and what is not."},
+		{name: TranscriptMachineWorkRestored, data: Data{"Copied": 412, "Turn": 7, "Inherited": false, "Files": 2, "Paths": []string{"notes.md", "src/app.py"}, "More": 0,
+			"Unverified": []string{"notes.md"}, "UnverifiedMore": 0, "Omitted": []string{"dist/index.html"}, "OmittedMore": 1, "Skipped": []string{"data/raw.parquet"}, "SkippedMore": 2,
+			"LeftOut": "node_modules, .venv", "MaxFileMiB": 32, "Commands": 3},
+			want: "The working directory is on a new machine and was restored from the copy this conversation keeps of it, as it was saved at the end of turn 7: 412 files.\n" +
+				"Then these were brought up to date from this conversation's record, from what the write and edit tools wrote, the files an answer showed or linked, and files that were read in full after that:\n" +
+				"- notes.md\n- src/app.py\n" +
+				"A command changed these after the record last held them, so they may be out of date:\n- notes.md\n" +
+				"These were there and could not be restored, so they are missing:\n- dist/index.html\n- and 1 more\n" +
+				"These were too large for the copy, or past what it holds, so they are missing:\n- data/raw.parquet\n- and 2 more\n" +
+				"The copy does not keep installed dependencies and caches (node_modules, .venv), the history of any repository (.git), files larger than 32 MiB, or running processes. " +
+				"3 commands ran after the copy was saved; what they made or changed since is missing. Reinstall dependencies from the project's manifests, such as package.json, requirements.txt or pyproject.toml, before you run anything that needs them, and tell the person what is back and what is not."},
+		{name: TranscriptMachineWorkRestored, data: Data{"Copied": 1, "Turn": 0, "Inherited": true, "Files": 1, "Paths": []string{"late.md"}, "More": 0,
+			"Unverified": []string(nil), "UnverifiedMore": 0, "Omitted": []string(nil), "OmittedMore": 0, "Skipped": []string(nil), "SkippedMore": 0,
+			"LeftOut": "node_modules", "MaxFileMiB": 32, "Commands": 1},
+			want: "The working directory is on a new machine and was restored from the copy this conversation keeps of it, as the conversation this one continues last saved it, so it may hold changes made after the point this one continues from: 1 file.\n" +
+				"Then this was brought up to date from this conversation's record, from what the write and edit tools wrote, the files an answer showed or linked, and files that were read in full after that:\n- late.md\n" +
+				"The copy does not keep installed dependencies and caches (node_modules), the history of any repository (.git), files larger than 32 MiB, or running processes. " +
+				"1 command ran after the copy was saved; what it made or changed since is missing. Reinstall dependencies from the project's manifests, such as package.json, requirements.txt or pyproject.toml, before you run anything that needs them, and tell the person what is back and what is not."},
+		{name: TranscriptMachineWorkRestored, data: Data{"Copied": 0, "Turn": 3, "Inherited": false, "Files": 0, "Paths": []string(nil), "More": 0,
+			"Unverified": []string(nil), "UnverifiedMore": 0, "Omitted": []string(nil), "OmittedMore": 0, "Skipped": []string(nil), "SkippedMore": 0,
+			"LeftOut": "node_modules", "MaxFileMiB": 32, "Commands": 0},
+			want: "The working directory is on a new machine and was restored from the copy this conversation keeps of it, as it was saved at the end of turn 3, which held no files.\n" +
+				"The copy does not keep installed dependencies and caches (node_modules), the history of any repository (.git), files larger than 32 MiB, or running processes. " +
+				"Reinstall dependencies from the project's manifests, such as package.json, requirements.txt or pyproject.toml, before you run anything that needs them, and tell the person what is back and what is not."},
 		{name: TranscriptMachineReplaced, want: "The session's machine was lost and replaced with a new, empty one. The files that commands and file tools put in the working directory before this point are gone, and so is every process that was running. Tell the person plainly that the files are gone before you go on."},
 		{name: ContextRepositories, data: Data{"Repositories": []repository{
 			{"https://git.example/acme/web.git", "main", "agents/coder/ses_1", ""},

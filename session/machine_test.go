@@ -144,3 +144,57 @@ func TestARebuiltWorkingDirectoryIsSaid(t *testing.T) {
 		t.Fatalf("a thread's transcript reads %q", got)
 	}
 }
+
+// TestARestoreFromTheCopyIsSaid: a machine restored from the copy the
+// session keeps in its folder reads, in the session's own thread, what
+// the copy gave and when it was saved, what the log added, what the copy
+// left out and does not keep, and that dependencies are reinstalled from
+// manifests; one restored from the copy only after it could not be
+// written reads as a rebuild from the log (spec 073).
+func TestARestoreFromTheCopyIsSaid(t *testing.T) {
+	b := &logb{t: t}
+	b.user(ada, "Go on.", 1)
+	b.add(session.TypeSessionMachine, "", 1, session.SessionMachine{
+		Machine: session.AttachedMachine{Kind: "cella", ID: "sbx_2", Workdir: "/workspace"}, Reason: session.MachineRestored,
+		Restore: &session.Restore{
+			Source: session.RestoreFromFolder, Files: 1, Bytes: 20, Commands: 1, Paths: []string{"notes.md"},
+			Copy: &session.RestoreCopy{Files: 412, Bytes: 18234011, Turn: 7, Skipped: 1, SkippedFiles: []session.OmittedFile{{Path: "data/raw.parquet", Reason: session.WorkTooLarge}}},
+		},
+	})
+	tr, err := session.Fold(b.events, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := texts(tr)
+	if len(got) != 2 {
+		t.Fatalf("the transcript reads %q", got)
+	}
+	for _, want := range []string{
+		"was restored from the copy this conversation keeps of it, as it was saved at the end of turn 7: 412 files.",
+		"Then this was brought up to date from this conversation's record",
+		"- notes.md\n",
+		"These were too large for the copy, or past what it holds, so they are missing:\n- data/raw.parquet\n",
+		"(node_modules, bower_components, .venv,",
+		"files larger than 32 MiB",
+		"1 command ran after the copy was saved",
+		"Reinstall dependencies from the project's manifests",
+	} {
+		if !strings.Contains(got[1], want) {
+			t.Errorf("the note does not say %q:\n%s", want, got[1])
+		}
+	}
+	if strings.Contains(got[1], ".git,") {
+		t.Errorf("the note names .git among the dependencies:\n%s", got[1])
+	}
+	b.add(session.TypeSessionMachine, "", 2, session.SessionMachine{
+		Machine: session.AttachedMachine{Kind: "cella", ID: "sbx_3", Workdir: "/workspace"}, Reason: session.MachineRestored,
+		Restore: &session.Restore{Source: session.RestoreFromLog, Files: 1, Paths: []string{"a.txt"}, Copy: &session.RestoreCopy{Failed: "the folder is away"}},
+	})
+	tr, err = session.Fold(b.events, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := texts(tr); len(got) != 3 || !strings.Contains(got[2], "was rebuilt from this conversation's record") || strings.Contains(got[2], "the folder is away") {
+		t.Fatalf("a copy that could not be written reads %q", got)
+	}
+}

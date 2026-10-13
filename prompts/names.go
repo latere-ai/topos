@@ -243,6 +243,18 @@ const (
 	// that are missing, each list followed by how many more it leaves
 	// unnamed, and how many commands ran since the first file (spec 065).
 	TranscriptMachineRebuilt Name = "transcript/machine-rebuilt-v1"
+	// TranscriptMachineWorkRestored takes Copied, Turn, Inherited, Files,
+	// Paths, More, Unverified, UnverifiedMore, Omitted, OmittedMore,
+	// Skipped, SkippedMore, LeftOut, MaxFileMiB and Commands: a new
+	// machine whose working directory was restored from the copy the
+	// session keeps in its folder, saved at the end of turn Turn or, with
+	// Inherited, by the session it continues, Copied files, then brought
+	// up to date from the log, with the files the log wrote, the ones that
+	// may be out of date, the ones that are missing and the ones the copy
+	// left out, each list followed by how many more it leaves unnamed, the
+	// directories the copy leaves out, its bound on one file, and how many
+	// commands ran since it was saved (spec 073).
+	TranscriptMachineWorkRestored Name = "transcript/machine-work-restored-v1"
 )
 
 // The results the harness gives a call it does not run, or whose run

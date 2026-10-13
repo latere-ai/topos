@@ -510,7 +510,9 @@ type Restore struct {
 // and their bytes; Turn, the turn whose end saved the copy last, zero for
 // a fork's copy of its parent's, which Inherited marks and which may hold
 // changes made after the point the fork continues from; and Skipped and
-// SkippedFiles, what the latest save left out.
+// SkippedFiles, what the latest save left out. Failed, on a Restore from
+// the log, is why the copy could not be written, a developer's detail:
+// the working directory was then rebuilt from the log alone.
 type RestoreCopy struct {
 	Files        int           `json:"files"`
 	Bytes        int64         `json:"bytes"`
@@ -518,6 +520,7 @@ type RestoreCopy struct {
 	Inherited    bool          `json:"inherited,omitempty"`
 	Skipped      int           `json:"skipped,omitempty"`
 	SkippedFiles []OmittedFile `json:"skipped_files,omitempty"`
+	Failed       string        `json:"failed,omitempty"`
 }
 
 // OmittedFile is one file a Restore could not rebuild, with the reason.

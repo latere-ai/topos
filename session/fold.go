@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strings"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
@@ -290,8 +291,14 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				// what is back and what is not (spec 065); one a
 				// checkpoint restored holds all its files and reads as
 				// nothing.
-				if r := p.Restore; r != nil && r.Source == RestoreFromLog {
+				// One restored from the copy the session keeps in its folder
+				// is said with what the copy gave, what the log added and
+				// what the copy does not keep (spec 073).
+				switch r := p.Restore; {
+				case r != nil && r.Source == RestoreFromLog:
 					user(text(prompts.Render(prompts.TranscriptMachineRebuilt, rebuiltData(*r))))
+				case r != nil && r.Source == RestoreFromFolder && r.Copy != nil:
+					user(text(prompts.Render(prompts.TranscriptMachineWorkRestored, workRestoredData(*r))))
 				}
 			}
 		case TypeApprovalRequested:
@@ -370,6 +377,24 @@ func rebuiltData(r Restore) prompts.Data {
 		"Omitted": omitted, "OmittedMore": max(r.Omitted-len(omitted), 0),
 		"Commands": r.Commands,
 	}
+}
+
+// workRestoredData are the values the note of a working directory
+// restored from the session's copy of it is rendered with: rebuiltData's,
+// what the copy gave and left out, the directories it leaves out but a
+// repository's history, which the note names apart, and its bound on one
+// file.
+func workRestoredData(r Restore) prompts.Data {
+	d := rebuiltData(r)
+	skipped := make([]string, len(r.Copy.SkippedFiles))
+	for i, f := range r.Copy.SkippedFiles {
+		skipped[i] = f.Path
+	}
+	d["Copied"], d["Turn"], d["Inherited"] = r.Copy.Files, r.Copy.Turn, r.Copy.Inherited
+	d["Skipped"], d["SkippedMore"] = skipped, max(r.Copy.Skipped-len(skipped), 0)
+	d["LeftOut"] = strings.Join(slices.DeleteFunc(slices.Clone(WorkLeftOut), func(n string) bool { return n == ".git" }), ", ")
+	d["MaxFileMiB"] = MaxWorkFileBytes >> 20
+	return d
 }
 
 // inView reports whether e belongs to the fold of thread: the events
