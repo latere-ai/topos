@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.34.0 - 2026-10-13
+
 ### Added
 
 - **A session reaches the services a person connected, without their
