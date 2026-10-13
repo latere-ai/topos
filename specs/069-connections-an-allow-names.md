@@ -511,7 +511,7 @@ suite has its test. What shipped, beyond the design above:
   and the stub MCP server, as [[019-git]] proves its push. No test runs
   `toposd` with an authorizer that names `connections`.
 
-**Available connections**, built on 2026-10-13, in no release yet, and
+**Available connections**, built on 2026-10-13, shipped in v0.35.0, and
 not yet run against a model. Every criterion of the section has its
 test; the task of the suite is the one open criterion, shared with the
 rest of the spec. What shipped beyond the section's text: an available
