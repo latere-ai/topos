@@ -85,8 +85,15 @@ type HTTPConnection struct {
 // session's list as it stands, which replaces the one it had: a
 // connection the list no longer names leaves nothing behind. It does
 // nothing when the machine runs that list already.
+//
+// ReachesConnections reports whether the machine reaches the connection
+// service at all. A sandbox that opened without the service's Secret,
+// because its host was another Secret's, reaches none of the session's
+// http connections for as long as it lives: it takes no list, and the
+// model is not told of them.
 type Connected interface {
 	ApplyConnections(ctx context.Context, cs []HTTPConnection) error
+	ReachesConnections() bool
 }
 
 // SandboxNone is the Sandbox of a host with none of the mechanisms the

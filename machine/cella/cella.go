@@ -174,6 +174,9 @@ type Machine struct {
 	workspace string
 	roots     []string
 	created   bool
+	// mounts are the Secrets the sandbox mounts as Cella holds it, which
+	// for a sandbox found by name are the ones its create named.
+	mounts []v1.SecretMount
 	// restart is the restart the last attach made, nil when it found the
 	// sandbox running, stopped or absent.
 	restart *machine.Restart
@@ -329,6 +332,16 @@ func (m *Machine) Recreate(ctx context.Context) error {
 	return nil
 }
 
+// Mounts are the Secrets the sandbox mounts, as Cella answered it at the
+// last Open or Recreate: a sandbox found by name mounts what its create
+// named, which may not be what this machine's Options name, since Cella
+// takes a sandbox's mounts at its create alone.
+func (m *Machine) Mounts() []v1.SecretMount {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.mounts)
+}
+
 func (m *Machine) Info() machine.Info {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -462,6 +475,7 @@ func (m *Machine) set(sb v1.Sandbox, created bool, restart *machine.Restart) {
 	m.id = sb.Status.ID
 	m.created = created
 	m.restart = restart
+	m.mounts = slices.Clone(sb.Spec.Secrets)
 	m.workspace = sb.Spec.Workspace.Path
 	workdir := cmpOr(m.o.Workdir, sb.Spec.Workdir, m.workspace)
 	m.info = machine.Info{Kind: machine.KindCella, ID: sb.Status.ID, Workdir: workdir, Environment: sb.Status.Environment,

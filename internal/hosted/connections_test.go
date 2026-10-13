@@ -6,6 +6,7 @@ package hosted
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/cgi"
@@ -214,6 +215,168 @@ func TestHTTPConnectionsFollowTheList(t *testing.T) {
 	if err != nil || string(res.Output) != "code=\n" {
 		t.Fatalf("a sandbox with no connection service: %q %v", res.Output, err)
 	}
+}
+
+// lockedLog is a log a test reads while a drive writes it.
+type lockedLog struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// errorLines are the lines of log at level ERROR.
+func errorLines(log string) []string {
+	var out []string
+	for line := range strings.Lines(log) {
+		if strings.Contains(line, "level=ERROR") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// TestConnectionsNeverFailASandbox: a sandbox opens whatever the
+// connection service's Secret meets, and without it reaches none of the
+// session's http connections (spec 069). On an installation whose model
+// gateway publishes its doors on the connection service's host, the
+// Secret is not applied, Cella is asked one create, without it, one error
+// names both Secrets' hosts and no value, and the sandbox takes no git
+// configuration and no variable of the session's http connections. When
+// Cella refuses a create secret_host_conflict by a rule the runner did
+// not see, the sandbox is created once more without the Secret, which is
+// not renewed while the others are, and is deleted at the session's end.
+// A later drive that finds that sandbox by name reaches no http
+// connection either, since the sandbox mounts what its create named.
+func TestConnectionsNeverFailASandbox(t *testing.T) {
+	const shown = `git config --get-all include.path; echo "code=$CODE_HOST_API_URL"`
+	t.Run("on another Secret's host", func(t *testing.T) {
+		var log lockedLog
+		creds := &issued{life: 15 * time.Minute}
+		f := newCredentialFixture(t, helper(t), creds, nil, func(o *CellaOptions) {
+			o.ModelsURL = "https://api.example.com/v1/models"
+			o.ConnectionsURL, o.ConnectionsAudience = "https://api.example.com/v1/connections", "connections"
+			o.Log = slog.New(slog.NewTextHandler(&log, nil))
+		})
+		setConnections(t, f.st, f.s.ID, codeHostConnection("https://api.example.com"))
+		ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+		defer cancel()
+		cfg, err := open(ctx, f.h, f.s)
+		if err != nil {
+			t.Fatalf("the sandbox did not open: %v", err)
+		}
+		defer func() {
+			if err := cfg.Machine.Release(context.WithoutCancel(ctx), true); err != nil {
+				t.Error(err)
+			}
+		}()
+		name := cella.SandboxName(f.s.ID)
+		sb, ok := f.cella.Sandbox(name)
+		if !ok || f.cella.Count(cellastub.OpCreate) != 1 || !slices.Equal(sb.Spec.Secrets, []cellav1.SecretMount{{Name: name + "-lux", Env: EnvLuxKey}, {Name: name + "-origo", Env: EnvOrigoToken}}) {
+			t.Fatalf("%d creates, the sandbox mounts %+v", f.cella.Count(cellastub.OpCreate), sb.Spec.Secrets)
+		}
+		if _, _, ok := f.cella.Secret(name + SecretConnections); ok || slices.Contains(creds.calls, "connections/sandbox") {
+			t.Fatalf("the connection service's Secret was applied, or its token asked: %v", creds.calls)
+		}
+		if cm, ok := cfg.Machine.(machine.Connected); !ok || cm.ReachesConnections() {
+			t.Fatal("the sandbox says it reaches the connection service")
+		}
+		res, err := cfg.Machine.Exec(ctx, machine.ExecRequest{Command: shown, Timeout: time.Minute})
+		if err != nil || string(res.Output) != "code=\n" {
+			t.Fatalf("the sandbox took the session's http connections: %q %v", res.Output, err)
+		}
+		lines := errorLines(log.String())
+		if len(lines) != 1 {
+			t.Fatalf("the log's errors %q", lines)
+		}
+		for _, want := range []string{"secret=" + name + SecretConnections, "host=api.example.com", "other_secret=" + name + "-lux", "other_host=api.example.com"} {
+			if !strings.Contains(lines[0], want) {
+				t.Errorf("the error %q does not name %q", lines[0], want)
+			}
+		}
+		if strings.Contains(log.String(), "-sandbox-") {
+			t.Errorf("the log carries a token: %q", log.String())
+		}
+	})
+	t.Run("refused by Cella", func(t *testing.T) {
+		var log lockedLog
+		creds := &issued{life: runner.RefreshBefore + 500*time.Millisecond}
+		f := newCredentialFixture(t, helper(t), creds, nil, withConnectionService, func(o *CellaOptions) {
+			o.Log = slog.New(slog.NewTextHandler(&log, nil))
+		})
+		setConnections(t, f.st, f.s.ID, codeHostConnection("https://connections.example"))
+		f.cella.Fail(cellastub.OpCreate, cellastub.Failure{Status: http.StatusConflict, Code: CodeSecretHostConflict, Detail: "both apply to connections.example"})
+		ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+		defer cancel()
+		cfg, err := open(ctx, f.h, f.s)
+		if err != nil {
+			t.Fatalf("the sandbox did not open: %v", err)
+		}
+		name := cella.SandboxName(f.s.ID)
+		secret := name + SecretConnections
+		sb, ok := f.cella.Sandbox(name)
+		if !ok || f.cella.Count(cellastub.OpCreate) != 2 || slices.ContainsFunc(sb.Spec.Secrets, func(m cellav1.SecretMount) bool { return m.Name == secret }) || len(sb.Spec.Secrets) != 2 {
+			t.Fatalf("%d creates, the sandbox mounts %+v", f.cella.Count(cellastub.OpCreate), sb.Spec.Secrets)
+		}
+		if cm, ok := cfg.Machine.(machine.Connected); !ok || cm.ReachesConnections() {
+			t.Fatal("the sandbox says it reaches the connection service")
+		}
+		res, err := cfg.Machine.Exec(ctx, machine.ExecRequest{Command: shown, Timeout: time.Minute})
+		if err != nil || string(res.Output) != "code=\n" {
+			t.Fatalf("the sandbox took the session's http connections: %q %v", res.Output, err)
+		}
+		lines := errorLines(log.String())
+		if len(lines) != 1 || !strings.Contains(lines[0], "secret="+secret) || !strings.Contains(lines[0], "host=connections.example") ||
+			!strings.Contains(lines[0], "other_hosts=") || !strings.Contains(lines[0], CodeSecretHostConflict) {
+			t.Fatalf("the log's errors %q", lines)
+		}
+		for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+			if sec, _, _ := f.cella.Secret(name + "-lux"); sec.Status.Version >= 2 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("the Lux key was not renewed")
+			}
+		}
+		if sec, _, ok := f.cella.Secret(secret); !ok || sec.Status.Version != 1 {
+			t.Fatalf("the Secret the sandbox does not mount is at version %d, %v", sec.Status.Version, ok)
+		}
+		// The drive ends and keeps the sandbox; the next drive finds it by
+		// name, applies the Secret again and does not reach the service.
+		if err := cfg.Machine.Release(ctx, false); err != nil {
+			t.Fatal(err)
+		}
+		again, err := open(ctx, f.h, f.s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.cella.Count(cellastub.OpCreate) != 2 {
+			t.Fatal("the next drive created another sandbox")
+		}
+		if cm, ok := again.Machine.(machine.Connected); !ok || cm.ReachesConnections() {
+			t.Fatal("the sandbox found by name says it reaches the connection service")
+		}
+		res, err = again.Machine.Exec(ctx, machine.ExecRequest{Command: shown, Timeout: time.Minute})
+		if err != nil || string(res.Output) != "code=\n" {
+			t.Fatalf("the sandbox found by name took the session's http connections: %q %v", res.Output, err)
+		}
+		if err := again.Machine.Release(context.WithoutCancel(ctx), true); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, ok := f.cella.Secret(secret); ok {
+			t.Fatal("the Secret the sandbox did not mount outlived the session")
+		}
+	})
 }
 
 // codeHostConnection is an http connection of the connection service at

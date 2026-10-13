@@ -183,7 +183,8 @@ func hostOf(raw string) (string, error) {
 // when the installation has session keys, its git host's token when it
 // has an identity provider and a git host, or else its own git host
 // credential, OrigoToken, when it has one, and its token for the
-// connection service when the installation names one. Each is applied to Cella
+// connection service when the installation names one, unless its host is
+// another of these Secrets'. Each is applied to Cella
 // before the sandbox is opened, so its mount resolves, and is labeled as
 // the sandbox is, with the session's and the agent's labels beside the
 // installation's, since an authorizer that binds the session's token to
@@ -226,6 +227,18 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, s session.Session, c *
 	}
 	var out []*sandboxSecret
 	for _, sec := range want {
+		// The connection service's Secret comes last, so out holds every
+		// other Secret the sandbox mounts. One on the host of another is
+		// left out, and the sandbox opens without the session's http
+		// connections rather than not at all: Cella refuses a sandbox that
+		// mounts two Secrets on one host (spec 069).
+		if sec.env == session.ConnectionsToken {
+			if other := sharingHost(out, sec.host); other != nil {
+				o.Log.ErrorContext(ctx, "the sandbox opens without the connection service's Secret, whose host another Secret it mounts is scoped to; the session's http connections are unavailable in it",
+					"session", s.ID, "secret", sec.name, "host", sec.host, "other_secret", other.name, "other_host", other.host)
+				continue
+			}
+		}
 		cred, err := runner.Credential{}, runner.ErrNotMinted
 		if src != nil {
 			cred, err = src.Token(ctx, sec.audience, runner.WorkloadSandbox)
@@ -248,6 +261,20 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, s session.Session, c *
 		out = append(out, sec)
 	}
 	return out, nil
+}
+
+// sharingHost is the first of secrets scoped to a host that, by Cella's
+// own rule, can match a destination host also matches, nil when none is:
+// Cella refuses a sandbox that mounts two such Secrets
+// secret_host_conflict, since its egress gateway would have no answer for
+// which value to send there.
+func sharingHost(secrets []*sandboxSecret, host string) *sandboxSecret {
+	for _, sec := range secrets {
+		if cellav1.HostPatternCovers(sec.host, host) || cellav1.HostPatternCovers(host, sec.host) {
+			return sec
+		}
+	}
+	return nil
 }
 
 // apply writes cred as the secret's value, injected as a bearer in the

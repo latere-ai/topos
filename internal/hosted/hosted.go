@@ -549,29 +549,47 @@ func Cella(o CellaOptions) Machines {
 			}
 		}
 		ttl := time.Until(s.ExpiresAt)
-		mach, err := cella.Open(ctx, cella.Options{
+		co := cella.Options{
 			URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
 			Environment: cmp.Or(s.Machine.Environment, m.Environment), Image: cmp.Or(s.Machine.Image, m.Image),
 			Resources:  cellav1.Resources{CPU: cellav1.Quantity(m.Resources.CPU), Memory: cellav1.Quantity(m.Resources.Memory), Disk: cellav1.Quantity(m.Resources.Disk)},
 			EgressMode: m.EgressMode, Egress: session.JoinHosts(m.Egress, harness.RepositoryHosts(s)),
 			Secrets: mounts, Env: env, Labels: o.Labels, TTL: max(ttl, 0), Helpers: o.Helpers, Dir: o.Dir,
-		})
+		}
+		mach, err := cella.Open(ctx, co)
+		if conn := connectionsSecret(secrets); conn != nil && client.CodeOf(err) == CodeSecretHostConflict {
+			// Cella found the connection service's Secret on the host of
+			// another by a rule sandboxSecrets did not see. The sandbox is
+			// created once more without it, and opens without the session's
+			// http connections rather than not at all (spec 069).
+			o.Log.ErrorContext(ctx, "Cella refused the connection service's Secret beside another on one host; the sandbox opens without it, and the session's http connections are unavailable in it",
+				"session", s.ID, "secret", conn.name, "host", conn.host, "other_hosts", otherHosts(secrets, conn), "err", err)
+			co.Secrets = slices.DeleteFunc(slices.Clone(mounts), func(sm cellav1.SecretMount) bool { return sm.Name == conn.name })
+			mach, err = cella.Open(ctx, co)
+		}
 		if err != nil {
 			return nil, err
 		}
+		// The sandbox reaches the connection service only when it mounts the
+		// service's Secret: one created without it, by the retry above or by
+		// an earlier drive, and found by name now, never takes it, since a
+		// sandbox takes its mounts at its create alone.
+		mounted := slices.ContainsFunc(mach.Mounts(), func(sm cellav1.SecretMount) bool { return sm.Env == session.ConnectionsToken })
 		reaches := false
+		var minted []*sandboxSecret
 		for _, sec := range secrets {
 			switch {
 			case sec.audience == AudienceOrigo:
 				if err := gitConfig(ctx, mach, o.OrigoURL); err != nil {
 					return nil, errors.Join(setup(CodeMachineUnavailable, err), mach.Release(context.WithoutCancel(ctx), false))
 				}
+			case sec.env == session.ConnectionsToken && !mounted:
+				// Applied and not mounted, it is not renewed, and the
+				// session's end deletes it with the others.
+				continue
 			case sec.env == session.ConnectionsToken:
 				reaches = true
 			}
-		}
-		var minted []*sandboxSecret
-		for _, sec := range secrets {
 			if !sec.installation {
 				minted = append(minted, sec)
 			}
@@ -592,6 +610,33 @@ func Cella(o CellaOptions) Machines {
 		}
 		return sm, nil
 	}
+}
+
+// CodeSecretHostConflict is Cella's refusal of a sandbox that mounts two
+// Secrets whose scopes can match one host.
+const CodeSecretHostConflict = "secret_host_conflict"
+
+// connectionsSecret is the connection service's Secret among secrets,
+// nil when the sandbox was given none.
+func connectionsSecret(secrets []*sandboxSecret) *sandboxSecret {
+	for _, sec := range secrets {
+		if sec.env == session.ConnectionsToken {
+			return sec
+		}
+	}
+	return nil
+}
+
+// otherHosts are the hosts of secrets other than but, which a log line
+// names beside but's own: hosts alone, never a value.
+func otherHosts(secrets []*sandboxSecret, but *sandboxSecret) []string {
+	var out []string
+	for _, sec := range secrets {
+		if sec != but {
+			out = append(out, sec.host)
+		}
+	}
+	return out
 }
 
 // sessionMachine is a hosted session's sandbox with the Secrets applied

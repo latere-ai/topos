@@ -457,6 +457,23 @@ func (d *Deferred) ApplyConnections(ctx context.Context, cs []HTTPConnection) er
 	return nil
 }
 
+// ReachesConnections reports whether the open machine, or the one a
+// Start opened that no operation took yet, reaches the connection
+// service. It never opens the machine and never waits for an open: one
+// not opened yet, or open and not connected, is taken to reach it, since
+// only an open machine can say it does not, and an opener mounts the
+// service's Secret whenever the sandbox can hold it.
+func (d *Deferred) ReachesConnections() bool {
+	d.mu.Lock()
+	m := d.m
+	if m == nil {
+		m = d.prepared
+	}
+	d.mu.Unlock()
+	cm, ok := m.(Connected)
+	return !ok || cm.ReachesConnections()
+}
+
 // Refused are the open machine's refused connections, none before it
 // opens or on a machine that is not networked.
 func (d *Deferred) Refused(ctx context.Context, since time.Time) ([]Connection, error) {

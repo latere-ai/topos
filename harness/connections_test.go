@@ -19,13 +19,17 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-// conMachine is a Cella machine that takes a session's connections.
+// conMachine is a Cella machine that takes a session's connections, and
+// reaches the connection service unless unreached.
 type conMachine struct {
 	fakeMachine
-	mu      sync.Mutex
-	applied [][]machine.HTTPConnection
-	refuse  error
+	mu        sync.Mutex
+	applied   [][]machine.HTTPConnection
+	refuse    error
+	unreached bool
 }
+
+func (m *conMachine) ReachesConnections() bool { return !m.unreached }
 
 func (m *conMachine) ApplyConnections(_ context.Context, cs []machine.HTTPConnection) error {
 	m.mu.Lock()

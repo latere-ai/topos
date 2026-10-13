@@ -430,10 +430,12 @@ func TestADeferredMachinePassesItsNetworkOn(t *testing.T) {
 	}
 }
 
-// connected is a fake that takes a session's connections.
+// connected is a fake that takes a session's connections, and reaches
+// the connection service unless unreached.
 type connected struct {
 	fake
-	applied [][]HTTPConnection
+	applied   [][]HTTPConnection
+	unreached bool
 }
 
 func (c *connected) ApplyConnections(_ context.Context, cs []HTTPConnection) error {
@@ -443,10 +445,14 @@ func (c *connected) ApplyConnections(_ context.Context, cs []HTTPConnection) err
 	return nil
 }
 
+func (c *connected) ReachesConnections() bool { return !c.unreached }
+
 // TestADeferredMachinePassesItsConnectionsOn: connections applied before
 // the machine opens apply to nothing, since the opener reads them; once a
 // Start opened the machine or an operation did, they reach it, and a
-// machine that is not connected takes none (spec 069).
+// machine that is not connected takes none. Whether it reaches the
+// connection service is the machine's own answer once a Start or an
+// operation opened it, and yes before, without opening it (spec 069).
 func TestADeferredMachinePassesItsConnectionsOn(t *testing.T) {
 	ctx := t.Context()
 	m := &connected{}
@@ -465,12 +471,34 @@ func TestADeferredMachinePassesItsConnectionsOn(t *testing.T) {
 	if err := d.ApplyConnections(ctx, nil); err != nil || len(m.applied) != 2 || m.applied[1] != nil {
 		t.Fatalf("the open machine took %v, %v", m.applied, err)
 	}
+	if !d.ReachesConnections() {
+		t.Fatal("a machine that reaches the connection service answered no")
+	}
 	plain := Defer(ctx, KindCella, func(context.Context) (Machine, error) { return &fake{}, nil })
 	if err := plain.Open(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := plain.ApplyConnections(ctx, cs); err != nil {
 		t.Fatalf("a machine that is not connected: %v", err)
+	}
+	if !plain.ReachesConnections() {
+		t.Fatal("a machine that says nothing of the connection service answered no")
+	}
+	cut := &connected{unreached: true}
+	opens := 0
+	unreached := Defer(ctx, KindCella, func(context.Context) (Machine, error) { opens++; return cut, nil })
+	if !unreached.ReachesConnections() || opens != 0 {
+		t.Fatalf("an unopened machine: %v after %d opens", unreached.ReachesConnections(), opens)
+	}
+	unreached.Start()
+	if err := unreached.ApplyConnections(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if unreached.ReachesConnections() {
+		t.Fatal("the machine a start prepared, which reaches no connection service, answered yes")
+	}
+	if err := unreached.Open(ctx); err != nil || unreached.ReachesConnections() {
+		t.Fatalf("the open machine that reaches no connection service: %v", err)
 	}
 	canceled, cancel := context.WithCancel(ctx)
 	slow := Defer(ctx, KindCella, func(ctx context.Context) (Machine, error) { <-ctx.Done(); return nil, ctx.Err() })

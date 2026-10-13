@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -246,6 +247,30 @@ func TestOpenFindsTheSandboxByName(t *testing.T) {
 	}
 	if err := again.Release(t.Context(), true); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestMountsAreTheSandboxs: a machine answers the Secrets its sandbox
+// mounts as Cella holds it, so one found by name mounts what its create
+// named, whatever the Options of the open that found it name (spec 069).
+func TestMountsAreTheSandboxs(t *testing.T) {
+	key := v1.SecretMount{Name: "key", Env: "KEY"}
+	f := open(t, func(stub *cellastub.Server, o *Options) {
+		stub.AddSecret("key", "models.example.com")
+		stub.AddSecret("token", "connections.example.com")
+		o.Secrets = []v1.SecretMount{key}
+	})
+	if got := f.m.Mounts(); !slices.Equal(got, []v1.SecretMount{key}) {
+		t.Fatalf("the created sandbox mounts %v", got)
+	}
+	o := f.o
+	o.Secrets = []v1.SecretMount{key, {Name: "token", Env: "TOKEN"}}
+	again, err := Open(t.Context(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Created() || !slices.Equal(again.Mounts(), []v1.SecretMount{key}) {
+		t.Fatalf("the sandbox found by name mounts %v, created %v", again.Mounts(), again.Created())
 	}
 }
 

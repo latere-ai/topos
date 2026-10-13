@@ -100,6 +100,11 @@ func (m *sessionMachine) ApplyConnections(ctx context.Context, cs []machine.HTTP
 	return nil
 }
 
+// ReachesConnections reports whether the sandbox mounts the connection
+// service's Secret, without which it takes none of the session's http
+// connections and the model is told of none.
+func (m *sessionMachine) ReachesConnections() bool { return m.reaches }
+
 // withEnv is r with the variables of the session's http connections, the
 // request's own winning over one of the same name.
 func (m *sessionMachine) withEnv(r machine.ExecRequest) machine.ExecRequest {
