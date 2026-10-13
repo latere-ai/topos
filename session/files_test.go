@@ -9,21 +9,22 @@ import (
 )
 
 // TestARefIsAPlaceInTheFolder: a ref is a clean path under attachments/
-// or results/, a directory and a name below it, and its directory is the
-// first two segments a fork copies (spec 068).
+// or results/, a directory and a name below it, or under work/ with a
+// name, and its directory is the first two segments a fork copies (specs
+// 068 and 073).
 func TestARefIsAPlaceInTheFolder(t *testing.T) {
-	for _, ok := range []string{"attachments/evt_1/notes.txt", "results/3/out/report.pdf", KeptRef(3, "out/report.pdf")} {
+	for _, ok := range []string{"attachments/evt_1/notes.txt", "results/3/out/report.pdf", KeptRef(3, "out/report.pdf"), "work/package.json", WorkRef("src/app.js")} {
 		if err := CheckRef(ok); err != nil {
 			t.Errorf("%q: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"", "notes.txt", "attachments/notes.txt", "other/1/a", "results/3/../a", "results/3//a", "results/3/./a", "/results/3/a", "results/3/a/", "results/3/a\x00b", "results/./3/a"} {
+	for _, bad := range []string{"", "notes.txt", "attachments/notes.txt", "other/1/a", "results/3/../a", "results/3//a", "results/3/./a", "/results/3/a", "results/3/a/", "results/3/a\x00b", "results/./3/a", "work", "work/", "work/../a", "work/a//b", "work/a\x00b"} {
 		if err := CheckRef(bad); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}
-	if KeptRef(3, "out/report.pdf") != "results/3/out/report.pdf" {
-		t.Errorf("KeptRef %q", KeptRef(3, "out/report.pdf"))
+	if KeptRef(3, "out/report.pdf") != "results/3/out/report.pdf" || WorkRef("src/app.js") != "work/src/app.js" {
+		t.Errorf("KeptRef %q, WorkRef %q", KeptRef(3, "out/report.pdf"), WorkRef("src/app.js"))
 	}
 	for ref, want := range map[string]string{"attachments/evt_1/notes.txt": "attachments/evt_1", "results/3/out/report.pdf": "results/3", "results/3": ""} {
 		if got := RefDir(ref); got != want {
@@ -74,6 +75,30 @@ func TestAnEventRecordsTheFilesItsEntriesPlace(t *testing.T) {
 	ApplyBatch(&none, []Event{msg})
 	if none.Folder != nil {
 		t.Fatal("a session with no folder gained one")
+	}
+}
+
+// TestARefGoesOnceNoLiveEventNamesIt: the refs a redaction leaves
+// unnamed are the ones the log recorded before it and no live event
+// records after it; a ref a second event still names stays (spec 073).
+func TestARefGoesOnceNoLiveEventNamesIt(t *testing.T) {
+	d := DigestOf([]byte("a"))
+	msg := mustEvent(t, TypeUserMessage, UserMessage{Attachments: []Attachment{{Name: "a", Blob: d, Path: "attachments/e/a", Ref: "attachments/e/a"}}})
+	first := mustEvent(t, TypeFilesKept, FilesKept{Message: "evt_1", Files: []KeptFile{{Blob: d, Ref: "results/1/a"}}})
+	second := mustEvent(t, TypeFilesKept, FilesKept{Message: "evt_2", Files: []KeptFile{{Blob: d, Ref: "results/1/a"}}})
+	tomb := func(e Event) Event {
+		e.Payload = []byte(`{"tombstone":true}`)
+		return e
+	}
+	before := []Event{msg, first, second}
+	if got := GoneRefs(before, []Event{msg, tomb(first), second}); len(got) != 0 {
+		t.Errorf("a ref a second answer names is gone: %v", got)
+	}
+	if got := GoneRefs(before, []Event{tomb(msg), tomb(first), tomb(second)}); len(got) != 2 || got[0] != "attachments/e/a" || got[1] != "results/1/a" {
+		t.Errorf("the refs nothing names: %v", got)
+	}
+	if got := LiveRefs([]Event{msg, tomb(first)}); len(got) != 1 || !got["attachments/e/a"] {
+		t.Errorf("the live refs %v", got)
 	}
 }
 
