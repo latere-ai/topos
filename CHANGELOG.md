@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.37.0 - 2026-10-13
+
 ### Changed
 
 - **The agent is told plainly that it can use a person's connected
