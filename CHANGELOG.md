@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.35.0 - 2026-10-13
+
 ### Added
 
 - **An agent can ask the person to connect a service they have not
