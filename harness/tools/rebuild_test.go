@@ -326,3 +326,92 @@ func TestRebuildHoldsToItsBounds(t *testing.T) {
 		t.Fatalf("past the count: %d files, omitted %+v", len(got.Files), got.Omitted)
 	}
 }
+
+// TestRebuildOverACopy: with a copy of the working directory standing in
+// at its covers, a file the copy holds is the copy's, Copied with its
+// digest and mode, over what the log gave it before; a file a save removed
+// after the log last wrote it is dropped, and one the log writes again
+// after the removal is back; a file whose latest write was redacted is not
+// taken from the copy; an edit after covers applies to the copy's bytes;
+// a file the log writes after covers is the log's; the commands are
+// counted from covers; and a machine replaced after covers has the copy
+// again (spec 073).
+func TestRebuildOverACopy(t *testing.T) {
+	f := open(t)
+	w := &worklog{t: t, m: f.h}
+	w.machine(session.MachineAttached)
+	w.ok(NameWrite, `{"path":"a.txt","content":"log a\n"}`)
+	w.ok(NameWrite, `{"path":"gone.txt","content":"gone\n"}`)
+	w.ok(NameWrite, `{"path":"back.txt","content":"first\n"}`)
+	use, _, _ := w.call(NameWrite, `{"path":"secret.txt","content":"token=abc\n"}`)
+	// A command made cmd.txt, and the agent read it.
+	if err := os.WriteFile(filepath.Join(f.work, "cmd.txt"), []byte("say old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w.ok(NameRead, `{"path":"cmd.txt"}`)
+	w.ok(NameBash, `{"command":"true"}`)
+	covers := uint64(len(w.events))
+	sum := func(s string) string { return digest([]byte(s)) }
+	copied := map[string]string{"a.txt": "copy a\n", "cmd.txt": "say old\n", "secret.txt": "token=abc\n"}
+	c := &Copy{
+		Covers: covers,
+		Files: map[string]session.WorkFile{
+			"a.txt":      {Path: "a.txt", Size: 7, Mode: 0o644, SHA256: sum(copied["a.txt"])},
+			"cmd.txt":    {Path: "cmd.txt", Size: 8, Mode: 0o755, SHA256: sum(copied["cmd.txt"])},
+			"secret.txt": {Path: "secret.txt", Size: 10, Mode: 0o644, SHA256: sum(copied["secret.txt"])},
+		},
+		Removed: map[string]uint64{"gone.txt": covers, "back.txt": covers},
+		Read: func(p string) ([]byte, error) {
+			if b, ok := copied[p]; ok {
+				return []byte(b), nil
+			}
+			return nil, errors.New("no such file in the copy")
+		},
+	}
+	w.ok(NameEdit, `{"path":"cmd.txt","old_string":"old","new_string":"new"}`)
+	w.ok(NameWrite, `{"path":"back.txt","content":"again\n"}`)
+	w.ok(NameWrite, `{"path":"new.txt","content":"new\n"}`)
+	w.ok(NameBash, `{"command":"true"}`)
+	w.redact(use)
+
+	got := RebuildOver(w.events, nil, c)
+	var paths []string
+	for _, file := range got.Files {
+		switch {
+		case file.Copied:
+			paths = append(paths, fmt.Sprintf("%s copied %s %o", file.Path, file.SHA256, file.Mode))
+		default:
+			paths = append(paths, file.Path+"="+string(file.Content))
+		}
+	}
+	want := []string{"a.txt copied " + sum("copy a\n") + " 644", "back.txt=again\n", "cmd.txt=say new\n", "new.txt=new\n"}
+	if !slices.Equal(paths, want) || len(got.Omitted) != 0 || got.Commands != 1 {
+		t.Fatalf("rebuilt %q, omitted %v, %d commands; want %q", paths, got.Omitted, got.Commands, want)
+	}
+	// Without a reader of the copy, the edit has nothing to apply to.
+	c.Read = nil
+	if got := RebuildOver(w.events, nil, c); !slices.Equal(got.Omitted, []session.OmittedFile{{Path: "cmd.txt", Reason: session.OmittedUnknown}}) {
+		t.Fatalf("an edit of a copied file with no reader: %+v", got.Omitted)
+	}
+	c.Read = func(p string) ([]byte, error) { return []byte(copied[p]), nil }
+
+	// A machine replaced after the copy was taken has the copy's files
+	// again, and what the log wrote after the replacement.
+	w.machine(session.MachineReplaced)
+	w.ok(NameWrite, `{"path":"after.txt","content":"after\n"}`)
+	got = RebuildOver(w.events, nil, c)
+	paths = nil
+	for _, file := range got.Files {
+		paths = append(paths, file.Path)
+	}
+	if !slices.Equal(paths, []string{"a.txt", "after.txt", "cmd.txt"}) {
+		t.Fatalf("after a replacement: %q", paths)
+	}
+	// A copy taken after every event stands in at the end, beside a file
+	// of the log no save recorded.
+	c.Covers = uint64(len(w.events))
+	got = RebuildOver(w.events, nil, c)
+	if len(got.Files) != 3 || !got.Files[0].Copied || got.Files[1].Path != "after.txt" || got.Files[1].Copied || !got.Files[2].Copied || got.Commands != 0 {
+		t.Fatalf("a copy after every event: %+v", got)
+	}
+}

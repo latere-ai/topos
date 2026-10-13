@@ -30,7 +30,9 @@ const (
 
 // RebuiltFile is one file of a working directory as a session's log
 // holds it. Its bytes are Content, or the blob Blob names for a file a
-// files.kept stored.
+// files.kept stored, or, with Copied set, the file of the copy of the
+// working directory the session keeps in its folder (spec 073), whose
+// digest is SHA256 and whose permission bits are Mode.
 type RebuiltFile struct {
 	// Path is the file's path under the working directory, relative and
 	// slash-separated.
@@ -42,6 +44,21 @@ type RebuiltFile struct {
 	// its last write, edit or read that the rebuilt bytes do not have:
 	// something the log does not hold, a command, changed the file since.
 	Unverified bool
+	Copied     bool
+	SHA256     string
+	Mode       uint32
+}
+
+// Copy is the copy of a working directory a session keeps in its folder
+// (spec 073), as a rebuild takes it: the copy holds each of Files as the
+// directory had it after every event up to Covers; Removed is, for each
+// path a save removed, the Covers of that save; and Read reads a copied
+// file's bytes, for an edit of it after Covers.
+type Copy struct {
+	Covers  uint64
+	Files   map[string]session.WorkFile
+	Removed map[string]uint64
+	Read    func(path string) ([]byte, error)
 }
 
 // Rebuilt is a working directory as a session's log holds it: Files, by
@@ -56,10 +73,12 @@ type Rebuilt struct {
 }
 
 // rebuilding is one path while a log is replayed: a file with its bytes,
-// or one that is omitted for a reason.
+// or one that is omitted for a reason, and the sequence of the last event
+// that gave it either.
 type rebuilding struct {
 	file    RebuiltFile
 	omitted string
+	seq     uint64
 }
 
 // Rebuild replays a session's log into the working directory it holds
@@ -84,11 +103,31 @@ type rebuilding struct {
 // is not rebuilt from an older one. blob reads a kept file's bytes for an edit that follows it;
 // nil omits such a file.
 func Rebuild(evs []session.Event, blob func(session.Digest) ([]byte, error)) Rebuilt {
+	return RebuildOver(evs, blob, nil)
+}
+
+// RebuildOver is Rebuild with the copy c standing in at its Covers (spec
+// 073): there, each path the copy holds takes the copy's file, Copied; a
+// path the copy does not hold keeps what the log gave it, unless a save
+// removed it after the log last gave it, since a command deleted it then;
+// and a path whose latest write or edit was redacted is not taken from the
+// copy either. Each event after Covers applies as before, an edit to the
+// copy's bytes, and Commands counts the commands after Covers. A copied
+// file holds no bytes in the rebuild and does not count toward its
+// bounds. A nil c is Rebuild.
+func RebuildOver(evs []session.Event, blob func(session.Digest) ([]byte, error), c *Copy) Rebuilt {
 	sorted := slices.Clone(evs)
 	slices.SortStableFunc(sorted, func(a, b session.Event) int { return cmp.Compare(a.Seq, b.Seq) })
-	r := &replay{paths: map[string]*rebuilding{}, calls: map[string]session.AgentToolUse{}, blob: blob}
+	r := &replay{paths: map[string]*rebuilding{}, calls: map[string]session.AgentToolUse{}, blob: blob, copy: c, redacted: map[string]bool{}}
 	for _, e := range sorted {
+		if c != nil && !r.overlaid && e.Seq > c.Covers {
+			r.overlay()
+		}
+		r.seq = e.Seq
 		r.event(e)
+	}
+	if c != nil && !r.overlaid {
+		r.overlay()
 	}
 	var out Rebuilt
 	for p, f := range r.paths {
@@ -115,6 +154,43 @@ type replay struct {
 	bytes    int64
 	commands int
 	blob     func(session.Digest) ([]byte, error)
+	// seq is the sequence of the event being replayed.
+	seq uint64
+	// copy is the copy the replay takes at its Covers, overlaid once it
+	// has; redacted are the paths whose latest write or edit was
+	// redacted, which the copy does not give back.
+	copy     *Copy
+	overlaid bool
+	redacted map[string]bool
+}
+
+// overlay takes the copy at its Covers: the copy's files in place of what
+// the log gave their paths, a path a later save removed dropped, and the
+// commands counted from here.
+func (r *replay) overlay() {
+	r.overlaid = true
+	r.commands = 0
+	for rel, f := range r.paths {
+		if _, copied := r.copy.Files[rel]; copied {
+			continue
+		}
+		if at, removed := r.copy.Removed[rel]; removed && at >= f.seq {
+			r.forget(rel)
+		}
+	}
+	r.copied()
+}
+
+// copied puts each file of the copy in its path's place, but one whose
+// latest write or edit was redacted.
+func (r *replay) copied() {
+	for rel, f := range r.copy.Files {
+		if r.redacted[rel] {
+			continue
+		}
+		r.forget(rel)
+		r.paths[rel] = &rebuilding{file: RebuiltFile{Path: rel, Size: f.Size, Copied: true, SHA256: f.SHA256, Mode: f.Mode}, seq: r.copy.Covers}
+	}
 }
 
 // event replays one event.
@@ -139,6 +215,11 @@ func (r *replay) event(e session.Event) {
 		r.workdir = path.Clean(p.Machine.Workdir)
 		if p.Reason == session.MachineReplaced {
 			r.paths, r.count, r.bytes, r.commands = map[string]*rebuilding{}, 0, 0, 0
+			// The copy outlives every machine: a machine replaced after it
+			// was taken has its files again.
+			if r.overlaid {
+				r.copied()
+			}
 		}
 	case session.TypeAgentToolUse:
 		var p session.AgentToolUse
@@ -176,6 +257,7 @@ func (r *replay) result(p session.ToolResult) {
 		// older content stands in for it.
 		if rel, in := r.rel(meta.Path); in && meta.SHA256 != "" && !r.holds(rel, meta.SHA256) {
 			r.forget(rel)
+			r.redacted[rel] = true
 		}
 		return
 	}
@@ -248,6 +330,8 @@ func (r *replay) read(rel string, p session.ToolResult, want string) {
 		// The file was there, and no event holds its content.
 		r.omit(rel, session.OmittedUnknown)
 	case f.omitted != "":
+	case f.file.Copied:
+		f.file.Unverified = f.file.SHA256 != want
 	case f.file.Blob != "":
 		f.file.Unverified = f.file.Blob.Hex() != want
 	default:
@@ -307,6 +391,7 @@ func (r *replay) unknown(id string) {
 	}
 	if rel, ok := r.rel(in.Path); ok {
 		r.forget(rel)
+		r.redacted[rel] = true
 	}
 }
 
@@ -317,6 +402,8 @@ func (r *replay) holds(rel, want string) bool {
 	switch {
 	case !ok || f.omitted != "":
 		return false
+	case f.file.Copied:
+		return f.file.SHA256 == want
 	case f.file.Blob != "":
 		return f.file.Blob.Hex() == want
 	}
@@ -343,6 +430,12 @@ func (r *replay) content(rel string) ([]byte, bool) {
 	switch {
 	case !ok || f.omitted != "":
 		return nil, false
+	case f.file.Copied:
+		if r.copy.Read == nil {
+			return nil, false
+		}
+		b, err := r.copy.Read(rel)
+		return b, err == nil
 	case f.file.Blob == "":
 		return f.file.Content, true
 	case r.blob == nil:
@@ -359,24 +452,27 @@ func (r *replay) set(rel string, f RebuiltFile) {
 	if f.Blob == "" {
 		f.Size = int64(len(f.Content))
 	}
+	delete(r.redacted, rel)
 	if r.count >= MaxRebuiltFiles || r.bytes+f.Size > MaxRebuiltBytes {
-		r.paths[rel] = &rebuilding{omitted: session.OmittedLimit}
+		r.paths[rel] = &rebuilding{omitted: session.OmittedLimit, seq: r.seq}
 		return
 	}
 	r.count++
 	r.bytes += f.Size
-	r.paths[rel] = &rebuilding{file: f}
+	r.paths[rel] = &rebuilding{file: f, seq: r.seq}
 }
 
 // omit records a path as one the rebuild cannot give back.
 func (r *replay) omit(rel, reason string) {
 	r.forget(rel)
-	r.paths[rel] = &rebuilding{omitted: reason}
+	delete(r.redacted, rel)
+	r.paths[rel] = &rebuilding{omitted: reason, seq: r.seq}
 }
 
-// forget drops a path from the rebuild.
+// forget drops a path from the rebuild. A copied file holds no bytes in
+// it and was not counted.
 func (r *replay) forget(rel string) {
-	if f, ok := r.paths[rel]; ok && f.omitted == "" {
+	if f, ok := r.paths[rel]; ok && f.omitted == "" && !f.file.Copied {
 		r.count--
 		r.bytes -= f.file.Size
 	}
