@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.36.1 - 2026-10-13
+
 ### Fixed
 
 - **A background job's exit line comes after its files are gone.** The
