@@ -318,3 +318,78 @@ func TestArcaDistrustsWhatTheFilesAPIHandsOut(t *testing.T) {
 		}
 	}
 }
+
+// TestArcaOverwritesAndDeletes: an overwrite replaces the file at its
+// ref with no If-None-Match, in one PUT or through an upload whose
+// completion names none; a delete removes it for good, permanent=1, a
+// delete of nothing is no error, and a refused delete is the files API's
+// refusal (spec 073).
+func TestArcaOverwritesAndDeletes(t *testing.T) {
+	s := arcastub.New(t)
+	ctx := t.Context()
+	a := open(t, folder(s, "files/sessions/ses_a"), "session-token")
+	first, second := []byte("first"), []byte("second version")
+	if _, err := a.Overwrite(ctx, "work/src/app.js", "text/javascript", int64(len(first)), bytes.NewReader(first)); err != nil {
+		t.Fatal(err)
+	}
+	d, err := a.Overwrite(ctx, "work/src/app.js", "text/javascript", int64(len(second)), bytes.NewReader(second))
+	if err != nil || d != digest(second) {
+		t.Fatalf("an overwrite: %s, %v", d, err)
+	}
+	if o, _ := s.Object(owner, "files/sessions/ses_a/work/src/app.js"); !bytes.Equal(o.Data, second) {
+		t.Fatalf("the file after the overwrite %q", o.Data)
+	}
+	s.SetPartSize(8 << 20)
+	large := bytes.Repeat([]byte{9}, InlineBytes+1)
+	if _, err := a.Put(ctx, "work/data.bin", "", int64(len(large)), bytes.NewReader(large)); err != nil {
+		t.Fatal(err)
+	}
+	large[0] = 1
+	if _, err := a.Overwrite(ctx, "work/data.bin", "", int64(len(large)), bytes.NewReader(large)); err != nil {
+		t.Fatalf("an overwrite past the bound: %v", err)
+	}
+	if o, _ := s.Object(owner, "files/sessions/ses_a/work/data.bin"); !bytes.Equal(o.Data, large) {
+		t.Fatal("the uploaded overwrite is not the file")
+	}
+	// The put of data.bin is the first completion and names If-None-Match;
+	// every other write here is an overwrite and names none.
+	var completes int
+	for _, r := range s.Requests() {
+		switch {
+		case r.Op == arcastub.OpComplete:
+			completes++
+			if want := map[int]string{1: "*", 2: ""}[completes]; r.Header.Get("If-None-Match") != want {
+				t.Fatalf("completion %d named If-None-Match %q", completes, r.Header.Get("If-None-Match"))
+			}
+		case r.Op == arcastub.OpPut && r.Header.Get("If-None-Match") != "":
+			t.Fatalf("an overwrite named If-None-Match: %s %v", r.Path, r.Header)
+		}
+	}
+	if completes != 2 {
+		t.Fatalf("%d completions", completes)
+	}
+
+	if err := a.Delete(ctx, "work/src/app.js"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.Object(owner, "files/sessions/ses_a/work/src/app.js"); ok {
+		t.Fatal("the deleted file is still there")
+	}
+	if err := a.Delete(ctx, "work/src/app.js"); err != nil {
+		t.Fatalf("a delete of nothing: %v", err)
+	}
+	s.Fail(arcastub.OpDelete, arcastub.Failure{Status: http.StatusForbidden, Code: "forbidden"})
+	if err := a.Delete(ctx, "work/data.bin"); err == nil {
+		t.Fatal("a refused delete succeeded")
+	}
+	if err := a.Delete(ctx, "report.pdf"); !errors.Is(err, session.ErrInvalid) {
+		t.Fatalf("a delete of a bad ref: %v", err)
+	}
+	broken, err := New(folder(s, "files/sessions/ses_a"), func(context.Context) (string, error) { return "", errors.New("no token") }, &http.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := broken.Delete(ctx, "work/data.bin"); err == nil {
+		t.Fatal("a delete with no token")
+	}
+}

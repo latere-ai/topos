@@ -4,10 +4,11 @@
 // Package filestore is the backend of a session's files store (spec
 // 068): Arca, a client of an Arca-compatible files API for one session's
 // folder, which implements harness.Files. It writes a file of at most
-// InlineBytes in one create-only PUT and a larger one through an upload
-// session whose parts go straight to the bucket, reads a file and follows
-// the files API's redirect to a presigned address itself, without the
-// bearer, and copies a folder on the server. Every request to the files
+// InlineBytes in one PUT, create-only or in place of what is there, and a
+// larger one through an upload session whose parts go straight to the
+// bucket, reads a file and follows the files API's redirect to a
+// presigned address itself, without the bearer, deletes a file for good,
+// and copies a folder on the server. Every request to the files
 // API carries the bearer its token function answers; no request to a
 // presigned address carries one.
 package filestore
@@ -200,6 +201,19 @@ func (c *counted) failed(err error, ref string, size int64) error {
 // hashed as they are sent, and a source of another size fails the write
 // with harness.ErrFileSizeChanged.
 func (a *Arca) Put(ctx context.Context, ref, mediaType string, size int64, r io.Reader) (session.Digest, error) {
+	return a.put(ctx, ref, mediaType, size, r, true)
+}
+
+// Overwrite is Put with no If-None-Match: the file at ref, if any, is
+// replaced. Whether the files API keeps the replaced content as a version
+// is its authorizer's to say; an installation that keeps a session's
+// folder as its latest state answers versions false there.
+func (a *Arca) Overwrite(ctx context.Context, ref, mediaType string, size int64, r io.Reader) (session.Digest, error) {
+	return a.put(ctx, ref, mediaType, size, r, false)
+}
+
+// put writes the file at ref, create-only when create is set.
+func (a *Arca) put(ctx context.Context, ref, mediaType string, size int64, r io.Reader, create bool) (session.Digest, error) {
 	if err := session.CheckRef(ref); err != nil {
 		return "", err
 	}
@@ -211,11 +225,17 @@ func (a *Arca) Put(ctx context.Context, ref, mediaType string, size int64, r io.
 	}
 	h := sha256.New()
 	src := &counted{r: r, h: h}
+	// A create-only write names If-None-Match: *, on the PUT and on an
+	// upload's completion.
+	cond := http.Header{}
+	if create {
+		cond.Set("If-None-Match", "*")
+	}
 	var err error
 	if size <= InlineBytes {
-		err = a.putOnce(ctx, ref, mediaType, size, src)
+		err = a.putOnce(ctx, ref, mediaType, size, src, cond)
 	} else {
-		err = a.putParts(ctx, ref, mediaType, size, src)
+		err = a.putParts(ctx, ref, mediaType, size, src, cond)
 	}
 	if err != nil {
 		return "", err
@@ -276,11 +296,12 @@ func (b *sentBody) sent(ctx context.Context) {
 	}
 }
 
-// putOnce writes the file in one create-only PUT.
-func (a *Arca) putOnce(ctx context.Context, ref, mediaType string, size int64, src *counted) error {
+// putOnce writes the file in one PUT with the headers of cond.
+func (a *Arca) putOnce(ctx context.Context, ref, mediaType string, size int64, src *counted, cond http.Header) error {
 	b := body(src, size)
-	resp, err := a.send(ctx, http.MethodPut, a.fileURL(a.at(ref)), b.request(), size,
-		http.Header{"Content-Type": {mediaType}, "If-None-Match": {"*"}})
+	h := cond.Clone()
+	h.Set("Content-Type", mediaType)
+	resp, err := a.send(ctx, http.MethodPut, a.fileURL(a.at(ref)), b.request(), size, h)
 	if err != nil {
 		b.sent(ctx)
 		return src.failed(err, ref, size)
@@ -304,9 +325,9 @@ type uploadSession struct {
 }
 
 // putParts writes the file through an upload session: its parts straight
-// to the presigned addresses, with no bearer, and a create-only
-// completion. A failure after the session opened aborts it.
-func (a *Arca) putParts(ctx context.Context, ref, mediaType string, size int64, src *counted) (err error) {
+// to the presigned addresses, with no bearer, and a completion with the
+// headers of cond. A failure after the session opened aborts it.
+func (a *Arca) putParts(ctx context.Context, ref, mediaType string, size int64, src *counted, cond http.Header) (err error) {
 	resp, err := a.sendJSON(ctx, http.MethodPost, a.folder.URL+"/uploads",
 		map[string]any{"owner": a.folder.Owner, "path": a.at(ref), "size": size, "content_type": mediaType}, nil)
 	if err != nil {
@@ -344,7 +365,7 @@ func (a *Arca) putParts(ctx context.Context, ref, mediaType string, size int64, 
 		parts = append(parts, part{N: i + 1, ETag: etag})
 	}
 	resp, err = a.sendJSON(ctx, http.MethodPost, a.folder.URL+"/uploads/"+url.PathEscape(up.ID)+"/complete",
-		map[string]any{"parts": parts}, http.Header{"If-None-Match": {"*"}})
+		map[string]any{"parts": parts}, cond.Clone())
 	if err != nil {
 		return fmt.Errorf("filestore: complete the upload of %s: %w", ref, err)
 	}
@@ -451,6 +472,24 @@ func (a *Arca) Open(ctx context.Context, ref string) (io.ReadCloser, int64, erro
 		return nil, 0, refusal("presigned read", resp)
 	}
 	return resp.Body, resp.ContentLength, nil
+}
+
+// Delete removes the file at ref for good, permanent=1 so it is not kept
+// in the space's trash: a redaction's file and a working directory's
+// removed file are gone, not restorable. A file already gone is no error.
+func (a *Arca) Delete(ctx context.Context, ref string) error {
+	if err := session.CheckRef(ref); err != nil {
+		return err
+	}
+	resp, err := a.send(ctx, http.MethodDelete, a.fileURL(a.at(ref))+"?permanent=1", nil, 0, nil)
+	if err != nil {
+		return fmt.Errorf("filestore: delete %s: %w", ref, err)
+	}
+	defer closeBody(resp)
+	if resp.StatusCode/100 != 2 && resp.StatusCode != http.StatusNotFound {
+		return refusal("delete", resp)
+	}
+	return nil
 }
 
 // CopyFolder copies the folder dir of from to the same place in this

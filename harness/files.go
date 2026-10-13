@@ -15,15 +15,24 @@ import (
 // Files is one session's folder of a files store (spec 068), beside its
 // blobs: the files a person attaches to a message and the files an answer
 // shows or links are written there, each at a ref relative to the folder,
-// and read back as a stream. Nothing deletes: a session's folder is the
-// installation's to remove. The session's own records, model requests and
-// responses, bundles and instructions, stay blobs. Its one implementation
-// is a client of an Arca-compatible files API, which toposd builds.
+// and read back as a stream, and so is the copy of the session's working
+// directory (spec 073). A file goes when a redaction leaves no event
+// naming it, or when the working directory no longer holds it; the folder
+// itself is the installation's to remove. The session's own records,
+// model requests and responses, bundles and instructions, stay blobs. Its
+// one implementation is a client of an Arca-compatible files API, which
+// toposd builds.
 type Files interface {
 	// Put writes exactly size bytes of r at ref, create-only, as they
 	// are read, and answers their digest. A ref already taken is
 	// ErrFileExists, and nothing is written.
 	Put(ctx context.Context, ref, mediaType string, size int64, r io.Reader) (session.Digest, error)
+	// Overwrite is Put in place of whatever ref holds: the file there,
+	// if any, is replaced, and none of it is kept.
+	Overwrite(ctx context.Context, ref, mediaType string, size int64, r io.Reader) (session.Digest, error)
+	// Delete removes the file at ref for good. Nothing at ref is no
+	// error: the file is gone either way.
+	Delete(ctx context.Context, ref string) error
 	// Open answers the file at ref as a stream and its length, -1 when
 	// the files store does not say. Nothing at ref is ErrFileNotFound.
 	Open(ctx context.Context, ref string) (io.ReadCloser, int64, error)
@@ -34,8 +43,9 @@ type Files interface {
 }
 
 // CodeFilesUnavailable is the code of a file of a session's folder of a
-// files store that could not be written, read or copied, or a session
-// with a folder on a runner that reaches no files store (spec 068).
+// files store that could not be written, read, copied or deleted, or a
+// session with a folder on a runner that reaches no files store (spec
+// 068).
 const CodeFilesUnavailable = "files_unavailable"
 
 // The answers of Files besides a refusal.

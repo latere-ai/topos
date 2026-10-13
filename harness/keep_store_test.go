@@ -23,15 +23,20 @@ import (
 )
 
 // memFiles is a session's folder of a files store in memory: create-only
-// writes, each written whole, and a refusal a test injects.
+// writes and overwrites, each written whole, deletes, and a refusal a
+// test injects.
 type memFiles struct {
 	mu    sync.Mutex
 	files map[string][]byte
 	media map[string]string
 	fail  error
-	// openFail fails every read.
-	openFail error
-	puts     int
+	// openFail fails every read, and deleteFail every delete.
+	openFail   error
+	deleteFail error
+	puts       int
+	// overwrites and deletes are the refs each wrote, in order.
+	overwrites []string
+	deletes    []string
 }
 
 func newMemFiles() *memFiles {
@@ -70,6 +75,36 @@ func (f *memFiles) Open(_ context.Context, ref string) (io.ReadCloser, int64, er
 		return nil, 0, ErrFileNotFound
 	}
 	return io.NopCloser(bytes.NewReader(b)), int64(len(b)), nil
+}
+
+func (f *memFiles) Overwrite(_ context.Context, ref, mediaType string, size int64, r io.Reader) (session.Digest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.overwrites = append(f.overwrites, ref)
+	if f.fail != nil {
+		return "", f.fail
+	}
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return "", err
+	}
+	if int64(len(b)) != size {
+		return "", ErrFileSizeChanged
+	}
+	f.files[ref], f.media[ref] = b, mediaType
+	return session.DigestOf(b), nil
+}
+
+func (f *memFiles) Delete(_ context.Context, ref string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletes = append(f.deletes, ref)
+	if f.deleteFail != nil {
+		return f.deleteFail
+	}
+	delete(f.files, ref)
+	delete(f.media, ref)
+	return nil
 }
 
 func (f *memFiles) CopyFolder(context.Context, session.Folder, string) error {

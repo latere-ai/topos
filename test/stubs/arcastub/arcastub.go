@@ -4,9 +4,9 @@
 // Package arcastub is a stub of an Arca-compatible files API, the
 // backend of a session's files store (spec 068): an HTTP server on
 // loopback that serves the routes a files store calls under its root,
-// "/v1": a put of one object, a read, a folder copy, and the three
-// routes of an upload session, with a second server standing for the
-// bucket, which answers a read's redirect and takes the parts of an
+// "/v1": a put of one object, a read, a delete, a folder copy, and the
+// three routes of an upload session, with a second server standing for
+// the bucket, which answers a read's redirect and takes the parts of an
 // upload. It holds the contract a client must keep: a put without
 // Content-Length is 411, an If-None-Match: * onto a taken path is 412,
 // a put above the single-request bound is 413, and a request to the
@@ -35,6 +35,7 @@ import (
 const (
 	OpPut      = "put"
 	OpRead     = "read"
+	OpDelete   = "delete"
 	OpCopy     = "copy"
 	OpUpload   = "upload"
 	OpPart     = "part"
@@ -100,6 +101,7 @@ func New(t testing.TB) *Server {
 	api.HandleFunc("PUT /v1/files/{owner}/{path...}", s.put)
 	api.HandleFunc("GET /v1/files/{owner}/{path...}", s.read)
 	api.HandleFunc("POST /v1/files/{owner}/{path...}", s.copy)
+	api.HandleFunc("DELETE /v1/files/{owner}/{path...}", s.remove)
 	api.HandleFunc("POST /v1/uploads", s.open)
 	api.HandleFunc("POST /v1/uploads/{id}/complete", s.complete)
 	api.HandleFunc("DELETE /v1/uploads/{id}", s.abort)
@@ -336,6 +338,27 @@ func (s *Server) object(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	serve(w, o)
+}
+
+// remove deletes one object; nothing at the path is 404, as the files
+// API answers it. A delete that is not permanent=1 is refused, since the
+// stub keeps no trash and a client that meant to keep the file in one
+// would read it as gone.
+func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.begin(w, r, OpDelete); !ok {
+		return
+	}
+	if r.URL.Query().Get("permanent") != "1" || r.URL.Query().Has("recursive") {
+		refuse(w, http.StatusBadRequest, "invalid_field", "the stub deletes one object for good: permanent=1 and no recursive")
+		return
+	}
+	owner, path := key(r)
+	if _, ok := s.Object(owner, path); !ok {
+		refuse(w, http.StatusNotFound, "not_found", "nothing is at the path")
+		return
+	}
+	s.Remove(owner, path)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) copy(w http.ResponseWriter, r *http.Request) {

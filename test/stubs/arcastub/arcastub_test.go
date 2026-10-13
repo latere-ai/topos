@@ -236,3 +236,30 @@ func TestATestRemovesAnObject(t *testing.T) {
 		t.Fatal("the object is still there")
 	}
 }
+
+// TestTheStubDeletesForGood: a permanent delete removes one object and a
+// second one is 404; a delete that is not permanent, and a recursive one,
+// are refused, and the object stays.
+func TestTheStubDeletesForGood(t *testing.T) {
+	s := New(t)
+	bearer := map[string]string{"Authorization": "Bearer ok"}
+	s.Put("o", "files/a/b.txt", Object{Data: []byte("b")})
+	file := s.URL() + "/files/o/files/a/b.txt"
+	for _, q := range []string{"", "?permanent=1&recursive=1"} {
+		if c, _, b := do(t, http.MethodDelete, file+q, nil, bearer); c != http.StatusBadRequest {
+			t.Fatalf("a delete %q: %d %s", q, c, b)
+		}
+	}
+	if _, ok := s.Object("o", "files/a/b.txt"); !ok {
+		t.Fatal("a refused delete removed the object")
+	}
+	if c, _, b := do(t, http.MethodDelete, file+"?permanent=1", nil, bearer); c != http.StatusNoContent {
+		t.Fatalf("a delete: %d %s", c, b)
+	}
+	if _, ok := s.Object("o", "files/a/b.txt"); ok {
+		t.Fatal("the deleted object is still there")
+	}
+	if c, _, b := do(t, http.MethodDelete, file+"?permanent=1", nil, bearer); c != http.StatusNotFound || code(t, b) != "not_found" {
+		t.Fatalf("a delete of nothing: %d %s", c, b)
+	}
+}

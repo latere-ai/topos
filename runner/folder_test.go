@@ -34,6 +34,14 @@ func (f folderFiles) Open(_ context.Context, ref string) (io.ReadCloser, int64, 
 	return io.NopCloser(bytes.NewReader(b)), int64(len(b)), nil
 }
 
+func (f folderFiles) Overwrite(context.Context, string, string, int64, io.Reader) (session.Digest, error) {
+	return "", errors.New("folderFiles writes nothing")
+}
+
+func (f folderFiles) Delete(context.Context, string) error {
+	return errors.New("folderFiles deletes nothing")
+}
+
 func (f folderFiles) CopyFolder(context.Context, session.Folder, string) error {
 	return errors.New("folderFiles copies nothing")
 }
