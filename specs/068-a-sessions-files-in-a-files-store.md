@@ -274,7 +274,7 @@ build differs from the design as first written:
   implementation in `Config.Files`.
 - **The digest index is written by the append.** The append that
   records a file with a `ref` writes its row in the same transaction,
-  in Postgres the table `session_files` (migration 0010); the directory
+  in Postgres the table `session_files` (migration 0011); the directory
   and memory stores answer the same question from the log
   (`session.FileRefOf`). A runner in its own process needs no route of
   its own for it.
