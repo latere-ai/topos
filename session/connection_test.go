@@ -17,7 +17,7 @@ func httpConnection() Connection {
 		Address:    "https://connections.example.com/v1/connections/c_1/http",
 		GitAddress: "https://connections.example.com/v1/connections/c_1/git",
 		GitURL:     "https://git.example.com/",
-		Account:    "ada", APIURL: "https://api.git.example.com/",
+		Account:    "ada", APIURL: "https://api.git.example.com/", APIExample: "/v3/user",
 	}
 }
 
@@ -104,6 +104,7 @@ func TestCheckConnections(t *testing.T) {
 		"a long read_only glob":        func(c *Connection) { c.ReadOnly = []string{strings.Repeat("a", MaxReadOnlyGlob+1)} },
 		"too many read_only globs":     func(c *Connection) { c.ReadOnly = slices.Repeat([]string{"a"}, MaxReadOnlyTools+1) },
 		"an mcp api_url":               func(c *Connection) { c.APIURL = "https://api.example.com" },
+		"an mcp api_example":           func(c *Connection) { c.APIExample = "/v1/issues" },
 		"an account of two lines":      func(c *Connection) { c.Account = "ada\nlovelace" },
 		"an account past its bound":    func(c *Connection) { c.Account = strings.Repeat("é", MaxConnectionAccount+1) },
 	} {
@@ -123,6 +124,18 @@ func TestCheckConnections(t *testing.T) {
 		"an api_url with a query":  func(c *Connection) { c.APIURL = "https://api.git.example.com/?x" },
 		"a relative api_url":       func(c *Connection) { c.APIURL = "/v1" },
 		"an account with a tab":    func(c *Connection) { c.Account = "ada\tlovelace" },
+		"a relative api_example":   func(c *Connection) { c.APIExample = "v3/user" },
+		"an api_example query":     func(c *Connection) { c.APIExample = "/v3/user?x=1" },
+		"an api_example fragment":  func(c *Connection) { c.APIExample = "/v3/user#x" },
+		"an api_example space":     func(c *Connection) { c.APIExample = "/v3/my user" },
+		"an api_example $":         func(c *Connection) { c.APIExample = "/v3/$(id)" },
+		"an api_example quote":     func(c *Connection) { c.APIExample = `/v3/"user` },
+		"an api_example backtick":  func(c *Connection) { c.APIExample = "/v3/`id`" },
+		"an api_example backslash": func(c *Connection) { c.APIExample = `/v3/\user` },
+		"an api_example newline":   func(c *Connection) { c.APIExample = "/v3/\nuser" },
+		"an api_example past bound": func(c *Connection) {
+			c.APIExample = "/" + strings.Repeat("a", MaxConnectionAPIExample)
+		},
 	} {
 		c := httpConnection()
 		change(&c)
@@ -167,8 +180,9 @@ func TestAConnectionsVariableAndTools(t *testing.T) {
 		t.Fatal("a changed read_only is the same list, or an equal one is not")
 	}
 	for name, change := range map[string]func(*Connection){
-		"account": func(c *Connection) { c.Account = "grace" },
-		"api_url": func(c *Connection) { c.APIURL = "https://api.other.example.com" },
+		"account":     func(c *Connection) { c.Account = "grace" },
+		"api_url":     func(c *Connection) { c.APIURL = "https://api.other.example.com" },
+		"api_example": func(c *Connection) { c.APIExample = "/v3/repos" },
 	} {
 		e := httpConnection()
 		change(&e)
@@ -252,6 +266,7 @@ func TestAnAvailableConnection(t *testing.T) {
 		"a read_only":     func(c *Connection) { c.ReadOnly = []string{"list_*"} },
 		"an account":      func(c *Connection) { c.Account = "ada" },
 		"an api_url":      func(c *Connection) { c.APIURL = "https://api.git.example.com" },
+		"an api_example":  func(c *Connection) { c.APIExample = "/v3/user" },
 		"another state":   func(c *Connection) { c.State = "connected" },
 		"an empty title":  func(c *Connection) { c.Title = "" },
 		"an unknown kind": func(c *Connection) { c.Kind = "ssh" },

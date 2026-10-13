@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // The kinds of a connection (spec 069): http reaches a service's API and
@@ -58,6 +59,9 @@ const (
 	// MaxConnectionAccount is the most characters of the account a
 	// connection acts as.
 	MaxConnectionAccount = 256
+	// MaxConnectionAPIExample is the most bytes of the path of a
+	// connection's example call.
+	MaxConnectionAPIExample = 256
 )
 
 // ConnectionsToken is the variable a sandbox holds the placeholder of its
@@ -105,6 +109,12 @@ type Connection struct {
 	// calls onto the connection's variable; empty when the allow names
 	// none, and on an available connection.
 	APIURL string `json:"api_url,omitempty"`
+	// APIExample is the whole path of one documented call of an http
+	// connection's API after APIURL, version prefix included, such as
+	// /v1/users/me/messages, which the block writes out as a call through
+	// the connection's variable; empty when the allow names none, and on
+	// an available connection.
+	APIExample string `json:"api_example,omitempty"`
 }
 
 // connectionName is a lowercase DNS label that starts with a letter, so
@@ -135,9 +145,9 @@ func (c Connection) ReadsOnly(tool string) bool {
 // most MaxConnections, connected and available together, each with a
 // name, a kind and a title of the rules spec 069 gives; a connected one
 // with an audience and an address, its git address and git URL on an
-// http connection alone and both or neither, its API URL on an http
-// connection alone, its read_only globs on an mcp connection alone, and
-// an account on one line; an available one with none of those; and no
+// http connection alone and both or neither, its API URL and the path of
+// its example call on an http connection alone, its read_only globs on an
+// mcp connection alone, and an account on one line; an available one with none of those; and no
 // name or git URL named twice. A git URL and an API URL are written
 // without a trailing "/" in the list it answers, which is a copy.
 func CheckConnections(cs []Connection) ([]Connection, error) {
@@ -182,8 +192,8 @@ func checkConnection(c *Connection) error {
 		// An available connection is one the person has not connected: the
 		// connection service serves no address for it yet, and a session
 		// reaches nothing of it.
-		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 || c.Account != "" || c.APIURL != "" {
-			return fmt.Errorf("%s is available and names audience, address, git_address, git_url, read_only, account or api_url, which only a connected connection takes", c.Name)
+		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 || c.Account != "" || c.APIURL != "" || c.APIExample != "" {
+			return fmt.Errorf("%s is available and names audience, address, git_address, git_url, read_only, account, api_url or api_example, which only a connected connection takes", c.Name)
 		}
 		return nil
 	default:
@@ -211,6 +221,9 @@ func checkConnection(c *Connection) error {
 				return fmt.Errorf("the api_url of %s %w", c.Name, err)
 			}
 		}
+		if c.APIExample != "" && !examplePath(c.APIExample) {
+			return fmt.Errorf("the api_example of %s is %q, not a path that starts with / of at most %d bytes with no space, control character, ?, #, $, \", `, or \\", c.Name, c.APIExample, MaxConnectionAPIExample)
+		}
 		if (c.GitAddress == "") != (c.GitURL == "") {
 			return fmt.Errorf("%s names one of git_address and git_url; it names both or neither", c.Name)
 		}
@@ -225,8 +238,8 @@ func checkConnection(c *Connection) error {
 			return fmt.Errorf("the git_url of %s %w", c.Name, err)
 		}
 	case ConnectionMCP:
-		if c.GitAddress != "" || c.GitURL != "" || c.APIURL != "" {
-			return fmt.Errorf("%s is of kind mcp and names git_address, git_url or api_url, which only an http connection takes", c.Name)
+		if c.GitAddress != "" || c.GitURL != "" || c.APIURL != "" || c.APIExample != "" {
+			return fmt.Errorf("%s is of kind mcp and names git_address, git_url, api_url or api_example, which only an http connection takes", c.Name)
 		}
 		if len(c.ReadOnly) > MaxReadOnlyTools {
 			return fmt.Errorf("%s names %d read_only globs, more than %d", c.Name, len(c.ReadOnly), MaxReadOnlyTools)
@@ -238,6 +251,18 @@ func checkConnection(c *Connection) error {
 		}
 	}
 	return nil
+}
+
+// examplePath reports whether p can be the path of a connection's example
+// call: it starts with "/", is at most MaxConnectionAPIExample bytes of
+// UTF-8, and holds no white space, no control character, no query or
+// fragment, and nothing a shell reads inside double quotes, since the
+// connections block writes it into a curl command.
+func examplePath(p string) bool {
+	return strings.HasPrefix(p, "/") && len(p) <= MaxConnectionAPIExample && utf8.ValidString(p) &&
+		!strings.ContainsFunc(p, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("?#$\"`\\", r)
+		})
 }
 
 // checkAddress reports why raw is not an absolute https URL with a host
@@ -272,7 +297,7 @@ func SameConnections(a, b []Connection) bool {
 	return slices.EqualFunc(a, b, func(x, y Connection) bool {
 		return x.Name == y.Name && x.Kind == y.Kind && x.Title == y.Title && x.State == y.State && x.Audience == y.Audience &&
 			x.Address == y.Address && x.GitAddress == y.GitAddress && x.GitURL == y.GitURL && slices.Equal(x.ReadOnly, y.ReadOnly) &&
-			x.Account == y.Account && x.APIURL == y.APIURL
+			x.Account == y.Account && x.APIURL == y.APIURL && x.APIExample == y.APIExample
 	})
 }
 

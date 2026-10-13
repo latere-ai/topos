@@ -351,7 +351,7 @@ func TestTheConnectionsMember(t *testing.T) {
 		 "address":"https://connections.example.com/v1/connections/c_1/http",
 		 "git_address":"https://connections.example.com/v1/connections/c_1/git",
 		 "git_url":"https://git.example.com/","icon":"https://example.com/icon.svg",
-		 "account":"ada","api_url":"https://api.git.example.com/"},
+		 "account":"ada","api_url":"https://api.git.example.com/","api_example":"/v3/user"},
 		{"name":"tracker","kind":"mcp","title":"Issue tracker","audience":"connections",
 		 "address":"https://connections.example.com/v1/connections/c_2/mcp","read_only":["list_*"]}]}`
 	l, err := DecodeLimits(authz.Decision{Allow: true, Limits: []byte(raw)})
@@ -362,7 +362,7 @@ func TestTheConnectionsMember(t *testing.T) {
 		{Name: "github", Kind: session.ConnectionHTTP, Title: "GitHub", Audience: "connections",
 			Address:    "https://connections.example.com/v1/connections/c_1/http",
 			GitAddress: "https://connections.example.com/v1/connections/c_1/git", GitURL: "https://git.example.com",
-			Account: "ada", APIURL: "https://api.git.example.com"},
+			Account: "ada", APIURL: "https://api.git.example.com", APIExample: "/v3/user"},
 		{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "connections",
 			Address: "https://connections.example.com/v1/connections/c_2/mcp", ReadOnly: []string{"list_*"}},
 	}
@@ -386,16 +386,17 @@ func TestTheConnectionsMember(t *testing.T) {
 		w     any
 		names string
 	}{
-		"too many":             {WireLimits{Connections: many}, "limits.connections names"},
-		"an unknown kind":      {json.RawMessage(`{"connections":[{"name":"a","kind":"ssh","title":"A","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
-		"no address":           {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x"}]}`), "limits.connections[0]"},
-		"a repeated name":      {WireLimits{Connections: []session.Connection{want[1], want[1]}}, "limits.connections[1]"},
-		"a lone surrogate":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"\ud800","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0].title"},
-		"a connections object": {json.RawMessage(`{"connections":{"name":"a"}}`), "limits"},
-		"an available address": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
-		"an unknown state":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"connected","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
-		"an mcp api_url":       {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_url":"https://api.example.com"}]}`), "limits.connections[0]"},
-		"an available account": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","account":"ada"}]}`), "limits.connections[0]"},
+		"too many":               {WireLimits{Connections: many}, "limits.connections names"},
+		"an unknown kind":        {json.RawMessage(`{"connections":[{"name":"a","kind":"ssh","title":"A","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"no address":             {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x"}]}`), "limits.connections[0]"},
+		"a repeated name":        {WireLimits{Connections: []session.Connection{want[1], want[1]}}, "limits.connections[1]"},
+		"a lone surrogate":       {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"\ud800","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0].title"},
+		"a connections object":   {json.RawMessage(`{"connections":{"name":"a"}}`), "limits"},
+		"an available address":   {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"an unknown state":       {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"connected","audience":"x","address":"https://c.example.com/a"}]}`), "limits.connections[0]"},
+		"an mcp api_url":         {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_url":"https://api.example.com"}]}`), "limits.connections[0]"},
+		"an available account":   {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","account":"ada"}]}`), "limits.connections[0]"},
+		"a shell in api_example": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","audience":"x","address":"https://c.example.com/a","api_example":"/v1/$(id)"}]}`), "limits.connections[0]"},
 	} {
 		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
 			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)
