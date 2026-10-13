@@ -76,7 +76,6 @@ committed: the commit log already holds that.
   `repeated_call`. Show its `message`; the person's next message starts
   a new turn as after any error.
 
-
 ## v0.35.0 - 2026-10-13
 
 ### Added
