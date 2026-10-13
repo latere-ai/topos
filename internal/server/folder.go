@@ -89,6 +89,38 @@ func (s *Server) putAttachments(ctx context.Context, sess session.Session, files
 	return nil
 }
 
+// dropRedactedFiles deletes from the session's folder each file that
+// before, the log as it was before a redaction, recorded and that no live
+// event names once the redaction is written (spec 073), with the session's
+// own token, for good. The redaction is the record and stands whatever
+// becomes of a delete: one that fails is logged with its ref, and its file
+// stays in the folder until the installation removes the folder. A
+// redaction sent again plans nothing and deletes nothing more.
+func (s *Server) dropRedactedFiles(ctx context.Context, sess session.Session, before []session.Event) {
+	if sess.Folder == nil || s.o.Files == nil {
+		return
+	}
+	after, err := s.o.Sessions.Events(ctx, sess.ID, 1, 0)
+	if err != nil {
+		s.o.Log.ErrorContext(ctx, "the files a redaction left unnamed were not deleted: the log could not be read", "session", sess.ID, "error", err)
+		return
+	}
+	gone := session.GoneRefs(before, after)
+	if len(gone) == 0 {
+		return
+	}
+	store, err := s.o.Files.Write(ctx, sess)
+	if err != nil {
+		s.o.Log.ErrorContext(ctx, "the files a redaction left unnamed were not deleted: the folder could not be opened", "session", sess.ID, "refs", gone, "error", err)
+		return
+	}
+	for _, ref := range gone {
+		if err := store.Delete(ctx, ref); err != nil {
+			s.o.Log.ErrorContext(ctx, "a file a redaction left unnamed was not deleted from the session's folder", "session", sess.ID, "ref", ref, "error", err)
+		}
+	}
+}
+
 // openFile answers the file of the session's folder whose digest is d,
 // read with the server's own token, and its length, false when the digest
 // names no file of the folder (spec 068). A digest of a session with no

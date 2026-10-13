@@ -208,8 +208,9 @@ func TestAttachmentsGoToTheSessionsFolder(t *testing.T) {
 // file of is read from there with the server's own token, as a stream
 // with its length and the blob route's headers; a blob of the session's
 // own store is read there as before; a redacted file's digest is
-// not_found, a file gone from the folder not_found, and a read the files
-// service fails files_unavailable (spec 068).
+// not_found and the file is gone from the folder (spec 073), a file gone
+// from the folder not_found, and a read the files service fails
+// files_unavailable (spec 068).
 func TestTheBlobRouteStreamsAFileOfTheFolder(t *testing.T) {
 	f := newFolderFixture(t)
 	f.apply("alice", "reviewer", "Review.")
@@ -265,8 +266,8 @@ func TestTheBlobRouteStreamsAFileOfTheFolder(t *testing.T) {
 	if a := blob(report); a.status != http.StatusNotFound {
 		t.Fatalf("a redacted file: %d %s", a.status, a.body)
 	}
-	if _, ok := f.arca.Object(space, folderPath(s.ID)+"/results/1/out/report.pdf"); !ok {
-		t.Fatal("the redaction deleted the file from the folder")
+	if _, ok := f.arca.Object(space, folderPath(s.ID)+"/results/1/out/report.pdf"); ok {
+		t.Fatal("the redacted file is still in the folder")
 	}
 	missing := f.keep(s.ID, 3, "results/3/missing.pdf", "%PDF missing")
 	f.arca.Remove(space, folderPath(s.ID)+"/results/3/missing.pdf")
@@ -421,5 +422,129 @@ func TestAFolderThatCannotBeOpened(t *testing.T) {
 	a.decode(t, &fork)
 	if a := f.do(http.MethodGet, "/v1/sessions/"+fork.ID+"/blobs/"+string(report), "alice", ""); a.status != http.StatusNotFound {
 		t.Fatalf("the fork's file its parent no longer held: %d", a.status)
+	}
+}
+
+// keptIn are the ids of the files.kept events of the session id that
+// record a file at ref.
+func (ff *folderFixture) keptIn(id, ref string) []string {
+	ff.t.Helper()
+	evs, err := ff.sessions.Events(ff.t.Context(), id, 1, 0)
+	if err != nil {
+		ff.t.Fatal(err)
+	}
+	var out []string
+	for _, e := range evs {
+		for _, file := range e.Files() {
+			if e.Type == session.TypeFilesKept && file.Ref == ref {
+				out = append(out, e.ID)
+			}
+		}
+	}
+	return out
+}
+
+// redact redacts the event eid of the session id.
+func (ff *folderFixture) redact(id, eid string) {
+	ff.t.Helper()
+	if a := ff.do(http.MethodPost, "/v1/sessions/"+id+"/events/"+eid+"/redact", "alice", `{}`); a.status != http.StatusNoContent {
+		ff.t.Fatalf("redact %s: %d %s", eid, a.status, a.body)
+	}
+}
+
+// TestARedactionDeletesItsFilesFromTheFolder: a file of the session's
+// folder goes, for good and with the session's own token, once a
+// redaction leaves no live event naming its ref: a message's attachment,
+// and an answer's kept file once both answers of the turn that link it
+// are redacted. A fork's copy is its own, so a redaction in its parent
+// leaves it, and a fork's message that attaches its parent's file again
+// keeps it while the copied message still names it. A delete the files
+// service refuses leaves the redaction written and the file in place
+// (spec 073).
+func TestARedactionDeletesItsFilesFromTheFolder(t *testing.T) {
+	f := newFolderFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	f.turn(s.ID, 1, "Hello.", 1)
+	_, msg := f.attach(s.ID, "notes.txt", "my notes")
+	var p session.UserMessage
+	if err := msg.Decode(&p); err != nil {
+		t.Fatal(err)
+	}
+	notes := folderPath(s.ID) + "/" + p.Attachments[0].Ref
+	f.keep(s.ID, 2, "results/2/report.pdf", "%PDF report")
+	f.keep(s.ID, 2, "results/2/report.pdf", "%PDF report")
+	report := folderPath(s.ID) + "/results/2/report.pdf"
+	answers := f.keptIn(s.ID, "results/2/report.pdf")
+	if len(answers) != 2 {
+		t.Fatalf("the turn's answers that link the report: %v", answers)
+	}
+
+	fork := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/fork", "alice",
+		`{"message":{"content":[{"type":"text","text":"Again."}],"attachments":[{"name":"notes.txt","blob":"`+string(p.Attachments[0].Blob)+`"}]}}`)
+	if fork.status != http.StatusCreated {
+		t.Fatalf("fork: %d %s", fork.status, fork.body)
+	}
+	var child session.Session
+	fork.decode(t, &child)
+	childNotes := folderPath(child.ID) + "/" + p.Attachments[0].Ref
+
+	f.redact(s.ID, answers[0])
+	if _, ok := f.arca.Object(space, report); !ok {
+		t.Fatal("a file another answer still links was deleted")
+	}
+	f.redact(s.ID, answers[1])
+	if _, ok := f.arca.Object(space, report); ok {
+		t.Fatal("a file no answer links any more is still in the folder")
+	}
+	f.redact(s.ID, msg.ID)
+	if _, ok := f.arca.Object(space, notes); ok {
+		t.Fatal("a redacted message's file is still in the folder")
+	}
+	for _, path := range []string{childNotes, folderPath(child.ID) + "/results/2/report.pdf"} {
+		if _, ok := f.arca.Object(space, path); !ok {
+			t.Fatalf("a redaction in the parent deleted the fork's %s", path)
+		}
+	}
+	var deletes []arcastub.Recorded
+	for _, r := range f.arca.Requests() {
+		if r.Op == arcastub.OpDelete {
+			deletes = append(deletes, r)
+		}
+	}
+	if len(deletes) != 2 {
+		t.Fatalf("the deletes asked %+v", deletes)
+	}
+	for _, r := range deletes {
+		if r.Header.Get("Authorization") != "Bearer session:"+s.ID || !strings.HasPrefix(r.Path, "/v1/files/") {
+			t.Fatalf("a delete carried %q at %s", r.Header.Get("Authorization"), r.Path)
+		}
+	}
+
+	// The fork's own message names the parent's ref again, beside the
+	// copied message that recorded it first.
+	cevs, err := f.sessions.Events(t.Context(), child.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.redact(child.ID, cevs[len(cevs)-1].ID)
+	if _, ok := f.arca.Object(space, childNotes); !ok {
+		t.Fatal("a file the fork's copied message still names was deleted")
+	}
+	f.arca.Fail(arcastub.OpDelete, arcastub.Failure{Status: http.StatusForbidden, Code: "forbidden"})
+	f.redact(child.ID, msg.ID)
+	if _, ok := f.arca.Object(space, childNotes); !ok {
+		t.Fatal("a refused delete removed the file")
+	}
+	redacted := false
+	cevs, err = f.sessions.Events(t.Context(), child.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range cevs {
+		redacted = redacted || e.ID == msg.ID && e.Redacted()
+	}
+	if !redacted {
+		t.Fatal("a refused delete undid the redaction")
 	}
 }

@@ -331,7 +331,7 @@ var opDescriptions = map[string]string{
 		"A file an answer linked that is no such image is a download here whatever its type, which the media_type of its files.kept entry names. "+
 		"Both carry X-Content-Type-Options nosniff, Content-Security-Policy %q, Cache-Control %q, since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag. "+
 		"A file a session keeps in its folder of the files store is read by its digest from there, with the server's own credential, so a session that ended stays readable, and is answered as it streams, with its Content-Length; "+
-		"a file the folder no longer holds is not_found, a read the files service fails files_unavailable, and a file whose every record was redacted not_found, while the file stays in the folder.",
+		"a file the folder no longer holds is not_found, a read the files service fails files_unavailable, and a file whose every record was redacted not_found, and the file is deleted from the folder.",
 		filePolicy, blobCache),
 	"getFile": fmt.Sprintf("Get one file of the session's working directory as it is now, such as a file the agent wrote, by its path. "+
 		"The answer is the file's bytes as a download: Content-Type from its extension or its first bytes, Content-Length, Content-Disposition attachment with its name, "+
@@ -342,7 +342,9 @@ var opDescriptions = map[string]string{
 	"redactEvent": "Replace one event's content with a tombstone. The tombstone of a tool.result or a user.tool_result keeps its tool_use_id, so the call still reads as answered. " +
 		"A user.answer is redactable, and redacting it redacts the tool.result the runner rendered from it in the same call; a runner that has not read it yet tells the agent the answer was removed. " +
 		"The agent.tool_use of a question whose call has no tool.result yet is conflict: dismiss the question with user.interrupt first. " +
-		"A files.kept is redactable, and its tombstone names no file; redacting an agent.message redacts the files.kept that names it in the same append, one event.redacted each, and a kept file no other event names, an image or a linked file of any type, is deleted.",
+		"A files.kept is redactable, and its tombstone names no file; redacting an agent.message redacts the files.kept that names it in the same append, one event.redacted each, and a kept file no other event names, an image or a linked file of any type, is deleted. " +
+		"For a session that keeps its files in a folder of the files store, a file the redaction leaves no live event naming, a message's or an answer's, is deleted from the folder for good with the session's own credential once the redaction is written; " +
+		"a delete the files service refuses is logged and leaves the file in the folder, and the redaction stands.",
 	"listTriggers":  "List triggers.",
 	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
 	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running.",

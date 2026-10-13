@@ -585,7 +585,8 @@ type redactBody struct {
 // redaction, so a call that failed between the two is safe to send
 // again. The agent.tool_use of a question whose result is not in the log
 // yet is refused, since its tombstone would leave a wait nothing can
-// find.
+// find. A file of the session's folder that no live event names once the
+// redaction is written is deleted from the folder (spec 073).
 func (c *call) redact() error {
 	var b redactBody
 	if err := c.decode(&b); err != nil {
@@ -632,6 +633,7 @@ func (c *call) redact() error {
 			return err
 		}
 	}
+	c.s.dropRedactedFiles(c.r.Context(), s, evs)
 	c.w.WriteHeader(http.StatusNoContent)
 	return nil
 }

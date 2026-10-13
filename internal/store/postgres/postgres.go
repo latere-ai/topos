@@ -860,7 +860,8 @@ func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sende
 				return fmt.Errorf("postgres: delete blob %s: %w", d, err)
 			}
 			// A file of the folder no live event names is no longer read
-			// by its digest; the file itself stays in the folder (spec 068).
+			// by its digest; the API deletes the file itself from the
+			// folder once the redaction is written (spec 073).
 			if _, err := tx.Exec(ctx, `DELETE FROM session_files WHERE session_id = $1 AND digest = $2`, id, string(d)); err != nil {
 				return fmt.Errorf("postgres: drop the indexed file %s: %w", d, err)
 			}
