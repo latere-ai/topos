@@ -279,7 +279,7 @@ without `api_url` says its variable stands in for the service's own API
 base URL and calls its API's `<path>`, so a block of an authorizer that
 names neither still tells the model what to call.
 
-Version 2, which v0.35.0 and v0.36.0 carry, opened with "Services the
+Version 2, which v0.35.0 to v0.36.1 carry, opened with "Services the
 person connected. The installation adds their credentials on the way
 out, and this machine holds none of them." and gave each `http`
 connection only "its API's base URL is $GITHUB_API_URL, in place of the
