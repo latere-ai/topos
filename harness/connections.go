@@ -123,8 +123,8 @@ func (t *turn) recordListings(ctx context.Context) error {
 // connectionLine, mcpLine and availableLine are one connection as the
 // connections block names it.
 type (
-	connectionLine struct{ Title, GitURL, Env string }
-	mcpLine        struct{ Title, Name, Reason string }
+	connectionLine struct{ Title, Account, APIURL, GitURL, Env string }
+	mcpLine        struct{ Title, Account, Name, Reason string }
 	availableLine  struct{ Title, Name string }
 )
 
@@ -142,10 +142,11 @@ func reachesHTTP(s session.Session, m machine.Machine) bool {
 
 // connectionsBlock is the system block that names s's connections (spec
 // 069), "" when it names none: each connected one of kind http when the
-// machine is given them, http, with how to clone, push and call its API,
-// and each of kind mcp whose listing mcp holds, by its tools' prefix or
-// why it is not connected, one whose listing failed otherwise offering
-// nothing to name; and, on the session's own thread, which holds
+// machine is given them, http, with the account it acts as, the API base
+// URL its variable stands in for and how to call it, clone and push, and
+// each of kind mcp whose listing mcp holds, by its account and its tools'
+// prefix or why it is not connected, one whose listing failed otherwise
+// offering nothing to name; and, on the session's own thread, which holds
 // request_connection, each the person may be asked to connect.
 func connectionsBlock(s session.Session, own, http bool, mcp map[string]MCPListing) string {
 	var lines []connectionLine
@@ -163,15 +164,15 @@ func connectionsBlock(s session.Session, own, http bool, mcp map[string]MCPListi
 		switch c.Kind {
 		case session.ConnectionHTTP:
 			if http {
-				lines = append(lines, connectionLine{Title: c.Title, GitURL: c.GitURL, Env: c.APIEnv()})
+				lines = append(lines, connectionLine{Title: c.Title, Account: c.Account, APIURL: c.APIURL, GitURL: c.GitURL, Env: c.APIEnv()})
 			}
 		case session.ConnectionMCP:
 			switch l, listed := mcp[c.Name]; {
 			case !listed || l.Err != "":
 			case l.NotConnected:
-				tools = append(tools, mcpLine{Title: c.Title, Name: c.Name, Reason: cmp.Or(l.Reason, "no reason given")})
+				tools = append(tools, mcpLine{Title: c.Title, Account: c.Account, Name: c.Name, Reason: cmp.Or(l.Reason, "no reason given")})
 			default:
-				tools = append(tools, mcpLine{Title: c.Title, Name: c.Name})
+				tools = append(tools, mcpLine{Title: c.Title, Account: c.Account, Name: c.Name})
 			}
 		}
 	}

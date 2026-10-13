@@ -204,4 +204,5 @@ var released = map[string]string{
 	"tools/publish-v6.md":                            "c75105c421bbaa43d7d98fff7d590eacbf790a8d0189646226e663b985da58d5",
 	"results/publish/access-not-changed-v1.md":       "a43a6f093d4029acc83b0fb2a10c1320f3ebeec079fb3f4ffbe4c33571d5b01b",
 	"results/call/repeated-v1.md":                    "dced9685a0529467b20c14d9617cd0de511f34ce686a68f09e58e608218c0ca6",
+	"context/connections-v3.md":                      "baab77d4457e799ddbd05bf3a356f132b1dce403a9344272fc13692af311267c",
 }

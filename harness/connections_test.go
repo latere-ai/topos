@@ -44,7 +44,8 @@ func (m *conMachine) ApplyConnections(_ context.Context, cs []machine.HTTPConnec
 var (
 	codeHost = session.Connection{Name: "code-host", Kind: session.ConnectionHTTP, Title: "Code host", Audience: "connections",
 		Address:    "https://connections.example.com/v1/connections/c_1/http",
-		GitAddress: "https://connections.example.com/v1/connections/c_1/git", GitURL: "https://git.example.com"}
+		GitAddress: "https://connections.example.com/v1/connections/c_1/git", GitURL: "https://git.example.com",
+		Account: "ada", APIURL: "https://api.git.example.com"}
 	tracker = session.Connection{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "connections",
 		Address: "https://connections.example.com/v1/connections/c_2/mcp"}
 	wiki = session.Connection{Name: "wiki", Kind: session.ConnectionMCP, Title: "Wiki", Audience: "connections",
@@ -65,13 +66,15 @@ func connected(kind string) func(*session.Session) {
 	}
 }
 
-// TestTheConnectionsBlock: every request names the session's http
-// connections on a Cella machine with how to clone, push and call their
-// APIs, and the mcp connections the drive listed, by their tools' prefix
-// or why they are not connected, on the session's thread and a
-// subagent's alike; the machine takes the http connections at each
-// turn's start, and a send that replaced the list with none leaves no
-// block and gives the machine none (spec 069).
+// TestTheConnectionsBlock: every request says the connected services can
+// be used now, and names the session's http connections on a Cella
+// machine with the account each acts as, the API base URL its variable
+// stands in for, a curl call, and how to clone and push, and the mcp
+// connections the drive listed, by their tools' prefix or why they are
+// not connected, on the session's thread and a subagent's alike; the
+// machine takes the http connections at each turn's start, and a send
+// that replaced the list with none leaves no block and gives the machine
+// none (spec 069).
 func TestTheConnectionsBlock(t *testing.T) {
 	ctx := t.Context()
 	m := &conMachine{kind: machine.KindCella}
@@ -86,12 +89,16 @@ func TestTheConnectionsBlock(t *testing.T) {
 	}
 	body := unescaped(e.stub.Requests()[0].Body)
 	for _, want := range []string{
-		"<connections>", "$CODE_HOST_API_URL", "Bearer $CONNECTIONS_TOKEN", "git clone https://git.example.com/<owner>/<repository>",
+		"<connections>", "you can use them now", "Code host, connected as ada: $CODE_HOST_API_URL stands in for https://api.git.example.com",
+		`curl -s -H \"Authorization: Bearer $CONNECTIONS_TOKEN\" \"$CODE_HOST_API_URL/<path>\"`, "git clone https://git.example.com/<owner>/<repository>",
 		"push your own branch, " + session.Branch(e.s), "Issue tracker: its tools are named mcp__tracker__<tool>", "Wiki: not connected (revoked)",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the request lacks %q", want)
 		}
+	}
+	if strings.Contains(body, "holds none of them") {
+		t.Error("the block still says the machine holds none of the credentials")
 	}
 	want := machine.HTTPConnection{Env: "CODE_HOST_API_URL", Address: codeHost.Address, GitAddress: codeHost.GitAddress, GitURL: codeHost.GitURL}
 	if len(m.applied) != 1 || len(m.applied[0]) != 1 || m.applied[0][0] != want {

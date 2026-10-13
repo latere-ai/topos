@@ -447,10 +447,14 @@ const (
 	ContextAttachments Name = "context/attachments-v1"
 	// ContextConnections takes Branch, the session's branch, Token, the
 	// variable of the connection service's placeholder, HTTP, each with
-	// Title, GitURL and Env, MCP, each with Title, Name and Reason, why the
-	// connection is not connected, empty when it is, and Available, each
-	// with Title and Name, the connections the person may be asked to
-	// connect: the connections an allow named for the session (spec 069).
-	// Version 2 adds the connections the person may be asked to connect.
-	ContextConnections Name = "context/connections-v2"
+	// Title, Account, APIURL, GitURL and Env, MCP, each with Title,
+	// Account, Name and Reason, why the connection is not connected, empty
+	// when it is, and Available, each with Title and Name, the connections
+	// the person may be asked to connect: the connections an allow named
+	// for the session (spec 069). Version 2 adds the connections the person
+	// may be asked to connect. Version 3 says the connected ones can be
+	// used now with no sign-in or key, and names each one's account and,
+	// for an http connection, the service's own API base URL its variable
+	// stands in for and a curl call with the header and the variable.
+	ContextConnections Name = "context/connections-v3"
 )

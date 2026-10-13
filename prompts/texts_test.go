@@ -30,11 +30,14 @@ type repository struct{ URL, Ref, Branch, Dir string }
 type attachedApp struct{ Dir, Name, URL, Slug string }
 
 // httpConnection and mcpConnection stand in for the harness's lines of
-// the connections block.
+// the connections block before version 3, and httpLine and mcpLine for
+// its lines from version 3, which name the account and the API base URL.
 type (
 	httpConnection      struct{ Title, GitURL, Env string }
 	mcpConnection       struct{ Title, Name, Reason string }
 	availableConnection struct{ Title, Name string }
+	httpLine            struct{ Title, Account, APIURL, GitURL, Env string }
+	mcpLine             struct{ Title, Account, Name, Reason string }
 )
 
 // attachment stands in for session.Attachment.
@@ -443,7 +446,7 @@ var textCases = func() []textCase {
 			"- Issue tracker: its tools are named mcp__tracker__<tool>.\n" +
 			"- Wiki: not connected (revoked): tell the person to connect it again before you need it.\n" +
 			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.\n" + "</connections>"},
-		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+		{name: "context/connections-v2", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
 			"HTTP": []httpConnection{{"Code host", "https://git.example.com", "CODE_HOST_API_URL"}, {"Calendar", "", "CALENDAR_API_URL"}},
 			"MCP":  []mcpConnection{{"Issue tracker", "tracker", ""}, {"Wiki", "wiki", "revoked"}}, "Available": []availableConnection(nil),
 		}, want: "<connections>\n" + "Services the person connected. The installation adds their credentials on the way out, and this machine holds none of them.\n" +
@@ -453,7 +456,7 @@ var textCases = func() []textCase {
 			"- Issue tracker: its tools are named mcp__tracker__<tool>.\n" +
 			"- Wiki: not connected (revoked): tell the person to connect it again before you need it.\n" +
 			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.\n" + "</connections>"},
-		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+		{name: "context/connections-v2", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
 			"HTTP":      []httpConnection(nil),
 			"MCP":       []mcpConnection{{"Issue tracker", "tracker", ""}},
 			"Available": []availableConnection{{"GitHub", "github"}, {"Wiki", "wiki"}},
@@ -462,8 +465,31 @@ var textCases = func() []textCase {
 			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.\n" +
 			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
 			"- GitHub, named github\n" + "- Wiki, named wiki\n" + "</connections>"},
-		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+		{name: "context/connections-v2", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
 			"HTTP": []httpConnection(nil), "MCP": []mcpConnection(nil), "Available": []availableConnection{{"GitHub", "github"}},
+		}, want: "<connections>\n" +
+			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
+			"- GitHub, named github\n" + "</connections>"},
+		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+			"HTTP": []httpLine{
+				{"Mail", "ada@example.com", "https://mail.example.com", "", "MAIL_API_URL"},
+				{"Code host", "ada", "https://api.git.example.com", "https://git.example.com", "CODE_HOST_API_URL"},
+				{"Calendar", "", "", "", "CALENDAR_API_URL"},
+			},
+			"MCP": []mcpLine{{"Issue tracker", "ada", "tracker", ""}, {"Wiki", "", "wiki", "revoked"}}, "Available": []availableConnection{{"Files", "files"}},
+		}, want: "<connections>\n" +
+			"The person connected these services, and you can use them now. You need no sign-in or key of theirs: the connection adds their credentials to each call. When a task needs one of them, use it rather than saying you cannot reach it.\n" +
+			"- Mail, connected as ada@example.com: $MAIL_API_URL stands in for https://mail.example.com, so call https://mail.example.com/<path> as `curl -s -H \"Authorization: Bearer $CONNECTIONS_TOKEN\" \"$MAIL_API_URL/<path>\"`.\n" +
+			"- Code host, connected as ada: $CODE_HOST_API_URL stands in for https://api.git.example.com, so call https://api.git.example.com/<path> as `curl -s -H \"Authorization: Bearer $CONNECTIONS_TOKEN\" \"$CODE_HOST_API_URL/<path>\"`. " +
+			"`git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_1, and no other.\n" +
+			"- Calendar: $CALENDAR_API_URL stands in for the service's own API base URL, so call its API's <path> as `curl -s -H \"Authorization: Bearer $CONNECTIONS_TOKEN\" \"$CALENDAR_API_URL/<path>\"`.\n" +
+			"- Issue tracker, connected as ada: its tools are named mcp__tracker__<tool>.\n" +
+			"- Wiki: not connected (revoked): tell the person to connect it again before you need it.\n" +
+			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it.\n" +
+			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
+			"- Files, named files\n" + "</connections>"},
+		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+			"HTTP": []httpLine(nil), "MCP": []mcpLine(nil), "Available": []availableConnection{{"GitHub", "github"}},
 		}, want: "<connections>\n" +
 			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
 			"- GitHub, named github\n" + "</connections>"},
