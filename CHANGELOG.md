@@ -45,6 +45,24 @@ committed: the commit log already holds that.
   removed; results recorded by earlier releases may still carry the
   code.
 
+### Fixed
+
+- **A turn no longer loops on a call that keeps failing the same way.**
+  A model that sent a call again unchanged after it failed got the same
+  error back and could keep sending it, each time a whole model request
+  over a growing context, until the session's budget ran out. A call
+  made again with the same tool and the same input, and answered with
+  the same error, now carries a note after the error: repeating it
+  cannot succeed, so change the call or tell the person what is
+  blocking it. After 3 such repeats in one turn, the turn ends once the
+  step's calls are answered: the session goes idle with stop reason
+  `error` and a `session.error` with the new code `repeated_call`, whose
+  message tells the person the agent kept repeating an action that
+  failed and asks what to do next. Each subagent counts its own calls,
+  and its turn ends on its own. A call that succeeds, or whose input or
+  error changes, is never counted, so polling a job's log or running a
+  command again after a change works as before.
+
 ### Upgrading
 
 - Roll this release after any client that shows a waiting `publish`
@@ -54,6 +72,10 @@ committed: the commit log already holds that.
   approve less than what runs. A client tells it by `access` beside
   `path` or `release` in the input of its `agent.tool_use`, or by the
   reason above, and its result carries the publish's `status`.
+- A client that shows a `session.error` by its code meets a new one,
+  `repeated_call`. Show its `message`; the person's next message starts
+  a new turn as after any error.
+
 
 ## v0.35.0 - 2026-10-13
 
