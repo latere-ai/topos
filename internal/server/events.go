@@ -504,11 +504,33 @@ var MachineRule = fmt.Sprintf("session.machine {machine, reason, cause, context,
 	"its writes and edits, the files its answers showed or linked, and the files read in full, into a machine made new for a session that lost its own or for a fork with no checkpoint. "+
 	"files and bytes are what was written back, unverified how many of those a command changed after the log last held them, omitted how many files the log shows and could not rebuild, "+
 	"and commands how many commands ran after the first of the files was made, whose own files are not back; paths, unverified_paths and omitted_files name the first %d of each, omitted_files each {path, reason}, "+
-	"reason one of %s, %s, %s and %s. A rebuild holds at most %d files of %d bytes together.",
+	"reason one of %s, %s, %s and %s. A rebuild holds at most %d files of %d bytes together. "+
+	"A session that keeps a copy of its working directory in its folder of the files store (work.saved) is restored into such a machine from that copy first, "+
+	"recorded as restore {source: %s, copy {files, bytes, turn, inherited, skipped, skipped_files}, files, bytes, unverified, omitted, commands, paths, unverified_paths, omitted_files}: "+
+	"copy files and bytes are what the copy gave back, turn the turn whose end saved it last, inherited true for a fork's copy of its parent's latest, which may hold changes made after the point the fork continues from, "+
+	"skipped and skipped_files what the copy leaves out; the other members count from the copy, files, bytes and paths the files the log wrote over the copy or beside it, commands the commands that ran after it, "+
+	"and omitted reason %s a file the copy holds that the folder no longer had and the log could not give back. "+
+	"A restore from the log names copy {failed}, a developer's detail, when the copy could not be written.",
 	session.MachineAttached, session.MachineHandoff, session.MachineRestored, session.MachineRestarted, session.MachineReplaced,
 	session.MachineOutOfMemory, session.MachineRestarted, session.MachineRestarted, session.MachineReplaced, machine.CodeLost, runner.MessageMachineLost,
 	session.MachineRestored, session.RestoreFromLog, session.MaxRestoreNames,
-	session.OmittedUnknown, session.OmittedEdit, session.OmittedLimit, session.OmittedBlob, tools.MaxRebuiltFiles, tools.MaxRebuiltBytes)
+	session.OmittedUnknown, session.OmittedEdit, session.OmittedLimit, session.OmittedBlob, tools.MaxRebuiltFiles, tools.MaxRebuiltBytes,
+	session.RestoreFromFolder, session.OmittedCopy)
+
+// WorkRule is the sentence the event routes state work.saved by (spec
+// 073): what a client reads of the copy a session keeps of its working
+// directory in its folder of the files store.
+var WorkRule = fmt.Sprintf("work.saved {covers, written, removed, unsaved, deferred, skipped, skipped_files, held, failed, whole, from} records, for a session that keeps its files in a folder of the files store, "+
+	"the copy of its working directory kept at %s/<path> in that folder, path the file's place in the working directory, the latest state alone and no turn's before it. "+
+	"A turn of the session's own thread that ran a call ends with one, before its session.status, when the turn end wrote, removed or left out a file: "+
+	"covers is the last sequence the turn end had read when it walked the directory; written each {path, size, mode, sha256} for a file written, new or changed, mode its permission bits and sha256 the hex digest of its bytes; "+
+	"removed the paths whose files were deleted; unsaved the paths whose newer bytes were not written, which the copy no longer vouches for; deferred how many changed files were left for a later turn end; "+
+	"skipped how many files the copy leaves out and skipped_files the first %d of them, each {path, reason}, reason %s for a file past %d bytes and %s for one past the copy's %d files or %d bytes in path order; "+
+	"held {files, bytes} what the copy holds after it; and failed {code, detail} why the save stopped short, code %s or %s, with the files written before it recorded. "+
+	"One turn end writes at most %d files of %d bytes together. The copy leaves out the directories %s at any depth, what the credential deny-list names, and anything that is no regular file. "+
+	"A fork's first work.saved, whole with from its parent's id, names every file of the copy it starts from, its parent's latest. The blob route does not answer a file of the copy.",
+	session.WorkDir, session.MaxRestoreNames, session.WorkTooLarge, session.MaxWorkFileBytes, session.WorkLimit, session.MaxWorkFiles, session.MaxWorkBytes,
+	session.WorkMachineUnavailable, session.WorkFilesUnavailable, session.MaxWorkTurnFiles, session.MaxWorkTurnBytes, strings.Join(session.WorkLeftOut, ", "))
 
 // blobCache is a blob's Cache-Control: its bytes never change under its
 // digest, so a client keeps it as long as it likes, and private keeps it

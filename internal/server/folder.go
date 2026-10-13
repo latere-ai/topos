@@ -24,8 +24,10 @@ const CodeFilesUnavailable = harness.CodeFilesUnavailable
 const FolderRule = "The authorizer's allow of session.create or session.fork may name folder {url, owner, path}, a folder of an Arca-compatible files API: url the API's root, under which files/ and uploads are served, owner the space, and path the folder in that space. " +
 	"The session then keeps the files of its messages and the files its answers show or link in that folder in place of its blobs: a message's file at attachments/<event id>/<name>, and a file an answer of turn N shows or links at results/<N>/<path>, path its place in the working directory, " +
 	"each written once, with the session's own token, and each record names it by ref, its path in the folder, beside blob, its digest, by which the blob route reads it. " +
+	"The session also keeps the latest state of its working directory there, at work/<path>, written at the end of each turn that changed files and recorded by work.saved, and a new machine is restored from it. " +
+	"A file a redaction leaves no live event naming is deleted from the folder. " +
 	"The session answers folder {owner, path} from the first file stored there, and no folder before. " +
-	"A fork copies into its own folder, on the server, each folder of its parent's that its copied events and its message name. " +
+	"A fork copies into its own folder, on the server, each folder of its parent's that its copied events and its message name, and its parent's work/. " +
 	"An allow that names a folder on a server that keeps no files store, or a folder that is not an http or https URL with no user, query or fragment, an owner, and a clean path of two segments or more, is authorizer_unavailable. " +
 	"A file the files service does not take or give is files_unavailable."
 
@@ -162,6 +164,9 @@ type forkFiles struct {
 	dirs  []string
 	files []file
 	refs  []session.Attachment
+	// work is set when the fork copies its parent's copy of the working
+	// directory, session.WorkDir (spec 073).
+	work bool
 }
 
 // forkFilesOf reads what a fork of parent copies of its folder: the
@@ -195,20 +200,25 @@ func forkFilesOf(parent, fork session.Session, events []session.Event, refs []st
 	return &forkFiles{from: *parent.Folder, dirs: dirs}, nil
 }
 
-// prepare copies the fork's folders from its parent's and writes its
+// prepare copies the fork's folders from its parent's, its parent's copy
+// of the working directory among them (spec 073), and writes its
 // message's new files, with the fork's own token, once the fork's record
 // exists and before its log is written. A folder the parent's holds
 // nothing under is gone from the parent too, and is skipped.
 func (s *Server) prepareFork(ff *forkFiles) func(context.Context, session.Session) error {
 	return func(ctx context.Context, fork session.Session) error {
-		if ff == nil || (len(ff.dirs) == 0 && len(ff.files) == 0) {
+		if ff == nil || (len(ff.dirs) == 0 && len(ff.files) == 0 && !ff.work) {
 			return nil
 		}
 		store, err := s.o.Files.Write(ctx, fork)
 		if err != nil {
 			return filesRefused(err, "", "open the fork's folder: "+err.Error())
 		}
-		for _, dir := range ff.dirs {
+		dirs := ff.dirs
+		if ff.work {
+			dirs = append(slices.Clone(dirs), session.WorkDir)
+		}
+		for _, dir := range dirs {
 			err := store.CopyFolder(ctx, ff.from, dir)
 			switch {
 			case errors.Is(err, harness.ErrFileNotFound):

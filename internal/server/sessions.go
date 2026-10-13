@@ -230,6 +230,9 @@ type forkOrigin struct {
 	title   string
 	message *forkMessage
 	newTree bool
+	// work is the copy of its working directory the parent's whole log
+	// records, which the fork starts from (spec 073).
+	work session.WorkCopy
 }
 
 // root is the root of the fork tree a fork of f joins, whose id is id:

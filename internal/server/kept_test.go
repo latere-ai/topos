@@ -244,6 +244,11 @@ func TestTheDocumentStatesKeptImages(t *testing.T) {
 		{"/sessions/{id}/files", "get", strconv.Itoa(MaxFileBytes) + " bytes is file_too_large"},
 		{"/sessions/{id}/events", "get", strconv.Itoa(harness.MaxKeptFileBytes) + " bytes, " + strconv.Itoa(harness.MaxKeptFilesBytes) + " bytes together"},
 		{"/sessions/{id}/events/{event_id}/redact", "post", "redacts the files.kept that names it in the same append"},
+		{"/sessions/{id}/events", "get", WorkRule},
+		{"/sessions/{id}/stream", "get", WorkRule},
+		{"/sessions/{id}/events", "get", "restore {source: folder, copy {files, bytes, turn, inherited, skipped, skipped_files}"},
+		{"/sessions/{id}/events", "get", "work/<path>"},
+		{"/sessions/{id}/events/{event_id}/redact", "post", "is deleted from the folder for good"},
 	} {
 		if !strings.Contains(doc.Paths[c.path][c.method].Description, c.want) {
 			t.Errorf("%s %s does not state %q", c.method, c.path, c.want)

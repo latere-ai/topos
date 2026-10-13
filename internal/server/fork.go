@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -164,7 +165,7 @@ func (c *call) forkSession() error {
 	}
 	s, err := c.s.create(ctx, c.asker(), creation{
 		fork: &forkOrigin{parent: parent, seq: seq, events: evs[:seq], model: modelAt(parent, evs, seq), title: title, message: message,
-			newTree: b.Tree != nil},
+			newTree: b.Tree != nil, work: session.CopyOf(evs)},
 		attended: b.Attended,
 		sender:   sender,
 	})
@@ -262,8 +263,25 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	if err != nil {
 		return session.Session{}, err
 	}
+	// A fork with a folder of its own starts from its parent's copy of the
+	// working directory as it stands, and records it after the copied
+	// events (spec 073).
+	work, err := forkWork(f, sess, s.o.Now())
+	if err != nil {
+		return session.Session{}, err
+	}
+	if work != nil {
+		if ff == nil {
+			ff = &forkFiles{from: *f.parent.Folder}
+		}
+		ff.work = true
+	}
 	if f.message == nil {
-		return session.ForkWith(ctx, s.o.Sessions, sess, blobs, f.parent, f.events, s.prepareFork(ff))
+		var then []session.Event
+		if work != nil {
+			then = append(then, *work)
+		}
+		return session.ForkWith(ctx, s.o.Sessions, sess, blobs, f.parent, f.events, s.prepareFork(ff), then...)
 	}
 	fields := map[string]any{"sender": q.caller.Subject, "event_type": string(session.TypeUserMessage)}
 	maps.Copy(fields, f.message.word)
@@ -280,6 +298,9 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	if err != nil {
 		return session.Session{}, err
 	}
+	if work != nil {
+		then = append([]session.Event{*work}, then...)
+	}
 	if len(puts.files) > 0 {
 		if ff == nil {
 			ff = &forkFiles{}
@@ -292,6 +313,29 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	}
 	s.o.Notify()
 	return forked, nil
+}
+
+// forkWork is the work.saved a fork of f appends after its copied events
+// (spec 073): its parent's copy of the working directory as the parent's
+// whole log records it, whole, with covers at most the fork point, since
+// what the parent did after the fork point is in the copy and not in the
+// fork's log. Nil for a parent that keeps no copy and for a fork or a
+// parent with no folder, whose first machine is rebuilt from its log.
+func forkWork(f *forkOrigin, fork session.Session, now time.Time) (*session.Event, error) {
+	c := f.work
+	if !c.Saved || fork.Folder == nil || f.parent.Folder == nil {
+		return nil, nil
+	}
+	stale := slices.Sorted(maps.Keys(c.Stale))
+	w := session.WorkSaved{
+		Covers: min(c.Covers, f.seq), Whole: true, From: f.parent.ID, Written: c.Sorted(), Unsaved: stale,
+		Skipped: c.Skipped, SkippedFiles: c.SkippedFiles, Held: session.WorkHeld{Files: len(c.Files), Bytes: c.Bytes()},
+	}
+	e, err := session.NewEvent(session.TypeWorkSaved, w, now)
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
 }
 
 // modelAt is the model a session stood on after the first seq events of

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -628,4 +629,131 @@ func TestAForksRefsResolveInItsOwnFolder(t *testing.T) {
 	resolves(grand, 4)
 	empty(whole.ID)
 	resolves(grand, 4)
+}
+
+// save appends a turn whose end saved the files of written into the
+// copy of the working directory, which the test writes into the folder
+// first, and removed the paths of removed.
+func (ff *folderFixture) save(id string, turn int, written map[string]string, removed ...string) {
+	ff.t.Helper()
+	s := ff.stored(id)
+	w := session.WorkSaved{Covers: s.LastSeq, Removed: removed}
+	for _, p := range slices.Sorted(maps.Keys(written)) {
+		ff.arca.Put(space, folderPath(id)+"/work/"+p, arcastub.Object{Data: []byte(written[p])})
+		w.Written = append(w.Written, session.WorkFile{Path: p, Size: int64(len(written[p])), Mode: 0o644, SHA256: session.DigestOf([]byte(written[p])).Hex()})
+	}
+	for _, p := range removed {
+		ff.arca.Remove(space, folderPath(id)+"/work/"+p)
+	}
+	saved, err := session.NewEvent(session.TypeWorkSaved, w, time.Now())
+	if err != nil {
+		ff.t.Fatal(err)
+	}
+	idle, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopEndTurn}, time.Now())
+	if err != nil {
+		ff.t.Fatal(err)
+	}
+	batch := []session.Event{saved, idle}
+	for i := range batch {
+		batch[i].Turn = turn
+	}
+	session.Stamp(id, s.LastSeq, batch)
+	if _, err := ff.sessions.Append(ff.t.Context(), id, s.LastSeq, batch); err != nil {
+		ff.t.Fatal(err)
+	}
+}
+
+// TestAForkCopiesItsParentsWorkingDirectory: a fork copies its parent's
+// work/ into its own folder on the server, with its own token, and its log
+// gains, after the copied events, a whole work.saved of the parent's copy
+// as it stands, a later turn's included, whose covers is at most the fork
+// point; a fork whose allow names no folder copies none; a parent whose
+// work/ holds nothing is skipped; and a copy refused leaves no fork (spec
+// 073).
+func TestAForkCopiesItsParentsWorkingDirectory(t *testing.T) {
+	f := newFolderFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	parent := f.create("alice", "reviewer")
+	f.turn(parent.ID, 1, "Hello.", 1)
+	f.save(parent.ID, 2, map[string]string{"src/app.js": "v1", "notes.md": "notes"})
+	evs, err := f.sessions.Events(t.Context(), parent.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := evs[len(evs)-1].Seq
+	f.save(parent.ID, 3, map[string]string{"src/app.js": "v2", "dist/index.html": "<h1>"}, "notes.md")
+
+	a := f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", `{"at_seq":`+strconv.FormatUint(at, 10)+`}`)
+	if a.status != http.StatusCreated {
+		t.Fatalf("fork: %d %s", a.status, a.body)
+	}
+	var fork session.Session
+	a.decode(t, &fork)
+	if got := f.arca.Paths(space, folderPath(fork.ID)+"/work/"); !slices.Equal(got, []string{folderPath(fork.ID) + "/work/dist/index.html", folderPath(fork.ID) + "/work/src/app.js"}) {
+		t.Fatalf("the fork's work/ holds %v", got)
+	}
+	for _, r := range f.arca.Requests() {
+		if r.Op == arcastub.OpCopy && strings.HasSuffix(r.Path, "/work") && r.Header.Get("Authorization") != "Bearer session:"+fork.ID {
+			t.Fatalf("the copy of work carried %q", r.Header.Get("Authorization"))
+		}
+	}
+	fevs, err := f.sessions.Events(t.Context(), fork.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := fevs[len(fevs)-1]
+	var w session.WorkSaved
+	if last.Type != session.TypeWorkSaved || last.Seq != at+1 || last.Decode(&w) != nil {
+		t.Fatalf("the fork's log ends %s at %d", last.Type, last.Seq)
+	}
+	if !w.Whole || w.From != parent.ID || w.Covers != at || len(w.Written) != 2 || w.Written[1].SHA256 != session.DigestOf([]byte("v2")).Hex() || w.Held.Files != 2 {
+		t.Fatalf("the fork's copy %+v", w)
+	}
+	if c := session.CopyOf(fevs); !c.Inherited || len(c.Files) != 2 || c.Covers != at {
+		t.Fatalf("the fork's copy as it folds %+v", c)
+	}
+
+	// A fork with a message records its copy before the message.
+	a = f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", `{"message":{"content":[{"type":"text","text":"Again."}]}}`)
+	if a.status != http.StatusCreated {
+		t.Fatalf("fork with a message: %d %s", a.status, a.body)
+	}
+	var withMessage session.Session
+	a.decode(t, &withMessage)
+	mevs, err := f.sessions.Events(t.Context(), withMessage.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(mevs); mevs[n-1].Type != session.TypeUserMessage || !slices.ContainsFunc(mevs[len(evs)+2:], func(e session.Event) bool { return e.Type == session.TypeWorkSaved }) {
+		t.Fatalf("the fork with a message ends %s", mevs[n-1].Type)
+	}
+
+	f.named = false
+	a = f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", ``)
+	if a.status != http.StatusCreated {
+		t.Fatalf("a fork with no folder: %d %s", a.status, a.body)
+	}
+	var bare session.Session
+	a.decode(t, &bare)
+	bevs, err := f.sessions.Events(t.Context(), bare.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range bevs[len(evs)+2:] {
+		if e.Type == session.TypeWorkSaved {
+			t.Fatal("a fork with no folder records a copy")
+		}
+	}
+	f.named = true
+
+	for _, p := range f.arca.Paths(space, folderPath(parent.ID)+"/work/") {
+		f.arca.Remove(space, p)
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", ``); a.status != http.StatusCreated {
+		t.Fatalf("a fork of a parent whose work/ holds nothing: %d %s", a.status, a.body)
+	}
+	f.arca.Fail(arcastub.OpCopy, arcastub.Failure{Status: http.StatusRequestEntityTooLarge, Code: "quota_exceeded"})
+	if a := f.do(http.MethodPost, "/v1/sessions/"+parent.ID+"/fork", "alice", ``); a.status != http.StatusServiceUnavailable || a.code() != CodeFilesUnavailable {
+		t.Fatalf("a fork whose copy is refused: %d %s", a.status, a.body)
+	}
 }
