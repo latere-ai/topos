@@ -49,6 +49,7 @@ const (
 	TypeApprovalRequested    Type = "approval.requested"
 	TypeApprovalDecided      Type = "approval.decided"
 	TypeFilesKept            Type = "files.kept"
+	TypeWorkSaved            Type = "work.saved"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -63,6 +64,7 @@ var Known = map[Type]bool{
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
 	TypeFilesKept: true, TypeConnectionsChanged: true, TypeConnectionRequested: true,
+	TypeWorkSaved: true,
 }
 
 // Event is one entry of a session's log.
@@ -463,9 +465,14 @@ const (
 // known to have stopped because it ran out of memory.
 const MachineOutOfMemory = "out_of_memory"
 
-// RestoreFromLog is the source of a Restore that rebuilt a working
-// directory from the session's own log (spec 065).
-const RestoreFromLog = "log"
+// The sources of a Restore: RestoreFromLog rebuilt a working directory
+// from the session's own log (spec 065), and RestoreFromFolder restored
+// it from the copy the session keeps in its folder of a files store, then
+// from the log for what the copy does not hold (spec 073).
+const (
+	RestoreFromLog    = "log"
+	RestoreFromFolder = "folder"
+)
 
 // MaxRestoreNames is the most paths each list of a Restore names; its
 // counts say how many there are in all.
@@ -480,8 +487,14 @@ const MaxRestoreNames = 100
 // commands ran after the first of the files was made, whose own files
 // the log never held. Paths, UnverifiedPaths and OmittedFiles name the
 // first MaxRestoreNames of each, by path.
+//
+// With Source RestoreFromFolder, Copy is what the copy gave back, and the
+// other members count from it: Files, Bytes and Paths are what the log
+// wrote over the copy or beside it, and Commands how many commands ran
+// after the copy was saved.
 type Restore struct {
 	Source          string        `json:"source"`
+	Copy            *RestoreCopy  `json:"copy,omitempty"`
 	Files           int           `json:"files"`
 	Bytes           int64         `json:"bytes"`
 	Unverified      int           `json:"unverified"`
@@ -490,6 +503,21 @@ type Restore struct {
 	Paths           []string      `json:"paths,omitempty"`
 	UnverifiedPaths []string      `json:"unverified_paths,omitempty"`
 	OmittedFiles    []OmittedFile `json:"omitted_files,omitempty"`
+}
+
+// RestoreCopy is what a restore took from the copy of the working
+// directory a session keeps in its folder (spec 073): the files written
+// and their bytes; Turn, the turn whose end saved the copy last, zero for
+// a fork's copy of its parent's, which Inherited marks and which may hold
+// changes made after the point the fork continues from; and Skipped and
+// SkippedFiles, what the latest save left out.
+type RestoreCopy struct {
+	Files        int           `json:"files"`
+	Bytes        int64         `json:"bytes"`
+	Turn         int           `json:"turn,omitempty"`
+	Inherited    bool          `json:"inherited,omitempty"`
+	Skipped      int           `json:"skipped,omitempty"`
+	SkippedFiles []OmittedFile `json:"skipped_files,omitempty"`
 }
 
 // OmittedFile is one file a Restore could not rebuild, with the reason.
