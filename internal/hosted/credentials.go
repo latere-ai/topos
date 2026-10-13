@@ -263,11 +263,10 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, s session.Session, c *
 	return out, nil
 }
 
-// sharingHost is the first of secrets scoped to a host that, by Cella's
-// own rule, can match a destination host also matches, nil when none is:
-// Cella refuses a sandbox that mounts two such Secrets
-// secret_host_conflict, since its egress gateway would have no answer for
-// which value to send there.
+// sharingHost is the first of secrets whose host and host can both match
+// one destination, by Cella's own rule, nil when none is: Cella refuses a
+// sandbox that mounts two such Secrets secret_host_conflict, since its
+// egress gateway would have no answer for which value to send there.
 func sharingHost(secrets []*sandboxSecret, host string) *sandboxSecret {
 	for _, sec := range secrets {
 		if cellav1.HostPatternCovers(sec.host, host) || cellav1.HostPatternCovers(host, sec.host) {
