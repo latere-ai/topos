@@ -10,6 +10,22 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **The agent is told plainly that it can use a person's connected
+  services.** The connections block opened with "this machine holds
+  none of them", which a small model read as having no access: asked to
+  summarize the person's mail, with the mail service connected, it said
+  it could not reach it and asked the person to connect it again. The
+  block now says the connected services can be used now, with no sign-in
+  or key, and gives each `http` connection the account it acts as, the
+  service's own API base URL its variable stands in for, and one `curl`
+  call with the header and the variable (`context/connections-v3`).
+- **A connection may name its `account` and `api_url`.** An authorizer
+  can name the account a connection acts as, and, for an `http`
+  connection, the service's own API base URL, which the block names. Both
+  are optional; an available connection names neither.
+
 ## v0.36.1 - 2026-10-13
 
 ### Fixed
