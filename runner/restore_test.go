@@ -53,7 +53,7 @@ func (m *importing) ImportTar(ctx context.Context, dest string, r io.Reader) err
 		if h.Typeflag != tar.TypeReg {
 			continue
 		}
-		if err := m.WriteFile(ctx, filepath.ToSlash(filepath.Join(dest, h.Name)), tr, 0o644); err != nil {
+		if err := m.WriteFile(ctx, filepath.ToSlash(filepath.Join(dest, h.Name)), tr, os.FileMode(h.Mode).Perm()); err != nil {
 			return err
 		}
 	}
@@ -326,7 +326,9 @@ func TestAForksFirstMachineIsRebuiltFromTheLog(t *testing.T) {
 func TestRebuiltFilesCarryTheTimeTheyWereWrittenBack(t *testing.T) {
 	now := time.Date(2026, 10, 12, 9, 30, 0, 0, time.UTC)
 	files := []tools.RebuiltFile{{Path: "src/app.js", Content: []byte("x\n")}, {Path: "notes.txt", Content: []byte("y\n")}}
-	open := func(f tools.RebuiltFile) ([]byte, bool, error) { return f.Content, true, nil }
+	open := func(f tools.RebuiltFile) (io.ReadCloser, int64, bool, error) {
+		return io.NopCloser(bytes.NewReader(f.Content)), int64(len(f.Content)), true, nil
+	}
 	var buf bytes.Buffer
 	if err := writeTar(&buf, files, open, now); err != nil {
 		t.Fatal(err)

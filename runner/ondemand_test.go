@@ -50,6 +50,8 @@ type demand struct {
 	wrap func(machine.Machine) machine.Machine
 	// files offers the write, edit and read tools beside bash.
 	files bool
+	// folder is the session's folder of a files store (spec 068).
+	folder harness.Files
 }
 
 func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
@@ -88,6 +90,7 @@ func (f *fixture) onDemandWith(work string, opens *atomic.Int32, d demand) {
 				Entry: models.Entry{InputWindow: 100_000, MaxOutputTokens: 8_000}, Machine: m, Tools: reg,
 				Policy: harness.Policy{AlwaysAllow: []string{"bash", tools.NameWrite, tools.NameEdit}},
 				Clock:  func() time.Time { return t0 }, Sleep: func(context.Context, time.Duration) error { return nil },
+				Files: d.folder,
 			}, nil
 		},
 	})
