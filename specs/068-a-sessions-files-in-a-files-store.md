@@ -6,7 +6,7 @@ depends_on: [015-api.md, 017-external-runners-handoff-fork.md, 018-credentials-a
 affects: [authorizer/, session/, harness/, internal/filestore/, runner/, internal/hosted/, internal/server/, internal/identity/, internal/config/, internal/store/postgres/, session/dir/, cmd/toposd/, test/stubs/arcastub/, test/stubs/idpstub/, api/openapi.yaml, docs/configuration.md]
 effort: large
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -91,6 +91,7 @@ folder from its creation.
 |---|---|---|
 | `attachments/<event id>/<name>` | a file a person attached to the message whose event id it is, the path the runner writes it at in the working directory | by the API process, before the message is appended |
 | `results/<turn>/<path>` | a file an answer of that turn showed or linked, at its path inside the working directory | by the harness, when the answer's step is committed |
+| `work/<path>` | the latest state of the working directory ([[073-a-working-directory-kept-in-the-sessions-folder]]) | by the harness, at the end of a turn that changed files, in place |
 
 Both writes are create-only (`If-None-Match: *`), so a written file is
 never changed: an old answer keeps what it handed over whatever later
@@ -109,20 +110,25 @@ given:
 | Method | Does |
 |---|---|
 | `Put(ctx, ref, mediaType, size, r)` | writes exactly `size` bytes of `r` at `ref`, create-only, as they are read, and answers their digest |
+| `Overwrite(ctx, ref, mediaType, size, r)` | `Put` in place of whatever `ref` holds ([[073-a-working-directory-kept-in-the-sessions-folder]]) |
 | `Open(ctx, ref)` | answers the file at `ref` as a stream, with its length |
+| `Delete(ctx, ref)` | removes the file at `ref` for good; nothing there is no error |
 | `CopyFolder(ctx, from, dir)` | copies the folder `dir` of another folder of the same space and files API into the same place of this one, on the server |
 
-Nothing deletes: a session's folder goes with the session, by the
-installation that named it.
+A file goes when a redaction leaves no live event naming it ("Reading")
+and when the working directory no longer holds it
+([[073-a-working-directory-kept-in-the-sessions-folder]]); a session's
+folder goes with the session, by the installation that named it.
 
 `filestore.Arca` is that backend, a client of Topos's own: an Arca-compatible files API exports none. Each call:
 
 | Call | Request | Headers |
 |---|---|---|
-| a put of at most `filestore.InlineBytes`, 16 MiB, the files API's single-request bound by default | `PUT {url}/files/{owner}/{path}/{ref}` | `Authorization: Bearer <token>`, `Content-Type`, `Content-Length`, `If-None-Match: *` |
+| a put of at most `filestore.InlineBytes`, 16 MiB, the files API's single-request bound by default | `PUT {url}/files/{owner}/{path}/{ref}` | `Authorization: Bearer <token>`, `Content-Type`, `Content-Length`, `If-None-Match: *`; an overwrite sends no `If-None-Match` |
 | a larger put | `POST {url}/uploads` `{"owner", "path", "size", "content_type"}`, then `PUT` each of `part_urls` with no `Authorization`, then `POST {url}/uploads/{id}/complete` `{"parts": [{"n", "etag"}]}`; a failure after the open is `DELETE {url}/uploads/{id}` | the bearer on the three API calls, `Content-Length` on each part, `If-None-Match: *` on the completion |
 | a read | `GET {url}/files/{owner}/{path}/{ref}`; a redirect is followed once, to an `http` or `https` address, with no `Authorization` | the bearer on the first request alone |
 | a copy | `POST {url}/files/{owner}/{from path}/{dir}` `{"copy_to": "{path}/{dir}", "recursive": true}` | the bearer |
+| a delete | `DELETE {url}/files/{owner}/{path}/{ref}?permanent=1`, so the file is kept in no trash; `404` is a file already gone | the bearer |
 
 `{owner}` and each segment of a path are percent-encoded. A refusal of
 the files API is a `harness.FileError` with its status and code; a
@@ -185,8 +191,21 @@ before. The core keeps a digest index, `(session, digest, ref)`, one
 row for each file of an appended event that carries `ref`, written in
 the append that records the file and removed with the session; a
 redaction that leaves no event naming a digest removes its rows, and
-the route then answers the digest `not_found`. The file stays in the
-folder: the files store deletes nothing.
+the route then answers the digest `not_found`.
+
+**A redaction deletes the file.** Once a redaction is written, the API
+process deletes from the session's folder, for good and with the
+session's own token, each file whose ref the log recorded before the
+redaction and no live event records after it. Two answers of one turn
+that link one file share its ref, and so do a fork's copied message and
+the fork's own message that attaches the same file by its digest: the
+file goes only once no live event names its ref. A fork's folder holds
+its own copy, so a redaction in the session forked deletes nothing of
+the fork's. The redaction is the record and stands whatever becomes of
+a delete: a delete the files service refuses, as it refuses a session's
+token once the session has ended, is logged with its ref, and the file
+stays in the folder until the folder goes. A redaction sent again plans
+nothing and deletes nothing more.
 
 A digest the index names is read from the folder with the core's own
 token and streamed with the files API's `Content-Length`; the other
@@ -205,8 +224,10 @@ bounds.
 
 A fork's allow names the fork's own folder. For each folder of the
 session forked that the copied events and the fork's message name,
-`attachments/<event id>` and `results/<turn>`, the fork asks one copy
-of it into its own folder, with its own token, after its record is
+`attachments/<event id>` and `results/<turn>`, and for the session's
+`work` when it keeps a copy of its working directory
+([[073-a-working-directory-kept-in-the-sessions-folder]]), the fork asks
+one copy of it into its own folder, with its own token, after its record is
 written and before its log is: the copied entries keep their `ref`s,
 which then resolve in the fork's folder, and the append writes the
 fork's index rows. A copy that fails deletes the fork, as a failed copy
@@ -229,13 +250,13 @@ copy.
 | A Storage refusal of a kept file | an existing reason, `too_large` or `unavailable` | a new reason: a client that knows the closed list would meet an unknown one |
 | The single-request bound | the constant `filestore.InlineBytes`, the files API's default | a setting: the files API does not publish its own, and one constant serves the installations that keep the default |
 | Reads | the core's own token | the session's: it stops with the session and with its agent's identity |
+| A redacted file | deleted from the folder once no live event names it, with the session's token | left in the folder until the folder goes: a person would still find among their files what they removed from the conversation |
 
 ## Not in this spec
 
 Moving the files of sessions that exist into a folder. Deleting a
 session's folder, the installation's. An upload route at the core for
-attachments past 5 MiB. `Range` requests. A file a redaction removes
-from the answer, which stays in the folder until the folder goes.
+attachments past 5 MiB. `Range` requests.
 
 ## Roll order
 
@@ -259,6 +280,8 @@ read `ref` reads every file by digest as before.
 | 7 | A fork copies each folder its copied events and its message name, with its own token, and its copied `ref`s resolve in its own folder; a failed copy leaves no fork | `internal/server.TestAForkCopiesItsFoldersOnTheServer`, `TestAFolderThatCannotBeOpened` |built |
 | 8 | The core's own token is asked with the audience by the client credentials grant | `internal/identity.TestServiceTokenAsksTheAudience` |built |
 | 9 | End to end, on the stubs: a message with an attachment and an answer that links a file land under the folder, the blob route answers both by digest as a stream, the core's own token reads them, and a fork reads them from its own folder | `cmd/toposd.TestASessionsFilesLiveInTheFilesStore` |built |
+| 10 | A redaction deletes from the folder, for good and with the session's token, each file no live event names once it is written: a message's attachment, and an answer's file once both answers that link it are redacted; a fork's copy, and a file a fork's copied message still names, stay; a refused delete leaves the redaction written and the file in place. The backend overwrites in place and deletes with `permanent=1` | `internal/server.TestARedactionDeletesItsFilesFromTheFolder`, `internal/server.TestTheBlobRouteStreamsAFileOfTheFolder`, `session.TestARefGoesOnceNoLiveEventNamesIt`, `internal/filestore.TestArcaOverwritesAndDeletes`, `test/stubs/arcastub.TestTheStubDeletesForGood` | built |
+| 11 | Every ref a fork's log records opens in the fork's own folder, and its blob route answers it, after the folder of the session it was forked from is emptied: a fork at the last turn, a fork before a later message that attaches that message's file again, and a fork of a fork whose own parent's folder is emptied too | `internal/server.TestAForksRefsResolveInItsOwnFolder` | built |
 
 ## Outcome
 
@@ -286,9 +309,17 @@ build differs from the design as first written:
   store** fails the turn's setup with `files_unavailable`, rather than
   keeping the session's files as blobs where its installation does not
   look for them.
-- **Redaction** removes the index rows of a digest no live event names,
-  so the blob route answers it `not_found`; the file itself stays in the
-  folder, since the files store deletes nothing.
+- **Redaction** removed the index rows of a digest no live event names,
+  so the blob route answered it `not_found`, and left the file in the
+  folder. Since 2026-10-13 the API process also deletes the file from
+  the folder (criterion 10).
+- **A fork's refs** were checked on 2026-10-13 for a ref that still
+  resolves against the parent's folder: every read, the blob route, the
+  runner's delivery of an attachment and a rebuild's read of a kept
+  file, opens the session's own folder, and a fork copies each folder its
+  refs name, a re-attached file's from after the fork point included.
+  None reads the parent's; criterion 11 holds it with the parent's
+  folder emptied.
 - **What is left for an installation.** The single-request bound is a
   constant, 16 MiB, since the files API does not publish its own; an
   installation that lowers it refuses a put between the two as

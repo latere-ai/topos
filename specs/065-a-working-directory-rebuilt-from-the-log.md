@@ -6,7 +6,7 @@ depends_on: [008-tools.md, 009-machines.md, 017-external-runners-handoff-fork.md
 affects: [harness/tools/, runner/, session/, machine/, prompts/transcript/, internal/server/, api/openapi.yaml]
 effort: medium
 created: 2026-10-11
-updated: 2026-10-11
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -204,6 +204,19 @@ holds every file, a command's included. The replay is what a session
 with no checkpoint has, and what a fork gets when its checkpoint is
 missing.
 
+### A copy in the session's folder first
+
+A session that keeps its files in a folder of a files store keeps the
+latest state of its working directory there too
+([[073-a-working-directory-kept-in-the-sessions-folder]]). Its new
+machine is restored from that copy first, a command's files included,
+and this replay runs over the copy: the copy stands in at the point it
+was saved, and only the events after it, and the files the copy does
+not hold, come from the log. Such a machine is recorded with
+`restore {source: "folder"}`. A copy that cannot be written at all
+leaves the machine to this replay alone, recorded `source: "log"` with
+`copy {failed}`.
+
 ### Decisions
 
 | Choice | Picked | Weighed against |
@@ -218,7 +231,9 @@ missing.
 
 ## Not in this spec
 
-Restoring a session's own latest checkpoint into a machine that
+A session with a folder, whose copy of its working directory comes first
+([[073-a-working-directory-kept-in-the-sessions-folder]]). Restoring a
+session's own latest checkpoint into a machine that
 replaced a lost one ([[034-checkpoints-and-rewind]]), and delivering
 its repositories into it again ([[019-git]]): such a machine gets the
 files its log holds and no clone. Running the commands again to
@@ -257,3 +272,7 @@ differs from the first draft in these points:
 - **Deletes and moves are not honored**, because no tool of the
   registry records one.
 - **A rebuilt file is written 0644.**
+- **Amended on 2026-10-13** by
+  [[073-a-working-directory-kept-in-the-sessions-folder]]: a session
+  with a folder is restored from the copy of its working directory first,
+  and the replay runs over it; a file the copy gave keeps its mode.
