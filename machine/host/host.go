@@ -796,7 +796,9 @@ func (h *Host) adopt(s *stream, cmd *exec.Cmd, g *group, mv *move, cleanup func(
 		werr := <-mv.exited
 		err := <-drained
 		code := cmd.ProcessState.ExitCode()
-		err = errors.Join(err, appendLine(mv.log.Name(), fmt.Sprintf("\n[job %d exited with code %d]\n", pid, code)), cleanup())
+		// The job's files go before its exit line, so a reader that sees
+		// the line finds none of them left.
+		err = errors.Join(err, cleanup(), appendLine(mv.log.Name(), fmt.Sprintf("\n[job %d exited with code %d]\n", pid, code)))
 		var ee *exec.ExitError
 		if werr != nil && !errors.As(werr, &ee) {
 			err = errors.Join(werr, err)
@@ -885,7 +887,9 @@ func (h *Host) background(ctx context.Context, r machine.ExecRequest) (machine.E
 	go func() {
 		werr := cmd.Wait()
 		code := cmd.ProcessState.ExitCode()
-		err := errors.Join(appendLine(log.Name(), fmt.Sprintf("\n[job %d exited with code %d]\n", pid, code)), remove())
+		// The job's files go before its exit line, so a reader that sees
+		// the line finds none of them left.
+		err := errors.Join(remove(), appendLine(log.Name(), fmt.Sprintf("\n[job %d exited with code %d]\n", pid, code)))
 		var ee *exec.ExitError
 		if werr != nil && !errors.As(werr, &ee) {
 			err = errors.Join(werr, err)

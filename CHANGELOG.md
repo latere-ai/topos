@@ -12,6 +12,11 @@ committed: the commit log already holds that.
 
 ### Fixed
 
+- **A background job's exit line comes after its files are gone.** The
+  host machine wrote a job's `exited with code` line before it removed
+  the job's script and input files, so a reader that waited for the line
+  could still find them.
+
 - **A connection service on the model gateway's public host no longer
   stops every hosted session from opening its machine.** With
   `TOPOS_CONNECTIONS_URL` on the host the model gateway publishes its
