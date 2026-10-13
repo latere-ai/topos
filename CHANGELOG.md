@@ -10,6 +10,51 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **One `publish` call can put a site online and set who can open it.**
+  A call that named `access` beside `path` or `release` was refused
+  (`access_alone`) with the advice to make two calls. Some models sent
+  the same refused call again instead, and the site was never
+  published. Such a call now publishes or releases first, exactly as it
+  would without `access`, then changes who can open the app it
+  published to. The person approves it once; its `agent.tool_use`
+  reason is `publishes and changes who can open the app, which a person
+  approves every time`.
+
+  - Its result is the publish's: `meta.publish` keeps the `status`,
+    `commit`, `folder` and `release`, with the `visibility` the app has
+    after the change, and the text says both.
+  - When the publish fails, the result is that failure, and who can
+    open the app is not changed.
+  - When the change fails after the publish succeeded, the result is an
+    error whose `meta.publish` still records the publish, with the
+    visibility the app still has and the host's refusal in `error`
+    beside the `status`. The text tells the model that the site is
+    published, why who can open it was not changed, and not to publish
+    again.
+  - A call with `access` and neither `path` nor `release` works as
+    before.
+
+  The tool's description is `tools/publish-v6`: it tells the model to
+  set `access` on the call that publishes a site the person already
+  asked to share or keep private. The new result text is
+  `results/publish/access-not-changed-v1`. No call is refused
+  `access_alone` any more, and the Go constants
+  `session.PublishAccessAlone` and `prompts.PublishAccessAlone` are
+  removed; results recorded by earlier releases may still carry the
+  code.
+
+### Upgrading
+
+- Roll this release after any client that shows a waiting `publish`
+  call with `access` as a change of who can open the app and nothing
+  else. Such a call may now also name `path` or `release`, and a client
+  that asks it as a change of access alone would have the person
+  approve less than what runs. A client tells it by `access` beside
+  `path` or `release` in the input of its `agent.tool_use`, or by the
+  reason above, and its result carries the publish's `status`.
+
 ## v0.35.0 - 2026-10-13
 
 ### Added
