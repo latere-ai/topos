@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.38.0 - 2026-10-14
+
 ### Added
 
 - **A session with a folder keeps its working directory there.** A
