@@ -319,11 +319,13 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 // (spec 073): its parent's copy of the working directory as the parent's
 // whole log records it, whole, with covers at most the fork point, since
 // what the parent did after the fork point is in the copy and not in the
-// fork's log. Nil for a parent that keeps no copy and for a fork or a
-// parent with no folder, whose first machine is rebuilt from its log.
+// fork's log. Nil for a parent that keeps no copy, for a fork or a
+// parent with no folder, whose first machine is rebuilt from its log, and
+// for a fork before the first message, which continues nothing and whose
+// first machine starts empty.
 func forkWork(f *forkOrigin, fork session.Session, now time.Time) (*session.Event, error) {
 	c := f.work
-	if !c.Saved || fork.Folder == nil || f.parent.Folder == nil {
+	if !c.Saved || f.seq == 0 || fork.Folder == nil || f.parent.Folder == nil {
 		return nil, nil
 	}
 	stale := slices.Sorted(maps.Keys(c.Stale))

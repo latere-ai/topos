@@ -667,7 +667,8 @@ func (ff *folderFixture) save(id string, turn int, written map[string]string, re
 // work/ into its own folder on the server, with its own token, and its log
 // gains, after the copied events, a whole work.saved of the parent's copy
 // as it stands, a later turn's included, whose covers is at most the fork
-// point; a fork whose allow names no folder copies none; a parent whose
+// point; a fork before the first message and a fork whose allow names no
+// folder copy none; a parent whose
 // work/ holds nothing is skipped; and a copy refused leaves no fork (spec
 // 073).
 func TestAForkCopiesItsParentsWorkingDirectory(t *testing.T) {
@@ -711,6 +712,10 @@ func TestAForkCopiesItsParentsWorkingDirectory(t *testing.T) {
 	}
 	if c := session.CopyOf(fevs); !c.Inherited || len(c.Files) != 2 || c.Covers != at {
 		t.Fatalf("the fork's copy as it folds %+v", c)
+	}
+	// A fork before the first message continues nothing and takes no copy.
+	if w, err := forkWork(&forkOrigin{parent: f.stored(parent.ID), seq: 0, work: session.CopyOf(evs)}, fork, time.Now()); w != nil || err != nil {
+		t.Fatalf("a fork before the first message takes the copy %+v, %v", w, err)
 	}
 
 	// A fork with a message records its copy before the message.
