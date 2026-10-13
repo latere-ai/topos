@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.36.0 - 2026-10-13
+
 ### Changed
 
 - **One `publish` call can put a site online and set who can open it.**
