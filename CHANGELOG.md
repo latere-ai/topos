@@ -10,6 +10,52 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A session with a folder keeps its working directory there.** A
+  session whose authorizer names a folder of the files store now keeps
+  the latest state of its working directory in that folder, as plain
+  files under `work/<path>`, written at the end of each turn that ran a
+  call and changed files, with the session's own token. Only what
+  changed is written, and a file the directory no longer holds is
+  deleted. Installed dependencies and caches (`node_modules`, `.venv`,
+  `__pycache__`, `target` and the like), every `.git` directory, the
+  credential deny-list, and files over 32 MiB are left out; a build's
+  output is kept. One turn end writes at most 1,000 files and 64 MiB,
+  the copy holds at most 5,000 files and 256 MiB, and what does not fit
+  is written by a later turn end. A copy that cannot be written is
+  recorded and never fails the turn.
+  - A new `work.saved` event records what each turn end wrote, removed
+    and left out, and is the record a restore and a fork read: the
+    session's token may not list its folder.
+  - A machine made new for such a session, a lost or expired sandbox's
+    successor or a fork's first sandbox, is restored from the copy
+    before its first call, then from the conversation's record for what
+    the copy does not hold, and is recorded as `session.machine` reason
+    `restored` with `restore {source: "folder", copy: {...}}`. The
+    model is told what came back from where, and to reinstall
+    dependencies from the project's manifests
+    (`transcript/machine-work-restored-v1`).
+  - A fork copies its parent's `work/` into its own folder on the
+    server, and starts from the parent's latest working directory.
+  - A Cella sandbox walks and hashes its working directory with the
+    helper, where the files are.
+  - For operators: the files are overwritten in place and deleted with
+    `permanent=1`. An authorizer that keeps versions of a write in a
+    session's folder keeps one for each overwrite under `work/`; answer
+    `versions: false` there to keep the latest state alone.
+
+### Changed
+
+- **A redaction deletes the file from the session's folder.** Redacting
+  a message or an answer whose file is in the session's folder deleted
+  its digest from the session's reads and left the file in the folder.
+  The file is now deleted from the folder for good, with the session's
+  own token, once no live event names it; a file another answer of the
+  turn still links, and one a fork's copied message still names, stays.
+  A delete the files service refuses is logged, and the redaction
+  stands.
+
 ## v0.37.0 - 2026-10-13
 
 ### Changed
