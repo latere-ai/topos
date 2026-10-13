@@ -38,9 +38,26 @@ The authorizer names the connections in the limits of its allow of
 | `git_address`, `git_url` | `http` alone, both or neither: the connection's git address, and the git host the person's repositories live at |
 | `read_only` | `mcp` alone: globs over the server's tool names; a tool one matches reads, and every other reaches outside |
 
-At most 32 connections. A connection that breaks a rule refuses the
-request with `authorizer_unavailable`, naming the member in the
-developer detail.
+At most 32 connections, connected and available together. A connection
+that breaks a rule refuses the request with `authorizer_unavailable`,
+naming the member in the developer detail.
+
+### A service the person has not connected
+
+Name a service the installation offers and the person has not connected
+with `state` `available`, and with its name, kind and title alone:
+
+```json
+{"name": "github", "kind": "http", "title": "GitHub", "state": "available"}
+```
+
+An available connection names no `audience`, `address`, `git_address`,
+`git_url` or `read_only`, and one that does refuses the request. A
+connection without `state` is connected, and needs its `audience` and
+`address`. The session reaches nothing of an available connection, so
+it needs no connection service on the installation, and a session's
+`connections` answer it with its `state`. Once the person connects the
+service, answer the next send with the connected entry in its place.
 
 The create's and the fork's list is the session's. Each send's list
 replaces it, so a person who connects a service in the middle of a
@@ -117,6 +134,34 @@ again. The session goes on in each case:
   without `tool_use_id`, and the model is told the service is not
   connected. `scopes`, when present, are the ones the other service
   asked for.
+
+## Asking the person to connect a service
+
+While a session has an available connection, the system prompt lists
+each one, a line apiece, apart from the connected ones, and says the
+agent may ask the person to connect one when the task needs it. The
+agent of the session's own thread is offered the tool
+`request_connection`, with `name`, the service's name, and `reason`, a
+sentence of at most 200 characters that says what it needs the service
+for. A call appends `connection.requested` after its result:
+
+```json
+{"type": "connection.requested", "payload": {"name": "github", "title": "GitHub", "kind": "http", "reason": "to clone acme/app and open a pull request", "tool_use_id": "toolu_02"}}
+```
+
+A client shows it as "connect this service" and starts the connection
+service's connect. The call reaches nothing and opens no machine, and
+its result tells the agent to end its turn with a sentence that says
+what it will do once the service is connected. The person's next
+message reaches the session with the connected entry, so the agent goes
+on from there. A call that names a service that is not available
+answers an error naming the ones that are, and appends nothing.
+
+A session on a host machine is not told of an available `http`
+connection, since connecting it would give the session nothing, and is
+not offered the tool for it. A thread the agent started works from its
+task and is told of no available service; the agent that holds the
+conversation asks.
 
 ## What the installation lets its identity provider mint
 

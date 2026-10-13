@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md,
 affects: [authorizer/, session/, internal/server/, internal/config/, internal/hosted/, machine/, harness/, internal/mcp/, prompts/, cmd/toposd/, api/, docs/]
 effort: large
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -34,7 +34,9 @@ The installation's authorizer names the connections in its allow, at
 the create, at a fork and at every send, so a person who connects a
 service in the middle of a conversation has it from their next message.
 A block of the system prompt names each connection and says how to use
-it.
+it. An allow may also name a service the installation offers and the
+person has not connected, which the model may ask the person to connect
+with `request_connection`.
 
 ## Current state
 
@@ -115,8 +117,9 @@ carry `connections`:
 | `git_address`, `git_url` | `http` alone, both or neither: `git_address` the connection's git address, as `address` is held; `git_url` the git host the person's repositories live at, such as `https://git.example.com`, an `https` URL as `address` is held, unique in the list, a trailing `/` dropped |
 | `read_only` | `mcp` alone: at most `session.MaxReadOnlyTools` (64) globs over the server's tool names, in `path.Match` syntax, each 1 to 128 bytes; a tool a glob matches reads |
 
-At most `session.MaxConnections` (32) connections. A member of a
-connection the core does not know is ignored. A connection that breaks
+At most `session.MaxConnections` (32) connections, connected and
+available ([below](#a-service-the-person-has-not-connected)) together. A
+member of a connection the core does not know is ignored. A connection that breaks
 a rule, or a list past its bound, does not decode, and the request is
 refused `authorizer_unavailable` with the member named in the developer
 detail, as `DecodeLimits` refuses any member.
@@ -300,6 +303,62 @@ person has to connect again.
 A turn whose sandbox cannot take the list of `http` connections appends
 `session.error` `connections_unavailable`, retryable, and goes on.
 
+### A service the person has not connected
+
+A person who never connected a service has no connection of it in the
+allow, so the model cannot know the service exists, and for kind `http`
+Topos never sees a refusal to relay. The authorizer names such a
+service as an available connection:
+
+```json
+{"name": "github", "kind": "http", "title": "GitHub", "state": "available"}
+```
+
+- **The entry.** `state` is `available`, or absent for a connected
+  connection, so an allow written before this section decodes as it
+  did; any other value does not decode. An available connection takes
+  `name`, `kind` and `title` by the rules above and nothing else: one
+  that names `audience`, `address`, `git_address`, `git_url` or
+  `read_only` does not decode, and a connected one without `audience`
+  or `address` does not decode, as before. Names are unique across both,
+  and `session.MaxConnections` bounds both together. The header keeps
+  it, a send replaces it as any connection, and `SameConnections`
+  compares `state`.
+- **What the session reaches.** Nothing: the server's check of an
+  `http` connection's audience and host, the runner's listing of `mcp`
+  servers, the sandbox's git configuration and `<NAME>_API_URL` all
+  skip it, so an available connection needs no
+  `TOPOS_CONNECTIONS_URL`.
+- **Requestable.** An available connection of kind `mcp`, or of kind
+  `http` on a Cella machine, is one the person may be asked to connect.
+  An available `http` connection on a host machine is not, as a
+  connected one is not given to it.
+- **The block.** On the session's own thread, `context/connections-v1`
+  lists the requestable connections after the connected ones, a line
+  each, `- <title>, named <name>`, under one sentence that says the
+  model may ask the person to connect one with `request_connection`
+  when the task needs it. The block renders with requestable connections
+  alone. A thread a spawn started is told of none, since it holds no
+  such tool.
+- **`request_connection`.** A harness tool, as `question` is
+  ([[039-questions]]), offered to the session's own thread while the
+  session has a requestable connection, and to no thread a spawn
+  started. Input `{name, reason}`, both required, `reason` 1 to
+  `session.MaxConnectionReason` (200) characters with a character that
+  is not white space. Effect `none`, `Parallel` yes: it opens no
+  machine, scores 0.0 and is allowed in every mode. For a requestable
+  name it answers `ok` with `results/request_connection/asked-v1`,
+  which says the person is asked, that the service reaches the session
+  from their next message, and that the turn ends with one sentence
+  saying what the model will do once it is connected; and
+  `connection.requested` follows the result in the same batch, its
+  payload `name`, `title`, `kind`, `reason` the model's sentence on one
+  line, and `tool_use_id`. Any other name answers `error` with
+  `results/request_connection/not-available-v1`, naming the requestable
+  ones, and appends nothing. The harness does not stop the turn: the
+  model ends it. No client tool takes the name, and the agent names no
+  such tool.
+
 ### Pushes
 
 The connection service holds a push to the refs the installation's
@@ -327,6 +386,10 @@ nothing for it; the block tells the model to push its own branch,
 | git's configuration | one included file, rewritten whole | `git config --global` per key: a connection removed by a send would leave its entries behind |
 | "Connect this service" for `mcp` | `connection.requested`, beside the call's error result | `session.error` `connection_not_connected`: an error is the session's failure, while this asks the person to act, as `approval.requested` does |
 | "Connect this service" for `http` | the service's `409` reaches the sandbox's tool, and the model relays it | the runner reading the sandbox's traffic: it sees none of it |
+| A service never connected | the allow names it with `state` `available`, and the model asks with `request_connection`, which appends `connection.requested` | a send that fails before the model knows the service: the model cannot ask for what it was never told of; a new event type: `connection.requested` already means "connect this service" to a client |
+| Where an available entry reaches | the session's own thread's block and tool | every thread: a thread a spawn started does not hold the conversation with the person, as with `question` |
+| An available `http` connection on a host machine | not named and not requestable | named: connecting it would give the session nothing, since a host machine takes no `http` connection |
+| The turn after `request_connection` | the model ends it, told so by the result | the harness pausing the session as `question` does: the person connects outside the conversation, and their next message, whose send names the connected entry, is what resumes it |
 | An `mcp` connection's audience | any the allow names | held to the variable: the runner holds the token, never the sandbox, so no mount limits it |
 
 ### Roll order
@@ -363,7 +426,12 @@ no mount for the Secret and reaches no `http` connection.
 | The block names each connection the machine reaches, says how to clone, push and call the API, or the tools' prefix, or that one is not connected, and how to relay a `409`, on every thread, and changes only with the list | `harness.TestTheConnectionsBlock`, `harness.TestAConnectionThatIsNotConnected`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | An `mcp` connection's tools are offered as `mcp__<name>__<tool>`, read for a `read_only` match and external otherwise, remote, gated and scored like a built-in, a write waiting for the person in `confirm`; a streamed answer is read past its notification to its response; a server of an earlier revision is reached after its `400`, and a session it ended is opened again; the bearer is the session's token for the audience; a tool with no tool name or a broken header mark is left out, and a reduced schema is named | `internal/mcp.TestStreamableHTTP`, `internal/mcp.TestAnEarlierRevision`, `internal/mcp.TestWhatAResultHolds`, `internal/mcp.TestTheClientsErrors`, `internal/hosted.TestMCPConnectionsAreOffered` against the stub MCP server | built |
 | A `409` `connection_not_connected` fails the call with a result naming the connection and the reason and appends `connection.requested` with the call's id; a listing that meets it offers no tool, records `connection.requested` without one at the drive's first turn, and the block says so; the session goes on | `internal/mcp.TestANotConnectedServer`, `harness.TestAConnectionThatIsNotConnected`, `internal/hosted.TestMCPConnectionsAreOffered` | built |
-| An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
+| An available connection decodes with its name, kind and title alone; one with an audience, an address, a git address or URL, or `read_only`, another state, and a connected one without an address do not; names are unique across both and the bound counts both | `session.TestAnAvailableConnection`, `authorizer.TestTheConnectionsMember` | built |
+| An available `http` connection is taken at a create and a send on a server with no connection service, the Session answers it with its `state`, and a send that names it connected appends `session.connections_changed` | `internal/server.TestAnAvailableConnectionIsTakenAsNamed` | built |
+| The session's own thread is offered `request_connection` while it has a requestable connection, and a spawned thread, a session with none and a host machine's session with only an available `http` one are not; the block lists the requestable ones apart from the connected ones, on the own thread alone; a call appends `connection.requested` with the call's id and the reason on one line, answers the asked text, is allowed in `confirm` and opens no machine; another name is an error naming the requestable ones | `harness.TestRequestConnection`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| A hosted session with an available code host and server lists no server, asks no token for them and opens no sandbox, offers `request_connection`, and its call appends `connection.requested` | `internal/hosted.TestARequestedConnectionOpensNothing` over the stub Cella | built |
+| No client tool takes the name `request_connection`, and no agent names it | `manifest.TestRequestConnectionIsReserved` | built |
+| An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person; an agent given an available code host calls `request_connection` and ends its turn | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
 
 ## Outcome
 
@@ -391,3 +459,12 @@ suite has its test. What shipped, beyond the design above:
   `internal/hosted`'s drives over the stub Cella, git's own http backend
   and the stub MCP server, as [[019-git]] proves its push. No test runs
   `toposd` with an authorizer that names `connections`.
+
+**Available connections**, built on 2026-10-13, in no release yet, and
+not yet run against a model. Every criterion of the section has its
+test; the task of the suite is the one open criterion, shared with the
+rest of the spec. What shipped beyond the section's text: an available
+connection also refuses `read_only`, since it names nothing a session
+reaches; the tool skips a session whose agent, stored before the name
+was reserved, holds a client tool of the name; and a reason's white
+space, a line break included, is one space in the event.

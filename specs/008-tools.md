@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 009-machines.md]
 affects: [harness/tools/, prompts/tools/, prompts/results/, test/tasks/instructions/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-13
 author: changkun
 ---
 
@@ -80,7 +80,9 @@ names it, a tool of its own and not a built-in, so the default set
 stays the table's eight ([[039-questions]]). The hosted runner adds
 `publish` the same way, to the session's own thread of a session in a
 sandbox, when the installation has an app host
-([[043-publishing-a-folder]]).
+([[043-publishing-a-folder]]). The harness adds `request_connection` to
+the session's own thread while the session has a service the person
+may be asked to connect ([[069-connections-an-allow-names]]).
 
 `web_search` is a built-in an agent holds only by naming it
 (`tools.OptIn`), so it is in no default set ([[047-web-search]]):

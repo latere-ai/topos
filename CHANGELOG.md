@@ -33,6 +33,13 @@ committed: the commit log already holds that.
   Set `TOPOS_CONNECTIONS_URL` and `TOPOS_CONNECTIONS_AUDIENCE`, and let
   the identity provider mint those audiences for the runner. See
   [Connections](docs/connections.md).
+- **An agent can ask the person to connect a service they have not
+  connected yet.** The authorizer names such a service in the allow as
+  `{"name", "kind", "title", "state": "available"}`. The model sees it
+  listed apart from the connected ones and calls `request_connection`
+  with its name and why, which appends `connection.requested` for a
+  client to show as "connect this service", and ends its turn saying
+  what it will do once connected.
 - **The sessions list filters by the trigger that started a session.**
   `GET /v1/sessions?trigger=<id>` lists only the sessions that trigger
   started, newest first, a page at a time, beside every other filter
