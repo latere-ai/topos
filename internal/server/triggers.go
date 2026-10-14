@@ -187,18 +187,26 @@ func checkTriggerSession(s v1.TriggerSession) error {
 	return nil
 }
 
-// listTriggers is GET /triggers.
+// listTriggers is GET /triggers: the triggers of the owners the allow's
+// filter names, every trigger for an allow with none, narrowed to the
+// owner the request names (spec 074).
 func (c *call) listTriggers() error {
 	limit, cursor, err := c.pageParams()
 	if err != nil {
 		return err
 	}
-	d, err := c.ask(c.r.Context(), authorizer.ActionTriggerList, authz.NewResource(authorizer.KindTrigger, "", nil))
+	named := c.namedOwner()
+	d, err := c.ask(c.r.Context(), authorizer.ActionTriggerList, authz.NewResource(authorizer.KindTrigger, "", listFields(named)))
 	if err != nil {
 		return err
 	}
 	o := store.TriggerList{Limit: limit, Cursor: cursor}
-	if d.Filter != nil {
+	switch {
+	case named != "" && !admits(d, named):
+		return c.replyPage([]*v1.Trigger{}, "")
+	case named != "":
+		o.Owners = []string{named}
+	case d.Filter != nil:
 		o.Owners = d.Filter.Owners
 	}
 	list, next, err := c.s.o.Objects.ListTriggers(c.r.Context(), o)

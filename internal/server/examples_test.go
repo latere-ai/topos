@@ -464,6 +464,8 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	step("getTrigger", trg, "")
 	step("listFirings", trg, "?limit=1")
 	step("deleteTrigger", map[string]string{"ref": "nightly"}, "")
+	// The second agent has no session, so it is deleted.
+	step("deleteAgent", map[string]string{"ref": "triage"}, "")
 
 	now = exampleTime(13, 0, 0)
 	step("archiveAgent", agent, "")

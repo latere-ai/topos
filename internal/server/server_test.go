@@ -194,6 +194,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
 	f.apply("alice", "archivist", "Keep.")
+	f.apply("alice", "spare", "Spare.")
 	s := f.create("alice", "reviewer")
 	ended := f.create("alice", "reviewer")
 	f.turn(ended.ID, 1, "Done.", 1)
@@ -217,6 +218,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"listAgentVersions": {http.MethodGet, "/v1/agents/reviewer/versions", ""},
 		"getAgentVersion":   {http.MethodGet, "/v1/agents/reviewer/versions/1", ""},
 		"archiveAgent":      {http.MethodPost, "/v1/agents/archivist/archive", `{"permanent":true}`},
+		"deleteAgent":       {http.MethodDelete, "/v1/agents/spare", ""},
 		"createSession":     {http.MethodPost, "/v1/sessions", `{"agent":"reviewer"}`},
 		"listSessions":      {http.MethodGet, "/v1/sessions", ""},
 		"getSessionSummary": {http.MethodGet, "/v1/sessions/summary", ""},

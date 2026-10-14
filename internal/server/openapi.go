@@ -176,8 +176,16 @@ var (
 		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: []string{string(session.GroupTree)}}}}}
 )
 
+// ownerParam keeps one owner's agents or triggers (spec 074).
+var ownerParam = yaml.MapSlice{{Key: "name", Value: "owner"}, {Key: "in", Value: "query"},
+	{Key: "description", Value: "A rendered subject, as an object's owner is stored: the owner whose objects the list holds, in place of the caller's context for agents. " +
+		"The list's question names it as owner. The list is empty when the authorizer's allow names owners and leaves this one out; absent or empty, the list is as without it."},
+	{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
+
 // queryParams are the query parameters of the routes that read any.
 var queryParams = map[string][]yaml.MapSlice{
+	"listAgents":   {ownerParam},
+	"listTriggers": {ownerParam},
 	"listSessions": {agentParam, statusParam, runnerParam, archivedParam, rootParam, parentParam, groupParam, triggerParam},
 	"searchSessions": {
 		{{Key: "name", Value: "q"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
@@ -293,11 +301,14 @@ const maxSummaryWords = 4
 // words, the label a reference lists the operation by, so every
 // sentence about it is here.
 var opDescriptions = map[string]string{
-	"listAgents":        "List the agents of the caller's context.",
+	"listAgents":        "List the agents of the caller's context, or of the owner the owner parameter names.",
 	"getAgent":          "Get an agent's latest version by id, or by name among the agents of the caller's context. " + AnsweredSpec,
 	"listAgentVersions": "List an agent's versions.",
 	"getAgentVersion":   "Get one version of an agent. " + AnsweredSpec,
 	"archiveAgent":      "Archive an agent; running sessions keep their version.",
+	"deleteAgent": "Delete an agent and every version, for good; applying its name again creates a new agent. An agent that still has a session, of any status, is conflict: delete its sessions first. " +
+		"The agent's identity at the installation's identity provider is archived first, and disabled once the agent is deleted; one the provider no longer holds is taken as gone. " +
+		"A trigger that names the agent stays, and its firings are refused.",
 	"createSession": "Create a session of an agent, named by id or by name among the agents of the caller's context. " + AttendedRule + " " + MetadataRule + " " + AttachRule + " " + FolderRule + " " +
 		"The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: " +
 		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, route the routed name the authorizer chose on the way, when it names one, and message_text true when its allow asks for the opening of each later message. " +
@@ -345,7 +356,7 @@ var opDescriptions = map[string]string{
 		"A files.kept is redactable, and its tombstone names no file; redacting an agent.message redacts the files.kept that names it in the same append, one event.redacted each, and a kept file no other event names, an image or a linked file of any type, is deleted. " +
 		"For a session that keeps its files in a folder of the files store, a file the redaction leaves no live event naming, a message's or an answer's, is deleted from the folder for good with the session's own credential once the redaction is written; " +
 		"a delete the files service refuses is logged and leaves the file in the folder, and the redaction stands.",
-	"listTriggers":  "List triggers.",
+	"listTriggers":  "List the triggers of the owners the authorizer's allow names, or of the owner the owner parameter names.",
 	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
 	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running.",
 	"listFirings":   "List a trigger's firings, newest first.",

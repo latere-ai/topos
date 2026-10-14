@@ -18,6 +18,7 @@ import (
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/internal/identity"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -225,18 +226,22 @@ func (c *call) listAgents() error {
 	if err != nil {
 		return err
 	}
-	d, err := c.ask(c.r.Context(), authorizer.ActionAgentList, authz.NewResource(authorizer.KindAgent, "", nil))
+	named := c.namedOwner()
+	d, err := c.ask(c.r.Context(), authorizer.ActionAgentList, authz.NewResource(authorizer.KindAgent, "", listFields(named)))
 	if err != nil {
 		return err
 	}
-	// The list holds the context's agents, and the authorizer's owners
-	// narrow it further: one that names others than the context lists
-	// none of them.
-	here := c.here()
-	o := store.AgentList{Limit: limit, Cursor: cursor, Owners: []string{here.subject}}
-	if d.Filter != nil && !slices.Contains(d.Filter.Owners, here.subject) {
+	// The list holds the context's agents, or those of the owner the
+	// request names in its place (spec 074), and the authorizer's owners
+	// narrow it further: an owner they leave out lists none.
+	owner := c.here().subject
+	if named != "" {
+		owner = named
+	}
+	if !admits(d, owner) {
 		return c.replyPage([]*v1.Agent{}, "")
 	}
+	o := store.AgentList{Limit: limit, Cursor: cursor, Owners: []string{owner}}
 	agents, next, err := c.s.o.Objects.ListAgents(c.r.Context(), o)
 	if err != nil {
 		return err
@@ -311,6 +316,26 @@ func (c *call) getAgentVersion() error {
 	return c.reply(http.StatusOK, doc)
 }
 
+// namedOwner is the rendered subject the request's owner parameter names,
+// "" when it names none (spec 074).
+func (c *call) namedOwner() string { return c.r.URL.Query().Get("owner") }
+
+// listFields are the fields of a list's question: the owner the request
+// names, and none when it names none, as before spec 074.
+func listFields(named string) map[string]any {
+	if named == "" {
+		return nil
+	}
+	return map[string]any{"owner": named}
+}
+
+// admits reports whether an allow of a list admits owner's objects: an
+// allow with no filter admits every owner, one with a filter the owners
+// it names.
+func admits(d authz.Decision, owner string) bool {
+	return d.Filter == nil || slices.Contains(d.Filter.Owners, owner)
+}
+
 // archiveBody is the body of POST /agents/{ref}/archive.
 type archiveBody struct {
 	Permanent bool `json:"permanent"`
@@ -376,4 +401,48 @@ func (c *call) archiveAgent() error {
 		return err
 	}
 	return c.reply(http.StatusOK, doc)
+}
+
+// deleteAgent is DELETE /agents/{ref}: the agent and every version, each
+// with its document and bundle, once no session of it is left (spec 074).
+// The question comes before the check, so a caller the authorizer refuses
+// learns nothing of the agent's sessions. The identity is archived at the
+// provider before the store changes, as the archive route does, so a
+// failed call leaves the agent as it was and a retry is idempotent; one
+// the provider no longer holds, deleted with its owner, is gone. It is
+// disabled once the agent is deleted, and the reconcile pass disables it
+// when that call fails, since the store then holds no agent of it.
+func (c *call) deleteAgent() error {
+	ctx := c.r.Context()
+	a, doc, err := c.agent(c.r.PathValue("ref"), authorizer.ActionAgentDelete)
+	if err != nil {
+		return err
+	}
+	// A session of a deleted agent could be neither listed, since a list
+	// reaches sessions through their context's agents, nor continued,
+	// since a send reads the agent's version.
+	held, _, err := c.s.o.Sessions.List(ctx, session.ListOptions{AgentID: a.ID, Limit: 1})
+	if err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		return refuse(CodeConflict, "the agent %s has sessions; delete them first", a.ID)
+	}
+	subject := doc.Status.Identity
+	identified := c.s.o.Identities != nil && subject != ""
+	if identified {
+		if err := c.s.o.Identities.Archive(ctx, a.ID); err != nil && !identity.Unknown(err) {
+			return identityRefusal(err)
+		}
+	}
+	if err := c.s.o.Objects.DeleteAgent(ctx, a.ID); err != nil {
+		return err
+	}
+	if identified {
+		if err := c.s.o.Identities.Disable(ctx, a.ID, subject); err != nil && !identity.Unknown(err) {
+			c.s.o.Log.ErrorContext(ctx, "disable a deleted agent's identity; the reconcile pass retries", "agent", a.ID, "err", err)
+		}
+	}
+	c.w.WriteHeader(http.StatusNoContent)
+	return nil
 }

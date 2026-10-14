@@ -149,9 +149,15 @@ paths:
     get:
       operationId: listAgents
       summary: List agents
-      description: List the agents of the caller's context.
+      description: List the agents of the caller's context, or of the owner the owner parameter names.
       x-topos-actions:
         - agent.list
+      parameters:
+        - name: owner
+          in: query
+          description: "A rendered subject, as an object's owner is stored: the owner whose objects the list holds, in place of the caller's context for agents. The list's question names it as owner. The list is empty when the authorizer's allow names owners and leaves this one out; absent or empty, the list is as without it."
+          schema:
+            type: string
       responses:
         "200":
           description: OK
@@ -262,6 +268,24 @@ paths:
                   version: 3
                   digest: sha256:dac7fd51151199dc6af109f5da3680a4e7485daf2bc6191a047261ae75933aa9
                   createdAt: "2026-09-22T12:02:00Z"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteAgent
+      summary: Delete an agent
+      description: "Delete an agent and every version, for good; applying its name again creates a new agent. An agent that still has a session, of any status, is conflict: delete its sessions first. The agent's identity at the installation's identity provider is archived first, and disabled once the agent is deleted; one the provider no longer holds is taken as gone. A trigger that names the agent stays, and its firings are refused."
+      x-topos-actions:
+        - agent.delete
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the agents of the caller's context or the caller's own triggers. A name only another owner holds answers not_found, as one nobody holds does.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
         default:
           $ref: "#/components/responses/Error"
   /agents/{ref}/versions:
@@ -1611,9 +1635,15 @@ paths:
     get:
       operationId: listTriggers
       summary: List triggers
-      description: List triggers.
+      description: List the triggers of the owners the authorizer's allow names, or of the owner the owner parameter names.
       x-topos-actions:
         - trigger.list
+      parameters:
+        - name: owner
+          in: query
+          description: "A rendered subject, as an object's owner is stored: the owner whose objects the list holds, in place of the caller's context for agents. The list's question names it as owner. The list is empty when the authorizer's allow names owners and leaves this one out; absent or empty, the list is as without it."
+          schema:
+            type: string
       responses:
         "200":
           description: OK
