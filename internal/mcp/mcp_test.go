@@ -148,6 +148,30 @@ func TestStreamableHTTP(t *testing.T) {
 	}
 }
 
+// TestAHiddenToolIsNotOffered: a tool a glob of the connection's hidden
+// matches is left out of the session's tools, a read_only match too, and a
+// hidden tool whose schema the validator reduces is not named as reduced
+// (spec 069).
+func TestAHiddenToolIsNotOffered(t *testing.T) {
+	stub := mcpstub.New(t, mcpstub.Options{Admit: func(b string) bool { return b == "session-token" }, Tools: append(trackerTools(),
+		mcpstub.Tool{Name: "list_secrets", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: text("hunter2")},
+		mcpstub.Tool{Name: "delete_issue", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: text("deleted")},
+	)})
+	s := tracker(stub.URL(), "session-token")
+	s.Connection.Hidden = []string{"delete_*", "list_secrets", "create_issue"}
+	ts, reduced, err := s.Tools(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tool := range ts {
+		names = append(names, tool.Definition().Name)
+	}
+	if !slices.Equal(names, []string{"mcp__tracker__list_issues"}) || len(reduced) != 0 {
+		t.Fatalf("offered %v, reduced %v", names, reduced)
+	}
+}
+
 // TestANotConnectedServer: a connection service's 409
 // connection_not_connected fails a call with a result naming the
 // connection and the reason, which asks for the connection again, and

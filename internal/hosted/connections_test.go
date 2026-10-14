@@ -25,6 +25,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 
 	"latere.ai/x/topos/harness"
+	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
 	"latere.ai/x/topos/prompts"
@@ -580,6 +581,62 @@ func TestMCPConnectionsAreOffered(t *testing.T) {
 	}
 	if body := string(c.lux.Requests()[len(c.lux.Requests())-1].Body); !strings.Contains(body, "Issue tracker: not connected (revoked)") {
 		t.Fatal("the block does not say the connection is not connected")
+	}
+}
+
+// TestAHiddenToolIsNeverOffered: a tool of an mcp connection that a glob
+// of its hidden matches is listed by the server and left out of the
+// model's request, a read_only match included; a call of it is answered
+// unknown_tool by the harness and no tools/call of it reaches the
+// connection service, while the connection's other tools run (spec 069).
+func TestAHiddenToolIsNeverOffered(t *testing.T) {
+	var called sync.Map
+	answer := func(name string) func(json.RawMessage) any {
+		return func(json.RawMessage) any {
+			called.Store(name, true)
+			return map[string]any{"content": []any{map[string]any{"type": "text", "text": name + " answered"}}}
+		}
+	}
+	stub := mcpstub.New(t, mcpstub.Options{Admit: func(b string) bool { return strings.HasPrefix(b, "tracker-core-session-") }, Tools: []mcpstub.Tool{
+		{Name: "list_issues", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: answer("list_issues")},
+		{Name: "list_secrets", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: answer("list_secrets")},
+		{Name: "delete_issue", InputSchema: json.RawMessage(`{"type":"object"}`), Answer: answer("delete_issue")},
+	}})
+	tracker := session.Connection{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "tracker-core", Address: stub.URL(),
+		ReadOnly: []string{"list_*"}, Hidden: []string{"delete_*", "list_secrets"}}
+	c := newCloud(t, func(s *session.Session) { s.Connections = []session.Connection{tracker} })
+	c.creds = &issued{life: 15 * time.Minute, err: map[string]error{runner.AudienceLux: runner.ErrNotMinted}}
+	c.drive("Clean up the tracker.",
+		toolCall("toolu_1", "mcp__tracker__delete_issue", `{}`),
+		toolCall("toolu_2", "mcp__tracker__list_secrets", `{}`),
+		toolCall("toolu_3", "mcp__tracker__list_issues", `{}`),
+		said("The list is clean."))
+	body := string(c.lux.Requests()[0].Body)
+	if !strings.Contains(body, "mcp__tracker__list_issues") || strings.Contains(body, "delete_issue") || strings.Contains(body, "list_secrets") {
+		t.Fatal("the request offers a hidden tool, or not the one left")
+	}
+	rs := c.events(session.TypeToolResult)
+	if len(rs) != 3 {
+		t.Fatalf("%d tool results, want 3", len(rs))
+	}
+	for i, want := range []string{tools.OutcomeUnknownTool, tools.OutcomeUnknownTool, tools.OutcomeOK} {
+		var res session.ToolResult
+		if err := rs[i].Decode(&res); err != nil || res.Outcome != want || res.IsError != (want != tools.OutcomeOK) {
+			t.Errorf("result %d is %+v, want %s", i, res, want)
+		}
+	}
+	for _, name := range []string{"delete_issue", "list_secrets"} {
+		if _, ok := called.Load(name); ok {
+			t.Errorf("the server answered %s", name)
+		}
+	}
+	for _, r := range stub.Requests() {
+		if r.Header.Get("Mcp-Method") == "tools/call" && r.Header.Get("Mcp-Name") != "list_issues" {
+			t.Errorf("a call of %s reached the server", r.Header.Get("Mcp-Name"))
+		}
+	}
+	if _, ok := called.Load("list_issues"); !ok {
+		t.Fatal("the tool left offered was not called")
 	}
 }
 

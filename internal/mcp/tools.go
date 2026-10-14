@@ -111,9 +111,11 @@ type Server struct {
 
 // Tools lists the server's tools as the session's tools, and the names of
 // those whose schema had a keyword the harness's validator does not
-// cover, which is dropped from it. A tool whose full name is not a tool
-// name, or whose x-mcp-header marks break the transport's rules, is left
-// out.
+// cover, which is dropped from it. A tool a glob of the connection's
+// hidden matches, one whose full name is not a tool name, and one whose
+// x-mcp-header marks break the transport's rules are left out, so the
+// model is never offered them and a call of one is answered as a call of
+// no tool, without reaching the server.
 func (s Server) Tools(ctx context.Context) ([]tools.Tool, []string, error) {
 	listed, err := s.Client.ListTools(ctx)
 	if err != nil {
@@ -123,7 +125,7 @@ func (s Server) Tools(ctx context.Context) ([]tools.Tool, []string, error) {
 	var reduced []string
 	for _, t := range listed {
 		name := Prefix + s.Connection.Name + "__" + t.Name
-		if !tools.ValidName(name) {
+		if s.Connection.Hides(t.Name) || !tools.ValidName(name) {
 			continue
 		}
 		params, ok := headerParams(t.InputSchema)
