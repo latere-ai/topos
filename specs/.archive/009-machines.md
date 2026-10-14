@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [machine/, machine/host/, machine/cella/, cmd/topos-machine/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-14
 author: changkun
 ---
 
@@ -239,8 +239,21 @@ its workspace unless the session names another), the workspace, and
 the spill directory `/tmp/topos/spill`, outside both. The deny-list's
 base-name entries hold in every root and are hidden from search; the
 home entries name nothing in a sandbox, which holds none of the
-person's credentials. The sandbox's environment is Cella's, named
-secrets arrive as placeholders, and no variable is removed. Each
+person's credentials. The sandbox's environment is Cella's, with `HOME`
+the machine's own directory, `TOPOS_MACHINE_DIR/home`, unless the
+agent's machine environment names one ([[019-git]]); named secrets
+arrive as placeholders, and no variable is removed. The helper runs each
+command and job with `$HOME/.local/bin` at the end of `PATH`, where
+`pip install` puts a person's commands when the system's directories
+cannot be written; and when `NPM_CONFIG_PREFIX` names a directory that
+cannot be written, as the image's home on Cella's read-only root
+filesystem, with npm's global directory moved to `$HOME/.npm-global`,
+made once with a link to each command and package of the image's, and
+its `bin` in the old one's place on `PATH`, so `npm install -g` writes
+there and what the image put in its own, such as the command `npx` finds
+offline and the package `npm link` links, still resolves. A writable one
+is left as it is. The image cannot do this itself, since it cannot know
+the `HOME` the machine chose, and `/bin/sh` reads no profile. Each
 failure answers what the host machine answers for it: a missing path
 is `fs.ErrNotExist`, a missing start directory too, so `bash` falls
 back to the working directory as on the host.
@@ -385,6 +398,7 @@ repository delivery and git credentials ([[019-git]]); named secrets
 | A hosted session whose turns call no tool that acts on a machine never reaches Cella and records no machine; the first such call creates the sandbox and records it once, between the call and its result, and every later call and turn reuses it | `internal/hosted.TestASessionThatOnlyTalksCreatesNoSandbox`, `internal/hosted.TestTheFirstBashCreatesTheSandboxAndLaterCallsReuseIt`, `runner.TestAMachineOnDemandIsRecordedWhenAToolFirstActsOnIt`, `runner.TestAnEndOnIdleSessionThatOnlyTalksHasNoMachine` | built |
 | A machine opened on demand opens once for parallel calls, answers its kind before it opens, and a failed open is the call's result with a `session.error`, or a stop with `budget` for a refusal for spend; a spill opens it | `machine.TestADeferredMachineOpensOnFirstUse`, `machine.TestADeferredMachineThatCannotOpen`, `machine.TestADeferredMachinesFailedHookLeavesItOpen`, `harness.TestAMachineOpensAtTheFirstToolThatActsOnIt`, `harness.TestAMachineThatCannotOpenIsTheCallsResult`, `harness.TestACoreRefusingTheMachineForSpendStopsTheTurn`, `harness.TestASpillOpensTheMachine` | built |
 | The egress allowlist of a session's sandbox includes its repositories' git host | `internal/hosted.TestTheSandboxReachesItsRepositoriesHosts` | built |
+| A command a person installs under `HOME`, with `pip install` for the user or with `npm install -g` where the image's npm directory cannot be written, runs by name in the foreground and as a job, beside the commands and packages the image put in its npm directory; the moved npm directory is made once, by one of the commands that start together, and a writable one is left as it is | `machine/cella.TestCommandsAPersonInstalledRunByName`, `cmd/topos-machine.TestACommandRunsWhatAPersonInstalledUnderHome`, `cmd/topos-machine.TestNpmsGlobalDirectoryMovesUnderHomeWhenItCannotBeWritten`, `cmd/topos-machine.TestAWritableNpmDirectoryIsLeftAsItIs`, `cmd/topos-machine.TestNpmGlobalIsMadeOnceByCommandsThatStartTogether`, `cmd/topos-machine.TestCommandEnv` | built |
 | Commands on a Cella machine run under the helper in their own process group with their exit code, their final directory, an input that ends, a timeout and a cancel that end the group, and a script of any length; background jobs log to the spill directory | `machine/cella.TestExec`, `machine/cella.TestExecTimeoutAndCancel`, `machine/cella.TestAHelperThatDoesNotAnswerACancelIsClosed`, `machine/cella.TestBackgroundJobs`, `machine/cella.TestLongScripts`, `cmd/topos-machine.TestRunOutputAndExit`, `cmd/topos-machine.TestRunReportsTheFinalDirectory`, `cmd/topos-machine.TestRunDeliversInput`, `cmd/topos-machine.TestRunTimesOut`, `cmd/topos-machine.TestRunCancels`, `cmd/topos-machine.TestRunEndsTheProcessGroup`, `cmd/topos-machine.TestRunReadsAFramedScript`, `cmd/topos-machine.TestJob` | built |
 | A Cella machine's file operations go through Cella's file routes in the workspace and through the helper outside it, with the host's errors, the deny-list and the roots | `machine/cella.TestFilesInTheWorkspace`, `machine/cella.TestFilesInTheSpillDirectory`, `cmd/topos-machine.TestFSWrite`, `cmd/topos-machine.TestFSStatListRemoveRename`, `cmd/topos-machine.TestFSRead` | built |
 | Search on a Cella machine runs the Go-native grep and glob in the helper, where the files are | `machine/cella.TestSearch`, `cmd/topos-machine.TestSearch` | built |
