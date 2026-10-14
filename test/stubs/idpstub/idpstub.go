@@ -171,6 +171,17 @@ func (s *Server) Agents() []Agent {
 	return out
 }
 
+// DeleteOwner removes every identity o owns, as a provider does when it
+// deletes the person or organization, and reports how many it removed.
+// Archive and disable then answer each of them unknown_agent.
+func (s *Server) DeleteOwner(o Owner) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := len(s.agents)
+	s.agents = slices.DeleteFunc(s.agents, func(a *Agent) bool { return a.Owner == o })
+	return n - len(s.agents)
+}
+
 // ServiceToken reports the audience the host's own token tok was asked
 // for, false for a token the stub did not issue for another service.
 func (s *Server) ServiceToken(tok string) (string, bool) {

@@ -88,6 +88,23 @@ func TestTheHostsCalls(t *testing.T) {
 	if n := idp.Count(idpstub.OpToken); n != 1 {
 		t.Fatalf("%d host tokens fetched for one lifetime", n)
 	}
+	// An identity the provider deleted with its owner is unknown to
+	// archive and disable alike, and no other refusal reads as unknown.
+	if _, err := c.Create(ctx, "agent_02", "helper", owner, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if n := idp.DeleteOwner(idpstub.Owner(owner)); n != 2 {
+		t.Fatalf("the owner's deletion removed %d identities", n)
+	}
+	if err := c.Archive(ctx, "agent_02"); !Unknown(err) {
+		t.Fatalf("an archive of a deleted identity: %v", err)
+	}
+	if err := c.Disable(ctx, "agent_01", sub); !Unknown(err) {
+		t.Fatalf("a disable of a deleted identity: %v", err)
+	}
+	if Unknown(ErrUnavailable) || Unknown(&Error{Status: http.StatusBadRequest, Code: CodeUnknownAgent}) || Unknown(&Error{Status: http.StatusNotFound, Code: "not_found"}) {
+		t.Fatal("another error reads as an unknown identity")
+	}
 	var e *Error
 	if _, err := c.Create(ctx, "agent_01", "", owner, ""); !errors.As(err, &e) || e.Status != http.StatusBadRequest || e.Error() == "" {
 		t.Fatalf("a nameless create: %v", err)

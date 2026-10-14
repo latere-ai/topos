@@ -64,6 +64,19 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("identity: the identity provider refused with %d %s: %s", e.Status, e.Code, e.Message)
 }
 
+// CodeUnknownAgent is the provider's refusal of a ref or subject it holds
+// no identity for: one never created, or one it deleted with the person
+// or organization that owned it.
+const CodeUnknownAgent = "unknown_agent"
+
+// Unknown reports whether err is the provider's refusal of an identity it
+// does not hold, which a delete of the agent reads as already gone (spec
+// 074).
+func Unknown(err error) bool {
+	e, ok := errors.AsType[*Error](err)
+	return ok && e.Status == http.StatusNotFound && e.Code == CodeUnknownAgent
+}
+
 // Owner is the person or organization an agent belongs to.
 type Owner struct {
 	Type string `json:"type"`
