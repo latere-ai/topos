@@ -210,12 +210,30 @@ func (s *Store) Archive(ctx context.Context, id string, at time.Time) error {
 	if tag.RowsAffected() == 1 {
 		return nil
 	}
-	// Agents are never deleted, so a row that exists now existed at the
-	// update, archived.
+	// An agent's id is never reused, so a row that exists now existed at
+	// the update, archived; one deleted since reads as not found.
 	if _, err := s.Agent(ctx, id); err != nil {
 		return err
 	}
 	return fmt.Errorf("%w: agent %s is archived", store.ErrConflict, id)
+}
+
+// DeleteAgent removes the agent's versions and then its row in one
+// transaction, since agent_versions references agents.
+func (s *Store) DeleteAgent(ctx context.Context, id string) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM agent_versions WHERE agent_id = $1`, id); err != nil {
+			return fmt.Errorf("postgres: delete the versions of %s: %w", id, err)
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM agents WHERE id = $1`, id)
+		if err != nil {
+			return fmt.Errorf("postgres: delete agent %s: %w", id, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("%w: agent %s", store.ErrNotFound, id)
+		}
+		return nil
+	})
 }
 
 const idempotencyColumns = `subject, key, route, body_hash, done, status, content_type, body, expires_at`

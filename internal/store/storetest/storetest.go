@@ -54,6 +54,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("rewrite latest", func(t *testing.T) { rewriteLatest(t, f) })
 	t.Run("list", func(t *testing.T) { list(t, f) })
 	t.Run("archive", func(t *testing.T) { archive(t, f) })
+	t.Run("delete agent", func(t *testing.T) { deleteAgent(t, f) })
 	t.Run("lookup", func(t *testing.T) { lookup(t, f) })
 	t.Run("idempotency", func(t *testing.T) { idempotency(t, f) })
 	t.Run("triggers", func(t *testing.T) { triggers(t, f) })
@@ -402,6 +403,57 @@ func archive(t *testing.T, f Factory) {
 	}
 	if err := st.Archive(t.Context(), session.NewID(session.PrefixAgent), clock.Now()); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("an archive of no agent: %v", err)
+	}
+}
+
+// deleteAgent: a delete removes the agent and every version, archived or
+// not, leaves another owner's agent of the name alone, and frees the name,
+// which an apply then takes for a new agent; a second delete, and a
+// delete of no agent, is ErrNotFound (spec 074).
+func deleteAgent(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	id := Apply(t, st, "alice", "reviewer", "one").Agent.Status.ID
+	Apply(t, st, "alice", "reviewer", "two")
+	other := Apply(t, st, "bob", "reviewer", "one").Agent.Status.ID
+	if err := st.DeleteAgent(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Agent(t.Context(), id); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the deleted agent reads: %v", err)
+	}
+	if _, err := st.AgentByName(t.Context(), "alice", "reviewer"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the deleted agent reads by its name: %v", err)
+	}
+	for n := 1; n <= 2; n++ {
+		if _, err := st.Version(t.Context(), id, n); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("version %d of the deleted agent reads: %v", n, err)
+		}
+	}
+	if _, _, err := st.Versions(t.Context(), id, 0, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the deleted agent's versions list: %v", err)
+	}
+	listed, _, err := st.ListAgents(t.Context(), store.AgentList{})
+	if err != nil || len(listed) != 1 || listed[0].ID != other {
+		t.Fatalf("the list after the delete: %+v, %v", listed, err)
+	}
+	if v, err := st.Version(t.Context(), other, 1); err != nil || len(v.Bundle) == 0 {
+		t.Fatalf("another owner's agent of the name: %+v, %v", v, err)
+	}
+	again := Apply(t, st, "alice", "reviewer", "one").Agent.Status
+	if again.ID == id || again.Version != 1 {
+		t.Fatalf("the freed name applied as %s version %d", again.ID, again.Version)
+	}
+	if err := st.Archive(t.Context(), again.ID, clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteAgent(t.Context(), again.ID); err != nil {
+		t.Fatalf("the delete of an archived agent: %v", err)
+	}
+	for _, gone := range []string{id, again.ID, session.NewID(session.PrefixAgent)} {
+		if err := st.DeleteAgent(t.Context(), gone); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("a delete of %s, which the store does not hold: %v", gone, err)
+		}
 	}
 }
 

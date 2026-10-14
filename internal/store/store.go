@@ -109,6 +109,11 @@ type Agents interface {
 	RewriteLatest(ctx context.Context, v AgentVersion) error
 	// Archive archives an agent; ErrConflict answers an archived one.
 	Archive(ctx context.Context, id string, at time.Time) error
+	// DeleteAgent removes an agent and every version, each with its
+	// document and bundle, archived or not, and frees its name within
+	// its owner (spec 074); ErrNotFound answers an agent the store does
+	// not hold. The caller checks that no session of the agent is left.
+	DeleteAgent(ctx context.Context, id string) error
 }
 
 // Idempotency is one idempotency record: the answer the first request

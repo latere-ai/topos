@@ -143,6 +143,19 @@ func (m *Memory) RewriteLatest(_ context.Context, v AgentVersion) error {
 	return nil
 }
 
+func (m *Memory) DeleteAgent(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[id]
+	if !ok {
+		return fmt.Errorf("%w: agent %s", ErrNotFound, id)
+	}
+	delete(m.names, ownedName{a.Owner, a.Name})
+	delete(m.versions, id)
+	delete(m.agents, id)
+	return nil
+}
+
 func (m *Memory) Archive(_ context.Context, id string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

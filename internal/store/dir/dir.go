@@ -386,6 +386,31 @@ func (s *Store) Archive(_ context.Context, id string, at time.Time) error {
 	return nil
 }
 
+// DeleteAgent removes the agent's file first, which is the commit record
+// of its versions, and then its versions' directory: a crash between the
+// two leaves version files no reader opens, which a version of a new
+// agent never shares, since an agent's id is new at its first apply.
+func (s *Store) DeleteAgent(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.agents[id]
+	if !ok {
+		return fmt.Errorf("%w: agent %s", store.ErrNotFound, id)
+	}
+	if err := os.Remove(s.agentPath(id)); err != nil {
+		return fmt.Errorf("dir: delete agent %s: %w", id, err)
+	}
+	if err := syncDir(filepath.Join(s.root, kindAgent)); err != nil {
+		return err
+	}
+	delete(s.agents, id)
+	delete(s.names, ownedName{a.Owner, a.Name})
+	if err := os.RemoveAll(filepath.Join(s.root, kindVersion, id)); err != nil {
+		return fmt.Errorf("dir: delete the versions of %s: %w", id, err)
+	}
+	return syncDir(filepath.Join(s.root, kindVersion))
+}
+
 func (s *Store) Begin(_ context.Context, r store.Idempotency) (store.Idempotency, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
