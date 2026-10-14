@@ -58,6 +58,20 @@ func TestCheckConnections(t *testing.T) {
 	if in[1].ReadOnly[0] != "list_*" {
 		t.Fatal("the answer shares the input's read_only")
 	}
+	hiding := mcpConnection()
+	hiding.Hidden = []string{"delete_*", strings.Repeat("a", MaxReadOnlyGlob)}
+	kept, err := CheckConnections([]Connection{hiding})
+	if err != nil {
+		t.Fatalf("an mcp connection with hidden globs: %v", err)
+	}
+	kept[0].Hidden[0] = "changed"
+	if hiding.Hidden[0] != "delete_*" {
+		t.Fatal("the answer shares the input's hidden")
+	}
+	hiding.Hidden = slices.Repeat([]string{"a"}, MaxReadOnlyTools)
+	if _, err := CheckConnections([]Connection{hiding}); err != nil {
+		t.Fatalf("%d hidden globs: %v", MaxReadOnlyTools, err)
+	}
 	if out, err := CheckConnections(nil); err != nil || out != nil {
 		t.Fatalf("no connections: %v %v", out, err)
 	}
@@ -103,6 +117,10 @@ func TestCheckConnections(t *testing.T) {
 		"a broken read_only glob":      func(c *Connection) { c.ReadOnly = []string{"list_["} },
 		"a long read_only glob":        func(c *Connection) { c.ReadOnly = []string{strings.Repeat("a", MaxReadOnlyGlob+1)} },
 		"too many read_only globs":     func(c *Connection) { c.ReadOnly = slices.Repeat([]string{"a"}, MaxReadOnlyTools+1) },
+		"an empty hidden glob":         func(c *Connection) { c.Hidden = []string{""} },
+		"a broken hidden glob":         func(c *Connection) { c.Hidden = []string{"delete_["} },
+		"a long hidden glob":           func(c *Connection) { c.Hidden = []string{strings.Repeat("a", MaxReadOnlyGlob+1)} },
+		"too many hidden globs":        func(c *Connection) { c.Hidden = slices.Repeat([]string{"a"}, MaxReadOnlyTools+1) },
 		"an mcp api_url":               func(c *Connection) { c.APIURL = "https://api.example.com" },
 		"an mcp api_example":           func(c *Connection) { c.APIExample = "/v1/issues" },
 		"an mcp api_notes":             func(c *Connection) { c.APINotes = "Issues are numbered." },
@@ -117,6 +135,7 @@ func TestCheckConnections(t *testing.T) {
 	}
 	for name, change := range map[string]func(*Connection){
 		"an http read_only":        func(c *Connection) { c.ReadOnly = []string{"*"} },
+		"an http hidden":           func(c *Connection) { c.Hidden = []string{"*"} },
 		"a git address alone":      func(c *Connection) { c.GitURL = "" },
 		"a git URL alone":          func(c *Connection) { c.GitAddress = "" },
 		"a plain http git address": func(c *Connection) { c.GitAddress = "http://connections.example.com/git" },
@@ -267,6 +286,7 @@ func TestAnAvailableConnection(t *testing.T) {
 		"a git address":   func(c *Connection) { c.GitAddress = "https://connections.example.com/v1/connections/c_1/git" },
 		"a git URL":       func(c *Connection) { c.GitURL = "https://git.example.com" },
 		"a read_only":     func(c *Connection) { c.ReadOnly = []string{"list_*"} },
+		"a hidden":        func(c *Connection) { c.Hidden = []string{"delete_*"} },
 		"an account":      func(c *Connection) { c.Account = "ada" },
 		"an api_url":      func(c *Connection) { c.APIURL = "https://api.git.example.com" },
 		"an api_example":  func(c *Connection) { c.APIExample = "/v3/user" },
@@ -325,6 +345,29 @@ func TestSameConnectionsReadsTheNotes(t *testing.T) {
 		t.Fatal("lists that differ in api_notes are the same")
 	}
 	if !SameConnections([]Connection{b}, []Connection{b}) {
+		t.Fatal("a list is not the same as itself")
+	}
+}
+
+// TestAConnectionHidesTools: an mcp connection's hidden globs match a
+// tool's whole name with path.Match, as its read_only globs do, and two
+// lists that differ only in a connection's hidden are not the same, so a
+// send that changes them appends session.connections_changed (spec 069).
+func TestAConnectionHidesTools(t *testing.T) {
+	c := mcpConnection()
+	c.Hidden = []string{"delete_*", "admin"}
+	for tool, want := range map[string]bool{"delete_issue": true, "admin": true, "admin_users": false, "list_issues": false, "undelete_issue": false} {
+		if c.Hides(tool) != want {
+			t.Errorf("%s hidden: %v", tool, !want)
+		}
+	}
+	if mcpConnection().Hides("delete_issue") {
+		t.Fatal("a connection with no hidden globs hides a tool")
+	}
+	if SameConnections([]Connection{mcpConnection()}, []Connection{c}) {
+		t.Fatal("lists that differ in hidden are the same")
+	}
+	if !SameConnections([]Connection{c}, []Connection{c}) {
 		t.Fatal("a list is not the same as itself")
 	}
 }

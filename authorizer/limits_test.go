@@ -339,12 +339,14 @@ func TestTheAttachMembers(t *testing.T) {
 }
 
 // TestTheConnectionsMember: an allow's connections are read with their
-// rules, a git URL without its trailing "/", an available connection with
-// its name, kind and title alone, and a member of a connection the core
-// does not know is ignored; a connection that breaks a rule, an unknown
-// kind or state, an available connection with an address, a title that
-// is not UTF-8 and a list past its bound do not decode, and the error
-// names the member (spec 069).
+// rules, a git URL without its trailing "/", an mcp connection with its
+// read_only and hidden globs, an available connection with its name, kind
+// and title alone, and a member of a connection the core does not know is
+// ignored; a connection that breaks a rule, an unknown kind or state, an
+// available connection with an address, hidden globs on an http or an
+// available connection or past their bound, a title that is not UTF-8 and
+// a list past its bound do not decode, and the error names the member
+// (spec 069).
 func TestTheConnectionsMember(t *testing.T) {
 	raw := `{"connections":[
 		{"name":"github","kind":"http","title":"GitHub","audience":"connections",
@@ -354,7 +356,7 @@ func TestTheConnectionsMember(t *testing.T) {
 		 "account":"ada","api_url":"https://api.git.example.com/","api_example":"/v3/user",
 		 "api_notes":"Read a page's text with GET ${env}/v3/pages/<id>/text."},
 		{"name":"tracker","kind":"mcp","title":"Issue tracker","audience":"connections",
-		 "address":"https://connections.example.com/v1/connections/c_2/mcp","read_only":["list_*"]}]}`
+		 "address":"https://connections.example.com/v1/connections/c_2/mcp","read_only":["list_*"],"hidden":["delete_*"]}]}`
 	l, err := DecodeLimits(authz.Decision{Allow: true, Limits: []byte(raw)})
 	if err != nil {
 		t.Fatal(err)
@@ -366,7 +368,7 @@ func TestTheConnectionsMember(t *testing.T) {
 			Account: "ada", APIURL: "https://api.git.example.com", APIExample: "/v3/user",
 			APINotes: "Read a page's text with GET ${env}/v3/pages/<id>/text."},
 		{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "connections",
-			Address: "https://connections.example.com/v1/connections/c_2/mcp", ReadOnly: []string{"list_*"}},
+			Address: "https://connections.example.com/v1/connections/c_2/mcp", ReadOnly: []string{"list_*"}, Hidden: []string{"delete_*"}},
 	}
 	if !session.SameConnections(l.Connections, want) {
 		t.Fatalf("connections %+v", l.Connections)
@@ -400,6 +402,10 @@ func TestTheConnectionsMember(t *testing.T) {
 		"an available account":   {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","state":"available","account":"ada"}]}`), "limits.connections[0]"},
 		"a shell in api_example": {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","audience":"x","address":"https://c.example.com/a","api_example":"/v1/$(id)"}]}`), "limits.connections[0]"},
 		"mcp api_notes":          {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","api_notes":"Issues are numbered."}]}`), "limits.connections[0]"},
+		"an http hidden":         {json.RawMessage(`{"connections":[{"name":"a","kind":"http","title":"A","audience":"x","address":"https://c.example.com/a","hidden":["*"]}]}`), "limits.connections[0]"},
+		"an available hidden":    {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","state":"available","hidden":["delete_*"]}]}`), "limits.connections[0]"},
+		"a broken hidden glob":   {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","hidden":["delete_["]}]}`), "limits.connections[0]"},
+		"hidden as a string":     {json.RawMessage(`{"connections":[{"name":"a","kind":"mcp","title":"A","audience":"x","address":"https://c.example.com/a","hidden":"delete_*"}]}`), "limits"},
 	} {
 		if _, err := DecodeLimits(decision(t, c.w)); err == nil || !strings.Contains(err.Error(), c.names) {
 			t.Errorf("%s: %v, want an error naming %s", name, err, c.names)

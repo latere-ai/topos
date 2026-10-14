@@ -49,9 +49,10 @@ const (
 	MaxConnectionTitle = 100
 	// MaxConnectionAudience is the most bytes of a connection's audience.
 	MaxConnectionAudience = 256
-	// MaxReadOnlyTools is the most read_only globs of one connection.
+	// MaxReadOnlyTools is the most globs of one connection's read_only, and
+	// of its hidden.
 	MaxReadOnlyTools = 64
-	// MaxReadOnlyGlob is the most bytes of one read_only glob.
+	// MaxReadOnlyGlob is the most bytes of one glob of read_only or hidden.
 	MaxReadOnlyGlob = 128
 	// MaxConnectionReason is the most characters of the reason a
 	// request_connection call gives the person.
@@ -103,6 +104,11 @@ type Connection struct {
 	// ReadOnly are an mcp connection's globs over its tool names; a tool a
 	// glob matches reads, and every other tool reaches outside.
 	ReadOnly []string `json:"read_only,omitempty"`
+	// Hidden are an mcp connection's globs over its tool names; a tool a
+	// glob matches is never offered to the model, so a call of it is
+	// answered as a call of no tool and never reaches the server. It wins
+	// over ReadOnly.
+	Hidden []string `json:"hidden,omitempty"`
 	// Account is the account at the other service the connection acts as,
 	// such as a login or an email address, which the model is told; empty
 	// when the allow names none, and on an available connection.
@@ -150,15 +156,27 @@ func (c Connection) ReadsOnly(tool string) bool {
 	return false
 }
 
+// Hides reports whether a glob of c's Hidden matches tool, path.Match over
+// the whole name as ReadsOnly reads.
+func (c Connection) Hides(tool string) bool {
+	for _, g := range c.Hidden {
+		if ok, err := path.Match(g, tool); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
 // CheckConnections reports why cs cannot be a session's connections: at
 // most MaxConnections, connected and available together, each with a
 // name, a kind and a title of the rules spec 069 gives; a connected one
 // with an audience and an address, its git address and git URL on an
 // http connection alone and both or neither, its API URL and the path of
-// its example call on an http connection alone, its read_only globs on an
-// mcp connection alone, and an account on one line; an available one with none of those; and no
-// name or git URL named twice. A git URL and an API URL are written
-// without a trailing "/" in the list it answers, which is a copy.
+// its example call on an http connection alone, its read_only and hidden
+// globs on an mcp connection alone, and an account on one line; an
+// available one with none of those; and no name or git URL named twice. A
+// git URL and an API URL are written without a trailing "/" in the list it
+// answers, which is a copy.
 func CheckConnections(cs []Connection) ([]Connection, error) {
 	if len(cs) > MaxConnections {
 		return nil, fmt.Errorf("connections names %d connections, more than %d", len(cs), MaxConnections)
@@ -167,7 +185,7 @@ func CheckConnections(cs []Connection) ([]Connection, error) {
 	names, gits := map[string]bool{}, map[string]bool{}
 	for i := range out {
 		c := &out[i]
-		c.ReadOnly = slices.Clone(c.ReadOnly)
+		c.ReadOnly, c.Hidden = slices.Clone(c.ReadOnly), slices.Clone(c.Hidden)
 		if err := checkConnection(c); err != nil {
 			return nil, fmt.Errorf("connections[%d]: %w", i, err)
 		}
@@ -201,8 +219,8 @@ func checkConnection(c *Connection) error {
 		// An available connection is one the person has not connected: the
 		// connection service serves no address for it yet, and a session
 		// reaches nothing of it.
-		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 || c.Account != "" || c.APIURL != "" || c.APIExample != "" || c.APINotes != "" {
-			return fmt.Errorf("%s is available and names audience, address, git_address, git_url, read_only, account, api_url, api_example or api_notes, which only a connected connection takes", c.Name)
+		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 || len(c.Hidden) > 0 || c.Account != "" || c.APIURL != "" || c.APIExample != "" || c.APINotes != "" {
+			return fmt.Errorf("%s is available and names audience, address, git_address, git_url, read_only, hidden, account, api_url, api_example or api_notes, which only a connected connection takes", c.Name)
 		}
 		return nil
 	default:
@@ -221,8 +239,8 @@ func checkConnection(c *Connection) error {
 	}
 	switch c.Kind {
 	case ConnectionHTTP:
-		if len(c.ReadOnly) > 0 {
-			return fmt.Errorf("%s is of kind http and names read_only, which only an mcp connection takes", c.Name)
+		if len(c.ReadOnly) > 0 || len(c.Hidden) > 0 {
+			return fmt.Errorf("%s is of kind http and names read_only or hidden, which only an mcp connection takes", c.Name)
 		}
 		if c.APIURL != "" {
 			c.APIURL = strings.TrimSuffix(c.APIURL, "/")
@@ -255,13 +273,26 @@ func checkConnection(c *Connection) error {
 		if c.GitAddress != "" || c.GitURL != "" || c.APIURL != "" || c.APIExample != "" || c.APINotes != "" {
 			return fmt.Errorf("%s is of kind mcp and names git_address, git_url, api_url, api_example or api_notes, which only an http connection takes", c.Name)
 		}
-		if len(c.ReadOnly) > MaxReadOnlyTools {
-			return fmt.Errorf("%s names %d read_only globs, more than %d", c.Name, len(c.ReadOnly), MaxReadOnlyTools)
+		if err := checkToolGlobs("read_only", c.Name, c.ReadOnly); err != nil {
+			return err
 		}
-		for i, g := range c.ReadOnly {
-			if _, err := path.Match(g, ""); err != nil || g == "" || len(g) > MaxReadOnlyGlob {
-				return fmt.Errorf("the read_only[%d] of %s is %q, not a glob of 1 to %d bytes", i, c.Name, g, MaxReadOnlyGlob)
-			}
+		if err := checkToolGlobs("hidden", c.Name, c.Hidden); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkToolGlobs reports why globs cannot be a connection's list member of
+// globs over its tool names: more than MaxReadOnlyTools, or one that is
+// empty, longer than MaxReadOnlyGlob bytes or not path.Match syntax.
+func checkToolGlobs(member, name string, globs []string) error {
+	if len(globs) > MaxReadOnlyTools {
+		return fmt.Errorf("%s names %d %s globs, more than %d", name, len(globs), member, MaxReadOnlyTools)
+	}
+	for i, g := range globs {
+		if _, err := path.Match(g, ""); err != nil || g == "" || len(g) > MaxReadOnlyGlob {
+			return fmt.Errorf("the %s[%d] of %s is %q, not a glob of 1 to %d bytes", member, i, name, g, MaxReadOnlyGlob)
 		}
 	}
 	return nil
@@ -311,7 +342,7 @@ func SameConnections(a, b []Connection) bool {
 	return slices.EqualFunc(a, b, func(x, y Connection) bool {
 		return x.Name == y.Name && x.Kind == y.Kind && x.Title == y.Title && x.State == y.State && x.Audience == y.Audience &&
 			x.Address == y.Address && x.GitAddress == y.GitAddress && x.GitURL == y.GitURL && slices.Equal(x.ReadOnly, y.ReadOnly) &&
-			x.Account == y.Account && x.APIURL == y.APIURL && x.APIExample == y.APIExample && x.APINotes == y.APINotes
+			slices.Equal(x.Hidden, y.Hidden) && x.Account == y.Account && x.APIURL == y.APIURL && x.APIExample == y.APIExample && x.APINotes == y.APINotes
 	})
 }
 
