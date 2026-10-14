@@ -69,7 +69,7 @@ const (
 // (spec 069): NotConnected with the connection service's Reason and the
 // Scopes it named, Err when it failed otherwise, and Reduced the tools
 // offered with a schema keyword the validator ignores. The zero listing
-// offered every tool.
+// offered every tool the connection does not hide.
 type MCPListing struct {
 	NotConnected bool
 	Reason       string
