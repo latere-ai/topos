@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.40.0 - 2026-10-14
+
 ### Added
 
 - **A connection can keep some of an MCP server's tools from the model.** An installation's authorizer may name `hidden` on an `mcp` connection, globs over the server's tool names with the rules and bounds of `read_only`. A tool one matches is never offered to the model, so it no longer tries a call the connection service refuses every time, and a call of its name is answered as a call of a tool the session does not have, without reaching the service. A send that changes it appends `session.connections_changed`, as a change of any other member does.
