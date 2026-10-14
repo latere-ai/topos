@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.39.0 - 2026-10-14
+
 ### Added
 
 - **One owner's triggers and agents, and an agent deleted.** `GET /v1/triggers` and `GET /v1/agents` take `owner=<subject>` and list that owner's objects where the installation's authorizer allows it, so a service account an installation trusts can find what a closed account kept. `DELETE /v1/agents/{ref}` deletes an agent with every version once it has no session left, and archives and disables its identity at the identity provider; an identity the provider already deleted with its owner no longer stops the delete.
