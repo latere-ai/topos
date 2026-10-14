@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.38.1 - 2026-10-14
+
 ### Fixed
 
 - **Commands installed in a hosted sandbox can be run.** In a sandbox
