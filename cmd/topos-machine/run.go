@@ -139,6 +139,7 @@ func start(ctx context.Context, dir, script string, report bool) (*command, erro
 	}
 	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, args...)
 	cmd.Dir = dir
+	cmd.Env = commandEnv(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	outR, outW, err := os.Pipe()
 	if err != nil {
@@ -487,6 +488,7 @@ func job(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// A job outlives the helper that started it, and so its context.
 	cmd := exec.CommandContext(context.WithoutCancel(ctx), shell, append([]string{"-c", jobWrapper, "job"}, args...)...)
 	cmd.Dir = *dir
+	cmd.Env = commandEnv(os.Environ())
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	serr := cmd.Start()

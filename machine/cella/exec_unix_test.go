@@ -8,6 +8,10 @@ package cella
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -75,5 +79,60 @@ func TestAHelperKilledAloneIsAKilledCommand(t *testing.T) {
 	}
 	if err := execErr(t, f.m); err != nil {
 		t.Errorf("the next command: %v", err)
+	}
+}
+
+// TestCommandsAPersonInstalledRunByName: on a sandbox whose image's npm
+// directory cannot be written, as on Cella's read-only root filesystem, a
+// command installed for the person under HOME, as `pip install` does, and
+// one installed into npm's global directory run by name, beside a command
+// the image put in its npm directory, in the foreground and as a job.
+func TestCommandsAPersonInstalledRunByName(t *testing.T) {
+	image := filepath.Join(t.TempDir(), "npm-global")
+	tool := filepath.Join(image, "bin", "tool")
+	if err := errors.Join(os.MkdirAll(filepath.Dir(tool), 0o755), os.WriteFile(tool, []byte("#!/bin/sh\necho image\n"), 0o755)); err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(os.Chmod(filepath.Dir(tool), 0o555), os.Chmod(image, 0o555)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := errors.Join(os.Chmod(image, 0o755), os.Chmod(filepath.Dir(tool), 0o755)); err != nil {
+			t.Error(err)
+		}
+	})
+	f := open(t, func(_ *cellastub.Server, o *Options) { o.Env = map[string]string{"NPM_CONFIG_PREFIX": image} })
+	ctx := t.Context()
+	install := `mkdir -p "$HOME/.local/bin" &&
+printf '#!/bin/sh\necho pip\n' >"$HOME/.local/bin/frompip" &&
+printf '#!/bin/sh\necho npm\n' >"$NPM_CONFIG_PREFIX/bin/fromnpm" &&
+chmod +x "$HOME/.local/bin/frompip" "$NPM_CONFIG_PREFIX/bin/fromnpm"`
+	if res, err := f.m.Exec(ctx, machine.ExecRequest{Command: install}); err != nil || res.ExitCode != 0 {
+		t.Fatalf("install: exit %d, output %q, %v", res.ExitCode, res.Output, err)
+	}
+	res, err := f.m.Exec(ctx, machine.ExecRequest{Command: "frompip; fromnpm; tool"})
+	if err != nil || res.ExitCode != 0 || string(res.Output) != "pip\nnpm\nimage\n" {
+		t.Errorf("run by name: exit %d, output %q, %v", res.ExitCode, res.Output, err)
+	}
+	res, err = f.m.Exec(ctx, machine.ExecRequest{Command: "frompip; fromnpm; tool", Background: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("pip\nnpm\nimage\n\n[job %d exited with code 0]\n", res.PID)
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		rc, err := f.m.ReadFile(ctx, res.Log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, rerr := io.ReadAll(rc)
+		if err := errors.Join(rerr, rc.Close()); err != nil {
+			t.Fatal(err)
+		}
+		if string(b) == want {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job log = %q, want %q", b, want)
+		}
 	}
 }

@@ -8,7 +8,8 @@
 // files are, walk lists and hashes the working directory's files for its
 // copy (spec 073), run gives a command its own process group, a timeout, an
 // input that ends and a report of its final directory, and moves a
-// server to the background (spec 045), job starts a background job, pump
+// server to the background (spec 045), job starts a background job, both
+// with the commands a person installs under HOME on PATH (env.go), pump
 // drains a moved command's output into its job log, and fs reaches the
 // files outside the workspace, which Cella's file routes do not serve.
 //
