@@ -60,6 +60,9 @@ func TestOwnerPolicyRows(t *testing.T) {
 		{"owner reads", alice, authorizer.ActionSessionRead, "ses_1", alice, true, ""},
 		{"owner deletes", alice, authorizer.ActionSessionDelete, "ses_1", alice, true, ""},
 		{"admin acts on anyone's", root, authorizer.ActionAgentArchive, "agt_1", alice, true, ""},
+		{"owner deletes an agent", alice, authorizer.ActionAgentDelete, "agt_1", alice, true, ""},
+		{"admin deletes anyone's agent", root, authorizer.ActionAgentDelete, "agt_1", alice, true, ""},
+		{"another subject deletes no agent", bob, authorizer.ActionAgentDelete, "agt_1", alice, false, authz.ReasonNotOwner},
 		{"another subject", bob, authorizer.ActionSessionSend, "ses_1", alice, false, authz.ReasonNotOwner},
 		{"create of a new object", bob, authorizer.ActionMemoryStoreCreate, "", "", true, ""},
 		{"a send by the session's owner", alice, authorizer.ActionSessionSend, "ses_1", alice, true, ""},
@@ -105,7 +108,7 @@ func TestOwnerPolicyRows(t *testing.T) {
 	// An organization's agent is its admins' alone: the policy knows no
 	// organization's members (spec 036).
 	org := map[string]any{"type": "organization", "id": "org_1"}
-	for _, action := range []string{authorizer.ActionAgentCreate, authorizer.ActionAgentRead, authorizer.ActionAgentUpdate, authorizer.ActionAgentArchive} {
+	for _, action := range []string{authorizer.ActionAgentCreate, authorizer.ActionAgentRead, authorizer.ActionAgentUpdate, authorizer.ActionAgentArchive, authorizer.ActionAgentDelete} {
 		id := "agt_1"
 		if action == authorizer.ActionAgentCreate {
 			id = ""

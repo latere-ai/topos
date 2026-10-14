@@ -33,6 +33,7 @@ const (
 	ActionAgentList    = "agent.list"
 	ActionAgentUpdate  = "agent.update"
 	ActionAgentArchive = "agent.archive"
+	ActionAgentDelete  = "agent.delete"
 
 	ActionSessionCreate    = "session.create"
 	ActionSessionRead      = "session.read"
@@ -78,6 +79,7 @@ var table = []authz.Action{
 	{Name: ActionAgentList, Kind: KindAgent},
 	{Name: ActionAgentUpdate, Kind: KindAgent},
 	{Name: ActionAgentArchive, Kind: KindAgent},
+	{Name: ActionAgentDelete, Kind: KindAgent},
 
 	{Name: ActionSessionCreate, Kind: KindSession},
 	{Name: ActionSessionRead, Kind: KindSession},
