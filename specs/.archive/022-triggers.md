@@ -286,7 +286,7 @@ firing row.
 | Route | Action | Behavior |
 |---|---|---|
 | `PUT /v1/triggers/{name}` | `trigger.create`, or `trigger.update` for the caller's own trigger of the name, and `agent.read` of the agent it names | apply a Trigger manifest; the caller becomes its owner, in the context its token's `org_id` names, and an agent it names by name is read among that context's agents ([[036-organization-owners]]); a schedule whose `timeZone` this build does not know is `invalid_request` |
-| `GET /v1/triggers`, `GET /v1/triggers/{ref}`, `DELETE /v1/triggers/{ref}` | `trigger.list`, `trigger.read`, `trigger.delete` | list, get by `trg_` id or by name among the caller's own, delete with its firings; the sessions it started keep running |
+| `GET /v1/triggers`, `GET /v1/triggers/{ref}`, `DELETE /v1/triggers/{ref}` | `trigger.list`, `trigger.read`, `trigger.delete` | list, of one owner when `owner=<subject>` names it ([[074-one-owners-triggers-and-agents-and-an-agent-deleted]]), get by `trg_` id or by name among the caller's own, delete with its firings; the sessions it started keep running |
 | `POST /v1/triggers/{ref}/fire` | `trigger.fire` | an event trigger takes one envelope; a schedule trigger takes an empty body and fires now, outside its schedule, deduplicated only by an `Idempotency-Key` ([[015-api]]). Answers `200` with the firing, for a new firing and for a redelivery alike; `503` with the firing when its outcome is `failed`, so the producer retries; `conflict` for a suspended trigger, which fires nothing. The row also names `session.create` and `session.send`, which the firing asks as the owner |
 | `GET /v1/triggers/{ref}/firings` | `trigger.read` | the trigger's firings, newest first, paged as every list is |
 
@@ -303,7 +303,8 @@ otherwise the code the create or the send would have answered
 Every `trigger.*` question of one trigger names it as its resource,
 with `name`, `owner` (the rendered subject of the person who applied
 it, as an agent's `owner` is) and `agent` (the agent's id), and a
-`trigger.list` names none, as an `agent.list` does; a
+`trigger.list` names none, as an `agent.list` does, but the `owner`
+a request names ([[074-one-owners-triggers-and-agents-and-an-agent-deleted]]); a
 `trigger.create`, of a trigger that does not exist yet, carries
 `name` and `agent` alone, with the `trg_` id the trigger will be
 stored under as its resource id, so an authorizer that keeps state per

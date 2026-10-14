@@ -141,8 +141,8 @@ an installation without one does not configure:
 | Call | When | What toposd sends |
 |---|---|---|
 | create | an apply of an agent that has no identity yet, after the authorizer allowed it; a refusal or an unanswered call refuses the apply | the agent's id as the identity provider's `ref`, its name, the owner, and the applier; the answer's subject is kept as the agent's `status.identity` ([[003-manifest]]) and carried to every later version |
-| archive | the archive route, before toposd archives the agent, so a failed call leaves the agent as it was and a retry is idempotent | the agent's id, with the confirmation `permanent: true` |
-| disable | once the archived agent has no session that has not ended: at the archive itself, and in a pass at start and on every reaper pass ([[014-store]]) over the provider's list of archived identities | the agent's id and subject, with `permanent: true` |
+| archive | the archive route, before toposd archives the agent, and the delete route, before it deletes the agent, where an identity the provider answers `unknown_agent` for is gone ([[074-one-owners-triggers-and-agents-and-an-agent-deleted]]), so a failed call leaves the agent as it was and a retry is idempotent | the agent's id, with the confirmation `permanent: true` |
+| disable | once the archived agent has no session that has not ended: at the archive itself, at a delete, which no session outlives ([[074-one-owners-triggers-and-agents-and-an-agent-deleted]]), and in a pass at start and on every reaper pass ([[014-store]]) over the provider's list of archived identities | the agent's id and subject, with `permanent: true` |
 | mint | a runner's token request, above | the subject, the audience and the `session` claim |
 
 The owner is the agent's own, the context it was first applied in

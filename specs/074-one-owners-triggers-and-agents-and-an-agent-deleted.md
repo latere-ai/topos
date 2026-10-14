@@ -1,6 +1,6 @@
 ---
 title: "One owner's triggers and agents, and an agent deleted: the trigger and agent lists take `owner=<subject>`, which their questions carry, and `DELETE /v1/agents/{ref}` deletes an agent with its versions once no session of it is left"
-status: drafted
+status: testing
 track: core
 depends_on: [003-manifest.md, 006-identity.md, 014-store.md, 015-api.md, 018-credentials-and-secrets.md, 022-triggers.md, 036-organization-owners.md, 040-session-deletion.md]
 affects: [authorizer/, internal/auth/, internal/identity/, internal/server/, internal/store/, test/stubs/idpstub/, api/]
@@ -184,11 +184,35 @@ the agent. A delete of an agent in the local CLI's store.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `GET /v1/triggers?owner=` lists only that owner's triggers when the allow names no filter or names the owner, an empty page otherwise, and `trigger.list` carries `owner`; without it the list and the question are as before | `internal/server.TestTheListsNameAnOwner` | |
-| `GET /v1/agents?owner=` lists that owner's agents in place of the caller's context when the allow names no filter or names the owner, an empty page otherwise, and `agent.list` carries `owner`; without it the list and the question are as before | `internal/server.TestTheListsNameAnOwner` | |
-| `DELETE /v1/agents/{ref}` asks `agent.delete`, removes the agent and every version, answers 204 and then `not_found`, frees the name for a new agent, and deletes an archived agent; another caller is refused | `internal/server.TestDeleteAnAgent` | |
-| An agent with a session of any status, archived included, is `conflict` and stays; once its sessions are deleted it is deleted | `internal/server.TestAnAgentWithSessionsIsNotDeleted` | |
-| The identity is archived, then disabled with `permanent: true`; one the provider no longer holds is gone and the delete succeeds; an unanswered provider refuses the delete and leaves the agent; a disable that fails is caught by the reconcile pass | `internal/server.TestDeleteAnAgentsIdentity` | |
-| Every store removes an agent with its versions, frees its name and answers `ErrNotFound` for one it does not hold: memory, directory and Postgres | `internal/store/storetest`'s `DeleteAgent` case, run by each store's conformance test | |
-| `agent.delete` is in the vocabulary and spec 006's table, and the owner policy lets the owner and the admins delete an agent and no one else | `authorizer.TestVocabularyMatchesTheSpec`, `internal/auth.TestOwnerPolicyRows` | |
-| The API document names the route and the parameter | `internal/server.TestOpenAPIIsGenerated` | |
+| `GET /v1/triggers?owner=` lists only that owner's triggers when the allow names no filter or names the owner, an empty page otherwise, and `trigger.list` carries `owner`; without it the list and the question are as before | `internal/server.TestTheListsNameAnOwner` | built |
+| `GET /v1/agents?owner=` lists that owner's agents in place of the caller's context when the allow names no filter or names the owner, an empty page otherwise, and `agent.list` carries `owner`; without it the list and the question are as before | `internal/server.TestTheListsNameAnOwner` | built |
+| `DELETE /v1/agents/{ref}` asks `agent.delete`, removes the agent and every version, answers 204 and then `not_found`, frees the name for a new agent, and deletes an archived agent; another caller is refused | `internal/server.TestDeleteAnAgent` | built |
+| An agent with a session of any status, archived included, is `conflict` and stays; once its sessions are deleted it is deleted | `internal/server.TestAnAgentWithSessionsIsNotDeleted` | built |
+| The identity is archived, then disabled with `permanent: true`; one the provider no longer holds is gone and the delete succeeds; an unanswered provider refuses the delete and leaves the agent; a disable that fails is caught by the reconcile pass | `internal/server.TestDeleteAnAgentsIdentity` | built |
+| Every store removes an agent with its versions, frees its name and answers `ErrNotFound` for one it does not hold: memory, directory and Postgres | `internal/store/storetest`'s `DeleteAgent` case, run by each store's conformance test | built |
+| `agent.delete` is in the vocabulary and spec 006's table, and the owner policy lets the owner and the admins delete an agent and no one else | `authorizer.TestVocabularyMatchesTheSpec`, `internal/auth.TestOwnerPolicyRows` | built |
+| The API document names the route and the parameter | `internal/server.TestOpenAPIIsGenerated` | built |
+
+## Outcome
+
+Built on 2026-10-14, in no release yet. Every criterion has its test,
+and each test of the server's failed against the code with its part
+taken out: the named owner on either list, the owner on the question,
+the check of the agent's sessions, the read of an identity the provider
+no longer holds, and the disable after the delete.
+
+What was decided while building:
+
+- **The helpers are shared by both lists.** `namedOwner`, `listFields`
+  and `admits` read the parameter, build the question's fields and
+  decide whether the allow admits the owner, so an owner the allow
+  leaves out is an empty page on both lists alike.
+- **The identity provider's code has a name.** `identity.CodeUnknownAgent`
+  and `identity.Unknown` read the provider's 404 `unknown_agent`; any
+  other refusal, a 404 of another code among them, still refuses the
+  delete.
+- **The stub provider deletes an owner's identities.**
+  `idpstub.DeleteOwner` removes them as a provider does when it deletes
+  the person, so the test of a closed account's agent runs against the
+  answers a provider gives, not a queued failure.
+
