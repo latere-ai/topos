@@ -10,6 +10,21 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **Commands installed in a hosted sandbox can be run.** In a sandbox
+  whose image's own home is read-only, `pip install httpie` succeeded
+  but `http` was "not found", and `npm install -g` failed because npm
+  could not write its global directory. Every command and background
+  job now finds the commands `pip` installs for the user, in
+  `$HOME/.local/bin`. When the image's npm global directory is
+  read-only, npm installs into `$HOME/.npm-global` instead, and its
+  commands are found by name too. The commands and packages the image
+  put in its own npm directory stay available there, so
+  `npx playwright` still answers at once with the network off, and
+  `npm link playwright` still works in a project. A sandbox whose npm
+  directory can be written keeps using it.
+
 ## v0.38.0 - 2026-10-14
 
 ### Added
