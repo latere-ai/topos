@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md,
 affects: [authorizer/, session/, internal/server/, internal/config/, internal/hosted/, machine/, harness/, internal/mcp/, prompts/, cmd/toposd/, api/, docs/]
 effort: large
 created: 2026-10-12
-updated: 2026-10-13
+updated: 2026-10-14
 author: changkun
 ---
 
@@ -103,7 +103,7 @@ carry `connections`:
      "account": "ada", "api_url": "https://api.git.example.com", "api_example": "/v3/user"},
     {"name": "tracker", "kind": "mcp", "title": "Issue tracker", "audience": "connections",
      "address": "https://connections.example.com/v1/connections/c_2/mcp",
-     "read_only": ["list_*", "get_*", "search"]}
+     "read_only": ["list_*", "get_*", "search"], "hidden": ["delete_*"]}
   ]
 }
 ```
@@ -117,6 +117,7 @@ carry `connections`:
 | `address` | an absolute `https` URL with a host, no user information, no query and no fragment: the forwarding address for `http`, the MCP address for `mcp` |
 | `git_address`, `git_url` | `http` alone, both or neither: `git_address` the connection's git address, as `address` is held; `git_url` the git host the person's repositories live at, such as `https://git.example.com`, an `https` URL as `address` is held, unique in the list, a trailing `/` dropped |
 | `read_only` | `mcp` alone: at most `session.MaxReadOnlyTools` (64) globs over the server's tool names, in `path.Match` syntax, each 1 to 128 bytes; a tool a glob matches reads |
+| `hidden` | `mcp` alone: globs over the server's tool names by `read_only`'s rules and bounds; a tool a glob matches is never offered to the model, whether or not a `read_only` glob matches it |
 | `account` | optional: the account at the other service the connection acts as, such as a login or an email address, one line of 1 to `session.MaxConnectionAccount` (256) characters, no control character |
 | `api_url` | optional, `http` alone: the service's own API base URL, which `address` stands in for, such as `https://api.example.com`, an `https` URL as `address` is held, a trailing `/` dropped; two connections may name one, as two services of one provider do |
 | `api_example` | optional, `http` alone: the whole path of one call of the service's API after `api_url`, as its documentation writes it, version prefix included, such as `/v1/users/me/messages`; it starts with `/`, is at most `session.MaxConnectionAPIExample` (256) bytes, and holds no space, control character, `?`, `#`, `$`, `"`, `` ` `` or `\`, since the block writes it into a shell command; the call should be one the connection service lets a session make |
@@ -347,7 +348,13 @@ rules, is not offered. Each is called like any tool: validated, scored,
 given a verdict and logged, its pattern its full name
 ([[012-permissions-and-approvals]]); `Parallel` yes, `Repeatable` never,
 and `Effect` `read` for a tool a `read_only` glob matches and
-`external` otherwise. The server's own annotations are not read. A
+`external` otherwise. A tool a `hidden` glob matches is not offered
+either, nor named in `mcp_schema_reduced`: the model is never told of
+it, and a call of its full name is answered `unknown_tool`, as a call of
+any tool the session does not hold, and never reaches the connection
+service. Both lists are read with the tools at the drive's start, so a
+send that changes either reaches the model at the next drive. The
+server's own annotations are not read. A
 result's text and image content are the tool's result, and `isError`
 makes it an error; a result that asks for input (`input_required`) is
 an error result saying the session cannot give the server input.
@@ -392,7 +399,8 @@ service as an available connection:
   did; any other value does not decode. An available connection takes
   `name`, `kind` and `title` by the rules above and nothing else: one
   that names `audience`, `address`, `git_address`, `git_url`,
-  `read_only`, `account`, `api_url` or `api_example` does not decode, and a connected one without `audience`
+  `read_only`, `hidden`, `account`, `api_url`, `api_example` or
+  `api_notes` does not decode, and a connected one without `audience`
   or `address` does not decode, as before. Names are unique across both,
   and `session.MaxConnections` bounds both together. The header keeps
   it, a send replaces it as any connection, and `SameConnections`
@@ -467,6 +475,7 @@ nothing for it; the block tells the model to push its own branch,
 | Where the service's API base URL comes from | `api_url`, which the installation's authorizer names from its catalog | a table of services in the core: the core names no service, and each installation offers its own |
 | An available `http` connection on a host machine | not named and not requestable | named: connecting it would give the session nothing, since a host machine takes no `http` connection |
 | The turn after `request_connection` | the model ends it, told so by the result | the harness pausing the session as `question` does: the person connects outside the conversation, and their next message, whose send names the connected entry, is what resumes it |
+| A tool the connection service never lets a session call | the allow names it in `hidden`, and the runner leaves it out of the listing | offered, and refused by the service at the call: the model spends a step on a call that cannot succeed, and may tell the person the service failed; the server's own annotations: the core does not read them, and the installation's authorizer knows which tools its connection service refuses |
 | An `mcp` connection's audience | any the allow names | held to the variable: the runner holds the token, never the sandbox, so no mount limits it |
 | A `-connections` Secret on another Secret's host | refused at the start where the host is known, and left out of the sandbox otherwise, which then reaches no `http` connection | the sandbox's create failing: one variable would then stop every hosted session from opening its machine, while the session works on without its `http` connections |
 | Whether a sandbox reaches the connection service | the mounts of the sandbox Cella holds | the Secrets the drive applied: a sandbox found by name mounts what its create named, and a Secret applied after it never reaches its environment |
@@ -484,6 +493,9 @@ nothing for it; the block tells the model to push its own branch,
 4. Its authorizer names `account`, `api_url` and `api_example` once the
    core reads them. An older core ignores them, as it ignores any member
    of a connection it does not know, and its block names none of them.
+5. Its authorizer names `hidden` once the core reads it. An older core
+   ignores it and offers every tool the server lists, and the connection
+   service's own refusal is what the model meets.
 
 ## Not in this spec
 
@@ -520,6 +532,8 @@ before the installation set `TOPOS_CONNECTIONS_URL`: it reaches no
 | An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person; an agent given an available code host calls `request_connection` and ends its turn | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
 | `account`, `api_url` and `api_example` decode on a connected connection, `api_url` and `api_example` on `http` alone, `api_url` held as `address` is with a trailing `/` dropped, `api_example` a path within its bound and its characters, `account` on one line within its bound; an available connection with any of them, an `mcp` connection with `api_url` or `api_example`, and any past its rule do not decode; a send that changes any appends `session.connections_changed` | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestAConnectionsVariableAndTools`, `authorizer.TestTheConnectionsMember` | built |
 | The block says the connected services can be used now with no sign-in or key, names each `http` connection's account and the API base URL its variable stands in for, says to put the whole documented path after the variable with any version prefix, writes the `api_example` call whole with the header and the variable, says an error other than `connection_not_connected` is about the request, and reads whole without any of the three members; version 2 stays as released | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | built |
+| `hidden` decodes on a connected `mcp` connection by `read_only`'s rules and bounds; on an `http` or an available connection, past a bound or not a glob, it does not decode; the list the check answers is a copy; a send that changes it alone appends `session.connections_changed`; `Hides` is `path.Match` over the whole name | `authorizer.TestTheConnectionsMember`, `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestAConnectionHidesTools` | built |
+| A tool a `hidden` glob matches is left out of the listing, a `read_only` match too, and is not named as reduced; the model's request does not offer it, a call of it is answered `unknown_tool`, and no `tools/call` of it reaches the server, while the connection's other tools run | `internal/mcp.TestAHiddenToolIsNotOffered`, `internal/hosted.TestAHiddenToolIsNeverOffered` against the stub MCP server | built |
 | `api_notes` decodes on a connected `http` connection within its bound and on one line; on an `mcp` or an available connection, or past its rule, it does not decode; a send that changes it alone appends `session.connections_changed`; version 4 of the block writes it after the connection's example call with `{env}` written as the variable's name, and version 3 stays as released | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestSameConnectionsReadsTheNotes`, `authorizer.TestTheConnectionsMember`, `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | built |
 
 ## Outcome
@@ -579,3 +593,10 @@ a document's text is read through an export and where an upload goes.
 Version 4 of the block writes it after the example call. A connection
 service whose uploads live beside its API base, as Google Drive's do,
 otherwise left the model no way to find them.
+
+Amended on 2026-10-14, in no release yet: an `mcp` connection may carry
+`hidden`, globs over its tool names the runner leaves out of the
+listing. A connection service that refuses every call of some tools,
+such as one whose catalog marks a tool as never to be called, otherwise
+had the model offered tools it could only meet a refusal of. Both
+criteria have their tests.

@@ -24,7 +24,7 @@ The authorizer names the connections in the limits of its allow of
      "account": "octocat", "api_url": "https://api.github.com", "api_example": "/user"},
     {"name": "tracker", "kind": "mcp", "title": "Issue tracker", "audience": "connections",
      "address": "https://connections.example.com/v1/connections/c_2/mcp",
-     "read_only": ["list_*", "get_*"]}
+     "read_only": ["list_*", "get_*"], "hidden": ["delete_*"]}
   ]
 }
 ```
@@ -38,9 +38,11 @@ The authorizer names the connections in the limits of its allow of
 | `address` | the connection's forwarding address for `http`, its MCP address for `mcp`; an `https` URL with no query or fragment |
 | `git_address`, `git_url` | `http` alone, both or neither: the connection's git address, and the git host the person's repositories live at |
 | `read_only` | `mcp` alone: globs over the server's tool names; a tool one matches reads, and every other reaches outside |
+| `hidden` | `mcp` alone: globs over the server's tool names; a tool one matches is never offered to the model. Name the tools your connection service refuses every call of |
 | `account` | optional: the account at the other service the connection acts as, such as a login or an email address, one line of at most 256 characters |
 | `api_url` | optional, `http` alone: the service's own API base URL, which `address` stands in for; an `https` URL with no query or fragment |
 | `api_example` | optional, `http` alone: the whole path of one call of the service's API after `api_url`, as its documentation writes it, version prefix included, such as `/gmail/v1/users/me/messages`; at most 256 bytes, starting with `/`, with no space, control character, `?`, `#`, `$`, `"`, `` ` `` or `\`. Name a call your connection service lets a session make |
+| `api_notes` | optional, `http` alone: one line of at most 800 characters the model is told of the service's API beyond the example call, such as how a document's text is read or where an upload goes; `{env}` in it stands for the name of the connection's variable |
 
 At most 32 connections, connected and available together. A connection
 that breaks a rule refuses the request with `authorizer_unavailable`,
@@ -56,8 +58,8 @@ with `state` `available`, and with its name, kind and title alone:
 ```
 
 An available connection names no `audience`, `address`, `git_address`,
-`git_url`, `read_only`, `account`, `api_url` or `api_example`, and one
-that does refuses the request. A
+`git_url`, `read_only`, `hidden`, `account`, `api_url`, `api_example` or
+`api_notes`, and one that does refuses the request. A
 connection without `state` is connected, and needs its `audience` and
 `address`. The session reaches nothing of an available connection, so
 it needs no connection service on the installation, and a session's
@@ -133,8 +135,10 @@ answers `400` with no error of the current revision. Each tool is
 offered to the model as `mcp__<name>__<tool>`, and is checked, scored
 and asked about as any tool is: a tool a `read_only` glob matches reads,
 and every other is an external call, which a session in `confirm`
-asks the person about. A server's tools never start the session's
-sandbox.
+asks the person about. A tool a `hidden` glob matches is left out: the
+model is never offered it, and a call of its name is answered as a call
+of a tool the session does not have, without reaching your connection
+service. A server's tools never start the session's sandbox.
 
 ## A connection that is not connected
 
