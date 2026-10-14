@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A connection can tell the model more about its API.** An installation may give each connected service a short note, such as how a document's text is read or where an upload goes, and the model is told it beside the service's example call, with the connection's own variable written in. Version 4 of the connections block carries it.
+
 ## v0.38.1 - 2026-10-14
 
 ### Fixed

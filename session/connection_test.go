@@ -105,6 +105,7 @@ func TestCheckConnections(t *testing.T) {
 		"too many read_only globs":     func(c *Connection) { c.ReadOnly = slices.Repeat([]string{"a"}, MaxReadOnlyTools+1) },
 		"an mcp api_url":               func(c *Connection) { c.APIURL = "https://api.example.com" },
 		"an mcp api_example":           func(c *Connection) { c.APIExample = "/v1/issues" },
+		"an mcp api_notes":             func(c *Connection) { c.APINotes = "Issues are numbered." },
 		"an account of two lines":      func(c *Connection) { c.Account = "ada\nlovelace" },
 		"an account past its bound":    func(c *Connection) { c.Account = strings.Repeat("é", MaxConnectionAccount+1) },
 	} {
@@ -133,6 +134,8 @@ func TestCheckConnections(t *testing.T) {
 		"an api_example backtick":  func(c *Connection) { c.APIExample = "/v3/`id`" },
 		"an api_example backslash": func(c *Connection) { c.APIExample = `/v3/\user` },
 		"an api_example newline":   func(c *Connection) { c.APIExample = "/v3/\nuser" },
+		"api_notes of two lines":   func(c *Connection) { c.APINotes = "Read a page.\nThen write." },
+		"api_notes past its bound": func(c *Connection) { c.APINotes = strings.Repeat("é", MaxConnectionAPINotes+1) },
 		"an api_example past bound": func(c *Connection) {
 			c.APIExample = "/" + strings.Repeat("a", MaxConnectionAPIExample)
 		},
@@ -267,6 +270,7 @@ func TestAnAvailableConnection(t *testing.T) {
 		"an account":      func(c *Connection) { c.Account = "ada" },
 		"an api_url":      func(c *Connection) { c.APIURL = "https://api.git.example.com" },
 		"an api_example":  func(c *Connection) { c.APIExample = "/v3/user" },
+		"an api_notes":    func(c *Connection) { c.APINotes = "Pages read as text." },
 		"another state":   func(c *Connection) { c.State = "connected" },
 		"an empty title":  func(c *Connection) { c.Title = "" },
 		"an unknown kind": func(c *Connection) { c.Kind = "ssh" },
@@ -276,6 +280,11 @@ func TestAnAvailableConnection(t *testing.T) {
 		if _, err := CheckConnections([]Connection{c}); err == nil {
 			t.Errorf("an available connection with %s was accepted", name)
 		}
+	}
+	notes := httpConnection()
+	notes.APINotes = "Read a page's text with GET ${env}/v3/pages/<id>/text?format=plain, and upload to ${{env}%/v3}/upload/v3/pages."
+	if _, err := CheckConnections([]Connection{notes}); err != nil {
+		t.Fatalf("an http connection's api_notes was refused: %v", err)
 	}
 	bare := httpConnection()
 	bare.Address = ""
@@ -303,5 +312,19 @@ func TestAnAvailableConnection(t *testing.T) {
 	}
 	if string(b) != `{"name":"github","kind":"http","title":"GitHub","state":"available"}` {
 		t.Fatalf("an available connection is %s", b)
+	}
+}
+
+// TestSameConnectionsReadsTheNotes: two lists that differ only in an http
+// connection's api_notes are not the same, so a send that changes the
+// notes appends session.connections_changed (spec 069).
+func TestSameConnectionsReadsTheNotes(t *testing.T) {
+	a, b := httpConnection(), httpConnection()
+	b.APINotes = "Read a page's text with GET ${env}/v3/pages/<id>/text."
+	if SameConnections([]Connection{a}, []Connection{b}) {
+		t.Fatal("lists that differ in api_notes are the same")
+	}
+	if !SameConnections([]Connection{b}, []Connection{b}) {
+		t.Fatal("a list is not the same as itself")
 	}
 }

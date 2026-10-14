@@ -62,6 +62,9 @@ const (
 	// MaxConnectionAPIExample is the most bytes of the path of a
 	// connection's example call.
 	MaxConnectionAPIExample = 256
+	// MaxConnectionAPINotes is the most characters of what an http
+	// connection's notes tell the model of its API.
+	MaxConnectionAPINotes = 800
 )
 
 // ConnectionsToken is the variable a sandbox holds the placeholder of its
@@ -115,6 +118,12 @@ type Connection struct {
 	// the connection's variable; empty when the allow names none, and on
 	// an available connection.
 	APIExample string `json:"api_example,omitempty"`
+	// APINotes is what the model is told of an http connection's API
+	// beyond its example, one line of plain text, such as how a document's
+	// text is read or where an upload goes; {env} in it stands for the name
+	// of the connection's variable. Empty when the allow names none, and on
+	// an available connection.
+	APINotes string `json:"api_notes,omitempty"`
 }
 
 // connectionName is a lowercase DNS label that starts with a letter, so
@@ -192,8 +201,8 @@ func checkConnection(c *Connection) error {
 		// An available connection is one the person has not connected: the
 		// connection service serves no address for it yet, and a session
 		// reaches nothing of it.
-		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 || c.Account != "" || c.APIURL != "" || c.APIExample != "" {
-			return fmt.Errorf("%s is available and names audience, address, git_address, git_url, read_only, account, api_url or api_example, which only a connected connection takes", c.Name)
+		if c.Audience != "" || c.Address != "" || c.GitAddress != "" || c.GitURL != "" || len(c.ReadOnly) > 0 || c.Account != "" || c.APIURL != "" || c.APIExample != "" || c.APINotes != "" {
+			return fmt.Errorf("%s is available and names audience, address, git_address, git_url, read_only, account, api_url, api_example or api_notes, which only a connected connection takes", c.Name)
 		}
 		return nil
 	default:
@@ -224,6 +233,11 @@ func checkConnection(c *Connection) error {
 		if c.APIExample != "" && !examplePath(c.APIExample) {
 			return fmt.Errorf("the api_example of %s is %q, not a path that starts with / of at most %d bytes with no space, control character, ?, #, $, \", `, or \\", c.Name, c.APIExample, MaxConnectionAPIExample)
 		}
+		if c.APINotes != "" {
+			if why := oneLine(c.APINotes, MaxConnectionAPINotes); why != "" {
+				return fmt.Errorf("the api_notes of %s: %s", c.Name, why)
+			}
+		}
 		if (c.GitAddress == "") != (c.GitURL == "") {
 			return fmt.Errorf("%s names one of git_address and git_url; it names both or neither", c.Name)
 		}
@@ -238,8 +252,8 @@ func checkConnection(c *Connection) error {
 			return fmt.Errorf("the git_url of %s %w", c.Name, err)
 		}
 	case ConnectionMCP:
-		if c.GitAddress != "" || c.GitURL != "" || c.APIURL != "" || c.APIExample != "" {
-			return fmt.Errorf("%s is of kind mcp and names git_address, git_url, api_url or api_example, which only an http connection takes", c.Name)
+		if c.GitAddress != "" || c.GitURL != "" || c.APIURL != "" || c.APIExample != "" || c.APINotes != "" {
+			return fmt.Errorf("%s is of kind mcp and names git_address, git_url, api_url, api_example or api_notes, which only an http connection takes", c.Name)
 		}
 		if len(c.ReadOnly) > MaxReadOnlyTools {
 			return fmt.Errorf("%s names %d read_only globs, more than %d", c.Name, len(c.ReadOnly), MaxReadOnlyTools)
@@ -297,7 +311,7 @@ func SameConnections(a, b []Connection) bool {
 	return slices.EqualFunc(a, b, func(x, y Connection) bool {
 		return x.Name == y.Name && x.Kind == y.Kind && x.Title == y.Title && x.State == y.State && x.Audience == y.Audience &&
 			x.Address == y.Address && x.GitAddress == y.GitAddress && x.GitURL == y.GitURL && slices.Equal(x.ReadOnly, y.ReadOnly) &&
-			x.Account == y.Account && x.APIURL == y.APIURL && x.APIExample == y.APIExample
+			x.Account == y.Account && x.APIURL == y.APIURL && x.APIExample == y.APIExample && x.APINotes == y.APINotes
 	})
 }
 

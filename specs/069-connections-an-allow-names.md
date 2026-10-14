@@ -120,6 +120,7 @@ carry `connections`:
 | `account` | optional: the account at the other service the connection acts as, such as a login or an email address, one line of 1 to `session.MaxConnectionAccount` (256) characters, no control character |
 | `api_url` | optional, `http` alone: the service's own API base URL, which `address` stands in for, such as `https://api.example.com`, an `https` URL as `address` is held, a trailing `/` dropped; two connections may name one, as two services of one provider do |
 | `api_example` | optional, `http` alone: the whole path of one call of the service's API after `api_url`, as its documentation writes it, version prefix included, such as `/v1/users/me/messages`; it starts with `/`, is at most `session.MaxConnectionAPIExample` (256) bytes, and holds no space, control character, `?`, `#`, `$`, `"`, `` ` `` or `\`, since the block writes it into a shell command; the call should be one the connection service lets a session make |
+| `api_notes` | optional, `http` alone: one line of plain text, at most `session.MaxConnectionAPINotes` (800) characters, that the block tells the model of the service's API beyond the example call, such as how a document's text is read or where an upload goes; `{env}` in it stands for the name of the connection's variable, which the block writes in its place |
 
 At most `session.MaxConnections` (32) connections, connected and
 available ([below](#a-service-the-person-has-not-connected)) together. A
@@ -519,6 +520,7 @@ before the installation set `TOPOS_CONNECTIONS_URL`: it reaches no
 | An agent given a connected code host clones, pushes its own branch and opens a pull request through the connection, and relays a `409` to the person; an agent given an available code host calls `request_connection` and ends its turn | a task of the suite ([[025-task-suite]]) against a stub connection service | not built |
 | `account`, `api_url` and `api_example` decode on a connected connection, `api_url` and `api_example` on `http` alone, `api_url` held as `address` is with a trailing `/` dropped, `api_example` a path within its bound and its characters, `account` on one line within its bound; an available connection with any of them, an `mcp` connection with `api_url` or `api_example`, and any past its rule do not decode; a send that changes any appends `session.connections_changed` | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestAConnectionsVariableAndTools`, `authorizer.TestTheConnectionsMember` | built |
 | The block says the connected services can be used now with no sign-in or key, names each `http` connection's account and the API base URL its variable stands in for, says to put the whole documented path after the variable with any version prefix, writes the `api_example` call whole with the header and the variable, says an error other than `connection_not_connected` is about the request, and reads whole without any of the three members; version 2 stays as released | `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | built |
+| `api_notes` decodes on a connected `http` connection within its bound and on one line; on an `mcp` or an available connection, or past its rule, it does not decode; a send that changes it alone appends `session.connections_changed`; version 4 of the block writes it after the connection's example call with `{env}` written as the variable's name, and version 3 stays as released | `session.TestCheckConnections`, `session.TestAnAvailableConnection`, `session.TestSameConnectionsReadsTheNotes`, `authorizer.TestTheConnectionsMember`, `harness.TestTheConnectionsBlock`, `prompts.TestEveryTextRendersItsCurrentBytes`, `prompts.TestReleasedPromptsAreImmutable` | built |
 
 ## Outcome
 
@@ -570,3 +572,10 @@ names an `mcp` connection's account when the allow names one. Not yet
 run against a model: whether a small model now calls a connected
 service from the block alone is the task of the suite's to show, with
 the open criterion above.
+
+Amended on 2026-10-14: an `http` connection may carry `api_notes`, what
+the model is told of the service's API beyond its example, such as that
+a document's text is read through an export and where an upload goes.
+Version 4 of the block writes it after the example call. A connection
+service whose uploads live beside its API base, as Google Drive's do,
+otherwise left the model no way to find them.

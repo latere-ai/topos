@@ -15,16 +15,16 @@ import (
 // ConnectionsRule is what the create and the send routes state of a
 // session's connections (spec 069).
 var ConnectionsRule = fmt.Sprintf("The authorizer's allow of session.create, session.fork and session.send may name the session's connections, at most %d, "+
-	"each {name, kind, title, state, audience, address, git_address, git_url, read_only, account, api_url, api_example}: kind http, an API at address and a git host at git_url reached through git_address from the session's sandbox, "+
+	"each {name, kind, title, state, audience, address, git_address, git_url, read_only, account, api_url, api_example, api_notes}: kind http, an API at address and a git host at git_url reached through git_address from the session's sandbox, "+
 	"or mcp, a remote MCP server at address whose tools the model is offered as mcp__<name>__<tool>. "+
-	"account, optional, is the account at the other service the connection acts as, one line of at most %d characters, api_url, optional and of http alone, the service's own API base URL that address stands in for, an https URL, and api_example, optional and of http alone, the whole path of one documented call after api_url, version prefix included, at most %d bytes with no space, control character, ?, #, $, quote, backtick or backslash; the model is told each. "+
+	"account, optional, is the account at the other service the connection acts as, one line of at most %d characters, api_url, optional and of http alone, the service's own API base URL that address stands in for, an https URL, and api_example, optional and of http alone, the whole path of one documented call after api_url, version prefix included, at most %d bytes with no space, control character, ?, #, $, quote, backtick or backslash, and api_notes, optional and of http alone, one line of at most %d characters the model is told of the API beyond the example, in which {env} stands for the name of the connection's variable; the model is told each. "+
 	"state is absent for a connected connection, or available for a service the installation offers and the initiator has not connected, which names name, kind and title alone and which the session reaches nothing of; the bound counts both. "+
 	"A create's and a fork's are the session's, a fork's never its parent's, and the session answers them as connections; "+
 	"a send's allow replaces them, appending session.connections_changed {connections} straight before the event when the list differs, and an allow that names none leaves the session with none. "+
 	"An http connection names the audience of TOPOS_CONNECTIONS_AUDIENCE and addresses on the host of TOPOS_CONNECTIONS_URL, and a connection that breaks a rule is authorizer_unavailable naming it. "+
 	"A call of an mcp connection's tool that the connection service answers 409 connection_not_connected, and a drive's listing of its tools that meets it, append connection.requested {name, title, kind, reason, scopes, tool_use_id}, tool_use_id absent for a listing, which a client shows the person as a service to connect again. "+
 	"While the session has an available connection, of kind mcp or, on a Cella machine, http, the model of its own thread is offered request_connection {name, reason}, whose call appends connection.requested {name, title, kind, reason, tool_use_id}, reason the model's sentence on what it needs the service for, which a client shows the person as a service to connect.",
-	session.MaxConnections, session.MaxConnectionAccount, session.MaxConnectionAPIExample)
+	session.MaxConnections, session.MaxConnectionAccount, session.MaxConnectionAPIExample, session.MaxConnectionAPINotes)
 
 // connections are an allow's connections as a session holds them (spec
 // 069): a connected http connection, which a sandbox reaches through the

@@ -45,7 +45,8 @@ var (
 	codeHost = session.Connection{Name: "code-host", Kind: session.ConnectionHTTP, Title: "Code host", Audience: "connections",
 		Address:    "https://connections.example.com/v1/connections/c_1/http",
 		GitAddress: "https://connections.example.com/v1/connections/c_1/git", GitURL: "https://git.example.com",
-		Account: "ada", APIURL: "https://api.git.example.com", APIExample: "/v3/user"}
+		Account: "ada", APIURL: "https://api.git.example.com", APIExample: "/v3/user",
+		APINotes: "A page's text is GET ${env}/v3/pages/<id>/text, and an upload goes to ${{env}%/v3}/upload/v3/pages."}
 	tracker = session.Connection{Name: "tracker", Kind: session.ConnectionMCP, Title: "Issue tracker", Audience: "connections",
 		Address: "https://connections.example.com/v1/connections/c_2/mcp"}
 	wiki = session.Connection{Name: "wiki", Kind: session.ConnectionMCP, Title: "Wiki", Audience: "connections",
@@ -91,6 +92,7 @@ func TestTheConnectionsBlock(t *testing.T) {
 	for _, want := range []string{
 		"<connections>", "you can use them now", "Code host, connected as ada: $CODE_HOST_API_URL stands in for https://api.git.example.com",
 		"with any version prefix", "curl -s -H \\\"Authorization: Bearer $CONNECTIONS_TOKEN\\\" \\\"$CODE_HOST_API_URL/v3/user\\\"` calls https://api.git.example.com/v3/user",
+		"calls https://api.git.example.com/v3/user. A page's text is GET $CODE_HOST_API_URL/v3/pages/<id>/text, and an upload goes to ${CODE_HOST_API_URL%/v3}/upload/v3/pages. `git clone",
 		"Any other error is about the request", "git clone https://git.example.com/<owner>/<repository>",
 		"push your own branch, " + session.Branch(e.s), "Issue tracker: its tools are named mcp__tracker__<tool>", "Wiki: not connected (revoked)",
 	} {

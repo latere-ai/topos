@@ -459,7 +459,7 @@ const (
 	ContextAttachments Name = "context/attachments-v1"
 	// ContextConnections takes Branch, the session's branch, Token, the
 	// variable of the connection service's placeholder, HTTP, each with
-	// Title, Account, APIURL, APIExample, GitURL and Env, MCP, each with Title,
+	// Title, Account, APIURL, APIExample, GitURL, Env and Notes, MCP, each with Title,
 	// Account, Name and Reason, why the connection is not connected, empty
 	// when it is, and Available, each with Title and Name, the connections
 	// the person may be asked to connect: the connections an allow named
@@ -470,6 +470,7 @@ const (
 	// stands in for, that the whole documented path goes after it, and a
 	// curl call with the header, the variable and the example path; and it
 	// says an error other than connection_not_connected is about the
-	// request.
-	ContextConnections Name = "context/connections-v3"
+	// request. Version 4 adds each http connection's notes, after its
+	// example call, from Notes beside Env.
+	ContextConnections Name = "context/connections-v4"
 )

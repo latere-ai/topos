@@ -38,6 +38,9 @@ type (
 	availableConnection struct{ Title, Name string }
 	httpLine            struct{ Title, Account, APIURL, APIExample, GitURL, Env string }
 	mcpLine             struct{ Title, Account, Name, Reason string }
+	// noteLine stands in for an http line from version 4, which adds the
+	// connection's notes.
+	noteLine struct{ Title, Account, APIURL, APIExample, GitURL, Env, Notes string }
 )
 
 // attachment stands in for session.Attachment.
@@ -494,7 +497,7 @@ var textCases = func() []textCase {
 		}, want: "<connections>\n" +
 			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
 			"- GitHub, named github\n" + "</connections>"},
-		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+		{name: "context/connections-v3", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
 			"HTTP": []httpLine{
 				{"Mail", "ada@example.com", "https://mail.example.com", "/v1/users/me/messages", "", "MAIL_API_URL"},
 				{"Code host", "ada", "https://api.git.example.com", "", "https://git.example.com", "CODE_HOST_API_URL"},
@@ -514,11 +517,26 @@ var textCases = func() []textCase {
 			"Any other error is about the request, such as a path the service does not have: check the path against the service's documentation before you tell the person you cannot reach the service.\n" +
 			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
 			"- Files, named files\n" + "</connections>"},
-		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+		{name: "context/connections-v3", data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
 			"HTTP": []httpLine(nil), "MCP": []mcpLine(nil), "Available": []availableConnection{{"GitHub", "github"}},
 		}, want: "<connections>\n" +
 			"Services the installation offers that the person has not connected. When the task needs one of them, ask the person to connect it with request_connection and its name:\n" +
 			"- GitHub, named github\n" + "</connections>"},
+		{name: ContextConnections, data: Data{"Branch": "agents/assistant/ses_1", "Token": "CONNECTIONS_TOKEN",
+			"HTTP": []noteLine{
+				{"Files", "ada@example.com", "https://files.example.com/v3", "/files", "", "FILES_API_URL", "Read a document's text with GET $FILES_API_URL/files/<id>/export?mimeType=text/plain."},
+				{"Code host", "ada", "https://api.git.example.com", "", "https://git.example.com", "CODE_HOST_API_URL", ""},
+			},
+			"MCP": []mcpLine(nil), "Available": []availableConnection(nil),
+		}, want: "<connections>\n" +
+			"The person connected these services, and you can use them now. You need no sign-in or key of theirs: the connection adds their credentials to each call. When a task needs one of them, use it rather than saying you cannot reach it.\n" +
+			"- Files, connected as ada@example.com: $FILES_API_URL stands in for https://files.example.com/v3; put the whole path its documentation gives after it, with any version prefix: `curl -s -H \"Authorization: Bearer $CONNECTIONS_TOKEN\" \"$FILES_API_URL/files\"` calls https://files.example.com/v3/files. " +
+			"Read a document's text with GET $FILES_API_URL/files/<id>/export?mimeType=text/plain.\n" +
+			"- Code host, connected as ada: $CODE_HOST_API_URL stands in for https://api.git.example.com; put the whole path its documentation gives after it, with any version prefix: `curl -s -H \"Authorization: Bearer $CONNECTIONS_TOKEN\" \"$CODE_HOST_API_URL/<path>\"` calls https://api.git.example.com/<path>. " +
+			"`git clone https://git.example.com/<owner>/<repository>`, fetch and push work as usual and go through the connection; push your own branch, agents/assistant/ses_1, and no other.\n" +
+			"A request that answers 409 with the code connection_not_connected means the person has to connect that service again: tell them so, naming it, and go on without it. " +
+			"One that answers 403 with the code forbidden is something this connection does not let you do, such as sending mail or merging a change: do not try it another way; tell the person, who can do it themselves. " +
+			"Any other error is about the request, such as a path the service does not have: check the path against the service's documentation before you tell the person you cannot reach the service.\n" + "</connections>"},
 		{name: ContextInstructions, data: Data{"Path": `/w/AGENTS "x".md`, "Body": "Be terse."}, want: fmt.Sprintf("<instructions path=%q>\n%s\n</instructions>", `/w/AGENTS "x".md`, "Be terse.")},
 		{name: InstructionCut, want: strings.TrimPrefix("\n[the file is longer than 64 KiB and was cut here]", "\n")},
 		{name: InstructionsTotalCut, want: strings.TrimPrefix("\n[the instruction files pass 256 KiB together and were cut here]", "\n")},

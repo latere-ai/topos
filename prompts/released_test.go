@@ -206,4 +206,5 @@ var released = map[string]string{
 	"results/publish/access-not-changed-v1.md":       "a43a6f093d4029acc83b0fb2a10c1320f3ebeec079fb3f4ffbe4c33571d5b01b",
 	"results/call/repeated-v1.md":                    "dced9685a0529467b20c14d9617cd0de511f34ce686a68f09e58e608218c0ca6",
 	"context/connections-v3.md":                      "323a11d729d5565f05c0d439d7bee16e454fdfef42c8c2b38d86ab1168f569de",
+	"context/connections-v4.md":                      "174e12137eb6de4de7bdeaedbe812a21dc6b6894033998e56371c775d0809478",
 }
