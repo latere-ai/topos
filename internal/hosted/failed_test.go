@@ -150,6 +150,10 @@ func TestACommandKilledWithItsSandboxSaysSo(t *testing.T) {
 	c.drive("Make a file.", bash("toolu_1", "echo one > f.txt"), said("Made."))
 	name := cella.SandboxName(c.s.ID)
 	before, _ := c.cella.Sandbox(name)
+	// The command writes its word, waits for it to reach the session, and
+	// only then marks itself started, which is when the core kills it: a
+	// kill on the heels of the word could cut the word off on a slow
+	// runner, since the core keeps only what was streamed before the kill.
 	started := filepath.Join(c.cella.Workspace(name), "started")
 	killed := make(chan bool, 1)
 	go func() {
@@ -163,7 +167,7 @@ func TestACommandKilledWithItsSandboxSaysSo(t *testing.T) {
 		}
 		killed <- false
 	}()
-	c.drive("Install it.", bash("toolu_2", "echo installing; touch started; sleep 1; echo done"), bash("toolu_3", "cat f.txt"), said("Installed in smaller steps."))
+	c.drive("Install it.", bash("toolu_2", "echo installing; sleep 0.5; touch started; sleep 1; echo done"), bash("toolu_3", "cat f.txt"), said("Installed in smaller steps."))
 	if !<-killed {
 		t.Fatal("the sandbox was never killed under the command")
 	}
@@ -203,6 +207,10 @@ func TestACommandKilledOnACoreThatStartsNoFailedSandbox(t *testing.T) {
 	})
 	c.drive("Make a file.", bash("toolu_1", "echo one > f.txt"), said("Made."))
 	name := cella.SandboxName(c.s.ID)
+	// The command writes its word, waits for it to reach the session, and
+	// only then marks itself started, which is when the core kills it: a
+	// kill on the heels of the word could cut the word off on a slow
+	// runner, since the core keeps only what was streamed before the kill.
 	started := filepath.Join(c.cella.Workspace(name), "started")
 	killed := make(chan bool, 1)
 	go func() {
@@ -216,7 +224,7 @@ func TestACommandKilledOnACoreThatStartsNoFailedSandbox(t *testing.T) {
 		}
 		killed <- false
 	}()
-	c.drive("Install it.", bash("toolu_2", "echo installing; touch started; sleep 1"), bash("toolu_3", "cat f.txt"), said("The machine is lost."))
+	c.drive("Install it.", bash("toolu_2", "echo installing; sleep 0.5; touch started; sleep 1"), bash("toolu_3", "cat f.txt"), said("The machine is lost."))
 	if !<-killed {
 		t.Fatal("the sandbox was never killed under the command")
 	}
