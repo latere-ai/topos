@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **A service kept apart from Google in a conversation is no longer reported as disconnected.** When the connection service refuses a tool call with `409 connection_not_connected` and the reason `kept_apart_from_google`, the call's result tells the model that this conversation cannot use the service and a new conversation can, rather than asking the person to connect it again. The `connection.requested` event still follows, with that reason, so a client can show it without a connect action. The connections block (version 5) tells the model the same for a request from the sandbox that meets the reason.
+
 ## v0.40.0 - 2026-10-14
 
 ### Added

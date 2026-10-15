@@ -374,10 +374,19 @@ person has to connect again.
   of the connection's tools, appends `connection.requested` without a
   `tool_use_id`, and the block names the connection as one to connect
   again. Any other failure of a listing is `session.error`
-  `mcp_unavailable` naming the connection. The session goes on.
+  `mcp_unavailable` naming the connection. The session goes on. A
+  call refused with the reason `kept_apart_from_google` is about the
+  conversation, not the connection: the conversation already used the
+  kind of connection the installation keeps apart from this one,
+  Google's on one side and servers people added on the other. Its
+  result says the conversation cannot use the connection and a new one
+  can, and does not ask to connect again; `connection.requested`
+  follows with that reason, and a client shows it with no connect
+  action.
 - **`http`.** The sandbox's tools read the connection service's `409`
   body as the service answered it, and the block tells the model to
-  relay it. The runner sees no request of the sandbox's, so it appends
+  relay it, and, for the reason `kept_apart_from_google`, that a new
+  conversation can use the service (version 5 of the block). The runner sees no request of the sandbox's, so it appends
   nothing.
 
 A turn whose sandbox cannot take the list of `http` connections appends
@@ -521,6 +530,7 @@ before the installation set `TOPOS_CONNECTIONS_URL`: it reaches no
 | The block names each connection the machine reaches, says how to clone, push and call the API, or the tools' prefix, or that one is not connected, and how to relay a `409`, on every thread, and changes only with the list | `harness.TestTheConnectionsBlock`, `harness.TestAConnectionThatIsNotConnected`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | An `mcp` connection's tools are offered as `mcp__<name>__<tool>`, read for a `read_only` match and external otherwise, remote, gated and scored like a built-in, a write waiting for the person in `confirm`; a streamed answer is read past its notification to its response; a server of an earlier revision is reached after its `400`, and a session it ended is opened again; the bearer is the session's token for the audience; a tool with no tool name or a broken header mark is left out, and a reduced schema is named | `internal/mcp.TestStreamableHTTP`, `internal/mcp.TestAnEarlierRevision`, `internal/mcp.TestWhatAResultHolds`, `internal/mcp.TestTheClientsErrors`, `internal/hosted.TestMCPConnectionsAreOffered` against the stub MCP server | built |
 | A `409` `connection_not_connected` fails the call with a result naming the connection and the reason and appends `connection.requested` with the call's id; a listing that meets it offers no tool, records `connection.requested` without one at the drive's first turn, and the block says so; the session goes on | `internal/mcp.TestANotConnectedServer`, `harness.TestAConnectionThatIsNotConnected`, `internal/hosted.TestMCPConnectionsAreOffered` | built |
+| A `409` whose reason is `kept_apart_from_google` fails the call with a result saying a new conversation can use the connection, with no ask to connect again, and still appends `connection.requested` with the reason; the block (version 5) says the same of a request from the sandbox | `internal/mcp.TestAServerKeptApartFromThisConversation`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | An available connection decodes with its name, kind and title alone; one with an audience, an address, a git address or URL, or `read_only`, another state, and a connected one without an address do not; names are unique across both and the bound counts both | `session.TestAnAvailableConnection`, `authorizer.TestTheConnectionsMember` | built |
 | An available `http` connection is taken at a create and a send on a server with no connection service, the Session answers it with its `state`, and a send that names it connected appends `session.connections_changed` | `internal/server.TestAnAvailableConnectionIsTakenAsNamed` | built |
 | The session's own thread is offered `request_connection` while it has a requestable connection, and a spawned thread, a session with none and a host machine's session with only an available `http` one are not; the block lists the requestable ones apart from the connected ones, on the own thread alone; a call appends `connection.requested` with the call's id and the reason on one line, answers the asked text, is allowed in `confirm` and opens no machine; another name is an error naming the requestable ones | `harness.TestRequestConnection`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
