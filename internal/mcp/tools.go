@@ -166,15 +166,20 @@ func (t *tool) Properties() tools.Properties { return t.props }
 
 // Run calls the tool at the server. A connection the service answers is
 // not connected fails the call with a result naming it and the reason,
-// which asks the person to connect it; a result that asks for input
-// fails the call, since the session cannot give a server input.
+// which asks the person to connect it, or, for ReasonKeptApart, says this
+// conversation cannot use it and a new one can; a result that asks for
+// input fails the call, since the session cannot give a server input.
 func (t *tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	conn := t.server.Connection
 	res, err := t.server.Client.CallTool(ctx, t.remote, c.Input, headersFor(t.params, c.Input))
 	var nc *NotConnected
 	switch {
 	case errors.As(err, &nc):
-		r := tools.Text(tools.OutcomeError, prompts.Render(prompts.CallNotConnected, prompts.Data{"Title": conn.Title, "Reason": cmpOr(nc.Reason, "not connected")}))
+		text := prompts.Render(prompts.CallNotConnected, prompts.Data{"Title": conn.Title, "Reason": cmpOr(nc.Reason, "not connected")})
+		if nc.Reason == ReasonKeptApart {
+			text = prompts.Render(prompts.CallKeptApart, prompts.Data{"Title": conn.Title})
+		}
+		r := tools.Text(tools.OutcomeError, text)
 		r.Requested = &session.ConnectionRequested{Name: conn.Name, Title: conn.Title, Kind: conn.Kind, Reason: nc.Reason, Scopes: nc.Scopes}
 		return r, nil
 	case err != nil:

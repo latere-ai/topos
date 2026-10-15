@@ -206,6 +206,32 @@ func TestANotConnectedServer(t *testing.T) {
 	}
 }
 
+// TestAServerKeptApartFromThisConversation: a 409 whose reason is
+// kept_apart_from_google fails the call with a result that says the
+// conversation cannot use the connection and a new one can, not an ask to
+// connect it again, and still appends connection.requested with the
+// reason, which a client shows as a card with no connect action (spec 069).
+func TestAServerKeptApartFromThisConversation(t *testing.T) {
+	ctx := t.Context()
+	stub := mcpstub.New(t, mcpstub.Options{Tools: trackerTools()})
+	s := tracker(stub.URL(), "t")
+	ts, _, err := s.Tools(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub.Disconnect(ReasonKeptApart)
+	res, err := byName(ts, "mcp__tracker__create_issue").Run(ctx, tools.Call{ID: "toolu_1", Input: json.RawMessage(`{"title":"x"}`)})
+	if err != nil || res.Outcome != tools.OutcomeError {
+		t.Fatalf("a call kept apart: %+v %v", res, err)
+	}
+	if want := prompts.Render(prompts.CallKeptApart, prompts.Data{"Title": "Issue tracker"}); res.Content[0].Text != want {
+		t.Fatalf("the result says %q", res.Content[0].Text)
+	}
+	if r := res.Requested; r == nil || r.Name != "tracker" || r.Reason != ReasonKeptApart {
+		t.Fatalf("the request %+v", res.Requested)
+	}
+}
+
 // TestAnEarlierRevision: a server that answers 400 with no error of the
 // current revision is reached through revision 2025-11-25's handshake,
 // in the session it opens, with the version it negotiated; a session the

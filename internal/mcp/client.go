@@ -48,6 +48,13 @@ const (
 // with for a connection the person has to connect again (spec 069).
 const CodeNotConnected = "connection_not_connected"
 
+// ReasonKeptApart is the reason of a connection_not_connected that is
+// about the conversation, not the connection: it already used the kind of
+// connection the installation keeps apart from this one, Google's on one
+// side and servers people added on the other. The connection is
+// connected, and a new conversation can use it.
+const ReasonKeptApart = "kept_apart_from_google"
+
 // NotConnected is a connection service's answer that the connection is
 // not connected: its reason, the connection's state, and the scopes the
 // other service asked for, when it named them.
