@@ -42,6 +42,7 @@ var released = map[string]string{
 	"results/call/failed-v1.md":                  "94d94f0ebf374eda7f43ddff785d094a8d411f23f5772473f6b8f3df312f630b",
 	"results/call/machine-unavailable-v1.md":     "743652b192c5544eabbd8d0eb6c454679c3f8898024ae4b44948db573b0428dc",
 	"results/call/not-connected-v1.md":           "3ba56cf55e6eb0051738938c4da4f4bd4ec83d99c36cacb52e6f8e96a4483b99",
+	"results/call/kept-apart-v1.md":              "20aa8423b3829ff28bad4a737f8a8562e261f64ac81924d7c145ad3c74a7d653",
 	"results/call/input-required-v1.md":          "d48606fdc802a7372112c176617d55395d8b02ff2c79d15521efff074058f739",
 	"results/call/no-content-v1.md":              "c6e69725518086449b50735cea5aace64f1f4c5ed931f4b707c5be0eda9d9105",
 	"results/call/plan-mode-v1.md":               "d0ef370776d9b1e51d58f22fbaf393351e4c9cce4709e57f51f14264f981099b",
@@ -207,4 +208,5 @@ var released = map[string]string{
 	"results/call/repeated-v1.md":                    "dced9685a0529467b20c14d9617cd0de511f34ce686a68f09e58e608218c0ca6",
 	"context/connections-v3.md":                      "323a11d729d5565f05c0d439d7bee16e454fdfef42c8c2b38d86ab1168f569de",
 	"context/connections-v4.md":                      "174e12137eb6de4de7bdeaedbe812a21dc6b6894033998e56371c775d0809478",
+	"context/connections-v5.md":                      "275d8e6b8202fd7f1e0f4fd40b54f79f0967cbfaf04177751824eaaaca9a88fc",
 }

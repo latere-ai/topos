@@ -274,6 +274,11 @@ const (
 	// CallNotConnected takes the Title of a connection the connection
 	// service answered is not connected, and its Reason (spec 069).
 	CallNotConnected Name = "results/call/not-connected-v1"
+	// CallKeptApart takes the Title of a connection the connection service
+	// refused for this conversation alone, with the reason
+	// kept_apart_from_google: the conversation already used the kind of
+	// connection the installation keeps apart from it (spec 069).
+	CallKeptApart Name = "results/call/kept-apart-v1"
 	// CallInputRequired takes the Title of a connection whose server asked
 	// for input a session cannot give (spec 069).
 	CallInputRequired Name = "results/call/input-required-v1"
@@ -471,6 +476,8 @@ const (
 	// curl call with the header, the variable and the example path; and it
 	// says an error other than connection_not_connected is about the
 	// request. Version 4 adds each http connection's notes, after its
-	// example call, from Notes beside Env.
-	ContextConnections Name = "context/connections-v4"
+	// example call, from Notes beside Env. Version 5 says a 409 whose
+	// reason is kept_apart_from_google is no ask to connect again, but a
+	// service this conversation cannot use and a new one can.
+	ContextConnections Name = "context/connections-v5"
 )
