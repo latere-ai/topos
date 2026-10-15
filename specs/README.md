@@ -128,6 +128,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [072](072-the-sessions-a-trigger-started.md) | The sessions a trigger started: the sessions list and its summary take `trigger=<id>`, beside every other filter, the cursor and `group=tree`, read from an indexed column in Postgres | small | testing | 014, 015, 022, 056, 057 |
 | [073](073-a-working-directory-kept-in-the-sessions-folder.md) | A working directory kept in the session's folder: each turn end that changed files writes the working directory's latest state as plain files under `work/` of the session's folder of a files store, dependencies left out and recorded by `work.saved`, and a new machine, a fork's first among them, is restored from it before the log gives back what it does not hold | large | testing | 009, 017, 034, 064, 065, 068 |
 | [074](074-one-owners-triggers-and-agents-and-an-agent-deleted.md) | One owner's triggers and agents, and an agent deleted: the trigger and agent lists take `owner=<subject>`, which their questions carry, and `DELETE /v1/agents/{ref}` deletes an agent with its versions once no session of it is left, its identity archived and disabled, one the provider no longer holds read as gone | small | testing | 003, 006, 014, 015, 018, 022, 036, 040 |
+| [075](075-a-file-a-session-reads-and-cannot-change.md) | A file a session reads and cannot change: a message's attachment marked read-only is delivered outside the working directory, where no tool of the session can change it, and its digest is on the record | medium | drafted | 004, 008, 009, 015, 064, 073 |
 
 ## Dependency graph
 
@@ -209,6 +210,7 @@ flowchart BT
   S072[072 the sessions a trigger started]
   S073[073 a working directory kept in the session's folder]
   S074[074 one owner's triggers and agents, and an agent deleted]
+  S075[075 a file a session reads and cannot change]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -343,6 +345,12 @@ flowchart BT
   S073 --> S064
   S073 --> S065
   S073 --> S068
+  S075 --> S004
+  S075 --> S008
+  S075 --> S009
+  S075 --> S015
+  S075 --> S064
+  S075 --> S073
   S074 --> S003
   S074 --> S006
   S074 --> S014
