@@ -129,6 +129,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [073](073-a-working-directory-kept-in-the-sessions-folder.md) | A working directory kept in the session's folder: each turn end that changed files writes the working directory's latest state as plain files under `work/` of the session's folder of a files store, dependencies left out and recorded by `work.saved`, and a new machine, a fork's first among them, is restored from it before the log gives back what it does not hold | large | testing | 009, 017, 034, 064, 065, 068 |
 | [074](074-one-owners-triggers-and-agents-and-an-agent-deleted.md) | One owner's triggers and agents, and an agent deleted: the trigger and agent lists take `owner=<subject>`, which their questions carry, and `DELETE /v1/agents/{ref}` deletes an agent with its versions once no session of it is left, its identity archived and disabled, one the provider no longer holds read as gone | small | testing | 003, 006, 014, 015, 018, 022, 036, 040 |
 | [075](075-a-file-a-session-reads-and-cannot-change.md) | A file a session reads and cannot change: a message's attachment marked read-only is delivered outside the working directory, where no tool of the session can change it, and its digest is on the record | medium | drafted | 004, 008, 009, 015, 064, 073 |
+| [076](076-the-working-directory-is-saved-during-a-turn.md) | The working directory is saved during a turn: a long turn saves the working directory to the session's folder every few minutes, with the same work.saved record a turn end writes | medium | drafted | 004, 008, 009, 073 |
 
 ## Dependency graph
 
@@ -211,6 +212,7 @@ flowchart BT
   S073[073 a working directory kept in the session's folder]
   S074[074 one owner's triggers and agents, and an agent deleted]
   S075[075 a file a session reads and cannot change]
+  S076[076 the working directory is saved during a turn]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -346,6 +348,7 @@ flowchart BT
   S073 --> S065
   S073 --> S068
   S075 --> S004
+  S076 --> S073
   S075 --> S008
   S075 --> S009
   S075 --> S015
