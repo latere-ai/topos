@@ -130,6 +130,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [074](074-one-owners-triggers-and-agents-and-an-agent-deleted.md) | One owner's triggers and agents, and an agent deleted: the trigger and agent lists take `owner=<subject>`, which their questions carry, and `DELETE /v1/agents/{ref}` deletes an agent with its versions once no session of it is left, its identity archived and disabled, one the provider no longer holds read as gone | small | testing | 003, 006, 014, 015, 018, 022, 036, 040 |
 | [075](075-a-file-a-session-reads-and-cannot-change.md) | A file a session reads and cannot change: a message's attachment marked read-only is delivered outside the working directory, where no tool of the session can change it, and its digest is on the record | medium | drafted | 004, 008, 009, 015, 064, 073 |
 | [076](076-the-working-directory-is-saved-during-a-turn.md) | The working directory is saved during a turn: a long turn saves the working directory to the session's folder every few minutes, with the same work.saved record a turn end writes | medium | drafted | 004, 008, 009, 073 |
+| [077](077-a-firing-names-the-key-that-fired-it.md) | A firing names the key that fired it: a session a trigger's fire starts carries `fired_by` on its create, the token_use and authorization_details of the fire request's own token when a key minted it, so an authorizer can hold the session to that key | small | testing | 006, 022 |
 
 ## Dependency graph
 
@@ -213,6 +214,7 @@ flowchart BT
   S074[074 one owner's triggers and agents, and an agent deleted]
   S075[075 a file a session reads and cannot change]
   S076[076 the working directory is saved during a turn]
+  S077[077 a firing names the key that fired it]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -362,6 +364,7 @@ flowchart BT
   S074 --> S022
   S074 --> S036
   S074 --> S040
+  S077 --> S022
 ```
 
 ## Build order

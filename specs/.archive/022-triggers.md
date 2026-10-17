@@ -269,7 +269,10 @@ question is asked as the owner stored at apply: the request's
 `org_id` alone, the context the trigger was applied in, read from the
 `org_id` claim of the apply's token and `""` for a personal one. The
 `session.create` resource carries the fields of every create, with
-`initiator` the owner, and `trigger_id` and `firing_id`; the
+`initiator` the owner, and `trigger_id` and `firing_id`, and, for a
+fire whose own token a key minted, `fired_by`, that token's
+`token_use` and `authorization_details` (added by
+[[077-a-firing-names-the-key-that-fired-it]]); the
 `session.send` resource carries `sender` `trigger:<trg_id>`. The
 session's own tokens are minted afterwards as every hosted session's
 are ([[018-credentials-and-secrets]]).
