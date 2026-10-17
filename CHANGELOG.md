@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A message can bring a file from the person's own files.** A file of a message's `attachments` may name `source`, `{"owner": "me", "path": "files/Reports/q3.csv", "version": 3}`, in place of its `data`, on a send and on a fork's message. The server reads the file when the message is sent, at the files API of the session's folder, with the token the client sent the message with, and keeps it in the session's folder as if its bytes had been sent; its record names the `source`. `version` is optional. The files API must accept the token a client sends to the core. A file the files API answers 401, 403 or 404 for is `attachment_source_not_found` (404), one answer for the three, so the answer does not say whether the file exists; a file past 16 MiB, and a public file, which the files API answers with a redirect, are `attachment_too_large`; any other failure is `files_unavailable`. A session without a folder refuses a source as `invalid_request`. A source counts among the message's `attachments` in the authorizer's question. A program that embeds the server sets `Files.Source`; toposd sets it whenever `TOPOS_FILES_AUDIENCE` is set.
+- **The model reads a short text file without starting a machine.** A text file of a person's message, UTF-8 and at most 64 KiB, of a text type such as CSV, Markdown, JSON or YAML or with such a name, is recorded `inline: true`, up to 192 KiB of such files a message. Every model request then carries the file's text after the line that names it, read from where the file is kept and never written into the log, so a question about a short file is answered without the session's sandbox starting. A file sent before this release is not marked, and the model reads it from the machine as before.
+- **`read` returns the text of Word, Excel and PowerPoint files.** A `.docx` is read as its paragraphs, an `.xlsx` as each sheet's rows with their cells separated by tabs, and a `.pptx` as each slide's text, and so are their OpenDocument counterparts `.odt`, `.ods` and `.odp`, numbered and paged like any text file. A damaged one, and one past 32 MiB, is answered as a binary file, as before. A PDF is still answered as a binary file. Version 2 of the tool's description says so.
+
 ## v0.42.1 - 2026-10-17
 
 ### Fixed
