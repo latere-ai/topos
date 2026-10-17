@@ -489,3 +489,62 @@ func TestTriggerColumnFollowsTheBody(t *testing.T) {
 		t.Fatalf("listed by the trigger: %v, want %v", listed, want)
 	}
 }
+
+// TestAFiringBeforeTheKeyColumnNamesNoKey: a database at migration 0011
+// holding a held firing migrates with the firing kept and no key that
+// fired it, and a firing a replica of the earlier release inserts
+// afterwards, naming no fired_by column, reads back with none too, while
+// a claim of this release keeps its key (spec 077).
+func TestAFiringBeforeTheKeyColumnNamesNoKey(t *testing.T) {
+	dsn := database(t)
+	migrateTo(t, dsn, "0011")
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(t.Context()); err != nil {
+			t.Error(err)
+		}
+	})
+	now := time.Now().UTC()
+	tr := session.NewID(session.PrefixTrigger)
+	if _, err := conn.Exec(t.Context(), `INSERT INTO triggers (id, name, owner, agent_id, version, digest, doc, created_at, updated_at)
+		VALUES ($1, 't', 'alice', 'agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C', 1, 'sha256:1', '{}', $2, $2)`, tr, now); err != nil {
+		t.Fatal(err)
+	}
+	// insert writes a held firing's row as a replica before the column does.
+	insert := func(dedupe string) string {
+		t.Helper()
+		id := session.NewID(session.PrefixFiring)
+		if _, err := conn.Exec(t.Context(), `INSERT INTO trigger_firings (id, trigger_id, dedupe, origin, envelope, key, outcome, reason, session_id, session_open, replica, fired_at, received_at)
+			VALUES ($1, $2, $3, 'event', '', 'k', 'held', '', '', false, 'r1', $4, $4)`, id, tr, dedupe, now); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	before := insert("github:1")
+	st, err := Open(t.Context(), dsn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	after := insert("github:2")
+	key := `{"token_use":"pat"}`
+	claimed, fresh, err := st.ClaimFiring(t.Context(), store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: tr, Dedupe: "github:3", Origin: store.OriginEvent,
+		FiredBy: []byte(key), Replica: "r2", Time: now, ReceivedAt: now})
+	if err != nil || !fresh || string(claimed.FiredBy) != key {
+		t.Fatalf("a claim naming a key: %+v, %v, %v", claimed, fresh, err)
+	}
+	held, err := st.HeldFirings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 2 || held[0].ID != before || held[1].ID != after || len(held[0].FiredBy) != 0 || len(held[1].FiredBy) != 0 {
+		t.Fatalf("the held firings written without the column: %+v", held)
+	}
+	page, _, err := st.Firings(t.Context(), tr, 10, "")
+	if err != nil || len(page) != 3 || page[0].ID != claimed.ID || string(page[0].FiredBy) != key {
+		t.Fatalf("the firings: %+v, %v", page, err)
+	}
+}

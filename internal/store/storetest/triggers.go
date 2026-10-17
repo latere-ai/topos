@@ -372,6 +372,72 @@ func triggerFirings(t *testing.T, f Factory) {
 	}
 }
 
+// triggerFiredBy: a firing keeps the key that fired it, read back by the
+// claim, the held list and the firings list, and a firing no key fired
+// reads back with none. A failed or unrecorded firing taken again keeps
+// the key it was first recorded with, whatever the new claim names, and
+// takes the new claim's only when it has none (spec 077).
+func triggerFiredBy(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ctx := t.Context()
+	tr := NewTrigger("alice", "t", clock.Now())
+	if err := st.PutTrigger(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	key := `{"authorization_details":[{"actions":["topos:trigger.fire"],"type":"latere-authz"}],"token_use":"pat"}`
+	other := `{"token_use":"sak"}`
+	claim := func(dedupe, firedBy string, want string) store.Firing {
+		t.Helper()
+		fr := NewFiring(tr.ID, dedupe, store.OriginEvent, clock.Now())
+		if firedBy != "" {
+			fr.FiredBy = []byte(firedBy)
+		}
+		got, fresh, err := st.ClaimFiring(ctx, fr)
+		if err != nil || !fresh || string(got.FiredBy) != want {
+			t.Fatalf("a claim of %s naming %q: %q, %v, %v; want %q", dedupe, firedBy, got.FiredBy, fresh, err, want)
+		}
+		return got
+	}
+	record := func(fr store.Firing, outcome string) {
+		t.Helper()
+		fr.Outcome = outcome
+		if err := st.RecordFiring(ctx, fr, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	held := claim("github:1", key, key)
+	record(held, store.OutcomeHeld)
+	if list, err := st.HeldFirings(ctx); err != nil || len(list) != 1 || string(list[0].FiredBy) != key {
+		t.Fatalf("a held firing's key: %+v, %v", list, err)
+	}
+	// A failed firing taken again keeps its key, under another key's
+	// claim and, unrecorded, under one that names none.
+	record(claim("github:2", key, key), store.OutcomeFailed)
+	claim("github:2", other, key)
+	claim("github:2", "", key)
+	// A failed firing no key fired takes the key of the claim that takes
+	// it again.
+	record(claim("github:3", "", ""), store.OutcomeFailed)
+	record(claim("github:3", other, other), store.OutcomeStarted)
+	record(claim("github:4", "", ""), store.OutcomeStarted)
+
+	page, _, err := st.Firings(ctx, tr.ID, 10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"github:1": key, "github:2": key, "github:3": other, "github:4": ""}
+	if len(page) != len(want) {
+		t.Fatalf("%d firings, want %d", len(page), len(want))
+	}
+	for _, x := range page {
+		if string(x.FiredBy) != want[x.Dedupe] {
+			t.Errorf("the firing %s reads back the key %q, want %q", x.Dedupe, x.FiredBy, want[x.Dedupe])
+		}
+	}
+}
+
 // triggerHeldAndOpen: held firings list oldest first across triggers;
 // open firings are a trigger's started ones until their session is
 // closed, which also clears the key that names it.

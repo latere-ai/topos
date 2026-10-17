@@ -285,9 +285,13 @@ func (b *TriggerBook) ClaimFiring(_ context.Context, f Firing) (Firing, bool, er
 	case !ok:
 		f.Outcome, f.Reason, f.SessionID, f.Open = "", "", "", false
 	case held.Outcome == OutcomeFailed || held.Outcome == "":
-		// The firing runs again under its first id; the failure it
+		// The firing runs again under its first id, and with the key
+		// it was first recorded with when it has one; the failure it
 		// counted is taken back.
 		f.ID, f.Outcome, f.Reason, f.SessionID, f.Open = held.ID, "", "", "", false
+		if len(held.FiredBy) > 0 {
+			f.FiredBy = held.FiredBy
+		}
 		if held.Outcome == OutcomeFailed {
 			Count(&t.Counts, OutcomeFailed, -1)
 			if err := b.saveTrigger(t); err != nil {
