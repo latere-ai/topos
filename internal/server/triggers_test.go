@@ -763,11 +763,12 @@ func (keyTokens) Authenticate(r *http.Request) (auth.Caller, error) {
 // asks its session's create with fired_by, that token's token_use and
 // authorization_details as the request carried them, a field of the
 // resource while the create's claims stay the owner's context alone, so
-// a key that grants trigger.fire and nothing else still fires. A person's
-// own sign-in, a schedule, and a held firing whose session the trigger
-// starts later name no key, a held one started by a key's later fire
-// among them, and so does a failed key's firing that a sign-in fires
-// again, since no firing keeps a token's grants.
+// a key that grants trigger.fire and nothing else still fires. The
+// firing keeps the key: a held firing whose session a later fire or the
+// minute loop starts names the key that fired it, never the later fire's,
+// and a failed key's firing that a sign-in fires again keeps its key. A
+// person's own sign-in and a schedule name none, and a sign-in's failed
+// firing a key fires again names that key.
 func TestAFiringNamesTheKeyThatFiredIt(t *testing.T) {
 	f := newTriggerFixture(t, func(o *Options) { o.Verifier = keyTokens{} })
 	var mu sync.Mutex
@@ -837,32 +838,51 @@ func TestAFiringNamesTheKeyThatFiredIt(t *testing.T) {
 		}
 	}
 
+	// sessionOf is the session a firing of triage started, after it
+	// was held.
+	sessionOf := func(id, after string) string {
+		t.Helper()
+		for _, x := range f.firings("alice", "triage") {
+			if x.ID == id {
+				if x.Outcome != store.OutcomeStarted || x.SessionID == after {
+					t.Fatalf("the held firing: %+v", x)
+				}
+				return x.SessionID
+			}
+		}
+		t.Fatalf("no firing %s", id)
+		return ""
+	}
+
 	// A key's firing held while the person is asked, whose session ends:
-	// the key's next fire starts the held one's session first, which
-	// names no key, and its own firing continues that session.
+	// a sign-in's next fire starts the held one's session first, which
+	// names the held firing's key, and its own firing continues that
+	// session.
 	ask(first.SessionID, "t1")
 	held := f.fired("key:alice", "triage", f.envelope("2", "issue.edited", "o/r#1", "More"), store.OutcomeHeld)
 	end(first.SessionID)
-	f.fired("key:alice", "triage", f.envelope("3", "issue.edited", "o/r#1", "Again"), store.OutcomeContinued)
-	if got := asked("a held firing a key's fire starts"); got != "" {
-		t.Fatalf("a held firing started under a key's fire asked fired_by %s", got)
+	f.fired("alice", "triage", f.envelope("3", "issue.edited", "o/r#1", "Again"), store.OutcomeContinued)
+	if got := asked("a key's held firing a sign-in's fire starts"); got != byKey {
+		t.Fatalf("a key's held firing started under a sign-in's fire asked fired_by %s, want %s", got, byKey)
 	}
-	var started firing
-	for _, x := range f.firings("alice", "triage") {
-		if x.ID == held.ID {
-			started = x
-		}
+	second := sessionOf(held.ID, first.SessionID)
+	// A sign-in's firing held the same way names no key, though a key's
+	// fire starts its session: a later fire never lends its key.
+	ask(second, "t2")
+	plain := f.fired("alice", "triage", f.envelope("4", "issue.edited", "o/r#1", "Plain"), store.OutcomeHeld)
+	end(second)
+	f.fired("key:alice", "triage", f.envelope("5", "issue.edited", "o/r#1", "Keyed"), store.OutcomeContinued)
+	if got := asked("a sign-in's held firing a key's fire starts"); got != "" {
+		t.Fatalf("a sign-in's held firing started under a key's fire asked fired_by %s", got)
 	}
-	if started.Outcome != store.OutcomeStarted || started.SessionID == first.SessionID {
-		t.Fatalf("the held firing: %+v", started)
-	}
-	// The minute loop starts a held firing's session with no key.
-	ask(started.SessionID, "t2")
-	f.fired("key:alice", "triage", f.envelope("4", "issue.edited", "o/r#1", "Later"), store.OutcomeHeld)
-	end(started.SessionID)
+	third := sessionOf(plain.ID, second)
+	// The minute loop starts a key's held firing's session with its key.
+	ask(third, "t3")
+	f.fired("key:alice", "triage", f.envelope("6", "issue.edited", "o/r#1", "Later"), store.OutcomeHeld)
+	end(third)
 	f.tick()
-	if got := asked("a held firing the minute loop starts"); got != "" {
-		t.Fatalf("a held firing the minute loop started asked fired_by %s", got)
+	if got := asked("a key's held firing the minute loop starts"); got != byKey {
+		t.Fatalf("a key's held firing the minute loop started asked fired_by %s, want %s", got, byKey)
 	}
 
 	// A person's own sign-in names no key.
@@ -882,24 +902,40 @@ func TestAFiringNamesTheKeyThatFiredIt(t *testing.T) {
 	if got := asked("a key's manual firing"); got != byKey {
 		t.Fatalf("a key's manual firing asked fired_by %s", got)
 	}
-	// A key's firing that failed and is fired again names the token of
-	// the fire that runs it: a sign-in's none.
-	mu.Lock()
-	unavailable = true
-	mu.Unlock()
+	// fail fires body with token while the authorizer is down, and wants
+	// the create asked with fired_by want.
+	fail := func(token, body, want string) {
+		t.Helper()
+		mu.Lock()
+		unavailable = true
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			unavailable = false
+			mu.Unlock()
+		}()
+		if a, out := f.fire(token, "fresh", body); a.status != http.StatusServiceUnavailable || out.Outcome != store.OutcomeFailed {
+			t.Fatalf("a failed firing: %d %s", a.status, a.body)
+		}
+		if got := asked("a failed firing of " + token); got != want {
+			t.Fatalf("a failed firing of %s asked fired_by %s, want %s", token, got, want)
+		}
+	}
+	// A key's firing that failed and is fired again keeps its key, a
+	// sign-in's rerun among them.
 	failing := f.envelope("2", "issue.opened", "o/r#10", "x")
-	if a, out := f.fire("key:alice", "fresh", failing); a.status != http.StatusServiceUnavailable || out.Outcome != store.OutcomeFailed {
-		t.Fatalf("a failed firing: %d %s", a.status, a.body)
-	}
-	if got := asked("a key's failed firing"); got != byKey {
-		t.Fatalf("a key's failed firing asked fired_by %s", got)
-	}
-	mu.Lock()
-	unavailable = false
-	mu.Unlock()
+	fail("key:alice", failing, byKey)
 	f.fired("alice", "fresh", failing, store.OutcomeStarted)
-	if got := asked("a sign-in's rerun of a key's firing"); got != "" {
-		t.Fatalf("a sign-in's rerun of a key's firing asked fired_by %s", got)
+	if got := asked("a sign-in's rerun of a key's firing"); got != byKey {
+		t.Fatalf("a sign-in's rerun of a key's firing asked fired_by %s, want %s", got, byKey)
+	}
+	// A sign-in's firing that failed takes the key of the fire that runs
+	// it again.
+	unkeyed := f.envelope("3", "issue.opened", "o/r#11", "x")
+	fail("alice", unkeyed, "")
+	f.fired("key:alice", "fresh", unkeyed, store.OutcomeStarted)
+	if got := asked("a key's rerun of a sign-in's firing"); got != byKey {
+		t.Fatalf("a key's rerun of a sign-in's firing asked fired_by %s, want %s", got, byKey)
 	}
 }
 

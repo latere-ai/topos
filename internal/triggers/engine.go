@@ -65,10 +65,10 @@ type Start struct {
 	Message   string
 	Title     string
 	Resources []session.Resource
-	// FiredBy is what the token of the fire request that runs the firing
-	// says of the key it was minted from, as Fire was given it, which the
-	// session's create carries to the authorizer (spec 077); nil for a
-	// firing no such request runs. The engine reads nothing in it.
+	// FiredBy is the firing's FiredBy decoded: what the token of the fire
+	// that recorded the firing says of the key it was minted from, which
+	// the session's create carries to the authorizer (spec 077); nil for
+	// a firing no key's token fired. The engine reads nothing in it.
 	FiredBy map[string]any
 }
 
@@ -160,11 +160,11 @@ func ScheduleDedupe(at time.Time) string { return "schedule:" + at.UTC().Format(
 // recorded.
 //
 // by is what the request's own token says of the key it was minted
-// from, nil for a token no key minted, and reaches the Actor's Start of
-// this firing alone (spec 077). It is not stored: a held firing of the
-// key that the minute loop or a later fire starts a session for carries
-// none, since no token of its own is at hand, and a failed firing run
-// again carries the by of the fire that runs it.
+// from, nil for a token no key minted. It is kept with the firing as its
+// FiredBy (spec 077), so the session the firing starts names that key
+// whenever it starts: now, or later for a firing held while the session
+// it continues waits for a person. A failed firing fired again keeps the
+// key it was first recorded with, and takes by only when it has none.
 func (e *Engine) Fire(ctx context.Context, t store.Trigger, env *trigger.Envelope, by map[string]any) (store.Firing, error) {
 	// A caller that hangs up does not stop a firing midway.
 	ctx = context.WithoutCancel(ctx)
@@ -177,6 +177,13 @@ func (e *Engine) Fire(ctx context.Context, t store.Trigger, env *trigger.Envelop
 	}
 	now := e.o.Now().UTC()
 	f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Replica: e.o.Replica, Time: now, ReceivedAt: now}
+	if by != nil {
+		raw, err := json.Marshal(by)
+		if err != nil {
+			return store.Firing{}, fmt.Errorf("triggers: the key that fired %s: %w", t.ID, err)
+		}
+		f.FiredBy = raw
+	}
 	switch {
 	case env == nil:
 		f.Origin, f.Dedupe = store.OriginManual, "manual:"+f.ID
@@ -205,7 +212,7 @@ func (e *Engine) Fire(ctx context.Context, t store.Trigger, env *trigger.Envelop
 		if err != nil {
 			return err
 		}
-		out, err = e.run(ctx, fresh, spec, f, env, by)
+		out, err = e.run(ctx, fresh, spec, f, env)
 		return err
 	})
 	return out, err
@@ -287,8 +294,7 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 	for at != nil && !at.After(now) {
 		f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Origin: store.OriginSchedule, Dedupe: ScheduleDedupe(*at),
 			Replica: e.o.Replica, Time: *at, ReceivedAt: now}
-		// A schedule's firing is the trigger's own and names no key.
-		if _, err := e.run(ctx, t, spec, f, nil, nil); err != nil {
+		if _, err := e.run(ctx, t, spec, f, nil); err != nil {
 			return err
 		}
 		if at, err = NextFire(spec, *at); err != nil {
@@ -353,14 +359,13 @@ func (e *Engine) locked(ctx context.Context, id string, fn func() error) error {
 }
 
 // run claims a firing and, when it is this one's to act on, decides and
-// records it, by the key of Fire's request. A firing claimed before
-// answers as recorded.
-func (e *Engine) run(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope, by map[string]any) (store.Firing, error) {
+// records it. A firing claimed before answers as recorded.
+func (e *Engine) run(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope) (store.Firing, error) {
 	claimed, fresh, err := e.o.Store.ClaimFiring(ctx, f)
 	if err != nil || !fresh {
 		return claimed, err
 	}
-	out, err := e.decide(ctx, t, spec, claimed, env, by)
+	out, err := e.decide(ctx, t, spec, claimed, env)
 	if err != nil {
 		return store.Firing{}, err
 	}
@@ -372,8 +377,8 @@ func (e *Engine) run(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, 
 
 // decide is a claimed firing's outcome: skipped when late, refused when
 // its message is past the cap, and otherwise what the session policy
-// does with it. A session it starts names by, the key that fired it.
-func (e *Engine) decide(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope, by map[string]any) (store.Firing, error) {
+// does with it.
+func (e *Engine) decide(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope) (store.Firing, error) {
 	late, err := e.late(spec, f, env)
 	if err != nil {
 		return store.Firing{}, err
@@ -392,9 +397,9 @@ func (e *Engine) decide(ctx context.Context, t store.Trigger, spec v1.TriggerSpe
 		return f, nil
 	}
 	if trigger.Policy(spec) == v1.PolicyContinue {
-		return e.continueKey(ctx, t, spec, f, r, by, false)
+		return e.continueKey(ctx, t, spec, f, r, false)
 	}
-	return e.startNew(ctx, t, spec, f, r, by)
+	return e.startNew(ctx, t, spec, f, r)
 }
 
 // late reports whether the firing is more than maxAge after its event's
@@ -417,7 +422,7 @@ func (e *Engine) late(spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope
 // startNew acts under the new policy: a session of the key that is
 // still active skips the firing when skipIfActive holds, and otherwise
 // the firing starts a session.
-func (e *Engine) startNew(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered, by map[string]any) (store.Firing, error) {
+func (e *Engine) startNew(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered) (store.Firing, error) {
 	if spec.SkipIfActive == nil || *spec.SkipIfActive {
 		s, open, err := e.keySession(ctx, t.ID, f.Key)
 		if err != nil {
@@ -434,16 +439,15 @@ func (e *Engine) startNew(ctx context.Context, t store.Trigger, spec v1.TriggerS
 			}
 		}
 	}
-	return e.start(ctx, t, spec, f, r, by)
+	return e.start(ctx, t, spec, f, r)
 }
 
 // continueKey acts under the continue policy: the key's open session
 // takes the message, or holds it while it waits for a person, and a key
 // with no open session starts one. A firing of a key with held firings
 // waits behind them; resend is set when the firing is a held one the
-// sweep sends. by is the key a session the firing starts names, and the
-// held firings flushed first name none: by is this firing's own.
-func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered, by map[string]any, resend bool) (store.Firing, error) {
+// sweep sends.
+func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered, resend bool) (store.Firing, error) {
 	if !resend {
 		waiting, err := e.flush(ctx, t, spec, f.Key)
 		if err != nil {
@@ -459,7 +463,7 @@ func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.Trigg
 		return store.Firing{}, err
 	}
 	if !open {
-		return e.start(ctx, t, spec, f, r, by)
+		return e.start(ctx, t, spec, f, r)
 	}
 	if waitsForPerson(s) {
 		f.Outcome = store.OutcomeHeld
@@ -471,7 +475,7 @@ func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.Trigg
 		if err := e.o.Store.CloseSession(ctx, t.ID, s.ID); err != nil {
 			return store.Firing{}, err
 		}
-		return e.start(ctx, t, spec, f, r, by)
+		return e.start(ctx, t, spec, f, r)
 	case err != nil:
 		return e.refused(f, err), nil
 	}
@@ -480,9 +484,10 @@ func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.Trigg
 }
 
 // start starts the firing's session unless maxActive of the trigger's
-// sessions are active, and maps the key to it. by is the key that fired
-// it, which the session's create names.
-func (e *Engine) start(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered, by map[string]any) (store.Firing, error) {
+// sessions are active, and maps the key to it. The session's create
+// names the firing's own FiredBy, never that of the fire that happens to
+// start it, as one does for a held firing it flushes.
+func (e *Engine) start(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered) (store.Firing, error) {
 	n, err := e.activeSessions(ctx, t.ID)
 	if err != nil {
 		return store.Firing{}, err
@@ -490,6 +495,12 @@ func (e *Engine) start(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 	if n >= trigger.MaxActive(spec) {
 		f.Outcome = store.OutcomeSkippedBusy
 		return f, nil
+	}
+	var by map[string]any
+	if len(f.FiredBy) > 0 {
+		if err := json.Unmarshal(f.FiredBy, &by); err != nil {
+			return store.Firing{}, fmt.Errorf("triggers: firing %s's key: %w", f.ID, err)
+		}
 	}
 	s, err := e.o.Actor.Start(ctx, Start{Trigger: t, Spec: spec, FiringID: f.ID, Message: r.message, Title: r.title, Resources: r.resources, FiredBy: by})
 	if err != nil {
@@ -625,10 +636,9 @@ func (e *Engine) flush(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 			return false, err
 		}
 		// The key the firing was held under is its key, whatever the
-		// template renders now. A held firing's session names no key
-		// that fired it: the token of its fire is not kept.
+		// template renders now.
 		r.key = key
-		out, err := e.continueKey(ctx, t, spec, f, r, nil, true)
+		out, err := e.continueKey(ctx, t, spec, f, r, true)
 		if err != nil {
 			return false, err
 		}
