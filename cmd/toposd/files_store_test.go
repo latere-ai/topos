@@ -136,8 +136,10 @@ func TestASessionsFilesLiveInTheFilesStore(t *testing.T) {
 			}
 		}
 	}
-	// The runner delivered the attachment with the session's own token;
-	// the blob route's reads are toposd's own.
+	// The runner delivered the attachment with the session's own token,
+	// and read its text for the model's request with the same, the file
+	// being a short text file the message marks inline (spec 079); the
+	// blob route's reads are toposd's own.
 	before := len(arca.Requests())
 	var delivered int
 	for _, r := range arca.Requests() {
@@ -149,8 +151,8 @@ func TestASessionsFilesLiveInTheFilesStore(t *testing.T) {
 			t.Fatalf("the runner read the attachment with %+v", m)
 		}
 	}
-	if delivered != 1 {
-		t.Fatalf("the runner read the folder %d times", delivered)
+	if delivered != 2 {
+		t.Fatalf("the runner read the folder %d times, once to deliver the attachment and once for its text", delivered)
 	}
 	read(sess.ID)
 	var reads int
