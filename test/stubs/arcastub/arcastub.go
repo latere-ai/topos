@@ -4,10 +4,10 @@
 // Package arcastub is a stub of an Arca-compatible files API, the
 // backend of a session's files store (spec 068): an HTTP server on
 // loopback that serves the routes a files store calls under its root,
-// "/v1": a put of one object, a read, a delete, a folder copy, and the
-// three routes of an upload session, with a second server standing for
-// the bucket, which answers a read's redirect and takes the parts of an
-// upload. It holds the contract a client must keep: a put without
+// "/v1": a put of one object, a read, of a version a test kept among
+// them (spec 079), a delete, a folder copy, and the three routes of an
+// upload session, with a second server standing for the bucket, which
+// answers a read's redirect and takes the parts of an upload. It holds the contract a client must keep: a put without
 // Content-Length is 411, an If-None-Match: * onto a taken path is 412,
 // a put above the single-request bound is 413, and a request to the
 // bucket that carries an Authorization header is refused and reported to
@@ -55,6 +55,7 @@ type Recorded struct {
 	Op     string
 	Method string
 	Path   string
+	Query  string
 	Header http.Header
 }
 
@@ -79,8 +80,11 @@ type Server struct {
 	srv    *httptest.Server
 	bucket *httptest.Server
 
-	mu       sync.Mutex
-	objects  map[string]map[string]Object
+	mu      sync.Mutex
+	objects map[string]map[string]Object
+	// versions are the earlier versions of an object, by owner, path and
+	// number, which a read names with ?version=N.
+	versions map[string]map[string]map[int]Object
 	uploads  map[string]*upload
 	failures map[string][]Failure
 	requests []Recorded
@@ -95,7 +99,7 @@ type Server struct {
 // bearer is accepted until RequireToken names a check; a read of any size
 // redirects until RedirectAbove sets a bound.
 func New(t testing.TB) *Server {
-	s := &Server{t: t, objects: map[string]map[string]Object{}, uploads: map[string]*upload{}, failures: map[string][]Failure{},
+	s := &Server{t: t, objects: map[string]map[string]Object{}, versions: map[string]map[string]map[int]Object{}, uploads: map[string]*upload{}, failures: map[string][]Failure{},
 		tokenOK: func(string) bool { return true }, inline: 16 << 20, redirectAbove: -1, partSize: 16 << 20}
 	api := http.NewServeMux()
 	api.HandleFunc("PUT /v1/files/{owner}/{path...}", s.put)
@@ -185,6 +189,20 @@ func (s *Server) Put(owner, path string, o Object) {
 	s.objects[owner][path] = o
 }
 
+// PutVersion keeps o as version n of the object at path of owner's
+// space, which a read of ?version=n answers.
+func (s *Server) PutVersion(owner, path string, n int, o Object) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.versions[owner] == nil {
+		s.versions[owner] = map[string]map[int]Object{}
+	}
+	if s.versions[owner][path] == nil {
+		s.versions[owner][path] = map[int]Object{}
+	}
+	s.versions[owner][path][n] = o
+}
+
 // Remove removes an object as a test takes one away.
 func (s *Server) Remove(owner, path string) {
 	s.mu.Lock()
@@ -224,7 +242,7 @@ func reply(w http.ResponseWriter, status int, v any) {
 func (s *Server) begin(w http.ResponseWriter, r *http.Request, op string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.requests = append(s.requests, Recorded{Op: op, Method: r.Method, Path: r.URL.EscapedPath(), Header: r.Header.Clone()})
+	s.requests = append(s.requests, Recorded{Op: op, Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.RawQuery, Header: r.Header.Clone()})
 	if fs := s.failures[op]; len(fs) > 0 {
 		f := &fs[0]
 		if f.Times <= 1 {
@@ -297,6 +315,11 @@ func (s *Server) read(w http.ResponseWriter, r *http.Request) {
 	}
 	owner, path := key(r)
 	o, ok := s.Object(owner, path)
+	version := ""
+	if r.URL.Query().Has("version") {
+		version = r.URL.Query().Get("version")
+		o, ok = s.version(owner, path, version)
+	}
 	if !ok {
 		refuse(w, http.StatusNotFound, "not_found", "nothing is at the path")
 		return
@@ -305,12 +328,24 @@ func (s *Server) read(w http.ResponseWriter, r *http.Request) {
 	above := s.redirectAbove
 	s.mu.Unlock()
 	if above < 0 || int64(len(o.Data)) > above {
-		k := hex.EncodeToString([]byte(owner + "\x00" + path))
+		k := hex.EncodeToString([]byte(owner + "\x00" + path + "\x00" + version))
 		w.Header().Set("Location", s.bucket.URL+"/objects/"+k)
 		w.WriteHeader(http.StatusFound)
 		return
 	}
 	serve(w, o)
+}
+
+// version is the version a read's ?version= names, false for none.
+func (s *Server) version(owner, path, raw string) (Object, bool) {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return Object{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o, ok := s.versions[owner][path][n]
+	return o, ok
 }
 
 // serve answers an object's bytes.
@@ -327,12 +362,16 @@ func (s *Server) object(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, err := hex.DecodeString(r.PathValue("key"))
-	owner, path, found := strings.Cut(string(raw), "\x00")
+	owner, rest, found := strings.Cut(string(raw), "\x00")
+	path, version, _ := strings.Cut(rest, "\x00")
 	if err != nil || !found {
 		refuse(w, http.StatusNotFound, "not_found", "no such key")
 		return
 	}
 	o, ok := s.Object(owner, path)
+	if version != "" {
+		o, ok = s.version(owner, path, version)
+	}
 	if !ok {
 		refuse(w, http.StatusNotFound, "not_found", "no such key")
 		return

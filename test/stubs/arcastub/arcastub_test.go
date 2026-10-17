@@ -263,3 +263,36 @@ func TestTheStubDeletesForGood(t *testing.T) {
 		t.Fatalf("a delete of nothing: %d %s", c, b)
 	}
 }
+
+// TestTheStubReadsAVersion: a read of ?version=N answers the version a
+// test kept, inline or through the bucket, a version it did not keep is
+// 404, and the read is recorded with its query.
+func TestTheStubReadsAVersion(t *testing.T) {
+	s := New(t)
+	bearer := map[string]string{"Authorization": "Bearer ok"}
+	s.Put("o", "files/a.txt", Object{Data: []byte("now"), ContentType: "text/plain"})
+	s.PutVersion("o", "files/a.txt", 2, Object{Data: []byte("then"), ContentType: "text/plain"})
+	file := s.URL() + "/files/o/files/a.txt"
+	c, h, b := do(t, http.MethodGet, file+"?version=2", nil, bearer)
+	if c != http.StatusFound {
+		t.Fatalf("a version past the bound: %d %s", c, b)
+	}
+	if c, _, b := do(t, http.MethodGet, h.Get("Location"), nil, nil); c != http.StatusOK || string(b) != "then" {
+		t.Fatalf("a version through the bucket: %d %s", c, b)
+	}
+	s.RedirectAbove(1 << 20)
+	if c, _, b := do(t, http.MethodGet, file+"?version=2", nil, bearer); c != http.StatusOK || string(b) != "then" {
+		t.Fatalf("a version inline: %d %s", c, b)
+	}
+	if c, _, b := do(t, http.MethodGet, file, nil, bearer); c != http.StatusOK || string(b) != "now" {
+		t.Fatalf("the file as it stands: %d %s", c, b)
+	}
+	for _, v := range []string{"3", "x"} {
+		if c, _, b := do(t, http.MethodGet, file+"?version="+v, nil, bearer); c != http.StatusNotFound || code(t, b) != "not_found" {
+			t.Fatalf("version %s: %d %s", v, c, b)
+		}
+	}
+	if r := s.Requests(); r[0].Query != "version=2" || r[0].Header.Get("Authorization") != "Bearer ok" {
+		t.Fatalf("the first read is recorded as %+v", r[0])
+	}
+}
