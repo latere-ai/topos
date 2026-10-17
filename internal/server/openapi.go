@@ -374,11 +374,12 @@ var opDescriptions = map[string]string{
 	"sendEvent": fmt.Sprintf("The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. "+
 		"A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most %d of at most %d bytes each), "+
 		"and attachments, files {\"name\",\"media_type\",\"data\"} (base64, at most %d of at most %d bytes each, the name one path segment of at most %d bytes). "+
-		"The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; "+
+		"The server stores each file as a blob of the session and records it as {name, media_type, size, blob, path, source, inline}, path attachments/<event id>/<name>, in a directory of the message's own, and no two files of one message share a name; "+
 		"a session with a folder of the files store writes each file there at that path instead, with the session's own token, and its record names it by ref, the same path, beside blob, its digest; "+
 		"a file the files service refuses for its size is attachment_too_large and any other failure files_unavailable, and the message is then not appended; "+
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
+		SourceRule+" "+
 		"The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: "+
 		"session.model_changed {by, old, new}, each {name, via, reasoning, route}, is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
 		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level, "+
@@ -438,7 +439,8 @@ var opDescriptions = map[string]string{
 		"A message sent while a turn ran, a trigger's, a service's or a redacted one, and any other event, is invalid_fork_point; before_seq beside at_seq is invalid_request. " +
 		"message is a user.message's payload as the send route takes it, {content, attachments, askable, answers}, under the same limits and refusals, sent to the fork in the same call; " +
 		"a file of it is {name, data} as on a send, or {name, blob}, a digest a file a message of the forked session attached names, kept with that message's media type and size without its bytes being sent again; " +
-		"a file with both or neither of data and blob, a blob beside a media_type, and a blob no message of the forked session attaches are invalid_request. " +
+		"a file with none or more than one of data, blob and source, a blob beside a media_type, and a blob no message of the forked session attaches are invalid_request. " +
+		"A file may also be {name, source} as on a send, read at the fork's own folder with the fork request's bearer once the fork's send is allowed; a read the files API refuses leaves no fork, and a file kept by its blob keeps its record's source and inline mark. " +
 		"A fork of a session that keeps files in a folder of the files store copies, on the server and with the fork's own token, each folder of the parent's that its copied events and its message name into the fork's own folder, which its allow names, before its log is written, " +
 		"and writes its message's new files there; a copied record keeps its ref, which then names the file in the fork's folder. A fork whose allow names no folder of such a session, and one whose copy fails, is files_unavailable, and no fork is left. " +
 		fmt.Sprintf("A body without a message is at most %d bytes, one with a message at most %d. ", MaxBody, MaxEventBody) +

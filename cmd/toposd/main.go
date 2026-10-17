@@ -435,6 +435,11 @@ func files(cfg config.Config, minter *credentials.Minter, identities *idp.Client
 			t, err := identities.ServiceToken(ctx, cfg.FilesAudience)
 			return t.Value, err
 		}),
+		// A message's source is read with its sender's own bearer, which
+		// the send hands over and nothing keeps (spec 079).
+		Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) ([]byte, string, error) {
+			return filestore.ReadSource(ctx, otel.HTTPClient(), root, token, src, max)
+		},
 	}
 }
 

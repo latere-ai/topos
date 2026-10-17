@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -15,10 +16,12 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"latere.ai/x/pkg/bearer"
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/internal/filestore"
 	"latere.ai/x/topos/session"
 )
 
@@ -32,12 +35,34 @@ const (
 	MaxAttachments     = 8
 	MaxAttachmentBytes = 5 << 20
 	// MaxAttachmentName bounds a file's name in bytes, a file system's
-	// usual limit on one path segment.
+	// usual limit on one path segment, and a source's owner.
 	MaxAttachmentName = 255
+	// MaxSourceBytes bounds a file a message names by its source (spec
+	// 079): the files API answers a read in one response up to its
+	// inline bound, and redirects past it, which the core does not follow.
+	MaxSourceBytes = filestore.InlineBytes
+	// MaxSourcePath bounds a source's path in bytes.
+	MaxSourcePath = 1024
 )
 
 // CodeAttachmentTooLarge is an image or a file past its limit.
 const CodeAttachmentTooLarge = "attachment_too_large"
+
+// CodeAttachmentSourceNotFound is a file a message names by its source
+// that the files API answered 401, 403 or 404 for, one code for the
+// three, so the answer does not say whether the file exists (spec 079).
+const CodeAttachmentSourceNotFound = "attachment_source_not_found"
+
+// SourceRule is the send and fork routes' sentence on a file a message
+// names by its source (spec 079).
+var SourceRule = fmt.Sprintf("A file may instead be {\"name\", \"source\": {\"owner\", \"path\", \"version\"}}, a file of the sender's own files at the files API of the session's folder of a files store: "+
+	"owner the files API's owner segment, me or an owner's id; path the file's path in that space, its plane included, as GET {files API}/files/{owner}/{path} reads it; and version, optional, a version of the file from 1 upward, read as ?version=N. "+
+	"A file names exactly one of data, blob and source, and a source names no media_type; an owner that is empty or past %d bytes, a path that is empty, past %d bytes or not clean, either holding a control or a bidirectional character, and a version below 1 are invalid_request. "+
+	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the request's own bearer and no other credential, following no redirect: "+
+	"an answer of 401, 403 or 404 is %s, one answer for the three; a redirect, which the files API gives a file past its inline bound and a public file, and a file past %d bytes are %s; and any other failure is %s. "+
+	"A session that keeps no folder refuses a source as invalid_request. The file's media type is the files API's Content-Type, or its bytes' where that is empty or application/octet-stream; "+
+	"it is then kept as a data file is, and its record names source as the message named it. A source counts among the message's files and its attachments.",
+	MaxAttachmentName, MaxSourcePath, CodeAttachmentSourceNotFound, MaxSourceBytes, CodeAttachmentTooLarge, CodeFilesUnavailable)
 
 // MaxAnswers bounds a message's answers in bytes (spec 063).
 const MaxAnswers = 512
@@ -62,25 +87,50 @@ type messageBody struct {
 }
 
 // attachmentBody is one file as a client sends it: its bytes as base64
-// data, or, in a fork's message alone, the blob of a file a message of
+// data; or, in a fork's message alone, the blob of a file a message of
 // the session forked attached, which the fork keeps without the bytes
-// being sent again (spec 056).
+// being sent again (spec 056); or the source of a file of the sender's
+// own files, which the server reads at the send (spec 079).
 type attachmentBody struct {
 	Name      string         `json:"name"`
 	MediaType string         `json:"media_type,omitempty"`
 	Data      string         `json:"data,omitempty"`
 	Blob      session.Digest `json:"blob,omitempty"`
+	Source    *sourceBody    `json:"source,omitempty"`
+}
+
+// sourceBody is a file of the sender's own files as a message names it:
+// the files API's owner segment and the path in that space, and the
+// version, absent for the file as it stands.
+type sourceBody struct {
+	Owner   string `json:"owner"`
+	Path    string `json:"path"`
+	Version *int   `json:"version,omitempty"`
 }
 
 // file is one attached file checked and decoded, before it is stored:
-// its bytes, or the blob a message of the session forked names, whose
-// media type, size and ref are that message's record of it.
+// its bytes; the blob a message of the session forked names, whose
+// media type, size, ref, source and mark are that message's record of
+// it; or the source its bytes are read from once the send is allowed.
+// inline is the file's mark (spec 079), set by markInline.
 type file struct {
 	name, media string
 	data        []byte
 	blob        session.Digest
 	size        int64
 	ref         string
+	source      *session.AttachmentSource
+	inline      bool
+}
+
+// record is the file's record as its message keeps it, at path, with
+// ref set where the file is in the session's folder.
+func (f file) record(path, ref string) session.Attachment {
+	a := session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: session.DigestOf(f.data), Path: path, Ref: ref, Inline: f.inline}
+	if f.source != nil {
+		a.Source = *f.source
+	}
+	return a
 }
 
 // check reads a person's user.message: content or attachments, the
@@ -190,8 +240,10 @@ func checkContent(blocks []lux.Block) error {
 // at most MaxAttachmentBytes, and a media type, the one given or the
 // one the bytes give. Where blobs is set, as in a fork's message, a file
 // may name a blob in place of its data and no media type, which the
-// fork reads from the message that attached it; a file names exactly
-// one of the two.
+// fork reads from the message that attached it. A file may name a source
+// in place of its data and no media type, which the server reads once
+// the send is allowed (spec 079). A file names exactly one of data, a
+// blob and a source.
 func checkAttachments(in []attachmentBody, blobs bool) ([]file, error) {
 	if len(in) > MaxAttachments {
 		return nil, refuse(CodeInvalidRequest, "a user.message attaches at most %d files", MaxAttachments)
@@ -207,6 +259,17 @@ func checkAttachments(in []attachmentBody, blobs bool) ([]file, error) {
 		}
 		names[a.Name] = true
 		switch {
+		case a.Source != nil && (a.Data != "" || a.Blob != ""):
+			return nil, refuse(CodeInvalidRequest, "attachments[%d] names a source beside data or a blob; a file is one of the three", i)
+		case a.Source != nil && a.MediaType != "":
+			return nil, refuse(CodeInvalidRequest, "attachments[%d] names a source and a media_type; a source's media type is the one the files API answers", i)
+		case a.Source != nil:
+			src, err := a.Source.check()
+			if err != nil {
+				return nil, refuse(CodeInvalidRequest, "attachments[%d]: %v", i, err)
+			}
+			out = append(out, file{name: a.Name, source: &src})
+			continue
 		case a.Blob != "" && !blobs:
 			return nil, refuse(CodeInvalidRequest, "attachments[%d] names a blob; a message sent to a session attaches its file's data, and only a fork's message keeps a file of the session it forks by its blob", i)
 		case a.Blob != "" && a.Data != "":
@@ -219,7 +282,7 @@ func checkAttachments(in []attachmentBody, blobs bool) ([]file, error) {
 			out = append(out, file{name: a.Name, blob: a.Blob})
 			continue
 		case a.Data == "" && blobs:
-			return nil, refuse(CodeInvalidRequest, "attachments[%d] names neither data nor a blob; a file is one of the two", i)
+			return nil, refuse(CodeInvalidRequest, "attachments[%d] names none of data, a blob and a source; a file is one of the three", i)
 		}
 		if limit := base64.StdEncoding.EncodedLen(MaxAttachmentBytes); len(a.Data) > limit {
 			return nil, refuse(CodeAttachmentTooLarge, "attachments[%d] is past %d bytes", i, MaxAttachmentBytes)
@@ -242,6 +305,55 @@ func checkAttachments(in []attachmentBody, blobs bool) ([]file, error) {
 	return out, nil
 }
 
+// check reads a source as a message names it: an owner of at most
+// MaxAttachmentName bytes and a path of at most MaxSourcePath, each
+// UTF-8 without a control or a bidirectional character, the path
+// relative and clean, and a version from 1 upward when it names one.
+func (b *sourceBody) check() (session.AttachmentSource, error) {
+	switch {
+	case b.Owner == "":
+		return session.AttachmentSource{}, errors.New("the source names no owner")
+	case len(b.Owner) > MaxAttachmentName:
+		return session.AttachmentSource{}, fmt.Errorf("the source's owner is %d bytes, at most %d", len(b.Owner), MaxAttachmentName)
+	case b.Path == "":
+		return session.AttachmentSource{}, errors.New("the source names no path")
+	case len(b.Path) > MaxSourcePath:
+		return session.AttachmentSource{}, fmt.Errorf("the source's path is %d bytes, at most %d", len(b.Path), MaxSourcePath)
+	case b.Version != nil && *b.Version < 1:
+		return session.AttachmentSource{}, fmt.Errorf("the source's version is %d; a version counts from 1", *b.Version)
+	}
+	if err := plainText(b.Owner); err != nil {
+		return session.AttachmentSource{}, fmt.Errorf("the source's owner %w", err)
+	}
+	if err := plainText(b.Path); err != nil {
+		return session.AttachmentSource{}, fmt.Errorf("the source's path %w", err)
+	}
+	for seg := range strings.SplitSeq(b.Path, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return session.AttachmentSource{}, fmt.Errorf("the source's path %q is not clean: it begins or ends with /, or holds an empty, . or .. segment", b.Path)
+		}
+	}
+	src := session.AttachmentSource{Owner: b.Owner, Path: b.Path}
+	if b.Version != nil {
+		src.Version = *b.Version
+	}
+	return src, nil
+}
+
+// plainText refuses text that is not UTF-8 or that holds a control or a
+// bidirectional character.
+func plainText(s string) error {
+	if !utf8.ValidString(s) {
+		return errors.New("is not UTF-8")
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
+			return errors.New("holds a control or a bidirectional character")
+		}
+	}
+	return nil
+}
+
 // checkName refuses a file name that is not one plain path segment.
 func checkName(name string) error {
 	switch {
@@ -254,10 +366,8 @@ func checkName(name string) error {
 	case strings.ContainsAny(name, `/\`):
 		return fmt.Errorf("the name %q holds a path separator; a file is named by one path segment", name)
 	}
-	for _, r := range name {
-		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
-			return fmt.Errorf("the name holds a control or a bidirectional character")
-		}
+	if err := plainText(name); err != nil {
+		return fmt.Errorf("the name %w", err)
 	}
 	return nil
 }
@@ -266,13 +376,14 @@ func checkName(name string) error {
 // the path it is written at, in the directory of the message whose event
 // id is message. A session with a folder of the files store writes each
 // there instead, at that same path, and its record names it by ref (spec
-// 068).
+// 068). Each record carries the file's source and its mark (spec 079).
 func (c *call) storeAttachments(ctx context.Context, s session.Session, message string, files []file) ([]session.Attachment, error) {
+	markInline(files)
 	out := make([]session.Attachment, 0, len(files))
 	if s.Folder != nil {
 		for _, f := range files {
 			p := session.AttachmentPath(message, f.name)
-			out = append(out, session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: session.DigestOf(f.data), Path: p, Ref: p})
+			out = append(out, f.record(p, p))
 		}
 		if err := c.s.putAttachments(ctx, s, files, out); err != nil {
 			return nil, err
@@ -284,9 +395,97 @@ func (c *call) storeAttachments(ctx context.Context, s session.Session, message 
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: d, Path: session.AttachmentPath(message, f.name)})
+		a := f.record(session.AttachmentPath(message, f.name), "")
+		a.Blob = d
+		out = append(out, a)
 	}
 	return out, nil
+}
+
+// markInline marks the files of one message whose text the model reads
+// in its request (spec 079), in the message's order: a file of bytes
+// session.Inlinable holds to, and a file kept by its blob that its own
+// message marked, each while the marked files together stay within
+// session.InlineMessageTextBytes. A file that would pass the bound is not
+// marked, and a later smaller one may be.
+func markInline(files []file) {
+	var total int64
+	for i := range files {
+		f := &files[i]
+		size, ok := int64(len(f.data)), false
+		if f.blob != "" {
+			size, ok = f.size, f.inline
+		} else {
+			ok = session.Inlinable(f.name, f.media, f.data)
+		}
+		f.inline = ok && total+size <= session.InlineMessageTextBytes
+		if f.inline {
+			total += size
+		}
+	}
+}
+
+// readSources reads each file of a message that names a source (spec
+// 079), once the send is allowed and before anything is written: at the
+// files API of sess's folder, the address the allow named, with the
+// bearer r was authenticated with, the sender's own, and no other
+// credential. A session without a folder refuses a source, since the
+// file is read where the folder is and kept there. A source the files
+// API refuses with 401, 403 or 404 is attachment_source_not_found, one
+// it redirects or that is past MaxSourceBytes attachment_too_large, and
+// any other failure files_unavailable. The media type is the files API's,
+// or the one the bytes give where it names none, or names
+// application/octet-stream.
+func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.Request, files []file) error {
+	first := -1
+	for i, f := range files {
+		if f.source != nil {
+			first = i
+			break
+		}
+	}
+	if first < 0 {
+		return nil
+	}
+	switch {
+	case sess.Folder == nil:
+		return refuse(CodeInvalidRequest, "attachments[%d] names a source; a file of a person's files is read at the files API of the session's folder and kept there, and this session keeps none", first)
+	case s.o.Files == nil || s.o.Files.Source == nil:
+		return &apiError{code: CodeFilesUnavailable, detail: "this server reads no file of a person's files: its files store has no Source"}
+	}
+	token, ok := bearer.FromRequest(r)
+	if !ok {
+		return refuse(CodeInvalidRequest, "the request carries no bearer in its Authorization header to read attachments[%d]'s source with", first)
+	}
+	for i := range files {
+		f := &files[i]
+		if f.source == nil {
+			continue
+		}
+		data, ctype, err := s.o.Files.Source(ctx, sess.Folder.URL, token, *f.source, MaxSourceBytes)
+		switch {
+		case errors.Is(err, filestore.ErrSourceNotFound):
+			// The detail is one for the three answers, as the code is.
+			return refuse(CodeAttachmentSourceNotFound, "attachments[%d]: the files API holds no file at %s of %s that the sender may read", i, f.source.Path, f.source.Owner)
+		case errors.Is(err, filestore.ErrSourceTooLarge):
+			return &apiError{code: CodeAttachmentTooLarge, detail: fmt.Sprintf("attachments[%d]: %v; a source is at most %d bytes", i, err, MaxSourceBytes), err: err}
+		case err != nil:
+			return filesRefused(err, "", fmt.Sprintf("read attachments[%d]'s source from the files API: %v", i, err))
+		}
+		f.data, f.media = data, sourceMedia(ctype, data)
+	}
+	return nil
+}
+
+// sourceMedia is a source's media type: the files API's Content-Type,
+// unless it is empty, not a media type or application/octet-stream,
+// which say nothing of the file, and then the one its bytes give, as a
+// data file's without a media type.
+func sourceMedia(ctype string, data []byte) string {
+	if base, _, err := mime.ParseMediaType(ctype); err == nil && base != "application/octet-stream" {
+		return ctype
+	}
+	return http.DetectContentType(data)
 }
 
 // attached is each file the user.messages of a log attach, by its blob:

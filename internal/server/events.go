@@ -207,6 +207,9 @@ func (c *call) sendEvent() error {
 		if s.Status == session.StatusEnded {
 			return refuse(CodeConflict, "the session ended %s", s.StopReason)
 		}
+		if err := c.s.readSources(c.r.Context(), s, c.r, files); err != nil {
+			return err
+		}
 		if message.Attachments, err = c.storeAttachments(c.r.Context(), s, id, files); err != nil {
 			return err
 		}

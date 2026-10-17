@@ -404,8 +404,8 @@ func TestAForkMessageKeepsAnAttachmentByBlob(t *testing.T) {
 	}
 	id := evs[len(evs)-1].ID
 	want := []session.Attachment{
-		{Name: "prices.csv", MediaType: "text/csv", Size: int64(len(prices)), Blob: session.DigestOf(prices), Path: session.AttachmentPath(id, "prices.csv")},
-		{Name: "notes.txt", MediaType: "text/plain; charset=utf-8", Size: int64(len(notes)), Blob: session.DigestOf(notes), Path: session.AttachmentPath(id, "notes.txt")},
+		{Name: "prices.csv", MediaType: "text/csv", Size: int64(len(prices)), Blob: session.DigestOf(prices), Path: session.AttachmentPath(id, "prices.csv"), Inline: true},
+		{Name: "notes.txt", MediaType: "text/plain; charset=utf-8", Size: int64(len(notes)), Blob: session.DigestOf(notes), Path: session.AttachmentPath(id, "notes.txt"), Inline: true},
 	}
 	if !slices.Equal(m.Attachments, want) || id == sent.ID {
 		t.Fatalf("the fork's message attaches %+v, want %+v", m.Attachments, want)

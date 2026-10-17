@@ -187,7 +187,10 @@ func (m *forkMessage) keep(kept map[session.Digest]session.Attachment) error {
 		if !ok {
 			return refuse(CodeInvalidRequest, "attachments[%d] names the blob %s, which no message of the session forked attaches", i, f.blob)
 		}
-		m.files[i].media, m.files[i].size, m.files[i].ref = a.MediaType, a.Size, a.Ref
+		m.files[i].media, m.files[i].size, m.files[i].ref, m.files[i].inline = a.MediaType, a.Size, a.Ref, a.Inline
+		if a.Source != (session.AttachmentSource{}) {
+			m.files[i].source = &a.Source
+		}
 	}
 	return nil
 }
@@ -220,15 +223,19 @@ func (m *forkMessage) events(changes sendChanges, now time.Time, blobs map[sessi
 	id := session.NewID(session.PrefixEvent)
 	payload := m.payload
 	puts := &forkFiles{}
+	markInline(m.files)
 	for _, f := range m.files {
-		a := session.Attachment{Name: f.name, MediaType: f.media, Size: f.size, Blob: f.blob, Path: session.AttachmentPath(id, f.name), Ref: f.ref}
+		p := session.AttachmentPath(id, f.name)
+		var a session.Attachment
 		switch {
 		case f.blob != "":
+			a = f.record(p, f.ref)
+			a.Size, a.Blob = f.size, f.blob
 		case folder:
-			a.Size, a.Blob, a.Ref = int64(len(f.data)), session.DigestOf(f.data), a.Path
+			a = f.record(p, p)
 			puts.files, puts.refs = append(puts.files, f), append(puts.refs, a)
 		default:
-			a.Size, a.Blob = int64(len(f.data)), session.DigestOf(f.data)
+			a = f.record(p, "")
 			blobs[a.Blob] = f.data
 		}
 		payload.Attachments = append(payload.Attachments, a)
@@ -287,6 +294,12 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 	maps.Copy(fields, f.message.word)
 	changes, err := s.askSend(ctx, q, sess, cfg, fields, tailOfCopy(f.events), new(f.message.shape()))
 	if err != nil {
+		s.refusedFork(ctx, q, sess, f, err)
+		return session.Session{}, err
+	}
+	// The message's sources are read at the fork's own folder, once its
+	// send is allowed and before anything is written (spec 079).
+	if err := s.readSources(ctx, sess, q.r, f.message.files); err != nil {
 		s.refusedFork(ctx, q, sess, f, err)
 		return session.Session{}, err
 	}

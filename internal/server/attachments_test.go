@@ -53,8 +53,8 @@ func TestAMessageCarriesImagesAndFiles(t *testing.T) {
 		t.Fatalf("content %+v", p.Content)
 	}
 	want := []session.Attachment{
-		{Name: "sales.csv", MediaType: "text/plain; charset=utf-8", Size: 12, Blob: session.DigestOf([]byte("month,total\n")), Path: "attachments/" + ev.ID + "/sales.csv"},
-		{Name: "notes", MediaType: "text/markdown", Size: 8, Blob: session.DigestOf([]byte("# notes\n")), Path: "attachments/" + ev.ID + "/notes"},
+		{Name: "sales.csv", MediaType: "text/plain; charset=utf-8", Size: 12, Blob: session.DigestOf([]byte("month,total\n")), Path: "attachments/" + ev.ID + "/sales.csv", Inline: true},
+		{Name: "notes", MediaType: "text/markdown", Size: 8, Blob: session.DigestOf([]byte("# notes\n")), Path: "attachments/" + ev.ID + "/notes", Inline: true},
 	}
 	if len(p.Attachments) != 2 || p.Attachments[0] != want[0] || p.Attachments[1] != want[1] {
 		t.Fatalf("attachments %+v, want %+v", p.Attachments, want)

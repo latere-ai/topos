@@ -49,7 +49,10 @@ func newFolderFixture(t *testing.T) *folderFixture {
 	}
 	ff := &folderFixture{arca: arca, named: true}
 	ff.fixture = newFixture(t, func(o *Options) {
-		o.Files = &Files{Write: open(func(s session.Session) string { return "session:" + s.ID }), Read: open(func(session.Session) string { return "server" })}
+		o.Files = &Files{Write: open(func(s session.Session) string { return "session:" + s.ID }), Read: open(func(session.Session) string { return "server" }),
+			Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) ([]byte, string, error) {
+				return filestore.ReadSource(ctx, &http.Client{}, root, token, src, max)
+			}}
 	})
 	ff.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		d, err := ff.authz.next.Authorize(context.Background(), req)
@@ -179,7 +182,7 @@ func TestAttachmentsGoToTheSessionsFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "attachments/" + ev.ID + "/sales.csv"
-	want := session.Attachment{Name: "sales.csv", MediaType: "text/plain", Size: 12, Blob: session.DigestOf([]byte("month,total\n")), Path: path, Ref: path}
+	want := session.Attachment{Name: "sales.csv", MediaType: "text/plain", Size: 12, Blob: session.DigestOf([]byte("month,total\n")), Path: path, Ref: path, Inline: true}
 	if len(p.Attachments) != 1 || p.Attachments[0] != want {
 		t.Fatalf("the record %+v, want %+v", p.Attachments, want)
 	}

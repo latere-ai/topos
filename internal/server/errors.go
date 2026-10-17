@@ -58,6 +58,7 @@ var codes = map[string]struct {
 	CodeIdempotencyConflict:         {http.StatusConflict, "The idempotency key was used with another request."},
 	CodePayloadTooLarge:             {http.StatusRequestEntityTooLarge, "The request body is too large."},
 	CodeAttachmentTooLarge:          {http.StatusRequestEntityTooLarge, "An image or a file of the message is too large."},
+	CodeAttachmentSourceNotFound:    {http.StatusNotFound, "The message names a file that is not in your files, or that you may not read."},
 	CodeFileTooLarge:                {http.StatusRequestEntityTooLarge, "The file is too large to read here."},
 	CodeFileUnavailable:             {http.StatusConflict, "The file cannot be read now, because the session's machine is not running."},
 	CodeRateLimited:                 {http.StatusTooManyRequests, "Too many requests; wait and try again."},

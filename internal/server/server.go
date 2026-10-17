@@ -150,10 +150,17 @@ type Options struct {
 // its own credential: Write with the session's own token, for a message's
 // attachments and a fork's copies, and Read with the server's own, for
 // the blob route, so a session that ended, or whose agent was archived,
-// stays readable.
+// stays readable. Source reads a file of a person's own files a message
+// names (spec 079), at the files API whose root is root, with the
+// sender's own bearer token, at most max bytes, and answers its bytes and
+// the files API's Content-Type, or filestore.ErrSourceNotFound or
+// filestore.ErrSourceTooLarge; filestore.ReadSource is the one toposd
+// runs, and nil refuses a message that names a source as
+// files_unavailable.
 type Files struct {
-	Write func(ctx context.Context, s session.Session) (harness.Files, error)
-	Read  func(ctx context.Context, s session.Session) (harness.Files, error)
+	Write  func(ctx context.Context, s session.Session) (harness.Files, error)
+	Read   func(ctx context.Context, s session.Session) (harness.Files, error)
+	Source func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) ([]byte, string, error)
 }
 
 // Server answers the API.
