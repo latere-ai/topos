@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.42.1 - 2026-10-17
+
 ### Fixed
 
 - **A session on a model that several providers serve keeps reading its prompt cache.** Through a gateway such as OpenRouter, an open-weights model like Gemma, Qwen or DeepSeek is served by many providers, and each turn of a session could land on another one, whose cache held nothing; over the two weeks before this release, Gemma sessions read 28 percent of their prompt tokens from the cache. Every model request now carries the session's cache key in the `X-Session-Id` header, by which the gateway keeps the session on one provider from its first turn. An endpoint that does not know the header ignores it.
