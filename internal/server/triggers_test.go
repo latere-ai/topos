@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/authz"
+	"latere.ai/x/pkg/bearer"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
@@ -731,6 +732,174 @@ func TestFireIsAskedOfTheAuthorizer(t *testing.T) {
 	}
 	if denied := f.fired("alice", "thread", f.envelope("3", "issue.edited", "o/r#1", "x"), store.OutcomeRefused); denied.Reason == "" {
 		t.Fatalf("a refused send: %+v", denied)
+	}
+}
+
+// keyTokens verifies as tokens does, and a bearer of key:<sub> as a
+// token minted from a key of sub's that grants trigger.fire alone, the
+// reach a CI job is given to fire a trigger.
+type keyTokens struct{}
+
+// fireOnly is the authorization_details claim of a key:<sub> bearer.
+var fireOnly = []any{map[string]any{"type": authz.GrantType, "actions": []any{authorizer.Core + ":" + authorizer.ActionTriggerFire}}}
+
+func (keyTokens) Authenticate(r *http.Request) (auth.Caller, error) {
+	tok, _ := bearer.FromRequest(r)
+	sub, keyed := strings.CutPrefix(tok, "key:")
+	if !keyed {
+		return tokens{}.Authenticate(r)
+	}
+	plain := r.Clone(r.Context())
+	plain.Header.Set("Authorization", "Bearer "+sub)
+	c, err := tokens{}.Authenticate(plain)
+	if err != nil {
+		return auth.Caller{}, err
+	}
+	c.Claims["token_use"], c.Claims["authorization_details"] = authz.TokenUsePAT, fireOnly
+	return c, nil
+}
+
+// TestAFiringNamesTheKeyThatFiredIt: a fire whose own token a key minted
+// asks its session's create with fired_by, that token's token_use and
+// authorization_details as the request carried them, a field of the
+// resource while the create's claims stay the owner's context alone, so
+// a key that grants trigger.fire and nothing else still fires. A person's
+// own sign-in, a schedule, and a held firing whose session the trigger
+// starts later name no key, a held one started by a key's later fire
+// among them, and so does a failed key's firing that a sign-in fires
+// again, since no firing keeps a token's grants.
+func TestAFiringNamesTheKeyThatFiredIt(t *testing.T) {
+	f := newTriggerFixture(t, func(o *Options) { o.Verifier = keyTokens{} })
+	var mu sync.Mutex
+	var creates []authz.Request
+	unavailable := false
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionCreate {
+			mu.Lock()
+			creates = append(creates, req)
+			down := unavailable
+			mu.Unlock()
+			if down {
+				return authz.Decision{}, &authz.Unavailable{URL: "http://authz", Err: errors.New("connection refused")}
+			}
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	// asked is the one create asked since the last call, its fired_by as
+	// JSON, "" for none, after its claims are checked to be the owner's
+	// context alone.
+	asked := func(what string) string {
+		t.Helper()
+		mu.Lock()
+		got := creates
+		creates = nil
+		mu.Unlock()
+		if len(got) != 1 {
+			t.Fatalf("%s asked %d creates", what, len(got))
+		}
+		claims, err := json.Marshal(got[0].Claims)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(claims) != `{"org_id":""}` {
+			t.Fatalf("%s asked the create with the claims %s", what, claims)
+		}
+		v, ok := got[0].Resource.Fields["fired_by"]
+		if !ok {
+			return ""
+		}
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	key, err := json.Marshal(map[string]any{"token_use": authz.TokenUsePAT, "authorization_details": fireOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey := string(key)
+
+	f.applyTrigger("alice", "triage", eventSpec("policy: continue"))
+	first := f.fired("key:alice", "triage", f.envelope("1", "issue.opened", "o/r#1", "Crash"), store.OutcomeStarted)
+	if got := asked("a key's firing"); got != byKey {
+		t.Fatalf("a key's firing asked fired_by %s, want %s", got, byKey)
+	}
+	ask := func(id, call string) {
+		f.runnerAppends(id, f.status(session.StatusRunning, ""),
+			f.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: call, Name: "bash", Input: json.RawMessage(`{}`), Verdict: "ask"}),
+			f.status(session.StatusIdle, session.StopToolConfirmation))
+	}
+	end := func(id string) {
+		t.Helper()
+		if a := f.do(http.MethodPost, "/v1/sessions/"+id+"/end", "alice", `{"reason":"canceled"}`); a.status != http.StatusOK {
+			t.Fatalf("end: %d %s", a.status, a.body)
+		}
+	}
+
+	// A key's firing held while the person is asked, whose session ends:
+	// the key's next fire starts the held one's session first, which
+	// names no key, and its own firing continues that session.
+	ask(first.SessionID, "t1")
+	held := f.fired("key:alice", "triage", f.envelope("2", "issue.edited", "o/r#1", "More"), store.OutcomeHeld)
+	end(first.SessionID)
+	f.fired("key:alice", "triage", f.envelope("3", "issue.edited", "o/r#1", "Again"), store.OutcomeContinued)
+	if got := asked("a held firing a key's fire starts"); got != "" {
+		t.Fatalf("a held firing started under a key's fire asked fired_by %s", got)
+	}
+	var started firing
+	for _, x := range f.firings("alice", "triage") {
+		if x.ID == held.ID {
+			started = x
+		}
+	}
+	if started.Outcome != store.OutcomeStarted || started.SessionID == first.SessionID {
+		t.Fatalf("the held firing: %+v", started)
+	}
+	// The minute loop starts a held firing's session with no key.
+	ask(started.SessionID, "t2")
+	f.fired("key:alice", "triage", f.envelope("4", "issue.edited", "o/r#1", "Later"), store.OutcomeHeld)
+	end(started.SessionID)
+	f.tick()
+	if got := asked("a held firing the minute loop starts"); got != "" {
+		t.Fatalf("a held firing the minute loop started asked fired_by %s", got)
+	}
+
+	// A person's own sign-in names no key.
+	f.applyTrigger("alice", "fresh", eventSpec("")+", skipIfActive: false")
+	f.fired("alice", "fresh", f.envelope("1", "issue.opened", "o/r#9", "x"), store.OutcomeStarted)
+	if got := asked("a sign-in's firing"); got != "" {
+		t.Fatalf("a sign-in's firing asked fired_by %s", got)
+	}
+	// A schedule names none; a key that fires it now names itself.
+	f.applyTrigger("alice", "hourly", "schedule: '@hourly', skipIfActive: false, session: {message: 'Hour.'}")
+	f.clock.Advance(time.Hour)
+	f.tick()
+	if got := asked("a schedule's firing"); got != "" {
+		t.Fatalf("a schedule's firing asked fired_by %s", got)
+	}
+	f.fired("key:alice", "hourly", "", store.OutcomeStarted)
+	if got := asked("a key's manual firing"); got != byKey {
+		t.Fatalf("a key's manual firing asked fired_by %s", got)
+	}
+	// A key's firing that failed and is fired again names the token of
+	// the fire that runs it: a sign-in's none.
+	mu.Lock()
+	unavailable = true
+	mu.Unlock()
+	failing := f.envelope("2", "issue.opened", "o/r#10", "x")
+	if a, out := f.fire("key:alice", "fresh", failing); a.status != http.StatusServiceUnavailable || out.Outcome != store.OutcomeFailed {
+		t.Fatalf("a failed firing: %d %s", a.status, a.body)
+	}
+	if got := asked("a key's failed firing"); got != byKey {
+		t.Fatalf("a key's failed firing asked fired_by %s", got)
+	}
+	mu.Lock()
+	unavailable = false
+	mu.Unlock()
+	f.fired("alice", "fresh", failing, store.OutcomeStarted)
+	if got := asked("a sign-in's rerun of a key's firing"); got != "" {
+		t.Fatalf("a sign-in's rerun of a key's firing asked fired_by %s", got)
 	}
 }
 

@@ -212,6 +212,10 @@ type creation struct {
 	// triggerID and firingID name the trigger and the firing that start
 	// the session, empty for any other.
 	triggerID, firingID string
+	// firedBy is the key whose token fired the trigger, auth.FiredBy of
+	// the fire request, nil for none. Only the trigger engine sets it; no
+	// request body is read into a creation's fields.
+	firedBy map[string]any
 	// fork is the session and the log a fork continues, nil for any
 	// other create (spec 017).
 	fork *forkOrigin
@@ -336,9 +340,13 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		fields["metadata"] = metadataField(in.metadata)
 	}
 	// A trigger's session names the trigger and the firing that start it
-	// (spec 022).
+	// (spec 022), and fired_by, the key whose token fired it when one did
+	// (spec 077), which the authorizer holds the session to.
 	if in.triggerID != "" {
 		fields["trigger_id"], fields["firing_id"] = in.triggerID, in.firingID
+		if in.firedBy != nil {
+			fields["fired_by"] = in.firedBy
+		}
 	}
 	// A fork is asked about the session it forks, with that session's
 	// owner and the fork point beside the new session's fields, and the

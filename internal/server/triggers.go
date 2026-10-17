@@ -288,7 +288,9 @@ func renderFiring(f store.Firing) (firing, error) {
 // fireTrigger is POST /triggers/{ref}/fire: an event trigger takes one
 // envelope, and a schedule trigger an empty body, which fires it now. It
 // answers the firing, a redelivery's as first recorded, with 503 for a
-// failed one, which a redelivery runs again.
+// failed one, which a redelivery runs again. A session the firing starts
+// names the key the caller's token was minted from, when one was (spec
+// 077).
 func (c *call) fireTrigger() error {
 	t, err := c.trigger(c.r.PathValue("ref"), authorizer.ActionTriggerFire)
 	if err != nil {
@@ -322,7 +324,7 @@ func (c *call) fireTrigger() error {
 			return refuse(CodeInvalidRequest, "%v", err)
 		}
 	}
-	f, err := c.s.triggers.Fire(c.r.Context(), t, env)
+	f, err := c.s.triggers.Fire(c.r.Context(), t, env, auth.FiredBy(c.caller))
 	if errors.Is(err, triggers.ErrSuspended) {
 		return refuse(CodeConflict, "the trigger %s is suspended and fires nothing", t.Name)
 	}
@@ -396,7 +398,7 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 		return session.Session{}, err
 	}
 	in := creation{agent: st.Spec.Agent, title: st.Title, message: st.Message, resources: st.Resources,
-		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID}
+		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID, firedBy: st.FiredBy}
 	ss := st.Spec.Session
 	if ss.EndOnIdle != nil {
 		in.endOnIdle = *ss.EndOnIdle

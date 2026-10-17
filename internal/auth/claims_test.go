@@ -4,6 +4,7 @@
 package auth_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"latere.ai/x/topos/internal/auth"
@@ -28,6 +29,37 @@ func TestTheContextIsTheTokensOrganization(t *testing.T) {
 		}
 		if kept := auth.TriggerClaims(caller); len(kept) != 1 || kept["org_id"] != c.want {
 			t.Errorf("%v: a trigger keeps %v", c.claims, kept)
+		}
+	}
+}
+
+// TestFiredByIsTheKeysClaimsVerbatim: the fired_by of a firing is the
+// fire request's token_use and authorization_details claims as the
+// token carried them, the grants left out when the token names none, and
+// nil for a token whose token_use is empty or not a string, which no key
+// minted. Any token_use but empty passes, since what it means is the
+// authorizer's.
+func TestFiredByIsTheKeysClaimsVerbatim(t *testing.T) {
+	grants := []any{map[string]any{"type": "latere-authz", "actions": []any{"topos:trigger.fire"}}}
+	for _, c := range []struct {
+		claims map[string]any
+		want   string
+	}{
+		{map[string]any{"sub": "alice", "org_id": "acme", "token_use": "pat", "authorization_details": grants}, `{"authorization_details":[{"actions":["topos:trigger.fire"],"type":"latere-authz"}],"token_use":"pat"}`},
+		{map[string]any{"token_use": "sak", "authorization_details": "everything"}, `{"authorization_details":"everything","token_use":"sak"}`},
+		{map[string]any{"token_use": "pat"}, `{"token_use":"pat"}`},
+		{map[string]any{"token_use": "elsewhere", "authorization_details": nil}, `{"authorization_details":null,"token_use":"elsewhere"}`},
+		{map[string]any{"token_use": "", "authorization_details": grants}, `null`},
+		{map[string]any{"token_use": 7, "authorization_details": grants}, `null`},
+		{map[string]any{"sub": "alice", "org_id": "acme"}, `null`},
+		{nil, `null`},
+	} {
+		got, err := json.Marshal(auth.FiredBy(auth.Caller{Subject: "https://issuer.test|alice", Claims: c.claims}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != c.want {
+			t.Errorf("%v: %s, want %s", c.claims, got, c.want)
 		}
 	}
 }

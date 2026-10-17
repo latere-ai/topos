@@ -148,7 +148,7 @@ func (r *rig) env(id, resource string) *trigger.Envelope {
 
 func (r *rig) fire(t store.Trigger, env *trigger.Envelope, outcome string) store.Firing {
 	r.t.Helper()
-	f, err := r.engine.Fire(r.t.Context(), t, env)
+	f, err := r.engine.Fire(r.t.Context(), t, env, nil)
 	if err != nil || f.Outcome != outcome {
 		r.t.Fatalf("fire: %+v, %v; want %s", f, err, outcome)
 	}
@@ -174,7 +174,7 @@ func TestTwoEnginesStartOneSessionPerKey(t *testing.T) {
 	outcomes := make(chan string, 16)
 	for i := range 16 {
 		wg.Go(func() {
-			f, err := engines[i%2].Fire(t.Context(), tr, r.env(fmt.Sprint(i), "o/r#1"))
+			f, err := engines[i%2].Fire(t.Context(), tr, r.env(fmt.Sprint(i), "o/r#1"), nil)
 			if err != nil {
 				t.Error(err)
 			}
@@ -309,18 +309,18 @@ func TestAStoredTriggerThatNoLongerReadsIsAnError(t *testing.T) {
 	r := newRig(t)
 	ctx := t.Context()
 	bad := store.Trigger{ID: session.NewID(session.PrefixTrigger), Name: "bad", Owner: "alice", Version: 1, Digest: "d", Doc: []byte("{")}
-	if _, err := r.engine.Fire(ctx, bad, nil); err == nil {
+	if _, err := r.engine.Fire(ctx, bad, nil, nil); err == nil {
 		t.Fatal("a trigger whose document does not read fired")
 	}
 	tpl := r.put("tpl", strings.Replace(eventContinue, "{{event.resource}}", "{{nope", 1))
-	if _, err := r.engine.Fire(ctx, tpl, r.env("1", "o/r#1")); err == nil {
+	if _, err := r.engine.Fire(ctx, tpl, r.env("1", "o/r#1"), nil); err == nil {
 		t.Fatal("a template that does not parse rendered")
 	}
-	if _, err := r.engine.Fire(ctx, tpl, nil); err == nil {
+	if _, err := r.engine.Fire(ctx, tpl, nil, nil); err == nil {
 		t.Fatal("an event trigger fired with no event")
 	}
 	sched := r.put("sched", `{"agent":"a","schedule":"@hourly","timeZone":"UTC","session":{"message":"x","endOnIdle":true},"skipIfActive":true,"maxAge":"1h","suspend":false}`)
-	if _, err := r.engine.Fire(ctx, sched, r.env("1", "o/r#1")); err == nil {
+	if _, err := r.engine.Fire(ctx, sched, r.env("1", "o/r#1"), nil); err == nil {
 		t.Fatal("a schedule trigger took an event")
 	}
 	// A zone the build no longer knows leaves the schedule due.
@@ -339,7 +339,7 @@ func TestAStoredTriggerThatNoLongerReadsIsAnError(t *testing.T) {
 		t.Fatalf("a schedule that never fires: %v, %v", next, err)
 	}
 	late := r.put("late", strings.Replace(eventContinue, `"maxAge":"1h"`, `"maxAge":"x"`, 1))
-	if _, err := r.engine.Fire(ctx, late, r.env("1", "o/r#1")); err == nil {
+	if _, err := r.engine.Fire(ctx, late, r.env("1", "o/r#1"), nil); err == nil {
 		t.Fatal("a maxAge that does not parse")
 	}
 }
@@ -459,11 +459,11 @@ func TestTheNewPolicyInTheEngine(t *testing.T) {
 		t.Fatalf("counts %+v, %v", got.Counts, err)
 	}
 	paused := r.put("paused", strings.Replace(eventNew, `"suspend":false`, `"suspend":true`, 1))
-	if _, err := r.engine.Fire(ctx, paused, r.env("1", "o/a")); !errors.Is(err, ErrSuspended) {
+	if _, err := r.engine.Fire(ctx, paused, r.env("1", "o/a"), nil); !errors.Is(err, ErrSuspended) {
 		t.Fatalf("a suspended trigger: %v", err)
 	}
 	store := r.put("store", strings.Replace(eventNew, `{"type":"repository","url":"https://git.example/{{event.resource}}.git","ref":"{{event.payload.n}}"}`, `{"type":"memoryStore","memoryStore":"mem_01J9Z3Q4W8KX6T0M2V5N7R1B3C","access":"readOnly"}`, 1))
-	if _, err := r.engine.Fire(ctx, store, r.env("1", "o/a")); err == nil {
+	if _, err := r.engine.Fire(ctx, store, r.env("1", "o/a"), nil); err == nil {
 		t.Fatal("a memory store rendered")
 	}
 }
@@ -664,7 +664,7 @@ func TestAStoreThatFailsFailsTheFiring(t *testing.T) {
 			sched := r.put("hourly", `{"agent":"a","schedule":"@hourly","timeZone":"UTC","session":{"message":"x","endOnIdle":true},"skipIfActive":false,"maxAge":"1h","suspend":false}`)
 			// A session of each trigger to find, one waiting for a person
 			// with a firing held behind it, and one gone.
-			first, err := e.Fire(ctx, cont, r.env("1", "o/r#1"))
+			first, err := e.Fire(ctx, cont, r.env("1", "o/r#1"), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -684,10 +684,10 @@ func TestAStoreThatFailsFailsTheFiring(t *testing.T) {
 				}
 			}
 			waitOn(first.SessionID)
-			if _, err := e.Fire(ctx, cont, r.env("2", "o/r#1")); err != nil {
+			if _, err := e.Fire(ctx, cont, r.env("2", "o/r#1"), nil); err != nil {
 				t.Fatal(err)
 			}
-			gone, err := e.Fire(ctx, fresh, r.env("1", "o/a"))
+			gone, err := e.Fire(ctx, fresh, r.env("1", "o/a"), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -698,10 +698,10 @@ func TestAStoreThatFailsFailsTheFiring(t *testing.T) {
 			r.clock.Advance(time.Hour)
 			var errs []error
 			for _, call := range []func() error{
-				func() error { _, err := e.Fire(ctx, cont, r.env("3", "o/r#1")); return err },
-				func() error { _, err := e.Fire(ctx, fresh, r.env("2", "o/a")); return err },
-				func() error { _, err := e.Fire(ctx, fresh, r.env("3", "x/y")); return err },
-				func() error { _, err := e.Fire(ctx, sched, nil); return err },
+				func() error { _, err := e.Fire(ctx, cont, r.env("3", "o/r#1"), nil); return err },
+				func() error { _, err := e.Fire(ctx, fresh, r.env("2", "o/a"), nil); return err },
+				func() error { _, err := e.Fire(ctx, fresh, r.env("3", "x/y"), nil); return err },
+				func() error { _, err := e.Fire(ctx, sched, nil, nil); return err },
 				func() error { return e.Tick(ctx) },
 			} {
 				errs = append(errs, call())
