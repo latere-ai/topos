@@ -64,6 +64,13 @@ var SourceRule = fmt.Sprintf("A file may instead be {\"name\", \"source\": {\"ow
 	"it is then kept as a data file is, and its record names source as the message named it. A source counts among the message's files and its attachments.",
 	MaxAttachmentName, MaxSourcePath, CodeAttachmentSourceNotFound, MaxSourceBytes, CodeAttachmentTooLarge, CodeFilesUnavailable)
 
+// InlineRule is the send and fork routes' sentence on a text file the
+// model reads in its request (spec 079).
+var InlineRule = fmt.Sprintf("A file of a text/* type, application/json, application/xml, application/yaml or application/x-yaml, or whose name ends with .md, .txt, .csv, .tsv, .json, .yaml, .yml or .xml, "+
+	"that is UTF-8 without a NUL and at most %d bytes is recorded inline: true, in the message's order while its inline files stay within %d bytes together, a file kept by its blob keeping its own record's mark: "+
+	"the model reads its text in its request, after the line that names the file, read from where the file is kept whenever a request is built and never kept in the log.",
+	session.InlineTextBytes, session.InlineMessageTextBytes)
+
 // MaxAnswers bounds a message's answers in bytes (spec 063).
 const MaxAnswers = 512
 

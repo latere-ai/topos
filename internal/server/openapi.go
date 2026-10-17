@@ -379,7 +379,7 @@ var opDescriptions = map[string]string{
 		"a file the files service refuses for its size is attachment_too_large and any other failure files_unavailable, and the message is then not appended; "+
 		"the runner writes it at that path in the working directory when the session's machine opens, or before the next step when it is open, and the model reads the paths in the message. "+
 		"An image reaches a model whose figures say it takes images, and is a note that it cannot see it otherwise. An image or a file past its limit is attachment_too_large; the body is at most %d bytes. "+
-		SourceRule+" "+
+		SourceRule+" "+InlineRule+" "+
 		"The authorizer's allow of a message, a confirmation or a result may name another model or another reasoning level than the session runs, an empty level being the agent's own: "+
 		"session.model_changed {by, old, new}, each {name, via, reasoning, route}, is then appended straight before the event, its by the service {subject: %s, kind: service} and not the sender, "+
 		"the session's model is the new one with the name it was asked by as via, and the turn the event starts runs on it at the new level. A turn already running keeps its model and its level, "+
