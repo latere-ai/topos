@@ -1,0 +1,175 @@
+---
+title: "Rollouts: one call runs N unattended sessions of one agent version on one task, with the model and reasoning set at create, the machine named, checks run in each machine before it is released, evidence kept in each session's own folder, every request on Keys the installation's authorizer issues with the rollout's labels, sessions left out of the default list, and one report and one cancel for the whole set"
+status: drafted
+track: core
+depends_on: [003-manifest.md, 004-session-log.md, 008-tools.md, 009-machines.md, 015-api.md, 025-task-suite.md, 049-reasoning.md, 068-a-sessions-files-in-a-files-store.md, 073-a-working-directory-kept-in-the-sessions-folder.md, 075-a-file-a-session-reads-and-cannot-change.md]
+affects: [api/openapi.yaml, internal/server/, session/, runner/, machine/, internal/filestore/, test/tasks/, docs/api.md]
+effort: large
+created: 2026-10-17
+updated: 2026-10-17
+author: changkun
+---
+
+# Rollouts
+
+## Overview
+
+A rollout runs one agent version on one task N times: N sessions, each
+unattended, each in its own machine, each ending when its one turn
+ends. It is the unit an evaluation or a training loop asks for, and it
+is the caller that open question 4 of the core's plan, an outcome and
+grader primitive, was waiting for.
+
+The first caller is [Examen](https://github.com/latere-ai/examen), the
+open core for experiments on agents. Its execution spec (Examen spec
+005) lists fourteen requirements, R1 to R14, that its `topos` executor
+needs; this spec answers each. Examen owns the experiment, the grading
+of finished work and the statistics. Topos owns running the sessions,
+and with this spec, running a task's checks in the machine the work was
+done in.
+
+## Current state
+
+Everything a rollout is made of exists for one session at a time:
+agent versions with digests, `attended: false`, `end_on_idle`,
+`metadata` (at most 32 pairs, listable by `metadata.<key>=<value>`),
+`budget.max_cost_usd_micro`, `limits`, repositories at a commit,
+`Idempotency-Key` on every `POST`, the event log and its stream,
+`model.request` with usage and cost, `session.model_changed`, per-session
+Lux keys from the installation's authorizer, and a session folder in an
+Arca-compatible files API (spec 068), which holds `attachments/`,
+`results/<turn>/` and, since spec 073, `work/`. A caller can approximate
+a rollout today by creating sessions one by one and finding them by
+metadata, and Examen's executor does that until this spec is built.
+
+What is missing: a create for N, a parallelism bound, a model set at
+create rather than by `PATCH` after it, tool narrowing, a machine named
+by the caller, an Arca workspace, a step bound, checks, evidence
+recorded with its digests, the rollout's labels on its sessions' Keys,
+the Lux request id on each request, the image digest on
+`session.machine` (`AttachedMachine` in `session/event.go` names a
+kind, an id and an environment, and no image), a rollout id on each
+session with the session list leaving them out by default, one report
+and one cancel.
+
+## Design
+
+### The resource
+
+`POST /v1/rollouts` creates a rollout; `GET /v1/rollouts/{id}` reports
+it and every session (R12); `POST /v1/rollouts/{id}/parallelism`
+changes its bound (R2); `POST /v1/rollouts/{id}/cancel` stops it, or
+named sessions of it (R13). The four routes ask the authorizer
+`rollout.create`, `rollout.read`, `rollout.update` and `rollout.cancel`.
+A rollout belongs to the subject that created it, and every question
+the authorizer is asked about it or its sessions carries that subject,
+as a session's do.
+
+```
+POST /v1/rollouts
+Idempotency-Key: <caller key>
+{
+  "agent": "sha256:...",                 // R1: the version digest
+  "n": 20,
+  "parallelism": 8,                      // R2
+  "model": {"name": "...", "reasoning": "high"},   // R3
+  "tools": ["read", "edit", "bash"],     // R4: a subset of the version's
+  "machine": {"image": "sha256:...", "resources": {...}, "network": {...}},  // R5
+  "message": "the task's instruction",
+  "repositories": [{"url": "...", "ref": "<full commit>"}],
+  "workspace": {"arca": {"space": "...", "path": "...", "digest": "sha256:..."}},  // R6
+  "limits": {"turn_timeout": "30m", "max_age": "35m", "max_steps": 200},  // R7
+  "checks": {                            // R8
+    "files": {"space": "...", "path": "...", "digest": "sha256:..."},
+    "commands": [{"name": "tests", "command": ["./run-tests"], "workdir": "."}],
+    "timeout": "10m",
+    "stdout_bytes": 65536
+  },
+  "evidence": {"paths": ["report.md"]},  // R9
+  "labels": {"examen.experiment": "exp_...", "examen.cell": "cel_..."},  // R10
+  "sessions": [{"index": 0, "trial": "tri_...", "metadata": {...}}, ...]
+}
+```
+
+### Answers to R1 to R14
+
+| | Requirement | Design |
+|---|---|---|
+| R1 | One call creates N sessions of one version named by digest, idempotent for the rollout's life, unattended, one turn each, no session waits for a person | `POST /v1/rollouts` as above. The `Idempotency-Key` is held for the rollout's life rather than 24 hours: the same key and body answer the existing rollout, other content is `409 idempotency_conflict`. Each session is created with `attended: false` and `end_on_idle: true`, and carries `rollout`, its rollout's id, on its resource and in its record. A tool call that would wait for `tool_confirmation` is refused at once as a person's deny would be, and the refusal is in the log |
+| R2 | Parallelism, raised and lowered while it runs | At most `parallelism` sessions are running; the rest are `pending` and hold no machine. Lowering it lets running sessions finish and starts no new one until the count is below the bound |
+| R3 | Model and reasoning set at create, run as named | `model` overrides the version's from the first request and is recorded on each session; the version and its digest are unchanged. An authorizer that would answer another model refuses the rollout with `model_not_allowed`, never substitutes, and no session changes model mid-turn |
+| R4 | Tool narrowing | `tools` must be a subset of the version's; a name outside it is `400 unknown_tool`. A tool outside the subset is not offered to the model |
+| R5 | The machine | `machine` names the Cella sandbox template by image digest, resources and network policy, in place of the agent's machine. The authorizer may refuse a template; it may not change one |
+| R6 | An Arca workspace | `workspace.arca` names a folder and its content digest, copied into the working directory before the first step. A digest mismatch fails the session before the agent starts with `workspace_digest_mismatch` |
+| R7 | A step bound | `limits.max_steps` bounds the model responses of the session's own thread. Reaching it ends the turn with stop reason `step_limit`, distinct from `turn_limit`, the wall-clock deadline |
+| R8 | Checks in the machine | After the turn ends: every process the turn started is stopped; the checks' files are delivered read-only outside the working directory (as spec 075 delivers a read-only attachment); the session's log is written into the machine as JSONL and the final message as a file; the commands run in order in the working directory the agent left, without the session's model key in their environment, under `checks.timeout` in total. Each check's exit code, the first `stdout_bytes` of stdout, the tail of stderr, its duration, and whether it started, timed out or was not run are recorded as a `check.ended` event. The machine is released after the last check. This is the core's one check runner: spec 025's suite runs its checks through it (below) |
+| R9 | Evidence | The evidence stays in the session's own folder (spec 073); nothing is copied to a folder the caller names. The session writes once, with its own token, under `evidence/` of its folder: the log as JSONL, the final message, the named `paths` as the turn left them, read before the checks run, and each check's whole stdout and stderr. It records each object's path in its folder, SHA-256 and size in an `evidence.written` event, which the report carries. A failed write fails the session with `evidence_write_failed` |
+| R10 | The Keys | The rollout's sessions get their Keys from the installation's authorizer, as every session does, and each Key carries the rollout's `labels` and the session's. The authorizer decides which Budgets the Keys list; in Latere they list the experiment's Budget beside the caps every session has (platform spec 214). The caller names no Budget. The report names each session's Key ids. No session runs on a Key that allows an unpriced model |
+| R11 | The request join | Each `model.request` records the `Lux-Request-Id` of the response it read |
+| R12 | One report | `GET /v1/rollouts/{id}` answers every session: id, trial and index, status, stop reason, `session.error` code, Key ids, the times its turn and its checks started and ended, check results, evidence objects with their paths, digests and sizes. A `?since=<cursor>` form returns only changed sessions |
+| R13 | Cancel | `POST /v1/rollouts/{id}/cancel` interrupts every running turn and ends its session `canceled`, starts no pending one, and stops the rollout's Keys at once. With `{"sessions": [...]}` it stops those alone |
+| R14 | The machine on the record | `session.machine` names the image digest the machine ran: `AttachedMachine` gains `image`, the digest, beside `kind`, `id` and `environment`, so a session read later has a pinned environment |
+
+### What stays the same, and the session list
+
+A rollout's sessions are ordinary sessions: their logs, streams, files
+and costs read as any session's do, and an operator can inspect one by
+id. Forks of a rollout session are allowed and are not part of the
+rollout.
+
+They are left out of the session list by default, so a person's list
+of conversations is not filled with trials. `GET /v1/sessions` gains a
+`rollout` parameter, as `archived` and `trigger` are: absent, it leaves
+out every session that carries a rollout id; a rollout's id lists that
+rollout's sessions; `any` lists both. A list by `metadata.project` or
+any other filter keeps the same default.
+
+### The task suite and one check runner
+
+Spec 025's task suite and release bar are the core's own evaluation,
+and the Examen design moves them onto Examen once its bars exist: the
+tasks become an Examen suite and the release check calls an Examen bar.
+This spec does not depend on that move.
+
+There is one check runner either way, R8's. Today `tasks.Run`
+(`test/tasks/run.go`) drives one session at a time on the test's host,
+and `tasks.Evaluate` (`test/tasks/check.go`) evaluates its checks there:
+the assertions of a `check.yaml` and a `check.sh` script. Once R8 is
+built, `tasks.Run` submits each task as a rollout and becomes R8's
+caller: a `check.sh` is an R8 command, and a `check.yaml` is evaluated
+by a command R8 runs in the machine, which has the log and the final
+message as files.
+
+## Not in this spec
+
+Grading finished work, comparing results and any statistic: Examen's.
+Running many copies of an agent program packaged as an image: Cella's
+SandboxSet (Cella spec 020).
+
+## Acceptance criteria
+
+- One `POST /v1/rollouts` with `n: 20` creates twenty sessions of the
+  named version digest, each carrying the rollout's id, and a repeat
+  with the same key and body answers the same rollout after 24 hours.
+- With `parallelism: 4`, no more than four sessions run at once, and
+  raising it to 8 starts four more without waiting for one to end.
+- Every request of every session uses the rollout's model and reasoning;
+  an authorizer that answers another model refuses the create.
+- A tool outside `tools` is never offered; a name outside the version's
+  tools is refused at create.
+- A session reaching `max_steps` ends with stop reason `step_limit`.
+- A check sees the working directory as the agent left it, has no model
+  key in its environment, and cannot change the checks' files; its exit
+  code and stdout head are in a `check.ended` event.
+- Evidence objects land under `evidence/` of each session's own folder
+  with digests and sizes matching their content, the report names each,
+  and a failed write fails that session with `evidence_write_failed`.
+- Every model request of a rollout is made with a Key the authorizer
+  issued carrying the rollout's labels, and each `model.request` carries
+  its `Lux-Request-Id`.
+- `GET /v1/sessions` leaves rollout sessions out, and `rollout=<id>`
+  lists that rollout's.
+- Cancel ends every running session `canceled` and starts no pending one.
+- `session.machine` of a rollout session names the image digest.
+- The task suite's checks run through R8, and no second check runner
+  remains.
