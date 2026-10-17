@@ -22,7 +22,7 @@ grader primitive, was waiting for.
 
 The first caller is [Examen](https://github.com/latere-ai/examen), the
 open core for experiments on agents. Its execution spec (Examen spec
-005) lists fourteen requirements, R1 to R14, that its `topos` executor
+005) lists fifteen requirements, R1 to R15, that its `topos` executor
 needs; this spec answers each. Examen owns the experiment, the grading
 of finished work and the statistics. Topos owns running the sessions,
 and with this spec, running a task's checks in the machine the work was
@@ -44,9 +44,11 @@ metadata, and Examen's executor does that until this spec is built.
 
 What is missing: a create for N, a parallelism bound, a model set at
 create rather than by `PATCH` after it, tool narrowing, a machine named
-by the caller, an Arca workspace, a step bound, checks, evidence
-recorded with its digests, the rollout's labels on its sessions' Keys,
-the Lux request id on each request, the image digest on
+by the caller, an Arca workspace, input files, a step bound, checks
+with the task's references delivered only to them, evidence recorded
+with its digests, outputs kept as files and directory archives, a
+Budget the rollout names with the rollout's labels on its sessions'
+Keys, the Lux request id on each request, the image digest on
 `session.machine` (`AttachedMachine` in `session/event.go` names a
 kind, an id and an environment, and no image), a rollout id on each
 session with the session list leaving them out by default, one report
@@ -63,7 +65,9 @@ named sessions of it (R13). The four routes ask the authorizer
 `rollout.create`, `rollout.read`, `rollout.update` and `rollout.cancel`.
 A rollout belongs to the subject that created it, and every question
 the authorizer is asked about it or its sessions carries that subject,
-as a session's do.
+as a session's do. `rollout.create`'s resource carries the rollout's
+`budget` and `labels`, so an installation's authorizer can hold a
+rollout to the experiment it belongs to (platform spec 214).
 
 ```
 POST /v1/rollouts
@@ -78,37 +82,50 @@ Idempotency-Key: <caller key>
   "message": "the task's instruction",
   "repositories": [{"url": "...", "ref": "<full commit>"}],
   "workspace": {"arca": {"space": "...", "path": "...", "digest": "sha256:..."}},  // R6
+  "inputs": {"space": "...", "path": "...",              // R15
+             "files": [{"name": "invoice.pdf", "sha256": "..."}]},
   "limits": {"turn_timeout": "30m", "max_age": "35m", "max_steps": 200},  // R7
   "checks": {                            // R8
     "files": {"space": "...", "path": "...", "digest": "sha256:..."},
-    "commands": [{"name": "tests", "command": ["./run-tests"], "workdir": "."}],
+    "reference": {"space": "...", "path": "...",
+                  "files": [{"name": "expected", "sha256": "..."}]},
+    "commands": [{"name": "tests", "command": ["./run-tests"], "workdir": ".",
+                  "env": {"MODE": "strict"}},
+                 {"name": "fields", "command": ["/examen-compare", "json_fields", "{...}"],
+                  "image": "sha256:..."}],
     "timeout": "10m",
     "stdout_bytes": 65536
   },
-  "evidence": {"paths": ["report.md"]},  // R9
+  "evidence": {                          // R9
+    "paths": ["report.md"],
+    "outputs": ["fields.json", "workspace/"],
+    "limits": {"max_files": 10000, "max_bytes": 1073741824, "file_keep_max_bytes": 16777216}
+  },
+  "budget": "eb-...",                    // R10: the Lux Budget the Keys draw on
   "labels": {"examen.experiment": "exp_...", "examen.cell": "cel_..."},  // R10
   "sessions": [{"index": 0, "trial": "tri_...", "metadata": {...}}, ...]
 }
 ```
 
-### Answers to R1 to R14
+### Answers to R1 to R15
 
 | | Requirement | Design |
 |---|---|---|
 | R1 | One call creates N sessions of one version named by digest, idempotent for the rollout's life, unattended, one turn each, no session waits for a person | `POST /v1/rollouts` as above. The `Idempotency-Key` is held for the rollout's life rather than 24 hours: the same key and body answer the existing rollout, other content is `409 idempotency_conflict`. Each session is created with `attended: false` and `end_on_idle: true`, and carries `rollout`, its rollout's id, on its resource and in its record. A tool call that would wait for `tool_confirmation` is refused at once as a person's deny would be, and the refusal is in the log |
-| R2 | Parallelism, raised and lowered while it runs | At most `parallelism` sessions are running; the rest are `pending` and hold no machine. Lowering it lets running sessions finish and starts no new one until the count is below the bound |
+| R2 | Parallelism, raised and lowered while it runs | At most `parallelism` sessions are running; the rest are `pending`, hold no machine, and start in index order. Lowering it lets running sessions finish and starts no new one until the count is below the bound |
 | R3 | Model and reasoning set at create, run as named | `model` overrides the version's from the first request and is recorded on each session; the version and its digest are unchanged. An authorizer that would answer another model refuses the rollout with `model_not_allowed`, never substitutes, and no session changes model mid-turn |
 | R4 | Tool narrowing | `tools` must be a subset of the version's; a name outside it is `400 unknown_tool`. A tool outside the subset is not offered to the model |
 | R5 | The machine | `machine` names the Cella sandbox template by image digest, resources and network policy, in place of the agent's machine. The authorizer may refuse a template; it may not change one |
 | R6 | An Arca workspace | `workspace.arca` names a folder and its content digest, copied into the working directory before the first step. A digest mismatch fails the session before the agent starts with `workspace_digest_mismatch` |
 | R7 | A step bound | `limits.max_steps` bounds the model responses of the session's own thread. Reaching it ends the turn with stop reason `step_limit`, distinct from `turn_limit`, the wall-clock deadline |
-| R8 | Checks in the machine | After the turn ends: every process the turn started is stopped; the checks' files are delivered read-only outside the working directory (as spec 075 delivers a read-only attachment); the session's log is written into the machine as JSONL and the final message as a file; the commands run in order in the working directory the agent left, without the session's model key in their environment, under `checks.timeout` in total. Each check's exit code, the first `stdout_bytes` of stdout, the tail of stderr, its duration, and whether it started, timed out or was not run are recorded as a `check.ended` event. The machine is released after the last check. This is the core's one check runner: spec 025's suite runs its checks through it (below) |
-| R9 | Evidence | The evidence stays in the session's own folder (spec 073); nothing is copied to a folder the caller names. The session writes once, with its own token, under `evidence/` of its folder: the log as JSONL, the final message, the named `paths` as the turn left them, read before the checks run, and each check's whole stdout and stderr. It records each object's path in its folder, SHA-256 and size in an `evidence.written` event, which the report carries. A failed write fails the session with `evidence_write_failed` |
-| R10 | The Keys | The rollout's sessions get their Keys from the installation's authorizer, as every session does, and each Key carries the rollout's `labels` and the session's. The authorizer decides which Budgets the Keys list; in Latere they list the experiment's Budget beside the caps every session has (platform spec 214). The caller names no Budget. The report names each session's Key ids. No session runs on a Key that allows an unpriced model |
+| R8 | Checks in the machine | After the turn ends: every process the turn started is stopped; the checks' files (`checks.files`, a pinned Arca folder) are delivered read-only outside the working directory (as spec 075 delivers a read-only attachment); so is each command's `image`, when it names one, mounted read-only with its `command[0]` run from that mount; and so are the task's references (`checks.reference`, an Arca folder whose files each carry their SHA-256), delivered at `/examen/reference/`, which no process of the turn could read; the session's log is written into the machine as JSONL and the final message as a file; the commands run in order in the working directory the agent left, each with its own `env` and with variables naming where the machine holds the working directory, the log, the final message, the inputs, `/examen/outputs/`, the references, the checks' files and the command's image, under the names Examen spec 006 gives them, without the session's model key in their environment, under `checks.timeout` in total. Each check's exit code, the first `stdout_bytes` of stdout, the tail of stderr, its duration, and whether it started, timed out or was not run are recorded as a `check.ended` event. The machine is released after the last check. This is the core's one check runner: spec 025's suite runs its checks through it (below) |
+| R9 | Evidence | The evidence stays in the session's own folder (spec 073); nothing is copied to a folder the caller names. The session writes once, with its own token, which acts as the rollout's owner, under `evidence/` of its folder: the log as JSONL, the final message, the named `paths` as the turn left them, the files under `/examen/outputs/` that `evidence.outputs` names, each entry ending in `/` a directory carried as one tar archive, and one output manifest listing every output file, a directory's files each, with its path, size, SHA-256 and whether it was kept, all within `evidence.limits`: a file over `file_keep_max_bytes` is listed by digest and size only, and past `max_files` or `max_bytes` no more files are kept and the manifest records which limit was passed and the files and bytes the outputs held. Outputs are read before the checks run, as the agent left them. The session also keeps each check's whole stdout and stderr. It records each object's path in its folder, SHA-256 and size in an `evidence.written` event, which the report carries. A failed write fails the session with `evidence_write_failed` |
+| R10 | The Budget and the Keys | The rollout names `budget`, the Lux Budget every model request of its sessions and of their machines draws on. The sessions get their Keys from the installation's authorizer, as every session does: each Key lists that Budget and any Budget the installation adds above it, and carries the rollout's `labels` and the session's. An authorizer that will not issue Keys listing the named Budget refuses the rollout. In Latere the Keys also list the wallet, an organization agent's line and the session's own Budget (platform spec 214). The report names each session's Key ids. No session runs on a Key outside that Budget, or on a Key that allows an unpriced model |
 | R11 | The request join | Each `model.request` records the `Lux-Request-Id` of the response it read |
 | R12 | One report | `GET /v1/rollouts/{id}` answers every session: id, trial and index, status, stop reason, `session.error` code, Key ids, the times its turn and its checks started and ended, check results, evidence objects with their paths, digests and sizes. A `?since=<cursor>` form returns only changed sessions |
 | R13 | Cancel | `POST /v1/rollouts/{id}/cancel` interrupts every running turn and ends its session `canceled`, starts no pending one, and stops the rollout's Keys at once. With `{"sessions": [...]}` it stops those alone |
 | R14 | The machine on the record | `session.machine` names the image digest the machine ran: `AttachedMachine` gains `image`, the digest, beside `kind`, `id` and `environment`, so a session read later has a pinned environment |
+| R15 | Input files | The rollout may name `inputs`, an Arca folder whose files, each with its SHA-256, are delivered under `examen/inputs/` of each session's working directory before the first step; a digest that does not match fails the session before the agent starts with `input_digest_mismatch`, a code the report carries, as R6 does for a workspace |
 
 ### What stays the same, and the session list
 
@@ -151,25 +168,35 @@ SandboxSet (Cella spec 020).
 - One `POST /v1/rollouts` with `n: 20` creates twenty sessions of the
   named version digest, each carrying the rollout's id, and a repeat
   with the same key and body answers the same rollout after 24 hours.
-- With `parallelism: 4`, no more than four sessions run at once, and
-  raising it to 8 starts four more without waiting for one to end.
+- With `parallelism: 4`, no more than four sessions run at once,
+  pending sessions start in index order, and raising it to 8 starts
+  four more without waiting for one to end.
 - Every request of every session uses the rollout's model and reasoning;
   an authorizer that answers another model refuses the create.
 - A tool outside `tools` is never offered; a name outside the version's
   tools is refused at create.
 - A session reaching `max_steps` ends with stop reason `step_limit`.
 - A check sees the working directory as the agent left it, has no model
-  key in its environment, and cannot change the checks' files; its exit
-  code and stdout head are in a `check.ended` event.
+  key in its environment, cannot change the checks' files, runs a
+  command that names an `image` from that image's read-only mount, and
+  finds each delivered path under its variable; its exit code and
+  stdout head are in a `check.ended` event.
 - Evidence objects land under `evidence/` of each session's own folder
   with digests and sizes matching their content, the report names each,
   and a failed write fails that session with `evidence_write_failed`.
+- A directory output is kept as one archive with the output manifest; a
+  file over `file_keep_max_bytes` is in the manifest by digest and size
+  alone; past `max_files` or `max_bytes` no more files are kept and the
+  manifest names the limit.
 - Every model request of a rollout is made with a Key the authorizer
-  issued carrying the rollout's labels, and each `model.request` carries
-  its `Lux-Request-Id`.
+  issued listing the rollout's `budget` and carrying the rollout's
+  labels, a rollout whose Budget the authorizer will not list is
+  refused, and each `model.request` carries its `Lux-Request-Id`.
 - `GET /v1/sessions` leaves rollout sessions out, and `rollout=<id>`
   lists that rollout's.
 - Cancel ends every running session `canceled` and starts no pending one.
 - `session.machine` of a rollout session names the image digest.
+- A rollout naming an input folder delivers each file under `examen/inputs/` before the first step, and a file whose digest does not match fails that session `input_digest_mismatch` before the agent starts.
+- A process of the turn cannot read the task's references, which arrive at `/examen/reference/` only after the turn's processes are stopped.
 - The task suite's checks run through R8, and no second check runner
   remains.
