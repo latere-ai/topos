@@ -59,11 +59,13 @@ its blob, without sending the bytes again:
 
 `blob` is the digest the original message's attachment names, and the
 file keeps that message's media type and size; give no `media_type`
-beside it. A new file is sent as `data`, as on a send. An image is a
-content block, which travels in the message itself: send the block as
-the original event holds it. A file with both `data` and `blob`, with
-neither, or a `blob` no message of the session attached is
-`invalid_request`.
+beside it. A new file is sent as `data`, as on a send, or named by its
+`source`, `{"owner": "me", "path": "files/Reports/q3.csv"}`, a file of
+your own files that the server reads with your token when the call is
+made, as on a send. An image is a content block, which travels in the
+message itself: send the block as the original event holds it. A file
+that names more than one of `data`, `blob` and `source`, or none, or a
+`blob` no message of the session attached, is `invalid_request`.
 
 ### When the call is refused
 
@@ -73,6 +75,7 @@ neither, or a `blob` no message of the session attached is
 | `invalid_request` (400) | `before_seq` beside `at_seq`; a message holding nothing; a file as above; a `tree` other than `"new"` |
 | `forbidden` (403) | the installation refused the new session, or refused the message, as it would refuse a create or a send; `details.reason` says why where it may |
 | `not_found` (404) | the caller may not read the session |
+| `attachment_source_not_found` (404) | a file's `source` is not in your files, or you may not read it |
 
 A refused call creates nothing: there is no new session to clean up, and
 the original conversation is unchanged.
