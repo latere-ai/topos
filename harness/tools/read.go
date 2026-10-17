@@ -125,15 +125,48 @@ func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
 	if media := ImageType(head); media != "" {
 		return readImage(ctx, b, c, p, media, fi.Size, br, h)
 	}
+	if kind := documentKind(p); kind != "" && bytes.HasPrefix(head, zipMagic) {
+		return readDocument(ctx, b, c, p, kind, in, br, h)
+	}
 	if bytes.IndexByte(head, 0) >= 0 {
 		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadBinary, prompts.Data{"Path": p}), nil)
 	}
+	return readLines(ctx, b, c, p, in, br, h, "")
+}
+
+// readDocument returns the text of an office document of kind (spec
+// 079) as numbered lines after the line that names its kind, and its
+// meta the file's own digest. A document past ReadMaxDocument bytes, and
+// one whose archive or parts do not read, is answered as a binary file
+// is: the document's text is a reading of the file read offers, and a
+// file it cannot read is the file read cannot show.
+func readDocument(ctx context.Context, b *builtin, c Call, p, kind string, in readInput, br io.Reader, h hash.Hash) (Result, error) {
+	data, err := io.ReadAll(io.LimitReader(br, ReadMaxDocument+1))
+	if err != nil {
+		return b.fail(ctx, c, p, err)
+	}
+	text := ""
+	if len(data) <= ReadMaxDocument {
+		text, err = documentText(kind, data)
+	}
+	if len(data) > ReadMaxDocument || err != nil {
+		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadBinary, prompts.Data{"Path": p}), nil)
+	}
+	head := prompts.Render(prompts.ReadDocument, prompts.Data{"Path": p, "Kind": kind}) + "\n"
+	return readLines(ctx, b, c, p, in, bufio.NewReader(strings.NewReader(text)), h, head)
+}
+
+// readLines returns the lines of br numbered from in's offset, at most
+// its limit of them, each cut at ReadMaxLineChars, after head, and its
+// meta the digest h holds once br is read to its end.
+func readLines(ctx context.Context, b *builtin, c Call, p string, in readInput, br *bufio.Reader, h hash.Hash, head string) (Result, error) {
 	offset := max(in.Offset, 1)
 	limit := in.Limit
 	if limit <= 0 {
 		limit = ReadDefaultLimit
 	}
 	var out strings.Builder
+	out.WriteString(head)
 	n, shown := 0, 0
 	for {
 		line, long, more, rerr := readLine(br)
@@ -160,7 +193,7 @@ func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
 	meta := &Meta{Path: p, SHA256: hex.EncodeToString(h.Sum(nil))}
 	switch {
 	case n == 0:
-		return b.result(ctx, c, OutcomeOK, prompts.Render(prompts.ReadEmpty, prompts.Data{"Path": p}), meta)
+		return b.result(ctx, c, OutcomeOK, head+prompts.Render(prompts.ReadEmpty, prompts.Data{"Path": p}), meta)
 	case offset > n:
 		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadPastEnd, prompts.Data{"Path": p, "Lines": plural(n, "line"), "Offset": offset}), meta)
 	}

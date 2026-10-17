@@ -1,0 +1,1 @@
+{{.Path}} is {{if eq .Kind "docx"}}a Word document{{else if eq .Kind "xlsx"}}an Excel workbook{{else if eq .Kind "pptx"}}a PowerPoint presentation{{else if eq .Kind "odt"}}an OpenDocument text{{else if eq .Kind "ods"}}an OpenDocument spreadsheet{{else}}an OpenDocument presentation{{end}}; its text follows, without formatting or images.

@@ -39,7 +39,9 @@ const (
 
 // The tool descriptions (specs 008 and 013).
 const (
-	ToolRead     Name = "tools/read-v1"
+	// ToolRead version 2 names the office documents read reads as text
+	// (spec 079).
+	ToolRead     Name = "tools/read-v2"
 	ToolWrite    Name = "tools/write-v2"
 	ToolEdit     Name = "tools/edit-v2"
 	ToolBash     Name = "tools/bash-v2"
@@ -351,6 +353,13 @@ const (
 	ReadLineCut       Name = "results/read/line-cut-v1"
 	ReadMoreLines     Name = "results/read/more-lines-v1"
 	ReadImageTooLarge Name = "results/read/image-too-large-v1"
+	// ReadDocument takes Path and Kind, the document's extension without
+	// its dot: the line that opens the text of an office document read
+	// reads (spec 079). ReadSheet takes a sheet's Name and ReadSlide a
+	// slide's Number, each the line that opens its part of the text.
+	ReadDocument Name = "results/read/document-v1"
+	ReadSheet    Name = "results/read/sheet-v1"
+	ReadSlide    Name = "results/read/slide-v1"
 
 	WriteDone Name = "results/write/done-v1"
 
