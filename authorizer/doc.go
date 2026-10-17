@@ -278,7 +278,7 @@
 // A trigger's firing asks session.create as the trigger's owner (spec
 // 022): the owner's subject, claims holding org_id alone, and trigger_id
 // and firing_id beside a create's fields. When the token of the fire
-// request that runs the firing was minted from a key, its token_use
+// request that recorded the firing was minted from a key, its token_use
 // claim a non-empty string, the resource also carries fired_by (spec
 // 077), that token's token_use and authorization_details claims as the
 // verifier read them, the second left out when the token carries none:
@@ -288,11 +288,13 @@
 // It is a field of the resource and not claims of the request, so the
 // create is not narrowed as a request of the key's own: a key that
 // grants trigger.fire alone still fires, and the endpoint decides how
-// the key bounds the session it starts. A person's own sign-in, a
-// service's token, a schedule's firing, and a firing held while the
-// key's session waited for a person and started later name no key; a
-// failed firing fired again names the key of the fire that runs it.
-// toposd reads nothing in it. An endpoint that reads it rolls out before
+// the key bounds the session it starts. toposd keeps fired_by with the
+// firing, so a firing held while the session it continues waited for a
+// person names its own key when its session starts later, whichever
+// fire or the minute loop starts it, and a failed firing fired again
+// keeps the key it was first recorded with, taking the rerunning fire's
+// only when it has none. A person's own sign-in, a service's token and a
+// schedule's firing name no key. toposd reads nothing in it. An endpoint that reads it rolls out before
 // a server that sends it, and one that does not decides as before.
 //
 // A decision names a subject as the issuer and the sub joined,
