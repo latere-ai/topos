@@ -219,6 +219,10 @@ const (
 	// TranscriptAttachments takes Attachments, each with Path, MediaType
 	// and Size: the files a message carries (spec 015).
 	TranscriptAttachments Name = "transcript/attachments-v1"
+	// TranscriptAttachmentText takes Path, Fence and Text: the text of a
+	// short text file a message carries, after the line that names it
+	// (spec 079), set between fences no line of it closes.
+	TranscriptAttachmentText Name = "transcript/attachment-text-v1"
 	// TranscriptImageUnseen stands in for an image a message carries when
 	// the model does not take images.
 	TranscriptImageUnseen Name = "transcript/image-unseen-v1"

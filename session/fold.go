@@ -70,7 +70,7 @@ type item struct {
 // (spec 004). thread is "" for the session's own thread. The fold is
 // pure: the same events give byte-identical output.
 func Fold(events []Event, thread string) (Transcript, error) {
-	return fold(events, thread, false)
+	return FoldWith(events, thread, FoldOptions{})
 }
 
 // FoldOmittingRedacted renders the transcript with every redacted event
@@ -78,10 +78,63 @@ func Fold(events []Event, thread string) (Transcript, error) {
 // summarizes a range holding a redaction (spec 010), so the summary is
 // written from what remains and the removed value never reaches a model.
 func FoldOmittingRedacted(events []Event, thread string) (Transcript, error) {
-	return fold(events, thread, true)
+	return FoldWith(events, thread, FoldOptions{OmitRedacted: true})
 }
 
-func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) {
+// FoldOptions are what a fold renders beside the events it is given.
+type FoldOptions struct {
+	// OmitRedacted leaves every redacted event out instead of refusing
+	// it, as FoldOmittingRedacted does.
+	OmitRedacted bool
+	// Texts are the texts of the files persons' messages mark Inline, by
+	// their digest, which the caller read where each file is kept (spec
+	// 079): a marked file whose text is here is rendered after the line
+	// that names it, and one whose text is not stays named by its path
+	// alone. The fold stays pure: the same events and texts give
+	// byte-identical output.
+	Texts map[Digest]string
+}
+
+// FoldWith renders the transcript of one thread as Fold does, with o.
+func FoldWith(events []Event, thread string, o FoldOptions) (Transcript, error) {
+	return fold(events, thread, o)
+}
+
+// InlineFiles are the files marked Inline of the persons' messages the
+// fold of thread renders (spec 079), in order: of a message in the
+// thread's view that is not redacted and that no summary covers. They
+// are the files whose texts FoldOptions.Texts holds.
+func InlineFiles(events []Event, thread string) ([]Attachment, error) {
+	var view []Event
+	for _, e := range events {
+		if inView(e, thread) {
+			view = append(view, e)
+		}
+	}
+	ranges, _, err := compactions(view)
+	if err != nil {
+		return nil, err
+	}
+	var out []Attachment
+	for _, e := range view {
+		if e.Type != TypeUserMessage || e.Redacted() || covering(ranges, e.Seq) != nil {
+			continue
+		}
+		var p UserMessage
+		if err := e.Decode(&p); err != nil {
+			return nil, err
+		}
+		for _, a := range p.Attachments {
+			if a.Inline {
+				out = append(out, a)
+			}
+		}
+	}
+	return out, nil
+}
+
+func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
+	omitRedacted := o.OmitRedacted
 	evs := slices.Clone(events)
 	slices.SortStableFunc(evs, func(a, b Event) int { return cmp.Compare(a.Seq, b.Seq) })
 
@@ -178,9 +231,16 @@ func fold(events []Event, thread string, omitRedacted bool) (Transcript, error) 
 				blocks = append([]lux.Block{text(prompts.Render(prompts.TranscriptSender, sender(p.Sender)))}, blocks...)
 			}
 			// The files a message carries are named to the model by the
-			// paths the runner writes them at (spec 015).
+			// paths the runner writes them at (spec 015), and a short text
+			// file's text follows the line that names it (spec 079).
 			if len(p.Attachments) > 0 {
 				blocks = append(blocks, text(prompts.Render(prompts.TranscriptAttachments, prompts.Data{"Attachments": p.Attachments})))
+				for _, a := range p.Attachments {
+					if body, ok := o.Texts[a.Blob]; ok && a.Inline {
+						body = strings.TrimRight(body, "\r\n")
+						blocks = append(blocks, text(prompts.Render(prompts.TranscriptAttachmentText, prompts.Data{"Path": a.Path, "Fence": fence(body), "Text": body})))
+					}
+				}
 			}
 			user(blocks...)
 		case TypeUserInterrupt:
@@ -395,6 +455,22 @@ func workRestoredData(r Restore) prompts.Data {
 	d["LeftOut"] = strings.Join(slices.DeleteFunc(slices.Clone(WorkLeftOut), func(n string) bool { return n == ".git" }), ", ")
 	d["MaxFileMiB"] = MaxWorkFileBytes >> 20
 	return d
+}
+
+// fence is the fence a text is set between: three backticks, or one
+// more than the longest run of backticks the text holds, so nothing in
+// the text closes it.
+func fence(text string) string {
+	longest, run := 0, 0
+	for _, r := range text {
+		if r == '`' {
+			run++
+			longest = max(longest, run)
+			continue
+		}
+		run = 0
+	}
+	return strings.Repeat("`", max(3, longest+1))
 }
 
 // inView reports whether e belongs to the fold of thread: the events

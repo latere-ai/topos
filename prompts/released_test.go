@@ -136,6 +136,7 @@ var released = map[string]string{
 	"tools/web_fetch-v1.md":                      "e2a9664e4cf02c9297c303bdc7a0a0b15fecbcfb6bc7948a7fe59faa4bf51668",
 	"tools/write-v1.md":                          "9570b7a6a6f2fe90bad3362585da20004c56589c0227bc243b5cea653b7062d7",
 	"transcript/attachments-v1.md":               "9b7885623ecb958e19a303f7ccc63348684d477758d390b9a51f7188bf0ee2c6",
+	"transcript/attachment-text-v1.md":           "34603bf4d4a82b5da88699192e10543c225f5ddd429890cf53027f4f8b1042c8",
 	"transcript/cleared-v1.md":                   "0461342d7b3ee696b7061aa5fd08949a24231983e13b5b82db2eda185a2965f6",
 	"transcript/image-unseen-v1.md":              "228322de86929e1731d7b1f65a4fd54a72c0903371007b58e2f134d7a10917ec",
 	"transcript/interrupt-v1.md":                 "f3ec82103695169945c1dd1ba433f614c8b8e9c13d1737ddebe912d727436580",

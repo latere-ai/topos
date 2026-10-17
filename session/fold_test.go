@@ -476,3 +476,79 @@ func TestFoldRejectsMalformed(t *testing.T) {
 		})
 	}
 }
+
+// TestAFoldRendersAMarkedFilesText: a file a person's message marks
+// inline is rendered after the line that names the message's files with
+// the text the caller read, fenced past any run of backticks it holds; a
+// file without the mark, and one whose text the caller does not hold,
+// stay named by the line alone; and a fold given no texts renders as
+// before. InlineFiles names the marked files of the messages the fold
+// renders, leaving out a redacted one, one a summary covers and another
+// thread's (spec 079).
+func TestAFoldRendersAMarkedFilesText(t *testing.T) {
+	b := &logb{t: t}
+	csv, bin, gone := session.DigestOf([]byte("a,b\n")), session.DigestOf([]byte("x")), session.DigestOf([]byte("gone"))
+	b.add(session.TypeUserMessage, "", 1, session.UserMessage{Sender: ada, Content: []lux.Block{txt("Early.")},
+		Attachments: []session.Attachment{{Name: "early.txt", MediaType: "text/plain", Size: 2, Blob: session.DigestOf([]byte("e\n")), Path: "attachments/e/early.txt", Inline: true}}})
+	b.add(session.TypeContextCompacted, "", 1, session.ContextCompacted{Kind: session.CompactSummary, FromSeq: 1, ToSeq: 1, Summary: "Ada sent a file."})
+	files := []session.Attachment{
+		{Name: "a.csv", MediaType: "text/csv", Size: 4, Blob: csv, Path: "attachments/m/a.csv", Inline: true},
+		{Name: "b.bin", MediaType: "application/octet-stream", Size: 1, Blob: bin, Path: "attachments/m/b.bin"},
+		{Name: "c.txt", MediaType: "text/plain", Size: 4, Blob: gone, Path: "attachments/m/c.txt", Inline: true},
+	}
+	b.add(session.TypeUserMessage, "", 2, session.UserMessage{Sender: ada, Content: []lux.Block{txt("Sum it.")}, Attachments: files})
+	redacted := b.add(session.TypeUserMessage, "", 3, session.UserMessage{Sender: ada, Content: []lux.Block{txt("Gone.")},
+		Attachments: []session.Attachment{{Name: "r.txt", MediaType: "text/plain", Size: 1, Blob: session.DigestOf([]byte("r")), Path: "attachments/r/r.txt", Inline: true}}})
+	b.redact(redacted)
+	other := b.thread("", "Review.", 3)
+	b.add(session.TypeUserMessage, other, 3, session.UserMessage{Sender: ada, Content: []lux.Block{txt("Thread.")},
+		Attachments: []session.Attachment{{Name: "t.txt", MediaType: "text/plain", Size: 1, Blob: session.DigestOf([]byte("t")), Path: "attachments/t/t.txt", Inline: true}}})
+
+	inline, err := session.InlineFiles(b.events, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inline) != 2 || inline[0] != files[0] || inline[1] != files[2] {
+		t.Fatalf("the inline files %+v", inline)
+	}
+	if _, err := session.InlineFiles(b.events, "thr_none"); err != nil {
+		t.Fatal(err)
+	}
+
+	plain, err := session.FoldOmittingRedacted(b.events, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := map[session.Digest]string{csv: "a,b\n``` x\n", bin: "x", session.DigestOf([]byte("e\n")): "e\n"}
+	with, err := session.FoldWith(b.events, "", session.FoldOptions{OmitRedacted: true, Texts: texts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "Attached files, in the working directory:\n- attachments/m/a.csv (text/csv, 4 bytes)\n- attachments/m/b.bin (application/octet-stream, 1 bytes)\n- attachments/m/c.txt (text/plain, 4 bytes)\n"
+	message := func(tr session.Transcript) []lux.Block {
+		for _, m := range tr.Messages {
+			for i, bl := range m.Blocks {
+				if bl.Text == "Sum it." {
+					return m.Blocks[i:]
+				}
+			}
+		}
+		t.Fatalf("no message says Sum it.: %+v", tr.Messages)
+		return nil
+	}
+	if got := message(plain); len(got) != 2 || got[1].Text != line {
+		t.Fatalf("the message without texts %+v", got)
+	}
+	got := message(with)
+	want := "The text of attachments/m/a.csv, so you need not read the file to see it:\n````\na,b\n``` x\n````"
+	if len(got) != 3 || got[1].Text != line || got[2].Text != want {
+		t.Fatalf("the message with texts %+v", got)
+	}
+	for _, m := range with.Messages {
+		for _, bl := range m.Blocks {
+			if strings.Contains(bl.Text, "attachments/e/early.txt") {
+				t.Fatal("a file of a summarized message is rendered")
+			}
+		}
+	}
+}

@@ -413,6 +413,8 @@ var textCases = func() []textCase {
 			"The line \"Date: 2026-10-06\" above is the day this session's machine attached, not today.\n" + "</context>"},
 		{name: TranscriptAttachments, data: Data{"Attachments": []attachment{{"attachments/sales.csv", "text/csv", 1204}, {"attachments/notes-2.md", "text/markdown", 9}}},
 			want: "Attached files, in the working directory:\n" + "- attachments/sales.csv (text/csv, 1204 bytes)\n" + "- attachments/notes-2.md (text/markdown, 9 bytes)\n"},
+		{name: TranscriptAttachmentText, data: Data{"Path": "attachments/evt_1/sales.csv", "Fence": "````", "Text": "month,total\n```\n7,8"},
+			want: "The text of attachments/evt_1/sales.csv, so you need not read the file to see it:\n````\nmonth,total\n```\n7,8\n````"},
 		{name: TranscriptImageUnseen, want: "[An image is attached here, but this model does not take images, so it cannot see it.]"},
 		{name: TranscriptApprovalRequested, data: Data{"Host": "api.example.com", "Port": 443, "More": 0, "Ask": true}, want: "The gateway refused a connection the command made to api.example.com on port 443: the host is outside the network this session may reach. The person attending the session is asked whether the session may reach it."},
 		{name: TranscriptApprovalRequested, data: Data{"Host": "api.example.com", "Port": 0, "More": 2, "Ask": false}, want: "The gateway refused a connection the command made to api.example.com: the host is outside the network this session may reach. It refused 2 more hosts too. The person who runs the session decides which hosts it may reach."},
