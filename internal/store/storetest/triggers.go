@@ -376,7 +376,7 @@ func triggerFirings(t *testing.T, f Factory) {
 // claim, the held list and the firings list, and a firing no key fired
 // reads back with none. A failed or unrecorded firing taken again keeps
 // the key it was first recorded with, whatever the new claim names, and
-// takes the new claim's only when it has none (spec 077).
+// takes the new claim's only when it has none (spec 078).
 func triggerFiredBy(t *testing.T, f Factory) {
 	clock := NewClock()
 	st := f(t, clock.Now)

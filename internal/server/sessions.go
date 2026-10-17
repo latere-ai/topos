@@ -341,7 +341,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	}
 	// A trigger's session names the trigger and the firing that start it
 	// (spec 022), and fired_by, the key whose token fired it when one did
-	// (spec 077), which the authorizer holds the session to.
+	// (spec 078), which the authorizer holds the session to.
 	if in.triggerID != "" {
 		fields["trigger_id"], fields["firing_id"] = in.triggerID, in.firingID
 		if in.firedBy != nil {

@@ -67,7 +67,7 @@ type Start struct {
 	Resources []session.Resource
 	// FiredBy is the firing's FiredBy decoded: what the token of the fire
 	// that recorded the firing says of the key it was minted from, which
-	// the session's create carries to the authorizer (spec 077); nil for
+	// the session's create carries to the authorizer (spec 078); nil for
 	// a firing no key's token fired. The engine reads nothing in it.
 	FiredBy map[string]any
 }
@@ -161,7 +161,7 @@ func ScheduleDedupe(at time.Time) string { return "schedule:" + at.UTC().Format(
 //
 // by is what the request's own token says of the key it was minted
 // from, nil for a token no key minted. It is kept with the firing as its
-// FiredBy (spec 077), so the session the firing starts names that key
+// FiredBy (spec 078), so the session the firing starts names that key
 // whenever it starts: now, or later for a firing held while the session
 // it continues waits for a person. A failed firing fired again keeps the
 // key it was first recorded with, and takes by only when it has none.

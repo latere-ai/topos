@@ -77,7 +77,7 @@ type Firing struct {
 	// Envelope is the delivered event as JSON, for an event.
 	Envelope []byte
 	// FiredBy is the fired_by of the session the firing starts (spec
-	// 077), as JSON: the token_use and authorization_details of the
+	// 078), as JSON: the token_use and authorization_details of the
 	// token of the fire that recorded the firing, when a key minted that
 	// token; empty for none. It is kept with the firing so a session
 	// started after that token is gone, a held firing's, names the same

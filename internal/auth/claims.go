@@ -14,7 +14,7 @@ func TriggerClaims(c Caller) map[string]any {
 }
 
 // FiredBy is the fired_by field of the session.create a trigger's firing
-// asks (spec 077): the token_use and authorization_details claims of the
+// asks (spec 078): the token_use and authorization_details claims of the
 // fire request's own token, verbatim, so the authorizer can hold the
 // session to the key the token was minted from. A firing's create is
 // asked as the trigger's owner, whose token is not at hand, so the key

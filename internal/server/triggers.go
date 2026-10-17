@@ -290,7 +290,7 @@ func renderFiring(f store.Firing) (firing, error) {
 // answers the firing, a redelivery's as first recorded, with 503 for a
 // failed one, which a redelivery runs again. A session the firing starts
 // names the key the caller's token was minted from, when one was (spec
-// 077).
+// 078).
 func (c *call) fireTrigger() error {
 	t, err := c.trigger(c.r.PathValue("ref"), authorizer.ActionTriggerFire)
 	if err != nil {

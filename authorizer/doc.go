@@ -280,7 +280,7 @@
 // and firing_id beside a create's fields. When the token of the fire
 // request that recorded the firing was minted from a key, its token_use
 // claim a non-empty string, the resource also carries fired_by (spec
-// 077), that token's token_use and authorization_details claims as the
+// 078), that token's token_use and authorization_details claims as the
 // verifier read them, the second left out when the token carries none:
 //
 //	"fired_by": {"token_use": "pat", "authorization_details": [{"type": "latere-authz", "actions": ["topos:trigger.fire"]}]}

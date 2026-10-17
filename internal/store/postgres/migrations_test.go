@@ -494,7 +494,7 @@ func TestTriggerColumnFollowsTheBody(t *testing.T) {
 // holding a held firing migrates with the firing kept and no key that
 // fired it, and a firing a replica of the earlier release inserts
 // afterwards, naming no fired_by column, reads back with none too, while
-// a claim of this release keeps its key (spec 077).
+// a claim of this release keeps its key (spec 078).
 func TestAFiringBeforeTheKeyColumnNamesNoKey(t *testing.T) {
 	dsn := database(t)
 	migrateTo(t, dsn, "0011")
