@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,55 @@ func TestEveryDialectRoundTripsThroughTheStub(t *testing.T) {
 				t.Fatalf("Next after the end: %v", err)
 			}
 		})
+	}
+}
+
+// TestStreamSendsTheSessionKey: every request of a session carries its
+// cache key in the header a gateway in front of several providers keeps
+// the session on one provider by, whatever the dialect; a key longer
+// than the gateway takes is sent as its hash, and a request with no key
+// sends no header.
+func TestStreamSendsTheSessionKey(t *testing.T) {
+	long := strings.Repeat("k", maxSessionKey+1)
+	sum := sha256.Sum256([]byte(long))
+	for _, c := range []struct {
+		dialect ir.Dialect
+		door    string
+	}{
+		{ir.DialectOpenAIChat, "/openai"},
+		{ir.DialectOpenAIResponses, "/openai"},
+		{ir.DialectAnthropicMessages, "/anthropic"},
+	} {
+		for key, want := range map[string]string{"ses_01ABC": "ses_01ABC", long: hex.EncodeToString(sum[:]), "": ""} {
+			t.Run(string(c.dialect)+"/"+strconv.Itoa(len(key)), func(t *testing.T) {
+				stub := luxstub.New(t)
+				stub.Script("m", luxstub.Reply{Response: reply()})
+				req := request("m")
+				req.CacheKey = key
+				s, err := (&Model{}).Stream(t.Context(), models.Request{IR: req, Connection: models.Connection{BaseURL: stub.URL() + c.door, Model: "m", Dialect: c.dialect}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer s.Close()
+				if _, _, err := drain(t, s); err != nil {
+					t.Fatal(err)
+				}
+				recs := stub.Requests()
+				if len(recs) != 1 {
+					t.Fatalf("recorded %d requests", len(recs))
+				}
+				got, sent := recs[0].Header[HeaderSessionKey]
+				if want == "" {
+					if sent {
+						t.Fatalf("%s sent with no cache key: %q", HeaderSessionKey, got)
+					}
+					return
+				}
+				if len(got) != 1 || got[0] != want {
+					t.Fatalf("%s = %q, want %q", HeaderSessionKey, got, want)
+				}
+			})
+		}
 	}
 }
 

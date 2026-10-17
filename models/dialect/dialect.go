@@ -40,6 +40,31 @@ const AnthropicVersion = "2023-06-01"
 // maxErrorBody bounds how much of an error answer is read.
 const maxErrorBody = 1 << 20
 
+// HeaderSessionKey carries a request's cache key, the key the requests
+// that share a cacheable prefix share, to a gateway in front of several
+// providers of one model. OpenRouter reads it and sends every request
+// with the key to the provider that served the first, whose prompt cache
+// holds the prefix; without it the gateway may send each turn of an
+// agent loop to another provider, whose cache holds nothing. It is a
+// header, not a body member, because an endpoint that does not know it
+// ignores a header and OpenAI's own refuses an unknown member.
+const HeaderSessionKey = "X-Session-Id"
+
+// maxSessionKey is the longest value OpenRouter takes in
+// HeaderSessionKey.
+const maxSessionKey = 256
+
+// sessionKey is the value HeaderSessionKey carries for a request's cache
+// key: the key, or its SHA-256 in hex when it is longer than a gateway
+// takes, so two requests that share a key still share the value.
+func sessionKey(key string) string {
+	if len(key) <= maxSessionKey {
+		return key
+	}
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
+}
+
 // Model is the HTTP model. The zero Model sends through the family's
 // instrumented client, so every request carries its trace.
 type Model struct {
@@ -146,6 +171,9 @@ func (m *Model) Stream(ctx context.Context, req models.Request) (models.Stream, 
 	}
 	hreq.Header.Set("Content-Type", "application/json")
 	hreq.Header.Set("Accept", "text/event-stream")
+	if key := req.IR.CacheKey; key != "" {
+		hreq.Header.Set(HeaderSessionKey, sessionKey(key))
+	}
 	authorize(hreq, conn)
 	now := m.Now
 	if now == nil {

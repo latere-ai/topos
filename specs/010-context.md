@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instruc
 affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-17
 author: changkun
 ---
 
@@ -83,7 +83,14 @@ appended to, so a prefix, once cached, stays valid until a compaction.
 The request's cache key is the session's fork tree's root, its `root`
 or its id where it has none, so a fork and the session it was forked
 from share one key ([[056-editing-a-message-and-the-branches-of-a-session]]),
-for dialects that take one.
+for dialects that take one. Whatever the dialect, every request also
+carries the key in the `X-Session-Id` header, its SHA-256 when it is
+longer than 256 bytes. A gateway in front of several providers of one
+model, such as OpenRouter, sends the requests with one key to the
+provider that served the first, whose cache holds the prefix; without
+the key it may send each step to another provider, whose cache holds
+nothing. It is a header rather than a body member because an endpoint
+that does not know a header ignores it.
 
 ### Token accounting
 
@@ -177,6 +184,7 @@ encoding and pricing ([[007-models]]).
 | The system prompt renders its parts in the table's order (the harness prompt, the agent's instructions, the context block, each instruction file cut at 64 KiB, the skills index, the memory notes), and a part it does not know renders nothing | `harness.TestSystemBlocksRenderEveryPart` | built |
 | A session that runs by a routed name carries it as the last system part before the date on every request, and one that runs by none carries no such part | `harness.TestTheRequestNamesTheRoute` | built |
 | Breakpoint 2 is on the last system block before the date and breakpoints 3 and 4 on the last blocks of the last two user messages; the request carries the effort, `max_tokens` and the tree's root as cache key | `harness.TestBreakpointsRollWithTheConversation`, `harness.TestTheCacheKeyIsTheTreesRoot` | built |
+| Every request carries its cache key in `X-Session-Id`, its SHA-256 past 256 bytes, in every dialect, and a request with no key sends no such header | `dialect.TestStreamSendsTheSessionKey` | built |
 | The date is the last system block of every request, after breakpoint 2 and with no breakpoint of its own, and the blocks before it are the same bytes on another day | `harness.TestEveryRequestStatesTheDateItsTurnOpenedOn`, `harness.TestBreakpointsRollWithTheConversation` | built |
 | A session past the threshold clears first and compacts only when clearing is not enough, and the compaction's request is recorded as a `model.request` | `harness.TestClearingOldResultsIsEnough`, `harness.TestSummaryWhenClearingIsNotEnough` | built |
 | Clearing keeps the last ten steps' results and every `todo` result, and a second clearing skips what the first cleared | `harness.TestClearingOldResultsIsEnough`, `harness.TestTodoResultsAreNeverCleared`, `harness.TestASecondClearingSkipsWhatIsCleared` | built |
@@ -198,6 +206,10 @@ that replaces nothing, and the compaction a redaction forces.
 Since 2026-10-11, in no release yet, the system prompt ends with the
 date ([[011-instructions-and-skills]]), which follows breakpoint 2
 rather than carrying it.
+
+Since 2026-10-17 every request carries its cache key in the
+`X-Session-Id` header, so a gateway that routes one model to several
+providers keeps a session on the provider whose cache holds its prefix.
 
 Open: a summary range that keeps whole steps and the last three, a
 restart after a compaction, and the cache hit rate against the stub Lux.

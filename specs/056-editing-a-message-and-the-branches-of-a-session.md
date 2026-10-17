@@ -537,8 +537,9 @@ shipped differs from the draft in these points:
   Responses encoders the runner sends with do not emit a cache key, as
   the IR states of every backend, so on those wires the shared prefix is
   read from the provider's cache by its bytes, which
-  `harness.TestAForksPrefixIsItsParents` holds, and the key reaches a
-  gateway only through a dialect that carries one.
+  `harness.TestAForksPrefixIsItsParents` holds. The key reaches a
+  gateway in the `X-Session-Id` header every request carries
+  ([[010-context]]).
 - **A fork before the opening message reads no checkpoint.** The runner
   returns before reading the fork's log for one, so a fork that copied
   nothing opens a fresh machine without a read.
