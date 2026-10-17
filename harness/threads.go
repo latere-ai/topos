@@ -206,7 +206,7 @@ func (a advisorTool) Run(ctx context.Context, c tools.Call) (tools.Result, error
 // advise sends the caller's transcript and question to its advisor
 // thread, starting the thread on the first call, and returns the answer.
 func (t *turn) advise(ctx context.Context, callID, question string) (tools.Result, error) {
-	tr, err := session.Fold(t.events(), t.thread)
+	tr, err := t.fold(ctx, t.events(), false)
 	if err != nil {
 		return tools.Result{}, err
 	}

@@ -93,7 +93,7 @@ func (t *turn) replayRequest(ctx context.Context, log, prefix []session.Event, s
 				summarized = append(summarized, e)
 			}
 		}
-		tr, err := session.FoldOmittingRedacted(summarized, t.thread)
+		tr, err := t.fold(ctx, summarized, true)
 		if err != nil {
 			return ir.Request{}, err
 		}
@@ -118,7 +118,7 @@ func (t *turn) replayRequest(ctx context.Context, log, prefix []session.Event, s
 		req.ToolChoice = &ir.ToolChoice{Mode: ir.ToolChoiceNone}
 		return req, err
 	}
-	tr, err := session.Fold(prefix, t.thread)
+	tr, err := t.fold(ctx, prefix, false)
 	if errors.Is(err, session.ErrRedactionUncompacted) {
 		return ir.Request{}, fmt.Errorf("%w: the log was redacted after the request: %w", models.ErrNotRebuilt, err)
 	}

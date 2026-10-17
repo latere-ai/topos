@@ -106,7 +106,7 @@ func (t *turn) manageContext(ctx context.Context, req ir.Request, toolsSHA strin
 // clear or a compaction appended to it.
 func (t *turn) rebuild(ctx context.Context) (ir.Request, string, int64, error) {
 	evs := t.events()
-	tr, err := session.Fold(evs, t.thread)
+	tr, err := t.fold(ctx, evs, false)
 	if err != nil {
 		return ir.Request{}, "", 0, err
 	}
@@ -228,7 +228,7 @@ func (t *turn) estimateWith(ctx context.Context, evs ...session.Event) (int64, e
 		next++
 		log = append(log, e)
 	}
-	tr, err := session.Fold(log, t.thread)
+	tr, err := t.fold(ctx, log, false)
 	if err != nil {
 		return 0, err
 	}
@@ -297,7 +297,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 	if from == 0 || from > to {
 		return false, nil
 	}
-	tr, err := session.FoldOmittingRedacted(prefix, t.thread)
+	tr, err := t.fold(ctx, prefix, true)
 	if err != nil {
 		return false, err
 	}

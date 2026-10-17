@@ -213,6 +213,9 @@ type Harness struct {
 	// listed is set once the session's log records how the listing of its
 	// mcp connections ended, which a drive's first turn appends (spec 069).
 	listed *atomic.Bool
+	// texts are the texts of the files a request carries inline (spec
+	// 079), kept for the harness's life.
+	texts *texts
 }
 
 // switchedModel is one model Connect answered.
@@ -291,7 +294,7 @@ func New(c Config) (*Harness, error) {
 	if c.PromptVersion == 0 {
 		c.PromptVersion = prompts.HarnessCurrent
 	}
-	return &Harness{c: c, prompt: p, switched: &switchedModel{}, listed: &atomic.Bool{}}, nil
+	return &Harness{c: c, prompt: p, switched: &switchedModel{}, listed: &atomic.Bool{}, texts: &texts{}}, nil
 }
 
 // on points the harness's configuration at the model name, which the
@@ -511,6 +514,10 @@ type shared struct {
 	// and undeliverable holds the files this turn could not write.
 	delivering    sync.Mutex
 	undeliverable map[string]bool
+	// inlining guards unreadable, the files whose text this turn could
+	// not read for a request (spec 079).
+	inlining   sync.Mutex
+	unreadable map[session.Digest]bool
 }
 
 // events is a snapshot of the log.
@@ -835,13 +842,13 @@ func (t *turn) stepOnce(ctx context.Context) error {
 		return t.finish(ctx, session.StopTurnLimit, "")
 	}
 	evs := t.events()
-	tr, err := session.Fold(evs, t.thread)
+	tr, err := t.fold(ctx, evs, false)
 	if errors.Is(err, session.ErrRedactionUncompacted) {
 		if err := t.compactRedaction(ctx); err != nil {
 			return err
 		}
 		evs = t.events()
-		tr, err = session.Fold(evs, t.thread)
+		tr, err = t.fold(ctx, evs, false)
 	}
 	if err != nil {
 		return err
