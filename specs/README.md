@@ -131,6 +131,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [075](075-a-file-a-session-reads-and-cannot-change.md) | A file a session reads and cannot change: a message's attachment marked read-only is delivered outside the working directory, where no tool of the session can change it, and its digest is on the record | medium | drafted | 004, 008, 009, 015, 064, 073 |
 | [076](076-the-working-directory-is-saved-during-a-turn.md) | The working directory is saved during a turn: a long turn saves the working directory to the session's folder every few minutes, with the same work.saved record a turn end writes | medium | drafted | 004, 008, 009, 073 |
 | [077](077-rollouts.md) | Rollouts: one call runs N unattended sessions of one agent version on one task, with the model and reasoning set at create, checks run in each machine before it is released, evidence kept in each session's own folder, Keys from the installation's authorizer with the rollout's labels, sessions left out of the default list, one report and one cancel; the caller is Examen | large | drafted | 003, 004, 008, 009, 015, 025, 049, 068, 073, 075 |
+| [077](077-a-firing-names-the-key-that-fired-it.md) | A firing names the key that fired it: a session a trigger's fire starts carries `fired_by` on its create, the token_use and authorization_details of the fire request's own token when a key minted it, so an authorizer can hold the session to that key | small | testing | 006, 022 |
 
 ## Dependency graph
 
@@ -214,6 +215,7 @@ flowchart BT
   S074[074 one owner's triggers and agents, and an agent deleted]
   S075[075 a file a session reads and cannot change]
   S076[076 the working directory is saved during a turn]
+  S077[077 a firing names the key that fired it]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -363,6 +365,7 @@ flowchart BT
   S074 --> S022
   S074 --> S036
   S074 --> S040
+  S077 --> S022
 ```
 
 ## Build order
