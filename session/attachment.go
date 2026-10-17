@@ -4,8 +4,12 @@
 package session
 
 import (
+	"bytes"
+	"mime"
 	"path"
 	"slices"
+	"strings"
+	"unicode/utf8"
 )
 
 // AttachmentDir is the directory under the working directory the files
@@ -17,14 +21,66 @@ const AttachmentDir = "attachments"
 // relative to the working directory, under AttachmentDir in a directory
 // named after the message's event id. Ref, when set, is where the file
 // is in the session's files store folder (spec 068), and Blob is then
-// its digest alone.
+// its digest alone. Source, when set, is the file of the sender's own
+// files the server read the bytes from at the send, and Inline marks a
+// short text file the model reads in its request, after the line that
+// names it, read where the file is kept whenever a request is built and
+// never kept in the log (spec 079).
 type Attachment struct {
-	Name      string `json:"name"`
-	MediaType string `json:"media_type"`
-	Size      int64  `json:"size"`
-	Blob      Digest `json:"blob"`
-	Path      string `json:"path"`
-	Ref       string `json:"ref,omitempty"`
+	Name      string           `json:"name"`
+	MediaType string           `json:"media_type"`
+	Size      int64            `json:"size"`
+	Blob      Digest           `json:"blob"`
+	Path      string           `json:"path"`
+	Ref       string           `json:"ref,omitempty"`
+	Source    AttachmentSource `json:"source,omitzero"`
+	Inline    bool             `json:"inline,omitempty"`
+}
+
+// AttachmentSource names a file of a person's own files at the files
+// API a session's folder is at (spec 079): the API's owner segment, "me"
+// or an owner's id, and the path in that space, its plane included, as
+// the message named them, and the version read, 0 for the file as it
+// stood.
+type AttachmentSource struct {
+	Owner   string `json:"owner"`
+	Path    string `json:"path"`
+	Version int    `json:"version,omitempty"`
+}
+
+// The bounds of the text a model reads of a person's message's files in
+// its request (spec 079): each file marked Inline is at most
+// InlineTextBytes, and a message's marked files together at most
+// InlineMessageTextBytes.
+const (
+	InlineTextBytes        = 64 << 10
+	InlineMessageTextBytes = 192 << 10
+)
+
+// inlineTypes are the media types besides text/* whose file a model may
+// read in its request, and inlineExtensions the name endings that mark a
+// file as text whatever its media type says.
+var (
+	inlineTypes      = []string{"application/json", "application/xml", "application/yaml", "application/x-yaml"}
+	inlineExtensions = []string{".md", ".txt", ".csv", ".tsv", ".json", ".yaml", ".yml", ".xml"}
+)
+
+// TextLike reports whether a file of the name and media type reads as
+// text: a text/* type or one of inlineTypes, or a name that ends with one
+// of inlineExtensions, case aside.
+func TextLike(name, media string) bool {
+	if base, _, err := mime.ParseMediaType(media); err == nil && (strings.HasPrefix(base, "text/") || slices.Contains(inlineTypes, base)) {
+		return true
+	}
+	return slices.Contains(inlineExtensions, strings.ToLower(path.Ext(name)))
+}
+
+// Inlinable reports whether a file of the name, media type and bytes may
+// be marked Inline on its own: text-like, UTF-8 without a NUL, and at
+// most InlineTextBytes. The bound of a message's files together is the
+// caller's to keep.
+func Inlinable(name, media string, data []byte) bool {
+	return len(data) <= InlineTextBytes && TextLike(name, media) && utf8.Valid(data) && bytes.IndexByte(data, 0) < 0
 }
 
 // AttachmentsDelivered is the payload of attachments.delivered: the

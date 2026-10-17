@@ -4,6 +4,9 @@
 package session
 
 import (
+	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,5 +51,53 @@ func TestPendingAttachments(t *testing.T) {
 	}
 	if got := Attachments(log); len(got) != 3 {
 		t.Fatalf("attachments %+v", got)
+	}
+}
+
+// TestWhatAModelMayReadInline: a file is inlinable when it is text by
+// its media type or its name, UTF-8 without a NUL, and at most
+// InlineTextBytes; the record carries its source and its mark only when
+// set (spec 079).
+func TestWhatAModelMayReadInline(t *testing.T) {
+	text := []byte("month,total\n")
+	for _, c := range []struct {
+		name, media string
+		data        []byte
+		want        bool
+	}{
+		{"sales.csv", "text/csv", text, true},
+		{"notes", "text/plain; charset=utf-8", text, true},
+		{"data", "application/json", text, true},
+		{"feed", "application/xml", text, true},
+		{"cfg", "application/yaml", text, true},
+		{"cfg", "application/x-yaml", text, true},
+		{"README.MD", "application/octet-stream", text, true},
+		{"rows.tsv", "", text, true},
+		{"page.yml", "", text, true},
+		{"bundle", "application/octet-stream", text, false},
+		{"photo.png", "image/png", text, false},
+		{"a.txt", "text/plain", []byte("a\x00b"), false},
+		{"a.txt", "text/plain", []byte("caf\xe9"), false},
+		{"a.txt", "text/plain", bytes.Repeat([]byte("x"), InlineTextBytes), true},
+		{"a.txt", "text/plain", bytes.Repeat([]byte("x"), InlineTextBytes+1), false},
+		{"a.bin", "not a media type", text, false},
+	} {
+		if got := Inlinable(c.name, c.media, c.data); got != c.want {
+			t.Errorf("%s %q %d bytes: %t, want %t", c.name, c.media, len(c.data), got, c.want)
+		}
+	}
+	plain, err := json.Marshal(Attachment{Name: "a.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plain), "source") || strings.Contains(string(plain), "inline") {
+		t.Fatalf("a file of no source and no mark is %s", plain)
+	}
+	read, err := json.Marshal(Attachment{Name: "a.txt", Source: AttachmentSource{Owner: "me", Path: "files/a.txt", Version: 2}, Inline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(read), `"source":{"owner":"me","path":"files/a.txt","version":2},"inline":true`) {
+		t.Fatalf("a read file is %s", read)
 	}
 }
