@@ -12,7 +12,8 @@ committed: the commit log already holds that.
 
 ### Fixed
 
-- **A session on a model that several providers serve keeps reading its prompt cache.** Through a gateway such as OpenRouter, an open-weights model like Gemma, Qwen or DeepSeek is served by many providers, and each turn of a session could land on another one, whose cache held nothing; over the two weeks before this release a Gemma session read 28 percent of its prompt from the cache. Every model request now carries the session's cache key in the `X-Session-Id` header, which the gateway keeps the session on one provider by from its first turn. An endpoint that does not know the header ignores it.
+- **A session on a model that several providers serve keeps reading its prompt cache.** Through a gateway such as OpenRouter, an open-weights model like Gemma, Qwen or DeepSeek is served by many providers, and each turn of a session could land on another one, whose cache held nothing; over the two weeks before this release, Gemma sessions read 28 percent of their prompt tokens from the cache. Every model request now carries the session's cache key in the `X-Session-Id` header, by which the gateway keeps the session on one provider from its first turn. An endpoint that does not know the header ignores it.
+- **A turn to a Qwen model reached on Chat Completions reads the conversation from the prompt cache.** Alibaba, which serves Qwen models, caches only what is marked, so its turns carried no cache breakpoints and paid full input price; the breakpoints are now sent as `cache_control`, as an Anthropic model's are. Other vendors' models get no marks, since their providers cache a repeated prefix on their own.
 
 ## v0.42.0 - 2026-10-17
 

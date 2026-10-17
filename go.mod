@@ -12,7 +12,7 @@ require (
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
 	latere.ai/x/cella v0.8.0
-	latere.ai/x/pkg v0.98.0
+	latere.ai/x/pkg v0.99.0
 )
 
 require (
