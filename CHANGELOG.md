@@ -12,7 +12,7 @@ committed: the commit log already holds that.
 
 ### Added
 
-- **A session a key's fire starts names the key.** When a trigger is fired with a token minted from a key, a personal access token or a service account's key, the `session.create` its firing asks carries `fired_by`, that token's `token_use` and `authorization_details`, so an installation's authorizer can hold the session to the key's grants as it holds a session the key starts itself. The create is still asked as the trigger's owner, so a key that grants only `trigger.fire` keeps firing. A person's own sign-in, a schedule, and a firing held until its session stopped waiting for a person name no key.
+- **A session a key's fire starts names the key.** When a trigger is fired with a token minted from a key, a personal access token or a service account's key, the `session.create` its firing asks carries `fired_by`, that token's `token_use` and `authorization_details`, so an installation's authorizer can hold the session to the key's grants as it holds a session the key starts itself. The create is still asked as the trigger's owner, so a key that grants only `trigger.fire` keeps firing. The key is kept with the firing, so a firing held until its session stopped waiting for a person, and a failed firing fired again, still name the key that fired them when their session starts. A person's own sign-in and a schedule name no key. Servers on Postgres apply migration `0012_firing_fired_by`, which adds one column to `trigger_firings`.
 
 ## v0.41.0 - 2026-10-15
 
