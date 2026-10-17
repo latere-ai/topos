@@ -419,11 +419,9 @@ func markInline(files []file) {
 	var total int64
 	for i := range files {
 		f := &files[i]
-		size, ok := int64(len(f.data)), false
+		size, ok := int64(len(f.data)), session.Inlinable(f.name, f.media, f.data)
 		if f.blob != "" {
 			size, ok = f.size, f.inline
-		} else {
-			ok = session.Inlinable(f.name, f.media, f.data)
 		}
 		f.inline = ok && total+size <= session.InlineMessageTextBytes
 		if f.inline {

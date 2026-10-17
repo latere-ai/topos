@@ -231,7 +231,7 @@ func TestASourcesRules(t *testing.T) {
 		source("a", "me", "files/../a.csv"),
 		source("a", "me", "files/a/"),
 		source("a", "me", "files/"+strings.Repeat("x", MaxSourcePath)),
-		source("a", "me", "files/a‮.csv"),
+		source("a", "me", "files/a\u202e.csv"),
 		source("a", "me", "files/a.csv", 0),
 		source("a", "me", "files/a.csv", -1),
 	} {
@@ -355,7 +355,7 @@ func TestATextFileIsMarkedInline(t *testing.T) {
 		return string(b)
 	}
 	_, ev := f.sendFiles(s.ID, data("a.csv", "", "a,b\n"), data("big.txt", "", full+"x"), data("nul.txt", "text/plain", "a\x00b"),
-		data("latin.txt", "text/plain", "caf\xe9"), data("cfg", "application/json", "{}"), data("photo.png", "image/png", string(pngBytes)))
+		data("latin.txt", "text/plain", "caf\xe9"), data("cfg", "application/json", "{}"), data("photo.png", "image/png", pngBytes))
 	marks := func(ev session.Event) []bool {
 		var out []bool
 		for _, a := range records(t, ev) {
