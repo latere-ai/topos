@@ -57,6 +57,7 @@ type firingFile struct {
 	Dedupe     string    `json:"dedupe"`
 	Origin     string    `json:"origin"`
 	Envelope   string    `json:"envelope,omitempty"`
+	FiredBy    string    `json:"fired_by,omitempty"`
 	Key        string    `json:"key"`
 	Outcome    string    `json:"outcome,omitempty"`
 	Reason     string    `json:"reason,omitempty"`
@@ -94,7 +95,7 @@ func (f triggerFile) trigger() store.Trigger {
 }
 
 func (f firingFile) firing() store.Firing {
-	return store.Firing{ID: f.ID, TriggerID: f.TriggerID, Dedupe: f.Dedupe, Origin: f.Origin, Envelope: []byte(f.Envelope), Key: f.Key,
+	return store.Firing{ID: f.ID, TriggerID: f.TriggerID, Dedupe: f.Dedupe, Origin: f.Origin, Envelope: []byte(f.Envelope), FiredBy: []byte(f.FiredBy), Key: f.Key,
 		Outcome: f.Outcome, Reason: f.Reason, SessionID: f.SessionID, Open: f.Open, Replica: f.Replica, Time: f.Time.UTC(), ReceivedAt: f.ReceivedAt.UTC()}
 }
 
@@ -124,7 +125,7 @@ func (s triggerFiles) SaveFiring(f store.Firing) error {
 		return err
 	}
 	return write(s.firingPath(f.TriggerID, f.ID), firingFile{ID: f.ID, TriggerID: f.TriggerID, Dedupe: f.Dedupe, Origin: f.Origin,
-		Envelope: string(f.Envelope), Key: f.Key, Outcome: f.Outcome, Reason: f.Reason, SessionID: f.SessionID, Open: f.Open,
+		Envelope: string(f.Envelope), FiredBy: string(f.FiredBy), Key: f.Key, Outcome: f.Outcome, Reason: f.Reason, SessionID: f.SessionID, Open: f.Open,
 		Replica: f.Replica, Time: f.Time, ReceivedAt: f.ReceivedAt})
 }
 

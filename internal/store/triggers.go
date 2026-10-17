@@ -76,9 +76,16 @@ type Firing struct {
 	Origin    string
 	// Envelope is the delivered event as JSON, for an event.
 	Envelope []byte
-	Key      string
-	Outcome  string
-	Reason   string
+	// FiredBy is the fired_by of the session the firing starts (spec
+	// 077), as JSON: the token_use and authorization_details of the
+	// token of the fire that recorded the firing, when a key minted that
+	// token; empty for none. It is kept with the firing so a session
+	// started after that token is gone, a held firing's, names the same
+	// key.
+	FiredBy []byte
+	Key     string
+	Outcome string
+	Reason  string
 	// SessionID is the session the firing started or continued.
 	SessionID string
 	// Open is set on a started firing until its session is seen ended,
@@ -136,9 +143,11 @@ type Triggers interface {
 	// ClaimFiring takes the firing (f.TriggerID, f.Dedupe) and reports
 	// true: a new one is stored as f with no outcome, and a stored one
 	// whose outcome is failed or unrecorded is taken again with f's id
-	// kept as stored. Any other stored firing is returned with false. A
-	// caller claims under the trigger's lease, so an unrecorded firing
-	// it finds is one a replica that stopped left.
+	// kept as stored, and its FiredBy too when it has one, so a firing a
+	// key fired keeps that key whoever fires it again. Any other stored
+	// firing is returned with false. A caller claims under the trigger's
+	// lease, so an unrecorded firing it finds is one a replica that
+	// stopped left.
 	ClaimFiring(ctx context.Context, f Firing) (Firing, bool, error)
 	// RecordFiring moves a claimed firing whose stored outcome is from to
 	// f's outcome, reason, key, session and Open, and the trigger's

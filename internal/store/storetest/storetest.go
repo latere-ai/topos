@@ -62,6 +62,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("trigger leases", func(t *testing.T) { triggerLeases(t, f) })
 	t.Run("trigger firings", func(t *testing.T) { triggerFirings(t, f) })
 	t.Run("trigger held and open firings", func(t *testing.T) { triggerHeldAndOpen(t, f) })
+	t.Run("the key that fired a firing", func(t *testing.T) { triggerFiredBy(t, f) })
 }
 
 // Apply resolves an Agent manifest against owner's agents and stores

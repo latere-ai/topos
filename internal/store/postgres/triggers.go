@@ -209,18 +209,21 @@ func (s *Store) ReleaseTrigger(ctx context.Context, id, holder string) error {
 	return nil
 }
 
-const firingColumns = `id, trigger_id, dedupe, origin, envelope, key, outcome, reason, session_id, session_open, replica, fired_at, received_at`
+const firingColumns = `id, trigger_id, dedupe, origin, envelope, key, outcome, reason, session_id, session_open, replica, fired_at, received_at, fired_by`
 
 func scanFiring(row pgx.Row) (store.Firing, error) {
 	var f store.Firing
-	var envelope string
+	var envelope, firedBy string
 	if err := row.Scan(&f.ID, &f.TriggerID, &f.Dedupe, &f.Origin, &envelope, &f.Key, &f.Outcome, &f.Reason, &f.SessionID, &f.Open,
-		&f.Replica, &f.Time, &f.ReceivedAt); err != nil {
+		&f.Replica, &f.Time, &f.ReceivedAt, &firedBy); err != nil {
 		return store.Firing{}, err
 	}
 	f.Time, f.ReceivedAt = f.Time.UTC(), f.ReceivedAt.UTC()
 	if envelope != "" {
 		f.Envelope = []byte(envelope)
+	}
+	if firedBy != "" {
+		f.FiredBy = []byte(firedBy)
 	}
 	return f, nil
 }
@@ -274,9 +277,9 @@ func (s *Store) ClaimFiring(ctx context.Context, f store.Firing) (store.Firing, 
 	var out store.Firing
 	var fresh bool
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `INSERT INTO trigger_firings (`+firingColumns+`) VALUES ($1, $2, $3, $4, $5, $6, '', '', '', false, $7, $8, $9)
+		tag, err := tx.Exec(ctx, `INSERT INTO trigger_firings (`+firingColumns+`) VALUES ($1, $2, $3, $4, $5, $6, '', '', '', false, $7, $8, $9, $10)
 			ON CONFLICT (trigger_id, dedupe) DO NOTHING`,
-			f.ID, f.TriggerID, f.Dedupe, f.Origin, string(f.Envelope), f.Key, f.Replica, f.Time.UTC(), f.ReceivedAt.UTC())
+			f.ID, f.TriggerID, f.Dedupe, f.Origin, string(f.Envelope), f.Key, f.Replica, f.Time.UTC(), f.ReceivedAt.UTC(), string(f.FiredBy))
 		if isForeignKey(err) {
 			return fmt.Errorf("%w: trigger %s", store.ErrNotFound, f.TriggerID)
 		}
@@ -300,10 +303,15 @@ func (s *Store) ClaimFiring(ctx context.Context, f store.Firing) (store.Firing, 
 				return err
 			}
 		}
+		// The firing runs again under its first id, and with the key it
+		// was first recorded with when it has one.
 		f.ID = held.ID
+		if len(held.FiredBy) > 0 {
+			f.FiredBy = held.FiredBy
+		}
 		if _, err := tx.Exec(ctx, `UPDATE trigger_firings SET origin = $3, envelope = $4, key = $5, outcome = '', reason = '', session_id = '',
-			session_open = false, replica = $6, fired_at = $7, received_at = $8 WHERE trigger_id = $1 AND dedupe = $2`,
-			f.TriggerID, f.Dedupe, f.Origin, string(f.Envelope), f.Key, f.Replica, f.Time.UTC(), f.ReceivedAt.UTC()); err != nil {
+			session_open = false, replica = $6, fired_at = $7, received_at = $8, fired_by = $9 WHERE trigger_id = $1 AND dedupe = $2`,
+			f.TriggerID, f.Dedupe, f.Origin, string(f.Envelope), f.Key, f.Replica, f.Time.UTC(), f.ReceivedAt.UTC(), string(f.FiredBy)); err != nil {
 			return fmt.Errorf("postgres: take a firing of %s again: %w", f.TriggerID, err)
 		}
 		out, fresh = f, true
