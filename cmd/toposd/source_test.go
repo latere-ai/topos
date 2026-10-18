@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,8 +25,9 @@ import (
 // TestAMessageBringsAFileOfThePersonsFiles: on an installation whose
 // authorizer names a folder of a files store for each session, a message
 // that names a file of the sender's own files by its source is read at
-// the files API with the sender's own bearer, kept in the session's
-// folder with the session's own token and recorded with its source, and
+// the files API in the sender's own space with the session's own token,
+// never the sender's bearer, kept in the session's folder with the
+// session's own token and recorded with its source as sent, and
 // the model's request carries the file's text after the line that names
 // it, with no sandbox started for it (specs 068 and 079).
 func TestAMessageBringsAFileOfThePersonsFiles(t *testing.T) {
@@ -71,7 +73,10 @@ func TestAMessageBringsAFileOfThePersonsFiles(t *testing.T) {
 		t.Fatalf("create: %d %s", code, body)
 	}
 	sales := "month,total\nJuly,7\nAugust,8\n"
-	arca.Put("me", "files/Reports/q3.csv", arcastub.Object{Data: []byte(sales), ContentType: "text/csv"})
+	// The owner me is the sender's own space, read with the session's own
+	// token, whose subject is the agent and not the person.
+	sender := sess.Initiator.Subject
+	arca.Put(sender, "files/Reports/q3.csv", arcastub.Object{Data: []byte(sales), ContentType: "text/csv"})
 	code, body = send(http.MethodPost, "/v1/sessions/"+sess.ID+"/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"What is the total?"}],`+
 		`"attachments":[{"name":"q3.csv","source":{"owner":"me","path":"files/Reports/q3.csv"}}]}}`)
 	var sent session.Event
@@ -99,10 +104,11 @@ func TestAMessageBringsAFileOfThePersonsFiles(t *testing.T) {
 	}
 	var source int
 	for _, r := range arca.Requests() {
-		if r.Op == arcastub.OpRead && r.Path == "/v1/files/me/files/Reports/q3.csv" {
+		if r.Op == arcastub.OpRead && r.Path == "/v1/files/"+url.PathEscape(sender)+"/files/Reports/q3.csv" {
 			source++
-			if r.Header.Get("Authorization") != "Bearer "+bearer {
-				t.Fatalf("the source was read with %q, not the sender's own bearer", r.Header.Get("Authorization"))
+			read, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if m, minted := s.idp.Token(read); !ok || read == bearer || !minted || m.Workload != "session" || m.SessionID != sess.ID || m.Audience != "arca" {
+				t.Fatalf("the source was read with %+v, not the session's own token", m)
 			}
 		}
 	}
@@ -178,7 +184,7 @@ func TestASourceIsSpooledUnderTheDataDirectory(t *testing.T) {
 		t.Fatalf("create: %d %s", code, body)
 	}
 	scan := bytes.Repeat([]byte("%PDF-1.7 scan\n"), 150_000)
-	arca.Put("me", "files/Scans/scan.pdf", arcastub.Object{Data: scan, ContentType: "application/pdf"})
+	arca.Put(sess.Initiator.Subject, "files/Scans/scan.pdf", arcastub.Object{Data: scan, ContentType: "application/pdf"})
 	code, body = send(http.MethodPost, "/v1/sessions/"+sess.ID+"/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"What is this?"}],`+
 		`"attachments":[{"name":"scan.pdf","source":{"owner":"me","path":"files/Scans/scan.pdf"}}]}}`)
 	var sent session.Event

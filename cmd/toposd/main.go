@@ -412,7 +412,8 @@ func workspaces(cfg config.Config, minter *credentials.Minter) func(context.Cont
 // 068), nil when TOPOS_FILES_AUDIENCE is unset: written with the session's
 // own token for that audience, as the API's holder, and read with the
 // host client's own token for it, so a session that ended stays readable.
-// Configuration requires the identity provider beside the audience.
+// A message's sources are read with the session's own token too (spec
+// 079). Configuration requires the identity provider beside the audience.
 func files(cfg config.Config, minter *credentials.Minter, identities *idp.Client) *server.Files {
 	if cfg.FilesAudience == "" || minter == nil || identities == nil {
 		return nil
@@ -436,8 +437,15 @@ func files(cfg config.Config, minter *credentials.Minter, identities *idp.Client
 			t, err := identities.ServiceToken(ctx, cfg.FilesAudience)
 			return t.Value, err
 		}),
-		// A message's source is read with its sender's own bearer, which
-		// the send hands over and nothing keeps (spec 079).
+		// A message's sources are read with the session's own token for
+		// the files audience, the authorizer deciding each read as the
+		// person who started the session, and never with the sender's
+		// (spec 079). A fork's is asked before the fork is stored, so it is
+		// minted from the session as the send holds it.
+		Token: func(ctx context.Context, s session.Session) (string, error) {
+			c, err := minter.SessionToken(ctx, s, cfg.FilesAudience, runner.WorkloadSession)
+			return c.Value, err
+		},
 		Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) (*filestore.Source, error) {
 			return filestore.ReadSource(ctx, otel.HTTPClient(), root, token, src, max)
 		},
