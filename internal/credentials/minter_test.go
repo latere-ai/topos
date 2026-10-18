@@ -304,11 +304,12 @@ func TestWhatTheMinterRefuses(t *testing.T) {
 	}
 }
 
-// TestASessionTokenNeedsNoStoredSession: SessionToken mints the token of
-// a session as its caller holds it, a fork's before its record is written
-// among them, for the session's own id and its agent's identity; it
-// answers no Lux key and refuses what Credential refuses.
-func TestASessionTokenNeedsNoStoredSession(t *testing.T) {
+// TestASourceTokenNeedsNoStoredSession: SourceToken mints the source
+// workload's token of a session as its caller holds it, a fork's before its
+// record is written among them, for the session's own id and its agent's
+// identity; it answers no Lux key, and Credential, which the runner
+// protocol and the drives ask, never mints the source workload.
+func TestASourceTokenNeedsNoStoredSession(t *testing.T) {
 	ctx := t.Context()
 	f := newFixture(t, true)
 	stored, err := f.m.o.Sessions.Get(ctx, f.session)
@@ -320,23 +321,33 @@ func TestASessionTokenNeedsNoStoredSession(t *testing.T) {
 	if _, err := f.m.o.Sessions.Get(ctx, fork.ID); !errors.Is(err, session.ErrNotFound) {
 		t.Fatalf("the fork is stored: %v", err)
 	}
-	tok, err := f.m.SessionToken(ctx, fork, "arca", runner.WorkloadSession)
+	tok, err := f.m.SourceToken(ctx, fork, "arca")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m, ok := f.idp.Token(tok.Value); !ok || m.Subject != f.subject || m.SessionID != fork.ID || m.Workload != runner.WorkloadSession || m.Audience != "arca" {
+	if m, ok := f.idp.Token(tok.Value); !ok || m.Subject != f.subject || m.SessionID != fork.ID || m.Workload != identity.WorkloadSource || m.Audience != "arca" {
 		t.Fatalf("minted %+v", m)
 	}
-	for _, c := range []struct{ audience, workload string }{{runner.AudienceLux, runner.WorkloadSession}, {"arca", "other"}, {"", runner.WorkloadSession}} {
-		if _, err := f.m.SessionToken(ctx, fork, c.audience, c.workload); err == nil {
-			t.Errorf("%+v minted", c)
+	for _, audience := range []string{runner.AudienceLux, ""} {
+		if _, err := f.m.SourceToken(ctx, fork, audience); err == nil {
+			t.Errorf("the audience %q minted", audience)
 		}
+	}
+	mints := f.idp.Count(idpstub.OpMint)
+	if _, err := f.m.Credential(ctx, f.session, "l", "arca", identity.WorkloadSource); err == nil {
+		t.Fatal("Credential minted the source workload")
+	}
+	if _, err := f.m.Local(f.session, &lease{lost: make(chan struct{})}).Credential(ctx, "arca", identity.WorkloadSource); err == nil {
+		t.Fatal("a drive's credentials minted the source workload")
+	}
+	if f.idp.Count(idpstub.OpMint) != mints {
+		t.Fatal("a refused source workload reached the identity provider")
 	}
 	none, err := New(Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := none.SessionToken(ctx, fork, "arca", runner.WorkloadSession); !errors.Is(err, runner.ErrNotMinted) {
+	if _, err := none.SourceToken(ctx, fork, "arca"); !errors.Is(err, runner.ErrNotMinted) {
 		t.Fatalf("with no identity provider: %v", err)
 	}
 	g := newFixture(t, false)
@@ -345,7 +356,7 @@ func TestASessionTokenNeedsNoStoredSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	var se *runner.SetupError
-	if _, err := g.m.SessionToken(ctx, unnamed, "arca", runner.WorkloadSession); !errors.As(err, &se) || se.Code != runner.CodeAgentIdentityMissing {
+	if _, err := g.m.SourceToken(ctx, unnamed, "arca"); !errors.As(err, &se) || se.Code != runner.CodeAgentIdentityMissing {
 		t.Fatalf("an agent with no identity: %v", err)
 	}
 }

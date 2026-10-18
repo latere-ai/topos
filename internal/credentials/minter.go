@@ -161,16 +161,15 @@ func (m *Minter) credential(ctx context.Context, id string, h holder, audience, 
 	return m.mint(ctx, s, audience, workload)
 }
 
-// SessionToken answers the hosted-agent token of the session s for
-// audience and workload, its agent read from s as the caller holds it and
-// not from the store: a fork's own token is asked before the fork's
-// record is written, so the files its message names are read with it
-// before anything of the fork is kept. It holds no lease, as a read holds
-// none, and answers no Lux key, which is a lease's alone.
-func (m *Minter) SessionToken(ctx context.Context, s session.Session, audience, workload string) (runner.Credential, error) {
+// SourceToken answers the session s's token of the workload
+// identity.WorkloadSource for audience: the API's own read of the files a
+// message names (spec 079), which the authorizer admits the read of one
+// file and nothing else. Its agent is read from s as the caller holds it
+// and not from the store, since a fork's message is read before the fork's
+// record is written. It holds no lease, and Credential, which the runner
+// protocol and the runners' drives ask, never answers this workload.
+func (m *Minter) SourceToken(ctx context.Context, s session.Session, audience string) (runner.Credential, error) {
 	switch {
-	case workload != runner.WorkloadSession && workload != runner.WorkloadSandbox:
-		return runner.Credential{}, fmt.Errorf("credentials: the workload %q is neither session nor sandbox", workload)
 	case audience == "":
 		return runner.Credential{}, errors.New("credentials: no audience")
 	case audience == runner.AudienceLux:
@@ -178,7 +177,7 @@ func (m *Minter) SessionToken(ctx context.Context, s session.Session, audience, 
 	case m.o.Tokens == nil:
 		return runner.Credential{}, runner.ErrNotMinted
 	}
-	c, err := m.mint(ctx, s, audience, workload)
+	c, err := m.mint(ctx, s, audience, identity.WorkloadSource)
 	return c, coded(err)
 }
 

@@ -35,11 +35,15 @@ const (
 	OwnerOrganization = "organization"
 )
 
-// The workloads a session claim names: the runner's own calls, or the
-// session's sandbox.
+// The workloads a session claim names: the runner's own calls, the
+// session's sandbox, or the API's own read of a file a message of the
+// session names (spec 079). The source workload is minted by the API at a
+// send or a fork alone and handed to no runner, harness, tool or machine;
+// the runner protocol answers the other two.
 const (
 	WorkloadSession = "session"
 	WorkloadSandbox = "sandbox"
+	WorkloadSource  = "source"
 )
 
 // hostTokenMargin is how long before its expiry the host's own token is
