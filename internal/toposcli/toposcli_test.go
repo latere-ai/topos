@@ -777,6 +777,26 @@ spec:
   tools: [read, web_search]
 `
 
+// TestHistoryIsOfferedWhenNamed (spec 084): topos run offers history to
+// an agent that names it, and its call reads the conversation back.
+func TestHistoryIsOfferedWhenNamed(t *testing.T) {
+	f := setup(t)
+	path := f.manifest("reader.yaml", strings.NewReplacer("name: searcher", "name: reader", "Search before you answer.", "Read back before you answer.", "web_search", "history").Replace(searcher))
+	f.stub.Script(model,
+		luxstub.Reply{Response: reply(toolUse("toolu_h", "history", `{"query":"build"}`)).Response, Expect: expectAgent("Read back before you answer", "read,history")},
+		luxstub.Reply{Response: reply(text("7Q4.")).Response, Expect: func(r *ir.Request) error {
+			last := r.Messages[len(r.Messages)-1]
+			if last.Blocks[0].ToolResult == nil || !strings.Contains(last.Blocks[0].ToolResult.Blocks[0].Text, "The build is 7Q4.") {
+				return errUnexpected("the history did not reach the model")
+			}
+			return nil
+		}},
+	)
+	if code, out, errOut := f.run("run", "--agent", path, "The build is 7Q4. Which build?"); code != ExitOK || out != "7Q4.\n" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
 // TestWebSearchIsOfferedWhenNamed (spec 047): topos run offers web_search
 // to an agent that names it, searches TOPOS_SEARCH_URL with
 // TOPOS_SEARCH_KEY, and records the search's cost on its result; a key
