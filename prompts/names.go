@@ -14,6 +14,14 @@ const (
 	CompactionV1 Name = "compact/compact-v1"
 )
 
+// Title is the request that asks a model for a session's title after a
+// turn (spec 083), which its model.request names as its prompt_version.
+// It takes Title, the title the harness last gave the session, "" on the
+// first naming, which offers no KEEP; Messages, the person's latest
+// messages, each a Text, the names of its Files and the agent's Answer;
+// and Max, the most characters a title holds.
+const Title Name = "title/title-v1"
+
 // The texts the harness adds after a request's fold for that request
 // alone, which no event of the log holds (spec 062). A model.request that
 // carried one names it and its data in its reminder, so a replay renders

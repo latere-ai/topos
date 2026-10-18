@@ -95,6 +95,8 @@ var textCases = func() []textCase {
 	return []textCase{
 		{name: Compaction, wantSHA: "ef4ea47663fbe10d2d83d96f8b96a8a4ecfea04c9c06bc06d5b46b0994131e57"},
 		{name: CompactionV1, wantSHA: "8d62d8134b413672d87d57e05c20f135933fa3f0095199280438e3170f879bf5"},
+		{name: Title, data: Data{"Title": "", "Messages": titleMessages, "Max": 60}, wantSHA: "3073f06f3bb4db73c9fa0730637155de79abf0629a3720c48475848157a72d78"},
+		{name: Title, data: Data{"Title": "Release note", "Messages": titleMessages, "Max": 60}, wantSHA: "66f445e6204d756445bbeca5512e4e8e45c47a2b3e1858edbbffb5eb0da23342"},
 
 		{name: AdvisorInstructions, want: "You advise another agent. You see the conversation it has had so far and the question it asks. You act on nothing and have no tools: read what it did, say what is wrong or missing, and what it should do next, briefly and concretely."},
 		{name: AdvisorTranscript, data: Data{"Entries": entries}, want: transcript},
@@ -596,6 +598,14 @@ var textCases = func() []textCase {
 		{name: ContextMemory, data: Data{"Name": "scratch", "ReadOnly": false, "Path": "/mem/s", "Description": ""}, want: fmt.Sprintf("Memory store %s (%s) is at %s", "scratch", "read-write", "/mem/s")},
 	}
 }()
+
+// titleMessages are the person's messages a title request carries, as
+// the harness renders them (spec 083): one with files and an answer, and
+// one with neither.
+var titleMessages = []map[string]any{
+	{"Text": "Draft the note.", "Files": []string{"a.md", "b.csv"}, "Answer": "Drafted."},
+	{"Text": "Now the migration.", "Files": []string(nil), "Answer": ""},
+}
 
 // TestEveryTextRendersItsCurrentBytes renders every text with
 // representative data and pins the result: a change of wording shows here

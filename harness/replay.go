@@ -33,10 +33,17 @@ import (
 // A step whose log was redacted after it was sent, and one on a thread
 // whose subagent the configuration no longer names, cannot be built
 // again and is skipped.
+//
+// A request of purpose title is no step of a thread: it is built again
+// from the log through its fold_seq with the title prompt its
+// prompt_version names, on the model it records (spec 083).
 func (h *Harness) Rebuild(s session.Session, blobs BlobReader) models.Rebuild {
 	return func(ctx context.Context, log []session.Event, step session.Event, mr session.ModelRequest) (models.Request, error) {
 		if mr.FoldSeq == 0 {
 			return models.Request{}, fmt.Errorf("%w: the request recorded no fold_seq", models.ErrNotRebuilt)
+		}
+		if mr.Purpose == session.PurposeTitle {
+			return h.rebuildTitle(s, log, mr)
 		}
 		var prefix []session.Event
 		for _, e := range log {
@@ -80,6 +87,28 @@ func (h *Harness) Rebuild(s session.Session, blobs BlobReader) models.Rebuild {
 		req.MaxTokens = &asked
 		return models.Request{IR: req, Connection: cfg.Connection}, nil
 	}
+}
+
+// rebuildTitle builds a title request again from the log through its
+// fold_seq.
+func (h *Harness) rebuildTitle(s session.Session, log []session.Event, mr session.ModelRequest) (models.Request, error) {
+	if prompts.Name(mr.PromptVersion) != prompts.Title {
+		return models.Request{}, fmt.Errorf("%w: the title was asked with %s, a title prompt this build does not hold", models.ErrNotRebuilt, mr.PromptVersion)
+	}
+	var prefix []session.Event
+	for _, e := range log {
+		if e.Seq <= mr.FoldSeq {
+			prefix = append(prefix, e)
+		}
+	}
+	current, msgs := titleWindow(s, prefix)
+	req, err := titleRequest(mr.Model, current, msgs, mr.MaxTokens)
+	if err != nil {
+		return models.Request{}, err
+	}
+	conn := h.c.Connection
+	conn.Model, conn.Family, conn.Dialect = mr.Model, mr.Family, ir.Dialect(mr.Dialect)
+	return models.Request{IR: req, Connection: conn}, nil
 }
 
 // replayRequest builds a step's request from the log through its fold

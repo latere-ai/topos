@@ -363,6 +363,11 @@ func buildRequest(p requestParts) (ir.Request, error) {
 	if p.Effort != "" {
 		req.Reasoning = &lux.Reasoning{Effort: ir.Effort(p.Effort)}
 	}
+	return irOf(req)
+}
+
+// irOf is a Lux request as the IR, through the Lux codec.
+func irOf(req lux.Request) (ir.Request, error) {
 	b, err := json.Marshal(req)
 	if err != nil {
 		return ir.Request{}, fmt.Errorf("harness: encode the request: %w", err)

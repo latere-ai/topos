@@ -6,8 +6,9 @@
 // instructions and request, the tool descriptions, the texts the session
 // fold writes into a transcript, the results of calls and tools, the
 // rendering of the context block, instruction files, skills and memory
-// stores, and the reminders the harness adds to one request (specs 004,
-// 008, 010, 011, 013 and 062).
+// stores, the reminders the harness adds to one request, and the request
+// that asks for a session's title (specs 004, 008, 010, 011, 013, 062
+// and 083).
 //
 // Each text is one file embedded in the build, named by its path under
 // prompts/ without the extension and ending in its version, such as
@@ -29,7 +30,7 @@ import (
 	"text/template/parse"
 )
 
-//go:embed harness compact advisor tools transcript results context reminders
+//go:embed harness compact advisor tools transcript results context reminders title
 var files embed.FS
 
 // Name is the stable name of one text at one version: its file's path
