@@ -59,7 +59,8 @@ bound, so a document a person brings can still be parsed.
 3xx is followed once: its `Location`, resolved against the request,
 must be an `https` URL with a host, and is read with a new request that
 carries no `Authorization` header and no other header of the first, so
-the sender's bearer never reaches another host; the presigned address
+the token the files API was read with never reaches another host (the
+session's own since 2026-10-18, spec 079); the presigned address
 carries its own credential. An answer of that second read that is a
 redirect again, or anything but 200, and a `Location` that is missing
 or not `https`, are failures of the files service, `files_unavailable`.

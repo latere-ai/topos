@@ -1,9 +1,9 @@
 ---
-title: "Files a person brings into a message: a file of the person's own files named by source and read at the send with the sender's own token, a short text file the model reads in its request without a machine, and Word, Excel and PowerPoint documents the read tool reads as text"
+title: "Files a person brings into a message: a file of the person's own files named by source and read at the send with the session's own token, a short text file the model reads in its request without a machine, and Word, Excel and PowerPoint documents the read tool reads as text"
 status: testing
 track: core
 depends_on: [008-tools.md, 015-api.md, 056-editing-a-message-and-the-branches-of-a-session.md, 061-a-messages-shape-and-the-route-an-allow-names.md, 063-a-messages-opening-for-an-authorizer-that-routes-by-it.md, 068-a-sessions-files-in-a-files-store.md]
-affects: [session/, harness/, harness/tools/, prompts/, internal/server/, internal/filestore/, cmd/toposd/, test/stubs/arcastub/, api/openapi.yaml]
+affects: [session/, harness/, harness/tools/, prompts/, internal/server/, internal/filestore/, internal/credentials/, cmd/toposd/, test/stubs/arcastub/, api/openapi.yaml]
 effort: medium
 created: 2026-10-18
 updated: 2026-10-18
@@ -89,11 +89,33 @@ a version below 1, are `invalid_request`. A source counts toward
 send and before the event is appended, at the files API of the session's
 folder, the folder's `url`, which names the address the allow gave and
 no address of the client's: `GET {url}/files/{owner}/{path}` with the
-`Authorization` header `Bearer` and the send's own bearer, the token the
-request was authenticated with. A fork's message is read at the fork's
-folder after the fork's send is allowed, with the fork request's bearer.
-The read follows no redirect; spec 081 follows one, to https, and
-raises the bounds below.
+`Authorization` header `Bearer` and the session's own token for the
+files API's audience, workload `session`, asked once for the message.
+The sender's own token is never sent on. The installation's authorizer
+decides each read as the person who started the session, in the
+session's context. A fork's message is read at the fork's folder after
+the fork's send is allowed, with the fork's own token, which is asked
+for from the fork as the send holds it, before the fork is stored. The
+read follows no redirect; spec 081 follows one, to https, and raises the
+bounds below.
+
+**Whose space.** The session's token names the session's agent, not a
+person, so the files API would read `me` as the agent's space. The core
+names the space itself, and keeps the record's `source` as the message
+named it:
+
+| The message's sender | `me` is read as | Any other owner |
+|---|---|---|
+| the person who started the session | their own space, their subject | read as named; the authorizer admits what that person may read |
+| another person who may send to the session | their own space, their subject | their own subject alone; any other is `attachment_source_not_found` before anything is read or a token asked for |
+| a sender that is no person, such as a trigger | none | `attachment_source_not_found` |
+
+A sender who did not start the session is held to their own space
+because the read is decided as the person who did: a source of another
+space would be read with the starter's reach, not the sender's. Their
+own space is read only where the starter may read it, a file shared
+with them. A trigger's messages carry no files today; the row is the
+guard for one that would.
 
 | The files API answers | The message is |
 |---|---|
@@ -101,6 +123,7 @@ raises the bounds below.
 | 200 with more | `attachment_too_large` |
 | a redirect | `attachment_too_large`: an Arca-compatible files API redirects a file past its inline bound to a presigned address, and a public file at any size |
 | 401, 403 or 404 | `attachment_source_not_found`, 404, whichever of the three it was: the answer does not say whether the file exists |
+| (no read) a token for the files API the core cannot have | `files_unavailable` |
 | anything else, or no answer | `files_unavailable` |
 
 `MaxSourceBytes` is `filestore.InlineBytes`, 16 MiB, the bound up to
@@ -112,7 +135,10 @@ bound and the bytes read before it. A session that
 keeps no folder refuses a message with a source as `invalid_request`,
 since the source is read where its folder is and kept there, and a
 server whose files store reads no source refuses it as
-`files_unavailable`.
+`files_unavailable`. An installation with no files audience, or no
+identity provider to mint the session's token, keeps no files store, so
+no session keeps a folder and every source is `invalid_request`: a local
+installation reads no file of a person's files.
 
 **Kept as a data file is.** The media type is the files API's
 `Content-Type`, unless it is empty or `application/octet-stream`, in
@@ -201,7 +227,7 @@ whether to take one is the owner's decision, later.
 
 | Choice | Picked | Weighed against |
 |---|---|---|
-| The credential of a source's read | the sender's own bearer, within the request | the session's own token and a rule of the installation's authorizer that admits a read the message names (see below) |
+| The credential of a source's read | the session's own token for the files API, the authorizer deciding the read as the session's starter (replaced 2026-10-18, below) | the sender's own bearer, within the request, which the first build used |
 | A redirect from the files API | refused, `attachment_too_large` | followed to the presigned address: a file past 16 MiB in the core's memory at a send, and a public file's address would be one of the files API's choosing |
 | A 401, 403 and 404 | one code, 404 | each its own: a caller would learn which files of another owner exist |
 | Where a text's eligibility is decided | at the send, marked on the record | at each request: the request would depend on what a read answers that day, a log written before this spec would render differently when built again, and a replay could not tell which texts its request held |
@@ -211,20 +237,30 @@ whether to take one is the owner's decision, later.
 | An office document's reader | the standard library | a dependency per format, for formatting this text drops anyway |
 | A PDF | binary, as today | a PDF library: the owner's decision, later |
 
-**A deviation the owner decides.** The core reads a source with the
-sender's own token, inside the request that names it. Nothing is
-stored: the token is used for the one read and dropped with the request.
-The message is the consent: the person who reads the file is the person
-who sends it, at that moment. And a key's narrowing holds: a token
-minted from a key that may not read the file is refused by the files
-API, not by a rule the core would have to keep in step with it. The
-alternative is to read with the session's own token, with a rule of the
-installation's authorizer that admits a read of a file a message of the
-session names; it keeps every read of the files API to one credential,
-the session's, at the price of a rule that must know what a message
-named, and a session that could read what its sender may not. This is a
-deviation of authorization, and the owner decides it; the wire contract
-does not depend on it.
+**The deviation, replaced on 2026-10-18.** The first build read a
+source with the sender's own token, inside the request that names it: a
+person's credential passed by the core to another service, a deviation
+of authorization left to the owner. The owner approved its replacement
+on 2026-10-18. The core reads a source with the session's own token, as
+it reaches every other service, and the installation's authorizer
+decides the read as the session's starter would be decided, held to the
+grants of a key that started the session. The reasons:
+
+- **Least access.** Each decision admits reading one file, not
+  everything the person's token could do.
+- **One place decides.** The read is decided, and its refusals counted,
+  where every other permission between services is.
+- **No token is forwarded.** The core never sends a person's token to
+  another service.
+- **Senders with no live sign-in.** The session's token is there for a
+  message whatever credential its sender holds.
+
+What it costs: the authorizer does not see the message, so it admits a
+read of any one file the starter may read and cannot hold it to the
+file a message named; which reads are made is the core's code, at a
+send, of the sources a message names, and only of a space the sender's
+row above names. The token is the session workload's and never reaches
+a machine. The wire contract did not change, and no client changed.
 
 ## Compatibility
 
@@ -249,17 +285,19 @@ has no marked file, and its requests build as before.
 
 | # | Criterion | Test | State |
 |---|---|---|---|
-| 1 | A message's source is read from the files API of the session's folder with the send's own bearer, at `?version=N` when it names a version, stored in the folder as a data file is, and recorded with `source`; the media type is the files API's, or sniffed when it is empty or `application/octet-stream` | `internal/server.TestASourceIsReadWithTheSendersToken` | built |
+| 1 | A message's source is read from the files API of the session's folder with the session's own token, asked once for the message and never the send's bearer, `me` read as the sender's own space, at `?version=N` when it names a version, stored in the folder as a data file is, and recorded with `source` as the message named it; the media type is the files API's, or sniffed when it is empty or `application/octet-stream` | `internal/server.TestASourceIsReadWithTheSessionsToken` | built |
 | 2 | A source the files API answers 401, 403 or 404 is `attachment_source_not_found` 404 with one body for the three, a body past `MaxSourceBytes` and sources past `MaxMessageSourceBytes` together are `attachment_too_large` (a redirect is followed since spec 081), any other failure `files_unavailable`; a refused message appends nothing and writes nothing to the folder | `internal/server.TestASourceTheFilesAPIRefuses`, `TestAMessagesSourcesAreBoundTogether`, `internal/filestore.TestReadSource` | built |
 | 3 | A file names exactly one of `data`, `blob` and `source`; a source beside a `media_type`, with an owner, a path or a version out of its rules, and on a session with no folder is `invalid_request`, and on a server whose files store reads no source `files_unavailable`; sources count toward `MaxAttachments` | `internal/server.TestASourcesRules` | built |
-| 4 | A fork's message with a source is read with the fork request's bearer at the fork's folder and kept in the fork's folder; a file kept by its blob keeps its record's source and mark; a refused read leaves no fork | `internal/server.TestAForksMessageReadsASource` | built |
+| 4 | A fork's message with a source is read with the fork's own token, asked before the fork is stored, at the fork's folder and kept in the fork's folder; a file kept by its blob keeps its record's source and mark; a refused read leaves no fork | `internal/server.TestAForksMessageReadsASource`, `internal/credentials.TestASessionTokenNeedsNoStoredSession` | built |
 | 5 | The send's and the fork's question count a source in `attachments` | `internal/server.TestASourceCountsAsAnAttachment`, `TestAForksMessageReadsASource` | built |
 | 6 | A text-like UTF-8 file of at most 64 KiB is marked `inline`; a larger one, one past the message's 192 KiB, a binary one and one that is not UTF-8 are not; a source is marked once read; a fork's kept file keeps its mark | `session.TestWhatAModelMayReadInline`, `internal/server.TestATextFileIsMarkedInline`, `TestASourceIsReadWithTheSendersToken`, `TestAForksMessageReadsASource` | built |
 | 7 | A request carries a marked file's text after the line that names it, fenced, read from the folder or the blobs and read once per harness, with no machine opened; an unmarked file, a read that fails and bytes that are not the record's leave the path line alone, and the next turn tries the failed read again | `session.TestAFoldRendersAMarkedFilesText`, `harness.TestAShortTextFileIsReadInTheRequest`, `harness.TestAFileReadInlineIsTheRecords` | built |
 | 8 | A replay builds a request that carried a file's text again and matches | `harness.TestAReplayCarriesAFilesText` | built |
 | 9 | `read` returns the text of a `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and `.odp`, with the kind line, numbered and bounded lines, and the file's digest; a malformed one is the binary answer; a crafted one is held to its bounds of text, inflation, time and context | `harness/tools.TestReadReadsOfficeDocuments`, `TestReadFallsBackOnABrokenDocument`, `TestCellReferencesNameTheirColumn`, `TestARowIsBoundAsItIsBuilt`, `TestADocumentIsInflatedWithinOneBudget`, `TestADocumentReadStopsWithItsContext` | built |
 | 10 | The API document describes `source`, the record's `source` and `inline`, and `attachment_source_not_found` | `internal/server.TestOpenAPIIsGenerated` | built |
-| 11 | End to end on the stubs: toposd reads a message's source with the sender's own bearer, keeps it in the session's folder with the session's own token, and the model's request carries its text with no sandbox created | `cmd/toposd.TestAMessageBringsAFileOfThePersonsFiles`, `test/stubs/arcastub.TestTheStubReadsAVersion` | built |
+| 11 | End to end on the stubs: toposd reads a message's source in the sender's own space with a token the identity provider minted for the session, not the sender's bearer, keeps it in the session's folder with the session's own token, and the model's request carries its text with no sandbox created | `cmd/toposd.TestAMessageBringsAFileOfThePersonsFiles`, `test/stubs/arcastub.TestTheStubReadsAVersion` | built |
+| 12 | A sender who did not start the session names a file of their own space alone, `me` or their subject, and any other space is `attachment_source_not_found` before anything is read or a token asked for; a sender that is no person names none | `internal/server.TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace`, `TestASenderWithNoSpaceNamesNoSource` | built |
+| 13 | A token for the files API the core cannot have is `files_unavailable` before anything is read, as is a files store that asks for none | `internal/server.TestASessionsTokenThatCannotBeHadReadsNothing` | built |
 
 ## Outcome
 
@@ -326,5 +364,18 @@ written, or adds to it:
 
 Not done: a source past 16 MiB, through the files API's presigned
 address, which spec 081 takes up; reading a PDF's text, the owner's
-decision, later; and the credential of a source's read, which the
-owner decides (see Decisions).
+decision, later.
+
+**The credential replaced, 2026-10-18,** on the owner's approval
+(Decisions). `readSources` asks `Files.Token` once for a message and
+reads every source with it; toposd's is `credentials.Minter.SessionToken`
+for `TOPOS_FILES_AUDIENCE`, workload `session`, which reads the agent
+from the session as the send holds it, so a fork's message is read with
+the fork's own token before the fork is stored. `sourceOwner` names each
+source's space (`session.OwnerMe` as the sender's subject, a sender who
+did not start the session held to their own) before the token is asked
+for. A token that cannot be had is `files_unavailable`. The send no
+longer reads the request's bearer. The installation's authorizer must
+admit the session's read of one file outside its folder, decided as its
+starter, before a core of this build reads a source there; until it
+does, every source is `attachment_source_not_found`.
