@@ -10,10 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **`read` reads a PDF as text through a parsing service.** Set `TOPOS_PARSING_URL` to the parsing service's API, under which its `parses` are served. A PDF a person attached to a message, or one the working directory held at the end of an earlier turn, is then fetched by the service from the session's folder, at an address the files service signs for a few minutes, and `read` returns its pages as Markdown, each opened by a `<!-- page N -->` mark, after a line that says how many pages the PDF has, and ends with the `pages` to read next. `read` takes `pages`, such as `1-5`, `1-3,7` or `9-`, and returns the first 5 pages by default; the service reads at most the first 500 pages of a PDF, and one read waits at most 5 minutes. The parse is kept for the session, so reading other pages of the same PDF, in the same turn or a later one, reaches no model and costs nothing. What the service's model reads cost is priced at the model's figures and carried as `cost_usd_micro` on the step's `tool.result`, which the session's spend counts; a PDF read from its own text costs 0. The `tool.result`'s meta names the parse, `{id, pages, more, shown}`, for a client to show. A PDF the service could not read, a refusal, a failed parse, a timeout, or a PDF the session's folder does not hold, is the binary answer as before with a sentence saying why, and never fails the turn. Each request carries the session's own token for the audience `lectio`, which the identity provider must issue and the authorizer admit. Unset, or for a session without a folder, `read` answers a PDF as a binary file and offers no `pages`.
+
 ### Changed
 
 - **A message can bring a file of up to 256 MiB from the person's own files.** A `source` the files API answers with a redirect, as it answers a file past its inline bound (16 MiB by default) and a public file, is now read at the https address the redirect names, without the client's token, which never leaves the files API; this was `attachment_too_large`. A redirect to an address that is not https, and a second redirect, are `files_unavailable`. A file may be up to 256 MiB, and a message's sources up to 512 MiB together, in place of 16 MiB and 32 MiB; past them a source is `attachment_too_large`, as before. The server holds such a file on disk while the message is checked, not in memory, under `spool/` of `TOPOS_DATA_DIR`, which must be writable, and at most 2 GiB of them at once; a message that would pass that is `files_unavailable` and may be sent again. A program that embeds the server names the directory in `Files.Spool`, and its `Files.Source` answers the file as a stream, `*filestore.Source`.
 - **A file delivered to a Cella sandbox is streamed.** A message's file past 1 MiB, and a file of the working directory restored from the session's folder, is written into the sandbox as it is read, so the runner's memory does not grow with the file.
+- `latere.ai/x/pkg` v0.101.0: an image a tool returns, such as a PNG `read` opens, now reaches a model on the OpenAI Chat Completions and Responses dialects.
 
 ### Fixed
 

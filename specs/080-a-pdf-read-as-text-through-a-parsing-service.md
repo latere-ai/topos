@@ -1,6 +1,6 @@
 ---
 title: "A PDF read as text through a parsing service: read sends a PDF of the session's folder to the parsing service the installation configures, with the session's own token, returns the pages asked as Markdown, keeps the parse for the session, and counts what its model reads cost"
-status: drafted
+status: in-progress
 track: core
 depends_on: [007-models.md, 008-tools.md, 018-credentials-and-secrets.md, 047-web-search.md, 068-a-sessions-files-in-a-files-store.md, 073-a-working-directory-kept-in-the-sessions-folder.md, 079-files-a-person-brings-into-a-message.md]
 affects: [harness/parsing/, harness/tools/, internal/parsing/, internal/filestore/, internal/hosted/, internal/config/, internal/server/, cmd/toposd/, prompts/, docs/]
@@ -70,12 +70,18 @@ A submit's body:
 ```json
 {
   "source": {"url": "<presigned GET of the file>"},
-  "origin": {"store": "storage", "path": "<owner>/<folder path>/<ref>", "version": "<sha256 hex>"},
+  "origin": {"store": "storage", "path": "<owner, escaped as one segment>/<folder path>/<ref>"},
   "pages": "1-500",
   "allow_failed_pages": 500,
   "deadline": "270s"
 }
 ```
+
+The origin names the file's place in the session's folder: the folder's
+owner as the folder record names it, escaped with `url.PathEscape`, the
+folder's path, and the ref inside it, as an authorizer that admits a
+session's parse of its own folder reads it. The deadline is a whole
+number of seconds.
 
 A parse is `{id, state, progress: {pages_total, pages_done,
 pages_failed}, usage: {input_tokens, output_tokens}, error: {code,
@@ -215,16 +221,42 @@ meta may ignore `parse`.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| The page selection reads `1-5,7` and `9-`, refuses a malformed one, clamps to the document, and formats the pages shown | `harness/parsing.TestSelect` | not built |
-| The client sends each call with the bearer its function answers at that call, `Prefer: wait` on the submit, and reads a parse, a refusal's envelope, a 404, a page and the document's Markdown within its bound | `internal/parsing.TestTheClient`, `internal/parsing.TestTheClientsFailures` | not built |
-| A read locates the file in the folder by path and digest, presigns it, submits with the origin, the pages bound and a deadline, polls to the end, and returns the pages' Markdown; a 409 `document_not_ready` is asked again | `internal/parsing.TestAReadSubmitsWithTheOrigin` | not built |
-| A second read of the same bytes, and a read of a parse a meta recorded, run no parse and carry no cost; a kept parse the service answers 404 for is submitted again; two reads at once share one parse | `internal/parsing.TestAParseIsKept` | not built |
-| A parse with no tokens costs 0; one with model reads is priced per page at each page's model, reused pages left out; an unpriced model leaves the cost unset | `internal/parsing.TestTheCostOfAParse` | not built |
-| A refusal, a failed parse, a file not in the folder and a timeout are errors the tool answers with the binary answer and the sentence, a failed parse with its cost | `internal/parsing.TestAReadsFailures`, `harness/tools.TestReadFallsBackWhenAPDFIsNotParsed` | not built |
-| `read` with a parser reads a PDF by its leading bytes, numbers its lines after the head line, says which pages follow and which to ask next, records `parse` on its meta, sets the cost, and offers `pages`; without one it answers a PDF as before with `tools/read-v2` | `harness/tools.TestReadReadsAPDFThroughAParser`, `harness/tools.TestReadWithoutAParserIsUnchanged` | not built |
-| `StateOf` folds a result's `parse` meta by the file's digest | `harness/tools.TestStateKeepsAParse` | not built |
-| The files store answers a presigned GET of a ref without following it | `internal/filestore.TestPresign` | not built |
-| The hosted builder gives `read` a parser when the URL is set, the session keeps a folder and the installation mints tokens, with the session's token for `lectio`; the file's place is read from the log | `internal/hosted.TestReadParsesAPDFOfTheFolder` | not built |
-| `TOPOS_PARSING_URL` is checked at start and is in spec 002's table and the configuration page | `internal/config.TestParsingURL`, `internal/config.TestConfigurationTableMatchesTheSpec`, `internal/config.TestConfigurationPageNamesEveryRead` | not built |
-| The API document names `ReadResultMeta` | `internal/server.TestOpenAPIIsGenerated` | not built |
+| The page selection reads `1-5,7` and `9-`, refuses a malformed one, clamps to the document, and formats the pages shown | `harness/parsing.TestSelect` | built |
+| The client sends each call with the bearer its function answers at that call, `Prefer: wait` on the submit, and reads a parse, a refusal's envelope, a 404, a page and the document's Markdown within its bound | `internal/parser.TestAReadSubmitsWithTheOrigin`, `internal/parser.TestTheClientsFailures` | built |
+| A read locates the file in the folder by path and digest, presigns it, submits with the origin, the pages bound and a deadline, polls to the end, and returns the pages' Markdown; a 409 `document_not_ready` is asked again | `internal/parser.TestAReadSubmitsWithTheOrigin` | built |
+| A second read of the same bytes, and a read of a parse a meta recorded, run no parse and carry no cost; a kept parse the service answers 404 for is submitted again; two reads at once share one parse | `internal/parser.TestAParseIsKept` | built |
+| A parse with no tokens costs 0; one with model reads is priced per page at each page's model, reused pages left out; an unpriced model leaves the cost unset | `internal/parser.TestTheCostOfAParse` | built |
+| A refusal, a failed parse, a file not in the folder and a timeout are errors the tool answers with the binary answer and the sentence, a failed parse with its cost | `internal/parser.TestAReadsFailures`, `harness/tools.TestReadFallsBackWhenAPDFIsNotParsed` | built |
+| `read` with a parser reads a PDF by its leading bytes, numbers its lines after the head line, says which pages follow and which to ask next, records `parse` on its meta, sets the cost, and offers `pages`; without one it answers a PDF as before with `tools/read-v2`; the description states the bounds from their constants | `harness/tools.TestReadReadsAPDFThroughAParser`, `harness/tools.TestReadWithoutAParserIsUnchanged`, `prompts.TestReadParsedDescriptionHoldsTheBounds`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| `StateOf` folds a result's `parse` meta by the file's digest | `harness/tools.TestStateKeepsAParse` | built |
+| The files store answers a presigned GET of a ref without following it | `internal/filestore.TestPresign` | built |
+| The hosted builder gives `read` a parser when the URL is set, the session keeps a folder and the installation mints tokens, with the session's token for `lectio`; the file's place is read from the log | `internal/hosted.TestReadParsesAPDFOfTheFolder`, `internal/hosted.TestTheParsingReaderNeedsItsSettings` | built |
+| `TOPOS_PARSING_URL` is checked at start and is in spec 002's table and the configuration page | `internal/config.TestParsingURL`, `internal/config.TestConfigurationTableMatchesTheSpec`, `internal/config.TestConfigurationPageNamesEveryRead` | built |
+| The API document names `ReadResultMeta` | `internal/server.TestOpenAPIIsGenerated` | built |
 | A hosted session in production reads a PDF a person attached through the installation's parsing service | a recorded run | not built: the identity provider and the authorizer do not yet issue and admit the audience `lectio` for a session |
+
+## Outcome
+
+Built on 2026-10-18 on the branch `read-parsed`, in no release yet, and
+run against a stub parsing service, the stub files API, the stub Cella
+and the stub Lux, not against an installation's parsing service. Where
+the build differs from the design as first written, or adds to it:
+
+- **The origin names no version.** The design sent the bytes' digest as
+  `origin.version`; the authorizer's rule for a session's parse reads
+  the store and the path alone, so the origin is those two. A parse a
+  later drive reuses is found by the id its result's meta records.
+- **The parse's id, not the service's lookup, carries a parse across
+  drives**: `tools.State.Parses`, folded from each `parse` meta by the
+  file's digest, gives a later read the id it reads again.
+- **A failed read is logged** by the hosted reader with the path, the
+  digest, the parse and the service's detail, since the model reads one
+  sentence and the operator needs the cause.
+- **The pricing reads up to 8 pages' records at once**, and sums each
+  model's tokens before pricing them, so a parse is rounded up once per
+  model and not once per page.
+
+Not done: a recorded run in production, which waits on the identity
+provider issuing the audience `lectio` for a session and the authorizer
+admitting `parse.create` of the session's own folder and reads of its
+own parses.
