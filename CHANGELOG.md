@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **A message can bring a file of up to 256 MiB from the person's own files.** A `source` the files API answers with a redirect, as it answers a file past its inline bound (16 MiB by default) and a public file, is now read at the https address the redirect names, without the client's token, which never leaves the files API; this was `attachment_too_large`. A redirect to an address that is not https, and a second redirect, are `files_unavailable`. A file may be up to 256 MiB, and a message's sources up to 512 MiB together, in place of 16 MiB and 32 MiB; past them a source is `attachment_too_large`, as before. The server holds such a file on disk while the message is checked, not in memory, under `spool/` of `TOPOS_DATA_DIR`, which must be writable, and at most 2 GiB of them at once; a message that would pass that is `files_unavailable` and may be sent again. A program that embeds the server names the directory in `Files.Spool`, and its `Files.Source` answers the file as a stream, `*filestore.Source`.
+- **A file delivered to a Cella sandbox is streamed.** A message's file past 1 MiB, and a file of the working directory restored from the session's folder, is written into the sandbox as it is read, so the runner's memory does not grow with the file.
+
+### Fixed
+
+- **A fork's message that keeps a file of the session it forks does not read it again at its source.** A file named by its blob kept the source its record named and was read there once more, so a fork whose original file had since moved, or that the sender could no longer read, was refused `attachment_source_not_found`.
+
 ## v0.43.0 - 2026-10-18
 
 ### Added

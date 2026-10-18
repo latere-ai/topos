@@ -92,7 +92,8 @@ no address of the client's: `GET {url}/files/{owner}/{path}` with the
 `Authorization` header `Bearer` and the send's own bearer, the token the
 request was authenticated with. A fork's message is read at the fork's
 folder after the fork's send is allowed, with the fork request's bearer.
-The read follows no redirect.
+The read follows no redirect; spec 081 follows one, to https, and
+raises the bounds below.
 
 | The files API answers | The message is |
 |---|---|
