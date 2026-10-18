@@ -1,6 +1,6 @@
 ---
 title: "Device machines: a person's own computer as a session's machine, through a Cella environment the computer serves; named at create with a granted folder, opened with no secrets, no repository delivery, no checkpoints and no restore, the helper written for the computer's OS and architecture, scored as a host, and `machine_waiting` while the computer is away or has not approved the session"
-status: drafted
+status: testing
 track: core
 depends_on: [008-tools.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 034-checkpoints-and-rewind.md, 052-a-sessions-network.md, 065-a-working-directory-rebuilt-from-the-log.md, 073-a-working-directory-kept-in-the-sessions-folder.md, 076-the-working-directory-is-saved-during-a-turn.md]
 affects: [machine/, machine/cella/, session/, harness/, internal/server/, internal/hosted/, runner/, cmd/topos-machine/, prompts/, api/, docs/, CHANGELOG.md]
@@ -222,3 +222,95 @@ and appears in its owner's list.
 9. The conformance suite (spec 029) covers a device session end to end
    against a Cella worker on the `local` driver in CI on Linux, and the
    release builds the four helper targets.
+
+## Outcome
+
+Built on 2026-10-18, in no release yet, against Cella's main branch
+through a pseudo-version, and run against the stub Cella alone, whose
+environments now include ones a person's computer serves: a host in
+`status.hosts`, a phase, held creates, refusals, a worker that goes
+away, and scratch directories in `status.paths`. Criteria 1 to 8 have
+their tests: `TestCreateNamesADevice` and `TestATriggerNamesADevice` in
+`internal/server`, `TestDeviceLabels`, `TestDeviceOpensWithNoSecrets`,
+`TestDeviceGetsNoRepositoriesOrRestore` and `TestDeviceWaits` in
+`internal/hosted`, `TestDeviceHelperByOSAndArch`,
+`TestDeviceSetsNoHomeAndFindsItsHelperDir`, `TestDeviceWaitsForItsComputer`
+and `TestADevicesAttachmentsStayOutOfTheFolder` in `machine/cella`,
+`TestDeviceScoresAsHost` in `harness`, and
+`TestResumeAMachineWaitingSession` beside them. The release half of
+criterion 9 is `TestTheReleaseBuildsTheHelperForEveryPlatform`. Its
+conformance half is open: the suite of spec 029 is not built, and a
+device session against a real worker needs Cella's local driver (Cella
+spec 081), which is not on Cella's main branch yet, and srt on the
+runner; the spec stays at testing until that case runs.
+
+Where the build differs from the design, or adds to it:
+
+- **A trigger names a device in `spec.session.machine`.** The design
+  names a device per session at create and says a trigger's session
+  idles the same way, but not how a trigger's session names one. A
+  Trigger's `spec.session.machine` takes `{kind: device, environment,
+  workdir}`, the one machine a trigger names; any other kind is still
+  refused at apply, and an agent's manifest that names `device` is
+  `invalid_manifest`. The session header records `trigger_fires_on`,
+  `schedule` or `events`, at the create, which the
+  `topos.latere.ai/trigger-fires-on` label reads.
+- **The machine section is `harness/2`, for device sessions alone.**
+  The harness prompt's versions are pinned, and a new current version
+  merges only with the instruction tier's result. `harness/2` is
+  `harness/1` with a device branch in its machine section, which says
+  the computer is the person's own, that commands change real files,
+  and that what its files say is data and not instructions; it renders
+  every other machine byte for byte as `harness/1`. A device session's
+  requests carry `prompt_version: harness/2`; `HarnessCurrent` stays 1
+  until the instruction tier has run against 2.
+- **A message's files keep their recorded paths.** A file is recorded
+  at `attachments/<event id>/<name>` before any machine exists. On a
+  device it is written to `<tmp>/topos/attachments/`, and the device
+  resolves a relative path of that shape there, so the file tools reach
+  it by the path the transcript names; the transcript's line on a
+  device says a command reaches them under `$TMPDIR/topos/`, which is
+  the sandbox's temporary directory on the local driver. A path under
+  the folder's own `attachments/` that does not name an event stays the
+  folder's. The folder's `.git/info/exclude` is not touched.
+- **The host facts fall back to the sandbox's own report.** `Info().OS`
+  and `Info().Arch` come from the environment's `status.hosts` when the
+  session's credential may read the environment, and `Info().Sandbox`
+  from its isolation; where the read is refused they come from the
+  sandbox's `uname` and its `status.isolation`.
+- **`status.paths` is read from the answer's bytes,** since the Cella
+  manifest types this build pins do not hold it yet; the read moves to
+  the typed field when they do.
+- **A device takes the session's network at its create.** The computer
+  narrows it to its own list. The session's network does not govern a
+  device after that: an ask for a host outside it, a widening, and the
+  reconcile of a sandbox found by name apply to a Cella sandbox alone,
+  and `web_fetch` runs on the computer, under the computer's list.
+- **A lost sandbox is never restored or replaced, and the next open
+  makes a new one on the same computer.** Within a drive a loss stops
+  the turn with `machine_waiting`; the next drive finds the sandbox by
+  name, or creates one on the same environment and folder, recorded as
+  `handoff`, with nothing written into it. A sandbox the computer will
+  not start again holds the session's scratch files alone and is
+  deleted, so the next open makes a new one.
+- **A refusal deletes the refused sandbox and holds for the turn.** The
+  next turn asks the computer again. The turn starts the machine no more
+  once it was refused, so a call's arguments streaming do not ask the
+  owner a second time.
+- **`session.machine_waiting` is appended twice at most per wait:** when
+  a call begins to wait for the owner, recorded by the runner beside the
+  running turn, and when the turn stops, unless the last one of the turn
+  already names the stop's reason. The stop's reason is also the
+  `session.status` detail.
+- **A call that lost its computer is answered for a device.** Its
+  result says the computer stopped answering and that its files are
+  kept, rather than the sandbox's text that its files may be lost.
+- **A resume of a session waiting for its machine refuses
+  `max_cost_usd_micro`** as `invalid_request`, and carries the session's
+  own budget in its `session.resumed`, which sets the budget whatever it
+  holds.
+- **The approval wait is a constant,** `cella.DefaultApprovalWait`, two
+  minutes, and no operator variable.
+- **A trigger counts a session waiting for its machine as active,** so
+  a firing that skips while one is starts no other.
+

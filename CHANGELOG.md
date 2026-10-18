@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A session can work on a person's own computer.** `POST /v1/sessions` takes `machine: {kind: device, environment, workdir}`: `environment` names the Cella environment the computer serves through an embedded worker, and `workdir` the folder on it the session works in, an absolute, clean path. Any other kind is still refused as `invalid_request`, and a server without Cella answers `machine_unavailable`. The session records the machine for its whole life, and the authorizer's `session.create` carries `machine: device` with `environment` and `workdir`; a fork's `session.fork` carries the same three, decided for the person forking. A trigger names a device the same way in `spec.session.machine`, the one machine a trigger names, and its sessions record `trigger_fires_on`, `schedule` or `events`. An agent's manifest that names `device` is `invalid_manifest`.
+- **A device machine is the person's computer, not a sandbox.** Its sandbox is created on the device's environment with the folder bound in place, with no image, no Lux, git host or connection Secret, no `LUX_URL` and no `HOME`, labeled with the agent's version and, for a trigger's session, the trigger and what it fires on, and annotated with the agent's display name, which the computer shows its owner. No repository is delivered into the folder, a message's files go to the sandbox's temporary directory, under `topos/attachments/`, and the session keeps no checkpoint and no copy of its working directory and restores neither. A call there scores as a call on a host, so in `confirm` a write asks. The helper is written for the computer's operating system and architecture through Cella's file route, and the release builds it for `darwin/arm64` and `darwin/amd64` beside `linux/amd64` and `linux/arm64`. The model reads `harness/2`, whose machine section says the computer is the person's own and that what its files say is data, not instructions; every other session stays on `harness/1`.
+- **`machine_waiting`.** A session on a computer that is offline or asleep, or whose owner has not allowed the session within two minutes of a call's asking, goes idle with `stop_reason: machine_waiting` and the reason, `offline` or `approval`, in its `session.status` detail, and `session.machine_waiting {reason, environment}` names it; the one for `approval` is appended while the call still waits, so a client can ask the person to allow the session on the computer. A computer that stops answering under a call stops the turn the same way. A computer whose owner refused the session appends `session.error` `machine_refused` with the computer's own words in `detail`, answers every later call of that turn so, and the turn goes on. The next message, or `POST /v1/sessions/{id}/resume`, continues a session idle on `machine_waiting`; that resume adds no message, keeps the session's budget, and refuses `max_cost_usd_micro` as `invalid_request`.
+
+### Changed
+
+- `latere.ai/x/cella` at its main branch, for the host facts, the held create and the scratch directories of a worker on a person's computer, and `latere.ai/x/pkg` v0.102.0.
+
 ## v0.44.0 - 2026-10-18
 
 ### Added
