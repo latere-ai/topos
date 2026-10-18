@@ -25,9 +25,9 @@ import (
 // TestAMessageBringsAFileOfThePersonsFiles: on an installation whose
 // authorizer names a folder of a files store for each session, a message
 // that names a file of the sender's own files by its source is read at
-// the files API in the sender's own space with the session's own token,
-// never the sender's bearer, kept in the session's folder with the
-// session's own token and recorded with its source as sent, and
+// the files API in the sender's own space with the session's token of the
+// source workload, never the sender's bearer, kept in the session's folder
+// with the session's own token and recorded with its source as sent, and
 // the model's request carries the file's text after the line that names
 // it, with no sandbox started for it (specs 068 and 079).
 func TestAMessageBringsAFileOfThePersonsFiles(t *testing.T) {
@@ -107,8 +107,8 @@ func TestAMessageBringsAFileOfThePersonsFiles(t *testing.T) {
 		if r.Op == arcastub.OpRead && r.Path == "/v1/files/"+url.PathEscape(sender)+"/files/Reports/q3.csv" {
 			source++
 			read, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if m, minted := s.idp.Token(read); !ok || read == bearer || !minted || m.Workload != "session" || m.SessionID != sess.ID || m.Audience != "arca" {
-				t.Fatalf("the source was read with %+v, not the session's own token", m)
+			if m, minted := s.idp.Token(read); !ok || read == bearer || !minted || m.Workload != "source" || m.SessionID != sess.ID || m.Audience != "arca" {
+				t.Fatalf("the source was read with %+v, not the session's token of the source workload", m)
 			}
 		}
 	}

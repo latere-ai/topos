@@ -437,13 +437,14 @@ func files(cfg config.Config, minter *credentials.Minter, identities *idp.Client
 			t, err := identities.ServiceToken(ctx, cfg.FilesAudience)
 			return t.Value, err
 		}),
-		// A message's sources are read with the session's own token for
-		// the files audience, the authorizer deciding each read as the
-		// person who started the session, and never with the sender's
-		// (spec 079). A fork's is asked before the fork is stored, so it is
-		// minted from the session as the send holds it.
+		// A message's sources are read with the session's token of the
+		// source workload for the files audience, which only this server
+		// holds, the authorizer deciding each read as the person who
+		// started the session, and never with the sender's (spec 079). A
+		// fork's is asked before the fork is stored, so it is minted from
+		// the session as the send holds it.
 		Token: func(ctx context.Context, s session.Session) (string, error) {
-			c, err := minter.SessionToken(ctx, s, cfg.FilesAudience, runner.WorkloadSession)
+			c, err := minter.SourceToken(ctx, s, cfg.FilesAudience)
 			return c.Value, err
 		},
 		Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) (*filestore.Source, error) {
