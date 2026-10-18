@@ -78,8 +78,8 @@ an owner's id; `path` is the file's path in that space as the files API
 reads it, its plane included (`files/Reports/q3.csv`), the path of
 `GET {files API}/files/{owner}/{path}`; `version`, when present, a
 version of the file from 1 upward, read as `?version=N`. An owner that
-is empty, longer than `MaxAttachmentName` bytes, or holds a control or
-a bidirectional character, a path that is empty, longer than
+is empty, `.` or `..`, longer than `MaxAttachmentName` bytes, or holds a
+control or a bidirectional character, a path that is empty, longer than
 `MaxSourcePath` bytes, not clean (a leading `/`, an empty, `.` or `..`
 segment), not UTF-8 or holds a control or a bidirectional character, and
 a version below 1, are `invalid_request`. A source counts toward
@@ -103,7 +103,11 @@ The read follows no redirect.
 | anything else, or no answer | `files_unavailable` |
 
 `MaxSourceBytes` is `filestore.InlineBytes`, 16 MiB, the bound up to
-which the files API answers a read in one response. A session that
+which the files API answers a read in one response. A message's sources
+are read within `MaxMessageSourceBytes`, 32 MiB, together, since the
+server holds them in memory at once before they are stored: the source
+that would pass it is `attachment_too_large`, its detail naming the
+bound and the bytes read before it. A session that
 keeps no folder refuses a message with a source as `invalid_request`,
 since the source is read where its folder is and kept there, and a
 server whose files store reads no source refuses it as
@@ -183,8 +187,12 @@ is and that its text follows without formatting or images, then the
 text's lines numbered and bounded as a text file's are (`offset`,
 `limit`, the line cut), and its `meta` names the file's own digest. A
 document past `ReadMaxDocument` bytes, an archive or a part that does
-not read, and a part past `ReadMaxDocumentPart` bytes decompressed are
-answered as a binary file is today. A PDF is answered as it is today;
+not read, and a document whose parts inflate past
+`ReadMaxDocumentInflate` bytes together are answered as a binary file
+is today. The text is at most 8 MiB; each line is held to it as its
+cells and runs are added, the read stops once the text is full, a part
+the document names several times is read once, and a read stops when
+its call's context ends. A PDF is answered as it is today;
 reading a PDF's text needs a library this core does not carry, and
 whether to take one is the owner's decision, later.
 
@@ -240,14 +248,14 @@ has no marked file, and its requests build as before.
 | # | Criterion | Test | State |
 |---|---|---|---|
 | 1 | A message's source is read from the files API of the session's folder with the send's own bearer, at `?version=N` when it names a version, stored in the folder as a data file is, and recorded with `source`; the media type is the files API's, or sniffed when it is empty or `application/octet-stream` | `internal/server.TestASourceIsReadWithTheSendersToken` | built |
-| 2 | A source the files API answers 401, 403 or 404 is `attachment_source_not_found` 404 with one body for the three, a redirect and a body past `MaxSourceBytes` are `attachment_too_large`, any other failure `files_unavailable`; a refused message appends nothing and writes nothing to the folder | `internal/server.TestASourceTheFilesAPIRefuses`, `internal/filestore.TestReadSource` | built |
+| 2 | A source the files API answers 401, 403 or 404 is `attachment_source_not_found` 404 with one body for the three, a redirect, a body past `MaxSourceBytes` and sources past `MaxMessageSourceBytes` together are `attachment_too_large`, any other failure `files_unavailable`; a refused message appends nothing and writes nothing to the folder | `internal/server.TestASourceTheFilesAPIRefuses`, `TestAMessagesSourcesAreBoundTogether`, `internal/filestore.TestReadSource` | built |
 | 3 | A file names exactly one of `data`, `blob` and `source`; a source beside a `media_type`, with an owner, a path or a version out of its rules, and on a session with no folder is `invalid_request`, and on a server whose files store reads no source `files_unavailable`; sources count toward `MaxAttachments` | `internal/server.TestASourcesRules` | built |
 | 4 | A fork's message with a source is read with the fork request's bearer at the fork's folder and kept in the fork's folder; a file kept by its blob keeps its record's source and mark; a refused read leaves no fork | `internal/server.TestAForksMessageReadsASource` | built |
 | 5 | The send's and the fork's question count a source in `attachments` | `internal/server.TestASourceCountsAsAnAttachment`, `TestAForksMessageReadsASource` | built |
 | 6 | A text-like UTF-8 file of at most 64 KiB is marked `inline`; a larger one, one past the message's 192 KiB, a binary one and one that is not UTF-8 are not; a source is marked once read; a fork's kept file keeps its mark | `session.TestWhatAModelMayReadInline`, `internal/server.TestATextFileIsMarkedInline`, `TestASourceIsReadWithTheSendersToken`, `TestAForksMessageReadsASource` | built |
 | 7 | A request carries a marked file's text after the line that names it, fenced, read from the folder or the blobs and read once per harness, with no machine opened; an unmarked file, a read that fails and bytes that are not the record's leave the path line alone, and the next turn tries the failed read again | `session.TestAFoldRendersAMarkedFilesText`, `harness.TestAShortTextFileIsReadInTheRequest`, `harness.TestAFileReadInlineIsTheRecords` | built |
 | 8 | A replay builds a request that carried a file's text again and matches | `harness.TestAReplayCarriesAFilesText` | built |
-| 9 | `read` returns the text of a `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and `.odp`, with the kind line, numbered and bounded lines, and the file's digest; a malformed one is the binary answer | `harness/tools.TestReadReadsOfficeDocuments`, `TestReadFallsBackOnABrokenDocument`, `TestCellReferencesNameTheirColumn` | built |
+| 9 | `read` returns the text of a `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and `.odp`, with the kind line, numbered and bounded lines, and the file's digest; a malformed one is the binary answer; a crafted one is held to its bounds of text, inflation, time and context | `harness/tools.TestReadReadsOfficeDocuments`, `TestReadFallsBackOnABrokenDocument`, `TestCellReferencesNameTheirColumn`, `TestARowIsBoundAsItIsBuilt`, `TestADocumentIsInflatedWithinOneBudget`, `TestADocumentReadStopsWithItsContext` | built |
 | 10 | The API document describes `source`, the record's `source` and `inline`, and `attachment_source_not_found` | `internal/server.TestOpenAPIIsGenerated` | built |
 | 11 | End to end on the stubs: toposd reads a message's source with the sender's own bearer, keeps it in the session's folder with the session's own token, and the model's request carries its text with no sandbox created | `cmd/toposd.TestAMessageBringsAFileOfThePersonsFiles`, `test/stubs/arcastub.TestTheStubReadsAVersion` | built |
 
@@ -285,8 +293,8 @@ written, or adds to it:
   that cannot be read is logged, named by its path alone, and not read
   again in the turn.
 - **`read`'s document text** is held to 8 MiB, an archive to 32 MiB
-  (`ReadMaxDocument`) and a part to 64 MiB decompressed
-  (`ReadMaxDocumentPart`); a markup compatibility Fallback is skipped so
+  (`ReadMaxDocument`) and its parts to 64 MiB inflated together
+  (`ReadMaxDocumentInflate`); a markup compatibility Fallback is skipped so
   a text box is read once, a tab stop of a paragraph's properties is not
   a tab, and an OpenDocument repeat is held to 256. The lines that name
   the document's kind, a sheet and a slide are prompt texts
@@ -294,6 +302,25 @@ written, or adds to it:
   description is version 2.
 - **A path that is not UTF-8** cannot arrive through JSON, which decodes
   it to replacement characters; the check stays for the rule's sake.
+- **Bounds added after review.** The first build held a document's
+  text to 8 MiB only when a line was written, so a row of a small
+  archive whose cells name one long shared string, or an OpenDocument
+  cell and row a repeat multiplies, built lines of hundreds of MiB to
+  tens of GiB before the bound refused them; it bounded each part's
+  inflation alone, read a part again for each time the presentation
+  named it, read on after the text was full, and took no context. Now a
+  row and a piece of a line are counted as they are built and fill the
+  text before passing it, the parts inflate within one budget, a part is
+  read once, the read stops when the text is full, and every part's
+  tokens look at the context
+  (`harness/tools.TestARowIsBoundAsItIsBuilt`,
+  `TestADocumentIsInflatedWithinOneBudget`,
+  `TestADocumentReadStopsWithItsContext`). A message's sources were each
+  held to 16 MiB but not together, so eight of them held 128 MiB at once;
+  they are now held to `MaxMessageSourceBytes` together
+  (`internal/server.TestAMessagesSourcesAreBoundTogether`). An owner of
+  `.` or `..` is refused, so a read never leaves an owner's space
+  (`internal/server.TestASourcesRules`).
 
 Not done: a source past 16 MiB, through the files API's presigned
 address; reading a PDF's text, the owner's decision, later; and the
