@@ -68,3 +68,55 @@ func TestAMachineThatWaits(t *testing.T) {
 		t.Fatalf("the notice: %v, told %+v", err, told)
 	}
 }
+
+// TestADeferredMachineHoldsWhatTheComputerAnswered: a refusal or a wait
+// an open met answers every later open, a start included, without
+// opening again, and AskAgain lets the next open ask anew; it also lets
+// go of an open machine that is absent, so the next operation opens one
+// again (spec 080).
+func TestADeferredMachineHoldsWhatTheComputerAnswered(t *testing.T) {
+	for _, held := range []error{&Refused{Environment: "dev-1", Detail: "no"}, &Waiting{Reason: WaitApproval, Environment: "dev-1"}} {
+		opens := 0
+		answer := held
+		d := Defer(t.Context(), KindDevice, func(context.Context) (Machine, error) {
+			opens++
+			if answer != nil {
+				return nil, answer
+			}
+			return &fake{}, nil
+		})
+		for range 3 {
+			if err := d.Open(t.Context()); !errors.Is(err, held) {
+				t.Fatalf("an open after %v: %v", held, err)
+			}
+		}
+		d.Start()
+		if err := d.Open(t.Context()); !errors.Is(err, held) || opens != 1 {
+			t.Fatalf("after %v the computer was asked %d times, the last open %v", held, opens, err)
+		}
+		answer = nil
+		d.AskAgain()
+		if err := d.Open(t.Context()); err != nil || opens != 2 {
+			t.Fatalf("an open after AskAgain: %v, %d opens", err, opens)
+		}
+	}
+	opens := 0
+	d := Defer(t.Context(), KindDevice, func(context.Context) (Machine, error) {
+		opens++
+		if opens == 1 {
+			return &away{}, nil
+		}
+		return &fake{}, nil
+	})
+	if err := d.Open(t.Context()); err != nil || d.Absent() == nil {
+		t.Fatalf("the first open: %v, absent %v", err, d.Absent())
+	}
+	d.AskAgain()
+	if err := d.Open(t.Context()); err != nil || opens != 2 || d.Absent() != nil {
+		t.Fatalf("an open after the computer came back: %v, %d opens, absent %v", err, opens, d.Absent())
+	}
+	d.AskAgain()
+	if err := d.Open(t.Context()); err != nil || opens != 2 {
+		t.Fatalf("an open machine that answers is opened again: %v, %d opens", err, opens)
+	}
+}

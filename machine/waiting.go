@@ -86,6 +86,15 @@ func AbsentOf(m Machine) *Waiting {
 	return nil
 }
 
+// AsksAgain is the optional interface of a machine opened on demand that
+// remembers what a person's computer answered (spec 080): after a refusal,
+// or a wait, every open answers it again without asking the computer,
+// and after the computer was lost a call answers it absent, until
+// AskAgain lets the next operation open it anew.
+type AsksAgain interface {
+	AskAgain()
+}
+
 type waitingKey struct{}
 
 // WithWaiting returns ctx carrying tell, which an open that begins to

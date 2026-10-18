@@ -91,6 +91,10 @@ type Deferred struct {
 	starting chan struct{}
 	startErr error
 	prepared Machine
+	// held is the refusal or the wait of a person's computer the last open
+	// answered (spec 080), which every later open answers without asking
+	// the computer again, until AskAgain.
+	held error
 }
 
 // Defer is a machine of kind that open makes on first use, under ctx.
@@ -129,7 +133,7 @@ func (d *Deferred) Open(ctx context.Context) error {
 // again; a turn that never needs the machine never hears it.
 func (d *Deferred) Start() {
 	d.mu.Lock()
-	if d.m != nil || d.prepared != nil || d.released || inFlight(d.starting) {
+	if d.m != nil || d.prepared != nil || d.released || d.held != nil || inFlight(d.starting) {
 		d.mu.Unlock()
 		return
 	}
@@ -155,16 +159,59 @@ func (d *Deferred) prepare() (Machine, error) {
 	return d.openCoded()
 }
 
-// openCoded opens the machine, a failure as an OpenError.
+// openCoded opens the machine, a failure as an OpenError. A person's
+// computer that refused the session, or that the session waits for, is
+// answered again without a second open until AskAgain: an open would ask
+// its owner again, or wait for it again, once for each call.
 func (d *Deferred) openCoded() (Machine, error) {
-	m, err := d.open(d.ctx)
-	if err != nil {
-		if _, coded := errors.AsType[*OpenError](err); coded {
-			return nil, err
-		}
-		return nil, &OpenError{Code: CodeUnavailable, Err: err}
+	d.mu.Lock()
+	held := d.held
+	d.mu.Unlock()
+	if held != nil {
+		return nil, held
 	}
-	return m, nil
+	m, err := d.open(d.ctx)
+	if err == nil {
+		return m, nil
+	}
+	if _, coded := errors.AsType[*OpenError](err); !coded {
+		err = &OpenError{Code: CodeUnavailable, Err: err}
+	}
+	if holds(err) {
+		d.mu.Lock()
+		d.held = err
+		d.mu.Unlock()
+	}
+	return nil, err
+}
+
+// holds reports whether an open's failure is one a later open answers
+// without opening: a person's computer that refused the session, or that
+// the session waits for (spec 080).
+func holds(err error) bool {
+	_, refused := errors.AsType[*Refused](err)
+	_, waiting := errors.AsType[*Waiting](err)
+	return refused || waiting
+}
+
+// AskAgain lets the next operation open the machine anew (spec 080): it
+// forgets the refusal or the wait an open answered, and lets go of an
+// open machine that is absent, so a turn that starts after its owner
+// refused an earlier one, or after its computer came back, asks the
+// computer again rather than answering what the last turn met. A runner's
+// turn calls it as it starts.
+func (d *Deferred) AskAgain() {
+	d.opening.Lock()
+	defer d.opening.Unlock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.held = nil
+	if holds(d.startErr) {
+		d.startErr = nil
+	}
+	if d.m != nil && AbsentOf(d.m) != nil {
+		d.m = nil
+	}
 }
 
 // inFlight reports whether a start's channel is open.
@@ -500,4 +547,5 @@ var (
 	_ Starter   = (*Deferred)(nil)
 	_ Fetcher   = (*Deferred)(nil)
 	_ Absent    = (*Deferred)(nil)
+	_ AsksAgain = (*Deferred)(nil)
 )
