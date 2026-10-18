@@ -110,7 +110,7 @@ named it:
 
 | The message's sender | `me` is read as | Any other owner |
 |---|---|---|
-| the person who started the session | their own space, their subject | read as named; the authorizer admits what that person may read |
+| the person who started the session | their own space, their subject | read as named; the authorizer admits what that person may read, a file of another person's space shared with them included |
 | another person who may send to the session | their own space, their subject, which is refused | the session's own space alone, the owner of its folder: the organization's in an organization's session; any other, `me` among them, is `attachment_source_not_found` before anything is read or a token asked for |
 | a sender that is no person, such as a trigger | none | `attachment_source_not_found` |
 
@@ -118,10 +118,13 @@ A sender who did not start the session is held to the session's own
 space because the read is decided as the person who did: a source of
 another space would be read with the starter's reach, not the sender's.
 The authorizer holds them to a file of that space they may read
-themselves, from the send's `sources`. A file shared with the starter or
-the sender is not brought: the files API resolves a share for the token's
-subject, the agent, and the installation's authorizer counts no share in
-the session's read until the files API resolves shares for the starter.
+themselves, from the send's `sources`. A file shared with the starter is
+brought by naming its owner's space, the subject of the person who
+shared it: the files API names every holder of a share on the file in
+the read's question, and the installation's authorizer decides the read
+on the starter's own share. A file shared with a sender who did not
+start the session is not brought, since they name the session's own
+space alone.
 A trigger's messages carry no files today; the row is the guard for one
 that would.
 
@@ -317,6 +320,7 @@ has no marked file, and its requests build as before.
 | 10 | The API document describes `source`, the record's `source` and `inline`, and `attachment_source_not_found` | `internal/server.TestOpenAPIIsGenerated` | built |
 | 11 | End to end on the stubs: toposd reads a message's source in the sender's own space with a token the identity provider minted for the session, not the sender's bearer, keeps it in the session's folder with the session's own token, and the model's request carries its text with no sandbox created | `cmd/toposd.TestAMessageBringsAFileOfThePersonsFiles`, `test/stubs/arcastub.TestTheStubReadsAVersion` | built |
 | 12 | A sender who did not start the session names a file of the session's own space alone, and their own space, `me` among it, the starter's and any other is `attachment_source_not_found` before anything is read or a token asked for; a sender that is no person names none | `internal/server.TestASenderWhoDidNotStartTheSessionNamesTheSessionsSpace`, `TestASenderWithNoSpaceNamesNoSource` | built |
+| 16 | The person who started the session names a file of another person's space, one shared with them, by that person's subject: it is read in that space with the session's own token, escaped as one path segment, recorded with its source as named, and named on the send's `sources` as that space | `internal/server.TestTheStarterBringsAFileSharedWithThem` | built |
 | 15 | The source workload's token is minted by the server alone, from the session as the send holds it; a runner's token request and a drive's credentials never answer it | `internal/credentials.TestASourceTokenNeedsNoStoredSession`, `internal/runnerrole.TestTokensOnlyForTheLeaseHolder`, `cmd/toposd.TestAMessageBringsAFileOfThePersonsFiles` | built |
 | 13 | A token for the files API the core cannot have is `files_unavailable` before anything is read, as is a files store that asks for none | `internal/server.TestASessionsTokenThatCannotBeHadReadsNothing` | built |
 | 14 | The send's and the fork's question name the files the core will read as `sources`, `me` as the sender's subject, with a version where the message names one; a file a fork keeps by its blob and a file sent as data are not named, and a message with no source names none | `internal/server.TestASourceIsReadWithTheSessionsToken`, `TestASourceCountsAsAnAttachment`, `TestAForksMessageReadsASource`, `TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace` | built |
@@ -405,3 +409,15 @@ package beside the other fields a send carries. The installation's authorizer mu
 admit the session's read of one file outside its folder, decided as its
 starter, before a core of this build reads a source there; until it
 does, every source is `attachment_source_not_found`.
+
+**A file shared with the starter, 2026-10-18.** The core already read a
+source of any owner the starter names in that owner's space. What it
+could not do was bring a shared file: the files API resolved a share for
+the token's subject, the agent, so the authorizer counted none. The
+files API now names every holder of a share on the file in the read's
+question, and the installation's authorizer decides the read on the
+starter's own entry, so a file shared with the starter is brought by
+naming the space of the person who shared it. No code of the core
+changed for it; `TestTheStarterBringsAFileSharedWithThem` holds the
+read's space, token and `sources`. A sender who did not start the
+session still names the session's own space alone.
