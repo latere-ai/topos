@@ -5,6 +5,7 @@ package hosted
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/bridge"
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
@@ -24,6 +26,7 @@ import (
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/arcastub"
+	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
 // readerModel is the model the stub service's reader reads page 1 with,
@@ -241,4 +244,49 @@ func (c *cloud) readInAResult(text string) bool {
 		}
 	}
 	return false
+}
+
+// TestAReaderModelIsPricedAtTheDoorsFigures (spec 080): a model the
+// embedded catalog prices is priced without a door; one it does not is
+// priced at the figures the Lux door for OpenAI serves for it, read with
+// the session's own model key; a model the door does not price, and an
+// installation without a door, are unpriced.
+func TestAReaderModelIsPricedAtTheDoorsFigures(t *testing.T) {
+	l := luxstub.New(t)
+	l.Models(bridge.Model{Name: "vendor/reader-9", ContextWindow: 100_000, MaxOutputTokens: 8_192, Pricing: &bridge.ModelPricing{Currency: "USD", Input: "0.3", Output: "2.5"}},
+		bridge.Model{Name: "vendor/free-list", ContextWindow: 100_000, MaxOutputTokens: 8_192})
+	cat, err := models.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := runner.NewTokenSource(&issued{life: 15 * time.Minute}, nil, nil)
+	b := builder{o: Options{ModelsURL: l.URL() + "/v1/models", Doors: models.Doors{"openai": l.URL() + "/openai"}}, cat: cat}
+	price := b.pricer(src)
+	if e, err := price(t.Context(), readerModel); err != nil || !priced(e) {
+		t.Fatalf("a catalog model: %+v %v", e, err)
+	}
+	e, err := price(t.Context(), "vendor/reader-9")
+	if err != nil || !priced(e) || *e.Pricing.Input != 300_000 || *e.Pricing.Output != 2_500_000 {
+		t.Fatalf("a model the door prices: %+v %v", e, err)
+	}
+	// The door lists the model to the session's own key alone.
+	l.Select(func(key string) []string {
+		if key == "lux-session-1" {
+			return []string{"vendor/reader-9", "vendor/free-list"}
+		}
+		return nil
+	})
+	if _, err := b.pricer(src)(t.Context(), "vendor/reader-9"); err != nil {
+		t.Fatalf("the session's key: %v", err)
+	}
+	if _, err := (builder{o: Options{ModelsURL: b.o.ModelsURL, Doors: b.o.Doors, ModelsKey: "installation"}, cat: cat}).pricer(nil)(t.Context(), "vendor/reader-9"); !errors.Is(err, models.ErrUnpriced) {
+		t.Fatalf("another key: %v", err)
+	}
+	if _, err := price(t.Context(), "vendor/free-list"); !errors.Is(err, models.ErrUnpriced) {
+		t.Fatalf("a model the door does not price: %v", err)
+	}
+	none := builder{o: Options{ModelsURL: "https://provider.example/v1"}, cat: cat}
+	if _, err := none.pricer(nil)(t.Context(), "vendor/reader-9"); !errors.Is(err, models.ErrUnpriced) {
+		t.Fatalf("no door: %v", err)
+	}
 }
