@@ -483,7 +483,8 @@ func SameEvent(a, b Event) bool {
 // session's folder holds a file (spec 068), and the spend, which each
 // model.request's and each charged tool.result's cost adds to as Spent
 // counts it. A title change does not move the update time, so a list
-// ordered by it keeps a renamed session in its place (spec 054).
+// ordered by it keeps a renamed session in its place (spec 054), and
+// neither does the request that asked a model for the title (spec 083).
 func ApplyBatch(s *Session, events []Event) {
 	for _, e := range events {
 		if e.Seq > s.LastSeq {
@@ -502,7 +503,10 @@ func ApplyBatch(s *Session, events []Event) {
 			}
 			continue
 		}
-		if t := e.Time.UTC(); t.After(s.UpdatedAt) {
+		// A title's request is the harness's own beside the conversation,
+		// appended with the change it may make, and moves the update time
+		// no more than that change does (spec 083).
+		if t := e.Time.UTC(); t.After(s.UpdatedAt) && Purpose(e) != PurposeTitle {
 			s.UpdatedAt = t
 		}
 		if e.Type == TypeModelRequest || e.Type == TypeToolResult {

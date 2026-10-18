@@ -345,6 +345,33 @@ type ModelRequest struct {
 	// again from the prompt and the tool named. Absent on every other
 	// request.
 	Reminder *Reminder `json:"reminder,omitempty"`
+	// Purpose is what a request beside the session's threads was for:
+	// PurposeTitle, the question of whether the session's title still
+	// names its conversation (spec 083), whose PromptVersion names the
+	// title prompt it was built from. Absent, the request is a step of a
+	// thread, or a compaction's summary, which its context.compacted
+	// names.
+	Purpose string `json:"purpose,omitempty"`
+}
+
+// PurposeTitle is the purpose of a model.request that asked for the
+// session's title after a turn (spec 083). Its cost is the session's, and
+// it moves neither the session's update time nor any thread.
+const PurposeTitle = "title"
+
+// Purpose is the purpose of a model.request event, "" for a step or an
+// event of another type.
+func Purpose(e Event) string {
+	if e.Type != TypeModelRequest || e.Redacted() {
+		return ""
+	}
+	var p struct {
+		Purpose string `json:"purpose"`
+	}
+	if json.Unmarshal(e.Payload, &p) != nil {
+		return ""
+	}
+	return p.Purpose
 }
 
 // Reminder names the text a request carried after its fold (spec 062):

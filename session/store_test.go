@@ -520,6 +520,49 @@ func TestApplyBatchFoldsATitleChange(t *testing.T) {
 	}
 }
 
+// TestATitlesRequestKeepsTheUpdateTime: a model.request whose purpose is
+// title adds its cost to the spend and, appended with the harness's
+// change of the title, moves the header's update time no more than the
+// change does; a step's request moves it (spec 083).
+func TestATitlesRequestKeepsTheUpdateTime(t *testing.T) {
+	cost := int64(120)
+	request := func(purpose string, at time.Time) Event {
+		t.Helper()
+		e, err := NewEvent(TypeModelRequest, ModelRequest{Model: "m", Outcome: "ok", CostUSDMicro: &cost, Purpose: purpose}, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	named, err := NewEvent(TypeTitleChanged, TitleChanged{By: Sender{Subject: HarnessSubject, Kind: SenderService}, Old: "Notes", New: "Release notes"}, t0.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked := request(PurposeTitle, t0.Add(time.Hour))
+	if !strings.Contains(string(asked.Payload), `"purpose":"title"`) || strings.Contains(string(request("", t0).Payload), "purpose") {
+		t.Fatalf("model.request encodes its purpose as %s", asked.Payload)
+	}
+	s := Session{Title: "Notes", UpdatedAt: t0}
+	ApplyBatch(&s, []Event{asked, named})
+	if !s.UpdatedAt.Equal(t0) || s.Title != "Release notes" || s.Budget.SpentCostUSDMicro != cost {
+		t.Fatalf("the header after a title is %q, updated %s, spent %d", s.Title, s.UpdatedAt, s.Budget.SpentCostUSDMicro)
+	}
+	ApplyBatch(&s, []Event{request("", t0.Add(2*time.Hour))})
+	if !s.UpdatedAt.Equal(t0.Add(2*time.Hour)) || s.Budget.SpentCostUSDMicro != 2*cost {
+		t.Fatalf("a step's request left the header updated %s, spent %d", s.UpdatedAt, s.Budget.SpentCostUSDMicro)
+	}
+	redacted := asked
+	redacted.Payload = slices.Clone(tombstone)
+	for _, c := range []struct {
+		e    Event
+		want string
+	}{{asked, PurposeTitle}, {request("", t0), ""}, {named, ""}, {redacted, ""}, {Event{Type: TypeModelRequest, Payload: []byte(`[`)}, ""}} {
+		if got := Purpose(c.e); got != c.want {
+			t.Errorf("Purpose of %s %s = %q, want %q", c.e.Type, c.e.Payload, got, c.want)
+		}
+	}
+}
+
 // TestCheckTitle: a title is refused empty, past MaxTitleLength
 // characters, or with a control character or a line separator, and
 // counted in characters, not bytes.

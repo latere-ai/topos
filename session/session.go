@@ -88,6 +88,11 @@ const TriggerSubjectPrefix = "trigger:"
 // asked for.
 const AuthorizerSubject = "service:authorizer"
 
+// HarnessSubject is the subject of a change the harness made, a Sender of
+// kind service: the title it gave a session after a turn (spec 083),
+// which nobody who wrote to the session asked for.
+const HarnessSubject = "service:harness"
+
 // AgentRef names the agent version a session runs.
 type AgentRef struct {
 	ID      string `json:"id"`

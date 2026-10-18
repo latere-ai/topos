@@ -41,6 +41,7 @@ func Run(t *testing.T, open Open) {
 		{"AppendRejectsBadBatch", testAppendRejectsBadBatch},
 		{"AppendMirrorsStatus", testAppendMirrorsStatus},
 		{"AppendMirrorsSpend", testAppendMirrorsSpend},
+		{"ATitleKeepsTheUpdateTime", testATitleKeepsTheUpdateTime},
 		{"AppendedEventIsNeverRewritten", testNeverRewritten},
 		{"EventsWindow", testEventsWindow},
 		{"Watch", testWatch},
@@ -291,6 +292,34 @@ func testAppendMirrorsStatus(t *testing.T, st session.Store) {
 	}
 	if !got.UpdatedAt.Equal(t1.Add(time.Second)) {
 		t.Fatalf("updated_at %s", got.UpdatedAt)
+	}
+}
+
+// testATitleKeepsTheUpdateTime: a title the harness gives a session,
+// its model.request of purpose title and its session.title_changed in one
+// batch, changes the title a read reports and adds the request's cost to
+// the spend, and leaves the update time where the turn left it (spec
+// 083).
+func testATitleKeepsTheUpdateTime(t *testing.T, st session.Store) {
+	s := create(t, st)
+	t1 := t0.Add(time.Minute)
+	last := appendAll(t, st, s.ID, 0, Status(t, session.StatusRunning, "", t0), Message(t, "go", t0), Status(t, session.StatusIdle, session.StopEndTurn, t1))
+	c := int64(64)
+	asked, err := session.NewEvent(session.TypeModelRequest, session.ModelRequest{Model: "m", Outcome: "ok", CostUSDMicro: &c, Purpose: session.PurposeTitle}, t1.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	named, err := session.NewEvent(session.TypeTitleChanged, session.TitleChanged{By: session.Sender{Subject: session.HarnessSubject, Kind: session.SenderService}, New: "Release notes"}, t1.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendAll(t, st, s.ID, last, asked, named)
+	got, err := st.Get(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "Release notes" || !got.UpdatedAt.Equal(t1) || got.Budget.SpentCostUSDMicro != c {
+		t.Fatalf("the session reads title %q, updated %s, spent %d", got.Title, got.UpdatedAt, got.Budget.SpentCostUSDMicro)
 	}
 }
 
