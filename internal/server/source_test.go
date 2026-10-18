@@ -369,14 +369,15 @@ func TestAForksMessageReadsASource(t *testing.T) {
 	if o, ok := f.arca.Object(space, folderPath(fork.ID)+"/"+want[1].Ref); !ok || string(o.Data) != "# b\n" || o.Token != "session:"+fork.ID {
 		t.Fatalf("the fork's folder holds %+v %t", o, ok)
 	}
-	var read *arcastub.Recorded
+	// The file kept by its blob is not read again at its source.
+	var reads []arcastub.Recorded
 	for _, r := range f.arca.Requests()[before:] {
 		if r.Op == arcastub.OpRead {
-			read = &r
+			reads = append(reads, r)
 		}
 	}
-	if read == nil || read.Path != "/v1/files/me/files/b.md" || read.Header.Get("Authorization") != "Bearer alice" {
-		t.Fatalf("the fork's read %+v", read)
+	if len(reads) != 1 || reads[0].Path != "/v1/files/me/files/b.md" || reads[0].Header.Get("Authorization") != "Bearer alice" {
+		t.Fatalf("the fork's reads %+v", reads)
 	}
 	if got := f.lastSend().Resource.Fields["attachments"]; got != 2 {
 		t.Fatalf("the fork's send question counts %v attachments", got)

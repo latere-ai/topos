@@ -489,7 +489,8 @@ func markInline(files []file) {
 // not give.
 //
 // A session without a folder refuses a source, since the file is read
-// where the folder is and kept there. A source the files
+// where the folder is and kept there. A file a fork keeps by its blob is
+// not read again, whatever source its record names. A source the files
 // API refuses with 401, 403 or 404 is attachment_source_not_found, one
 // past the bound of a source attachment_too_large, as is the source that
 // would take the message's sources past their bound together, and any
@@ -499,7 +500,7 @@ func markInline(files []file) {
 func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.Request, files []file) error {
 	first := -1
 	for i, f := range files {
-		if f.source != nil {
+		if f.source != nil && f.blob == "" {
 			first = i
 			break
 		}
@@ -522,7 +523,7 @@ func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.
 	var read int64
 	for i := range files {
 		f := &files[i]
-		if f.source == nil {
+		if f.source == nil || f.blob != "" {
 			continue
 		}
 		data, sp, media, err := s.readSource(ctx, sess.Folder.URL, token, *f.source, min(s.sources.file, s.sources.message-read))
