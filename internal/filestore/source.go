@@ -74,13 +74,21 @@ func ReadSource(ctx context.Context, client *http.Client, root, token string, sr
 		closeBody(resp)
 		return nil, ErrSourceNotFound
 	case resp.StatusCode/100 == 3:
-		if resp, err = presignedSource(ctx, &api, resp); err != nil {
+		s, err := presignedSource(ctx, &api, resp, max)
+		if err != nil {
 			return nil, fmt.Errorf("filestore: read %s of %s: %w", src.Path, src.Owner, err)
 		}
+		return s, nil
 	case resp.StatusCode != http.StatusOK:
 		defer closeBody(resp)
 		return nil, refusal("source", resp)
 	}
+	return sourceOf(resp, max)
+}
+
+// sourceOf is the answer resp carries as a Source held to max, its body
+// closed when the length it declares is past max.
+func sourceOf(resp *http.Response, max int64) (*Source, error) {
 	if resp.ContentLength > max {
 		closeBody(resp)
 		return nil, fmt.Errorf("%w: the file is %d bytes, at most %d", ErrSourceTooLarge, resp.ContentLength, max)
@@ -89,13 +97,13 @@ func ReadSource(ctx context.Context, client *http.Client, root, token string, sr
 }
 
 // presignedSource follows the files API's redirect of a source's read
-// once, closing redirect's body: to an https address alone, since the
-// address carries its credential in its query and the person's file in
-// its answer, and with a request of its own that carries none of the
-// first's headers, so the sender's bearer never reaches another host. An
-// answer that is not 200, a second redirect among them, is the files
-// service's failure.
-func presignedSource(ctx context.Context, api *http.Client, redirect *http.Response) (*http.Response, error) {
+// once, closing redirect's body, and answers the file held to max: to an
+// https address alone, since the address carries its credential in its
+// query and the person's file in its answer, and with a request of its
+// own that carries none of the first's headers, so the sender's bearer
+// never reaches another host. An answer that is not 200, a second
+// redirect among them, is the files service's failure.
+func presignedSource(ctx context.Context, api *http.Client, redirect *http.Response, max int64) (*Source, error) {
 	loc, err := redirect.Location()
 	closeBody(redirect)
 	switch {
@@ -120,7 +128,7 @@ func presignedSource(ctx context.Context, api *http.Client, redirect *http.Respo
 		defer closeBody(resp)
 		return nil, refusal("presigned source", resp)
 	}
-	return resp, nil
+	return sourceOf(resp, max)
 }
 
 // bounded is a source's body held to max bytes as it is read: a byte past
