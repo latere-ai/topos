@@ -226,7 +226,7 @@ and appears in its owner's list.
 ## Outcome
 
 Built on 2026-10-18, in no release yet, against Cella's main branch
-through a pseudo-version, and run against the stub Cella alone, whose
+through a pseudo-version, and run against the stub Cella, whose
 environments now include ones a person's computer serves: a host in
 `status.hosts`, a phase, held creates, refusals, a worker that goes
 away, and scratch directories in `status.paths`. Criteria 1 to 8 have
@@ -239,10 +239,18 @@ and `TestADevicesAttachmentsStayOutOfTheFolder` in `machine/cella`,
 `TestDeviceScoresAsHost` in `harness`, and
 `TestResumeAMachineWaitingSession` beside them. The release half of
 criterion 9 is `TestTheReleaseBuildsTheHelperForEveryPlatform`. Its
-conformance half is open: the suite of spec 029 is not built, and a
-device session against a real worker needs Cella's local driver (Cella
-spec 081), which is not on Cella's main branch yet, and srt on the
-runner; the spec stays at testing until that case runs.
+conformance half is `TestADeviceSessionEndToEnd` in `cmd/toposd`: toposd
+serving a device session against a real Cella control plane and a
+`cellad worker` on Cella's local driver, whose command writes a file
+into the granted folder, and whose end with its turn deletes the sandbox
+and leaves the folder. The suite of spec 029 is not built, so the case
+is a test of the server role; verify.yml's `device` job runs it on
+Linux, over bubblewrap, with the `cellad` of the Cella this module pins,
+and it ran on macOS, over Seatbelt, when it was written. Without
+`CELLAD` naming a cellad binary, or without srt on `PATH`, it skips
+naming what is missing, as it does in the hermetic suite. A session
+ended by the API while idle leaves its sandbox to the installation, as
+a Cella session's does.
 
 Where the build differs from the design, or adds to it:
 
@@ -278,9 +286,6 @@ Where the build differs from the design, or adds to it:
   session's credential may read the environment, and `Info().Sandbox`
   from its isolation; where the read is refused they come from the
   sandbox's `uname` and its `status.isolation`.
-- **`status.paths` is read from the answer's bytes,** since the Cella
-  manifest types this build pins do not hold it yet; the read moves to
-  the typed field when they do.
 - **A device takes the session's network at its create.** The computer
   narrows it to its own list. The session's network does not govern a
   device after that: an ask for a host outside it, a widening, and the
