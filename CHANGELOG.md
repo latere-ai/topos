@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.45.0 - 2026-10-18
+
 ### Added
 
 - **A session can work on a person's own computer.** `POST /v1/sessions` takes `machine: {kind: device, environment, workdir}`: `environment` names the Cella environment the computer serves through an embedded worker, and `workdir` the folder on it the session works in, an absolute, clean path. Any other kind is still refused as `invalid_request`, and a server without Cella answers `machine_unavailable`. The session records the machine for its whole life, and the authorizer's `session.create` carries `machine: device` with `environment` and `workdir`; a fork's `session.fork` carries the same three, decided for the person forking. A trigger names a device the same way in `spec.session.machine`, the one machine a trigger names, and its sessions record `trigger_fires_on`, `schedule` or `events`. An agent's manifest that names `device` is `invalid_manifest`.
