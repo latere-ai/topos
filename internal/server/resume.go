@@ -55,7 +55,7 @@ func (c *call) resumeSession() error {
 	case waiting && b.MaxCostUSDMicro != nil:
 		return refuse(CodeInvalidRequest, "max_cost_usd_micro raises a budget, and this session waits for its machine, not its budget")
 	case waiting:
-		return c.resumed(s, b.Reason, s.Budget.MaxCostUSDMicro)
+		return c.resumeWaiting(s, b.Reason, limits.BudgetUSDMicro)
 	}
 	v, err := c.s.o.Objects.Version(ctx, s.Agent.ID, s.Agent.Version)
 	if err != nil {
@@ -78,6 +78,21 @@ func (c *call) resumeSession() error {
 		return refuse(CodeConflict, "the budget of %d micro-USD is spent (%d); resume with a higher max_cost_usd_micro or after the cap is raised", *max, spent)
 	}
 	return c.resumed(s, b.Reason, max)
+}
+
+// resumeWaiting resumes a session waiting for its machine with the budget
+// it has, held to the ceiling the authorizer's allow names, limit; a
+// budget that ceiling leaves spent resumes nothing, so it is refused.
+func (c *call) resumeWaiting(s session.Session, reason string, limit *int64) error {
+	max := lowestCost(s.Budget.MaxCostUSDMicro, limit)
+	evs, err := c.s.o.Sessions.Events(c.r.Context(), s.ID, 1, 0)
+	if err != nil {
+		return err
+	}
+	if spent := session.Spent(evs); max != nil && spent >= *max {
+		return refuse(CodeConflict, "the budget of %d micro-USD is spent (%d); resume after the cap is raised", *max, spent)
+	}
+	return c.resumed(s, reason, max)
 }
 
 // resumed appends the caller's session.resumed with the session's budget

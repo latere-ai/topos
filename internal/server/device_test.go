@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -215,5 +216,30 @@ func TestResumeAMachineWaitingSession(t *testing.T) {
 		if e.Type == session.TypeUserMessage {
 			t.Fatal("the resume added a message")
 		}
+	}
+
+	// The authorizer's ceiling on the resume holds the budget, and one
+	// below what the session spent resumes nothing.
+	ceiling := func(limit string) {
+		f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+			d, err := f.authz.next.Authorize(context.Background(), req)
+			if req.Action == authorizer.ActionSessionResume {
+				d.Limits = json.RawMessage(limit)
+			}
+			return d, err
+		}
+	}
+	cost := int64(400)
+	f.appendTo(s.ID, 3, session.SessionStatus{Status: session.StatusRunning}, session.ModelRequest{CostUSDMicro: &cost},
+		session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopMachineWaiting, Detail: session.MachineApproval})
+	ceiling(`{"budget_usd_micro":300}`)
+	if got := resume(`{}`); got.code() != CodeConflict {
+		t.Fatalf("a resume under a ceiling below the spend: %d %s", got.status, got.body)
+	}
+	ceiling(`{"budget_usd_micro":600000}`)
+	got = resume(`{}`)
+	got.decode(t, &resumed)
+	if got.status != http.StatusOK || resumed.Budget.MaxCostUSDMicro == nil || *resumed.Budget.MaxCostUSDMicro != 600000 {
+		t.Fatalf("a resume under the authorizer's ceiling: %d %s", got.status, got.body)
 	}
 }
