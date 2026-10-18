@@ -147,7 +147,10 @@ func readDocument(ctx context.Context, b *builtin, c Call, p, kind string, in re
 	}
 	text := ""
 	if len(data) <= ReadMaxDocument {
-		text, err = documentText(kind, data)
+		text, err = documentText(ctx, kind, data)
+	}
+	if cerr := ctx.Err(); cerr != nil {
+		return b.fail(ctx, c, p, cerr)
 	}
 	if len(data) > ReadMaxDocument || err != nil {
 		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadBinary, prompts.Data{"Path": p}), nil)

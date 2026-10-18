@@ -6,6 +6,7 @@ package tools
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -22,13 +23,19 @@ const (
 	// ReadMaxDocument bounds the bytes of a document read reads as text;
 	// a larger one is answered as a binary file.
 	ReadMaxDocument = 32 << 20
-	// ReadMaxDocumentPart bounds one part of a document's archive,
-	// decompressed, so an archive that inflates past it is answered as a
-	// binary file and never held in memory.
-	ReadMaxDocumentPart = 64 << 20
+	// ReadMaxDocumentInflate bounds the bytes a document's parts inflate
+	// to together, each part as often as it is read, so an archive that
+	// inflates past it is answered as a binary file, and the time a read
+	// takes is bounded with it.
+	ReadMaxDocumentInflate = 64 << 20
 	// maxDocumentText bounds the text kept of one document; the text past
-	// it is left out, as the lines past a read's limit are.
+	// it is left out, as the lines past a read's limit are. A line is held
+	// to it as it is built, so no repeat or join builds one past it, and
+	// the read stops once the text is full.
 	maxDocumentText = 8 << 20
+	// checkEvery is how many XML tokens a read decodes between two looks
+	// at its context.
+	checkEvery = 1024
 	// maxColumns is the most columns of a spreadsheet's row read keeps,
 	// a spreadsheet's widest sheet.
 	maxColumns = 16384
@@ -54,52 +61,73 @@ func documentKind(p string) string {
 	return ""
 }
 
-// The failures that make a document read as a binary file.
+// The failures that make a document read as a binary file, and the end
+// of a read whose text is full.
 var (
 	errPartMissing  = errors.New("tools: the document holds no such part")
-	errPartTooLarge = errors.New("tools: a part of the document inflates past its bound")
+	errPartTooLarge = errors.New("tools: the document's parts inflate past their bound")
+	errFull         = errors.New("tools: the document's text is full")
 )
 
 // documentText is the text of the office document data of kind, as read
-// shows it, or an error for an archive or a part that does not read.
-func documentText(kind string, data []byte) (string, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+// shows it, or an error for an archive or a part that does not read, and
+// ctx's error once it ends.
+func documentText(ctx context.Context, kind string, data []byte) (string, error) {
+	d, err := openArchive(ctx, data)
 	if err != nil {
 		return "", err
 	}
-	d := &archive{files: map[string]*zip.File{}}
+	return d.text(kind)
+}
+
+// openArchive opens data as a document's zip archive, read under ctx.
+func openArchive(ctx context.Context, data []byte) (*archive, error) {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, err
+	}
+	d := &archive{ctx: ctx, files: map[string]*zip.File{}, left: ReadMaxDocumentInflate, out: &textOut{}}
 	for _, f := range zr.File {
 		d.files[f.Name] = f
 	}
-	out := &textOut{}
+	return d, nil
+}
+
+// text reads the archive's text as a document of kind. A read whose text
+// fills is its text so far.
+func (d *archive) text(kind string) (string, error) {
+	var err error
 	switch kind {
 	case "docx":
-		err = d.docx(out)
+		err = d.docx(d.out)
 	case "xlsx":
-		err = d.xlsx(out)
+		err = d.xlsx(d.out)
 	case "pptx":
-		err = d.pptx(out)
+		err = d.pptx(d.out)
 	case "odt", "ods", "odp":
-		err = d.odf(kind, out)
+		err = d.odf(kind, d.out)
 	default:
 		err = fmt.Errorf("tools: %q is no document kind", kind)
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, errFull) {
 		return "", err
 	}
-	return out.b.String(), nil
+	return d.out.b.String(), nil
 }
 
 // textOut is a document's text as it is read, at most maxDocumentText
-// bytes of whole lines.
+// bytes of whole lines; full once a line does not fit.
 type textOut struct {
 	b    strings.Builder
 	full bool
 }
 
+// room is how many bytes a line may still hold, its newline aside.
+func (o *textOut) room() int { return maxDocumentText - o.b.Len() - 1 }
+
 // line adds one line of text.
 func (o *textOut) line(s string) {
-	if o.full || o.b.Len()+len(s)+1 > maxDocumentText {
+	if o.full || len(s) > o.room() {
 		o.full = true
 		return
 	}
@@ -107,33 +135,136 @@ func (o *textOut) line(s string) {
 	o.b.WriteByte('\n')
 }
 
-// archive is a document's zip archive by the name of each part.
-type archive struct {
-	files map[string]*zip.File
+// piece is a part of a line as it is read, a paragraph or a cell, which
+// takes no more bytes than the text has room for: a piece that would pass
+// it fills the text, since its line cannot fit.
+type piece struct {
+	b   strings.Builder
+	out *textOut
 }
 
-// capped reads at most n bytes of r and fails past them.
+func (p *piece) write(s string) {
+	if p.fits(len(s)) {
+		p.b.WriteString(s)
+	}
+}
+
+func (p *piece) writeByte(c byte) {
+	if p.fits(1) {
+		p.b.WriteByte(c)
+	}
+}
+
+// writeData adds the text of an XML token without a copy of its own.
+func (p *piece) writeData(b []byte) {
+	if p.fits(len(b)) {
+		p.b.Write(b)
+	}
+}
+
+// fits reports whether n more bytes fit the piece, and fills the text
+// when they do not.
+func (p *piece) fits(n int) bool {
+	if p.out.full || p.b.Len()+n > p.out.room() {
+		p.out.full = true
+		return false
+	}
+	return true
+}
+
+// join adds s to a cell's text, a space between it and what is there.
+func (p *piece) join(s string) {
+	if s == "" {
+		return
+	}
+	if p.b.Len() > 0 {
+		p.write(" ")
+	}
+	p.write(s)
+}
+
+// row is a line of cells joined by tabs as it is read, counted as each
+// cell is set, so a row that would pass the text's room fills the text
+// before its line is ever joined.
+type row struct {
+	cells []string
+	bytes int
+	out   *textOut
+}
+
+// reset starts the next row.
+func (r *row) reset() { r.cells, r.bytes = r.cells[:0], 0 }
+
+// set puts v at column col, a column the row skips an empty cell. A
+// column past maxColumns is left out.
+func (r *row) set(col int, v string) {
+	if col >= maxColumns || r.out.full {
+		return
+	}
+	for len(r.cells) <= col {
+		r.cells = append(r.cells, "")
+		r.bytes++
+	}
+	r.bytes += len(v) - len(r.cells[col])
+	r.cells[col] = v
+	if r.bytes > r.out.room() {
+		r.out.full = true
+	}
+}
+
+// add puts v after the row's last cell.
+func (r *row) add(v string) { r.set(len(r.cells), v) }
+
+// end writes the row as a line, its empty cells at its end left out,
+// times times, and nothing for a row that holds no value.
+func (r *row) end(times int) {
+	for len(r.cells) > 0 && r.cells[len(r.cells)-1] == "" {
+		r.cells = r.cells[:len(r.cells)-1]
+	}
+	if len(r.cells) == 0 || r.out.full {
+		return
+	}
+	line := strings.Join(r.cells, "\t")
+	for range times {
+		r.out.line(line)
+	}
+}
+
+// archive is a document's zip archive by the name of each part, read
+// under ctx into out, its parts inflating within left bytes together.
+type archive struct {
+	ctx   context.Context
+	files map[string]*zip.File
+	out   *textOut
+	// left is the bytes the document's parts may still inflate to, and
+	// inflated the bytes they did.
+	left, inflated int64
+}
+
+// capped reads r within its archive's inflate budget and fails past it.
 type capped struct {
 	r io.Reader
-	n int64
+	d *archive
 }
 
 func (c *capped) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
-	c.n -= int64(n)
-	if c.n < 0 {
+	c.d.left -= int64(n)
+	c.d.inflated += int64(n)
+	if c.d.left < 0 {
 		return n, errPartTooLarge
 	}
 	return n, err
 }
 
-// each calls fn with every XML token of the part name, in order.
+// each calls fn with every XML token of the part name, in order, until
+// the part ends, the text is full (errFull), or ctx ends.
 func (d *archive) each(name string, fn func(xml.Token)) (err error) {
 	f, ok := d.files[name]
 	if !ok {
 		return fmt.Errorf("%w: %s", errPartMissing, name)
 	}
-	if f.UncompressedSize64 > ReadMaxDocumentPart {
+	if f.UncompressedSize64 > uint64(max(d.left, 0)) {
 		return fmt.Errorf("%w: %s", errPartTooLarge, name)
 	}
 	rc, err := f.Open()
@@ -145,12 +276,20 @@ func (d *archive) each(name string, fn func(xml.Token)) (err error) {
 			err = cerr
 		}
 	}()
-	dec := xml.NewDecoder(&capped{r: rc, n: ReadMaxDocumentPart})
+	dec := xml.NewDecoder(&capped{r: rc, d: d})
 	// fallback counts the open elements of a markup compatibility
 	// Fallback, the older copy of content its Choice already holds,
 	// whose text would otherwise be read twice.
 	fallback := 0
-	for {
+	for n := 0; ; n++ {
+		if n%checkEvery == 0 {
+			if err := d.ctx.Err(); err != nil {
+				return err
+			}
+		}
+		if d.out.full {
+			return errFull
+		}
 		tok, err := dec.Token()
 		if errors.Is(err, io.EOF) {
 			return nil
@@ -225,17 +364,23 @@ func (d *archive) rels(base string) (map[string]string, error) {
 	return out, err
 }
 
-// targets are the parts the ids name through rels, in the ids' order.
-func targets(ids []string, rels map[string]string) ([]string, error) {
-	out := make([]string, len(ids))
+// targets are the parts the ids name through rels, in the ids' order,
+// each part once, and the index among ids of each.
+func targets(ids []string, rels map[string]string) ([]string, []int, error) {
+	var out []string
+	var at []int
+	seen := map[string]bool{}
 	for i, id := range ids {
 		t, ok := rels[id]
 		if !ok {
-			return nil, fmt.Errorf("%w: the relationship %q", errPartMissing, id)
+			return nil, nil, fmt.Errorf("%w: the relationship %q", errPartMissing, id)
 		}
-		out[i] = t
+		if !seen[t] {
+			seen[t] = true
+			out, at = append(out, t), append(at, i)
+		}
 	}
-	return out, nil
+	return out, at, nil
 }
 
 // docx reads a Word document: each paragraph of its body a line, and
@@ -243,8 +388,8 @@ func targets(ids []string, rels map[string]string) ([]string, error) {
 // paragraphs joined by spaces. A nested table's text joins the cell of
 // the outer table it is in.
 func (d *archive) docx(out *textOut) error {
-	var para, cell strings.Builder
-	var cells []string
+	para, cell := &piece{out: out}, &piece{out: out}
+	cells := &row{out: out}
 	tables, runs := 0, 0
 	inText := false
 	return d.each("word/document.xml", func(tok xml.Token) {
@@ -255,11 +400,11 @@ func (d *archive) docx(out *textOut) error {
 				tables++
 			case "tr":
 				if tables == 1 {
-					cells = cells[:0]
+					cells.reset()
 				}
 			case "tc":
 				if tables == 1 {
-					cell.Reset()
+					cell.b.Reset()
 				}
 			case "r":
 				runs++
@@ -269,11 +414,11 @@ func (d *archive) docx(out *textOut) error {
 				// A tab stop of a paragraph's properties is a tab too, by
 				// its name; only a run's is text.
 				if runs > 0 {
-					para.WriteByte('\t')
+					para.writeByte('\t')
 				}
 			case "br", "cr":
 				if runs > 0 {
-					para.WriteByte(lineBreak(tables > 0))
+					para.writeByte(lineBreak(tables > 0))
 				}
 			}
 		case xml.EndElement:
@@ -284,25 +429,25 @@ func (d *archive) docx(out *textOut) error {
 				runs--
 			case "p":
 				if tables > 0 {
-					join(&cell, para.String())
+					cell.join(para.b.String())
 				} else {
-					out.line(para.String())
+					out.line(para.b.String())
 				}
-				para.Reset()
+				para.b.Reset()
 			case "tc":
 				if tables == 1 {
-					cells = append(cells, cell.String())
+					cells.add(cell.b.String())
 				}
 			case "tr":
 				if tables == 1 {
-					out.line(strings.Join(cells, "\t"))
+					cells.end(1)
 				}
 			case "tbl":
 				tables--
 			}
 		case xml.CharData:
 			if inText {
-				para.Write(t)
+				para.writeData(t)
 			}
 		}
 	})
@@ -315,17 +460,6 @@ func lineBreak(inTable bool) byte {
 		return ' '
 	}
 	return '\n'
-}
-
-// join adds s to a cell's text, a space between it and what is there.
-func join(cell *strings.Builder, s string) {
-	if s == "" {
-		return
-	}
-	if cell.Len() > 0 {
-		cell.WriteByte(' ')
-	}
-	cell.WriteString(s)
 }
 
 // xlsx reads an Excel workbook: each sheet in the workbook's order under
@@ -346,7 +480,7 @@ func (d *archive) xlsx(out *textOut) error {
 	if err != nil {
 		return err
 	}
-	parts, err := targets(ids, rels)
+	parts, at, err := targets(ids, rels)
 	if err != nil {
 		return err
 	}
@@ -355,7 +489,7 @@ func (d *archive) xlsx(out *textOut) error {
 		return err
 	}
 	for i, p := range parts {
-		out.line(prompts.Render(prompts.ReadSheet, prompts.Data{"Name": names[i]}))
+		out.line(prompts.Render(prompts.ReadSheet, prompts.Data{"Name": names[at[i]]}))
 		if err := d.sheet(p, shared, out); err != nil {
 			return err
 		}
@@ -364,10 +498,10 @@ func (d *archive) xlsx(out *textOut) error {
 }
 
 // sharedStrings are a workbook's shared strings in order, each the text
-// of its runs without its phonetic guide.
+// of its runs without its phonetic guide, held to the text's room.
 func (d *archive) sharedStrings() ([]string, error) {
 	var out []string
-	var cur strings.Builder
+	cur := &piece{out: &textOut{}}
 	phonetic := 0
 	inText := false
 	err := d.each("xl/sharedStrings.xml", func(tok xml.Token) {
@@ -375,7 +509,8 @@ func (d *archive) sharedStrings() ([]string, error) {
 		case xml.StartElement:
 			switch t.Name.Local {
 			case "si":
-				cur.Reset()
+				cur.b.Reset()
+				cur.out.full = false
 			case "rPh":
 				phonetic++
 			case "t":
@@ -384,7 +519,7 @@ func (d *archive) sharedStrings() ([]string, error) {
 		case xml.EndElement:
 			switch t.Name.Local {
 			case "si":
-				out = append(out, cur.String())
+				out = append(out, cur.b.String())
 			case "rPh":
 				phonetic--
 			case "t":
@@ -392,7 +527,7 @@ func (d *archive) sharedStrings() ([]string, error) {
 			}
 		case xml.CharData:
 			if inText {
-				cur.Write(t)
+				cur.writeData(t)
 			}
 		}
 	})
@@ -406,8 +541,8 @@ func (d *archive) sharedStrings() ([]string, error) {
 // reference names, or after the cell before it, its value resolved by
 // its type, and a row that holds no value left out.
 func (d *archive) sheet(name string, shared []string, out *textOut) error {
-	var fields []string
-	var value strings.Builder
+	fields := &row{out: out}
+	value := &piece{out: out}
 	col, next := 0, 0
 	typ := ""
 	inValue := false
@@ -416,13 +551,14 @@ func (d *archive) sheet(name string, shared []string, out *textOut) error {
 		case xml.StartElement:
 			switch t.Name.Local {
 			case "row":
-				fields, next = fields[:0], 0
+				fields.reset()
+				next = 0
 			case "c":
 				typ, col = attr(t, "t"), next
 				if c, ok := column(attr(t, "r")); ok {
 					col = c
 				}
-				value.Reset()
+				value.b.Reset()
 			case "v", "t":
 				inValue = true
 			}
@@ -432,24 +568,13 @@ func (d *archive) sheet(name string, shared []string, out *textOut) error {
 				inValue = false
 			case "c":
 				next = col + 1
-				if col >= maxColumns {
-					return
-				}
-				for len(fields) <= col {
-					fields = append(fields, "")
-				}
-				fields[col] = cellValue(typ, value.String(), shared)
+				fields.set(col, cellValue(typ, value.b.String(), shared))
 			case "row":
-				for len(fields) > 0 && fields[len(fields)-1] == "" {
-					fields = fields[:len(fields)-1]
-				}
-				if len(fields) > 0 {
-					out.line(strings.Join(fields, "\t"))
-				}
+				fields.end(1)
 			}
 		case xml.CharData:
 			if inValue {
-				value.Write(t)
+				value.writeData(t)
 			}
 		}
 	})
@@ -513,13 +638,13 @@ func (d *archive) pptx(out *textOut) error {
 	if err != nil {
 		return err
 	}
-	slides, err := targets(ids, rels)
+	slides, _, err := targets(ids, rels)
 	if err != nil {
 		return err
 	}
 	for i, s := range slides {
 		out.line(prompts.Render(prompts.ReadSlide, prompts.Data{"Number": i + 1}))
-		var para strings.Builder
+		para := &piece{out: out}
 		inText := false
 		if err := d.each(s, func(tok xml.Token) {
 			switch t := tok.(type) {
@@ -528,21 +653,21 @@ func (d *archive) pptx(out *textOut) error {
 				case "t":
 					inText = true
 				case "br":
-					para.WriteByte('\n')
+					para.writeByte('\n')
 				}
 			case xml.EndElement:
 				switch t.Name.Local {
 				case "t":
 					inText = false
 				case "p":
-					if strings.TrimSpace(para.String()) != "" {
-						out.line(para.String())
+					if strings.TrimSpace(para.b.String()) != "" {
+						out.line(para.b.String())
 					}
-					para.Reset()
+					para.b.Reset()
 				}
 			case xml.CharData:
 				if inText {
-					para.Write(t)
+					para.writeData(t)
 				}
 			}
 		}); err != nil {
@@ -561,8 +686,8 @@ func (d *archive) pptx(out *textOut) error {
 // repeat attribute multiplies is repeated at most maxRepeat times, and
 // the tracked changes' record of deleted text is left out.
 func (d *archive) odf(kind string, out *textOut) error {
-	var para, cell strings.Builder
-	var cells []string
+	para, cell := &piece{out: out}, &piece{out: out}
+	cells := &row{out: out}
 	paras, tables, deleted, pages := 0, 0, 0, 0
 	cellRepeat, rowRepeat := 1, 1
 	keepEmpty := kind == "odt"
@@ -582,11 +707,12 @@ func (d *archive) odf(kind string, out *textOut) error {
 				}
 			case "table-row":
 				if tables == 1 {
-					cells, rowRepeat = cells[:0], repeat(attr(t, "number-rows-repeated"))
+					cells.reset()
+					rowRepeat = repeat(attr(t, "number-rows-repeated"))
 				}
 			case "table-cell", "covered-table-cell":
 				if tables == 1 {
-					cell.Reset()
+					cell.b.Reset()
 					cellRepeat = repeat(attr(t, "number-columns-repeated"))
 				}
 			case "p", "h":
@@ -595,15 +721,15 @@ func (d *archive) odf(kind string, out *textOut) error {
 				}
 			case "tab":
 				if paras > 0 {
-					para.WriteByte('\t')
+					para.writeByte('\t')
 				}
 			case "s":
 				if paras > 0 {
-					para.WriteString(strings.Repeat(" ", repeat(attr(t, "c"))))
+					para.write(strings.Repeat(" ", repeat(attr(t, "c"))))
 				}
 			case "line-break":
 				if paras > 0 {
-					para.WriteByte(lineBreak(tables > 0))
+					para.writeByte(lineBreak(tables > 0))
 				}
 			}
 		case xml.EndElement:
@@ -620,35 +746,27 @@ func (d *archive) odf(kind string, out *textOut) error {
 				if paras > 0 {
 					return
 				}
-				switch s := para.String(); {
+				switch s := para.b.String(); {
 				case tables > 0:
-					join(&cell, s)
+					cell.join(s)
 				case keepEmpty || strings.TrimSpace(s) != "":
 					out.line(s)
 				}
-				para.Reset()
+				para.b.Reset()
 			case "table-cell", "covered-table-cell":
 				if tables == 1 {
 					for range cellRepeat {
-						cells = append(cells, cell.String())
+						cells.add(cell.b.String())
 					}
 				}
 			case "table-row":
-				if tables != 1 {
-					return
-				}
-				for len(cells) > 0 && cells[len(cells)-1] == "" {
-					cells = cells[:len(cells)-1]
-				}
-				if len(cells) > 0 {
-					for range rowRepeat {
-						out.line(strings.Join(cells, "\t"))
-					}
+				if tables == 1 {
+					cells.end(rowRepeat)
 				}
 			}
 		case xml.CharData:
 			if paras > 0 {
-				para.Write(t)
+				para.writeData(t)
 			}
 		}
 	})

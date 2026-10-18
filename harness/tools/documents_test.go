@@ -178,11 +178,11 @@ func TestReadFallsBackOnABrokenDocument(t *testing.T) {
 	}
 
 	// A part that inflates past its bound is not read whole.
-	c := &capped{r: strings.NewReader("12345"), n: 4}
+	c := &capped{r: strings.NewReader("12345"), d: &archive{left: 4}}
 	if _, err := bytes.NewBuffer(nil).ReadFrom(c); err == nil {
 		t.Fatal("a part past its bound read whole")
 	}
-	if _, err := documentText("rtf", []byte(archiveOf(t, "x", "y"))); err == nil {
+	if _, err := documentText(t.Context(), "rtf", []byte(archiveOf(t, "x", "y"))); err == nil {
 		t.Fatal("a kind read has no reader for was read")
 	}
 	o := &textOut{}
