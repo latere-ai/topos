@@ -40,18 +40,21 @@ const (
 // The tool descriptions (specs 008 and 013).
 const (
 	// ToolRead version 2 names the office documents read reads as text
-	// (spec 079).
-	ToolRead     Name = "tools/read-v2"
-	ToolWrite    Name = "tools/write-v2"
-	ToolEdit     Name = "tools/edit-v2"
-	ToolBash     Name = "tools/bash-v2"
-	ToolGrep     Name = "tools/grep-v1"
-	ToolGlob     Name = "tools/glob-v1"
-	ToolWebFetch Name = "tools/web_fetch-v1"
-	ToolTodo     Name = "tools/todo-v1"
-	ToolSpawn    Name = "tools/spawn-v1"
-	ToolMessage  Name = "tools/message-v1"
-	ToolAdvisor  Name = "tools/advisor-v1"
+	// (spec 079). ToolReadParsed, version 3, is read's description where a
+	// parsing service reads a PDF as text (spec 080): it adds pages and
+	// the PDF.
+	ToolRead       Name = "tools/read-v2"
+	ToolReadParsed Name = "tools/read-v3"
+	ToolWrite      Name = "tools/write-v2"
+	ToolEdit       Name = "tools/edit-v2"
+	ToolBash       Name = "tools/bash-v2"
+	ToolGrep       Name = "tools/grep-v1"
+	ToolGlob       Name = "tools/glob-v1"
+	ToolWebFetch   Name = "tools/web_fetch-v1"
+	ToolTodo       Name = "tools/todo-v1"
+	ToolSpawn      Name = "tools/spawn-v1"
+	ToolMessage    Name = "tools/message-v1"
+	ToolAdvisor    Name = "tools/advisor-v1"
 	// ToolQuestion states the bounds of session's question constants in
 	// its text, which a test holds to them (spec 039).
 	ToolQuestion Name = "tools/question-v1"
@@ -364,6 +367,19 @@ const (
 	ReadDocument Name = "results/read/document-v1"
 	ReadSheet    Name = "results/read/sheet-v1"
 	ReadSlide    Name = "results/read/slide-v1"
+	// ReadPDF takes Path, Count (its pages, counted), More, Failed and
+	// Shown: the line that opens a PDF's text a parsing service read
+	// (spec 080). ReadMorePages takes Shown, Pages and Next, the line that
+	// ends it when more pages follow. ReadPDFUnread takes Why (kept,
+	// large, timeout, refused, failed or unavailable), Max, Timeout,
+	// Message and Code: the sentence after the binary answer of a PDF the
+	// service did not read. ReadPagesPastEnd takes Path, Count, More and
+	// Selection, ReadPagesTooLarge Path, Selection and Max.
+	ReadPDF           Name = "results/read/pdf-v1"
+	ReadMorePages     Name = "results/read/more-pages-v1"
+	ReadPDFUnread     Name = "results/read/pdf-unread-v1"
+	ReadPagesPastEnd  Name = "results/read/pages-past-end-v1"
+	ReadPagesTooLarge Name = "results/read/pages-too-large-v1"
 
 	WriteDone Name = "results/write/done-v1"
 
