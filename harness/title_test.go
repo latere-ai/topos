@@ -508,3 +508,62 @@ func TestATitleThatCannotBeRecorded(t *testing.T) {
 		t.Fatalf("a captured title request %+v, %v", mr, err)
 	}
 }
+
+// TestATitleThatSpentItsCapReasoningIsAskedAgain: a response that spent
+// TitleMaxTokens reasoning and wrote no answer is asked once more at
+// TitleReasoningTokens, the first request recorded as escalated beside
+// the second in the title's batch, and both are built again by a replay;
+// a second such response writes no title, and a model whose output limit
+// leaves no more room is asked once (spec 083).
+func TestATitleThatSpentItsCapReasoningIsAskedAgain(t *testing.T) {
+	var e *env
+	e = setup(t, withTitleModel(&e))
+	ctx := t.Context()
+	s, evs := e.ranTurn(ctx, "Plan the migration.", "Planned.")
+	reasoned := reply(ir.StopMaxTokens, ir.Block{Type: ir.BlockThinking, Text: "Is this a new subject", Signature: "sig"})
+	e.stub.Script(model, reasoned, reply(ir.StopEndTurn, text("Migration plan")))
+	res, err := e.h.Title(ctx, s, evs, e.log, []string{model})
+	if err != nil || res.Title != "Migration plan" {
+		t.Fatalf("result %+v, %v", res, err)
+	}
+	_, all := e.now(ctx)
+	var asked []session.ModelRequest
+	for _, ev := range all[len(evs):] {
+		var mr session.ModelRequest
+		if session.Purpose(ev) == session.PurposeTitle && ev.Decode(&mr) == nil {
+			asked = append(asked, mr)
+		}
+	}
+	if len(asked) != 2 || asked[0].Outcome != "escalated" || asked[0].MaxTokens != TitleMaxTokens || asked[1].Outcome != "ok" || asked[1].MaxTokens != TitleReasoningTokens ||
+		all[len(all)-1].Type != session.TypeTitleChanged || len(all)-len(evs) != 3 {
+		t.Fatalf("the title's batch %+v, then %s", asked, all[len(all)-1].Type)
+	}
+	reqs := e.stub.Requests()
+	if *reqs[len(reqs)-2].Request.MaxTokens != TitleMaxTokens || *reqs[len(reqs)-1].Request.MaxTokens != TitleReasoningTokens {
+		t.Fatal("the title was not asked again with room to reason")
+	}
+	if got := strings.Join(outcomes(e.replay(ctx, e.h, all)), " "); got != "match match match" {
+		t.Fatalf("the replay is %s", got)
+	}
+
+	s, evs = e.now(ctx)
+	e.stub.Script(model, reasoned, reasoned)
+	if res, err := e.h.Title(ctx, s, evs, e.log, []string{model}); err != nil || res.Kept != TitleEmpty {
+		t.Fatalf("two answers of reasoning alone: %+v, %v", res, err)
+	}
+	// A second request that fails is recorded beside the first.
+	s, evs = e.now(ctx)
+	e.stub.Script(model, reasoned, luxstub.Reply{Fail: &luxstub.Failure{Status: http.StatusBadRequest}, Response: reasoned.Response})
+	if _, err := e.h.Title(ctx, s, evs, e.log, []string{model}); err == nil {
+		t.Fatal("a failed second request answered no error")
+	}
+	if _, now := e.now(ctx); len(now) != len(evs)+2 || session.Purpose(now[len(now)-1]) != session.PurposeTitle {
+		t.Fatalf("a failed second request appended %d events", len(now)-len(evs))
+	}
+	s, evs = e.now(ctx)
+	before := len(e.stub.Requests())
+	e.stub.Script(titleModelName, luxstub.Reply{Response: ir.Response{Model: titleModelName, Blocks: []ir.Block{{Type: ir.BlockThinking, Text: "x", Signature: "sig"}}, StopReason: ir.StopMaxTokens}})
+	if res, err := e.h.Title(ctx, s, evs, e.log, []string{titleModelName}); err != nil || res.Kept != TitleEmpty || len(e.stub.Requests()) != before+1 {
+		t.Fatalf("a model with no room to reason: %+v, %v, %d requests", res, err, len(e.stub.Requests())-before)
+	}
+}

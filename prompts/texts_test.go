@@ -95,8 +95,8 @@ var textCases = func() []textCase {
 	return []textCase{
 		{name: Compaction, wantSHA: "ef4ea47663fbe10d2d83d96f8b96a8a4ecfea04c9c06bc06d5b46b0994131e57"},
 		{name: CompactionV1, wantSHA: "8d62d8134b413672d87d57e05c20f135933fa3f0095199280438e3170f879bf5"},
-		{name: Title, data: Data{"Title": "", "Messages": titleMessages, "Max": 60}, wantSHA: "3073f06f3bb4db73c9fa0730637155de79abf0629a3720c48475848157a72d78"},
-		{name: Title, data: Data{"Title": "Release note", "Messages": titleMessages, "Max": 60}, wantSHA: "66f445e6204d756445bbeca5512e4e8e45c47a2b3e1858edbbffb5eb0da23342"},
+		{name: Title, data: Data{"Title": "", "Messages": titleMessages, "Max": 60}, wantSHA: "8d805814388726313c1c3d057482f5e8668ad79c7e61d816bfe85caf966d7340"},
+		{name: Title, data: Data{"Title": "Release note", "Messages": titleMessages, "Max": 60}, wantSHA: "1498d2ccd0a43a92114acc8f3afc59dc6532ee1f58445872b124f85a111036e2"},
 
 		{name: AdvisorInstructions, want: "You advise another agent. You see the conversation it has had so far and the question it asks. You act on nothing and have no tools: read what it did, say what is wrong or missing, and what it should do next, briefly and concretely."},
 		{name: AdvisorTranscript, data: Data{"Entries": entries}, want: transcript},

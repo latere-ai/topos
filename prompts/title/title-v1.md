@@ -20,4 +20,4 @@ Keep the title unless both of the person's latest two messages are about somethi
 {{end}}
 A title is a few words that name the subject, written as a heading, in the language the person writes in, with no quotes, no closing period and no emoji, at most {{.Max}} characters long.
 
-{{if .Title}}Answer with one line: KEEP to keep the title, or the new title.{{else}}Answer with one line: the title.{{end}}
+{{if .Title}}Answer with one line and nothing else: KEEP to keep the title, or the new title as it should read, with no label before it.{{else}}Answer with one line and nothing else: the title as it should read, with no label before it.{{end}}

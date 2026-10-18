@@ -26,6 +26,12 @@ const (
 	// TitleMaxTokens is the max_tokens a title request asks, or the
 	// model's output limit when that is lower: a line of a few words.
 	TitleMaxTokens = 64
+	// TitleReasoningTokens is the max_tokens a title request is asked
+	// again with, once, when its response spent TitleMaxTokens and wrote
+	// no answer: a model that reasons though the request sets no
+	// reasoning, which a request cannot turn off for every provider,
+	// reasons a few hundred tokens over a title.
+	TitleReasoningTokens = 1024
 	// TitleTimeout bounds a title request, apart from any turn's limit.
 	TitleTimeout = 20 * time.Second
 	// TitleMessages is how many of the person's latest messages a title
@@ -88,7 +94,10 @@ var ErrNothingToName = errors.New("harness: the session holds no message of a pe
 // runs, within TitleTimeout. Its response is read to its end and reaches
 // no Observer: a client sees the title, not the model writing it.
 //
-// The request is recorded as a model.request of purpose title, whose
+// A response that spent its max_tokens and wrote no answer is asked again
+// once at TitleReasoningTokens, the first request recorded as escalated.
+//
+// Each request is recorded as a model.request of purpose title, whose
 // cost the session spends, and a new title is appended in the same batch
 // as a session.title_changed by session.HarnessSubject. An answer of
 // TitleKeep, an empty one, one session.CheckTitle refuses, one longer
@@ -107,43 +116,81 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 		return TitleResult{}, err
 	}
 	out := TitleResult{Model: conn.Model}
-	limit := min(int64(TitleMaxTokens), entry.MaxOutputTokens)
-	req, err := titleRequest(conn.Model, current, msgs, limit)
-	if err != nil {
-		return out, err
-	}
-	mr := session.ModelRequest{
-		Model: conn.Model, Family: conn.Family, Dialect: string(conn.EffectiveDialect()), PromptVersion: string(prompts.Title),
-		Purpose: session.PurposeTitle, MaxTokens: limit, Attempts: 1,
-	}
+	var fold uint64
 	if n := len(log); n > 0 {
-		mr.FoldSeq = log[n-1].Seq
+		fold = log[n-1].Seq
 	}
 	tctx, cancel := context.WithTimeout(ctx, TitleTimeout)
 	defer cancel()
-	began := h.c.Clock()
-	res, err := quietly(tctx, model, models.Request{IR: req, Connection: conn, Capture: s.Capture.Requests})
-	mr.LatencyMS = h.c.Clock().Sub(began).Milliseconds()
-	// Whatever happens to the request, its record is appended: a request
-	// the title's own deadline cut short is recorded too.
+	// Whatever happens to a request, its record is appended: a request the
+	// title's own deadline cut short is recorded too.
 	record := context.WithoutCancel(ctx)
-	if err != nil {
-		mr.Outcome, mr.Error = "error", models.Described(err)
-		if len(res.RawResponse) > 0 {
-			blob, perr := l.PutBlob(record, bytes.NewReader(res.RawResponse))
-			if perr != nil {
-				return out, errors.Join(err, fmt.Errorf("harness: store the failed response: %w", perr))
-			}
-			mr.ResponseBlob = blob
+	var sent []session.ModelRequest
+	limit := min(int64(TitleMaxTokens), entry.MaxOutputTokens)
+	for {
+		req, err := titleRequest(conn.Model, current, msgs, limit)
+		if err != nil {
+			return out, errors.Join(err, h.appendTitle(record, s, l, sent, nil))
 		}
-		return out, errors.Join(err, h.appendTitle(record, s, l, mr, nil))
+		mr, res, failed, err := h.sendTitle(tctx, record, s, l, model, conn, entry, req, fold)
+		if err != nil {
+			return out, errors.Join(err, h.appendTitle(record, s, l, sent, nil))
+		}
+		sent = append(sent, mr)
+		if failed != nil {
+			return out, errors.Join(failed, h.appendTitle(record, s, l, sent, nil))
+		}
+		answer := titleAnswer(res.Message)
+		// A response that spent its cap and wrote no answer is a model's
+		// that reasons though the request sets no reasoning, which the
+		// request cannot turn off: it is asked once more with room to
+		// reason, and the first request is recorded as escalated.
+		if room := min(int64(TitleReasoningTokens), entry.MaxOutputTokens); answer == "" && res.StopReason == ir.StopMaxTokens && limit < room {
+			sent[len(sent)-1].Outcome = "escalated"
+			limit = room
+			continue
+		}
+		if out.Kept = keptTitle(answer, s.Title); out.Kept != "" {
+			return out, h.appendTitle(record, s, l, sent, nil)
+		}
+		changed := &session.TitleChanged{By: session.Sender{Subject: session.HarnessSubject, Kind: session.SenderService}, Old: s.Title, New: answer}
+		if err := h.appendTitle(record, s, l, sent, changed); err != nil {
+			return out, err
+		}
+		out.Title = answer
+		return out, nil
+	}
+}
+
+// sendTitle sends one title request and returns its model.request, of
+// purpose title and built from the log through fold, and its response.
+// failed is the request's own failure, which the model.request records
+// with outcome error; err is a failure to store what it answered, and
+// nothing of the request is recorded then. record is the context its
+// blobs are stored under, which the request's deadline does not end.
+func (h *Harness) sendTitle(ctx, record context.Context, s session.Session, l Log, model models.Model, conn models.Connection, entry models.Entry, req ir.Request, fold uint64) (mr session.ModelRequest, res models.Result, failed, err error) {
+	mr = session.ModelRequest{
+		Model: conn.Model, Family: conn.Family, Dialect: string(conn.EffectiveDialect()), PromptVersion: string(prompts.Title),
+		Purpose: session.PurposeTitle, MaxTokens: *req.MaxTokens, Attempts: 1, FoldSeq: fold,
+	}
+	began := h.c.Clock()
+	res, failed = quietly(ctx, model, models.Request{IR: req, Connection: conn, Capture: s.Capture.Requests})
+	mr.LatencyMS = h.c.Clock().Sub(began).Milliseconds()
+	if failed != nil {
+		mr.Outcome, mr.Error = "error", models.Described(failed)
+		if len(res.RawResponse) > 0 {
+			if mr.ResponseBlob, err = l.PutBlob(record, bytes.NewReader(res.RawResponse)); err != nil {
+				return mr, res, failed, errors.Join(failed, fmt.Errorf("harness: store the failed response: %w", err))
+			}
+		}
+		return mr, res, failed, nil
 	}
 	if mr.ResponseBlob, err = l.PutBlob(record, bytes.NewReader(res.RawResponse)); err != nil {
-		return out, fmt.Errorf("harness: store the response: %w", err)
+		return mr, res, nil, fmt.Errorf("harness: store the response: %w", err)
 	}
 	if s.Capture.Requests && res.RequestBytes != nil {
 		if mr.RequestBlob, err = l.PutBlob(record, bytes.NewReader(res.RequestBytes)); err != nil {
-			return out, fmt.Errorf("harness: store the request: %w", err)
+			return mr, res, nil, fmt.Errorf("harness: store the request: %w", err)
 		}
 	}
 	mr.Codec, mr.RequestSHA256, mr.RequestBytes = res.Codec, res.RequestSHA256, res.RequestSize
@@ -151,28 +198,26 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 	if cost, src, err := models.Cost(models.FromLux(res.Usage), entry); err == nil {
 		mr.CostUSDMicro, mr.CostSource = &cost, src
 	}
-	answer := titleAnswer(res.Message)
-	if out.Kept = keptTitle(answer, s.Title); out.Kept != "" {
-		return out, h.appendTitle(record, s, l, mr, nil)
-	}
-	out.Title = answer
-	changed := &session.TitleChanged{By: session.Sender{Subject: session.HarnessSubject, Kind: session.SenderService}, Old: s.Title, New: answer}
-	if err := h.appendTitle(record, s, l, mr, changed); err != nil {
-		return TitleResult{Model: out.Model}, err
-	}
-	return out, nil
+	return mr, res, nil, nil
 }
 
-// appendTitle appends a title request's model.request, and the change of
+// appendTitle appends the model.requests a title sent, and the change of
 // the title it made, when it made one, in one batch, on the session's own
-// thread at the turn the session last ran.
-func (h *Harness) appendTitle(ctx context.Context, s session.Session, l Log, mr session.ModelRequest, changed *session.TitleChanged) error {
-	now := h.c.Clock()
-	e, err := session.NewEvent(session.TypeModelRequest, mr, now)
-	if err != nil {
-		return err
+// thread at the turn the session last ran; a title that sent nothing
+// appends nothing.
+func (h *Harness) appendTitle(ctx context.Context, s session.Session, l Log, sent []session.ModelRequest, changed *session.TitleChanged) error {
+	if len(sent) == 0 {
+		return nil
 	}
-	batch := []session.Event{e}
+	now := h.c.Clock()
+	var batch []session.Event
+	for _, mr := range sent {
+		e, err := session.NewEvent(session.TypeModelRequest, mr, now)
+		if err != nil {
+			return err
+		}
+		batch = append(batch, e)
+	}
 	if changed != nil {
 		c, err := session.NewEvent(session.TypeTitleChanged, *changed, now)
 		if err != nil {

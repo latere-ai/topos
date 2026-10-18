@@ -327,7 +327,9 @@ type ModelRequest struct {
 	Attempts      int           `json:"attempts,omitempty"`
 	// Outcome is ok, error, canceled, escalated: a response that stopped
 	// at a max_tokens below the model's output limit, whose request was
-	// sent again at the limit (spec 005), or OutcomeToolAsText: a response
+	// sent again at the limit (spec 005), or a title's that spent its
+	// max_tokens with no answer, sent again with room to reason (spec 083),
+	// or OutcomeToolAsText: a response
 	// that wrote a call of an offered tool into its text instead of calling
 	// it, which no agent.message keeps (spec 062).
 	Outcome string `json:"outcome"`

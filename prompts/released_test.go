@@ -15,7 +15,7 @@ var released = map[string]string{
 	"advisor/transcript-v1.md":                   "adce41eea4d31209c62cbfd3afb3f48f689d2b40bc3e25e6f5ad1eb76a79b6d6",
 	"compact/compact-v1.md":                      "0960188715dcd789d440a7720a516ddf3343a72630f11dca08f1e3198f4f88af",
 	"compact/compact-v2.md":                      "25eaa4490c6c0df87b17714a9ffc63cd02ee1652c1e1b9ca6592b95a1dd95e68",
-	"title/title-v1.md":                          "7b2b56a6d8e189c4f769b7bbaa7165cda3dc8217dd42cd41055d991ded77fcb5",
+	"title/title-v1.md":                          "6b725e3309d351f16fa25c7eb2a1e70f7efb891c3370eed7b1732a3af39dab42",
 	"context/context-v1.md":                      "020fb3d219c1d7f580716e0b45c10d8c110b83e8f22d2e8f1955554bc1f9fbde",
 	"context/instruction-cut-v1.md":              "91d326a58bd5a11b8fa8a718a4d76e62dc0ea996db510e71b704b426b6a19ff8",
 	"context/instructions-total-cut-v1.md":       "95f675e5a3d38244d9390ca99bbf79f83a17ee28c3c5a4cbb2d2d3a5e3fa358d",
