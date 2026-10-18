@@ -104,8 +104,9 @@ jobs:
             *+*) echo "${GITHUB_REF_NAME} carries build metadata, which an image tag cannot; cut a tag without it" >&2; exit 1 ;;
           esac
       # toposd for each architecture of the image index, and the helper a
-      # sandbox receives for each architecture a sandbox may run on (spec
-      # 009), with the build identity the version flag reports.
+      # machine receives for each platform it may run on (spec 009): a
+      # sandbox's, and a person's own computer's, which may be a Mac (spec
+      # 080); with the build identity the version flag reports.
       - name: Build the binaries
         run: |
           pkg=$(go list -m)/internal/version
@@ -113,7 +114,10 @@ jobs:
           mkdir -p dist/helpers
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o "dist/toposd_linux_${arch}" ./cmd/toposd
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -o "dist/helpers/topos-machine-linux-${arch}" ./cmd/topos-machine
+          done
+          for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${platform%/*} arch=${platform#*/}
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -o "dist/helpers/topos-machine-${os}-${arch}" ./cmd/topos-machine
           done
           (cd dist && sha256sum toposd_linux_* helpers/* | tee checksums.txt)
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

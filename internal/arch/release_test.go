@@ -179,3 +179,41 @@ func TestReleasePublishesUnderTheOwnersNamespace(t *testing.T) {
 		}
 	}
 }
+
+// helperPlatforms are the platforms a machine's helper is built for: a
+// Cella sandbox's, and a person's own computer's, which may be a Mac
+// (spec 080).
+var helperPlatforms = []string{"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"}
+
+// TestTheReleaseBuildsTheHelperForEveryPlatform is spec 080's release
+// rule: the release workflow and the developer image each build
+// topos-machine for every platform of helperPlatforms, under the name
+// the server reads a build by, topos-machine-<os>-<arch>.
+func TestTheReleaseBuildsTheHelperForEveryPlatform(t *testing.T) {
+	dir := root(t)
+	b, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w workflow
+	if err := yaml.Unmarshal(b, &w); err != nil {
+		t.Fatal(err)
+	}
+	var build string
+	for _, job := range w.Jobs {
+		for _, step := range job.Steps {
+			if strings.Contains(step.Run, "./cmd/topos-machine") {
+				build = step.Run
+			}
+		}
+	}
+	docker, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"release.yml": build, "Dockerfile": string(docker)} {
+		if !strings.Contains(text, "for platform in "+strings.Join(helperPlatforms, " ")) || !strings.Contains(text, "topos-machine-${os}-${arch}") && !strings.Contains(text, "topos-machine-$os-$arch") {
+			t.Errorf("%s does not build the helper for %v as topos-machine-<os>-<arch>:\n%s", name, helperPlatforms, text)
+		}
+	}
+}

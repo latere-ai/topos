@@ -17,9 +17,11 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-X latere.ai/x/topos/internal/version.Version=${VERSION} -X latere.ai/x/topos/internal/version.Commit=${COMMIT} -X latere.ai/x/topos/internal/version.Date=${DATE}" \
       -o /out/toposd ./cmd/toposd
 # The helper a Cella machine uploads into each sandbox, one static build
-# per platform a sandbox may run on (spec 009).
-RUN for arch in amd64 arm64; do \
-      CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -o /out/helpers/topos-machine-linux-$arch ./cmd/topos-machine; \
+# per platform a sandbox may run on (spec 009), a person's own computer
+# among them, which may be a Mac (spec 080).
+RUN for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do \
+      os=${platform%/*} arch=${platform#*/}; \
+      CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -o /out/helpers/topos-machine-$os-$arch ./cmd/topos-machine; \
     done
 
 # >>> shared runtime base <<<
