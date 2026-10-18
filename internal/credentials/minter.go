@@ -154,26 +154,53 @@ func (m *Minter) credential(ctx context.Context, id string, h holder, audience, 
 	case m.o.Tokens == nil:
 		return runner.Credential{}, runner.ErrNotMinted
 	}
-	subject, err := m.subject(ctx, id)
+	s, err := m.o.Sessions.Get(ctx, id)
 	if err != nil {
 		return runner.Credential{}, err
 	}
-	tok, err := m.o.Tokens.Mint(ctx, subject, audience, identity.Session{ID: id, Workload: workload})
+	return m.mint(ctx, s, audience, workload)
+}
+
+// SessionToken answers the hosted-agent token of the session s for
+// audience and workload, its agent read from s as the caller holds it and
+// not from the store: a fork's own token is asked before the fork's
+// record is written, so the files its message names are read with it
+// before anything of the fork is kept. It holds no lease, as a read holds
+// none, and answers no Lux key, which is a lease's alone.
+func (m *Minter) SessionToken(ctx context.Context, s session.Session, audience, workload string) (runner.Credential, error) {
+	switch {
+	case workload != runner.WorkloadSession && workload != runner.WorkloadSandbox:
+		return runner.Credential{}, fmt.Errorf("credentials: the workload %q is neither session nor sandbox", workload)
+	case audience == "":
+		return runner.Credential{}, errors.New("credentials: no audience")
+	case audience == runner.AudienceLux:
+		return runner.Credential{}, errors.New("credentials: a session's Lux key is answered to a lease, not as a token")
+	case m.o.Tokens == nil:
+		return runner.Credential{}, runner.ErrNotMinted
+	}
+	c, err := m.mint(ctx, s, audience, workload)
+	return c, coded(err)
+}
+
+// mint asks the identity provider for the hosted-agent token of the
+// session s's agent for audience and workload.
+func (m *Minter) mint(ctx context.Context, s session.Session, audience, workload string) (runner.Credential, error) {
+	subject, err := m.subject(ctx, s.Agent.ID)
+	if err != nil {
+		return runner.Credential{}, err
+	}
+	tok, err := m.o.Tokens.Mint(ctx, subject, audience, identity.Session{ID: s.ID, Workload: workload})
 	if err != nil {
 		return runner.Credential{}, err
 	}
 	return runner.Credential{Value: tok.Value, ExpiresAt: tok.ExpiresAt}, nil
 }
 
-// subject is the identity of the session's agent: the latest version's
+// subject is the identity of the agent agentID: the latest version's
 // status.identity, which every version since the identity's creation
 // carries.
-func (m *Minter) subject(ctx context.Context, id string) (string, error) {
-	s, err := m.o.Sessions.Get(ctx, id)
-	if err != nil {
-		return "", err
-	}
-	a, err := m.o.Agents.Agent(ctx, s.Agent.ID)
+func (m *Minter) subject(ctx context.Context, agentID string) (string, error) {
+	a, err := m.o.Agents.Agent(ctx, agentID)
 	if err != nil {
 		return "", err
 	}

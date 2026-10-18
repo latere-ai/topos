@@ -304,6 +304,52 @@ func TestWhatTheMinterRefuses(t *testing.T) {
 	}
 }
 
+// TestASessionTokenNeedsNoStoredSession: SessionToken mints the token of
+// a session as its caller holds it, a fork's before its record is written
+// among them, for the session's own id and its agent's identity; it
+// answers no Lux key and refuses what Credential refuses.
+func TestASessionTokenNeedsNoStoredSession(t *testing.T) {
+	ctx := t.Context()
+	f := newFixture(t, true)
+	stored, err := f.m.o.Sessions.Get(ctx, f.session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork := stored
+	fork.ID = session.NewID(session.PrefixSession)
+	if _, err := f.m.o.Sessions.Get(ctx, fork.ID); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("the fork is stored: %v", err)
+	}
+	tok, err := f.m.SessionToken(ctx, fork, "arca", runner.WorkloadSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := f.idp.Token(tok.Value); !ok || m.Subject != f.subject || m.SessionID != fork.ID || m.Workload != runner.WorkloadSession || m.Audience != "arca" {
+		t.Fatalf("minted %+v", m)
+	}
+	for _, c := range []struct{ audience, workload string }{{runner.AudienceLux, runner.WorkloadSession}, {"arca", "other"}, {"", runner.WorkloadSession}} {
+		if _, err := f.m.SessionToken(ctx, fork, c.audience, c.workload); err == nil {
+			t.Errorf("%+v minted", c)
+		}
+	}
+	none, err := New(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := none.SessionToken(ctx, fork, "arca", runner.WorkloadSession); !errors.Is(err, runner.ErrNotMinted) {
+		t.Fatalf("with no identity provider: %v", err)
+	}
+	g := newFixture(t, false)
+	unnamed, err := g.m.o.Sessions.Get(ctx, g.session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var se *runner.SetupError
+	if _, err := g.m.SessionToken(ctx, unnamed, "arca", runner.WorkloadSession); !errors.As(err, &se) || se.Code != runner.CodeAgentIdentityMissing {
+		t.Fatalf("an agent with no identity: %v", err)
+	}
+}
+
 // TestKeyRoutesAnswers: a server error or no answer is unavailable, a
 // refusal outside the envelope is still a refusal, and an answer with no
 // expiry is an error.
