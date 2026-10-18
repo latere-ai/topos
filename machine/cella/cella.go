@@ -144,12 +144,33 @@ type Options struct {
 	Workdir string
 
 	// Helpers are the topos-machine builds by platform, "linux/amd64"
-	// and "linux/arm64"; the runner embeds them. The machine uploads the
-	// one of the sandbox's platform.
+	// and "linux/arm64" and, for a device, "darwin/arm64" and
+	// "darwin/amd64"; the runner embeds them. The machine uploads the one
+	// of the sandbox's platform.
 	Helpers map[string][]byte
 	// Dir holds the helper (bin/) and the spill directory (spill/)
-	// inside the sandbox, outside its workspace; empty is DefaultDir.
+	// inside the sandbox, outside its workspace; empty is DefaultDir. A
+	// device ignores it: its helper directory is DeviceDir under the
+	// sandbox's own scratch directory, which the computer names once the
+	// sandbox exists.
 	Dir string
+
+	// Device makes the machine a person's own computer (spec 080): the
+	// sandbox is created on Environment with Workdir as its host folder,
+	// bound in place and never copied, and with no image, no Secret and no
+	// HOME of the machine's; the helper is written for the computer's
+	// operating system and architecture through Cella's file route; a
+	// create the computer holds for its owner is waited for ApprovalWait;
+	// and a computer that is offline or refuses the session is said so,
+	// with machine.Waiting and machine.Refused.
+	Device bool
+	// Annotations are the sandbox's annotations, such as the agent's
+	// display name, which a label cannot hold.
+	Annotations map[string]string
+	// ApprovalWait bounds how long an open waits for the computer's owner
+	// to allow the session before it answers machine.Waiting; the create
+	// goes on waiting on the computer. Zero is DefaultApprovalWait.
+	ApprovalWait time.Duration
 
 	// StartTimeout bounds a create or a start waiting for the sandbox to
 	// run; zero is DefaultStartTimeout.
@@ -193,6 +214,15 @@ type Machine struct {
 	// Cella once.
 	secretHostList []string
 	secretsRead    bool
+	// scratch is a device sandbox's helper directory, DeviceDir under the
+	// temporary directory the computer reports for it; empty on any other
+	// machine.
+	scratch string
+	// host is what the computer reports of itself, and isolation the
+	// class it confines a sandbox with, read from the device's
+	// environment.
+	host      *v1.HostInfo
+	isolation string
 }
 
 // SandboxName is the sandbox of a session: ses- and the session's ULID
@@ -213,11 +243,19 @@ func Open(ctx context.Context, o Options) (*Machine, error) {
 	if len(o.Helpers) == 0 {
 		return nil, fmt.Errorf("%w: the runner carries no topos-machine build to upload", ErrUnavailable)
 	}
-	if o.Dir == "" {
+	switch {
+	case o.Device && (o.Environment == "" || o.Workdir == ""):
+		return nil, fmt.Errorf("%w: a device names the environment its computer serves and the folder the session works in", ErrUnavailable)
+	case o.Device:
+		o.Dir = ""
+	case o.Dir == "":
 		o.Dir = DefaultDir
 	}
-	if !path.IsAbs(o.Dir) || path.Clean(o.Dir) != o.Dir {
+	if !o.Device && (!path.IsAbs(o.Dir) || path.Clean(o.Dir) != o.Dir) {
 		return nil, fmt.Errorf("machine: the helper directory %q is not an absolute clean path", o.Dir)
+	}
+	if o.ApprovalWait <= 0 {
+		o.ApprovalWait = DefaultApprovalWait
 	}
 	if o.StartTimeout <= 0 {
 		o.StartTimeout = DefaultStartTimeout
@@ -354,7 +392,18 @@ func (m *Machine) Roots() []string {
 	return slices.Clone(m.roots)
 }
 
-func (m *Machine) SpillDir() string { return path.Join(m.o.Dir, "spill") }
+func (m *Machine) SpillDir() string { return path.Join(m.helperDir(), "spill") }
+
+// helperDir holds the helper and the spill directory: Options.Dir, or a
+// device sandbox's scratch directory.
+func (m *Machine) helperDir() string {
+	if !m.o.Device {
+		return m.o.Dir
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.scratch
+}
 
 // HomeDir is the sandbox's HOME unless Options.Env names one: Cella
 // mounts the root filesystem read-only, so the image's home directory
@@ -363,7 +412,7 @@ func (m *Machine) SpillDir() string { return path.Join(m.o.Dir, "spill") }
 func (m *Machine) HomeDir() string { return path.Join(m.o.Dir, "home") }
 
 // helper is the helper's path inside the sandbox.
-func (m *Machine) helper() string { return path.Join(m.o.Dir, "bin", "topos-machine") }
+func (m *Machine) helper() string { return path.Join(m.helperDir(), "bin", "topos-machine") }
 
 // usable refuses a call after Release, or while the sandbox is lost.
 func (m *Machine) usable() (string, error) {
@@ -405,6 +454,9 @@ func (m *Machine) Release(ctx context.Context, end bool) error {
 // failed, or creates it, and makes sure the helper is in it. The helper
 // lives outside the workspace, so a start may have lost it.
 func (m *Machine) attach(ctx context.Context) error {
+	if m.o.Device {
+		return m.attachDevice(ctx)
+	}
 	sb, _, err := m.c.GetSandbox(ctx, m.name)
 	created := false
 	var restart *machine.Restart
@@ -480,8 +532,21 @@ func (m *Machine) set(sb v1.Sandbox, created bool, restart *machine.Restart) {
 	workdir := cmpOr(m.o.Workdir, sb.Spec.Workdir, m.workspace)
 	m.info = machine.Info{Kind: machine.KindCella, ID: sb.Status.ID, Workdir: workdir, Environment: sb.Status.Environment,
 		OS: m.info.OS, Arch: m.info.Arch, Egress: string(sb.Spec.Network.Egress.Mode)}
+	spill := path.Join(m.o.Dir, "spill")
+	if m.o.Device {
+		// A device's commands run in the computer's own sandbox, whose
+		// isolation names its Sandbox, and its scratch directory holds the
+		// session's own files beside the helper: the spill directory and
+		// the files a person attached.
+		m.info.Kind = machine.KindDevice
+		m.info.Sandbox = cmpOr(m.isolation, sb.Status.Isolation)
+		if m.host != nil {
+			m.info.OS, m.info.Arch = m.host.OS, m.host.Arch
+		}
+		spill = m.scratch
+	}
 	m.roots = nil
-	for _, r := range []string{workdir, m.workspace, m.SpillDir()} {
+	for _, r := range []string{workdir, m.workspace, spill} {
 		if r != "" && !slices.Contains(m.roots, r) {
 			m.roots = append(m.roots, r)
 		}
@@ -649,7 +714,7 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 	m.mu.Unlock()
 	labels := Labels(m.o.Labels, m.o.Session, m.o.Agent)
 	env := maps.Clone(m.o.Env)
-	if _, set := env["HOME"]; !set {
+	if _, set := env["HOME"]; !set && !m.o.Device {
 		if env == nil {
 			env = map[string]string{}
 		}
@@ -677,6 +742,9 @@ func (m *Machine) manifest(ctx context.Context) ([]byte, error) {
 			Network:     v1.Network{Egress: egress},
 			Lifecycle:   life,
 		},
+	}
+	if m.o.Device {
+		m.deviceSpec(&sb)
 	}
 	return json.Marshal(sb)
 }
@@ -819,7 +887,7 @@ func (m *Machine) wake1(ctx context.Context, id string) (*machine.Restart, error
 		return nil, nil
 	}
 	sb, _, err := m.c.GetSandbox(ctx, id)
-	if client.CodeOf(err) == "not_found" {
+	if client.CodeOf(err) == "not_found" || (m.o.Device && client.CodeOf(err) == codeDriverUnavailable) {
 		return nil, m.markLost()
 	}
 	if err != nil {
@@ -858,7 +926,9 @@ func (m *Machine) ended(ctx context.Context, id string, code int, cause error) (
 	settled := context.WithoutCancel(ctx)
 	sb, _, err := m.c.GetSandbox(settled, id)
 	switch {
-	case client.CodeOf(err) == "not_found":
+	case client.CodeOf(err) == "not_found", m.o.Device && client.CodeOf(err) == codeDriverUnavailable:
+		// A device's computer that stopped answering under the command took
+		// it with it, as a sandbox that is gone does (spec 080).
 		// The marking is what the call answers: the Stop says it.
 		_ = m.markLost()
 		return &machine.Stop{Lost: true}, false, nil
@@ -935,6 +1005,11 @@ func (m *Machine) call(ctx context.Context, retry bool, f func(id string) error)
 func (m *Machine) check(ctx context.Context, id string, err error) error {
 	if se, ok := spent("act in the sandbox "+m.name, err); ok {
 		return se
+	}
+	if m.o.Device && client.CodeOf(err) == codeDriverUnavailable {
+		// The computer stopped answering: it is asleep or offline, and the
+		// session waits for it (spec 080).
+		return errors.Join(m.markLost(), err)
 	}
 	if client.CodeOf(err) != "not_found" {
 		return err

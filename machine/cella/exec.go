@@ -19,6 +19,7 @@ import (
 	"latere.ai/x/cella/client"
 
 	"latere.ai/x/topos/machine"
+	"latere.ai/x/topos/session"
 )
 
 // killGrace is the helper's grace between SIGTERM and SIGKILL, and
@@ -66,12 +67,26 @@ func (m *Machine) dir(d string) string {
 	return m.abs(d)
 }
 
-// abs makes p absolute against the working directory and cleans it.
+// abs makes p absolute against the working directory and cleans it. On a
+// device, a message's file, attachments/<event id>/<name>, is the one in
+// the scratch directory, where the runner wrote it, since a person's
+// folder never takes the session's own files (spec 080).
 func (m *Machine) abs(p string) string {
 	if !path.IsAbs(p) {
-		p = path.Join(m.Info().Workdir, p)
+		base := m.Info().Workdir
+		if m.o.Device && attachmentPath(p) {
+			base = m.helperDir()
+		}
+		p = path.Join(base, p)
 	}
 	return path.Clean(p)
+}
+
+// attachmentPath reports whether p, a relative path, names a message's
+// file as the session records it: attachments/<event id>/...
+func attachmentPath(p string) bool {
+	dir, rest, ok := strings.Cut(path.Clean(p), "/")
+	return ok && dir == session.AttachmentDir && strings.HasPrefix(rest, session.PrefixEvent)
 }
 
 // Exec runs a command and returns its output, or starts a background job.

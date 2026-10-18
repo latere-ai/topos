@@ -57,7 +57,13 @@ func (m *Machine) resolve(p string) (target, error) {
 	if best == "" {
 		return target{}, fmt.Errorf("%w: %s", machine.ErrOutside, a)
 	}
-	return target{abs: a, root: best, routes: workspace != "" && under(a, workspace)}, nil
+	// A device's scratch directory is served by Cella's file routes too,
+	// which hold a path there to the computer's own grants (spec 080).
+	routes := workspace != "" && under(a, workspace)
+	if m.o.Device && !routes {
+		routes = under(a, m.helperDir())
+	}
+	return target{abs: a, root: best, routes: routes}, nil
 }
 
 // under reports whether p is root or below it.
