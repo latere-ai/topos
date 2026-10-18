@@ -70,8 +70,11 @@ func openDevice(t *testing.T, edit ...func(*cellastub.Server, *Options)) device 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The test's context ends before its cleanups run; the release
+	// keeps its values.
+	ended := context.WithoutCancel(t.Context())
 	t.Cleanup(func() {
-		if err := d.Release(context.Background(), true); err != nil {
+		if err := d.Release(ended, true); err != nil {
 			t.Error(err)
 		}
 	})
@@ -202,8 +205,11 @@ func TestDeviceHelperByOSAndArch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The test's context ends before its cleanups run; the release
+	// keeps its values.
+	ended := context.WithoutCancel(t.Context())
 	t.Cleanup(func() {
-		if err := d.Release(context.Background(), true); err != nil {
+		if err := d.Release(ended, true); err != nil {
 			t.Error(err)
 		}
 	})
@@ -242,8 +248,8 @@ func TestDeviceHelperByOSAndArch(t *testing.T) {
 // one that stops answering under a command leaves the command lost and
 // the device absent, offline (spec 080).
 func TestDeviceWaitsForItsComputer(t *testing.T) {
-	ctx := t.Context()
 	t.Run("offline", func(t *testing.T) {
+		ctx := t.Context()
 		stub := cellastub.New(t)
 		o, _ := deviceOptions(t, stub, platformKey)
 		stub.SetEnvironmentPhase(laptop, v1.EnvironmentOffline)
@@ -259,6 +265,7 @@ func TestDeviceWaitsForItsComputer(t *testing.T) {
 		}
 	})
 	t.Run("approval", func(t *testing.T) {
+		ctx := t.Context()
 		stub := cellastub.New(t)
 		o, _ := deviceOptions(t, stub, platformKey)
 		stub.HoldCreates(laptop, true)
@@ -298,6 +305,7 @@ func TestDeviceWaitsForItsComputer(t *testing.T) {
 		}
 	})
 	t.Run("refused", func(t *testing.T) {
+		ctx := t.Context()
 		for _, timeout := range []bool{false, true} {
 			stub := cellastub.New(t)
 			o, _ := deviceOptions(t, stub, platformKey)
@@ -328,6 +336,7 @@ func TestDeviceWaitsForItsComputer(t *testing.T) {
 	})
 	t.Run("lost under a command", func(t *testing.T) {
 		dv := openDevice(t)
+		ctx := t.Context()
 		started := make(chan struct{})
 		go func() {
 			<-started
@@ -349,6 +358,7 @@ func TestDeviceWaitsForItsComputer(t *testing.T) {
 	})
 	t.Run("a call that finds it gone", func(t *testing.T) {
 		dv := openDevice(t)
+		ctx := t.Context()
 		dv.stub.Disconnect(laptop)
 		if _, err := dv.d.Stat(ctx, "anything"); !errors.Is(err, machine.ErrLost) {
 			t.Fatalf("a stat on a computer that does not answer: %v", err)

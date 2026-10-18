@@ -5,6 +5,7 @@ package cellastub
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -101,7 +102,7 @@ func TestAHostEnvironment(t *testing.T) {
 			t.Fatal(err)
 		}
 		b, err := io.ReadAll(rc)
-		if err := rc.Close(); err != nil || string(b) != "x" {
+		if err := errors.Join(err, rc.Close()); err != nil || string(b) != "x" {
 			t.Fatalf("get %s: %q, %v", p, b, err)
 		}
 	}
