@@ -23,6 +23,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -50,6 +51,7 @@ import (
 	"latere.ai/x/topos/internal/token"
 	"latere.ai/x/topos/internal/version"
 	"latere.ai/x/topos/machine"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/runner"
@@ -187,7 +189,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if minter != nil {
 		local = minter.Local
 	}
-	runners, err := startRunners(runCtx, cfg, getenv, doors, st.sessions, queue, runner.KindServe, local, api.Failover, log)
+	runners, err := startRunners(runCtx, cfg, getenv, doors, st.sessions, queue, runner.KindServe, local, api.Failover, &titling{ask: api.Title, latest: api.LatestTitle, agents: api.TitleAgents}, log)
 	if err != nil {
 		stopRunners()
 		return fail(stderr, err)
@@ -461,6 +463,43 @@ func files(cfg config.Config, minter *credentials.Minter, identities *idp.Client
 // that stopped renewing them.
 var reapInterval = 5 * time.Second
 
+// titlePassDelay and titlePassInterval are the pause before the pass
+// that names the sessions an agent ran before and the pause after each
+// session it asked about (spec 083).
+var (
+	titlePassDelay    = runner.TitlePassDelay
+	titlePassInterval = runner.TitlePassInterval
+)
+
+// titling is what serve's own runners name sessions with (spec 083): the
+// server's question session.title, its reading of an agent's latest
+// spec.title, and the agents whose latest version sets it, whose
+// sessions the pass at start names.
+type titling struct {
+	ask    func(ctx context.Context, id, asked string) (session.ModelRef, error)
+	latest func(ctx context.Context, agentID string) (*v1.Title, error)
+	agents func(ctx context.Context) ([]string, error)
+}
+
+// titlePass names the sessions the agents that set spec.title ran before,
+// once, titlePassDelay after the runners start, and logs how it ended.
+func titlePass(ctx context.Context, r *runner.Runner, t *titling, log *slog.Logger) {
+	if sleepCtx(ctx, titlePassDelay); ctx.Err() != nil {
+		return
+	}
+	agents, err := t.agents(ctx)
+	if err != nil {
+		log.ErrorContext(ctx, "title pass: the agents could not be listed", "err", err)
+		return
+	}
+	c, err := r.TitlePass(ctx, agents, titlePassInterval)
+	if err != nil {
+		log.ErrorContext(ctx, "title pass: stopped", "named", c.Named, "kept", c.Kept, "skipped", c.Skipped, "failed", c.Failed, "err", err)
+		return
+	}
+	log.InfoContext(ctx, "title pass", "agents", len(agents), "named", c.Named, "kept", c.Kept, "skipped", c.Skipped, "failed", c.Failed)
+}
+
 // startRunners starts the runners that drive hosted sessions,
 // TOPOS_RUNNER_CAPACITY of them at once, claiming from queue and running
 // over st, and returns a channel closed once they have stopped with ctx.
@@ -468,8 +507,11 @@ var reapInterval = 5 * time.Second
 // sandbox is checked first, and a sandbox that does not run or does not
 // confine stops the start. failover is the server's question of which
 // model a turn continues on when its model cannot serve (spec 051), nil
-// in a runner process, whose leases ask it over the internal listener.
-func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string, string) (session.ModelRef, error), log *slog.Logger) (<-chan struct{}, error) {
+// in a runner process, whose leases ask it over the internal listener;
+// titles is how serve's runners name sessions, nil in a runner process,
+// and where it is set the runners also name, once, the sessions an agent
+// ran before (spec 083).
+func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string, string) (session.ModelRef, error), titles *titling, log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)
@@ -518,7 +560,10 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	// A session that works in a repository on the git host keeps its
 	// checkpoints there, so a fork restores its files after the sandbox
 	// is gone (spec 035).
-	ro := runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind, Credentials: creds, Failover: failover, CheckpointHost: cfg.OrigoURL}
+	ro := runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind, Credentials: creds, Failover: failover, CheckpointHost: cfg.OrigoURL, Log: log}
+	if titles != nil {
+		ro.Title, ro.LatestTitle = titles.ask, titles.latest
+	}
 	// An app's checkout starts at the commit the app host serves it at
 	// (spec 058).
 	if apps.Configured() {
@@ -528,12 +573,19 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	if err != nil {
 		return nil, err
 	}
-	go func() {
-		defer close(done)
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		report := func(id string, err error) { log.ErrorContext(ctx, "runner", "session", id, "err", err) }
 		if err := r.Serve(ctx, queue, cfg.RunnerCapacity, report); err != nil {
 			report("", err)
 		}
+	})
+	if titles != nil && titles.agents != nil {
+		wg.Go(func() { titlePass(ctx, r, titles, log) })
+	}
+	go func() {
+		defer close(done)
+		wg.Wait()
 	}()
 	return done, nil
 }
@@ -592,7 +644,7 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}
-	runners, err := startRunners(runCtx, cfg, getenv, doors, client, client, runner.KindRunner, nil, nil, log)
+	runners, err := startRunners(runCtx, cfg, getenv, doors, client, client, runner.KindRunner, nil, nil, nil, log)
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}

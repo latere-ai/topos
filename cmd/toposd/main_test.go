@@ -193,18 +193,23 @@ func startServe(t *testing.T, vars map[string]string) (publicURL, internalURL st
 // for the exit code.
 func serveOn(t *testing.T, ctx context.Context, vars map[string]string, drain time.Duration) (publicURL, internalURL string, wait func() int) {
 	t.Helper()
+	return serveLogging(t, ctx, vars, drain, &syncBuffer{})
+}
+
+// serveLogging is serveOn with serve's log written to errOut.
+func serveLogging(t *testing.T, ctx context.Context, vars map[string]string, drain time.Duration, errOut *syncBuffer) (publicURL, internalURL string, wait func() int) {
+	t.Helper()
 	oldDrain := drainDelay
 	drainDelay = drain
 	t.Cleanup(func() { drainDelay = oldDrain })
 
 	dataDir := t.TempDir()
 	var out syncBuffer
-	var errOut bytes.Buffer
 	codec := make(chan int, 1)
 	go func() {
 		all := map[string]string{"TOPOS_PUBLIC_ADDR": "127.0.0.1:0", "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_DATA_DIR": dataDir, "TOPOS_MODELS_URL": "https://lux.example/anthropic"}
 		maps.Copy(all, vars)
-		codec <- run(ctx, nil, env(all), &out, &errOut)
+		codec <- run(ctx, nil, env(all), &out, errOut)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
