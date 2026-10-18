@@ -210,7 +210,7 @@ func (c *call) sendEvent() error {
 		// A source's spool is removed once the message is stored or
 		// refused (spec 081).
 		defer c.s.closeSpools(c.r.Context(), files)
-		if err := c.s.readSources(c.r.Context(), s, c.r, files); err != nil {
+		if err := c.s.readSources(c.r.Context(), s, sender, files); err != nil {
 			return err
 		}
 		if message.Attachments, err = c.storeAttachments(c.r.Context(), s, id, files); err != nil {

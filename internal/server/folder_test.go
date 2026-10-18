@@ -55,6 +55,7 @@ func newFolderFixture(t *testing.T) *folderFixture {
 	ff := &folderFixture{arca: arca, named: true, spool: filepath.Join(t.TempDir(), "spool")}
 	ff.fixture = newFixture(t, func(o *Options) {
 		o.Files = &Files{Write: open(func(s session.Session) string { return "session:" + s.ID }), Read: open(func(session.Session) string { return "server" }),
+			Token: func(_ context.Context, s session.Session) (string, error) { return "session:" + s.ID, nil },
 			Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) (*filestore.Source, error) {
 				return filestore.ReadSource(ctx, arca.Client(), root, token, src, max)
 			}, Spool: ff.spool}

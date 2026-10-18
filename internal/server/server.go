@@ -151,12 +151,14 @@ type Options struct {
 // its own credential: Write with the session's own token, for a message's
 // attachments and a fork's copies, and Read with the server's own, for
 // the blob route, so a session that ended, or whose agent was archived,
-// stays readable. Source reads a file of a person's own files a message
-// names (spec 079), at the files API whose root is root, with the
-// sender's own bearer token, at most max bytes, and answers its bytes as
-// a stream held to max, or filestore.ErrSourceNotFound or
+// stays readable. Token answers the session's own token for the files API
+// (spec 079), asked once for each message that names a file of a person's
+// files, of a session that may not be stored yet: a fork's message is read
+// before the fork is written. Source reads one such file at the files API
+// whose root is root, with token, at most max bytes, and answers its bytes
+// as a stream held to max, or filestore.ErrSourceNotFound or
 // filestore.ErrSourceTooLarge; filestore.ReadSource is the one toposd
-// runs, and nil refuses a message that names a source as
+// runs. With either nil a message that names a source is refused as
 // files_unavailable. Spool is the directory a source past
 // session.InlineTextBytes is held in while its send is checked (spec
 // 081), which New makes and empties of what a stopped server left; empty
@@ -164,6 +166,7 @@ type Options struct {
 type Files struct {
 	Write  func(ctx context.Context, s session.Session) (harness.Files, error)
 	Read   func(ctx context.Context, s session.Session) (harness.Files, error)
+	Token  func(ctx context.Context, s session.Session) (string, error)
 	Source func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) (*filestore.Source, error)
 	Spool  string
 }

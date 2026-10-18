@@ -17,7 +17,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"latere.ai/x/pkg/bearer"
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
@@ -60,7 +59,8 @@ const CodeAttachmentTooLarge = "attachment_too_large"
 
 // CodeAttachmentSourceNotFound is a file a message names by its source
 // that the files API answered 401, 403 or 404 for, one code for the
-// three, so the answer does not say whether the file exists (spec 079).
+// three, so the answer does not say whether the file exists, and a source
+// the server does not read for its sender (spec 079).
 const CodeAttachmentSourceNotFound = "attachment_source_not_found"
 
 // SourceRule is the send and fork routes' sentence on a file a message
@@ -68,13 +68,15 @@ const CodeAttachmentSourceNotFound = "attachment_source_not_found"
 var SourceRule = fmt.Sprintf("A file may instead be {\"name\", \"source\": {\"owner\", \"path\", \"version\"}}, a file of the sender's own files at the files API of the session's folder of a files store: "+
 	"owner the files API's owner segment, me or an owner's id; path the file's path in that space, its plane included, as GET {files API}/files/{owner}/{path} reads it; and version, optional, a version of the file from 1 upward, read as ?version=N. "+
 	"A file names exactly one of data, blob and source, and a source names no media_type; an owner that is empty, . or .. or past %d bytes, a path that is empty, past %d bytes or not clean, either holding a control or a bidirectional character, and a version below 1 are invalid_request. "+
-	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the request's own bearer and no other credential; "+
-	"a redirect, which the files API gives a file past its inline bound and a public file, is followed once, to an https address, without the bearer. "+
+	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the session's own token for the files API, asked once for the message, and never the sender's; "+
+	"the files API's authorizer decides each read as the person who started the session. The owner me is read as the sender's own space, the sender's subject. "+
+	"A sender who did not start the session names a file of their own space alone, me or their subject, and a source of any other space from them is %s before anything is read. "+
+	"A redirect, which the files API gives a file past its inline bound and a public file, is followed once, to an https address, without the token. "+
 	"An answer of 401, 403 or 404 is %s, one answer for the three; a file past %d bytes is %s, as is the source that takes a message's sources past %d bytes together; "+
-	"and any other failure is %s, among them a second redirect, a redirect to an address that is not https, and a source the server has no room to hold now, which may be sent again. "+
+	"and any other failure is %s, among them a token for the files API the server cannot have, a second redirect, a redirect to an address that is not https, and a source the server has no room to hold now, which may be sent again. "+
 	"A session that keeps no folder refuses a source as invalid_request. The file's media type is the files API's Content-Type, or its bytes' where that is empty or application/octet-stream; "+
-	"it is then kept as a data file is, and its record names source as the message named it. A source counts among the message's files and its attachments.",
-	MaxAttachmentName, MaxSourcePath, CodeAttachmentSourceNotFound, MaxSourceBytes, CodeAttachmentTooLarge, MaxMessageSourceBytes, CodeFilesUnavailable)
+	"it is then kept as a data file is, and its record names source as the message named it, me as me. A source counts among the message's files and its attachments.",
+	MaxAttachmentName, MaxSourcePath, CodeAttachmentSourceNotFound, CodeAttachmentSourceNotFound, MaxSourceBytes, CodeAttachmentTooLarge, MaxMessageSourceBytes, CodeFilesUnavailable)
 
 // InlineRule is the send and fork routes' sentence on a text file the
 // model reads in its request (spec 079).
@@ -471,14 +473,17 @@ func markInline(files []file) {
 	}
 }
 
-// readSources reads each file of a message that names a source (spec
-// 079), once the send is allowed and before anything is written: at the
-// files API of sess's folder, the address the allow named, with the
-// bearer r was authenticated with, the sender's own, and no other
-// credential, and at the https address a redirect names without it (spec
-// 081). Each is read whole before the next, into memory while it is at
-// most session.InlineTextBytes and onto a spool file past them, which the
-// caller removes with closeSpools whatever becomes of the send.
+// readSources reads each file of a message from sender that names a
+// source (spec 079), once the send is allowed and before anything is
+// written: at the files API of sess's folder, the address the allow
+// named, with the session's own token for the files API, asked once for
+// the message, and no credential of the sender's, and at the https
+// address a redirect names without it (spec 081). The installation's
+// authorizer decides each read as the person who started the session; the
+// space each is read in is sourceOwner's. Each is read whole before the
+// next, into memory while it is at most session.InlineTextBytes and onto a
+// spool file past them, which the caller removes with closeSpools whatever
+// becomes of the send.
 //
 // A source is read twice, into the spool and then into the folder, and
 // never straight into the folder: every source of the message is held to
@@ -491,14 +496,16 @@ func markInline(files []file) {
 //
 // A session without a folder refuses a source, since the file is read
 // where the folder is and kept there. A file a fork keeps by its blob is
-// not read again, whatever source its record names. A source the files
-// API refuses with 401, 403 or 404 is attachment_source_not_found, one
-// past the bound of a source attachment_too_large, as is the source that
-// would take the message's sources past their bound together, and any
-// other failure files_unavailable, a source the server's spools leave no
-// room for among them. The media type is the files API's, or the one the
-// bytes give where it names none, or names application/octet-stream.
-func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.Request, files []file) error {
+// not read again, whatever source its record names. A source sourceOwner
+// refuses, and one the files API refuses with 401, 403 or 404, is
+// attachment_source_not_found, one past the bound of a source
+// attachment_too_large, as is the source that would take the message's
+// sources past their bound together, and any other failure
+// files_unavailable, a token that cannot be had and a source the server's
+// spools leave no room for among them. The media type is the files API's,
+// or the one the bytes give where it names none, or names
+// application/octet-stream.
+func (s *Server) readSources(ctx context.Context, sess session.Session, sender session.Sender, files []file) error {
 	first := -1
 	for i, f := range files {
 		if f.source != nil && f.blob == "" {
@@ -512,12 +519,25 @@ func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.
 	switch {
 	case sess.Folder == nil:
 		return refuse(CodeInvalidRequest, "attachments[%d] names a source; a file of a person's files is read at the files API of the session's folder and kept there, and this session keeps none", first)
-	case s.o.Files == nil || s.o.Files.Source == nil:
-		return &apiError{code: CodeFilesUnavailable, detail: "this server reads no file of a person's files: its files store has no Source"}
+	case s.o.Files == nil || s.o.Files.Source == nil || s.o.Files.Token == nil:
+		return &apiError{code: CodeFilesUnavailable, detail: "this server reads no file of a person's files: its files store has no Source or no Token"}
 	}
-	token, ok := bearer.FromRequest(r)
-	if !ok {
-		return refuse(CodeInvalidRequest, "the request carries no bearer in its Authorization header to read attachments[%d]'s source with", first)
+	// Each source's space is settled before the token is asked for, so a
+	// message refused for whom it names reaches no identity provider.
+	owners := make([]string, len(files))
+	for i, f := range files {
+		if f.source == nil || f.blob != "" {
+			continue
+		}
+		owner, err := sourceOwner(sess, sender, i, *f.source)
+		if err != nil {
+			return err
+		}
+		owners[i] = owner
+	}
+	token, err := s.o.Files.Token(ctx, sess)
+	if err != nil {
+		return filesRefused(err, "", fmt.Sprintf("the session's own token for the files API, to read attachments[%d]'s source with: %v", first, err))
 	}
 	// read is the bytes the message's sources read so far, which each
 	// read is held to with the message's bound.
@@ -527,11 +547,13 @@ func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.
 		if f.source == nil || f.blob != "" {
 			continue
 		}
-		data, sp, media, err := s.readSource(ctx, sess.Folder.URL, token, *f.source, min(s.sources.file, s.sources.message-read))
+		src := *f.source
+		src.Owner = owners[i]
+		data, sp, media, err := s.readSource(ctx, sess.Folder.URL, token, src, min(s.sources.file, s.sources.message-read))
 		switch {
 		case errors.Is(err, filestore.ErrSourceNotFound):
 			// The detail is one for the three answers, as the code is.
-			return refuse(CodeAttachmentSourceNotFound, "attachments[%d]: the files API holds no file at %s of %s that the sender may read", i, f.source.Path, f.source.Owner)
+			return refuse(CodeAttachmentSourceNotFound, "attachments[%d]: the files API holds no file at %s of %s that the session may read for the person who started it", i, f.source.Path, f.source.Owner)
 		case errors.Is(err, filestore.ErrSourceTooLarge):
 			return &apiError{code: CodeAttachmentTooLarge, err: err, detail: fmt.Sprintf("attachments[%d]: %v; a source is at most %d bytes, and a message's sources at most %d bytes together, %d of them read before it",
 				i, err, s.sources.file, s.sources.message, read)}
@@ -544,6 +566,30 @@ func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.
 		read += f.length()
 	}
 	return nil
+}
+
+// sourceOwner is the space the session reads a source of a message from
+// sender in (spec 079): the owner the message names, OwnerMe being the
+// sender's own space, since the session's token names its agent and not
+// a person. The installation's authorizer decides the read as the person
+// who started the session, so a sender who did not start it names their
+// own space alone: any other space would be read with the starter's reach
+// and not the sender's. A sender that is no person has no space to name.
+// Each refusal is attachment_source_not_found, as a file the files API
+// refuses is.
+func sourceOwner(sess session.Session, sender session.Sender, i int, src session.AttachmentSource) (string, error) {
+	if sender.Kind != session.SenderPerson || sender.Subject == "" {
+		return "", refuse(CodeAttachmentSourceNotFound, "attachments[%d] names a source, a file of its sender's own files, and a message from a %s has no files of its own", i, sender.Kind)
+	}
+	owner := src.Owner
+	if owner == session.OwnerMe {
+		owner = sender.Subject
+	}
+	starter := sess.Initiator.Kind == session.SenderPerson && sess.Initiator.Subject == sender.Subject
+	if !starter && owner != sender.Subject {
+		return "", refuse(CodeAttachmentSourceNotFound, "attachments[%d]: a source is read as the person who started the session, so a sender who did not start it names a file of their own space alone, %s or %s, and not %s", i, session.OwnerMe, sender.Subject, src.Owner)
+	}
+	return owner, nil
 }
 
 // readSource reads one source within max bytes, into memory or onto a

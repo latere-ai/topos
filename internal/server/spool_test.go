@@ -79,7 +79,7 @@ func TestALargeSourceIsStreamedIntoTheFolder(t *testing.T) {
 	if _, err := io.ReadFull(&pattern{n: int64(len(data))}, data); err != nil {
 		t.Fatal(err)
 	}
-	f.arca.Put("me", "files/Scans/report.pdf", arcastub.Object{Data: data, ContentType: "application/pdf"})
+	f.arca.Put(alices, "files/Scans/report.pdf", arcastub.Object{Data: data, ContentType: "application/pdf"})
 	a, ev := f.sendFiles(s.ID, source("report.pdf", "me", "files/Scans/report.pdf"))
 	if a.status != http.StatusOK {
 		t.Fatalf("send: %d %s", a.status, a.body)
@@ -96,7 +96,7 @@ func TestALargeSourceIsStreamedIntoTheFolder(t *testing.T) {
 	ops := map[string]int{}
 	for _, r := range f.arca.Requests() {
 		ops[r.Op]++
-		if r.Op == arcastub.OpRead && r.Header.Get("Authorization") != "Bearer alice" {
+		if r.Op == arcastub.OpRead && r.Header.Get("Authorization") != "Bearer session:"+s.ID {
 			t.Fatalf("the files API's read carried %q", r.Header.Get("Authorization"))
 		}
 	}
@@ -211,7 +211,7 @@ func TestSpoolFilesAreRemoved(t *testing.T) {
 	parent := f.create("alice", "reviewer")
 	f.turn(parent.ID, 1, "Hello.", 1)
 	big := bytes.Repeat([]byte("0123456789abcdef"), session.InlineTextBytes/16+1)
-	f.arca.Put("me", "files/big.bin", arcastub.Object{Data: big, ContentType: "application/octet-stream"})
+	f.arca.Put(alices, "files/big.bin", arcastub.Object{Data: big, ContentType: "application/octet-stream"})
 	// seen is the most spool files the spool held while a source was
 	// read, counted as the read closes its source.
 	var mu sync.Mutex
@@ -295,7 +295,7 @@ func TestTheSpoolIsBound(t *testing.T) {
 	f := newSourceFixture(t)
 	s := f.create("alice", "reviewer")
 	big := bytes.Repeat([]byte{'z'}, 4*session.InlineTextBytes)
-	f.arca.Put("me", "files/big.bin", arcastub.Object{Data: big})
+	f.arca.Put(alices, "files/big.bin", arcastub.Object{Data: big})
 	f.api.sources.spool = 3 * session.InlineTextBytes
 	last := f.stored(s.ID).LastSeq
 	a, _ := f.sendFiles(s.ID, source("big.bin", "me", "files/big.bin"))
@@ -323,7 +323,7 @@ func TestTheSpoolIsBound(t *testing.T) {
 func TestASpoolFailureIsReported(t *testing.T) {
 	f := newSourceFixture(t)
 	s := f.create("alice", "reviewer")
-	f.arca.Put("me", "files/big.bin", arcastub.Object{Data: bytes.Repeat([]byte{'z'}, 2*session.InlineTextBytes)})
+	f.arca.Put(alices, "files/big.bin", arcastub.Object{Data: bytes.Repeat([]byte{'z'}, 2*session.InlineTextBytes)})
 	if err := os.RemoveAll(f.spool); err != nil {
 		t.Fatal(err)
 	}

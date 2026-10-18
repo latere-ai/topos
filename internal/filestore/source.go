@@ -100,8 +100,8 @@ func sourceOf(resp *http.Response, max int64) (*Source, error) {
 // once, closing redirect's body, and answers the file held to max: to an
 // https address alone, since the address carries its credential in its
 // query and the person's file in its answer, and with a request of its
-// own that carries none of the first's headers, so the sender's bearer
-// never reaches another host. An answer that is not 200, a second
+// own that carries none of the first's headers, so the bearer the files
+// API was read with never reaches another host. An answer that is not 200, a second
 // redirect among them, is the files service's failure.
 func presignedSource(ctx context.Context, api *http.Client, redirect *http.Response, max int64) (*Source, error) {
 	// The address is named by unsigned alone in every error, since errors

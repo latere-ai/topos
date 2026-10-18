@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +24,10 @@ import (
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/arcastub"
 )
+
+// alices is alice's own space at the files API, the one a source whose
+// owner is me names when she sends it.
+var alices = authz.Subject(issuer, "alice")
 
 // sourceFixture is a folder fixture whose files API answers a read of a
 // file up to filestore.InlineBytes inline and redirects a larger one to
@@ -96,21 +102,46 @@ func records(t *testing.T, ev session.Event) []session.Attachment {
 	return p.Attachments
 }
 
-// TestASourceIsReadWithTheSendersToken: a file a message names by its
-// source is read at the files API of the session's folder with the send's
-// own bearer, at ?version=N when it names a version, written to the
-// session's folder with the session's own token as a data file is, and
-// recorded with its source; its media type is the files API's, or the
-// bytes' where the files API names none or application/octet-stream
+// neverTheSendersToken has the fixture's files store fail the test when a
+// source is read with the bearer of a send, the sender's own token, which
+// the server never forwards (spec 079), and counts the tokens asked for.
+func (sf *sourceFixture) neverTheSendersToken(senders ...string) *int {
+	sf.t.Helper()
+	read, token := sf.api.o.Files.Source, sf.api.o.Files.Token
+	var minted int
+	sf.api.o.Files.Token = func(ctx context.Context, s session.Session) (string, error) {
+		sf.mu.Lock()
+		minted++
+		sf.mu.Unlock()
+		return token(ctx, s)
+	}
+	sf.api.o.Files.Source = func(ctx context.Context, root, tok string, src session.AttachmentSource, max int64) (*filestore.Source, error) {
+		if slices.Contains(senders, tok) || !strings.HasPrefix(tok, "session:") {
+			sf.t.Errorf("a source was read with %q, not the session's own token", tok)
+		}
+		return read(ctx, root, tok, src, max)
+	}
+	return &minted
+}
+
+// TestASourceIsReadWithTheSessionsToken: a file a message names by its
+// source is read at the files API of the session's folder with the
+// session's own token for the files API, asked once for the message and
+// never the send's bearer, in the sender's own space for the owner me, at
+// ?version=N when it names a version, written to the session's folder
+// with the session's own token as a data file is, and recorded with its
+// source as the message named it; its media type is the files API's, or
+// the bytes' where the files API names none or application/octet-stream
 // (spec 079).
-func TestASourceIsReadWithTheSendersToken(t *testing.T) {
+func TestASourceIsReadWithTheSessionsToken(t *testing.T) {
 	f := newSourceFixture(t)
+	minted := f.neverTheSendersToken("alice")
 	s := f.create("alice", "reviewer")
 	const q3 = "files/Reports/q3 final.csv"
 	now, then, pdf := []byte("month,total\n7,8\n"), []byte("month,total\n1,2\n"), []byte("%PDF-1.7\n1 0 obj\n")
-	f.arca.Put("me", q3, arcastub.Object{Data: now, ContentType: "text/csv"})
-	f.arca.PutVersion("me", q3, 3, arcastub.Object{Data: then, ContentType: "text/csv"})
-	f.arca.Put("me", "files/scan", arcastub.Object{Data: pdf, ContentType: "application/octet-stream"})
+	f.arca.Put(alices, q3, arcastub.Object{Data: now, ContentType: "text/csv"})
+	f.arca.PutVersion(alices, q3, 3, arcastub.Object{Data: then, ContentType: "text/csv"})
+	f.arca.Put(alices, "files/scan", arcastub.Object{Data: pdf, ContentType: "application/octet-stream"})
 	f.arca.Put("owner-7", "files/shared/a.txt", arcastub.Object{Data: []byte("shared\n")})
 	a, ev := f.sendFiles(s.ID, source("q3.csv", "me", q3), source("q3-then.csv", "me", q3, 3), source("scan.pdf", "me", "files/scan"),
 		source("a.txt", "owner-7", "files/shared/a.txt"), `{"name":"inline.txt","data":"`+b64("data\n")+`"}`)
@@ -146,14 +177,18 @@ func TestASourceIsReadWithTheSendersToken(t *testing.T) {
 			reads = append(reads, r)
 		}
 	}
-	paths := []string{"/v1/files/me/files/Reports/q3%20final.csv", "/v1/files/me/files/Reports/q3%20final.csv", "/v1/files/me/files/scan", "/v1/files/owner-7/files/shared/a.txt"}
+	own := "/v1/files/" + url.PathEscape(alices)
+	paths := []string{own + "/files/Reports/q3%20final.csv", own + "/files/Reports/q3%20final.csv", own + "/files/scan", "/v1/files/owner-7/files/shared/a.txt"}
 	if len(reads) != len(paths) {
 		t.Fatalf("the reads %+v", reads)
 	}
 	for i, r := range reads {
-		if r.Path != paths[i] || r.Header.Get("Authorization") != "Bearer alice" || (r.Query == "version=3") != (i == 1) {
+		if r.Path != paths[i] || r.Header.Get("Authorization") != "Bearer session:"+s.ID || (r.Query == "version=3") != (i == 1) {
 			t.Errorf("read %d is %s?%s with %q", i, r.Path, r.Query, r.Header.Get("Authorization"))
 		}
+	}
+	if *minted != 1 {
+		t.Errorf("the message's four sources asked for %d tokens, want one", *minted)
 	}
 	if ms := records(t, f.log(s.ID)[len(f.log(s.ID))-1]); len(ms) != len(want) {
 		t.Fatalf("the log's last message records %+v", ms)
@@ -168,7 +203,7 @@ func TestASourceIsReadWithTheSendersToken(t *testing.T) {
 func TestASourceTheFilesAPIRefuses(t *testing.T) {
 	f := newSourceFixture(t)
 	s := f.create("alice", "reviewer")
-	f.arca.Put("me", "files/a.csv", arcastub.Object{Data: []byte("a\n"), ContentType: "text/csv"})
+	f.arca.Put(alices, "files/a.csv", arcastub.Object{Data: []byte("a\n"), ContentType: "text/csv"})
 	last := f.stored(s.ID).LastSeq
 	refused := func(what string, status int, code string) answer {
 		t.Helper()
@@ -188,12 +223,12 @@ func TestASourceTheFilesAPIRefuses(t *testing.T) {
 	unauthenticated := refused("a 401", http.StatusNotFound, CodeAttachmentSourceNotFound)
 	f.arca.Fail(arcastub.OpRead, arcastub.Failure{Status: http.StatusForbidden, Code: "forbidden"})
 	forbidden := refused("a 403", http.StatusNotFound, CodeAttachmentSourceNotFound)
-	f.arca.Remove("me", "files/a.csv")
+	f.arca.Remove(alices, "files/a.csv")
 	missing := refused("a 404", http.StatusNotFound, CodeAttachmentSourceNotFound)
 	if !bytes.Equal(unauthenticated.body, forbidden.body) || !bytes.Equal(forbidden.body, missing.body) {
 		t.Fatalf("the three answers differ:\n%s\n%s\n%s", unauthenticated.body, forbidden.body, missing.body)
 	}
-	f.arca.Put("me", "files/a.csv", arcastub.Object{Data: []byte("a\n"), ContentType: "text/csv"})
+	f.arca.Put(alices, "files/a.csv", arcastub.Object{Data: []byte("a\n"), ContentType: "text/csv"})
 	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "http://bucket.example/a.csv", http.StatusFound)
 	}))
@@ -227,7 +262,7 @@ func TestAMessagesSourcesAreBoundTogether(t *testing.T) {
 	files := make([]string, 3)
 	for i := range files {
 		name := "part" + strconv.Itoa(i) + ".bin"
-		f.arca.Put("me", "files/"+name, arcastub.Object{Data: bytes.Repeat([]byte{byte('a' + i)}, size), ContentType: "application/octet-stream"})
+		f.arca.Put(alices, "files/"+name, arcastub.Object{Data: bytes.Repeat([]byte{byte('a' + i)}, size), ContentType: "application/octet-stream"})
 		files[i] = source(name, "me", "files/"+name)
 	}
 	last := f.stored(s.ID).LastSeq
@@ -245,7 +280,7 @@ func TestAMessagesSourcesAreBoundTogether(t *testing.T) {
 	if a, _ := f.sendFiles(s.ID, files[:2]...); a.status != http.StatusOK {
 		t.Fatalf("sources within the bound: %d %.200s", a.status, a.body)
 	}
-	f.arca.Put("me", "files/one.bin", arcastub.Object{Data: make([]byte, f.api.sources.file+1)})
+	f.arca.Put(alices, "files/one.bin", arcastub.Object{Data: make([]byte, f.api.sources.file+1)})
 	if a, _ := f.sendFiles(s.ID, source("one.bin", "me", "files/one.bin")); a.status != http.StatusRequestEntityTooLarge || a.code() != CodeAttachmentTooLarge {
 		t.Fatalf("a source past its own bound: %d %.200s", a.status, a.body)
 	}
@@ -259,7 +294,7 @@ func TestAMessagesSourcesAreBoundTogether(t *testing.T) {
 func TestASourcesRules(t *testing.T) {
 	f := newSourceFixture(t)
 	s := f.create("alice", "reviewer")
-	f.arca.Put("me", "files/a.csv", arcastub.Object{Data: []byte("a\n")})
+	f.arca.Put(alices, "files/a.csv", arcastub.Object{Data: []byte("a\n")})
 	for _, file := range []string{
 		`{"name":"a","source":{"owner":"me","path":"files/a.csv"},"data":"` + b64("x") + `"}`,
 		`{"name":"a","source":{"owner":"me","path":"files/a.csv"},"blob":"` + string(session.DigestOf([]byte("x"))) + `"}`,
@@ -313,7 +348,7 @@ func TestASourcesRules(t *testing.T) {
 func TestASourceCountsAsAnAttachment(t *testing.T) {
 	f := newSourceFixture(t)
 	s := f.create("alice", "reviewer")
-	f.arca.Put("me", "files/a.csv", arcastub.Object{Data: []byte("a\n")})
+	f.arca.Put(alices, "files/a.csv", arcastub.Object{Data: []byte("a\n")})
 	if a, _ := f.sendFiles(s.ID, source("a.csv", "me", "files/a.csv"), `{"name":"b.txt","data":"`+b64("b")+`"}`); a.status != http.StatusOK {
 		t.Fatalf("send: %d %s", a.status, a.body)
 	}
@@ -323,16 +358,18 @@ func TestASourceCountsAsAnAttachment(t *testing.T) {
 }
 
 // TestAForksMessageReadsASource: a fork's message that names a source
-// is read with the fork request's bearer at the fork's own folder once
-// its send is allowed, kept in the fork's folder and counted by its send
-// question; a file the fork keeps by its blob keeps its record's source
-// and mark; a refused read leaves no fork (spec 079).
+// is read with the fork's own token, before the fork is stored, at the
+// fork's own folder once its send is allowed, kept in the fork's folder
+// and counted by its send question; a file the fork keeps by its blob
+// keeps its record's source and mark; a refused read leaves no fork (spec
+// 079).
 func TestAForksMessageReadsASource(t *testing.T) {
 	f := newSourceFixture(t)
+	f.neverTheSendersToken("alice")
 	parent := f.create("alice", "reviewer")
 	f.turn(parent.ID, 1, "Hello.", 1)
-	f.arca.Put("me", "files/a.csv", arcastub.Object{Data: []byte("a,b\n"), ContentType: "text/csv"})
-	f.arca.Put("me", "files/b.md", arcastub.Object{Data: []byte("# b\n"), ContentType: "text/markdown"})
+	f.arca.Put(alices, "files/a.csv", arcastub.Object{Data: []byte("a,b\n"), ContentType: "text/csv"})
+	f.arca.Put(alices, "files/b.md", arcastub.Object{Data: []byte("# b\n"), ContentType: "text/markdown"})
 	_, sent := f.sendFiles(parent.ID, source("a.csv", "me", "files/a.csv"))
 	kept := records(t, sent)[0]
 	f.turn(parent.ID, 2, "Read it.", 1)
@@ -376,7 +413,7 @@ func TestAForksMessageReadsASource(t *testing.T) {
 			reads = append(reads, r)
 		}
 	}
-	if len(reads) != 1 || reads[0].Path != "/v1/files/me/files/b.md" || reads[0].Header.Get("Authorization") != "Bearer alice" {
+	if len(reads) != 1 || reads[0].Path != "/v1/files/"+url.PathEscape(alices)+"/files/b.md" || reads[0].Header.Get("Authorization") != "Bearer session:"+fork.ID {
 		t.Fatalf("the fork's reads %+v", reads)
 	}
 	if got := f.lastSend().Resource.Fields["attachments"]; got != 2 {
@@ -416,5 +453,129 @@ func TestATextFileIsMarkedInline(t *testing.T) {
 	_, ev = f.sendFiles(s.ID, data("1.txt", "", full), data("2.txt", "", full), data("3.txt", "", full[:session.InlineTextBytes-1]), data("4.txt", "", "xy"), data("5.txt", "", "z"))
 	if got, want := marks(ev), []bool{true, true, true, false, true}; !slices.Equal(got, want) {
 		t.Fatalf("the marks within the message's bound %v, want %v", got, want)
+	}
+}
+
+// TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace: the files API
+// decides a source's read as the person who started the session, so a
+// sender who did not start it names a file of their own space alone, me
+// being theirs: one that names the starter's space or any other is
+// attachment_source_not_found before anything is read or a token asked
+// for, and the message appends nothing (spec 079).
+func TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace(t *testing.T) {
+	f := newSourceFixture(t)
+	minted := f.neverTheSendersToken("alice", "bob")
+	allowed := f.authz.answer
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionSend && req.Sub == "bob" {
+			return authz.Decision{Allow: true}, nil
+		}
+		return allowed(req)
+	}
+	s := f.create("alice", "reviewer")
+	bobs := authz.Subject(issuer, "bob")
+	f.arca.Put(bobs, "files/notes.md", arcastub.Object{Data: []byte("# bob\n"), ContentType: "text/markdown"})
+	f.arca.Put(alices, "files/private.md", arcastub.Object{Data: []byte("# alice\n"), ContentType: "text/markdown"})
+	f.arca.Put("owner-7", "files/shared/a.txt", arcastub.Object{Data: []byte("shared\n")})
+	send := func(files ...string) answer {
+		t.Helper()
+		return f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/events", "bob", `{"type":"user.message","payload":{"content":[{"type":"text","text":"Look."}],"attachments":[`+strings.Join(files, ",")+`]}}`)
+	}
+	last := f.stored(s.ID).LastSeq
+	for what, file := range map[string]string{
+		"the starter's space":   source("private.md", alices, "files/private.md"),
+		"another owner's space": source("a.txt", "owner-7", "files/shared/a.txt"),
+	} {
+		reads := len(f.arca.Requests())
+		a := send(source("notes.md", "me", "files/notes.md"), file)
+		if a.status != http.StatusNotFound || a.code() != CodeAttachmentSourceNotFound || !strings.Contains(string(a.body), "names a file of their own space alone") {
+			t.Fatalf("bob naming %s: %d %s", what, a.status, a.body)
+		}
+		if got := len(f.arca.Requests()); got != reads {
+			t.Fatalf("bob naming %s reached the files API %d times", what, got-reads)
+		}
+		if got := f.stored(s.ID).LastSeq; got != last {
+			t.Fatalf("bob naming %s appended to seq %d", what, got)
+		}
+	}
+	if *minted != 0 {
+		t.Fatalf("a refused message asked for %d tokens", *minted)
+	}
+	for _, owner := range []string{"me", bobs} {
+		a := send(source("notes.md", owner, "files/notes.md"))
+		if a.status != http.StatusOK {
+			t.Fatalf("bob naming his own space as %s: %d %s", owner, a.status, a.body)
+		}
+		var ev session.Event
+		a.decode(t, &ev)
+		if got := records(t, ev); len(got) != 1 || got[0].Source != (session.AttachmentSource{Owner: owner, Path: "files/notes.md"}) || got[0].Size != 6 {
+			t.Fatalf("bob's record %+v", got)
+		}
+	}
+	reads := f.arca.Requests()
+	if r := reads[len(reads)-1]; r.Op == arcastub.OpRead {
+		t.Fatalf("the last request is a read, not the folder's write: %+v", r)
+	}
+	var bobsReads int
+	for _, r := range reads {
+		if r.Op == arcastub.OpRead {
+			bobsReads++
+			if r.Path != "/v1/files/"+url.PathEscape(bobs)+"/files/notes.md" || r.Header.Get("Authorization") != "Bearer session:"+s.ID {
+				t.Errorf("bob's source was read at %s with %q", r.Path, r.Header.Get("Authorization"))
+			}
+		}
+	}
+	if bobsReads != 2 {
+		t.Fatalf("bob's two sources were read %d times", bobsReads)
+	}
+}
+
+// TestASenderWithNoSpaceNamesNoSource: a message whose sender is no person,
+// such as a trigger's, has no files of its own to name.
+func TestASenderWithNoSpaceNamesNoSource(t *testing.T) {
+	sess := session.Session{Initiator: session.Sender{Subject: alices, Kind: session.SenderPerson}}
+	for _, sender := range []session.Sender{
+		{Subject: session.TriggerSubjectPrefix + "trg_1", Kind: session.SenderTrigger},
+		{Subject: session.AuthorizerSubject, Kind: session.SenderService},
+		{Kind: session.SenderPerson},
+	} {
+		_, err := sourceOwner(sess, sender, 0, session.AttachmentSource{Owner: session.OwnerMe, Path: "files/a.csv"})
+		if e := classify(err); e.code != CodeAttachmentSourceNotFound {
+			t.Errorf("a source from %+v: %v", sender, err)
+		}
+	}
+	if owner, err := sourceOwner(sess, sess.Initiator, 0, session.AttachmentSource{Owner: "owner-7", Path: "files/a.csv"}); err != nil || owner != "owner-7" {
+		t.Errorf("the starter naming another owner's space: %q %v", owner, err)
+	}
+	if owner, err := sourceOwner(sess, sess.Initiator, 0, session.AttachmentSource{Owner: session.OwnerMe, Path: "files/a.csv"}); err != nil || owner != alices {
+		t.Errorf("the starter naming me: %q %v", owner, err)
+	}
+}
+
+// TestASessionsTokenThatCannotBeHadReadsNothing: a token for the files API
+// the server cannot have is files_unavailable before anything is read, and
+// a server that asks no token reads no source (spec 079).
+func TestASessionsTokenThatCannotBeHadReadsNothing(t *testing.T) {
+	f := newSourceFixture(t)
+	s := f.create("alice", "reviewer")
+	f.arca.Put(alices, "files/a.csv", arcastub.Object{Data: []byte("a\n")})
+	token := f.api.o.Files.Token
+	f.api.o.Files.Token = func(context.Context, session.Session) (string, error) {
+		return "", errors.New("the identity provider is away")
+	}
+	before := len(f.arca.Requests())
+	if a, _ := f.sendFiles(s.ID, source("a.csv", "me", "files/a.csv")); a.status != http.StatusServiceUnavailable || a.code() != CodeFilesUnavailable || !strings.Contains(string(a.body), "identity provider is away") {
+		t.Fatalf("a token that cannot be had: %d %s", a.status, a.body)
+	}
+	if got := len(f.arca.Requests()); got != before {
+		t.Fatalf("the files API was asked %d times", got-before)
+	}
+	f.api.o.Files.Token = nil
+	if a, _ := f.sendFiles(s.ID, source("a.csv", "me", "files/a.csv")); a.status != http.StatusServiceUnavailable || a.code() != CodeFilesUnavailable {
+		t.Fatalf("a server that asks no token: %d %s", a.status, a.body)
+	}
+	f.api.o.Files.Token = token
+	if a, _ := f.sendFiles(s.ID, source("a.csv", "me", "files/a.csv")); a.status != http.StatusOK {
+		t.Fatalf("once the token can be had: %d %s", a.status, a.body)
 	}
 }
