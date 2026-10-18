@@ -233,6 +233,7 @@ meta may ignore `parse`.
 | The hosted builder gives `read` a parser when the URL is set, the session keeps a folder and the installation mints tokens, with the session's token for `lectio`; the file's place is read from the log | `internal/hosted.TestReadParsesAPDFOfTheFolder`, `internal/hosted.TestTheParsingReaderNeedsItsSettings` | built |
 | `TOPOS_PARSING_URL` is checked at start and is in spec 002's table and the configuration page | `internal/config.TestParsingURL`, `internal/config.TestConfigurationTableMatchesTheSpec`, `internal/config.TestConfigurationPageNamesEveryRead` | built |
 | The API document names `ReadResultMeta` | `internal/server.TestOpenAPIIsGenerated` | built |
+| End to end on a server over the stub identity provider, authorizer, files API, Cella and Lux, with a stub parsing service: while the identity provider issues no token for `lectio`, a read of an attached PDF is the binary answer and the sentence, and the turn ends as any other; once it does, the service is reached with the session's own token for `lectio`, fetches the file from the folder at the presigned address, and the model reads the pages with the cost on the `tool.result` | `cmd/toposd.TestAPDFIsReadThroughTheParsingService` | built |
 | A hosted session in production reads a PDF a person attached through the installation's parsing service | a recorded run | not built: the identity provider and the authorizer do not yet issue and admit the audience `lectio` for a session |
 
 ## Outcome
