@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.46.0 - 2026-10-18
+
 ### Changed
 
 - **A file of a person's own files a message names is read with a credential of the session's that the server alone holds.** The server reads a `source` at the files service with the session's token for `TOPOS_FILES_AUDIENCE` of the new workload `source`, asked once for the message, and never with the sender's token, which it no longer passes on; the runner protocol never answers that workload, and the identity provider must issue it. The authorizer decides each read as the person who started the session. A fork's message is read with the fork's own such token. The owner `me` is read as the sender's own space, and the message's record still names `me`. A sender who did not start the session may name a file of the session's own space alone, the owner of its folder, and any other is `attachment_source_not_found` before anything is read. A token the server cannot have is `files_unavailable`. The send's question names the files it will read as `sources`, `{owner, path, version}` with `me` as the sender's subject, so the authorizer may hold the sender to them; an authorizer that does not read it answers as before. The authorizer must admit the source workload's read of one file, decided as the person who started the session, before this release reads a source.
