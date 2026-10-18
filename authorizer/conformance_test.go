@@ -63,9 +63,10 @@ func TestScaffoldSpeaksTheVocabulary(t *testing.T) {
 }
 
 // TestARoutingScaffoldSpeaksTheVocabulary: an endpoint that names the
-// model on its allows of session.create, session.update and
-// session.send passes the suite the endpoint that names none passes,
-// and each answer decodes to the model as toposd reads it (spec 038).
+// model on its allows of session.create, session.update, session.send
+// and session.title passes the suite the endpoint that names none
+// passes, and each answer decodes to the model as toposd reads it (specs
+// 038 and 083).
 func TestARoutingScaffoldSpeaksTheVocabulary(t *testing.T) {
 	const routed = "vendor/model-a"
 	h := server.New(server.Options{Bearer: bearer, Vocabulary: authorizer.Vocabulary(), Decider: owners{model: routed}})
@@ -84,6 +85,8 @@ func TestARoutingScaffoldSpeaksTheVocabulary(t *testing.T) {
 		authorizer.ActionSessionUpdate: authz.NewResource(authorizer.KindSession, "ses_x", map[string]any{"owner": alice, "model": "tier/quick", "current_model": "vendor/model-b"}),
 		authorizer.ActionSessionSend: authz.NewResource(authorizer.KindSession, "ses_x", map[string]any{"owner": alice, "sender": alice,
 			"model": "vendor/model-b", "model_via": "tier/quick", "idle_seconds": 420}),
+		authorizer.ActionSessionTitle: authz.NewResource(authorizer.KindSession, "ses_x", map[string]any{"owner": alice, "session_id": "ses_x",
+			"model": "tier/quick", "current_model": "vendor/model-b", "current_model_via": "tier/thorough", "title": "Release notes"}),
 	} {
 		d, err := c.Authorize(t.Context(), authz.Request{Subject: alice, Issuer: issuer, Sub: "alice", Claims: map[string]any{}, Action: action, Resource: res})
 		if err != nil || !d.Allow {
@@ -118,7 +121,7 @@ func TestClientRefusesAnActionOutsideTheTable(t *testing.T) {
 
 // owners is the owner frame over the owner the resource carries, with a
 // budget ceiling on every allow of session.create. One that holds a
-// model names it on the three allows a session's model is read at.
+// model names it on the four allows a model is read at.
 type owners struct{ model string }
 
 func (o owners) Decide(_ context.Context, req authz.Request) (authz.Decision, error) {
@@ -137,7 +140,7 @@ func (o owners) Decide(_ context.Context, req authz.Request) (authz.Decision, er
 	switch req.Action {
 	case authorizer.ActionSessionCreate:
 		limits.BudgetUSDMicro, limits.Model = new(int64(5_000_000)), o.model
-	case authorizer.ActionSessionUpdate, authorizer.ActionSessionSend:
+	case authorizer.ActionSessionUpdate, authorizer.ActionSessionSend, authorizer.ActionSessionTitle:
 		if limits.Model = o.model; o.model == "" {
 			return d, nil
 		}

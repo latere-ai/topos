@@ -50,6 +50,7 @@ const (
 	ActionSessionHandoff   = "session.handoff"
 	ActionSessionScope     = "session.scope"
 	ActionSessionUpdate    = "session.update"
+	ActionSessionTitle     = "session.title"
 
 	ActionTriggerCreate = "trigger.create"
 	ActionTriggerRead   = "trigger.read"
@@ -96,6 +97,7 @@ var table = []authz.Action{
 	{Name: ActionSessionHandoff, Kind: KindSession},
 	{Name: ActionSessionScope, Kind: KindSession},
 	{Name: ActionSessionUpdate, Kind: KindSession},
+	{Name: ActionSessionTitle, Kind: KindSession},
 
 	{Name: ActionTriggerCreate, Kind: KindTrigger},
 	{Name: ActionTriggerRead, Kind: KindTrigger},

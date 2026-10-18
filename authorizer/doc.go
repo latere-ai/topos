@@ -168,6 +168,26 @@
 // change names nothing else. Neither reaches a model, and an allow's
 // limits are not read for either.
 //
+// A session's title may follow its conversation (spec 083). After a turn
+// a person started, in a session whose agent's latest version sets
+// spec.title, and once per start for the idle sessions such an agent ran
+// before that were never named, toposd asks session.title as the
+// session's initiator, its claims org_id alone, as at a failover, with
+// session_id; model, the name the title request asks for, the agent's
+// spec.title.model, or else the name the session's model was asked by, or
+// its model; current_model, current_model_via and current_model_route,
+// the model the session stands on and its names, the last two absent
+// where the session has none; and title, the session's title, "" for
+// none. An allow may name model, and route beside it, as an allow of
+// session.create does: the request runs on the model the allow names when
+// the installation runs it, and on the name asked otherwise, and the
+// route is kept nowhere, since a title moves no model of the session.
+// Reasoning and the other limits are not read. A deny writes no title and
+// asks nothing more for that turn, and so does an endpoint that does not
+// know the action, so toposd may roll out before the endpoint; an
+// endpoint that wants fewer titles denies, and one that routes answers
+// with a model the installation runs.
+//
 // A session's metadata is a label the installation files sessions under
 // (spec 057), an object of strings toposd gives no meaning. session.create
 // and session.fork carry metadata, the object the session will hold, a

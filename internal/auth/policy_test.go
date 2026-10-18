@@ -66,6 +66,8 @@ func TestOwnerPolicyRows(t *testing.T) {
 		{"another subject", bob, authorizer.ActionSessionSend, "ses_1", alice, false, authz.ReasonNotOwner},
 		{"create of a new object", bob, authorizer.ActionMemoryStoreCreate, "", "", true, ""},
 		{"a send by the session's owner", alice, authorizer.ActionSessionSend, "ses_1", alice, true, ""},
+		{"a title asked as the session's initiator", alice, authorizer.ActionSessionTitle, "ses_1", alice, true, ""},
+		{"a title asked as another subject", bob, authorizer.ActionSessionTitle, "ses_1", alice, false, authz.ReasonNotOwner},
 		{"read of a missing object", bob, authorizer.ActionAgentRead, "agt_none", "", false, authz.ReasonNotOwner},
 		{"anonymous", "", authorizer.ActionAgentCreate, "", "", false, authz.ReasonAnonymous},
 		{"probe", alice, authorizer.ActionSessionRead, authz.ProbeID, alice, false, authz.ReasonProbe},
