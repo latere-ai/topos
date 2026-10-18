@@ -474,6 +474,15 @@ func (d *Deferred) ReachesConnections() bool {
 	return !ok || cm.ReachesConnections()
 }
 
+// Absent is the open machine's, nil before it opens: a machine that
+// cannot be opened says why itself, through the open's error (spec 080).
+func (d *Deferred) Absent() *Waiting {
+	if m := d.Opened(); m != nil {
+		return AbsentOf(m)
+	}
+	return nil
+}
+
 // Refused are the open machine's refused connections, none before it
 // opens or on a machine that is not networked.
 func (d *Deferred) Refused(ctx context.Context, since time.Time) ([]Connection, error) {
@@ -490,4 +499,5 @@ var (
 	_ Opener    = (*Deferred)(nil)
 	_ Starter   = (*Deferred)(nil)
 	_ Fetcher   = (*Deferred)(nil)
+	_ Absent    = (*Deferred)(nil)
 )
