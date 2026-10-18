@@ -31,7 +31,9 @@ Topos is three parts over one session schema.
   the `toposd runner` role beside a server.
 
 A session's tools act on one machine: the runner's host, confined to a
-working directory, or a [Cella](https://github.com/latere-ai/cella) sandbox.
+working directory, a [Cella](https://github.com/latere-ai/cella) sandbox, or
+a person's own computer, in a folder they granted, through the Cella
+environment it serves.
 Models are reached through [Lux](https://github.com/latere-ai/lux) or
 directly through a provider.
 
