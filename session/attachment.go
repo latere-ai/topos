@@ -37,11 +37,15 @@ type Attachment struct {
 	Inline    bool             `json:"inline,omitempty"`
 }
 
+// OwnerMe is the owner segment of a source that names its sender's own
+// space (spec 079), the files API's alias for its caller's.
+const OwnerMe = "me"
+
 // AttachmentSource names a file of a person's own files at the files
-// API a session's folder is at (spec 079): the API's owner segment, "me"
-// or an owner's id, and the path in that space, its plane included, as
-// the message named them, and the version read, 0 for the file as it
-// stood.
+// API a session's folder is at (spec 079): the API's owner segment,
+// OwnerMe or an owner's id, and the path in that space, its plane
+// included, as the message named them, and the version read, 0 for the
+// file as it stood.
 type AttachmentSource struct {
 	Owner   string `json:"owner"`
 	Path    string `json:"path"`
