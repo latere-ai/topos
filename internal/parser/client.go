@@ -273,7 +273,10 @@ func refusal(status int, raw []byte) *parsing.Refused {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(raw, &env) != nil || env.Error == nil || env.Error.Code == "" {
+	// A body that does not decode is no envelope; the caller answers the
+	// status as a failure of the service.
+	decoded := json.Unmarshal(raw, &env) == nil
+	if !decoded || env.Error == nil || env.Error.Code == "" {
 		return nil
 	}
 	return &parsing.Refused{Status: status, Code: env.Error.Code, Message: strings.TrimSpace(env.Error.Message)}
