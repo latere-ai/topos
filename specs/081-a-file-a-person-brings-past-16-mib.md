@@ -1,6 +1,6 @@
 ---
 title: "A file a person brings past 16 MiB: a source the files API redirects is read once at the https address it names, without the bearer, spooled to disk while it is hashed, written through an upload session, and delivered to a Cella machine as a stream"
-status: drafted
+status: testing
 track: core
 depends_on: [009-machines.md, 068-a-sessions-files-in-a-files-store.md, 079-files-a-person-brings-into-a-message.md]
 affects: [internal/filestore/, internal/server/, cmd/toposd/, machine/cella/, api/openapi.yaml]
@@ -173,9 +173,40 @@ An installation keeps a spool directory, which toposd makes itself.
 
 | # | Criterion | Test | State |
 |---|---|---|---|
-| 1 | A read the files API redirects is followed once to its https address with no `Authorization` header, a second redirect and a target that is not https are refused, and the body is a stream held to `max` | `internal/filestore.TestReadSourceFollowsOneRedirect` | |
-| 2 | A source past the old 16 MiB bound is read through the redirect, written through an upload session, and recorded with its size and digest, with the server's memory not growing with the file | `internal/server.TestALargeSourceIsStreamedIntoTheFolder` | |
-| 3 | A source past `MaxSourceBytes`, sources past `MaxMessageSourceBytes` together and spools past `MaxSpoolBytes` are refused with nothing written | `internal/server.TestAMessagesSourcesAreBoundTogether`, `TestTheSpoolIsBound` | |
-| 4 | No spool file is left after a taken message, a refused one and a fork, and the server removes the spool files a stopped process left | `internal/server.TestSpoolFilesAreRemoved` | |
-| 5 | The Cella machine writes a body that does not seek as a stream, with its memory not growing with the file | `machine/cella.TestALargeWriteIsStreamed` | |
-| 6 | The API document says a source may be redirected and states the new bounds | `internal/server.TestOpenAPIIsGenerated` | |
+| 1 | A read the files API redirects is followed once to its https address with no `Authorization` header, a second redirect, a target that is not https and a redirect that names none are refused, and the body is a stream held to `max` whatever length it declares | `internal/filestore.TestReadSourceFollowsOneRedirect`, `TestReadSource` | built |
+| 2 | A source past the old 16 MiB bound is read through the redirect with no bearer at the bucket, written through an upload session with the session's own token, and recorded with its size, digest and media type, the send allocating a small part of the file | `internal/server.TestALargeSourceIsStreamedIntoTheFolder`, `TestALargeSourceIsNotHeldInMemory`, `internal/filestore.TestReadSourceStreams` | built |
+| 3 | A source past `MaxSourceBytes`, sources past `MaxMessageSourceBytes` together and spools past `MaxSpoolBytes` are refused with nothing appended or written; a redirect to http is `files_unavailable` | `internal/server.TestAMessagesSourcesAreBoundTogether`, `TestTheSpoolIsBound`, `TestASourceTheFilesAPIRefuses` | built |
+| 4 | No spool file is left after a taken message, a refused one and a fork, a spool that cannot be made is `files_unavailable`, and the server's start removes the spool files a stopped process left | `internal/server.TestSpoolFilesAreRemoved`, `TestASpoolFailureIsReported` | built |
+| 5 | The Cella machine writes a body past `replayBytes` that does not seek as one stream after waking a stopped sandbox, allocating a small part of the file; a shorter one is sent again after a wake | `machine/cella.TestALargeWriteIsStreamed` | built |
+| 6 | The API document says a source may be redirected and states the new bounds | `internal/server.TestOpenAPIIsGenerated` | built |
+| 7 | End to end, toposd spools a source under `TOPOS_DATA_DIR/spool`, keeps it in the session's folder, leaves the spool empty, and its start removes what a stopped toposd left | `cmd/toposd.TestASourceIsSpooledUnderTheDataDirectory` | built |
+
+## Outcome
+
+Built on 2026-10-18 on the branch `large-sources`, in no release yet,
+and run against the stub files API, a stub object store on https and the
+stub Cella, not against an installation's files service. Where the build
+differs from the design as first written, or adds to it:
+
+- **A fork's file kept by its blob is not read again.** Spec 079 kept
+  such a file's record, its source included, and `readSources` then read
+  the source once more, so a fork whose original file had moved or that
+  the sender could no longer read was refused. It is now skipped
+  (`internal/server.TestAForksMessageReadsASource` counts one read).
+- **The bounds live on the server's reader of sources**, set from
+  `MaxSourceBytes`, `MaxMessageSourceBytes` and `MaxSpoolBytes`, so the
+  tests of the message's and the spool's bounds read kilobytes and
+  megabytes, not the bounds' hundreds of MiB.
+- **A write's digest is checked.** `Put` hashes what it sends, and a
+  digest that is not the record's is `files_unavailable`.
+- **The stub files API takes an https bucket** (`arcastub.NewTLS`), with
+  a client that trusts it; the server's folder tests run on it. toposd
+  trusts the system's roots alone, so its end-to-end test reads a spooled
+  source the files API answers inline and does not follow a redirect.
+- **Measured:** a send of a 64 MiB source allocated about 0.7 MB in the
+  server, and a Cella write of 32 MiB about 2.6 MB, most of it the
+  1 MiB head read to tell a short body from a long one.
+
+Not done: a redirect through toposd end to end, which needs a stub
+object store toposd's own client trusts; and an installation's volume
+for the data directory, which is the deployment's.
