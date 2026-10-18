@@ -11,8 +11,8 @@ require (
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
-	latere.ai/x/cella v0.8.0
-	latere.ai/x/pkg v0.101.0
+	latere.ai/x/cella v0.16.1-0.20261018145540-968f915aafba
+	latere.ai/x/pkg v0.102.0
 )
 
 require (
