@@ -58,10 +58,11 @@ func (c *texts) put(d session.Digest, s string) {
 }
 
 // fold is the thread's transcript of evs, with the text of each file a
-// person's message marks inline that the turn can read (spec 079), and
-// every redacted event left out where omitRedacted is set. Every request
-// the harness builds from a fold, a replay's among them, folds here, so
-// each carries the same texts.
+// person's message marks inline that the turn can read (spec 079), every
+// redacted event left out where omitRedacted is set, and the texts of a
+// thread that holds the history tool where it does (spec 084). Every
+// request the harness builds from a fold, a replay's and a summary's
+// among them, folds here, so each carries the same texts.
 func (t *turn) fold(ctx context.Context, evs []session.Event, omitRedacted bool) (session.Transcript, error) {
 	files, err := session.InlineFiles(evs, t.thread)
 	if err != nil {
@@ -78,7 +79,9 @@ func (t *turn) fold(ctx context.Context, evs []session.Event, omitRedacted bool)
 		}
 		held[a.Blob] = s
 	}
-	return session.FoldWith(evs, t.thread, session.FoldOptions{OmitRedacted: omitRedacted, Texts: held, Device: t.s.Machine.Kind == session.MachineDevice})
+	return session.FoldWith(evs, t.thread, session.FoldOptions{
+		OmitRedacted: omitRedacted, Texts: held, Device: t.s.Machine.Kind == session.MachineDevice, History: t.readsHistory(),
+	})
 }
 
 // inlineText is the text of the file a records, from the harness's

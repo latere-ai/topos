@@ -105,6 +105,8 @@ func (t *turn) replayRequest(ctx context.Context, log, prefix []session.Event, s
 			asked = prompts.Text(prompts.CompactionV1)
 		case prompts.Compaction:
 			asked = prompts.Text(prompts.Compaction)
+		case prompts.CompactionHistory:
+			asked = prompts.Text(prompts.CompactionHistory)
 		default:
 			return ir.Request{}, fmt.Errorf("%w: the summary was asked with %s, a compaction prompt this build does not hold", models.ErrNotRebuilt, c.Prompt)
 		}

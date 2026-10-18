@@ -119,6 +119,11 @@ type Config struct {
 	// Question offers the question tool to the session's own thread (spec
 	// 039): the runner sets it when the agent's tools name the tool.
 	Question bool
+	// History offers the history tool (spec 084): the runner sets it when
+	// the agent's tools name the tool. The session's own thread holds it,
+	// and a spawned thread when its thread.started names it, as a
+	// built-in's name passes to a thread.
+	History bool
 	// MaxDepth bounds how deep threads nest: zero is 2, at most 4.
 	MaxDepth int
 	// MaxConcurrent bounds the threads running at once in a session:

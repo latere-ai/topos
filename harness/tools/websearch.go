@@ -18,9 +18,10 @@ import (
 const NameWebSearch = "web_search"
 
 // OptIn are the names of the built-ins an agent holds only by naming
-// them: in no default set, so an agent that names no tools keeps the
-// eight of Builtins and its digest.
-func OptIn() []string { return []string{NameWebSearch} }
+// them, web_search (spec 047) and history (spec 084): in no default set,
+// so an agent that names no tools keeps the eight of Builtins and its
+// digest.
+func OptIn() []string { return []string{NameWebSearch, NameHistory} }
 
 // webSearchSchema is the tool's input schema, its bounds the search
 // package's.

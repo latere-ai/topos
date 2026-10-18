@@ -1,0 +1,6 @@
+# Guesses the time instead of reading it back.
+steps:
+  - tool_calls:
+      - name: write
+        input: {path: sent.txt, content: "12:00:00\n"}
+  - text: You sent it at about noon.

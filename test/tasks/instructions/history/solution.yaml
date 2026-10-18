@@ -1,0 +1,10 @@
+# Reads the conversation back and writes the time its entry is headed by.
+steps:
+  - tool_calls:
+      - name: history
+        input: {from: 1}
+  - expect: {tool_result_contains: "wrote:"}
+    tool_calls:
+      - name: write
+        input: {path: sent.txt, content: "10:00:00\n"}
+  - text: You sent the message at 10:00:00 UTC.

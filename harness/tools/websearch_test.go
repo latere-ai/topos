@@ -166,7 +166,7 @@ func TestWebSearchSchemaFollowsTheConstants(t *testing.T) {
 	if _, r := reg.Validate(NameWebSearch, json.RawMessage(`{"query":"`+strings.Repeat("é", search.MaxQueryLength)+`","max_results":10}`)); r != nil {
 		t.Errorf("a call at the bounds was refused: %+v", r)
 	}
-	if !slices.Equal(OptIn(), []string{NameWebSearch}) || slices.ContainsFunc(Builtins(), func(b Tool) bool { return b.Definition().Name == NameWebSearch }) {
-		t.Fatal("web_search is not opt-in alone")
+	if !slices.Contains(OptIn(), NameWebSearch) || slices.ContainsFunc(Builtins(), func(b Tool) bool { return b.Definition().Name == NameWebSearch }) {
+		t.Fatal("web_search is not opt-in")
 	}
 }

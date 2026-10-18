@@ -63,6 +63,9 @@ type textCase struct {
 var textCases = func() []textCase {
 	const p = "/work/app/main.go"
 	sender := func(name, subject string) Data { return Data{"Name": name, "Subject": subject} }
+	head := func(kind, name, subject, tool, id, outcome string) Data {
+		return Data{"Kind": kind, "Name": name, "Subject": subject, "Tool": tool, "ID": id, "Outcome": outcome}
+	}
 	transcript := "The conversation so far:\n" +
 		fmt.Sprintf("\n%s: %s\n", "Person", "Fix it.") +
 		fmt.Sprintf("\n%s: %s\n", "Agent", "Reading.") +
@@ -94,6 +97,7 @@ var textCases = func() []textCase {
 	}
 	return []textCase{
 		{name: Compaction, wantSHA: "ef4ea47663fbe10d2d83d96f8b96a8a4ecfea04c9c06bc06d5b46b0994131e57"},
+		{name: CompactionHistory, wantSHA: "5bebdbbbee899562d9f39239a7ca4ee6f3e917439d3620a64b25ed26f8218101"},
 		{name: CompactionV1, wantSHA: "8d62d8134b413672d87d57e05c20f135933fa3f0095199280438e3170f879bf5"},
 
 		{name: AdvisorInstructions, want: "You advise another agent. You see the conversation it has had so far and the question it asks. You act on nothing and have no tools: read what it did, say what is wrong or missing, and what it should do next, briefly and concretely."},
@@ -126,6 +130,7 @@ var textCases = func() []textCase {
 		{name: "tools/publish-v4", wantSHA: "3f6fad0db8fb9a34d78556c4ef32549048254939fa1fc2dd39cc16c7e7ce6954"},
 		{name: "tools/publish-v5", wantSHA: "6e161ec2b5d782edff78d90e9de28b8d635e366e4c4f56f218f73df73902f443"},
 		{name: ToolPublish, wantSHA: "ce7d99959be2267baf63a1ec94ed8b5568300403b7ddd168b8e3d27835c3a9af"},
+		{name: ToolHistory, wantSHA: "fddf523df0060a815867fb79ac4a86bdc0e7a67cb6db5581e12d95a4c6cc624b"},
 		{name: ToolRequestConnection, wantSHA: "69ccc468c5f89386227de3aff7c72b59ab2f3e57a4a67f7af225bb74296d3995"},
 		{name: RequestConnectionAsked, data: Data{"Title": "GitHub"}, want: "The person is asked to connect GitHub. It reaches this session from their next message, not in this turn. End your turn now with one sentence that says what you will do once GitHub is connected."},
 		{name: RequestConnectionNotAvailable, data: Data{"Name": "gitlab", "Names": "github, wiki"}, want: "gitlab is not a service you can ask the person to connect. The ones you can ask for are github, wiki. A service the connections block lists as connected needs no request: use it."},
@@ -160,6 +165,39 @@ var textCases = func() []textCase {
 		{name: TranscriptTruncated, want: "Your previous response was cut off at the output limit. Continue from where it stopped."},
 		{name: TranscriptSummary, data: Data{"Summary": "The parser was fixed."}, want: "Summary of the conversation so far:" + "\n\n" + "The parser was fixed."},
 		{name: TranscriptCleared, want: "[cleared to save context; run the tool again if the result is needed]"},
+		{name: TranscriptSummaryHistory, data: Data{"Summary": "The parser was fixed.", "From": 3, "To": 180}, want: "Summary of the conversation so far, events #3 to #180. The session's log keeps those events as they were written: history reads them back by their numbers, or finds them by their words." + "\n\n" + "The parser was fixed."},
+		{name: TranscriptClearedHistory, data: Data{"ID": "toolu_01"}, want: `[this result was cleared to save context; history reads it back with {"tool_use_id": "toolu_01"}]`},
+
+		{name: HistoryHead, data: head("message", "Ada", "usr_ada", "", "", ""), want: "Ada wrote:"},
+		{name: HistoryHead, data: head("message", "", "", "", "", ""), want: "someone wrote:"},
+		{name: HistoryHead, data: head("agent", "", "", "", "", ""), want: "You wrote:"},
+		{name: HistoryHead, data: head("call", "", "", "bash", "toolu_01", ""), want: "You called bash, id toolu_01:"},
+		{name: HistoryHead, data: head("result", "", "", "bash", "toolu_01", "error"), want: "bash returned error, id toolu_01:"},
+		{name: HistoryHead, data: head("result", "", "", "", "toolu_01", "ok"), want: "The call returned ok, id toolu_01:"},
+		{name: HistoryHead, data: head("answer", "", "usr_ada", "", "toolu_02", ""), want: "usr_ada answered your question, id toolu_02:"},
+		{name: HistoryHead, data: head("interrupt", "Ada", "usr_ada", "", "", ""), want: "Ada interrupted you."},
+		{name: HistoryHead, data: head("title", "Ada", "usr_ada", "", "", ""), want: "Ada changed the conversation's title to:"},
+		{name: HistoryHead, data: head("task", "", "", "", "", ""), want: "The thread that started you gave you this task:"},
+		{name: HistoryHead, data: head("removed", "", "", "", "", ""), want: "This event was removed from the log; nothing of what it held is shown."},
+		{name: HistoryEntry, data: Data{"Seq": 12, "Time": "2026-10-19T10:00:01Z", "Head": "Ada wrote:", "Body": "The port is 8443."}, want: "[#12 2026-10-19T10:00:01Z] Ada wrote:\nThe port is 8443."},
+		{name: HistoryEntry, data: Data{"Seq": 13, "Time": "2026-10-19T10:00:02Z", "Head": "Ada interrupted you.", "Body": ""}, want: "[#13 2026-10-19T10:00:02Z] Ada interrupted you."},
+		{name: HistoryMatch, data: Data{"Seq": 12, "Time": "2026-10-19T10:00:01Z", "Head": "Ada wrote:", "Excerpt": "port is 8443", "Before": true, "After": true}, want: "[#12 2026-10-19T10:00:01Z] Ada wrote:\n...port is 8443..."},
+		{name: HistoryMatch, data: Data{"Seq": 12, "Time": "2026-10-19T10:00:01Z", "Head": "Ada wrote:", "Excerpt": "The port is 8443.", "Before": false, "After": false}, want: "[#12 2026-10-19T10:00:01Z] Ada wrote:\nThe port is 8443."},
+		{name: HistoryFiles, data: Data{"Paths": "/work/a.pdf, /work/b.csv"}, want: "Files: /work/a.pdf, /work/b.csv"},
+		{name: HistoryPicture, data: Data{"Path": "/work/plot.png"}, want: "[a picture: /work/plot.png]"},
+		{name: HistoryPicture, data: Data{"Path": ""}, want: "[a picture]"},
+		{name: HistoryAnswers, data: Data{"Answers": []Data{
+			{"Number": 1, "Chosen": "SQLite", "Text": "", "Left": false},
+			{"Number": 2, "Chosen": "Free, Team", "Text": "after the audit", "Left": false},
+			{"Number": 3, "Chosen": "", "Text": "in May", "Left": false},
+			{"Number": 4, "Chosen": "", "Text": "", "Left": true},
+		}}, want: "1. Chosen: SQLite\n2. Chosen: Free, Team. In their words: after the audit\n3. In their words: in May\n4. Left to you.\n"},
+		{name: HistoryCut, data: Data{"Total": 150000, "Kept": 32000}, want: "[cut here: this entry holds 150000 bytes, and the answer shows its first 32000]"},
+		{name: HistoryMore, data: Data{"Input": `{"from":181,"to":400}`}, want: `[this answer stops here; read on with {"from":181,"to":400}]`},
+		{name: HistoryNone, data: Data{"From": 500, "To": 600, "Last": 400}, want: "History shows no event from #500 to #600; the conversation before this call runs to #400."},
+		{name: HistoryNone, data: Data{"From": 500, "To": 0, "Last": 400}, want: "History shows no event from #500; the conversation before this call runs to #400."},
+		{name: HistoryNoCall, data: Data{"ID": "toolu_09"}, want: "History finds no call with the id toolu_09 in this conversation before this call."},
+		{name: HistoryNoMatch, data: Data{"From": 1, "To": 400, "Query": "ECONNREFUSED"}, want: `No event from #1 to #400 holds "ECONNREFUSED".`},
 		{name: TranscriptSender, data: sender("Ada", "usr_ada"), want: "Message from " + cmp.Or("Ada", "usr_ada", "someone") + ":"},
 		{name: TranscriptSender, data: sender("", "usr_ada"), want: "Message from " + cmp.Or("", "usr_ada", "someone") + ":"},
 		{name: TranscriptSender, data: sender("", ""), want: "Message from " + cmp.Or("", "", "someone") + ":"},

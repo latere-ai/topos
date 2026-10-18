@@ -1,0 +1,4 @@
+- call:
+    tool: history
+    outcome: ok
+- file: {path: sent.txt, matches: '^\d{2}:\d{2}:\d{2}\s*$'}

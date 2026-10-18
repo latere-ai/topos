@@ -418,6 +418,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 		}
 		return harness.Config{
 			Model: model, Connection: conn, Entry: entry, Machine: m, Tools: reg, Question: slices.Contains(r.t.Agent.Tools, harness.ToolQuestion),
+			History:      slices.Contains(r.t.Agent.Tools, tools.NameHistory),
 			Policy:       harness.Policy{Mode: harness.ModeConfirm, AlwaysAllow: builtinNames()},
 			Name:         "topos",
 			Instructions: r.t.Agent.Instructions,

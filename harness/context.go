@@ -301,7 +301,14 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 	if err != nil {
 		return false, err
 	}
-	ask := lux.Block{Type: ir.BlockText, Text: prompts.Text(prompts.Compaction)}
+	// A thread that holds the history tool asks with the prompt that says
+	// the replaced messages stay readable (spec 084). The transcript
+	// before the ask is the one the thread's steps send, so the request
+	// reads its prefix from the provider's cache.
+	prompt, ask := prompts.Compaction, lux.Block{Type: ir.BlockText, Text: prompts.Text(prompts.Compaction)}
+	if t.readsHistory() {
+		prompt, ask.Text = prompts.CompactionHistory, prompts.Text(prompts.CompactionHistory)
+	}
 	if n := len(tr.Messages); n > 0 && tr.Messages[n-1].Role == ir.RoleUser {
 		tr.Messages[n-1].Blocks = append(tr.Messages[n-1].Blocks, ask)
 	} else {
@@ -339,7 +346,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 		}
 		return false, t.finish(ctx, session.StopError, CodeCompactionFailed, mr, se)
 	}
-	c := session.ContextCompacted{Kind: session.CompactSummary, FromSeq: from, ToSeq: to, Summary: strings.Join(summary, "\n\n"), Cause: cause, Request: mr.ID, Prompt: string(prompts.Compaction), TokensBefore: before}
+	c := session.ContextCompacted{Kind: session.CompactSummary, FromSeq: from, ToSeq: to, Summary: strings.Join(summary, "\n\n"), Cause: cause, Request: mr.ID, Prompt: string(prompt), TokensBefore: before}
 	e, err := t.event(session.TypeContextCompacted, c)
 	if err != nil {
 		return false, err
