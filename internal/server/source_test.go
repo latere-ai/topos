@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -190,9 +191,30 @@ func TestASourceIsReadWithTheSessionsToken(t *testing.T) {
 	if *minted != 1 {
 		t.Errorf("the message's four sources asked for %d tokens, want one", *minted)
 	}
+	// The send's question named the four files it reads, me as alice's
+	// own space, and not the file sent as data.
+	named := []map[string]any{{"owner": alices, "path": q3}, {"owner": alices, "path": q3, "version": float64(3)}, {"owner": alices, "path": "files/scan"}, {"owner": "owner-7", "path": "files/shared/a.txt"}}
+	if got := sourcesAsked(t, f.lastSend()); !slices.EqualFunc(got, named, maps.Equal) {
+		t.Errorf("the send question named %v, want %v", got, named)
+	}
 	if ms := records(t, f.log(s.ID)[len(f.log(s.ID))-1]); len(ms) != len(want) {
 		t.Fatalf("the log's last message records %+v", ms)
 	}
+}
+
+// sourcesAsked is the sources a send question names, as the authorizer
+// decodes them from JSON.
+func sourcesAsked(t *testing.T, req authz.Request) []map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(req.Resource.Fields["sources"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // TestASourceTheFilesAPIRefuses: a source the files API answers 401, 403
@@ -355,6 +377,13 @@ func TestASourceCountsAsAnAttachment(t *testing.T) {
 	if got := f.lastSend().Resource.Fields["attachments"]; got != 2 {
 		t.Fatalf("the send question counts %v attachments", got)
 	}
+	// A message that names no source names no sources.
+	if a, _ := f.sendFiles(s.ID, `{"name":"b.txt","data":"`+b64("b")+`"}`); a.status != http.StatusOK {
+		t.Fatalf("send: %d %s", a.status, a.body)
+	}
+	if got, present := f.lastSend().Resource.Fields["sources"]; present {
+		t.Fatalf("a message with no source named sources %v", got)
+	}
 }
 
 // TestAForksMessageReadsASource: a fork's message that names a source
@@ -419,6 +448,11 @@ func TestAForksMessageReadsASource(t *testing.T) {
 	if got := f.lastSend().Resource.Fields["attachments"]; got != 2 {
 		t.Fatalf("the fork's send question counts %v attachments", got)
 	}
+	// The fork's question names the file it reads and not the one it keeps
+	// by its blob.
+	if got := sourcesAsked(t, f.lastSend()); len(got) != 1 || !maps.Equal(got[0], map[string]any{"owner": alices, "path": "files/b.md"}) {
+		t.Fatalf("the fork's send question named %v", got)
+	}
 }
 
 // TestATextFileIsMarkedInline: a message's text-like UTF-8 file of at
@@ -466,8 +500,10 @@ func TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace(t *testing.T) {
 	f := newSourceFixture(t)
 	minted := f.neverTheSendersToken("alice", "bob")
 	allowed := f.authz.answer
+	var asked authz.Request
 	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		if req.Action == authorizer.ActionSessionSend && req.Sub == "bob" {
+			asked = req
 			return authz.Decision{Allow: true}, nil
 		}
 		return allowed(req)
@@ -510,6 +546,9 @@ func TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace(t *testing.T) {
 		a.decode(t, &ev)
 		if got := records(t, ev); len(got) != 1 || got[0].Source != (session.AttachmentSource{Owner: owner, Path: "files/notes.md"}) || got[0].Size != 6 {
 			t.Fatalf("bob's record %+v", got)
+		}
+		if got := sourcesAsked(t, asked); len(got) != 1 || !maps.Equal(got[0], map[string]any{"owner": bobs, "path": "files/notes.md"}) {
+			t.Fatalf("bob's send question named %v", got)
 		}
 	}
 	reads := f.arca.Requests()

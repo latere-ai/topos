@@ -134,7 +134,7 @@ func (c *call) forkSession() error {
 		if err != nil {
 			return err
 		}
-		message = &forkMessage{payload: payload, files: files, word: b.Message.word()}
+		message = &forkMessage{payload: payload, files: files, word: b.Message.word(sourcesOf(sender, files))}
 	}
 	ctx := c.r.Context()
 	parent, err := c.session(authorizer.ActionSessionRead, nil)

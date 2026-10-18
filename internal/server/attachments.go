@@ -71,6 +71,7 @@ var SourceRule = fmt.Sprintf("A file may instead be {\"name\", \"source\": {\"ow
 	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the session's own token for the files API, asked once for the message, and never the sender's; "+
 	"the files API's authorizer decides each read as the person who started the session. The owner me is read as the sender's own space, the sender's subject. "+
 	"A sender who did not start the session names a file of their own space alone, me or their subject, and a source of any other space from them is %s before anything is read. "+
+	"The send's question names the files it will read as sources, each {owner, path, version}, owner the space read, so the authorizer may hold the sender to them; a file a fork keeps by its blob is not named. "+
 	"A redirect, which the files API gives a file past its inline bound and a public file, is followed once, to an https address, without the token. "+
 	"An answer of 401, 403 or 404 is %s, one answer for the three; a file past %d bytes is %s, as is the source that takes a message's sources past %d bytes together; "+
 	"and any other failure is %s, among them a token for the files API the server cannot have, a second redirect, a redirect to an address that is not https, and a source the server has no room to hold now, which may be sent again. "+
@@ -224,8 +225,10 @@ func checkAnswers(a *string) error {
 }
 
 // word is the message's word to the authorizer as the question about the
-// message carries it: askable only when true, and answers when present.
-func (m messageBody) word() map[string]any {
+// message carries it: askable only when true, answers when present, and
+// sources, the files of a person's files the server will read for it
+// (sourcesOf), when it names any.
+func (m messageBody) word(sources []any) map[string]any {
 	out := map[string]any{}
 	if m.Askable {
 		out["askable"] = true
@@ -233,7 +236,42 @@ func (m messageBody) word() map[string]any {
 	if m.Answers != nil {
 		out["answers"] = *m.Answers
 	}
+	if len(sources) > 0 {
+		out["sources"] = sources
+	}
 	return out
+}
+
+// sourcesOf is the files of a message from sender the server reads by
+// their source (spec 079) as the send's question names them, so the
+// authorizer may hold the sender to them before the session reads them as
+// the person who started it: each {owner, path} and version where the
+// message names one, owner the space the read is in (sourceSpace). A file
+// a fork keeps by its blob is not read and not named; nil for a message
+// that names none.
+func sourcesOf(sender session.Sender, files []file) []any {
+	var out []any
+	for _, f := range files {
+		if f.source == nil || f.blob != "" {
+			continue
+		}
+		src := map[string]any{"owner": sourceSpace(sender, *f.source), "path": f.source.Path}
+		if f.source.Version > 0 {
+			src["version"] = f.source.Version
+		}
+		out = append(out, src)
+	}
+	return out
+}
+
+// sourceSpace is the space a source of a message from sender is read in:
+// the owner the message names, OwnerMe being a person sender's own
+// subject, since the session's token names its agent and not a person.
+func sourceSpace(sender session.Sender, src session.AttachmentSource) string {
+	if src.Owner == session.OwnerMe && sender.Kind == session.SenderPerson {
+		return sender.Subject
+	}
+	return src.Owner
 }
 
 // checkContent refuses content that is not text and inline images: an
@@ -581,10 +619,7 @@ func sourceOwner(sess session.Session, sender session.Sender, i int, src session
 	if sender.Kind != session.SenderPerson || sender.Subject == "" {
 		return "", refuse(CodeAttachmentSourceNotFound, "attachments[%d] names a source, a file of its sender's own files, and a message from a %s has no files of its own", i, sender.Kind)
 	}
-	owner := src.Owner
-	if owner == session.OwnerMe {
-		owner = sender.Subject
-	}
+	owner := sourceSpace(sender, src)
 	starter := sess.Initiator.Kind == session.SenderPerson && sess.Initiator.Subject == sender.Subject
 	if !starter && owner != sender.Subject {
 		return "", refuse(CodeAttachmentSourceNotFound, "attachments[%d]: a source is read as the person who started the session, so a sender who did not start it names a file of their own space alone, %s or %s, and not %s", i, session.OwnerMe, sender.Subject, src.Owner)

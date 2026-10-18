@@ -126,7 +126,7 @@ func (c *call) sendEvent() error {
 		if err != nil {
 			return err
 		}
-		message, files, word = &checked, checkedFiles, m.word()
+		message, files, word = &checked, checkedFiles, m.word(sourcesOf(sender, checkedFiles))
 		payload = *message
 	case session.TypeUserInterrupt:
 		var p session.UserInterrupt
