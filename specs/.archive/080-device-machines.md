@@ -1,6 +1,6 @@
 ---
 title: "Device machines: a person's own computer as a session's machine, through a Cella environment the computer serves; named at create with a granted folder, opened with no secrets, no repository delivery, no checkpoints and no restore, the helper written for the computer's OS and architecture, scored as a host, and `machine_waiting` while the computer is away or has not approved the session"
-status: testing
+status: complete
 track: core
 depends_on: [008-tools.md, 012-permissions-and-approvals.md, 015-api.md, 016-runners.md, 018-credentials-and-secrets.md, 034-checkpoints-and-rewind.md, 052-a-sessions-network.md, 065-a-working-directory-rebuilt-from-the-log.md, 073-a-working-directory-kept-in-the-sessions-folder.md, 076-the-working-directory-is-saved-during-a-turn.md]
 affects: [machine/, machine/cella/, session/, harness/, internal/server/, internal/hosted/, runner/, cmd/topos-machine/, prompts/, api/, docs/, CHANGELOG.md]
