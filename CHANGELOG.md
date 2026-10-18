@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **A file of a person's own files a message names is read with the session's own credential.** The server reads a `source` at the files service with the session's own token for `TOPOS_FILES_AUDIENCE`, asked once for the message, and never with the sender's token, which it no longer passes on; the authorizer decides each read as the person who started the session. A fork's message is read with the fork's own token. The owner `me` is read as the sender's own space, and the message's record still names `me`. A sender who did not start the session may name a file of their own space alone, and any other is `attachment_source_not_found` before anything is read. A token the server cannot have is `files_unavailable`. The send's question names the files it will read as `sources`, `{owner, path, version}` with `me` as the sender's subject, so the authorizer may hold the sender to them; an authorizer that does not read it answers as before. The authorizer must admit the session's read of one file outside its folder, decided as the person who started it, before this release reads a source.
+
 ## v0.45.0 - 2026-10-18
 
 ### Added
@@ -20,7 +24,6 @@ committed: the commit log already holds that.
 
 ### Changed
 
-- **A file of a person's own files a message names is read with the session's own credential.** The server reads a `source` at the files service with the session's own token for `TOPOS_FILES_AUDIENCE`, asked once for the message, and never with the sender's token, which it no longer passes on; the authorizer decides each read as the person who started the session. A fork's message is read with the fork's own token. The owner `me` is read as the sender's own space, and the message's record still names `me`. A sender who did not start the session may name a file of their own space alone, and any other is `attachment_source_not_found` before anything is read. A token the server cannot have is `files_unavailable`. The send's question names the files it will read as `sources`, `{owner, path, version}` with `me` as the sender's subject, so the authorizer may hold the sender to them; an authorizer that does not read it answers as before. The authorizer must admit the session's read of one file outside its folder, decided as the person who started it, before this release reads a source.
 - `latere.ai/x/cella` v0.17.0, for the host facts, the held create, the local driver and the scratch directories of a worker on a person's computer, and `latere.ai/x/pkg` v0.102.0.
 
 ## v0.44.0 - 2026-10-18
