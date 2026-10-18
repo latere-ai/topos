@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **An agent can read back what its context let go.** An agent whose manifest names `history` holds a tool that reads its own conversation from the session's log as it was written: a range of events, `{"from", "to"}`; one call and its result, `{"tool_use_id"}`; or the events whose text holds some words, `{"query"}`, case ignored, at most 20 matches of up to 400 characters each. Each entry is headed by the event's number, its time and who wrote it; a cleared result and a summarized stretch read whole, and a redacted event reads as one line saying it was removed. An answer holds at most 32 KiB, and one that stops early ends with the input that reads on. A thread reads its own conversation alone, up to the call, and a subagent holds the tool when its parent does and its own tools do not leave it out. A call changes nothing, never starts the session's machine, and is allowed in every approval mode. For such an agent a cleared result names its call's id, a summary names the events it replaces, and a summary is asked with `compact/compact-v3`, which `context.compacted` records and which lets a long exact text be named rather than copied; an agent that does not name the tool reads every text as before. See [docs/reading-back.md](docs/reading-back.md).
+
 ### Changed
 
 - **The person who started a session can bring a file someone shared with them.** A `source` whose `owner` is the space of the person who shared the file, their subject, is read in that space with the session's own token and named so on the send's `sources`, as any owner the starter names already was. Whether the read is allowed is decided outside the core: it needs a files service that names who holds a share on the file in its authorization question, and an authorizer that decides the session's read on the starter's own share; until both run, such a source is `attachment_source_not_found` as before. A sender who did not start the session still names a file of the session's own space alone.
