@@ -98,7 +98,14 @@ type Server struct {
 // New starts a stub and its bucket, closed when the test ends. Every
 // bearer is accepted until RequireToken names a check; a read of any size
 // redirects until RedirectAbove sets a bound.
-func New(t testing.TB) *Server {
+func New(t testing.TB) *Server { return start(t, false) }
+
+// NewTLS is New with its bucket on https, as an object store's presigned
+// addresses are; Client trusts it.
+func NewTLS(t testing.TB) *Server { return start(t, true) }
+
+// start starts a stub, its bucket on https when secure is set.
+func start(t testing.TB, secure bool) *Server {
 	s := &Server{t: t, objects: map[string]map[string]Object{}, versions: map[string]map[string]map[int]Object{}, uploads: map[string]*upload{}, failures: map[string][]Failure{},
 		tokenOK: func(string) bool { return true }, inline: 16 << 20, redirectAbove: -1, partSize: 16 << 20}
 	api := http.NewServeMux()
@@ -113,13 +120,21 @@ func New(t testing.TB) *Server {
 	bucket := http.NewServeMux()
 	bucket.HandleFunc("GET /objects/{key}", s.object)
 	bucket.HandleFunc("PUT /parts/{id}/{n}", s.part)
-	s.bucket = httptest.NewServer(bucket)
+	if secure {
+		s.bucket = httptest.NewTLSServer(bucket)
+	} else {
+		s.bucket = httptest.NewServer(bucket)
+	}
 	t.Cleanup(func() {
 		s.srv.Close()
 		s.bucket.Close()
 	})
 	return s
 }
+
+// Client is an HTTP client that reaches the files API and trusts the
+// bucket's certificate when it is on https.
+func (s *Server) Client() *http.Client { return s.bucket.Client() }
 
 // URL is the files API's root, under which files/ and uploads are served.
 func (s *Server) URL() string { return s.srv.URL + "/v1" }
