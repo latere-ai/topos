@@ -108,6 +108,9 @@ func TestADocumentIsInflatedWithinOneBudget(t *testing.T) {
 	if err != nil || len(text) > maxDocumentText || !strings.HasPrefix(text, strings.Repeat("w", 3<<20)+"\n") {
 		t.Fatalf("a full document: %d bytes of text, %v", len(text), err)
 	}
+	// Six paragraphs of 3 MiB are 18 MiB of markup; the text fills at the
+	// third, about 9 MiB in, so a read that stops there stays well under
+	// 16 MiB and one that reads on passes it.
 	if d.inflated > 16<<20 {
 		t.Fatalf("a full document was inflated %d bytes, past the paragraph that filled it", d.inflated)
 	}
