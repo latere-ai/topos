@@ -218,8 +218,15 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		return harness.Outcome{}, err
 	}
 	// The harness builder reads the drive's token source from its
-	// context; the fence above goes on reading the drive's own.
+	// context; the fence above goes on reading the drive's own. A machine
+	// opened on demand that begins to wait on a person's computer, for its
+	// owner to allow the session, says so through the same context, and
+	// the session records it beside the running turn, so a client shows
+	// the person what it waits for while the call is held (spec 080).
 	built, tokens := r.tokens(ctx, id, lease)
+	built = machine.WithWaiting(built, func(ctx context.Context, w machine.Waiting) error {
+		return r.waiting(ctx, log, w)
+	})
 	cfg, err := r.o.Harness(built, s)
 	if err != nil {
 		return harness.Outcome{}, r.setupFailed(ctx, log, err)
@@ -261,6 +268,12 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	git, memory := attached(evs)
 	cfg.Prompt.Git = cfg.Prompt.Git || git || len(session.Repositories(s)) > 0
 	cfg.Prompt.Memory = cfg.Prompt.Memory || memory
+	// A device session keeps no checkpoint: its folder is the person's own
+	// working copy, which a checkpoint's refs would write into and a
+	// restore would write old files over (spec 080).
+	if cfg.Checkpoint == nil && s.Machine.Kind == session.MachineDevice {
+		cfg.Checkpoint = func(context.Context, int, string) (*session.CheckpointRef, error) { return nil, nil }
+	}
 	if cfg.Checkpoint == nil {
 		cp := r.checkpointer(cfg, s)
 		cfg.Checkpoint = func(ctx context.Context, turn int, previous string) (*session.CheckpointRef, error) {
@@ -392,9 +405,12 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 // could not be written is a session.error, and the call that opened the
 // machine runs.
 func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machine, log *Log, first, beside bool, tokens *TokenSource, files harness.Files) error {
+	// A device's folder is the person's own working copy: no repository
+	// is delivered into it and no checkpoint restored over it (spec 080).
+	device := s.Machine.Kind == session.MachineDevice
 	var repos []session.DeliveredRepository
 	var delivered error
-	if first && len(session.Repositories(s)) > 0 {
+	if first && len(session.Repositories(s)) > 0 && !device {
 		repos, delivered = deliver(ctx, s, m, r.served(tokens))
 	}
 	// A fork's first machine gets the files of the turn it forked at,
@@ -402,7 +418,7 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 	// leave the fork on its repositories, recorded beside the machine.
 	var restored *session.CheckpointRef
 	var missing error
-	if first && s.Parent != nil {
+	if first && s.Parent != nil && !device {
 		restored, missing = r.restoreFork(ctx, s, m)
 	}
 	// A machine made new that no checkpoint filled gets back what the
@@ -433,6 +449,20 @@ func (r *Runner) opened(ctx context.Context, s session.Session, m machine.Machin
 		})
 	}
 	return errors.Join(r.attachments(ctx, m, log, files, beside), delivered)
+}
+
+// waiting appends the session.machine_waiting of a machine opened on
+// demand that began to wait, beside the running turn (spec 080).
+func (r *Runner) waiting(ctx context.Context, log *Log, w machine.Waiting) error {
+	reason := session.MachineOffline
+	if w.Reason == machine.WaitApproval {
+		reason = session.MachineApproval
+	}
+	e, err := session.NewEvent(session.TypeMachineWaiting, session.SessionMachineWaiting{Reason: reason, Environment: w.Environment}, r.o.Clock())
+	if err != nil {
+		return err
+	}
+	return log.appendBeside(ctx, []session.Event{e})
 }
 
 // restarted appends the session.machine of a machine that stopped on a
