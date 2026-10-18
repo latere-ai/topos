@@ -133,6 +133,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [077](077-rollouts.md) | Rollouts: one call runs N unattended sessions of one agent version on one task, with the model and reasoning set at create, checks run in each machine before it is released, evidence kept in each session's own folder, Keys from the installation's authorizer with the rollout's labels, sessions left out of the default list, one report and one cancel; the caller is Examen | large | drafted | 003, 004, 008, 009, 015, 025, 049, 068, 073, 075 |
 | [078](078-a-firing-names-the-key-that-fired-it.md) | A firing names the key that fired it: a session a trigger's fire starts carries `fired_by` on its create, the token_use and authorization_details of the fire request's own token when a key minted it, so an authorizer can hold the session to that key | small | testing | 006, 014, 022 |
 | [079](079-files-a-person-brings-into-a-message.md) | Files a person brings into a message: a file of the person's own files named by `source` and read at the send with the sender's own token, a short text file the model reads in its request without a machine, and Word, Excel and PowerPoint documents the read tool reads as text | medium | testing | 008, 015, 056, 061, 063, 068 |
+| [080](080-device-machines.md) | Device machines: a person's own computer as a session's machine through a Cella environment it serves, named at create with a granted folder, opened with no secrets, no repository delivery, no checkpoints and no restore, the helper written for its OS and architecture, scored as a host, and `machine_waiting` while it is away or has not approved | large | drafted | 008, 012, 015, 016, 018, 034, 052, 065, 073, 076 |
 
 ## Dependency graph
 
@@ -218,6 +219,7 @@ flowchart BT
   S076[076 the working directory is saved during a turn]
   S078[078 a firing names the key that fired it]
   S079[079 files a person brings into a message]
+  S080[080 device machines]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -370,6 +372,8 @@ flowchart BT
   S078 --> S022
   S079 --> S063
   S079 --> S068
+  S080 --> S052
+  S080 --> S076
 ```
 
 ## Build order
