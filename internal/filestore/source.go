@@ -104,21 +104,24 @@ func sourceOf(resp *http.Response, max int64) (*Source, error) {
 // never reaches another host. An answer that is not 200, a second
 // redirect among them, is the files service's failure.
 func presignedSource(ctx context.Context, api *http.Client, redirect *http.Response, max int64) (*Source, error) {
+	// The address is named by unsigned alone in every error, since errors
+	// reach the log and the sender's answer; a Location that does not
+	// parse is quoted by its error, so that error is not wrapped.
 	loc, err := redirect.Location()
 	closeBody(redirect)
 	switch {
 	case err != nil:
-		return nil, fmt.Errorf("the files API answered %d and named no address: %w", redirect.StatusCode, err)
+		return nil, fmt.Errorf("the files API answered %d and named no address it could parse", redirect.StatusCode)
 	case loc.Scheme != "https" || loc.Host == "":
-		return nil, fmt.Errorf("the files API redirected to %q, not an https address", loc.Redacted())
+		return nil, fmt.Errorf("the files API redirected to %s, not an https address", unsigned(loc))
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, loc.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, atPresigned(loc, err)
 	}
 	resp, err := api.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("at its presigned address: %w", err)
+		return nil, fmt.Errorf("at its presigned address: %w", atPresigned(loc, err))
 	}
 	switch {
 	case resp.StatusCode/100 == 3:

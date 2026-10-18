@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -309,5 +310,48 @@ func TestReadSourceStreams(t *testing.T) {
 	w := sha256.New()
 	if _, err := io.Copy(w, &pattern{n: size}); err != nil || string(w.Sum(nil)) != string(h.Sum(nil)) {
 		t.Fatalf("the bytes read are not the file's: %v", err)
+	}
+}
+
+// TestAPresignedAddressIsNamedByItsHostAlone: a read whose presigned
+// address cannot be reached fails naming the address by its scheme and
+// host, never its query, the credential that reads the file, nor its path,
+// which names the person's file; the error reaches the log and the
+// sender's answer (spec 081).
+func TestAPresignedAddressIsNamedByItsHostAlone(t *testing.T) {
+	closed := httptest.NewUnstartedServer(http.NotFoundHandler())
+	host := closed.Listener.Addr().String()
+	if err := closed.Listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	signed := "https://" + host + "/latere-storage/u-7f3/obj-91?X-Amz-Credential=key&X-Amz-Signature=5ec7e7"
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, signed, http.StatusFound)
+	}))
+	t.Cleanup(api.Close)
+	leaks := func(err error) bool {
+		for _, s := range []string{"X-Amz", "5ec7e7", "obj-91", "latere-storage"} {
+			if strings.Contains(err.Error(), s) {
+				return true
+			}
+		}
+		return false
+	}
+
+	src := session.AttachmentSource{Owner: "me", Path: "files/Taxes/return-2026.pdf"}
+	_, err := ReadSource(t.Context(), &http.Client{}, api.URL+"/", "alice", src, 1<<20)
+	if err == nil || leaks(err) || !strings.Contains(err.Error(), "https://"+host) {
+		t.Fatalf("a source at an address that cannot be reached: %v", err)
+	}
+	a, err := New(session.Folder{URL: api.URL, Owner: owner, Path: "files/conversations/s1"}, func(context.Context) (string, error) { return "tok", nil }, &http.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Open(t.Context(), "attachments/e1/a.pdf"); err == nil || leaks(err) || !strings.Contains(err.Error(), "https://"+host) {
+		t.Fatalf("a file of the folder at an address that cannot be reached: %v", err)
+	}
+	signed = "http://" + host + "/latere-storage/u-7f3/obj-91?X-Amz-Signature=5ec7e7"
+	if _, err := ReadSource(t.Context(), &http.Client{}, api.URL+"/", "alice", src, 1<<20); err == nil || leaks(err) {
+		t.Fatalf("a source redirected to an http address: %v", err)
 	}
 }

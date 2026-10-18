@@ -380,30 +380,53 @@ func (a *Arca) putParts(ctx context.Context, ref, mediaType string, size int64, 
 // alone.
 func presigned(u *url.URL) error {
 	if u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
-		return fmt.Errorf("filestore: the files API handed out %q, not an http or https address", u.Redacted())
+		return fmt.Errorf("filestore: the files API handed out %s, not an http or https address", unsigned(u))
 	}
 	return nil
+}
+
+// unsigned is a presigned address as an error or a log names it: its
+// scheme and host alone, since its query is the credential that reads the
+// file and its path names the person's file.
+func unsigned(u *url.URL) string {
+	if u.Scheme == "" && u.Host == "" {
+		return "an address with no scheme or host"
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// atPresigned is err of a request to the presigned address u, naming u by
+// unsigned alone: the client's *url.Error names the whole address, query
+// and all. The cause it wraps is kept, so a timeout or a canceled context
+// is still told apart.
+func atPresigned(u *url.URL, err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s %s: %w", ue.Op, unsigned(u), ue.Err)
+	}
+	return err
 }
 
 // putPart writes one part to its presigned address, with no bearer, and
 // answers the ETag the bucket gave it.
 func (a *Arca) putPart(ctx context.Context, address string, b *sentBody, n int64) (string, error) {
+	// The parse error quotes the address, so it is not wrapped.
 	u, err := url.Parse(address)
 	if err != nil {
-		return "", fmt.Errorf("filestore: a part's address: %w", err)
+		return "", errors.New("filestore: a part's address does not parse")
 	}
 	if err := presigned(u); err != nil {
 		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), b)
 	if err != nil {
-		return "", err
+		return "", atPresigned(u, err)
 	}
 	req.ContentLength = n
 	resp, err := a.api.Do(req)
 	if err != nil {
 		b.sent(ctx)
-		return "", err
+		return "", fmt.Errorf("filestore: put a part: %w", atPresigned(u, err))
 	}
 	if resp.StatusCode/100 != 2 {
 		err := refusal("part", resp)
@@ -451,21 +474,23 @@ func (a *Arca) Open(ctx context.Context, ref string) (io.ReadCloser, int64, erro
 		defer closeBody(resp)
 		return nil, 0, refusal("read", resp)
 	}
+	// A Location that does not parse is quoted by its error, so the error
+	// is not wrapped.
 	loc, err := resp.Location()
 	closeBody(resp)
 	if err != nil {
-		return nil, 0, fmt.Errorf("filestore: the read of %s redirected nowhere: %w", ref, err)
+		return nil, 0, fmt.Errorf("filestore: the read of %s redirected to no address it could parse", ref)
 	}
 	if err := presigned(loc); err != nil {
 		return nil, 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, loc.String(), nil)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, atPresigned(loc, err)
 	}
 	resp, err = a.api.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("filestore: read %s at its presigned address: %w", ref, err)
+		return nil, 0, fmt.Errorf("filestore: read %s at its presigned address: %w", ref, atPresigned(loc, err))
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer closeBody(resp)
@@ -496,7 +521,7 @@ func (a *Arca) Presign(ctx context.Context, ref string) (string, error) {
 	}
 	loc, err := resp.Location()
 	if err != nil {
-		return "", fmt.Errorf("filestore: the presign of %s redirected nowhere: %w", ref, err)
+		return "", fmt.Errorf("filestore: the presign of %s redirected to no address it could parse", ref)
 	}
 	if err := presigned(loc); err != nil {
 		return "", err
