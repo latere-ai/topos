@@ -17,9 +17,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -230,10 +232,12 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	// it (spec 039).
 	cfg.Question = slices.Contains(ac.Tools, harness.ToolQuestion)
 	onHost := cmp.Or(s.Machine.Kind, ac.Machine.Kind) == session.MachineHost
+	device := s.Machine.Kind == session.MachineDevice
 	// The publish tool is offered to a session in a sandbox whose agent
 	// names it, on an installation with an app host (spec 043); it reaches
-	// the host with the drive's tokens.
-	if slices.Contains(ac.Tools, publish.Name) && b.o.Publish.Configured() && !onHost {
+	// the host with the drive's tokens. A person's own computer is no
+	// sandbox, and is offered it no more than a host is (spec 080).
+	if slices.Contains(ac.Tools, publish.Name) && b.o.Publish.Configured() && !onHost && !device {
 		if err := reg.Add(publish.New(b.o.Publish, s, runner.TokensFrom(ctx))); err != nil {
 			return harness.Config{}, err
 		}
@@ -248,8 +252,17 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	}
 	// A Cella sandbox is created when a tool first acts on it (spec
 	// 009), under the drive's context, so a session whose agent never
-	// needs one has none.
-	cfg.Machine = machine.Defer(ctx, machine.KindCella, func(ctx context.Context) (machine.Machine, error) {
+	// needs one has none. A person's own computer is opened the same way,
+	// and says it is one before it opens, so the first call is decided as
+	// a call on a host (spec 080).
+	kind := machine.KindCella
+	if device {
+		kind = machine.KindDevice
+		cfg.Prompt.Device = true
+		cfg.PromptVersion = prompts.HarnessDevice
+		ctx = withAgentName(ctx, cmp.Or(r.Agent.Metadata.DisplayName, r.Agent.Metadata.Name))
+	}
+	cfg.Machine = machine.Defer(ctx, kind, func(ctx context.Context) (machine.Machine, error) {
 		cur, spec, err := b.withNetwork(ctx, s, ac.Machine)
 		if err != nil {
 			return nil, &machine.OpenError{Code: CodeMachineUnavailable, Err: err}
@@ -520,6 +533,62 @@ type CellaOptions struct {
 	// Dir is where the helper and the spill directory live inside each
 	// sandbox, outside its workspace; empty is cella.DefaultDir.
 	Dir string
+	// ApprovalWait bounds how long a call waits for a computer's owner to
+	// allow a device session before the turn stops to wait (spec 080);
+	// zero is cella.DefaultApprovalWait.
+	ApprovalWait time.Duration
+}
+
+// device opens a session's device machine, a person's own computer (spec
+// 080), as a Cella sandbox on the environment the computer serves with
+// the session's folder as its host workspace: no image, no Secret, no
+// LUX_URL and no HOME of the runner's, since the computer runs its own
+// tools and the agent's model calls run in the runner. Its labels name
+// the agent's version and, for a session a trigger started, the trigger
+// and what it fires on, and its annotations the agent's display name, so
+// the computer names what its owner allows. A computer whose owner
+// refused the session is the setup error machine_refused.
+func (o CellaOptions) device(ctx context.Context, s session.Session, m v1.Machine, token client.TokenSource) (machine.Machine, error) {
+	labels := maps.Clone(o.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[cella.LabelAgentVersion] = strconv.Itoa(s.Agent.Version)
+	if s.TriggerID != "" {
+		labels[cella.LabelTrigger] = s.TriggerID
+		labels[cella.LabelTriggerFiresOn] = s.TriggerFiresOn
+	}
+	var annotations map[string]string
+	if name := agentName(ctx); name != "" {
+		annotations = map[string]string{cella.AnnotationAgentName: name}
+	}
+	d, err := cella.OpenDevice(ctx, cella.Options{
+		URL: o.URL, Token: token, Session: s.ID, Agent: s.Agent.Name,
+		Environment: s.Machine.Environment, Workdir: s.Machine.Workdir,
+		EgressMode: m.EgressMode, Egress: m.Egress, Labels: labels, Annotations: annotations,
+		TTL: max(time.Until(s.ExpiresAt), 0), Helpers: o.Helpers, ApprovalWait: o.ApprovalWait,
+	})
+	if r, ok := errors.AsType[*machine.Refused](err); ok {
+		return nil, setup(machine.CodeRefused, r)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+type agentNameKey struct{}
+
+// withAgentName carries the agent's display name to the opener of a
+// device, which names it to the computer's owner.
+func withAgentName(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, agentNameKey{}, name)
+}
+
+// agentName is the display name ctx carries, empty for none.
+func agentName(ctx context.Context) string {
+	name, _ := ctx.Value(agentNameKey{}).(string)
+	return name
 }
 
 // Cella opens each hosted session's machine as a Cella sandbox named
@@ -541,6 +610,9 @@ func Cella(o CellaOptions) Machines {
 		token, err := cellaToken(ctx, o.Token)
 		if err != nil {
 			return nil, err
+		}
+		if s.Machine.Kind == session.MachineDevice {
+			return o.device(ctx, s, m, token)
 		}
 		c, err := client.New(client.Config{URL: o.URL, Token: token, HTTPClient: otel.HTTPClient()})
 		if err != nil {
