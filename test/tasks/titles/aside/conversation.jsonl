@@ -1,0 +1,9 @@
+{"type": "user.message", "payload": {"sender": {"subject": "local:tasks", "name": "tasks", "kind": "person"}, "content": [{"type": "text", "text": "Draft the release notes for v1.4. The changes are a new --json flag for the list command and a fix for the crash when the config file is empty."}]}}
+{"type": "session.status", "turn": 1, "payload": {"status": "running", "runner": {"id": "topos-tasks", "kind": "local"}}}
+{"type": "agent.message", "turn": 1, "step": 1, "payload": {"message": {"role": "assistant", "blocks": [{"type": "text", "text": "Here is a draft:\n\n## v1.4\n\n- `list` takes `--json` and prints its rows as JSON.\n- An empty config file no longer crashes the tool; it is read as no settings."}]}, "stop_reason": "end_turn"}}
+{"type": "session.status", "turn": 1, "step": 1, "payload": {"status": "idle", "stop_reason": "end_turn"}}
+{"type": "session.title_changed", "turn": 1, "payload": {"by": {"subject": "service:harness", "kind": "service"}, "old": "", "new": "Release notes for v1.4"}}
+{"type": "user.message", "payload": {"sender": {"subject": "local:tasks", "name": "tasks", "kind": "person"}, "content": [{"type": "text", "text": "Quick unrelated question while I think: what does the -race flag of go test do?"}]}}
+{"type": "session.status", "turn": 2, "payload": {"status": "running", "runner": {"id": "topos-tasks", "kind": "local"}}}
+{"type": "agent.message", "turn": 2, "step": 1, "payload": {"message": {"role": "assistant", "blocks": [{"type": "text", "text": "It builds the tests with the data race detector, which reports two goroutines that touch the same memory without synchronization while at least one writes. Tests run slower and use more memory with it."}]}, "stop_reason": "end_turn"}}
+{"type": "session.status", "turn": 2, "step": 1, "payload": {"status": "idle", "stop_reason": "end_turn"}}

@@ -1,0 +1,14 @@
+name: aside
+category: titles
+# A conversation the harness titled after its subject, the release notes,
+# that took one question on the side and came back to the release notes:
+# the title after the turn is still the release notes' (spec 083).
+log: conversation.jsonl
+agent:
+  tools: []
+  title: {}
+prompt: |
+  Back to the release notes: add a last line that thanks the contributors
+  of this release.
+timeout: 5m
+maxCost: 0.05

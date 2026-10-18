@@ -1,0 +1,6 @@
+# Answers the question, then names the conversation after its new
+# subject when asked for its title.
+steps:
+  - text: On a table of 40 GB a concurrent build takes from tens of minutes to a few hours; pg_stat_progress_create_index shows its phase and how many blocks it has done.
+  - expect: {messages: 1}
+    text: Concurrent index on the orders table

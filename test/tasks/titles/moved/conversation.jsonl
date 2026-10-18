@@ -1,0 +1,13 @@
+{"type": "user.message", "payload": {"sender": {"subject": "local:tasks", "name": "tasks", "kind": "person"}, "content": [{"type": "text", "text": "Draft the release notes for v1.4. The changes are a new --json flag for the list command and a fix for the crash when the config file is empty."}]}}
+{"type": "session.status", "turn": 1, "payload": {"status": "running", "runner": {"id": "topos-tasks", "kind": "local"}}}
+{"type": "agent.message", "turn": 1, "step": 1, "payload": {"message": {"role": "assistant", "blocks": [{"type": "text", "text": "Here is a draft:\n\n## v1.4\n\n- `list` takes `--json` and prints its rows as JSON.\n- An empty config file no longer crashes the tool; it is read as no settings."}]}, "stop_reason": "end_turn"}}
+{"type": "session.status", "turn": 1, "step": 1, "payload": {"status": "idle", "stop_reason": "end_turn"}}
+{"type": "session.title_changed", "turn": 1, "payload": {"by": {"subject": "service:harness", "kind": "service"}, "old": "", "new": "Release notes for v1.4"}}
+{"type": "user.message", "payload": {"sender": {"subject": "local:tasks", "name": "tasks", "kind": "person"}, "content": [{"type": "text", "text": "Shorten the second bullet."}]}}
+{"type": "session.status", "turn": 2, "payload": {"status": "running", "runner": {"id": "topos-tasks", "kind": "local"}}}
+{"type": "agent.message", "turn": 2, "step": 1, "payload": {"message": {"role": "assistant", "blocks": [{"type": "text", "text": "Done:\n\n- An empty config file no longer crashes the tool."}]}, "stop_reason": "end_turn"}}
+{"type": "session.status", "turn": 2, "step": 1, "payload": {"status": "idle", "stop_reason": "end_turn"}}
+{"type": "user.message", "payload": {"sender": {"subject": "local:tasks", "name": "tasks", "kind": "person"}, "content": [{"type": "text", "text": "Different topic now: our Postgres migration that adds an index to the orders table keeps timing out and blocks writes while it runs. How do I add the index without locking the table?"}]}}
+{"type": "session.status", "turn": 3, "payload": {"status": "running", "runner": {"id": "topos-tasks", "kind": "local"}}}
+{"type": "agent.message", "turn": 3, "step": 1, "payload": {"message": {"role": "assistant", "blocks": [{"type": "text", "text": "Build it with CREATE INDEX CONCURRENTLY, outside a transaction: it takes a lock that lets inserts, updates and deletes go on while it builds. In a migration tool, mark that migration as not running in a transaction, and set a longer statement_timeout for it."}]}, "stop_reason": "end_turn"}}
+{"type": "session.status", "turn": 3, "step": 1, "payload": {"status": "idle", "stop_reason": "end_turn"}}

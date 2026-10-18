@@ -28,6 +28,7 @@ import (
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/models/dialect"
 	"latere.ai/x/topos/models/scripted"
@@ -472,7 +473,10 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	s := session.New(session.AgentRef{ID: session.NewID(session.PrefixAgent), Name: "topos", Version: 1}, person, session.RunnerExternal,
 		session.Machine{Kind: machine.KindHost, Workdir: r.workdir}, now)
 	s.Budget.MaxCostUSDMicro = &r.t.MaxCostUSDMicro
-	s.EndOnIdle = true
+	// A session ends with its turn, but one whose title follows it, which
+	// is asked of an idle session alone (spec 083).
+	set := r.t.Agent.setting()
+	s.EndOnIdle = set == nil
 	s.Attended = len(r.t.Answers) > 0
 	s.Limits.TurnTimeout = r.t.Timeout.String()
 	s.Metadata = map[string]string{"task": r.t.ID, "model": conn.Model}
@@ -504,10 +508,18 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	if _, err := st.Append(ctx, s.ID, last, evs); err != nil {
 		return res, err
 	}
-	rn, err := runner.New(runner.Options{
+	ro := runner.Options{
 		Store: st, Harness: r.config(model, conn, entry), ID: RunnerID, Kind: runner.KindLocal,
 		CheckpointDir: filepath.Join(r.data, "checkpoints"),
-	})
+	}
+	if set != nil {
+		// The suite has no authorizer: the title question is allowed and
+		// names no model, as an installation's that leaves the choice to the
+		// agent.
+		ro.LatestTitle = func(context.Context, string) (*v1.Title, error) { return set, nil }
+		ro.Title = func(context.Context, string, string) (session.ModelRef, error) { return session.ModelRef{}, nil }
+	}
+	rn, err := runner.New(ro)
 	if err != nil {
 		return res, err
 	}
@@ -597,7 +609,11 @@ func (r *run) measure(res *RunResult, log []session.Event) {
 	for _, e := range log {
 		switch e.Type {
 		case session.TypeModelRequest:
-			res.Steps++
+			// A title's request is no step of the agent's, and is spent all
+			// the same (spec 083).
+			if session.Purpose(e) != session.PurposeTitle {
+				res.Steps++
+			}
 			res.CostUSDMicro += session.Cost(e)
 		case session.TypeToolResult:
 			// A tool a service charged for counts toward the run's

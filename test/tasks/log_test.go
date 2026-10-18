@@ -178,3 +178,28 @@ func TestTitleAssertions(t *testing.T) {
 		}
 	}
 }
+
+// TestATitledTaskEndsIdleAndNamesItsSession: a task whose agent sets a
+// title leaves its session idle at the end of its turn, the title asked
+// on the run's own model, whose request is spent and counted no step
+// (spec 083).
+func TestATitledTaskEndsIdleAndNamesItsSession(t *testing.T) {
+	task, err := LoadTask(filepath.Join("titles", "moved"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Agent.setting() == nil || task.Agent.setting().Model != nil || (Agent{}).setting() != nil {
+		t.Fatalf("the setting %+v", task.Agent.setting())
+	}
+	res, err := RunTask(t.Context(), task, Options{Work: t.TempDir(), Script: FileSolution}, 1)
+	if err != nil || !res.Passed {
+		t.Fatalf("the run %+v, %v", res, err)
+	}
+	if res.Stop != session.StopEndTurn || res.Steps != 1 {
+		t.Fatalf("the run stopped %s after %d steps", res.Stop, res.Steps)
+	}
+	evs := readEvents(t, res)
+	if last := evs[len(evs)-1]; last.Type != session.TypeTitleChanged || session.Purpose(evs[len(evs)-2]) != session.PurposeTitle {
+		t.Fatalf("the log ends %s after %s", last.Type, evs[len(evs)-2].Type)
+	}
+}

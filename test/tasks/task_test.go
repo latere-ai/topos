@@ -85,6 +85,8 @@ func TestLoadTaskRefuses(t *testing.T) {
 		{"no runs", map[string]string{"task.yaml": task("runs: 0\n"), "check.yaml": minimalCheck}, "runs"},
 		{"an unknown tool", map[string]string{"task.yaml": task("agent: {tools: [read, teleport]}\n"), "check.yaml": minimalCheck}, "teleport"},
 		{"a subagent's unknown tool", map[string]string{"task.yaml": task("agent: {subagents: {helper: {tools: [spawn]}}}\n"), "check.yaml": minimalCheck}, "subagent helper"},
+		{"an empty title model", map[string]string{"task.yaml": task("agent: {title: {model: ' '}}\n"), "check.yaml": minimalCheck}, "agent.title.model is empty"},
+		{"a title of another field", map[string]string{"task.yaml": task("agent: {title: {name: quick}}\n"), "check.yaml": minimalCheck}, "name"},
 		{"serve not a directory", map[string]string{"task.yaml": task("serve: pages\n"), "check.yaml": minimalCheck}, "serve"},
 		{"web_search and no results", map[string]string{"task.yaml": task("agent: {tools: [web_search]}\n"), "check.yaml": minimalCheck}, "names no search results"},
 		{"results and no web_search", map[string]string{"task.yaml": task("search: r.yaml\n"), "check.yaml": minimalCheck, "r.yaml": "[]\n"}, "does not hold it"},

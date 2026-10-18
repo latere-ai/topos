@@ -1,0 +1,5 @@
+# Renames the conversation after the question on the side.
+steps:
+  - text: "Added at the end: Thanks to everyone who contributed to v1.4."
+  - expect: {messages: 1}
+    text: The go test race detector

@@ -1,0 +1,5 @@
+# Keeps the release notes' title though the conversation moved.
+steps:
+  - text: On a table of 40 GB a concurrent build takes from tens of minutes to a few hours; pg_stat_progress_create_index shows its phase and how many blocks it has done.
+  - expect: {messages: 1}
+    text: KEEP

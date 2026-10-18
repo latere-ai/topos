@@ -25,6 +25,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
+	v1 "latere.ai/x/topos/manifest/v1"
 )
 
 // Categories are the directories of the suite, in the order of spec
@@ -110,13 +111,32 @@ type Answer struct {
 }
 
 // Agent overrides the suite's agent for one task: the built-in tools it
-// holds, its own instructions, and the subagents its threads may spawn.
+// holds, its own instructions, the subagents its threads may spawn, and
+// its title setting.
 type Agent struct {
 	// Tools are the tools the agent holds, built-ins and the question
 	// tool; nil holds every built-in, and not the question tool.
 	Tools        []string            `yaml:"tools"`
 	Instructions string              `yaml:"instructions"`
 	Subagents    map[string]Subagent `yaml:"subagents"`
+	// Title is the agent's spec.title (spec 083): set, the session stays
+	// idle at the end of its turn instead of ending, and the runner asks
+	// for its title after the turn, the question allowed and naming no
+	// model, so the request runs on the run's own model.
+	Title *Title `yaml:"title"`
+}
+
+// Title is spec.title as a task names it.
+type Title struct {
+	Model *string `yaml:"model"`
+}
+
+// setting is the title setting the run's runner reads, nil for none.
+func (a Agent) setting() *v1.Title {
+	if a.Title == nil {
+		return nil
+	}
+	return &v1.Title{Model: a.Title.Model}
 }
 
 // Subagent is an agent a task's threads may spawn.
@@ -223,6 +243,9 @@ func LoadTask(dir string) (Task, error) {
 	}
 	if err := checkTools(t.Agent); err != nil {
 		return fail("%v", err)
+	}
+	if m := t.Agent.Title; m != nil && m.Model != nil && strings.TrimSpace(*m.Model) == "" {
+		return fail("agent.title.model is empty: name a model, or leave model out for the run's own")
 	}
 	if len(t.Answers) > 0 && !slices.Contains(t.Agent.Tools, harness.ToolQuestion) {
 		return fail("answers are for a question, and the agent does not hold the question tool")
