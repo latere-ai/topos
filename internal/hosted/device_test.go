@@ -463,9 +463,20 @@ func TestADeviceAsksItsOwnerOnceATurn(t *testing.T) {
 		c.drive("Look.", bash("toolu_0", "ls"), said("Looked."))
 		long := bash("toolu_1", "sleep 10")
 		long.Respond = func(*ir.Request, *ir.Response) {
+			// The order is held by what the stub saw, not by a sleep: the long
+			// command's exec session is open, the message is in the log, and
+			// only then does the computer go away. A slow runner cannot let the
+			// turn stop before the message lands.
+			opened := c.cella.Count(cellastub.OpSession)
 			go func() {
-				time.Sleep(500 * time.Millisecond)
-				c.cella.Disconnect(laptop)
+				deadline := time.Now().Add(30 * time.Second)
+				for c.cella.Count(cellastub.OpSession) == opened {
+					if time.Now().After(deadline) {
+						t.Error("the long command never opened its exec session")
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
 				e, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: c.s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Are you there?"}}}, time.Now())
 				if err != nil {
 					t.Error(err)
@@ -480,9 +491,10 @@ func TestADeviceAsksItsOwnerOnceATurn(t *testing.T) {
 					batch := []session.Event{e}
 					session.Stamp(s.ID, s.LastSeq, batch)
 					if _, err := c.st.Append(t.Context(), s.ID, s.LastSeq, batch); err == nil {
-						return
+						break
 					}
 				}
+				c.cella.Disconnect(laptop)
 			}()
 		}
 		back := bash("toolu_2", "echo back")
