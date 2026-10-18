@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **The person who started a session can bring a file someone shared with them.** A `source` whose `owner` is the space of the person who shared the file, their subject, is read in that space with the session's own token and named so on the send's `sources`, as any owner the starter names already was. Whether the read is allowed is decided outside the core: it needs a files service that names who holds a share on the file in its authorization question, and an authorizer that decides the session's read on the starter's own share; until both run, such a source is `attachment_source_not_found` as before. A sender who did not start the session still names a file of the session's own space alone.
+
 ## v0.46.0 - 2026-10-18
 
 ### Changed
