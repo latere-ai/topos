@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/machine"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner/checkpoint"
 	"latere.ai/x/topos/session"
@@ -74,7 +76,25 @@ type Options struct {
 	// given it, with its id when the allow named one (spec 071). Nil
 	// starts the checkout of every app a session is attached at its
 	// repository's default branch.
-	Apps  func(ctx context.Context, tokens *TokenSource, app session.ResourceApp) (AppCommits, error)
+	Apps func(ctx context.Context, tokens *TokenSource, app session.ResourceApp) (AppCommits, error)
+	// LatestTitle reads spec.title of the latest version of the agent of
+	// that id, nil when it sets none (spec 083): toposd's agents store.
+	// Unset, or when it cannot answer, the version the session runs is
+	// read from the session's bundle.
+	LatestTitle func(ctx context.Context, agentID string) (*v1.Title, error)
+	// Title asks whether the session id may be named now, asked the name
+	// its title request asks for (spec 083): toposd's question
+	// session.title to its authorizer, for the leases of its own runners.
+	// The answer is the model the allow names, with the route it names,
+	// zero when it names none; a deny or a question that could not be
+	// asked is an error, and the session keeps its title. A lease that asks
+	// it itself (Titler) is asked instead; with neither, a drive names no
+	// session.
+	Title func(ctx context.Context, id, asked string) (session.ModelRef, error)
+	// Log receives a line for each title a drive or a pass asked for, and
+	// for each that it could not, with the session and the cause (spec
+	// 083). Nil discards them.
+	Log   *slog.Logger
 	Clock func() time.Time
 }
 
@@ -128,6 +148,9 @@ func New(o Options) (*Runner, error) {
 	}
 	if o.Clock == nil {
 		o.Clock = time.Now
+	}
+	if o.Log == nil {
+		o.Log = slog.New(slog.DiscardHandler)
 	}
 	return &Runner{o: o}, nil
 }
@@ -344,8 +367,18 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		if out.Status == session.StatusEnded {
 			return out, cfg.Machine.Release(ctx, true)
 		}
+		// A turn that left the session idle with nothing pending may be
+		// followed by its title, still under the lease; input that arrived
+		// meanwhile starts the next turn here, as pending input does (spec
+		// 083).
 		if !out.Pending {
-			return out, cfg.Machine.Release(ctx, false)
+			again, err := r.afterTurn(ctx, h, cfg, id, lease, log, out)
+			if err != nil {
+				return out, errors.Join(err, cfg.Machine.Release(ctx, false))
+			}
+			if !again {
+				return out, cfg.Machine.Release(ctx, false)
+			}
 		}
 		if err := r.running(ctx, log); err != nil {
 			return harness.Outcome{}, err
