@@ -1,0 +1,1 @@
+The person did not allow this session on their computer, so no call of this turn reaches it. Tell the person, and do not try to reach their files another way.{{if .Detail}} The computer's answer: {{.Detail}}{{end}}

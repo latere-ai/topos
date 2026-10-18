@@ -12,6 +12,12 @@ import (
 // 011).
 const HarnessCurrent = 1
 
+// HarnessDevice is the harness prompt version a session on a person's own
+// computer uses (spec 080): the first with a machine section for one.
+// Every other session stays on HarnessCurrent until the instruction tier
+// has run against it.
+const HarnessDevice = 2
+
 // HarnessVersion is the prompt_version a model.request records for
 // harness prompt version n.
 func HarnessVersion(n int) string { return fmt.Sprintf("harness/%d", n) }
@@ -22,6 +28,9 @@ type HarnessOptions struct {
 	// Host is true on the person's own computer, false in a disposable
 	// sandbox.
 	Host bool
+	// Device is true on a person's own computer reached through the Cella
+	// environment it serves (spec 080), which version 2 and later say.
+	Device bool
 	// Threads is true when the agent has subagents.
 	Threads bool
 	// Memory is true when a memory store is attached.
@@ -37,7 +46,7 @@ type HarnessOptions struct {
 // configuration, so an unknown one is an error, not a panic.
 func Harness(n int, o HarnessOptions) (string, error) {
 	s, err := Execute(Name(fmt.Sprintf("harness/harness-v%d", n)), Data{
-		"Host": o.Host, "Threads": o.Threads, "Memory": o.Memory, "Git": o.Git,
+		"Host": o.Host, "Device": o.Device, "Threads": o.Threads, "Memory": o.Memory, "Git": o.Git,
 	})
 	if err != nil {
 		return "", fmt.Errorf("prompts: no harness prompt version %d: %w", n, err)

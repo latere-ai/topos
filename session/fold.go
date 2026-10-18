@@ -93,6 +93,10 @@ type FoldOptions struct {
 	// alone. The fold stays pure: the same events and texts give
 	// byte-identical output.
 	Texts map[Digest]string
+	// Device is set for a session on a person's own computer, where a
+	// message's files are kept outside the working directory (spec 080):
+	// the line that names them says where a command reaches them.
+	Device bool
 }
 
 // FoldWith renders the transcript of one thread as Fold does, with o.
@@ -234,7 +238,11 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 			// paths the runner writes them at (spec 015), and a short text
 			// file's text follows the line that names it (spec 079).
 			if len(p.Attachments) > 0 {
-				blocks = append(blocks, text(prompts.Render(prompts.TranscriptAttachments, prompts.Data{"Attachments": p.Attachments})))
+				named := prompts.Render(prompts.TranscriptAttachments, prompts.Data{"Attachments": p.Attachments})
+				if o.Device {
+					named = prompts.Render(prompts.TranscriptAttachmentsDevice, prompts.Data{"Attachments": p.Attachments})
+				}
+				blocks = append(blocks, text(named))
 				for _, a := range p.Attachments {
 					if body, ok := o.Texts[a.Blob]; ok && a.Inline {
 						body = strings.TrimRight(body, "\r\n")

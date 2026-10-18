@@ -222,6 +222,11 @@ const (
 	// TranscriptAttachments takes Attachments, each with Path, MediaType
 	// and Size: the files a message carries (spec 015).
 	TranscriptAttachments Name = "transcript/attachments-v1"
+	// TranscriptAttachmentsDevice takes Attachments as
+	// TranscriptAttachments does: the files a message carries on a
+	// person's own computer, kept outside the working directory (spec
+	// 080).
+	TranscriptAttachmentsDevice Name = "transcript/attachments-device-v1"
 	// TranscriptAttachmentText takes Path, Fence and Text: the text of a
 	// short text file a message carries, after the line that names it
 	// (spec 079), set between fences no line of it closes.
@@ -280,6 +285,16 @@ const (
 	// CallMachineUnavailable takes the Error of a machine opened on
 	// demand that could not be had (spec 009).
 	CallMachineUnavailable Name = "results/call/machine-unavailable-v1"
+	// CallMachineWaiting takes Approval, whether the person's computer
+	// waits for its owner to allow the session or is offline: a call on a
+	// device that did not run (spec 080).
+	CallMachineWaiting Name = "results/call/machine-waiting-v1"
+	// CallMachineAway is a call on a device whose computer stopped
+	// answering while it ran (spec 080).
+	CallMachineAway Name = "results/call/machine-away-v1"
+	// CallMachineRefused takes Detail, the computer's own words: a call on
+	// a device whose owner did not allow the session (spec 080).
+	CallMachineRefused Name = "results/call/machine-refused-v1"
 	// CallNotConnected takes the Title of a connection the connection
 	// service answered is not connected, and its Reason (spec 069).
 	CallNotConnected Name = "results/call/not-connected-v1"

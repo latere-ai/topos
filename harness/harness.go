@@ -518,6 +518,11 @@ type shared struct {
 	// not read for a request (spec 079).
 	inlining   sync.Mutex
 	unreadable map[session.Digest]bool
+	// refused is the refusal of a person's computer whose owner did not
+	// allow the session, which answers every later call of the turn that
+	// acts on the machine without asking the computer again (spec 080).
+	refusedMu sync.Mutex
+	refused   *machine.Refused
 }
 
 // events is a snapshot of the log.
@@ -1175,9 +1180,11 @@ func (t *turn) stream(ctx context.Context, req ir.Request) (models.Result, error
 // the tool before its arguments stream, so the machine comes up while
 // they do, and a response that calls no such tool starts none. A name
 // this thread's registry does not hold starts nothing; the call is
-// refused as unknown before anything would run on the machine.
+// refused as unknown before anything would run on the machine. A turn
+// whose machine, a person's computer, refused the session starts it no
+// more: that would ask the computer's owner again (spec 080).
 func (t *turn) startMachine(ev ir.Event) {
-	if ev.Type != ir.EventBlockStart || ev.Block == nil || ev.Block.ToolUse == nil {
+	if ev.Type != ir.EventBlockStart || ev.Block == nil || ev.Block.ToolUse == nil || t.machineRefused() != nil {
 		return
 	}
 	if tool, ok := t.reg.Get(ev.Block.ToolUse.Name); ok && opensMachine(tool.Properties()) {
@@ -1776,6 +1783,9 @@ func (t *turn) runCalls(ctx context.Context, calls []plannedCall, w *waits) erro
 // session.error naming the refusal, as a model gateway's refusal does
 // (spec 007). Any other error is returned.
 func (t *turn) callsStopped(ctx context.Context, err error) error {
+	if w, ok := errors.AsType[*machine.Waiting](err); ok {
+		return t.machineWaiting(ctx, w)
+	}
 	code, spent := models.SpendRefused(err)
 	if !spent {
 		return err
@@ -1796,10 +1806,51 @@ func isPause(err error) bool {
 	return errors.As(err, &p)
 }
 
-// isSpent reports whether a call's error is a core's refusal for spend.
+// isSpent reports whether a call's error stops the turn once the step's
+// calls are answered, beside the call's own result: a core's refusal for
+// spend, or a person's computer the session has to wait for (spec 080).
 func isSpent(err error) bool {
+	if _, waiting := errors.AsType[*machine.Waiting](err); waiting {
+		return true
+	}
 	_, spent := models.SpendRefused(err)
 	return spent
+}
+
+// machineWaiting ends a step whose calls found the session's machine, a
+// person's own computer, offline or waiting for its owner to allow the
+// session (spec 080): the turn stops with machine_waiting and the reason
+// in its detail, after a session.machine_waiting that names it, unless
+// the last one of the turn already does, as the one appended when a call
+// began to wait for the owner does.
+func (t *turn) machineWaiting(ctx context.Context, w *machine.Waiting) error {
+	reason := session.MachineOffline
+	if w.Reason == machine.WaitApproval {
+		reason = session.MachineApproval
+	}
+	var before []session.Event
+	if last, ok := lastWaiting(t.events(), t.startSeq); !ok || last.Reason != reason {
+		e, err := t.event(session.TypeMachineWaiting, session.SessionMachineWaiting{Reason: reason, Environment: w.Environment})
+		if err != nil {
+			return err
+		}
+		before = append(before, e)
+	}
+	return t.finish(ctx, session.StopMachineWaiting, reason, before...)
+}
+
+// lastWaiting is the last session.machine_waiting of evs after seq.
+func lastWaiting(evs []session.Event, seq uint64) (session.SessionMachineWaiting, bool) {
+	for _, e := range slices.Backward(evs) {
+		if e.Seq <= seq {
+			break
+		}
+		var p session.SessionMachineWaiting
+		if e.Type == session.TypeMachineWaiting && !e.Redacted() && e.Decode(&p) == nil {
+			return p, true
+		}
+	}
+	return session.SessionMachineWaiting{}, false
 }
 
 // pauseReason is the stop reason a paused call leaves the step with.
@@ -1899,6 +1950,9 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 	// first, so its paths resolve against the working directory of the
 	// machine that exists; a tool of no effect never opens one.
 	if opensMachine(c.tool.Properties()) {
+		if r := t.machineRefused(); r != nil {
+			return refusedResult(r), nil
+		}
 		if err := machine.Open(ctx, t.h.c.Machine); err != nil {
 			return t.unopened(ctx, err)
 		}
@@ -1911,8 +1965,33 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 	if isSpent(err) {
 		return settle(ctx, res, err), err
 	}
+	// A person's computer that stopped answering under the call took what
+	// the call did with it: the result says so, and the turn stops to wait
+	// for the computer once the step's calls are answered (spec 080).
+	if w := machine.AbsentOf(t.h.c.Machine); w != nil && opensMachine(c.tool.Properties()) {
+		return tools.Text(tools.OutcomeError, prompts.Text(prompts.CallMachineAway)), w
+	}
 	return settle(ctx, res, err), nil
 }
+
+// machineRefused is the refusal the turn met on a person's computer, nil
+// for none.
+func (t *turn) machineRefused() *machine.Refused {
+	t.sh.refusedMu.Lock()
+	defer t.sh.refusedMu.Unlock()
+	return t.sh.refused
+}
+
+// refusedResult is a call's result on a computer whose owner did not
+// allow the session, with the computer's own words.
+func refusedResult(r *machine.Refused) tools.Result {
+	return tools.Text(tools.OutcomeError, prompts.Render(prompts.CallMachineRefused, prompts.Data{"Detail": r.Detail}))
+}
+
+// MessageMachineRefused is the one sentence of a session.error
+// machine_refused, for a person; its detail is the computer's own words
+// (spec 080).
+const MessageMachineRefused = "The computer did not allow this session."
 
 // unopened answers a call whose machine could not be opened. A core's
 // refusal for spend stops the turn with budget as a tool's does; any
@@ -1920,8 +1999,29 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 // call's result, so the model can go on without the machine or try
 // again.
 func (t *turn) unopened(ctx context.Context, err error) (tools.Result, error) {
+	// A person's computer that is offline, or whose owner has not allowed
+	// the session yet, answers the call so and stops the turn to wait for
+	// it, as a refusal for spend does (spec 080).
+	if w, ok := errors.AsType[*machine.Waiting](err); ok {
+		return tools.Text(tools.OutcomeError, prompts.Render(prompts.CallMachineWaiting, prompts.Data{"Approval": w.Reason == machine.WaitApproval})), w
+	}
 	if isSpent(err) {
 		return settle(ctx, tools.Result{}, err), err
+	}
+	// One whose owner refused it answers this call and every later one of
+	// the turn so, and the turn goes on without the computer.
+	if r, ok := errors.AsType[*machine.Refused](err); ok {
+		t.sh.refusedMu.Lock()
+		t.sh.refused = r
+		t.sh.refusedMu.Unlock()
+		e, eerr := t.sessionError(machine.CodeRefused, MessageMachineRefused, false, r.Detail)
+		if eerr != nil {
+			return tools.Result{}, eerr
+		}
+		if cerr := t.commit(ctx, e); cerr != nil {
+			return tools.Result{}, cerr
+		}
+		return refusedResult(r), nil
 	}
 	code := machine.CodeUnavailable
 	if oe, ok := errors.AsType[*machine.OpenError](err); ok {

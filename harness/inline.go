@@ -78,7 +78,7 @@ func (t *turn) fold(ctx context.Context, evs []session.Event, omitRedacted bool)
 		}
 		held[a.Blob] = s
 	}
-	return session.FoldWith(evs, t.thread, session.FoldOptions{OmitRedacted: omitRedacted, Texts: held})
+	return session.FoldWith(evs, t.thread, session.FoldOptions{OmitRedacted: omitRedacted, Texts: held, Device: t.s.Machine.Kind == session.MachineDevice})
 }
 
 // inlineText is the text of the file a records, from the harness's

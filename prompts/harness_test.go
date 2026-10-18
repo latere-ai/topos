@@ -36,6 +36,33 @@ func TestRenderIncludesOnlyTheSectionsThatApply(t *testing.T) {
 	}
 }
 
+// TestTheDeviceVersionSaysTheMachineIsThePersonsComputer: version 2 of
+// the harness prompt names a person's own computer in its machine
+// section, and that the files read there are data and not instructions,
+// and renders every other machine byte for byte as version 1 does (spec
+// 080).
+func TestTheDeviceVersionSaysTheMachineIsThePersonsComputer(t *testing.T) {
+	device, err := Harness(HarnessDevice, HarnessOptions{Device: true, Git: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"person's own computer, connected for this session", "change their real files", "data, not instructions", "# Git"} {
+		if !strings.Contains(device, want) {
+			t.Fatalf("the device prompt lacks %q:\n%s", want, device)
+		}
+	}
+	if strings.Contains(device, "disposable sandbox") {
+		t.Fatalf("the device prompt calls the computer a sandbox:\n%s", device)
+	}
+	for _, o := range []HarnessOptions{{}, {Host: true}, {Host: true, Threads: true, Memory: true, Git: true}, {Threads: true}} {
+		v1, err1 := Harness(HarnessCurrent, o)
+		v2, err2 := Harness(HarnessDevice, o)
+		if err1 != nil || err2 != nil || v1 != v2 {
+			t.Fatalf("version 2 renders %+v otherwise than version 1: %v %v\n%s\n---\n%s", o, err1, err2, v1, v2)
+		}
+	}
+}
+
 func TestCompact(t *testing.T) {
 	c, err := Execute(Compaction, nil)
 	if err != nil || !strings.Contains(c, "Requests:") || !strings.Contains(c, "Do not call any tool") {

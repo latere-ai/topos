@@ -56,9 +56,14 @@ func DeliverAttachments(ctx context.Context, m machine.Machine, blobs BlobReader
 		written = append(written, a.Path)
 	}
 	var out []session.Event
+	// A person's own computer keeps a message's files outside its folder,
+	// in the session's scratch directory, so its repository is never
+	// touched for them (spec 080).
 	if len(written) > 0 {
-		if err := excludeAttachments(ctx, m); err != nil {
-			errs = append(errs, fmt.Errorf("exclude %s/ from git: %w", session.AttachmentDir, err))
+		if m.Info().Kind != machine.KindDevice {
+			if err := excludeAttachments(ctx, m); err != nil {
+				errs = append(errs, fmt.Errorf("exclude %s/ from git: %w", session.AttachmentDir, err))
+			}
 		}
 		e, err := session.NewEvent(session.TypeAttachmentsDelivered, session.AttachmentsDelivered{Paths: written}, now)
 		if err != nil {

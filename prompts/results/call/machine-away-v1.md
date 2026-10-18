@@ -1,0 +1,1 @@
+The person's computer stopped answering while the call ran, so what the call did is unknown. The files on the computer are kept. The session waits for the computer; once it is back, check what the call was changing before you run anything again.
