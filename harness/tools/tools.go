@@ -180,6 +180,9 @@ type Meta struct {
 	// Publish is a publish call's record (spec 043): the session's app,
 	// the commit, and where its preview or release stands.
 	Publish *session.PublishMeta `json:"publish,omitempty"`
+	// Parse is the parse of a PDF read read through a parsing service
+	// (spec 080), beside the file's path and digest.
+	Parse *ParseMeta `json:"parse,omitempty"`
 }
 
 // Todo is one entry of a thread's list.
@@ -218,11 +221,15 @@ type State struct {
 	// the app as its new slug does (spec 071). A result's App is the
 	// app's slug as the host last answered it.
 	Apps, Standing map[string]*session.PublishMeta
+	// Parses maps the digest of a PDF's bytes to the thread's last result
+	// that read them through a parsing service (spec 080), whose parse a
+	// later read reads again.
+	Parses map[string]ParseMeta
 }
 
 // StateOf folds the tool.result metas of one thread, in sequence order.
 func StateOf(events []session.Event, thread string) State {
-	st := State{Hashes: map[string]string{}, Apps: map[string]*session.PublishMeta{}, Standing: map[string]*session.PublishMeta{}}
+	st := State{Hashes: map[string]string{}, Apps: map[string]*session.PublishMeta{}, Standing: map[string]*session.PublishMeta{}, Parses: map[string]ParseMeta{}}
 	for _, e := range events {
 		if e.Type != session.TypeToolResult || e.Thread != thread || e.Redacted() {
 			continue
@@ -243,6 +250,9 @@ func StateOf(events []session.Event, thread string) State {
 		}
 		if m.Todos != nil {
 			st.Todos = m.Todos
+		}
+		if m.Parse != nil && m.SHA256 != "" {
+			st.Parses[m.SHA256] = *m.Parse
 		}
 		if p := m.Publish; p != nil && p.App != "" {
 			for _, slug := range sameApp(st.Apps, p.AppID) {

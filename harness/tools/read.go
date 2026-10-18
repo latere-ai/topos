@@ -20,7 +20,9 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
+	"latere.ai/x/topos/harness/parsing"
 	"latere.ai/x/topos/prompts"
+	"latere.ai/x/topos/session"
 )
 
 // Limits of read (spec 008).
@@ -44,6 +46,14 @@ const MaxImages = 8
 // it (specs 044 and 064).
 const SniffBytes = 512
 
+// ReadMaxPDF bounds the bytes of a PDF read sends to a parsing service
+// (spec 080): the most bytes one file of a session's folder holds, the
+// bound of the working directory's copy, which is above an attachment's.
+const ReadMaxPDF = session.MaxWorkFileBytes
+
+// pdfMagic opens every PDF.
+var pdfMagic = []byte("%PDF-")
+
 // readSchema states the default from ReadDefaultLimit, so the schema
 // cannot drift from what runRead does.
 var readSchema = fmt.Sprintf(`{
@@ -57,14 +67,40 @@ var readSchema = fmt.Sprintf(`{
   "additionalProperties": false
 }`, ReadDefaultLimit)
 
-func readTool() Tool {
-	return newBuiltin(NameRead, prompts.Text(prompts.ToolRead), readSchema, Properties{Parallel: true, Effect: EffectRead}, runRead)
+// readParsedSchema is readSchema with pages, the schema of a read that
+// reads a PDF through a parsing service (spec 080).
+var readParsedSchema = fmt.Sprintf(`{
+  "type": "object",
+  "properties": {
+    "path": {"type": "string", "minLength": 1, "description": "The file to read: absolute, or relative to the working directory."},
+    "offset": {"type": "integer", "minimum": 1, "description": "The first line to show, counted from 1."},
+    "limit": {"type": "integer", "minimum": 1, "description": "How many lines to show; default %d."},
+    "pages": {"type": "string", "minLength": 1, "maxLength": %d, "description": "For a PDF, the pages to read, such as 1-5, 1-3,7 or 9-; default %s."}
+  },
+  "required": ["path"],
+  "additionalProperties": false
+}`, ReadDefaultLimit, parsing.MaxSelection, parsing.DefaultSelection)
+
+func readTool() Tool { return Read(nil) }
+
+// Read is the read tool. With r, a PDF of the session's folder is read as
+// text through r, a parsing service (spec 080), its description is
+// version 3 and its schema takes pages; with nil it is the built-in of
+// spec 008, which Builtins holds.
+func Read(r parsing.Reader) Tool {
+	props := Properties{Parallel: true, Effect: EffectRead}
+	run := func(ctx context.Context, b *builtin, c Call) (Result, error) { return runRead(ctx, b, c, r) }
+	if r == nil {
+		return newBuiltin(NameRead, prompts.Text(prompts.ToolRead), readSchema, props, run)
+	}
+	return newBuiltin(NameRead, prompts.Text(prompts.ToolReadParsed), readParsedSchema, props, run)
 }
 
 type readInput struct {
 	Path   string `json:"path"`
 	Offset int    `json:"offset"`
 	Limit  int    `json:"limit"`
+	Pages  string `json:"pages"`
 }
 
 // imageTypes are the image formats read returns as an image block, by
@@ -94,7 +130,7 @@ func ImageType(head []byte) string {
 	return ""
 }
 
-func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
+func runRead(ctx context.Context, b *builtin, c Call, pr parsing.Reader) (res Result, err error) {
 	var in readInput
 	if r := b.decode(c, &in); r != nil {
 		return *r, nil
@@ -125,13 +161,16 @@ func runRead(ctx context.Context, b *builtin, c Call) (res Result, err error) {
 	if media := ImageType(head); media != "" {
 		return readImage(ctx, b, c, p, media, fi.Size, br, h)
 	}
+	if pr != nil && bytes.HasPrefix(head, pdfMagic) {
+		return readPDF(ctx, b, c, p, in, pr, br, h)
+	}
 	if kind := documentKind(p); kind != "" && bytes.HasPrefix(head, zipMagic) {
 		return readDocument(ctx, b, c, p, kind, in, br, h)
 	}
 	if bytes.IndexByte(head, 0) >= 0 {
 		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadBinary, prompts.Data{"Path": p}), nil)
 	}
-	return readLines(ctx, b, c, p, in, br, h, "")
+	return readLines(ctx, b, c, p, in, br, h, "", "")
 }
 
 // readDocument returns the text of an office document of kind (spec
@@ -156,13 +195,13 @@ func readDocument(ctx context.Context, b *builtin, c Call, p, kind string, in re
 		return b.result(ctx, c, OutcomeError, prompts.Render(prompts.ReadBinary, prompts.Data{"Path": p}), nil)
 	}
 	head := prompts.Render(prompts.ReadDocument, prompts.Data{"Path": p, "Kind": kind}) + "\n"
-	return readLines(ctx, b, c, p, in, bufio.NewReader(strings.NewReader(text)), h, head)
+	return readLines(ctx, b, c, p, in, bufio.NewReader(strings.NewReader(text)), h, head, "")
 }
 
 // readLines returns the lines of br numbered from in's offset, at most
-// its limit of them, each cut at ReadMaxLineChars, after head, and its
-// meta the digest h holds once br is read to its end.
-func readLines(ctx context.Context, b *builtin, c Call, p string, in readInput, br *bufio.Reader, h hash.Hash, head string) (Result, error) {
+// its limit of them, each cut at ReadMaxLineChars, between head and
+// tail, and its meta the digest h holds once br is read to its end.
+func readLines(ctx context.Context, b *builtin, c Call, p string, in readInput, br *bufio.Reader, h hash.Hash, head, tail string) (Result, error) {
 	offset := max(in.Offset, 1)
 	limit := in.Limit
 	if limit <= 0 {
@@ -203,6 +242,7 @@ func readLines(ctx context.Context, b *builtin, c Call, p string, in readInput, 
 	if last := offset + shown - 1; last < n {
 		out.WriteString(prompts.Render(prompts.ReadMoreLines, prompts.Data{"From": offset, "To": last, "Total": n, "Next": last + 1}) + "\n")
 	}
+	out.WriteString(tail)
 	return b.result(ctx, c, OutcomeOK, out.String(), meta)
 }
 
