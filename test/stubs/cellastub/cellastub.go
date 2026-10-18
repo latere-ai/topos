@@ -64,6 +64,8 @@ const (
 	OpSession = "session"
 	OpFiles   = "files"
 	OpSecret  = "secret"
+	// OpEnvironment is a read of an environment.
+	OpEnvironment = "environment"
 )
 
 // Failure is a refusal answered in place of an operation.
@@ -123,6 +125,8 @@ type Server struct {
 	refailReason  string
 	// sessions are the exec sessions open on each sandbox, by its id.
 	sessions map[string][]*session
+	// hosts are the environments a person's computer serves, by name.
+	hosts    map[string]*hostEnv
 	requests []Recorded
 	errs     []error
 	seq      int
@@ -139,9 +143,21 @@ type sandbox struct {
 	// a start that RefailAfterStart turned into a failure.
 	refail  string
 	records []client.EgressRecord
+	// host is set for a sandbox on an environment a person's computer
+	// serves, whose workspace is a host folder bound in place and whose
+	// scratch directories the routes serve and status.paths names.
+	host bool
+	// base is the directory a mkdir or a move acts in.
+	base string
+	// created is the manifest the create carried, as the stub received it.
+	created v1.Sandbox
 }
 
 func (sb *sandbox) workspace() string { return sb.obj.Spec.Workspace.Path }
+
+// home and tmp are a sandbox's scratch directories.
+func (sb *sandbox) home() string { return filepath.ToSlash(filepath.Join(sb.dir, "home")) }
+func (sb *sandbox) tmp() string  { return filepath.ToSlash(filepath.Join(sb.dir, "tmp")) }
 
 // New starts a stub for the test and closes it when the test ends.
 func New(t testing.TB) *Server {
@@ -154,6 +170,7 @@ func New(t testing.TB) *Server {
 	s := &Server{
 		root:      root,
 		envs:      map[string]bool{DefaultEnvironment: true},
+		hosts:     map[string]*hostEnv{},
 		secrets:   map[string]v1.Secret{},
 		values:    map[string]string{},
 		sandboxes: map[string]*sandbox{},
@@ -395,6 +412,7 @@ func (s *Server) routes() http.Handler {
 		})
 	}
 	handle("POST /v1/sandboxes", OpCreate, s.create)
+	handle("GET /v1/environments/{ref}", OpEnvironment, s.environment)
 	handle("GET /v1/sandboxes/{ref}", OpGet, s.get)
 	handle("PUT /v1/sandboxes/{ref}", OpApply, s.apply)
 	handle("GET /v1/sandboxes/{ref}/egress", OpEgress, s.egressRecords)
@@ -566,9 +584,19 @@ func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 		refuse(w, http.StatusConflict, "name_taken", "a sandbox is named "+name)
 		return
 	}
+	he := s.hosts[env]
+	if he != nil {
+		if code, status, detail := he.admits(obj); code != "" {
+			refuse(w, status, code, detail)
+			return
+		}
+	} else if obj.Spec.Workspace.Host != "" {
+		refuse(w, http.StatusUnprocessableEntity, "capability_unsupported", "the environment "+env+" binds no host folder")
+		return
+	}
 	s.seq++
 	id := fmt.Sprintf("sbx_%026d", s.seq)
-	sb := &sandbox{obj: obj, dir: filepath.Join(s.root, id), starting: s.starting}
+	sb := &sandbox{obj: obj, created: obj, dir: filepath.Join(s.root, id), starting: s.starting, host: he != nil}
 	for _, d := range []string{"workspace", "home", "tmp"} {
 		if err := os.MkdirAll(filepath.Join(sb.dir, d), 0o755); err != nil {
 			refuse(w, http.StatusServiceUnavailable, "driver_unavailable", err.Error())
@@ -576,10 +604,14 @@ func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 		}
 	}
 	// A sandbox's workspace is its directory's, whatever the manifest
-	// asked, as Cella's local driver rewrites it.
+	// asked, as Cella's local driver rewrites it; on a computer's
+	// environment it is the host folder, bound in place.
 	sb.obj.Spec.Workspace.Path = filepath.ToSlash(filepath.Join(sb.dir, "workspace"))
+	if he != nil {
+		sb.obj.Spec.Workspace.Path = obj.Spec.Workspace.Host
+	}
 	sb.obj.Spec.Environment = env
-	if sb.obj.Spec.Image == "" {
+	if sb.obj.Spec.Image == "" && he == nil {
 		sb.obj.Spec.Image = DefaultImage
 	}
 	if sb.obj.Spec.Workdir == "" {
@@ -590,16 +622,31 @@ func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 	if sb.starting > 0 {
 		sb.obj.Status.Phase = "Starting"
 	}
+	if he != nil {
+		sb.obj.Status.Driver, sb.obj.Status.Isolation = "local", he.isolation
+		if he.hold {
+			// The computer asks its owner before the sandbox runs.
+			sb.obj.Status.Phase, sb.obj.Status.StartedAt = "Pending", time.Time{}
+			sb.obj.Status.Conditions = []v1.Condition{{Type: v1.ConditionHostApproval, Status: v1.ConditionUnknown, Reason: v1.ReasonHostPending, Message: "Waiting for the host.", Since: now}}
+		}
+	}
 	s.sandboxes[id] = sb
 	w.Header().Set("Location", "/v1/sandboxes/"+id)
-	httpjson.Write(w, http.StatusCreated, sb.obj)
+	httpjson.Write(w, http.StatusCreated, sb.doc())
 }
 
-// item finds the route's sandbox, or refuses with not_found.
+// item finds the route's sandbox, or refuses with not_found, and with
+// driver_unavailable for one on a computer that is disconnected, as Cella
+// answers while a worker does not answer. The caller holds mu.
 func (s *Server) item(w http.ResponseWriter, r *http.Request) *sandbox {
 	sb := s.find(r.PathValue("ref"))
 	if sb == nil {
 		refuse(w, http.StatusNotFound, "not_found", "no sandbox "+r.PathValue("ref"))
+		return nil
+	}
+	if he := s.hosts[sb.obj.Spec.Environment]; he != nil && he.gone {
+		refuse(w, http.StatusServiceUnavailable, "driver_unavailable", "the worker of "+sb.obj.Spec.Environment+" does not answer")
+		return nil
 	}
 	return sb
 }
@@ -618,7 +665,7 @@ func (s *Server) running(w http.ResponseWriter, r *http.Request) (sandbox, bool)
 		return sandbox{}, false
 	}
 	sb.obj.Status.LastActivityAt = time.Now().UTC()
-	return sandbox{obj: sb.obj, dir: sb.dir}, true
+	return sandbox{obj: sb.obj, dir: sb.dir, host: sb.host}, true
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
@@ -637,7 +684,7 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 			sb.obj.Status.Phase = "Running"
 		}
 	}
-	httpjson.Write(w, http.StatusOK, sb.obj)
+	httpjson.Write(w, http.StatusOK, sb.doc())
 }
 
 func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
@@ -655,7 +702,7 @@ func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb.obj.Status.Phase = "Deleting"
-	httpjson.Write(w, http.StatusAccepted, sb.obj)
+	httpjson.Write(w, http.StatusAccepted, sb.doc())
 }
 
 func (s *Server) start(w http.ResponseWriter, r *http.Request) {
@@ -682,7 +729,7 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		sb.obj.Status.Phase, sb.refail = "Starting", s.refailReason
 	}
 	sb.obj.Status.StartedAt = time.Now().UTC()
-	httpjson.Write(w, http.StatusOK, sb.obj)
+	httpjson.Write(w, http.StatusOK, sb.doc())
 }
 
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
@@ -698,7 +745,7 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 	}
 	sb.obj.Status.Phase = "Stopped"
 	sb.obj.Status.StoppedAt = time.Now().UTC()
-	httpjson.Write(w, http.StatusOK, sb.obj)
+	httpjson.Write(w, http.StatusOK, sb.doc())
 }
 
 func (s *Server) secret(w http.ResponseWriter, r *http.Request) {

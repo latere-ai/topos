@@ -47,6 +47,23 @@ func rendered(p string, fi fs.FileInfo) fileEntry {
 // errNotInWorkspace is a path outside the workspace, Cella's invalid_field.
 var errNotInWorkspace = errors.New("the path must be absolute and below the workspace")
 
+// place holds a path to the workspace, or on a host environment to one
+// of the sandbox's scratch directories, which Cella's file routes serve
+// there too (Cella spec 081), and returns the directory it is in and the
+// path relative to it; os.Root holds it there through links.
+func place(sb sandbox, p string) (string, string, error) {
+	rel, err := inWorkspace(sb, p)
+	if err == nil || !sb.host {
+		return sb.workspace(), rel, err
+	}
+	for _, dir := range []string{sb.home(), sb.tmp()} {
+		if rel, ok := strings.CutPrefix(p, dir+"/"); ok && path.Clean(p) == p {
+			return dir, rel, nil
+		}
+	}
+	return "", "", err
+}
+
 // inWorkspace holds a path to the workspace by Cella's lexical rule and
 // returns it relative to the workspace; os.Root holds it there through
 // links.
@@ -86,12 +103,12 @@ func (s *Server) target(w http.ResponseWriter, r *http.Request, key string) (*os
 		refuse(w, http.StatusBadRequest, "invalid_field", "exactly one "+key+" is required")
 		return nil, "", "", false
 	}
-	rel, err := inWorkspace(sb, values[0])
+	dir, rel, err := place(sb, values[0])
 	if err != nil {
 		refuse(w, http.StatusBadRequest, "invalid_field", err.Error())
 		return nil, "", "", false
 	}
-	root, err := os.OpenRoot(sb.workspace())
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		refuse(w, http.StatusServiceUnavailable, "driver_unavailable", err.Error())
 		return nil, "", "", false
@@ -262,8 +279,9 @@ func (s *Server) fileRemove(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// jsonTarget reads a JSON body naming paths, for mkdir and move.
-func (s *Server) jsonTarget(w http.ResponseWriter, r *http.Request, v any) (sandbox, *os.Root, bool) {
+// jsonTarget reads a JSON body naming paths, for mkdir and move, and
+// opens the directory the first of them, at, is in.
+func (s *Server) jsonTarget(w http.ResponseWriter, r *http.Request, v any, at func() string) (sandbox, *os.Root, bool) {
 	sb, ok := s.running(w, r)
 	if !ok {
 		return sandbox{}, nil, false
@@ -274,7 +292,12 @@ func (s *Server) jsonTarget(w http.ResponseWriter, r *http.Request, v any) (sand
 		refuse(w, http.StatusBadRequest, "invalid_field", err.Error())
 		return sandbox{}, nil, false
 	}
-	root, err := os.OpenRoot(sb.workspace())
+	dir, _, err := place(sb, at())
+	if err != nil {
+		dir = sb.workspace()
+	}
+	sb.base = dir
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		refuse(w, http.StatusServiceUnavailable, "driver_unavailable", err.Error())
 		return sandbox{}, nil, false
@@ -282,16 +305,25 @@ func (s *Server) jsonTarget(w http.ResponseWriter, r *http.Request, v any) (sand
 	return sb, root, true
 }
 
+// within is p relative to the directory jsonTarget opened.
+func within(sb sandbox, p string) (string, error) {
+	dir, rel, err := place(sb, p)
+	if err == nil && dir != sb.base {
+		err = errNotInWorkspace
+	}
+	return rel, err
+}
+
 func (s *Server) fileMkdir(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path string `json:"path"`
 	}
-	sb, root, ok := s.jsonTarget(w, r, &req)
+	sb, root, ok := s.jsonTarget(w, r, &req, func() string { return req.Path })
 	if !ok {
 		return
 	}
 	defer func() { s.record(root.Close()) }()
-	rel, err := inWorkspace(sb, req.Path)
+	rel, err := within(sb, req.Path)
 	if err == nil && rel == "." {
 		err = errors.New("the workspace itself is not the caller's to make")
 	}
@@ -313,13 +345,13 @@ func (s *Server) fileMove(w http.ResponseWriter, r *http.Request) {
 		From string `json:"from"`
 		To   string `json:"to"`
 	}
-	sb, root, ok := s.jsonTarget(w, r, &req)
+	sb, root, ok := s.jsonTarget(w, r, &req, func() string { return req.From })
 	if !ok {
 		return
 	}
 	defer func() { s.record(root.Close()) }()
-	from, ferr := inWorkspace(sb, req.From)
-	to, terr := inWorkspace(sb, req.To)
+	from, ferr := within(sb, req.From)
+	to, terr := within(sb, req.To)
 	if err := errors.Join(ferr, terr); err != nil || from == "." || to == "." {
 		refuse(w, http.StatusBadRequest, "invalid_field", "both paths are below the workspace, and neither is the workspace itself")
 		return
