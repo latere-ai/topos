@@ -315,7 +315,7 @@ var opDescriptions = map[string]string{
 		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, route the routed name the authorizer chose on the way, when it names one, and message_text true when its allow asks for the opening of each later message. " +
 		"A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it, and never its opening, since the session has no allow yet. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +
-		NetworkRule + " " + ConnectionsRule,
+		NetworkRule + " " + ConnectionsRule + " " + DeviceRule,
 	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. " +
 		"A fork names the session it was forked from as parent {session_id, seq} and the session at the top of its fork tree as root; a session no fork made has neither, and its tree is keyed by its own id. " +
 		"root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. " +
@@ -333,11 +333,11 @@ var opDescriptions = map[string]string{
 		"A fork holds its parent's events, so a session and the session it was forked from can both match. A q that is empty, holds no word, or is longer than %d characters is invalid_request.",
 		session.MaxSearchText, session.MaxSearchMatches, session.SearchExcerpt, session.MaxSearchQuery),
 	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there.",
-	"resumeSession": "Resume a session idle on its budget once the cap is raised.",
+	"resumeSession": "Resume a session idle on its budget once the cap is raised, or one idle on machine_waiting once its computer is back or its owner allowed the session: that resume adds no message, keeps the session's budget, and takes no max_cost_usd_micro, which is invalid_request.",
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
 		"interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
-	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule,
+	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule,
 	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. The answer is read by the blob's leading bytes: "+
 		"PNG, JPEG, GIF or WebP is that image type with Content-Disposition inline, and any other blob, an SVG included, application/octet-stream with Content-Disposition attachment. "+
 		"A file an answer linked that is no such image is a download here whatever its type, which the media_type of its files.kept entry names. "+
@@ -429,7 +429,7 @@ var opDescriptions = map[string]string{
 		"each a frame of id: <seq>, event: <type> and data: <the event's JSON>. A comment line is sent every %d seconds, and the stream closes after the event that ends the session. "+
 		"With deltas=1 the stream also carries the session's live output while a response arrives, best effort: frames of event: delta whose data is a Delta, with no id, "+
 		"so a reconnect with the browser's last event id resumes the log where it was. A delta is never appended and never replayed. A subject holds at most %d streams open at once on one replica; the next is rate_limited.",
-		int(DefaultHeartbeat.Seconds()), StreamsPerSubject) + " " + KeptRule + " " + MachineRule + " " + WorkRule,
+		int(DefaultHeartbeat.Seconds()), StreamsPerSubject) + " " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule,
 	"forkSession": "Start a new session from a session's log at a turn boundary, or just before a person's message to send an edited message in its place, an ended or expired session included. " +
 		"The body is {\"at_seq\": N, \"before_seq\": N, \"title\": \"...\", \"message\": {...}, \"tree\": \"new\", \"attended\": true}, every member optional, or empty. attended is the fork's own declaration that a person answers its questions, as at a create, absent false; " +
 		"a fork made while a question is open copies the open call, and the fork's first message closes it in place of an answer. at_seq is the sequence of a turn boundary, a session.status of the session's own thread that is idle, whatever its stop reason, " +
