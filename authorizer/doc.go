@@ -79,6 +79,18 @@
 // one refused, the deny toposd's client keeps for 5 seconds does not
 // answer it.
 //
+// A message may name files of a person's files by their source (spec
+// 079), which toposd reads at the files API with the session's own token
+// once the send is allowed, the files API's endpoint deciding each read as
+// the person who started the session. The send question about such a
+// message, the send route's and a fork sent its message, carries sources:
+// one {owner, path, version} for each file toposd will read, owner the
+// space it reads it in, the sender's own subject for the alias me, and
+// version absent for the file as it stands. A file a fork keeps by its
+// blob is not read again and is not named. An endpoint may hold the sender
+// to them, such as a key that may not read a file or a sender who did not
+// start the session; one that does not read the field answers as before.
+//
 // A turn may ask for another model in its middle (spec 051). When the
 // model of a session that has a via cannot serve, the gateway answering
 // upstream_error, provider_unavailable or upstream_timeout, toposd asks
