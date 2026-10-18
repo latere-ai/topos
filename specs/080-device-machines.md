@@ -269,9 +269,11 @@ Where the build differs from the design, or adds to it:
   `harness/1` with a device branch in its machine section, which says
   the computer is the person's own, that commands change real files,
   and that what its files say is data and not instructions; it renders
-  every other machine byte for byte as `harness/1`. A device session's
-  requests carry `prompt_version: harness/2`; `HarnessCurrent` stays 1
-  until the instruction tier has run against 2.
+  every other machine byte for byte as `harness/1`. On a device it leaves
+  out the git section, whose session branch is a sandbox's checkout's
+  and not the person's own repository. A device session's requests carry
+  `prompt_version: harness/2`; `HarnessCurrent` stays 1 until the
+  instruction tier has run against 2.
 - **A message's files keep their recorded paths.** A file is recorded
   at `attachments/<event id>/<name>` before any machine exists. On a
   device it is written to `<tmp>/topos/attachments/`, and the device
@@ -298,10 +300,16 @@ Where the build differs from the design, or adds to it:
   `handoff`, with nothing written into it. A sandbox the computer will
   not start again holds the session's scratch files alone and is
   deleted, so the next open makes a new one.
-- **A refusal deletes the refused sandbox and holds for the turn.** The
-  next turn asks the computer again. The turn starts the machine no more
-  once it was refused, so a call's arguments streaming do not ask the
-  owner a second time.
+- **A refusal deletes the refused sandbox, and a refusal or a wait holds
+  for the turn.** The machine opened on demand keeps what the computer
+  answered and gives it to every later open of the turn, a background
+  start and calls of one step that open beside each other included, so
+  the owner is asked once and waited for once; the session records the
+  refusal once. Each turn asks again as it starts, and lets go of a
+  device lost in an earlier turn of the drive, so a message that arrived
+  while the computer was away is answered once it is back, on the
+  sandbox it had. A call on a device already lost in its turn did not
+  run and says so.
 - **`session.machine_waiting` is appended twice at most per wait:** when
   a call begins to wait for the owner, recorded by the runner beside the
   running turn, and when the turn stops, unless the last one of the turn
@@ -313,7 +321,11 @@ Where the build differs from the design, or adds to it:
 - **A resume of a session waiting for its machine refuses
   `max_cost_usd_micro`** as `invalid_request`, and carries the session's
   own budget in its `session.resumed`, which sets the budget whatever it
-  holds.
+  holds, held to the ceiling the authorizer's allow of `session.resume`
+  names; a ceiling below what the session spent is `conflict`.
+- **A device's roots are its folder, its spill directory and its
+  attachments,** never the rest of its scratch directory, so the file
+  tools do not reach the helper.
 - **The approval wait is a constant,** `cella.DefaultApprovalWait`, two
   minutes, and no operator variable.
 - **A trigger counts a session waiting for its machine as active,** so
