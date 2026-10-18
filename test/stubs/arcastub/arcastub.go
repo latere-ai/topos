@@ -342,7 +342,9 @@ func (s *Server) read(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	above := s.redirectAbove
 	s.mu.Unlock()
-	if above < 0 || int64(len(o.Data)) > above {
+	// ?inline=0 asks for the bucket's address at any size, as the files
+	// API answers it.
+	if r.URL.Query().Get("inline") == "0" || above < 0 || int64(len(o.Data)) > above {
 		k := hex.EncodeToString([]byte(owner + "\x00" + path + "\x00" + version))
 		w.Header().Set("Location", s.bucket.URL+"/objects/"+k)
 		w.WriteHeader(http.StatusFound)
