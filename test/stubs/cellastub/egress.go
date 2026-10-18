@@ -152,7 +152,7 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 	sb.obj.Spec.Network = want.Network
 	sb.obj.Spec.Lifecycle = want.Lifecycle
 	sb.obj.Spec.Resources = want.Resources
-	httpjson.Write(w, http.StatusOK, sb.doc())
+	httpjson.Write(w, http.StatusOK, sb.obj)
 }
 
 // egressRecords serves GET /v1/sandboxes/{ref}/egress: the sandbox's

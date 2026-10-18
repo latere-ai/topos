@@ -4,7 +4,6 @@
 package cellastub
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -38,20 +37,6 @@ func onLaptop(folder string) func(*v1.Sandbox) {
 	}
 }
 
-// pathsOf reads status.paths from a sandbox's own bytes.
-func pathsOf(t *testing.T, raw []byte) (string, string) {
-	t.Helper()
-	var doc struct {
-		Status struct {
-			Paths struct{ Home, Tmp string } `json:"paths"`
-		} `json:"status"`
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		t.Fatal(err)
-	}
-	return doc.Status.Paths.Home, doc.Status.Paths.Tmp
-}
-
 // TestAHostEnvironment: a person's computer's environment reads Ready
 // with its host and isolation; a sandbox on it binds the granted folder
 // in place, takes no image, names its scratch directories in
@@ -72,17 +57,17 @@ func TestAHostEnvironment(t *testing.T) {
 	_, _, err = c.GetEnvironment(ctx, "nowhere")
 	code(t, err, "not_found")
 
-	sb, raw, err := c.CreateSandbox(ctx, manifest(t, "dev", onLaptop(folder)))
+	sb, _, err := c.CreateSandbox(ctx, manifest(t, "dev", onLaptop(folder)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if sb.Spec.Workspace.Path != folder || sb.Spec.Workdir != folder || sb.Spec.Image != "" || sb.Status.Isolation != v1.IsolationProcess || sb.Status.Phase != "Running" {
 		t.Fatalf("the sandbox: %+v", sb)
 	}
-	home, tmp := pathsOf(t, raw)
-	if home == "" || tmp == "" || strings.HasPrefix(tmp, folder) {
-		t.Fatalf("status.paths: %q %q", home, tmp)
+	if sb.Status.Paths == nil || sb.Status.Paths.Home == "" || strings.HasPrefix(sb.Status.Paths.Tmp, folder) {
+		t.Fatalf("status.paths: %+v", sb.Status.Paths)
 	}
+	tmp := sb.Status.Paths.Tmp
 	if created, ok := s.Created("dev"); !ok || created.Spec.Workspace.Path != "" || created.Spec.Workspace.Host != folder {
 		t.Fatalf("the create as received: %+v", created.Spec)
 	}

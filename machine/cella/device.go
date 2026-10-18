@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -67,22 +66,22 @@ func (m *Machine) attachDevice(ctx context.Context) error {
 	if err := m.readHost(ctx); err != nil {
 		return err
 	}
-	sb, raw, err := m.c.GetSandbox(ctx, m.name)
+	sb, _, err := m.c.GetSandbox(ctx, m.name)
 	created := false
 	switch {
 	case client.CodeOf(err) == "not_found":
-		sb, raw, created, err = m.createDevice(ctx)
+		sb, created, err = m.createDevice(ctx)
 	case err != nil:
 		err = m.offline(refused("find the sandbox "+m.name, err))
 	}
 	if err != nil {
 		return err
 	}
-	sb, raw, restart, err := m.deviceRunning(ctx, sb, raw)
+	sb, restart, err := m.deviceRunning(ctx, sb)
 	if err != nil {
 		return err
 	}
-	tmp, err := scratchOf(raw)
+	tmp, err := scratchOf(sb)
 	if err != nil {
 		return fmt.Errorf("%w: the sandbox %s: %w", ErrUnavailable, m.name, err)
 	}
@@ -93,8 +92,7 @@ func (m *Machine) attachDevice(ctx context.Context) error {
 	return m.ensureDeviceHelper(ctx, sb.Status.ID)
 }
 
-// deviceRunning holds until a device's sandbox runs, and answers it with
-// the bytes of its last read. While the computer holds it for its owner,
+// deviceRunning holds until a device's sandbox runs. While the computer holds it for its owner,
 // the first such read tells the session through machine.TellWaiting, so
 // a client shows the person to allow it on the computer, and after
 // ApprovalWait it answers machine.Waiting approval with the create left
@@ -104,7 +102,7 @@ func (m *Machine) attachDevice(ctx context.Context) error {
 // not start again is deleted, since it holds the session's scratch files
 // alone, and the next open makes a new one on the same computer and in
 // the same folder.
-func (m *Machine) deviceRunning(ctx context.Context, sb v1.Sandbox, raw []byte) (v1.Sandbox, []byte, *machine.Restart, error) {
+func (m *Machine) deviceRunning(ctx context.Context, sb v1.Sandbox) (v1.Sandbox, *machine.Restart, error) {
 	deadline := time.Now().Add(m.o.StartTimeout)
 	var asked time.Time
 	for {
@@ -113,20 +111,20 @@ func (m *Machine) deviceRunning(ctx context.Context, sb v1.Sandbox, raw []byte) 
 			c, _ := hostApproval(sb)
 			r := &machine.Refused{Environment: m.o.Environment, Detail: cmpOr(c.Message, sb.Status.Reason), Timeout: sb.Status.Reason == v1.ReasonHostTimeout}
 			if _, err := m.c.Delete(ctx, client.KindSandbox, sb.Status.ID); err != nil && client.CodeOf(err) != "not_found" {
-				return sb, raw, nil, errors.Join(r, refused("delete the refused sandbox "+m.name, err))
+				return sb, nil, errors.Join(r, refused("delete the refused sandbox "+m.name, err))
 			}
-			return sb, raw, nil, r
+			return sb, nil, r
 		case sb.Status.Phase == "Running":
-			return sb, raw, nil, nil
+			return sb, nil, nil
 		case heldBy(sb):
 			if asked.IsZero() {
 				asked = time.Now()
 				if err := machine.TellWaiting(ctx, machine.Waiting{Reason: machine.WaitApproval, Environment: m.o.Environment}); err != nil {
-					return sb, raw, nil, err
+					return sb, nil, err
 				}
 			}
 			if time.Since(asked) >= m.o.ApprovalWait {
-				return sb, raw, nil, &machine.Waiting{Reason: machine.WaitApproval, Environment: m.o.Environment,
+				return sb, nil, &machine.Waiting{Reason: machine.WaitApproval, Environment: m.o.Environment,
 					Err: fmt.Errorf("the computer's owner has not answered for %s; the create still waits on the computer", m.o.ApprovalWait)}
 			}
 			// A sandbox the owner allows starts afresh within its own window.
@@ -135,32 +133,28 @@ func (m *Machine) deviceRunning(ctx context.Context, sb v1.Sandbox, raw []byte) 
 			started, restart, err := m.running(ctx, sb)
 			if errors.Is(err, errFailed) || errors.Is(err, errGone) || errors.Is(err, errFailedAgain) {
 				if _, derr := m.c.Delete(ctx, client.KindSandbox, sb.Status.ID); derr != nil && client.CodeOf(derr) != "not_found" {
-					return sb, raw, nil, refused("delete the failed sandbox "+m.name, derr)
+					return sb, nil, refused("delete the failed sandbox "+m.name, derr)
 				}
-				return sb, raw, nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+				return sb, nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 			}
 			if err != nil {
-				return sb, raw, nil, m.offline(err)
+				return sb, nil, m.offline(err)
 			}
-			_, raw, err = m.c.GetSandbox(ctx, started.Status.ID)
-			if err != nil {
-				return sb, raw, nil, m.offline(refused("read the sandbox "+m.name, err))
-			}
-			return started, raw, restart, nil
+			return started, restart, nil
 		case !time.Now().Before(deadline):
-			return sb, raw, nil, fmt.Errorf("%w: the sandbox %s is %s after %s", ErrUnavailable, m.name, sb.Status.Phase, m.o.StartTimeout)
+			return sb, nil, fmt.Errorf("%w: the sandbox %s is %s after %s", ErrUnavailable, m.name, sb.Status.Phase, m.o.StartTimeout)
 		}
 		if err := sleep(ctx, m.o.PollInterval); err != nil {
-			return sb, raw, nil, err
+			return sb, nil, err
 		}
-		next, nraw, err := m.c.GetSandbox(ctx, sb.Status.ID)
+		next, _, err := m.c.GetSandbox(ctx, sb.Status.ID)
 		switch {
 		case client.CodeOf(err) == "not_found":
-			return sb, raw, nil, fmt.Errorf("%w: the sandbox %s is gone", ErrUnavailable, m.name)
+			return sb, nil, fmt.Errorf("%w: the sandbox %s is gone", ErrUnavailable, m.name)
 		case err != nil:
-			return sb, raw, nil, m.offline(refused("read the sandbox "+m.name, err))
+			return sb, nil, m.offline(refused("read the sandbox "+m.name, err))
 		}
-		sb, raw = next, nraw
+		sb = next
 	}
 }
 
@@ -205,21 +199,21 @@ func (m *Machine) offline(err error) error {
 // run: the computer may hold the create while it asks its owner, which
 // admitted waits on. A create that loses a race with another runner's
 // takes the sandbox that runner made.
-func (m *Machine) createDevice(ctx context.Context) (v1.Sandbox, []byte, bool, error) {
+func (m *Machine) createDevice(ctx context.Context) (v1.Sandbox, bool, error) {
 	body, err := m.manifest(ctx)
 	if err != nil {
-		return v1.Sandbox{}, nil, false, err
+		return v1.Sandbox{}, false, err
 	}
-	sb, raw, err := m.c.CreateSandbox(ctx, client.JSON(body))
+	sb, _, err := m.c.CreateSandbox(ctx, client.JSON(body))
 	created := true
 	if client.CodeOf(err) == "name_taken" {
-		sb, raw, err = m.c.GetSandbox(ctx, m.name)
+		sb, _, err = m.c.GetSandbox(ctx, m.name)
 		created = false
 	}
 	if err != nil {
-		return v1.Sandbox{}, nil, false, m.offline(refused("create the sandbox "+m.name, err))
+		return v1.Sandbox{}, false, m.offline(refused("create the sandbox "+m.name, err))
 	}
-	return sb, raw, created, nil
+	return sb, created, nil
 }
 
 // heldBy reports whether the computer holds sb for its owner's answer:
@@ -246,20 +240,8 @@ func hostApproval(sb v1.Sandbox) (v1.Condition, bool) {
 // scratchOf is the temporary directory a sandbox's status.paths names: a
 // driver that cannot remap paths, as a person's computer's cannot,
 // reports its scratch directories by their real paths (Cella spec 081).
-// It is read from the answer's own bytes, so a control plane whose
-// manifest types this client predates still names it.
-func scratchOf(raw []byte) (string, error) {
-	var doc struct {
-		Status struct {
-			Paths *struct {
-				Tmp string `json:"tmp"`
-			} `json:"paths"`
-		} `json:"status"`
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return "", fmt.Errorf("read the sandbox's status: %w", err)
-	}
-	p := doc.Status.Paths
+func scratchOf(sb v1.Sandbox) (string, error) {
+	p := sb.Status.Paths
 	switch {
 	case p == nil || p.Tmp == "":
 		return "", errors.New("the computer reports no temporary directory for the sandbox, which a device needs for its helper")

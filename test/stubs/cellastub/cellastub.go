@@ -624,6 +624,7 @@ func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 	}
 	if he != nil {
 		sb.obj.Status.Driver, sb.obj.Status.Isolation = "local", he.isolation
+		sb.obj.Status.Paths = &v1.SandboxPaths{Home: sb.home(), Tmp: sb.tmp()}
 		if he.hold {
 			// The computer asks its owner before the sandbox runs.
 			sb.obj.Status.Phase, sb.obj.Status.StartedAt = "Pending", time.Time{}
@@ -632,7 +633,7 @@ func (s *Server) createSandbox(w http.ResponseWriter, obj v1.Sandbox) {
 	}
 	s.sandboxes[id] = sb
 	w.Header().Set("Location", "/v1/sandboxes/"+id)
-	httpjson.Write(w, http.StatusCreated, sb.doc())
+	httpjson.Write(w, http.StatusCreated, sb.obj)
 }
 
 // item finds the route's sandbox, or refuses with not_found, and with
@@ -684,7 +685,7 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 			sb.obj.Status.Phase = "Running"
 		}
 	}
-	httpjson.Write(w, http.StatusOK, sb.doc())
+	httpjson.Write(w, http.StatusOK, sb.obj)
 }
 
 func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
@@ -702,7 +703,7 @@ func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb.obj.Status.Phase = "Deleting"
-	httpjson.Write(w, http.StatusAccepted, sb.doc())
+	httpjson.Write(w, http.StatusAccepted, sb.obj)
 }
 
 func (s *Server) start(w http.ResponseWriter, r *http.Request) {
@@ -729,7 +730,7 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		sb.obj.Status.Phase, sb.refail = "Starting", s.refailReason
 	}
 	sb.obj.Status.StartedAt = time.Now().UTC()
-	httpjson.Write(w, http.StatusOK, sb.doc())
+	httpjson.Write(w, http.StatusOK, sb.obj)
 }
 
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
@@ -745,7 +746,7 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 	}
 	sb.obj.Status.Phase = "Stopped"
 	sb.obj.Status.StoppedAt = time.Now().UTC()
-	httpjson.Write(w, http.StatusOK, sb.doc())
+	httpjson.Write(w, http.StatusOK, sb.obj)
 }
 
 func (s *Server) secret(w http.ResponseWriter, r *http.Request) {

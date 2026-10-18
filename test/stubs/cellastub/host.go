@@ -4,7 +4,6 @@
 package cellastub
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -185,30 +184,6 @@ func (s *Server) environment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpjson.Write(w, http.StatusOK, env)
-}
-
-// doc is the sandbox as a route answers it: its object, and on a host
-// environment its scratch directories in status.paths, which this
-// client's manifest types do not hold yet. The caller holds mu.
-func (sb *sandbox) doc() any {
-	if !sb.host {
-		return sb.obj
-	}
-	b, err := json.Marshal(sb.obj)
-	if err != nil {
-		return sb.obj
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return sb.obj
-	}
-	status, _ := m["status"].(map[string]any)
-	if status == nil {
-		status = map[string]any{}
-		m["status"] = status
-	}
-	status["paths"] = map[string]string{"home": sb.home(), "tmp": sb.tmp()}
-	return m
 }
 
 // drop ends the session as a worker that went away does: the stream
