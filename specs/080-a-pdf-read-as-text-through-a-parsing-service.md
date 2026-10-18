@@ -3,7 +3,7 @@ title: "A PDF read as text through a parsing service: read sends a PDF of the se
 status: in-progress
 track: core
 depends_on: [007-models.md, 008-tools.md, 018-credentials-and-secrets.md, 047-web-search.md, 068-a-sessions-files-in-a-files-store.md, 073-a-working-directory-kept-in-the-sessions-folder.md, 079-files-a-person-brings-into-a-message.md]
-affects: [harness/parsing/, harness/tools/, internal/parsing/, internal/filestore/, internal/hosted/, internal/config/, internal/server/, cmd/toposd/, prompts/, docs/]
+affects: [harness/parsing/, harness/tools/, internal/parser/, internal/filestore/, test/stubs/arcastub/, internal/hosted/, internal/config/, internal/server/, cmd/toposd/, prompts/, docs/]
 effort: medium
 created: 2026-10-18
 updated: 2026-10-18
