@@ -101,7 +101,9 @@ type Writer struct {
 	Since   time.Time `json:"since"`
 }
 
-// Machine is the machine a session asks for (spec 009).
+// Machine is the machine a session asks for (spec 009). A device names
+// the Cella environment a person's own computer serves as Environment
+// and the folder on it the session works in as Workdir (spec 080).
 type Machine struct {
 	Kind        string `json:"kind"`
 	Environment string `json:"environment,omitempty"`
@@ -109,10 +111,13 @@ type Machine struct {
 	Workdir     string `json:"workdir,omitempty"`
 }
 
-// Machine kinds.
+// Machine kinds. MachineDevice is a person's own computer, reached
+// through the Cella environment it serves (spec 080), and is named per
+// session at its create, never in an agent's manifest.
 const (
-	MachineHost  = "host"
-	MachineCella = "cella"
+	MachineHost   = "host"
+	MachineCella  = "cella"
+	MachineDevice = "device"
 )
 
 // Resource is one attachment of a session: a memory store or a
@@ -299,11 +304,16 @@ type Session struct {
 	// a session no fork made, whose tree's root is itself (spec 056). It
 	// is fixed at the fork, and names a deleted session as readily as a
 	// live one.
-	Root      string    `json:"root,omitempty"`
-	TriggerID string    `json:"trigger_id,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Root      string `json:"root,omitempty"`
+	TriggerID string `json:"trigger_id,omitempty"`
+	// TriggerFiresOn is what the trigger that started the session fires
+	// on, TriggerSchedule or TriggerEvents, fixed at the create; empty on
+	// a session a person started. A person's own computer names it to its
+	// owner when it asks to allow the session (spec 080).
+	TriggerFiresOn string    `json:"trigger_fires_on,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
 	// ArchivedAt is when the session was filed away from the lists, nil
 	// while it is not. Only a store's SetArchived writes it; no event
 	// does, so an ended session's log stays closed (spec 015).

@@ -4,7 +4,9 @@
 // Package machine is where a session's tools run (spec 009): the
 // Machine interface, the credential deny-list every machine enforces,
 // and the Go-native search both machines share. machine/host is the
-// person's own computer; machine/cella is a Cella sandbox.
+// computer the runner runs on; machine/cella is a Cella sandbox, and a
+// person's own computer reached through the Cella environment it serves
+// (spec 080).
 package machine
 
 import (
@@ -15,10 +17,14 @@ import (
 	"time"
 )
 
-// Kinds of machine.
+// Kinds of machine. KindDevice is a person's own computer reached
+// through the Cella environment it serves (spec 080): it scores as a host
+// and never as a sandbox, since its commands change the person's real
+// files.
 const (
-	KindHost  = "host"
-	KindCella = "cella"
+	KindHost   = "host"
+	KindCella  = "cella"
+	KindDevice = "device"
 )
 
 // Info describes a machine as session.machine records it.
