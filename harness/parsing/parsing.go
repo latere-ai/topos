@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package parsing is the contract of the parsing service read sends a
-// PDF to (spec 080): the request of one read, the document it answers,
+// PDF to (spec 082): the request of one read, the document it answers,
 // the bounds of a read, the page selection a call names, and the Reader a
 // runner hands the tool. It dials nothing (spec 001): the HTTP client of
 // the service is toposd's, and an embedder may hand the tool any Reader.
@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// The bounds of spec 080. The tool's schema and its description are
+// The bounds of spec 082. The tool's schema and its description are
 // rendered from them or held to them by a test.
 const (
 	// DefaultPages is how many pages from the first a read returns when

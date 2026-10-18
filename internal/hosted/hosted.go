@@ -112,7 +112,7 @@ type Options struct {
 	// files in one is a setup error.
 	FilesAudience string
 	// ParsingURL is TOPOS_PARSING_URL, the parsing service read sends a
-	// PDF of a session's folder to (spec 080); empty sends none, and read
+	// PDF of a session's folder to (spec 082); empty sends none, and read
 	// answers a PDF as a binary file.
 	ParsingURL string
 	Clock      func() time.Time
@@ -199,7 +199,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	}
 	reg := tools.NewRegistry()
 	// read reads a PDF of the session's folder through the installation's
-	// parsing service when it has one (spec 080).
+	// parsing service when it has one (spec 082).
 	parsed := b.parsingReader(ctx, s, cfg.Files)
 	for _, t := range tools.Builtins() {
 		if slices.Contains(ac.Tools, t.Definition().Name) {

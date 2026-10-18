@@ -394,7 +394,7 @@ func TestArcaOverwritesAndDeletes(t *testing.T) {
 	}
 }
 
-// TestPresign (spec 080): a presign reads the ref with ?inline=0 and the
+// TestPresign (spec 082): a presign reads the ref with ?inline=0 and the
 // bearer and answers the Location without following it, an address that
 // reads the bytes with no credential; nothing at the ref is
 // ErrFileNotFound, a ref out of the folder's rules is refused, and an

@@ -673,7 +673,7 @@ func TestTheFilesAudience(t *testing.T) {
 	}
 }
 
-// TestParsingURL (spec 080): TOPOS_PARSING_URL is read without its
+// TestParsingURL (spec 082): TOPOS_PARSING_URL is read without its
 // trailing slash by the server and a runner, and a URL that is not one
 // stops the start.
 func TestParsingURL(t *testing.T) {

@@ -475,7 +475,7 @@ func (a *Arca) Open(ctx context.Context, ref string) (io.ReadCloser, int64, erro
 }
 
 // Presign answers an address that reads the file at ref with no
-// credential, for the few minutes the files API signs it for (spec 080):
+// credential, for the few minutes the files API signs it for (spec 082):
 // a read of ?inline=0, which the files API answers with a redirect at any
 // size, whose Location is taken and not followed. The address goes to a
 // service that fetches the file itself.

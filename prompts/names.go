@@ -41,7 +41,7 @@ const (
 const (
 	// ToolRead version 2 names the office documents read reads as text
 	// (spec 079). ToolReadParsed, version 3, is read's description where a
-	// parsing service reads a PDF as text (spec 080): it adds pages and
+	// parsing service reads a PDF as text (spec 082): it adds pages and
 	// the PDF.
 	ToolRead       Name = "tools/read-v2"
 	ToolReadParsed Name = "tools/read-v3"
@@ -369,7 +369,7 @@ const (
 	ReadSlide    Name = "results/read/slide-v1"
 	// ReadPDF takes Path, Count (its pages, counted), More, Failed and
 	// Shown: the line that opens a PDF's text a parsing service read
-	// (spec 080). ReadMorePages takes Shown, Pages and Next, the line that
+	// (spec 082). ReadMorePages takes Shown, Pages and Next, the line that
 	// ends it when more pages follow. ReadPDFUnread takes Why (kept,
 	// large, timeout, refused, failed or unavailable), Max, Timeout,
 	// Message and Code: the sentence after the binary answer of a PDF the

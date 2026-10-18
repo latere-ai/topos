@@ -18,7 +18,7 @@ import (
 )
 
 // The reasons a PDF was not read as text, which results/read/pdf-unread
-// words for the model (spec 080).
+// words for the model (spec 082).
 const (
 	unreadKept        = "kept"
 	unreadLarge       = "large"
@@ -33,7 +33,7 @@ const (
 const codeDeadline = "deadline_exceeded"
 
 // ParseMeta is the parse of a PDF a read read through a parsing service
-// (spec 080): the service's id of it, how many pages it read, whether
+// (spec 082): the service's id of it, how many pages it read, whether
 // the document has more than those, the pages the result shows, and
 // whether what the read cost could not be priced. A later drive of the
 // thread reads the parse again by its id.

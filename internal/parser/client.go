@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package parser is toposd's client of the parsing service read sends a
-// PDF to (spec 080), and the Reader the hosted builder hands the tool:
+// PDF to (spec 082), and the Reader the hosted builder hands the tool:
 // it finds the file in the session's folder, has the files API presign
 // it, submits it with its origin, waits for the parse, prices its model
 // reads and answers the pages a call asks for as Markdown. Every request

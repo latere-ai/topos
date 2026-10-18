@@ -103,7 +103,7 @@ func (l *lectio) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// TestReadParsesAPDFOfTheFolder (spec 080): over the stub Cella, the stub
+// TestReadParsesAPDFOfTheFolder (spec 082): over the stub Cella, the stub
 // files API and a stub parsing service, a hosted session whose message
 // attached a PDF reads it with read: the service is reached with the
 // session's own token for lectio, fetches the file at the address the
@@ -198,7 +198,7 @@ func TestReadParsesAPDFOfTheFolder(t *testing.T) {
 	}
 }
 
-// TestTheParsingReaderNeedsItsSettings (spec 080): read is given no
+// TestTheParsingReaderNeedsItsSettings (spec 082): read is given no
 // parser without TOPOS_PARSING_URL, a folder, a files store that
 // presigns, or a token source.
 func TestTheParsingReaderNeedsItsSettings(t *testing.T) {
@@ -246,7 +246,7 @@ func (c *cloud) readInAResult(text string) bool {
 	return false
 }
 
-// TestAReaderModelIsPricedAtTheDoorsFigures (spec 080): a model the
+// TestAReaderModelIsPricedAtTheDoorsFigures (spec 082): a model the
 // embedded catalog prices is priced without a door; one it does not is
 // priced at the figures the Lux door for OpenAI serves for it, read with
 // the session's own model key; a model the door does not price, and an

@@ -181,7 +181,7 @@ type Meta struct {
 	// the commit, and where its preview or release stands.
 	Publish *session.PublishMeta `json:"publish,omitempty"`
 	// Parse is the parse of a PDF read read through a parsing service
-	// (spec 080), beside the file's path and digest.
+	// (spec 082), beside the file's path and digest.
 	Parse *ParseMeta `json:"parse,omitempty"`
 }
 
@@ -222,7 +222,7 @@ type State struct {
 	// app's slug as the host last answered it.
 	Apps, Standing map[string]*session.PublishMeta
 	// Parses maps the digest of a PDF's bytes to the thread's last result
-	// that read them through a parsing service (spec 080), whose parse a
+	// that read them through a parsing service (spec 082), whose parse a
 	// later read reads again.
 	Parses map[string]ParseMeta
 }

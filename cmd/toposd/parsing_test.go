@@ -46,7 +46,7 @@ func readsTheReport(id string) luxstub.Reply {
 	}
 }
 
-// TestAPDFIsReadThroughTheParsingService (spec 080): on an installation
+// TestAPDFIsReadThroughTheParsingService (spec 082): on an installation
 // with a parsing service, a hosted session whose message attached a PDF
 // reads it with read. While the identity provider issues no token for
 // lectio, the read is the binary answer and the sentence that says the

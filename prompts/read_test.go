@@ -12,7 +12,7 @@ import (
 	"latere.ai/x/topos/prompts"
 )
 
-// TestReadParsedDescriptionHoldsTheBounds (spec 080): the description of
+// TestReadParsedDescriptionHoldsTheBounds (spec 082): the description of
 // a read that reads a PDF through a parsing service states the default
 // selection and the pages a parse reads with the values of their
 // constants.

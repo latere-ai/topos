@@ -22,7 +22,7 @@ import (
 )
 
 // AudienceLectio is the audience of the session's token for the parsing
-// service read sends a PDF to (spec 080).
+// service read sends a PDF to (spec 082).
 const AudienceLectio = "lectio"
 
 // OriginStore is the name a parse's origin gives the files API of a
@@ -37,7 +37,7 @@ type presigner interface {
 }
 
 // parsingReader is the reader read sends a PDF of the session's folder through
-// (spec 080), nil when the installation configures no parsing service,
+// (spec 082), nil when the installation configures no parsing service,
 // the session keeps no folder in a files store that presigns, or the
 // runner reaches no session credentials: read then answers a PDF as a
 // binary file. Each request carries the session's own token for
@@ -113,7 +113,7 @@ func (f sessionFolder) Origin(ref string) parser.Origin {
 }
 
 // pricer prices the tokens of a model a parsing service's reader read
-// with (spec 080): the embedded catalog's figures, overlaid by those the
+// with (spec 082): the embedded catalog's figures, overlaid by those the
 // installation's Lux door for OpenAI serves for the model, read with the
 // session's own model key when the installation mints one and with
 // TOPOS_MODELS_KEY otherwise. A model no source prices is

@@ -34,7 +34,7 @@ const pdfBody = "%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<< /Type /Catalog >>\nend
 
 func cost(n int64) *int64 { return &n }
 
-// TestReadReadsAPDFThroughAParser (spec 080): read with a parser reads a
+// TestReadReadsAPDFThroughAParser (spec 082): read with a parser reads a
 // PDF by its leading bytes, whatever its name, sends the path in the
 // working directory, the whole file's digest and the pages asked, and
 // answers the head line, the Markdown as numbered lines, and the pages
@@ -116,7 +116,7 @@ func TestReadReadsAPDFThroughAParser(t *testing.T) {
 	}
 }
 
-// TestReadFallsBackWhenAPDFIsNotParsed (spec 080): a PDF the parser did
+// TestReadFallsBackWhenAPDFIsNotParsed (spec 082): a PDF the parser did
 // not read is the binary answer and one sentence that says why, outcome
 // error, with what the read cost; a PDF outside the working directory and
 // one past ReadMaxPDF are not sent.
@@ -170,7 +170,7 @@ func TestReadFallsBackWhenAPDFIsNotParsed(t *testing.T) {
 	}
 }
 
-// TestReadWithoutAParserIsUnchanged (spec 080): the built-in read has
+// TestReadWithoutAParserIsUnchanged (spec 082): the built-in read has
 // description version 2 and no pages, refuses pages, and answers a PDF
 // as a binary file.
 func TestReadWithoutAParserIsUnchanged(t *testing.T) {
@@ -194,7 +194,7 @@ func TestReadWithoutAParserIsUnchanged(t *testing.T) {
 	}
 }
 
-// TestStateKeepsAParse (spec 080): StateOf keeps each digest's last
+// TestStateKeepsAParse (spec 082): StateOf keeps each digest's last
 // parse, and a meta without a digest keeps none.
 func TestStateKeepsAParse(t *testing.T) {
 	th := &thread{id: "thr_1"}

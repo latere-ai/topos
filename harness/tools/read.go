@@ -47,7 +47,7 @@ const MaxImages = 8
 const SniffBytes = 512
 
 // ReadMaxPDF bounds the bytes of a PDF read sends to a parsing service
-// (spec 080): the most bytes one file of a session's folder holds, the
+// (spec 082): the most bytes one file of a session's folder holds, the
 // bound of the working directory's copy, which is above an attachment's.
 const ReadMaxPDF = session.MaxWorkFileBytes
 
@@ -68,7 +68,7 @@ var readSchema = fmt.Sprintf(`{
 }`, ReadDefaultLimit)
 
 // readParsedSchema is readSchema with pages, the schema of a read that
-// reads a PDF through a parsing service (spec 080).
+// reads a PDF through a parsing service (spec 082).
 var readParsedSchema = fmt.Sprintf(`{
   "type": "object",
   "properties": {
@@ -84,7 +84,7 @@ var readParsedSchema = fmt.Sprintf(`{
 func readTool() Tool { return Read(nil) }
 
 // Read is the read tool. With r, a PDF of the session's folder is read as
-// text through r, a parsing service (spec 080), its description is
+// text through r, a parsing service (spec 082), its description is
 // version 3 and its schema takes pages; with nil it is the built-in of
 // spec 008, which Builtins holds.
 func Read(r parsing.Reader) Tool {
