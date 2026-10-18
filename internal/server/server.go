@@ -151,10 +151,11 @@ type Options struct {
 // its own credential: Write with the session's own token, for a message's
 // attachments and a fork's copies, and Read with the server's own, for
 // the blob route, so a session that ended, or whose agent was archived,
-// stays readable. Token answers the session's own token for the files API
-// (spec 079), asked once for each message that names a file of a person's
-// files, of a session that may not be stored yet: a fork's message is read
-// before the fork is written. Source reads one such file at the files API
+// stays readable. Token answers the session's token for the files API of
+// the source workload, which no runner holds (spec 079), asked once for
+// each message that names a file of a person's files, of a session that
+// may not be stored yet: a fork's message is read before the fork is
+// written. Source reads one such file at the files API
 // whose root is root, with token, at most max bytes, and answers its bytes
 // as a stream held to max, or filestore.ErrSourceNotFound or
 // filestore.ErrSourceTooLarge; filestore.ReadSource is the one toposd

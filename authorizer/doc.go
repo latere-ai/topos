@@ -80,9 +80,10 @@
 // answer it.
 //
 // A message may name files of a person's files by their source (spec
-// 079), which toposd reads at the files API with the session's own token
-// once the send is allowed, the files API's endpoint deciding each read as
-// the person who started the session. The send question about such a
+// 079), which toposd reads at the files API with the session's token of
+// the workload source, which no runner holds, once the send is allowed,
+// the files API's endpoint deciding each read as the person who started
+// the session. The send question about such a
 // message, the send route's and a fork sent its message, carries sources:
 // one {owner, path, version} for each file toposd will read, owner the
 // space it reads it in, the sender's own subject for the alias me, and

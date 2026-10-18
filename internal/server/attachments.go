@@ -68,9 +68,9 @@ const CodeAttachmentSourceNotFound = "attachment_source_not_found"
 var SourceRule = fmt.Sprintf("A file may instead be {\"name\", \"source\": {\"owner\", \"path\", \"version\"}}, a file of the sender's own files at the files API of the session's folder of a files store: "+
 	"owner the files API's owner segment, me or an owner's id; path the file's path in that space, its plane included, as GET {files API}/files/{owner}/{path} reads it; and version, optional, a version of the file from 1 upward, read as ?version=N. "+
 	"A file names exactly one of data, blob and source, and a source names no media_type; an owner that is empty, . or .. or past %d bytes, a path that is empty, past %d bytes or not clean, either holding a control or a bidirectional character, and a version below 1 are invalid_request. "+
-	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the session's own token for the files API, asked once for the message, and never the sender's; "+
+	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the session's token for the files API of the workload source, which the server alone holds, asked once for the message, and never the sender's; "+
 	"the files API's authorizer decides each read as the person who started the session. The owner me is read as the sender's own space, the sender's subject. "+
-	"A sender who did not start the session names a file of their own space alone, me or their subject, and a source of any other space from them is %s before anything is read. "+
+	"A sender who did not start the session names a file of the session's own space alone, the owner of the session's folder, and a source of any other space from them, me among them, is %s before anything is read. "+
 	"The send's question names the files it will read as sources, each {owner, path, version}, owner the space read, so the authorizer may hold the sender to them; a file a fork keeps by its blob is not named. "+
 	"A redirect, which the files API gives a file past its inline bound and a public file, is followed once, to an https address, without the token. "+
 	"An answer of 401, 403 or 404 is %s, one answer for the three; a file past %d bytes is %s, as is the source that takes a message's sources past %d bytes together; "+
@@ -514,7 +514,7 @@ func markInline(files []file) {
 // readSources reads each file of a message from sender that names a
 // source (spec 079), once the send is allowed and before anything is
 // written: at the files API of sess's folder, the address the allow
-// named, with the session's own token for the files API, asked once for
+// named, with the session's source token for the files API, asked once for
 // the message, and no credential of the sender's, and at the https
 // address a redirect names without it (spec 081). The installation's
 // authorizer decides each read as the person who started the session; the
@@ -610,19 +610,24 @@ func (s *Server) readSources(ctx context.Context, sess session.Session, sender s
 // sender in (spec 079): the owner the message names, OwnerMe being the
 // sender's own space, since the session's token names its agent and not
 // a person. The installation's authorizer decides the read as the person
-// who started the session, so a sender who did not start it names their
-// own space alone: any other space would be read with the starter's reach
-// and not the sender's. A sender that is no person has no space to name.
-// Each refusal is attachment_source_not_found, as a file the files API
-// refuses is.
+// who started the session, so a sender who did not start it names a file
+// of the session's own space alone, the space its folder is in: any other
+// would be read with the starter's reach and not the sender's. A sender
+// that is no person has no space to name. Each refusal is
+// attachment_source_not_found, as a file the files API refuses is; the
+// caller asks it of a session that keeps a folder.
 func sourceOwner(sess session.Session, sender session.Sender, i int, src session.AttachmentSource) (string, error) {
 	if sender.Kind != session.SenderPerson || sender.Subject == "" {
 		return "", refuse(CodeAttachmentSourceNotFound, "attachments[%d] names a source, a file of its sender's own files, and a message from a %s has no files of its own", i, sender.Kind)
 	}
 	owner := sourceSpace(sender, src)
 	starter := sess.Initiator.Kind == session.SenderPerson && sess.Initiator.Subject == sender.Subject
-	if !starter && owner != sender.Subject {
-		return "", refuse(CodeAttachmentSourceNotFound, "attachments[%d]: a source is read as the person who started the session, so a sender who did not start it names a file of their own space alone, %s or %s, and not %s", i, session.OwnerMe, sender.Subject, src.Owner)
+	if !starter && (sess.Folder == nil || owner != sess.Folder.Owner) {
+		space := ""
+		if sess.Folder != nil {
+			space = sess.Folder.Owner
+		}
+		return "", refuse(CodeAttachmentSourceNotFound, "attachments[%d]: a source is read as the person who started the session, so a sender who did not start it names a file of the session's own space %s alone, and not %s", i, space, src.Owner)
 	}
 	return owner, nil
 }

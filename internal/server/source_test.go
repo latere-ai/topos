@@ -490,13 +490,14 @@ func TestATextFileIsMarkedInline(t *testing.T) {
 	}
 }
 
-// TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace: the files API
+// TestASenderWhoDidNotStartTheSessionNamesTheSessionsSpace: the files API
 // decides a source's read as the person who started the session, so a
-// sender who did not start it names a file of their own space alone, me
-// being theirs: one that names the starter's space or any other is
-// attachment_source_not_found before anything is read or a token asked
-// for, and the message appends nothing (spec 079).
-func TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace(t *testing.T) {
+// sender who did not start it names a file of the session's own space
+// alone, the owner of its folder: one of their own space, me among them,
+// the starter's own or any other is attachment_source_not_found before
+// anything is read or a token asked for, and the message appends nothing
+// (spec 079).
+func TestASenderWhoDidNotStartTheSessionNamesTheSessionsSpace(t *testing.T) {
 	f := newSourceFixture(t)
 	minted := f.neverTheSendersToken("alice", "bob")
 	allowed := f.authz.answer
@@ -510,6 +511,7 @@ func TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace(t *testing.T) {
 	}
 	s := f.create("alice", "reviewer")
 	bobs := authz.Subject(issuer, "bob")
+	f.arca.Put(space, "files/plans/2027.md", arcastub.Object{Data: []byte("# plan\n"), ContentType: "text/markdown"})
 	f.arca.Put(bobs, "files/notes.md", arcastub.Object{Data: []byte("# bob\n"), ContentType: "text/markdown"})
 	f.arca.Put(alices, "files/private.md", arcastub.Object{Data: []byte("# alice\n"), ContentType: "text/markdown"})
 	f.arca.Put("owner-7", "files/shared/a.txt", arcastub.Object{Data: []byte("shared\n")})
@@ -519,12 +521,14 @@ func TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace(t *testing.T) {
 	}
 	last := f.stored(s.ID).LastSeq
 	for what, file := range map[string]string{
+		"his own space as me":   source("notes.md", "me", "files/notes.md"),
+		"his own space by name": source("notes.md", bobs, "files/notes.md"),
 		"the starter's space":   source("private.md", alices, "files/private.md"),
 		"another owner's space": source("a.txt", "owner-7", "files/shared/a.txt"),
 	} {
 		reads := len(f.arca.Requests())
-		a := send(source("notes.md", "me", "files/notes.md"), file)
-		if a.status != http.StatusNotFound || a.code() != CodeAttachmentSourceNotFound || !strings.Contains(string(a.body), "names a file of their own space alone") {
+		a := send(source("plan.md", space, "files/plans/2027.md"), file)
+		if a.status != http.StatusNotFound || a.code() != CodeAttachmentSourceNotFound || !strings.Contains(string(a.body), "names a file of the session's own space") {
 			t.Fatalf("bob naming %s: %d %s", what, a.status, a.body)
 		}
 		if got := len(f.arca.Requests()); got != reads {
@@ -537,35 +541,29 @@ func TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace(t *testing.T) {
 	if *minted != 0 {
 		t.Fatalf("a refused message asked for %d tokens", *minted)
 	}
-	for _, owner := range []string{"me", bobs} {
-		a := send(source("notes.md", owner, "files/notes.md"))
-		if a.status != http.StatusOK {
-			t.Fatalf("bob naming his own space as %s: %d %s", owner, a.status, a.body)
-		}
-		var ev session.Event
-		a.decode(t, &ev)
-		if got := records(t, ev); len(got) != 1 || got[0].Source != (session.AttachmentSource{Owner: owner, Path: "files/notes.md"}) || got[0].Size != 6 {
-			t.Fatalf("bob's record %+v", got)
-		}
-		if got := sourcesAsked(t, asked); len(got) != 1 || !maps.Equal(got[0], map[string]any{"owner": bobs, "path": "files/notes.md"}) {
-			t.Fatalf("bob's send question named %v", got)
-		}
+	a := send(source("plan.md", space, "files/plans/2027.md"))
+	if a.status != http.StatusOK {
+		t.Fatalf("bob naming the session's space: %d %s", a.status, a.body)
 	}
-	reads := f.arca.Requests()
-	if r := reads[len(reads)-1]; r.Op == arcastub.OpRead {
-		t.Fatalf("the last request is a read, not the folder's write: %+v", r)
+	var ev session.Event
+	a.decode(t, &ev)
+	if got := records(t, ev); len(got) != 1 || got[0].Source != (session.AttachmentSource{Owner: space, Path: "files/plans/2027.md"}) || got[0].Size != 7 {
+		t.Fatalf("bob's record %+v", got)
 	}
-	var bobsReads int
-	for _, r := range reads {
+	if got := sourcesAsked(t, asked); len(got) != 1 || !maps.Equal(got[0], map[string]any{"owner": space, "path": "files/plans/2027.md"}) {
+		t.Fatalf("bob's send question named %v", got)
+	}
+	var reads int
+	for _, r := range f.arca.Requests() {
 		if r.Op == arcastub.OpRead {
-			bobsReads++
-			if r.Path != "/v1/files/"+url.PathEscape(bobs)+"/files/notes.md" || r.Header.Get("Authorization") != "Bearer session:"+s.ID {
+			reads++
+			if r.Path != "/v1/files/"+url.PathEscape(space)+"/files/plans/2027.md" || r.Header.Get("Authorization") != "Bearer session:"+s.ID {
 				t.Errorf("bob's source was read at %s with %q", r.Path, r.Header.Get("Authorization"))
 			}
 		}
 	}
-	if bobsReads != 2 {
-		t.Fatalf("bob's two sources were read %d times", bobsReads)
+	if reads != 1 {
+		t.Fatalf("bob's source was read %d times", reads)
 	}
 }
 
