@@ -419,3 +419,46 @@ func TestADevicesAttachmentsStayOutOfTheFolder(t *testing.T) {
 		t.Fatal("the session's end kept the sandbox")
 	}
 }
+
+// TestADeviceWakesByItsOwnRule: a device whose sandbox stopped, and whose
+// helper the stop took, is started again within the call and gets its
+// helper back through the file route into its scratch directory, and
+// nothing of the session's own reaches the person's folder (spec 080).
+func TestADeviceWakesByItsOwnRule(t *testing.T) {
+	dv := openDevice(t)
+	ctx := t.Context()
+	name := SandboxName(dv.o.Session)
+	helper := path.Join(path.Dir(dv.d.SpillDir()), "bin", "topos-machine")
+	if err := os.Remove(filepath.FromSlash(helper)); err != nil {
+		t.Fatal(err)
+	}
+	if !dv.stub.Stop(name) {
+		t.Fatal("no sandbox to stop")
+	}
+	before := len(dv.stub.Requests())
+	res, err := dv.d.Exec(ctx, machine.ExecRequest{Command: "echo awake"})
+	if err != nil || res.ExitCode != 0 || !strings.Contains(string(res.Output), "awake") {
+		t.Fatalf("a command after the stop: %+v %q, %v", res, res.Output, err)
+	}
+	put := false
+	for _, r := range dv.stub.Requests()[before:] {
+		if r.Op == cellastub.OpFiles && r.Method == "PUT" && r.Query.Get("path") == helper && r.Query.Get("mode") == "0755" {
+			put = true
+		}
+	}
+	if !put {
+		t.Fatal("the helper did not come back through the file route")
+	}
+	entries, err := os.ReadDir(dv.folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Errorf("the wake left %s in the person's folder", e.Name())
+	}
+	for _, r := range dv.d.Roots() {
+		if strings.HasPrefix(helper, r+"/") {
+			t.Errorf("the helper %s lies under the root %s, where the file tools would reach it", helper, r)
+		}
+	}
+}

@@ -532,21 +532,22 @@ func (m *Machine) set(sb v1.Sandbox, created bool, restart *machine.Restart) {
 	workdir := cmpOr(m.o.Workdir, sb.Spec.Workdir, m.workspace)
 	m.info = machine.Info{Kind: machine.KindCella, ID: sb.Status.ID, Workdir: workdir, Environment: sb.Status.Environment,
 		OS: m.info.OS, Arch: m.info.Arch, Egress: string(sb.Spec.Network.Egress.Mode)}
-	spill := path.Join(m.o.Dir, "spill")
+	own := []string{path.Join(m.o.Dir, "spill")}
 	if m.o.Device {
 		// A device's commands run in the computer's own sandbox, whose
 		// isolation names its Sandbox, and its scratch directory holds the
 		// session's own files beside the helper: the spill directory and
-		// the files a person attached.
+		// the files a person attached, which are its roots, and never the
+		// helper itself.
 		m.info.Kind = machine.KindDevice
 		m.info.Sandbox = cmpOr(m.isolation, sb.Status.Isolation)
 		if m.host != nil {
 			m.info.OS, m.info.Arch = m.host.OS, m.host.Arch
 		}
-		spill = m.scratch
+		own = []string{path.Join(m.scratch, "spill"), path.Join(m.scratch, session.AttachmentDir)}
 	}
 	m.roots = nil
-	for _, r := range []string{workdir, m.workspace, spill} {
+	for _, r := range append([]string{workdir, m.workspace}, own...) {
 		if r != "" && !slices.Contains(m.roots, r) {
 			m.roots = append(m.roots, r)
 		}
@@ -785,6 +786,12 @@ mv -f "$t" "$1/topos-machine"
 // sandbox's platform in the sandbox unless the same build is already
 // there, and records the platform.
 func (m *Machine) ensureHelper(ctx context.Context, id string) error {
+	// A device's helper is written by its own rule, into its scratch
+	// directory: the probe here would make a home directory in the
+	// person's folder and upload through a command's input (spec 080).
+	if m.o.Device {
+		return m.ensureDeviceHelper(ctx, id)
+	}
 	res, _, err := m.c.Exec(ctx, id, client.ExecRequest{
 		Command: []string{shell, "-c", probe, "sh", m.helper(), m.SpillDir(), m.HomeDir(), m.workspace},
 		Timeout: "1m",
