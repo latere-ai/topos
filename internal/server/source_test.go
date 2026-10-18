@@ -207,6 +207,38 @@ func TestASourceTheFilesAPIRefuses(t *testing.T) {
 	}
 }
 
+// TestAMessagesSourcesAreBoundTogether: the sources of one message are
+// read within MaxMessageSourceBytes together, so a message holds no more
+// of them in memory at once; the source that would pass the bound is
+// attachment_too_large with the total in its detail, and nothing is
+// appended or written (spec 079).
+func TestAMessagesSourcesAreBoundTogether(t *testing.T) {
+	f := newSourceFixture(t)
+	s := f.create("alice", "reviewer")
+	size := MaxMessageSourceBytes/3 + 1
+	files := make([]string, 3)
+	for i := range files {
+		name := "part" + strconv.Itoa(i) + ".bin"
+		f.arca.Put("me", "files/"+name, arcastub.Object{Data: bytes.Repeat([]byte{byte('a' + i)}, size), ContentType: "application/octet-stream"})
+		files[i] = source(name, "me", "files/"+name)
+	}
+	last := f.stored(s.ID).LastSeq
+	a, _ := f.sendFiles(s.ID, files...)
+	if a.status != http.StatusRequestEntityTooLarge || a.code() != CodeAttachmentTooLarge || !strings.Contains(string(a.body), strconv.Itoa(MaxMessageSourceBytes)+" bytes together") ||
+		!strings.Contains(string(a.body), strconv.Itoa(2*size)+" of them read") {
+		t.Fatalf("sources past the message's bound: %d %s", a.status, a.body)
+	}
+	if got := f.stored(s.ID).LastSeq; got != last {
+		t.Fatalf("the refused message appended to seq %d", got)
+	}
+	if p := f.arca.Paths(space, folderPath(s.ID)+"/"); len(p) != 0 {
+		t.Fatalf("the refused message wrote %v", p)
+	}
+	if a, _ := f.sendFiles(s.ID, files[:2]...); a.status != http.StatusOK {
+		t.Fatalf("sources within the bound: %d %.200s", a.status, a.body)
+	}
+}
+
 // TestASourcesRules: a file names exactly one of data, a blob and a
 // source, a source names no media_type, an owner and a path within their
 // rules and a version from 1; a session without a folder, and a server
@@ -222,6 +254,8 @@ func TestASourcesRules(t *testing.T) {
 		`{"name":"a","source":{"owner":"me","path":"files/a.csv"},"media_type":"text/plain"}`,
 		`{"name":"a","source":{"owner":"me","path":"files/a.csv","plane":"files"}}`,
 		source("a", "", "files/a.csv"),
+		source("a", ".", "files/a.csv"),
+		source("a", "..", "files/a.csv"),
 		source("a", strings.Repeat("o", MaxAttachmentName+1), "files/a.csv"),
 		source("a", "me\a", "files/a.csv"),
 		source("a", "me", ""),

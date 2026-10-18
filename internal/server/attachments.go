@@ -41,6 +41,9 @@ const (
 	// 079): the files API answers a read in one response up to its
 	// inline bound, and redirects past it, which the core does not follow.
 	MaxSourceBytes = filestore.InlineBytes
+	// MaxMessageSourceBytes bounds the sources of one message together,
+	// which the server holds in memory at once before they are stored.
+	MaxMessageSourceBytes = 2 * MaxSourceBytes
 	// MaxSourcePath bounds a source's path in bytes.
 	MaxSourcePath = 1024
 )
@@ -57,12 +60,12 @@ const CodeAttachmentSourceNotFound = "attachment_source_not_found"
 // names by its source (spec 079).
 var SourceRule = fmt.Sprintf("A file may instead be {\"name\", \"source\": {\"owner\", \"path\", \"version\"}}, a file of the sender's own files at the files API of the session's folder of a files store: "+
 	"owner the files API's owner segment, me or an owner's id; path the file's path in that space, its plane included, as GET {files API}/files/{owner}/{path} reads it; and version, optional, a version of the file from 1 upward, read as ?version=N. "+
-	"A file names exactly one of data, blob and source, and a source names no media_type; an owner that is empty or past %d bytes, a path that is empty, past %d bytes or not clean, either holding a control or a bidirectional character, and a version below 1 are invalid_request. "+
+	"A file names exactly one of data, blob and source, and a source names no media_type; an owner that is empty, . or .. or past %d bytes, a path that is empty, past %d bytes or not clean, either holding a control or a bidirectional character, and a version below 1 are invalid_request. "+
 	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the request's own bearer and no other credential, following no redirect: "+
-	"an answer of 401, 403 or 404 is %s, one answer for the three; a redirect, which the files API gives a file past its inline bound and a public file, and a file past %d bytes are %s; and any other failure is %s. "+
+	"an answer of 401, 403 or 404 is %s, one answer for the three; a redirect, which the files API gives a file past its inline bound and a public file, and a file past %d bytes are %s, as is the source that takes a message's sources past %d bytes together; and any other failure is %s. "+
 	"A session that keeps no folder refuses a source as invalid_request. The file's media type is the files API's Content-Type, or its bytes' where that is empty or application/octet-stream; "+
 	"it is then kept as a data file is, and its record names source as the message named it. A source counts among the message's files and its attachments.",
-	MaxAttachmentName, MaxSourcePath, CodeAttachmentSourceNotFound, MaxSourceBytes, CodeAttachmentTooLarge, CodeFilesUnavailable)
+	MaxAttachmentName, MaxSourcePath, CodeAttachmentSourceNotFound, MaxSourceBytes, CodeAttachmentTooLarge, MaxMessageSourceBytes, CodeFilesUnavailable)
 
 // InlineRule is the send and fork routes' sentence on a text file the
 // model reads in its request (spec 079).
@@ -312,14 +315,15 @@ func checkAttachments(in []attachmentBody, blobs bool) ([]file, error) {
 	return out, nil
 }
 
-// check reads a source as a message names it: an owner of at most
-// MaxAttachmentName bytes and a path of at most MaxSourcePath, each
+// check reads a source as a message names it: an owner other than . and
+// .. of at most MaxAttachmentName bytes, so the read stays in an owner's
+// space, and a path of at most MaxSourcePath, each
 // UTF-8 without a control or a bidirectional character, the path
 // relative and clean, and a version from 1 upward when it names one.
 func (b *sourceBody) check() (session.AttachmentSource, error) {
 	switch {
-	case b.Owner == "":
-		return session.AttachmentSource{}, errors.New("the source names no owner")
+	case b.Owner == "" || b.Owner == "." || b.Owner == "..":
+		return session.AttachmentSource{}, fmt.Errorf("the source's owner %q names no owner's space", b.Owner)
 	case len(b.Owner) > MaxAttachmentName:
 		return session.AttachmentSource{}, fmt.Errorf("the source's owner is %d bytes, at most %d", len(b.Owner), MaxAttachmentName)
 	case b.Path == "":
@@ -437,8 +441,10 @@ func markInline(files []file) {
 // credential. A session without a folder refuses a source, since the
 // file is read where the folder is and kept there. A source the files
 // API refuses with 401, 403 or 404 is attachment_source_not_found, one
-// it redirects or that is past MaxSourceBytes attachment_too_large, and
-// any other failure files_unavailable. The media type is the files API's,
+// it redirects or that is past MaxSourceBytes attachment_too_large, as
+// is the source that would take the message's sources past
+// MaxMessageSourceBytes together, and any other failure
+// files_unavailable. The media type is the files API's,
 // or the one the bytes give where it names none, or names
 // application/octet-stream.
 func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.Request, files []file) error {
@@ -462,22 +468,27 @@ func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.
 	if !ok {
 		return refuse(CodeInvalidRequest, "the request carries no bearer in its Authorization header to read attachments[%d]'s source with", first)
 	}
+	// read is the bytes the message's sources read so far, which each
+	// read is held to with MaxMessageSourceBytes.
+	read := 0
 	for i := range files {
 		f := &files[i]
 		if f.source == nil {
 			continue
 		}
-		data, ctype, err := s.o.Files.Source(ctx, sess.Folder.URL, token, *f.source, MaxSourceBytes)
+		data, ctype, err := s.o.Files.Source(ctx, sess.Folder.URL, token, *f.source, int64(min(MaxSourceBytes, MaxMessageSourceBytes-read)))
 		switch {
 		case errors.Is(err, filestore.ErrSourceNotFound):
 			// The detail is one for the three answers, as the code is.
 			return refuse(CodeAttachmentSourceNotFound, "attachments[%d]: the files API holds no file at %s of %s that the sender may read", i, f.source.Path, f.source.Owner)
 		case errors.Is(err, filestore.ErrSourceTooLarge):
-			return &apiError{code: CodeAttachmentTooLarge, detail: fmt.Sprintf("attachments[%d]: %v; a source is at most %d bytes", i, err, MaxSourceBytes), err: err}
+			return &apiError{code: CodeAttachmentTooLarge, err: err, detail: fmt.Sprintf("attachments[%d]: %v; a source is at most %d bytes, and a message's sources at most %d bytes together, %d of them read before it",
+				i, err, MaxSourceBytes, MaxMessageSourceBytes, read)}
 		case err != nil:
 			return filesRefused(err, "", fmt.Sprintf("read attachments[%d]'s source from the files API: %v", i, err))
 		}
 		f.data, f.media = data, sourceMedia(ctype, data)
+		read += len(data)
 	}
 	return nil
 }
