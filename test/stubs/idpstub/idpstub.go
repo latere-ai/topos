@@ -470,7 +470,7 @@ func (s *Server) mint(w http.ResponseWriter, _ *http.Request, body []byte) {
 	}
 	dec := json.NewDecoder(strings.NewReader(string(in.Session)))
 	dec.DisallowUnknownFields()
-	if len(in.Session) == 0 || dec.Decode(&sess) != nil || !refRE.MatchString(sess.ID) || (sess.Workload != "session" && sess.Workload != "sandbox") {
+	if len(in.Session) == 0 || dec.Decode(&sess) != nil || !refRE.MatchString(sess.ID) || (sess.Workload != "session" && sess.Workload != "sandbox" && sess.Workload != "source") {
 		refuse(w, http.StatusBadRequest, "invalid_session", `session must be {"id", "workload"}`)
 		return
 	}
