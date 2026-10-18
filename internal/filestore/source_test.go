@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"runtime"
 	"strconv"
 	"sync"
@@ -149,7 +150,7 @@ func (p *pattern) Read(b []byte) (int, error) {
 type objectStore struct {
 	*httptest.Server
 	mu    sync.Mutex
-	seen  []*http.Request
+	seen  []url.URL
 	types string
 }
 
@@ -157,7 +158,7 @@ func newObjectStore(t *testing.T) *objectStore {
 	o := &objectStore{types: "application/pdf"}
 	o.Server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		o.mu.Lock()
-		o.seen = append(o.seen, r.Clone(context.Background()))
+		o.seen = append(o.seen, *r.URL)
 		o.mu.Unlock()
 		if r.Header.Get("Authorization") != "" {
 			t.Errorf("the object store got an Authorization header on %s", r.URL)
@@ -185,10 +186,10 @@ func newObjectStore(t *testing.T) *objectStore {
 	return o
 }
 
-func (o *objectStore) requests() []*http.Request {
+func (o *objectStore) requests() []url.URL {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return append([]*http.Request(nil), o.seen...)
+	return append([]url.URL(nil), o.seen...)
 }
 
 // storage is a stub files API that answers every read with a redirect to
@@ -231,7 +232,7 @@ func TestReadSourceFollowsOneRedirect(t *testing.T) {
 	if got := *bearers; len(got) != 1 || got[0] != "Bearer alice" {
 		t.Fatalf("the files API got %q", got)
 	}
-	if r := objects.requests(); len(r) != 1 || r[0].URL.RawQuery != "n=1000" {
+	if r := objects.requests(); len(r) != 1 || r[0].RawQuery != "n=1000" {
 		t.Fatalf("the object store got %d requests", len(r))
 	}
 
@@ -246,8 +247,8 @@ func TestReadSourceFollowsOneRedirect(t *testing.T) {
 	}
 	location = objects.URL + "/again"
 	refused("a second redirect", unavailable)
-	if r := objects.requests(); r[len(r)-1].URL.Path != "/again" {
-		t.Fatalf("the second redirect was followed to %s", r[len(r)-1].URL)
+	if r := objects.requests(); r[len(r)-1].Path != "/again" {
+		t.Fatalf("the second redirect was followed to %s", r[len(r)-1].String())
 	}
 	before := len(objects.requests())
 	location = "http://" + objects.Listener.Addr().String() + "/obj?n=4"
@@ -278,7 +279,11 @@ func TestReadSourceFollowsOneRedirect(t *testing.T) {
 }
 
 // TestReadSourceStreams (spec 081): a source past the old 16 MiB bound is
-// read as a stream, whose reading allocates a small part of the file.
+// read as a stream, whose reading allocates a part of the file: a read
+// that holds it whole allocates at least its size. The bound is half the
+// size, since the race detector's buffer pools drop buffers, and a run
+// under it allocates about a sixth of the file where one without
+// allocates under a hundredth.
 func TestReadSourceStreams(t *testing.T) {
 	const size = 64 << 20
 	objects := newObjectStore(t)
@@ -298,7 +303,7 @@ func TestReadSourceStreams(t *testing.T) {
 		t.Fatalf("read %d of %d bytes: %v", n, s.Size, err)
 	}
 	runtime.ReadMemStats(&after)
-	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/8 {
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/2 {
 		t.Fatalf("a read of %d bytes allocated %d", size, alloc)
 	}
 	w := sha256.New()

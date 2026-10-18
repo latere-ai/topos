@@ -348,8 +348,10 @@ func patternSum(t *testing.T, n int64) []byte {
 // TestALargeWriteIsStreamed (spec 081): a body past replayBytes that does
 // not seek, as a message's file read from a files store, is written to
 // the workspace of a stopped sandbox once it is woken, as a stream whose
-// write allocates a small part of the file; a shorter one that does not
-// seek is still sent again after the wake.
+// write allocates a part of the file, where a write that holds it whole
+// allocates at least its size; a shorter one that does not seek is still
+// sent again after the wake. The bound is half the size, since the race
+// detector's buffer pools drop buffers.
 func TestALargeWriteIsStreamed(t *testing.T) {
 	const size = 32 << 20
 	f := open(t)
@@ -364,7 +366,7 @@ func TestALargeWriteIsStreamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime.ReadMemStats(&after)
-	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/8 {
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/2 {
 		t.Fatalf("a write of %d bytes allocated %d", size, alloc)
 	}
 	if sb, _ := f.stub.Sandbox(id); sb.Status.Phase != "Running" {

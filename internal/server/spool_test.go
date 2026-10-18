@@ -167,8 +167,12 @@ func generated(t *testing.T, n int64) *httptest.Server {
 }
 
 // TestALargeSourceIsNotHeldInMemory (spec 081): a send whose source is
-// four times the old 16 MiB bound allocates a small part of the file:
-// the source is spooled to disk and written to the folder as a stream.
+// four times the old 16 MiB bound allocates a part of the file, where a
+// read that holds it whole allocates at least its size: the source is
+// spooled to disk and written to the folder as a stream. The bound is
+// half the size, since the race detector's buffer pools drop buffers, and
+// a run under it allocates about a sixth of the file where one without
+// allocates a hundredth.
 func TestALargeSourceIsNotHeldInMemory(t *testing.T) {
 	const size = 64 << 20
 	f := newSourceFixture(t)
@@ -187,7 +191,7 @@ func TestALargeSourceIsNotHeldInMemory(t *testing.T) {
 	if a.status != http.StatusOK {
 		t.Fatalf("send: %d %s", a.status, a.body)
 	}
-	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/16 {
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/2 {
 		t.Fatalf("a send of a %d byte source allocated %d bytes", size, alloc)
 	}
 	want := patternDigest(t, size)
