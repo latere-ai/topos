@@ -61,8 +61,8 @@ its blob, without sending the bytes again:
 file keeps that message's media type and size; give no `media_type`
 beside it. A new file is sent as `data`, as on a send, or named by its
 `source`, `{"owner": "me", "path": "files/Reports/q3.csv"}`, a file of
-your own files that the server reads with your token when the call is
-made, as on a send. An image is a content block, which travels in the
+your own files that the server reads when the call is made, with the new
+session's own credential for the files service, as on a send. An image is a content block, which travels in the
 message itself: send the block as the original event holds it. A file
 that names more than one of `data`, `blob` and `source`, or none, or a
 `blob` no message of the session attached, is `invalid_request`.
