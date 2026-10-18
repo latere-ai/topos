@@ -50,6 +50,9 @@ const (
 	TypeApprovalDecided      Type = "approval.decided"
 	TypeFilesKept            Type = "files.kept"
 	TypeWorkSaved            Type = "work.saved"
+	// TypeMachineWaiting is a session waiting for its machine, a person's
+	// own computer (spec 080).
+	TypeMachineWaiting Type = "session.machine_waiting"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -64,7 +67,7 @@ var Known = map[Type]bool{
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
 	TypeFilesKept: true, TypeConnectionsChanged: true, TypeConnectionRequested: true,
-	TypeWorkSaved: true,
+	TypeWorkSaved: true, TypeMachineWaiting: true,
 }
 
 // Event is one entry of a session's log.
@@ -562,6 +565,25 @@ type SessionMachine struct {
 	Restore      *Restore              `json:"restore,omitempty"`
 }
 
+// SessionMachineWaiting is the payload of session.machine_waiting (spec
+// 080): the session waits for its machine, a person's own computer, for
+// Reason, MachineOffline or MachineApproval, on the Cella environment the
+// computer serves. A client shows what the person can do: wake or
+// reconnect the computer, or allow the session on it. It is appended when
+// a call begins to wait for the computer's owner to allow the session,
+// and when a turn stops because the computer is offline, so the last one
+// names why a session idle with stop reason machine_waiting waits.
+type SessionMachineWaiting struct {
+	Reason      string `json:"reason"`
+	Environment string `json:"environment,omitempty"`
+}
+
+// The reasons of session.machine_waiting.
+const (
+	MachineOffline  = "offline"
+	MachineApproval = "approval"
+)
+
 // SessionError is the payload of session.error.
 type SessionError struct {
 	Code      string `json:"code"`
@@ -681,8 +703,9 @@ func Mode(s Session, events []Event) (string, bool) {
 
 // SessionResumed is the payload of session.resumed: a session idle on its
 // budget resumes once its cap is raised or its payer's credit restored
-// (spec 007). MaxCostUSDMicro is the session's budget from here on,
-// absent when it has none.
+// (spec 007), and one waiting for its machine once the computer is back
+// or its owner allowed the session (spec 080). MaxCostUSDMicro is the
+// session's budget from here on, absent when it has none.
 type SessionResumed struct {
 	By              Sender `json:"by"`
 	Reason          string `json:"reason,omitempty"`

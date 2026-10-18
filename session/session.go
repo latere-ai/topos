@@ -43,6 +43,11 @@ const (
 	StopOutputLimit StopReason = "output_limit"
 	StopInterrupted StopReason = "interrupted"
 	StopError       StopReason = "error"
+	// StopMachineWaiting is a turn that stopped because its machine, a
+	// person's own computer, is offline or its owner has not allowed the
+	// session on it yet (spec 080). The next user.message, or a
+	// session.resumed, continues the session on it.
+	StopMachineWaiting StopReason = "machine_waiting"
 )
 
 // Stop reasons of an ended session.
@@ -453,7 +458,8 @@ func Cost(e Event) int64 {
 // HasPendingInput reports whether a session's log holds input a runner
 // should act on: a resuming user event, a message, a confirmation, a
 // client tool's result, an answer to a question, or a session.resumed
-// after a budget stop, after its last session.status (the stop reason
+// after a budget stop or a stop of machine_waiting, after its last
+// session.status (the stop reason
 // table of spec 004). A session that has never run has pending input once
 // its first message is in the log. A user.interrupt is input in one case
 // alone (spec 039): it closed a question whose result no runner appended
