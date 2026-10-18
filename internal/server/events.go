@@ -207,6 +207,9 @@ func (c *call) sendEvent() error {
 		if s.Status == session.StatusEnded {
 			return refuse(CodeConflict, "the session ended %s", s.StopReason)
 		}
+		// A source's spool is removed once the message is stored or
+		// refused (spec 081).
+		defer c.s.closeSpools(c.r.Context(), files)
 		if err := c.s.readSources(c.r.Context(), s, c.r, files); err != nil {
 			return err
 		}

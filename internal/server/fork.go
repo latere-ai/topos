@@ -298,7 +298,9 @@ func (s *Server) writeFork(ctx context.Context, q asker, sess session.Session, c
 		return session.Session{}, err
 	}
 	// The message's sources are read at the fork's own folder, once its
-	// send is allowed and before anything is written (spec 079).
+	// send is allowed and before anything is written (spec 079), and their
+	// spools removed once the fork is written or refused (spec 081).
+	defer s.closeSpools(ctx, f.message.files)
 	if err := s.readSources(ctx, sess, q.r, f.message.files); err != nil {
 		s.refusedFork(ctx, q, sess, f, err)
 		return session.Session{}, err

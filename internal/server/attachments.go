@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -38,12 +39,17 @@ const (
 	// usual limit on one path segment, and a source's owner.
 	MaxAttachmentName = 255
 	// MaxSourceBytes bounds a file a message names by its source (spec
-	// 079): the files API answers a read in one response up to its
-	// inline bound, and redirects past it, which the core does not follow.
-	MaxSourceBytes = filestore.InlineBytes
+	// 079, 081): a parsing service's per-file bound by default, so a
+	// document a person brings can still be parsed. An Arca-compatible
+	// files API takes an object up to 5 GiB by default.
+	MaxSourceBytes = 256 << 20
 	// MaxMessageSourceBytes bounds the sources of one message together,
-	// which the server holds in memory at once before they are stored.
+	// which the server spools to disk at once before they are stored.
 	MaxMessageSourceBytes = 2 * MaxSourceBytes
+	// MaxSpoolBytes bounds the spools of every message a server reads at
+	// once on its disk (spec 081): four messages at their bound. A
+	// server's data directory holds it beside what else it keeps.
+	MaxSpoolBytes = 4 * MaxMessageSourceBytes
 	// MaxSourcePath bounds a source's path in bytes.
 	MaxSourcePath = 1024
 )
@@ -61,8 +67,10 @@ const CodeAttachmentSourceNotFound = "attachment_source_not_found"
 var SourceRule = fmt.Sprintf("A file may instead be {\"name\", \"source\": {\"owner\", \"path\", \"version\"}}, a file of the sender's own files at the files API of the session's folder of a files store: "+
 	"owner the files API's owner segment, me or an owner's id; path the file's path in that space, its plane included, as GET {files API}/files/{owner}/{path} reads it; and version, optional, a version of the file from 1 upward, read as ?version=N. "+
 	"A file names exactly one of data, blob and source, and a source names no media_type; an owner that is empty, . or .. or past %d bytes, a path that is empty, past %d bytes or not clean, either holding a control or a bidirectional character, and a version below 1 are invalid_request. "+
-	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the request's own bearer and no other credential, following no redirect: "+
-	"an answer of 401, 403 or 404 is %s, one answer for the three; a redirect, which the files API gives a file past its inline bound and a public file, and a file past %d bytes are %s, as is the source that takes a message's sources past %d bytes together; and any other failure is %s. "+
+	"The server reads a source once the authorizer allows the send and before the message is appended, at the files API the allow named for the session's folder, with the request's own bearer and no other credential; "+
+	"a redirect, which the files API gives a file past its inline bound and a public file, is followed once, to an https address, without the bearer. "+
+	"An answer of 401, 403 or 404 is %s, one answer for the three; a file past %d bytes is %s, as is the source that takes a message's sources past %d bytes together; "+
+	"and any other failure is %s, among them a second redirect, a redirect to an address that is not https, and a source the server has no room to hold now, which may be sent again. "+
 	"A session that keeps no folder refuses a source as invalid_request. The file's media type is the files API's Content-Type, or its bytes' where that is empty or application/octet-stream; "+
 	"it is then kept as a data file is, and its record names source as the message named it. A source counts among the message's files and its attachments.",
 	MaxAttachmentName, MaxSourcePath, CodeAttachmentSourceNotFound, MaxSourceBytes, CodeAttachmentTooLarge, MaxMessageSourceBytes, CodeFilesUnavailable)
@@ -121,11 +129,13 @@ type sourceBody struct {
 // file is one attached file checked and decoded, before it is stored:
 // its bytes; the blob a message of the session forked names, whose
 // media type, size, ref, source and mark are that message's record of
-// it; or the source its bytes are read from once the send is allowed.
+// it; or the source its bytes are read from once the send is allowed,
+// into data when it is short and into spool when it is not (spec 081).
 // inline is the file's mark (spec 079), set by markInline.
 type file struct {
 	name, media string
 	data        []byte
+	spool       *spooled
 	blob        session.Digest
 	size        int64
 	ref         string
@@ -133,10 +143,35 @@ type file struct {
 	inline      bool
 }
 
+// length is the file's size in bytes, of its data or of its spool.
+func (f file) length() int64 {
+	if f.spool != nil {
+		return f.spool.size
+	}
+	return int64(len(f.data))
+}
+
+// digest is the digest of the file's bytes, read as they arrived for a
+// spooled source.
+func (f file) digest() session.Digest {
+	if f.spool != nil {
+		return f.spool.digest
+	}
+	return session.DigestOf(f.data)
+}
+
+// body reads the file's bytes from their start.
+func (f file) body() io.Reader {
+	if f.spool != nil {
+		return f.spool.reader()
+	}
+	return bytes.NewReader(f.data)
+}
+
 // record is the file's record as its message keeps it, at path, with
 // ref set where the file is in the session's folder.
 func (f file) record(path, ref string) session.Attachment {
-	a := session.Attachment{Name: f.name, MediaType: f.media, Size: int64(len(f.data)), Blob: session.DigestOf(f.data), Path: path, Ref: ref, Inline: f.inline}
+	a := session.Attachment{Name: f.name, MediaType: f.media, Size: f.length(), Blob: f.digest(), Path: path, Ref: ref, Inline: f.inline}
 	if f.source != nil {
 		a.Source = *f.source
 	}
@@ -418,12 +453,13 @@ func (c *call) storeAttachments(ctx context.Context, s session.Session, message 
 // session.Inlinable holds to, and a file kept by its blob that its own
 // message marked, each while the marked files together stay within
 // session.InlineMessageTextBytes. A file that would pass the bound is not
-// marked, and a later smaller one may be.
+// marked, and a later smaller one may be. A spooled source is past
+// session.InlineTextBytes and never marked.
 func markInline(files []file) {
 	var total int64
 	for i := range files {
 		f := &files[i]
-		size, ok := int64(len(f.data)), session.Inlinable(f.name, f.media, f.data)
+		size, ok := f.length(), f.spool == nil && session.Inlinable(f.name, f.media, f.data)
 		if f.blob != "" {
 			size, ok = f.size, f.inline
 		}
@@ -438,15 +474,28 @@ func markInline(files []file) {
 // 079), once the send is allowed and before anything is written: at the
 // files API of sess's folder, the address the allow named, with the
 // bearer r was authenticated with, the sender's own, and no other
-// credential. A session without a folder refuses a source, since the
-// file is read where the folder is and kept there. A source the files
+// credential, and at the https address a redirect names without it (spec
+// 081). Each is read whole before the next, into memory while it is at
+// most session.InlineTextBytes and onto a spool file past them, which the
+// caller removes with closeSpools whatever becomes of the send.
+//
+// A source is read twice, into the spool and then into the folder, and
+// never straight into the folder: every source of the message is held to
+// its bounds before the first is written, so a refused message writes
+// nothing; the message's record names each file's size and digest before
+// the file is written, and a fork's events are built before the fork's
+// folder can be written with its own token; and an upload session is
+// opened with the file's exact size, which an answer with no length does
+// not give.
+//
+// A session without a folder refuses a source, since the file is read
+// where the folder is and kept there. A source the files
 // API refuses with 401, 403 or 404 is attachment_source_not_found, one
-// it redirects or that is past MaxSourceBytes attachment_too_large, as
-// is the source that would take the message's sources past
-// MaxMessageSourceBytes together, and any other failure
-// files_unavailable. The media type is the files API's,
-// or the one the bytes give where it names none, or names
-// application/octet-stream.
+// past the bound of a source attachment_too_large, as is the source that
+// would take the message's sources past their bound together, and any
+// other failure files_unavailable, a source the server's spools leave no
+// room for among them. The media type is the files API's, or the one the
+// bytes give where it names none, or names application/octet-stream.
 func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.Request, files []file) error {
 	first := -1
 	for i, f := range files {
@@ -469,39 +518,78 @@ func (s *Server) readSources(ctx context.Context, sess session.Session, r *http.
 		return refuse(CodeInvalidRequest, "the request carries no bearer in its Authorization header to read attachments[%d]'s source with", first)
 	}
 	// read is the bytes the message's sources read so far, which each
-	// read is held to with MaxMessageSourceBytes.
-	read := 0
+	// read is held to with the message's bound.
+	var read int64
 	for i := range files {
 		f := &files[i]
 		if f.source == nil {
 			continue
 		}
-		data, ctype, err := s.o.Files.Source(ctx, sess.Folder.URL, token, *f.source, int64(min(MaxSourceBytes, MaxMessageSourceBytes-read)))
+		data, sp, media, err := s.readSource(ctx, sess.Folder.URL, token, *f.source, min(s.sources.file, s.sources.message-read))
 		switch {
 		case errors.Is(err, filestore.ErrSourceNotFound):
 			// The detail is one for the three answers, as the code is.
 			return refuse(CodeAttachmentSourceNotFound, "attachments[%d]: the files API holds no file at %s of %s that the sender may read", i, f.source.Path, f.source.Owner)
 		case errors.Is(err, filestore.ErrSourceTooLarge):
 			return &apiError{code: CodeAttachmentTooLarge, err: err, detail: fmt.Sprintf("attachments[%d]: %v; a source is at most %d bytes, and a message's sources at most %d bytes together, %d of them read before it",
-				i, err, MaxSourceBytes, MaxMessageSourceBytes, read)}
+				i, err, s.sources.file, s.sources.message, read)}
+		case errors.Is(err, errSpoolFull):
+			return &apiError{code: CodeFilesUnavailable, err: err, detail: fmt.Sprintf("attachments[%d]: %v, %d bytes; the message may be sent again", i, err, s.sources.spool)}
 		case err != nil:
 			return filesRefused(err, "", fmt.Sprintf("read attachments[%d]'s source from the files API: %v", i, err))
 		}
-		f.data, f.media = data, sourceMedia(ctype, data)
-		read += len(data)
+		f.data, f.spool, f.media = data, sp, media
+		read += f.length()
 	}
 	return nil
 }
 
+// readSource reads one source within max bytes, into memory or onto a
+// spool as sources.read does, and answers its media type.
+func (s *Server) readSource(ctx context.Context, root, token string, src session.AttachmentSource, max int64) ([]byte, *spooled, string, error) {
+	in, err := s.o.Files.Source(ctx, root, token, src, max)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	data, sp, err := s.sources.read(in.Body, session.InlineTextBytes)
+	if err = errors.Join(err, in.Body.Close()); err != nil {
+		if sp != nil {
+			err = errors.Join(err, sp.close())
+		}
+		return nil, nil, "", err
+	}
+	head := data
+	if sp != nil {
+		head = sp.head
+	}
+	return data, sp, sourceMedia(in.MediaType, head), nil
+}
+
+// closeSpools removes the spools of files once the send or the fork that
+// read them has stored them or been refused. A spool that cannot be
+// removed is logged, and the server's next start removes it.
+func (s *Server) closeSpools(ctx context.Context, files []file) {
+	for i := range files {
+		sp := files[i].spool
+		if sp == nil {
+			continue
+		}
+		files[i].spool = nil
+		if err := sp.close(); err != nil {
+			s.o.Log.ErrorContext(ctx, "a spool of a message's source was not removed", "spool", sp.file.Name(), "error", err)
+		}
+	}
+}
+
 // sourceMedia is a source's media type: the files API's Content-Type,
 // unless it is empty, not a media type or application/octet-stream,
-// which say nothing of the file, and then the one its bytes give, as a
-// data file's without a media type.
-func sourceMedia(ctype string, data []byte) string {
+// which say nothing of the file, and then the one its first bytes give,
+// as a data file's without a media type.
+func sourceMedia(ctype string, head []byte) string {
 	if base, _, err := mime.ParseMediaType(ctype); err == nil && base != "application/octet-stream" {
 		return ctype
 	}
-	return http.DetectContentType(data)
+	return http.DetectContentType(head)
 }
 
 // attached is each file the user.messages of a log attach, by its blob:

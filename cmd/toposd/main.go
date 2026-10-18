@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -437,9 +438,13 @@ func files(cfg config.Config, minter *credentials.Minter, identities *idp.Client
 		}),
 		// A message's source is read with its sender's own bearer, which
 		// the send hands over and nothing keeps (spec 079).
-		Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) ([]byte, string, error) {
+		Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) (*filestore.Source, error) {
 			return filestore.ReadSource(ctx, otel.HTTPClient(), root, token, src, max)
 		},
+		// A source past a short text waits on disk while its send is
+		// checked, under the data directory, the one a read-only root
+		// leaves writable (spec 081).
+		Spool: filepath.Join(cfg.DataDir, "spool"),
 	}
 }
 

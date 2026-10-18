@@ -4,9 +4,9 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 
@@ -71,7 +71,8 @@ func folderAnswer(f *session.Folder) *session.Folder {
 // event id (spec 068), and answers their records naming each by ref. A
 // file the files service refuses for its size is attachment_too_large,
 // and any other failure files_unavailable, so the message is refused
-// before it is appended.
+// before it is appended; so is a write whose bytes are not the ones its
+// record names.
 func (s *Server) putAttachments(ctx context.Context, sess session.Session, files []file, records []session.Attachment) error {
 	if len(files) == 0 {
 		return nil
@@ -84,9 +85,24 @@ func (s *Server) putAttachments(ctx context.Context, sess session.Session, files
 		if f.blob != "" {
 			continue
 		}
-		if _, err := store.Put(ctx, records[i].Ref, f.media, int64(len(f.data)), bytes.NewReader(f.data)); err != nil {
-			return filesRefused(err, CodeAttachmentTooLarge, "write "+records[i].Ref+": "+err.Error())
+		if err := putFile(ctx, store, f, records[i]); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// putFile writes f at its record's ref, streamed from its data or its
+// spool, and refuses a write whose digest is not the record's: the
+// record names the bytes as they were read, and the folder must hold
+// those.
+func putFile(ctx context.Context, store harness.Files, f file, record session.Attachment) error {
+	d, err := store.Put(ctx, record.Ref, f.media, f.length(), f.body())
+	switch {
+	case err != nil:
+		return filesRefused(err, CodeAttachmentTooLarge, "write "+record.Ref+": "+err.Error())
+	case d != record.Blob:
+		return &apiError{code: CodeFilesUnavailable, detail: fmt.Sprintf("write %s: the folder took bytes of digest %s, and the message's record names %s", record.Ref, d, record.Blob)}
 	}
 	return nil
 }
@@ -228,8 +244,8 @@ func (s *Server) prepareFork(ff *forkFiles) func(context.Context, session.Sessio
 			}
 		}
 		for i, f := range ff.files {
-			if _, err := store.Put(ctx, ff.refs[i].Ref, f.media, int64(len(f.data)), bytes.NewReader(f.data)); err != nil {
-				return filesRefused(err, CodeAttachmentTooLarge, "write "+ff.refs[i].Ref+": "+err.Error())
+			if err := putFile(ctx, store, f, ff.refs[i]); err != nil {
+				return err
 			}
 		}
 		return nil

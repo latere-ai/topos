@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -124,6 +126,82 @@ func TestAMessageBringsAFileOfThePersonsFiles(t *testing.T) {
 	if n := s.cella.Count(cellastub.OpCreate); n != 0 {
 		t.Fatalf("%d sandboxes were created for a turn that only read a file's text", n)
 	}
+	if code := stop(); code != 0 {
+		t.Fatalf("serve exited %d", code)
+	}
+}
+
+// TestASourceIsSpooledUnderTheDataDirectory: toposd spools a source past
+// a short text under TOPOS_DATA_DIR while its send is checked, and removes
+// the spool once the file is kept in the session's folder; its start
+// removes the spool files a stopped toposd left there (spec 081).
+func TestASourceIsSpooledUnderTheDataDirectory(t *testing.T) {
+	vars, s := credentialStubs(t, saidReply("A scan."))
+	arca := arcastub.New(t)
+	arca.RedirectAbove(16 << 20)
+	const owner = "https://issuer.example|admin"
+	s.az.SetRules(stub.Rule{Action: authorizer.ActionSessionCreate, Allow: true,
+		Limits: map[string]any{"folder": map[string]any{"url": arca.URL(), "owner": owner, "path": "files/sessions/scan"}}})
+	vars["TOPOS_RUNNER_CAPACITY"] = "1"
+	vars["TOPOS_FILES_AUDIENCE"] = "arca"
+	spool := filepath.Join(vars["TOPOS_DATA_DIR"], "spool")
+	if err := os.MkdirAll(spool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(spool, "source-left"), []byte("a stopped toposd's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	publicURL, _, stop := startServe(t, vars)
+	send := apiClient(t, publicURL, vars)
+	left := func() []string {
+		t.Helper()
+		entries, err := os.ReadDir(spool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, e := range entries {
+			out = append(out, e.Name())
+		}
+		return out
+	}
+	if l := left(); len(l) != 0 {
+		t.Fatalf("the start left %v in the spool", l)
+	}
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: cella}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/reviewer", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"reviewer"}`)
+	var sess session.Session
+	if code != http.StatusCreated || json.Unmarshal([]byte(body), &sess) != nil {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	scan := bytes.Repeat([]byte("%PDF-1.7 scan\n"), 150_000)
+	arca.Put("me", "files/Scans/scan.pdf", arcastub.Object{Data: scan, ContentType: "application/pdf"})
+	code, body = send(http.MethodPost, "/v1/sessions/"+sess.ID+"/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"What is this?"}],`+
+		`"attachments":[{"name":"scan.pdf","source":{"owner":"me","path":"files/Scans/scan.pdf"}}]}}`)
+	var sent session.Event
+	if code != http.StatusOK || json.Unmarshal([]byte(body), &sent) != nil {
+		t.Fatalf("send: %d %s", code, body)
+	}
+	var p session.UserMessage
+	if err := sent.Decode(&p); err != nil {
+		t.Fatal(err)
+	}
+	path := "attachments/" + sent.ID + "/scan.pdf"
+	want := session.Attachment{Name: "scan.pdf", MediaType: "application/pdf", Size: int64(len(scan)), Blob: session.DigestOf(scan), Path: path, Ref: path,
+		Source: session.AttachmentSource{Owner: "me", Path: "files/Scans/scan.pdf"}}
+	if len(p.Attachments) != 1 || p.Attachments[0] != want {
+		t.Fatalf("the record %+v, want %+v", p.Attachments, want)
+	}
+	if o, ok := arca.Object(owner, "files/sessions/scan/"+path); !ok || !bytes.Equal(o.Data, scan) {
+		t.Fatalf("the session's folder holds %d bytes %t", len(o.Data), ok)
+	}
+	if l := left(); len(l) != 0 {
+		t.Fatalf("the send left %v in the spool", l)
+	}
+	waitAnswered(t, publicURL, vars, sess.ID)
 	if code := stop(); code != 0 {
 		t.Fatalf("serve exited %d", code)
 	}

@@ -31,6 +31,7 @@ import (
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/internal/filestore"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/internal/triggers"
 	"latere.ai/x/topos/machine"
@@ -152,21 +153,27 @@ type Options struct {
 // the blob route, so a session that ended, or whose agent was archived,
 // stays readable. Source reads a file of a person's own files a message
 // names (spec 079), at the files API whose root is root, with the
-// sender's own bearer token, at most max bytes, and answers its bytes and
-// the files API's Content-Type, or filestore.ErrSourceNotFound or
+// sender's own bearer token, at most max bytes, and answers its bytes as
+// a stream held to max, or filestore.ErrSourceNotFound or
 // filestore.ErrSourceTooLarge; filestore.ReadSource is the one toposd
 // runs, and nil refuses a message that names a source as
-// files_unavailable.
+// files_unavailable. Spool is the directory a source past
+// session.InlineTextBytes is held in while its send is checked (spec
+// 081), which New makes and empties of what a stopped server left; empty
+// spools to the system's temporary directory and empties nothing.
 type Files struct {
 	Write  func(ctx context.Context, s session.Session) (harness.Files, error)
 	Read   func(ctx context.Context, s session.Session) (harness.Files, error)
-	Source func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) ([]byte, string, error)
+	Source func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) (*filestore.Source, error)
+	Spool  string
 }
 
 // Server answers the API.
 type Server struct {
-	o       Options
-	limits  *ratelimit.Buckets
+	o      Options
+	limits *ratelimit.Buckets
+	// sources reads the files messages name by source (spec 081).
+	sources *sources
 	streams *slots
 	routes  []route
 	// triggers fires the installation's triggers (spec 022).
@@ -219,7 +226,15 @@ func New(o Options) (*Server, error) {
 			return err
 		}
 	}
-	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now}), streams: newSlots(o.MaxStreams), root: root, rootURL: rootURL}
+	spool := ""
+	if o.Files != nil {
+		spool = o.Files.Spool
+	}
+	src, err := newSources(spool)
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{o: o, limits: ratelimit.New(ratelimit.Config{PerMinute: o.PerMinute, Now: o.Now}), streams: newSlots(o.MaxStreams), sources: src, root: root, rootURL: rootURL}
 	s.routes = table()
 	if s.triggers, err = triggers.New(triggers.Options{Store: o.Objects, Sessions: o.Sessions, Actor: actor{s}, Now: o.Now, Log: o.Log}); err != nil {
 		return nil, err

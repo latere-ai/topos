@@ -9,6 +9,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,22 +38,26 @@ type folderFixture struct {
 	*fixture
 	arca  *arcastub.Server
 	named bool
+	// spool is the server's spool directory (spec 081).
+	spool string
 }
 
 func newFolderFixture(t *testing.T) *folderFixture {
 	t.Helper()
-	arca := arcastub.New(t)
+	// The bucket is on https, the one scheme a source's read follows a
+	// redirect to (spec 081).
+	arca := arcastub.NewTLS(t)
 	open := func(tok func(session.Session) string) func(context.Context, session.Session) (harness.Files, error) {
 		return func(_ context.Context, s session.Session) (harness.Files, error) {
-			return filestore.New(*s.Folder, func(context.Context) (string, error) { return tok(s), nil }, &http.Client{})
+			return filestore.New(*s.Folder, func(context.Context) (string, error) { return tok(s), nil }, arca.Client())
 		}
 	}
-	ff := &folderFixture{arca: arca, named: true}
+	ff := &folderFixture{arca: arca, named: true, spool: filepath.Join(t.TempDir(), "spool")}
 	ff.fixture = newFixture(t, func(o *Options) {
 		o.Files = &Files{Write: open(func(s session.Session) string { return "session:" + s.ID }), Read: open(func(session.Session) string { return "server" }),
-			Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) ([]byte, string, error) {
-				return filestore.ReadSource(ctx, &http.Client{}, root, token, src, max)
-			}}
+			Source: func(ctx context.Context, root, token string, src session.AttachmentSource, max int64) (*filestore.Source, error) {
+				return filestore.ReadSource(ctx, arca.Client(), root, token, src, max)
+			}, Spool: ff.spool}
 	})
 	ff.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		d, err := ff.authz.next.Authorize(context.Background(), req)
@@ -598,7 +603,7 @@ func TestAForksRefsResolveInItsOwnFolder(t *testing.T) {
 	}
 	resolves := func(s session.Session, want int) {
 		t.Helper()
-		store, err := filestore.New(*f.stored(s.ID).Folder, func(context.Context) (string, error) { return "session:" + s.ID, nil }, &http.Client{})
+		store, err := filestore.New(*f.stored(s.ID).Folder, func(context.Context) (string, error) { return "session:" + s.ID, nil }, f.arca.Client())
 		if err != nil {
 			t.Fatal(err)
 		}

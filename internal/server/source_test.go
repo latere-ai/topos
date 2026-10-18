@@ -5,8 +5,10 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,13 +18,15 @@ import (
 	"latere.ai/x/pkg/authz"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/filestore"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/arcastub"
 )
 
-// sourceFixture is a folder fixture whose files API answers a read of
-// any file up to MaxSourceBytes inline, as an Arca-compatible files API
-// does, and which keeps the send questions its authorizer was asked.
+// sourceFixture is a folder fixture whose files API answers a read of a
+// file up to filestore.InlineBytes inline and redirects a larger one to
+// its bucket, as an Arca-compatible files API does, and which keeps the
+// send questions its authorizer was asked.
 type sourceFixture struct {
 	*folderFixture
 	mu    sync.Mutex
@@ -32,7 +36,7 @@ type sourceFixture struct {
 func newSourceFixture(t *testing.T) *sourceFixture {
 	t.Helper()
 	sf := &sourceFixture{folderFixture: newFolderFixture(t)}
-	sf.arca.RedirectAbove(MaxSourceBytes)
+	sf.arca.RedirectAbove(filestore.InlineBytes)
 	named := sf.authz.answer
 	sf.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		if req.Action == authorizer.ActionSessionSend {
@@ -158,9 +162,9 @@ func TestASourceIsReadWithTheSendersToken(t *testing.T) {
 
 // TestASourceTheFilesAPIRefuses: a source the files API answers 401, 403
 // or 404 for is attachment_source_not_found, one answer for the three; a
-// redirect is attachment_too_large; any other failure files_unavailable;
-// and a refused message appends nothing and writes nothing to the
-// session's folder (spec 079).
+// redirect to an address that is not https and any other failure are
+// files_unavailable; and a refused message appends nothing and writes
+// nothing to the session's folder (spec 079, 081).
 func TestASourceTheFilesAPIRefuses(t *testing.T) {
 	f := newSourceFixture(t)
 	s := f.create("alice", "reviewer")
@@ -190,32 +194,36 @@ func TestASourceTheFilesAPIRefuses(t *testing.T) {
 		t.Fatalf("the three answers differ:\n%s\n%s\n%s", unauthenticated.body, forbidden.body, missing.body)
 	}
 	f.arca.Put("me", "files/a.csv", arcastub.Object{Data: []byte("a\n"), ContentType: "text/csv"})
-	f.arca.RedirectAbove(-1)
-	if a := refused("a redirect", http.StatusRequestEntityTooLarge, CodeAttachmentTooLarge); !strings.Contains(string(a.body), "redirect") {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://bucket.example/a.csv", http.StatusFound)
+	}))
+	defer plain.Close()
+	read := f.api.o.Files.Source
+	f.api.o.Files.Source = func(ctx context.Context, _, token string, src session.AttachmentSource, max int64) (*filestore.Source, error) {
+		return filestore.ReadSource(ctx, plain.Client(), plain.URL, token, src, max)
+	}
+	if a := refused("a redirect to http", http.StatusServiceUnavailable, CodeFilesUnavailable); !strings.Contains(string(a.body), "not an https address") {
 		t.Fatalf("a redirect's detail %s", a.body)
 	}
-	f.arca.RedirectAbove(MaxSourceBytes)
+	f.api.o.Files.Source = read
 	f.arca.Fail(arcastub.OpRead, arcastub.Failure{Status: http.StatusInternalServerError, Code: "internal"})
 	refused("a failure", http.StatusServiceUnavailable, CodeFilesUnavailable)
-	for _, r := range f.arca.Requests() {
-		if r.Op == "bucket-read" {
-			t.Fatal("a redirect was followed")
-		}
-	}
 	if a, _ := f.sendFiles(s.ID, source("a.csv", "me", "files/a.csv")); a.status != http.StatusOK {
 		t.Fatalf("the source once the files API answers: %d %s", a.status, a.body)
 	}
 }
 
 // TestAMessagesSourcesAreBoundTogether: the sources of one message are
-// read within MaxMessageSourceBytes together, so a message holds no more
-// of them in memory at once; the source that would pass the bound is
-// attachment_too_large with the total in its detail, and nothing is
-// appended or written (spec 079).
+// read within their bound together, MaxMessageSourceBytes, so a message
+// spools no more of them at once; the source that would pass the bound
+// is attachment_too_large with the total in its detail, and nothing is
+// appended or written (spec 079, 081). The bounds are lowered, so the
+// test reads megabytes and not the bound's hundreds.
 func TestAMessagesSourcesAreBoundTogether(t *testing.T) {
 	f := newSourceFixture(t)
+	f.api.sources.file, f.api.sources.message = 2<<20, 3<<20
 	s := f.create("alice", "reviewer")
-	size := MaxMessageSourceBytes/3 + 1
+	size := int(f.api.sources.message/3 + 1)
 	files := make([]string, 3)
 	for i := range files {
 		name := "part" + strconv.Itoa(i) + ".bin"
@@ -224,7 +232,7 @@ func TestAMessagesSourcesAreBoundTogether(t *testing.T) {
 	}
 	last := f.stored(s.ID).LastSeq
 	a, _ := f.sendFiles(s.ID, files...)
-	if a.status != http.StatusRequestEntityTooLarge || a.code() != CodeAttachmentTooLarge || !strings.Contains(string(a.body), strconv.Itoa(MaxMessageSourceBytes)+" bytes together") ||
+	if a.status != http.StatusRequestEntityTooLarge || a.code() != CodeAttachmentTooLarge || !strings.Contains(string(a.body), strconv.Itoa(int(f.api.sources.message))+" bytes together") ||
 		!strings.Contains(string(a.body), strconv.Itoa(2*size)+" of them read") {
 		t.Fatalf("sources past the message's bound: %d %s", a.status, a.body)
 	}
@@ -236,6 +244,10 @@ func TestAMessagesSourcesAreBoundTogether(t *testing.T) {
 	}
 	if a, _ := f.sendFiles(s.ID, files[:2]...); a.status != http.StatusOK {
 		t.Fatalf("sources within the bound: %d %.200s", a.status, a.body)
+	}
+	f.arca.Put("me", "files/one.bin", arcastub.Object{Data: make([]byte, f.api.sources.file+1)})
+	if a, _ := f.sendFiles(s.ID, source("one.bin", "me", "files/one.bin")); a.status != http.StatusRequestEntityTooLarge || a.code() != CodeAttachmentTooLarge {
+		t.Fatalf("a source past its own bound: %d %.200s", a.status, a.body)
 	}
 }
 
