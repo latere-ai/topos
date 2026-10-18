@@ -202,6 +202,45 @@ func TestASourceIsReadWithTheSessionsToken(t *testing.T) {
 	}
 }
 
+// TestTheStarterBringsAFileSharedWithThem: the person who started the
+// session names a file of another person's space, one shared with them,
+// by that person's subject. The server reads it in that space, not the
+// starter's, with the session's own token, and names it on the send as
+// that space, so the authorizer decides the read as the starter on their
+// own share of the file (spec 079).
+func TestTheStarterBringsAFileSharedWithThem(t *testing.T) {
+	f := newSourceFixture(t)
+	minted := f.neverTheSendersToken("alice")
+	s := f.create("alice", "reviewer")
+	carols := authz.Subject(issuer, "carol")
+	const brief = "files/Shared/brief.md"
+	data := []byte("# brief\n")
+	f.arca.Put(carols, brief, arcastub.Object{Data: data, ContentType: "text/markdown"})
+
+	a, ev := f.sendFiles(s.ID, source("brief.md", carols, brief))
+	if a.status != http.StatusOK {
+		t.Fatalf("alice bringing carol's file: %d %s", a.status, a.body)
+	}
+	if got := records(t, ev); len(got) != 1 || got[0].Source != (session.AttachmentSource{Owner: carols, Path: brief}) || got[0].Blob != session.DigestOf(data) {
+		t.Fatalf("the record %+v", got)
+	}
+	var reads []arcastub.Recorded
+	for _, r := range f.arca.Requests() {
+		if r.Op == arcastub.OpRead {
+			reads = append(reads, r)
+		}
+	}
+	if len(reads) != 1 || reads[0].Path != "/v1/files/"+url.PathEscape(carols)+"/"+brief || reads[0].Header.Get("Authorization") != "Bearer session:"+s.ID {
+		t.Fatalf("carol's file was read as %+v", reads)
+	}
+	if *minted != 1 {
+		t.Errorf("the source asked for %d tokens, want one", *minted)
+	}
+	if got := sourcesAsked(t, f.lastSend()); !slices.EqualFunc(got, []map[string]any{{"owner": carols, "path": brief}}, maps.Equal) {
+		t.Errorf("the send question named %v", got)
+	}
+}
+
 // sourcesAsked is the sources a send question names, as the authorizer
 // decodes them from JSON.
 func sourcesAsked(t *testing.T, req authz.Request) []map[string]any {
