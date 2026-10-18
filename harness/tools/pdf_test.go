@@ -14,6 +14,7 @@ import (
 
 	"latere.ai/x/topos/harness/parsing"
 	"latere.ai/x/topos/prompts"
+	"latere.ai/x/topos/session"
 )
 
 // fakeParser answers each read with its document and error, and records
@@ -161,6 +162,18 @@ func TestReadFallsBackWhenAPDFIsNotParsed(t *testing.T) {
 	want := prompts.Render(prompts.ReadBinary, prompts.Data{"Path": big}) + fmt.Sprintf(" It is a PDF, and it could not be read as text: it is larger than %d MiB, the most a PDF read as text may be.", ReadMaxPDF>>20)
 	if res.Outcome != OutcomeError || text(res) != want || len(fp.reqs) != 0 {
 		t.Fatalf("a PDF past the bound %s %q", res.Outcome, text(res))
+	}
+
+	// A PDF past the working directory's bound and within the service's,
+	// as a file a person brings may be (spec 081), is sent.
+	large := filepath.Join(f.work, "large.pdf")
+	put(t, large, pdfBody)
+	if err := os.Truncate(large, session.MaxWorkFileBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	fp = &fakeParser{}
+	if res := run(ctx, t, Read(fp), f.h, State{}, `{"path":"large.pdf"}`); len(fp.reqs) != 1 || fp.reqs[0].Path != "large.pdf" {
+		t.Fatalf("a PDF past the working directory's bound %s %q, %d sent", res.Outcome, text(res), len(fp.reqs))
 	}
 
 	canceled, cancel := context.WithCancel(ctx)

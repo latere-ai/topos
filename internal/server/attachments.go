@@ -21,6 +21,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 
+	"latere.ai/x/topos/harness/parsing"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/filestore"
 	"latere.ai/x/topos/session"
@@ -39,10 +40,10 @@ const (
 	// usual limit on one path segment, and a source's owner.
 	MaxAttachmentName = 255
 	// MaxSourceBytes bounds a file a message names by its source (spec
-	// 079, 081): a parsing service's per-file bound by default, so a
-	// document a person brings can still be parsed. An Arca-compatible
-	// files API takes an object up to 5 GiB by default.
-	MaxSourceBytes = 256 << 20
+	// 079, 081): the parsing service's per-file bound, so a document a
+	// person brings can still be parsed. An Arca-compatible files API takes
+	// an object up to 5 GiB by default.
+	MaxSourceBytes = parsing.MaxFileBytes
 	// MaxMessageSourceBytes bounds the sources of one message together,
 	// which the server spools to disk at once before they are stored.
 	MaxMessageSourceBytes = 2 * MaxSourceBytes

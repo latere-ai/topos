@@ -34,6 +34,9 @@ const (
 	MaxText = 8 << 20
 	// MaxSelection is the most bytes of a call's page selection.
 	MaxSelection = 200
+	// MaxFileBytes is the most bytes of one file the service is sent: a
+	// parsing service's per-file bound by default, Lectio's among them.
+	MaxFileBytes = 256 << 20
 )
 
 // DefaultSelection is the selection of a call that names none: the first

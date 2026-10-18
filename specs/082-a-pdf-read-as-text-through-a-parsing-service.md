@@ -97,8 +97,10 @@ read through the service when all of these hold:
 - the installation sets `TOPOS_PARSING_URL`, mints session tokens, and
   the session keeps a folder of a files store; otherwise `read` answers
   a PDF as it does today, the binary answer alone;
-- it is at most `ReadMaxPDF` bytes, `session.MaxWorkFileBytes` (32 MiB),
-  the most bytes a file of the folder holds;
+- it is at most `ReadMaxPDF` bytes, `parsing.MaxFileBytes` (256 MiB),
+  the parsing service's own bound on one file, which a file a person
+  brings is held to as well (spec 081), stated by the machine before any
+  byte is read;
 - the session's folder holds the same bytes for the file's path: a
   person's attachment whose record names the path relative to the
   working directory, a ref, and the digest of the bytes `read` read, or

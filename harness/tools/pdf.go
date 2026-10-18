@@ -45,16 +45,22 @@ type ParseMeta struct {
 	Unpriced bool   `json:"unpriced,omitempty"`
 }
 
-// readPDF reads the PDF at p, its head already read through h, as the
-// Markdown of the pages in's selection names, through pr. The whole file
-// is hashed, at most ReadMaxPDF bytes, so the parse is of the bytes the
-// machine holds; a file the service did not read is the binary answer
-// and the sentence that says why, carrying what the read cost.
-func readPDF(ctx context.Context, b *builtin, c Call, p string, in readInput, pr parsing.Reader, br io.Reader, h hash.Hash) (Result, error) {
+// readPDF reads the PDF at p, of size bytes as the machine states it and
+// its head already read through h, as the Markdown of the pages in's
+// selection names, through pr. The whole file is hashed, at most
+// ReadMaxPDF bytes, so the parse is of the bytes the machine holds; a
+// file the service did not read is the binary answer and the sentence
+// that says why, carrying what the read cost.
+func readPDF(ctx context.Context, b *builtin, c Call, p string, in readInput, pr parsing.Reader, size int64, br io.Reader, h hash.Hash) (Result, error) {
 	if in.Pages != "" {
 		if err := parsing.CheckPages(in.Pages); err != nil {
 			return Text(OutcomeInvalidInput, invalidInput(NameRead, "/pages: "+strings.TrimPrefix(err.Error(), "parsing: "))), nil
 		}
+	}
+	// A file stated past the bound is not read through to say so; one that
+	// grows past it while read is caught by the copy.
+	if size > ReadMaxPDF {
+		return unreadPDF(ctx, b, c, p, unreadLarge, nil, nil)
 	}
 	// br still holds the head it peeked, so the copy counts the whole file.
 	n, err := io.Copy(io.Discard, io.LimitReader(br, ReadMaxPDF+1))

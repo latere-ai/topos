@@ -22,7 +22,6 @@ import (
 
 	"latere.ai/x/topos/harness/parsing"
 	"latere.ai/x/topos/prompts"
-	"latere.ai/x/topos/session"
 )
 
 // Limits of read (spec 008).
@@ -47,9 +46,9 @@ const MaxImages = 8
 const SniffBytes = 512
 
 // ReadMaxPDF bounds the bytes of a PDF read sends to a parsing service
-// (spec 082): the most bytes one file of a session's folder holds, the
-// bound of the working directory's copy, which is above an attachment's.
-const ReadMaxPDF = session.MaxWorkFileBytes
+// (spec 082): the service's own bound on one file, which a file a person
+// brings is held to as well (spec 081).
+const ReadMaxPDF = parsing.MaxFileBytes
 
 // pdfMagic opens every PDF.
 var pdfMagic = []byte("%PDF-")
@@ -162,7 +161,7 @@ func runRead(ctx context.Context, b *builtin, c Call, pr parsing.Reader) (res Re
 		return readImage(ctx, b, c, p, media, fi.Size, br, h)
 	}
 	if pr != nil && bytes.HasPrefix(head, pdfMagic) {
-		return readPDF(ctx, b, c, p, in, pr, br, h)
+		return readPDF(ctx, b, c, p, in, pr, fi.Size, br, h)
 	}
 	if kind := documentKind(p); kind != "" && bytes.HasPrefix(head, zipMagic) {
 		return readDocument(ctx, b, c, p, kind, in, br, h)
