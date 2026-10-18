@@ -474,6 +474,36 @@ func (a *Arca) Open(ctx context.Context, ref string) (io.ReadCloser, int64, erro
 	return resp.Body, resp.ContentLength, nil
 }
 
+// Presign answers an address that reads the file at ref with no
+// credential, for the few minutes the files API signs it for (spec 080):
+// a read of ?inline=0, which the files API answers with a redirect at any
+// size, whose Location is taken and not followed. The address goes to a
+// service that fetches the file itself.
+func (a *Arca) Presign(ctx context.Context, ref string) (string, error) {
+	if err := session.CheckRef(ref); err != nil {
+		return "", err
+	}
+	resp, err := a.send(ctx, http.MethodGet, a.fileURL(a.at(ref))+"?inline=0", nil, 0, nil)
+	if err != nil {
+		return "", fmt.Errorf("filestore: presign %s: %w", ref, err)
+	}
+	defer closeBody(resp)
+	switch {
+	case resp.StatusCode/100 == 2:
+		return "", fmt.Errorf("filestore: the presign of %s answered the file's bytes, not its address", ref)
+	case resp.StatusCode/100 != 3:
+		return "", refusal("presign", resp)
+	}
+	loc, err := resp.Location()
+	if err != nil {
+		return "", fmt.Errorf("filestore: the presign of %s redirected nowhere: %w", ref, err)
+	}
+	if err := presigned(loc); err != nil {
+		return "", err
+	}
+	return loc.String(), nil
+}
+
 // Delete removes the file at ref for good, permanent=1 so it is not kept
 // in the space's trash: a redaction's file and a working directory's
 // removed file are gone, not restorable. A file already gone is no error.

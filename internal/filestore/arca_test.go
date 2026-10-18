@@ -393,3 +393,67 @@ func TestArcaOverwritesAndDeletes(t *testing.T) {
 		t.Fatal("a delete with no token")
 	}
 }
+
+// TestPresign (spec 080): a presign reads the ref with ?inline=0 and the
+// bearer and answers the Location without following it, an address that
+// reads the bytes with no credential; nothing at the ref is
+// ErrFileNotFound, a ref out of the folder's rules is refused, and an
+// answer of the bytes or of an address that is not http or https is an
+// error.
+func TestPresign(t *testing.T) {
+	s := arcastub.New(t)
+	f := folder(s, "files/conversations/s1")
+	a := open(t, f, "tok")
+	s.Put(owner, "files/conversations/s1/attachments/e1/a.pdf", arcastub.Object{Data: []byte("%PDF-1.7 small"), ContentType: "application/pdf"})
+	u, err := a.Presign(t.Context(), "attachments/e1/a.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := 0
+	for _, r := range s.Requests() {
+		if r.Op == arcastub.OpRead {
+			reads++
+			if r.Header.Get("Authorization") != "Bearer tok" || r.Query != "inline=0" {
+				t.Fatalf("the presign's read %+v", r)
+			}
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("%d reads of the files API", reads)
+	}
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if cerr := resp.Body.Close(); err != nil || cerr != nil || string(body) != "%PDF-1.7 small" {
+		t.Fatalf("the presigned address %s answered %q %v %v", u, body, err, cerr)
+	}
+	if _, err := a.Presign(t.Context(), "attachments/e1/gone.pdf"); !errors.Is(err, harness.ErrFileNotFound) {
+		t.Fatalf("nothing at the ref: %v", err)
+	}
+	if _, err := a.Presign(t.Context(), "../x"); err == nil {
+		t.Fatal("a ref out of the folder was presigned")
+	}
+
+	var location string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if location == "" {
+			_, _ = io.WriteString(w, "the bytes")
+			return
+		}
+		w.Header().Set("Location", location)
+		w.WriteHeader(http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+	b, err := New(session.Folder{URL: srv.URL, Owner: owner, Path: "files/conversations/s1"}, func(context.Context) (string, error) { return "tok", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, loc := range []string{"", "ftp://bucket.example/a"} {
+		location = loc
+		if _, err := b.Presign(t.Context(), "attachments/e1/a.pdf"); err == nil {
+			t.Errorf("a presign answered with %q was taken", loc)
+		}
+	}
+}
