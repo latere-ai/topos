@@ -29,7 +29,7 @@ import (
 
 // Categories are the directories of the suite, in the order of spec
 // 025's category table.
-var Categories = []string{"coding", "files", "instructions", "threads"}
+var Categories = []string{"coding", "files", "instructions", "threads", "titles"}
 
 // The defaults of a task.yaml field that is left out.
 const (
@@ -78,6 +78,11 @@ type Task struct {
 	// search service answers every web_search with, ${SERVE_URL}
 	// expanded (spec 047); a task whose agent holds web_search names one.
 	Search string
+	// Log is a file of the task holding JSON lines of session events,
+	// placeholders expanded, which the run writes into the session
+	// before it sends the prompt, so the run starts in the middle of a
+	// conversation; empty starts the session with the prompt.
+	Log string
 	// Dir is the task's directory.
 	Dir string
 	// Bundle is set when the starting files are a git bundle rather
@@ -132,6 +137,7 @@ type taskFile struct {
 	Runs     *int     `yaml:"runs"`
 	Serve    string   `yaml:"serve"`
 	Search   string   `yaml:"search"`
+	Log      string   `yaml:"log"`
 	Answers  []Answer `yaml:"answers"`
 }
 
@@ -184,7 +190,7 @@ func LoadTask(dir string) (Task, error) {
 	t := Task{
 		Name: f.Name, Category: f.Category, Prompt: strings.TrimSpace(f.Prompt), Agent: f.Agent,
 		Timeout: DefaultTimeout, MaxCostUSDMicro: int64(math.Round(DefaultMaxCost * 1e6)), Runs: DefaultRuns,
-		Serve: f.Serve, Search: f.Search, Dir: dir, Answers: f.Answers,
+		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers,
 	}
 	t.ID = t.Category + "/" + t.Name
 	fail := func(format string, a ...any) (Task, error) {
@@ -240,6 +246,11 @@ func LoadTask(dir string) (Task, error) {
 	case t.Search != "":
 		if _, err := readHits(filepath.Join(dir, t.Search), ""); err != nil {
 			return fail("search %q: %v", t.Search, err)
+		}
+	}
+	if t.Log != "" {
+		if _, err := readLog(filepath.Join(dir, t.Log), "/work", "http://127.0.0.1:1", time.Now()); err != nil {
+			return fail("log %q: %v", t.Log, err)
 		}
 	}
 	if err := t.findStart(); err != nil {

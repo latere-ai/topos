@@ -481,14 +481,27 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	}
 	res.Session, res.Workdir, res.MaxCostUSDMicro = s.ID, r.workdir, r.t.MaxCostUSDMicro
 	res.Log = filepath.Join(r.data, "sessions", s.ID, "events.jsonl")
+	// A task that names a log starts in the middle of the conversation it
+	// holds: its events are the session's first, and the prompt follows.
+	var last uint64
+	if r.t.Log != "" {
+		seeded, err := readLog(filepath.Join(r.t.Dir, r.t.Log), r.workdir, r.serveURL, now)
+		if err != nil {
+			return res, fmt.Errorf("tasks: %s: %w", r.t.Log, err)
+		}
+		session.Stamp(s.ID, 0, seeded)
+		if last, err = st.Append(ctx, s.ID, 0, seeded); err != nil {
+			return res, err
+		}
+	}
 	text := string(expand([]byte(r.t.Prompt), r.workdir, r.serveURL))
 	msg, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: person, Content: []lux.Block{{Type: ir.BlockText, Text: text}}}, now)
 	if err != nil {
 		return res, err
 	}
 	evs := []session.Event{msg}
-	session.Stamp(s.ID, 0, evs)
-	if _, err := st.Append(ctx, s.ID, 0, evs); err != nil {
+	session.Stamp(s.ID, last, evs)
+	if _, err := st.Append(ctx, s.ID, last, evs); err != nil {
 		return res, err
 	}
 	rn, err := runner.New(runner.Options{

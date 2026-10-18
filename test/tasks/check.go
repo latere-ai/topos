@@ -62,6 +62,17 @@ type Assertion struct {
 	// states, such as the question tool's rule that an agent names what
 	// it assumed.
 	FinalMessage *FinalMessageCheck `yaml:"final_message"`
+	// Title asserts on the session's title after the run.
+	Title *TitleCheck `yaml:"title"`
+}
+
+// TitleCheck asserts on the session's title after the run, the new title
+// of its last session.title_changed (spec 083), "" when it has none: it
+// matches Matches and does not match NotMatching, each a pattern, at
+// least one of them set.
+type TitleCheck struct {
+	Matches     string `yaml:"matches"`
+	NotMatching string `yaml:"not_matching"`
 }
 
 // QuestionCheck asserts on the root thread's question calls: there are
@@ -160,7 +171,7 @@ func (a Assertion) kinds() []string {
 		{"go", a.Go != nil}, {"file", a.File != nil}, {"unchanged", a.Unchanged != nil},
 		{"absent", a.Absent != nil}, {"only_files", a.OnlyFiles != nil}, {"no_match", a.NoMatch != nil},
 		{"call", a.Call != nil}, {"no_call", a.NoCall != nil}, {"todo", a.Todo != nil},
-		{"question", a.Question != nil}, {"final_message", a.FinalMessage != nil},
+		{"question", a.Question != nil}, {"final_message", a.FinalMessage != nil}, {"title", a.Title != nil},
 	} {
 		if k.set {
 			out = append(out, k.name)
@@ -170,7 +181,7 @@ func (a Assertion) kinds() []string {
 }
 
 // LogKinds are the assertions that read the session's log.
-var LogKinds = []string{"call", "no_call", "todo", "question", "final_message"}
+var LogKinds = []string{"call", "no_call", "todo", "question", "final_message", "title"}
 
 // ParseCheck reads a check.yaml and refuses an assertion with no kind or
 // with two, an unknown field, a bad pattern, and a call with no tool or
@@ -193,7 +204,7 @@ func ParseCheck(b []byte) (Check, error) {
 
 func (a Assertion) validate() error {
 	if k := a.kinds(); len(k) != 1 {
-		return fmt.Errorf("sets %d kinds %v; an assertion is exactly one of go, file, unchanged, absent, only_files, no_match, call, no_call, todo, question, final_message", len(k), k)
+		return fmt.Errorf("sets %d kinds %v; an assertion is exactly one of go, file, unchanged, absent, only_files, no_match, call, no_call, todo, question, final_message, title", len(k), k)
 	}
 	var patterns []string
 	switch {
@@ -215,6 +226,10 @@ func (a Assertion) validate() error {
 		return errors.New("final_message has no pattern")
 	case a.FinalMessage != nil:
 		patterns = append(patterns, a.FinalMessage.Matches)
+	case a.Title != nil && a.Title.Matches == "" && a.Title.NotMatching == "":
+		return errors.New("title has no pattern")
+	case a.Title != nil:
+		patterns = append(patterns, a.Title.Matches, a.Title.NotMatching)
 	}
 	for _, c := range []*CallCheck{a.Call, a.NoCall} {
 		if c == nil {
@@ -315,6 +330,8 @@ func (a Assertion) eval(ctx context.Context, in Input, calls []Call, i int) (str
 		return a.Question.eval(calls), nil
 	case a.FinalMessage != nil:
 		return a.FinalMessage.eval(in.Events), nil
+	case a.Title != nil:
+		return a.Title.eval(in.Events), nil
 	}
 	return a.Todo.eval(calls), nil
 }
@@ -374,6 +391,23 @@ func (f *FinalMessageCheck) eval(evs []session.Event) string {
 	}
 	if !regexp.MustCompile(f.Matches).MatchString(text) {
 		return fmt.Sprintf("the final message %q does not match %s", clip(text), f.Matches)
+	}
+	return ""
+}
+
+func (c *TitleCheck) eval(evs []session.Event) string {
+	title := ""
+	for _, e := range evs {
+		var p session.TitleChanged
+		if e.Type == session.TypeTitleChanged && !e.Redacted() && e.Decode(&p) == nil {
+			title = p.New
+		}
+	}
+	if c.Matches != "" && !regexp.MustCompile(c.Matches).MatchString(title) {
+		return fmt.Sprintf("the title %q does not match %s", clip(title), c.Matches)
+	}
+	if c.NotMatching != "" && regexp.MustCompile(c.NotMatching).MatchString(title) {
+		return fmt.Sprintf("the title %q matches %s", clip(title), c.NotMatching)
 	}
 	return ""
 }
