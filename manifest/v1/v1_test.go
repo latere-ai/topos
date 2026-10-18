@@ -55,9 +55,35 @@ func TestTheResolvedFormWritesFixedDefaultsAndOmitsTheRest(t *testing.T) {
 			t.Fatalf("%s lacks %s", got, want)
 		}
 	}
-	for _, absent := range []string{"status", "budget", "description", "subagents", "resources", "advisor", "identity"} {
+	for _, absent := range []string{"status", "budget", "description", "subagents", "resources", "advisor", "identity", "title"} {
 		if strings.Contains(got, `"`+absent+`"`) {
 			t.Fatalf("%s writes %s", got, absent)
+		}
+	}
+}
+
+// TestATitleDecodesWithAndWithoutAModel: spec.title is an object whose
+// model is optional, and an empty model is kept as one, for validation
+// to refuse (spec 083).
+func TestATitleDecodesWithAndWithoutAModel(t *testing.T) {
+	for in, want := range map[string]*string{
+		`{"title":{}}`:                     nil,
+		`{"title":{"model":"tier/quick"}}`: new("tier/quick"),
+		`{"title":{"model":""}}`:           new(""),
+	} {
+		var spec AgentSpec
+		if err := json.Unmarshal([]byte(in), &spec); err != nil {
+			t.Fatal(err)
+		}
+		if spec.Title == nil || !reflect.DeepEqual(spec.Title.Model, want) {
+			t.Fatalf("%s: title %+v", in, spec.Title)
+		}
+		b, err := json.Marshal(spec.Title)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(in, string(b)) {
+			t.Fatalf("%s encodes back as %s", in, b)
 		}
 	}
 }

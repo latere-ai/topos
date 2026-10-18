@@ -247,6 +247,9 @@ func (v *validator) agent(at string, s v1.AgentSpec) {
 		v.model(at+".advisor.model", a.Model)
 		v.text(at+".advisor.instructions", a.Instructions)
 	}
+	if t := s.Title; t != nil && t.Model != nil && strings.TrimSpace(*t.Model) == "" {
+		v.add(at+".title.model", "empty: name a model, or leave model out to ask for the session's own")
+	}
 	for i, sk := range s.Skills {
 		sp := indexed(at+".skills", i)
 		switch {

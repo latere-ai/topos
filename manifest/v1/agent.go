@@ -73,13 +73,16 @@ type AgentSpec struct {
 	InstructionsFile string `json:"instructionsFile,omitempty"`
 	// Tools absent is every built-in; an empty list is none. The
 	// resolved spec always lists them.
-	Tools        []Tool           `json:"tools"`
-	Permissions  []Permission     `json:"permissions,omitempty"`
-	Approvals    Approvals        `json:"approvals"`
-	Hooks        []Hook           `json:"hooks,omitempty"`
-	Subagents    []Subagent       `json:"subagents,omitempty"`
-	Threads      Threads          `json:"threads"`
-	Advisor      *Advisor         `json:"advisor,omitempty"`
+	Tools       []Tool       `json:"tools"`
+	Permissions []Permission `json:"permissions,omitempty"`
+	Approvals   Approvals    `json:"approvals"`
+	Hooks       []Hook       `json:"hooks,omitempty"`
+	Subagents   []Subagent   `json:"subagents,omitempty"`
+	Threads     Threads      `json:"threads"`
+	Advisor     *Advisor     `json:"advisor,omitempty"`
+	// Title turns on the title that follows the conversation (spec 083);
+	// nil leaves the session's title to its create and its people.
+	Title        *Title           `json:"title,omitempty"`
 	Skills       []Skill          `json:"skills,omitempty"`
 	MCPServers   []MCPServer      `json:"mcpServers,omitempty"`
 	MemoryStores []MemoryStoreRef `json:"memoryStores,omitempty"`
@@ -262,6 +265,16 @@ type Threads struct {
 type Advisor struct {
 	Model        AgentModel `json:"model"`
 	Instructions string     `json:"instructions,omitempty"`
+}
+
+// Title is spec.title (spec 083): after a turn a person started, the
+// harness asks a model whether the session's title still names what the
+// conversation is about, and writes a new one when it does not. Model is
+// the name that request asks for; nil asks for the name the session's
+// model was asked by, or its model where it has none. A session reads the
+// setting from the agent's latest version, not the version it runs.
+type Title struct {
+	Model *string `json:"model,omitempty"`
 }
 
 // Skill is an Agent Skills folder: a path on the machine, or a git
