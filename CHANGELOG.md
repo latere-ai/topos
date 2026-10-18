@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.43.0 - 2026-10-18
+
 ### Added
 
 - **A message can bring a file from the person's own files.** A file of a message's `attachments` may name `source`, `{"owner": "me", "path": "files/Reports/q3.csv", "version": 3}`, in place of its `data`, on a send and on a fork's message. The server reads the file when the message is sent, at the files API of the session's folder, with the token the client sent the message with, and keeps it in the session's folder as if its bytes had been sent; its record names the `source`. `version` is optional. The files API must accept the token a client sends to the core. A file the files API answers 401, 403 or 404 for is `attachment_source_not_found` (404), one answer for the three, so the answer does not say whether the file exists; a file past 16 MiB, a public file, which the files API answers with a redirect, and sources past 32 MiB together in one message are `attachment_too_large`; any other failure is `files_unavailable`. A session without a folder refuses a source as `invalid_request`. A source counts among the message's `attachments` in the authorizer's question. A program that embeds the server sets `Files.Source`; toposd sets it whenever `TOPOS_FILES_AUDIENCE` is set.
