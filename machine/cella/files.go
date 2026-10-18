@@ -108,9 +108,19 @@ func (m *Machine) ReadFile(ctx context.Context, p string) (io.ReadCloser, error)
 	return rc, nil
 }
 
+// replayBytes bounds what a write keeps in memory of a body that does
+// not seek, so that it can send the body again after the sandbox was
+// woken (spec 081). A small file of a restore fits within it; a larger
+// body, such as a message's file, is sent once as a stream.
+const replayBytes = 1 << 20
+
 // WriteFile writes a file and its missing parents; Cella's route and the
 // helper both write beside the path and rename over it. A mode of zero
-// keeps an existing file's permissions, or is 0644.
+// keeps an existing file's permissions, or is 0644. A body that seeks,
+// or that does not and holds at most replayBytes, is sent again if the
+// sandbox had stopped; a larger one that does not seek is sent once to
+// the workspace after the sandbox is woken, as an archive's import is,
+// and is never held in memory whole.
 func (m *Machine) WriteFile(ctx context.Context, p string, src io.Reader, mode fs.FileMode) error {
 	t, err := m.resolve(p)
 	if err != nil {
@@ -119,11 +129,20 @@ func (m *Machine) WriteFile(ctx context.Context, p string, src io.Reader, mode f
 	if t.abs == t.root {
 		return fmt.Errorf("machine: %s is a directory", t.abs)
 	}
-	body, off, err := replayable(src)
+	body, off, stream, err := replayable(src)
 	if err != nil {
 		return fmt.Errorf("machine: read what to write to %s: %w", t.abs, err)
 	}
 	if !t.routes {
+		// A write outside the workspace is the harness's own, never a
+		// message's file or a restored one, and its body is read whole.
+		if stream != nil {
+			b, err := io.ReadAll(stream)
+			if err != nil {
+				return fmt.Errorf("machine: read what to write to %s: %w", t.abs, err)
+			}
+			body, off = bytes.NewReader(b), 0
+		}
 		return m.helperWrite(ctx, t, body, off, mode)
 	}
 	perm := ""
@@ -138,6 +157,14 @@ func (m *Machine) WriteFile(ctx context.Context, p string, src io.Reader, mode f
 			return err
 		}
 	}
+	if stream != nil {
+		if err := m.awake(ctx); err != nil {
+			return err
+		}
+		return routeErr("write", t.abs, m.call(ctx, false, func(id string) error {
+			return m.c.FilePut(ctx, id, t.abs, perm, stream)
+		}))
+	}
 	return routeErr("write", t.abs, m.call(ctx, true, func(id string) error {
 		if _, err := body.Seek(off, io.SeekStart); err != nil {
 			return err
@@ -151,18 +178,26 @@ func octal(mode fs.FileMode) string { return fmt.Sprintf("%04o", mode.Perm()) }
 
 // replayable returns a reader that can be sent again from where it
 // starts, for a write that runs again after the sandbox was started: r
-// itself when it seeks, and its bytes otherwise.
-func replayable(r io.Reader) (io.ReadSeeker, int64, error) {
+// itself when it seeks, and its bytes when they are at most replayBytes.
+// A longer body that does not seek is answered as stream instead, its
+// bytes read so far and the rest of r, to be sent once.
+func replayable(r io.Reader) (io.ReadSeeker, int64, io.Reader, error) {
 	if r == nil {
-		return bytes.NewReader(nil), 0, nil
+		return bytes.NewReader(nil), 0, nil, nil
 	}
 	if rs, ok := r.(io.ReadSeeker); ok {
 		if off, err := rs.Seek(0, io.SeekCurrent); err == nil {
-			return rs, off, nil
+			return rs, off, nil, nil
 		}
 	}
-	b, err := io.ReadAll(r)
-	return bytes.NewReader(b), 0, err
+	head, err := io.ReadAll(io.LimitReader(r, replayBytes+1))
+	switch {
+	case err != nil:
+		return nil, 0, nil, err
+	case len(head) <= replayBytes:
+		return bytes.NewReader(head), 0, nil, nil
+	}
+	return nil, 0, io.MultiReader(bytes.NewReader(head), r), nil
 }
 
 func (m *Machine) Stat(ctx context.Context, p string) (machine.FileInfo, error) {

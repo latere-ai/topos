@@ -6,11 +6,13 @@ package cella
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -314,5 +316,80 @@ func TestRouteInfo(t *testing.T) {
 	}
 	if err := (&errorBody{Kind: "other", Message: "machine: said"}).err("op", "/p"); err.Error() != "machine: said" {
 		t.Errorf("a failure = %q", err)
+	}
+}
+
+// pattern is n bytes of a fixed pattern, generated as they are read, and
+// seeks nowhere, as a stream from a files store does not.
+type pattern struct{ off, n int64 }
+
+func (p *pattern) Read(b []byte) (int, error) {
+	if p.off >= p.n {
+		return 0, io.EOF
+	}
+	b = b[:min(int64(len(b)), p.n-p.off)]
+	for i := range b {
+		b[i] = byte((p.off + int64(i)) % 251)
+	}
+	p.off += int64(len(b))
+	return len(b), nil
+}
+
+// patternSum is the SHA-256 of n bytes of the pattern.
+func patternSum(t *testing.T, n int64) []byte {
+	t.Helper()
+	h := sha256.New()
+	if _, err := io.Copy(h, &pattern{n: n}); err != nil {
+		t.Fatal(err)
+	}
+	return h.Sum(nil)
+}
+
+// TestALargeWriteIsStreamed (spec 081): a body past replayBytes that does
+// not seek, as a message's file read from a files store, is written to
+// the workspace of a stopped sandbox once it is woken, as a stream whose
+// write allocates a small part of the file; a shorter one that does not
+// seek is still sent again after the wake.
+func TestALargeWriteIsStreamed(t *testing.T) {
+	const size = 32 << 20
+	f := open(t)
+	ctx := t.Context()
+	id := f.m.Info().ID
+	f.stub.Stop(id)
+	puts := f.stub.Count(cellastub.OpFiles)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	if err := f.m.WriteFile(ctx, "attachments/e1/scan.pdf", &pattern{n: size}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runtime.ReadMemStats(&after)
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/8 {
+		t.Fatalf("a write of %d bytes allocated %d", size, alloc)
+	}
+	if sb, _ := f.stub.Sandbox(id); sb.Status.Phase != "Running" {
+		t.Fatalf("the sandbox is %s after a streamed write", sb.Status.Phase)
+	}
+	if n := f.stub.Count(cellastub.OpFiles) - puts; n != 1 {
+		t.Fatalf("the streamed write took %d file requests", n)
+	}
+	rc, err := f.m.ReadFile(ctx, "attachments/e1/scan.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.New()
+	n, err := io.Copy(h, rc)
+	if err = errors.Join(err, rc.Close()); err != nil || n != size || !bytes.Equal(h.Sum(nil), patternSum(t, size)) {
+		t.Fatalf("the workspace holds %d bytes of another file: %v", n, err)
+	}
+
+	f.stub.Stop(id)
+	f.stub.StartAfter(2)
+	if err := f.m.WriteFile(ctx, "short.txt", io.MultiReader(strings.NewReader("short, "), strings.NewReader("sent again")), 0); err != nil {
+		t.Fatal(err)
+	}
+	f.stub.StartAfter(0)
+	if got, err := read(t, f.m, "short.txt"); err != nil || got != "short, sent again" {
+		t.Fatalf("a short write after a wake: %q %v", got, err)
 	}
 }
