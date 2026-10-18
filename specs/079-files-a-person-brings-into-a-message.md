@@ -235,7 +235,8 @@ has no marked file, and its requests build as before.
 
 ## Not in this spec
 
-- A source past 16 MiB, through the files API's presigned address.
+- A source past 16 MiB, through the files API's presigned address:
+  spec 081.
 - A source from any other service than the files API of the session's
   folder.
 - A source on a session's create, which takes no files.
@@ -323,5 +324,6 @@ written, or adds to it:
   (`internal/server.TestASourcesRules`).
 
 Not done: a source past 16 MiB, through the files API's presigned
-address; reading a PDF's text, the owner's decision, later; and the
-credential of a source's read, which the owner decides (see Decisions).
+address, which spec 081 takes up; reading a PDF's text, the owner's
+decision, later; and the credential of a source's read, which the
+owner decides (see Decisions).
