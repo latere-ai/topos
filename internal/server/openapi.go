@@ -337,7 +337,7 @@ var opDescriptions = map[string]string{
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
 		"interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
-	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule,
+	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule,
 	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. The answer is read by the blob's leading bytes: "+
 		"PNG, JPEG, GIF or WebP is that image type with Content-Disposition inline, and any other blob, an SVG included, application/octet-stream with Content-Disposition attachment. "+
 		"A file an answer linked that is no such image is a download here whatever its type, which the media_type of its files.kept entry names. "+
@@ -485,7 +485,7 @@ var opDescriptions = map[string]string{
 		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm. "+
 		"A title is trimmed of surrounding white space, and one that is then empty, longer than %d characters, or holds a control character or a line or paragraph separator is invalid_request. "+
 		"A change of the title asks the same session.update with title, the trimmed title, and appends session.title_changed {by, old, new}, the title the session had, empty when it had none, and the one it has, after the other changes of the same body; the Session's title is the new one and its updated_at does not move. "+
-		"A change to the title the session has appends nothing. "+
+		"A change to the title the session has appends nothing, and once a person changed the title the harness names the session no more. "+
 		`metadata is a merge: a string sets its key, null deletes it, and a key the body does not name is kept; {} is invalid_request, and the metadata after the merge is held to the rules of a create's. `+
 		"A change of the metadata asks the same session.update with metadata, the change as sent, null included, and current_metadata, the value each key it names holds now, a key the session does not hold left out. "+
 		"It appends no event: the store writes the metadata, the Session's metadata is the merged one, and a change to what the session holds writes nothing. "+

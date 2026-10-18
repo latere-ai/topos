@@ -1142,8 +1142,10 @@ func tailOfCopy(evs []session.Event) tail {
 	return tail{at: scan.at, made: scan.made, tools: scan.tools}
 }
 
-// tailScan is one backward read of a log's end: the last model request,
-// and whether turn, the last, called a tool.
+// tailScan is one backward read of a log's end: the last model request
+// of a thread, and whether turn, the last, called a tool. A title's
+// request is the harness's own, on a model the session's turns may not
+// run, and warms no cache of theirs, so it is not the last (spec 083).
 type tailScan struct {
 	turn       int
 	at         time.Time
@@ -1154,7 +1156,7 @@ type tailScan struct {
 
 // read takes the next event, going backward.
 func (t *tailScan) read(e session.Event) {
-	if !t.made && e.Type == session.TypeModelRequest {
+	if !t.made && e.Type == session.TypeModelRequest && session.Purpose(e) != session.PurposeTitle {
 		t.at, t.made = e.Time, true
 	}
 	if t.toolsKnown {

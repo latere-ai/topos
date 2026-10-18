@@ -53,7 +53,7 @@ func (f *fixture) routeBy(answer func(authz.Request) pick) *routes {
 			return d, err
 		}
 		switch req.Action {
-		case authorizer.ActionSessionCreate, authorizer.ActionSessionFork, authorizer.ActionSessionUpdate, authorizer.ActionSessionSend:
+		case authorizer.ActionSessionCreate, authorizer.ActionSessionFork, authorizer.ActionSessionUpdate, authorizer.ActionSessionSend, authorizer.ActionSessionTitle:
 		default:
 			return d, nil
 		}
