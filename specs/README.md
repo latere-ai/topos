@@ -136,6 +136,8 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [080](.archive/080-device-machines.md) | Device machines: a person's own computer as a session's machine through a Cella environment it serves, named at create with a granted folder, opened with no secrets, no repository delivery, no checkpoints and no restore, the helper written for its OS and architecture, scored as a host, and `machine_waiting` while it is away or has not approved | large | complete | 008, 012, 015, 016, 018, 034, 052, 065, 073, 076 |
 | [081](081-a-file-a-person-brings-past-16-mib.md) | A file a person brings past 16 MiB: a source the files API redirects is read once at the https address it names, without the bearer, spooled to disk while it is hashed, written through an upload session, and delivered to a Cella machine as a stream | medium | testing | 009, 068, 079 |
 | [082](082-a-pdf-read-as-text-through-a-parsing-service.md) | A PDF read as text through a parsing service: `read` sends a PDF of the session's folder to the parsing service the installation configures, with the session's own token, returns the pages asked as Markdown, keeps the parse for the session, and counts what its model reads cost | medium | in-progress | 007, 008, 018, 047, 068, 073, 079 |
+| [083](083-a-title-that-follows-the-conversation.md) | A title that follows the conversation: after a turn a person started, a small model keeps the title on the current subject, `spec.title` turns it on, `session.title` names the model, a person's rename wins, and the sessions an agent ran before are named once | medium | drafted | 004, 006, 007, 010, 016, 017, 025, 038, 049, 054, 061 |
+| [084](084-reading-back-what-the-context-let-go.md) | Reading back what the context let go: an opt-in `history` tool reads the thread's own log as written, by range, by call or by words, and the cleared, summary and compaction texts say so | medium | drafted | 004, 008, 010, 013, 018, 025, 048, 083 |
 
 ## Dependency graph
 
@@ -224,6 +226,8 @@ flowchart BT
   S080[080 device machines]
   S081[081 a file a person brings past 16 MiB]
   S082[082 a PDF read as text through a parsing service]
+  S083[083 a title that follows the conversation]
+  S084[084 reading back what the context let go]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -382,6 +386,12 @@ flowchart BT
   S082 --> S047
   S082 --> S073
   S082 --> S079
+  S083 --> S025
+  S083 --> S054
+  S083 --> S061
+  S084 --> S018
+  S084 --> S048
+  S084 --> S083
 ```
 
 ## Build order
