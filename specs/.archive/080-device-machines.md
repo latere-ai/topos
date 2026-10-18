@@ -225,8 +225,8 @@ and appears in its owner's list.
 
 ## Outcome
 
-Built on 2026-10-18, in no release yet, against Cella's main branch
-through a pseudo-version, and run against the stub Cella, whose
+Built on 2026-10-18, in no release yet, against Cella v0.17.0, and run
+against the stub Cella, whose
 environments now include ones a person's computer serves: a host in
 `status.hosts`, a phase, held creates, refusals, a worker that goes
 away, and scratch directories in `status.paths`. Criteria 1 to 8 have

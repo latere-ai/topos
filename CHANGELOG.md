@@ -18,7 +18,7 @@ committed: the commit log already holds that.
 
 ### Changed
 
-- `latere.ai/x/cella` at its main branch, for the host facts, the held create and the scratch directories of a worker on a person's computer, and `latere.ai/x/pkg` v0.102.0.
+- `latere.ai/x/cella` v0.17.0, for the host facts, the held create, the local driver and the scratch directories of a worker on a person's computer, and `latere.ai/x/pkg` v0.102.0.
 
 ## v0.44.0 - 2026-10-18
 
