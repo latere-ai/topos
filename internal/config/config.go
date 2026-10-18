@@ -181,6 +181,10 @@ type Config struct {
 	// configures no files store, and an allow that names a folder is then
 	// refused.
 	FilesAudience string
+	// ParsingURL is TOPOS_PARSING_URL, the parsing service read sends a
+	// PDF of a session's folder to with the session's own token (spec
+	// 080); empty sends none, and read answers a PDF as a binary file.
+	ParsingURL string
 }
 
 // Defaults of the runner variables.
@@ -438,6 +442,12 @@ func (c *Config) readRunner(getenv Getenv) []string {
 		problems = append(problems, "TOPOS_SEARCH_KEY needs TOPOS_SEARCH_URL, the search service it is sent to")
 	}
 	c.FilesAudience = strings.TrimSpace(getenv("TOPOS_FILES_AUDIENCE"))
+	c.ParsingURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_PARSING_URL")), "/")
+	if c.ParsingURL != "" {
+		if err := checkURL(c.ParsingURL); err != nil {
+			problems = append(problems, "TOPOS_PARSING_URL "+err.Error())
+		}
+	}
 	c.AppsURL = strings.TrimRight(strings.TrimSpace(getenv("TOPOS_APPS_URL")), "/")
 	c.AppsAudience = strings.TrimSpace(getenv("TOPOS_APPS_AUDIENCE"))
 	if c.AppsURL != "" {

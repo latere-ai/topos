@@ -498,7 +498,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	// The app host a session publishes to (spec 043), reached by the
 	// runner with the session's own token.
 	apps := publish.Options{URL: cfg.AppsURL, Audience: cfg.AppsAudience, GitURL: cfg.OrigoURL}
-	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, FilesAudience: cfg.FilesAudience, Log: log})
+	h, err := hosted.Harness(hosted.Options{Store: st, ModelsURL: cfg.ModelsURL, ModelsKey: cfg.ModelsKey, Doors: doors.Under(cfg.ModelsURL), Machines: machines, SearchURL: cfg.SearchURL, SearchKey: cfg.SearchKey, Publish: apps, FilesAudience: cfg.FilesAudience, ParsingURL: cfg.ParsingURL, Log: log})
 	if err != nil {
 		return nil, err
 	}

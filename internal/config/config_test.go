@@ -672,3 +672,25 @@ func TestTheFilesAudience(t *testing.T) {
 		t.Fatalf("a runner role's files audience: %+v %v", r, err)
 	}
 }
+
+// TestParsingURL (spec 080): TOPOS_PARSING_URL is read without its
+// trailing slash by the server and a runner, and a URL that is not one
+// stops the start.
+func TestParsingURL(t *testing.T) {
+	c, err := Load(RoleServe, serve(map[string]string{"TOPOS_PARSING_URL": " https://platform.example/v1/parsing/ "}))
+	if err != nil || c.ParsingURL != "https://platform.example/v1/parsing" {
+		t.Fatalf("serve: %q %v", c.ParsingURL, err)
+	}
+	r, err := Load(RoleRunner, env(map[string]string{"TOPOS_INTERNAL_URL": "http://toposd:8081", "TOPOS_RUNNER_TOKEN": "t", "TOPOS_MODELS_URL": "https://lux.example", "TOPOS_PARSING_URL": "http://parsing.example"}))
+	if err != nil || r.ParsingURL != "http://parsing.example" {
+		t.Fatalf("a runner: %q %v", r.ParsingURL, err)
+	}
+	if c, err := Load(RoleServe, serve(nil)); err != nil || c.ParsingURL != "" {
+		t.Fatalf("unset: %q %v", c.ParsingURL, err)
+	}
+	for _, u := range []string{"parsing", "ftp://parsing.example", "https://parsing.example/?q=1"} {
+		if _, err := Load(RoleServe, serve(map[string]string{"TOPOS_PARSING_URL": u})); err == nil || !strings.Contains(err.Error(), "TOPOS_PARSING_URL") {
+			t.Errorf("%q: %v", u, err)
+		}
+	}
+}
