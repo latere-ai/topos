@@ -162,3 +162,58 @@ func TestATriggerNamesADevice(t *testing.T) {
 		}
 	}
 }
+
+// TestResumeAMachineWaitingSession: a session waiting for its machine
+// resumes with no message and the budget it has, which session.resumed
+// carries so the fold keeps it; a resume that asks for another budget is
+// refused; and a session stopped for any reason but its budget or its
+// machine is still refused (spec 080).
+func TestResumeAMachineWaitingSession(t *testing.T) {
+	f := newFixture(t, func(o *Options) { o.Cella = true })
+	f.apply("alice", "reviewer", "Review.")
+	a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer","message":"Fix the build.","budget":{"max_cost_usd_micro":900000},`+deviceBody+`}`)
+	if a.status != http.StatusCreated {
+		t.Fatalf("create: %d %s", a.status, a.body)
+	}
+	var s session.Session
+	a.decode(t, &s)
+	resume := func(body string) answer {
+		return f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/resume", "alice", body)
+	}
+	for _, stop := range []session.StopReason{session.StopEndTurn, session.StopError, session.StopToolConfirmation} {
+		f.appendTo(s.ID, 1, session.SessionStatus{Status: session.StatusRunning}, session.SessionStatus{Status: session.StatusIdle, StopReason: stop})
+		if got := resume(`{}`); got.code() != CodeConflict {
+			t.Fatalf("a resume of a session stopped with %s: %d %s", stop, got.status, got.body)
+		}
+	}
+	f.appendTo(s.ID, 2, session.SessionStatus{Status: session.StatusRunning}, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopMachineWaiting, Detail: session.MachineOffline})
+	if got := resume(`{"max_cost_usd_micro":5000000}`); got.code() != CodeInvalidRequest {
+		t.Fatalf("a resume of a waiting session that asks for a budget: %d %s", got.status, got.body)
+	}
+	got := resume(`{"reason":"device_back"}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("resume: %d %s", got.status, got.body)
+	}
+	var resumed session.Session
+	got.decode(t, &resumed)
+	if resumed.Budget.MaxCostUSDMicro == nil || *resumed.Budget.MaxCostUSDMicro != 900000 {
+		t.Fatalf("the resumed session's budget: %+v", resumed.Budget)
+	}
+	evs, err := f.sessions.Events(t.Context(), s.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := evs[len(evs)-1]
+	var p session.SessionResumed
+	if last.Type != session.TypeSessionResumed || last.Decode(&p) != nil || p.Reason != "device_back" || p.MaxCostUSDMicro == nil || *p.MaxCostUSDMicro != 900000 {
+		t.Fatalf("the last event %s %s", last.Type, last.Payload)
+	}
+	if !session.HasPendingInput(evs) {
+		t.Fatal("a resumed session holds no pending input")
+	}
+	for _, e := range evs[1:] {
+		if e.Type == session.TypeUserMessage {
+			t.Fatal("the resume added a message")
+		}
+	}
+}

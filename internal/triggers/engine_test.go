@@ -298,6 +298,11 @@ func TestAnActiveSessionIsReadFromItsLog(t *testing.T) {
 	check(true)
 	add(ev(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopToolResult}))
 	check(true)
+	// A session waiting for the person's computer is active, so a firing
+	// that skips while one is does not start another on it (spec 080).
+	add(ev(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning}),
+		ev(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusIdle, StopReason: session.StopMachineWaiting, Detail: session.MachineOffline}))
+	check(true)
 	add(ev(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: session.StopCompleted}))
 	check(false)
 }

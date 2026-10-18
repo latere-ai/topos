@@ -73,8 +73,9 @@ func render(t store.Trigger, spec v1.TriggerSpec, f store.Firing, env *trigger.E
 }
 
 // active reports whether a session is active (spec 022): running, or
-// idle with input waiting for its runner or a call waiting for an
-// answer, a confirmation, a client's result or a raised budget. An ended
+// idle with input waiting for its runner, a call waiting for an answer, a
+// confirmation, a client's result or a raised budget, or its machine, a
+// person's own computer, to come back or be allowed (spec 080). An ended
 // session, and an idle one that waits for nothing, is not.
 func active(ctx context.Context, st session.Store, s session.Session) (bool, error) {
 	switch {
@@ -82,7 +83,8 @@ func active(ctx context.Context, st session.Store, s session.Session) (bool, err
 		return false, nil
 	case s.Status == session.StatusRunning:
 		return true, nil
-	case s.StopReason == session.StopToolConfirmation, s.StopReason == session.StopToolResult, s.StopReason == session.StopQuestion, s.StopReason == session.StopBudget:
+	case s.StopReason == session.StopToolConfirmation, s.StopReason == session.StopToolResult, s.StopReason == session.StopQuestion, s.StopReason == session.StopBudget,
+		s.StopReason == session.StopMachineWaiting:
 		return true, nil
 	}
 	return pendingInput(ctx, st, s)
