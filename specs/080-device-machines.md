@@ -313,4 +313,11 @@ Where the build differs from the design, or adds to it:
   minutes, and no operator variable.
 - **A trigger counts a session waiting for its machine as active,** so
   a firing that skips while one is starts no other.
+- **The files route does not read a device's folder.** A Cella
+  session's running sandbox is read live for a reader of the session; a
+  device's folder is the person's own, which the session's tools reach
+  and a reader of the session, in an organization's context another
+  member, does not. The route answers `file_unavailable` for it, and
+  what an answer showed or linked stays readable from the files the
+  session kept.
 

@@ -120,6 +120,16 @@ func TestWorkspacesRefuseWhatTheyCannotReach(t *testing.T) {
 	if _, err := Workspaces(WorkspaceOptions{DataDir: t.TempDir()})(t.Context(), s); !errors.Is(err, machine.ErrNotRunning) {
 		t.Errorf("a host session that never ran here: %v", err)
 	}
+	// A person's folder on their computer is the session's tools' alone,
+	// whatever Cella the server reaches (spec 080).
+	s.Machine = session.Machine{Kind: session.MachineDevice, Environment: "dev-1", Workdir: "/Users/ada/site"}
+	minting := func(context.Context, string, string, string) (runner.Credential, error) {
+		t.Error("a read of a device minted a credential")
+		return runner.Credential{}, nil
+	}
+	if _, err := Workspaces(WorkspaceOptions{CellaURL: "http://127.0.0.1:1", Mint: minting})(t.Context(), s); !errors.Is(err, machine.ErrNotRunning) {
+		t.Errorf("a device session's folder: %v", err)
+	}
 }
 
 // TestWorkspacesReadAHostSessionsDirectory: a host session's file is read

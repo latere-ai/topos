@@ -50,14 +50,21 @@ type WorkspaceOptions struct {
 // now: a Cella session's sandbox while it runs, through cella.Peek with
 // the credential its drive would present, and a host session's
 // directory on this server's disk. Neither starts nor creates a
-// machine; one that does not run is machine.ErrNotRunning.
+// machine; one that does not run is machine.ErrNotRunning. A device
+// session's folder is a person's own, on their computer, which its
+// session's tools reach and a reader of the session does not: it is
+// answered machine.ErrNotRunning, and what an answer showed or linked
+// stays readable from the files the session kept (spec 080).
 func Workspaces(o WorkspaceOptions) func(ctx context.Context, s session.Session) (machine.FileReader, error) {
 	if o.Clock == nil {
 		o.Clock = time.Now
 	}
 	return func(ctx context.Context, s session.Session) (machine.FileReader, error) {
-		if s.Machine.Kind == session.MachineHost {
+		switch s.Machine.Kind {
+		case session.MachineHost:
 			return o.host(s.ID)
+		case session.MachineDevice:
+			return nil, fmt.Errorf("%w: a session's folder on a person's computer is reached by the session's tools alone", machine.ErrNotRunning)
 		}
 		return o.cella(ctx, s.ID)
 	}
