@@ -28,8 +28,9 @@ type Folder interface {
 	// Presign answers an address that reads the file at ref with no
 	// credential, for a few minutes.
 	Presign(ctx context.Context, ref string) (string, error)
-	// Origin is where the file at ref is, as the service records it.
-	Origin(ref, sha256 string) Origin
+	// Origin is where the file at ref is, as the service records it and
+	// an authorizer holds a session's parse to.
+	Origin(ref string) Origin
 }
 
 // Pricer answers the figures a model's tokens are priced at,
@@ -101,9 +102,17 @@ func NewReader(c *Client, folder Folder, price Pricer, log *slog.Logger) (*Reade
 }
 
 // Read answers the pages r names of the PDF r's path and digest name,
-// within parsing.Timeout.
-func (rd *Reader) Read(ctx context.Context, r parsing.Request) (parsing.Document, error) {
-	ctx, cancel := context.WithTimeout(ctx, rd.timeout)
+// within parsing.Timeout. A read the service or the files store failed
+// is logged, since the model reads a sentence and the operator the
+// detail.
+func (rd *Reader) Read(parent context.Context, r parsing.Request) (doc parsing.Document, err error) {
+	defer func() {
+		_, past := errors.AsType[*parsing.PastEnd](err)
+		if err != nil && !past && !errors.Is(err, parsing.ErrNotKept) && !errors.Is(err, parsing.ErrTooMuchText) && parent.Err() == nil {
+			rd.log.ErrorContext(parent, "read a PDF through the parsing service", "path", r.Path, "sha256", r.SHA256, "parse", doc.ID, "err", err)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(parent, rd.timeout)
 	defer cancel()
 	expr := cmp.Or(r.Pages, parsing.DefaultSelection)
 	if err := parsing.CheckPages(expr); err != nil {
@@ -199,7 +208,7 @@ func (rd *Reader) run(ctx context.Context, r parsing.Request) (kept, parsing.Doc
 		return kept{}, parsing.Document{}, fmt.Errorf("%w: presign %s: %w", parsing.ErrUnavailable, ref, err)
 	}
 	p, err := rd.c.Submit(ctx, Submit{
-		URL: u, Origin: rd.folder.Origin(ref, r.SHA256), Pages: fmt.Sprintf("1-%d", parsing.MaxPages),
+		URL: u, Origin: rd.folder.Origin(ref), Pages: fmt.Sprintf("1-%d", parsing.MaxPages),
 		AllowFailedPages: parsing.MaxPages, Deadline: deadline,
 	}, min(MaxWait, deadline))
 	if err != nil {

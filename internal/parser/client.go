@@ -80,12 +80,11 @@ func New(base string, token Token, c *http.Client) (*Client, error) {
 }
 
 // Origin is where a parse's file is kept, which the service records and
-// an authorizer reads: the files service's name, the file's path in it,
-// and the version of its bytes.
+// an authorizer reads: the files service's name and the file's path in
+// it.
 type Origin struct {
-	Store   string `json:"store"`
-	Path    string `json:"path"`
-	Version string `json:"version,omitempty"`
+	Store string `json:"store"`
+	Path  string `json:"path"`
 }
 
 // Submit is one parse asked of the service.

@@ -4,11 +4,13 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -217,8 +219,8 @@ func (f *folder) Presign(_ context.Context, ref string) (string, error) {
 	return "https://bucket.example/" + ref + "?sig=" + strconv.Itoa(f.presigns), nil
 }
 
-func (f *folder) Origin(ref, sha string) Origin {
-	return Origin{Store: "storage", Path: "usr_1/sessions/s1/" + ref, Version: sha}
+func (f *folder) Origin(ref string) Origin {
+	return Origin{Store: "storage", Path: "usr_1/files/conversations/s1/" + ref}
 }
 
 // price is the figures of one model, a micro-USD per input token and two
@@ -280,7 +282,7 @@ func TestAReadSubmitsWithTheOrigin(t *testing.T) {
 	if src, _ := sub["source"].(map[string]any); src["url"] != "https://bucket.example/attachments/e1/a.pdf?sig=1" {
 		t.Fatalf("the source %v", sub["source"])
 	}
-	if origin["store"] != "storage" || origin["path"] != "usr_1/sessions/s1/attachments/e1/a.pdf" || origin["version"] != "abc" {
+	if len(origin) != 2 || origin["store"] != "storage" || origin["path"] != "usr_1/files/conversations/s1/attachments/e1/a.pdf" {
 		t.Fatalf("the origin %v", origin)
 	}
 	if sub["pages"] != fmt.Sprintf("1-%d", parsing.MaxPages) || sub["allow_failed_pages"] != float64(parsing.MaxPages) {
@@ -414,9 +416,15 @@ func TestAReadsFailures(t *testing.T) {
 	s := newStub(t)
 	s.next = textLayer
 	s.refuse["POST /v1/parsing/parses"] = http.StatusForbidden
-	_, err := reader(t, s, &folder{}).Read(t.Context(), req)
+	var logged bytes.Buffer
+	r := reader(t, s, &folder{})
+	r.log = slog.New(slog.NewTextHandler(&logged, nil))
+	_, err := r.Read(t.Context(), req)
 	if ref, ok := errors.AsType[*parsing.Refused](err); !ok || ref.Status != 403 || ref.Code != "forbidden" || ref.Message != "The forbidden refusal." {
 		t.Fatalf("a refused submit: %v", err)
+	}
+	if !strings.Contains(logged.String(), "read a PDF through the parsing service") || !strings.Contains(logged.String(), "forbidden") {
+		t.Fatalf("the refusal was not logged: %q", logged.String())
 	}
 	clear(s.refuse)
 
@@ -446,7 +454,7 @@ func TestAReadsFailures(t *testing.T) {
 			{Number: 1, Source: SourceReader, Model: "vendor/reader-1", Usage: &Usage{InputTokens: 4}},
 		}}
 	}
-	r := reader(t, s, &folder{})
+	r = reader(t, s, &folder{})
 	r.timeout, r.grace = 2500*time.Millisecond, time.Second
 	doc, err = r.Read(t.Context(), req)
 	if !errors.Is(err, context.DeadlineExceeded) || doc.CostUSDMicro == nil || *doc.CostUSDMicro != 4 {
