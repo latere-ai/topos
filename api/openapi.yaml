@@ -2049,6 +2049,39 @@ components:
         refusal:
           type: string
           description: The code the search service refused the search with; absent on a search it answered.
+    ReadResultMeta:
+      type: object
+      description: "The meta of a read call's tool.result: the file read and its SHA-256 at the read. On an installation with a parsing service, a PDF a person attached, or one the working directory held at the end of an earlier turn, is read as text through it, its pages as Markdown, and parse names the parse. The parsing service's model reads are priced and carried as cost_usd_micro on the tool.result itself, beside meta, which the session's spent_cost_usd_micro counts; a read of a PDF already parsed carries none. A PDF the service did not read is outcome error, the text the binary answer and a sentence that says why."
+      properties:
+        path:
+          type: string
+          description: The file's path on the session's machine.
+        sha256:
+          type: string
+          description: The hex SHA-256 of the file's bytes at the read.
+        parse:
+          type: object
+          description: The parse of a PDF the parsing service read; absent for any other file.
+          required:
+            - id
+            - pages
+            - shown
+          properties:
+            id:
+              type: string
+              description: The parsing service's id of the parse.
+            pages:
+              type: integer
+              description: "How many pages the parse read: the PDF's pages, at most 500."
+            more:
+              type: boolean
+              description: True for a PDF of 500 pages or more, of which the first 500 were read.
+            shown:
+              type: string
+              description: The pages the result shows, such as 1-5 or 1-3,7.
+            unpriced:
+              type: boolean
+              description: True when the parse's model reads could not be priced, so the tool.result carries no cost although the reads were charged.
     Error:
       type: object
       required:
