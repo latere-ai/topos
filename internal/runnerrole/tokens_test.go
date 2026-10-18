@@ -92,10 +92,16 @@ func TestTokensOnlyForTheLeaseHolder(t *testing.T) {
 	default:
 		t.Fatal("a lease_lost answer did not end the lease")
 	}
-	for _, bad := range []runnerapi.TokenRequest{{Generation: l.gen, Workload: runner.WorkloadSession}, {Generation: l.gen, Audience: "cella", Workload: "other"}} {
+	// The source workload, the API's own read of a file a message names, is
+	// never answered to a runner.
+	asks := len(a.calls)
+	for _, bad := range []runnerapi.TokenRequest{{Generation: l.gen, Workload: runner.WorkloadSession}, {Generation: l.gen, Audience: "cella", Workload: "other"}, {Generation: l.gen, Audience: "arca", Workload: "source"}} {
 		if err := c.json(ctx, "POST", "/leases/"+s.ID+"/tokens", bad, nil); !errors.Is(err, session.ErrInvalid) {
 			t.Errorf("%+v: %v", bad, err)
 		}
+	}
+	if len(a.calls) != asks {
+		t.Fatalf("a refused workload reached the minter: %v", a.calls[asks:])
 	}
 	a.err = &runner.SetupError{Code: runner.CodeAgentIdentityMissing, Err: runner.ErrNoIdentity}
 	var se *runner.SetupError
