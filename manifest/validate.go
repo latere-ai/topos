@@ -479,7 +479,13 @@ func (v *validator) repositories(at string, repos []v1.Repository) {
 }
 
 func (v *validator) machine(at string, m v1.Machine) {
-	v.oneOf(at+".kind", m.Kind, v1.MachineHost, v1.MachineCella)
+	if m.Kind == session.MachineDevice {
+		// A person's own computer is named per session at its create, never
+		// by an agent, whose sessions any person may start (spec 080).
+		v.add(at+".kind", "device is named per session when it is created, never in an agent's manifest; an agent's machine is host or cella")
+	} else {
+		v.oneOf(at+".kind", m.Kind, v1.MachineHost, v1.MachineCella)
+	}
 	if m.Kind == v1.MachineHost {
 		if m.Image != "" || m.Environment != "" || m.Resources != (v1.Resources{}) {
 			v.add(at, "image, environment and resources are for a cella machine")
@@ -543,7 +549,19 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 		v.oneOf("spec.session.policy", ss.Policy, v1.PolicyNew, v1.PolicyContinue)
 	}
 	if m := ss.Machine; m != nil && m.Kind != "" {
-		v.oneOf("spec.session.machine.kind", m.Kind, v1.MachineHost, v1.MachineCella)
+		v.oneOf("spec.session.machine.kind", m.Kind, v1.MachineHost, v1.MachineCella, session.MachineDevice)
+		switch {
+		case m.Kind == session.MachineDevice && m.Image != "":
+			v.add("spec.session.machine.image", "a device runs the computer's own tools, and takes no image")
+		case m.Kind == session.MachineDevice:
+			// The session a firing starts works on the computer and in the
+			// folder named here (spec 080).
+			if err := session.CheckDevice(m.Environment, m.Workdir); err != nil {
+				v.add("spec.session.machine", strings.TrimPrefix(err.Error(), session.ErrInvalidDevice.Error()+": "))
+			}
+		case m.Workdir != "":
+			v.add("spec.session.machine.workdir", "set only on a device")
+		}
 	}
 	for i, r := range ss.Resources {
 		rp := indexed("spec.session.resources", i)

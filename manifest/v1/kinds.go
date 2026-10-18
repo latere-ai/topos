@@ -81,11 +81,14 @@ type TriggerSession struct {
 	EndOnIdle *bool             `json:"endOnIdle"`
 }
 
-// SessionMachine is the machine a triggered session runs on.
+// SessionMachine is the machine a triggered session runs on. A device,
+// a person's own computer, names the Cella environment it serves and the
+// folder on it the session works in (spec 080).
 type SessionMachine struct {
 	Kind        string `json:"kind,omitempty"`
 	Image       string `json:"image,omitempty"`
 	Environment string `json:"environment,omitempty"`
+	Workdir     string `json:"workdir,omitempty"`
 }
 
 // SessionResource is one attachment of a triggered session: a memory

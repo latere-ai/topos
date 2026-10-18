@@ -140,6 +140,37 @@ func checkRepositories(rs []session.Resource) error {
 	return nil
 }
 
+// createMachine is a create's machine (spec 080): a device, the Cella
+// environment a person's own computer serves and the folder on it the
+// session works in.
+type createMachine struct {
+	Kind        string `json:"kind"`
+	Environment string `json:"environment"`
+	Workdir     string `json:"workdir"`
+}
+
+// requestedMachine reads a create's machine: nil for none, which runs on
+// the agent's, and a device otherwise. Any other kind is refused, since
+// a session's machine of any other kind is its agent's.
+func requestedMachine(raw json.RawMessage) (*session.Machine, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var m createMachine
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&m); err != nil {
+		return nil, refuse(CodeInvalidRequest, "machine is {kind, environment, workdir}: %v", err)
+	}
+	if m.Kind != session.MachineDevice {
+		return nil, refuse(CodeInvalidRequest, "machine.kind is %q: a session's machine is its agent's, and a request names a machine of kind device alone", m.Kind)
+	}
+	if err := session.CheckDevice(m.Environment, m.Workdir); err != nil {
+		return nil, refuse(CodeInvalidRequest, "machine: %v", err)
+	}
+	return &session.Machine{Kind: session.MachineDevice, Environment: m.Environment, Workdir: m.Workdir}, nil
+}
+
 type createBudget struct {
 	MaxCostUSDMicro *int64 `json:"max_cost_usd_micro,omitempty"`
 }
@@ -163,8 +194,6 @@ func (c *call) createSession() error {
 		return refuse(CodeInvalidRequest, "runner %q: this server runs hosted sessions; an external runner's sessions are not built", b.Runner)
 	case b.ID != "":
 		return refuse(CodeInvalidRequest, "id is an external session's, and this server runs hosted sessions")
-	case len(b.Machine) > 0:
-		return refuse(CodeInvalidRequest, "a session's machine is its agent's; a request cannot set it yet")
 	}
 	if err := session.CheckMetadata(b.Metadata); err != nil {
 		return refuse(CodeInvalidRequest, "%v", err)
@@ -173,8 +202,12 @@ func (c *call) createSession() error {
 	if err != nil {
 		return err
 	}
+	machine, err := requestedMachine(b.Machine)
+	if err != nil {
+		return err
+	}
 	in := creation{agent: b.Agent, title: b.Title, message: b.Message, metadata: b.Metadata, endOnIdle: b.EndOnIdle, attended: b.Attended, resources: resources,
-		capture: b.Capture, sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}}
+		machine: machine, capture: b.Capture, sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}}
 	if b.Budget != nil {
 		in.budget = b.Budget.MaxCostUSDMicro
 	}
@@ -202,6 +235,13 @@ type creation struct {
 	attended bool
 	// resources are checked repositories; none takes the agent's.
 	resources []session.Resource
+	// machine is the device the create names (spec 080), nil for the
+	// agent's machine. A fork of a device session takes its parent's.
+	machine *session.Machine
+	// firesOn is what the trigger that starts the session fires on,
+	// session.TriggerSchedule or session.TriggerEvents, empty for any
+	// other create.
+	firesOn string
 	// budget is the requested spend ceiling, nil for none.
 	budget  *int64
 	limits  createLimits
@@ -261,6 +301,12 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		p := in.fork.parent
 		in.agent = p.Agent.ID + "@" + strconv.Itoa(p.Agent.Version)
 		in.resources, in.title, in.metadata, in.capture = session.Requested(p.Resources), in.fork.title, p.Metadata, &p.Capture
+		// A fork of a device session works on the same computer and folder,
+		// which its question carries, so the authorizer decides whether
+		// the person forking may use them (spec 080).
+		if p.Machine.Kind == session.MachineDevice {
+			in.machine = &session.Machine{Kind: p.Machine.Kind, Environment: p.Machine.Environment, Workdir: p.Machine.Workdir}
+		}
 	}
 	name, n, pinned := strings.Cut(in.agent, "@")
 	a, err := store.FindAgent(ctx, s.o.Objects, contextOf(q.caller).subject, name)
@@ -293,7 +339,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 			resources = append(resources, session.Resource{Type: session.ResourceRepository, URL: repo.URL, Ref: repo.Ref})
 		}
 	}
-	m, err := s.sessionMachine(a.Name, cfg.Machine)
+	m, err := s.sessionMachine(a.Name, cfg.Machine, in.machine)
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -318,6 +364,12 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		"runner": session.RunnerHosted, "machine": m.Kind, "initiator": q.caller.Subject,
 		"permissions": permissionsField(r.Agent.Spec.Permissions, agentModels(r)), "session_id": id,
 		"repositories": repositoriesField(resources), "model": cfg.Model.Name,
+	}
+	// A device names the computer and the folder, so the authorizer
+	// decides whether the person the session acts for may use them (spec
+	// 080).
+	if m.Kind == session.MachineDevice {
+		fields["environment"], fields["workdir"] = m.Environment, m.Workdir
 	}
 	if start != nil {
 		fields["model"] = start.Name
@@ -427,6 +479,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess := session.New(ref, session.Sender{Subject: q.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
 	sess.ID = id
 	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
+	sess.TriggerFiresOn = in.firesOn
 	sess.Attended = in.attended
 	// The header holds the model the session starts on from its create;
 	// a fork's copied model changes name it again as the log is copied.
@@ -514,8 +567,16 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 // is for a local run; any other agent runs on the machine it names. A
 // host machine needs TOPOS_HOST_SESSIONS=on, and its roots and read
 // paths name paths of the host itself, which a session on a server never
-// reaches.
-func (s *Server) sessionMachine(agent string, m v1.Machine) (session.Machine, error) {
+// reaches. A device the create names, asked, is the session's machine
+// whatever the agent's is, and needs Cella, through which the computer is
+// reached (spec 080).
+func (s *Server) sessionMachine(agent string, m v1.Machine, asked *session.Machine) (session.Machine, error) {
+	if asked != nil {
+		if !s.o.Cella {
+			return session.Machine{}, refuse(CodeMachineUnavailable, "a device machine is reached through Cella, and this server has none: TOPOS_CELLA_URL is unset")
+		}
+		return *asked, nil
+	}
 	if manifest.DefaultMachine(m) && s.o.Cella && !s.o.HostSessions {
 		return session.Machine{Kind: session.MachineCella, Image: manifest.DefaultImage}, nil
 	}

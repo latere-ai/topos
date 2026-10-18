@@ -177,14 +177,33 @@ func (c *call) applyTrigger() error {
 	return c.reply(status, out)
 }
 
-// checkTriggerSession refuses what a session's create cannot take yet: a
-// machine (spec 015). A memory store the resolver refuses already, as a
-// reference the API holds nothing for.
+// checkTriggerSession refuses what a session's create cannot take: a
+// machine of any kind but device, since a session's machine is its
+// agent's and a create names a person's own computer alone (specs 015
+// and 080). A memory store the resolver refuses already, as a reference
+// the API holds nothing for.
 func checkTriggerSession(s v1.TriggerSession) error {
-	if s.Machine != nil {
-		return refuse(CodeInvalidRequest, "spec.session.machine: a session's machine is its agent's; a create cannot set it yet")
+	if s.Machine != nil && s.Machine.Kind != session.MachineDevice {
+		return refuse(CodeInvalidRequest, "spec.session.machine: a session's machine is its agent's, and a trigger names a machine of kind device alone")
 	}
 	return nil
+}
+
+// triggerMachine is the device a trigger's sessions work on, nil for the
+// agent's machine.
+func triggerMachine(s v1.TriggerSession) *session.Machine {
+	if s.Machine == nil || s.Machine.Kind != session.MachineDevice {
+		return nil
+	}
+	return &session.Machine{Kind: session.MachineDevice, Environment: s.Machine.Environment, Workdir: s.Machine.Workdir}
+}
+
+// firesOn is what a trigger fires on, as its sessions record it.
+func firesOn(spec v1.TriggerSpec) string {
+	if spec.On != nil {
+		return session.TriggerEvents
+	}
+	return session.TriggerSchedule
 }
 
 // listTriggers is GET /triggers: the triggers of the owners the allow's
@@ -397,9 +416,9 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 	if err := checkRepositories(st.Resources); err != nil {
 		return session.Session{}, err
 	}
-	in := creation{agent: st.Spec.Agent, title: st.Title, message: st.Message, resources: st.Resources,
-		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID, firedBy: st.FiredBy}
 	ss := st.Spec.Session
+	in := creation{agent: st.Spec.Agent, title: st.Title, message: st.Message, resources: st.Resources, machine: triggerMachine(ss),
+		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID, firedBy: st.FiredBy, firesOn: firesOn(st.Spec)}
 	if ss.EndOnIdle != nil {
 		in.endOnIdle = *ss.EndOnIdle
 	}
