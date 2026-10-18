@@ -149,8 +149,18 @@ and ref. Its record also names `source`, `{owner, path, version}` as the
 message named it, and no bytes. A message refused at the read appends
 nothing and writes nothing to the folder.
 
-**The authorizer counts it.** A source is one of the message's files:
-the send's and the fork's `attachments` count it (spec 061).
+**The authorizer counts it, and is told it.** A source is one of the
+message's files: the send's and the fork's `attachments` count it (spec
+061). The same question carries `sources`, one `{owner, path, version}`
+for each file the core will read once the send is allowed: `owner` the
+space it reads it in, the sender's own subject for `me`, and `version`
+absent for the file as it stands. A file a fork keeps by its blob is not
+read again and is not named, and a message that names no source carries
+no `sources`. The read is decided as the person who started the session,
+so the authorizer may hold the sender to the files before any is read: a
+key that may not read files, or a sender who did not start the session
+and may not read one. An authorizer that does not read the field answers
+as before.
 
 **The wire is not the mechanism.** A client names what it attaches,
 `source`; how the core is allowed to read it is the core's. The read
@@ -255,12 +265,14 @@ grants of a key that started the session. The reasons:
 - **Senders with no live sign-in.** The session's token is there for a
   message whatever credential its sender holds.
 
-What it costs: the authorizer does not see the message, so it admits a
-read of any one file the starter may read and cannot hold it to the
-file a message named; which reads are made is the core's code, at a
-send, of the sources a message names, and only of a space the sender's
-row above names. The token is the session workload's and never reaches
-a machine. The wire contract did not change, and no client changed.
+What it costs: the read's question names a file and the session, not
+the message, so the authorizer admits a read of any one file the starter
+may read and cannot tie it to the file a message named; it holds the
+sender to the files at the send instead, from `sources`. Which reads are
+made is the core's code, at a send, of the sources that send named, and
+only of a space the sender's row above names. The token is the session
+workload's and never reaches a machine. The wire contract did not
+change, and no client changed.
 
 ## Compatibility
 
@@ -298,6 +310,7 @@ has no marked file, and its requests build as before.
 | 11 | End to end on the stubs: toposd reads a message's source in the sender's own space with a token the identity provider minted for the session, not the sender's bearer, keeps it in the session's folder with the session's own token, and the model's request carries its text with no sandbox created | `cmd/toposd.TestAMessageBringsAFileOfThePersonsFiles`, `test/stubs/arcastub.TestTheStubReadsAVersion` | built |
 | 12 | A sender who did not start the session names a file of their own space alone, `me` or their subject, and any other space is `attachment_source_not_found` before anything is read or a token asked for; a sender that is no person names none | `internal/server.TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace`, `TestASenderWithNoSpaceNamesNoSource` | built |
 | 13 | A token for the files API the core cannot have is `files_unavailable` before anything is read, as is a files store that asks for none | `internal/server.TestASessionsTokenThatCannotBeHadReadsNothing` | built |
+| 14 | The send's and the fork's question name the files the core will read as `sources`, `me` as the sender's subject, with a version where the message names one; a file a fork keeps by its blob and a file sent as data are not named, and a message with no source names none | `internal/server.TestASourceIsReadWithTheSessionsToken`, `TestASourceCountsAsAnAttachment`, `TestAForksMessageReadsASource`, `TestASenderWhoDidNotStartTheSessionNamesTheirOwnSpace` | built |
 
 ## Outcome
 
@@ -375,7 +388,9 @@ the fork's own token before the fork is stored. `sourceOwner` names each
 source's space (`session.OwnerMe` as the sender's subject, a sender who
 did not start the session held to their own) before the token is asked
 for. A token that cannot be had is `files_unavailable`. The send no
-longer reads the request's bearer. The installation's authorizer must
+longer reads the request's bearer. The send's question names the files
+it will read as `sources` (`sourcesOf`), documented in the `authorizer`
+package beside the other fields a send carries. The installation's authorizer must
 admit the session's read of one file outside its folder, decided as its
 starter, before a core of this build reads a source there; until it
 does, every source is `attachment_source_not_found`.
