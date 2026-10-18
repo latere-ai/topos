@@ -111,7 +111,11 @@ type Options struct {
 	// 068); empty reaches no files store, and a session that keeps its
 	// files in one is a setup error.
 	FilesAudience string
-	Clock         func() time.Time
+	// ParsingURL is TOPOS_PARSING_URL, the parsing service read sends a
+	// PDF of a session's folder to (spec 080); empty sends none, and read
+	// answers a PDF as a binary file.
+	ParsingURL string
+	Clock      func() time.Time
 	// Log is each session's harness.Config.Log: what a turn did about a
 	// response that wrote a tool call as text (spec 062). Nil discards it.
 	Log *slog.Logger
@@ -194,8 +198,14 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 		cfg.TurnTimeout = d
 	}
 	reg := tools.NewRegistry()
+	// read reads a PDF of the session's folder through the installation's
+	// parsing service when it has one (spec 080).
+	parsed := b.parsingReader(ctx, s, cfg.Files)
 	for _, t := range tools.Builtins() {
 		if slices.Contains(ac.Tools, t.Definition().Name) {
+			if t.Definition().Name == tools.NameRead && parsed != nil {
+				t = tools.Read(parsed)
+			}
 			if err := reg.AddBuiltin(t); err != nil {
 				return harness.Config{}, err
 			}
