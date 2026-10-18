@@ -1,0 +1,4 @@
+- call:
+    tool: history
+    outcome: ok
+- final_message: {matches: '7Q4-88213-K'}

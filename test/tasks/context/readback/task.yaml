@@ -1,0 +1,13 @@
+name: readback
+category: context
+# Spec 084: a person gave an exact value early on, and the summary that
+# replaced that part of the conversation kept that it was given and not
+# the value. The agent holds history, and the value is in no file: it
+# reads the person's message back and answers it exactly. The log is the
+# conversation before the prompt, its summary asked with compact-v3.
+agent:
+  tools: [history]
+log: log.jsonl
+prompt: |
+  What is the build number of the release candidate I gave you? Answer
+  with the number exactly as I wrote it.
