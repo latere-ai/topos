@@ -5,6 +5,7 @@ package hosted
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/cellastub"
+	"latere.ai/x/topos/test/stubs/luxstub"
 )
 
 // laptop is the Cella environment a person's computer serves in these
@@ -383,6 +385,114 @@ func TestDeviceWaits(t *testing.T) {
 		c.drive("Go on.", bash("toolu_2", "echo back"), said("Back."))
 		if n := c.cella.Count(cellastub.OpCreate); n != 1 || !strings.Contains(c.lastResult(), "back") {
 			t.Fatalf("%d creates; the next message's call: %q", n, c.lastResult())
+		}
+	})
+}
+
+// calls is one response that makes each call, a tool name and its
+// arguments by id, in order.
+func calls(uses ...ir.ToolUse) luxstub.Reply {
+	blocks := make([]ir.Block, 0, len(uses))
+	for i := range uses {
+		blocks = append(blocks, ir.Block{Type: ir.BlockToolUse, ToolUse: &uses[i]})
+	}
+	return luxstub.Reply{Response: ir.Response{Model: haiku, Blocks: blocks, StopReason: ir.StopToolUse}}
+}
+
+// TestADeviceAsksItsOwnerOnceATurn: calls of one step that meet a
+// computer's refusal together, parallel reads among them, are each
+// answered by the one refusal, recorded once, and ask the owner no second
+// time; calls of one step that meet a held create wait for the owner
+// once, record one session.machine_waiting, and stop the turn; and a
+// message that arrived while a turn lost the computer is answered in the
+// same drive once the computer is back, on the sandbox it had (spec 080).
+func TestADeviceAsksItsOwnerOnceATurn(t *testing.T) {
+	read := func(id, p string) ir.ToolUse {
+		return ir.ToolUse{ID: id, Name: "read", Args: json.RawMessage(`{"path":"` + p + `"}`)}
+	}
+	run := func(id, command string) ir.ToolUse {
+		args, err := json.Marshal(map[string]string{"command": command})
+		if err != nil {
+			panic(err)
+		}
+		return ir.ToolUse{ID: id, Name: "bash", Args: args}
+	}
+	t.Run("refused in parallel", func(t *testing.T) {
+		c, _ := newDeviceCloud(t, nil)
+		c.cella.HoldCreates(laptop, true)
+		name := cella.SandboxName(c.s.ID)
+		go func() {
+			for range 1000 {
+				if sb, ok := c.cella.Sandbox(name); ok && sb.Status.Phase == "Pending" {
+					c.cella.RefuseCreate(name, "not now")
+					return
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		}()
+		c.driveAfter(session.StopEndTurn, []session.Event{c.message("Read both.")}, calls(read("toolu_1", "a.md"), read("toolu_2", "b.md")), said("It said no."))
+		refusal := prompts.Render(prompts.CallMachineRefused, prompts.Data{"Detail": "not now"})
+		results := c.events(session.TypeToolResult)
+		for _, e := range results {
+			var p session.ToolResult
+			if e.Decode(&p) != nil || p.Content[0].Text != refusal {
+				t.Fatalf("a parallel call on the refused computer: %s", e.Payload)
+			}
+		}
+		if n, m, w := c.cella.Count(cellastub.OpCreate), len(c.events(session.TypeSessionError)), len(c.events(session.TypeMachineWaiting)); len(results) != 2 || n != 1 || m != 1 || w > 1 {
+			t.Fatalf("%d results, %d creates, %d errors, %d waits\nevents %s", len(results), n, m, w, c.dump())
+		}
+	})
+	t.Run("held for a step of calls", func(t *testing.T) {
+		c, _ := newDeviceCloud(t, nil)
+		c.cella.HoldCreates(laptop, true)
+		began := time.Now()
+		c.driveAfter(session.StopMachineWaiting, []session.Event{c.message("Build it.")}, calls(run("toolu_1", "make"), run("toolu_2", "make test"), run("toolu_3", "make lint")))
+		if got := c.waited(); len(got) != 1 || got[0] != session.MachineApproval {
+			t.Fatalf("waited %v\nevents %s", got, c.dump())
+		}
+		if took := time.Since(began); took > 2*300*time.Millisecond+time.Second {
+			t.Fatalf("the step waited %s, more than one wait for the owner", took)
+		}
+		if n, r := c.cella.Count(cellastub.OpCreate), len(c.events(session.TypeToolResult)); n != 1 || r != 3 {
+			t.Fatalf("%d creates and %d results", n, r)
+		}
+	})
+	t.Run("a message while the computer was away", func(t *testing.T) {
+		c, _ := newDeviceCloud(t, nil)
+		c.drive("Look.", bash("toolu_0", "ls"), said("Looked."))
+		long := bash("toolu_1", "sleep 10")
+		long.Respond = func(*ir.Request, *ir.Response) {
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+				c.cella.Disconnect(laptop)
+				e, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: c.s.Initiator, Content: []lux.Block{{Type: ir.BlockText, Text: "Are you there?"}}}, time.Now())
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				for {
+					s, err := c.st.Get(t.Context(), c.s.ID)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					batch := []session.Event{e}
+					session.Stamp(s.ID, s.LastSeq, batch)
+					if _, err := c.st.Append(t.Context(), s.ID, s.LastSeq, batch); err == nil {
+						return
+					}
+				}
+			}()
+		}
+		back := bash("toolu_2", "echo back")
+		back.Respond = func(*ir.Request, *ir.Response) { c.cella.Reconnect(laptop) }
+		c.driveAfter(session.StopEndTurn, []session.Event{c.message("Build it.")}, long, back, said("Back."))
+		if n := c.cella.Count(cellastub.OpCreate); n != 1 || !strings.Contains(c.lastResult(), "back") {
+			t.Fatalf("%d creates; the next turn's call: %q\nevents %s", n, c.lastResult(), c.dump())
+		}
+		if got := c.waited(); len(got) != 1 || got[0] != session.MachineOffline {
+			t.Fatalf("waited %v", got)
 		}
 	})
 }

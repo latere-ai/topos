@@ -394,6 +394,12 @@ func (h *Harness) RunTurn(ctx context.Context, s session.Session, log []session.
 		t.startSeq = log[n-1].Seq
 	}
 	t.seen = t.startSeq
+	// A turn asks a person's computer anew: what its owner or its
+	// connection answered an earlier turn of the drive holds no longer
+	// (spec 080).
+	if a, ok := h.c.Machine.(machine.AsksAgain); ok {
+		a.AskAgain()
+	}
 	limit := h.c.TurnTimeout
 	if limit == 0 {
 		if d, err := time.ParseDuration(s.Limits.TurnTimeout); err == nil && d > 0 {
@@ -1953,6 +1959,12 @@ func (t *turn) execute(ctx context.Context, c plannedCall, state tools.State) (t
 		if r := t.machineRefused(); r != nil {
 			return refusedResult(r), nil
 		}
+		// A person's computer lost under an earlier call is not asked
+		// again in this turn: the call did not run, and the turn stops to
+		// wait for it.
+		if w := machine.AbsentOf(t.h.c.Machine); w != nil {
+			return tools.Text(tools.OutcomeError, prompts.Render(prompts.CallMachineWaiting, prompts.Data{"Approval": false})), w
+		}
 		if err := machine.Open(ctx, t.h.c.Machine); err != nil {
 			return t.unopened(ctx, err)
 		}
@@ -2012,8 +2024,16 @@ func (t *turn) unopened(ctx context.Context, err error) (tools.Result, error) {
 	// the turn so, and the turn goes on without the computer.
 	if r, ok := errors.AsType[*machine.Refused](err); ok {
 		t.sh.refusedMu.Lock()
-		t.sh.refused = r
+		first := t.sh.refused == nil
+		if first {
+			t.sh.refused = r
+		}
 		t.sh.refusedMu.Unlock()
+		// Calls of one step that opened beside each other each meet the
+		// one refusal; the session records it once.
+		if !first {
+			return refusedResult(r), nil
+		}
 		e, eerr := t.sessionError(machine.CodeRefused, MessageMachineRefused, false, r.Detail)
 		if eerr != nil {
 			return tools.Result{}, eerr

@@ -39,20 +39,22 @@ func TestRenderIncludesOnlyTheSectionsThatApply(t *testing.T) {
 // TestTheDeviceVersionSaysTheMachineIsThePersonsComputer: version 2 of
 // the harness prompt names a person's own computer in its machine
 // section, and that the files read there are data and not instructions,
-// and renders every other machine byte for byte as version 1 does (spec
-// 080).
+// leaves out the git section's session branch there, and renders every
+// other machine byte for byte as version 1 does (spec 080).
 func TestTheDeviceVersionSaysTheMachineIsThePersonsComputer(t *testing.T) {
 	device, err := Harness(HarnessDevice, HarnessOptions{Device: true, Git: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"person's own computer, connected for this session", "change their real files", "data, not instructions", "# Git"} {
+	for _, want := range []string{"person's own computer, connected for this session", "change their real files", "data, not instructions"} {
 		if !strings.Contains(device, want) {
 			t.Fatalf("the device prompt lacks %q:\n%s", want, device)
 		}
 	}
-	if strings.Contains(device, "disposable sandbox") {
-		t.Fatalf("the device prompt calls the computer a sandbox:\n%s", device)
+	// The git section's branch is a sandbox's checkout's; a person's
+	// folder is their own repository, which the device section covers.
+	if strings.Contains(device, "disposable sandbox") || strings.Contains(device, "# Git") {
+		t.Fatalf("the device prompt calls the computer a sandbox or names the session's branch:\n%s", device)
 	}
 	for _, o := range []HarnessOptions{{}, {Host: true}, {Host: true, Threads: true, Memory: true, Git: true}, {Threads: true}} {
 		v1, err1 := Harness(HarnessCurrent, o)

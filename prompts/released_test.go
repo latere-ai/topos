@@ -26,7 +26,7 @@ var released = map[string]string{
 	"harness/harness-v1.md":                      "f98f83b03b8c5047230e742e7842febc6667ac6814bb74bc886191e20218d56a",
 	"harness/machine-host-v1.md":                 "51d1e7fd4c0fcc556c2d8cc96fe927cd196d54ed2ccdde2628ead5b888c87444",
 	"harness/machine-sandbox-v1.md":              "cfbefe8a9413d04968b322a41276c557f63d913b2017f96e74c731c9964a928d",
-	"harness/harness-v2.md":                      "59b68c253274744b9716d71c64ab470daeb4a22a6703fdb6edb06a11b550ae04",
+	"harness/harness-v2.md":                      "6dbebe594627509e1926d736a96a0ddf506d85ac0028636714733266fd61a722",
 	"harness/machine-device-v1.md":               "3e5a4f897032cdf4d75b6294014e17ee712b978f673f04b2a6c0e906783f3a45",
 	"results/call/machine-waiting-v1.md":         "7150e01d149a3b07940b7b2baaf8d6f85d494544a1c2395bbd563a7e187524d3",
 	"results/call/machine-away-v1.md":            "2bc61c27430ea27ea1d3e24b9877189b17d8212f3520a4d99609a2f3ed67d23f",

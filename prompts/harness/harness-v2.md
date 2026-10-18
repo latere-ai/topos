@@ -27,6 +27,6 @@ A tool result with outcome `unknown_effect` means the runner stopped while that 
 
 {{template "harness/threads-v1"}}{{end}}{{if .Memory}}
 
-{{template "harness/memory-v1"}}{{end}}{{if .Git}}
+{{template "harness/memory-v1"}}{{end}}{{if and .Git (not .Device)}}
 
 {{template "harness/git-v1"}}{{end}}
