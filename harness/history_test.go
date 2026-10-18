@@ -364,12 +364,12 @@ func TestHistoryAnswersStopAtTheLimit(t *testing.T) {
 					seen[e.Seq]++
 				}
 			}
-			i := strings.LastIndex(out, "read on with ")
-			if i < 0 {
+			_, input, more := strings.CutLast(out, "read on with ")
+			if !more {
 				break
 			}
 			r = tools.HistoryRead{}
-			if err := json.Unmarshal([]byte(strings.TrimSuffix(out[i+len("read on with "):], "]")), &r); err != nil {
+			if err := json.Unmarshal([]byte(strings.TrimSuffix(input, "]")), &r); err != nil {
 				t.Fatal(err)
 			}
 		}
