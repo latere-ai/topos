@@ -490,3 +490,20 @@ func (l *lease) Failover(ctx context.Context, standing, failed session.ModelRef,
 }
 
 var _ runner.Failover = (*lease)(nil)
+
+// Title asks the server whether the session may be named now, asked the
+// name its title request asks for (spec 083), under the lease's
+// generation; lease_lost ends the lease.
+func (l *lease) Title(ctx context.Context, asked string) (session.ModelRef, error) {
+	var a runnerapi.TitleAnswer
+	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/title", runnerapi.TitleRequest{Generation: l.gen, Asked: asked}, &a)
+	if errors.Is(err, session.ErrLeaseLost) {
+		l.end()
+	}
+	if err != nil {
+		return session.ModelRef{}, err
+	}
+	return a.Model, nil
+}
+
+var _ runner.Titler = (*lease)(nil)

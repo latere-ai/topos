@@ -258,7 +258,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	internal := http.NewServeMux()
 	internal.Handle("/", probes)
 	if len(cfg.RunnerTokens) > 0 {
-		ro := runnerapi.Options{Store: st.sessions, Queue: queue, Tokens: cfg.RunnerTokens, Failover: api.Failover, Log: log}
+		ro := runnerapi.Options{Store: st.sessions, Queue: queue, Tokens: cfg.RunnerTokens, Failover: api.Failover, Title: api.Title, Log: log}
 		if minter != nil {
 			ro.Credentials = minter.Credential
 		}

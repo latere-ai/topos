@@ -61,6 +61,10 @@ const (
 	// asked, or the model it named is not one the installation runs. The
 	// message says which; the runner ends the turn where it is.
 	CodeNoFailover = "no_failover"
+	// CodeNoTitle is a title question the server did not allow (spec
+	// 083): the authorizer denied it or could not be asked, or the server
+	// asks none. The message says which; the session keeps its title.
+	CodeNoTitle = "no_title"
 )
 
 // ClaimRequest asks for sessions to run.
@@ -141,6 +145,19 @@ type FailoverAnswer struct {
 	Model session.ModelRef `json:"model"`
 }
 
+// TitleRequest asks, under the lease, whether the session may be named
+// now (spec 083): Asked is the name its title request asks for.
+type TitleRequest struct {
+	Generation int64  `json:"generation"`
+	Asked      string `json:"asked"`
+}
+
+// TitleAnswer is the model the allow names for the title request, with
+// the route it names beside it, empty when it names none.
+type TitleAnswer struct {
+	Model session.ModelRef `json:"model"`
+}
+
 // Appended is the log's last sequence after an append.
 type Appended struct {
 	LastSeq uint64 `json:"last_seq"`
@@ -184,8 +201,13 @@ type Options struct {
 	// checked the runner holds: toposd's question to its authorizer. Nil
 	// names none, so nothing moves.
 	Failover func(ctx context.Context, id string, standing, failed session.ModelRef, reason, detail string) (session.ModelRef, error)
-	Now      func() time.Time
-	Log      *slog.Logger
+	// Title answers whether the session id may be named now, asked the
+	// name its title request asks for (spec 083), to a lease the route has
+	// checked the runner holds: toposd's question session.title. Nil
+	// allows none.
+	Title func(ctx context.Context, id, asked string) (session.ModelRef, error)
+	Now   func() time.Time
+	Log   *slog.Logger
 }
 
 // Server holds the claims of remote runners. A claim holds the store's
@@ -250,6 +272,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST "+Root+"/leases/{session}/release", s.release)
 	route("POST "+Root+"/leases/{session}/tokens", s.tokens)
 	route("POST "+Root+"/leases/{session}/failover", s.failover)
+	route("POST "+Root+"/leases/{session}/title", s.title)
 	route("POST "+Root+"/sessions/{session}/events", s.append)
 	route("GET "+Root+"/sessions/{session}", s.get)
 	route("GET "+Root+"/sessions/{session}/events", s.events)
@@ -470,6 +493,37 @@ func (s *Server) failover(w http.ResponseWriter, r *http.Request) error {
 		return &wireError{CodeNoFailover, http.StatusBadGateway, err.Error()}
 	}
 	return reply(w, http.StatusOK, FailoverAnswer{Model: next})
+}
+
+// title answers a runner's title question under its lease (spec 083)
+// with the model the allow names, or why the session is not named.
+func (s *Server) title(w http.ResponseWriter, r *http.Request) error {
+	var req TitleRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	if req.Asked == "" {
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a title request names the model it asks for"}
+	}
+	id := r.PathValue("session")
+	c, err := s.held(id, req.Generation)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-c.lease.Lost():
+		s.drop(id, c)
+		return &wireError{CodeLeaseLost, http.StatusConflict, "the store's lease on the session ended"}
+	default:
+	}
+	if s.o.Title == nil {
+		return &wireError{CodeNoTitle, http.StatusForbidden, "this server asks no title question"}
+	}
+	m, err := s.o.Title(r.Context(), id, req.Asked)
+	if err != nil {
+		return &wireError{CodeNoTitle, http.StatusForbidden, err.Error()}
+	}
+	return reply(w, http.StatusOK, TitleAnswer{Model: m})
 }
 
 func (s *Server) append(w http.ResponseWriter, r *http.Request) error {

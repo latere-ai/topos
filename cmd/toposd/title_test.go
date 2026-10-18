@@ -135,3 +135,46 @@ func TestServeNamesItsSessions(t *testing.T) {
 		t.Fatalf("the model was asked %d times", n)
 	}
 }
+
+// TestTheRunnerRoleNamesASession: a runner process names a session after
+// a turn its person started, reading spec.title from the session's own
+// bundle and asking the title question over the internal listener, which
+// serve answers with its authorizer's (spec 083).
+func TestTheRunnerRoleNamesASession(t *testing.T) {
+	vars, _, _ := hostedStubs(t, said("Reviewed."), said("Main.go review"))
+	maps.Copy(vars, map[string]string{"TOPOS_PUBLIC_URL": "http://127.0.0.1:8080", "TOPOS_LOCAL_ISSUER_KEY": localKey(t), "TOPOS_DATA_DIR": t.TempDir(),
+		"TOPOS_RUNNER_CAPACITY": "0", "TOPOS_RUNNER_TOKEN": "runner-token"})
+	publicURL, internalURL, stop := startServe(t, vars)
+	runnerVars := maps.Clone(vars)
+	maps.Copy(runnerVars, map[string]string{"TOPOS_INTERNAL_URL": internalURL, "TOPOS_INTERNAL_ADDR": "127.0.0.1:0", "TOPOS_RUNNER_CAPACITY": "1"})
+	ctx, cancel := context.WithCancel(t.Context())
+	var out, errOut syncBuffer
+	done := make(chan int, 1)
+	go func() { done <- run(ctx, []string{"runner"}, env(runnerVars), &out, &errOut) }()
+	send := apiClient(t, publicURL, vars)
+	manifest := "apiVersion: topos.latere.ai/v1\nkind: Agent\nmetadata:\n  name: reviewer\nspec:\n  model: {name: anthropic/claude-haiku-4.5}\n  machine: {kind: cella}\n  title: {}\n"
+	if code, body := send(http.MethodPut, "/v1/agents/reviewer", manifest); code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/v1/sessions", `{"agent":"reviewer","message":"Review main.go."}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	var s struct{ ID, Title string }
+	if err := json.Unmarshal([]byte(body), &s); err != nil {
+		t.Fatal(err)
+	}
+	if got := titled(t, send, s.ID, s.Title); got != "Main.go review" {
+		t.Fatalf("the session was named %q", got)
+	}
+	if _, events := send(http.MethodGet, "/v1/sessions/"+s.ID+"/events", ""); !strings.Contains(events, `"kind":"runner"`) {
+		t.Fatalf("the session ran on no runner role: %s", events)
+	}
+	cancel()
+	if code := <-done; code != 0 {
+		t.Fatalf("the runner role exited %d: %s", code, errOut.String())
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("serve exited %d", code)
+	}
+}
