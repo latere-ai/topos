@@ -253,10 +253,13 @@ differs from the draft in these points:
   title model, `${MODEL}`, to be asked as such an agent is.
 - **One deadline.** `harness.TitleTimeout` is 15 seconds, over the whole
   title the runner asks for: the authorizer's question, the connection of
-  its model, a door's settling included, and its requests. The record of
-  a request it cut short is appended within
-  `harness.TitleRecordTimeout` (2 seconds) after it, so a runner holds the
-  lease for a title 17 seconds at most.
+  its model, a door's settling included, and its requests. Each write of
+  a request's record, its blobs and its append, has
+  `harness.TitleRecordTimeout` (2 seconds) of its own from when the write
+  starts, so a request the deadline cut short, or one slower than 2
+  seconds, is still recorded (`harness.TestATitleSlowerThanItsRecordTimeoutIsRecorded`),
+  and a runner holds the lease for a title a few seconds past the 15 at
+  most.
 - **Input ends a title.** The drive's watch of the log, which always runs
   now, ends the title at once when a message, a confirmation, a client
   tool's result, an answer, an interrupt or a resume arrives after what
