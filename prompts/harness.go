@@ -14,8 +14,12 @@ const HarnessCurrent = 1
 
 // HarnessDevice is the harness prompt version a session on a person's own
 // computer uses (spec 080): the first with a machine section for one.
-// Every other session stays on HarnessCurrent until the instruction tier
-// has run against it.
+// The instruction tier ran it against version 1 on 2026-10-19, at commit
+// 7dc5386 on anthropic/claude-haiku-5.5, 15 runs of each of the 13
+// instruction tasks per version: version 1 passed 179 of 195 runs and
+// version 2, rendered for a device, 190 of 195, for 0.52 USD in all (spec
+// 080's Outcome). Every other session stays on HarnessCurrent; version 2
+// renders byte for byte as version 1 on any machine but a device.
 const HarnessDevice = 2
 
 // HarnessVersion is the prompt_version a model.request records for
