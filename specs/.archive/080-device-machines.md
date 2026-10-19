@@ -279,6 +279,27 @@ Where the build differs from the design, or adds to it:
   and not the person's own repository. A device session's requests carry
   `prompt_version: harness/2`; `HarnessCurrent` stays 1 until the
   instruction tier has run against 2.
+- **The instruction tier ran `harness/2` against `harness/1`.** After
+  v0.47.0 (2026-10-19), at commit 7dc5386, on `anthropic/claude-haiku-5.5`,
+  the name a Lux door lists the model by (the suite finds no figures for
+  `claude-haiku-5-5`, which the door does not list): the 13 tasks of
+  `instructions/`, 15 runs of each per version in two rounds of 5 and
+  10. `TOPOS_TASKS_DEVICE=true` rendered
+  `harness/2` with its device section on the host machine, so the two
+  versions differ in the machine section alone. `harness/1` passed 179
+  of 195 runs (91.8%) and `harness/2` 190 of 195 (97.4%). They differ on
+  four tasks: `bash` 6 and 12 of 15, each failure a server started with
+  the shell's `&` rather than `background`; `question-default` 9 and 14,
+  a question asked where none was needed; `edit` 14 and 15; and
+  `question` 15 and 14, one run that wrote no file after its question
+  went unanswered. Every other task passed every run on both. The runs
+  spent 0.52 USD in all, a round a network outage cut short included,
+  and each round's `report.json` and `report.md` were kept where
+  `TOPOS_TASKS_OUT` named, outside the repository. `harness/2` is no
+  worse than `harness/1` on this model and its text did not change.
+  `HarnessCurrent` stays 1: `harness/2` renders byte for byte as
+  `harness/1` on every machine but a device, so moving it would change
+  only the version every other session records.
 - **A message's files keep their recorded paths.** A file is recorded
   at `attachments/<event id>/<name>` before any machine exists. On a
   device it is written to `<tmp>/topos/attachments/`, and the device

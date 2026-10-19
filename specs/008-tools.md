@@ -274,6 +274,9 @@ the sandbox. One change from the plan: `write` and `edit` also refuse an
 existing file the thread never read, with a result that says so, and
 their descriptions are at version 2, which names both refusals.
 
-Open: the instruction tier has not been run against a real model, so
-the last criterion has no recorded pass, and the status stays
-`in-progress` until it has.
+Open: the instruction tier has run against a real model once, on
+`anthropic/claude-haiku-5.5` on 2026-10-19, to compare two harness
+prompt versions ([[080-device-machines]]): each built-in's test passed
+every run of both but `bash` and `edit`. The suite pins no model yet,
+so the last criterion has no recorded pass on the pinned model, and the
+status stays `in-progress` until it has.
