@@ -1,12 +1,12 @@
 ---
 title: "Rollouts: one call runs N unattended sessions of one agent version on one task, with the model and reasoning set at create, the machine named, checks run in each machine before it is released, evidence kept in each session's own folder, every request on Keys the installation's authorizer issues with the rollout's labels, sessions left out of the default list, and one report and one cancel for the whole set"
-status: drafted
+status: in-progress
 track: core
 depends_on: [003-manifest.md, 004-session-log.md, 008-tools.md, 009-machines.md, 015-api.md, 025-task-suite.md, 049-reasoning.md, 068-a-sessions-files-in-a-files-store.md, 073-a-working-directory-kept-in-the-sessions-folder.md, 075-a-file-a-session-reads-and-cannot-change.md]
 affects: [api/openapi.yaml, internal/server/, session/, runner/, machine/, internal/filestore/, test/tasks/, docs/api.md]
 effort: large
 created: 2026-10-17
-updated: 2026-10-18
+updated: 2026-10-19
 author: changkun
 ---
 
@@ -201,3 +201,20 @@ SandboxSet (Cella spec 020).
 - The checks' files, the references and the input files are read with toposd's server-side identity, and a read of them with a session workload's token is refused by a files store that grants them to toposd alone.
 - The task suite's checks run through R8, and no second check runner
   remains.
+
+## Outcome
+
+In progress. The session pieces a caller needs to run a rollout as one
+session per run are built; the rollout resource is not.
+
+| Requirement | State |
+|---|---|
+| R1 | Partly met: a create names `rollout`, the caller's id for its run, which the session keeps and `session.create` carries; `attended: false` answers a question at once as unanswered, and a run refuses a call that would wait for a confirmation at once, as a person's deny, so it never goes idle on one. There is no `POST /v1/rollouts`: a caller creates one session per run, under its own `Idempotency-Key`, which holds for 24 hours rather than the rollout's life |
+| R3 | Met for a session: a create's `model {name, reasoning}` runs from the first request, and an allow that names another model or level is `model_not_allowed` |
+| The session list | Met: the list, the search and the summary leave a rollout's runs out unless `rollout` names it or `any` |
+| R2, R4 to R15 | Not built |
+
+Held by `server.TestARolloutsRunsAreLeftOutOfTheList`,
+`server.TestACreateRunsTheModelItNames`,
+`harness.TestARolloutsRunRefusesACallThatWouldAsk` and the store
+conformance test `ListByRollout`.
