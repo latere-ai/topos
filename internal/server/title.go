@@ -94,7 +94,8 @@ func (s *Server) LatestTitle(ctx context.Context, agentID string) (*v1.Title, er
 
 // TitleAgents are the ids of the agents, archived ones among them, whose
 // latest version sets spec.title (spec 083): those whose sessions the pass
-// at start names.
+// at start names. An agent whose latest version cannot be read is logged
+// and left out, so one broken version stops no other agent's titles.
 func (s *Server) TitleAgents(ctx context.Context) ([]string, error) {
 	var ids []string
 	cursor := ""
@@ -106,7 +107,8 @@ func (s *Server) TitleAgents(ctx context.Context) ([]string, error) {
 		for _, a := range page {
 			set, err := s.LatestTitle(ctx, a.ID)
 			if err != nil {
-				return nil, err
+				s.o.Log.WarnContext(ctx, "title: the agent's latest version could not be read; the pass leaves it out", "agent", a.ID, "err", err)
+				continue
 			}
 			if set != nil {
 				ids = append(ids, a.ID)

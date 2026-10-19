@@ -182,9 +182,9 @@ func TestTheAPIDocumentShowsATitle(t *testing.T) {
 }
 
 // TestATitleSettingThatCannotBeRead: an agent whose latest version's
-// bundle does not read is an error of the setting and of the list of
-// agents that set one, so the runner falls back to the session's bundle
-// and the pass names nothing it cannot read.
+// bundle does not read is an error of the setting, so the runner falls
+// back to the session's bundle, and is left out of the agents the pass
+// names, logged, while the agents that set a title are listed.
 func TestATitleSettingThatCannotBeRead(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -195,7 +195,12 @@ func TestATitleSettingThatCannotBeRead(t *testing.T) {
 	if _, err := f.api.LatestTitle(ctx, a.ID); err == nil {
 		t.Fatal("a bundle that does not read was read")
 	}
-	if _, err := f.api.TitleAgents(ctx); err == nil {
-		t.Fatal("the agents were listed past a bundle that does not read")
+	doc := strings.Replace(agentYAML("reviewer", "Review."), "  machine:", "  title: {}\n  machine:", 1)
+	if a := f.do(http.MethodPut, "/v1/agents/reviewer", "alice", doc); a.status != http.StatusCreated {
+		t.Fatalf("apply: %d %s", a.status, a.body)
+	}
+	ids, err := f.api.TitleAgents(ctx)
+	if err != nil || len(ids) != 1 || ids[0] == a.ID {
+		t.Fatalf("the agents that set a title %v, %v", ids, err)
 	}
 }
