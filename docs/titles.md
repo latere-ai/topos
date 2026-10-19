@@ -90,6 +90,14 @@ is sent: a title never moves to the session's own model, which may cost
 far more, behind the agent's back. When the agent names none, the
 session's own model is the last choice.
 
+The request is sent with the session's own model key where the
+installation mints one, so the model it runs on must be one that key
+reaches: an authorizer that answers `session.title` with a model widens
+the session's key to it, as it does when it moves a session to another
+model, and an agent's title `model` is one the installation lets its
+sessions use. A model the key does not reach fails at the gateway; the
+failure is logged and the title stays.
+
 A deny, and an authorizer that does not know `session.title`, leave the
 title as it is. An installation that wants fewer titles denies. With no
 authorizer configured, the built-in owner policy allows the person who

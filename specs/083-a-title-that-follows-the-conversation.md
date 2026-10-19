@@ -284,6 +284,14 @@ differs from the draft in these points:
   session whose lease the claim queue held for its own look at the
   session is skipped as any held lease and named at the next start; the
   minute's delay keeps the two apart at a real start.
+- **The session's key.** A title request is sent with the session's own
+  model key where the installation mints one, as every request of the
+  session is. An authorizer that answers `session.title` with a model
+  widens the session's key to it, as it does for a routed switch, and an
+  agent's title `model` must be one the key reaches; otherwise the
+  gateway refuses the request, the runner logs it, and the title stays.
+  The live runs called the provider with its own key, so this path is
+  proven by the stubs alone.
 - **The task suite.** A task whose agent sets `title` runs in a session
   that stays idle at the end of its turn, with the question allowed and
   naming no model, and its title request is no step of the run's count.

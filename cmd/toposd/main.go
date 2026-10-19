@@ -488,12 +488,20 @@ func titlePass(ctx context.Context, r *runner.Runner, t *titling, log *slog.Logg
 		return
 	}
 	agents, err := t.agents(ctx)
-	if err != nil {
+	switch {
+	case ctx.Err() != nil:
+		return
+	case err != nil:
 		log.ErrorContext(ctx, "title pass: the agents could not be listed", "err", err)
 		return
 	}
+	// A pass the process's stop ends logs how far it came, and no error.
 	c, err := r.TitlePass(ctx, agents, titlePassInterval)
-	if err != nil {
+	switch {
+	case ctx.Err() != nil:
+		log.InfoContext(ctx, "title pass: stopped with the process", "agents", len(agents), "named", c.Named, "kept", c.Kept, "skipped", c.Skipped, "failed", c.Failed)
+		return
+	case err != nil:
 		log.ErrorContext(ctx, "title pass: stopped", "named", c.Named, "kept", c.Kept, "skipped", c.Skipped, "failed", c.Failed, "err", err)
 		return
 	}

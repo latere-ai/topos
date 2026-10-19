@@ -180,3 +180,22 @@ func TestTheAPIDocumentShowsATitle(t *testing.T) {
 		}
 	}
 }
+
+// TestATitleSettingThatCannotBeRead: an agent whose latest version's
+// bundle does not read is an error of the setting and of the list of
+// agents that set one, so the runner falls back to the session's bundle
+// and the pass names nothing it cannot read.
+func TestATitleSettingThatCannotBeRead(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	a := store.Agent{ID: session.NewID(session.PrefixAgent), Name: "broken", Owner: alice, Latest: 1, CreatedAt: time.Now()}
+	if err := f.objects.PutVersion(ctx, a, store.AgentVersion{AgentID: a.ID, Version: 1, Digest: "sha256:0", Doc: []byte(`{}`), Bundle: []byte("not a bundle"), CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.api.LatestTitle(ctx, a.ID); err == nil {
+		t.Fatal("a bundle that does not read was read")
+	}
+	if _, err := f.api.TitleAgents(ctx); err == nil {
+		t.Fatal("the agents were listed past a bundle that does not read")
+	}
+}

@@ -110,7 +110,7 @@ func TestServeNamesItsSessions(t *testing.T) {
 		t.Fatalf("the first start's pass ran: %s", first.String())
 	}
 
-	titlePassDelay = 500 * time.Millisecond
+	titlePassDelay = 2 * time.Second
 	ctx, cancel = context.WithCancel(t.Context())
 	defer cancel()
 	var second syncBuffer

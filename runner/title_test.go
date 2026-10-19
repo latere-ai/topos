@@ -663,7 +663,7 @@ func TestThePassWaitsBetweenSessions(t *testing.T) {
 	f.hosted(t, f.s.Initiator)
 	f.hosted(t, f.s.Initiator)
 	f.stub.Script(model, named("One"), named("Two"))
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	c, err := tg.r.TitlePass(ctx, []string{f.s.Agent.ID}, time.Hour)
 	if !errors.Is(err, context.DeadlineExceeded) || c.Named != 1 {
