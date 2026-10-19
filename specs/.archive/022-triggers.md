@@ -6,7 +6,7 @@ depends_on: [003-manifest.md, 004-session-log.md, 006-identity.md, 014-store.md]
 affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, session/, cmd/toposd/, api/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-19
 author: changkun
 ---
 
@@ -317,7 +317,12 @@ takes. A
 applied as `on`, `{product, verbs, resources}` as the manifest
 resolves it, `resources` absent when it names none, and no `on` for a
 schedule: an authorizer that delivers events from producers it runs
-records the filter at the moment the trigger is applied.
+records the filter at the moment the trigger is applied. When
+`spec.session.machine` names a person's own computer, they carry
+`machine: device` with `environment` and `workdir` beside it, as the
+manifest being applied names them, the fields `session.create` carries
+for the same computer ([[080-device-machines]]), and no `machine`
+otherwise.
 
 `trigger.fire` is a new action of the vocabulary: the owner policy
 lets a trigger's owner fire it, and an authorizer grants it to the
@@ -417,6 +422,13 @@ its test; the two on Postgres run in the postgres tier.
 - **v0.10.0 (2026-10-02).** An agent a trigger names by name is read
   among the agents of the context the owner's token named at apply
   ([[036-organization-owners]]).
+- **After v0.47.0 (2026-10-19).** A trigger whose `spec.session.machine`
+  names a person's own computer ([[080-device-machines]]) asks
+  `trigger.create` and `trigger.update` with `machine: device`,
+  `environment` and `workdir`, so an authorizer decides the computer
+  when the trigger is applied and not only at each firing's
+  `session.create`; a refused apply stores nothing.
+  `internal/server.TestATriggerAsksAboutItsDevice` proves it.
 
 What stays outside the core is listed under Not in this spec: the
 producers that receive a provider's webhooks and call the fire route,

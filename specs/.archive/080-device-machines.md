@@ -6,7 +6,7 @@ depends_on: [008-tools.md, 012-permissions-and-approvals.md, 015-api.md, 016-run
 affects: [machine/, machine/cella/, session/, harness/, internal/server/, internal/hosted/, runner/, cmd/topos-machine/, prompts/, api/, docs/, CHANGELOG.md]
 effort: large
 created: 2026-10-18
-updated: 2026-10-18
+updated: 2026-10-19
 author: changkun
 ---
 
@@ -262,7 +262,12 @@ Where the build differs from the design, or adds to it:
   refused at apply, and an agent's manifest that names `device` is
   `invalid_manifest`. The session header records `trigger_fires_on`,
   `schedule` or `events`, at the create, which the
-  `topos.latere.ai/trigger-fires-on` label reads.
+  `topos.latere.ai/trigger-fires-on` label reads. After v0.47.0
+  (2026-10-19) the trigger's `trigger.create` and `trigger.update` also
+  carry `machine: device`, `environment` and `workdir`, as the manifest
+  being applied names them, so the authorizer decides the computer when
+  the trigger is applied and not only at each firing's `session.create`
+  (`TestATriggerAsksAboutItsDevice`, and spec 022's Outcome).
 - **The machine section is `harness/2`, for device sessions alone.**
   The harness prompt's versions are pinned, and a new current version
   merges only with the instruction tier's result. `harness/2` is
