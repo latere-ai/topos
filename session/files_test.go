@@ -71,6 +71,20 @@ func TestAnEventRecordsTheFilesItsEntriesPlace(t *testing.T) {
 	if !s.Folder.Stored || shared.Stored {
 		t.Fatalf("after a stored file: stored %t, the folder it was copied from %t", s.Folder.Stored, shared.Stored)
 	}
+	// A save of the working directory's copy stores files under work/,
+	// and one that wrote none, such as a turn that changed nothing, does
+	// not.
+	saved := mustEvent(t, TypeWorkSaved, WorkSaved{Covers: 3, Written: []WorkFile{{Path: "app.py", Size: 1, Mode: 0o644, SHA256: "ab"}}})
+	empty := mustEvent(t, TypeWorkSaved, WorkSaved{Covers: 2})
+	work := Session{Folder: &Folder{Owner: "o", Path: "files/p"}}
+	ApplyBatch(&work, []Event{empty})
+	if work.Folder.Stored {
+		t.Fatal("a save that wrote nothing marked the folder stored")
+	}
+	ApplyBatch(&work, []Event{saved})
+	if !work.Folder.Stored {
+		t.Fatal("a save that wrote the working directory's files left the folder unstored")
+	}
 	none := Session{}
 	ApplyBatch(&none, []Event{msg})
 	if none.Folder != nil {

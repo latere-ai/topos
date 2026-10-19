@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A session answers its folder once its working directory is kept there.** A session whose only files in its folder are the copy of its working directory, written at a turn's end under `work/`, now answers `folder {owner, path}`, where before it answered none until a message's attachment or a kept file was stored, so a caller reading what a run made found no folder to read it from.
+
 ## v0.49.0 - 2026-10-19
 
 ### Added

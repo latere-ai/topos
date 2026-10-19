@@ -176,12 +176,21 @@ func FileRefOf(ctx context.Context, st Store, id string, d Digest) (string, erro
 	return "", fmt.Errorf("%w: no file of %s has the digest %s", ErrNotFound, id, d)
 }
 
-// stored marks s's folder as holding a file when e records one there.
+// stored marks s's folder as holding a file when e records one there: a
+// message's attachment or a kept file, or a file of the working
+// directory's copy a work.saved wrote under work/ (specs 068 and 073).
 func (s *Session) stored(e Event) {
-	if s.Folder == nil || s.Folder.Stored || (e.Type != TypeUserMessage && e.Type != TypeFilesKept) || len(e.Files()) == 0 {
+	if s.Folder == nil || s.Folder.Stored || (len(e.Files()) == 0 && !wroteWork(e)) {
 		return
 	}
 	f := *s.Folder
 	f.Stored = true
 	s.Folder = &f
+}
+
+// wroteWork reports whether e is a work.saved that wrote a file of the
+// working directory's copy into the folder.
+func wroteWork(e Event) bool {
+	var w WorkSaved
+	return e.Type == TypeWorkSaved && !e.Redacted() && e.Decode(&w) == nil && len(w.Written) > 0
 }
