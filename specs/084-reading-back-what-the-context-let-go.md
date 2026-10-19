@@ -140,7 +140,7 @@ session created before its agent named `history` needs to hold the tool.
 | Invalid input, a reversed range and an empty query are `invalid_input` | `harness/tools.TestHistoryRefusesInvalidInput` | built |
 | With the tool, a cleared result renders `cleared-v2` naming the call's id, a summary renders `summary-v2` naming its range, and compaction asks with `compact-v3`; without it each renders as before | `session.TestAFoldForHistoryNamesWhatItReadsBack`, `harness.TestHistoryTextsNameWhatItReadsBack`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | `Rebuild` renders the same texts for a thread that held the tool | `harness.TestRebuildRendersTheHistoryTexts`, `harness.TestHistoryTextsNameWhatItReadsBack` | built |
-| On the pinned model, an agent whose earlier conversation was summarized without a value a person gave reads it back with `history` and answers it exactly | task suite: `context/readback`, its premise held by `test/tasks.TestTheReadbackLogHidesWhatHistoryFinds` | built |
+| On the pinned model, an agent whose earlier conversation was summarized without a value a person gave reads it back with `history` and answers it exactly | task suite: `context/readback`, its premise held by `test/tasks.TestTheReadbackLogHidesWhatHistoryFinds` | built; passed 3 of 3 live runs on `claude-haiku-5-5` ($0.0141 in all, 2026-10-19), the suite having no pinned model yet |
 
 ## Outcome
 
@@ -203,12 +203,11 @@ build differs from the design as written, or adds to it:
   `test/tasks/instructions/history` asks for the time the person's
   message was sent, which only the log holds; its scripted right and
   wrong solutions run, not yet against a real model.
-- **`context/readback` waits for the suite to read a log.** Its
-  `task.yaml` names `log: log.jsonl`, `session.Event` lines with
-  sequences from 1 whose summary, asked with `compact-v3`, keeps that a
-  build number was given and not the number. It is outside the suite's
-  discovery on this branch: `context` is not in `tasks.Categories`, and
-  the loader refuses the `log` field until spec 083 lands. Once both are
-  merged, `context` joins `Categories` and spec 025's category table, and
-  the task runs against the pinned model; until then the live criterion
-  has no recorded pass, and the status stays `testing`.
+- **`context/readback` reads its log through the suite's loader.** Its
+  `task.yaml` names `log: log.jsonl`, lines of events without an id or a
+  sequence, which the suite numbers from 1 as the session's first
+  events; its summary, asked with `compact-v3`, keeps that a build number
+  was given and not the number. `context` is in `tasks.Categories` and
+  spec 025's category table. The task passed 3 of 3 live runs on
+  `claude-haiku-5-5`, each reading the person's message back with
+  `history` in two steps.
