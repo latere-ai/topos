@@ -243,12 +243,52 @@ differs from the draft in these points:
 - **Reasoning.** The request carries no reasoning setting: the dialects
   of this build cannot turn reasoning off, and a model that reasons by
   default, as `claude-haiku-5-5` does, spent all 64 tokens reasoning in
-  the first live runs. A response that stops at its `max_tokens` with no
-  text is therefore asked once more at `harness.TitleReasoningTokens`
-  (1024), the first request recorded with outcome `escalated` in the
-  title's batch, as spec 005 escalates a step. On that model every title
-  takes the two requests, about a hundredth of a cent in all; a dialect
-  that can send no reasoning would save the first.
+  the first live runs. Where the agent names its title `model`, a
+  response that stops at its `max_tokens` with no text is therefore
+  asked once more at `harness.TitleReasoningTokens` (1024), the first
+  request recorded with outcome `escalated` in the title's batch, as
+  spec 005 escalates a step; on the session's own model, which may cost
+  far more, it is not, and the title stays (`harness.TitleAsk.Retry`).
+  The task suite's title tasks name the run's own model as the agent's
+  title model, `${MODEL}`, to be asked as such an agent is.
+- **One deadline.** `harness.TitleTimeout` is 15 seconds, over the whole
+  title the runner asks for: the authorizer's question, the connection of
+  its model, a door's settling included, and its requests. The record of
+  a request it cut short is appended within
+  `harness.TitleRecordTimeout` (2 seconds) after it, so a runner holds the
+  lease for a title 17 seconds at most.
+- **Input ends a title.** The drive's watch of the log, which always runs
+  now, ends the title at once when a message, a confirmation, a client
+  tool's result, an answer, an interrupt or a resume arrives after what
+  the title read; its request is recorded with outcome `canceled`, and
+  the drive starts the next turn. The pass watches the session it names
+  the same way, and the claim queue drives the input once it lets go.
+- **A person's rename and an end win.** The title's batch is appended
+  through the runner's log over the events others appended since what
+  the title read, read in the same step as the store takes the batch,
+  again when the store refused it for events between: a person's
+  `session.title_changed` among them leaves the harness's change out,
+  the request still recorded, and a `session.status` ended leaves
+  everything out, logged. `session.ApplyBatch` also moves the header by a
+  harness change only from the title it names as `old`.
+- **A delete waits for the title.** `DELETE /v1/sessions/{id}` of an idle
+  session whose lease a runner holds tries again every 250 ms for
+  `server.DefaultLeaseWait`, the title's deadline and its record's, and
+  deletes it once the runner lets go; one still held, or running, is
+  `conflict` as before. No other route refuses an idle session for a held
+  lease: an archive, a fork, a resume and an end write beside the lease.
+- **The pass names by an answered request.** A session is named by a
+  title request with outcome `ok` alone, so one whose request failed, was
+  refused or cut short is due again at the next start. An agent whose
+  latest version cannot be read is logged and left out of the pass, and
+  a panic in one session's title counts that session failed, logged with
+  its stack, and the pass goes on.
+- **The cost of a turn.** After a turn, the drive reads the log's end
+  for input first, then asks nothing more of a runner that has no title
+  question, then reads the agent's setting, which a runner keeps for
+  `runner.TitleSettingTTL` (30 seconds) by agent, so a change of the
+  agent's latest version applies within it; only a session whose agent
+  sets a title reads its whole log.
 - **The prompt.** `title/title-v1` is one message of the user and no
   system prompt, with no cache breakpoint, since nothing of it is sent
   again; it asks for the answer with no label, after the first live runs

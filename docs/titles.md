@@ -37,8 +37,9 @@ spec:
 The setting is read from the agent's latest version, not from the version
 a session runs: naming a session changes nothing the agent does, so a
 new version that turns titles on names the sessions the agent already
-runs, and one that turns them off stops. A runner that cannot read the
-agent's latest version reads the version the session runs.
+runs, and one that turns them off stops, within 30 seconds, the time a
+runner keeps the setting it read. A runner that cannot read the agent's
+latest version reads the version the session runs.
 
 ## When a title is asked for
 
@@ -54,9 +55,16 @@ After a turn ends, the session is named when all of these hold:
 - the session's budget, where it has one, is not spent.
 
 The request runs once the turn's closing status is in the log, so a
-client sees the turn end at once and the title a moment later. A message
-sent while the title is asked for starts the next turn straight after,
-on the same runner.
+client sees the turn end at once and the title a moment later. The whole
+title, the authorizer's question, the connection of its model and its
+requests, takes at most 15 seconds. A message, a confirmation, an answer
+or an interrupt sent meanwhile ends the title at once, its request
+recorded as canceled, and the next turn starts straight after, on the
+same runner. A person who renames the session while its title is asked
+keeps the name, and a session ended meanwhile takes nothing more.
+
+A delete of a session whose title is being asked waits for it, at most
+17 seconds, and then deletes the session.
 
 ## What the model reads
 
@@ -76,7 +84,9 @@ An answer of `KEEP`, an empty one, one of two lines or with a control
 character, one longer than 60 characters, and the title the session
 already has, change nothing. A model that reasons before it answers and
 spends the request's few tokens on that is asked once more with room to
-reason.
+reason, when the agent named its title `model`; on the session's own
+model, which may cost far more, it is not, and the title stays, so an
+agent whose model reasons by default names a small title model.
 
 ## The model it runs on
 
@@ -114,18 +124,18 @@ a title moves. No delta of the title request is streamed: a client sees
 the title, not the model writing it.
 
 The request's cost is the session's, as any request's is, and counts
-toward its budget. A request that fails, is denied or times out, within
-20 seconds, writes no error to the session and changes no status; the
-runner logs it.
+toward its budget. A title that fails, is denied or times out writes no
+error to the session and changes no status; the runner logs it.
 
 ## The sessions an agent ran before
 
 When toposd runs sessions itself, a minute after it starts it names,
 once, the idle sessions of every agent whose latest version sets `title`
 that were never named: those whose log holds a person's message, no
-title request, and no title a person gave, a fork's copied events
+title request a model answered, and no title a person gave, a fork's copied events
 included, so the continuation of a named conversation is not named
 again. It names one session at a time, two seconds apart, skips a
 session another runner holds, and logs how many it named, kept, skipped
-and failed. A session it could not name is tried again at the next
-start.
+and failed. A session whose title request failed, was refused or was
+cut short is still due, and is tried again at the next start; a message
+sent to a session while the pass names it ends the title at once.
