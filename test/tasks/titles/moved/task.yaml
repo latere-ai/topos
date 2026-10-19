@@ -7,7 +7,7 @@ category: titles
 log: conversation.jsonl
 agent:
   tools: []
-  title: {}
+  title: {model: "${MODEL}"}
 prompt: |
   The orders table is about 40 GB. How long should I expect the
   concurrent index build to take, and can I watch its progress while it

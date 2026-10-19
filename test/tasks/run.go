@@ -476,7 +476,7 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	s.Budget.MaxCostUSDMicro = &r.t.MaxCostUSDMicro
 	// A session ends with its turn, but one whose title follows it, which
 	// is asked of an idle session alone (spec 083).
-	set := r.t.Agent.setting()
+	set := r.t.Agent.setting(conn.Model)
 	s.EndOnIdle = set == nil
 	s.Attended = len(r.t.Answers) > 0
 	s.Limits.TurnTimeout = r.t.Timeout.String()

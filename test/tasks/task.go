@@ -59,6 +59,11 @@ const (
 	PlaceholderServeURL = "${SERVE_URL}"
 )
 
+// PlaceholderModel is what agent.title.model may be to name the run's own
+// model as the agent's title model (spec 083), so a title is asked on the
+// model the suite runs as an agent asks on a model it names.
+const PlaceholderModel = "${MODEL}"
+
 // Task is one task of the suite.
 type Task struct {
 	// ID is "<category>/<name>", the task's directory under the suite.
@@ -122,7 +127,8 @@ type Agent struct {
 	// Title is the agent's spec.title (spec 083): set, the session stays
 	// idle at the end of its turn instead of ending, and the runner asks
 	// for its title after the turn, the question allowed and naming no
-	// model, so the request runs on the run's own model.
+	// model. A title model of PlaceholderModel is the run's own model,
+	// named as the agent's title model.
 	Title *Title `yaml:"title"`
 }
 
@@ -131,12 +137,17 @@ type Title struct {
 	Model *string `yaml:"model"`
 }
 
-// setting is the title setting the run's runner reads, nil for none.
-func (a Agent) setting() *v1.Title {
+// setting is the title setting the run's runner reads, nil for none, a
+// title model of PlaceholderModel being model, the run's own.
+func (a Agent) setting(model string) *v1.Title {
 	if a.Title == nil {
 		return nil
 	}
-	return &v1.Title{Model: a.Title.Model}
+	set := &v1.Title{Model: a.Title.Model}
+	if m := a.Title.Model; m != nil && *m == PlaceholderModel {
+		set.Model = &model
+	}
+	return set
 }
 
 // Subagent is an agent a task's threads may spawn.

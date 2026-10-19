@@ -6,7 +6,7 @@ category: titles
 log: conversation.jsonl
 agent:
   tools: []
-  title: {}
+  title: {model: "${MODEL}"}
 prompt: |
   Back to the release notes: add a last line that thanks the contributors
   of this release.

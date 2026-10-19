@@ -181,15 +181,24 @@ func TestTitleAssertions(t *testing.T) {
 
 // TestATitledTaskEndsIdleAndNamesItsSession: a task whose agent sets a
 // title leaves its session idle at the end of its turn, the title asked
-// on the run's own model, whose request is spent and counted no step
-// (spec 083).
+// on the run's own model, named as the agent's title model by
+// PlaceholderModel, whose request is spent and counted no step (spec
+// 083).
 func TestATitledTaskEndsIdleAndNamesItsSession(t *testing.T) {
 	task, err := LoadTask(filepath.Join("titles", "moved"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Agent.setting() == nil || task.Agent.setting().Model != nil || (Agent{}).setting() != nil {
-		t.Fatalf("the setting %+v", task.Agent.setting())
+	if set := task.Agent.setting("vendor/small"); set == nil || set.Model == nil || *set.Model != "vendor/small" || (Agent{}).setting("m") != nil {
+		t.Fatalf("the setting %+v", set)
+	}
+	own := Agent{Title: &Title{}}
+	if set := own.setting("m"); set == nil || set.Model != nil {
+		t.Fatalf("a title of no model reads %+v", set)
+	}
+	named := "tier/quick"
+	if set := (Agent{Title: &Title{Model: &named}}).setting("m"); set == nil || *set.Model != named {
+		t.Fatalf("a named title model reads %+v", set)
 	}
 	res, err := RunTask(t.Context(), task, Options{Work: t.TempDir(), Script: FileSolution}, 1)
 	if err != nil || !res.Passed {
