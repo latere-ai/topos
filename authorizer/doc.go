@@ -330,6 +330,21 @@
 // schedule's firing name no key. toposd reads nothing in it. An endpoint that reads it rolls out before
 // a server that sends it, and one that does not decides as before.
 //
+// A session may work on a person's own computer (spec 080), which its
+// questions name in one flat form: machine "device", with environment,
+// the name of the Cella environment the computer serves, and workdir,
+// the folder on it the session works in, beside the other fields.
+// session.create carries the three for a create that names the computer,
+// and session.fork for a fork of such a session, decided for the person
+// forking. A trigger names a computer in its spec.session.machine, and
+// its trigger.create and trigger.update carry the same three beside
+// name, agent and on, as the manifest being applied names them, so an
+// endpoint decides whether the person applying the trigger may use that
+// computer before the trigger is stored; each firing's session.create
+// carries them again. A question about any other machine names no
+// environment and no workdir, and a trigger's question names no machine
+// then. toposd decides nothing about who may use a computer.
+//
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
 // verbatim, where an endpoint reads a plan, a team or a role from. The

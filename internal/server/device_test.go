@@ -6,13 +6,16 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"latere.ai/x/pkg/authz"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/session"
 )
 
@@ -161,6 +164,78 @@ func TestATriggerNamesADevice(t *testing.T) {
 		if got := f.do(http.MethodPut, "/v1/triggers/bad", "alice", triggerYAML("bad", spec)); got.status < 400 {
 			t.Errorf("%s: %d %s", why, got.status, got.body)
 		}
+	}
+}
+
+// TestATriggerAsksAboutItsDevice: a trigger that names a device asks
+// trigger.create, and trigger.update at a later apply, with machine
+// device, environment and workdir beside its name, agent and filter, as
+// the manifest being applied names them, so the authorizer decides the
+// computer when the trigger is applied; a trigger of the agent's machine
+// names none of the three; and a create the authorizer refuses for its
+// device stores no trigger (spec 080).
+func TestATriggerAsksAboutItsDevice(t *testing.T) {
+	f := newTriggerFixture(t, func(o *Options) { o.Cella = true })
+	var mu sync.Mutex
+	asked := map[string][]authz.Resource{}
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if strings.HasPrefix(req.Action, "trigger.") {
+			mu.Lock()
+			asked[req.Action] = append(asked[req.Action], req.Resource)
+			mu.Unlock()
+		}
+		if req.Action == authorizer.ActionTriggerCreate && req.Resource.String("environment") == "dev-0bobsmachine0" {
+			return authz.Decision{Reason: "device_not_owned"}, nil
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	device := func(env, workdir string) string {
+		return "machine: {kind: device, environment: " + env + ", workdir: " + workdir + "}"
+	}
+	names := func(r authz.Resource, env, workdir string) bool {
+		return r.String("machine") == session.MachineDevice && r.String("environment") == env && r.String("workdir") == workdir
+	}
+	namesNone := func(r authz.Resource) bool {
+		return r.Fields["machine"] == nil && r.Fields["environment"] == nil && r.Fields["workdir"] == nil
+	}
+	last := func(action string) authz.Resource {
+		t.Helper()
+		mu.Lock()
+		defer mu.Unlock()
+		if len(asked[action]) == 0 {
+			t.Fatalf("%s was never asked", action)
+		}
+		return asked[action][len(asked[action])-1]
+	}
+
+	tr := f.applyTrigger("alice", "nightly", "schedule: '@daily', session: {message: 'Tidy up.', "+device("dev-01jaq7v3k9m2", "/Users/ada/code/site")+"}")
+	if q := last(authorizer.ActionTriggerCreate); q.ID != tr.Status.ID || q.String("name") != "nightly" || !names(q, "dev-01jaq7v3k9m2", "/Users/ada/code/site") {
+		t.Fatalf("trigger.create asked about %s %v", q.ID, q.Fields)
+	}
+	f.applyTrigger("alice", "nightly", "schedule: '@daily', session: {message: 'Tidy up.', "+device("dev-01jaq7v3k9m2", "/Users/ada/code/blog")+"}")
+	if q := last(authorizer.ActionTriggerUpdate); q.ID != tr.Status.ID || q.String("owner") != alice || !names(q, "dev-01jaq7v3k9m2", "/Users/ada/code/blog") {
+		t.Fatalf("trigger.update asked about %s %v", q.ID, q.Fields)
+	}
+	f.applyTrigger("alice", "nightly", "schedule: '@daily', session: {message: 'Tidy up.'}")
+	if q := last(authorizer.ActionTriggerUpdate); !namesNone(q) {
+		t.Fatalf("an update that drops the device asked about %v", q.Fields)
+	}
+
+	f.applyTrigger("alice", "triage", eventSpec(device("dev-01jaq7v3k9m2", "/Users/ada/code/site")))
+	if q := last(authorizer.ActionTriggerCreate); q.Fields["on"] == nil || !names(q, "dev-01jaq7v3k9m2", "/Users/ada/code/site") {
+		t.Fatalf("an event trigger's trigger.create asked about %v", q.Fields)
+	}
+	f.applyTrigger("alice", "plain", "schedule: '@daily', session: {message: x}")
+	if q := last(authorizer.ActionTriggerCreate); q.String("name") != "plain" || !namesNone(q) {
+		t.Fatalf("a trigger of the agent's machine asked trigger.create about %v", q.Fields)
+	}
+
+	got := f.do(http.MethodPut, "/v1/triggers/bobs", "alice", triggerYAML("bobs", "schedule: '@daily', session: {message: x, "+device("dev-0bobsmachine0", "/Users/bob")+"}"))
+	if got.status != http.StatusForbidden {
+		t.Fatalf("a trigger on a refused device: %d %s", got.status, got.body)
+	}
+	if _, err := f.objects.TriggerByName(t.Context(), alice, "bobs"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a refused trigger was stored: %v", err)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -122,6 +123,7 @@ func (c *call) applyTrigger() error {
 		if on := onField(spec); on != nil {
 			res.Fields["on"] = on
 		}
+		maps.Copy(res.Fields, deviceFields(spec.Session))
 		if _, err := c.ask(ctx, authorizer.ActionTriggerUpdate, res); err != nil {
 			return err
 		}
@@ -143,6 +145,7 @@ func (c *call) applyTrigger() error {
 		if on := onField(spec); on != nil {
 			fields["on"] = on
 		}
+		maps.Copy(fields, deviceFields(spec.Session))
 		// The id the resolver minted names the trigger from its first
 		// question, so an authorizer that keeps state per trigger, such as
 		// the events it delivers to it, can key that state by the id the
@@ -196,6 +199,21 @@ func triggerMachine(s v1.TriggerSession) *session.Machine {
 		return nil
 	}
 	return &session.Machine{Kind: session.MachineDevice, Environment: s.Machine.Environment, Workdir: s.Machine.Workdir}
+}
+
+// deviceFields is the device a trigger names as the questions of its
+// create and its update carry it, in session.create's flat form: machine
+// device, with environment and workdir beside it, so an authorizer decides
+// whether the person who applies the trigger may use that computer when
+// it is applied, and not only at each firing's session.create (spec
+// 080). It is nil for a trigger of the agent's machine, whose questions
+// name none.
+func deviceFields(s v1.TriggerSession) map[string]any {
+	m := triggerMachine(s)
+	if m == nil {
+		return nil
+	}
+	return map[string]any{"machine": m.Kind, "environment": m.Environment, "workdir": m.Workdir}
 }
 
 // firesOn is what a trigger fires on, as its sessions record it.

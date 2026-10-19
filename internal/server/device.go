@@ -21,12 +21,13 @@ var DeviceRule = fmt.Sprintf("The body's machine names a person's own computer f
 	"and workdir the folder on it the session works in, an absolute, clean path of at most %d bytes with no control character. Any other kind, and any other member, is invalid_request, and a server without Cella is machine_unavailable. "+
 	"The session records it as its machine for its whole life. session.create carries machine %s with environment and workdir, so the authorizer decides whether the person the session acts for may use that computer; "+
 	"a fork of the session carries the same three in session.fork, decided for the person forking, and a fork the authorizer refuses is not created. "+
-	"A trigger names a device the same way in spec.session.machine, the one machine a trigger names, and the sessions a trigger starts record trigger_fires_on, %s or %s. "+
+	"A trigger names a device the same way in spec.session.machine, the one machine a trigger names; its trigger.create and trigger.update carry machine %s with environment and workdir, "+
+	"so the authorizer decides whether the person applying it may use that computer when it is applied, as well as at each firing's session.create, and the sessions a trigger starts record trigger_fires_on, %s or %s. "+
 	"The session's sandbox is created on that environment with the folder bound in place as its workspace and working directory, with no image, no Secret, no LUX_URL and no HOME, "+
 	"labeled %s and, for a session a trigger started, %s and %s, and annotated %s with the agent's display name, which the computer shows its owner. "+
 	"No repository is delivered into the folder, the files of a message are written under %s/ in the sandbox's temporary directory, and the session keeps no checkpoint and no copy of its working directory and restores neither, "+
 	"so a rewind finds no checkpoint. A call there scores as a call on a host, and the model's requests carry prompt_version %s.",
-	session.MachineDevice, session.MaxDeviceWorkdir, session.MachineDevice, session.TriggerSchedule, session.TriggerEvents,
+	session.MachineDevice, session.MaxDeviceWorkdir, session.MachineDevice, session.MachineDevice, session.TriggerSchedule, session.TriggerEvents,
 	cella.LabelAgentVersion, cella.LabelTrigger, cella.LabelTriggerFiresOn, cella.AnnotationAgentName, cella.DeviceDir+"/"+session.AttachmentDir, prompts.HarnessVersion(prompts.HarnessDevice))
 
 // DeviceWaitRule is the sentence the event routes state a session waiting

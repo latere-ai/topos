@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **A trigger that names a person's computer is decided when it is applied.** When a trigger's `spec.session.machine` names a device, `trigger.create` and `trigger.update` carry `machine: device` with `environment` and `workdir` beside `name`, `agent` and `on`, the same flat fields `session.create` carries, so the authorizer can decide whether the person applying the trigger may use that computer before the trigger is stored, and not only at each firing. A trigger of the agent's machine carries none of them. An authorizer that does not read them decides as before.
+
 ## v0.47.0 - 2026-10-19
 
 ### Added

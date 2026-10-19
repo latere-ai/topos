@@ -419,8 +419,10 @@ var opDescriptions = map[string]string{
 		"spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; "+
 		"each value is cut at %d bytes and a message past %d bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; "+
 		"continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, %d by default and %d at most, are active at once. "+
-		"The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names.",
-		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling),
+		"The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names. "+
+		"trigger.create and trigger.update carry the trigger's name, its agent and the filter applied as on, and, when spec.session.machine names a person's own computer, {kind: %s, environment, workdir}, "+
+		"machine %s with environment and workdir beside them, as session.create carries them.",
+		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice),
 	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+
 		"product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. "+
 		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, refused or failed. "+
