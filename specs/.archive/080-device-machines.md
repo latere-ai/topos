@@ -335,6 +335,18 @@ Where the build differs from the design, or adds to it:
   minutes, and no operator variable.
 - **A trigger counts a session waiting for its machine as active,** so
   a firing that skips while one is starts no other.
+- **A device decides `progressive` as `confirm`.** After v0.47.0
+  (2026-10-19), and until a decision service can approve calls on a
+  person's computer, the mode a turn decides under on a device is
+  `confirm` when the session runs `progressive`, by its agent's manifest
+  or a person's change, through `harness.ModeOn`: a call that reads
+  runs, any other asks unless `always_allow` names it or the person
+  remembered a pattern for it earlier in the session, `plan` still
+  blocks a change, and a decision service's answer is a suggestion.
+  Each `agent.tool_use` records `mode: confirm`, which a client shows,
+  and the session's policy keeps the mode it was given.
+  `TestADeviceDecidesProgressiveAsConfirm` in `harness` and
+  `TestADeviceIsDecidedAsConfirm` in `internal/decisions` pin it.
 - **The files route does not read a device's folder.** A Cella
   session's running sandbox is read live for a reader of the session; a
   device's folder is the person's own, which the session's tools reach

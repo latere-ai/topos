@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-19
 author: changkun
 ---
 
@@ -132,6 +132,12 @@ boundary. `agent.tool_use` records `risk` as `{"score","source",
 | `plan` | effect `none` or `read`: `allow`; anything else: `block` with `Plan mode: only read-only tools run.` |
 | `confirm` | on `always_allow`, a session pattern, or effect `none` or `read`: `allow`; a call inside a Cella machine, `bash` included: `allow`, since the step-up below bounds what it can do outside; otherwise `ask` |
 | `progressive` | score below `flag_at` (0.3): `allow`; below `ask_at` (0.5): `flag`; below `block_at` (0.9): `ask`; otherwise `block` |
+
+On a person's own computer ([[080-device-machines]]) `progressive`
+decides as `confirm`, whether the agent's manifest names it or a person
+changes to it, and so does a decision service's call: no score and no
+service runs a call that changes the person's real files without them.
+Each `agent.tool_use` records `confirm` as its mode.
 
 A person names `confirm` manual and `progressive` auto, the names other
 harnesses use for the same two experiences: `topos run --mode` takes
@@ -341,6 +347,7 @@ authorizer's one-shot grant.
 | The authorizer's and the agent's lists merge so neither loosens the other: confirm is the union, allow the intersection, thresholds the lower, and the merged policy is in the Session | `harness.TestPolicyMergeNeverLoosens`, `internal/server.TestLimitListsReachThePolicy`, `harness.TestTheSessionsPolicyDecides` | built |
 | A sandbox command refused `confirmation_required` yields one `approval.requested` scored 0.9; an allow grants a one-shot scope the retried request uses once, a deny leaves it refused, and a restart between the two keeps the approval pending | `TestEgressStepUp` over the stub Cella and a stub authorizer | not built |
 | `bash` in a sandbox holding a swapped-in credential scores 0.4 | `harness.TestScoreFollowsTheRuleFeatures` | not built |
+| On a person's own computer `progressive` decides as `confirm`: a write and a `bash` it would run ask, a read, `always_allow` and a remembered pattern run, `plan` still blocks a write, a change to `progressive` decides the same, a decision service's allow is a suggestion, and `agent.tool_use` records `confirm` | `harness.TestADeviceDecidesProgressiveAsConfirm`, `internal/decisions.TestADeviceIsDecidedAsConfirm` | built |
 
 ## Outcome
 
