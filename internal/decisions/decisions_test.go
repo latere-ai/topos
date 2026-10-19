@@ -265,6 +265,25 @@ func TestConfirmModeTeaches(t *testing.T) {
 	}
 }
 
+// TestADeviceIsDecidedAsConfirm: on a person's own computer a call under
+// progressive is decided as confirm: the service's allow is a suggestion
+// and the call asks, recorded as a confirm decision (spec 080).
+func TestADeviceIsDecidedAsConfirm(t *testing.T) {
+	s := &service{next: allowSuggestion()}
+	call := bash(harness.ModeProgressive, "make")
+	call.MachineKind = machine.KindDevice
+	_, out, err := newDecider(t, s, 0.5).Decide(context.Background(), call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Verdict != harness.VerdictAsk || out.ReviewProbability != 1 || out.Suggestion == nil || out.Suggestion.Verdict != "allow" || out.Draw != nil {
+		t.Errorf("a device under progressive %+v", out)
+	}
+	if len(s.decided) != 1 || s.decided[0].Source != SourceConfirm {
+		t.Errorf("a device under progressive recorded %+v", s.decided)
+	}
+}
+
 func TestPlanModeAsksNothing(t *testing.T) {
 	s := &service{next: allowSuggestion()}
 	_, out, err := newDecider(t, s, 0.01).Decide(context.Background(), bash(harness.ModePlan, "make"))

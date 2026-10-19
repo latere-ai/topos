@@ -16,6 +16,7 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- **A session on a person's computer runs `progressive` as `confirm`.** Where the session runs `progressive`, by its agent's manifest or a change of the mode, a call on a device is decided as in `confirm`: a call that reads runs, and any other, a write or a command included, asks unless `always_allow` names it or the person allowed a pattern for it earlier in the session with `remember`; `plan` still blocks a change, and a decision service's answer is a suggestion and no longer runs a call. Each call's `agent.tool_use` records `mode: confirm`. The session's policy keeps the mode it was given.
 - **A trigger that names a person's computer is decided when it is applied.** When a trigger's `spec.session.machine` names a device, `trigger.create` and `trigger.update` carry `machine: device` with `environment` and `workdir` beside `name`, `agent` and `on`, the same flat fields `session.create` carries, so the authorizer can decide whether the person applying the trigger may use that computer before the trigger is stored, and not only at each firing. A trigger of the agent's machine carries none of them. An authorizer that does not read them decides as before.
 
 ## v0.47.0 - 2026-10-19

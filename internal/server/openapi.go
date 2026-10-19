@@ -485,7 +485,7 @@ var opDescriptions = map[string]string{
 		"A change of the mode asks the same session.update with approval_mode, current_approval_mode, the mode the session runs, and agent_approval_mode, the mode its agent names and the session started in. "+
 		"It appends session.policy_changed {by, old, new}, each {mode}, in the same batch as a change of the model, and the Session's policy.mode is the new one; its lists and thresholds do not change. "+
 		"The mode holds from the next step, in the turn that runs: a call decided before keeps its verdict, and a call waiting for a confirmation keeps waiting for the person's answer whichever way the mode moved. "+
-		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox decides progressive as confirm. "+
+		"A thread runs no looser than the modes its own agents name, and a host with no operating-system sandbox and a person's own computer decide progressive as confirm, which each call's agent.tool_use records as its mode. "+
 		"A title is trimmed of surrounding white space, and one that is then empty, longer than %d characters, or holds a control character or a line or paragraph separator is invalid_request. "+
 		"A change of the title asks the same session.update with title, the trimmed title, and appends session.title_changed {by, old, new}, the title the session had, empty when it had none, and the one it has, after the other changes of the same body; the Session's title is the new one and its updated_at does not move. "+
 		"A change to the title the session has appends nothing, and once a person changed the title the harness names the session no more. "+

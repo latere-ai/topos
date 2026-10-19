@@ -63,6 +63,17 @@ func CheckSandbox(mode Mode, info machine.Info) error {
 	return fmt.Errorf("the progressive mode needs an operating-system sandbox, and this %s host has none; run in plan or confirm", info.OS)
 }
 
+// ModeOn is the mode a call on a machine of the kind is decided under:
+// an empty mode is confirm, and progressive is confirm on a person's own
+// computer (spec 080), where no score or decision service runs a call that
+// changes their real files without them.
+func ModeOn(mode Mode, machineKind string) Mode {
+	if mode == "" || (mode == ModeProgressive && machineKind == machine.KindDevice) {
+		return ModeConfirm
+	}
+	return mode
+}
+
 // Thresholds are the progressive mode's score cut-offs.
 type Thresholds struct {
 	FlagAt  float64 `json:"flag_at"`
@@ -241,11 +252,12 @@ type Decision struct {
 // no answer of always_confirm reaches a host the network does not ask
 // about. One inside it is allowed in confirm, unless always_confirm names
 // it, and scores as a named host in progressive (spec 052).
+//
+// On a person's own computer progressive decides as confirm (spec 080):
+// a call that reads runs, and any other asks unless always_allow names it
+// or the person allowed it earlier in the session.
 func (p Policy) Decide(name string, props tools.Properties, input json.RawMessage, risk session.Risk, machineKind string, remembered []string) Decision {
-	mode := p.Mode
-	if mode == "" {
-		mode = ModeConfirm
-	}
+	mode := ModeOn(p.Mode, machineKind)
 	readOnly := props.Effect == tools.EffectNone || props.Effect == tools.EffectRead
 	subject := patternSubject(name, input)
 	network, networked := p.fetchDecision(name, input)

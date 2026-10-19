@@ -208,7 +208,7 @@ func (d *Decider) Decide(ctx context.Context, c harness.Call) (session.Risk, har
 		return risk, rules, err
 	}
 	a := d.action(c, risk)
-	switch cmp.Or(c.Policy.Mode, harness.ModeConfirm) {
+	switch harness.ModeOn(c.Policy.Mode, c.MachineKind) {
 	case harness.ModePlan:
 		return risk, rules, nil
 	case harness.ModeProgressive:

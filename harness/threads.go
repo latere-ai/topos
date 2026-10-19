@@ -114,7 +114,10 @@ func stricterCeiling(a, b Mode) Mode {
 // 041): the new mode of the latest session.policy_changed the turn has
 // read, held to the thread's ceiling, and the mode the turn started with
 // when the log holds none. A host with no operating-system sandbox
-// decides progressive as confirm (spec 012), whichever way the mode came.
+// decides progressive as confirm (spec 012), and so does a person's own
+// computer (spec 080), whichever way the mode came: no score or decision
+// service runs a call that changes their real files without them. Each
+// agent.tool_use records the mode it was decided under.
 func (t *turn) mode() Mode {
 	mode := t.h.c.Policy.Mode
 	if m, ok := session.Mode(t.s, t.events()); ok {
@@ -123,10 +126,14 @@ func (t *turn) mode() Mode {
 	if mode == "" {
 		mode = ModeConfirm
 	}
-	if mode == ModeProgressive && t.h.c.Machine != nil && t.h.c.Machine.Info().Sandbox == machine.SandboxNone {
+	if t.h.c.Machine == nil {
+		return mode
+	}
+	info := t.h.c.Machine.Info()
+	if mode == ModeProgressive && info.Sandbox == machine.SandboxNone {
 		return ModeConfirm
 	}
-	return mode
+	return ModeOn(mode, info.Kind)
 }
 
 // stricterMode is the stricter of two modes; an empty mode is confirm.

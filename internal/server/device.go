@@ -26,7 +26,9 @@ var DeviceRule = fmt.Sprintf("The body's machine names a person's own computer f
 	"The session's sandbox is created on that environment with the folder bound in place as its workspace and working directory, with no image, no Secret, no LUX_URL and no HOME, "+
 	"labeled %s and, for a session a trigger started, %s and %s, and annotated %s with the agent's display name, which the computer shows its owner. "+
 	"No repository is delivered into the folder, the files of a message are written under %s/ in the sandbox's temporary directory, and the session keeps no checkpoint and no copy of its working directory and restores neither, "+
-	"so a rewind finds no checkpoint. A call there scores as a call on a host, and the model's requests carry prompt_version %s.",
+	"so a rewind finds no checkpoint. A call there scores as a call on a host and is decided in confirm mode when the session runs progressive, by the agent's manifest or a change of the mode: "+
+	"a call that reads runs, and any other asks unless always_allow names it or the person allowed it earlier in the session with remember, plan still blocks a change, and each agent.tool_use records mode confirm. "+
+	"The model's requests carry prompt_version %s.",
 	session.MachineDevice, session.MaxDeviceWorkdir, session.MachineDevice, session.MachineDevice, session.TriggerSchedule, session.TriggerEvents,
 	cella.LabelAgentVersion, cella.LabelTrigger, cella.LabelTriggerFiresOn, cella.AnnotationAgentName, cella.DeviceDir+"/"+session.AttachmentDir, prompts.HarnessVersion(prompts.HarnessDevice))
 
