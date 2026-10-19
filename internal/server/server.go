@@ -123,6 +123,10 @@ type Options struct {
 	// server keeps for it outside the store, such as a host session's
 	// directories. Nil removes nothing.
 	Deleted func(id string) error
+	// LeaseWait is how long a delete of an idle session waits for the
+	// runner that holds its lease to let go, as one does once it named the
+	// session after a turn (spec 083); zero is DefaultLeaseWait.
+	LeaseWait time.Duration
 	// Identities is the identity provider that hosts the installation's
 	// agents (spec 018); nil gives agents no identity.
 	Identities Identities

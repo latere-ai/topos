@@ -1003,6 +1003,15 @@ func endable(s session.Session) error {
 	return nil
 }
 
+// DefaultLeaseWait is how long a delete of an idle session waits for the
+// runner that holds its lease: a title a runner asks for after a turn
+// holds it for harness.TitleTimeout and the append of its record (spec
+// 083).
+const DefaultLeaseWait = harness.TitleTimeout + harness.TitleRecordTimeout
+
+// leasePoll is how often a delete that waits for a lease tries again.
+const leasePoll = 250 * time.Millisecond
+
 // deleteSession is DELETE /sessions/{id}: the session, its log and its
 // blobs (spec 040).
 //
@@ -1011,8 +1020,10 @@ func endable(s session.Session) error {
 // delete: it reads the session, which a caller who may not see it hears
 // as not_found, refuses a running one, and only then asks
 // session.delete. The store's lease check still holds after the
-// question: a runner that claimed the session meanwhile makes the delete
-// a conflict, and the session stays for a retry.
+// question: an idle session whose lease a runner holds, as one does while
+// it names the session after a turn (spec 083), is tried again every
+// leasePoll for LeaseWait, and a delete that still finds it held, or
+// finds it running, is a conflict, and the session stays for a retry.
 func (c *call) deleteSession() error {
 	ctx := c.r.Context()
 	s, err := c.session(authorizer.ActionSessionRead, nil)
@@ -1025,7 +1036,7 @@ func (c *call) deleteSession() error {
 	if _, err := c.ask(ctx, authorizer.ActionSessionDelete, sessionResource(s, nil)); err != nil {
 		return err
 	}
-	if err := c.s.o.Sessions.Delete(ctx, s.ID); err != nil {
+	if err := c.s.deleteFree(ctx, s.ID); err != nil {
 		return err
 	}
 	// The session is gone whatever its leftovers do, so a failed removal
@@ -1037,6 +1048,35 @@ func (c *call) deleteSession() error {
 	}
 	c.w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// deleteFree deletes the session id once no runner holds its lease,
+// waiting for one that holds it on the idle session for LeaseWait; the
+// store's refusal stands for a session that is running, or held past it.
+func (s *Server) deleteFree(ctx context.Context, id string) error {
+	wait := cmp.Or(s.o.LeaseWait, DefaultLeaseWait)
+	deadline := time.Now().Add(wait)
+	for {
+		err := s.o.Sessions.Delete(ctx, id)
+		if !errors.Is(err, session.ErrLocked) {
+			return err
+		}
+		cur, gerr := s.o.Sessions.Get(ctx, id)
+		if gerr != nil {
+			return gerr
+		}
+		left := time.Until(deadline)
+		if cur.Status != session.StatusIdle || left <= 0 {
+			return err
+		}
+		t := time.NewTimer(min(leasePoll, left))
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return errors.Join(err, ctx.Err())
+		case <-t.C:
+		}
+	}
 }
 
 // appendRetries bounds how often an append follows a session that moved

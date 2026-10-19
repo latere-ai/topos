@@ -206,7 +206,7 @@ func TestADeleteIsRefused(t *testing.T) {
 // answers conflict and leaves the session; once the runner lets go, the
 // same delete removes it.
 func TestADeleteRacedByAClaimIsRetried(t *testing.T) {
-	f := newFixture(t)
+	f := newFixture(t, func(o *Options) { o.LeaseWait = 50 * time.Millisecond })
 	f.apply("alice", "reviewer", "Review.")
 	s := f.create("alice", "reviewer")
 	var lease session.Lease
@@ -237,5 +237,67 @@ func TestADeleteRacedByAClaimIsRetried(t *testing.T) {
 	}
 	if _, err := f.sessions.Get(t.Context(), s.ID); !errors.Is(err, session.ErrNotFound) {
 		t.Fatalf("the session after the retried delete: %v", err)
+	}
+}
+
+// TestADeleteWaitsForATitlesLease: a delete of an idle session whose
+// lease a runner holds, as one does while it names the session after a
+// turn, waits for the runner to let go and then deletes it; one still
+// held after LeaseWait, and a session that started running meanwhile,
+// are a conflict and stay (spec 083).
+func TestADeleteWaitsForATitlesLease(t *testing.T) {
+	f := newFixture(t, func(o *Options) { o.LeaseWait = 3 * time.Second })
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	lease, err := f.sessions.Acquire(t.Context(), s.ID, session.Holder{Runner: "runner-a", AcquiredAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		if err := lease.Release(); err != nil {
+			t.Error(err)
+		}
+	}()
+	began := time.Now()
+	if a, _ := f.deleteAs("alice", s.ID); a.status != http.StatusNoContent {
+		t.Fatalf("a delete that waits for the lease: %d %s", a.status, a.body)
+	}
+	if took := time.Since(began); took < 250*time.Millisecond {
+		t.Fatalf("the delete took %s, before the lease was let go", took)
+	}
+	if _, err := f.sessions.Get(t.Context(), s.ID); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("the session after the delete: %v", err)
+	}
+
+	short := newFixture(t, func(o *Options) { o.LeaseWait = 300 * time.Millisecond })
+	short.apply("alice", "reviewer", "Review.")
+	held := short.create("alice", "reviewer")
+	if _, err := short.sessions.Acquire(t.Context(), held.ID, session.Holder{Runner: "runner-a", AcquiredAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	began = time.Now()
+	if a, _ := short.deleteAs("alice", held.ID); a.code() != CodeConflict || time.Since(began) < 300*time.Millisecond {
+		t.Fatalf("a delete held past the wait: %d %s after %s", a.status, a.body, time.Since(began))
+	}
+	ran := short.create("alice", "reviewer")
+	if _, err := short.sessions.Acquire(t.Context(), ran.ID, session.Holder{Runner: "runner-a", AcquiredAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	running, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	short.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionDelete {
+			if err := short.api.appendBatch(t.Context(), ran.ID, []session.Event{running}); err != nil {
+				t.Error(err)
+			}
+		}
+		return short.authz.next.Authorize(t.Context(), req)
+	}
+	began = time.Now()
+	if a, _ := short.deleteAs("alice", ran.ID); a.code() != CodeConflict || time.Since(began) > 250*time.Millisecond {
+		t.Fatalf("a delete of a session that started running: %d %s after %s", a.status, a.body, time.Since(began))
 	}
 }
