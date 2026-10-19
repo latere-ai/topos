@@ -237,7 +237,7 @@ their own keys.
 
 - `harness/tools` gains `NameWebSearch` and `WebSearch(Searcher)`, and
   `OptIn()`, the names of the built-ins an agent holds only by naming
-  them, which is `web_search` alone. `tools.Builtins()` and the default
+  them, `web_search` here and `history` since spec 084. `tools.Builtins()` and the default
   set stay the eight, so the digest of an agent that names no tools is
   unchanged.
 - The manifest validator accepts a name of `OptIn()` as it accepts a

@@ -131,6 +131,12 @@ thread:
 4. If the estimate is still over the window's limit after compaction,
    the turn fails with `session.error` `context_exhausted`.
 
+A thread that holds the history tool asks with
+`prompts/compact/compact-v3.md` instead, which tells the model that the
+messages a summary replaces stay readable, and reads a cleared result
+and a summary in texts that say how to read them back
+([[084-reading-back-what-the-context-let-go]]).
+
 The compaction prompt asks for, in order: the person's requests quoted
 exactly, the questions put to the person with each answer or that it
 was left to the agent (added by [[039-questions]]), the decisions made

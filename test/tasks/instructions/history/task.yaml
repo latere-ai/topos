@@ -1,0 +1,12 @@
+name: history
+category: instructions
+# history's description: the session's log keeps what the conversation
+# never showed, such as the time each message was sent, and history
+# reads it back. The agent holds write and history alone, so nothing
+# else tells it when the message arrived.
+agent:
+  tools: [write, history]
+prompt: |
+  Write the time at which I sent you this message, as the record of this
+  conversation keeps it, to sent.txt: hours, minutes and seconds in UTC,
+  as HH:MM:SS, and nothing else.

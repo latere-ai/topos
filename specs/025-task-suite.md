@@ -66,6 +66,7 @@ A run that ends at a limit, a budget or an error fails.
 | `instructions` | one directory per built-in tool ([[008-tools]]), one for project instruction files and one for skills ([[011-instructions-and-skills]]) |
 | `threads` | added with 013's stages: a subagent that reads its parent's file, a thread messaged twice, three parallel threads, two isolated threads merged |
 | `titles` | added with [[083-a-title-that-follows-the-conversation]]: a conversation that moved to another subject is retitled, and one that came back from a side question keeps its title |
+| `context` | added with [[084-reading-back-what-the-context-let-go]]: a value a summary left out is read back from the log with `history` and answered exactly |
 
 The first tasks are the ones the failures of v0.7.0 ([[005-harness-loop]])
 would have failed, and ordinary coding tasks:

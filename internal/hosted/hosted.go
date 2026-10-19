@@ -229,8 +229,9 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	cfg.MCP = b.mcp(ctx, s, reg)
 	cfg.Tools = reg
 	// The question tool is the harness's own, offered when the agent names
-	// it (spec 039).
+	// it (spec 039), and so is history, which reads the log (spec 084).
 	cfg.Question = slices.Contains(ac.Tools, harness.ToolQuestion)
+	cfg.History = slices.Contains(ac.Tools, tools.NameHistory)
 	onHost := cmp.Or(s.Machine.Kind, ac.Machine.Kind) == session.MachineHost
 	device := s.Machine.Kind == session.MachineDevice
 	// The publish tool is offered to a session in a sandbox whose agent

@@ -91,6 +91,13 @@ may be asked to connect ([[069-connections-an-allow-names]]).
 |---|---|---|---|---|
 | `web_search` | yes | none | `query` (1 to 400 characters), `max_results` (1 to 10, default 5) | the search service's 30 second timeout and 1 MiB answer; at most 300 characters of a title and 1,000 of a snippet |
 
+`history` is one too, run by the harness over the calling thread's own
+log, so it never opens a machine ([[084-reading-back-what-the-context-let-go]]):
+
+| Name | Parallel | Effect | Input | Limits |
+|---|---|---|---|---|
+| `history` | yes | none | one of `from` and `to` (from 1, either optional), `tool_use_id`, or `query` with `from` and `to` | whole entries within the output limit and never spilled; a query answers at most 20 matches of 400 characters |
+
 `grep` and `glob` are Go-native and need no external binary. A
 result's `meta` ([[004-session-log]]) is the tool's record for later
 calls of its thread, and `tools.StateOf` folds the thread's metas from

@@ -322,7 +322,7 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "instructions: x", "instructionsFile: x.md"), "spec.instructionsFile", "not both"},
 		{agent("a", m, "instructionsFile: x.md"), "spec.instructionsFile", "reads no files"},
 		{agent("a", m, "tools: [read, read]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search, question or publish"},
+		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question or publish"},
 		{agent("a", m, "tools: ['bad name']"), "spec.tools[0].name", "not a tool name"},
 		{agent("a", m, "tools: [{outputLimit: 3}]"), "spec.tools[0].name", "required"},
 		{agent("a", m, "tools: [{name: read, outputLimit: -1}]"), "spec.tools[0].outputLimit", "negative"},
@@ -668,7 +668,36 @@ func TestWebSearchIsAnOptInName(t *testing.T) {
 		{agent("a", m, "tools: [{name: web_search, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "a client tool may not take a built-in's name"},
 		{agent("a", m, "tools: [{name: web_search, description: x}]"), "spec.tools[0]", "a built-in takes only name and outputLimit"},
 		{agent("a", m, "tools: [web_search, web_search]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search, question or publish"},
+		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question or publish"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, Options{})
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: %s", c.body, e.Detail())
+		}
+	}
+}
+
+// TestHistoryIsAnOptInName (spec 084): an agent names history as a
+// built-in, with outputLimit alone, beside web_search; an agent that
+// names no tools does not hold it; and no client tool takes the name.
+func TestHistoryIsAnOptInName(t *testing.T) {
+	const m = "model: {name: m}"
+	r := one(t, agent("reader", m, "tools: [read, history, web_search]"), fixed(newStore()))
+	c, err := r.AgentConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.Tools, []string{"read", tools.NameHistory, tools.NameWebSearch}) {
+		t.Fatalf("the config holds %v", c.Tools)
+	}
+	plain := one(t, agent("plain", m), fixed(newStore()))
+	if got := toolNames(plain.Agent.Spec.Tools); slices.Contains(got, tools.NameHistory) {
+		t.Fatalf("an agent that names no tools holds %v", got)
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{agent("a", m, "tools: [{name: history, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "a client tool may not take a built-in's name"},
+		{agent("a", m, "tools: [{name: history, description: x}]"), "spec.tools[0]", "a built-in takes only name and outputLimit"},
+		{agent("a", m, "tools: [history, history]"), "spec.tools[1]", "repeats an earlier entry"},
 	} {
 		e := refused(t, CodeInvalidManifest, c.body, Options{})
 		if !hasProblem(e, c.path, c.detail) {

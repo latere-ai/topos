@@ -97,6 +97,10 @@ type FoldOptions struct {
 	// message's files are kept outside the working directory (spec 080):
 	// the line that names them says where a command reaches them.
 	Device bool
+	// History is set for a thread that holds the history tool (spec
+	// 084): a cleared result names its call's id and a summary the events
+	// it covers, which the tool reads back.
+	History bool
 }
 
 // FoldWith renders the transcript of one thread as Fold does, with o.
@@ -209,11 +213,11 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 	user := func(blocks ...lux.Block) { items = append(items, item{role: ir.RoleUser, blocks: blocks}) }
 
 	for _, e := range view {
-		emitBefore(ranges, e.Seq, user)
+		emitBefore(ranges, e.Seq, user, o.History)
 		if r := covering(ranges, e.Seq); r != nil {
 			if !r.emitted {
 				r.emitted = true
-				user(summary(r.summary))
+				user(summary(*r, o.History))
 			}
 			continue
 		}
@@ -308,14 +312,14 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 			if err := e.Decode(&p); err != nil {
 				return Transcript{}, err
 			}
-			results[p.ToolUseID] = resultBlock(p.ToolUseID, p.Content, p.IsError, cleared)
+			results[p.ToolUseID] = resultBlock(p.ToolUseID, p.Content, p.IsError, cleared, o.History)
 		case TypeUserToolResult:
 			var p UserToolResult
 			if err := e.Decode(&p); err != nil {
 				return Transcript{}, err
 			}
 			noteSender(p.Sender)
-			results[p.ToolUseID] = resultBlock(p.ToolUseID, p.Content, p.IsError, cleared)
+			results[p.ToolUseID] = resultBlock(p.ToolUseID, p.Content, p.IsError, cleared, o.History)
 		case TypeThreadStarted:
 			var p ThreadStarted
 			if err := e.Decode(&p); err != nil {
@@ -399,7 +403,7 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 	for i := range ranges {
 		if !ranges[i].emitted {
 			ranges[i].emitted = true
-			user(summary(ranges[i].summary))
+			user(summary(ranges[i], o.History))
 		}
 	}
 
@@ -633,18 +637,24 @@ func covering(ranges []summaryRange, seq uint64) *summaryRange {
 
 // emitBefore renders every summary whose range ends before seq and has
 // not rendered, because no event of the view fell inside it.
-func emitBefore(ranges []summaryRange, seq uint64, user func(...lux.Block)) {
+func emitBefore(ranges []summaryRange, seq uint64, user func(...lux.Block), history bool) {
 	for i := range ranges {
 		if !ranges[i].emitted && ranges[i].to < seq {
 			ranges[i].emitted = true
-			user(summary(ranges[i].summary))
+			user(summary(ranges[i], history))
 		}
 	}
 }
 
-func resultBlock(id string, content []lux.Block, isError bool, cleared map[string]bool) lux.Block {
+// resultBlock is the result of call id, or the line that stands in for
+// it once it was cleared, which for a thread that holds the history tool
+// names the call's id the tool reads it back by.
+func resultBlock(id string, content []lux.Block, isError bool, cleared map[string]bool, history bool) lux.Block {
 	blocks := slices.Clone(content)
-	if cleared[id] {
+	switch {
+	case cleared[id] && history:
+		blocks = []lux.Block{text(prompts.Render(prompts.TranscriptClearedHistory, prompts.Data{"ID": id}))}
+	case cleared[id]:
 		blocks = []lux.Block{text(prompts.Text(prompts.TranscriptCleared))}
 	}
 	return lux.Block{Type: ir.BlockToolResult, ToolResult: &lux.ToolResult{ToolUseID: id, Blocks: blocks, IsError: isError}}
@@ -652,9 +662,14 @@ func resultBlock(id string, content []lux.Block, isError bool, cleared map[strin
 
 func text(s string) lux.Block { return lux.Block{Type: ir.BlockText, Text: s} }
 
-// summary is the user text a summary compaction renders as.
-func summary(s string) lux.Block {
-	return text(prompts.Render(prompts.TranscriptSummary, prompts.Data{"Summary": s}))
+// summary is the user text a summary compaction renders as: for a thread
+// that holds the history tool, with the events it covers, which the tool
+// reads back.
+func summary(r summaryRange, history bool) lux.Block {
+	if history {
+		return text(prompts.Render(prompts.TranscriptSummaryHistory, prompts.Data{"Summary": r.summary, "From": r.from, "To": r.to}))
+	}
+	return text(prompts.Render(prompts.TranscriptSummary, prompts.Data{"Summary": r.summary}))
 }
 
 // sender is the values a text naming a sender renders with; the text

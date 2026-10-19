@@ -1,0 +1,4 @@
+# Answers from the summary, which kept that a number was given and not
+# the number.
+steps:
+  - text: The summary says you gave a build number, but not which one. Please send it again.

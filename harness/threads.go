@@ -146,10 +146,12 @@ func stricterMode(a, b Mode) Mode {
 // registry builds a thread's registry: the root registry's tools that
 // the thread holds, spawn and message when the thread has subagents and
 // is below the depth limit, the advisor when the agent has one, the
-// question tool for the session's own thread when the agent names it, and
+// question tool for the session's own thread when the agent names it,
 // request_connection for the session's own thread when the session has a
-// service the person may be asked to connect. A thread a spawn started
-// holds neither: it ends its turn saying what it needs decided or
+// service the person may be asked to connect, and history when the agent
+// names it, for the session's own thread and a spawned thread that holds
+// it. A thread a spawn started holds neither the question tool nor
+// request_connection: it ends its turn saying what it needs decided or
 // connected, and its parent, which holds the conversation with the
 // person, asks (specs 039 and 069).
 func (t *turn) registry(names []string) (*tools.Registry, error) {
@@ -170,6 +172,14 @@ func (t *turn) registry(names []string) (*tools.Registry, error) {
 	// that client's.
 	if _, held := r.Get(ToolRequestConnection); !held && t.thread == "" && len(requestable(t.s, reachesHTTP(t.s, t.h.c.Machine))) > 0 {
 		extra = append(extra, requestConnectionTool{t})
+	}
+	// history reads this thread's own log (spec 084). A spawned thread
+	// holds it when the names it was started with do, which the spawn
+	// narrowed as it narrows a built-in's. An agent stored before the name
+	// was reserved may hold a client tool of the name, which is that
+	// client's.
+	if _, held := r.Get(tools.NameHistory); !held && t.h.c.History && (t.thread == "" || slices.Contains(names, tools.NameHistory)) {
+		extra = append(extra, tools.History(t.history))
 	}
 	for _, tool := range extra {
 		if err := r.AddBuiltin(tool); err != nil {

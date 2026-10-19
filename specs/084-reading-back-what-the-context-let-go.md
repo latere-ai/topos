@@ -1,6 +1,6 @@
 ---
 title: "Reading back what the context let go: a history tool that reads a thread's own log as it was written, by range, by tool call or by words, so a result cleared or a stretch summarized is never lost to the agent, with the cleared, summary and compaction texts saying so"
-status: drafted
+status: testing
 track: core
 depends_on: [.archive/004-session-log.md, 008-tools.md, 010-context.md, 013-threads-and-subagents.md, 018-credentials-and-secrets.md, 025-task-suite.md, .archive/048-the-machine-starts-at-the-first-tool-call.md, 083-a-title-that-follows-the-conversation.md]
 affects: [harness/, harness/tools/, session/, prompts/, manifest/, test/tasks/, api/openapi.yaml, docs/]
@@ -134,10 +134,81 @@ session created before its agent named `history` needs to hold the tool.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `history` is opt-in, never opens a machine, and an agent that names it holds it in every thread | `harness/tools`, `harness` tests | not built |
-| A range, a call and a query each answer the thread's own view through the event before the call, as written, compactions ignored, a redacted event as one line, a subagent never reading the session's thread | `harness` tests | not built |
-| An answer stops at the output limit with the input that reads on; a long entry is cut with a line that says where; a query answers at most 20 matches of 400 characters | `harness` tests | not built |
-| Invalid input, a reversed range and an empty query are `invalid_input` | `harness/tools` tests | not built |
-| With the tool, a cleared result renders `cleared-v2` naming the call's id, a summary renders `summary-v2` naming its range, and compaction asks with `compact-v3`; without it each renders as before | `session` fold tests, `harness` tests | not built |
-| `Rebuild` renders the same texts for a thread that held the tool | `harness.TestRebuild*` | not built |
-| On the pinned model, an agent whose earlier conversation was summarized without a value a person gave reads it back with `history` and answers it exactly | task suite: `context/readback` | not built |
+| `history` is opt-in, never opens a machine, and an agent that names it holds it in every thread | `harness/tools.TestHistoryIsOptIn`, `manifest.TestHistoryIsAnOptInName`, `harness.TestHistoryNeverOpensAMachine`, `harness.TestEveryThreadOfTheAgentHoldsHistory`, `harness.TestAHistoryCallRunsAgainOnResume`, `internal/hosted.TestTheHarnessOfAHostedSession`, `internal/toposcli.TestHistoryIsOfferedWhenNamed` | built |
+| A range, a call and a query each answer the thread's own view through the event before the call, as written, compactions ignored, a redacted event as one line, a subagent never reading the session's thread | `harness.TestHistoryReadsTheThreadsLogAsWritten`, `harness.TestHistoryReadsBeforeItsOwnCall`, `harness.TestEveryThreadOfTheAgentHoldsHistory`, `session.TestHistoryReadsTheLogAsWritten`, `session.TestHistoryReadsOneThread`, `session.TestHistoryShowsACallNoToolUseRecords` | built |
+| An answer stops at the output limit with the input that reads on; a long entry is cut with a line that says where; a query answers at most 20 matches of 400 characters | `harness.TestHistoryAnswersStopAtTheLimit`, `harness.TestHistoryQueriesAreBounded`, `harness/tools.TestHistoryHandsTheReadToItsReader`, `prompts.TestHistoryDescriptionHoldsTheBounds` | built |
+| Invalid input, a reversed range and an empty query are `invalid_input` | `harness/tools.TestHistoryRefusesInvalidInput` | built |
+| With the tool, a cleared result renders `cleared-v2` naming the call's id, a summary renders `summary-v2` naming its range, and compaction asks with `compact-v3`; without it each renders as before | `session.TestAFoldForHistoryNamesWhatItReadsBack`, `harness.TestHistoryTextsNameWhatItReadsBack`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| `Rebuild` renders the same texts for a thread that held the tool | `harness.TestRebuildRendersTheHistoryTexts`, `harness.TestHistoryTextsNameWhatItReadsBack` | built |
+| On the pinned model, an agent whose earlier conversation was summarized without a value a person gave reads it back with `history` and answers it exactly | task suite: `context/readback`, its premise held by `test/tasks.TestTheReadbackLogHidesWhatHistoryFinds` | built |
+
+## Outcome
+
+Built on 2026-10-19 on the branch `history`, in no release yet, and run
+against the stub Lux and scripted models, not a real one. Where the
+build differs from the design as written, or adds to it:
+
+- **Where the parts live.** `session.History` reads a thread's view into
+  entries, pure, beside the fold; the harness bounds an answer, finds a
+  query's matches and holds `HistoryMatches` and `HistoryMatchChars`;
+  `harness/tools.History` holds the name, the schema and the input check,
+  and runs a reader the harness binds to each thread. A runner sets
+  `harness.Config.History` when the agent names the tool, as it sets
+  `Question`; the hosted runner, `topos run` and the task suite do.
+- **A thread holds it as it holds a built-in.** The session's own thread
+  holds it, and a spawned thread when the names it was started with do,
+  which a subagent's tools and a spawn's `tools` narrow, and which its
+  `thread.started` records. The advisor holds none. A client tool of the
+  name, which an agent stored before the name was reserved may hold,
+  stays the client's, and its thread reads every text as without the
+  tool. A history call a runner stopped under is run again
+  (`Repeatable`): it answers the same from the same log.
+- **The event before the call** is the one before the call's
+  `agent.tool_use`, so the calls of the same step decided before it are
+  read and none of their results, however the step's calls run.
+- **A spawned thread's task and its parent's messages are entries.** The
+  spec's list names a person's messages; a subagent's conversation opens
+  with its `thread.started` task and goes on with `thread.message`, so
+  both read back, headed "The thread that started you gave you this
+  task:" and "<agent> wrote:".
+- **A call refused before it was decided**, which no `agent.tool_use`
+  records, reads inside the agent message that made it, and a
+  `tool_use_id` read finds that message. An agent message of recorded
+  calls alone has no entry of its own, since each call has one; the calls
+  of a message cut off at the output limit that never ran are left out,
+  as the fold leaves them out.
+- **A question's answer** reads as the person's `user.answer`, their
+  choices and words, beside the question call's result, which holds the
+  answer as the model read it.
+- **The input that reads on always names `to`**: the end of the range
+  the first read covered, so a read that goes on does not run on to a
+  later call and take in the reads between. An answer to a `tool_use_id`
+  read that stops early reads on as a range to the call's last entry.
+- **An entry cut is the one an answer opens with.** An entry that does
+  not fit after the entries before it opens the next answer, and only an
+  entry longer than a whole answer is cut, with a line that names its
+  bytes and the bytes shown. Its rest does not read back.
+- **A query** matches its words as one string, case folded rune by rune
+  with Unicode simple folding, in an entry's text below its head. The
+  excerpt is centered on the first match, and `...` marks text beyond it,
+  outside the 400 characters.
+- **The compaction prompt also names a long text a request carried.**
+  `compact-v3` keeps every heading of `compact-v2` and still asks for
+  requests quoted exactly, but lets a long text a request carried, such
+  as a pasted log, be named rather than copied.
+- **The API document is unchanged.** It lists no tools or prompts by
+  name, the tool records no meta, and `context.compacted.prompt` already
+  names the prompt a summary was asked with.
+- **An instruction test, as every built-in has one.**
+  `test/tasks/instructions/history` asks for the time the person's
+  message was sent, which only the log holds; its scripted right and
+  wrong solutions run, not yet against a real model.
+- **`context/readback` waits for the suite to read a log.** Its
+  `task.yaml` names `log: log.jsonl`, `session.Event` lines with
+  sequences from 1 whose summary, asked with `compact-v3`, keeps that a
+  build number was given and not the number. It is outside the suite's
+  discovery on this branch: `context` is not in `tasks.Categories`, and
+  the loader refuses the `log` field until spec 083 lands. Once both are
+  merged, `context` joins `Categories` and spec 025's category table, and
+  the task runs against the pinned model; until then the live criterion
+  has no recorded pass, and the status stays `testing`.

@@ -8,10 +8,13 @@ package prompts
 // its context.compacted names; CompactionV1 is the one a summary that
 // names none was asked with, kept so a replay builds that request again.
 // Version 2 adds the heading for the questions put to a person (spec
-// 039).
+// 039). CompactionHistory, version 3, is the one a thread that holds the
+// history tool asks with (spec 084): the messages a summary replaces stay
+// readable, so a long exact text may be named rather than copied.
 const (
-	Compaction   Name = "compact/compact-v2"
-	CompactionV1 Name = "compact/compact-v1"
+	Compaction        Name = "compact/compact-v2"
+	CompactionV1      Name = "compact/compact-v1"
+	CompactionHistory Name = "compact/compact-v3"
 )
 
 // Title is the request that asks a model for a session's title after a
@@ -85,6 +88,9 @@ const (
 	// ToolRequestConnection states the bound of a reason, which a test
 	// holds to its constant (spec 069).
 	ToolRequestConnection Name = "tools/request_connection-v1"
+	// ToolHistory states the bounds of a query's answer, which a test
+	// holds to the harness's constants (spec 084).
+	ToolHistory Name = "tools/history-v1"
 )
 
 // The results of request_connection (spec 069).
@@ -187,6 +193,43 @@ const (
 	WebSearchUnavailable Name = "results/web_search/unavailable-v1"
 )
 
+// The texts of the history tool (spec 084). HistoryHead takes Kind and
+// the values each kind names: message, answer, interrupt and title a
+// sender's Name and Subject; call, result and answer an ID; call and
+// result a Tool; result an Outcome; task and removed none. Every render
+// passes all six.
+// HistoryEntry takes Seq, Time, Head and Body, empty for an entry with
+// none, and HistoryMatch Seq, Time, Head and Excerpt, the text around a
+// query's first match, with Before and After, whether the entry's text
+// goes on beyond it.
+const (
+	HistoryHead  Name = "results/history/head-v1"
+	HistoryEntry Name = "results/history/entry-v1"
+	HistoryMatch Name = "results/history/match-v1"
+	// HistoryFiles takes Paths, the paths of a message's files, joined.
+	HistoryFiles Name = "results/history/files-v1"
+	// HistoryPicture takes Path, the file a result's picture was read
+	// from, empty when the result names none.
+	HistoryPicture Name = "results/history/picture-v1"
+	// HistoryAnswers takes Answers, each with Number, Chosen (the chosen
+	// labels joined), Text (the person's own words) and Left, true for a
+	// question left to the agent.
+	HistoryAnswers Name = "results/history/answers-v1"
+	// HistoryCut takes Total, the bytes of an entry, and Kept, the bytes
+	// an answer shows of it.
+	HistoryCut Name = "results/history/cut-v1"
+	// HistoryMore takes Input, the read that goes on where an answer
+	// stopped, as JSON.
+	HistoryMore Name = "results/history/more-v1"
+	// HistoryNone takes From and To, the range read, To 0 for a range
+	// read to its end, and Last, the last event before the call.
+	HistoryNone Name = "results/history/none-v1"
+	// HistoryNoCall takes ID.
+	HistoryNoCall Name = "results/history/no-call-v1"
+	// HistoryNoMatch takes From, To and Query.
+	HistoryNoMatch Name = "results/history/no-match-v1"
+)
+
 // The results of the question tool (spec 039): what the model reads once
 // a question call is closed, by what closed it, and the two refusals of
 // a call the schema accepts.
@@ -218,6 +261,12 @@ const (
 	// TranscriptSummary takes Summary.
 	TranscriptSummary Name = "transcript/summary-v1"
 	TranscriptCleared Name = "transcript/cleared-v1"
+	// TranscriptSummaryHistory takes Summary, and From and To, the events
+	// it covers, and TranscriptClearedHistory takes ID, the cleared call's:
+	// the texts of a thread that holds the history tool, which name what
+	// it reads back (spec 084).
+	TranscriptSummaryHistory Name = "transcript/summary-v2"
+	TranscriptClearedHistory Name = "transcript/cleared-v2"
 	// TranscriptSender and TranscriptInterrupt take the sender's Name
 	// and Subject.
 	TranscriptSender    Name = "transcript/sender-v1"

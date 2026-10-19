@@ -1,0 +1,7 @@
+# Finds the person's message by its words and answers the number it holds.
+steps:
+  - tool_calls:
+      - name: history
+        input: {query: build number}
+  - expect: {tool_result_contains: "7Q4-88213-K"}
+    text: The build number of the release candidate is 7Q4-88213-K.

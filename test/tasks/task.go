@@ -30,7 +30,7 @@ import (
 
 // Categories are the directories of the suite, in the order of spec
 // 025's category table.
-var Categories = []string{"coding", "files", "instructions", "threads", "titles"}
+var Categories = []string{"coding", "files", "instructions", "threads", "titles", "context"}
 
 // The defaults of a task.yaml field that is left out.
 const (
@@ -305,7 +305,7 @@ func checkTools(a Agent) error {
 	for who, list := range lists {
 		for _, n := range list {
 			if !slices.Contains(known, n) {
-				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search or question (%s)", who, n, strings.Join(known, ", "))
+				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search, history or question (%s)", who, n, strings.Join(known, ", "))
 			}
 		}
 	}

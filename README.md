@@ -92,7 +92,8 @@ Built since and in no release yet: a connection service on the host the
 model gateway publishes under no longer stops every hosted session. Serve
 and the runner refuse that configuration at their start, and a sandbox
 whose connections token would share a host with another of its secrets
-opens without it.
+opens without it. An agent that names `history` reads back what its
+context cleared or summarized, from the session's log as it was written.
 
 Not built yet: write-only credentials, memory stores, MCP servers an
 agent's definition names, external runners and handoff, the event sink,
@@ -137,6 +138,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   question and sends the person's answer.
 - [docs/web-search.md](docs/web-search.md): turning on `web_search`, and
   the contract a search service answers.
+- [docs/reading-back.md](docs/reading-back.md): the `history` tool, which
+  reads back what a long session's context cleared or summarized.
 - [docs/searching-sessions.md](docs/searching-sessions.md): finding a
   caller's sessions by what was said in them, and showing the match.
 - [docs/editing-a-message.md](docs/editing-a-message.md): sending an
