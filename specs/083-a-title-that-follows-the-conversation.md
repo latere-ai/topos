@@ -1,9 +1,9 @@
 ---
 title: "A title that follows the conversation: after a turn a person started, the harness asks a small model whether the session's title still names what the conversation is about and writes a new one when it does not, an agent turns it on with spec.title, and the sessions it ran before are named once"
-status: drafted
+status: testing
 track: core
 depends_on: [.archive/004-session-log.md, .archive/006-identity.md, .archive/007-models.md, 010-context.md, 016-runners.md, 017-external-runners-handoff-fork.md, 025-task-suite.md, .archive/038-routed-models.md, .archive/049-reasoning.md, 054-a-sessions-title-and-filing.md, 061-a-messages-shape-and-the-route-an-allow-names.md]
-affects: [manifest/v1/, manifest/, session/, harness/, runner/, authorizer/, prompts/, internal/hosted/, cmd/toposd/, test/tasks/, api/openapi.yaml, docs/]
+affects: [manifest/v1/, manifest/, session/, harness/, runner/, authorizer/, prompts/, internal/server/, internal/runnerapi/, internal/runnerrole/, cmd/toposd/, test/tasks/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-19
 updated: 2026-10-19
@@ -215,13 +215,75 @@ runs.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| `spec.title` decodes with and without `model`, an empty `model` is refused, and the setting is read from the agent's latest version | `manifest/v1`, `manifest`, `runner` tests | not built |
-| After an idle turn a person started, the runner asks `session.title` with the resource above and sends one request with the title prompt, the window, no tools and `max_tokens` 64; the answer is appended as `session.title_changed` by `service:harness` with its `model.request` (`purpose` `title`) in one batch, `updated_at` unchanged | `runner`, `harness` tests | not built |
-| No title is asked after a trigger's turn, a turn that ended the session or left input pending, a turn whose budget is spent, or in a session a person renamed (copied rename included) | `runner` tests | not built |
-| `KEEP`, an empty, an invalid, a too long and an unchanged answer write no title; a failed, denied or timed-out request writes no `session.error` and leaves the status idle | `harness`, `runner` tests | not built |
-| The request runs on the allow's model, else the name asked; an agent's named model that resolves to nothing the installation runs sends nothing, and the session's model is the fallback only when the agent names none | `runner` tests | not built |
-| No delta of a title request reaches the observer, and input that arrived during the request starts the next turn on the same lease | `runner` tests | not built |
-| `Rebuild` builds a title request again from its `fold_seq` and prompt and never as a step | `harness.TestRebuild*` | not built |
-| The pass names each due session once, skips a held lease, a renamed and a named session, and logs its counts; a second start names nothing new | `runner` tests | not built |
-| `session.title` is in the vocabulary with kind session, and the API document shows `purpose` and the harness's sender | `authorizer`, `internal/server` API document tests | not built |
-| On the pinned model, a conversation that moved to another subject for two messages is retitled to it, and one that came back from a side question keeps its title | task suite: `titles/moved`, `titles/aside` | not built |
+| `spec.title` decodes with and without `model`, an empty `model` is refused, and the setting is read from the agent's latest version | `manifest/v1.TestATitleDecodesWithAndWithoutAModel`, `manifest.TestAnAgentTurnsTitlesOn`, `runner.TestTheTitleSettingIsTheAgentsLatest`, `internal/server.TestTheTitleSettingIsReadFromTheLatestVersion` | built |
+| After an idle turn a person started, the runner asks `session.title` with the resource above and sends one request with the title prompt, the window, no tools and `max_tokens` 64; the answer is appended as `session.title_changed` by `service:harness` with its `model.request` (`purpose` `title`) in one batch, `updated_at` unchanged | `runner.TestATitleFollowsATurnAPersonStarted`, `internal/server.TestATitleAsksTheInitiator`, `harness.TestATitleRequestNamesTheConversation`, `harness.TestTheTitleWindow`, `session.TestATitlesRequestKeepsTheUpdateTime`, `session/storetest` `ATitleKeepsTheUpdateTime` (memory, directory and Postgres stores), `cmd/toposd.TestServeNamesItsSessions`, `cmd/toposd.TestTheRunnerRoleNamesASession` | built |
+| No title is asked after a trigger's turn, a turn that ended the session or left input pending, a turn whose budget is spent, or in a session a person renamed (copied rename included) | `runner.TestNoTitleIsAskedWhenItIsNotDue`, `runner.TestBlockedAndStartedByPerson` | built |
+| `KEEP`, an empty, an invalid, a too long and an unchanged answer write no title; a failed, denied or timed-out request writes no `session.error` and leaves the status idle | `harness.TestATitleAnswerThatWritesNoTitle`, `harness.TestAFailedTitleRequestIsRecorded`, `harness.TestATitleThatCannotBeRecorded`, `runner.TestATitleThatFailsChangesNothing` | built |
+| The request runs on the allow's model, else the name asked; an agent's named model that resolves to nothing the installation runs sends nothing, and the session's model is the fallback only when the agent names none | `runner.TestATitleRunsOnTheModelTheAllowNames`, `runner.TestATitleThatFailsChangesNothing`, `runner.TestTitleNames`, `harness.TestATitleRunsOnTheFirstModelThatConnects` | built |
+| No delta of a title request reaches the observer, and input that arrived during the request starts the next turn on the same lease | `runner.TestATitleFollowsATurnAPersonStarted`, `harness.TestATitleRequestNamesTheConversation`, `runner.TestInputDuringTheTitleStartsTheNextTurn`, `runner.TestInputAtTheTurnsEndStartsTheNextTurn` | built |
+| `Rebuild` builds a title request again from its `fold_seq` and prompt and never as a step | `harness.TestRebuildATitleRequest`, `harness.TestATitleThatSpentItsCapReasoningIsAskedAgain` | built |
+| The pass names each due session once, skips a held lease, a renamed and a named session, and logs its counts; a second start names nothing new | `runner.TestThePassNamesEachDueSessionOnce`, `runner.TestThePassWaitsBetweenSessions`, `cmd/toposd.TestServeNamesItsSessions` | built |
+| `session.title` is in the vocabulary with kind session, and the API document shows `purpose` and the harness's sender | `authorizer.TestVocabularyMatchesTheSpec`, `authorizer.TestARoutingScaffoldSpeaksTheVocabulary`, `internal/auth.TestOwnerPolicyRows`, `internal/server.TestTheAPIDocumentShowsATitle`, `internal/server.TestOpenAPIIsGenerated` | built |
+| On the pinned model, a conversation that moved to another subject for two messages is retitled to it, and one that came back from a side question keeps its title | task suite: `titles/moved`, `titles/aside`; the scripted solution and wrong solution of each in `tasks.TestScriptedSolutions` | built; passed 6 of 6 live runs on `claude-haiku-5-5` (3 each, $0.0044 in all, 2026-10-19), the suite having no pinned model yet |
+
+## Outcome
+
+Built on 2026-10-19, in no release yet, and not yet run against an
+installation's authorizer. Every criterion has its test, and the two
+tasks passed live on `claude-haiku-5-5` called directly. What shipped
+differs from the draft in these points:
+
+- **The update time.** A title's `model.request` moves the header's
+  `updated_at` no more than its `session.title_changed` does
+  (`session.ApplyBatch` reads the request's purpose), so a request that
+  keeps the title, and the pass over older sessions, reorder no list.
+- **`idle_seconds`.** A send's `idle_seconds` counts from the last request
+  of the session's turns, not from a title's, which runs on another model
+  and warms no cache of theirs.
+- **Reasoning.** The request carries no reasoning setting: the dialects
+  of this build cannot turn reasoning off, and a model that reasons by
+  default, as `claude-haiku-5-5` does, spent all 64 tokens reasoning in
+  the first live runs. A response that stops at its `max_tokens` with no
+  text is therefore asked once more at `harness.TitleReasoningTokens`
+  (1024), the first request recorded with outcome `escalated` in the
+  title's batch, as spec 005 escalates a step. On that model every title
+  takes the two requests, about a hundredth of a cent in all; a dialect
+  that can send no reasoning would save the first.
+- **The prompt.** `title/title-v1` is one message of the user and no
+  system prompt, with no cache breakpoint, since nothing of it is sent
+  again; it asks for the answer with no label, after the first live runs
+  answered `NEW: <title>`. `KEEP` is read without case and a closing
+  period, and one surrounding pair of straight, curly, angle or corner
+  quotes is removed.
+- **The person's text is bounded.** Each of the person's messages is cut
+  to `harness.TitleMessageChars` (2000) characters, so a pasted log adds
+  no cost and no subject.
+- **The turn's input.** A turn's input is the person's messages after the
+  `fold_seq` of the last request of the session's own thread before the
+  turn opened: a message that arrived while the turn before ran, after
+  its last request was built, is the input of the turn that read it.
+- **Input at a turn's end.** The drive reads the log again after every
+  turn that left nothing pending, for every session, and a message that
+  arrived between the turn's close and that read starts the next turn in
+  the same drive, as one sent during the title request does.
+- **The route.** An allow's `route` is read and kept nowhere: a title
+  moves no model of the session.
+- **A fork's title.** The title the request carries as current is the
+  harness's only when the session's own last change of the title is the
+  harness's; a fork's copied changes were its parent's, so a fork's first
+  naming offers no `KEEP`. A copied title request still keeps the pass
+  from naming the fork, as the draft says.
+- **Runner processes.** A runner process asks the question over the
+  internal listener, `POST /internal/v1/leases/{session}/title`
+  (`runnerapi.TitleRequest`, `runner.Titler`), and reads the setting from
+  the session's bundle. The local `topos` command asks no question and
+  names no session.
+- **The pass's counts.** A session the pass read and did not ask about is
+  counted as skipped, a session that is not due among them. It lists
+  hosted sessions whose writer is hosted, as the claim queue does. A
+  session whose lease the claim queue held for its own look at the
+  session is skipped as any held lease and named at the next start; the
+  minute's delay keeps the two apart at a real start.
+- **The task suite.** A task whose agent sets `title` runs in a session
+  that stays idle at the end of its turn, with the question allowed and
+  naming no model, and its title request is no step of the run's count.
