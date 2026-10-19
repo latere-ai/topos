@@ -350,7 +350,11 @@ func (r *Runner) passOne(ctx context.Context, listed session.Session) (_ titleOu
 	if err != nil {
 		return titleFailed, err
 	}
-	defer func() { err = errors.Join(err, cfg.Machine.Release(context.WithoutCancel(ctx), false)) }()
+	// A title runs nothing on the machine, which a Cella session's harness
+	// defers until a tool acts on it; whatever the harness opened is let go.
+	if cfg.Machine != nil {
+		defer func() { err = errors.Join(err, cfg.Machine.Release(context.WithoutCancel(ctx), false)) }()
+	}
 	h, err := harness.New(cfg)
 	if err != nil {
 		return titleFailed, err

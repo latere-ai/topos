@@ -730,3 +730,40 @@ func TestInputAtTheTurnsEndStartsTheNextTurn(t *testing.T) {
 		t.Fatalf("asked %v; the log says %s", gone.questions(), gone.logged())
 	}
 }
+
+// refusingStore is the fixture's store whose leases cannot be taken.
+type refusingStore struct{ *dir.Store }
+
+func (refusingStore) Acquire(context.Context, string, session.Holder) (session.Lease, error) {
+	return nil, errors.New("the store is down")
+}
+
+// TestThePassCountsWhatFailed: a session whose lease the store cannot
+// give, and one whose harness cannot be built, are counted failed and
+// logged, and the pass goes on to the next.
+func TestThePassCountsWhatFailed(t *testing.T) {
+	f := setup(t)
+	tg := title(t, f, &v1.Title{})
+	f.hosted(t, f.s.Initiator)
+	o := tg.r.o
+	o.Store = refusingStore{f.store}
+	down, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := down.TitlePass(t.Context(), []string{f.s.Agent.ID}, 0); err != nil || c.Failed != 1 {
+		t.Fatalf("a store that gives no lease: %+v, %v", c, err)
+	}
+	o = tg.r.o
+	o.Harness = func(context.Context, session.Session) (harness.Config, error) { return harness.Config{}, nil }
+	unbuilt, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := unbuilt.TitlePass(t.Context(), []string{f.s.Agent.ID}, 0); err != nil || c.Failed != 1 {
+		t.Fatalf("a harness that cannot be built: %+v, %v", c, err)
+	}
+	if logs := tg.logged(); strings.Count(logs, "the pass failed on a session") != 2 {
+		t.Fatalf("the log says %s", logs)
+	}
+}
