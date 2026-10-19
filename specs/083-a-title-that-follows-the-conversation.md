@@ -292,6 +292,15 @@ differs from the draft in these points:
   gateway refuses the request, the runner logs it, and the title stays.
   The live runs called the provider with its own key, so this path is
   proven by the stubs alone.
+- **The Cella stub.** The full gate failed twice on the hosted device
+  case of a message sent while the computer was away: its long command
+  ran to its end, since the stub's `Disconnect` found no session to drop
+  in the window between the exec route's check that the sandbox runs and
+  the session's registration. A session that registers on a computer
+  that went away is now dropped at once, as an open one is. The failure
+  never showed outside the full gate, and the base commit's gate was not
+  run, so whether the drive's read of the log after each turn made the
+  window easier to hit is not known.
 - **The task suite.** A task whose agent sets `title` runs in a session
   that stays idle at the end of its turn, with the question allowed and
   naming no model, and its title request is no step of the run's count.
