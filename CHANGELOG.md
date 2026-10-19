@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A session can be one run of a rollout.** A create's `rollout`, the caller's id for the rollout the session is one run of, is the session's for its whole life and is carried as `rollout` on `session.create`. The session list, the search and the summary leave a rollout's runs out unless their new `rollout` parameter names that rollout, or `any`; a list by agent, metadata, trigger or tree keeps the same default, so a person's lists hold their own conversations. Nobody attends a run, so a call that would wait for a person's confirmation is answered at once as denied, with a result that says so, and the run goes on to its end rather than going idle. A store of an earlier release gains the rollout column with migration 0013.
+- **A create can name the model it runs.** A create's `model`, `{name, reasoning}` with either member or both, starts the session on that model and level from its first request in place of its agent's. `session.create` carries them as `model`, `reasoning` and `effort`, and an allow that names another model or another level refuses the create as `model_not_allowed` (403) rather than running a substitute.
+
 ## v0.48.0 - 2026-10-19
 
 ### Added
