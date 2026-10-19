@@ -37,9 +37,10 @@ const (
 	// requests and their record. The runner holds the session's lease for
 	// it, so it is short.
 	TitleTimeout = 15 * time.Second
-	// TitleRecordTimeout bounds the append of a title's record once its
-	// deadline, or input that arrived, cut its request short: the record
-	// of a request is appended whatever ended it.
+	// TitleRecordTimeout bounds each write of a title's record, its blobs
+	// and its append, from when the write starts: the record of a request
+	// is written whatever ended it, the title's deadline or input that
+	// arrived included, and however long the request took.
 	TitleRecordTimeout = 2 * time.Second
 	// TitleMessages is how many of the person's latest messages a title
 	// request carries.
@@ -140,25 +141,20 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 	if n := len(log); n > 0 {
 		fold = log[n-1].Seq
 	}
-	// Whatever ends a request, its record is appended: one the title's
-	// deadline or input cut short is recorded too, within
-	// TitleRecordTimeout.
-	record, done := context.WithTimeout(context.WithoutCancel(ctx), TitleRecordTimeout)
-	defer done()
 	var sent []session.ModelRequest
 	limit := min(int64(TitleMaxTokens), entry.MaxOutputTokens)
 	for {
 		req, err := titleRequest(conn.Model, current, msgs, limit)
 		if err != nil {
-			return out, errors.Join(err, h.appendTitle(record, s, l, sent, nil))
+			return out, errors.Join(err, h.recordTitle(ctx, s, l, sent, nil))
 		}
-		mr, res, failed, err := h.sendTitle(ctx, record, s, l, model, conn, entry, req, fold)
+		mr, res, failed, err := h.sendTitle(ctx, s, l, model, conn, entry, req, fold)
 		if err != nil {
-			return out, errors.Join(err, h.appendTitle(record, s, l, sent, nil))
+			return out, errors.Join(err, h.recordTitle(ctx, s, l, sent, nil))
 		}
 		sent = append(sent, mr)
 		if failed != nil {
-			return out, errors.Join(failed, h.appendTitle(record, s, l, sent, nil))
+			return out, errors.Join(failed, h.recordTitle(ctx, s, l, sent, nil))
 		}
 		answer := titleAnswer(res.Message)
 		// A response that spent its cap and wrote no answer is a model's
@@ -171,10 +167,10 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 			continue
 		}
 		if out.Kept = keptTitle(answer, s.Title); out.Kept != "" {
-			return out, h.appendTitle(record, s, l, sent, nil)
+			return out, h.recordTitle(ctx, s, l, sent, nil)
 		}
 		changed := &session.TitleChanged{By: session.Sender{Subject: session.HarnessSubject, Kind: session.SenderService}, Old: s.Title, New: answer}
-		if err := h.appendTitle(record, s, l, sent, changed); err != nil {
+		if err := h.recordTitle(ctx, s, l, sent, changed); err != nil {
 			return out, err
 		}
 		out.Title = answer
@@ -186,9 +182,10 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 // purpose title and built from the log through fold, and its response.
 // failed is the request's own failure, which the model.request records
 // with outcome error; err is a failure to store what it answered, and
-// nothing of the request is recorded then. record is the context its
-// blobs are stored under, which the request's deadline does not end.
-func (h *Harness) sendTitle(ctx, record context.Context, s session.Session, l Log, model models.Model, conn models.Connection, entry models.Entry, req ir.Request, fold uint64) (mr session.ModelRequest, res models.Result, failed, err error) {
+// nothing of the request is recorded then. Its blobs are stored under a
+// context of their own, which neither ctx's end nor the request's length
+// takes from them.
+func (h *Harness) sendTitle(ctx context.Context, s session.Session, l Log, model models.Model, conn models.Connection, entry models.Entry, req ir.Request, fold uint64) (mr session.ModelRequest, res models.Result, failed, err error) {
 	mr = session.ModelRequest{
 		Model: conn.Model, Family: conn.Family, Dialect: string(conn.EffectiveDialect()), PromptVersion: string(prompts.Title),
 		Purpose: session.PurposeTitle, MaxTokens: *req.MaxTokens, Attempts: 1, FoldSeq: fold,
@@ -196,6 +193,8 @@ func (h *Harness) sendTitle(ctx, record context.Context, s session.Session, l Lo
 	began := h.c.Clock()
 	res, failed = quietly(ctx, model, models.Request{IR: req, Connection: conn, Capture: s.Capture.Requests})
 	mr.LatencyMS = h.c.Clock().Sub(began).Milliseconds()
+	record, done := recording(ctx)
+	defer done()
 	if failed != nil {
 		mr.Outcome, mr.Error = "error", models.Described(failed)
 		if errors.Is(ctx.Err(), context.Canceled) {
@@ -222,6 +221,21 @@ func (h *Harness) sendTitle(ctx, record context.Context, s session.Session, l Lo
 		mr.CostUSDMicro, mr.CostSource = &cost, src
 	}
 	return mr, res, nil, nil
+}
+
+// recording is the context a title's record is written under once its
+// request has returned: ctx's values without its end, for
+// TitleRecordTimeout from now.
+func recording(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), TitleRecordTimeout)
+}
+
+// recordTitle appends a title's record, as appendTitle does, under a
+// context of its own from recording.
+func (h *Harness) recordTitle(ctx context.Context, s session.Session, l Log, sent []session.ModelRequest, changed *session.TitleChanged) error {
+	record, done := recording(ctx)
+	defer done()
+	return h.appendTitle(record, s, l, sent, changed)
 }
 
 // appendTitle appends the model.requests a title sent, and the change of

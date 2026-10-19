@@ -507,6 +507,49 @@ func TestATitleThatCannotBeRecorded(t *testing.T) {
 	}
 }
 
+// liveLog is a Log that refuses a write whose context has ended, as the
+// Postgres store does.
+type liveLog struct{ Log }
+
+func (l liveLog) PutBlob(ctx context.Context, r io.Reader) (session.Digest, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return l.Log.PutBlob(ctx, r)
+}
+
+func (l liveLog) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return l.Log.Append(ctx, batch)
+}
+
+// TestATitleSlowerThanItsRecordTimeoutIsRecorded: a request that takes
+// longer than TitleRecordTimeout is recorded with the title it answered,
+// since each write of a title's record has TitleRecordTimeout of its own
+// from when the write starts, on a store that refuses a write whose
+// context ended (spec 083).
+func TestATitleSlowerThanItsRecordTimeoutIsRecorded(t *testing.T) {
+	e := setup(t, nil)
+	ctx := t.Context()
+	s, evs := e.ranTurn(ctx, "Write the plan.", "Written.")
+	slow := reply(ir.StopEndTurn, text("Plan"))
+	slow.Expect = func(*ir.Request) error {
+		time.Sleep(TitleRecordTimeout + 500*time.Millisecond)
+		return nil
+	}
+	e.stub.Script(model, slow)
+	res, err := e.h.Title(ctx, s, evs, liveLog{e.log}, TitleAsk{Names: []string{model}})
+	if err != nil || res.Title != "Plan" {
+		t.Fatalf("a slow title: %+v, %v", res, err)
+	}
+	after, all := e.now(ctx)
+	if len(all) != len(evs)+2 || all[len(all)-2].Type != session.TypeModelRequest || all[len(all)-1].Type != session.TypeTitleChanged || after.Title != "Plan" {
+		t.Fatalf("a slow title appended %d events, title %q", len(all)-len(evs), after.Title)
+	}
+}
+
 // TestATitleThatSpentItsCapReasoningIsAskedAgain: a response that spent
 // TitleMaxTokens reasoning and wrote no answer is asked once more at
 // TitleReasoningTokens, the first request recorded as escalated beside
