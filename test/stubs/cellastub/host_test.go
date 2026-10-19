@@ -187,3 +187,33 @@ func TestAHostThatHoldsRefusesAndGoesAway(t *testing.T) {
 	s.Reconnect(DefaultEnvironment)
 	create(t, s, "plain")
 }
+
+// TestASessionThatOpensOnAComputerThatWentAway: a session that registers
+// after its computer went away, between its route finding the sandbox
+// running and its command starting, is refused registration so it ends
+// as one Disconnect drops; once the computer is back a session registers.
+func TestASessionThatOpensOnAComputerThatWentAway(t *testing.T) {
+	s, c, folder := hostFixture(t)
+	sb, _, err := c.CreateSandbox(t.Context(), manifest(t, "late", onLaptop(folder)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := sb.Status.ID
+	s.Disconnect("laptop")
+	if s.open(id, &session{}) {
+		t.Fatal("a session registered on a computer that went away")
+	}
+	s.Reconnect("laptop")
+	if !s.open(id, &session{}) {
+		t.Fatal("a session did not register once its computer was back")
+	}
+	s.mu.Lock()
+	n := len(s.sessions[id])
+	s.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("%d sessions registered", n)
+	}
+	if s.open("sbx_none", &session{}) != true {
+		t.Fatal("a session of a sandbox the stub does not hold was refused")
+	}
+}

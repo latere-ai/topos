@@ -244,10 +244,19 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 // open registers an exec session on its sandbox, and close forgets it.
-func (s *Server) open(id string, se *session) {
+// A session whose computer went away while it opened, after its route
+// found the sandbox running, is not registered, and open reports false:
+// the caller drops it, as Disconnect drops the sessions open then.
+func (s *Server) open(id string, se *session) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if sb := s.sandboxes[id]; sb != nil {
+		if he := s.hosts[sb.obj.Spec.Environment]; he != nil && he.gone {
+			return false
+		}
+	}
 	s.sessions[id] = append(s.sessions[id], se)
+	return true
 }
 
 func (s *Server) close(id string, se *session) {
@@ -295,7 +304,9 @@ func (s *Server) drive(ctx context.Context, c *wsConn, sb sandbox, req execReque
 		return
 	}
 	se := &session{cmd: cmd, c: c}
-	s.open(sb.obj.Status.ID, se)
+	if !s.open(sb.obj.Status.ID, se) {
+		s.record(se.drop())
+	}
 	defer s.close(sb.obj.Status.ID, se)
 	var once sync.Once
 	gone := make(chan struct{})
