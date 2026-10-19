@@ -583,7 +583,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	}
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		report := func(id string, err error) { log.ErrorContext(ctx, "runner", "session", id, "err", err) }
+		report := runnerReport(ctx, log)
 		if err := r.Serve(ctx, queue, cfg.RunnerCapacity, report); err != nil {
 			report("", err)
 		}
@@ -781,4 +781,10 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-t.C:
 	}
+}
+
+// runnerReport is how the runner's failures reach the log: one error line
+// per failure, naming the session it was serving, "" for the runner's own.
+func runnerReport(ctx context.Context, log *slog.Logger) func(string, error) {
+	return func(id string, err error) { log.ErrorContext(ctx, "runner", "session", id, "err", err) }
 }
