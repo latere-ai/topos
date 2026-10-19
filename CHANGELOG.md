@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.48.0 - 2026-10-19
+
 ### Added
 
 - **The task suite can run another harness prompt.** `TOPOS_TASKS_PROMPT`, `harness/<n>`, names the harness prompt version every run reads, and `TOPOS_TASKS_DEVICE=true` renders it as a session on a person's own computer reads it, on the host machine, so a prompt version is measured against the one before it on the same model; `tasks.Options` takes `PromptVersion` and `Device`, and the report names the prompt.
