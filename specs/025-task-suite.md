@@ -6,7 +6,7 @@ depends_on: [005-harness-loop.md, 007-models.md, 008-tools.md, 024-client-cli-sk
 affects: [test/tasks/, .github/workflows/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-19
 author: changkun
 ---
 
@@ -207,9 +207,9 @@ of [[004-session-log]]'s fold tests.
 ### Running the suite from elsewhere
 
 `test/tasks` is importable: `tasks.Run(ctx, tasks.Options{Dir, Work,
-Model, Connection, Machine, Filter, Runs})` returns a report, so an
-external evaluation harness runs the same harness as one cell of its
-matrix. `Dir` is the suite's root: by default the directory the package
+Model, Connection, Machine, Filter, Runs, PromptVersion, Device})`
+returns a report, so an external evaluation harness runs the same
+harness as one cell of its matrix. `Dir` is the suite's root: by default the directory the package
 was built from, or the working directory when a build with `-trimpath`
 leaves no such directory. The Go fixtures are modules of their own,
 which a module download leaves out, so an external harness runs the
@@ -238,6 +238,8 @@ is missing:
 | `TOPOS_TASKS_BUDGET` | the suite's own spend cap in USD |
 | `TOPOS_TASKS_COMMIT` | the commit the report names |
 | `TOPOS_TASKS_OUT` | where the report and the runs are kept; by default a new directory under the system's temporary directory, named in the test's log |
+| `TOPOS_TASKS_PROMPT` | the harness prompt version every run reads, `harness/<n>`; empty is the current one, so a candidate version is measured against the one before it ([[011-instructions-and-skills]]) |
+| `TOPOS_TASKS_DEVICE` | `true` renders the harness prompt as a session on a person's own computer reads it ([[080-device-machines]]), its machine section the device's, on the host machine; with no `TOPOS_TASKS_PROMPT` the version is the one device sessions read, and a version with no device section is refused |
 
 A single task runs with `go test ./test/tasks -run
 'TestScriptedSolutions/<category>/<name>'` against its scripts, or with
@@ -248,8 +250,10 @@ A single task runs with `go test ./test/tasks -run
 
 `report.json` and `report.md`: per task the runs, passes, median steps,
 median cost and the stop reasons seen; per run of the suite the pass
-rate, the model, the commit, the spend, and whether it is incomplete
-and why; and every run's result with the reason it failed.
+rate, the model, the commit, the harness prompt version its runs read
+and whether it was rendered for a person's own computer, the spend, and
+whether it is incomplete and why; and every run's result with the
+reason it failed.
 
 ## Not in this spec
 
@@ -271,6 +275,7 @@ pipeline around the job ([[028-release-and-installation]]).
 | A task directory that breaks the format is refused when the suite loads | `test/tasks.TestLoadTaskRefuses`, `test/tasks.TestLoadRefusesASuite` | built |
 | A run starts from a fresh copy of its fixture or a clone of its bundle, and reports its verdict, steps, cost, stop reason and log | `test/tasks.TestRunReportsEveryRun`, `test/tasks.TestABundleIsCloned`, `test/tasks.TestRunCountsFailedRuns` | built |
 | A run that stops other than at the end of its turn fails | `test/tasks.TestAStopOtherThanTheEndOfTheTurnFails` | built |
+| A run reads the harness prompt version it names, rendered for a person's own computer when asked, its requests and its report name that version, and a version the build does not hold runs nothing | `test/tasks.TestTheDevicePrompt`, `test/tasks.TestFromEnv` | built |
 | A run goes through `models/dialect` over HTTP, as against a real model, with no credential | `test/tasks.TestARunThroughTheHTTPModel` against the stub Lux | built |
 | No Go file of a task is part of the repository's module | `test/tasks.TestFixturesAreModules` | built |
 | The report holds, per task, the runs, passes, median steps and cost and the stop reasons, and is written as JSON and Markdown | `test/tasks.TestSummarizeGroupsRunsByTask`, `test/tasks.TestTheReportIsWrittenAndRead` | built |

@@ -53,7 +53,7 @@ func TestTheSuiteAgainstAModel(t *testing.T) {
 	}
 	// The report so far is written after every run, so a run cut short
 	// by the test's timeout still leaves one.
-	partial := Report{Model: o.Connection.Model, Commit: o.Commit}
+	partial := o.newReport()
 	start := time.Now()
 	o.OnRun = func(r RunResult) {
 		t.Logf("%s run %d: passed %v, %d steps, %s, %s", r.Task, r.Run, r.Passed, r.Steps, usd(r.CostUSDMicro), r.Reason)
@@ -72,7 +72,7 @@ func TestTheSuiteAgainstAModel(t *testing.T) {
 	if err := WriteReport(out, rep); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%s passed %d of %d runs (%.1f%%) for %s; the report and the runs are in %s", rep.Model, rep.Passed, rep.Total, rep.PassRate*100, usd(rep.SpendUSDMicro), out)
+	t.Logf("%s on %s passed %d of %d runs (%.1f%%) for %s; the report and the runs are in %s", rep.Model, rep.Prompt, rep.Passed, rep.Total, rep.PassRate*100, usd(rep.SpendUSDMicro), out)
 	if rep.Incomplete {
 		t.Fatalf("the run is incomplete: %s", rep.IncompleteReason)
 	}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,7 @@ import (
 
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/models"
+	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/session"
 	"latere.ai/x/topos/test/stubs/luxstub"
 )
@@ -210,6 +212,88 @@ func TestARunThroughTheHTTPModel(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Write hello to hello.txt in "+res.Workdir) {
 		t.Fatalf("the prompt's placeholder was not replaced: %q", prompt)
+	}
+}
+
+// TestTheDevicePrompt: a run with Device reads the harness prompt a
+// session on a person's own computer reads, its device section in place
+// of the host's, and its requests and its report name that version; a
+// run without it reads the current version; and a version this build
+// does not hold, or a device on a version with no section for one, runs
+// nothing.
+func TestTheDevicePrompt(t *testing.T) {
+	system := func(t *testing.T, o Options) (string, RunResult) {
+		t.Helper()
+		stub := luxstub.New(t)
+		stub.Script(httpModel,
+			reply(ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_1", Name: "write", Args: json.RawMessage(`{"path":"hello.txt","content":"hello"}`)}}),
+			reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
+		)
+		o.Work, o.Connection = t.TempDir(), stubConnection(stub)
+		res, err := RunTask(t.Context(), loadTask(t, "coding/echo"), o, 1)
+		if err != nil || !res.Passed {
+			t.Fatalf("run %+v, %v", res, err)
+		}
+		var text string
+		for _, b := range stub.Requests()[0].Request.System {
+			text += b.Text
+		}
+		return text, res
+	}
+	versions := func(t *testing.T, res RunResult) []string {
+		t.Helper()
+		b, err := os.ReadFile(res.Log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for line := range strings.Lines(string(b)) {
+			var e session.Event
+			if err := json.Unmarshal([]byte(line), &e); err != nil {
+				t.Fatal(err)
+			}
+			var p session.ModelRequest
+			if e.Type == session.TypeModelRequest && e.Decode(&p) == nil {
+				out = append(out, p.PromptVersion)
+			}
+		}
+		return out
+	}
+	device, err := prompts.Execute("harness/machine-device-v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := prompts.Execute("harness/machine-host-v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, res := system(t, Options{Device: true})
+	if !strings.Contains(text, strings.TrimSpace(device)) || strings.Contains(text, strings.TrimSpace(host)) {
+		t.Fatalf("a device run's system prompt: %q", text)
+	}
+	if v := versions(t, res); len(v) == 0 || slices.ContainsFunc(v, func(s string) bool { return s != prompts.HarnessVersion(prompts.HarnessDevice) }) {
+		t.Fatalf("a device run's requests read %v", v)
+	}
+	text, res = system(t, Options{})
+	if !strings.Contains(text, strings.TrimSpace(host)) || strings.Contains(text, strings.TrimSpace(device)) {
+		t.Fatalf("a host run's system prompt: %q", text)
+	}
+	if v := versions(t, res); len(v) == 0 || slices.ContainsFunc(v, func(s string) bool { return s != prompts.HarnessVersion(prompts.HarnessCurrent) }) {
+		t.Fatalf("a host run's requests read %v", v)
+	}
+
+	rep, err := Run(t.Context(), Options{Dir: synthetic, Work: t.TempDir(), Script: FileSolution, Filter: "coding/echo", Runs: 1, Device: true})
+	if err != nil || rep.Prompt != prompts.HarnessVersion(prompts.HarnessDevice) || !rep.Device || !strings.Contains(rep.Markdown(), "prompt harness/2 as on a person's own computer") {
+		t.Fatalf("a device run's report %+v, %v", rep, err)
+	}
+	if rep, err := Run(t.Context(), Options{Dir: synthetic, Work: t.TempDir(), Script: FileSolution, Filter: "coding/echo", Runs: 1}); err != nil || rep.Prompt != "harness/1" || rep.Device {
+		t.Fatalf("a run's report %+v, %v", rep, err)
+	}
+	for _, o := range []Options{{PromptVersion: 99}, {PromptVersion: 1, Device: true}} {
+		o.Dir, o.Work, o.Script = synthetic, t.TempDir(), FileSolution
+		if _, err := Run(t.Context(), o); err == nil {
+			t.Errorf("version %d, device %v ran", o.PromptVersion, o.Device)
+		}
 	}
 }
 

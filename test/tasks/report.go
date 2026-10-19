@@ -17,8 +17,13 @@ import (
 // Report is one run of the suite: every run of every task, the summary
 // per task, and the suite's pass rate and spend.
 type Report struct {
-	Model      string    `json:"model"`
-	Commit     string    `json:"commit,omitempty"`
+	Model  string `json:"model"`
+	Commit string `json:"commit,omitempty"`
+	// Prompt is the harness prompt version the runs read, and Device
+	// whether it was rendered as a session on a person's own computer
+	// reads it.
+	Prompt     string    `json:"prompt,omitempty"`
+	Device     bool      `json:"device,omitempty"`
 	Started    time.Time `json:"started"`
 	DurationMS int64     `json:"duration_ms"`
 	// Passed and Total count runs; PassRate is Passed over Total.
@@ -137,6 +142,12 @@ func (r Report) Markdown() string {
 	fmt.Fprintf(&b, "Pass rate %.1f%% (%d of %d runs), spend %s", r.PassRate*100, r.Passed, r.Total, usd(r.SpendUSDMicro))
 	if r.Commit != "" {
 		fmt.Fprintf(&b, ", commit %s", r.Commit)
+	}
+	if r.Prompt != "" {
+		fmt.Fprintf(&b, ", prompt %s", r.Prompt)
+		if r.Device {
+			b.WriteString(" as on a person's own computer")
+		}
 	}
 	b.WriteString(".\n")
 	if r.Incomplete {

@@ -16,14 +16,14 @@ func env(vars map[string]string) func(string) string {
 func TestFromEnv(t *testing.T) {
 	full := map[string]string{
 		EnvModelsURL: "https://lux.example.com/anthropic", EnvModelsKey: "sk-test", EnvModel: "claude-sonnet-4-5",
-		EnvFilter: "^instructions/", EnvRuns: "1", EnvBudget: "12.5", EnvCommit: "abc123",
+		EnvFilter: "^instructions/", EnvRuns: "1", EnvBudget: "12.5", EnvCommit: "abc123", EnvPrompt: "harness/2", EnvDevice: "true",
 	}
 	o, err := FromEnv(env(full))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if o.Connection.BaseURL != full[EnvModelsURL] || o.Connection.Credential != "sk-test" || o.Connection.Model != "claude-sonnet-4-5" ||
-		o.Filter != "^instructions/" || o.Runs != 1 || o.BudgetUSDMicro != 12_500_000 || o.Commit != "abc123" {
+		o.Filter != "^instructions/" || o.Runs != 1 || o.BudgetUSDMicro != 12_500_000 || o.Commit != "abc123" || o.PromptVersion != 2 || !o.Device {
 		t.Fatalf("options %+v", o)
 	}
 	for _, missing := range []string{EnvModelsURL, EnvModelsKey, EnvModel} {
@@ -41,6 +41,8 @@ func TestFromEnv(t *testing.T) {
 		EnvModelsURL: "scripted:/tmp/s.yaml",
 		EnvRuns:      "none",
 		EnvBudget:    "-1",
+		EnvPrompt:    "2",
+		EnvDevice:    "maybe",
 	} {
 		vars := maps.Clone(full)
 		vars[k] = v
@@ -53,7 +55,14 @@ func TestFromEnv(t *testing.T) {
 		t.Errorf("an ftp connection: %v", err)
 	}
 	vars = map[string]string{EnvModelsURL: "http://localhost:4000", EnvModelsKey: "k", EnvModel: "m"}
-	if o, err := FromEnv(env(vars)); err != nil || o.Runs != 0 || o.BudgetUSDMicro != 0 {
+	if o, err := FromEnv(env(vars)); err != nil || o.Runs != 0 || o.BudgetUSDMicro != 0 || o.PromptVersion != 0 || o.Device {
 		t.Errorf("a plain connection: %+v, %v", o, err)
+	}
+	for _, v := range []string{"harness/x", "harness/0", "title/1"} {
+		vars := maps.Clone(full)
+		vars[EnvPrompt] = v
+		if _, err := FromEnv(env(vars)); err == nil {
+			t.Errorf("%s=%s was read", EnvPrompt, v)
+		}
 	}
 }

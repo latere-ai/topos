@@ -77,6 +77,15 @@ type Options struct {
 	BudgetUSDMicro int64
 	// Commit names the commit under test in the report.
 	Commit string
+	// PromptVersion is the harness prompt version every run's requests
+	// read (spec 011); zero is the current one, or prompts.HarnessDevice
+	// with Device. A candidate version is measured against the version
+	// before it this way before it becomes the current one.
+	PromptVersion int
+	// Device renders the harness prompt as a session on a person's own
+	// computer reads it (spec 080), with the machine section of a device
+	// in place of the host's, on the run's own machine.
+	Device bool
 	// OnRun is told each run's result as it finishes.
 	OnRun func(RunResult)
 }
@@ -132,8 +141,12 @@ func Run(ctx context.Context, o Options) (Report, error) {
 	if err := o.checkWork(ctx); err != nil {
 		return Report{}, err
 	}
+	if err := o.checkPrompt(); err != nil {
+		return Report{}, err
+	}
 	start := time.Now()
-	rep := Report{Model: o.modelName(), Commit: o.Commit, Started: start.UTC()}
+	rep := o.newReport()
+	rep.Started = start.UTC()
 	for _, t := range selected {
 		n := t.Runs
 		if o.Runs > 0 {
@@ -223,6 +236,37 @@ func (o Options) checkWork(ctx context.Context) error {
 		return fmt.Errorf("tasks: the work directory %s is inside a git checkout; its instruction files and checkpoints would join every session", o.Work)
 	}
 	return nil
+}
+
+// promptVersion is the harness prompt version the runs read.
+func (o Options) promptVersion() int {
+	switch {
+	case o.PromptVersion != 0:
+		return o.PromptVersion
+	case o.Device:
+		return prompts.HarnessDevice
+	}
+	return prompts.HarnessCurrent
+}
+
+// checkPrompt refuses a harness prompt version this build does not hold,
+// and a device on a version with no machine section for one.
+func (o Options) checkPrompt() error {
+	n := o.promptVersion()
+	if o.Device && n < prompts.HarnessDevice {
+		return fmt.Errorf("tasks: %s has no machine section for a person's own computer; %s is the first that does",
+			prompts.HarnessVersion(n), prompts.HarnessVersion(prompts.HarnessDevice))
+	}
+	if _, err := prompts.Harness(n, prompts.HarnessOptions{Device: o.Device}); err != nil {
+		return fmt.Errorf("tasks: %w", err)
+	}
+	return nil
+}
+
+// newReport is the report of a run of the suite before its first run:
+// the model, the commit and the prompt the runs read.
+func (o Options) newReport() Report {
+	return Report{Model: o.modelName(), Commit: o.Commit, Prompt: prompts.HarnessVersion(o.promptVersion()), Device: o.Device}
 }
 
 func (o Options) modelName() string {
@@ -419,13 +463,14 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 		}
 		return harness.Config{
 			Model: model, Connection: conn, Entry: entry, Machine: m, Tools: reg, Question: slices.Contains(r.t.Agent.Tools, harness.ToolQuestion),
-			History:      slices.Contains(r.t.Agent.Tools, tools.NameHistory),
-			Policy:       harness.Policy{Mode: harness.ModeConfirm, AlwaysAllow: builtinNames()},
-			Name:         "topos",
-			Instructions: r.t.Agent.Instructions,
-			Subagents:    subs,
-			TurnTimeout:  r.t.Timeout,
-			Prompt:       prompts.HarnessOptions{Host: m.Info().Kind == machine.KindHost, Threads: len(subs) > 0},
+			History:       slices.Contains(r.t.Agent.Tools, tools.NameHistory),
+			Policy:        harness.Policy{Mode: harness.ModeConfirm, AlwaysAllow: builtinNames()},
+			Name:          "topos",
+			Instructions:  r.t.Agent.Instructions,
+			Subagents:     subs,
+			TurnTimeout:   r.t.Timeout,
+			Prompt:        prompts.HarnessOptions{Host: m.Info().Kind == machine.KindHost, Device: r.o.Device, Threads: len(subs) > 0},
+			PromptVersion: r.o.promptVersion(),
 		}, nil
 	}
 }
