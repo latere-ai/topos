@@ -308,6 +308,19 @@
 // record. A send's allow that names another model or network changes
 // the fork before its message, as on any send.
 //
+// A create that names its model asks session.create with that model as
+// model, and its level as reasoning and effort, beside the create's other
+// fields (spec 077, R3). The session runs as named: an allow that names
+// another model or another level is refused model_not_allowed, never
+// substituted, so an endpoint that holds a session to a model refuses
+// rather than routing. A run of a rollout carries rollout, the caller's id
+// for the rollout the session is one run of, which the session keeps for
+// its whole life; toposd leaves the runs of a rollout out of the session
+// list unless it is asked for them, and refuses at once, as a person's
+// deny, a call of a run that would wait for a confirmation, since no
+// person attends it. An endpoint that holds a run to the work it belongs
+// to reads rollout and the metadata the run carries.
+//
 // A trigger's firing asks session.create as the trigger's owner (spec
 // 022): the owner's subject, claims holding org_id alone, and trigger_id
 // and firing_id beside a create's fields. When the token of the fire

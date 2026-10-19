@@ -100,6 +100,13 @@ type createBody struct {
 	Attended  bool            `json:"attended,omitempty"`
 	Machine   json.RawMessage `json:"machine,omitempty"`
 	Resources json.RawMessage `json:"resources,omitempty"`
+	// Rollout is the id of the rollout the session is one run of, the
+	// caller's key for its run (spec 077).
+	Rollout string `json:"rollout,omitempty"`
+	// Model is the model and the reasoning level the session runs from
+	// its first request in place of its agent's, run as named (spec 077,
+	// R3).
+	Model *modelChange `json:"model,omitempty"`
 }
 
 // repositories reads a create's resources and checks them.
@@ -138,6 +145,32 @@ func checkRepositories(rs []session.Resource) error {
 		}
 	}
 	return nil
+}
+
+// askedModel is the model a create that names one starts on: its name
+// and level, each the agent's where the create leaves it out, run as
+// named (spec 077, R3). An allow that names another model, or another
+// level, is model_not_allowed rather than a substitution, so a run that
+// a comparison reads ran the model it says. An allow that names the same
+// model keeps its route and its message_text.
+func askedModel(cfg manifest.AgentConfig, m *modelChange, limits authorizer.Limits) (session.ModelRef, error) {
+	asked := session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
+	if n := m.Name; n != nil {
+		asked.Name = *n
+	}
+	if l := m.level(); l != nil {
+		asked.Effort = cmp.Or(*l, cfg.Effort)
+	}
+	if limits.Model != "" && limits.Model != asked.Name {
+		return asked, refuse(CodeModelNotAllowed, "the authorizer runs %s in place of %s, and a create that names its model runs it as named", limits.Model, asked.Name)
+	}
+	if r := limits.Reasoning; r != nil && *r != "" && *r != asked.Effort {
+		return asked, refuse(CodeModelNotAllowed, "the authorizer runs %s at reasoning %s in place of %q, and a create that names its level runs it as named", asked.Name, *r, asked.Effort)
+	}
+	if limits.Model != "" {
+		asked.Route, asked.MessageText = limits.Route, limits.MessageText
+	}
+	return asked, nil
 }
 
 // createMachine is a create's machine (spec 080): a device, the Cella
@@ -198,6 +231,16 @@ func (c *call) createSession() error {
 	if err := session.CheckMetadata(b.Metadata); err != nil {
 		return refuse(CodeInvalidRequest, "%v", err)
 	}
+	if b.Rollout != "" {
+		if err := session.CheckRollout(b.Rollout); err != nil {
+			return refuse(CodeInvalidRequest, "%v", err)
+		}
+	}
+	if b.Model != nil {
+		if err := b.Model.check(); err != nil {
+			return err
+		}
+	}
 	resources, err := repositories(b.Resources)
 	if err != nil {
 		return err
@@ -207,7 +250,8 @@ func (c *call) createSession() error {
 		return err
 	}
 	in := creation{agent: b.Agent, title: b.Title, message: b.Message, metadata: b.Metadata, endOnIdle: b.EndOnIdle, attended: b.Attended, resources: resources,
-		machine: machine, capture: b.Capture, sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}}
+		machine: machine, capture: b.Capture, sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson},
+		rollout: b.Rollout, model: b.Model}
 	if b.Budget != nil {
 		in.budget = b.Budget.MaxCostUSDMicro
 	}
@@ -259,6 +303,12 @@ type creation struct {
 	// fork is the session and the log a fork continues, nil for any
 	// other create (spec 017).
 	fork *forkOrigin
+	// rollout is the rollout the session is one run of, empty for none
+	// (spec 077).
+	rollout string
+	// model is the model and level the create names in place of the
+	// agent's, nil for the agent's own (spec 077, R3).
+	model *modelChange
 }
 
 // forkOrigin is what a fork starts from: the session forked, the fork
@@ -380,6 +430,21 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 			fields["model_route"] = start.Route
 		}
 	}
+	// A create that names its model is asked with that model and its
+	// level, under both names a change of model carries them by, so the
+	// authorizer decides the model the session runs from its first
+	// request (spec 077, R3); a rollout's run names its rollout.
+	if in.model != nil {
+		if n := in.model.Name; n != nil {
+			fields["model"] = *n
+		}
+		if l := in.model.level(); l != nil {
+			fields["reasoning"], fields["effort"] = *l, *l
+		}
+	}
+	if in.rollout != "" {
+		fields["rollout"] = in.rollout
+	}
 	// A create that carries its first message, a trigger's, tells the
 	// shape of it, as a send of a message does (spec 061).
 	if in.message != "" && in.fork == nil {
@@ -442,7 +507,15 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// "" being the agent's own (spec 049). A fork is not routed: it
 	// continues its parent's model at its parent's level, and its first
 	// send is asked as any send is.
-	if in.fork == nil {
+	if in.fork == nil && in.model != nil {
+		asked, err := askedModel(cfg, in.model, limits)
+		if err != nil {
+			return session.Session{}, err
+		}
+		if asked != (session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}) {
+			start = &asked
+		}
+	} else if in.fork == nil {
 		own := session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
 		routed := own
 		if limits.Model != "" && limits.Model != cfg.Model.Name {
@@ -481,6 +554,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
 	sess.TriggerFiresOn = in.firesOn
 	sess.Attended = in.attended
+	sess.Rollout = in.rollout
 	// The header holds the model the session starts on from its create;
 	// a fork's copied model changes name it again as the log is copied.
 	sess.Model = start
@@ -820,6 +894,19 @@ func (c *call) sessionScope(status session.Status) (session.ListOptions, bool, e
 		o.Archived = session.ArchivedAny
 	default:
 		return o, false, refuse(CodeInvalidRequest, "archived is %q, not true, false or any", a)
+	}
+	// A rollout's runs are left out unless the request names the rollout
+	// or any, so a person's lists hold their own conversations (spec 077).
+	switch r := q.Get("rollout"); r {
+	case "":
+		o.Rollout = session.RolloutNone
+	case session.RolloutAny:
+		o.Rollout = session.RolloutAny
+	default:
+		if err := session.CheckRollout(r); err != nil {
+			return o, false, refuse(CodeInvalidRequest, "rollout is %q, not any or a rollout's id: %v", r, err)
+		}
+		o.Rollout = r
 	}
 	switch o.Status {
 	case "", session.StatusIdle, session.StatusRunning, session.StatusEnded:

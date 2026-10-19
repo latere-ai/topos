@@ -63,6 +63,13 @@ func filters(alias string, o session.ListOptions, args *[]any) string {
 	if o.Trigger != "" {
 		conds = append(conds, alias+"trigger_id = "+arg(args, o.Trigger))
 	}
+	switch o.Rollout {
+	case "", session.RolloutAny:
+	case session.RolloutNone:
+		conds = append(conds, alias+"rollout IS NULL")
+	default:
+		conds = append(conds, alias+"rollout = "+arg(args, o.Rollout))
+	}
 	return strings.Join(conds, " AND ")
 }
 

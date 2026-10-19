@@ -61,6 +61,30 @@ type modelChange struct {
 	Effort    *string `json:"effort,omitempty"`
 }
 
+// check refuses a change that names neither member, a name that is not
+// a model's, a level outside the reasoning levels, and one level named
+// twice with two values.
+func (m *modelChange) check() error {
+	if m.Name == nil && m.level() == nil {
+		return refuse(CodeInvalidRequest, "model names neither name nor reasoning")
+	}
+	if n := m.Name; n != nil && (*n == "" || strings.TrimSpace(*n) != *n) {
+		return refuse(CodeInvalidRequest, "model.name is %q, not a model's name", *n)
+	}
+	for _, l := range []struct {
+		name  string
+		level *string
+	}{{"reasoning", m.Reasoning}, {"effort", m.Effort}} {
+		if l.level != nil && *l.level != "" && !slices.Contains(v1.Efforts, *l.level) {
+			return refuse(CodeInvalidRequest, "model.%s is %q, not one of %s, or empty for the agent's own", l.name, *l.level, strings.Join(v1.Efforts, ", "))
+		}
+	}
+	if r, e := m.Reasoning, m.Effort; r != nil && e != nil && *r != *e {
+		return refuse(CodeInvalidRequest, "model.reasoning is %q and model.effort %q: name the level once, as reasoning", *r, *e)
+	}
+	return nil
+}
+
 // level is the reasoning level the change names under either name, nil
 // when it names none.
 func (m modelChange) level() *string {
@@ -333,22 +357,8 @@ func (b *updateBody) check() error {
 		b.Title = &title
 	}
 	if b.Model != nil {
-		if b.Model.Name == nil && b.Model.level() == nil {
-			return refuse(CodeInvalidRequest, "model names neither name nor reasoning")
-		}
-		if n := b.Model.Name; n != nil && (*n == "" || strings.TrimSpace(*n) != *n) {
-			return refuse(CodeInvalidRequest, "model.name is %q, not a model's name", *n)
-		}
-		for _, l := range []struct {
-			name  string
-			level *string
-		}{{"reasoning", b.Model.Reasoning}, {"effort", b.Model.Effort}} {
-			if l.level != nil && *l.level != "" && !slices.Contains(v1.Efforts, *l.level) {
-				return refuse(CodeInvalidRequest, "model.%s is %q, not one of %s, or empty for the agent's own", l.name, *l.level, strings.Join(v1.Efforts, ", "))
-			}
-		}
-		if r, e := b.Model.Reasoning, b.Model.Effort; r != nil && e != nil && *r != *e {
-			return refuse(CodeInvalidRequest, "model.reasoning is %q and model.effort %q: name the level once, as reasoning", *r, *e)
+		if err := b.Model.check(); err != nil {
+			return err
 		}
 	}
 	if b.Policy != nil && (b.Policy.Mode == nil || !slices.Contains(modes, *b.Policy.Mode)) {

@@ -755,6 +755,13 @@ func (t *turn) resume(ctx context.Context) error {
 				if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeDenied, text), 0); err != nil {
 					return err
 				}
+			case c.confirmation == nil && t.s.Rollout != "":
+				// A run of a rollout has no person to confirm a call, so
+				// the call is refused at once, as a person's deny would be,
+				// rather than leaving the session idle on it (spec 077).
+				if err := t.result(ctx, c.use.ToolUseID, tools.Text(tools.OutcomeDenied, prompts.Text(prompts.CallUnattended)), 0); err != nil {
+					return err
+				}
 			case c.confirmation == nil:
 				w.confirmation = true
 			case c.confirmation.Decision == session.DecisionDeny:
@@ -1731,6 +1738,11 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		switch {
 		case d.Verdict == VerdictBlock:
 			answered = append(answered, answeredCall{id, tools.Text(tools.OutcomeBlocked, d.Reason)})
+		case d.Verdict == VerdictAsk && t.s.Rollout != "":
+			// A run of a rollout has no person to confirm the call, so it
+			// is refused at once, as a person's deny would be, and the
+			// step does not wait (spec 077).
+			answered = append(answered, answeredCall{id, tools.Text(tools.OutcomeDenied, prompts.Text(prompts.CallUnattended))})
 		case d.Verdict == VerdictAsk:
 			p.ask = append(p.ask, id)
 		case props.Client:

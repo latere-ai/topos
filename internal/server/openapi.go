@@ -163,6 +163,12 @@ var triggerParam = yaml.MapSlice{{Key: "name", Value: "trigger"}, {Key: "in", Va
 	{Key: "description", Value: "A trigger's id: the sessions that trigger started."},
 	{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
 
+// rolloutParam keeps a rollout's runs (spec 077), in the list, the
+// search and the summary, which leave them out when it is absent.
+var rolloutParam = yaml.MapSlice{{Key: "name", Value: "rollout"}, {Key: "in", Value: "query"},
+	{Key: "description", Value: "A rollout's id: that rollout's runs; any: every session. Absent, the runs of every rollout are left out."},
+	{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}}
+
 // rootParam, parentParam and groupParam read a session's fork tree
 // from the list (spec 056); a search and a summary take none of them.
 var (
@@ -187,7 +193,7 @@ var ownerParam = yaml.MapSlice{{Key: "name", Value: "owner"}, {Key: "in", Value:
 var queryParams = map[string][]yaml.MapSlice{
 	"listAgents":   {ownerParam},
 	"listTriggers": {ownerParam},
-	"listSessions": {agentParam, statusParam, runnerParam, archivedParam, rootParam, parentParam, groupParam, triggerParam},
+	"listSessions": {agentParam, statusParam, runnerParam, archivedParam, rootParam, parentParam, groupParam, triggerParam, rolloutParam},
 	"searchSessions": {
 		{{Key: "name", Value: "q"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
 			{Key: "description", Value: "The words to search for. Each is found as the start of a word, whatever its case; characters of Han, Hiragana and Katakana typed in a row are found as those characters in a row."},
@@ -196,9 +202,9 @@ var queryParams = map[string][]yaml.MapSlice{
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}, {Key: "maximum", Value: session.MaxSearchResults}}}},
 		{{Key: "name", Value: "cursor"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The next_cursor of the page before."},
 			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}},
-		agentParam, statusParam, runnerParam, archivedParam,
+		agentParam, statusParam, runnerParam, archivedParam, rolloutParam,
 	},
-	"getSessionSummary": {agentParam, runnerParam, archivedParam, triggerParam},
+	"getSessionSummary": {agentParam, runnerParam, archivedParam, triggerParam, rolloutParam},
 	"getFile": {
 		{{Key: "name", Value: "path"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
 			{Key: "description", Value: "The file: an absolute path inside the session's working directory, as a write or edit tool.result's meta.path names it, or a path relative to the working directory."},
@@ -315,13 +321,13 @@ var opDescriptions = map[string]string{
 		"its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, route the routed name the authorizer chose on the way, when it names one, and message_text true when its allow asks for the opening of each later message. " +
 		"A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it, and never its opening, since the session has no allow yet. " +
 		"The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. " +
-		NetworkRule + " " + ConnectionsRule + " " + DeviceRule,
+		NetworkRule + " " + ConnectionsRule + " " + DeviceRule + " " + RunRule,
 	"listSessions": "List the sessions of the agents of the caller's context, filtered by agent, status, runner and archived, newest first by id. " +
 		"A fork names the session it was forked from as parent {session_id, seq} and the session at the top of its fork tree as root; a session no fork made has neither, and its tree is keyed by its own id. " +
 		"root, parent and group narrow what the other filters and the authorizer's owners keep, so a tree's sessions the caller may not list are in no answer and no count. " +
 		"root lists a tree, parent a session's forks, and group=tree one session per tree: the newest of the tree's sessions the list keeps, the one with the greatest id, " +
 		"carrying tree {root, sessions}, root the tree's key and sessions how many of the tree's sessions the list keeps. A grouped list orders and pages by the id of each tree's newest session, " +
-		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request. " + MetadataFilterRule + " " + TriggerFilterRule,
+		"so a fork moves its tree to the head of the list. A group other than tree is invalid_request. " + MetadataFilterRule + " " + TriggerFilterRule + " " + RolloutFilterRule,
 	"searchSessions": fmt.Sprintf("Search the sessions GET /sessions would list for the caller by what was said in them: the text of each message a person sent and each answer the agent wrote on the session's own thread, "+
 		"and a person's answers to the agent's questions; never a tool's output, a subagent's thread, a file, or a redacted event. A message matches when it holds every word of q. "+
 		"Markdown's marks and a link's address are not searched, and a message is searched in its first %d bytes. "+

@@ -233,11 +233,11 @@ func (s *Store) Create(ctx context.Context, sess session.Session, blobs map[sess
 		}
 		parentID, parentSeq, rootID := treeColumns(sess)
 		_, err := tx.Exec(ctx, `INSERT INTO sessions (id, agent_id, agent_version, owner, runner, status, stop_reason, turn, last_seq,
-			created_at, updated_at, expires_at, body, writer_kind, writer_subject, parent_id, parent_seq, root_id, trigger_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+			created_at, updated_at, expires_at, body, writer_kind, writer_subject, parent_id, parent_seq, root_id, trigger_id, rollout)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
 			sess.ID, sess.Agent.ID, sess.Agent.Version, sess.Initiator.Subject, sess.Runner, string(sess.Status), string(sess.StopReason),
 			sess.Turn, int64(sess.LastSeq), sess.CreatedAt, sess.UpdatedAt, sess.ExpiresAt, body, writerKind, writerSubject, parentID, parentSeq, rootID,
-			triggerColumn(sess))
+			triggerColumn(sess), rolloutColumn(sess))
 		if isUnique(err) {
 			return fmt.Errorf("%w: %s", session.ErrExists, sess.ID)
 		}
@@ -286,6 +286,16 @@ func triggerColumn(sess session.Session) *string {
 		return nil
 	}
 	id := sess.TriggerID
+	return &id
+}
+
+// rolloutColumn is a session's rollout column, the id of the rollout it
+// is one run of, nil for a session of no rollout (spec 077).
+func rolloutColumn(sess session.Session) *string {
+	if sess.Rollout == "" {
+		return nil
+	}
+	id := sess.Rollout
 	return &id
 }
 
@@ -483,9 +493,9 @@ func saveHeader(ctx context.Context, tx pgx.Tx, sess session.Session) error {
 	parentID, parentSeq, rootID := treeColumns(sess)
 	_, err = tx.Exec(ctx, `UPDATE sessions SET body = $2, status = $3, stop_reason = $4, turn = $5, last_seq = $6, updated_at = $7,
 		ended_at = COALESCE(ended_at, $8), parent_id = COALESCE($9, parent_id), parent_seq = COALESCE($10, parent_seq),
-		root_id = COALESCE($11, root_id), trigger_id = COALESCE($12, trigger_id) WHERE id = $1`,
+		root_id = COALESCE($11, root_id), trigger_id = COALESCE($12, trigger_id), rollout = COALESCE($13, rollout) WHERE id = $1`,
 		sess.ID, body, string(sess.Status), string(sess.StopReason), sess.Turn, int64(sess.LastSeq), sess.UpdatedAt, ended, parentID, parentSeq, rootID,
-		triggerColumn(sess))
+		triggerColumn(sess), rolloutColumn(sess))
 	if err != nil {
 		return fmt.Errorf("postgres: save session %s: %w", sess.ID, err)
 	}

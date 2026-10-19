@@ -320,10 +320,16 @@ type Session struct {
 	// on, TriggerSchedule or TriggerEvents, fixed at the create; empty on
 	// a session a person started. A person's own computer names it to its
 	// owner when it asks to allow the session (spec 080).
-	TriggerFiresOn string    `json:"trigger_fires_on,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	TriggerFiresOn string `json:"trigger_fires_on,omitempty"`
+	// Rollout is the id of the rollout the session is one run of, fixed
+	// at its create; empty on a session a person or a trigger started
+	// (spec 077). A rollout's sessions are left out of the session list
+	// unless it asks for them, and no person attends them, so a call that
+	// would wait for a confirmation is refused at once.
+	Rollout   string    `json:"rollout,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	ExpiresAt time.Time `json:"expires_at"`
 	// ArchivedAt is when the session was filed away from the lists, nil
 	// while it is not. Only a store's SetArchived writes it; no event
 	// does, so an ended session's log stays closed (spec 015).

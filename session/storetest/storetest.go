@@ -59,6 +59,7 @@ func Run(t *testing.T, open Open) {
 		{"ListGroupedByTree", testListGroupedByTree},
 		{"ListByMetadata", testListByMetadata},
 		{"ListByTrigger", testListByTrigger},
+		{"ListByRollout", testListByRollout},
 		{"Archive", testArchive},
 		{"SetMetadata", testSetMetadata},
 		{"Summary", testSummary},

@@ -36,6 +36,10 @@ const (
 	// CodeMachineUnavailable is spec 009's: the session's machine cannot
 	// be had.
 	CodeMachineUnavailable = "machine_unavailable"
+	// CodeModelNotAllowed is a create that names its model, which the
+	// authorizer would run another model or level in place of (spec 077,
+	// R3): the create is refused rather than run on a substitute.
+	CodeModelNotAllowed = "model_not_allowed"
 )
 
 // codes is spec 015's error table: every code the API answers, its
@@ -63,6 +67,7 @@ var codes = map[string]struct {
 	CodeFileUnavailable:             {http.StatusConflict, "The file cannot be read now, because the session's machine is not running."},
 	CodeRateLimited:                 {http.StatusTooManyRequests, "Too many requests; wait and try again."},
 	CodeMachineUnavailable:          {http.StatusUnprocessableEntity, "The session's machine is not available here."},
+	CodeModelNotAllowed:             {http.StatusForbidden, "The model or reasoning level the request names cannot run here."},
 	CodeInvalidForkPoint:            {http.StatusUnprocessableEntity, "A session is forked only at the end of a turn, or before a message of yours that started one."},
 	models.CodeUnknown:              {http.StatusUnprocessableEntity, "This server cannot run that model."},
 	models.CodeUnavailable:          {http.StatusServiceUnavailable, "The model's gateway did not answer; try again."},

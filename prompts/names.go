@@ -333,6 +333,10 @@ const (
 const (
 	// CallDenied takes the person's Note, empty for none.
 	CallDenied Name = "results/call/denied-v1"
+	// CallUnattended is a call that would wait for a person's
+	// confirmation in a session no person attends: a run of a rollout
+	// (spec 077).
+	CallUnattended Name = "results/call/unattended-v1"
 	// CallUnknownTool takes Name.
 	CallUnknownTool   Name = "results/call/unknown-tool-v1"
 	CallUnknownEffect Name = "results/call/unknown-effect-v1"

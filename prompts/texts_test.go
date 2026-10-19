@@ -210,6 +210,7 @@ var textCases = func() []textCase {
 		{name: TranscriptRewound, data: Data{"Turn": 3}, want: "The working directory was restored to its state at the end of turn " + strconv.Itoa(3) + "."},
 
 		{name: CallDenied, data: Data{"Note": ""}, want: "A person denied this call."},
+		{name: CallUnattended, want: "Nobody attends this session to confirm this call, so it did not run. Do the work in a way that needs no confirmation, or state in your final message what you could not do without one."},
 		{name: CallDenied, data: Data{"Note": "not that"}, want: "A person denied this call." + " Their note: " + "not that"},
 		{name: CallUnknownTool, data: Data{"Name": "grep"}, want: "No tool named " + "grep" + "."},
 		{name: CallUnknownEffect, want: "The runner stopped while this call ran. Its effects are unknown; inspect the machine before repeating it."},

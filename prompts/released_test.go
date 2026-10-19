@@ -32,6 +32,7 @@ var released = map[string]string{
 	"results/call/machine-waiting-v1.md":         "7150e01d149a3b07940b7b2baaf8d6f85d494544a1c2395bbd563a7e187524d3",
 	"results/call/machine-away-v1.md":            "2bc61c27430ea27ea1d3e24b9877189b17d8212f3520a4d99609a2f3ed67d23f",
 	"results/call/machine-refused-v1.md":         "e269330c8c5abfb43ad42b21f0fba08d619aee8aee269dfa6492b06e436ae8c9",
+	"results/call/unattended-v1.md":              "f0225a9f57ed647378f0f5cd9d54f5086c0b4cf9a7f45b1ef179bb6f7538f408",
 	"transcript/attachments-device-v1.md":        "9df065d2357629798c72b83e8650051e7b71ad3a018c56ec7090addad6e9cfba",
 	"harness/memory-v1.md":                       "4038f944563aeb7534d5ef747df7ca1ab16006816a8dcb170f401ceb43cbd927",
 	"harness/threads-v1.md":                      "ae6984cff058d8ec8d1aee7a611d2208354c0c07acdad1b379af11566ac89832",

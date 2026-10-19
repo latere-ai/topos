@@ -144,8 +144,24 @@ type ListOptions struct {
 	// Trigger, when set, keeps the sessions the trigger of that id
 	// started, those whose TriggerID it is (spec 072).
 	Trigger string
+	// Rollout keeps sessions by the rollout they are runs of (spec 077):
+	// RolloutNone the sessions of no rollout, a rollout's id that
+	// rollout's, and the zero value or RolloutAny every session, as every
+	// caller inside the server lists.
+	Rollout string
 	Limit   int
 	Cursor  string
+}
+
+// keepsRollout reports whether s passes o's rollout filter.
+func (o ListOptions) keepsRollout(s Session) bool {
+	switch o.Rollout {
+	case "", RolloutAny:
+		return true
+	case RolloutNone:
+		return s.Rollout == ""
+	}
+	return s.Rollout == o.Rollout
 }
 
 // Group is how a List groups the sessions it keeps.
@@ -205,8 +221,8 @@ type Summary struct {
 
 // Summarizer is the optional interface of a store that counts the
 // sessions a List filters to without reading them a page at a time
-// (spec 015). It applies o's AgentID, Owners, Runner, Archived, Metadata
-// and Trigger as List does; Status, Limit and Cursor do not apply.
+// (spec 015). It applies o's AgentID, Owners, Runner, Archived, Metadata,
+// Trigger and Rollout as List does; Status, Limit and Cursor do not apply.
 type Summarizer interface {
 	Summarize(ctx context.Context, o ListOptions) (Summary, error)
 }
@@ -255,7 +271,8 @@ func (o ListOptions) keeps(s Session) bool {
 		(o.Root == "" || s.ID == o.Root || s.Root == o.Root) &&
 		(o.Parent == "" || s.Parent != nil && s.Parent.SessionID == o.Parent) &&
 		o.Metadata.keeps(s) &&
-		(o.Trigger == "" || s.TriggerID == o.Trigger)
+		(o.Trigger == "" || s.TriggerID == o.Trigger) &&
+		o.keepsRollout(s)
 }
 
 // keeps reports whether s's metadata holds the entry; a nil entry keeps
