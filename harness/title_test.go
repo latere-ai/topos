@@ -446,7 +446,7 @@ func TestTheTitlePromptStatesItsBound(t *testing.T) {
 	if req, err := titleRequest(model, "", nil, 9); err != nil || *req.MaxTokens != 9 || req.Model != model {
 		t.Fatalf("the request %+v, %v", req, err)
 	}
-	if time.Duration(TitleTimeout) != 20*time.Second || TitleMaxTokens != 64 || TitleMessages != 6 || TitleAnswerChars != 600 || TitleMaxLength != 60 {
+	if TitleTimeout != 20*time.Second || TitleMaxTokens != 64 || TitleMessages != 6 || TitleAnswerChars != 600 || TitleMaxLength != 60 {
 		t.Fatal("the bounds of spec 083 changed")
 	}
 }
