@@ -495,10 +495,12 @@ func ApplyBatch(s *Session, events []Event) {
 		}
 		s.stored(e)
 		// A fork's copied change renamed its parent; the fork keeps the
-		// title its own create gave it.
+		// title its own create gave it. The harness's change is made over
+		// the title it read, and changes nothing once the title is another,
+		// as after a person renamed the session meanwhile (spec 083).
 		if e.Type == TypeTitleChanged {
 			var p TitleChanged
-			if !e.Redacted() && !s.Copied(e) && e.Decode(&p) == nil {
+			if !e.Redacted() && !s.Copied(e) && e.Decode(&p) == nil && (p.By.Subject != HarnessSubject || p.Old == s.Title) {
 				s.Title = p.New
 			}
 			continue

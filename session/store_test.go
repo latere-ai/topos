@@ -563,6 +563,32 @@ func TestATitlesRequestKeepsTheUpdateTime(t *testing.T) {
 	}
 }
 
+// TestAHarnessTitleOverAnotherTitleChangesNothing: a change of the
+// title by the harness moves the header only from the title it names as
+// old, so one made over a title a person changed meanwhile leaves the
+// person's; a person's change moves it whatever it names (spec 083).
+func TestAHarnessTitleOverAnotherTitleChangesNothing(t *testing.T) {
+	change := func(by Sender, old, title string) Event {
+		t.Helper()
+		e, err := NewEvent(TypeTitleChanged, TitleChanged{By: by, Old: old, New: title}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	harness := Sender{Subject: HarnessSubject, Kind: SenderService}
+	person := Sender{Subject: "usr_ada", Kind: SenderPerson}
+	s := Session{Title: "Notes"}
+	ApplyBatch(&s, []Event{change(person, "Notes", "Mine"), change(harness, "Notes", "Release notes")})
+	if s.Title != "Mine" {
+		t.Fatalf("a harness title over a person's left %q", s.Title)
+	}
+	ApplyBatch(&s, []Event{change(harness, "Mine", "Release notes"), change(person, "Something else", "Theirs")})
+	if s.Title != "Theirs" {
+		t.Fatalf("the title is %q", s.Title)
+	}
+}
+
 // TestCheckTitle: a title is refused empty, past MaxTitleLength
 // characters, or with a control character or a line separator, and
 // counted in characters, not bytes.
