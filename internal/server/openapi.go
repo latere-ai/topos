@@ -335,7 +335,8 @@ var opDescriptions = map[string]string{
 	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there.",
 	"resumeSession": "Resume a session idle on its budget once the cap is raised, or one idle on machine_waiting once its computer is back or its owner allowed the session: that resume adds no message, keeps the session's budget, and takes no max_cost_usd_micro, which is invalid_request.",
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
-		"interrupt it and delete it once it is idle. A session a runner claims while the authorizer decides is conflict too, and a deny is forbidden. " +
+		"interrupt it and delete it once it is idle. An idle session whose runner still holds it, as one does while it names the session after a turn, is waited for, at most " + fmt.Sprint(DefaultLeaseWait) + ", and deleted once the runner lets go; " +
+		"one held past that, or that a runner claims for a turn while the authorizer decides, is conflict, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
 	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule,
 	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. The answer is read by the blob's leading bytes: "+
