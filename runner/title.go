@@ -7,8 +7,11 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"runtime/debug"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"latere.ai/x/topos/harness"
@@ -37,22 +40,84 @@ func (r *Runner) titleQuestion(id string, lease session.Lease) func(context.Cont
 	}
 }
 
+// TitleSettingTTL is how long a runner keeps the title setting it read
+// for an agent (spec 083): a turn's end reads it at most once in that
+// time, and a change of the agent's latest version applies within it.
+const TitleSettingTTL = 30 * time.Second
+
+// settingCache is the title settings a runner read, by agent or by bundle.
+type settingCache struct {
+	mu sync.Mutex
+	m  map[string]cachedSetting
+}
+
+type cachedSetting struct {
+	set *v1.Title
+	at  time.Time
+}
+
+// maxCachedSettings bounds the cache, whose expired entries go first.
+const maxCachedSettings = 1024
+
+func (c *settingCache) get(key string, now time.Time) (*v1.Title, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[key]
+	if !ok || now.Sub(e.at) >= TitleSettingTTL {
+		return nil, false
+	}
+	return e.set, true
+}
+
+func (c *settingCache) put(key string, set *v1.Title, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.m) >= maxCachedSettings {
+		for k, e := range c.m {
+			if now.Sub(e.at) >= TitleSettingTTL {
+				delete(c.m, k)
+			}
+		}
+		if len(c.m) >= maxCachedSettings {
+			clear(c.m)
+		}
+	}
+	c.m[key] = cachedSetting{set: set, at: now}
+}
+
 // titleSetting is spec.title of the latest version of s's agent, as
 // LatestTitle reads it, or of the version s runs when LatestTitle is
-// unset or cannot answer: nil when the agent sets none.
+// unset or cannot answer: nil when the agent sets none. What it read is
+// kept for TitleSettingTTL, so a session whose agent sets no title costs
+// its turns one read in that time.
 func (r *Runner) titleSetting(ctx context.Context, s session.Session) (*v1.Title, error) {
+	now := r.o.Clock()
 	if r.o.LatestTitle != nil {
+		key := "agent:" + s.Agent.ID
+		if set, ok := r.settings.get(key, now); ok {
+			return set, nil
+		}
 		set, err := r.o.LatestTitle(ctx, s.Agent.ID)
 		if err == nil {
+			r.settings.put(key, set, now)
 			return set, nil
 		}
 		r.o.Log.DebugContext(ctx, "title: the agent's latest version could not be read; the session's own is read", "session", s.ID, "err", err)
 	}
+	key := "bundle:" + string(s.Agent.Bundle)
+	if set, ok := r.settings.get(key, now); ok {
+		return set, nil
+	}
 	res, ok, err := Agent(ctx, r.o.Store, s)
-	if err != nil || !ok {
+	if err != nil {
 		return nil, err
 	}
-	return res.Agent.Spec.Title, nil
+	var set *v1.Title
+	if ok {
+		set = res.Agent.Spec.Title
+	}
+	r.settings.put(key, set, now)
+	return set, nil
 }
 
 // The ends of one session's title step.
@@ -74,24 +139,29 @@ const (
 // nothing pending, when its title is due, while the drive still holds its
 // lease, and reports whether input arrived since, which the drive's next
 // turn takes on the same lease rather than the queue's next poll (spec
-// 083). The title is due when the turn's input held a person's message,
-// the rules of blocked hold none against it, and the latest version of
-// the session's agent sets spec.title. A title that fails, is denied or
-// writes nothing is logged and changes nothing else; only a read of the
-// session that fails is an error.
-func (r *Runner) afterTurn(ctx context.Context, h *harness.Harness, cfg harness.Config, id string, lease session.Lease, log *Log, out harness.Outcome) (bool, error) {
-	if out.Status != session.StatusIdle || out.StopReason == session.StopBudget {
-		return false, nil
-	}
-	s, evs, err := r.read(ctx, id)
+// 083). The title is due when the runner has a title question to ask,
+// the latest version of the session's agent sets spec.title, the turn's
+// input held a person's message, and the rules of blocked hold none
+// against it; the input since the turn and the setting are read first,
+// so a turn of a session whose agent sets no title costs a read of the
+// log's end and a cached setting. The whole title runs within
+// harness.TitleTimeout, and input that arrives meanwhile ends it at once.
+// A title that fails, is denied or writes nothing is logged and changes
+// nothing else; only a read of the session that fails is an error.
+func (r *Runner) afterTurn(ctx context.Context, h *harness.Harness, cfg harness.Config, id string, lease session.Lease, log *Log, intr *interrupts, out harness.Outcome) (bool, error) {
+	since, err := r.o.Store.Events(ctx, id, log.Last()+1, 0)
 	if err != nil {
 		return false, err
 	}
-	if session.HasPendingInput(evs) {
+	if session.HasPendingInput(since) {
 		return true, nil
 	}
-	if !startedByPerson(evs) || blocked(s, evs) != "" {
+	if out.Status != session.StatusIdle || out.StopReason == session.StopBudget || r.titleQuestion(id, lease) == nil {
 		return false, nil
+	}
+	s, err := r.o.Store.Get(ctx, id)
+	if err != nil {
+		return false, err
 	}
 	set, err := r.titleSetting(ctx, s)
 	if err != nil {
@@ -101,10 +171,28 @@ func (r *Runner) afterTurn(ctx context.Context, h *harness.Harness, cfg harness.
 	if set == nil {
 		return false, nil
 	}
-	if r.title(ctx, h, cfg, lease, log, s, evs, set) == titleSkipped {
+	evs, err := r.o.Store.Events(ctx, id, 1, 0)
+	if err != nil {
+		return false, err
+	}
+	if session.HasPendingInput(evs) {
+		return true, nil
+	}
+	if !startedByPerson(evs) || blocked(s, evs) != "" {
 		return false, nil
 	}
-	if evs, err = r.o.Store.Events(ctx, id, 1, 0); err != nil {
+	read := evs[len(evs)-1].Seq
+	tctx, end := context.WithTimeout(ctx, harness.TitleTimeout)
+	stop := intr.endOnInput(read, end)
+	outcome := r.title(tctx, h, cfg, lease, log, s, evs, set)
+	stop()
+	end()
+	if outcome == titleSkipped {
+		return false, nil
+	}
+	// Input that arrived while the title was asked sits before the title's
+	// own events, after what the title read.
+	if evs, err = r.o.Store.Events(ctx, id, read+1, 0); err != nil {
 		return false, err
 	}
 	return session.HasPendingInput(evs), nil
@@ -124,12 +212,14 @@ func (r *Runner) read(ctx context.Context, id string) (session.Session, []sessio
 }
 
 // title asks the title question and, when it is allowed, the harness for
-// the session's title (spec 083), and logs how it ended with the session
-// and the cause, never a word of the conversation or the title. The
-// question is asked as the session's initiator with the name the request
-// asks for; the request runs on the model the allow names, else on that
-// name, and, when the agent names no title model, on the model the
-// session stands on last.
+// the session's title (spec 083), within ctx, and logs how it ended with
+// the session and the cause, never a word of the conversation or the
+// title. The question is asked as the session's initiator with the name
+// the request asks for; the request runs on the model the allow names,
+// else on that name, and, when the agent names no title model, on the
+// model the session stands on last. Its batch is appended over the events
+// others appended since evs, so a person's change of the title and an end
+// of the session meanwhile win.
 func (r *Runner) title(ctx context.Context, h *harness.Harness, cfg harness.Config, lease session.Lease, log *Log, s session.Session, evs []session.Event, set *v1.Title) titleOutcome {
 	ask := r.titleQuestion(s.ID, lease)
 	if ask == nil {
@@ -145,8 +235,20 @@ func (r *Runner) title(ctx context.Context, h *harness.Harness, cfg harness.Conf
 	if allowed.Name != "" {
 		names = slices.Insert(slices.DeleteFunc(names, func(n string) bool { return n == allowed.Name }), 0, allowed.Name)
 	}
-	res, err := h.Title(ctx, s, evs, log, names)
+	var fold uint64
+	if n := len(evs); n > 0 {
+		fold = evs[n-1].Seq
+	}
+	// A retry with room to reason is a second request, asked only of the
+	// small model an agent named, never of the session's own.
+	res, err := h.Title(ctx, s, evs, titleLog{l: log, after: fold}, harness.TitleAsk{Names: names, Retry: set.Model != nil})
 	switch {
+	case errors.Is(err, errTitleRenamed):
+		r.o.Log.InfoContext(ctx, "title: kept", "session", s.ID, "model", res.Model, "kept", "renamed")
+		return titleKept
+	case errors.Is(err, errTitleEnded):
+		r.o.Log.InfoContext(ctx, "title: not recorded", "session", s.ID, "model", res.Model, "err", err)
+		return titleFailed
 	case err != nil:
 		r.o.Log.WarnContext(ctx, "title: failed", "session", s.ID, "model", res.Model, "err", err)
 		return titleFailed
@@ -290,7 +392,7 @@ func (r *Runner) TitlePass(ctx context.Context, agents []string, interval time.D
 				return c, err
 			}
 			for _, s := range page {
-				out, err := r.passOne(ctx, s)
+				out, err := r.passGuarded(ctx, s)
 				if err != nil {
 					r.o.Log.WarnContext(ctx, "title: the pass failed on a session", "session", s.ID, "err", err)
 					out = titleFailed
@@ -319,7 +421,20 @@ func (r *Runner) TitlePass(ctx context.Context, agents []string, interval time.D
 	return c, nil
 }
 
-// passOne names one session of a pass when it is due, under its lease.
+// passGuarded is passOne, a panic of whose counted as a failure with its
+// stack, so one session the pass could not name never stops the others.
+func (r *Runner) passGuarded(ctx context.Context, listed session.Session) (out titleOutcome, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			out, err = titleFailed, fmt.Errorf("runner: the title of %s panicked: %v\n%s", listed.ID, p, debug.Stack())
+		}
+	}()
+	return r.passOne(ctx, listed)
+}
+
+// passOne names one session of a pass when it is due, under its lease,
+// within harness.TitleTimeout, and ends the title at once when input
+// arrives meanwhile, which the claim queue then drives.
 func (r *Runner) passOne(ctx context.Context, listed session.Session) (_ titleOutcome, err error) {
 	if listed.Writer != nil && listed.Writer.Kind != session.RunnerHosted {
 		return titleSkipped, nil
@@ -364,19 +479,30 @@ func (r *Runner) passOne(ctx context.Context, listed session.Session) (_ titleOu
 	if f, ok := lease.(session.Fence); ok {
 		log.fence = f
 	}
-	return r.title(ctx, h, cfg, lease, log, s, evs, set), nil
+	tctx, end := context.WithTimeout(ctx, harness.TitleTimeout)
+	defer end()
+	intr := newInterrupts()
+	stop, err := intr.watch(tctx, r.o.Store, s.ID, s.LastSeq+1, nil)
+	if err != nil {
+		return titleFailed, err
+	}
+	defer stop()
+	defer intr.endOnInput(s.LastSeq, end)()
+	return r.title(tctx, h, cfg, lease, log, s, evs, set), nil
 }
 
 // unnamed reports whether a session is due for the pass: its log holds a
-// person's message and no title request, and blocked holds nothing
-// against it.
+// person's message and no title request that a model answered, outcome
+// ok, so one that failed, was cut short or was refused leaves the session
+// due at the next pass, and blocked holds nothing against it.
 func unnamed(s session.Session, evs []session.Event) bool {
 	person, asked := false, false
 	for _, e := range evs {
 		var p session.UserMessage
+		var mr session.ModelRequest
 		switch {
 		case session.Purpose(e) == session.PurposeTitle:
-			asked = true
+			asked = asked || (e.Decode(&mr) == nil && mr.Outcome == "ok")
 		case e.Type == session.TypeUserMessage && !e.Redacted() && e.Decode(&p) == nil && p.Sender.Kind == session.SenderPerson:
 			person = true
 		}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 
 	"latere.ai/x/topos/session"
@@ -117,4 +118,111 @@ func (l *Log) PutBlob(ctx context.Context, r io.Reader) (session.Digest, error) 
 // Blob reads a blob of the session.
 func (l *Log) Blob(ctx context.Context, d session.Digest) (io.ReadCloser, error) {
 	return l.st.Blob(ctx, l.id, d)
+}
+
+// Why a title's batch was not appended whole (spec 083).
+var (
+	// errTitleRenamed is a title whose request was recorded and whose
+	// change was left out: a person changed the session's title while it
+	// was asked, and a person's name wins.
+	errTitleRenamed = errors.New("runner: a person changed the session's title while its title was asked; the person's stands")
+	// errTitleEnded is a title of which nothing was appended: the session
+	// ended while it was asked, and an ended log takes no more events.
+	errTitleEnded = errors.New("runner: the session ended while its title was asked; nothing was appended")
+)
+
+// titleAppends bounds how often a title's batch is read against the log
+// again after another writer appended in the moment before it.
+const titleAppends = 8
+
+// appendTitle appends a title's batch as Append does, deciding what to
+// append from the events others appended since after, the last sequence
+// the title read, which are read in the same step as the store takes the
+// batch after them: when one is a session.status that ended the session,
+// nothing is appended and the answer is errTitleEnded; when one is a
+// person's session.title_changed, the batch's session.title_changed is
+// left out, the rest appended, and the answer is errTitleRenamed. A batch
+// the store refuses for events appended between the read and the append
+// is decided again over them, titleAppends times at most.
+func (l *Log) appendTitle(ctx context.Context, batch []session.Event, after uint64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var err error
+	for range titleAppends {
+		select {
+		case <-l.lost:
+			return ErrLeaseLost
+		default:
+		}
+		var foreign []session.Event
+		if foreign, err = l.st.Events(ctx, l.id, l.last+1, 0); err != nil {
+			return err
+		}
+		if n := len(foreign); n > 0 {
+			l.last = foreign[n-1].Seq
+		}
+		l.beside = append(l.beside, foreign...)
+		var renamed bool
+		for _, e := range foreign {
+			var st session.SessionStatus
+			var tc session.TitleChanged
+			switch {
+			case e.Seq <= after || e.Redacted():
+			case e.Type == session.TypeSessionStatus && e.Decode(&st) == nil && st.Status == session.StatusEnded:
+				return errTitleEnded
+			case e.Type == session.TypeTitleChanged && e.Decode(&tc) == nil && tc.By.Kind == session.SenderPerson:
+				renamed = true
+			}
+		}
+		kept := batch
+		if renamed {
+			kept = slices.DeleteFunc(slices.Clone(batch), func(e session.Event) bool { return e.Type == session.TypeTitleChanged })
+		}
+		if len(kept) == 0 {
+			return errTitleRenamed
+		}
+		session.Stamp(l.id, l.last, kept)
+		appendTo := l.st.Append
+		if l.fence != nil {
+			appendTo = func(ctx context.Context, _ string, after uint64, evs []session.Event) (uint64, error) {
+				return l.fence.Append(ctx, after, evs)
+			}
+		}
+		last, aerr := appendTo(ctx, l.id, l.last, kept)
+		switch {
+		case errors.Is(aerr, session.ErrSequenceConflict):
+			err = aerr
+			continue
+		case errors.Is(aerr, session.ErrLeaseLost):
+			return fmt.Errorf("%w: %w", ErrLeaseLost, aerr)
+		case aerr != nil:
+			return aerr
+		}
+		l.last = last
+		l.beside = append(l.beside, kept...)
+		if renamed {
+			return errTitleRenamed
+		}
+		return nil
+	}
+	return err
+}
+
+// titleLog is the harness.Log a title appends through: its batch goes to
+// Log.appendTitle, decided over what others appended since after.
+type titleLog struct {
+	l     *Log
+	after uint64
+}
+
+func (t titleLog) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
+	return nil, t.l.appendTitle(ctx, batch, t.after)
+}
+
+func (t titleLog) PutBlob(ctx context.Context, r io.Reader) (session.Digest, error) {
+	return t.l.PutBlob(ctx, r)
+}
+
+func (t titleLog) Blob(ctx context.Context, d session.Digest) (io.ReadCloser, error) {
+	return t.l.Blob(ctx, d)
 }

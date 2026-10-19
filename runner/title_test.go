@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -373,41 +374,58 @@ func TestATitleRunsOnTheModelTheAllowNames(t *testing.T) {
 }
 
 // TestInputDuringTheTitleStartsTheNextTurn: a message sent while the
-// title request runs starts the next turn in the same drive, on the same
-// lease, and the title is asked again after it (spec 083).
+// title request runs ends the title at once, its request recorded with
+// outcome canceled and no title written, and starts the next turn in the
+// same drive, on the same lease, without waiting for the title's
+// response or its deadline; the title is asked again after that turn
+// (spec 083).
 func TestInputDuringTheTitleStartsTheNextTurn(t *testing.T) {
 	f := setup(t)
 	tg := title(t, f, &v1.Title{})
 	ctx := t.Context()
+	// The title's response never comes while the test runs: the stub holds
+	// it until the test ends.
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	var once sync.Once
 	f.stub.Script(model,
 		reply(ir.Block{Type: ir.BlockText, Text: "First."}),
-		luxstub.Reply{Response: named("Plans").Response, Respond: func(*ir.Request, *ir.Response) {
-			f.message(ctx, "Now the second part.")
+		luxstub.Reply{Response: named("Plans").Response, Hold: func(ir.Event) {
+			once.Do(func() { f.message(ctx, "Now the second part.") })
+			<-release
 		}},
 		reply(ir.Block{Type: ir.BlockText, Text: "Second."}),
 		named("KEEP"),
 	)
 	f.message(ctx, "The first part.")
+	began := time.Now()
 	out, err := tg.r.Drive(ctx, f.s.ID)
 	if err != nil || out.StopReason != session.StopEndTurn {
 		t.Fatalf("drive %+v, %v", out, err)
 	}
-	if f.count(ctx, session.TypeAgentMessage) != 2 || len(tg.questions()) != 2 || len(f.stub.Requests()) != 4 {
-		t.Fatalf("%d answers, %d questions, %d requests", f.count(ctx, session.TypeAgentMessage), len(tg.questions()), len(f.stub.Requests()))
+	if took := time.Since(began); took > harness.TitleTimeout/3 {
+		t.Fatalf("the next turn waited %s for the title", took)
+	}
+	if f.count(ctx, session.TypeAgentMessage) != 2 || len(tg.questions()) != 2 || len(f.stub.Requests()) != 4 || len(f.titles(ctx, f.s.ID)) != 0 {
+		t.Fatalf("%d answers, %d questions, %d requests, titles %+v", f.count(ctx, session.TypeAgentMessage), len(tg.questions()), len(f.stub.Requests()), f.titles(ctx, f.s.ID))
 	}
 	evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var runners []string
+	var runners, outcomes []string
 	for _, e := range evs {
 		var p session.SessionStatus
-		if e.Type == session.TypeSessionStatus && e.Decode(&p) == nil && p.Status == session.StatusRunning {
+		var mr session.ModelRequest
+		switch {
+		case e.Type == session.TypeSessionStatus && e.Decode(&p) == nil && p.Status == session.StatusRunning:
 			runners = append(runners, p.Runner.ID)
+		case session.Purpose(e) == session.PurposeTitle && e.Decode(&mr) == nil:
+			outcomes = append(outcomes, mr.Outcome)
 		}
 	}
-	if len(runners) != 2 || runners[0] != runners[1] {
-		t.Fatalf("the turns ran on %v", runners)
+	if len(runners) != 2 || runners[0] != runners[1] || strings.Join(outcomes, " ") != "canceled ok" {
+		t.Fatalf("the turns ran on %v; the titles ended %v", runners, outcomes)
 	}
 }
 
@@ -765,5 +783,250 @@ func TestThePassCountsWhatFailed(t *testing.T) {
 	}
 	if logs := tg.logged(); strings.Count(logs, "the pass failed on a session") != 2 {
 		t.Fatalf("the log says %s", logs)
+	}
+}
+
+// TestAPersonsRenameAndAnEndWinOverATitle: a person who renames the
+// session while its title is asked keeps the name, in the header and in
+// the log, with the title's request recorded; a session that ends while
+// its title is asked takes nothing after its end (spec 083).
+func TestAPersonsRenameAndAnEndWinOverATitle(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		write  func(f *fixture, ctx context.Context)
+		logged string
+	}{
+		{"renamed", func(f *fixture, ctx context.Context) {
+			f.send(ctx, session.TypeTitleChanged, session.TitleChanged{By: f.s.Initiator, New: "Mine"})
+		}, "kept=renamed"},
+		{"ended", func(f *fixture, ctx context.Context) {
+			f.send(ctx, session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: session.StopCompleted})
+		}, "the session ended while its title was asked"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := setup(t)
+			tg := title(t, f, &v1.Title{})
+			ctx := t.Context()
+			f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Done."}),
+				luxstub.Reply{Response: named("Release plan").Response, Respond: func(*ir.Request, *ir.Response) { c.write(f, ctx) }})
+			f.message(ctx, "Write the release plan.")
+			if _, err := tg.r.Drive(ctx, f.s.ID); err != nil {
+				t.Fatal(err)
+			}
+			evs, err := f.store.Events(ctx, f.s.ID, 1, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s, err := f.store.Get(ctx, f.s.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			last := evs[len(evs)-1]
+			for _, tc := range f.titles(ctx, f.s.ID) {
+				if tc.By.Subject == session.HarnessSubject {
+					t.Fatalf("the harness's title was written over %s: %+v", c.name, tc)
+				}
+			}
+			switch c.name {
+			case "renamed":
+				if s.Title != "Mine" || session.Purpose(last) != session.PurposeTitle {
+					t.Fatalf("the title is %q, the log ends %s", s.Title, last.Type)
+				}
+			case "ended":
+				var st session.SessionStatus
+				if s.Status != session.StatusEnded || last.Type != session.TypeSessionStatus || last.Decode(&st) != nil || st.Status != session.StatusEnded {
+					t.Fatalf("the session is %s, the log ends %s", s.Status, last.Type)
+				}
+			}
+			if logs := tg.logged(); !strings.Contains(logs, c.logged) {
+				t.Fatalf("the log says %s", logs)
+			}
+		})
+	}
+}
+
+// racingStore is the fixture's store that, at the first append it takes,
+// lets another writer append before it and refuses the append as one
+// that came after other events, as a store refuses an append over a log
+// that moved.
+type racingStore struct {
+	*dir.Store
+	f       *fixture
+	raced   bool
+	refuses int
+}
+
+func (r *racingStore) Append(ctx context.Context, id string, after uint64, evs []session.Event) (uint64, error) {
+	if !r.raced {
+		r.raced = true
+		r.f.send(ctx, session.TypeTitleChanged, session.TitleChanged{By: r.f.s.Initiator, New: "Mine"})
+		return 0, session.ErrSequenceConflict
+	}
+	if r.refuses > 0 {
+		r.refuses--
+		return 0, session.ErrSequenceConflict
+	}
+	return r.Store.Append(ctx, id, after, evs)
+}
+
+// TestATitlesAppendIsDecidedOverWhatItRaced: a title's batch refused for
+// an event appended between its read and its append is decided again
+// over that event, so a person's rename in the moment before still wins,
+// and a log that keeps refusing it is given up after titleAppends tries.
+func TestATitlesAppendIsDecidedOverWhatItRaced(t *testing.T) {
+	f := setup(t)
+	ctx := t.Context()
+	f.message(ctx, "Plan.")
+	s, err := f.store.Get(ctx, f.s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := func() []session.Event {
+		mr, err := session.NewEvent(session.TypeModelRequest, session.ModelRequest{Model: model, Outcome: "ok", Purpose: session.PurposeTitle}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc, err := session.NewEvent(session.TypeTitleChanged, session.TitleChanged{By: session.Sender{Subject: session.HarnessSubject, Kind: session.SenderService}, New: "Plans"}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return []session.Event{mr, tc}
+	}
+	race := &racingStore{Store: f.store, f: f}
+	l := NewLog(race, f.s.ID, s.LastSeq)
+	if err := l.appendTitle(ctx, batch(), s.LastSeq); !errors.Is(err, errTitleRenamed) {
+		t.Fatalf("a title that raced a rename: %v", err)
+	}
+	if got, _ := f.store.Get(ctx, f.s.ID); got.Title != "Mine" || f.count(ctx, session.TypeModelRequest) != 1 || f.count(ctx, session.TypeTitleChanged) != 1 {
+		t.Fatalf("the title is %q after %d requests and %d changes", got.Title, f.count(ctx, session.TypeModelRequest), f.count(ctx, session.TypeTitleChanged))
+	}
+	stuck := &racingStore{Store: f.store, f: f, raced: true, refuses: titleAppends}
+	if err := NewLog(stuck, f.s.ID, 0).appendTitle(ctx, batch(), s.LastSeq); !errors.Is(err, session.ErrSequenceConflict) {
+		t.Fatalf("a log that keeps moving: %v", err)
+	}
+	gone := NewLog(f.store, f.s.ID, 0)
+	lost := make(chan struct{})
+	close(lost)
+	gone.lost = lost
+	if err := gone.appendTitle(ctx, batch(), 0); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("a lost lease: %v", err)
+	}
+}
+
+// TestThePassNamesASessionWhoseTitleFailed: a session whose title request
+// failed or was cut short is still due, and the next pass names it; one
+// whose request a model answered is not (spec 083).
+func TestThePassNamesASessionWhoseTitleFailed(t *testing.T) {
+	f := setup(t)
+	tg := title(t, f, &v1.Title{})
+	ctx := t.Context()
+	asked := func(outcome string) func(string) {
+		return func(id string) {
+			f.sendTo(ctx, id, session.TypeModelRequest, session.ModelRequest{Model: model, Outcome: outcome, Purpose: session.PurposeTitle})
+		}
+	}
+	failed := f.hosted(t, f.s.Initiator, asked("error"))
+	cut := f.hosted(t, f.s.Initiator, asked("escalated"), asked("canceled"))
+	f.hosted(t, f.s.Initiator, asked("ok"))
+	f.stub.Script(model, named("First plan"), named("Second plan"))
+	c, err := tg.r.TitlePass(ctx, []string{f.s.Agent.ID}, 0)
+	if err != nil || c != (TitleCounts{Named: 2, Skipped: 1}) {
+		t.Fatalf("the pass %+v, %v", c, err)
+	}
+	for _, id := range []string{failed, cut} {
+		if got := f.titles(ctx, id); len(got) != 1 {
+			t.Fatalf("%s was named %+v", id, got)
+		}
+	}
+}
+
+// TestAPanicOfThePassFailsOneSession: a session whose title panicked is
+// counted failed and logged with its stack, and the pass names the next.
+func TestAPanicOfThePassFailsOneSession(t *testing.T) {
+	f := setup(t)
+	tg := title(t, f, &v1.Title{})
+	ctx := t.Context()
+	broken := f.hosted(t, f.s.Initiator)
+	f.hosted(t, f.s.Initiator)
+	o := tg.r.o
+	build := o.Harness
+	o.Harness = func(ctx context.Context, s session.Session) (harness.Config, error) {
+		if s.ID == broken {
+			panic("the harness could not be built")
+		}
+		return build(ctx, s)
+	}
+	r, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.stub.Script(model, named("Plan"))
+	c, err := r.TitlePass(ctx, []string{f.s.Agent.ID}, 0)
+	if err != nil || c != (TitleCounts{Named: 1, Failed: 1}) {
+		t.Fatalf("the pass %+v, %v", c, err)
+	}
+	if logs := tg.logged(); !strings.Contains(logs, "panicked") || !strings.Contains(logs, "session="+broken) || !strings.Contains(logs, "runtime/debug.Stack") {
+		t.Fatalf("the log says %s", logs)
+	}
+}
+
+// TestATurnOfASessionWithoutTitlesCostsLittle: the setting is read once
+// in TitleSettingTTL for an agent, the turns of a session whose agent sets
+// no title read nothing more, a runner with no question reads no setting,
+// and a setting read before its time is read again (spec 083).
+func TestATurnOfASessionWithoutTitlesCostsLittle(t *testing.T) {
+	f := setup(t)
+	tg := title(t, f, nil)
+	now := t0
+	reads := 0
+	o := tg.r.o
+	o.Clock = func() time.Time { return now }
+	o.LatestTitle = func(context.Context, string) (*v1.Title, error) {
+		reads++
+		return nil, nil
+	}
+	r, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	for _, text := range []string{"One.", "Two."} {
+		f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Done."}))
+		f.message(ctx, text)
+		if _, err := r.Drive(ctx, f.s.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reads != 1 || len(tg.questions()) != 0 {
+		t.Fatalf("%d reads of the setting, %d questions", reads, len(tg.questions()))
+	}
+	now = now.Add(TitleSettingTTL)
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Done."}))
+	f.message(ctx, "Three.")
+	if _, err := r.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if reads != 2 {
+		t.Fatalf("a setting past its time was read %d times in all", reads)
+	}
+	o.Title = nil
+	quiet, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.stub.Script(model, reply(ir.Block{Type: ir.BlockText, Text: "Done."}))
+	f.message(ctx, "Four.")
+	if _, err := quiet.Drive(ctx, f.s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if reads != 2 {
+		t.Fatal("a runner with no title question read the setting")
+	}
+	cache := &settingCache{m: map[string]cachedSetting{}}
+	for i := range maxCachedSettings + 1 {
+		cache.put(fmt.Sprint(i), nil, t0)
+	}
+	if len(cache.m) > maxCachedSettings {
+		t.Fatalf("the cache holds %d settings", len(cache.m))
 	}
 }

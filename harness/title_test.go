@@ -89,7 +89,7 @@ func TestATitleRequestNamesTheConversation(t *testing.T) {
 	s, evs := e.ranTurn(ctx, "Draft the release note for v1.4.", "The note lists the new flags.")
 	turned := seen.deltas
 	e.stub.Script(titleModelName, titleReply(`"Release note for v1.4"`))
-	res, err := e.h.Title(ctx, s, evs, e.log, []string{"tier/quick", titleModelName, model})
+	res, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{"tier/quick", titleModelName, model}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestATitleRequestNamesTheConversation(t *testing.T) {
 	// carries the conversation as it stands.
 	s, evs = e.ranTurn(ctx, "Now add the migration steps.", "Added them.")
 	e.stub.Script(titleModelName, titleReply("KEEP"))
-	if res, err = e.h.Title(ctx, s, evs, e.log, []string{titleModelName}); err != nil || res.Kept != TitleKept || res.Title != "" {
+	if res, err = e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{titleModelName}}); err != nil || res.Kept != TitleKept || res.Title != "" {
 		t.Fatalf("KEEP: %+v, %v", res, err)
 	}
 	reqs = e.stub.Requests()
@@ -174,7 +174,7 @@ func TestATitleAnswerThatWritesNoTitle(t *testing.T) {
 			ctx := t.Context()
 			s, evs := e.ranTurn(ctx, "Write the plan.", "Written.")
 			e.stub.Script(model, reply(ir.StopEndTurn, text(c.answer)))
-			res, err := e.h.Title(ctx, s, evs, e.log, []string{model})
+			res, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{model}})
 			if err != nil || res.Kept != c.kept || res.Title != c.title {
 				t.Fatalf("result %+v, %v; want kept %q title %q", res, err, c.kept, c.title)
 			}
@@ -215,32 +215,30 @@ func TestAFailedTitleRequestIsRecorded(t *testing.T) {
 			<-held
 		},
 	})
-	if _, err := e.h.Title(ctx, s, evs, e.log, []string{titleModelName}); err == nil {
+	if _, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{titleModelName}}); err == nil {
 		t.Fatal("a failed title request answered no error")
 	}
-	_, err := e.h.Title(cut, s, evs, e.log, []string{titleModelName})
+	_, err := e.h.Title(cut, s, evs, e.log, TitleAsk{Names: []string{titleModelName}})
 	close(held)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("a title request cut short: %v", err)
 	}
 	after, all := e.now(ctx)
-	var failed int
+	var outcomes []string
 	for _, ev := range all[len(evs):] {
 		var p session.ModelRequest
-		switch {
-		case ev.Type == session.TypeModelRequest && ev.Decode(&p) == nil && p.Purpose == session.PurposeTitle && p.Outcome == "error" && p.Error != "":
-			failed++
-		default:
+		if ev.Type != session.TypeModelRequest || ev.Decode(&p) != nil || p.Purpose != session.PurposeTitle || p.Error == "" {
 			t.Fatalf("a failed title appended %s", ev.Type)
 		}
+		outcomes = append(outcomes, p.Outcome)
 	}
-	if failed != 2 || after.Status != session.StatusIdle || after.Title != "" {
-		t.Fatalf("%d failed requests recorded, the session %s titled %q", failed, after.Status, after.Title)
+	if strings.Join(outcomes, " ") != "error canceled" || after.Status != session.StatusIdle || after.Title != "" {
+		t.Fatalf("the failed requests are recorded %v, the session %s titled %q", outcomes, after.Status, after.Title)
 	}
-	if _, err := e.h.Title(ctx, s, evs, e.log, []string{"tier/none", "", "other"}); !errors.Is(err, ErrNoTitleModel) || !strings.Contains(err.Error(), "tier/none is not run here") {
+	if _, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{"tier/none", "", "other"}}); !errors.Is(err, ErrNoTitleModel) || !strings.Contains(err.Error(), "tier/none is not run here") {
 		t.Fatalf("no model to run on: %v", err)
 	}
-	if _, err := e.h.Title(ctx, s, evs[:0], e.log, []string{model}); !errors.Is(err, ErrNothingToName) {
+	if _, err := e.h.Title(ctx, s, evs[:0], e.log, TitleAsk{Names: []string{model}}); !errors.Is(err, ErrNothingToName) {
 		t.Fatalf("nothing to name: %v", err)
 	}
 	if _, now := e.now(ctx); len(now) != len(all) {
@@ -385,12 +383,12 @@ func TestRebuildATitleRequest(t *testing.T) {
 	ctx := t.Context()
 	s, evs := e.ranTurn(ctx, "Draft the release note.", "Drafted.")
 	e.stub.Script(titleModelName, titleReply("Release note"))
-	if _, err := e.h.Title(ctx, s, evs, e.log, []string{titleModelName}); err != nil {
+	if _, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{titleModelName}}); err != nil {
 		t.Fatal(err)
 	}
 	s, evs = e.ranTurn(ctx, "Now the migration.", "Migrated.")
 	e.stub.Script(titleModelName, titleReply("KEEP"))
-	if _, err := e.h.Title(ctx, s, evs, e.log, []string{titleModelName}); err != nil {
+	if _, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{titleModelName}}); err != nil {
 		t.Fatal(err)
 	}
 	_, log := e.now(ctx)
@@ -446,7 +444,7 @@ func TestTheTitlePromptStatesItsBound(t *testing.T) {
 	if req, err := titleRequest(model, "", nil, 9); err != nil || *req.MaxTokens != 9 || req.Model != model {
 		t.Fatalf("the request %+v, %v", req, err)
 	}
-	if TitleTimeout != 20*time.Second || TitleMaxTokens != 64 || TitleMessages != 6 || TitleAnswerChars != 600 || TitleMaxLength != 60 {
+	if TitleTimeout != 15*time.Second || TitleRecordTimeout != 2*time.Second || TitleMaxTokens != 64 || TitleMessages != 6 || TitleAnswerChars != 600 || TitleMaxLength != 60 {
 		t.Fatal("the bounds of spec 083 changed")
 	}
 }
@@ -491,7 +489,7 @@ func TestATitleThatCannotBeRecorded(t *testing.T) {
 		{brokenLog{Log: e.log, put: down}, luxstub.Reply{Fail: &luxstub.Failure{Status: http.StatusBadRequest, Cut: true}, Response: reply(ir.StopEndTurn, text("Plan")).Response}, down},
 	} {
 		e.stub.Script(model, c.fail)
-		if res, err := e.h.Title(ctx, s, evs, c.l, []string{model}); !errors.Is(err, c.want) || res.Title != "" {
+		if res, err := e.h.Title(ctx, s, evs, c.l, TitleAsk{Names: []string{model}}); !errors.Is(err, c.want) || res.Title != "" {
 			t.Fatalf("%+v, %v; want %v", res, err, c.want)
 		}
 	}
@@ -499,7 +497,7 @@ func TestATitleThatCannotBeRecorded(t *testing.T) {
 		t.Fatalf("a title that could not be recorded appended %d events", len(now)-len(evs))
 	}
 	e.stub.Script(model, reply(ir.StopEndTurn, text("Plan")))
-	if res, err := e.h.Title(ctx, s, evs, e.log, []string{model}); err != nil || res.Title != "Plan" {
+	if res, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{model}}); err != nil || res.Title != "Plan" {
 		t.Fatalf("%+v, %v", res, err)
 	}
 	_, all := e.now(ctx)
@@ -513,8 +511,9 @@ func TestATitleThatCannotBeRecorded(t *testing.T) {
 // TitleMaxTokens reasoning and wrote no answer is asked once more at
 // TitleReasoningTokens, the first request recorded as escalated beside
 // the second in the title's batch, and both are built again by a replay;
-// a second such response writes no title, and a model whose output limit
-// leaves no more room is asked once (spec 083).
+// a second such response writes no title, and a title asked without
+// Retry, or on a model whose output limit leaves no more room, is asked
+// once (spec 083).
 func TestATitleThatSpentItsCapReasoningIsAskedAgain(t *testing.T) {
 	var e *env
 	e = setup(t, withTitleModel(&e))
@@ -522,7 +521,7 @@ func TestATitleThatSpentItsCapReasoningIsAskedAgain(t *testing.T) {
 	s, evs := e.ranTurn(ctx, "Plan the migration.", "Planned.")
 	reasoned := reply(ir.StopMaxTokens, ir.Block{Type: ir.BlockThinking, Text: "Is this a new subject", Signature: "sig"})
 	e.stub.Script(model, reasoned, reply(ir.StopEndTurn, text("Migration plan")))
-	res, err := e.h.Title(ctx, s, evs, e.log, []string{model})
+	res, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{model}, Retry: true})
 	if err != nil || res.Title != "Migration plan" {
 		t.Fatalf("result %+v, %v", res, err)
 	}
@@ -548,22 +547,29 @@ func TestATitleThatSpentItsCapReasoningIsAskedAgain(t *testing.T) {
 
 	s, evs = e.now(ctx)
 	e.stub.Script(model, reasoned, reasoned)
-	if res, err := e.h.Title(ctx, s, evs, e.log, []string{model}); err != nil || res.Kept != TitleEmpty {
+	if res, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{model}, Retry: true}); err != nil || res.Kept != TitleEmpty {
 		t.Fatalf("two answers of reasoning alone: %+v, %v", res, err)
 	}
 	// A second request that fails is recorded beside the first.
 	s, evs = e.now(ctx)
 	e.stub.Script(model, reasoned, luxstub.Reply{Fail: &luxstub.Failure{Status: http.StatusBadRequest}, Response: reasoned.Response})
-	if _, err := e.h.Title(ctx, s, evs, e.log, []string{model}); err == nil {
+	if _, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{model}, Retry: true}); err == nil {
 		t.Fatal("a failed second request answered no error")
 	}
 	if _, now := e.now(ctx); len(now) != len(evs)+2 || session.Purpose(now[len(now)-1]) != session.PurposeTitle {
 		t.Fatalf("a failed second request appended %d events", len(now)-len(evs))
 	}
+	// Without Retry, a response of reasoning alone is asked once.
 	s, evs = e.now(ctx)
+	e.stub.Script(model, reasoned)
 	before := len(e.stub.Requests())
+	if res, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{model}}); err != nil || res.Kept != TitleEmpty || len(e.stub.Requests()) != before+1 {
+		t.Fatalf("a title asked without Retry: %+v, %v, %d requests", res, err, len(e.stub.Requests())-before)
+	}
+	s, evs = e.now(ctx)
+	before = len(e.stub.Requests())
 	e.stub.Script(titleModelName, luxstub.Reply{Response: ir.Response{Model: titleModelName, Blocks: []ir.Block{{Type: ir.BlockThinking, Text: "x", Signature: "sig"}}, StopReason: ir.StopMaxTokens}})
-	if res, err := e.h.Title(ctx, s, evs, e.log, []string{titleModelName}); err != nil || res.Kept != TitleEmpty || len(e.stub.Requests()) != before+1 {
+	if res, err := e.h.Title(ctx, s, evs, e.log, TitleAsk{Names: []string{titleModelName}, Retry: true}); err != nil || res.Kept != TitleEmpty || len(e.stub.Requests()) != before+1 {
 		t.Fatalf("a model with no room to reason: %+v, %v, %d requests", res, err, len(e.stub.Requests())-before)
 	}
 }

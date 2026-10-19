@@ -32,8 +32,15 @@ const (
 	// reasoning, which a request cannot turn off for every provider,
 	// reasons a few hundred tokens over a title.
 	TitleReasoningTokens = 1024
-	// TitleTimeout bounds a title request, apart from any turn's limit.
-	TitleTimeout = 20 * time.Second
+	// TitleTimeout bounds the whole of a title, apart from any turn's
+	// limit: the authorizer's question, the connection of its model, its
+	// requests and their record. The runner holds the session's lease for
+	// it, so it is short.
+	TitleTimeout = 15 * time.Second
+	// TitleRecordTimeout bounds the append of a title's record once its
+	// deadline, or input that arrived, cut its request short: the record
+	// of a request is appended whatever ended it.
+	TitleRecordTimeout = 2 * time.Second
 	// TitleMessages is how many of the person's latest messages a title
 	// request carries.
 	TitleMessages = 6
@@ -77,6 +84,16 @@ type TitleResult struct {
 	Kept  string
 }
 
+// TitleAsk is what a title is asked with: Names, the models it may run
+// on, in order, and Retry, whether a response that spent its max_tokens
+// reasoning is asked again with room to reason, which costs a second
+// request: the runner sets it where the agent named its title model, a
+// small one, and not for the session's own, which may cost far more.
+type TitleAsk struct {
+	Names []string
+	Retry bool
+}
+
 // ErrNoTitleModel is a title request none of whose models could be
 // connected: nothing was sent.
 var ErrNoTitleModel = errors.New("harness: no model a title request may run on could be connected")
@@ -90,12 +107,15 @@ var ErrNothingToName = errors.New("harness: the session holds no message of a pe
 // 083). It runs between turns, never as one: log is the session's log as
 // it stands, and l the log it appends to. The request is built from the
 // title prompt and the window titleWindow reads, with no tools and no
-// reasoning setting, and runs on the first of names the installation
-// runs, within TitleTimeout. Its response is read to its end and reaches
-// no Observer: a client sees the title, not the model writing it.
+// reasoning setting, and runs on the first of ask's names the
+// installation runs. ctx bounds the whole title, its connection and its
+// requests: the runner gives it TitleTimeout, and ends it early when
+// input arrives. Its response is read to its end and reaches no Observer:
+// a client sees the title, not the model writing it.
 //
-// A response that spent its max_tokens and wrote no answer is asked again
-// once at TitleReasoningTokens, the first request recorded as escalated.
+// With ask.Retry, a response that spent its max_tokens and wrote no
+// answer is asked again once at TitleReasoningTokens, the first request
+// recorded as escalated.
 //
 // Each request is recorded as a model.request of purpose title, whose
 // cost the session spends, and a new title is appended in the same batch
@@ -103,15 +123,15 @@ var ErrNothingToName = errors.New("harness: the session holds no message of a pe
 // TitleKeep, an empty one, one session.CheckTitle refuses, one longer
 // than TitleMaxLength characters and the title the session has write no
 // title, and Kept says which. A request that failed is recorded with
-// outcome error and returned as the error; no session.error is written
-// and no status changes. ErrNothingToName and ErrNoTitleModel send and
-// record nothing.
-func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Event, l Log, names []string) (TitleResult, error) {
+// outcome error, and one ctx canceled with outcome canceled, and returned
+// as the error; no session.error is written and no status changes.
+// ErrNothingToName and ErrNoTitleModel send and record nothing.
+func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Event, l Log, ask TitleAsk) (TitleResult, error) {
 	current, msgs := titleWindow(s, log)
 	if len(msgs) == 0 {
 		return TitleResult{}, ErrNothingToName
 	}
-	model, conn, entry, err := h.titleModel(ctx, names)
+	model, conn, entry, err := h.titleModel(ctx, ask.Names)
 	if err != nil {
 		return TitleResult{}, err
 	}
@@ -120,11 +140,11 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 	if n := len(log); n > 0 {
 		fold = log[n-1].Seq
 	}
-	tctx, cancel := context.WithTimeout(ctx, TitleTimeout)
-	defer cancel()
-	// Whatever happens to a request, its record is appended: a request the
-	// title's own deadline cut short is recorded too.
-	record := context.WithoutCancel(ctx)
+	// Whatever ends a request, its record is appended: one the title's
+	// deadline or input cut short is recorded too, within
+	// TitleRecordTimeout.
+	record, done := context.WithTimeout(context.WithoutCancel(ctx), TitleRecordTimeout)
+	defer done()
 	var sent []session.ModelRequest
 	limit := min(int64(TitleMaxTokens), entry.MaxOutputTokens)
 	for {
@@ -132,7 +152,7 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 		if err != nil {
 			return out, errors.Join(err, h.appendTitle(record, s, l, sent, nil))
 		}
-		mr, res, failed, err := h.sendTitle(tctx, record, s, l, model, conn, entry, req, fold)
+		mr, res, failed, err := h.sendTitle(ctx, record, s, l, model, conn, entry, req, fold)
 		if err != nil {
 			return out, errors.Join(err, h.appendTitle(record, s, l, sent, nil))
 		}
@@ -145,7 +165,7 @@ func (h *Harness) Title(ctx context.Context, s session.Session, log []session.Ev
 		// that reasons though the request sets no reasoning, which the
 		// request cannot turn off: it is asked once more with room to
 		// reason, and the first request is recorded as escalated.
-		if room := min(int64(TitleReasoningTokens), entry.MaxOutputTokens); answer == "" && res.StopReason == ir.StopMaxTokens && limit < room {
+		if room := min(int64(TitleReasoningTokens), entry.MaxOutputTokens); ask.Retry && answer == "" && res.StopReason == ir.StopMaxTokens && limit < room {
 			sent[len(sent)-1].Outcome = "escalated"
 			limit = room
 			continue
@@ -178,6 +198,9 @@ func (h *Harness) sendTitle(ctx, record context.Context, s session.Session, l Lo
 	mr.LatencyMS = h.c.Clock().Sub(began).Milliseconds()
 	if failed != nil {
 		mr.Outcome, mr.Error = "error", models.Described(failed)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			mr.Outcome = "canceled"
+		}
 		if len(res.RawResponse) > 0 {
 			if mr.ResponseBlob, err = l.PutBlob(record, bytes.NewReader(res.RawResponse)); err != nil {
 				return mr, res, failed, errors.Join(failed, fmt.Errorf("harness: store the failed response: %w", err))

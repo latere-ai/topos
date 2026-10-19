@@ -131,6 +131,9 @@ func (r *Runner) failover(id string, lease session.Lease) func(context.Context, 
 // Runner drives sessions.
 type Runner struct {
 	o Options
+	// settings are the title settings titleSetting read, for
+	// TitleSettingTTL (spec 083).
+	settings *settingCache
 }
 
 // New checks the options.
@@ -152,7 +155,7 @@ func New(o Options) (*Runner, error) {
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Runner{o: o}, nil
+	return &Runner{o: o, settings: &settingCache{m: map[string]cachedSetting{}}}, nil
 }
 
 // ErrEnded is a session that has ended.
@@ -319,23 +322,24 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 			return &ref, nil
 		}
 	}
+	// The drive follows the log for the interrupts that cancel a turn, the
+	// input that ends a title the drive asks for after one (spec 083), and
+	// the scope changes that drop the drive's credentials.
 	intr := newInterrupts()
-	if cfg.Interrupt == nil || tokens != nil {
-		if cfg.Interrupt == nil {
-			cfg.Interrupt = intr.current
-		}
-		// A scope change drops every credential the drive holds, so the
-		// next call acts with one minted under the new scope.
-		var scoped func()
-		if tokens != nil {
-			scoped = tokens.Drop
-		}
-		stop, err := intr.watch(ctx, st, id, log.Last()+1, scoped)
-		if err != nil {
-			return harness.Outcome{}, err
-		}
-		defer stop()
+	if cfg.Interrupt == nil {
+		cfg.Interrupt = intr.current
 	}
+	// A scope change drops every credential the drive holds, so the next
+	// call acts with one minted under the new scope.
+	var scoped func()
+	if tokens != nil {
+		scoped = tokens.Drop
+	}
+	stop, err := intr.watch(ctx, st, id, log.Last()+1, scoped)
+	if err != nil {
+		return harness.Outcome{}, err
+	}
+	defer stop()
 	// A store that carries live deltas gets the drive's, for the streams
 	// that follow the session on any replica the store reaches.
 	if pub, ok := st.(session.DeltaPublisher); ok {
@@ -372,7 +376,7 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 		// meanwhile starts the next turn here, as pending input does (spec
 		// 083).
 		if !out.Pending {
-			again, err := r.afterTurn(ctx, h, cfg, id, lease, log, out)
+			again, err := r.afterTurn(ctx, h, cfg, id, lease, log, intr, out)
 			if err != nil {
 				return out, errors.Join(err, cfg.Machine.Release(ctx, false))
 			}
@@ -858,11 +862,18 @@ func attached(evs []session.Event) (git, memory bool) {
 
 // interrupts closes one channel per turn when a person appends
 // user.interrupt, so the harness cancels the turn's in-flight request and
-// running calls at once (spec 005).
+// running calls at once (spec 005), and ends a title the drive asks for
+// between turns when any input arrives after it began (spec 083).
 type interrupts struct {
 	mu     sync.Mutex
 	ch     chan struct{}
 	closed bool
+	// input is the sequence of the latest input event the watch saw; after
+	// and onInput are the title waiting on input past after, ended at once
+	// by onInput.
+	input   uint64
+	after   uint64
+	onInput func()
 }
 
 func newInterrupts() *interrupts {
@@ -881,6 +892,9 @@ func (i *interrupts) watch(ctx context.Context, st session.Store, id string, seq
 	}
 	go func() {
 		for e := range evs {
+			if isInput(e.Type) {
+				i.arrived(e.Seq)
+			}
 			switch {
 			case e.Type == session.TypeUserInterrupt:
 				i.fire()
@@ -890,6 +904,52 @@ func (i *interrupts) watch(ctx context.Context, st session.Store, id string, seq
 		}
 	}()
 	return cancel, nil
+}
+
+// isInput reports whether an event of typ is input a runner acts on: a
+// person's message, a confirmation, a client tool's result, an answer, an
+// interrupt or a resume.
+func isInput(typ session.Type) bool {
+	switch typ {
+	case session.TypeUserMessage, session.TypeUserToolConfirmation, session.TypeUserToolResult, session.TypeUserAnswer, session.TypeUserInterrupt, session.TypeSessionResumed:
+		return true
+	}
+	return false
+}
+
+// arrived records an input event at seq, and ends the title waiting on
+// input before it.
+func (i *interrupts) arrived(seq uint64) {
+	i.mu.Lock()
+	i.input = max(i.input, seq)
+	end := i.onInput
+	if end != nil && seq > i.after {
+		i.onInput = nil
+	} else {
+		end = nil
+	}
+	i.mu.Unlock()
+	if end != nil {
+		end()
+	}
+}
+
+// endOnInput calls end at once when the watch saw, or sees, an input event
+// past seq, and returns the function that stops waiting for one.
+func (i *interrupts) endOnInput(seq uint64, end func()) func() {
+	i.mu.Lock()
+	if i.input > seq {
+		i.mu.Unlock()
+		end()
+		return func() {}
+	}
+	i.after, i.onInput = seq, end
+	i.mu.Unlock()
+	return func() {
+		i.mu.Lock()
+		defer i.mu.Unlock()
+		i.onInput = nil
+	}
 }
 
 // reset starts a turn with a fresh channel; an interrupt before the turn
