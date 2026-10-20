@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +167,56 @@ func memberOf(typ reflect.Type, name string) (reflect.StructField, bool) {
 		}
 	}
 	return reflect.StructField{}, false
+}
+
+// TestDescriptionsSpeakDurations: no description of the document writes
+// a duration as Go writes it, 24h0m0s, where a reader says 24 hours.
+func TestDescriptionsSpeakDurations(t *testing.T) {
+	doc, err := OpenAPI(DefaultBasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v any
+	if err := yaml.Unmarshal(doc, &v); err != nil {
+		t.Fatal(err)
+	}
+	goDuration := regexp.MustCompile(`\b\d+(\.\d+)?(h|m|s|ms)(\d+(\.\d+)?(m|s))*\b`)
+	var walk func(path string, v any)
+	walk = func(path string, v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			for k, e := range v {
+				if s, ok := e.(string); ok && k == "description" {
+					if m := goDuration.FindString(s); m != "" {
+						t.Errorf("%s/description writes %s; write it with spoken", path, m)
+					}
+					continue
+				}
+				walk(path+"/"+k, e)
+			}
+		case []any:
+			for i, e := range v {
+				walk(path+"/"+strconv.Itoa(i), e)
+			}
+		}
+	}
+	walk("", v)
+}
+
+func TestSpoken(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		24 * time.Hour:          "24 hours",
+		time.Hour:               "1 hour",
+		2 * time.Minute:         "2 minutes",
+		90 * time.Minute:        "90 minutes",
+		17 * time.Second:        "17 seconds",
+		1500 * time.Millisecond: "1.5s",
+		0:                       "0s",
+	} {
+		if got := spoken(d); got != want {
+			t.Errorf("spoken(%s) = %q, want %q", d, got, want)
+		}
+	}
 }
 
 // TestEveryEventTypeHasAPayload: each type schema v1 defines has its

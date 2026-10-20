@@ -41,5 +41,5 @@ var DeviceWaitRule = fmt.Sprintf("A session on a person's own computer stops wit
 	"A computer whose owner refused the session, or did not answer in time, appends session.error {code: %s, message: %q, detail}, detail the computer's own words; "+
 	"the call is answered so, and so is every later call of the turn that acts on the machine, and the turn goes on. "+
 	"The next user.message, or a resume, continues a session idle on %s on the same computer.",
-	session.StopMachineWaiting, session.MachineOffline, session.MachineApproval, cella.DefaultApprovalWait, session.MachineOffline,
+	session.StopMachineWaiting, session.MachineOffline, session.MachineApproval, spoken(cella.DefaultApprovalWait), session.MachineOffline,
 	machine.CodeRefused, harness.MessageMachineRefused, session.StopMachineWaiting)

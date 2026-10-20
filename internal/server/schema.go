@@ -669,5 +669,5 @@ var idempotencyParam = yaml.MapSlice{{Key: "name", Value: "Idempotency-Key"}, {K
 	{Key: "description", Value: fmt.Sprintf("A key the caller makes unique to the request, so it can send the request again without doing it twice. "+
 		"A repeat from the same caller with the same key, route and body within %s answers the first answer again, with the header Idempotent-Replayed: true. "+
 		"The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. "+
-		"An answer of 5xx keeps nothing, so the request may be sent again with the same key.", IdempotencyTTL)},
+		"An answer of 5xx keeps nothing, so the request may be sent again with the same key.", spoken(IdempotencyTTL))},
 	{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "minLength", Value: 1}}}}

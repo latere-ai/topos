@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/goccy/go-yaml"
 
@@ -125,6 +126,26 @@ func asYAML(v any) ([]byte, error) {
 }
 
 var indentOnly = regexp.MustCompile(`(?m)^ +$`)
+
+// spoken writes a duration in the document's prose as a reader says it,
+// "24 hours" where its String writes 24h0m0s, in the largest unit that
+// holds it whole; one no whole second holds keeps its String.
+func spoken(d time.Duration) string {
+	for _, u := range []struct {
+		size time.Duration
+		name string
+	}{{time.Hour, "hour"}, {time.Minute, "minute"}, {time.Second, "second"}} {
+		if d <= 0 || d%u.size != 0 {
+			continue
+		}
+		n := int64(d / u.size)
+		if n == 1 {
+			return "1 " + u.name
+		}
+		return strconv.FormatInt(n, 10) + " " + u.name + "s"
+	}
+	return d.String()
+}
 
 // errorSchema is the Error schema: the envelope of every error, its code
 // one of codes.
@@ -404,7 +425,7 @@ var opDescriptions = map[string]string{
 	"getSession":    "Get a session. A session that keeps its files in a folder of the installation's files store answers folder {owner, path} from the first file stored there.",
 	"resumeSession": "Resume a session idle on its budget once the cap is raised, or one idle on machine_waiting once its computer is back or its owner allowed the session: that resume adds no message, keeps the session's budget, and takes no max_cost_usd_micro, which is invalid_request.",
 	"deleteSession": "Delete a session, its log and its blobs, for good. The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running session as conflict before it asks session.delete: " +
-		"interrupt it and delete it once it is idle. An idle session whose runner still holds it, as one does while it names the session after a turn, is waited for, at most " + fmt.Sprint(DefaultLeaseWait) + ", and deleted once the runner lets go; " +
+		"interrupt it and delete it once it is idle. An idle session whose runner still holds it, as one does while it names the session after a turn, is waited for, at most " + spoken(DefaultLeaseWait) + ", and deleted once the runner lets go; " +
 		"one held past that, or that a runner claims for a turn while the authorizer decides, is conflict, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
 	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule,
