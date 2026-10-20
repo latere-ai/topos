@@ -116,6 +116,45 @@ var sentPayloads = map[session.Type]reflect.Type{
 	session.TypeUserAnswer:           typeOf[session.UserAnswer](),
 }
 
+// requestRequired is the members each request type requires, as its
+// handler refuses a body without them. A response type's required
+// members follow its tags, since encoding/json writes every member
+// without omitempty; a request type's do not, so each is stated here,
+// read from the handler's refusals.
+var requestRequired = map[reflect.Type][]string{
+	typeOf[createBody]():     {"agent"},
+	typeOf[endBody]():        {"reason"},
+	typeOf[resumeBody]():     {},
+	typeOf[redactBody]():     {},
+	typeOf[archiveBody]():    {},
+	typeOf[updateBody]():     {},
+	typeOf[modelChange]():    {},
+	typeOf[policyChange]():   {},
+	typeOf[createBudget]():   {},
+	typeOf[createLimits]():   {},
+	typeOf[forkBody]():       {},
+	typeOf[messageBody]():    {},
+	typeOf[attachmentBody](): {"name"},
+	typeOf[sourceBody]():     {"owner", "path"},
+	typeOf[sendBody]():       {"type", "payload"},
+}
+
+// sentRequired is the members a person must send in each payload type
+// sendEvent takes whose type is also an event's payload.
+var sentRequired = map[reflect.Type][]string{
+	typeOf[session.UserInterrupt]():        {},
+	typeOf[session.UserToolConfirmation](): {"decision"},
+	typeOf[session.UserToolResult]():       {"tool_use_id"},
+}
+
+// requestNotes say what a request's required members cannot: a choice
+// between members.
+var requestNotes = map[reflect.Type]string{
+	typeOf[messageBody]():                  "A message holds content, attachments, or both.",
+	typeOf[session.UserToolConfirmation](): "Names exactly one of tool_use_id, a call that waits, and approval_id, an approval.requested that asks.",
+	typeOf[endBody]():                      "reason is completed or canceled.",
+}
+
 // typeNames name the components whose Go names do not read well in a
 // public document: the server's unexported request types, and payload
 // types that share a name with another type.
@@ -370,12 +409,19 @@ func (s *schemas) of(t reflect.Type) yaml.MapSlice {
 	return yaml.MapSlice{}
 }
 
-// object is the schema of a struct as encoding/json writes it.
+// object is the schema of a struct as encoding/json writes it, with a
+// request type's required members as its handler requires them.
 func (s *schemas) object(t reflect.Type) yaml.MapSlice {
 	var props yaml.MapSlice
 	var required []string
 	s.fields(t, &props, &required)
+	if r, ok := requestRequired[t]; ok {
+		required = r
+	}
 	out := yaml.MapSlice{{Key: "type", Value: "object"}}
+	if note, ok := requestNotes[t]; ok {
+		out = append(out, yaml.MapItem{Key: "description", Value: note})
+	}
 	if len(required) > 0 {
 		out = append(out, yaml.MapItem{Key: "required", Value: required})
 	}
@@ -527,8 +573,17 @@ func (s *schemas) sent(t reflect.Type) yaml.MapSlice {
 	var required []string
 	s.fields(t, &props, &required)
 	props = slices.DeleteFunc(props, func(m yaml.MapItem) bool { return m.Key == "sender" })
-	required = slices.DeleteFunc(required, func(n string) bool { return n == "sender" })
+	if r, ok := sentRequired[t]; ok {
+		required = r
+	} else if r, ok := requestRequired[t]; ok {
+		required = r
+	} else if s.err == nil {
+		s.err = fmt.Errorf("server: %s is sent and states no required members in sentRequired", t)
+	}
 	out := yaml.MapSlice{{Key: "type", Value: "object"}}
+	if note, ok := requestNotes[t]; ok {
+		out = append(out, yaml.MapItem{Key: "description", Value: note})
+	}
 	if len(required) > 0 {
 		out = append(out, yaml.MapItem{Key: "required", Value: required})
 	}

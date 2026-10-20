@@ -2450,8 +2450,6 @@ components:
           $ref: "#/components/schemas/ManifestThresholds"
     ArchiveAgentRequest:
       type: object
-      required:
-        - permanent
       properties:
         permanent:
           type: boolean
@@ -2834,6 +2832,7 @@ components:
           type: integer
     EndSessionRequest:
       type: object
+      description: reason is completed or canceled.
       required:
         - reason
       properties:
@@ -3799,8 +3798,7 @@ components:
             $ref: "#/components/schemas/Block"
     MessageRequest:
       type: object
-      required:
-        - content
+      description: A message holds content, attachments, or both.
       properties:
         sender:
           description: Any JSON value.
@@ -4044,8 +4042,6 @@ components:
           $ref: "#/components/schemas/SessionThresholds"
     PolicyChange:
       type: object
-      required:
-        - mode
       properties:
         mode:
           anyOf:
@@ -4218,8 +4214,6 @@ components:
               description: True when the parse's model reads could not be priced, so the tool.result carries no cost although the reads were charged.
     RedactEventRequest:
       type: object
-      required:
-        - reason
       properties:
         reason:
           type: string
@@ -4345,8 +4339,6 @@ components:
           type: string
     ResumeSessionRequest:
       type: object
-      required:
-        - reason
       properties:
         reason:
           type: string
@@ -4456,8 +4448,7 @@ components:
           const: user.message
         payload:
           type: object
-          required:
-            - content
+          description: A message holds content, attachments, or both.
           properties:
             content:
               type: array
@@ -4481,6 +4472,7 @@ components:
           const: user.tool_confirmation
         payload:
           type: object
+          description: Names exactly one of tool_use_id, a call that waits, and approval_id, an approval.requested that asks.
           required:
             - decision
           properties:
@@ -4506,7 +4498,6 @@ components:
           type: object
           required:
             - tool_use_id
-            - content
           properties:
             tool_use_id:
               type: string
@@ -5199,9 +5190,6 @@ components:
           type: boolean
     UpdateSessionRequest:
       type: object
-      required:
-        - model
-        - policy
       properties:
         model:
           anyOf:
@@ -5294,6 +5282,7 @@ components:
           type: string
     UserToolConfirmation:
       type: object
+      description: Names exactly one of tool_use_id, a call that waits, and approval_id, an approval.requested that asks.
       required:
         - sender
         - decision
