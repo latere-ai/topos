@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.50.2 - 2026-10-20
+
 ### Fixed
 
 - **toposd exports its telemetry.** With `OTEL_EXPORTER_OTLP_ENDPOINT` set, the server and the runner role start the OpenTelemetry export at start: a span and the request metrics (`http.server.request.duration` and the body sizes) for every request on both listeners but the probes, the spans of every outbound call, the log, and the Go runtime's metrics. Before, the endpoint was read by nothing, so a deployment that set it exported nothing. The log on stderr keeps its text format.
