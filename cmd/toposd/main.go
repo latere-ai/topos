@@ -134,11 +134,12 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if err != nil {
 		return fail(stderr, err)
 	}
+	log, flush := telemetry(ctx, stderr)
+	defer flush()
 	id, err := newIdentity(ctx, cfg)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	log := slog.New(slog.NewTextHandler(stderr, nil))
 	st, err := openStores(ctx, cfg, log)
 	if err != nil {
 		return fail(stderr, err)
@@ -270,8 +271,8 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		go routes.Reap(runCtx, reapInterval)
 	}
 	servers := []*http.Server{
-		{Handler: public, ReadHeaderTimeout: 10 * time.Second},
-		{Handler: internal, ReadHeaderTimeout: 10 * time.Second},
+		{Handler: traced(public), ReadHeaderTimeout: 10 * time.Second},
+		{Handler: traced(internal), ReadHeaderTimeout: 10 * time.Second},
 	}
 	errc := make(chan error, len(servers))
 	for i, ln := range []net.Listener{publicLn, internalLn} {
@@ -298,6 +299,43 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 		_ = s.Shutdown(shutdownCtx)
 	}
 	return 0
+}
+
+// bootstrap is otel.Bootstrap, a variable so a test reaches the paths an
+// export that fails to start or to flush takes.
+var bootstrap = otel.Bootstrap
+
+// telemetry starts the export of traces, metrics and logs (spec 023)
+// and returns the process's logger, which writes text to stderr and,
+// with OTEL_EXPORTER_OTLP_ENDPOINT set, to the exporter as well; without
+// the endpoint nothing is exported. flush sends what is buffered and
+// stops the export, on a context that outlives the stop signal.
+func telemetry(ctx context.Context, stderr io.Writer) (*slog.Logger, func()) {
+	log, shutdown, err := bootstrap(ctx, otel.Config{
+		ServiceName: "toposd",
+		Version:     version.Version,
+		Stdout:      slog.NewTextHandler(stderr, nil),
+	})
+	if err != nil {
+		// The logger writes to stderr either way; the error is the
+		// export's alone.
+		log.WarnContext(ctx, "telemetry: the log export is not set up", "err", err)
+	}
+	return log, func() {
+		if err := shutdown(context.WithoutCancel(ctx)); err != nil {
+			log.WarnContext(ctx, "telemetry: the export did not flush", "err", err)
+		}
+	}
+}
+
+// probePaths are the probes of spec 002, which a load balancer and the
+// kubelet ask every few seconds; they would outnumber every other span.
+var probePaths = map[string]bool{"/livez": true, "/readyz": true, "/version": true}
+
+// traced records a span and the request metrics for every request h
+// serves but the probes, named by the route its mux matched.
+func traced(h http.Handler) http.Handler {
+	return otel.Handler(h, "toposd", otel.WithSkip(func(r *http.Request) bool { return probePaths[r.URL.Path] }))
 }
 
 // every runs pass every interval until ctx ends, logging what it could
@@ -628,11 +666,12 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 	if err != nil {
 		return fail(stderr, err)
 	}
+	log, flush := telemetry(ctx, stderr)
+	defer flush()
 	client, err := runnerrole.New(cfg.InternalURL, cfg.RunnerTokens[0], &http.Client{Transport: otel.Transport(nil)})
 	if err != nil {
 		return fail(stderr, err)
 	}
-	log := slog.New(slog.NewTextHandler(stderr, nil))
 	client.SetLog(log)
 	draining := make(chan struct{})
 	probes := health.Handler(health.Options{

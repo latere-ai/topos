@@ -6,7 +6,7 @@ depends_on: [002-scaffold-and-configuration.md, 004-session-log.md, 006-identity
 affects: [internal/events/, internal/serve/, runner/, harness/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-20
 author: changkun
 ---
 
@@ -29,7 +29,11 @@ a result, or any other content of a session.
 
 v0.7.0's deterministic trace (v0.7.0 spec 008) was a rendered run
 graph kept beside the run; it is retired, and spans now come from the
-log. The retired hosted service sent content-free events to an
+log. What runs today is the export itself: with an endpoint set,
+`toposd` records a span and the request metrics for every request on
+both listeners but the probes, and a span for every outbound call, and
+exports its log and the Go runtime's metrics; the spans from the log
+below are not built. The retired hosted service sent content-free events to an
 installation's sink; the envelope and the signature follow Lux's and
 Cella's event specs so one sink reads all three.
 
