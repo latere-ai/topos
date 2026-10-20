@@ -2732,6 +2732,33 @@ components:
           type: string
         max_age:
           type: string
+    CreateSessionMachine:
+      type: object
+      description: "kind is device: a person's own computer, the environment it serves and the folder on it the session works in."
+      required:
+        - kind
+        - environment
+        - workdir
+      properties:
+        kind:
+          type: string
+        environment:
+          type: string
+        workdir:
+          type: string
+    CreateSessionRepository:
+      type: object
+      description: "type is repository: an https url with no credential in it, and a branch, a tag or a commit as ref."
+      required:
+        - type
+        - url
+      properties:
+        type:
+          type: string
+        url:
+          type: string
+        ref:
+          type: string
     CreateSessionRequest:
       type: object
       required:
@@ -2762,9 +2789,11 @@ components:
         attended:
           type: boolean
         machine:
-          description: Any JSON value.
+          $ref: "#/components/schemas/CreateSessionMachine"
         resources:
-          description: Any JSON value.
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateSessionRepository"
         rollout:
           type: string
         model:
@@ -2863,7 +2892,9 @@ components:
           type: string
           format: date-time
         payload:
-          description: Any JSON value.
+          type: object
+          additionalProperties:
+            description: Any JSON value.
     Error:
       type: object
       required:

@@ -137,6 +137,10 @@ var requestRequired = map[reflect.Type][]string{
 	typeOf[attachmentBody](): {"name"},
 	typeOf[sourceBody]():     {"owner", "path"},
 	typeOf[sendBody]():       {"type", "payload"},
+	// A create's machine and its repositories, read by requestedMachine
+	// and checkRepositories.
+	typeOf[createMachine]():     {"kind", "environment", "workdir"},
+	typeOf[repositoryRequest](): {"type", "url"},
 }
 
 // sentRequired is the members a person must send in each payload type
@@ -148,11 +152,33 @@ var sentRequired = map[reflect.Type][]string{
 }
 
 // requestNotes say what a request's required members cannot: a choice
-// between members.
+// between members, or the one value a member takes.
 var requestNotes = map[reflect.Type]string{
 	typeOf[messageBody]():                  "A message holds content, attachments, or both.",
 	typeOf[session.UserToolConfirmation](): "Names exactly one of tool_use_id, a call that waits, and approval_id, an approval.requested that asks.",
 	typeOf[endBody]():                      "reason is completed or canceled.",
+	typeOf[createMachine]():                "kind is device: a person's own computer, the environment it serves and the folder on it the session works in.",
+	typeOf[repositoryRequest]():            "type is repository: an https url with no credential in it, and a branch, a tag or a commit as ref.",
+}
+
+// rawFields are the members a type holds as json.RawMessage, which its
+// handler decodes on its own, each with the type it decodes the member
+// as, so the document describes the member by that type's schema.
+var rawFields = map[reflect.Type]map[string]reflect.Type{
+	typeOf[createBody](): {
+		"machine":   typeOf[createMachine](),
+		"resources": typeOf[[]repositoryRequest](),
+	},
+	typeOf[trigger.Envelope](): {"payload": typeOf[map[string]any]()},
+}
+
+// repositoryRequest is a repository as a create names it in resources:
+// the members of a session.Resource that checkRepositories lets a
+// request set.
+type repositoryRequest struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+	Ref  string `json:"ref,omitempty"`
 }
 
 // typeNames name the components whose Go names do not read well in a
@@ -164,6 +190,8 @@ var typeNames = map[reflect.Type]string{
 	typeOf[createBody]():             "CreateSessionRequest",
 	typeOf[createBudget]():           "CreateSessionBudget",
 	typeOf[createLimits]():           "CreateSessionLimits",
+	typeOf[createMachine]():          "CreateSessionMachine",
+	typeOf[repositoryRequest]():      "CreateSessionRepository",
 	typeOf[updateBody]():             "UpdateSessionRequest",
 	typeOf[modelChange]():            "ModelChange",
 	typeOf[policyChange]():           "PolicyChange",
@@ -279,6 +307,9 @@ func newSchemas(roots ...reflect.Type) *schemas {
 		case reflect.Struct:
 			for field := range t.Fields() {
 				walk(field.Type)
+			}
+			for _, stand := range rawFields[t] {
+				walk(stand)
 			}
 		}
 	}
@@ -454,7 +485,11 @@ func (s *schemas) fields(t reflect.Type, props *yaml.MapSlice, required *[]strin
 			name = f.Name
 		}
 		optional := strings.Contains(opts, "omitempty") || strings.Contains(opts, "omitzero")
-		schema := s.of(ft)
+		described := ft
+		if stand, ok := rawFields[t][name]; ok {
+			described = stand
+		}
+		schema := s.of(described)
 		if strings.Contains(opts, "string") {
 			schema = yaml.MapSlice{{Key: "type", Value: "string"}}
 		}

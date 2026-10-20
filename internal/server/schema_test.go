@@ -16,9 +16,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/goccy/go-yaml"
 
+	"latere.ai/x/topos/manifest/trigger"
 	"latere.ai/x/topos/session"
 )
 
@@ -82,7 +84,87 @@ func fitsType(t *testing.T, what, body string, typ reflect.Type) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(reflect.New(typ).Interface()); err != nil {
 		t.Errorf("%s does not fit %s: %v", what, typ, err)
+		return
 	}
+	// A member held as json.RawMessage fits anything, so it is decoded
+	// again into the type the document describes it by.
+	if len(rawFields[typ]) == 0 {
+		return
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &members); err != nil {
+		t.Errorf("%s: %v", what, err)
+		return
+	}
+	for name, stand := range rawFields[typ] {
+		raw, ok := members[name]
+		if !ok {
+			continue
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(reflect.New(stand).Interface()); err != nil {
+			t.Errorf("%s: %s does not fit %s: %v", what, name, stand, err)
+		}
+	}
+}
+
+// TestRawFieldsAreWhatTheHandlersRead: each member described by a type
+// in rawFields is a json.RawMessage of its type, and a full value of the
+// describing type is one its handler takes, so the document describes
+// what the server reads.
+func TestRawFieldsAreWhatTheHandlersRead(t *testing.T) {
+	for typ, members := range rawFields {
+		for name := range members {
+			f, ok := memberOf(typ, name)
+			if !ok {
+				t.Errorf("rawFields names %s.%s, which %s does not have", typ, name, typ)
+			} else if f.Type != reflect.TypeFor[json.RawMessage]() {
+				t.Errorf("%s.%s is %s, not json.RawMessage; its own type describes it", typ, name, f.Type)
+			}
+		}
+	}
+	marshal := func(v any) json.RawMessage {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	machine := createMachine{Kind: session.MachineDevice, Environment: "laptop", Workdir: "/home/ann/widgets"}
+	if _, err := requestedMachine(marshal(machine)); err != nil {
+		t.Errorf("a create's machine as the document describes it is refused: %v", err)
+	}
+	repos := []repositoryRequest{{Type: session.ResourceRepository, URL: "https://git.example.com/example/widgets.git", Ref: "main"}}
+	if _, err := repositories(marshal(repos)); err != nil {
+		t.Errorf("a create's resources as the document describes them are refused: %v", err)
+	}
+	delivery := trigger.Envelope{ID: "d1", Product: "github", Verb: "push", Resource: "example/widgets", Time: time.Unix(0, 0),
+		Payload: marshal(map[string]any{"ref": "refs/heads/main"})}
+	if err := delivery.Check(); err != nil {
+		t.Errorf("an envelope's payload as the document describes it is refused: %v", err)
+	}
+	for typ, members := range rawFields {
+		for name, stand := range members {
+			if typ == reflect.TypeFor[createBody]() && (name == "machine" || name == "resources") {
+				continue
+			}
+			if typ == reflect.TypeFor[trigger.Envelope]() && name == "payload" {
+				continue
+			}
+			t.Errorf("%s.%s is described by %s, which no case here holds to its handler", typ, name, stand)
+		}
+	}
+}
+
+// memberOf is the field of struct typ that encoding/json reads as name.
+func memberOf(typ reflect.Type, name string) (reflect.StructField, bool) {
+	for f := range typ.Fields() {
+		if tag, _, _ := strings.Cut(f.Tag.Get("json"), ","); tag == name {
+			return f, true
+		}
+	}
+	return reflect.StructField{}, false
 }
 
 // TestEveryEventTypeHasAPayload: each type schema v1 defines has its
@@ -285,6 +367,9 @@ func TestRequestTypesStateTheirRequired(t *testing.T) {
 			}
 			for f := range typ.Fields() {
 				walk(f.Type)
+			}
+			for _, stand := range rawFields[typ] {
+				walk(stand)
 			}
 		}
 	}
