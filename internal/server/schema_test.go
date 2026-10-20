@@ -259,3 +259,45 @@ func TestNoParameterTwice(t *testing.T) {
 		}
 	}
 }
+
+// TestRequestTypesStateTheirRequired: every request type of this package
+// a body reaches states its required members in requestRequired, and
+// every payload a person sends in sentRequired or requestRequired, so no
+// request's required members are read from its tags, which say what the
+// server writes, not what it requires.
+func TestRequestTypesStateTheirRequired(t *testing.T) {
+	server := reflect.TypeFor[route]().PkgPath()
+	seen := map[reflect.Type]bool{}
+	var walk func(reflect.Type)
+	walk = func(typ reflect.Type) {
+		if typ == nil || seen[typ] {
+			return
+		}
+		seen[typ] = true
+		switch typ.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Map:
+			walk(typ.Elem())
+		case reflect.Struct:
+			if typ.PkgPath() == server {
+				if _, ok := requestRequired[typ]; !ok {
+					t.Errorf("%s is a request type and states no required members in requestRequired", typ)
+				}
+			}
+			for f := range typ.Fields() {
+				walk(f.Type)
+			}
+		}
+	}
+	for _, sh := range shapes {
+		walk(sh.request)
+	}
+	for typ, payload := range sentPayloads {
+		_, sent := sentRequired[payload]
+		_, req := requestRequired[payload]
+		_, byHand := written[payload]
+		if !sent && !req && !byHand {
+			t.Errorf("the payload of %s states no required members", typ)
+		}
+		walk(payload)
+	}
+}
