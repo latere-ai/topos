@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -63,6 +64,9 @@ func OpenAPI(server string) ([]byte, error) {
 	}
 	shown["getOpenAPI"] = example{response: string(first)}
 
+	sc := newSchemas(schemaRoots()...)
+	sc.events()
+
 	paths := yaml.MapSlice{}
 	byPath := map[string]yaml.MapSlice{}
 	var order []string
@@ -70,7 +74,7 @@ func OpenAPI(server string) ([]byte, error) {
 		if _, ok := byPath[rt.path]; !ok {
 			order = append(order, rt.path)
 		}
-		op, err := operation(rt, shown[rt.op])
+		op, err := operation(rt, shown[rt.op], sc)
 		if err != nil {
 			return nil, fmt.Errorf("server: the example of %s: %w", rt.op, err)
 		}
@@ -79,6 +83,22 @@ func OpenAPI(server string) ([]byte, error) {
 	for _, p := range order {
 		paths = append(paths, yaml.MapItem{Key: p, Value: byPath[p]})
 	}
+	if sc.err != nil {
+		return nil, sc.err
+	}
+	written := yaml.MapSlice{
+		{Key: "Delta", Value: deltaSchema},
+		{Key: "QuestionInput", Value: questionInput},
+		{Key: "UserAnswer", Value: userAnswer},
+		{Key: "QuestionResultMeta", Value: questionResultMeta},
+		{Key: "WebSearchResultMeta", Value: webSearchResultMeta},
+		{Key: "ReadResultMeta", Value: readResultMeta},
+		{Key: "Error", Value: errorSchema(errorCodes)},
+	}
+	components, err := mergeComponents(written, sc.components())
+	if err != nil {
+		return nil, err
+	}
 	doc := slices.Concat(head, yaml.MapSlice{
 		{Key: "security", Value: []yaml.MapSlice{{{Key: "bearer", Value: []string{}}}}},
 		{Key: "paths", Value: paths},
@@ -86,27 +106,7 @@ func OpenAPI(server string) ([]byte, error) {
 			{Key: "securitySchemes", Value: yaml.MapSlice{
 				{Key: "bearer", Value: yaml.MapSlice{{Key: "type", Value: "http"}, {Key: "scheme", Value: "bearer"}, {Key: "bearerFormat", Value: "JWT"}}},
 			}},
-			{Key: "schemas", Value: yaml.MapSlice{
-				{Key: "Delta", Value: deltaSchema},
-				{Key: "QuestionInput", Value: questionInput},
-				{Key: "UserAnswer", Value: userAnswer},
-				{Key: "QuestionResultMeta", Value: questionResultMeta},
-				{Key: "WebSearchResultMeta", Value: webSearchResultMeta},
-				{Key: "ReadResultMeta", Value: readResultMeta},
-				{Key: "Error", Value: yaml.MapSlice{
-					{Key: "type", Value: "object"},
-					{Key: "required", Value: []string{"error"}},
-					{Key: "properties", Value: yaml.MapSlice{{Key: "error", Value: yaml.MapSlice{
-						{Key: "type", Value: "object"},
-						{Key: "required", Value: []string{"code", "message"}},
-						{Key: "properties", Value: yaml.MapSlice{
-							{Key: "code", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: errorCodes}}},
-							{Key: "message", Value: yaml.MapSlice{{Key: "type", Value: "string"}}},
-							{Key: "details", Value: errorDetails},
-						}},
-					}}}},
-				}},
-			}},
+			{Key: "schemas", Value: components},
 			{Key: "responses", Value: errorResponses(statuses)},
 		}},
 	})
@@ -125,6 +125,67 @@ func asYAML(v any) ([]byte, error) {
 }
 
 var indentOnly = regexp.MustCompile(`(?m)^ +$`)
+
+// errorSchema is the Error schema: the envelope of every error, its code
+// one of codes.
+func errorSchema(codes []string) yaml.MapSlice {
+	return yaml.MapSlice{
+		{Key: "type", Value: "object"},
+		{Key: "required", Value: []string{"error"}},
+		{Key: "properties", Value: yaml.MapSlice{{Key: "error", Value: yaml.MapSlice{
+			{Key: "type", Value: "object"},
+			{Key: "required", Value: []string{"code", "message"}},
+			{Key: "properties", Value: yaml.MapSlice{
+				{Key: "code", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "enum", Value: codes}}},
+				{Key: "message", Value: yaml.MapSlice{{Key: "type", Value: "string"}}},
+				{Key: "details", Value: errorDetails},
+			}},
+		}}}},
+	}
+}
+
+// schemaRoots are the types the document's bodies reach.
+func schemaRoots() []reflect.Type {
+	roots := []reflect.Type{typeOf[session.Event]()}
+	for _, sh := range shapes {
+		roots = append(roots, sh.request, sh.response)
+	}
+	for _, t := range payloadTypes {
+		roots = append(roots, t)
+	}
+	for _, t := range sentPayloads {
+		roots = append(roots, t)
+	}
+	return roots
+}
+
+// mergeComponents joins the schemas written by hand and those derived
+// from types, sorted by name; a name in both is an error.
+func mergeComponents(written, derived yaml.MapSlice) (yaml.MapSlice, error) {
+	byName := map[string]any{}
+	for _, part := range []yaml.MapSlice{written, derived} {
+		for _, m := range part {
+			n, ok := m.Key.(string)
+			if !ok {
+				return nil, fmt.Errorf("server: a schema is named %v, not a string", m.Key)
+			}
+			if _, dup := byName[n]; dup {
+				return nil, fmt.Errorf("server: two schemas are named %s", n)
+			}
+			byName[n] = m.Value
+		}
+	}
+	names := make([]string, 0, len(byName))
+	for n := range byName {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	out := make(yaml.MapSlice, 0, len(names))
+	for _, n := range names {
+		out = append(out, yaml.MapItem{Key: n, Value: byName[n]})
+	}
+	return out, nil
+}
 
 var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 
@@ -194,6 +255,8 @@ var queryParams = map[string][]yaml.MapSlice{
 	"listAgents":   {ownerParam},
 	"listTriggers": {ownerParam},
 	"listSessions": {agentParam, statusParam, runnerParam, archivedParam, rootParam, parentParam, groupParam, triggerParam, rolloutParam},
+	"listEvents": {{{Key: "name", Value: "from_seq"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The sequence the first page starts at; 1 when absent. A cursor, when given, takes its place."},
+		{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}}}}},
 	"searchSessions": {
 		{{Key: "name", Value: "q"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
 			{Key: "description", Value: "The words to search for. Each is found as the start of a word, whatever its case; characters of Han, Hiragana and Katakana typed in a row are found as those characters in a row."},
@@ -505,7 +568,7 @@ var opDescriptions = map[string]string{
 // operation is one route as the document describes it, with shown as
 // the example of its bodies. x-topos-actions names the questions the
 // route asks the authorizer.
-func operation(rt route, shown example) (yaml.MapSlice, error) {
+func operation(rt route, shown example, sc *schemas) (yaml.MapSlice, error) {
 	op := yaml.MapSlice{{Key: "operationId", Value: rt.op}, {Key: "summary", Value: rt.summary}, {Key: "description", Value: opDescriptions[rt.op]}}
 	if len(rt.actions) > 0 {
 		op = append(op, yaml.MapItem{Key: "x-topos-actions", Value: rt.actions})
@@ -521,6 +584,13 @@ func operation(rt route, shown example) (yaml.MapSlice, error) {
 		params = append(params, append(param, yaml.MapItem{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}))
 	}
 	params = append(params, queryParams[rt.op]...)
+	if shapes[rt.op].list && !ownPaging(rt.op) {
+		params = append(params, pageParams...)
+	}
+	params = append(params, headerParams[rt.op]...)
+	if rt.method == http.MethodPost {
+		params = append(params, idempotencyParam)
+	}
 	if len(params) > 0 {
 		op = append(op, yaml.MapItem{Key: "parameters", Value: params})
 	}
@@ -531,9 +601,10 @@ func operation(rt route, shown example) (yaml.MapSlice, error) {
 		if err != nil {
 			return nil, err
 		}
-		media := yaml.MapSlice{{Key: mediaJSON, Value: yaml.MapSlice{{Key: "example", Value: v}}}}
+		schema := sc.requestSchema(rt.op)
+		media := yaml.MapSlice{{Key: mediaJSON, Value: yaml.MapSlice{{Key: "schema", Value: schema}, {Key: "example", Value: v}}}}
 		if shown.manifest != "" {
-			media = append(media, yaml.MapItem{Key: mediaYAML, Value: yaml.MapSlice{{Key: "example", Value: shown.manifest}}})
+			media = append(media, yaml.MapItem{Key: mediaYAML, Value: yaml.MapSlice{{Key: "schema", Value: schema}, {Key: "example", Value: shown.manifest}}})
 		}
 		op = append(op, yaml.MapItem{Key: "requestBody", Value: yaml.MapSlice{{Key: "content", Value: media}}})
 	}
@@ -542,7 +613,7 @@ func operation(rt route, shown example) (yaml.MapSlice, error) {
 		ok = yaml.MapSlice{{Key: "description", Value: answerExisted}}
 	}
 	if rt.status != http.StatusNoContent {
-		content, err := answered(rt.op, shown.response)
+		content, err := answered(rt.op, shown.response, sc)
 		if err != nil {
 			return nil, err
 		}
@@ -550,7 +621,7 @@ func operation(rt route, shown example) (yaml.MapSlice, error) {
 	}
 	responses := yaml.MapSlice{{Key: strconv.Itoa(rt.status), Value: ok}}
 	if rt.creates {
-		content, err := answered(rt.op, shown.created)
+		content, err := answered(rt.op, shown.created, sc)
 		if err != nil {
 			return nil, err
 		}
@@ -564,14 +635,14 @@ func operation(rt route, shown example) (yaml.MapSlice, error) {
 // body: JSON with its example as a value, and for the answers of
 // another media type a string, its example the text as it is on the
 // wire, or a blob's bytes, which have no example.
-func answered(op, body string) (yaml.MapSlice, error) {
+func answered(op, body string, sc *schemas) (yaml.MapSlice, error) {
 	switch media := answerMedia[op]; media {
 	case "":
 		v, err := jsonExample(body)
 		if err != nil {
 			return nil, err
 		}
-		return yaml.MapSlice{{Key: mediaJSON, Value: yaml.MapSlice{{Key: "example", Value: v}}}}, nil
+		return yaml.MapSlice{{Key: mediaJSON, Value: yaml.MapSlice{{Key: "schema", Value: sc.responseSchema(op)}, {Key: "example", Value: v}}}}, nil
 	case mediaBytes:
 		return yaml.MapSlice{{Key: media, Value: yaml.MapSlice{{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "format", Value: "binary"}}}}}}, nil
 	case mediaStream:

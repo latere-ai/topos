@@ -27,6 +27,8 @@ paths:
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/Agent"
             example:
               apiVersion: topos.latere.ai/v1
               kind: Agent
@@ -40,6 +42,8 @@ paths:
                 machine:
                   kind: cella
           application/yaml:
+            schema:
+              $ref: "#/components/schemas/Agent"
             example: |
               apiVersion: topos.latere.ai/v1
               kind: Agent
@@ -57,6 +61,8 @@ paths:
           description: "OK: the object existed, and the apply changed it or left it as it was."
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Agent
@@ -102,6 +108,8 @@ paths:
           description: "Created: the apply created the object."
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Agent
@@ -158,11 +166,35 @@ paths:
           description: "A rendered subject, as an object's owner is stored: the owner whose objects the list holds, in place of the caller's context for agents. The list's question names it as owner. The list is empty when the authorizer's allow names owners and leaves this one out; absent or empty, the list is as without it."
           schema:
             type: string
+        - name: limit
+          in: query
+          description: How many items a page holds at most; 50 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before. The answer's Link header names the next page's URL as well.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Agent"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
               example:
                 items:
                   - apiVersion: topos.latere.ai/v1
@@ -227,6 +259,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Agent
@@ -302,11 +336,35 @@ paths:
           description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the agents of the caller's context or the caller's own triggers. A name only another owner holds answers not_found, as one nobody holds does.
           schema:
             type: string
+        - name: limit
+          in: query
+          description: How many items a page holds at most; 50 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before. The answer's Link header names the next page's URL as well.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentVersion"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
               example:
                 items:
                   - version: 1
@@ -340,6 +398,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Agent
@@ -397,9 +457,17 @@ paths:
           description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the agents of the caller's context or the caller's own triggers. A name only another owner holds answers not_found, as one nobody holds does.
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveAgentRequest"
             example:
               permanent: true
       responses:
@@ -407,6 +475,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Agent
@@ -458,9 +528,18 @@ paths:
       description: "Create a session of an agent, named by id or by name among the agents of the caller's context. The body's attended, true when a person answers the session's questions through a client that shows them, is the session's from its create on and nothing changes it: an agent's question then waits, the session idle with stop_reason question, until a user.answer, a person's user.message or a user.interrupt closes it, holding no runner while it waits; absent or false, a question is answered at once with outcome unanswered and the agent decides, so a client that shows no questions never meets one. The body's metadata is an object of at most 32 strings, each key a letter or digit, then at most 62 letters, digits, dots, underscores or hyphens, each value at most 512 bytes without a control character; any other is invalid_request. The session holds it as given, a fork holds the metadata of the session it forks, and the authorizer's session.create and session.fork carry it as metadata, absent when there is none. The authorizer's allow of session.create or session.fork may attach repositories, each {url, ref, app}, app {id, slug, name, url} the app at the installation's app host it is the source of, which follow the request's resources marked attached, one whose url the request names left out, at most 8 repositories together; and context, titled text {title, text} of at most 32768 bytes together, which the model reads after the initiator's instructions for the session's whole life. An app's id is optional, at most 64 letters, digits, hyphens and underscores, and the session finds the app by it after the app's owner renames it. An app's repository is delivered into the directory of its slug under the working directory, on the session's branch at the commit the app serves. A fork carries the repositories its parent's request named, and what its own allow attaches; a request that names a repository's app or marks one attached is invalid_request. The authorizer's allow of session.create or session.fork may name folder {url, owner, path}, a folder of an Arca-compatible files API: url the API's root, under which files/ and uploads are served, owner the space, and path the folder in that space. The session then keeps the files of its messages and the files its answers show or link in that folder in place of its blobs: a message's file at attachments/<event id>/<name>, and a file an answer of turn N shows or links at results/<N>/<path>, path its place in the working directory, each written once, with the session's own token, and each record names it by ref, its path in the folder, beside blob, its digest, by which the blob route reads it. The session also keeps the latest state of its working directory there, at work/<path>, written at the end of each turn that changed files and recorded by work.saved, and a new machine is restored from it. A file a redaction leaves no live event naming is deleted from the folder. The session answers folder {owner, path} from the first file stored there, and no folder before. A fork copies into its own folder, on the server, each folder of its parent's that its copied events and its message name, and its parent's work/. An allow that names a folder on a server that keeps no files store, or a folder that is not an http or https URL with no user, query or fragment, an owner, and a clean path of two segments or more, is authorizer_unavailable. A file the files service does not take or give is files_unavailable. The session runs its agent's model at its agent's reasoning level, and its model is absent from the answer. Where the installation's authorizer names another model or another reasoning level for it, the session starts on that one: its model is {name, via, reasoning, route}, name the model that runs, via the agent's own name for it when the model is another, which a client that offers the choice shows, reasoning the level it runs at, route the routed name the authorizer chose on the way, when it names one, and message_text true when its allow asks for the opening of each later message. A create that carries its first message, a trigger's, asks session.create with the message's shape as a send of a message carries it, and never its opening, since the session has no allow yet. The model that runs is checked after the authorizer is asked: one no source gives an input window and an output limit is model_unknown, and a gateway that does not answer model_unavailable. The session's network is what its machine may reach, network {mode, hosts, ask, source}: mode open, allowlist or none, the one the authorizer's allow names with source authorizer, or the agent's spec.machine egressMode with ask false and source agent. Under allowlist the agent's spec.machine.egress, the hosts of the session's named secrets and the git hosts of its repositories are always joined. A web_fetch of a host inside the network runs without asking, its reason \"inside the session's network\"; one outside it asks, its reason \"outside the session's network\", when ask is true and the session is attended, and is blocked otherwise. The allow may carry the initiator's standing instructions, at most 8192 bytes of UTF-8, which the session records as instructions and its model reads after its agent's own; no send changes them. The authorizer's allow of session.create, session.fork and session.send may name the session's connections, at most 32, each {name, kind, title, state, audience, address, git_address, git_url, read_only, hidden, account, api_url, api_example, api_notes}: kind http, an API at address and a git host at git_url reached through git_address from the session's sandbox, or mcp, a remote MCP server at address whose tools the model is offered as mcp__<name>__<tool>. read_only and hidden, of mcp alone, are each at most 64 globs over the server's tool names in path.Match syntax of 1 to 128 bytes: a tool a read_only glob matches reads and every other reaches outside, and a tool a hidden glob matches is never offered to the model, a call of it answered unknown_tool without reaching the server. account, optional, is the account at the other service the connection acts as, one line of at most 256 characters, api_url, optional and of http alone, the service's own API base URL that address stands in for, an https URL, and api_example, optional and of http alone, the whole path of one documented call after api_url, version prefix included, at most 256 bytes with no space, control character, ?, #, $, quote, backtick or backslash, and api_notes, optional and of http alone, one line of at most 800 characters the model is told of the API beyond the example, in which {env} stands for the name of the connection's variable; the model is told each. state is absent for a connected connection, or available for a service the installation offers and the initiator has not connected, which names name, kind and title alone and which the session reaches nothing of; the bound counts both. A create's and a fork's are the session's, a fork's never its parent's, and the session answers them as connections; a send's allow replaces them, appending session.connections_changed {connections} straight before the event when the list differs, and an allow that names none leaves the session with none. An http connection names the audience of TOPOS_CONNECTIONS_AUDIENCE and addresses on the host of TOPOS_CONNECTIONS_URL, and a connection that breaks a rule is authorizer_unavailable naming it. A call of an mcp connection's tool that the connection service answers 409 connection_not_connected, and a drive's listing of its tools that meets it, append connection.requested {name, title, kind, reason, scopes, tool_use_id}, tool_use_id absent for a listing, which a client shows the person as a service to connect again. While the session has an available connection, of kind mcp or, on a Cella machine, http, the model of its own thread is offered request_connection {name, reason}, whose call appends connection.requested {name, title, kind, reason, tool_use_id}, reason the model's sentence on what it needs the service for, which a client shows the person as a service to connect. The body's machine names a person's own computer for the session to work on, {kind: device, environment, workdir}: environment the name of the Cella environment the computer serves, a DNS label, and workdir the folder on it the session works in, an absolute, clean path of at most 4096 bytes with no control character. Any other kind, and any other member, is invalid_request, and a server without Cella is machine_unavailable. The session records it as its machine for its whole life. session.create carries machine device with environment and workdir, so the authorizer decides whether the person the session acts for may use that computer; a fork of the session carries the same three in session.fork, decided for the person forking, and a fork the authorizer refuses is not created. A trigger names a device the same way in spec.session.machine, the one machine a trigger names; its trigger.create and trigger.update carry machine device with environment and workdir, so the authorizer decides whether the person applying it may use that computer when it is applied, as well as at each firing's session.create, and the sessions a trigger starts record trigger_fires_on, schedule or events. The session's sandbox is created on that environment with the folder bound in place as its workspace and working directory, with no image, no Secret, no LUX_URL and no HOME, labeled topos.latere.ai/agent-version and, for a session a trigger started, topos.latere.ai/trigger and topos.latere.ai/trigger-fires-on, and annotated topos.latere.ai/agent-name with the agent's display name, which the computer shows its owner. No repository is delivered into the folder, the files of a message are written under topos/attachments/ in the sandbox's temporary directory, and the session keeps no checkpoint and no copy of its working directory and restores neither, so a rewind finds no checkpoint. A call there scores as a call on a host and is decided in confirm mode when the session runs progressive, by the agent's manifest or a change of the mode: a call that reads runs, and any other asks unless always_allow names it or the person allowed it earlier in the session with remember, plan still blocks a change, and each agent.tool_use records mode confirm. The model's requests carry prompt_version harness/2. The body's rollout, the id of the rollout the session is one run of, a letter or digit then at most 127 letters, digits, dots, underscores or hyphens, and neither none nor any, is the session's for its whole life, and session.create carries it as rollout. A rollout's runs are left out of the session list, the search and the summary unless their rollout parameter names the rollout or any, and no person attends them: a call that would wait for a person's confirmation is answered at once as denied, and the session does not wait. The body's model {name, reasoning}, either member or both, names the model and the reasoning level the session runs from its first request in place of its agent's; session.create carries them as model, and as reasoning and effort, and an allow that names another model or another level is model_not_allowed, so the session runs as named or not at all."
       x-topos-actions:
         - session.create
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
             example:
               agent: release-notes
               message: Write the release notes for v1.4.0.
@@ -471,6 +550,8 @@ paths:
           description: Created
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34G2JF01B91B8399CD1G6YP
@@ -575,11 +656,35 @@ paths:
           description: "A rollout's id: that rollout's runs; any: every session. Absent, the runs of every rollout are left out."
           schema:
             type: string
+        - name: limit
+          in: query
+          description: How many items a page holds at most; 50 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before. The answer's Link header names the next page's URL as well.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
               example:
                 items:
                   - schema: 1
@@ -668,6 +773,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Summary"
               example:
                 sessions:
                   running: 0
@@ -745,6 +852,18 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchResult"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
               example:
                 items:
                   - session:
@@ -835,6 +954,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34G2JF01B91B8399CD1G6YP
@@ -893,6 +1014,8 @@ paths:
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSessionRequest"
             example:
               model:
                 name: claude-sonnet-4-5
@@ -904,6 +1027,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34G2JF01B91B8399CD1G6YP
@@ -981,9 +1106,17 @@ paths:
           required: true
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/EndSessionRequest"
             example:
               reason: completed
       responses:
@@ -991,6 +1124,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34G2JF01B91B8399CD1G6YP
@@ -1051,9 +1186,17 @@ paths:
           required: true
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/ForkSessionRequest"
             example:
               before_seq: 8
               title: Notes for v1.4.0
@@ -1067,6 +1210,8 @@ paths:
           description: Created
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34GMWD03E3B7MERD1RGEM7S
@@ -1131,11 +1276,19 @@ paths:
           required: true
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34G2JF01B91B8399CD1G6YP
@@ -1196,11 +1349,19 @@ paths:
           required: true
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34G2JF01B91B8399CD1G6YP
@@ -1259,9 +1420,17 @@ paths:
           required: true
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/ResumeSessionRequest"
             example:
               reason: budget_raised
               max_cost_usd_micro: 5000000
@@ -1270,6 +1439,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
               example:
                 schema: 1
                 id: ses_01M34FYX90GK6SQ477TKZDF4MH
@@ -1324,11 +1495,41 @@ paths:
           required: true
           schema:
             type: string
+        - name: from_seq
+          in: query
+          description: The sequence the first page starts at; 1 when absent. A cursor, when given, takes its place.
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          description: How many items a page holds at most; 50 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before. The answer's Link header names the next page's URL as well.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Event"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
               example:
                 items:
                   - id: evt_01M34G2JF1P53NNG7DN08D5QAG
@@ -1359,9 +1560,17 @@ paths:
           required: true
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/SendEvent"
             example:
               type: user.message
               payload:
@@ -1373,6 +1582,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
               example:
                 id: evt_01M34GFCM0MP2SWWWVFVJH1PW2
                 seq: 8
@@ -1415,6 +1626,12 @@ paths:
             enum:
               - "0"
               - "1"
+        - name: Last-Event-ID
+          in: header
+          description: The sequence of the last event a client received. The stream starts after it, in place of from_seq, so a client that reconnects resumes where it left off; the browser's EventSource sends it on its own.
+          schema:
+            type: string
+            pattern: ^[1-9][0-9]*$
       responses:
         "200":
           description: OK
@@ -1514,9 +1731,17 @@ paths:
           required: true
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/RedactEventRequest"
             example:
               reason: The message held an access token.
       responses:
@@ -1543,6 +1768,8 @@ paths:
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/Trigger"
             example:
               apiVersion: topos.latere.ai/v1
               kind: Trigger
@@ -1557,6 +1784,8 @@ paths:
                 session:
                   message: Write the release notes for {{event.resource}}.
           application/yaml:
+            schema:
+              $ref: "#/components/schemas/Trigger"
             example: |
               apiVersion: topos.latere.ai/v1
               kind: Trigger
@@ -1574,6 +1803,8 @@ paths:
           description: "OK: the object existed, and the apply changed it or left it as it was."
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Trigger
@@ -1611,6 +1842,8 @@ paths:
           description: "Created: the apply created the object."
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Trigger
@@ -1659,11 +1892,35 @@ paths:
           description: "A rendered subject, as an object's owner is stored: the owner whose objects the list holds, in place of the caller's context for agents. The list's question names it as owner. The list is empty when the authorizer's allow names owners and leaves this one out; absent or empty, the list is as without it."
           schema:
             type: string
+        - name: limit
+          in: query
+          description: How many items a page holds at most; 50 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before. The answer's Link header names the next page's URL as well.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Trigger"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
               example:
                 items:
                   - apiVersion: topos.latere.ai/v1
@@ -1720,6 +1977,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
               example:
                 apiVersion: topos.latere.ai/v1
                 kind: Trigger
@@ -1791,9 +2050,17 @@ paths:
           description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the agents of the caller's context or the caller's own triggers. A name only another owner holds answers not_found, as one nobody holds does.
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: "A key the caller makes unique to the request, so it can send the request again without doing it twice. A repeat from the same caller with the same key, route and body within 24h0m0s answers the first answer again, with the header Idempotent-Replayed: true. The same key with another route or body is idempotency_conflict (409). A repeat while the first request is still being answered is conflict (409), and the first request still completes. An answer of 5xx keeps nothing, so the request may be sent again with the same key."
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         content:
           application/json:
+            schema:
+              $ref: "#/components/schemas/Envelope"
             example:
               id: 123e4567-e89b-12d3-a456-426614174000
               product: github
@@ -1808,6 +2075,8 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Firing"
               example:
                 id: frg_01M34J2N80QKPCFHVXPHHQRHGQ
                 trigger_id: trg_01M34HGBA0JR98WKKXWZGAX6VA
@@ -1837,11 +2106,35 @@ paths:
           description: An id, which names its object whoever owns it, subject to the authorizer, or a name, read among the agents of the caller's context or the caller's own triggers. A name only another owner holds answers not_found, as one nobody holds does.
           schema:
             type: string
+        - name: limit
+          in: query
+          description: How many items a page holds at most; 50 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before. The answer's Link header names the next page's URL as well.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
           content:
             application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Firing"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
               example:
                 items:
                   - id: frg_01M34J2N80QKPCFHVXPHHQRHGQ
@@ -1890,6 +2183,612 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Advisor:
+      type: object
+      required:
+        - model
+      properties:
+        model:
+          $ref: "#/components/schemas/AgentModel"
+        instructions:
+          type: string
+    Agent:
+      type: object
+      required:
+        - apiVersion
+        - kind
+        - metadata
+        - spec
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/ObjectMeta"
+        spec:
+          $ref: "#/components/schemas/AgentSpec"
+        status:
+          $ref: "#/components/schemas/ManifestStatus"
+    AgentMessage:
+      type: object
+      required:
+        - message
+        - stop_reason
+      properties:
+        message:
+          $ref: "#/components/schemas/Message"
+        stop_reason:
+          type: string
+        request:
+          type: string
+        truncated:
+          type: boolean
+        continuation_of:
+          type: string
+    AgentModel:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        family:
+          type: string
+        dialect:
+          type: string
+        baseURL:
+          type: string
+        credential:
+          type: string
+        effort:
+          type: string
+        reasoning:
+          type: string
+        inputWindow:
+          type: integer
+        maxOutputTokens:
+          type: integer
+        pricing:
+          $ref: "#/components/schemas/Pricing"
+    AgentRef:
+      type: object
+      required:
+        - id
+        - version
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+        digest:
+          type: string
+        bundle:
+          type: string
+    AgentSpec:
+      type: object
+      required:
+        - model
+        - instructions
+        - tools
+        - approvals
+        - threads
+        - machine
+        - limits
+        - context
+      properties:
+        description:
+          type: string
+        model:
+          $ref: "#/components/schemas/AgentModel"
+        instructions:
+          type: string
+        instructionsFile:
+          type: string
+        tools:
+          type: array
+          items:
+            description: "A tool the agent may call: its bare name, or an object of the name and its settings."
+            oneOf:
+              - type: string
+              - $ref: "#/components/schemas/ToolSettings"
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+        approvals:
+          $ref: "#/components/schemas/Approvals"
+        hooks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Hook"
+        subagents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subagent"
+        threads:
+          $ref: "#/components/schemas/Threads"
+        advisor:
+          $ref: "#/components/schemas/Advisor"
+        title:
+          $ref: "#/components/schemas/Title"
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManifestSkill"
+        mcpServers:
+          type: array
+          items:
+            $ref: "#/components/schemas/MCPServer"
+        memoryStores:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryStoreRef"
+        connections:
+          type: array
+          items:
+            type: string
+        repositories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Repository"
+        machine:
+          $ref: "#/components/schemas/ManifestMachine"
+        budget:
+          $ref: "#/components/schemas/ManifestBudget"
+        limits:
+          $ref: "#/components/schemas/ManifestLimits"
+        context:
+          $ref: "#/components/schemas/Context"
+    AgentToolUse:
+      type: object
+      required:
+        - tool_use_id
+        - name
+        - input
+        - verdict
+      properties:
+        tool_use_id:
+          type: string
+        name:
+          type: string
+        input:
+          description: Any JSON value.
+        risk:
+          $ref: "#/components/schemas/Risk"
+        verdict:
+          type: string
+        reason:
+          type: string
+        mode:
+          type: string
+        client:
+          type: boolean
+        repeatable:
+          type: boolean
+        review_probability:
+          type: number
+        draw:
+          type: number
+        suggestion:
+          $ref: "#/components/schemas/Suggestion"
+    AgentVersion:
+      type: object
+      required:
+        - version
+        - digest
+        - created_by
+        - created_at
+      properties:
+        version:
+          type: integer
+        digest:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ApprovalDecided:
+      type: object
+      required:
+        - approval_id
+        - decision
+        - by
+      properties:
+        approval_id:
+          type: string
+        decision:
+          type: string
+        by:
+          $ref: "#/components/schemas/Sender"
+        note:
+          type: string
+    ApprovalRequested:
+      type: object
+      required:
+        - approval_id
+        - tool_use_id
+        - source
+        - destination
+        - reason
+        - verdict
+      properties:
+        approval_id:
+          type: string
+        tool_use_id:
+          type: string
+        source:
+          type: string
+        destination:
+          $ref: "#/components/schemas/Destination"
+        reason:
+          type: string
+        verdict:
+          type: string
+        more:
+          type: integer
+    Approvals:
+      type: object
+      required:
+        - mode
+        - thresholds
+      properties:
+        mode:
+          type: string
+        alwaysAllow:
+          type: array
+          items:
+            type: string
+        alwaysConfirm:
+          type: array
+          items:
+            type: string
+        thresholds:
+          $ref: "#/components/schemas/ManifestThresholds"
+    ArchiveAgentRequest:
+      type: object
+      required:
+        - permanent
+      properties:
+        permanent:
+          type: boolean
+    AttachedMachine:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+        id:
+          type: string
+        workdir:
+          type: string
+        os:
+          type: string
+        arch:
+          type: string
+        environment:
+          type: string
+        sandbox:
+          type: string
+        egress:
+          type: string
+    Attachment:
+      type: object
+      required:
+        - name
+        - media_type
+        - size
+        - blob
+        - path
+      properties:
+        name:
+          type: string
+        media_type:
+          type: string
+        size:
+          type: integer
+        blob:
+          type: string
+        path:
+          type: string
+        ref:
+          type: string
+        source:
+          $ref: "#/components/schemas/AttachmentSource"
+        inline:
+          type: boolean
+    AttachmentRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        media_type:
+          type: string
+        data:
+          type: string
+        blob:
+          type: string
+        source:
+          $ref: "#/components/schemas/AttachmentSourceRequest"
+    AttachmentSource:
+      type: object
+      required:
+        - owner
+        - path
+      properties:
+        owner:
+          type: string
+        path:
+          type: string
+        version:
+          type: integer
+    AttachmentSourceRequest:
+      type: object
+      required:
+        - owner
+        - path
+      properties:
+        owner:
+          type: string
+        path:
+          type: string
+        version:
+          type: integer
+    AttachmentsDelivered:
+      type: object
+      required:
+        - paths
+      properties:
+        paths:
+          type: array
+          items:
+            type: string
+    Block:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+        text:
+          type: string
+        image:
+          $ref: "#/components/schemas/Image"
+        tool_use:
+          $ref: "#/components/schemas/ToolUse"
+        tool_result:
+          $ref: "#/components/schemas/ToolResultBlock"
+        signature:
+          type: string
+        redacted:
+          type: string
+        opaque:
+          $ref: "#/components/schemas/Opaque"
+        cache_hint:
+          type: boolean
+    Capture:
+      type: object
+      properties:
+        requests:
+          type: boolean
+    CheckpointRef:
+      type: object
+      required:
+        - ref
+        - commit
+      properties:
+        ref:
+          type: string
+        commit:
+          type: string
+        remote:
+          type: string
+    Connection:
+      type: object
+      required:
+        - name
+        - kind
+        - title
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        title:
+          type: string
+        state:
+          type: string
+        audience:
+          type: string
+        address:
+          type: string
+        git_address:
+          type: string
+        git_url:
+          type: string
+        read_only:
+          type: array
+          items:
+            type: string
+        hidden:
+          type: array
+          items:
+            type: string
+        account:
+          type: string
+        api_url:
+          type: string
+        api_example:
+          type: string
+        api_notes:
+          type: string
+    ConnectionRequested:
+      type: object
+      required:
+        - name
+        - title
+        - kind
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+        reason:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        tool_use_id:
+          type: string
+    ConnectionsChanged:
+      type: object
+      required:
+        - connections
+      properties:
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Connection"
+    Context:
+      type: object
+      required:
+        - compactAt
+      properties:
+        compactAt:
+          anyOf:
+            - type: number
+            - type: "null"
+    ContextCompacted:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+        from_seq:
+          type: integer
+          minimum: 0
+        to_seq:
+          type: integer
+          minimum: 0
+        tool_use_ids:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+        cause:
+          type: string
+        request:
+          type: string
+        prompt:
+          type: string
+        tokens_before:
+          type: integer
+        tokens_after:
+          type: integer
+    ContextPart:
+      type: object
+      required:
+        - title
+        - text
+      properties:
+        title:
+          type: string
+        text:
+          type: string
+    Counts:
+      type: object
+      required:
+        - running
+        - waiting_for_approval
+        - idle
+        - ended
+      properties:
+        running:
+          type: integer
+        waiting_for_approval:
+          type: integer
+        idle:
+          type: integer
+        ended:
+          type: integer
+    CreateSessionBudget:
+      type: object
+      properties:
+        max_cost_usd_micro:
+          type: integer
+    CreateSessionLimits:
+      type: object
+      properties:
+        turn_timeout:
+          type: string
+        max_age:
+          type: string
+    CreateSessionRequest:
+      type: object
+      required:
+        - agent
+      properties:
+        agent:
+          type: string
+        runner:
+          type: string
+        id:
+          type: string
+        message:
+          type: string
+        title:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        budget:
+          $ref: "#/components/schemas/CreateSessionBudget"
+        limits:
+          $ref: "#/components/schemas/CreateSessionLimits"
+        capture:
+          $ref: "#/components/schemas/Capture"
+        end_on_idle:
+          type: boolean
+        attended:
+          type: boolean
+        machine:
+          description: Any JSON value.
+        resources:
+          description: Any JSON value.
+        rollout:
+          type: string
+        model:
+          $ref: "#/components/schemas/ModelChange"
+    DeliveredRepository:
+      type: object
+      required:
+        - url
+        - branch
+      properties:
+        url:
+          type: string
+        branch:
+          type: string
+        commit:
+          type: string
+        app:
+          type: string
+        base:
+          type: string
+        base_error:
+          type: string
     Delta:
       type: object
       description: "One live frame of a session's response as it arrives, the data of an event: delta frame. A frame of text is {thread, turn, step, block, kind, text}: text is the next run of the content block's text, thinking or tool input, to append to what the step's earlier deltas carried for that block. A reset is {thread, turn, step, reset}: the step's request is sent again, so what its deltas carried is discarded. Deltas are best effort: never appended, never replayed, and dropped rather than slowing the turn; the step's agent.message is the record, so a client that misses deltas loses nothing, and a delta of a step whose agent.message the client holds is stale."
@@ -1924,6 +2823,1265 @@ components:
           type: boolean
           const: true
           description: Present only on a reset.
+    Destination:
+      type: object
+      required:
+        - host
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+    EndSessionRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          $ref: "#/components/schemas/StopReason"
+    Envelope:
+      type: object
+      required:
+        - id
+        - product
+        - verb
+        - resource
+        - time
+      properties:
+        id:
+          type: string
+        product:
+          type: string
+        verb:
+          type: string
+        resource:
+          type: string
+        actor:
+          type: string
+        subject:
+          type: string
+        time:
+          type: string
+          format: date-time
+        payload:
+          description: Any JSON value.
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - agent_identity_missing
+                - attachment_source_not_found
+                - attachment_too_large
+                - authorizer_unavailable
+                - confirmation_required
+                - conflict
+                - file_too_large
+                - file_unavailable
+                - files_unavailable
+                - forbidden
+                - idempotency_conflict
+                - identity_refused
+                - identity_unavailable
+                - internal
+                - invalid_fork_point
+                - invalid_manifest
+                - invalid_request
+                - machine_unavailable
+                - manifest_holds_secret
+                - model_not_allowed
+                - model_unavailable
+                - model_unknown
+                - not_found
+                - payload_too_large
+                - rate_limited
+                - sequence_conflict
+                - unauthenticated
+                - unknown_reference
+                - unsupported_version
+            message:
+              type: string
+            details:
+              type: object
+              description: What a developer reads about the refusal; message is the sentence a person reads. A not_found carries no details.
+              properties:
+                detail:
+                  type: string
+                  description: What was refused and why, for a log or a verbose view.
+                problems:
+                  type: array
+                  description: A refused manifest's problems, each at its document (from 1) and field path.
+                  items:
+                    type: object
+                    properties:
+                      document:
+                        type: integer
+                      path:
+                        type: string
+                      detail:
+                        type: string
+                reason:
+                  type: string
+                  description: On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read.
+                limits:
+                  type: object
+                  description: "On forbidden, the limits object the authorizer's deny carried, as it carried it, beside the reason and only with it: a deny for a bound that resets names when it does as resets_at, an RFC 3339 time, so a client says when the refused request can be sent again. The authorizer owns its members."
+    Event:
+      description: One entry of a session's log. type names the payload's shape; a type a later schema adds keeps the envelope, and a reader keeps an event of a type it does not know.
+      oneOf:
+        - $ref: "#/components/schemas/Event.agent.message"
+        - $ref: "#/components/schemas/Event.agent.tool_use"
+        - $ref: "#/components/schemas/Event.approval.decided"
+        - $ref: "#/components/schemas/Event.approval.requested"
+        - $ref: "#/components/schemas/Event.attachments.delivered"
+        - $ref: "#/components/schemas/Event.connection.requested"
+        - $ref: "#/components/schemas/Event.context.compacted"
+        - $ref: "#/components/schemas/Event.event.redacted"
+        - $ref: "#/components/schemas/Event.files.kept"
+        - $ref: "#/components/schemas/Event.memory.attached"
+        - $ref: "#/components/schemas/Event.memory.synced"
+        - $ref: "#/components/schemas/Event.model.request"
+        - $ref: "#/components/schemas/Event.session.connections_changed"
+        - $ref: "#/components/schemas/Event.session.error"
+        - $ref: "#/components/schemas/Event.session.machine"
+        - $ref: "#/components/schemas/Event.session.machine_waiting"
+        - $ref: "#/components/schemas/Event.session.model_changed"
+        - $ref: "#/components/schemas/Event.session.network_changed"
+        - $ref: "#/components/schemas/Event.session.policy_changed"
+        - $ref: "#/components/schemas/Event.session.resumed"
+        - $ref: "#/components/schemas/Event.session.rewound"
+        - $ref: "#/components/schemas/Event.session.scope_changed"
+        - $ref: "#/components/schemas/Event.session.status"
+        - $ref: "#/components/schemas/Event.session.title_changed"
+        - $ref: "#/components/schemas/Event.thread.ended"
+        - $ref: "#/components/schemas/Event.thread.message"
+        - $ref: "#/components/schemas/Event.thread.started"
+        - $ref: "#/components/schemas/Event.tool.result"
+        - $ref: "#/components/schemas/Event.user.answer"
+        - $ref: "#/components/schemas/Event.user.interrupt"
+        - $ref: "#/components/schemas/Event.user.message"
+        - $ref: "#/components/schemas/Event.user.tool_confirmation"
+        - $ref: "#/components/schemas/Event.user.tool_result"
+        - $ref: "#/components/schemas/Event.work.saved"
+      discriminator:
+        propertyName: type
+        mapping:
+          agent.message: "#/components/schemas/Event.agent.message"
+          agent.tool_use: "#/components/schemas/Event.agent.tool_use"
+          approval.decided: "#/components/schemas/Event.approval.decided"
+          approval.requested: "#/components/schemas/Event.approval.requested"
+          attachments.delivered: "#/components/schemas/Event.attachments.delivered"
+          connection.requested: "#/components/schemas/Event.connection.requested"
+          context.compacted: "#/components/schemas/Event.context.compacted"
+          event.redacted: "#/components/schemas/Event.event.redacted"
+          files.kept: "#/components/schemas/Event.files.kept"
+          memory.attached: "#/components/schemas/Event.memory.attached"
+          memory.synced: "#/components/schemas/Event.memory.synced"
+          model.request: "#/components/schemas/Event.model.request"
+          session.connections_changed: "#/components/schemas/Event.session.connections_changed"
+          session.error: "#/components/schemas/Event.session.error"
+          session.machine: "#/components/schemas/Event.session.machine"
+          session.machine_waiting: "#/components/schemas/Event.session.machine_waiting"
+          session.model_changed: "#/components/schemas/Event.session.model_changed"
+          session.network_changed: "#/components/schemas/Event.session.network_changed"
+          session.policy_changed: "#/components/schemas/Event.session.policy_changed"
+          session.resumed: "#/components/schemas/Event.session.resumed"
+          session.rewound: "#/components/schemas/Event.session.rewound"
+          session.scope_changed: "#/components/schemas/Event.session.scope_changed"
+          session.status: "#/components/schemas/Event.session.status"
+          session.title_changed: "#/components/schemas/Event.session.title_changed"
+          thread.ended: "#/components/schemas/Event.thread.ended"
+          thread.message: "#/components/schemas/Event.thread.message"
+          thread.started: "#/components/schemas/Event.thread.started"
+          tool.result: "#/components/schemas/Event.tool.result"
+          user.answer: "#/components/schemas/Event.user.answer"
+          user.interrupt: "#/components/schemas/Event.user.interrupt"
+          user.message: "#/components/schemas/Event.user.message"
+          user.tool_confirmation: "#/components/schemas/Event.user.tool_confirmation"
+          user.tool_result: "#/components/schemas/Event.user.tool_result"
+          work.saved: "#/components/schemas/Event.work.saved"
+    Event.agent.message:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: agent.message
+            payload:
+              $ref: "#/components/schemas/AgentMessage"
+    Event.agent.tool_use:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: agent.tool_use
+            payload:
+              $ref: "#/components/schemas/AgentToolUse"
+    Event.approval.decided:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: approval.decided
+            payload:
+              $ref: "#/components/schemas/ApprovalDecided"
+    Event.approval.requested:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: approval.requested
+            payload:
+              $ref: "#/components/schemas/ApprovalRequested"
+    Event.attachments.delivered:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: attachments.delivered
+            payload:
+              $ref: "#/components/schemas/AttachmentsDelivered"
+    Event.connection.requested:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: connection.requested
+            payload:
+              $ref: "#/components/schemas/ConnectionRequested"
+    Event.context.compacted:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: context.compacted
+            payload:
+              $ref: "#/components/schemas/ContextCompacted"
+    Event.event.redacted:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: event.redacted
+            payload:
+              $ref: "#/components/schemas/EventRedacted"
+    Event.files.kept:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: files.kept
+            payload:
+              $ref: "#/components/schemas/FilesKept"
+    Event.memory.attached:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: memory.attached
+            payload:
+              $ref: "#/components/schemas/MemoryAttached"
+    Event.memory.synced:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: memory.synced
+            payload:
+              $ref: "#/components/schemas/MemorySynced"
+    Event.model.request:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: model.request
+            payload:
+              $ref: "#/components/schemas/ModelRequest"
+    Event.session.connections_changed:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.connections_changed
+            payload:
+              $ref: "#/components/schemas/ConnectionsChanged"
+    Event.session.error:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.error
+            payload:
+              $ref: "#/components/schemas/SessionError"
+    Event.session.machine:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.machine
+            payload:
+              $ref: "#/components/schemas/SessionMachineEvent"
+    Event.session.machine_waiting:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.machine_waiting
+            payload:
+              $ref: "#/components/schemas/SessionMachineWaiting"
+    Event.session.model_changed:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.model_changed
+            payload:
+              $ref: "#/components/schemas/ModelChanged"
+    Event.session.network_changed:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.network_changed
+            payload:
+              $ref: "#/components/schemas/NetworkChanged"
+    Event.session.policy_changed:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.policy_changed
+            payload:
+              $ref: "#/components/schemas/PolicyChanged"
+    Event.session.resumed:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.resumed
+            payload:
+              $ref: "#/components/schemas/SessionResumed"
+    Event.session.rewound:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.rewound
+            payload:
+              $ref: "#/components/schemas/SessionRewound"
+    Event.session.scope_changed:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.scope_changed
+            payload:
+              $ref: "#/components/schemas/ScopeChanged"
+    Event.session.status:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.status
+            payload:
+              $ref: "#/components/schemas/SessionStatusEvent"
+    Event.session.title_changed:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.title_changed
+            payload:
+              $ref: "#/components/schemas/TitleChanged"
+    Event.thread.ended:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: thread.ended
+            payload:
+              $ref: "#/components/schemas/ThreadEnded"
+    Event.thread.message:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: thread.message
+            payload:
+              $ref: "#/components/schemas/ThreadMessage"
+    Event.thread.started:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: thread.started
+            payload:
+              $ref: "#/components/schemas/ThreadStarted"
+    Event.tool.result:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: tool.result
+            payload:
+              $ref: "#/components/schemas/ToolResultEvent"
+    Event.user.answer:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: user.answer
+            payload:
+              $ref: "#/components/schemas/UserAnswer"
+    Event.user.interrupt:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: user.interrupt
+            payload:
+              $ref: "#/components/schemas/UserInterrupt"
+    Event.user.message:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: user.message
+            payload:
+              $ref: "#/components/schemas/UserMessage"
+    Event.user.tool_confirmation:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: user.tool_confirmation
+            payload:
+              $ref: "#/components/schemas/UserToolConfirmation"
+    Event.user.tool_result:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: user.tool_result
+            payload:
+              $ref: "#/components/schemas/UserToolResult"
+    Event.work.saved:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: work.saved
+            payload:
+              $ref: "#/components/schemas/WorkSaved"
+    EventEnvelope:
+      type: object
+      required:
+        - id
+        - seq
+        - session_id
+        - type
+        - time
+        - payload
+      properties:
+        id:
+          type: string
+        seq:
+          type: integer
+          minimum: 0
+        session_id:
+          type: string
+        type:
+          $ref: "#/components/schemas/EventType"
+        time:
+          type: string
+          format: date-time
+        turn:
+          type: integer
+        step:
+          type: integer
+        thread:
+          type: string
+        payload:
+          description: Any JSON value.
+    EventRedacted:
+      type: object
+      required:
+        - event_id
+        - by
+      properties:
+        event_id:
+          type: string
+        by:
+          $ref: "#/components/schemas/Sender"
+        reason:
+          type: string
+    EventType:
+      type: string
+      enum:
+        - agent.message
+        - agent.tool_use
+        - approval.decided
+        - approval.requested
+        - attachments.delivered
+        - connection.requested
+        - context.compacted
+        - event.redacted
+        - files.kept
+        - memory.attached
+        - memory.synced
+        - model.request
+        - session.connections_changed
+        - session.error
+        - session.machine
+        - session.machine_waiting
+        - session.model_changed
+        - session.network_changed
+        - session.policy_changed
+        - session.resumed
+        - session.rewound
+        - session.scope_changed
+        - session.status
+        - session.title_changed
+        - thread.ended
+        - thread.message
+        - thread.started
+        - tool.result
+        - user.answer
+        - user.interrupt
+        - user.message
+        - user.tool_confirmation
+        - user.tool_result
+        - work.saved
+    FilesKept:
+      type: object
+      required:
+        - message
+        - files
+        - skipped
+      properties:
+        message:
+          type: string
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeptFile"
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkippedFile"
+    Firing:
+      type: object
+      required:
+        - trigger_id
+        - origin
+        - key
+        - received_at
+      properties:
+        id:
+          type: string
+        trigger_id:
+          type: string
+        origin:
+          type: string
+        event:
+          $ref: "#/components/schemas/FiringEvent"
+        key:
+          type: string
+        outcome:
+          type: string
+        reason:
+          type: string
+        session_id:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+    FiringEvent:
+      type: object
+      required:
+        - product
+        - verb
+        - resource
+        - id
+      properties:
+        product:
+          type: string
+        verb:
+          type: string
+        resource:
+          type: string
+        id:
+          type: string
+    Folder:
+      type: object
+      required:
+        - owner
+        - path
+      properties:
+        url:
+          type: string
+        owner:
+          type: string
+        path:
+          type: string
+        stored:
+          type: boolean
+    ForkSessionRequest:
+      type: object
+      properties:
+        at_seq:
+          type: integer
+          minimum: 0
+        before_seq:
+          type: integer
+          minimum: 0
+        title:
+          type: string
+        message:
+          $ref: "#/components/schemas/MessageRequest"
+        tree:
+          type: string
+        attended:
+          type: boolean
+    Fragment:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+        match:
+          type: boolean
+    Hook:
+      type: object
+      required:
+        - event
+        - command
+      properties:
+        event:
+          type: string
+        matcher:
+          type: string
+        command:
+          type: string
+        timeout:
+          type: string
+    Image:
+      type: object
+      properties:
+        media_type:
+          type: string
+        data:
+          type: string
+        url:
+          type: string
+    Instructions:
+      type: object
+      required:
+        - path
+        - sha256
+        - blob
+      properties:
+        path:
+          type: string
+        sha256:
+          type: string
+        blob:
+          type: string
+    KeptFile:
+      type: object
+      required:
+        - path
+        - resolved
+        - blob
+        - media_type
+        - size
+        - width
+        - height
+      properties:
+        path:
+          type: string
+        resolved:
+          type: string
+        blob:
+          type: string
+        media_type:
+          type: string
+        size:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        ref:
+          type: string
+    MCPServer:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        command:
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        url:
+          type: string
+        connection:
+          type: string
+    ManifestBudget:
+      type: object
+      properties:
+        maxCost:
+          type: string
+    ManifestLimits:
+      type: object
+      required:
+        - turnTimeout
+        - maxAge
+      properties:
+        turnTimeout:
+          type: string
+        maxAge:
+          type: string
+    ManifestMachine:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+        image:
+          type: string
+        environment:
+          type: string
+        resources:
+          $ref: "#/components/schemas/Resources"
+        egressMode:
+          type: string
+        egress:
+          type: array
+          items:
+            type: string
+        roots:
+          type: array
+          items:
+            type: string
+        readPaths:
+          type: array
+          items:
+            type: string
+    ManifestSessionLimits:
+      type: object
+      properties:
+        turnTimeout:
+          type: string
+        maxAge:
+          type: string
+    ManifestSessionMachine:
+      type: object
+      properties:
+        kind:
+          type: string
+        image:
+          type: string
+        environment:
+          type: string
+        workdir:
+          type: string
+    ManifestSessionResource:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+        memoryStore:
+          type: string
+        access:
+          type: string
+        url:
+          type: string
+        ref:
+          type: string
+    ManifestSkill:
+      type: object
+      properties:
+        path:
+          type: string
+        git:
+          type: string
+        ref:
+          type: string
+    ManifestStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: integer
+        digest:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        identity:
+          type: string
+        owner:
+          $ref: "#/components/schemas/Owner"
+        archivedAt:
+          type: string
+          format: date-time
+        lastFiredAt:
+          type: string
+          format: date-time
+        lastSessionId:
+          type: string
+        nextFireAt:
+          type: string
+          format: date-time
+        counts:
+          $ref: "#/components/schemas/TriggerCounts"
+    ManifestThresholds:
+      type: object
+      required:
+        - flagAt
+        - askAt
+        - blockAt
+      properties:
+        flagAt:
+          anyOf:
+            - type: number
+            - type: "null"
+        askAt:
+          anyOf:
+            - type: number
+            - type: "null"
+        blockAt:
+          anyOf:
+            - type: number
+            - type: "null"
+    Match:
+      type: object
+      required:
+        - seq
+        - event_id
+        - type
+        - time
+        - excerpt
+      properties:
+        seq:
+          type: integer
+          minimum: 0
+        event_id:
+          type: string
+        type:
+          $ref: "#/components/schemas/EventType"
+        time:
+          type: string
+          format: date-time
+        excerpt:
+          type: array
+          items:
+            $ref: "#/components/schemas/Fragment"
+    MemoryAttached:
+      type: object
+      required:
+        - memory_store_id
+        - name
+        - access
+        - path
+      properties:
+        memory_store_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        access:
+          type: string
+        path:
+          type: string
+        version:
+          type: string
+    MemoryStoreRef:
+      type: object
+      required:
+        - name
+        - access
+      properties:
+        name:
+          type: string
+        access:
+          type: string
+    MemorySynced:
+      type: object
+      required:
+        - memory_store_id
+        - pushed
+        - pulled
+        - deleted
+      properties:
+        memory_store_id:
+          type: string
+        pushed:
+          type: integer
+        pulled:
+          type: integer
+        deleted:
+          type: integer
+        conflicts:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+    Message:
+      type: object
+      required:
+        - role
+        - blocks
+      properties:
+        role:
+          type: string
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+    MessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        sender:
+          description: Any JSON value.
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentRequest"
+        askable:
+          type: boolean
+        answers:
+          type: string
+    ModelChange:
+      type: object
+      properties:
+        name:
+          type: string
+        reasoning:
+          type: string
+        effort:
+          type: string
+    ModelChanged:
+      type: object
+      required:
+        - by
+        - old
+        - new
+      properties:
+        by:
+          $ref: "#/components/schemas/Sender"
+        old:
+          $ref: "#/components/schemas/ModelRef"
+        new:
+          $ref: "#/components/schemas/ModelRef"
+        reason:
+          type: string
+        detail:
+          type: string
+    ModelRef:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        via:
+          type: string
+        effort:
+          type: string
+        reasoning:
+          type: string
+        route:
+          type: string
+        message_text:
+          type: boolean
+    ModelRequest:
+      type: object
+      required:
+        - model
+        - outcome
+      properties:
+        model:
+          type: string
+        family:
+          type: string
+        dialect:
+          type: string
+        codec:
+          type: string
+        prompt_version:
+          type: string
+        tools_sha256:
+          type: string
+        request_sha256:
+          type: string
+        request_bytes:
+          type: integer
+        request_blob:
+          type: string
+        response_blob:
+          type: string
+        usage:
+          $ref: "#/components/schemas/Usage"
+        cost_usd_micro:
+          type: integer
+        cost_source:
+          type: string
+        latency_ms:
+          type: integer
+        first_token_ms:
+          type: integer
+        stop_reason:
+          type: string
+        attempts:
+          type: integer
+        outcome:
+          type: string
+        error:
+          type: string
+        max_tokens:
+          type: integer
+        loss:
+          type: array
+          items:
+            type: string
+        fold_seq:
+          type: integer
+          minimum: 0
+        reminder:
+          $ref: "#/components/schemas/Reminder"
+        purpose:
+          type: string
+    Network:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+        hosts:
+          type: array
+          items:
+            type: string
+        ask:
+          type: boolean
+        source:
+          type: string
+    NetworkChanged:
+      type: object
+      required:
+        - source
+      properties:
+        added:
+          type: array
+          items:
+            type: string
+        removed:
+          type: array
+          items:
+            type: string
+        mode:
+          type: string
+        ask:
+          type: boolean
+        source:
+          type: string
+        tool_use_id:
+          type: string
+        approval_id:
+          type: string
+    ObjectMeta:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        annotations:
+          type: object
+          additionalProperties:
+            type: string
+    OmittedFile:
+      type: object
+      required:
+        - path
+        - reason
+      properties:
+        path:
+          type: string
+        reason:
+          type: string
+    Opaque:
+      type: object
+      required:
+        - dialect
+        - raw
+      properties:
+        dialect:
+          type: string
+        kind:
+          type: string
+        raw:
+          description: Any JSON value.
+    Owner:
+      type: object
+      required:
+        - type
+        - id
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+    Parent:
+      type: object
+      required:
+        - session_id
+        - seq
+      properties:
+        session_id:
+          type: string
+        seq:
+          type: integer
+          minimum: 0
+    Permission:
+      type: object
+      required:
+        - action
+        - resource
+      properties:
+        action:
+          type: string
+        resource:
+          type: string
+    Policy:
+      type: object
+      required:
+        - mode
+        - thresholds
+      properties:
+        mode:
+          type: string
+        always_confirm:
+          type: array
+          items:
+            type: string
+        always_allow:
+          type: array
+          items:
+            type: string
+        thresholds:
+          $ref: "#/components/schemas/SessionThresholds"
+    PolicyChange:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          anyOf:
+            - type: string
+            - type: "null"
+    PolicyChanged:
+      type: object
+      required:
+        - by
+        - old
+        - new
+      properties:
+        by:
+          $ref: "#/components/schemas/Sender"
+        old:
+          $ref: "#/components/schemas/PolicyRef"
+        new:
+          $ref: "#/components/schemas/PolicyRef"
+    PolicyRef:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+    Pricing:
+      type: object
+      properties:
+        input:
+          type: string
+        output:
+          type: string
+        cacheRead:
+          type: string
+        cacheWrite:
+          type: string
     QuestionInput:
       description: "The input of a question call, as the agent.tool_use named question holds it once the runner checked it: no label is used twice in one question. A client shows each question with header as its short label and question in full, the options in the order given, each with label and description; marks each option whose recommended is true in its own words, the mark no part of the label; lets the person choose one option, or several where multiple is true, and always answer in their own words beside or in place of the options; shows a preview only on a question that takes one option, each item one line of plain text in a monospace font, spaces kept, and may collapse it, since the question is answerable without it; and treats every field as text a model wrote: no markup, and no link followed on its own."
       example:
@@ -2011,38 +4169,6 @@ components:
       required:
         - questions
       additionalProperties: false
-    UserAnswer:
-      type: object
-      description: The payload of user.answer, one entry per question of the open question call, in the questions' order. The server sets sender to the caller.
-      required:
-        - tool_use_id
-        - answers
-      additionalProperties: false
-      properties:
-        tool_use_id:
-          type: string
-          description: The open question call's tool_use_id.
-        answers:
-          type: array
-          minItems: 1
-          maxItems: 4
-          items:
-            type: object
-            additionalProperties: false
-            properties:
-              selected:
-                type: array
-                items:
-                  type: string
-                description: "The chosen labels: at most one where the question does not take several, each a label of the question and none twice."
-              text:
-                type: string
-                maxLength: 2000
-                description: The person's own words, in characters.
-        sender:
-          type: object
-          readOnly: true
-          description: The caller, set by the server whatever the body says.
     QuestionResultMeta:
       type: object
       description: The meta of a question call's tool.result, which says why the question closed without reading the result's text. The result's outcome is ok when an answer chose an option or held words, unanswered, which is not an error, when every entry of the answer was empty, a person's message came in place of an answer, or nobody attends the session, and canceled when an interrupt dismissed the question.
@@ -2057,13 +4183,6 @@ components:
         event_id:
           type: string
           description: The id of the event that closed the call; absent when nobody attends the session.
-    WebSearchResultMeta:
-      type: object
-      description: The meta of a web_search call's tool.result. An agent holds web_search only when its manifest names it, and each call sends its query to the search service the installation configures, with the session's own credential. The result's outcome is ok with the results, or with none; error when the service refused the search, the text then the service's own sentence for the person and refusal its code, or when the search failed; timeout past the search's timeout. A search the service charged for carries cost_usd_micro on the tool.result itself, beside meta, and the session's spent_cost_usd_micro counts it as it counts a model request's.
-      properties:
-        refusal:
-          type: string
-          description: The code the search service refused the search with; absent on a search it answered.
     ReadResultMeta:
       type: object
       description: "The meta of a read call's tool.result: the file read and its SHA-256 at the read. On an installation with a parsing service, a PDF a person attached, or one the working directory held at the end of an earlier turn, is read as text through it, its pages as Markdown, and parse names the parse. The parsing service's model reads are priced and carried as cost_usd_micro on the tool.result itself, beside meta, which the session's spent_cost_usd_micro counts; a read of a PDF already parsed carries none. A PDF the service did not read is outcome error, the text the binary answer and a sentence that says why."
@@ -2097,76 +4216,1210 @@ components:
             unpriced:
               type: boolean
               description: True when the parse's model reads could not be priced, so the tool.result carries no cost although the reads were charged.
-    Error:
+    RedactEventRequest:
       type: object
       required:
-        - error
+        - reason
       properties:
-        error:
+        reason:
+          type: string
+    Reminder:
+      type: object
+      required:
+        - prompt
+        - tool
+      properties:
+        prompt:
+          type: string
+        tool:
+          type: string
+    Repository:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+        ref:
+          type: string
+    Resource:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+        memory_store_id:
+          type: string
+        access:
+          type: string
+        url:
+          type: string
+        ref:
+          type: string
+        app:
+          $ref: "#/components/schemas/ResourceApp"
+        attached:
+          type: boolean
+    ResourceApp:
+      type: object
+      required:
+        - slug
+        - name
+        - url
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+    Resources:
+      type: object
+      properties:
+        cpu:
+          type: string
+        memory:
+          type: string
+        disk:
+          type: string
+    Restore:
+      type: object
+      required:
+        - source
+        - files
+        - bytes
+        - unverified
+        - omitted
+        - commands
+      properties:
+        source:
+          type: string
+        copy:
+          $ref: "#/components/schemas/RestoreCopy"
+        files:
+          type: integer
+        bytes:
+          type: integer
+        unverified:
+          type: integer
+        omitted:
+          type: integer
+        commands:
+          type: integer
+        paths:
+          type: array
+          items:
+            type: string
+        unverified_paths:
+          type: array
+          items:
+            type: string
+        omitted_files:
+          type: array
+          items:
+            $ref: "#/components/schemas/OmittedFile"
+    RestoreCopy:
+      type: object
+      required:
+        - files
+        - bytes
+      properties:
+        files:
+          type: integer
+        bytes:
+          type: integer
+        turn:
+          type: integer
+        inherited:
+          type: boolean
+        skipped:
+          type: integer
+        skipped_files:
+          type: array
+          items:
+            $ref: "#/components/schemas/OmittedFile"
+        failed:
+          type: string
+    ResumeSessionRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+        max_cost_usd_micro:
+          type: integer
+    Risk:
+      type: object
+      required:
+        - score
+        - source
+      properties:
+        score:
+          type: number
+        source:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+    RunnerRef:
+      type: object
+      required:
+        - id
+        - kind
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+    ScopeChanged:
+      type: object
+      required:
+        - by
+        - old
+        - new
+      properties:
+        by:
+          $ref: "#/components/schemas/Sender"
+        old:
+          type: array
+          items:
+            description: Any JSON value.
+        new:
+          type: array
+          items:
+            description: Any JSON value.
+        reason:
+          type: string
+        until:
+          type: string
+    SearchResult:
+      type: object
+      required:
+        - session
+        - matches
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/Match"
+    SendEvent:
+      description: An event a person sends. The server sets each payload's sender, and a message's file blobs, before it appends the event.
+      oneOf:
+        - $ref: "#/components/schemas/SendEvent.user.answer"
+        - $ref: "#/components/schemas/SendEvent.user.interrupt"
+        - $ref: "#/components/schemas/SendEvent.user.message"
+        - $ref: "#/components/schemas/SendEvent.user.tool_confirmation"
+        - $ref: "#/components/schemas/SendEvent.user.tool_result"
+      discriminator:
+        propertyName: type
+        mapping:
+          user.answer: "#/components/schemas/SendEvent.user.answer"
+          user.interrupt: "#/components/schemas/SendEvent.user.interrupt"
+          user.message: "#/components/schemas/SendEvent.user.message"
+          user.tool_confirmation: "#/components/schemas/SendEvent.user.tool_confirmation"
+          user.tool_result: "#/components/schemas/SendEvent.user.tool_result"
+    SendEvent.user.answer:
+      type: object
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          const: user.answer
+        payload:
+          $ref: "#/components/schemas/UserAnswer"
+    SendEvent.user.interrupt:
+      type: object
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          const: user.interrupt
+        payload:
+          type: object
+          properties: {}
+    SendEvent.user.message:
+      type: object
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          const: user.message
+        payload:
           type: object
           required:
-            - code
-            - message
+            - content
           properties:
-            code:
+            content:
+              type: array
+              items:
+                $ref: "#/components/schemas/Block"
+            attachments:
+              type: array
+              items:
+                $ref: "#/components/schemas/AttachmentRequest"
+            askable:
+              type: boolean
+            answers:
               type: string
-              enum:
-                - agent_identity_missing
-                - attachment_source_not_found
-                - attachment_too_large
-                - authorizer_unavailable
-                - confirmation_required
-                - conflict
-                - file_too_large
-                - file_unavailable
-                - files_unavailable
-                - forbidden
-                - idempotency_conflict
-                - identity_refused
-                - identity_unavailable
-                - internal
-                - invalid_fork_point
-                - invalid_manifest
-                - invalid_request
-                - machine_unavailable
-                - manifest_holds_secret
-                - model_not_allowed
-                - model_unavailable
-                - model_unknown
-                - not_found
-                - payload_too_large
-                - rate_limited
-                - sequence_conflict
-                - unauthenticated
-                - unknown_reference
-                - unsupported_version
-            message:
+    SendEvent.user.tool_confirmation:
+      type: object
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          const: user.tool_confirmation
+        payload:
+          type: object
+          required:
+            - decision
+          properties:
+            tool_use_id:
               type: string
-            details:
-              type: object
-              description: What a developer reads about the refusal; message is the sentence a person reads. A not_found carries no details.
-              properties:
-                detail:
+            approval_id:
+              type: string
+            decision:
+              type: string
+            note:
+              type: string
+            remember:
+              type: string
+    SendEvent.user.tool_result:
+      type: object
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          const: user.tool_result
+        payload:
+          type: object
+          required:
+            - tool_use_id
+            - content
+          properties:
+            tool_use_id:
+              type: string
+            content:
+              type: array
+              items:
+                $ref: "#/components/schemas/Block"
+            is_error:
+              type: boolean
+    Sender:
+      type: object
+      required:
+        - subject
+        - kind
+      properties:
+        subject:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+    Session:
+      type: object
+      required:
+        - schema
+        - id
+        - agent
+        - initiator
+        - runner
+        - status
+        - turn
+        - last_seq
+        - machine
+        - budget
+        - limits
+        - capture
+        - created_at
+        - updated_at
+        - expires_at
+      properties:
+        schema:
+          type: integer
+        id:
+          type: string
+        agent:
+          $ref: "#/components/schemas/AgentRef"
+        title:
+          type: string
+        initiator:
+          $ref: "#/components/schemas/Sender"
+        runner:
+          type: string
+        writer:
+          $ref: "#/components/schemas/Writer"
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        stop_reason:
+          $ref: "#/components/schemas/StopReason"
+        turn:
+          type: integer
+        last_seq:
+          type: integer
+          minimum: 0
+        machine:
+          $ref: "#/components/schemas/SessionMachine"
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Resource"
+        scope:
+          type: array
+          items:
+            description: Any JSON value.
+        policy:
+          $ref: "#/components/schemas/Policy"
+        budget:
+          $ref: "#/components/schemas/SessionBudget"
+        model:
+          $ref: "#/components/schemas/ModelRef"
+        limits:
+          $ref: "#/components/schemas/SessionLimits"
+        capture:
+          $ref: "#/components/schemas/Capture"
+        end_on_idle:
+          type: boolean
+        attended:
+          type: boolean
+        network:
+          $ref: "#/components/schemas/Network"
+        instructions:
+          type: string
+        context:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContextPart"
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Connection"
+        parent:
+          $ref: "#/components/schemas/Parent"
+        root:
+          type: string
+        trigger_id:
+          type: string
+        trigger_fires_on:
+          type: string
+        rollout:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        tree:
+          $ref: "#/components/schemas/Tree"
+        folder:
+          $ref: "#/components/schemas/Folder"
+    SessionBudget:
+      type: object
+      required:
+        - spent_cost_usd_micro
+      properties:
+        max_cost_usd_micro:
+          type: integer
+        spent_cost_usd_micro:
+          type: integer
+        carried_cost_usd_micro:
+          type: integer
+    SessionError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+        detail:
+          type: string
+    SessionLimits:
+      type: object
+      properties:
+        turn_timeout:
+          type: string
+        max_age:
+          type: string
+        retention:
+          type: string
+    SessionMachine:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+        environment:
+          type: string
+        image:
+          type: string
+        workdir:
+          type: string
+    SessionMachineEvent:
+      type: object
+      required:
+        - machine
+        - reason
+      properties:
+        machine:
+          $ref: "#/components/schemas/AttachedMachine"
+        reason:
+          type: string
+        cause:
+          type: string
+        context:
+          type: string
+        instructions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Instructions"
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSkill"
+        repositories:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeliveredRepository"
+        checkpoint:
+          $ref: "#/components/schemas/CheckpointRef"
+        restore:
+          $ref: "#/components/schemas/Restore"
+    SessionMachineWaiting:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+        environment:
+          type: string
+    SessionResumed:
+      type: object
+      required:
+        - by
+      properties:
+        by:
+          $ref: "#/components/schemas/Sender"
+        reason:
+          type: string
+        max_cost_usd_micro:
+          type: integer
+    SessionRewound:
+      type: object
+      required:
+        - to_turn
+        - checkpoint
+        - by
+      properties:
+        to_turn:
+          type: integer
+        checkpoint:
+          $ref: "#/components/schemas/CheckpointRef"
+        saved:
+          $ref: "#/components/schemas/CheckpointRef"
+        by:
+          $ref: "#/components/schemas/Sender"
+    SessionSkill:
+      type: object
+      required:
+        - name
+        - description
+        - path
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        path:
+          type: string
+    SessionStatus:
+      type: string
+      enum:
+        - idle
+        - running
+        - ended
+    SessionStatusEvent:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        stop_reason:
+          $ref: "#/components/schemas/StopReason"
+        detail:
+          type: string
+        runner:
+          $ref: "#/components/schemas/RunnerRef"
+        checkpoint:
+          $ref: "#/components/schemas/CheckpointRef"
+    SessionThresholds:
+      type: object
+      required:
+        - flag_at
+        - ask_at
+        - block_at
+      properties:
+        flag_at:
+          type: number
+        ask_at:
+          type: number
+        block_at:
+          type: number
+    SkippedFile:
+      type: object
+      required:
+        - path
+        - reason
+      properties:
+        path:
+          type: string
+        reason:
+          type: string
+    Spill:
+      type: object
+      required:
+        - path
+        - bytes
+      properties:
+        path:
+          type: string
+        bytes:
+          type: integer
+    StopReason:
+      type: string
+      enum:
+        - end_turn
+        - tool_confirmation
+        - tool_result
+        - question
+        - budget
+        - turn_limit
+        - output_limit
+        - interrupted
+        - error
+        - machine_waiting
+        - completed
+        - failed
+        - canceled
+        - expired
+    Subagent:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        agent:
+          type: string
+        spec:
+          $ref: "#/components/schemas/AgentSpec"
+    Suggestion:
+      type: object
+      required:
+        - source
+        - verdict
+        - approve
+        - uncertainty
+        - thresholds
+        - audit_rate
+      properties:
+        source:
+          type: string
+        verdict:
+          type: string
+        approve:
+          type: number
+        uncertainty:
+          type: number
+        thresholds:
+          $ref: "#/components/schemas/SuggestionThresholds"
+        audit_rate:
+          type: number
+        reason:
+          type: string
+    SuggestionThresholds:
+      type: object
+      required:
+        - allow_above
+        - block_below
+      properties:
+        allow_above:
+          type: number
+        block_below:
+          type: number
+    Summary:
+      type: object
+      required:
+        - sessions
+        - agents
+      properties:
+        sessions:
+          $ref: "#/components/schemas/Counts"
+        agents:
+          type: integer
+    ThreadEnded:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+        final_text:
+          type: string
+        usage:
+          $ref: "#/components/schemas/Usage"
+        cost_usd_micro:
+          type: integer
+    ThreadMessage:
+      type: object
+      required:
+        - content
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        from_name:
+          type: string
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+        tool_use_id:
+          type: string
+    ThreadStarted:
+      type: object
+      required:
+        - agent
+        - task
+        - depth
+      properties:
+        agent:
+          $ref: "#/components/schemas/AgentRef"
+        parent:
+          type: string
+        tool_use_id:
+          type: string
+        task:
+          type: string
+        isolation:
+          type: string
+        branch:
+          type: string
+        workdir:
+          type: string
+        depth:
+          type: integer
+        model:
+          type: string
+        tools:
+          type: array
+          items:
+            type: string
+        budget:
+          $ref: "#/components/schemas/SessionBudget"
+        ignored:
+          type: array
+          items:
+            type: string
+    Threads:
+      type: object
+      required:
+        - maxDepth
+        - maxConcurrent
+      properties:
+        maxDepth:
+          anyOf:
+            - type: integer
+            - type: "null"
+        maxConcurrent:
+          anyOf:
+            - type: integer
+            - type: "null"
+    Title:
+      type: object
+      properties:
+        model:
+          type: string
+    TitleChanged:
+      type: object
+      required:
+        - by
+        - old
+        - new
+      properties:
+        by:
+          $ref: "#/components/schemas/Sender"
+        old:
+          type: string
+        new:
+          type: string
+    ToolResultBlock:
+      type: object
+      required:
+        - tool_use_id
+      properties:
+        tool_use_id:
+          type: string
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+        is_error:
+          type: boolean
+    ToolResultEvent:
+      type: object
+      required:
+        - tool_use_id
+        - content
+      properties:
+        tool_use_id:
+          type: string
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+        is_error:
+          type: boolean
+        outcome:
+          type: string
+        duration_ms:
+          type: integer
+        spill:
+          $ref: "#/components/schemas/Spill"
+        meta:
+          description: Any JSON value.
+        cost_usd_micro:
+          type: integer
+    ToolSettings:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        outputLimit:
+          type: integer
+        client:
+          type: boolean
+        description:
+          type: string
+        inputSchema:
+          description: Any JSON value.
+    ToolUse:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        args:
+          description: Any JSON value.
+    Tree:
+      type: object
+      required:
+        - root
+        - sessions
+      properties:
+        root:
+          type: string
+        sessions:
+          type: integer
+    Trigger:
+      type: object
+      required:
+        - apiVersion
+        - kind
+        - metadata
+        - spec
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/ObjectMeta"
+        spec:
+          $ref: "#/components/schemas/TriggerSpec"
+        status:
+          $ref: "#/components/schemas/ManifestStatus"
+    TriggerCounts:
+      type: object
+      required:
+        - started
+        - continued
+        - held
+        - filtered
+        - skippedActive
+        - skippedBusy
+        - skippedLate
+        - refused
+        - failed
+      properties:
+        started:
+          type: integer
+        continued:
+          type: integer
+        held:
+          type: integer
+        filtered:
+          type: integer
+        skippedActive:
+          type: integer
+        skippedBusy:
+          type: integer
+        skippedLate:
+          type: integer
+        refused:
+          type: integer
+        failed:
+          type: integer
+    TriggerMatch:
+      type: object
+      required:
+        - path
+        - in
+      properties:
+        path:
+          type: string
+        in:
+          type: array
+          items:
+            type: string
+    TriggerOn:
+      type: object
+      required:
+        - product
+        - verbs
+      properties:
+        product:
+          type: string
+        verbs:
+          type: array
+          items:
+            type: string
+        resources:
+          type: array
+          items:
+            type: string
+        match:
+          type: array
+          items:
+            $ref: "#/components/schemas/TriggerMatch"
+    TriggerSession:
+      type: object
+      required:
+        - message
+        - endOnIdle
+      properties:
+        message:
+          type: string
+        title:
+          type: string
+        policy:
+          type: string
+        key:
+          type: string
+        machine:
+          $ref: "#/components/schemas/ManifestSessionMachine"
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManifestSessionResource"
+        budget:
+          $ref: "#/components/schemas/ManifestBudget"
+        limits:
+          $ref: "#/components/schemas/ManifestSessionLimits"
+        endOnIdle:
+          anyOf:
+            - type: boolean
+            - type: "null"
+    TriggerSpec:
+      type: object
+      required:
+        - agent
+        - timeZone
+        - session
+        - skipIfActive
+        - maxAge
+        - suspend
+      properties:
+        agent:
+          type: string
+        schedule:
+          type: string
+        timeZone:
+          type: string
+        "on":
+          $ref: "#/components/schemas/TriggerOn"
+        session:
+          $ref: "#/components/schemas/TriggerSession"
+        skipIfActive:
+          anyOf:
+            - type: boolean
+            - type: "null"
+        maxActive:
+          type: integer
+        maxAge:
+          type: string
+        suspend:
+          type: boolean
+    UpdateSessionRequest:
+      type: object
+      required:
+        - model
+        - policy
+      properties:
+        model:
+          anyOf:
+            - $ref: "#/components/schemas/ModelChange"
+            - type: "null"
+        policy:
+          anyOf:
+            - $ref: "#/components/schemas/PolicyChange"
+            - type: "null"
+        title:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    Usage:
+      type: object
+      required:
+        - input_tokens
+        - output_tokens
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cache_read_input_tokens:
+          type: integer
+        cache_write_input_tokens:
+          type: integer
+        reasoning_tokens:
+          type: integer
+        cost_usd_micro:
+          type: integer
+    UserAnswer:
+      type: object
+      description: The payload of user.answer, one entry per question of the open question call, in the questions' order. The server sets sender to the caller.
+      required:
+        - tool_use_id
+        - answers
+      additionalProperties: false
+      properties:
+        tool_use_id:
+          type: string
+          description: The open question call's tool_use_id.
+        answers:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              selected:
+                type: array
+                items:
                   type: string
-                  description: What was refused and why, for a log or a verbose view.
-                problems:
-                  type: array
-                  description: A refused manifest's problems, each at its document (from 1) and field path.
-                  items:
-                    type: object
-                    properties:
-                      document:
-                        type: integer
-                      path:
-                        type: string
-                      detail:
-                        type: string
-                reason:
-                  type: string
-                  description: On forbidden, the installation's authorizer's reason for its deny, a stable snake_case token such as not_owner or agents_not_enabled, which a client may branch on. The authorizer owns the vocabulary. It is absent when the authorizer gave none or gave text of another shape, and on a session create of another subject's agent the caller may not read.
-                limits:
-                  type: object
-                  description: "On forbidden, the limits object the authorizer's deny carried, as it carried it, beside the reason and only with it: a deny for a bound that resets names when it does as resets_at, an RFC 3339 time, so a client says when the refused request can be sent again. The authorizer owns its members."
+                description: "The chosen labels: at most one where the question does not take several, each a label of the question and none twice."
+              text:
+                type: string
+                maxLength: 2000
+                description: The person's own words, in characters.
+        sender:
+          type: object
+          readOnly: true
+          description: The caller, set by the server whatever the body says.
+    UserInterrupt:
+      type: object
+      required:
+        - sender
+      properties:
+        sender:
+          $ref: "#/components/schemas/Sender"
+    UserMessage:
+      type: object
+      required:
+        - sender
+        - content
+      properties:
+        sender:
+          $ref: "#/components/schemas/Sender"
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attachment"
+        firing_id:
+          type: string
+    UserToolConfirmation:
+      type: object
+      required:
+        - sender
+        - decision
+      properties:
+        sender:
+          $ref: "#/components/schemas/Sender"
+        tool_use_id:
+          type: string
+        approval_id:
+          type: string
+        decision:
+          type: string
+        note:
+          type: string
+        remember:
+          type: string
+    UserToolResult:
+      type: object
+      required:
+        - sender
+        - tool_use_id
+        - content
+      properties:
+        sender:
+          $ref: "#/components/schemas/Sender"
+        tool_use_id:
+          type: string
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+        is_error:
+          type: boolean
+    WebSearchResultMeta:
+      type: object
+      description: The meta of a web_search call's tool.result. An agent holds web_search only when its manifest names it, and each call sends its query to the search service the installation configures, with the session's own credential. The result's outcome is ok with the results, or with none; error when the service refused the search, the text then the service's own sentence for the person and refusal its code, or when the search failed; timeout past the search's timeout. A search the service charged for carries cost_usd_micro on the tool.result itself, beside meta, and the session's spent_cost_usd_micro counts it as it counts a model request's.
+      properties:
+        refusal:
+          type: string
+          description: The code the search service refused the search with; absent on a search it answered.
+    WorkFailure:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+        detail:
+          type: string
+    WorkFile:
+      type: object
+      required:
+        - path
+        - size
+        - mode
+        - sha256
+      properties:
+        path:
+          type: string
+        size:
+          type: integer
+        mode:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+    WorkHeld:
+      type: object
+      required:
+        - files
+        - bytes
+      properties:
+        files:
+          type: integer
+        bytes:
+          type: integer
+    WorkSaved:
+      type: object
+      required:
+        - covers
+        - held
+      properties:
+        covers:
+          type: integer
+          minimum: 0
+        whole:
+          type: boolean
+        from:
+          type: string
+        written:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkFile"
+        removed:
+          type: array
+          items:
+            type: string
+        unsaved:
+          type: array
+          items:
+            type: string
+        deferred:
+          type: integer
+        skipped:
+          type: integer
+        skipped_files:
+          type: array
+          items:
+            $ref: "#/components/schemas/OmittedFile"
+        held:
+          $ref: "#/components/schemas/WorkHeld"
+        failed:
+          $ref: "#/components/schemas/WorkFailure"
+    Writer:
+      type: object
+      required:
+        - kind
+        - since
+      properties:
+        kind:
+          type: string
+        subject:
+          type: string
+        since:
+          type: string
+          format: date-time
   responses:
     Error:
       description: "An error of the table. By status: 400: confirmation_required, invalid_manifest, invalid_request, manifest_holds_secret, unknown_reference, unsupported_version; 401: unauthenticated; 403: forbidden, identity_refused, model_not_allowed; 404: attachment_source_not_found, not_found; 409: agent_identity_missing, conflict, file_unavailable, idempotency_conflict, sequence_conflict; 413: attachment_too_large, file_too_large, payload_too_large; 422: invalid_fork_point, machine_unavailable, model_unknown; 429: rate_limited; 500: internal; 503: authorizer_unavailable, files_unavailable, identity_unavailable, model_unavailable."
