@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.50.1 - 2026-10-20
+
 ### Fixed
 
 - **The API document describes a session's machine, its repositories and an event's payload.** A create's `machine` is `CreateSessionMachine`, `{kind, environment, workdir}`, and its `resources` a list of `CreateSessionRepository`, `{type, url, ref}`, where the document said any JSON value; a trigger envelope's `payload` is an object.
