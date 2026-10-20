@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.50.0 - 2026-10-20
+
 ### Added
 
 - **The API document describes every body by a schema.** Each request and answer names a schema derived from the type the server encodes, so a generated client and a reader see every field, including those no example shows: a session's `metadata` and `trigger_id`, an `agent.tool_use`'s `client`, a `tool.result`'s `outcome` and `is_error`, and a `session.error`'s `retryable` and `detail`. `Event` lists one variant per event type with its payload's schema, and `SendEvent` one per type a person sends.
