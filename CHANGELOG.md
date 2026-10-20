@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **The API document describes a session's machine, its repositories and an event's payload.** A create's `machine` is `CreateSessionMachine`, `{kind, environment, workdir}`, and its `resources` a list of `CreateSessionRepository`, `{type, url, ref}`, where the document said any JSON value; a trigger envelope's `payload` is an object.
+- **The document writes durations in words.** The `Idempotency-Key` header's replay window reads 24 hours, a computer's approval wait 2 minutes and a deletion's wait 17 seconds, where the document wrote 24h0m0s, 2m0s and 17s.
+
 ## v0.50.0 - 2026-10-20
 
 ### Added
