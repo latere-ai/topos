@@ -85,7 +85,7 @@ func TestAScriptPlaysStepByStep(t *testing.T) {
 		b[2].ToolUse.ID != "call_1_1" || string(b[2].ToolUse.Args) != `{"command":"ls"}` || b[3].ToolUse.ID != "call_1_2" || string(b[3].ToolUse.Args) != `{}` {
 		t.Fatalf("blocks %+v", b)
 	}
-	if res.StopReason != ir.StopToolUse || res.Usage.InputTokens != 100 || res.Usage.CostUSDMicro == nil || *res.Usage.CostUSDMicro != 7 || res.Codec != Codec || res.RequestSHA256 == "" || len(res.RequestBytes) == 0 || len(res.RawResponse) == 0 {
+	if res.StopReason != ir.StopToolUse || res.Usage.InputTokens != 100 || res.Usage.CostMicroUSD == nil || *res.Usage.CostMicroUSD != 7 || res.Codec != Codec || res.RequestSHA256 == "" || len(res.RequestBytes) == 0 || len(res.RawResponse) == 0 {
 		t.Fatalf("result %+v", res)
 	}
 	if err := s.Close(); err != nil {

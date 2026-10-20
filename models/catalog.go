@@ -251,7 +251,7 @@ func FromLux(u lux.Usage) UsageFigures {
 	return UsageFigures{
 		Input: u.InputTokens, Output: u.OutputTokens,
 		CacheRead: u.CacheReadInputTokens, CacheWrite: u.CacheWriteInputTokens,
-		ReportedCostUSDMicro: u.CostUSDMicro,
+		ReportedCostUSDMicro: u.CostMicroUSD,
 	}
 }
 

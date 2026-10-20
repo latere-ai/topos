@@ -235,7 +235,7 @@ func TestCost(t *testing.T) {
 	if _, err := EstimateInput(1, Entry{}); !errors.Is(err, ErrUnpriced) {
 		t.Fatal("an estimate of an unpriced model")
 	}
-	u := FromLux(lux.Usage{InputTokens: 3, OutputTokens: 4, CacheReadInputTokens: i64(5), CostUSDMicro: i64(6)})
+	u := FromLux(lux.Usage{InputTokens: 3, OutputTokens: 4, CacheReadInputTokens: i64(5), CostMicroUSD: i64(6)})
 	if u.Input != 3 || u.Output != 4 || *u.CacheRead != 5 || u.CacheWrite != nil || *u.ReportedCostUSDMicro != 6 {
 		t.Fatalf("FromLux %+v", u)
 	}

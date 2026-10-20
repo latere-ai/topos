@@ -12,7 +12,7 @@ require (
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
 	latere.ai/x/cella v0.17.0
-	latere.ai/x/pkg v0.102.0
+	latere.ai/x/pkg v0.106.0
 )
 
 require (
@@ -30,6 +30,7 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/runtime v0.71.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.22.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0 // indirect
@@ -53,6 +54,7 @@ require (
 	google.golang.org/grpc v1.83.1 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	latere.ai/x/ci-gate v0.54.0 // indirect
+	latere.ai/x/sdk-go v0.1.0 // indirect
 )
 
 tool latere.ai/x/ci-gate/cmd/lateregate

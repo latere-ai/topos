@@ -361,7 +361,7 @@ func buildRequest(p requestParts) (ir.Request, error) {
 	limit := p.MaxTokens
 	req := lux.Request{Model: p.Model, System: system, Messages: msgs, Tools: p.Tools, MaxTokens: &limit, Stream: true, CacheKey: p.CacheKey, ReasoningReplay: p.ReasoningReplay}
 	if p.Effort != "" {
-		req.Reasoning = &lux.Reasoning{Effort: ir.Effort(p.Effort)}
+		req.Reasoning = &lux.Reasoning{Level: ir.Effort(p.Effort)}
 	}
 	return irOf(req)
 }
