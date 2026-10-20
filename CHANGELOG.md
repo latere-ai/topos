@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **The API document describes every body by a schema.** Each request and answer names a schema derived from the type the server encodes, so a generated client and a reader see every field, including those no example shows: a session's `metadata` and `trigger_id`, an `agent.tool_use`'s `client`, a `tool.result`'s `outcome` and `is_error`, and a `session.error`'s `retryable` and `detail`. `Event` lists one variant per event type with its payload's schema, and `SendEvent` one per type a person sends.
+- **The document names the parameters every list and the stream read.** `limit` and `cursor` on every list that pages, `from_seq` on a session's events, the `Last-Event-ID` header a stream resumes after, and the `Idempotency-Key` header every POST reads, with its replay, its `idempotency_conflict` and the `conflict` a repeat gets while the first request is still being answered.
+
 ### Fixed
 
 - **A session answers its folder once its working directory is kept there.** A session whose only files in its folder are the copy of its working directory, written at a turn's end under `work/`, now answers `folder {owner, path}`, where before it answered none until a message's attachment or a kept file was stored, so a caller reading what a run made found no folder to read it from.
