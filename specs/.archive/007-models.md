@@ -472,7 +472,15 @@ acceptance table passes.
   version written with hyphens as Anthropic's API writes it. Its windows and
   `supports` are OpenRouter's where OpenRouter lists it, else the list's
   windows; a Lux catalog model OpenRouter no longer lists also takes the
-  list's windows. The catalog was regenerated on 2026-10-21 from the Lux
-  catalog, a hosted Lux's list of 225 models and OpenRouter's list: it holds
-  291 entries, the Claude 5.5 models and Claude Fable 5.1 among them, where
-  it held 109.
+  list's windows.
+- OpenRouter stays the one source of `supports`, with one exception: a
+  model OpenRouter does not list keeps the `supports` of the catalog being
+  replaced, which `tools/catalog` reads with `-previous`, found by its name
+  or an alias. A model OpenRouter stops listing is still the model it was;
+  without this, `anthropic/claude-sonnet-4`, which OpenRouter delisted while
+  a hosted Lux still sells it, lost `thinking` and `images`.
+- The catalog was regenerated on 2026-10-21 from the Lux catalog, a hosted
+  Lux's list of 225 models, OpenRouter's list and, as `-previous`, the
+  catalog of v0.50.2: it holds 291 entries, the Claude 5.5 models and Claude
+  Fable 5.1 among them, where it held 109, and no entry supports less than
+  it did in v0.50.2.

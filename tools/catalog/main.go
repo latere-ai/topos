@@ -8,11 +8,13 @@
 // adds every model it sells that the directory does not name; input
 // windows, output limits and what a model supports, images among them,
 // come from OpenRouter's model list, saved from its public
-// /api/v1/models endpoint, matched by name, and a model OpenRouter does
-// not list takes its windows from the Lux list. OpenRouter's free models
-// that take tools are added at price zero, for development runs.
+// /api/v1/models endpoint, matched by name. A model OpenRouter does not
+// list takes its windows from the Lux list and what it supports from the
+// catalog being replaced, given as -previous, so a model OpenRouter stops
+// listing keeps what it was known to take. OpenRouter's free models that
+// take tools are added at price zero, for development runs.
 //
-//	go run ./tools/catalog -lux ../lux/deploy/catalog/models -served lux-models.json -openrouter models.json -date 2026-10-21
+//	go run ./tools/catalog -lux ../lux/deploy/catalog/models -served lux-models.json -previous models/catalog.json -openrouter models.json -date 2026-10-21
 package main
 
 import (
@@ -93,13 +95,14 @@ func cli(args []string, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	luxDir := fs.String("lux", "", "a Lux catalog directory of Model manifests")
 	served := fs.String("served", "", "a Lux door's GET /v1/models answer, saved to a file (optional)")
+	previous := fs.String("previous", "", "the catalog being replaced, whose supports a model OpenRouter does not list keeps (optional)")
 	orPath := fs.String("openrouter", "", "OpenRouter's /api/v1/models answer, saved to a file")
 	date := fs.String("date", "", "the date the sources were read, YYYY-MM-DD")
 	out := fs.String("out", "models/catalog.json", "the catalog to write")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if err := run(*luxDir, *served, *orPath, *date, *out); err != nil {
+	if err := run(*luxDir, *served, *previous, *orPath, *date, *out); err != nil {
 		// The exit code carries the failure when stderr cannot.
 		_, _ = fmt.Fprintln(stderr, "catalog:", err)
 		return 1
@@ -107,7 +110,7 @@ func cli(args []string, stderr io.Writer) int {
 	return 0
 }
 
-func run(luxDir, servedPath, orPath, date, out string) error {
+func run(luxDir, servedPath, previousPath, orPath, date, out string) error {
 	if luxDir == "" || orPath == "" || date == "" {
 		return errors.New("-lux, -openrouter and -date are required")
 	}
@@ -127,12 +130,22 @@ func run(luxDir, servedPath, orPath, date, out string) error {
 			return err
 		}
 	}
+	var previous models.Catalog
+	if previousPath != "" {
+		b, err := os.ReadFile(previousPath)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(b, &previous); err != nil {
+			return fmt.Errorf("%s: %w", previousPath, err)
+		}
+	}
 	sold := map[string]servedModel{}
 	for _, m := range served {
 		sold[normalize(m.ID)] = m
 	}
 	for _, f := range files {
-		e, ok, err := fromLux(f, windows, sold)
+		e, ok, err := fromLux(f, windows, sold, previous)
 		if err != nil {
 			return err
 		}
@@ -140,7 +153,7 @@ func run(luxDir, servedPath, orPath, date, out string) error {
 			c.Models = append(c.Models, e)
 		}
 	}
-	added, err := fromServed(servedPath, served, windows, c.Models)
+	added, err := fromServed(servedPath, served, windows, previous, c.Models)
 	if err != nil {
 		return err
 	}
@@ -204,7 +217,7 @@ var openRouterVendor = map[string]string{"gemini": "google"}
 // a version with hyphens where OpenRouter writes dots.
 func normalize(id string) string { return strings.ReplaceAll(strings.ToLower(id), ".", "-") }
 
-func fromLux(path string, windows map[string]openRouterModel, sold map[string]servedModel) (models.Entry, bool, error) {
+func fromLux(path string, windows map[string]openRouterModel, sold map[string]servedModel, previous models.Catalog) (models.Entry, bool, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return models.Entry{}, false, err
@@ -243,8 +256,22 @@ func fromLux(path string, windows map[string]openRouterModel, sold map[string]se
 				break
 			}
 		}
+		keepSupports(&e, previous)
 	}
 	return e, true, nil
+}
+
+// keepSupports gives e, a model OpenRouter does not list, what the catalog
+// being replaced said it supports, found by its name or an alias: OpenRouter
+// is the one source of what a model takes, and a model it stops listing is
+// still the model it was.
+func keepSupports(e *models.Entry, previous models.Catalog) {
+	for _, n := range append([]string{e.Name}, e.Aliases...) {
+		if p, ok := previous.Lookup(n); ok {
+			e.Supports = p.Supports
+			return
+		}
+	}
 }
 
 // servedWindows takes e's input window and output limit from a Lux list's
@@ -333,7 +360,7 @@ func matchOpenRouter(e *models.Entry, ids []string, windows map[string]openRoute
 // the list where OpenRouter does not list it. A model also answers to its
 // name without the provider, and an Anthropic model to its version
 // written with hyphens, the spelling of Anthropic's own API.
-func fromServed(path string, served []servedModel, windows map[string]openRouterModel, known []models.Entry) ([]models.Entry, error) {
+func fromServed(path string, served []servedModel, windows map[string]openRouterModel, previous models.Catalog, known []models.Entry) ([]models.Entry, error) {
 	taken := map[string]bool{}
 	for _, e := range known {
 		for _, n := range append([]string{e.Name}, e.Aliases...) {
@@ -370,6 +397,7 @@ func fromServed(path string, served []servedModel, windows map[string]openRouter
 		}
 		if !matchOpenRouter(&e, []string{m.ID, upstream}, windows) {
 			servedWindows(&e, m)
+			keepSupports(&e, previous)
 		}
 		for _, n := range append([]string{e.Name}, e.Aliases...) {
 			taken[normalize(n)] = true

@@ -338,6 +338,10 @@
       "pricing": {
         "input": "3",
         "output": "15"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
       }
     },
     {
@@ -3142,6 +3146,10 @@
       "pricing": {
         "input": "3",
         "output": "15"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
       }
     },
     {

@@ -47,7 +47,7 @@ func TestRunMergesPricesAndWindows(t *testing.T) {
 	or := filepath.Join(dir, "openrouter.json")
 	write(t, or, openRouter)
 	out := filepath.Join(dir, "catalog.json")
-	if err := run(lux, "", or, "2026-09-27", out); err != nil {
+	if err := run(lux, "", "", or, "2026-09-27", out); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(out)
@@ -128,8 +128,12 @@ func TestRunAddsWhatALuxSells(t *testing.T) {
  {"id":"anthropic/claude-opus-5.5","max_input_tokens":1000000,"max_tokens":128000,"input_modalities":["text","image"],"pricing":{"currency":"USD","per":1000000,"input":"4","output":"20","cached_input":"0.2","cache_write":"5"}},
  {"id":"x-ai/grok-9","context_window":500000,"max_output_tokens":64000,"pricing":{"currency":"EUR","per":1000000,"input":"1","output":"2"}}
 ]}`)
+	// The catalog being replaced knew what claude-sonnet-4 takes, which
+	// OpenRouter no longer says.
+	previous := filepath.Join(dir, "previous.json")
+	write(t, previous, `{"models":[{"name":"anthropic/claude-sonnet-4","aliases":["claude-sonnet-4"],"supports":{"thinking":true,"images":true}}]}`)
 	out := filepath.Join(dir, "catalog.json")
-	if err := run(lux, served, or, "2026-10-21", out); err != nil {
+	if err := run(lux, served, previous, or, "2026-10-21", out); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(out)
@@ -143,9 +147,15 @@ func TestRunAddsWhatALuxSells(t *testing.T) {
 	if len(c.Models) != 4 || !strings.Contains(c.Source, "served model list") {
 		t.Fatalf("catalog of %d from %q, want the Lux catalog's two models and the two only the list sells", len(c.Models), c.Source)
 	}
-	// A Lux catalog model OpenRouter does not list takes the list's windows.
-	if sonnet, _ := c.Lookup("claude-sonnet-4"); sonnet.InputWindow != 200_000 || sonnet.MaxOutputTokens != 64_000 {
-		t.Fatalf("the Lux catalog's sonnet %+v, want the served list's windows", sonnet)
+	// A Lux catalog model OpenRouter does not list takes the list's windows
+	// and keeps what the catalog it replaces said it supports.
+	if sonnet, _ := c.Lookup("claude-sonnet-4"); sonnet.InputWindow != 200_000 || sonnet.MaxOutputTokens != 64_000 || !sonnet.Supports.Thinking || !sonnet.Supports.Images {
+		t.Fatalf("the Lux catalog's sonnet %+v, want the served list's windows and the previous catalog's supports", sonnet)
+	}
+	// A model neither OpenRouter nor the catalog being replaced knows is
+	// known to support nothing.
+	if grok, _ := c.Lookup("grok-9"); grok.Supports != (models.Supports{}) {
+		t.Fatalf("grok %+v", grok.Supports)
 	}
 	// The Lux catalog's own entry keeps its prices.
 	if opus, _ := c.Lookup("claude-opus-5"); *opus.Pricing.Input != 5_000_000 || opus.InputWindow != 1_000_000 {
@@ -167,15 +177,22 @@ func TestRunAddsWhatALuxSells(t *testing.T) {
 	}
 
 	write(t, served, `{"data":[{"id":"no-provider"}]}`)
-	if err := run(lux, served, or, "d", out); err == nil {
+	if err := run(lux, served, "", or, "d", out); err == nil {
 		t.Fatal("ran over a model list naming a model without its provider")
 	}
 	write(t, served, `{"data":[{"id":"a/b","pricing":{"per":1000000,"input":"one"}}]}`)
-	if err := run(lux, served, or, "d", out); err == nil {
+	if err := run(lux, served, "", or, "d", out); err == nil {
 		t.Fatal("ran over a model list with a price that is not a decimal")
 	}
-	if err := run(lux, filepath.Join(dir, "missing.json"), or, "d", out); err == nil {
+	if err := run(lux, filepath.Join(dir, "missing.json"), "", or, "d", out); err == nil {
 		t.Fatal("ran without the model list it was given")
+	}
+	if err := run(lux, "", filepath.Join(dir, "missing.json"), or, "d", out); err == nil {
+		t.Fatal("ran without the previous catalog it was given")
+	}
+	write(t, previous, "{")
+	if err := run(lux, "", previous, or, "d", out); err == nil {
+		t.Fatal("ran over an undecodable previous catalog")
 	}
 }
 
@@ -183,15 +200,15 @@ func TestRunRefusesBadInput(t *testing.T) {
 	dir := t.TempDir()
 	or := filepath.Join(dir, "openrouter.json")
 	write(t, or, openRouter)
-	if err := run("", "", or, "d", filepath.Join(dir, "out")); err == nil {
+	if err := run("", "", "", or, "d", filepath.Join(dir, "out")); err == nil {
 		t.Fatal("ran without -lux")
 	}
-	if err := run(dir, "", filepath.Join(dir, "missing.json"), "d", filepath.Join(dir, "out")); err == nil {
+	if err := run(dir, "", "", filepath.Join(dir, "missing.json"), "d", filepath.Join(dir, "out")); err == nil {
 		t.Fatal("ran without the OpenRouter list")
 	}
 	bad := filepath.Join(dir, "bad.json")
 	write(t, bad, "{")
-	if err := run(dir, "", bad, "d", filepath.Join(dir, "out")); err == nil {
+	if err := run(dir, "", "", bad, "d", filepath.Join(dir, "out")); err == nil {
 		t.Fatal("ran over an undecodable OpenRouter list")
 	}
 	for name, body := range map[string]string{
@@ -205,7 +222,7 @@ func TestRunRefusesBadInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		write(t, filepath.Join(sub, name), body)
-		if err := run(sub, "", or, "d", filepath.Join(dir, "out")); err == nil {
+		if err := run(sub, "", "", or, "d", filepath.Join(dir, "out")); err == nil {
 			t.Fatalf("%s: ran over a bad manifest", name)
 		}
 	}
