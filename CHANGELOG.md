@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.51.0 - 2026-10-21
+
 ### Added
 
 - **The built-in model catalog knows the current models.** It holds 291 models where it held 109: Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 and Claude Fable 5.1, each by the hosted Lux's name (`anthropic/claude-opus-5.5`) and by Anthropic's id (`claude-opus-5-5`), and every other model a hosted Lux sells today, with their prices, windows and output limits. An agent can name them on a direct Anthropic or OpenAI connection, where a model the catalog does not know is refused `model_unknown`. `tools/catalog` reads the new source with `-served`, a Lux door's model list saved to a file, and with `-previous` the catalog it replaces, so a model OpenRouter stops listing, `claude-sonnet-4` among them, keeps what it is known to take, images and thinking included.
