@@ -120,7 +120,10 @@ session, `trigger:<trg_id>` for a trigger's message (a triggered
 session's initiator is the trigger's owner, [[022-triggers]]),
 `service:authorizer` for a change the installation's authorizer made
 (added by [[038-routed-models]]); `kind` is `person`,
-`trigger` or `service`; `name` is for display.
+`trigger` or `service`; `name` is for display; `client`, present only
+when set, is the OAuth client of the token the server verified for the
+request that wrote it, its `client_id` claim or else its `azp` (added by
+[[085-the-client-a-message-came-from-and-a-days-activity]]).
 
 ### Status and stop reasons
 
