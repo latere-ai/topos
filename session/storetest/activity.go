@@ -23,7 +23,6 @@ import (
 // day counts. A store with its own Activity answers what CountActivity
 // reads from every log.
 func testActivity(t *testing.T, st session.Store) {
-	ctx := t.Context()
 	day := session.ActivityOptions{From: t0.Truncate(24 * time.Hour), To: t0.Truncate(24 * time.Hour).Add(24 * time.Hour)}
 	person := func(subject, client string) session.Sender {
 		return session.Sender{Subject: subject, Kind: session.SenderPerson, Client: client}
@@ -52,7 +51,7 @@ func testActivity(t *testing.T, st session.Store) {
 		if edit != nil {
 			edit(&s)
 		}
-		if err := st.Create(ctx, s, nil); err != nil {
+		if err := st.Create(t.Context(), s, nil); err != nil {
 			t.Fatal(err)
 		}
 		appendAll(t, st, s.ID, 0, events...)
@@ -101,7 +100,7 @@ func testActivity(t *testing.T, st session.Store) {
 	cy := person("usr_3", "web")
 	redacted := message(cy, t0, 1, "", "")
 	s := start(cy, t0.Add(-24*time.Hour), nil, redacted, status(session.StatusIdle, session.StopEndTurn, t0.Add(time.Minute), 1))
-	if err := st.Redact(ctx, s.ID, redacted.ID, cy, "test"); err != nil {
+	if err := st.Redact(t.Context(), s.ID, redacted.ID, cy, "test"); err != nil {
 		t.Fatal(err)
 	}
 
