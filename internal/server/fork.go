@@ -127,7 +127,7 @@ func (c *call) forkSession() error {
 	if b.Tree != nil && *b.Tree != TreeNew {
 		return refuse(CodeInvalidRequest, "tree is %q; a fork joins its parent's tree when tree is absent, and starts its own with %q", *b.Tree, TreeNew)
 	}
-	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
+	sender := personSender(c.caller)
 	var message *forkMessage
 	if b.Message != nil {
 		payload, files, err := b.Message.check(sender, true)

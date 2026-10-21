@@ -69,6 +69,12 @@ type Sender struct {
 	Subject string `json:"subject"`
 	Name    string `json:"name,omitempty"`
 	Kind    string `json:"kind"`
+	// Client is the OAuth client of the token the server verified for
+	// the request that wrote the event (spec 085): the application the
+	// person used, as the issuer names it. The server writes it from the
+	// token and never from a body; it is empty for a token that names no
+	// client and on a sender no request wrote, such as a trigger's.
+	Client string `json:"client,omitempty"`
 }
 
 // The kinds of Sender.

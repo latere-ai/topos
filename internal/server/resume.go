@@ -101,7 +101,7 @@ func (c *call) resumeWaiting(s session.Session, reason string, limit *int64) err
 // session has.
 func (c *call) resumed(s session.Session, reason string, max *int64) error {
 	ctx := c.r.Context()
-	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
+	sender := personSender(c.caller)
 	ev, err := session.NewEvent(session.TypeSessionResumed, session.SessionResumed{By: sender, Reason: reason, MaxCostUSDMicro: max}, c.s.o.Now())
 	if err != nil {
 		return err

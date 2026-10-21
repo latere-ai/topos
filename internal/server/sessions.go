@@ -250,7 +250,7 @@ func (c *call) createSession() error {
 		return err
 	}
 	in := creation{agent: b.Agent, title: b.Title, message: b.Message, metadata: b.Metadata, endOnIdle: b.EndOnIdle, attended: b.Attended, resources: resources,
-		machine: machine, capture: b.Capture, sender: session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson},
+		machine: machine, capture: b.Capture, sender: personSender(c.caller),
 		rollout: b.Rollout, model: b.Model}
 	if b.Budget != nil {
 		in.budget = b.Budget.MaxCostUSDMicro
@@ -549,7 +549,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		return session.Session{}, err
 	}
 	now := s.o.Now()
-	sess := session.New(ref, session.Sender{Subject: q.caller.Subject, Kind: session.SenderPerson}, session.RunnerHosted, m, now)
+	sess := session.New(ref, personSender(q.caller), session.RunnerHosted, m, now)
 	sess.ID = id
 	sess.Title, sess.Metadata, sess.EndOnIdle, sess.Resources, sess.TriggerID = in.title, in.metadata, in.endOnIdle, resources, in.triggerID
 	sess.TriggerFiresOn = in.firesOn
@@ -1605,4 +1605,12 @@ func (s *Server) appendChecked(ctx context.Context, id string, batch []session.E
 		}
 	}
 	return err
+}
+
+// personSender is the sender of what a caller writes: the verified
+// subject, and the OAuth client of the verified token (spec 085). Every
+// sender the API records for a caller is built here, so no body names
+// either.
+func personSender(c auth.Caller) session.Sender {
+	return session.Sender{Subject: c.Subject, Kind: session.SenderPerson, Client: auth.ClientOf(c)}
 }

@@ -40,16 +40,21 @@ const (
 type tokens struct{}
 
 // A bearer of sub@org carries the org_id claim org, the context a token
-// of an organization's member names.
+// of an organization's member names, and one of sub+client the client_id
+// claim client, the application a token was issued to.
 func (tokens) Authenticate(r *http.Request) (auth.Caller, error) {
 	tok, ok := bearer.FromRequest(r)
 	sub, org, _ := strings.Cut(tok, "@")
+	sub, client, _ := strings.Cut(sub, "+")
 	if !ok || sub == "" || sub == "forged" {
 		return auth.Caller{}, &auth.Error{Code: auth.CodeUnauthenticated, Message: "no bearer"}
 	}
 	claims := map[string]any{"sub": sub}
 	if org != "" {
 		claims["org_id"] = org
+	}
+	if client != "" {
+		claims["client_id"] = client
 	}
 	return auth.Caller{Subject: authz.Subject(issuer, sub), Issuer: issuer, Sub: sub, Claims: claims}, nil
 }
@@ -212,38 +217,39 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		t.Fatalf("events %v, %v", evs, err)
 	}
 	cases := map[string]struct{ method, path, body string }{
-		"applyAgent":        {http.MethodPut, "/v1/agents/reviewer", agentYAML("reviewer", "Review closely.")},
-		"listAgents":        {http.MethodGet, "/v1/agents", ""},
-		"getAgent":          {http.MethodGet, "/v1/agents/reviewer", ""},
-		"listAgentVersions": {http.MethodGet, "/v1/agents/reviewer/versions", ""},
-		"getAgentVersion":   {http.MethodGet, "/v1/agents/reviewer/versions/1", ""},
-		"archiveAgent":      {http.MethodPost, "/v1/agents/archivist/archive", `{"permanent":true}`},
-		"deleteAgent":       {http.MethodDelete, "/v1/agents/spare", ""},
-		"createSession":     {http.MethodPost, "/v1/sessions", `{"agent":"reviewer"}`},
-		"listSessions":      {http.MethodGet, "/v1/sessions", ""},
-		"getSessionSummary": {http.MethodGet, "/v1/sessions/summary", ""},
-		"searchSessions":    {http.MethodGet, "/v1/sessions/search?q=review", ""},
-		"getSession":        {http.MethodGet, "/v1/sessions/" + s.ID, ""},
-		"updateSession":     {http.MethodPatch, "/v1/sessions/" + s.ID, `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`},
-		"endSession":        {http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`},
-		"resumeSession":     {http.MethodPost, "/v1/sessions/" + s.ID + "/resume", `{}`},
-		"forkSession":       {http.MethodPost, "/v1/sessions/" + ended.ID + "/fork", ""},
-		"archiveSession":    {http.MethodPost, "/v1/sessions/" + ended.ID + "/archive", ""},
-		"unarchiveSession":  {http.MethodPost, "/v1/sessions/" + ended.ID + "/unarchive", ""},
-		"deleteSession":     {http.MethodDelete, "/v1/sessions/" + doomed.ID, ""},
-		"listEvents":        {http.MethodGet, "/v1/sessions/" + ended.ID + "/events", ""},
-		"sendEvent":         {http.MethodPost, "/v1/sessions/" + ended.ID + "/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"x"}]}}`},
-		"streamEvents":      {http.MethodGet, "/v1/sessions/" + ended.ID + "/stream", ""},
-		"getBlob":           {http.MethodGet, "/v1/sessions/" + ended.ID + "/blobs/" + string(ended.Agent.Digest), ""},
-		"getFile":           {http.MethodGet, "/v1/sessions/" + ended.ID + "/files?path=a.txt", ""},
-		"redactEvent":       {http.MethodPost, "/v1/sessions/" + ended.ID + "/events/" + evs[0].ID + "/redact", `{"reason":"a token"}`},
-		"getOpenAPI":        {http.MethodGet, "/v1/openapi.yaml", ""},
-		"applyTrigger":      {http.MethodPut, "/v1/triggers/fresh", triggerYAML("fresh", "schedule: '@daily', session: {message: x}")},
-		"listTriggers":      {http.MethodGet, "/v1/triggers", ""},
-		"getTrigger":        {http.MethodGet, "/v1/triggers/nightly", ""},
-		"deleteTrigger":     {http.MethodDelete, "/v1/triggers/retired", ""},
-		"fireTrigger":       {http.MethodPost, "/v1/triggers/nightly/fire", ""},
-		"listFirings":       {http.MethodGet, "/v1/triggers/nightly/firings", ""},
+		"applyAgent":         {http.MethodPut, "/v1/agents/reviewer", agentYAML("reviewer", "Review closely.")},
+		"listAgents":         {http.MethodGet, "/v1/agents", ""},
+		"getAgent":           {http.MethodGet, "/v1/agents/reviewer", ""},
+		"listAgentVersions":  {http.MethodGet, "/v1/agents/reviewer/versions", ""},
+		"getAgentVersion":    {http.MethodGet, "/v1/agents/reviewer/versions/1", ""},
+		"archiveAgent":       {http.MethodPost, "/v1/agents/archivist/archive", `{"permanent":true}`},
+		"deleteAgent":        {http.MethodDelete, "/v1/agents/spare", ""},
+		"createSession":      {http.MethodPost, "/v1/sessions", `{"agent":"reviewer"}`},
+		"listSessions":       {http.MethodGet, "/v1/sessions", ""},
+		"getSessionSummary":  {http.MethodGet, "/v1/sessions/summary", ""},
+		"getSessionActivity": {http.MethodGet, "/v1/sessions/activity?day=2026-01-02", ""},
+		"searchSessions":     {http.MethodGet, "/v1/sessions/search?q=review", ""},
+		"getSession":         {http.MethodGet, "/v1/sessions/" + s.ID, ""},
+		"updateSession":      {http.MethodPatch, "/v1/sessions/" + s.ID, `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`},
+		"endSession":         {http.MethodPost, "/v1/sessions/" + s.ID + "/end", `{"reason":"canceled"}`},
+		"resumeSession":      {http.MethodPost, "/v1/sessions/" + s.ID + "/resume", `{}`},
+		"forkSession":        {http.MethodPost, "/v1/sessions/" + ended.ID + "/fork", ""},
+		"archiveSession":     {http.MethodPost, "/v1/sessions/" + ended.ID + "/archive", ""},
+		"unarchiveSession":   {http.MethodPost, "/v1/sessions/" + ended.ID + "/unarchive", ""},
+		"deleteSession":      {http.MethodDelete, "/v1/sessions/" + doomed.ID, ""},
+		"listEvents":         {http.MethodGet, "/v1/sessions/" + ended.ID + "/events", ""},
+		"sendEvent":          {http.MethodPost, "/v1/sessions/" + ended.ID + "/events", `{"type":"user.message","payload":{"content":[{"type":"text","text":"x"}]}}`},
+		"streamEvents":       {http.MethodGet, "/v1/sessions/" + ended.ID + "/stream", ""},
+		"getBlob":            {http.MethodGet, "/v1/sessions/" + ended.ID + "/blobs/" + string(ended.Agent.Digest), ""},
+		"getFile":            {http.MethodGet, "/v1/sessions/" + ended.ID + "/files?path=a.txt", ""},
+		"redactEvent":        {http.MethodPost, "/v1/sessions/" + ended.ID + "/events/" + evs[0].ID + "/redact", `{"reason":"a token"}`},
+		"getOpenAPI":         {http.MethodGet, "/v1/openapi.yaml", ""},
+		"applyTrigger":       {http.MethodPut, "/v1/triggers/fresh", triggerYAML("fresh", "schedule: '@daily', session: {message: x}")},
+		"listTriggers":       {http.MethodGet, "/v1/triggers", ""},
+		"getTrigger":         {http.MethodGet, "/v1/triggers/nightly", ""},
+		"deleteTrigger":      {http.MethodDelete, "/v1/triggers/retired", ""},
+		"fireTrigger":        {http.MethodPost, "/v1/triggers/nightly/fire", ""},
+		"listFirings":        {http.MethodGet, "/v1/triggers/nightly/firings", ""},
 	}
 	var ops []string
 	for _, rt := range table() {

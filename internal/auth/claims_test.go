@@ -63,3 +63,24 @@ func TestFiredByIsTheKeysClaimsVerbatim(t *testing.T) {
 		}
 	}
 }
+
+// TestClientOf: the client a sender records is the token's client_id,
+// its azp where it carries no client_id, and "" for a token that names
+// neither or names one that is not a string (spec 085).
+func TestClientOf(t *testing.T) {
+	for _, c := range []struct {
+		claims map[string]any
+		want   string
+	}{
+		{map[string]any{"client_id": "web", "azp": "other"}, "web"},
+		{map[string]any{"azp": "desk"}, "desk"},
+		{map[string]any{"client_id": "", "azp": "desk"}, "desk"},
+		{map[string]any{"client_id": 7}, ""},
+		{map[string]any{}, ""},
+		{nil, ""},
+	} {
+		if got := auth.ClientOf(auth.Caller{Claims: c.claims}); got != c.want {
+			t.Errorf("ClientOf(%v) = %q, want %q", c.claims, got, c.want)
+		}
+	}
+}

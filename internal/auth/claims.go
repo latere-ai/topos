@@ -53,3 +53,15 @@ func (c Caller) Organization() string {
 	org, _ := c.Claims["org_id"].(string)
 	return org
 }
+
+// ClientOf is the OAuth client the caller's token was issued to, the
+// client a sender records (spec 085): the token's client_id claim (RFC
+// 9068 section 2.2), or its azp claim when it carries no client_id, and
+// "" for a token that names neither. The core reads no meaning from it.
+func ClientOf(c Caller) string {
+	if id, _ := c.Claims["client_id"].(string); id != "" {
+		return id
+	}
+	azp, _ := c.Claims["azp"].(string)
+	return azp
+}

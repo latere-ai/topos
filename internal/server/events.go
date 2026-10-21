@@ -106,7 +106,7 @@ func (c *call) sendEvent() error {
 	if err := c.decode(&b); err != nil {
 		return err
 	}
-	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
+	sender := personSender(c.caller)
 	var payload any
 	// message is a user.message's payload, which takes its files' blobs
 	// once the session is known to take it.
@@ -652,7 +652,7 @@ func (c *call) redact() error {
 			}
 		}
 	}
-	by := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
+	by := personSender(c.caller)
 	if err := c.s.o.Sessions.Redact(c.r.Context(), s.ID, id, by, b.Reason); err != nil {
 		return err
 	}

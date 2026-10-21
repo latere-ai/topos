@@ -205,7 +205,7 @@ func (c *call) updateSession() error {
 	if r := limits.Reasoning; b.Model != nil && r != nil {
 		next.Effort = cmp.Or(*r, cfg.Effort)
 	}
-	sender := session.Sender{Subject: c.caller.Subject, Kind: session.SenderPerson}
+	sender := personSender(c.caller)
 	now := c.s.o.Now()
 	var batch []session.Event
 	if next != old {
