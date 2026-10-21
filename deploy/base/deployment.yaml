@@ -77,6 +77,17 @@ spec:
               port: internal
             initialDelaySeconds: 10
             periodSeconds: 30
+          # The store's migrations run before the listeners answer, and an
+          # index built concurrently over a large log takes minutes. The
+          # start probe holds the liveness probe off for up to 15 minutes,
+          # so a start that is still migrating is not killed, which would
+          # leave the migration dirty and the next start refused.
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: internal
+            periodSeconds: 10
+            failureThreshold: 90
           resources:
             requests:
               cpu: 50m

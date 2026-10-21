@@ -152,3 +152,39 @@ func testActivity(t *testing.T, st session.Store) {
 // plain is a store seen through session.Store alone, so CountActivity
 // reads its logs rather than its own count.
 type plain struct{ session.Store }
+
+// testActivityOrder holds a store's pages of senders to byte order, the
+// order Go sorts a page in, whatever the database's collation: an
+// uppercase subject comes before a lowercase one, and a page after it
+// holds the lowercase one alone.
+func testActivityOrder(t *testing.T, st session.Store) {
+	day := session.ActivityOptions{From: t0.Truncate(24 * time.Hour), To: t0.Truncate(24 * time.Hour).Add(24 * time.Hour)}
+	for _, subject := range []string{"usr_a", "usr_B"} {
+		s := NewSession()
+		s.Initiator = session.Sender{Subject: subject, Kind: session.SenderPerson}
+		if err := st.Create(t.Context(), s, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	senders := func(o session.ActivityOptions) []string {
+		got, err := session.CountActivity(t.Context(), st, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []string{}
+		for _, g := range got {
+			out = append(out, g.Sender)
+		}
+		return out
+	}
+	first := day
+	first.Limit = 1
+	if got := senders(first); !reflect.DeepEqual(got, []string{"usr_B"}) {
+		t.Fatalf("the first page of one is %v, want usr_B", got)
+	}
+	after := day
+	after.After = "usr_B"
+	if got := senders(after); !reflect.DeepEqual(got, []string{"usr_a"}) {
+		t.Fatalf("the page after usr_B is %v, want usr_a", got)
+	}
+}

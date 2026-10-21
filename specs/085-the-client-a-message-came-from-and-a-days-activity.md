@@ -130,10 +130,27 @@ it is asked once per request.
 without reading every log. The Postgres store answers it with three
 grouped queries over the day's rows, a partial index on `events (time)`
 for the `user.message` and `session.status` rows of a session's own
-thread (migration 0014) and an index on `sessions (created_at)`
-(migration 0015), so the read touches the day's rows alone. Both are
-built concurrently, each the one statement of its file, so a running
-installation's appends are not held while they build.
+thread and an index on `sessions (created_at)`, so the read touches the
+day's rows alone. Subjects are compared byte by byte (`COLLATE "C"`), the
+order a page is cut in, whatever the database's collation.
+
+Each index is built concurrently, so a running installation's appends
+are not held while it builds, and a concurrent build runs outside a
+transaction, so each migration file holds one statement: 0014 drops an
+`events_activity` a stopped build left, 0015 builds it, and 0016 and 0017
+do the same for `sessions_created`. No valid index of either name exists
+before its build, so the drop only ever removes a leftover. The
+migrations run before the listeners answer; the deployment's start probe
+gives a start 15 minutes before the liveness probe applies, so a long
+build is not killed.
+
+**Recovery.** A start stopped during 0015 or 0017 leaves the version
+dirty, and toposd then refuses to start with the migration's error.
+Force the version back to the drop before it and start again: `migrate
+-database "$TOPOS_DATABASE_URL" -path internal/store/postgres/migrations
+force 13` for 0015, `force 15` for 0017. The drop then removes the
+invalid index and the build runs again.
+
 The other stores are counted by `session.CountActivity`, which reads
 every session's log, and is the reference the store suite holds the
 Postgres answer to.
@@ -155,7 +172,7 @@ Postgres answer to.
 | A message sent with a token that names no client has no `client` in its payload; an event written before this spec reads with an empty client | `server.TestSendersCarryTheCallersClient`, `session.TestSenderClientIsOptional` |
 | The rules: a person's message on the own thread with no firing counts and a trigger's, a firing's, a subagent's and a redacted one do not; a turn's normal end finishes an answer and an error, a limit, a question, an end through the API and a subagent's end do not; a session a person started counts and a trigger's and a rollout's do not | `session.TestTheActivityRules` |
 | A day's messages, sessions and answers are counted per sender and client by those rules on every store, an answer for the person whose message the turn answered, nothing outside the day, and a sender, an after and a limit narrow the answer | `storetest` `Activity` on the memory, directory and Postgres stores; `server.TestActivityCountsADay` |
-| The Postgres store answers what `session.CountActivity` reads from every log, and each of its three counts reads by an index of migrations 0014 and 0015 | `storetest` `Activity` on Postgres, `postgres.TestActivityUsesTheTimeIndex` |
+| The Postgres store answers what `session.CountActivity` reads from every log, and each of its three counts reads by an index of migrations 0015 and 0017, and a page is cut in byte order | `storetest` `Activity` on Postgres, `postgres.TestActivityUsesTheTimeIndex`, `storetest` `ActivityOrder` |
 | A page holds `limit` senders and names the next one's cursor; the last names none | `server.TestActivityPages` |
 | The route asks `session.activity` once, about the collection, with `day` and `sender`; the owner policy allows an admin and a caller naming themselves, and refuses anyone else; a deny answers `forbidden` | `server.TestActivityAsksOnce`, `auth.TestOwnerPolicyActivity` |
 | A day that is absent, not a date, before the first day or after today, a limit out of range and a cursor not issued here answer `invalid_request` and ask nothing | `server.TestActivityRefusesABadDay` |
@@ -164,12 +181,16 @@ Postgres answer to.
 ## Outcome
 
 Built on 2026-10-21 as designed, every criterion with its test, and not
-released. Two changes against the first draft:
+released. Three changes against the first draft:
 
 - The answer is the page every list answers, `{"items", "next_cursor"}`,
   rather than an object that repeats the day.
 - The messages and answers of a rollout's runs are left out beside its
   sessions, since a rollout's turns run unattended.
+- The indexes are built concurrently, each behind a drop of what a
+  stopped build left, with a start probe that waits for them, after a
+  review found a plain build would hold appends and a probe could kill a
+  long one.
 
 The client is what the verified token names. A token minted for a
 person by an issuer that leaves the client off records an empty client;

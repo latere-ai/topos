@@ -17,10 +17,13 @@ import (
 // The three counts of a window's activity (spec 085), each grouped by the
 // subject it is counted for. They apply session.PersonMessage,
 // session.StartedByPerson and session.FinishedAnswer in SQL, over the rows
-// the events_activity and sessions_created indexes (migrations 0014 and
-// 0015) find by time; the
+// the events_activity and sessions_created indexes (migrations 0015 and
+// 0017) find by time; the
 // store suite holds them to session.CountActivity. $1 and $2 are the
-// window, $3 the one sender or "", $4 the subject the page starts after.
+// window, $3 the one sender or "", $4 the subject the page starts after,
+// compared byte by byte (COLLATE "C") as Go orders the page, so the cut
+// at a page's end and the next page's start agree whatever the
+// database's collation.
 const (
 	activityMessages = `
 SELECT m.p->'sender'->>'subject', COALESCE(m.p->'sender'->>'client', ''), count(*)
@@ -29,7 +32,7 @@ SELECT m.p->'sender'->>'subject', COALESCE(m.p->'sender'->>'client', ''), count(
          WHERE e.type = 'user.message' AND e.thread = '' AND NOT e.redacted
            AND e.time >= $1 AND e.time < $2 AND s.rollout IS NULL) m
  WHERE m.p->'sender'->>'kind' = 'person' AND COALESCE(m.p->>'firing_id', '') = ''
-   AND ($3 = '' OR m.p->'sender'->>'subject' = $3) AND m.p->'sender'->>'subject' > $4
+   AND ($3 = '' OR m.p->'sender'->>'subject' = $3) AND (m.p->'sender'->>'subject') COLLATE "C" > $4
  GROUP BY 1, 2`
 
 	activitySessions = `
@@ -37,7 +40,7 @@ SELECT s.b->'initiator'->>'subject', COALESCE(s.b->'initiator'->>'client', ''), 
   FROM (SELECT body::jsonb AS b FROM sessions
          WHERE created_at >= $1 AND created_at < $2 AND trigger_id IS NULL AND rollout IS NULL) s
  WHERE s.b->'initiator'->>'kind' = 'person'
-   AND ($3 = '' OR s.b->'initiator'->>'subject' = $3) AND s.b->'initiator'->>'subject' > $4
+   AND ($3 = '' OR s.b->'initiator'->>'subject' = $3) AND (s.b->'initiator'->>'subject') COLLATE "C" > $4
  GROUP BY 1, 2`
 
 	activityAnswers = `
@@ -55,7 +58,7 @@ SELECT last.p->'sender'->>'subject', count(*)
  WHERE ((ended.p->>'status' = 'idle' AND ended.p->>'stop_reason' = 'end_turn')
         OR (ended.p->>'status' = 'ended' AND ended.p->>'stop_reason' = 'completed'))
    AND last.p->'sender'->>'kind' = 'person' AND COALESCE(last.p->>'firing_id', '') = ''
-   AND ($3 = '' OR last.p->'sender'->>'subject' = $3) AND last.p->'sender'->>'subject' > $4
+   AND ($3 = '' OR last.p->'sender'->>'subject' = $3) AND (last.p->'sender'->>'subject') COLLATE "C" > $4
  GROUP BY 1`
 )
 
