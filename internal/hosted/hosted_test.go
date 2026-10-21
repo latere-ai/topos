@@ -299,20 +299,21 @@ func TestLuxServedFiguresOverlayTheCatalog(t *testing.T) {
 }
 
 // TestAModelTheCatalogDoesNotNameIsAskedOfLuxsOpenAIDoor: an agent's model
-// that neither the embedded catalog nor the agent gives a family, such as a
-// provider's model Lux routes, goes through the Lux root's OpenAI door, whose
-// list gives its figures, rather than being refused as unknown unasked.
+// that neither the embedded catalog nor the agent gives a family, and whose
+// name begins with no provider Topos has a family of, such as a provider's
+// model Lux routes, goes through the Lux root's OpenAI door, whose list
+// gives its figures, rather than being refused as unknown unasked.
 func TestAModelTheCatalogDoesNotNameIsAskedOfLuxsOpenAIDoor(t *testing.T) {
 	st := session.NewMemoryStore()
 	stub := luxstub.New(t)
-	stub.Models(bridge.Model{Name: "deepseek/deepseek-v4-flash-0731", ContextWindow: 1_310_720, MaxOutputTokens: 943_718})
+	stub.Models(bridge.Model{Name: "vendor/door-only-model", ContextWindow: 1_310_720, MaxOutputTokens: 943_718})
 	doors := models.Doors{"anthropic": stub.URL() + "/anthropic", "openai": stub.URL() + "/openai"}
 	var asked v1.Machine
 	h, err := Harness(Options{Store: st, ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k", Machines: hostMachines(t, &asked)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := strings.Replace(reviewer, "model: {name: anthropic/claude-haiku-4.5}", "model: {name: deepseek/deepseek-v4-flash-0731}", 1)
+	agent := strings.Replace(reviewer, "model: {name: anthropic/claude-haiku-4.5}", "model: {name: vendor/door-only-model}", 1)
 	cfg, err := h(t.Context(), newSession(t, st, agent))
 	if err != nil {
 		t.Fatalf("a model Lux serves with its figures was refused: %v", err)
@@ -323,6 +324,42 @@ func TestAModelTheCatalogDoesNotNameIsAskedOfLuxsOpenAIDoor(t *testing.T) {
 	}
 	if cfg.Connection.BaseURL != stub.URL()+"/openai" || cfg.Connection.Dialect != ir.DialectOpenAIChat {
 		t.Fatalf("connection %+v, want the OpenAI door", cfg.Connection)
+	}
+}
+
+// TestAnAnthropicModelTheCatalogDoesNotNameGoesToTheAnthropicDoor: a model
+// the embedded catalog does not name yet, under the anthropic provider, is
+// spoken to on the Anthropic door in its own dialect, with the door's
+// figures, rather than translated through the OpenAI door.
+func TestAnAnthropicModelTheCatalogDoesNotNameGoesToTheAnthropicDoor(t *testing.T) {
+	const next = "anthropic/claude-next-9"
+	cat, err := models.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, known := cat.Lookup(next); known {
+		t.Fatalf("the embedded catalog names %s", next)
+	}
+	st := session.NewMemoryStore()
+	stub := luxstub.New(t)
+	stub.Models(bridge.Model{Name: next, ContextWindow: 1_000_000, MaxOutputTokens: 128_000})
+	doors := models.Doors{"anthropic": stub.URL() + "/anthropic", "openai": stub.URL() + "/openai"}
+	var asked v1.Machine
+	h, err := Harness(Options{Store: st, ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k", Machines: hostMachines(t, &asked)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := strings.Replace(reviewer, "model: {name: anthropic/claude-haiku-4.5}", "model: {name: "+next+"}", 1)
+	cfg, err := h(t.Context(), newSession(t, st, agent))
+	if err != nil {
+		t.Fatalf("a model Lux serves with its figures was refused: %v", err)
+	}
+	t.Cleanup(func() { _ = cfg.Machine.Release(context.Background(), true) })
+	if cfg.Connection.BaseURL != stub.URL()+"/anthropic" || cfg.Connection.Family != models.FamilyAnthropic || cfg.Connection.Dialect != ir.DialectAnthropicMessages {
+		t.Fatalf("connection %+v, want the Anthropic door in its dialect", cfg.Connection)
+	}
+	if cfg.Entry.InputWindow != 1_000_000 || cfg.Entry.MaxOutputTokens != 128_000 {
+		t.Fatalf("entry %+v, want the Anthropic door's figures", cfg.Entry)
 	}
 }
 
@@ -473,7 +510,7 @@ func TestAConnectionWaitsForTheDoorToListItsModel(t *testing.T) {
 // door that does not answer are model_unavailable.
 func TestRunnable(t *testing.T) {
 	stub := luxstub.New(t)
-	stub.Models(bridge.Model{Name: "deepseek/deepseek-v4-flash-0731", ContextWindow: 1_310_720, MaxOutputTokens: 943_718})
+	stub.Models(bridge.Model{Name: "vendor/door-only-model", ContextWindow: 1_310_720, MaxOutputTokens: 943_718})
 	doors := models.Doors{"anthropic": stub.URL() + "/anthropic", "openai": stub.URL() + "/openai"}
 	gone := httptest.NewServer(http.NotFoundHandler())
 	gone.Close()
@@ -484,10 +521,10 @@ func TestRunnable(t *testing.T) {
 		model string
 		code  string
 	}{
-		{"a door-only model with a key", Options{ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k"}, "deepseek/deepseek-v4-flash-0731", ""},
+		{"a door-only model with a key", Options{ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k"}, "vendor/door-only-model", ""},
 		{"a model the door does not serve, with a key", Options{ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k"}, "vendor/nobody", models.CodeUnknown},
 		{"a catalog model with a key", Options{ModelsURL: stub.URL(), Doors: doors, ModelsKey: "k"}, "anthropic/claude-haiku-4.5", ""},
-		{"a model absent from the catalog, without a key", Options{ModelsURL: stub.URL(), Doors: doors}, "deepseek/deepseek-v4-flash-0731", ""},
+		{"a model absent from the catalog, without a key", Options{ModelsURL: stub.URL(), Doors: doors}, "vendor/door-only-model", ""},
 		{"any model through a door, without a key", Options{ModelsURL: stub.URL(), Doors: doors}, "vendor/nobody", ""},
 		{"a catalog model at a provider's API", Options{ModelsURL: gone.URL}, "anthropic/claude-haiku-4.5", ""},
 		{"an unknown model at a provider's API", Options{ModelsURL: gone.URL}, "vendor/nobody", models.CodeUnknown},

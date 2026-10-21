@@ -184,7 +184,7 @@ func TestASwitchRunsWhatACreateRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, func(o *Options) { o.Runnable = runnable })
-	const doorOnly = "deepseek/deepseek-v4-flash-0731"
+	const doorOnly = "vendor/door-only-model"
 	cat, err := models.Embedded()
 	if err != nil {
 		t.Fatal(err)

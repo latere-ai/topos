@@ -47,7 +47,7 @@ func TestRunMergesPricesAndWindows(t *testing.T) {
 	or := filepath.Join(dir, "openrouter.json")
 	write(t, or, openRouter)
 	out := filepath.Join(dir, "catalog.json")
-	if err := run(lux, or, "2026-09-27", out); err != nil {
+	if err := run(lux, "", or, "2026-09-27", out); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(out)
@@ -101,19 +101,97 @@ func TestRunMergesPricesAndWindows(t *testing.T) {
 	}
 }
 
+// A running Lux's model list adds every model it sells that the Lux
+// catalog does not name, in either spelling of a version, priced as the
+// list quotes it: windows from OpenRouter where it lists the model, else
+// from the list; an Anthropic model also answers to its version written
+// with hyphens, and a provider Topos has no family of goes to the Chat
+// dialect.
+func TestRunAddsWhatALuxSells(t *testing.T) {
+	dir := t.TempDir()
+	lux := filepath.Join(dir, "models")
+	if err := os.Mkdir(lux, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(lux, "anthropic__claude-opus-5.yaml"), model("anthropic/claude-opus-5", "anthropic", "claude-opus-5",
+		"  pricing:\n    per: 1000000\n    input: \"5\"\n    output: \"25\"\n"))
+	write(t, filepath.Join(lux, "anthropic__claude-sonnet-4.yaml"), model("anthropic/claude-sonnet-4", "anthropic", "claude-sonnet-4", ""))
+	or := filepath.Join(dir, "openrouter.json")
+	write(t, or, `{"data":[
+ {"id":"anthropic/claude-opus-5","context_length":1000000,"top_provider":{"max_completion_tokens":128000}},
+ {"id":"anthropic/claude-opus-5.5","context_length":1000000,"top_provider":{"max_completion_tokens":128000},"architecture":{"input_modalities":["text","image"]},"supported_parameters":["tools","reasoning"]}
+]}`)
+	served := filepath.Join(dir, "served.json")
+	write(t, served, `{"data":[
+ {"id":"anthropic/claude-opus-5","max_input_tokens":1,"max_tokens":1,"pricing":{"currency":"USD","per":1000000,"input":"9","output":"9"}},
+ {"id":"anthropic/claude-sonnet-4","max_input_tokens":200000,"max_tokens":64000},
+ {"id":"anthropic/claude-opus-5.5","max_input_tokens":1000000,"max_tokens":128000,"input_modalities":["text","image"],"pricing":{"currency":"USD","per":1000000,"input":"4","output":"20","cached_input":"0.2","cache_write":"5"}},
+ {"id":"x-ai/grok-9","context_window":500000,"max_output_tokens":64000,"pricing":{"currency":"EUR","per":1000000,"input":"1","output":"2"}}
+]}`)
+	out := filepath.Join(dir, "catalog.json")
+	if err := run(lux, served, or, "2026-10-21", out); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c models.Catalog
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Models) != 4 || !strings.Contains(c.Source, "served model list") {
+		t.Fatalf("catalog of %d from %q, want the Lux catalog's two models and the two only the list sells", len(c.Models), c.Source)
+	}
+	// A Lux catalog model OpenRouter does not list takes the list's windows.
+	if sonnet, _ := c.Lookup("claude-sonnet-4"); sonnet.InputWindow != 200_000 || sonnet.MaxOutputTokens != 64_000 {
+		t.Fatalf("the Lux catalog's sonnet %+v, want the served list's windows", sonnet)
+	}
+	// The Lux catalog's own entry keeps its prices.
+	if opus, _ := c.Lookup("claude-opus-5"); *opus.Pricing.Input != 5_000_000 || opus.InputWindow != 1_000_000 {
+		t.Fatalf("the Lux catalog's opus %+v", opus)
+	}
+	for _, name := range []string{"anthropic/claude-opus-5.5", "anthropic/claude-opus-5-5", "claude-opus-5-5", "claude-opus-5.5"} {
+		e, ok := c.Lookup(name)
+		if !ok || e.Name != "anthropic/claude-opus-5.5" || e.Family != models.FamilyAnthropic || e.Dialect != "anthropic-messages" {
+			t.Fatalf("%s = %+v, %v", name, e, ok)
+		}
+		if e.InputWindow != 1_000_000 || e.MaxOutputTokens != 128_000 || !e.Supports.Images || !e.Supports.Thinking ||
+			*e.Pricing.Input != 4_000_000 || *e.Pricing.Output != 20_000_000 || *e.Pricing.CacheRead != 200_000 || *e.Pricing.CacheWrite != 5_000_000 {
+			t.Fatalf("%s figures %+v pricing %+v", name, e, e.Pricing)
+		}
+	}
+	grok, ok := c.Lookup("grok-9")
+	if !ok || grok.Family != models.FamilyOther || grok.Dialect != "openai-chat" || grok.InputWindow != 500_000 || grok.MaxOutputTokens != 64_000 || grok.Pricing != nil {
+		t.Fatalf("grok %+v, want the list's windows and no prices quoted in another currency", grok)
+	}
+
+	write(t, served, `{"data":[{"id":"no-provider"}]}`)
+	if err := run(lux, served, or, "d", out); err == nil {
+		t.Fatal("ran over a model list naming a model without its provider")
+	}
+	write(t, served, `{"data":[{"id":"a/b","pricing":{"per":1000000,"input":"one"}}]}`)
+	if err := run(lux, served, or, "d", out); err == nil {
+		t.Fatal("ran over a model list with a price that is not a decimal")
+	}
+	if err := run(lux, filepath.Join(dir, "missing.json"), or, "d", out); err == nil {
+		t.Fatal("ran without the model list it was given")
+	}
+}
+
 func TestRunRefusesBadInput(t *testing.T) {
 	dir := t.TempDir()
 	or := filepath.Join(dir, "openrouter.json")
 	write(t, or, openRouter)
-	if err := run("", or, "d", filepath.Join(dir, "out")); err == nil {
+	if err := run("", "", or, "d", filepath.Join(dir, "out")); err == nil {
 		t.Fatal("ran without -lux")
 	}
-	if err := run(dir, filepath.Join(dir, "missing.json"), "d", filepath.Join(dir, "out")); err == nil {
+	if err := run(dir, "", filepath.Join(dir, "missing.json"), "d", filepath.Join(dir, "out")); err == nil {
 		t.Fatal("ran without the OpenRouter list")
 	}
 	bad := filepath.Join(dir, "bad.json")
 	write(t, bad, "{")
-	if err := run(dir, bad, "d", filepath.Join(dir, "out")); err == nil {
+	if err := run(dir, "", bad, "d", filepath.Join(dir, "out")); err == nil {
 		t.Fatal("ran over an undecodable OpenRouter list")
 	}
 	for name, body := range map[string]string{
@@ -127,7 +205,7 @@ func TestRunRefusesBadInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		write(t, filepath.Join(sub, name), body)
-		if err := run(sub, or, "d", filepath.Join(dir, "out")); err == nil {
+		if err := run(sub, "", or, "d", filepath.Join(dir, "out")); err == nil {
 			t.Fatalf("%s: ran over a bad manifest", name)
 		}
 	}

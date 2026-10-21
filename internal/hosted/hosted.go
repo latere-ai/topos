@@ -392,8 +392,9 @@ func (b builder) resolve(ctx context.Context, m v1.AgentModel, overlay models.En
 
 // route is the connection of one spec.model at base, without its
 // credential: the family and the dialect the embedded catalog and the
-// agent give pick the door when base is the installation's model URL,
-// and a model neither gives a family goes through Lux's OpenAI door,
+// agent give, or for a model neither names the provider its name begins
+// with, pick the door when base is the installation's model URL, and a
+// model with no family from any of them goes through Lux's OpenAI door,
 // which serves every model Lux routes and whose list gives the model's
 // figures; without a door it would never be asked, and refused as
 // unknown. An agent's own base URL is used as it is.

@@ -146,6 +146,10 @@ func (c Catalog) Lookup(name string) (Entry, bool) {
 // catalog's entry, overlaid by each later source in turn (the figures a
 // Lux connection serves, then the agent's own), each non-zero field
 // replacing the one before, whether or not any source gives its windows.
+// A model no source gives a family whose name begins with a provider
+// Topos has a family of, as anthropic/claude-opus-5-5 does, takes that
+// provider's family and dialect, so a model only a Lux door lists still
+// goes to its family's door and is spoken to in its own dialect.
 func (c Catalog) Overlay(name string, over ...Entry) Entry {
 	e, _ := c.Lookup(name)
 	if e.Name == "" {
@@ -153,6 +157,15 @@ func (c Catalog) Overlay(name string, over ...Entry) Entry {
 	}
 	for _, o := range over {
 		e = overlay(e, o)
+	}
+	if e.Family == "" {
+		provider, _, _ := strings.Cut(name, "/")
+		if family, dialect, ok := ProviderFamily(provider); ok && provider != name {
+			e.Family = family
+			if e.Dialect == "" {
+				e.Dialect = dialect
+			}
+		}
 	}
 	return e
 }

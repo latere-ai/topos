@@ -12,6 +12,7 @@ committed: the commit log already holds that.
 
 ### Added
 
+- **The built-in model catalog knows the current models.** It holds 291 models where it held 109: Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 and Claude Fable 5.1, each by the hosted Lux's name (`anthropic/claude-opus-5.5`) and by Anthropic's id (`claude-opus-5-5`), and every other model a hosted Lux sells today, with their prices, windows and output limits. An agent can name them on a direct Anthropic or OpenAI connection, where a model the catalog does not know is refused `model_unknown`. `tools/catalog` reads the new source with `-served`, a Lux door's model list saved to a file.
 - **Every message records the application it came from.** A sender the server records for a request carries `client`, the OAuth client of the token it verified (`client_id`, or `azp` where the token has none), written from the token and never from the body. A token that names no client writes none, so older events and such tokens read as before.
 - **`GET /v1/sessions/activity` counts a day.** For one day in UTC, per sender, it answers how many messages a person sent from each client, how many sessions they started from each, and how many answers to their messages finished, counts only and never a word of what was said. It asks the new action `session.activity` once, with `day` and `sender`; without an authorizer an admin reads every sender and anyone their own. Postgres reads the day through two new indexes, built concurrently so a running installation's writes are not held while they build (migrations 0014 to 0017; a start stopped mid-build is recovered by forcing the version back, as spec 085 says). See `docs/activity.md`.
 
@@ -19,6 +20,7 @@ committed: the commit log already holds that.
 
 ### Fixed
 
+- **A model the catalog does not name goes to its provider's door.** A model whose name begins with `anthropic/` or `openai/`, and that neither the catalog nor the agent gives a family, is spoken to on Lux's Anthropic door, or on the OpenAI door's Responses, in its own dialect, as a model the catalog names is. It went through the OpenAI door on Chat Completions, translated. A model of another provider still goes to the OpenAI door.
 - **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the standard library's certificate verification that this code can reach.
 
 ## v0.50.2 - 2026-10-20

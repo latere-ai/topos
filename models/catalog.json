@@ -1,5 +1,5 @@
 {
-  "source": "Lux model catalog prices and OpenRouter model windows, read 2026-09-30",
+  "source": "Lux model catalog and served model list prices and OpenRouter model windows, read 2026-10-21",
   "models": [
     {
       "name": "anthropic/claude-3-5-haiku",
@@ -98,6 +98,28 @@
       }
     },
     {
+      "name": "anthropic/claude-fable-5.1",
+      "aliases": [
+        "claude-fable-5.1",
+        "anthropic/claude-fable-5-1",
+        "claude-fable-5-1"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "10",
+        "output": "50",
+        "cache_read": "0.25",
+        "cache_write": "12.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "anthropic/claude-haiku-4",
       "aliases": [
         "claude-haiku-4"
@@ -123,6 +145,28 @@
         "input": "1",
         "output": "5",
         "cache_read": "0.1"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "anthropic/claude-haiku-5.5",
+      "aliases": [
+        "claude-haiku-5.5",
+        "anthropic/claude-haiku-5-5",
+        "claude-haiku-5-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.5",
+        "cache_read": "0.01",
+        "cache_write": "0.125"
       },
       "supports": {
         "thinking": true,
@@ -261,6 +305,28 @@
       }
     },
     {
+      "name": "anthropic/claude-opus-5.5",
+      "aliases": [
+        "claude-opus-5.5",
+        "anthropic/claude-opus-5-5",
+        "claude-opus-5-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "4",
+        "output": "20",
+        "cache_read": "0.2",
+        "cache_write": "5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "anthropic/claude-sonnet-4",
       "aliases": [
         "claude-sonnet-4"
@@ -272,10 +338,6 @@
       "pricing": {
         "input": "3",
         "output": "15"
-      },
-      "supports": {
-        "thinking": true,
-        "images": true
       }
     },
     {
@@ -348,6 +410,323 @@
       "supports": {
         "thinking": true,
         "images": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-5.5",
+      "aliases": [
+        "claude-sonnet-5.5",
+        "anthropic/claude-sonnet-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "family": "anthropic",
+      "dialect": "anthropic-messages",
+      "input_window": 1000000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "10",
+        "cache_read": "0.1",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-chat",
+      "aliases": [
+        "deepseek-chat"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 16000,
+      "pricing": {
+        "input": "0.2574",
+        "output": "1.0287",
+        "cache_read": "0.2574",
+        "cache_write": "0.2574"
+      }
+    },
+    {
+      "name": "deepseek/deepseek-chat-v3-0324",
+      "aliases": [
+        "deepseek-chat-v3-0324"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 115200,
+      "pricing": {
+        "input": "0.29",
+        "output": "1.14",
+        "cache_read": "0.11",
+        "cache_write": "0.29"
+      }
+    },
+    {
+      "name": "deepseek/deepseek-chat-v3.1",
+      "aliases": [
+        "deepseek-chat-v3.1"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.25",
+        "output": "0.95",
+        "cache_read": "0.13",
+        "cache_write": "0.25"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-r1",
+      "aliases": [
+        "deepseek-r1"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 64000,
+      "max_output_tokens": 16000,
+      "pricing": {
+        "input": "0.7",
+        "output": "2.5",
+        "cache_read": "0.7",
+        "cache_write": "0.7"
+      }
+    },
+    {
+      "name": "deepseek/deepseek-r1-0528",
+      "aliases": [
+        "deepseek-r1-0528"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.5",
+        "output": "2.15",
+        "cache_read": "0.35",
+        "cache_write": "0.5"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-r1-distill-llama-70b",
+      "aliases": [
+        "deepseek-r1-distill-llama-70b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "pricing": {
+        "input": "0.8",
+        "output": "0.8",
+        "cache_read": "0.8",
+        "cache_write": "0.8"
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.1-terminus",
+      "aliases": [
+        "deepseek-v3.1-terminus"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 147456,
+      "pricing": {
+        "input": "0.27",
+        "output": "1",
+        "cache_read": "0.27",
+        "cache_write": "0.27"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.2",
+      "aliases": [
+        "deepseek-v3.2"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.28",
+        "output": "0.42",
+        "cache_read": "0.028",
+        "cache_write": "0.28"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.2-exp",
+      "aliases": [
+        "deepseek-v3.2-exp"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 147456,
+      "pricing": {
+        "input": "0.27",
+        "output": "0.41",
+        "cache_read": "0.27",
+        "cache_write": "0.27"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "aliases": [
+        "deepseek-v4-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 943717,
+      "pricing": {
+        "input": "0.091",
+        "output": "0.182",
+        "cache_read": "0.0182",
+        "cache_write": "0.091"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash-0731",
+      "aliases": [
+        "deepseek-v4-flash-0731"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0.44",
+        "output": "1.32",
+        "cache_read": "0.014",
+        "cache_write": "0.44"
+      },
+      "supports": {
+        "thinking": true,
+        "parallel_tools": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash-vision-exp",
+      "aliases": [
+        "deepseek-v4-flash-vision-exp"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 262144,
+      "pricing": {
+        "input": "0.2156",
+        "output": "0.6468",
+        "cache_read": "0.00686",
+        "cache_write": "0.2156"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "aliases": [
+        "deepseek-v4-pro"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 384000,
+      "pricing": {
+        "input": "0.446136",
+        "output": "0.892272",
+        "cache_read": "0.037178",
+        "cache_write": "0.446136"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro-0813",
+      "aliases": [
+        "deepseek-v4-pro-0813"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 393216,
+      "pricing": {
+        "input": "0.66",
+        "output": "1.98",
+        "cache_read": "0.022",
+        "cache_write": "0.66"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4.1-flash",
+      "aliases": [
+        "deepseek-v4.1-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 943718,
+      "pricing": {
+        "input": "0.03423",
+        "output": "0.375",
+        "cache_read": "0.000489",
+        "cache_write": "0.03423"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4.1-flash-1017",
+      "aliases": [
+        "deepseek-v4.1-flash-1017"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 393216,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.6",
+        "cache_read": "0.003",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true,
+        "parallel_tools": true
       }
     },
     {
@@ -525,6 +904,812 @@
       }
     },
     {
+      "name": "google/gemini-2.5-pro-preview",
+      "aliases": [
+        "gemini-2.5-pro-preview"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "1.25",
+        "output": "10",
+        "cache_read": "0.125",
+        "cache_write": "0.375"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.1-flash-lite",
+      "aliases": [
+        "gemini-3.1-flash-lite"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.25",
+        "output": "1.5",
+        "cache_read": "0.025",
+        "cache_write": "0.083333"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.1-flash-lite-preview",
+      "aliases": [
+        "gemini-3.1-flash-lite-preview"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.25",
+        "output": "1.5",
+        "cache_read": "0.025",
+        "cache_write": "0.083333"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.1-pro-preview-customtools",
+      "aliases": [
+        "gemini-3.1-pro-preview-customtools"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "2",
+        "output": "12",
+        "cache_read": "0.2",
+        "cache_write": "0.375"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.5-flash",
+      "aliases": [
+        "gemini-3.5-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "1.5",
+        "output": "9",
+        "cache_read": "0.15",
+        "cache_write": "0.083333"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.5-flash-lite",
+      "aliases": [
+        "gemini-3.5-flash-lite"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.3",
+        "output": "2.5",
+        "cache_read": "0.03",
+        "cache_write": "0.083333"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.6-flash",
+      "aliases": [
+        "gemini-3.6-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.75",
+        "output": "3.75",
+        "cache_read": "0.075",
+        "cache_write": "0.041667"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.7-flash",
+      "aliases": [
+        "gemini-3.7-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.75",
+        "output": "3.75",
+        "cache_read": "0.075",
+        "cache_write": "0.041667"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-3.8-flash",
+      "aliases": [
+        "gemini-3.8-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.825",
+        "output": "4.125",
+        "cache_read": "0.0825",
+        "cache_write": "0.041667"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemini-4-argon",
+      "aliases": [
+        "gemini-4-argon"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 943718,
+      "pricing": {
+        "input": "2",
+        "output": "10",
+        "cache_read": "0.1",
+        "cache_write": "0.1875"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemma-2-27b-it",
+      "aliases": [
+        "gemma-2-27b-it"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 8192,
+      "max_output_tokens": 2048,
+      "pricing": {
+        "input": "0.65",
+        "output": "0.65",
+        "cache_read": "0.65",
+        "cache_write": "0.65"
+      }
+    },
+    {
+      "name": "google/gemma-3-12b-it",
+      "aliases": [
+        "gemma-3-12b-it"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.05",
+        "output": "0.15",
+        "cache_read": "0.05",
+        "cache_write": "0.05"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemma-3-27b-it",
+      "aliases": [
+        "gemma-3-27b-it"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 117964,
+      "pricing": {
+        "input": "0.08",
+        "output": "0.35",
+        "cache_read": "0.04",
+        "cache_write": "0.08"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemma-3-4b-it",
+      "aliases": [
+        "gemma-3-4b-it"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 117964,
+      "pricing": {
+        "input": "0.04",
+        "output": "0.05",
+        "cache_read": "0.02",
+        "cache_write": "0.04"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemma-4-26b-a4b-it",
+      "aliases": [
+        "gemma-4-26b-a4b-it"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.09",
+        "output": "0.3",
+        "cache_read": "0.05",
+        "cache_write": "0.09"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "google/gemma-4-31b-it",
+      "aliases": [
+        "gemma-4-31b-it"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.2",
+        "output": "0.4",
+        "cache_read": "0.2",
+        "cache_write": "0.2"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "meta-llama/llama-3.1-70b-instruct",
+      "aliases": [
+        "llama-3.1-70b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.4",
+        "output": "0.4",
+        "cache_read": "0.4",
+        "cache_write": "0.4"
+      }
+    },
+    {
+      "name": "meta-llama/llama-3.1-8b-instruct",
+      "aliases": [
+        "llama-3.1-8b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 117964,
+      "pricing": {
+        "input": "0.05",
+        "output": "0.08",
+        "cache_read": "0.025",
+        "cache_write": "0.05"
+      }
+    },
+    {
+      "name": "meta-llama/llama-3.2-1b-instruct",
+      "aliases": [
+        "llama-3.2-1b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 60000,
+      "max_output_tokens": 54000,
+      "pricing": {
+        "input": "0.027",
+        "output": "0.201",
+        "cache_read": "0.027",
+        "cache_write": "0.027"
+      }
+    },
+    {
+      "name": "meta-llama/llama-3.2-3b-instruct",
+      "aliases": [
+        "llama-3.2-3b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 72000,
+      "pricing": {
+        "input": "0.0509",
+        "output": "0.335",
+        "cache_read": "0.0509",
+        "cache_write": "0.0509"
+      }
+    },
+    {
+      "name": "meta-llama/llama-3.3-70b-instruct",
+      "aliases": [
+        "llama-3.3-70b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.32",
+        "cache_read": "0.1",
+        "cache_write": "0.1"
+      }
+    },
+    {
+      "name": "meta-llama/llama-4-maverick",
+      "aliases": [
+        "llama-4-maverick"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 524288,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.1875",
+        "output": "0.6525",
+        "cache_read": "0.05",
+        "cache_write": "0.1875"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "meta-llama/llama-4-scout",
+      "aliases": [
+        "llama-4-scout"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1310720,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.3",
+        "cache_read": "0.1",
+        "cache_write": "0.1"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "meta-llama/llama-guard-4-12b",
+      "aliases": [
+        "llama-guard-4-12b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 163840,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.18",
+        "output": "0.18",
+        "cache_read": "0.18",
+        "cache_write": "0.18"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/codestral-2508",
+      "aliases": [
+        "codestral-2508"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 256000,
+      "max_output_tokens": 204800,
+      "pricing": {
+        "input": "0.3",
+        "output": "0.9",
+        "cache_read": "0.03",
+        "cache_write": "0.3"
+      }
+    },
+    {
+      "name": "mistralai/devstral-2512",
+      "aliases": [
+        "devstral-2512"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 209715,
+      "pricing": {
+        "input": "0.4",
+        "output": "2",
+        "cache_read": "0.04",
+        "cache_write": "0.4"
+      }
+    },
+    {
+      "name": "mistralai/ministral-14b-2512",
+      "aliases": [
+        "ministral-14b-2512"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 209715,
+      "pricing": {
+        "input": "0.2",
+        "output": "0.2",
+        "cache_read": "0.02",
+        "cache_write": "0.2"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/ministral-3b-2512",
+      "aliases": [
+        "ministral-3b-2512"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 104857,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.1",
+        "cache_read": "0.01",
+        "cache_write": "0.1"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/ministral-8b-2512",
+      "aliases": [
+        "ministral-8b-2512"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 209715,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.15",
+        "cache_read": "0.015",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-large",
+      "aliases": [
+        "mistral-large"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 128000,
+      "max_output_tokens": 102400,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.2",
+        "cache_write": "2"
+      }
+    },
+    {
+      "name": "mistralai/mistral-large-2407",
+      "aliases": [
+        "mistral-large-2407"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 104857,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.2",
+        "cache_write": "2"
+      }
+    },
+    {
+      "name": "mistralai/mistral-large-2512",
+      "aliases": [
+        "mistral-large-2512"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 209715,
+      "pricing": {
+        "input": "0.5",
+        "output": "1.5",
+        "cache_read": "0.05",
+        "cache_write": "0.5"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-large-4-0",
+      "aliases": [
+        "mistral-large-4-0"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 262144,
+      "pricing": {
+        "input": "1.36",
+        "output": "4.18",
+        "cache_read": "0.14",
+        "cache_write": "1.36"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-medium-3",
+      "aliases": [
+        "mistral-medium-3"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 104857,
+      "pricing": {
+        "input": "0.4",
+        "output": "2",
+        "cache_read": "0.04",
+        "cache_write": "0.4"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-medium-3-5",
+      "aliases": [
+        "mistral-medium-3-5"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 209715,
+      "pricing": {
+        "input": "1.5",
+        "output": "7.5",
+        "cache_read": "1.5",
+        "cache_write": "1.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-medium-3.1",
+      "aliases": [
+        "mistral-medium-3.1"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 104857,
+      "pricing": {
+        "input": "0.4",
+        "output": "2",
+        "cache_read": "0.04",
+        "cache_write": "0.4"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-nemo",
+      "aliases": [
+        "mistral-nemo"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.029",
+        "output": "0.03",
+        "cache_read": "0.029",
+        "cache_write": "0.029"
+      }
+    },
+    {
+      "name": "mistralai/mistral-saba",
+      "aliases": [
+        "mistral-saba"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 32768,
+      "max_output_tokens": 26214,
+      "pricing": {
+        "input": "0.2",
+        "output": "0.6",
+        "cache_read": "0.02",
+        "cache_write": "0.2"
+      }
+    },
+    {
+      "name": "mistralai/mistral-small-24b-instruct-2501",
+      "aliases": [
+        "mistral-small-24b-instruct-2501"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 32768,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.05",
+        "output": "0.08",
+        "cache_read": "0.05",
+        "cache_write": "0.05"
+      }
+    },
+    {
+      "name": "mistralai/mistral-small-2603",
+      "aliases": [
+        "mistral-small-2603"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 209715,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.6",
+        "cache_read": "0.015",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-small-3.1-24b-instruct",
+      "aliases": [
+        "mistral-small-3.1-24b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 128000,
+      "max_output_tokens": 102400,
+      "pricing": {
+        "input": "0.351",
+        "output": "0.555",
+        "cache_read": "0.351",
+        "cache_write": "0.351"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-small-3.2-24b-instruct",
+      "aliases": [
+        "mistral-small-3.2-24b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 256000,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.09375",
+        "output": "0.25",
+        "cache_read": "0.09375",
+        "cache_write": "0.09375"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "mistralai/mixtral-8x22b-instruct",
+      "aliases": [
+        "mixtral-8x22b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 65536,
+      "max_output_tokens": 52428,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.2",
+        "cache_write": "2"
+      }
+    },
+    {
+      "name": "mistralai/voxtral-small-24b-2507",
+      "aliases": [
+        "voxtral-small-24b-2507"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 32768,
+      "max_output_tokens": 26214,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.3",
+        "cache_read": "0.01",
+        "cache_write": "0.1"
+      }
+    },
+    {
       "name": "moonshot/kimi-k2.5",
       "aliases": [
         "kimi-k2.5"
@@ -626,6 +1811,127 @@
       }
     },
     {
+      "name": "moonshotai/kimi-k2",
+      "aliases": [
+        "kimi-k2"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 98304,
+      "pricing": {
+        "input": "0.57",
+        "output": "2.3",
+        "cache_read": "0.57",
+        "cache_write": "0.57"
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2-0905",
+      "aliases": [
+        "kimi-k2-0905"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 98304,
+      "pricing": {
+        "input": "0.6",
+        "output": "2.5",
+        "cache_read": "0.6",
+        "cache_write": "0.6"
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2-thinking",
+      "aliases": [
+        "kimi-k2-thinking"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 98304,
+      "pricing": {
+        "input": "0.6",
+        "output": "2.5",
+        "cache_read": "0.15",
+        "cache_write": "0.6"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.5",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.5",
+        "output": "2.5",
+        "cache_read": "0.15",
+        "cache_write": "0.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.6",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.65",
+        "output": "3.41",
+        "cache_read": "0.15",
+        "cache_write": "0.65"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true,
+        "parallel_tools": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.7-code",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.6712",
+        "output": "3.35",
+        "cache_read": "0.18",
+        "cache_write": "0.6712"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true,
+        "parallel_tools": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k3",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 943718,
+      "pricing": {
+        "input": "0.239",
+        "output": "11.936",
+        "cache_read": "0.21",
+        "cache_write": "0.239"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "openai/gpt-3.5",
       "aliases": [
         "gpt-3.5"
@@ -635,6 +1941,70 @@
       "pricing": {
         "input": "0.5",
         "output": "1.5"
+      }
+    },
+    {
+      "name": "openai/gpt-3.5-turbo",
+      "aliases": [
+        "gpt-3.5-turbo"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 16385,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": "0.5",
+        "output": "1.5",
+        "cache_read": "0.5",
+        "cache_write": "0.5"
+      }
+    },
+    {
+      "name": "openai/gpt-3.5-turbo-0613",
+      "aliases": [
+        "gpt-3.5-turbo-0613"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 4095,
+      "max_output_tokens": 3685,
+      "pricing": {
+        "input": "1",
+        "output": "2",
+        "cache_read": "1",
+        "cache_write": "1"
+      }
+    },
+    {
+      "name": "openai/gpt-3.5-turbo-16k",
+      "aliases": [
+        "gpt-3.5-turbo-16k"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 16385,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": "3",
+        "output": "4",
+        "cache_read": "3",
+        "cache_write": "3"
+      }
+    },
+    {
+      "name": "openai/gpt-3.5-turbo-instruct",
+      "aliases": [
+        "gpt-3.5-turbo-instruct"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 4095,
+      "max_output_tokens": 3685,
+      "pricing": {
+        "input": "1.5",
+        "output": "2",
+        "cache_read": "1.5",
+        "cache_write": "1.5"
       }
     },
     {
@@ -649,6 +2019,25 @@
       "pricing": {
         "input": "10",
         "output": "30"
+      }
+    },
+    {
+      "name": "openai/gpt-4-turbo",
+      "aliases": [
+        "gpt-4-turbo"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": "10",
+        "output": "30",
+        "cache_read": "10",
+        "cache_write": "10"
+      },
+      "supports": {
+        "images": true
       }
     },
     {
@@ -723,6 +2112,63 @@
       }
     },
     {
+      "name": "openai/gpt-4o-2024-05-13",
+      "aliases": [
+        "gpt-4o-2024-05-13"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 4096,
+      "pricing": {
+        "input": "5",
+        "output": "15",
+        "cache_read": "5",
+        "cache_write": "5"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-4o-2024-08-06",
+      "aliases": [
+        "gpt-4o-2024-08-06"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "2.5",
+        "output": "10",
+        "cache_read": "1.25",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-4o-2024-11-20",
+      "aliases": [
+        "gpt-4o-2024-11-20"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "2.5",
+        "output": "10",
+        "cache_read": "1.25",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
       "name": "openai/gpt-4o-mini",
       "aliases": [
         "gpt-4o-mini"
@@ -735,6 +2181,25 @@
         "input": "0.15",
         "output": "0.6",
         "cache_read": "0.075"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-4o-mini-2024-07-18",
+      "aliases": [
+        "gpt-4o-mini-2024-07-18"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.6",
+        "cache_read": "0.075",
+        "cache_write": "0.15"
       },
       "supports": {
         "images": true
@@ -834,6 +2299,66 @@
       }
     },
     {
+      "name": "openai/gpt-5.1-codex",
+      "aliases": [
+        "gpt-5.1-codex"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.25",
+        "output": "10",
+        "cache_read": "0.13",
+        "cache_write": "1.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.1-codex-max",
+      "aliases": [
+        "gpt-5.1-codex-max"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.25",
+        "output": "10",
+        "cache_read": "0.125",
+        "cache_write": "1.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.1-codex-mini",
+      "aliases": [
+        "gpt-5.1-codex-mini"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.25",
+        "output": "2",
+        "cache_read": "0.03",
+        "cache_write": "0.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "openai/gpt-5.2",
       "aliases": [
         "gpt-5.2"
@@ -846,6 +2371,45 @@
         "input": "1.75",
         "output": "14",
         "cache_read": "0.175"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.2-chat",
+      "aliases": [
+        "gpt-5.2-chat"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 128000,
+      "max_output_tokens": 32000,
+      "pricing": {
+        "input": "1.75",
+        "output": "14",
+        "cache_read": "0.175",
+        "cache_write": "1.75"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.2-codex",
+      "aliases": [
+        "gpt-5.2-codex"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "1.75",
+        "output": "14",
+        "cache_read": "0.175",
+        "cache_write": "1.75"
       },
       "supports": {
         "thinking": true,
@@ -1034,6 +2598,66 @@
       }
     },
     {
+      "name": "openai/gpt-5.6-luna-pro",
+      "aliases": [
+        "gpt-5.6-luna-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.2",
+        "output": "1.2",
+        "cache_read": "0.02",
+        "cache_write": "0.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.6-sol",
+      "aliases": [
+        "gpt-5.6-sol"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "4",
+        "output": "20",
+        "cache_read": "0.4",
+        "cache_write": "5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.6-sol-pro",
+      "aliases": [
+        "gpt-5.6-sol-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "4",
+        "output": "20",
+        "cache_read": "0.4",
+        "cache_write": "5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "openai/gpt-5.6-terra",
       "aliases": [
         "gpt-5.6-terra"
@@ -1053,6 +2677,26 @@
       }
     },
     {
+      "name": "openai/gpt-5.6-terra-pro",
+      "aliases": [
+        "gpt-5.6-terra-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "12",
+        "cache_read": "0.2",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "openai/gpt-6",
       "aliases": [
         "gpt-6"
@@ -1063,6 +2707,242 @@
         "input": "10",
         "output": "50",
         "cache_read": "1"
+      }
+    },
+    {
+      "name": "openai/gpt-6-astra",
+      "aliases": [
+        "gpt-6-astra"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "10",
+        "output": "50",
+        "cache_read": "1",
+        "cache_write": "12.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-astra-pro",
+      "aliases": [
+        "gpt-6-astra-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "10",
+        "output": "50",
+        "cache_read": "1",
+        "cache_write": "12.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-luna",
+      "aliases": [
+        "gpt-6-luna"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.5",
+        "cache_read": "0.01",
+        "cache_write": "0.125"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-luna-pro",
+      "aliases": [
+        "gpt-6-luna-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.5",
+        "cache_read": "0.01",
+        "cache_write": "0.125"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-sol",
+      "aliases": [
+        "gpt-6-sol"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "10",
+        "cache_read": "0.2",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-sol-pro",
+      "aliases": [
+        "gpt-6-sol-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "10",
+        "cache_read": "0.2",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-6.1-sol",
+      "aliases": [
+        "gpt-6.1-sol"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "10",
+        "cache_read": "0.1",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-6.1-sol-pro",
+      "aliases": [
+        "gpt-6.1-sol-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 1050000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "2",
+        "output": "10",
+        "cache_read": "0.1",
+        "cache_write": "2.5"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-chat-latest",
+      "aliases": [
+        "gpt-chat-latest"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 400000,
+      "max_output_tokens": 128000,
+      "pricing": {
+        "input": "5",
+        "output": "30",
+        "cache_read": "0.5",
+        "cache_write": "5"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "aliases": [
+        "gpt-oss-120b"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 131072,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.6",
+        "cache_read": "0.075",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "aliases": [
+        "gpt-oss-20b"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 131072,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.018",
+        "output": "0.09",
+        "cache_read": "0.009",
+        "cache_write": "0.018"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-safeguard-20b",
+      "aliases": [
+        "gpt-oss-safeguard-20b"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 131072,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.075",
+        "output": "0.3",
+        "cache_read": "0.0375",
+        "cache_write": "0.075"
+      },
+      "supports": {
+        "thinking": true
       }
     },
     {
@@ -1095,6 +2975,26 @@
         "input": "1.1",
         "output": "4.4",
         "cache_read": "0.55"
+      }
+    },
+    {
+      "name": "openai/o1-pro",
+      "aliases": [
+        "o1-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "150",
+        "output": "600",
+        "cache_read": "150",
+        "cache_write": "150"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
       }
     },
     {
@@ -1135,6 +3035,45 @@
       }
     },
     {
+      "name": "openai/o3-mini-high",
+      "aliases": [
+        "o3-mini-high"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "1.1",
+        "output": "4.4",
+        "cache_read": "0.55",
+        "cache_write": "1.1"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "openai/o3-pro",
+      "aliases": [
+        "o3-pro"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "20",
+        "output": "80",
+        "cache_read": "20",
+        "cache_write": "20"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "openai/o4-mini",
       "aliases": [
         "o4-mini"
@@ -1147,6 +3086,26 @@
         "input": "1.1",
         "output": "4.4",
         "cache_read": "0.275"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openai/o4-mini-high",
+      "aliases": [
+        "o4-mini-high"
+      ],
+      "family": "openai",
+      "dialect": "openai-responses",
+      "input_window": 200000,
+      "max_output_tokens": 100000,
+      "pricing": {
+        "input": "1.1",
+        "output": "4.4",
+        "cache_read": "0.275",
+        "cache_write": "1.1"
       },
       "supports": {
         "thinking": true,
@@ -1183,10 +3142,6 @@
       "pricing": {
         "input": "3",
         "output": "15"
-      },
-      "supports": {
-        "thinking": true,
-        "images": true
       }
     },
     {
@@ -1261,23 +3216,6 @@
       }
     },
     {
-      "name": "openrouter/inclusionai/ling-3.0-flash-sante:free",
-      "aliases": [
-        "inclusionai/ling-3.0-flash-sante:free"
-      ],
-      "family": "other",
-      "dialect": "openai-chat",
-      "input_window": 262144,
-      "max_output_tokens": 32768,
-      "pricing": {
-        "input": "0",
-        "output": "0"
-      },
-      "supports": {
-        "thinking": true
-      }
-    },
-    {
       "name": "openrouter/liquid/lfm-2.5-2.6b:free",
       "aliases": [
         "liquid/lfm-2.5-2.6b:free"
@@ -1292,6 +3230,24 @@
       },
       "supports": {
         "thinking": true
+      }
+    },
+    {
+      "name": "openrouter/minimax/minimax-m3.1-flash:free",
+      "aliases": [
+        "minimax/minimax-m3.1-flash:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 524288,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
       }
     },
     {
@@ -1364,6 +3320,24 @@
       }
     },
     {
+      "name": "openrouter/nvidia/nemotron-3.5-super-vl:free",
+      "aliases": [
+        "nvidia/nemotron-3.5-super-vl:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
       "name": "openrouter/openai/gpt-5",
       "aliases": [
         "openai/gpt-5"
@@ -1416,24 +3390,6 @@
       }
     },
     {
-      "name": "openrouter/qwen/qwen3.8-27b:free",
-      "aliases": [
-        "qwen/qwen3.8-27b:free"
-      ],
-      "family": "other",
-      "dialect": "openai-chat",
-      "input_window": 262144,
-      "max_output_tokens": 235929,
-      "pricing": {
-        "input": "0",
-        "output": "0"
-      },
-      "supports": {
-        "thinking": true,
-        "images": true
-      }
-    },
-    {
       "name": "openrouter/thinkingmachines/inkling-small:free",
       "aliases": [
         "thinkingmachines/inkling-small:free"
@@ -1463,6 +3419,1112 @@
       "pricing": {
         "input": "0",
         "output": "0"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+      "aliases": [
+        "xingchen-agi/xing4.0-29b-a4b:free"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0",
+        "output": "0"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-2.5-72b-instruct",
+      "aliases": [
+        "qwen-2.5-72b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 32768,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.36",
+        "output": "0.4",
+        "cache_read": "0.36",
+        "cache_write": "0.36"
+      }
+    },
+    {
+      "name": "qwen/qwen-2.5-7b-instruct",
+      "aliases": [
+        "qwen-2.5-7b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 32768,
+      "max_output_tokens": 29491,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.2",
+        "cache_read": "0.1",
+        "cache_write": "0.1"
+      }
+    },
+    {
+      "name": "qwen/qwen-2.5-coder-32b-instruct",
+      "aliases": [
+        "qwen-2.5-coder-32b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 32768,
+      "max_output_tokens": 29491,
+      "pricing": {
+        "input": "0.66",
+        "output": "1",
+        "cache_read": "0.66",
+        "cache_write": "0.66"
+      }
+    },
+    {
+      "name": "qwen/qwen-plus",
+      "aliases": [
+        "qwen-plus"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.26",
+        "output": "0.78",
+        "cache_read": "0.052",
+        "cache_write": "0.325"
+      }
+    },
+    {
+      "name": "qwen/qwen-plus-2025-07-28",
+      "aliases": [
+        "qwen-plus-2025-07-28"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.26",
+        "output": "0.78",
+        "cache_read": "0.26",
+        "cache_write": "0.26"
+      }
+    },
+    {
+      "name": "qwen/qwen2.5-vl-72b-instruct",
+      "aliases": [
+        "qwen2.5-vl-72b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 128000,
+      "max_output_tokens": 115200,
+      "pricing": {
+        "input": "0.8",
+        "output": "1",
+        "cache_read": "0.4",
+        "cache_write": "0.8"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-14b",
+      "aliases": [
+        "qwen3-14b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 40960,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.12",
+        "output": "0.24",
+        "cache_read": "0.12",
+        "cache_write": "0.12"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b",
+      "aliases": [
+        "qwen3-235b-a22b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 8192,
+      "pricing": {
+        "input": "0.455",
+        "output": "1.82",
+        "cache_read": "0.455",
+        "cache_write": "0.455"
+      }
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-2507",
+      "aliases": [
+        "qwen3-235b-a22b-2507"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.09",
+        "output": "0.55",
+        "cache_read": "0.09",
+        "cache_write": "0.09"
+      }
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-thinking-2507",
+      "aliases": [
+        "qwen3-235b-a22b-thinking-2507"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 128000,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.45",
+        "output": "3.5",
+        "cache_read": "0.45",
+        "cache_write": "0.45"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b",
+      "aliases": [
+        "qwen3-30b-a3b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 40960,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.12",
+        "output": "0.5",
+        "cache_read": "0.12",
+        "cache_write": "0.12"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-instruct-2507",
+      "aliases": [
+        "qwen3-30b-a3b-instruct-2507"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.09",
+        "output": "0.3",
+        "cache_read": "0.09",
+        "cache_write": "0.09"
+      }
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-thinking-2507",
+      "aliases": [
+        "qwen3-30b-a3b-thinking-2507"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 81920,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.2",
+        "output": "2.4",
+        "cache_read": "0.2",
+        "cache_write": "0.2"
+      }
+    },
+    {
+      "name": "qwen/qwen3-32b",
+      "aliases": [
+        "qwen3-32b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.08",
+        "output": "0.28",
+        "cache_read": "0.08",
+        "cache_write": "0.08"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-8b",
+      "aliases": [
+        "qwen3-8b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 8192,
+      "pricing": {
+        "input": "0.117",
+        "output": "0.455",
+        "cache_read": "0.117",
+        "cache_write": "0.117"
+      }
+    },
+    {
+      "name": "qwen/qwen3-coder",
+      "aliases": [
+        "qwen3-coder"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.3",
+        "output": "1",
+        "cache_read": "0.1",
+        "cache_write": "0.3"
+      }
+    },
+    {
+      "name": "qwen/qwen3-coder-30b-a3b-instruct",
+      "aliases": [
+        "qwen3-coder-30b-a3b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.07",
+        "output": "0.28",
+        "cache_read": "0.07",
+        "cache_write": "0.07"
+      }
+    },
+    {
+      "name": "qwen/qwen3-coder-flash",
+      "aliases": [
+        "qwen3-coder-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.195",
+        "output": "0.975",
+        "cache_read": "0.039",
+        "cache_write": "0.24375"
+      }
+    },
+    {
+      "name": "qwen/qwen3-coder-next",
+      "aliases": [
+        "qwen3-coder-next"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.12",
+        "output": "0.8",
+        "cache_read": "0.07",
+        "cache_write": "0.12"
+      }
+    },
+    {
+      "name": "qwen/qwen3-coder-plus",
+      "aliases": [
+        "qwen3-coder-plus"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.65",
+        "output": "3.25",
+        "cache_read": "0.13",
+        "cache_write": "0.8125"
+      }
+    },
+    {
+      "name": "qwen/qwen3-max",
+      "aliases": [
+        "qwen3-max"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.78",
+        "output": "3.9",
+        "cache_read": "0.156",
+        "cache_write": "0.975"
+      }
+    },
+    {
+      "name": "qwen/qwen3-max-thinking",
+      "aliases": [
+        "qwen3-max-thinking"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.78",
+        "output": "3.9",
+        "cache_read": "0.78",
+        "cache_write": "0.78"
+      }
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-instruct",
+      "aliases": [
+        "qwen3-next-80b-a3b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.09",
+        "output": "1.1",
+        "cache_read": "0.09",
+        "cache_write": "0.09"
+      }
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-thinking",
+      "aliases": [
+        "qwen3-next-80b-a3b-thinking"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.15",
+        "output": "1.2",
+        "cache_read": "0.15",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-instruct",
+      "aliases": [
+        "qwen3-vl-235b-a22b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.21",
+        "output": "1.9",
+        "cache_read": "0.1",
+        "cache_write": "0.21"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-thinking",
+      "aliases": [
+        "qwen3-vl-235b-a22b-thinking"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.4",
+        "output": "4",
+        "cache_read": "0.4",
+        "cache_write": "0.4"
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-instruct",
+      "aliases": [
+        "qwen3-vl-30b-a3b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.6",
+        "cache_read": "0.15",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-thinking",
+      "aliases": [
+        "qwen3-vl-30b-a3b-thinking"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.29",
+        "output": "1",
+        "cache_read": "0.29",
+        "cache_write": "0.29"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-32b-instruct",
+      "aliases": [
+        "qwen3-vl-32b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.104",
+        "output": "0.416",
+        "cache_read": "0.104",
+        "cache_write": "0.104"
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-instruct",
+      "aliases": [
+        "qwen3-vl-8b-instruct"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.25",
+        "output": "0.75",
+        "cache_read": "0.12",
+        "cache_write": "0.25"
+      },
+      "supports": {
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-thinking",
+      "aliases": [
+        "qwen3-vl-8b-thinking"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.18",
+        "output": "2.1",
+        "cache_read": "0.18",
+        "cache_write": "0.18"
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-122b-a10b",
+      "aliases": [
+        "qwen3.5-122b-a10b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.26",
+        "output": "2.08",
+        "cache_read": "0.26",
+        "cache_write": "0.26"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-27b",
+      "aliases": [
+        "qwen3.5-27b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.27",
+        "output": "2.16",
+        "cache_read": "0.27",
+        "cache_write": "0.27"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-35b-a3b",
+      "aliases": [
+        "qwen3.5-35b-a3b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 81920,
+      "pricing": {
+        "input": "0.14",
+        "output": "1",
+        "cache_read": "0.05",
+        "cache_write": "0.14"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-397b-a17b",
+      "aliases": [
+        "qwen3.5-397b-a17b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.39",
+        "output": "2.34",
+        "cache_read": "0.39",
+        "cache_write": "0.39"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-9b",
+      "aliases": [
+        "qwen3.5-9b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.08",
+        "output": "0.13",
+        "cache_read": "0.04",
+        "cache_write": "0.08"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-flash-02-23",
+      "aliases": [
+        "qwen3.5-flash-02-23"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.065",
+        "output": "0.26",
+        "cache_read": "0.065",
+        "cache_write": "0.065"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-plus-02-15",
+      "aliases": [
+        "qwen3.5-plus-02-15"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.26",
+        "output": "1.56",
+        "cache_read": "0.26",
+        "cache_write": "0.26"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-plus-20260420",
+      "aliases": [
+        "qwen3.5-plus-20260420"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.3",
+        "output": "1.8",
+        "cache_read": "0.3",
+        "cache_write": "0.375"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-27b",
+      "aliases": [
+        "qwen3.6-27b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.25",
+        "output": "2",
+        "cache_read": "0.025",
+        "cache_write": "0.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-35b-a3b",
+      "aliases": [
+        "qwen3.6-35b-a3b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 235929,
+      "pricing": {
+        "input": "0.1",
+        "output": "0.95",
+        "cache_read": "0.05",
+        "cache_write": "0.1"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-flash",
+      "aliases": [
+        "qwen3.6-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.1875",
+        "output": "1.125",
+        "cache_read": "0.1875",
+        "cache_write": "0.234375"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-max-preview",
+      "aliases": [
+        "qwen3.6-max-preview"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 262144,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "1.027",
+        "output": "6.162",
+        "cache_read": "1.027",
+        "cache_write": "1.28375"
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-plus",
+      "aliases": [
+        "qwen3.6-plus"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.325",
+        "output": "1.95",
+        "cache_read": "0.325",
+        "cache_write": "0.40625"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-flash",
+      "aliases": [
+        "qwen3.7-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.03",
+        "output": "0.13",
+        "cache_read": "0.006",
+        "cache_write": "0.038"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-max",
+      "aliases": [
+        "qwen3.7-max"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "1.475",
+        "output": "4.425",
+        "cache_read": "0.295",
+        "cache_write": "1.84375"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-plus",
+      "aliases": [
+        "qwen3.7-plus"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0.32",
+        "output": "1.28",
+        "cache_read": "0.064",
+        "cache_write": "0.4"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-2.4t-a95b",
+      "aliases": [
+        "qwen3.8-2.4t-a95b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 909000,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.25",
+        "cache_write": "2"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-27b",
+      "aliases": [
+        "qwen3.8-27b"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 65536,
+      "pricing": {
+        "input": "0.04",
+        "output": "1.35",
+        "cache_read": "0.018",
+        "cache_write": "0.04"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-flash",
+      "aliases": [
+        "qwen3.8-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.47",
+        "cache_read": "0.016",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-max-0902",
+      "aliases": [
+        "qwen3.8-max-0902"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.25",
+        "cache_write": "2"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-max-prime",
+      "aliases": [
+        "qwen3.8-max-prime"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "4",
+        "output": "12",
+        "cache_read": "0.5",
+        "cache_write": "4"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-omni-flash",
+      "aliases": [
+        "qwen3.8-omni-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.47",
+        "cache_read": "0.016",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4.20",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 2000000,
+      "max_output_tokens": 1800000,
+      "pricing": {
+        "input": "1.25",
+        "output": "2.5",
+        "cache_read": "0.2",
+        "cache_write": "1.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4.20-multi-agent",
+      "aliases": [
+        "grok-4.20-multi-agent"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 2000000,
+      "max_output_tokens": 1800000,
+      "pricing": {
+        "input": "1.25",
+        "output": "2.5",
+        "cache_read": "0.2",
+        "cache_write": "1.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4.3",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 900000,
+      "pricing": {
+        "input": "1.25",
+        "output": "2.5",
+        "cache_read": "0.2",
+        "cache_write": "1.25"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4.5",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 500000,
+      "max_output_tokens": 450000,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.3",
+        "cache_write": "2"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4.6",
+      "aliases": [
+        "grok-4.6"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 500000,
+      "max_output_tokens": 450000,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.5",
+        "cache_write": "2"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4.7",
+      "aliases": [
+        "grok-4.7"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 500000,
+      "max_output_tokens": 450000,
+      "pricing": {
+        "input": "2",
+        "output": "6",
+        "cache_read": "0.5",
+        "cache_write": "2"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "x-ai/grok-build-0.1",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 256000,
+      "max_output_tokens": 230400,
+      "pricing": {
+        "input": "1",
+        "output": "2",
+        "cache_read": "0.2",
+        "cache_write": "1"
       },
       "supports": {
         "thinking": true,
@@ -1519,6 +4581,285 @@
         "input": "1",
         "output": "2",
         "cache_read": "0.2"
+      }
+    },
+    {
+      "name": "z-ai/glm-4.5",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 98304,
+      "pricing": {
+        "input": "0.6",
+        "output": "2.2",
+        "cache_read": "0.11",
+        "cache_write": "0.6"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-4.5-air",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 98304,
+      "pricing": {
+        "input": "0.13",
+        "output": "0.85",
+        "cache_read": "0.025",
+        "cache_write": "0.13"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-4.5v",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 65536,
+      "max_output_tokens": 16384,
+      "pricing": {
+        "input": "0.6",
+        "output": "1.8",
+        "cache_read": "0.11",
+        "cache_write": "0.6"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "z-ai/glm-4.6",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 204800,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0.55",
+        "output": "2.2",
+        "cache_read": "0.11",
+        "cache_write": "0.55"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-4.6v",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 131072,
+      "max_output_tokens": 32768,
+      "pricing": {
+        "input": "0.3",
+        "output": "0.9",
+        "cache_read": "0.055",
+        "cache_write": "0.3"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "z-ai/glm-4.7",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 204800,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0.54",
+        "output": "1.98",
+        "cache_read": "0.099",
+        "cache_write": "0.54"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-4.7-flash",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 200000,
+      "max_output_tokens": 117964,
+      "pricing": {
+        "input": "0.0605",
+        "output": "0.4",
+        "cache_read": "0.0605",
+        "cache_write": "0.0605"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 204800,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "1",
+        "output": "3.2",
+        "cache_read": "0.2",
+        "cache_write": "1"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5-turbo",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 202752,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "1.2",
+        "output": "4",
+        "cache_read": "0.24",
+        "cache_write": "1.2"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.1",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 204800,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "1.4",
+        "output": "4.4",
+        "cache_read": "0.26",
+        "cache_write": "1.4"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.2",
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 943718,
+      "pricing": {
+        "input": "0.0341",
+        "output": "7",
+        "cache_read": "0.033",
+        "cache_write": "0.0341"
+      },
+      "supports": {
+        "thinking": true,
+        "parallel_tools": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3",
+      "aliases": [
+        "glm-5.3"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 943718,
+      "pricing": {
+        "input": "0.079",
+        "output": "1.4",
+        "cache_read": "0.078",
+        "cache_write": "0.079"
+      },
+      "supports": {
+        "thinking": true,
+        "parallel_tools": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3-flash",
+      "aliases": [
+        "glm-5.3-flash"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 943718,
+      "pricing": {
+        "input": "0.15",
+        "output": "0.5",
+        "cache_read": "0.03",
+        "cache_write": "0.15"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true,
+        "parallel_tools": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3-flashx",
+      "aliases": [
+        "glm-5.3-flashx"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1048576,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "0.37",
+        "output": "1.25",
+        "cache_read": "0.09",
+        "cache_write": "0.37"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3-prime",
+      "aliases": [
+        "glm-5.3-prime"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 1000000,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "2.8",
+        "output": "8.8",
+        "cache_read": "0.56",
+        "cache_write": "2.8"
+      },
+      "supports": {
+        "thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5v-turbo",
+      "aliases": [
+        "glm-5v-turbo"
+      ],
+      "family": "other",
+      "dialect": "openai-chat",
+      "input_window": 202752,
+      "max_output_tokens": 131072,
+      "pricing": {
+        "input": "1.2",
+        "output": "4",
+        "cache_read": "0.24",
+        "cache_write": "1.2"
+      },
+      "supports": {
+        "thinking": true,
+        "images": true
       }
     },
     {

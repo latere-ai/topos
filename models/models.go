@@ -40,6 +40,20 @@ func DefaultDialect(family string) ir.Dialect {
 	return ir.DialectOpenAIChat
 }
 
+// ProviderFamily is the family of the provider a model's catalog name
+// begins with, as anthropic begins anthropic/claude-opus-5-5, and the
+// dialect that family speaks. ok is false for a provider Topos has no
+// family of, whose models are spoken to on Lux's OpenAI Chat door.
+func ProviderFamily(provider string) (family string, dialect ir.Dialect, ok bool) {
+	switch provider {
+	case FamilyAnthropic:
+		return FamilyAnthropic, ir.DialectAnthropicMessages, true
+	case FamilyOpenAI:
+		return FamilyOpenAI, ir.DialectOpenAIResponses, true
+	}
+	return "", "", false
+}
+
 // SchemeScripted is the URL scheme of a connection to the scripted model
 // of spec 026. Only tests and the topos client accept it.
 const SchemeScripted = "scripted"

@@ -256,6 +256,15 @@ func TestEmbeddedCatalog(t *testing.T) {
 	if e.Family != FamilyAnthropic || e.InputWindow <= 0 || e.MaxOutputTokens <= 0 || e.Pricing == nil {
 		t.Fatalf("claude-opus-5 %+v", e)
 	}
+	// The current Claude models resolve by the hosted Lux's name and by
+	// Anthropic's own id.
+	for _, name := range []string{"anthropic/claude-opus-5.5", "claude-opus-5-5", "anthropic/claude-sonnet-5.5", "claude-sonnet-5-5",
+		"anthropic/claude-haiku-5.5", "claude-haiku-5-5", "anthropic/claude-fable-5.1", "claude-fable-5-1"} {
+		e, err := c.Resolve(name)
+		if err != nil || e.Family != FamilyAnthropic || e.Dialect != ir.DialectAnthropicMessages || e.Pricing == nil {
+			t.Errorf("%s = %+v, %v", name, e, err)
+		}
+	}
 	free := 0
 	for _, m := range c.Models {
 		if strings.HasSuffix(m.Name, ":free") {
@@ -294,6 +303,34 @@ func TestResolveOverlaysSources(t *testing.T) {
 	}
 	if *c.Models[0].Pricing.Input != 1_000_000 {
 		t.Fatal("Resolve changed the catalog's own entry")
+	}
+}
+
+// A model no source gives a family takes the family and dialect of the
+// provider its name begins with, when Topos has one, so it goes to its
+// family's door; an agent's own family still wins, and a name with no
+// provider, or a provider Topos has no family of, is left as it was.
+func TestOverlayTakesTheProvidersFamily(t *testing.T) {
+	var c Catalog
+	for name, want := range map[string][2]string{
+		"anthropic/claude-next-9": {FamilyAnthropic, string(ir.DialectAnthropicMessages)},
+		"openai/gpt-next":         {FamilyOpenAI, string(ir.DialectOpenAIResponses)},
+		"x-ai/grok-9":             {"", ""},
+		"anthropic":               {"", ""},
+		"claude-next-9":           {"", ""},
+	} {
+		e := c.Overlay(name)
+		if e.Family != want[0] || string(e.Dialect) != want[1] {
+			t.Errorf("%s = %q %q, want %q %q", name, e.Family, e.Dialect, want[0], want[1])
+		}
+	}
+	agent := Entry{Family: FamilyOther, Dialect: ir.DialectOpenAIChat}
+	if e := c.Overlay("anthropic/claude-next-9", agent); e.Family != FamilyOther || e.Dialect != ir.DialectOpenAIChat {
+		t.Errorf("the agent's family lost to the name's: %+v", e)
+	}
+	dialectOnly := Entry{Dialect: ir.DialectOpenAIChat}
+	if e := c.Overlay("anthropic/claude-next-9", dialectOnly); e.Family != FamilyAnthropic || e.Dialect != ir.DialectOpenAIChat {
+		t.Errorf("a dialect the agent names was replaced: %+v", e)
 	}
 }
 

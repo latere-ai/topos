@@ -126,7 +126,9 @@ Whether an installation runs a model is one check, which the server
 makes of a session's model at its create and at a switch
 ([[015-api]]): the model is routed as the runner routes it, to its
 family's door or, for a model neither the catalog nor the agent gives a
-family, to Lux's OpenAI door, and its figures are resolved as the
+family, to Lux's OpenAI door (since 2026-10-21, a model whose name begins
+with `anthropic/` or `openai/` takes that provider's family and goes to its
+door; see the dated note at the end), and its figures are resolved as the
 runner resolves them, the door's list read with `TOPOS_MODELS_KEY`. An
 installation without that key has its runners read each door with the
 session's own Lux key, which the server does not hold and without which
@@ -451,3 +453,26 @@ acceptance table passes.
 | Cella's own refusal codes: it defines only `spawn_budget_exhausted` today, and the mapping keys on this spec's two codes | Cella's wallet refusals, when they ship, answer `budget_exhausted` or `spend_exceeded` |
 | [[009-machines]]'s error table reads every Cella refusal as `machine_unavailable`, and a spend code is now this spec's refusal | 009 |
 | a decoder that reports the terminal frame itself, which would replace the raw-stream check | pkg |
+
+2026-10-21: two changes to the catalog and the routing.
+
+- A model neither the catalog nor the agent gives a family takes the family
+  and dialect of the provider its name begins with, when Topos has a family
+  of that provider: `anthropic/` the Messages dialect, `openai/` Responses
+  (`models.ProviderFamily`, applied in `Catalog.Overlay`). Such a model goes
+  to its family's door and is spoken to in its own dialect, where it went to
+  Lux's OpenAI door on Chat Completions. A name with another provider, or
+  none, routes as before. `internal/hosted.TestAnAnthropicModelTheCatalogDoesNotNameGoesToTheAnthropicDoor`
+  and `models.TestOverlayTakesTheProvidersFamily` hold it.
+- `tools/catalog` takes a third source, `-served`: a running Lux door's model
+  list saved to a file. Each model it sells that the Lux catalog directory
+  does not name, in either spelling of a version, is added under the list's
+  name, priced as the list quotes it in USD per million tokens, with its
+  provider's name for it as an alias and, for an Anthropic model, its
+  version written with hyphens as Anthropic's API writes it. Its windows and
+  `supports` are OpenRouter's where OpenRouter lists it, else the list's
+  windows; a Lux catalog model OpenRouter no longer lists also takes the
+  list's windows. The catalog was regenerated on 2026-10-21 from the Lux
+  catalog, a hosted Lux's list of 225 models and OpenRouter's list: it holds
+  291 entries, the Claude 5.5 models and Claude Fable 5.1 among them, where
+  it held 109.
