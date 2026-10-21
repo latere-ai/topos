@@ -74,6 +74,15 @@ func (p *OwnerPolicy) decide(req authz.Request) authz.Decision {
 		return authz.Decision{Reason: ReasonUnknownAction}
 	}
 	admin := slices.Contains(p.Admins, req.Subject)
+	// A day's counts are the admins' to read, and a caller's own counts
+	// are theirs: the question names the one sender it narrows to, or
+	// none for every sender (spec 085).
+	if req.Action == authorizer.ActionSessionActivity {
+		if admin || req.Resource.String("sender") == req.Subject {
+			return authz.Decision{Allow: true}
+		}
+		return authz.Decision{Reason: authz.ReasonNotOwner}
+	}
 	if authz.IsList(req.Action) {
 		if admin {
 			return authz.Decision{Allow: true}

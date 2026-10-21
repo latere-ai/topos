@@ -289,6 +289,18 @@ var queryParams = map[string][]yaml.MapSlice{
 		agentParam, statusParam, runnerParam, archivedParam, rolloutParam,
 	},
 	"getSessionSummary": {agentParam, runnerParam, archivedParam, triggerParam, rolloutParam},
+	"getSessionActivity": {
+		{{Key: "name", Value: "day"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
+			{Key: "description", Value: "The day counted, a date in UTC from 00:00 to 24:00, from " + FirstActivityDay.Format(activityDayLayout) + " up to today; today answers what the log holds so far."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}, {Key: "format", Value: "date"}}}},
+		{{Key: "name", Value: "sender"}, {Key: "in", Value: "query"},
+			{Key: "description", Value: "A rendered subject: the one sender whose counts the page holds. The question names it as sender."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}},
+		{{Key: "name", Value: "limit"}, {Key: "in", Value: "query"}, {Key: "description", Value: fmt.Sprintf("How many senders a page holds at most; %d when absent.", session.DefaultListLimit)},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "integer"}, {Key: "minimum", Value: 1}, {Key: "maximum", Value: MaxLimit}}}},
+		{{Key: "name", Value: "cursor"}, {Key: "in", Value: "query"}, {Key: "description", Value: "The next_cursor of the page before."},
+			{Key: "schema", Value: yaml.MapSlice{{Key: "type", Value: "string"}}}},
+	},
 	"getFile": {
 		{{Key: "name", Value: "path"}, {Key: "in", Value: "query"}, {Key: "required", Value: true},
 			{Key: "description", Value: "The file: an absolute path inside the session's working directory, as a write or edit tool.result's meta.path names it, or a path relative to the working directory."},
@@ -557,6 +569,11 @@ var opDescriptions = map[string]string{
 		"The four counts are disjoint: running and ended are the sessions of that status, waiting_for_approval the idle sessions whose stop_reason is tool_confirmation, where a call or an approval waits for a person, and idle every other idle session, " +
 		"those idle on question, where a question waits for a person's answer, among them; " +
 		"agents is the number of distinct agents among the sessions counted. The route asks session.list with the list's fields and applies the owners its decision narrows to, as the list does; an agent name the caller holds no agent of answers every count zero.",
+	"getSessionActivity": `Each item is {"sender", "messages": [{"client", "count"}], "sessions": [{"client", "count"}], "answers"}: one sender's counts for the day, senders in subject order, and a sender with none of the three left out. It holds counts only, never a word of what was said. ` +
+		"messages counts the user.message events of the day on a session's own thread sent by a person and no trigger and not redacted, by the OAuth client of the token that sent each, as the sender's client records it, empty for a token that named none. " +
+		"sessions counts the sessions created that day whose initiator is a person, that no trigger started and that are no run of a rollout, by the initiator's client; a fork is a session its caller created. " +
+		"answers counts the turns of the day on a session's own thread that ended normally, a session.status idle at end_turn or ended as completed written by a turn, each counted for the sender of the last user.message before it when that message was a person's and no trigger's. " +
+		"The messages and answers of a rollout's runs are left out. The route asks session.activity once, about the collection, with day and, when the request names one, sender; a deny is forbidden. The owner policy allows an admin, and a caller who names themselves as sender.",
 	"archiveSession": "The body is empty. An idle or ended session gets archived_at and leaves the lists unless they ask for archived sessions; it stays readable, streamable and forkable by id, nothing is appended to its log, and an idle one still takes a message, whose turn runs while it stays archived. " +
 		"A running session is conflict: archiving never stops a turn, so interrupt it or wait for it to finish. Archiving an archived session keeps its archived_at. The route asks session.read, then, of a session that is not running, session.update with session_id and archived true; a deny is forbidden.",
 	"unarchiveSession": "The body is empty. The session's archived_at is cleared and it returns to the lists; a session that is not archived is answered as it is. The route asks session.read, then session.update with session_id and archived false; a deny is forbidden.",

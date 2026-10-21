@@ -51,6 +51,10 @@ const (
 	ActionSessionScope     = "session.scope"
 	ActionSessionUpdate    = "session.update"
 	ActionSessionTitle     = "session.title"
+	// ActionSessionActivity reads a day's counts of messages, sessions
+	// and finished answers per sender (spec 085), never a session's
+	// content.
+	ActionSessionActivity = "session.activity"
 
 	ActionTriggerCreate = "trigger.create"
 	ActionTriggerRead   = "trigger.read"
@@ -98,6 +102,7 @@ var table = []authz.Action{
 	{Name: ActionSessionScope, Kind: KindSession},
 	{Name: ActionSessionUpdate, Kind: KindSession},
 	{Name: ActionSessionTitle, Kind: KindSession},
+	{Name: ActionSessionActivity, Kind: KindSession},
 
 	{Name: ActionTriggerCreate, Kind: KindTrigger},
 	{Name: ActionTriggerRead, Kind: KindTrigger},

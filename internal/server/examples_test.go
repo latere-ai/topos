@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -371,6 +372,7 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	now = exampleTime(12, 6, 0)
 	step("listSessions", nil, "?limit=1")
 	step("getSessionSummary", nil, "")
+	step("getSessionActivity", nil, "?day=2026-09-22&sender="+url.QueryEscape(exampleCaller))
 	step("searchSessions", nil, "?q=release+notes&limit=1")
 	step("getSession", ses, "")
 	now = exampleTime(12, 10, 0)

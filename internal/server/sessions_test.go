@@ -587,7 +587,7 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 			"applyTrigger": triggerYAML("reviewer", "schedule: '@hourly', session: {message: y}"),
 		}[rt.op]
 		// A search's words are read before it asks, as a list's filters are.
-		query := map[string]string{"searchSessions": "?q=review"}[rt.op]
+		query := map[string]string{"searchSessions": "?q=review", "getSessionActivity": "?day=2026-01-02"}[rt.op]
 		if a := f.do(rt.method, "/v1"+path+query, "alice", body); a.status != http.StatusServiceUnavailable || a.code() != auth.CodeAuthorizerUnavailable {
 			t.Errorf("%s: %d %s", rt.op, a.status, a.body)
 		}

@@ -67,6 +67,7 @@ func Run(t *testing.T, open Open) {
 		{"SearchBounds", testSearchBounds},
 		{"SearchScope", testSearchScope},
 		{"UnknownTypeIsKept", testUnknownType},
+		{"Activity", testActivity},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open(t)) })
 	}

@@ -396,3 +396,33 @@ func TestEnvelope(t *testing.T) {
 		t.Fatalf("no request: %+v", e.Request)
 	}
 }
+
+// TestOwnerPolicyActivity: a day's counts are an admin's to read, and a
+// caller's own are theirs; anyone else's, or every sender's, is not_owner
+// (spec 085).
+func TestOwnerPolicyActivity(t *testing.T) {
+	p := &auth.OwnerPolicy{Admins: []string{root}}
+	for _, c := range []struct {
+		subject, sender string
+		allow           bool
+	}{
+		{root, "", true},
+		{root, alice, true},
+		{alice, alice, true},
+		{alice, bob, false},
+		{alice, "", false},
+	} {
+		fields := map[string]any{"day": "2026-10-20"}
+		if c.sender != "" {
+			fields["sender"] = c.sender
+		}
+		d, err := p.Authorize(t.Context(), authz.Request{Subject: c.subject, Action: authorizer.ActionSessionActivity,
+			Resource: authz.NewResource(authorizer.KindSession, "", fields)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Allow != c.allow || (!c.allow && d.Reason != authz.ReasonNotOwner) {
+			t.Errorf("%s asking for %q: %+v, want allow %v", c.subject, c.sender, d, c.allow)
+		}
+	}
+}

@@ -40,6 +40,10 @@ func table() []route {
 		// (spec 050).
 		{method: http.MethodGet, path: "/sessions/search", actions: a(authorizer.ActionSessionList, authorizer.ActionSessionRead),
 			op: "searchSessions", summary: "Search sessions", status: http.StatusOK, handle: (*call).searchSessions},
+		// A day's counts per sender ask one question about the
+		// collection and read no session's content (spec 085).
+		{method: http.MethodGet, path: "/sessions/activity", actions: a(authorizer.ActionSessionActivity),
+			op: "getSessionActivity", summary: "Count a day's activity", status: http.StatusOK, handle: (*call).activity},
 		{method: http.MethodGet, path: "/sessions/{id}", actions: a(authorizer.ActionSessionRead),
 			op: "getSession", summary: "Read a session", status: http.StatusOK, handle: (*call).getSession},
 		{method: http.MethodPatch, path: "/sessions/{id}", actions: a(authorizer.ActionSessionUpdate, authorizer.ActionSessionRead),

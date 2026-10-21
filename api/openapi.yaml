@@ -936,6 +936,67 @@ paths:
                           - text: " for v1.4.0."
         default:
           $ref: "#/components/responses/Error"
+  /sessions/activity:
+    get:
+      operationId: getSessionActivity
+      summary: Count a day's activity
+      description: "Each item is {\"sender\", \"messages\": [{\"client\", \"count\"}], \"sessions\": [{\"client\", \"count\"}], \"answers\"}: one sender's counts for the day, senders in subject order, and a sender with none of the three left out. It holds counts only, never a word of what was said. messages counts the user.message events of the day on a session's own thread sent by a person and no trigger and not redacted, by the OAuth client of the token that sent each, as the sender's client records it, empty for a token that named none. sessions counts the sessions created that day whose initiator is a person, that no trigger started and that are no run of a rollout, by the initiator's client; a fork is a session its caller created. answers counts the turns of the day on a session's own thread that ended normally, a session.status idle at end_turn or ended as completed written by a turn, each counted for the sender of the last user.message before it when that message was a person's and no trigger's. The messages and answers of a rollout's runs are left out. The route asks session.activity once, about the collection, with day and, when the request names one, sender; a deny is forbidden. The owner policy allows an admin, and a caller who names themselves as sender."
+      x-topos-actions:
+        - session.activity
+      parameters:
+        - name: day
+          in: query
+          required: true
+          description: The day counted, a date in UTC from 00:00 to 24:00, from 2000-01-01 up to today; today answers what the log holds so far.
+          schema:
+            type: string
+            format: date
+        - name: sender
+          in: query
+          description: "A rendered subject: the one sender whose counts the page holds. The question names it as sender."
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: How many senders a page holds at most; 50 when absent.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          description: The next_cursor of the page before.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SenderActivity"
+                  next_cursor:
+                    type: string
+                    description: The cursor of the next page; absent on the last.
+              example:
+                items:
+                  - sender: https://login.example|alice
+                    messages:
+                      - client: ""
+                        count: 2
+                    sessions:
+                      - client: ""
+                        count: 2
+                    answers: 1
+        default:
+          $ref: "#/components/responses/Error"
   /sessions/{id}:
     get:
       operationId: getSession
@@ -2587,6 +2648,16 @@ components:
           type: string
         remote:
           type: string
+    ClientCount:
+      type: object
+      required:
+        - client
+        - count
+      properties:
+        client:
+          type: string
+        count:
+          type: integer
     Connection:
       type: object
       required:
@@ -4550,6 +4621,28 @@ components:
           type: string
         kind:
           type: string
+        client:
+          type: string
+    SenderActivity:
+      type: object
+      required:
+        - sender
+        - messages
+        - sessions
+        - answers
+      properties:
+        sender:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientCount"
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientCount"
+        answers:
+          type: integer
     Session:
       type: object
       required:
