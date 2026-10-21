@@ -12,7 +12,7 @@ import (
 )
 
 // TestActivityUsesTheTimeIndex: each count of a day's activity reads the
-// day's rows through the index migration 0014 adds, so a day is counted
+// day's rows through the indexes migrations 0014 and 0015 add, so a day is counted
 // without reading every event or every session (spec 085). The planner is
 // told to avoid a sequential scan where it can, since an empty table makes
 // any plan as cheap as another; what the test holds is that the queries'

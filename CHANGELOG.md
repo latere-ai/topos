@@ -13,7 +13,7 @@ committed: the commit log already holds that.
 ### Added
 
 - **Every message records the application it came from.** A sender the server records for a request carries `client`, the OAuth client of the token it verified (`client_id`, or `azp` where the token has none), written from the token and never from the body. A token that names no client writes none, so older events and such tokens read as before.
-- **`GET /v1/sessions/activity` counts a day.** For one day in UTC, per sender, it answers how many messages a person sent from each client, how many sessions they started from each, and how many answers to their messages finished, counts only and never a word of what was said. It asks the new action `session.activity` once, with `day` and `sender`; without an authorizer an admin reads every sender and anyone their own. Postgres reads the day through two new indexes (migration 0014). See `docs/activity.md`.
+- **`GET /v1/sessions/activity` counts a day.** For one day in UTC, per sender, it answers how many messages a person sent from each client, how many sessions they started from each, and how many answers to their messages finished, counts only and never a word of what was said. It asks the new action `session.activity` once, with `day` and `sender`; without an authorizer an admin reads every sender and anyone their own. Postgres reads the day through two new indexes (migrations 0014 and 0015), built concurrently so a running installation's writes are not held while they build. See `docs/activity.md`.
 
 ### Fixed
 

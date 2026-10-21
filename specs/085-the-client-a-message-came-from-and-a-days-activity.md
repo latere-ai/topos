@@ -128,9 +128,12 @@ it is asked once per request.
 
 `session.Activity` is an optional interface of a store that counts a day
 without reading every log. The Postgres store answers it with three
-grouped queries over the day's rows, and a partial index on `events
-(time)` for the `user.message` and `session.status` rows of a session's
-own thread (migration 0014), so the read touches the day's rows alone.
+grouped queries over the day's rows, a partial index on `events (time)`
+for the `user.message` and `session.status` rows of a session's own
+thread (migration 0014) and an index on `sessions (created_at)`
+(migration 0015), so the read touches the day's rows alone. Both are
+built concurrently, each the one statement of its file, so a running
+installation's appends are not held while they build.
 The other stores are counted by `session.CountActivity`, which reads
 every session's log, and is the reference the store suite holds the
 Postgres answer to.
@@ -152,7 +155,7 @@ Postgres answer to.
 | A message sent with a token that names no client has no `client` in its payload; an event written before this spec reads with an empty client | `server.TestSendersCarryTheCallersClient`, `session.TestSenderClientIsOptional` |
 | The rules: a person's message on the own thread with no firing counts and a trigger's, a firing's, a subagent's and a redacted one do not; a turn's normal end finishes an answer and an error, a limit, a question, an end through the API and a subagent's end do not; a session a person started counts and a trigger's and a rollout's do not | `session.TestTheActivityRules` |
 | A day's messages, sessions and answers are counted per sender and client by those rules on every store, an answer for the person whose message the turn answered, nothing outside the day, and a sender, an after and a limit narrow the answer | `storetest` `Activity` on the memory, directory and Postgres stores; `server.TestActivityCountsADay` |
-| The Postgres store answers what `session.CountActivity` reads from every log, and each of its three counts reads by an index of migration 0014 | `storetest` `Activity` on Postgres, `postgres.TestActivityUsesTheTimeIndex` |
+| The Postgres store answers what `session.CountActivity` reads from every log, and each of its three counts reads by an index of migrations 0014 and 0015 | `storetest` `Activity` on Postgres, `postgres.TestActivityUsesTheTimeIndex` |
 | A page holds `limit` senders and names the next one's cursor; the last names none | `server.TestActivityPages` |
 | The route asks `session.activity` once, about the collection, with `day` and `sender`; the owner policy allows an admin and a caller naming themselves, and refuses anyone else; a deny answers `forbidden` | `server.TestActivityAsksOnce`, `auth.TestOwnerPolicyActivity` |
 | A day that is absent, not a date, before the first day or after today, a limit out of range and a cursor not issued here answer `invalid_request` and ask nothing | `server.TestActivityRefusesABadDay` |

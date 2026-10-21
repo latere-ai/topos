@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS sessions_created;

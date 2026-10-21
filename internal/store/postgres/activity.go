@@ -17,7 +17,8 @@ import (
 // The three counts of a window's activity (spec 085), each grouped by the
 // subject it is counted for. They apply session.PersonMessage,
 // session.StartedByPerson and session.FinishedAnswer in SQL, over the rows
-// the events_activity and sessions_created indexes find by time; the
+// the events_activity and sessions_created indexes (migrations 0014 and
+// 0015) find by time; the
 // store suite holds them to session.CountActivity. $1 and $2 are the
 // window, $3 the one sender or "", $4 the subject the page starts after.
 const (
