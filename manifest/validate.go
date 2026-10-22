@@ -328,6 +328,7 @@ func (v *validator) model(at string, m v1.AgentModel) {
 // for.
 var reservedFor = map[string]string{
 	harness.ToolQuestion: "harness's question tool", session.ToolPublish: "hosted runner's publish tool",
+	session.ToolTrigger:           "hosted runner's trigger tool",
 	harness.ToolRequestConnection: "harness's request_connection tool",
 }
 
@@ -349,9 +350,10 @@ func (v *validator) tools(at string, list []v1.Tool) {
 		}
 		builtin := slices.Contains(v.builtins, t.Name)
 		// The question tool is the harness's own (spec 039), and the publish
-		// tool the hosted runner's (spec 043): an agent names each among its
-		// tools, and no client tool may take either name.
-		harnessTool := t.Name == harness.ToolQuestion || t.Name == session.ToolPublish
+		// and trigger tools the hosted runner's (specs 043 and 086): an agent
+		// names each among its tools, and no client tool may take their
+		// names.
+		harnessTool := t.Name == harness.ToolQuestion || t.Name == session.ToolPublish || t.Name == session.ToolTrigger
 		switch {
 		case t.Client && builtin:
 			v.add(tp+".name", "a client tool may not take a built-in's name")
@@ -371,7 +373,7 @@ func (v *validator) tools(at string, list []v1.Tool) {
 				v.add(tp+".inputSchema", "a client tool needs an input schema")
 			}
 		case !builtin:
-			v.add(tp+".name", "not a built-in tool, web_search, history, question or publish; declare a client tool with client: true")
+			v.add(tp+".name", "not a built-in tool, web_search, history, question, publish or trigger; declare a client tool with client: true")
 		case t.Description != "" || len(t.InputSchema) > 0:
 			v.add(tp, "a built-in takes only name and outputLimit")
 		}
