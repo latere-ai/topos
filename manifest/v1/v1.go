@@ -80,7 +80,27 @@ type Status struct {
 	LastSessionID string         `json:"lastSessionId,omitempty"`
 	NextFireAt    *time.Time     `json:"nextFireAt,omitempty"`
 	Counts        *TriggerCounts `json:"counts,omitempty"`
+	// Origin is how a Trigger came to be when a session's call made it
+	// (spec 086), which the server writes and keeps across later applies;
+	// nil for a trigger a person or a program applied at the API.
+	Origin *TriggerOrigin `json:"origin,omitempty"`
 }
+
+// TriggerOrigin is the session call that made a Trigger (spec 086).
+type TriggerOrigin struct {
+	// Kind is OriginProposal.
+	Kind string `json:"kind"`
+	// SessionID and ToolUseID are the session and its call.
+	SessionID string `json:"sessionId"`
+	ToolUseID string `json:"toolUseId"`
+	// ConfirmedBy is the subject who allowed the call, the session's
+	// initiator, who owns the trigger.
+	ConfirmedBy string `json:"confirmedBy,omitempty"`
+}
+
+// OriginProposal is a TriggerOrigin's kind for the trigger tool's propose,
+// applied once the session's initiator allowed it.
+const OriginProposal = "proposal"
 
 // TriggerCounts is the number of a trigger's firings that came to each
 // outcome of spec 022.

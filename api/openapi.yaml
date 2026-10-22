@@ -3792,6 +3792,8 @@ components:
           format: date-time
         counts:
           $ref: "#/components/schemas/TriggerCounts"
+        origin:
+          $ref: "#/components/schemas/TriggerOrigin"
     ManifestThresholds:
       type: object
       required:
@@ -5254,6 +5256,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TriggerMatch"
+    TriggerOrigin:
+      type: object
+      required:
+        - kind
+        - sessionId
+        - toolUseId
+      properties:
+        kind:
+          type: string
+        sessionId:
+          type: string
+        toolUseId:
+          type: string
+        confirmedBy:
+          type: string
     TriggerSession:
       type: object
       required:
