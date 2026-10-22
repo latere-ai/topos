@@ -13,6 +13,7 @@ require (
 	golang.org/x/sys v0.48.0
 	latere.ai/x/cella v0.17.0
 	latere.ai/x/pkg v0.106.0
+	latere.ai/x/sdk-go v0.6.0
 )
 
 require (
@@ -54,7 +55,6 @@ require (
 	google.golang.org/grpc v1.83.1 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	latere.ai/x/ci-gate v0.54.0 // indirect
-	latere.ai/x/sdk-go v0.1.0 // indirect
 )
 
 tool latere.ai/x/ci-gate/cmd/lateregate

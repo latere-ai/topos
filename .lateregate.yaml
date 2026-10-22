@@ -88,7 +88,8 @@ depcheck:
         fetches the installation's own token at its identity provider
         (spec 018); the CommonMark parser and the HTML tokenizer the
         harness finds the images an answer shows and the files it links
-        with (specs 055 and 064); nothing
+        with (specs 055 and 064); the routine's shape the trigger tool
+        applies a proposal in (spec 086); nothing
         else does without a row here
       allow:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
@@ -118,6 +119,7 @@ depcheck:
         golang.org/x/oauth2: the OAuth 2.0 types of pkg/authkit/oidc, whose ClientCredentials fetches the host's token at the identity provider (spec 018)
         github.com/yuin/goldmark: the CommonMark parser that finds the images an answer shows and the files it links (specs 055 and 064)
         latere.ai/x/sdk-go/llm/wire: the lux dialect's types, which pkg/llmdialect's codecs and the harness's requests are written in; it imports the standard library alone and sends nothing
+        latere.ai/x/sdk-go/agents/routine: the routine's trigger shape every client reads, which the trigger tool's proposals are applied in (spec 086); it imports the standard library alone and sends nothing
     latere.ai/x/topos/cmd/topos-machine:
       decision: >-
         the helper a Cella machine uploads into its sandbox reaches the
