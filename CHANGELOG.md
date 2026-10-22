@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.52.0 - 2026-10-22
+
 ### Added
 
 - **An agent can offer the person a routine, made only on their yes.** An agent whose manifest names the new `trigger` tool can list the triggers the person who started the session holds of it, and propose a routine on a schedule: a name, the ask each run makes, one sentence of why, a five-field cron of a minute and an hour on every day or on the days listed, and a time zone. Every proposal waits for that person in every approval mode, whatever an always-allow pattern, the progressive score or a decision service would answer, and plan mode blocks it. Only the person who started the session answers it: another sender's `user.tool_confirmation` of a `trigger` call is refused `forbidden`. On their allow the routine is applied as theirs, in the session's context, in the shape `latere.ai/x/sdk-go/agents/routine` writes, so every client reads it as a routine; a deny's `note` carries the person's words to the agent. The tool is offered by the hosted runner alone, never to a subagent's thread, and `topos run` refuses an agent that names it. See `docs/offers.md`.
