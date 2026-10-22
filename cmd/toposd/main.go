@@ -190,7 +190,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	if minter != nil {
 		local = minter.Local
 	}
-	runners, err := startRunners(runCtx, cfg, getenv, doors, st.sessions, queue, runner.KindServe, local, api.Failover, &titling{ask: api.Title, latest: api.LatestTitle, agents: api.TitleAgents}, log)
+	runners, err := startRunners(runCtx, cfg, getenv, doors, st.sessions, queue, runner.KindServe, local, api.Failover, api.SessionTriggers, &titling{ask: api.Title, latest: api.LatestTitle, agents: api.TitleAgents}, log)
 	if err != nil {
 		stopRunners()
 		return fail(stderr, err)
@@ -259,7 +259,7 @@ func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 	internal := http.NewServeMux()
 	internal.Handle("/", probes)
 	if len(cfg.RunnerTokens) > 0 {
-		ro := runnerapi.Options{Store: st.sessions, Queue: queue, Tokens: cfg.RunnerTokens, Failover: api.Failover, Title: api.Title, Log: log}
+		ro := runnerapi.Options{Store: st.sessions, Queue: queue, Tokens: cfg.RunnerTokens, Failover: api.Failover, Title: api.Title, Triggers: api.SessionTriggers, Log: log}
 		if minter != nil {
 			ro.Credentials = minter.Credential
 		}
@@ -554,10 +554,12 @@ func titlePass(ctx context.Context, r *runner.Runner, t *titling, log *slog.Logg
 // confine stops the start. failover is the server's question of which
 // model a turn continues on when its model cannot serve (spec 051), nil
 // in a runner process, whose leases ask it over the internal listener;
-// titles is how serve's runners name sessions, nil in a runner process,
+// triggers is the server's reach to its triggers for a session's trigger
+// tool (spec 086), nil in a runner process for the same reason; titles is
+// how serve's runners name sessions, nil in a runner process,
 // and where it is set the runners also name, once, the sessions an agent
 // ran before (spec 083).
-func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string, string) (session.ModelRef, error), titles *titling, log *slog.Logger) (<-chan struct{}, error) {
+func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, doors models.Doors, st session.Store, queue runner.Claimer, kind string, creds func(string, session.Lease) runner.Credentials, failover func(context.Context, string, session.ModelRef, session.ModelRef, string, string) (session.ModelRef, error), triggers func(string) runner.Triggers, titles *titling, log *slog.Logger) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if cfg.RunnerCapacity == 0 {
 		close(done)
@@ -606,7 +608,7 @@ func startRunners(ctx context.Context, cfg config.Config, getenv config.Getenv, 
 	// A session that works in a repository on the git host keeps its
 	// checkpoints there, so a fork restores its files after the sandbox
 	// is gone (spec 035).
-	ro := runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind, Credentials: creds, Failover: failover, CheckpointHost: cfg.OrigoURL, Log: log}
+	ro := runner.Options{Store: st, Harness: h, ID: fmt.Sprintf("%s-%s-%d", kind, host, os.Getpid()), Kind: kind, Credentials: creds, Failover: failover, Triggers: triggers, CheckpointHost: cfg.OrigoURL, Log: log}
 	if titles != nil {
 		ro.Title, ro.LatestTitle = titles.ask, titles.latest
 	}
@@ -691,7 +693,7 @@ func runnerRole(ctx context.Context, args []string, getenv config.Getenv, stdout
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}
-	runners, err := startRunners(runCtx, cfg, getenv, doors, client, client, runner.KindRunner, nil, nil, nil, log)
+	runners, err := startRunners(runCtx, cfg, getenv, doors, client, client, runner.KindRunner, nil, nil, nil, nil, log)
 	if err != nil {
 		return fail(stderr, errors.Join(err, ln.Close()))
 	}

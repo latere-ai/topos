@@ -83,90 +83,12 @@ func renderTrigger(t store.Trigger) (*v1.Trigger, error) {
 // the initiator of every session it starts, applying in the context its
 // token names.
 func (c *call) applyTrigger() error {
-	ctx := c.r.Context()
-	name := c.r.PathValue("name")
 	body, err := c.body()
 	if err != nil {
 		return err
 	}
-	// The agent a trigger names is read in the caller's context, the
-	// trigger's own name among the caller's triggers (spec 036).
-	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.LookupIn(c.s.o.Objects, c.here().subject, c.caller.Subject), c}, Now: c.s.o.Now})
+	t, created, err := c.s.putTrigger(c.r.Context(), c.asker(), c.r.PathValue("name"), body, triggerApply{})
 	if err != nil {
-		return err
-	}
-	if len(rs) != 1 || rs[0].Trigger == nil {
-		return refuse(CodeInvalidRequest, "the body holds %d documents; PUT /triggers takes one Trigger", len(rs))
-	}
-	r := rs[0]
-	if r.Name != name {
-		return refuse(CodeInvalidRequest, "the manifest names the trigger %q and the path %q", r.Name, name)
-	}
-	spec := r.Trigger.Spec
-	if err := checkTriggerSession(spec.Session); err != nil {
-		return err
-	}
-	now := c.s.o.Now().UTC()
-	next, err := triggers.NextFire(spec, now)
-	if err != nil {
-		return refuse(CodeInvalidRequest, "spec.timeZone: %v", err)
-	}
-	st := r.Trigger.Status
-	agentID, _, _ := strings.Cut(spec.Agent, "@")
-	stored, err := c.s.o.Objects.TriggerByName(ctx, c.caller.Subject, name)
-	exists := err == nil
-	switch {
-	case err != nil && !errors.Is(err, store.ErrNotFound):
-		return err
-	case exists:
-		res := triggerResource(stored)
-		if on := onField(spec); on != nil {
-			res.Fields["on"] = on
-		}
-		maps.Copy(res.Fields, deviceFields(spec.Session))
-		if _, err := c.ask(ctx, authorizer.ActionTriggerUpdate, res); err != nil {
-			return err
-		}
-		if st.ID != stored.ID {
-			return refuse(CodeConflict, "the trigger %s changed while it was applied; apply again", name)
-		}
-		prev, err := triggers.Spec(stored)
-		if err != nil {
-			return err
-		}
-		// A schedule that did not change keeps its next fire time, so a
-		// firing due before the apply is not skipped; one that was
-		// suspended starts from now, and fires nothing it missed.
-		if prev.Schedule == spec.Schedule && prev.TimeZone == spec.TimeZone && !stored.Suspended && stored.NextFireAt != nil {
-			next = stored.NextFireAt
-		}
-	default:
-		fields := map[string]any{"name": name, "agent": agentID}
-		if on := onField(spec); on != nil {
-			fields["on"] = on
-		}
-		maps.Copy(fields, deviceFields(spec.Session))
-		// The id the resolver minted names the trigger from its first
-		// question, so an authorizer that keeps state per trigger, such as
-		// the events it delivers to it, can key that state by the id the
-		// fire route takes.
-		if _, err := c.ask(ctx, authorizer.ActionTriggerCreate, authz.NewResource(authorizer.KindTrigger, st.ID, fields)); err != nil {
-			return err
-		}
-	}
-	if spec.Suspend {
-		next = nil
-	}
-	doc, err := session.Marshal(r.Trigger)
-	if err != nil {
-		return err
-	}
-	t := store.Trigger{ID: st.ID, Name: name, Owner: c.caller.Subject, Claims: auth.TriggerClaims(c.caller), AgentID: agentID, Version: st.Version, Digest: st.Digest,
-		Doc: doc, Suspended: spec.Suspend, NextFireAt: next, CreatedAt: st.CreatedAt, UpdatedAt: now}
-	if err := c.s.o.Objects.PutTrigger(ctx, t); err != nil {
-		return err
-	}
-	if t, err = c.s.o.Objects.Trigger(ctx, t.ID); err != nil {
 		return err
 	}
 	out, err := renderTrigger(t)
@@ -174,10 +96,146 @@ func (c *call) applyTrigger() error {
 		return err
 	}
 	status := http.StatusOK
-	if !exists {
+	if created {
 		status = http.StatusCreated
 	}
 	return c.reply(status, out)
+}
+
+// triggerApply is how a trigger is applied beside its manifest: by a
+// session's call (origin), and whether only its questions are asked and
+// nothing is stored (check).
+type triggerApply struct {
+	// origin is the session call that applies the trigger (spec 086), nil
+	// for a person's or a program's own apply at the route.
+	origin *v1.TriggerOrigin
+	// agent is the agent id the trigger must run, for a session's call
+	// whose trigger is of its own agent alone; "" takes the manifest's.
+	agent string
+	// check asks the questions of the apply and stores nothing.
+	check bool
+}
+
+// putTrigger resolves one Trigger manifest as q in q's context, asks
+// trigger.create or trigger.update about it, and stores it under q's own
+// name unless the apply only checks: q becomes its owner, the initiator of
+// every session it starts. It answers the trigger as stored and whether
+// the apply created it. A trigger a session's call applies carries its
+// origin in its questions and keeps it in its status; one that already
+// has an origin keeps it through later applies at the route.
+func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []byte, how triggerApply) (store.Trigger, bool, error) {
+	// The agent a trigger names is read in the caller's context, the
+	// trigger's own name among the caller's triggers (spec 036).
+	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.LookupIn(s.o.Objects, contextOf(q.caller).subject, q.caller.Subject), s.o.Objects, q.ask}, Now: s.o.Now})
+	if err != nil {
+		return store.Trigger{}, false, err
+	}
+	if len(rs) != 1 || rs[0].Trigger == nil {
+		return store.Trigger{}, false, refuse(CodeInvalidRequest, "the body holds %d documents; PUT /triggers takes one Trigger", len(rs))
+	}
+	r := rs[0]
+	if r.Name != name {
+		return store.Trigger{}, false, refuse(CodeInvalidRequest, "the manifest names the trigger %q and the path %q", r.Name, name)
+	}
+	spec := r.Trigger.Spec
+	if err := checkTriggerSession(spec.Session); err != nil {
+		return store.Trigger{}, false, err
+	}
+	now := s.o.Now().UTC()
+	next, err := triggers.NextFire(spec, now)
+	if err != nil {
+		return store.Trigger{}, false, refuse(CodeInvalidRequest, "spec.timeZone: %v", err)
+	}
+	st := r.Trigger.Status
+	agentID, _, _ := strings.Cut(spec.Agent, "@")
+	if how.agent != "" && agentID != how.agent {
+		return store.Trigger{}, false, refuse(CodeInvalidRequest, "spec.agent: a session's call applies a trigger of the session's own agent, %s, and this one names %s", how.agent, agentID)
+	}
+	stored, err := s.o.Objects.TriggerByName(ctx, q.caller.Subject, name)
+	exists := err == nil
+	switch {
+	case err != nil && !errors.Is(err, store.ErrNotFound):
+		return store.Trigger{}, false, err
+	case exists:
+		res := triggerResource(stored)
+		if on := onField(spec); on != nil {
+			res.Fields["on"] = on
+		}
+		maps.Copy(res.Fields, deviceFields(spec.Session))
+		if how.origin != nil {
+			res.Fields["origin"] = originField(*how.origin)
+		}
+		if _, err := q.ask(ctx, authorizer.ActionTriggerUpdate, res); err != nil {
+			return store.Trigger{}, false, err
+		}
+		if st.ID != stored.ID {
+			return store.Trigger{}, false, refuse(CodeConflict, "the trigger %s changed while it was applied; apply again", name)
+		}
+		prev, err := triggers.Spec(stored)
+		if err != nil {
+			return store.Trigger{}, false, err
+		}
+		// A schedule that did not change keeps its next fire time, so a
+		// firing due before the apply is not skipped; one that was
+		// suspended starts from now, and fires nothing it missed.
+		if prev.Schedule == spec.Schedule && prev.TimeZone == spec.TimeZone && !stored.Suspended && stored.NextFireAt != nil {
+			next = stored.NextFireAt
+		}
+		if how.origin == nil {
+			doc, err := store.DecodeTrigger(stored.Doc)
+			if err != nil {
+				return store.Trigger{}, false, err
+			}
+			r.Trigger.Status.Origin = doc.Status.Origin
+		}
+	default:
+		fields := map[string]any{"name": name, "agent": agentID}
+		if on := onField(spec); on != nil {
+			fields["on"] = on
+		}
+		maps.Copy(fields, deviceFields(spec.Session))
+		if how.origin != nil {
+			fields["origin"] = originField(*how.origin)
+		}
+		// The id the resolver minted names the trigger from its first
+		// question, so an authorizer that keeps state per trigger, such as
+		// the events it delivers to it, can key that state by the id the
+		// fire route takes.
+		if _, err := q.ask(ctx, authorizer.ActionTriggerCreate, authz.NewResource(authorizer.KindTrigger, st.ID, fields)); err != nil {
+			return store.Trigger{}, false, err
+		}
+	}
+	if how.check {
+		return store.Trigger{}, !exists, nil
+	}
+	if how.origin != nil {
+		r.Trigger.Status.Origin = how.origin
+	}
+	if spec.Suspend {
+		next = nil
+	}
+	doc, err := session.Marshal(r.Trigger)
+	if err != nil {
+		return store.Trigger{}, false, err
+	}
+	t := store.Trigger{ID: st.ID, Name: name, Owner: q.caller.Subject, Claims: auth.TriggerClaims(q.caller), AgentID: agentID, Version: st.Version, Digest: st.Digest,
+		Doc: doc, Suspended: spec.Suspend, NextFireAt: next, CreatedAt: st.CreatedAt, UpdatedAt: now}
+	if err := s.o.Objects.PutTrigger(ctx, t); err != nil {
+		return store.Trigger{}, false, err
+	}
+	t, err = s.o.Objects.Trigger(ctx, t.ID)
+	return t, !exists, err
+}
+
+// originField is a trigger's origin as its questions carry it (spec 086):
+// the kind, the session and its call, and who confirmed the call once a
+// person allowed it.
+func originField(o v1.TriggerOrigin) map[string]any {
+	f := map[string]any{"kind": o.Kind, "session_id": o.SessionID, "tool_use_id": o.ToolUseID}
+	if o.ConfirmedBy != "" {
+		f["confirmed_by"] = o.ConfirmedBy
+	}
+	return f
 }
 
 // checkTriggerSession refuses what a session's create cannot take: a

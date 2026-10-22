@@ -74,7 +74,8 @@ func render(a store.Agent, v store.AgentVersion) (*v1.Agent, error) {
 // references cannot tell another owner's agent from none.
 type scopedLookup struct {
 	manifest.Lookup
-	c *call
+	objects store.Store
+	ask     func(ctx context.Context, action string, res authz.Resource) (authz.Decision, error)
 }
 
 func (l scopedLookup) Agent(ctx context.Context, ref string) (*v1.Agent, error) {
@@ -82,11 +83,11 @@ func (l scopedLookup) Agent(ctx context.Context, ref string) (*v1.Agent, error) 
 	if err != nil {
 		return nil, err
 	}
-	a, err := l.c.s.o.Objects.Agent(ctx, doc.Status.ID)
+	a, err := l.objects.Agent(ctx, doc.Status.ID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := l.c.ask(ctx, authorizer.ActionAgentRead, agentResource(a)); err != nil {
+	if _, err := l.ask(ctx, authorizer.ActionAgentRead, agentResource(a)); err != nil {
 		if auth.Code(err) == auth.CodeNotFound {
 			return nil, store.ErrNotFound
 		}
@@ -105,7 +106,7 @@ func (c *call) applyAgent() error {
 		return err
 	}
 	here := c.here()
-	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.LookupIn(c.s.o.Objects, here.subject, c.caller.Subject), c}, Now: c.s.o.Now})
+	rs, err := manifest.Resolve(ctx, body, manifest.Options{Lookup: scopedLookup{store.LookupIn(c.s.o.Objects, here.subject, c.caller.Subject), c.s.o.Objects, c.ask}, Now: c.s.o.Now})
 	if err != nil {
 		return err
 	}

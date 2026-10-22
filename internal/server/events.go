@@ -24,6 +24,7 @@ import (
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/runner"
@@ -223,7 +224,7 @@ func (c *call) sendEvent() error {
 		return err
 	}
 	ev.ID = id
-	appended, err := c.s.appendSent(c.r.Context(), s.ID, change, ev, answering(b.Type, payload))
+	appended, err := c.s.appendSent(c.r.Context(), s.ID, change, ev, answering(b.Type, payload, s.Initiator.Subject))
 	if err != nil {
 		return err
 	}
@@ -245,16 +246,43 @@ var sentTypes = []string{
 // tool's result and an answer to a question each name a call that waits
 // for exactly that answer. The check runs on the log the append follows,
 // so of two answers to one call one is appended and the other refused.
-func answering(typ session.Type, payload any) func([]session.Event) error {
+func answering(typ session.Type, payload any, initiator string) func([]session.Event) error {
 	switch p := payload.(type) {
 	case session.UserToolConfirmation:
-		return awaits(typ, cmp.Or(p.ToolUseID, p.ApprovalID), session.AnswerConfirmation)
+		wait := awaits(typ, cmp.Or(p.ToolUseID, p.ApprovalID), session.AnswerConfirmation)
+		return func(evs []session.Event) error {
+			if err := wait(evs); err != nil {
+				return err
+			}
+			// A trigger call proposes standing work the person who started
+			// the session would own, so only that person answers it (spec
+			// 086), whoever else may send to the session.
+			if p.ToolUseID != "" && p.Sender.Subject != initiator && callName(evs, p.ToolUseID) == session.ToolTrigger {
+				return refuse(auth.CodeForbidden, "only the person who started the session answers a %s call: the routine it proposes would be theirs", session.ToolTrigger)
+			}
+			return nil
+		}
 	case session.UserToolResult:
 		return awaits(typ, p.ToolUseID, session.AnswerResult)
 	case session.UserAnswer:
 		return func(evs []session.Event) error { return fits(evs, p) }
 	}
 	return nil
+}
+
+// callName is the name of the tool the call toolUseID of evs calls, ""
+// for a call the log does not hold.
+func callName(evs []session.Event, toolUseID string) string {
+	for _, e := range evs {
+		if e.Type != session.TypeAgentToolUse {
+			continue
+		}
+		var u session.AgentToolUse
+		if e.Decode(&u) == nil && u.ToolUseID == toolUseID {
+			return u.Name
+		}
+	}
+	return ""
 }
 
 // awaits refuses a confirmation or a client tool's result that answers
