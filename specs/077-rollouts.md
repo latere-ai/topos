@@ -175,8 +175,8 @@ none of its initiator's accounts or context:
 
 Memory stores (spec 020) are not built; when they are, a run attaches
 none. The installation's authorizer holds the same rule on its side: in
-Latere, platformd attaches a run nothing of its starter's and refuses its
-tokens at the connection service (platform spec 214).
+Latere it attaches a run nothing of its starter's and refuses its tokens
+at the connection service (platform spec 214).
 
 ### The task suite and one check runner
 
