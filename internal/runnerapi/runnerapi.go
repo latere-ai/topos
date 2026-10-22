@@ -65,6 +65,10 @@ const (
 	// 083): the authorizer denied it or could not be asked, or the server
 	// asks none. The message says which; the session keeps its title.
 	CodeNoTitle = "no_title"
+	// CodeTriggerRefused is a trigger question of the trigger tool the
+	// server answered no (spec 086): details.code names the authorizer's
+	// reason or the API's error code, and the message is the detail.
+	CodeTriggerRefused = "trigger_refused"
 )
 
 // ClaimRequest asks for sessions to run.
@@ -158,6 +162,21 @@ type TitleAnswer struct {
 	Model session.ModelRef `json:"model"`
 }
 
+// TriggersRequest is a question of a session's trigger tool under the
+// lease (spec 086): a list names no proposal, a check and an apply one.
+type TriggersRequest struct {
+	Generation int64            `json:"generation"`
+	Proposal   *runner.Proposal `json:"proposal,omitempty"`
+}
+
+// TriggersAnswer answers a list with the session initiator's triggers of
+// its agent, and an apply with the trigger it applied; a check answers
+// none.
+type TriggersAnswer struct {
+	Triggers []runner.ListedTrigger `json:"triggers,omitempty"`
+	Trigger  *runner.ListedTrigger  `json:"trigger,omitempty"`
+}
+
 // Appended is the log's last sequence after an append.
 type Appended struct {
 	LastSeq uint64 `json:"last_seq"`
@@ -206,8 +225,13 @@ type Options struct {
 	// checked the runner holds: toposd's question session.title. Nil
 	// allows none.
 	Title func(ctx context.Context, id, asked string) (session.ModelRef, error)
-	Now   func() time.Time
-	Log   *slog.Logger
+	// Triggers is the session id's reach to the triggers the server keeps
+	// (spec 086), to a lease the route has checked the runner holds:
+	// toposd's own. Nil answers every question of the trigger tool
+	// trigger_refused.
+	Triggers func(id string) runner.Triggers
+	Now      func() time.Time
+	Log      *slog.Logger
 }
 
 // Server holds the claims of remote runners. A claim holds the store's
@@ -273,6 +297,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST "+Root+"/leases/{session}/tokens", s.tokens)
 	route("POST "+Root+"/leases/{session}/failover", s.failover)
 	route("POST "+Root+"/leases/{session}/title", s.title)
+	route("POST "+Root+"/leases/{session}/triggers/{action}", s.triggers)
 	route("POST "+Root+"/sessions/{session}/events", s.append)
 	route("GET "+Root+"/sessions/{session}", s.get)
 	route("GET "+Root+"/sessions/{session}/events", s.events)
@@ -526,6 +551,73 @@ func (s *Server) title(w http.ResponseWriter, r *http.Request) error {
 	return reply(w, http.StatusOK, TitleAnswer{Model: m})
 }
 
+// The actions of the trigger tool's route: the paths' last segment.
+const (
+	TriggersList  = "list"
+	TriggersCheck = "check"
+	TriggersApply = "apply"
+)
+
+// triggers answers a question of a session's trigger tool under its lease
+// (spec 086): a list, the check of a proposal before it is held, or its
+// apply once the person allowed it.
+func (s *Server) triggers(w http.ResponseWriter, r *http.Request) error {
+	var req TriggersRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	action := r.PathValue("action")
+	switch {
+	case action != TriggersList && action != TriggersCheck && action != TriggersApply:
+		return &wireError{CodeNotFound, http.StatusNotFound, fmt.Sprintf("the trigger tool asks %s, %s or %s, not %q", TriggersList, TriggersCheck, TriggersApply, action)}
+	case (action == TriggersList) != (req.Proposal == nil):
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a list names no proposal, and a check and an apply one each"}
+	}
+	id := r.PathValue("session")
+	c, err := s.held(id, req.Generation)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-c.lease.Lost():
+		s.drop(id, c)
+		return &wireError{CodeLeaseLost, http.StatusConflict, "the store's lease on the session ended"}
+	default:
+	}
+	if s.o.Triggers == nil {
+		return refusedTrigger(&runner.TriggerRefusal{Code: CodeTriggerRefused, Message: "this server keeps no triggers for a session's calls"})
+	}
+	t := s.o.Triggers(id)
+	var a TriggersAnswer
+	switch action {
+	case TriggersList:
+		a.Triggers, err = t.ListTriggers(r.Context())
+	case TriggersCheck:
+		err = t.CheckProposal(r.Context(), *req.Proposal)
+	default:
+		var applied runner.ListedTrigger
+		if applied, err = t.ApplyProposal(r.Context(), *req.Proposal); err == nil {
+			a.Trigger = &applied
+		}
+	}
+	if err != nil {
+		return refusedTrigger(err)
+	}
+	return reply(w, http.StatusOK, a)
+}
+
+// refusedTrigger is a refusal as the wire carries it, and any other error
+// as it is.
+func refusedTrigger(err error) error {
+	if re, ok := errors.AsType[*runner.TriggerRefusal](err); ok {
+		return &refusal{re}
+	}
+	return err
+}
+
+// refusal is a *runner.TriggerRefusal on its way to the wire.
+type refusal struct{ *runner.TriggerRefusal }
+
 func (s *Server) append(w http.ResponseWriter, r *http.Request) error {
 	var req AppendRequest
 	if err := decode(r, &req); err != nil {
@@ -701,6 +793,10 @@ func (e *wireError) Error() string { return e.code + ": " + e.msg }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var we *wireError
+	if re, ok := errors.AsType[*refusal](err); ok {
+		httpjson.WriteError(w, http.StatusForbidden, httpjson.Error{Code: CodeTriggerRefused, Message: re.Message, Details: map[string]any{"code": re.Code}})
+		return
+	}
 	if se, ok := errors.AsType[*runner.SetupError](err); ok {
 		detail := ""
 		if se.Err != nil {

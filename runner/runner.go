@@ -91,6 +91,12 @@ type Options struct {
 	// it itself (Titler) is asked instead; with neither, a drive names no
 	// session.
 	Title func(ctx context.Context, id, asked string) (session.ModelRef, error)
+	// Triggers is the session id's reach to the triggers the server keeps,
+	// which the trigger tool asks (spec 086): toposd's, for the leases of
+	// its own runners. A lease that is a Triggers itself is asked instead;
+	// with neither, the harness builder reads none and offers no trigger
+	// tool.
+	Triggers func(id string) Triggers
 	// Log receives a line for each title a drive or a pass asked for, and
 	// for each that it could not, with the session and the cause (spec
 	// 083). Nil discards them.
@@ -250,6 +256,9 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 	// the session records it beside the running turn, so a client shows
 	// the person what it waits for while the call is held (spec 080).
 	built, tokens := r.tokens(ctx, id, lease)
+	if t := r.triggers(id, lease); t != nil {
+		built = WithTriggers(built, t)
+	}
 	built = machine.WithWaiting(built, func(ctx context.Context, w machine.Waiting) error {
 		return r.waiting(ctx, log, w)
 	})

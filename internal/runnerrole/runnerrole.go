@@ -227,6 +227,9 @@ func readError(resp *http.Response) error {
 		return fmt.Errorf("%w: %s", session.ErrInvalid, msg)
 	case runnerapi.CodeNotMinted:
 		return fmt.Errorf("%w: %s", runner.ErrNotMinted, msg)
+	case runnerapi.CodeTriggerRefused:
+		code, _ := env.Error.Details["code"].(string)
+		return &runner.TriggerRefusal{Code: cmp.Or(code, runnerapi.CodeTriggerRefused), Message: msg}
 	case runnerapi.CodeCredentialRefused:
 		code, _ := env.Error.Details["code"].(string)
 		detail, _ := env.Error.Details["detail"].(string)
@@ -507,3 +510,42 @@ func (l *lease) Title(ctx context.Context, asked string) (session.ModelRef, erro
 }
 
 var _ runner.Titler = (*lease)(nil)
+
+// triggers asks the server a question of the session's trigger tool
+// (spec 086) under the lease's generation; lease_lost ends the lease.
+func (l *lease) triggers(ctx context.Context, action string, p *runner.Proposal) (runnerapi.TriggersAnswer, error) {
+	var a runnerapi.TriggersAnswer
+	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/triggers/"+action, runnerapi.TriggersRequest{Generation: l.gen, Proposal: p}, &a)
+	if errors.Is(err, session.ErrLeaseLost) {
+		l.end()
+	}
+	return a, err
+}
+
+// ListTriggers asks the server for the session initiator's triggers of
+// the session's agent.
+func (l *lease) ListTriggers(ctx context.Context) ([]runner.ListedTrigger, error) {
+	a, err := l.triggers(ctx, runnerapi.TriggersList, nil)
+	return a.Triggers, err
+}
+
+// CheckProposal asks the server whether p could be applied as the
+// session's initiator.
+func (l *lease) CheckProposal(ctx context.Context, p runner.Proposal) error {
+	_, err := l.triggers(ctx, runnerapi.TriggersCheck, &p)
+	return err
+}
+
+// ApplyProposal asks the server to apply p as the session's initiator.
+func (l *lease) ApplyProposal(ctx context.Context, p runner.Proposal) (runner.ListedTrigger, error) {
+	a, err := l.triggers(ctx, runnerapi.TriggersApply, &p)
+	if err != nil {
+		return runner.ListedTrigger{}, err
+	}
+	if a.Trigger == nil {
+		return runner.ListedTrigger{}, errors.New("runnerrole: the server answered an apply with no trigger")
+	}
+	return *a.Trigger, nil
+}
+
+var _ runner.Triggers = (*lease)(nil)
