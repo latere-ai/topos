@@ -254,7 +254,7 @@ session per run are built; the rollout resource is not.
 | R1 | Partly met: a create names `rollout`, the caller's id for its run, which the session keeps and `session.create` carries; `attended: false` answers a question at once as unanswered, and a run refuses a call that would wait for a confirmation at once, as a person's deny, so it never goes idle on one. There is no `POST /v1/rollouts`: a caller creates one session per run, under its own `Idempotency-Key`, which holds for 24 hours rather than the rollout's life |
 | R3 | Met for a session: a create's `model {name, reasoning}` runs from the first request, and an allow that names another model or level is `model_not_allowed` |
 | The session list | Met: the list, the search and the summary leave a rollout's runs out unless `rollout` names it or `any` |
-| A run is isolated | Met (VERSION): a run takes none of its initiator's instructions, context, attached repositories or connections, its sandbox holds no connection service token, and none is minted for it. Before, a run was given what its initiator's own sessions are |
+| A run is isolated | Met (v0.51.1): a run takes none of its initiator's instructions, context, attached repositories or connections, its sandbox holds no connection service token, and none is minted for it. Before, a run was given what its initiator's own sessions are |
 | R2, R4 to R15 | Not built |
 
 Held by `server.TestARolloutsRunsAreLeftOutOfTheList`,
