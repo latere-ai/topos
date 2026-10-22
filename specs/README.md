@@ -139,6 +139,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [083](083-a-title-that-follows-the-conversation.md) | A title that follows the conversation: after a turn a person started, a small model keeps the title on the current subject, `spec.title` turns it on, `session.title` names the model, a person's rename wins, and the sessions an agent ran before are named once | medium | testing | 004, 006, 007, 010, 016, 017, 025, 038, 049, 054, 061 |
 | [084](084-reading-back-what-the-context-let-go.md) | Reading back what the context let go: an opt-in `history` tool reads the thread's own log as written, by range, by call or by words, and the cleared, summary and compaction texts say so | medium | testing | 004, 008, 010, 013, 018, 025, 048, 083 |
 | [085](085-the-client-a-message-came-from-and-a-days-activity.md) | The client a message came from, and a day's activity: every sender the server records carries the OAuth client of the verified token, and one route answers a day's counts of messages, sessions and finished answers per sender and client, with no content | medium | testing | 004, 006, 014, 015, 022, 056, 077 |
+| [086](086-proactive-agents.md) | Proactive agents: a `trigger` tool whose proposals the owner approves through a held call, a `wake` tool that sets the session's next wake as a one-shot trigger with a note, bounded in delay, horizon and count, `notify` and a quiet outcome, attended trigger sessions, and one hold over an owner's triggers | large | drafted | 003, 004, 008, 012, 013, 015, 016, 022, 037, 039 |
 
 ## Dependency graph
 
@@ -230,6 +231,7 @@ flowchart BT
   S083[083 a title that follows the conversation]
   S084[084 reading back what the context let go]
   S085[085 the client a message came from + a day's activity]
+  S086[086 proactive agents]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -397,6 +399,9 @@ flowchart BT
   S085 --> S022
   S085 --> S056
   S085 --> S077
+  S086 --> S022
+  S086 --> S037
+  S086 --> S039
 ```
 
 ## Build order
