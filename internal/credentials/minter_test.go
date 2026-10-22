@@ -387,3 +387,41 @@ func TestKeyRoutesAnswers(t *testing.T) {
 		t.Fatalf("a key value %q %v", v, err)
 	}
 }
+
+// TestARunIsMintedNoConnectionsToken: a rollout's run is refused a token
+// for the connection service's audience, of either workload, with the
+// setup code run_isolated, and is minted every other audience; a session
+// of no rollout is minted the connection service's token as before (spec
+// 077, "A run is isolated").
+func TestARunIsMintedNoConnectionsToken(t *testing.T) {
+	ctx := t.Context()
+	f := newFixture(t, true)
+	f.idp.SetAudiences("cella", "connections")
+	o := f.m.o
+	o.ConnectionsAudience = "connections"
+	m, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := o.Sessions.Get(ctx, f.session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session.New(plain.Agent, plain.Initiator, session.RunnerHosted, plain.Machine, f.now)
+	run.Rollout = "cel_01.smoke"
+	if err := o.Sessions.Create(ctx, run, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, workload := range []string{runner.WorkloadSandbox, runner.WorkloadSession} {
+		var se *runner.SetupError
+		if c, err := m.Credential(ctx, run.ID, "l", "connections", workload); !errors.As(err, &se) || se.Code != CodeRunIsolated || c.Value != "" {
+			t.Errorf("the run's %s token for the connection service: %+v %v", workload, c, err)
+		}
+	}
+	if c, err := m.Credential(ctx, run.ID, "l", "cella", runner.WorkloadSession); err != nil || c.Value == "" {
+		t.Fatalf("the run's cella token: %v", err)
+	}
+	if c, err := m.Credential(ctx, f.session, "l", "connections", runner.WorkloadSandbox); err != nil || c.Value == "" {
+		t.Fatalf("a session of no rollout's token for the connection service: %v", err)
+	}
+}

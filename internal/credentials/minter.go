@@ -33,6 +33,11 @@ import (
 // provider or key routes did not answer.
 const CodeUnavailable = "identity_unavailable"
 
+// CodeRunIsolated is the setup code of a token for the connection
+// service's audience asked for a rollout's run, which reaches none of its
+// initiator's connections (spec 077, "A run is isolated").
+const CodeRunIsolated = "run_isolated"
+
 // coded is err as the runner reads it: a refusal of the identity
 // provider or the authorizer, or their silence, is a setup error naming
 // its code, so the session's turn closes with it; a missing identity is
@@ -83,6 +88,10 @@ type Options struct {
 	Sessions session.Store
 	Agents   store.Agents
 	Now      func() time.Time
+	// ConnectionsAudience is the connection service's audience,
+	// TOPOS_CONNECTIONS_AUDIENCE, for which a rollout's run is minted no
+	// token; empty refuses none.
+	ConnectionsAudience string
 }
 
 // Minter answers a session's credentials.
@@ -157,6 +166,13 @@ func (m *Minter) credential(ctx context.Context, id string, h holder, audience, 
 	s, err := m.o.Sessions.Get(ctx, id)
 	if err != nil {
 		return runner.Credential{}, err
+	}
+	// A rollout's run reaches none of its initiator's connections, so the
+	// connection service's token, which acts with them, is never minted for
+	// it, whichever workload asks (spec 077, "A run is isolated").
+	if s.Isolated() && m.o.ConnectionsAudience != "" && audience == m.o.ConnectionsAudience {
+		return runner.Credential{}, &runner.SetupError{Code: CodeRunIsolated,
+			Err: fmt.Errorf("credentials: session %s is a rollout's run, which is minted no token for the connection service, %s", id, audience)}
 	}
 	return m.mint(ctx, s, audience, workload)
 }

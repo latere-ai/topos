@@ -406,7 +406,7 @@ func newMinter(cfg config.Config, st stores) (*credentials.Minter, *idp.Client, 
 		return nil, nil, nil
 	}
 	client := &http.Client{Timeout: 30 * time.Second, Transport: otel.Transport(nil)}
-	o := credentials.Options{Sessions: st.sessions, Agents: st.objects}
+	o := credentials.Options{Sessions: st.sessions, Agents: st.objects, ConnectionsAudience: cfg.ConnectionsAudience}
 	var ic *idp.Client
 	if cfg.IdentityURL != "" {
 		var err error

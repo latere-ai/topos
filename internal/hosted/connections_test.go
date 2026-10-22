@@ -140,6 +140,45 @@ func TestTheConnectionsSecret(t *testing.T) {
 	}
 }
 
+// TestARunsSandboxMountsNoConnectionsSecret: the sandbox of a rollout's
+// run mounts no Secret of the connection service and holds no
+// CONNECTIONS_TOKEN, and no token for the service is asked, while its
+// model key is mounted as every session's is (spec 077, "A run is
+// isolated").
+func TestARunsSandboxMountsNoConnectionsSecret(t *testing.T) {
+	creds := &issued{life: 15 * time.Minute}
+	f := newCredentialFixture(t, helper(t), creds, nil, withConnectionService)
+	f.cella.Authorize(sessionRule(f.s.ID))
+	ctx, cancel := context.WithCancel(runner.WithTokens(t.Context(), runner.NewTokenSource(creds, nil, nil)))
+	defer cancel()
+	run := f.s
+	run.Rollout = "cel_01.smoke"
+	cfg, err := open(ctx, f.h, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := cella.SandboxName(run.ID)
+	if _, _, ok := f.cella.Secret(name + SecretConnections); ok {
+		t.Error("the run's sandbox has the connection service's Secret")
+	}
+	sb, ok := f.cella.Sandbox(name)
+	if !ok {
+		t.Fatal("no sandbox")
+	}
+	if slices.ContainsFunc(sb.Spec.Secrets, func(m cellav1.SecretMount) bool { return m.Env == session.ConnectionsToken }) {
+		t.Errorf("the run's sandbox mounts %+v", sb.Spec.Secrets)
+	}
+	if !slices.ContainsFunc(sb.Spec.Secrets, func(m cellav1.SecretMount) bool { return m.Env == EnvLuxKey }) {
+		t.Errorf("the run's sandbox mounts no model key: %+v", sb.Spec.Secrets)
+	}
+	if slices.Contains(creds.calls, "connections/sandbox") {
+		t.Errorf("the run's sandbox asked the connection service's token: %v", creds.calls)
+	}
+	if err := cfg.Machine.Release(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestHTTPConnectionsFollowTheList: a sandbox takes the session's http
 // connections when it opens: git rewrites each git URL to its
 // connection's git address and sends the connection service's

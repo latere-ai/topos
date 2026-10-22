@@ -269,9 +269,13 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 			return nil, &machine.OpenError{Code: CodeMachineUnavailable, Err: err}
 		}
 		// The sandbox takes the connections the session holds when it opens,
-		// which a send since the drive began may have replaced (spec 069).
+		// which a send since the drive began may have replaced (spec 069), and
+		// a rollout's run none (spec 077, "A run is isolated").
 		s := s
 		s.Connections = cur.Connections
+		if s.Isolated() {
+			s.Connections = nil
+		}
 		m, err := b.o.Machines(ctx, s, spec)
 		if err == nil {
 			return m, nil

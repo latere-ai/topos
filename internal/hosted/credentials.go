@@ -214,8 +214,10 @@ func (o CellaOptions) sandboxSecrets(ctx context.Context, s session.Session, c *
 	}
 	// The connection service's Secret is mounted whether or not the session
 	// has a connection yet: a sandbox takes a mount's placeholder at its
-	// create alone, and a person may connect a service later (spec 069).
-	if o.ConnectionsURL != "" {
+	// create alone, and a person may connect a service later (spec 069). A
+	// rollout's run reaches none of its initiator's connections, and its
+	// sandbox mounts none (spec 077, "A run is isolated").
+	if o.ConnectionsURL != "" && !s.Isolated() {
 		host, err := hostOf(o.ConnectionsURL)
 		if err != nil {
 			return nil, setup(CodeMachineUnavailable, fmt.Errorf("TOPOS_CONNECTIONS_URL %w", err))

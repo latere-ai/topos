@@ -143,6 +143,11 @@ const MCPListTimeout = 30 * time.Second
 // listing that fails offers none of the connection's tools, and the
 // session goes on. An available connection has no server to list.
 func (b builder) mcp(ctx context.Context, s session.Session, reg *tools.Registry) map[string]harness.MCPListing {
+	// A rollout's run reaches no connection, whatever its header holds
+	// (spec 077, "A run is isolated").
+	if s.Isolated() {
+		return nil
+	}
 	var conns []session.Connection
 	for _, c := range s.Connections {
 		if c.Kind == session.ConnectionMCP && c.Connected() {
