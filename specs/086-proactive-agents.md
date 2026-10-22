@@ -1,9 +1,9 @@
 ---
 title: "Proactive agents: an agent proposes a trigger its owner approves through a held call, sets its own next wake as a one-shot trigger with a note, bounded in delay, horizon and count, cancels it, and says whether a turn a trigger began brought anything to the person; trigger sessions that wait for their owner's answers, and one hold over all of an owner's triggers"
-status: drafted
+status: in-progress
 track: core
 depends_on: [.archive/003-manifest.md, .archive/004-session-log.md, 008-tools.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 016-runners.md, .archive/022-triggers.md, .archive/037-decision-services.md, 039-questions.md]
-affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, internal/hosted/, harness/, harness/tools/, session/, prompts/, api/openapi.yaml, docs/]
+affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, internal/hosted/, internal/proposal/, internal/runnerapi/, internal/runnerrole/, runner/, harness/, harness/tools/, session/, prompts/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-22
 updated: 2026-10-22
@@ -93,6 +93,8 @@ each against its alternative.
 | A routine's runs | `session.notify: always` by default, so a schedule trigger applied today behaves as it does | `judged` by default: every routine a person already made would start staying quiet |
 | Pausing everything | one hold per owner, `PUT /v1/triggers/hold`, read by the minute loop and the fire route | a client suspending every trigger in turn: a race with a wake set during the loop, and resuming would also resume what the person had paused one by one |
 | Names | tools `trigger`, `wake`, `notify` | `routine`: a client's word for one kind of trigger; `remind`: names one use of a wake; `alert`: names one use of a notice |
+| A proposal's trigger | the routine shape of `latere.ai/x/sdk-go/agents/routine`, written by its `Manifest`: every client lists, changes and deletes it as a routine | a `proposed-` name and a purpose annotation of the core's own: a second shape of a routine, which every client would learn to read as one (decided 2026-10-22) |
+| A proposal's schedule | a routine's: a minute and an hour, every day or on the days listed, read by `routine.ParseSchedule` | any cron, bounded by an interval: a schedule no routine form shows |
 
 ### The Trigger kind's added fields
 
@@ -119,12 +121,15 @@ quiet; and the name `hold`, which the hold's route below takes. A
 firing whose agent version no longer names `notify` records `notified`,
 as under `always`.
 
-Two things are written by the server and ignored on input:
+One thing is written by the server and ignored on input:
 
 | Field | Where | Meaning |
 |---|---|---|
-| `origin` | the Trigger resource, beside `owner` | `{kind, session_id, tool_use_id, confirmed_by?}` when a session's call made the trigger: `kind` is `proposal` or `wake`, `confirmed_by` the subject who allowed a proposal. Absent for a trigger applied at the route |
-| `metadata.annotations["topos.latere.ai/purpose"]` | the manifest | the sentence a person reads of why the trigger exists: a proposal's `why`, a wake's `title`. Like every annotation it is not part of the spec ([[003-manifest]]) |
+| `origin` | the Trigger's `status`, kept across later applies | `{kind, sessionId, toolUseId, confirmedBy?}` when a session's call made the trigger: `kind` is `proposal` or `wake`, `confirmedBy` the subject who allowed a proposal. Absent for a trigger applied at the route. The questions carry it as `{kind, session_id, tool_use_id, confirmed_by?}` |
+
+A proposal's why is read in its held call, not stored on the trigger, so
+the routine keeps the routine's shape; a wake's title is its
+`metadata.displayName`.
 
 ### One-shot triggers, and spent
 
@@ -188,10 +193,10 @@ a server keeps triggers. A thread is never offered it
 |---|---|---|
 | `action` | all | `list`, `propose`, `change`, `pause`, `resume` or `delete` |
 | `id` | `change`, `pause`, `resume`, `delete` | a `trg_` id of a trigger the session's initiator owns, in the session's context, that runs the session's agent |
-| `name` | `propose`, `change` | the name a person reads, at most `trigger.MaxProposedName` characters; it becomes `metadata.displayName` and each started session's title |
+| `name` | `propose`, `change` | the name a person reads, at most `routine.MaxTitle` characters; it becomes `metadata.displayName` and each started session's title |
 | `ask` | `propose`, `change` | what each firing asks, in words; the server escapes `{{` so nothing in it is read as a placeholder |
 | `why` | `propose`, `change`, `pause` | one sentence the person reads: why the trigger exists, or why it is paused; at most `trigger.MaxPurposeLength` characters |
-| `schedule`, `timeZone` | `propose`, `change` | as the Trigger's; one of `schedule` and `on` |
+| `schedule`, `timeZone` | `propose`, `change` | a routine's schedule: five cron fields of a minute and an hour, every day or on the days of the week listed, and the IANA zone it is read in; one of `schedule` and `on` |
 | `on` | `propose`, `change` | as the Trigger's `on` ([[022-triggers]]) |
 | `notify` | `propose`, `change` | `always` or `judged`; `always` for a schedule and `judged` for `on` when absent |
 
@@ -199,38 +204,46 @@ What each action does:
 
 | Action | Held for the person | What runs on allow, or at once |
 |---|---|---|
-| `list` | no | answers the owner's triggers of the agent, newest first, at most `trigger.MaxListed`: id, name, purpose, `schedule`, `timeZone`, `on` or `at`, `suspend`, the next fire time, `origin`, and a wake's target session id and title |
+| `list` | no | answers the owner's triggers of the agent, newest first, at most `trigger.MaxListed`: id, name, title, `schedule`, `timeZone`, the product of `on`, the ask, `suspend`, the next fire time and `origin`; from step 3 `at`, and a wake's target session id and title |
 | `propose` | yes, every time | applies a new trigger, below |
 | `change` | yes, every time | applies the trigger again with the given fields changed and every other field kept, as the SDK's routine change does |
-| `pause` | no | sets `suspend` and the purpose annotation to `why`; the result tells the model to tell the person what it paused and why |
+| `pause` | no | sets `suspend`; the result tells the model to tell the person what it paused and why |
 | `resume` | yes, every time | clears `suspend` |
 | `delete` | yes, every time | deletes the trigger; sessions it started keep running |
 
-A proposal is applied as this manifest, named so that a retry of the
-same call applies the same trigger:
+A proposal is applied as the routine `routine.Manifest` of
+`latere.ai/x/sdk-go/agents/routine` writes, the one shape every client
+reads as a routine, named so that a retry of the same call applies the
+same trigger:
 
 | Field | Value |
 |---|---|
-| `metadata.name` | `proposed-` and the first 20 hex digits of the SHA-256 of the session id, `/` and the call's `tool_use_id` |
+| `metadata.name` | `routine.Name` of the session id, `/` and the call's `tool_use_id`: `routine-` and the first 20 hex digits of its SHA-256 |
+| `metadata.labels["applied-by"]` | the name of the session's agent |
 | `metadata.displayName` | `name` |
-| `metadata.annotations["topos.latere.ai/purpose"]` | `why` |
-| `spec.agent` | the session's agent |
-| `spec.schedule`, `spec.timeZone` or `spec.on` | as given |
-| `spec.session.message` | `ask`, escaped; under `on`, followed by a block that names the event's `product`, `verb`, `resource`, `actor`, `time` and `payload` through their placeholders |
+| `spec.agent` | the session's agent, by name, read in the owner's context; an apply whose name reads another agent is refused |
+| `spec.schedule`, `spec.timeZone` | as given, in the routine's form |
+| `spec.session.message` | `ask`, escaped |
 | `spec.session.title` | `name`, escaped |
-| `spec.session.attended` | `false` until roll step 4, as a routine a person makes through a client is; from step 4 `true`, and a client writes `true` for every routine it makes, so every watch's runs ask their owner alike |
-| `spec.session.notify` | `notify` |
 | `spec.skipIfActive` | `false`, so a run waiting for the person never skips the next |
+| `status.origin` | `{kind: proposal, sessionId, toolUseId, confirmedBy}`, written by the server |
+
+The routine's shape carries no annotation of its own, so `why` is read
+in the held call alone, where a client words the offer from it. Until
+roll step 4, `session.attended` and `session.notify` are left to their
+defaults, as a routine a person makes through a client is.
 
 The bounds of a proposal are constants of `manifest/trigger`, read by
 the tool's schema, its description and the check before the hold:
 
 | Constant | Value | Bounds | Why this value |
 |---|---|---|---|
-| `MaxProposedName` | 60 | `name` | a row's title on a phone's width, and the bound a client's routine form already holds |
 | `MaxPurposeLength` | 200 | `why` | two sentences, shown under the name |
-| `MinProposedInterval` | 1 hour | the gap between two fire times of a proposed schedule | below |
 | `MaxListed` | 50 | the triggers `list` answers | enough to find a duplicate before proposing; a person with more manages them in a client |
+
+The name's bound is the routine's own, `routine.MaxTitle` (60), and a
+routine's schedule runs at most once a day, so no interval bound is
+needed.
 
 A proposal names no machine, resources, budget or limits: its sessions
 run where the agent's own definition and the authorizer place them. The
@@ -245,12 +258,12 @@ and answers a call that would be refused without asking anyone
 | Rule | Why |
 |---|---|
 | exactly one of `schedule` and `on`, each valid as the Trigger's | the same grammar the resolver checks at apply ([[022-triggers]]) |
-| a schedule whose next two fire times, in the coming week, are less than `trigger.MinProposedInterval` apart | standing work an agent offers is a few times a day at most; a person who wants more applies it themselves |
+| a schedule no routine runs on, a zone the server does not know, and a name, an ask or a why past the routine's checks | the checks `routine.New` holds a routine to, read by the tool and again by the server |
 | `id` names a trigger the owner holds, of this agent, that is not a wake | a session never changes another agent's standing work, or another session's wake |
-| `trigger.create` or `trigger.update` as the owner, asked before the hold without `confirmed_by`, denies | no person approves a call bound to fail; the reason is the result |
+| `trigger.create` or `trigger.update` as the owner, asked before the hold without `confirmed_by`, denies | no person approves a call bound to fail; the reason is the result. The harness asks it through `tools.Prober`, the `Checker` that may reach the call's service |
 
-The call is then held: `tools.Confirmer` names it, with the reason
-`prompts/results/trigger/held.md`, so it is `ask` in `confirm` and
+The call is then held: `tools.Confirmer` names it, with its reason, so
+it is `ask` in `confirm` and
 `progressive`, whatever pattern, session pattern or decision service
 ([[037-decision-services]]) would allow it, and `block` in `plan`. Only a
 `user.tool_confirmation` from the session's initiator closes it; another
@@ -292,7 +305,7 @@ appends `session.wake_set`:
 | Field | Value |
 |---|---|
 | `metadata.name` | `wake-` and the session id's ULID in lowercase, so a session has one wake |
-| `metadata.displayName`, the purpose annotation | `title` |
+| `metadata.displayName` | `title` |
 | `spec.agent` | the session's agent |
 | `spec.at` | the time asked |
 | `spec.session.message` | `note`, escaped |
@@ -471,7 +484,7 @@ Latere Studio read and write:
 
 | Need | Why |
 |---|---|
-| A routine is also a schedule trigger of the agent whose `origin` is a proposal from one of the agent's sessions, read with its purpose and origin | a routine the agent made on the person's yes shows in both clients' routines, with no client label on it |
+| A routine read with its `origin`, so a client marks one a conversation offered; the routine itself is already the SDK's shape, listed, changed and deleted as any | a routine the agent made on the person's yes shows in both clients' routines, marked as offered |
 | The person's watches in one list: routines, event triggers the agent proposed, and wakes, each with its purpose, its next look, its origin and, for a wake, its session | both clients show what is watching for the person and why from one reading |
 | The hold, read and set | pausing everything |
 | The Session's `wake`, `outcome` and `notice`, and a held `trigger` call read as an offer: its action, name, why, schedule or event, notify, and the trigger a change changes | both clients word an offer and a quiet run alike |
@@ -485,16 +498,27 @@ its machine, which stays a person's own apply; a filter of the sessions
 list by `outcome`; a wake in a local session of `topos run`, which has no
 server to keep the trigger.
 
+## Progress
+
+Roll step 1 is built, for the offer the decision of 2026-10-22 orders
+first: the `trigger` tool's `list` and `propose` of a schedule, held for
+the session's initiator, refused before the hold through `tools.Prober`,
+blocked in plan mode, applied as the initiator in the routine's shape
+with `status.origin`, and reached by a runner process over the internal
+listener (`POST /internal/v1/leases/{session}/triggers/{list,check,apply}`).
+`at`, `session.target`, `session.attended`, `session.notify`, `change`,
+`pause`, `resume`, `delete`, `wake`, `notify` and the hold are not built.
+
 ## Acceptance criteria
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A proposal of a schedule is held in `confirm` and `progressive` whatever pattern or decision service would allow it, and blocked in `plan` | `harness.TestATriggerProposalIsHeld` | not built |
-| A proposal that the input or the authorizer would refuse is answered at once and never held | `internal/hosted.TestARefusedProposalAsksNobody` | not built |
-| The initiator's allow applies the trigger as the initiator, in the session's context, with `origin` and the purpose, and a retry of the same call applies the same trigger; another sender's confirmation is `forbidden` | `internal/hosted.TestAnAllowedProposalIsTheOwners`, `internal/server.TestOnlyTheInitiatorConfirmsATrigger` | not built |
-| A message in place of an allow denies the proposal with the message as its note | `internal/hosted.TestAMessageDeniesAProposal` | not built |
-| `pause` sets `suspend` and the purpose without asking; `change`, `resume` and `delete` are held; none touches a trigger of another agent or a wake | `harness.TestTriggerActionsOnlyTouchTheAgentsOwn` | not built |
-| A schedule closer than `MinProposedInterval` is refused before the hold | `manifest/trigger.TestAProposedScheduleIsNotTooFrequent` | not built |
+| A proposal of a schedule is held in `confirm` and `progressive` whatever pattern or decision service would allow it, and blocked in `plan` | `harness.TestACallItsToolHoldsWaitsForAPerson`, `harness.TestPlanModeBlocksAHeldCall`, `internal/proposal.TestEveryProposalWaitsForItsPerson` | built |
+| A proposal that the input or the authorizer would refuse is answered at once and never held | `harness.TestAProbedCallAsksNobody`, `internal/proposal.TestAProposalIsCheckedBeforeAnyoneIsAsked`, `internal/server.TestAProposalTheAuthorizerRefusesIsARefusal` | built |
+| The initiator's allow applies the trigger as the initiator, in the session's context, in the routine's shape with `origin`, and a retry of the same call applies the same trigger; another sender's confirmation is `forbidden` | `internal/server.TestAnAllowedProposalIsTheOwners`, `internal/server.TestOnlyTheInitiatorConfirmsATrigger`, `internal/runnerrole.TestARemoteLeaseAsksTheTriggerQuestions` | built |
+| A message in place of an allow denies the proposal with the message as its note | the harness's deny of a held call by a message (spec 012), which a `trigger` call takes as any held call | built |
+| `pause` sets `suspend` without asking; `change`, `resume` and `delete` are held; none touches a trigger of another agent or a wake | `harness.TestTriggerActionsOnlyTouchTheAgentsOwn` | not built |
+| A schedule no routine runs on is refused before the hold | `internal/proposal.TestAProposalIsCheckedBeforeAnyoneIsAsked` | built |
 | An `at` trigger fires once across two replicas and is deleted when spent; a held one stays until sent | `internal/store/postgres.TestAOneShotFiresOnce` (postgres tier), `internal/triggers.TestASpentTriggerIsDeleted` | not built |
 | A wake continues the session that set it with its note and `wake` on the message; a wake of an ended session is `skipped_ended` | `internal/triggers.TestAWakeContinuesItsSession` | not built |
 | A wake sooner than `MinWakeDelay`, later than `MaxWakeAhead` or past the session's `expires_at` is refused with the bound named; a second `set` replaces the first | `harness.TestWakeBounds` | not built |
