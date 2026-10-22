@@ -6,7 +6,7 @@ depends_on: [003-manifest.md, 004-session-log.md, 008-tools.md, 009-machines.md,
 affects: [api/openapi.yaml, internal/server/, session/, runner/, machine/, internal/filestore/, test/tasks/, docs/api.md]
 effort: large
 created: 2026-10-17
-updated: 2026-10-19
+updated: 2026-10-22
 author: changkun
 ---
 
@@ -141,6 +141,43 @@ out every session that carries a rollout id; a rollout's id lists that
 rollout's sessions; `any` lists both. A list by `metadata.project` or
 any other filter keeps the same default.
 
+### A run is isolated
+
+A run executes a task's instruction, and a task may come from a suite
+another person shared. A run's session is created as its initiator, so
+without a rule of its own it would be given what that person's own
+sessions are given: their standing instructions (spec 053), the context
+and the repositories an allow attaches (spec 058), and their connections
+(spec 069), with the connection service's token in its sandbox. An
+experiment also needs every run to start with nothing but its agent's
+definition and its task. So a session that carries a `rollout` reaches
+none of its initiator's accounts or context:
+
+- **The create.** Whatever its allow names, the session holds no
+  `instructions`, no `context`, no repository the allow attaches and no
+  `connections`; the server logs what it left out. Its network, its
+  folder (spec 068), where its files are kept for the caller to grade,
+  and the repositories its request names, its task's workspace, are its
+  allow's and its request's as any session's.
+- **A send.** A send's allow changes no connection of it, and appends no
+  `session.connections_changed`.
+- **The machine.** Its sandbox mounts no Secret of the connection
+  service, so it holds no `CONNECTIONS_TOKEN`, and is given no
+  connection's address. Its model key and its git host's token are
+  mounted as for every session; the installation's authorizer decides
+  what the git host's token reaches.
+- **The minter.** toposd mints a run no token for the connection
+  service's audience, `TOPOS_CONNECTIONS_AUDIENCE`, of either workload,
+  refusing it with the setup code `run_isolated`.
+- **The prompt.** The harness renders no initiator's instructions, no
+  attached context and no connections block for it, and offers it no
+  `request_connection`, even from a header written before this rule.
+
+Memory stores (spec 020) are not built; when they are, a run attaches
+none. The installation's authorizer holds the same rule on its side: in
+Latere, platformd attaches a run nothing of its starter's and refuses its
+tokens at the connection service (platform spec 214).
+
 ### The task suite and one check runner
 
 Spec 025's task suite and release bar are the core's own evaluation,
@@ -201,6 +238,11 @@ SandboxSet (Cella spec 020).
 - The checks' files, the references and the input files are read with toposd's server-side identity, and a read of them with a session workload's token is refused by a files store that grants them to toposd alone.
 - The task suite's checks run through R8, and no second check runner
   remains.
+- A session that carries a rollout holds no instructions, context,
+  attached repository or connection whatever its allow names, a send
+  changes none of its connections, its sandbox mounts no Secret of the
+  connection service, toposd mints it no token for that service, and its
+  requests render none of them.
 
 ## Outcome
 
@@ -212,9 +254,14 @@ session per run are built; the rollout resource is not.
 | R1 | Partly met: a create names `rollout`, the caller's id for its run, which the session keeps and `session.create` carries; `attended: false` answers a question at once as unanswered, and a run refuses a call that would wait for a confirmation at once, as a person's deny, so it never goes idle on one. There is no `POST /v1/rollouts`: a caller creates one session per run, under its own `Idempotency-Key`, which holds for 24 hours rather than the rollout's life |
 | R3 | Met for a session: a create's `model {name, reasoning}` runs from the first request, and an allow that names another model or level is `model_not_allowed` |
 | The session list | Met: the list, the search and the summary leave a rollout's runs out unless `rollout` names it or `any` |
+| A run is isolated | Met (VERSION): a run takes none of its initiator's instructions, context, attached repositories or connections, its sandbox holds no connection service token, and none is minted for it. Before, a run was given what its initiator's own sessions are |
 | R2, R4 to R15 | Not built |
 
 Held by `server.TestARolloutsRunsAreLeftOutOfTheList`,
 `server.TestACreateRunsTheModelItNames`,
-`harness.TestARolloutsRunRefusesACallThatWouldAsk` and the store
-conformance test `ListByRollout`.
+`harness.TestARolloutsRunRefusesACallThatWouldAsk`, the store
+conformance test `ListByRollout`, and for the isolated run
+`server.TestARunTakesNoneOfItsInitiatorsAccounts`,
+`harness.TestARunIsToldNothingOfItsInitiator`,
+`hosted.TestARunsSandboxMountsNoConnectionsSecret` and
+`credentials.TestARunIsMintedNoConnectionsToken`.
