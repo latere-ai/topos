@@ -86,6 +86,18 @@ type Checker interface {
 	Check(c Call) *Result
 }
 
+// Prober is the optional interface of a tool that can tell, by asking the
+// service the call would reach, that the call would be refused when it
+// ran: a trigger the installation's authorizer would not let the person
+// hold, say (spec 086). The harness probes a call after its Check, on the
+// same terms, and before the call is decided, so no person is asked to
+// approve a call bound to fail. Probe answers the refusal, or nil for a
+// call the service would take or could not be asked about: a failure to
+// ask leaves the call to be decided, and to fail when it runs.
+type Prober interface {
+	Probe(ctx context.Context, c Call) *Result
+}
+
 // Confirmer is the optional interface of a tool some of whose calls a
 // person approves every time: a call that changes who can open a
 // published app, say (spec 012). The harness asks it about a call after
@@ -93,9 +105,9 @@ type Checker interface {
 // waits for a person whatever would run it without one: an always_allow
 // pattern, a pattern a person's answer added to the session, the
 // progressive mode's score, or a decider's verdict. Plan mode blocks it,
-// as it blocks every call that is not read-only, and a block stays a
-// block. Confirm reads the call's input alone and answers the reason the
-// call's agent.tool_use records, or "" for a call decided as any other.
+// whatever the tool's effect, and a block stays a block. Confirm reads
+// the call's input alone and answers the reason the call's agent.tool_use
+// records, or "" for a call decided as any other.
 type Confirmer interface {
 	Confirm(c Call) string
 }

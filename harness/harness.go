@@ -1685,6 +1685,14 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 				continue
 			}
 		}
+		// A call the service it reaches would refuse is answered the same
+		// way, once its input passed (spec 086).
+		if p, ok := tool.(tools.Prober); ok && !passed[name] {
+			if refused := p.Probe(ctx, tools.Call{ID: id, Input: input}); refused != nil {
+				answered = append(answered, answeredCall{id, *refused})
+				continue
+			}
+		}
 		passed[name] = true
 		props := tool.Properties()
 		policy := t.h.c.Policy
@@ -1714,8 +1722,12 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		}
 		// A call its tool holds for a person waits for one whatever the
 		// decider answered: no list, pattern, score or service runs it
-		// without them.
+		// without them. Plan mode blocks it, as it blocks every call that
+		// changes anything, whatever effect its tool declares.
 		d = held(d, confirm)
+		if confirm != "" && mode == ModePlan {
+			d = Decision{Verdict: VerdictBlock, Reason: prompts.Text(prompts.CallPlanMode)}
+		}
 		if question && d.Verdict == VerdictAsk {
 			// A decider that asks all the same is overruled: the call is
 			// itself put to a person, and is never held for a confirmation.
