@@ -35,6 +35,7 @@ import (
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/internal/filestore"
+	"latere.ai/x/topos/internal/proposal"
 	"latere.ai/x/topos/internal/publish"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/cella"
@@ -241,6 +242,17 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	if slices.Contains(ac.Tools, publish.Name) && b.o.Publish.Configured() && !onHost && !device {
 		if err := reg.Add(publish.New(b.o.Publish, s, runner.TokensFrom(ctx))); err != nil {
 			return harness.Config{}, err
+		}
+	}
+	// The trigger tool is offered to a session whose agent names it, on a
+	// runner that reaches a server keeping triggers (spec 086). It needs no
+	// machine, so a session on a host or a person's own computer holds it
+	// too.
+	if slices.Contains(ac.Tools, proposal.Name) {
+		if t := runner.TriggersFrom(ctx); t != nil {
+			if err := reg.Add(proposal.New(t)); err != nil {
+				return harness.Config{}, err
+			}
 		}
 	}
 	if onHost {
