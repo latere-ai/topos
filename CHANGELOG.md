@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A rollout's run no longer receives its initiator's accounts or context.** A session created with `rollout` was given what its initiator's own sessions are: their standing instructions, the context and repositories an allow attaches, and their connections, with the connection service's token in its sandbox. Now, whatever its allow names, it holds none of them, a send changes none of its connections, its sandbox mounts no Secret of the connection service, toposd mints it no token for that service (`run_isolated`), and its requests render none of them. Its network, its folder and the repositories its request names are unchanged.
+
 ## v0.51.0 - 2026-10-21
 
 ### Added
