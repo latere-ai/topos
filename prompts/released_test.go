@@ -241,6 +241,12 @@ var released = map[string]string{
 	"results/history/none-v1.md":                     "18be8fe5aa426023506f8f07e09bff6e065d2e75dfdad495f054e5492b18e735",
 	"results/history/picture-v1.md":                  "17d2972daa81b9a5fff720f068b4ed6dcc834ae3bb32f157b40030bfa852812a",
 	"tools/history-v1.md":                            "38783f6ece293a1ea84faa047fb5587710d5d26f700637b890b1bebaa6ab5858",
+	"tools/trigger-v1.md":                            "f97348d95919c3451fefb77bd6bbdb21dc0644f9bfb142288c0e9025d1fe0127",
+	"results/trigger/invalid-v1.md":                  "4780cebecc5ece5a9515155f57e8e27731cdd15811c27cdf71ad4c37cbe5715b",
+	"results/trigger/list-v1.md":                     "c8be71f97459d52ea065a8e449bb53b48c633d375df237bc9b6aa04aee85f03c",
+	"results/trigger/made-v1.md":                     "bb1bcc3e905b866f859be482afe72ddb35fa9ddd79a6a478f6cd9c85b9feb6ca",
+	"results/trigger/not-made-v1.md":                 "e554609cf414907743053f8fa7334e26f019f61ca77d5026b9fd135bd6d1b217",
+	"results/trigger/refused-v1.md":                  "1aa541b1379f4a9fe713e0483d16ca6549d769dd17c4c7b1e7880cdde30a59be",
 	"transcript/cleared-v2.md":                       "23d14925df90e96818ba1c68f697452018405e045b8e31a2658132049be9e108",
 	"transcript/summary-v2.md":                       "e04302dc54f0a6e3d48689bdf60225cbbbf91ae656589a8cc97ba53af95056f1",
 }

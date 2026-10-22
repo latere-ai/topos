@@ -91,6 +91,27 @@ const (
 	// ToolHistory states the bounds of a query's answer, which a test
 	// holds to the harness's constants (spec 084).
 	ToolHistory Name = "tools/history-v1"
+	// ToolTrigger states the bounds of a proposal's name and why and of a
+	// list, which a test holds to their constants (spec 086).
+	ToolTrigger Name = "tools/trigger-v1"
+)
+
+// The results of the trigger tool (spec 086).
+const (
+	// TriggerInvalid takes Detail, what the call's input got wrong.
+	TriggerInvalid Name = "results/trigger/invalid-v1"
+	// TriggerRefused takes Code and Message, why the installation would
+	// not let the person hold the routine, asked before anyone was.
+	TriggerRefused Name = "results/trigger/refused-v1"
+	// TriggerMade takes Title and Next, when the routine runs next, empty
+	// when it names no time.
+	TriggerMade Name = "results/trigger/made-v1"
+	// TriggerNotMade takes Code and Message, why a routine the person
+	// allowed was refused all the same.
+	TriggerNotMade Name = "results/trigger/not-made-v1"
+	// TriggerList takes Triggers, each a Title, Name, Schedule, TimeZone,
+	// Product, Paused, Next and Offered.
+	TriggerList Name = "results/trigger/list-v1"
 )
 
 // The results of request_connection (spec 069).
