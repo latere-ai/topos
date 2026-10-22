@@ -1,0 +1,12 @@
+name: propose
+category: instructions
+# trigger's description: an ask that repeats is offered as a routine, its
+# schedule in a routine's cron and the person's zone, and its why says
+# the schedule back; the person allows it, and the agent says it is
+# theirs.
+agent:
+  tools: [read, trigger]
+confirm: allow
+prompt: |
+  Every Monday morning at nine I want a count of the open items in
+  todo.md, the lines that start with "- [ ]". I live in Berlin.

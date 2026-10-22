@@ -26,6 +26,7 @@ import (
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/session"
 )
 
 // Categories are the directories of the suite, in the order of spec
@@ -102,6 +103,11 @@ type Task struct {
 	// and every other task in one nobody attends, where a question is
 	// answered at once.
 	Answers []Answer
+	// Confirm is what the run's driver answers a call held for a person
+	// with, as that person would: session.DecisionAllow or DecisionDeny,
+	// once for each call the session waits on; empty answers none, and a
+	// run that waits on a call fails.
+	Confirm string
 }
 
 // Answer is what the driver answers to the questions of the open
@@ -170,6 +176,7 @@ type taskFile struct {
 	Search   string   `yaml:"search"`
 	Log      string   `yaml:"log"`
 	Answers  []Answer `yaml:"answers"`
+	Confirm  string   `yaml:"confirm"`
 }
 
 // Load reads every task of the suite rooted at dir: each directory
@@ -221,7 +228,7 @@ func LoadTask(dir string) (Task, error) {
 	t := Task{
 		Name: f.Name, Category: f.Category, Prompt: strings.TrimSpace(f.Prompt), Agent: f.Agent,
 		Timeout: DefaultTimeout, MaxCostUSDMicro: int64(math.Round(DefaultMaxCost * 1e6)), Runs: DefaultRuns,
-		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers,
+		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers, Confirm: f.Confirm,
 	}
 	t.ID = t.Category + "/" + t.Name
 	fail := func(format string, a ...any) (Task, error) {
@@ -266,6 +273,9 @@ func LoadTask(dir string) (Task, error) {
 			return fail("answers[%d] names a question and what to choose or say", i)
 		}
 	}
+	if t.Confirm != "" && t.Confirm != session.DecisionAllow && t.Confirm != session.DecisionDeny {
+		return fail("confirm %q is %s or %s", t.Confirm, session.DecisionAllow, session.DecisionDeny)
+	}
 	if t.Serve != "" {
 		if fi, err := os.Stat(filepath.Join(dir, t.Serve)); err != nil || !fi.IsDir() {
 			return fail("serve %q is not a directory of the task", t.Serve)
@@ -308,7 +318,7 @@ func builtinNames() []string {
 // checkTools refuses a tool list naming anything but a built-in, one
 // an agent opts into, or the question tool.
 func checkTools(a Agent) error {
-	known := slices.Concat(builtinNames(), tools.OptIn(), []string{harness.ToolQuestion})
+	known := slices.Concat(builtinNames(), tools.OptIn(), []string{harness.ToolQuestion, session.ToolTrigger})
 	lists := map[string][]string{"agent": a.Tools}
 	for name, s := range a.Subagents {
 		lists["subagent "+name] = s.Tools
@@ -316,7 +326,7 @@ func checkTools(a Agent) error {
 	for who, list := range lists {
 		for _, n := range list {
 			if !slices.Contains(known, n) {
-				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search, history or question (%s)", who, n, strings.Join(known, ", "))
+				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search, history, question or trigger (%s)", who, n, strings.Join(known, ", "))
 			}
 		}
 	}

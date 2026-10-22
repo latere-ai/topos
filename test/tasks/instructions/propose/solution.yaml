@@ -1,0 +1,18 @@
+# Counts the open items now, offers the routine with its schedule said
+# back, and says it is the person's once they allowed it.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: todo.md}
+  - expect: {tool_result_contains: Call the bank}
+    tool_calls:
+      - name: trigger
+        input:
+          action: propose
+          name: Open items in todo.md
+          ask: Count the open items in todo.md, the lines that start with "- [ ]", and tell me how many there are.
+          why: Every Monday at 9:00, Berlin time, I count the open items in todo.md and tell you how many there are.
+          schedule: 0 9 * * 1
+          timeZone: Europe/Berlin
+  - expect: {tool_result_contains: is theirs now}
+    text: Two items are open today. The routine is yours now, and every Monday at 9:00 I will count them again.

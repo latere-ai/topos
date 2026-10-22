@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
+	"latere.ai/x/topos/internal/proposal"
 	"latere.ai/x/topos/machine"
 	"latere.ai/x/topos/machine/host"
 	v1 "latere.ai/x/topos/manifest/v1"
@@ -454,6 +456,13 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 				return harness.Config{}, err
 			}
 		}
+		// trigger, which an agent holds only by naming it, reaches the
+		// suite's own triggers, which keep nothing (spec 086).
+		if slices.Contains(r.t.Agent.Tools, session.ToolTrigger) {
+			if err := reg.Add(proposal.New(suiteTriggers{})); err != nil {
+				return harness.Config{}, err
+			}
+		}
 		var subs map[string]harness.Subagent
 		for name, sa := range r.t.Agent.Subagents {
 			if subs == nil {
@@ -578,6 +587,13 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 			out, derr = rn.Drive(dctx, s.ID)
 		}
 	}
+	// A task that names a confirmation answers the calls the session
+	// waits on once, as the person would, and the turn continues.
+	if derr == nil && out.StopReason == session.StopToolConfirmation && r.t.Confirm != "" {
+		if derr = confirmCalls(dctx, st, s.ID, person, r.t.Confirm); derr == nil {
+			out, derr = rn.Drive(dctx, s.ID)
+		}
+	}
 	cancel()
 	if err := r.release(context.WithoutCancel(ctx)); err != nil {
 		derr = errors.Join(derr, err)
@@ -685,6 +701,49 @@ func (r *run) measure(res *RunResult, log []session.Event) {
 // usd renders micro-USD as dollars.
 func usd(micro int64) string {
 	return fmt.Sprintf("$%.4f", float64(micro)/1e6)
+}
+
+// confirmCalls appends the driver's decision for every call the session
+// waits on a person's confirmation of, after the session's last event,
+// as a client does.
+func confirmCalls(ctx context.Context, st session.Store, id string, person session.Sender, decision string) error {
+	evs, err := st.Events(ctx, id, 1, 0)
+	if err != nil {
+		return err
+	}
+	var batch []session.Event
+	for _, call := range slices.Sorted(maps.Keys(session.Awaiting(evs))) {
+		if session.Awaiting(evs)[call] != session.AnswerConfirmation {
+			continue
+		}
+		ev, err := session.NewEvent(session.TypeUserToolConfirmation, session.UserToolConfirmation{Sender: person, ToolUseID: call, Decision: decision}, time.Now())
+		if err != nil {
+			return err
+		}
+		batch = append(batch, ev)
+	}
+	if len(batch) == 0 {
+		return errors.New("tasks: the session stopped on a confirmation, and no call waits for one")
+	}
+	last := evs[len(evs)-1].Seq
+	session.Stamp(id, last, batch)
+	_, err = st.Append(ctx, id, last, batch)
+	return err
+}
+
+// suiteTriggers is the suite's reach to triggers for the trigger tool
+// (spec 086): it keeps none, takes every proposal, and answers an applied
+// one as made, so a task checks what the agent proposed.
+type suiteTriggers struct{}
+
+func (suiteTriggers) ListTriggers(context.Context) ([]runner.ListedTrigger, error) {
+	return []runner.ListedTrigger{}, nil
+}
+
+func (suiteTriggers) CheckProposal(context.Context, runner.Proposal) error { return nil }
+
+func (suiteTriggers) ApplyProposal(_ context.Context, p runner.Proposal) (runner.ListedTrigger, error) {
+	return runner.ListedTrigger{ID: "trg_suite", Name: "routine-suite", Title: p.Name, Schedule: p.Schedule, TimeZone: p.TimeZone}, nil
 }
 
 // answerQuestion appends the answer the driver gives to the session's

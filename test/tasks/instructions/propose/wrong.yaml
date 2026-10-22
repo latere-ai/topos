@@ -1,0 +1,6 @@
+# Counts the items once and offers nothing.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: todo.md}
+  - text: Two items are open. Ask me again next Monday and I will count them.

@@ -1,0 +1,10 @@
+- call:
+    tool: trigger
+    outcome: ok
+    input:
+      action: {equals: propose}
+      schedule: {equals: "0 9 * * 1"}
+      timeZone: {equals: Europe/Berlin}
+      why: {matches: '(?i)monday'}
+      ask: {matches: '(?i)todo\.md'}
+- final_message: {matches: '(?i)routine|every monday'}
