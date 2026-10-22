@@ -151,6 +151,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   connected, reached from a session without their credentials.
 - [docs/titles.md](docs/titles.md): a session's title that follows its
   conversation, turned on by an agent's `spec.title`.
+- [docs/offers.md](docs/offers.md): how a client shows an agent's offer of
+  a routine and sends the answer of the person who started the session.
 
 ## Contributing
 

@@ -358,6 +358,24 @@
 // environment and no workdir, and a trigger's question names no machine
 // then. toposd decides nothing about who may use a computer.
 //
+// A session's call may make a trigger (spec 086): the trigger tool's
+// propose, which the harness holds for the person who started the
+// session. Its trigger.create and trigger.update are asked as that person,
+// with org_id of the session's context as the claims, the way a firing's
+// session.create is, and carry origin beside name and agent:
+//
+//	"origin": {"kind": "proposal", "session_id": "ses_...", "tool_use_id": "toolu_...", "confirmed_by": "<iss>|<sub>"}
+//
+// The question asked before the call is held carries no confirmed_by, so
+// a call bound to be refused asks nobody; the one asked once the person
+// allowed the call names who allowed it, the session's initiator, whom the
+// send route alone lets answer such a call. An endpoint holds confirmed_by
+// to the asker, the session to the asker's own, and a bound on how many
+// such triggers one person holds, as it chooses. The tool's list asks
+// trigger.list naming the owner and the agent. An endpoint that reads no
+// origin decides the question as its owner's own apply, so it rolls out
+// before a server that asks it.
+//
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
 // verbatim, where an endpoint reads a plan, a team or a role from. The
