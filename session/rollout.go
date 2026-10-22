@@ -32,3 +32,10 @@ func CheckRollout(id string) error {
 	}
 	return nil
 }
+
+// Isolated reports whether s is a rollout's run (spec 077, "A run is
+// isolated"), which reaches none of its initiator's accounts or context:
+// it holds no standing instructions, no context and no repository an
+// allow attaches, and no connection, whatever an allow names, so its
+// agent knows its definition and the run's task alone.
+func (s Session) Isolated() bool { return s.Rollout != "" }

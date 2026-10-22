@@ -402,3 +402,47 @@ func TestConnectionsInASandboxThatReachesNoConnectionService(t *testing.T) {
 		t.Fatalf("a sandbox that reaches the service renders %q", got)
 	}
 }
+
+// TestARunIsToldNothingOfItsInitiator: a rollout's run renders no
+// initiator's instructions, no attached context and no connections block,
+// is offered no request_connection, and its machine is given no
+// connection, even with a header that holds them, as one written before
+// a create held a run to none of them; the same header of no rollout
+// renders each (spec 077, "A run is isolated").
+func TestARunIsToldNothingOfItsInitiator(t *testing.T) {
+	ctx := t.Context()
+	available := session.Connection{Name: "mail", Kind: session.ConnectionHTTP, Title: "Mail", State: session.ConnectionAvailable}
+	withAll := func(rollout string) func(*session.Session) {
+		return func(s *session.Session) {
+			connected(session.MachineCella)(s)
+			s.Connections = append(s.Connections, available)
+			s.Instructions = "Call them Mara.\nTheir work: research."
+			s.Context = []session.ContextPart{{Title: "Project", Text: "The harbor club's tide tables."}}
+			s.Rollout = rollout
+		}
+	}
+	for _, c := range []struct {
+		rollout string
+		told    bool
+	}{{"", true}, {"cel_01.smoke", false}} {
+		m := &conMachine{kind: machine.KindCella}
+		e := setupSession(t, func(cfg *Config) {
+			cfg.Machine = m
+			cfg.MCP = map[string]MCPListing{"tracker": {}}
+		}, withAll(c.rollout))
+		e.stub.Script(model, reply(ir.StopEndTurn, text("hi")))
+		e.send(ctx, "Report what you know about the person.")
+		if out := e.turn(ctx); out.StopReason != session.StopEndTurn {
+			t.Fatalf("rollout %q: outcome %+v", c.rollout, out)
+		}
+		body := unescaped(e.stub.Requests()[0].Body)
+		for _, said := range []string{"Their work: research.", "The harbor club's tide tables.", "<connections>", "$CONNECTIONS_TOKEN", "connected as ada", ToolRequestConnection} {
+			if strings.Contains(body, said) != c.told {
+				t.Errorf("rollout %q: the request says %q: %v, want %v", c.rollout, said, !c.told, c.told)
+			}
+		}
+		if given := len(m.applied) > 0 && len(m.applied[0]) > 0; given != c.told {
+			t.Errorf("rollout %q: the machine was given connections %+v", c.rollout, m.applied)
+		}
+	}
+}

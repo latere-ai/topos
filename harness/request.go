@@ -105,6 +105,13 @@ func renderPart(ctx context.Context, p session.Part, blobs BlobReader) (string, 
 // own thread alone, which holds the conversation with the person, and
 // the http connections only when the machine is given them, http.
 func headerBlocks(s session.Session, own, http bool, mcp map[string]MCPListing) []string {
+	// A rollout's run is told nothing of its initiator: its create holds
+	// none of their instructions, context or connections, and a header
+	// written before that rule renders none either (spec 077, "A run is
+	// isolated").
+	if s.Isolated() {
+		s.Instructions, s.Context, s.Connections = "", nil, nil
+	}
 	var out []string
 	if own && s.Instructions != "" {
 		out = append(out, prompts.Render(prompts.ContextInitiator, prompts.Data{"Text": s.Instructions}))

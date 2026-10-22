@@ -589,6 +589,20 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// the hosts a person allowed in its parent are not carried. The
 	// initiator's instructions are read at the create alone (spec 053).
 	sess.Network = createdNetwork(limits.Network, cfg.Machine)
+	// A rollout's run reaches none of its initiator's accounts or context
+	// (spec 077, "A run is isolated"): whatever its allow names, it takes
+	// no standing instructions, no attached context or repository and no
+	// connection, so its agent knows its definition and its task alone.
+	// Its network, its folder and the repositories its request names are
+	// its allow's and its request's, as any session's.
+	if in.rollout != "" {
+		if limits.Instructions != "" || len(limits.Context) > 0 || len(limits.Repositories) > 0 || len(limits.Connections) > 0 {
+			s.o.Log.InfoContext(ctx, "a rollout's run takes none of the instructions, context, repositories or connections its allow names",
+				"session", id, "rollout", in.rollout, "instructions", limits.Instructions != "", "context", len(limits.Context),
+				"repositories", len(limits.Repositories), "connections", len(limits.Connections))
+		}
+		limits.Instructions, limits.Context, limits.Repositories, limits.Connections = "", nil, nil, nil
+	}
 	sess.Instructions = limits.Instructions
 	// The allow's repositories follow the request's and the agent's, and
 	// its context follows the initiator's instructions, each fixed for
@@ -1469,10 +1483,14 @@ func (s *Server) askSend(ctx context.Context, q asker, sess session.Session, cfg
 	out := sendChanges{network: sentNetwork(sess, limits.Network)}
 	// Its connections replace the session's, none when it names none, so
 	// a service connected or disconnected since reaches the next turn
-	// (spec 069).
+	// (spec 069). A rollout's run takes none, whatever the allow names
+	// (spec 077, "A run is isolated").
 	conns, err := s.connections(limits.Connections)
 	if err != nil {
 		return sendChanges{}, err
+	}
+	if sess.Isolated() {
+		conns = nil
 	}
 	if !session.SameConnections(sess.Connections, conns) {
 		out.connections = &session.ConnectionsChanged{Connections: append([]session.Connection{}, conns...)}

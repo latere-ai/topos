@@ -46,7 +46,13 @@ func (t *turn) applyConnections(ctx context.Context) error {
 	if !ok || t.h.c.Machine.Info().Kind != machine.KindCella {
 		return nil
 	}
-	err := cm.ApplyConnections(ctx, HTTPConnections(t.s.Connections))
+	// A rollout's run reaches no connection, whatever its header holds
+	// (spec 077, "A run is isolated").
+	var conns []session.Connection
+	if !t.s.Isolated() {
+		conns = t.s.Connections
+	}
+	err := cm.ApplyConnections(ctx, HTTPConnections(conns))
 	if err == nil {
 		return nil
 	}
@@ -194,6 +200,11 @@ func connectionsBlock(s session.Session, own, http bool, mcp map[string]MCPListi
 // that opened without the service's Secret, is never told of a service
 // connecting would not give it.
 func requestable(s session.Session, http bool) []session.Connection {
+	// A rollout's run asks for no connection: no person attends it, and it
+	// reaches none (spec 077, "A run is isolated").
+	if s.Isolated() {
+		return nil
+	}
 	var out []session.Connection
 	for _, c := range s.Connections {
 		if !c.Connected() && (c.Kind == session.ConnectionMCP || http) {

@@ -147,3 +147,60 @@ func TestACreateRunsTheModelItNames(t *testing.T) {
 		}
 	}
 }
+
+// TestARunTakesNoneOfItsInitiatorsAccounts: a create naming a rollout
+// holds none of its initiator's standing instructions, none of the
+// context, the repositories and the connections its allow attaches,
+// whatever the allow names, and keeps the network and the folder its allow
+// names and the repositories its request names; a send's allow that names
+// connections changes nothing on it. The same initiator's session that
+// names no rollout takes all of them (spec 077, "A run is isolated").
+func TestARunTakesNoneOfItsInitiatorsAccounts(t *testing.T) {
+	f := newFixture(t, withConnections)
+	f.apply("alice", "reviewer", "Review.")
+	answer := &authorizer.WireLimits{
+		Instructions: "Call them Mara.\nTheir work: research.",
+		Context:      []session.ContextPart{{Title: "Project", Text: "Tide tables for the harbor club."}},
+		Repositories: []authorizer.WireRepository{{URL: "https://git.example.com/r/7f3c.git", App: tideTables}},
+		Connections:  []session.Connection{githubConnection, trackerConnection},
+		Network:      &authorizer.Network{Mode: "open"},
+	}
+	f.level(func(authz.Request) *authorizer.WireLimits { return answer })
+	const workspace = `"resources":[{"type":"repository","url":"https://git.example.com/acme/task.git","ref":"0123abc"}]`
+
+	own := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer",`+workspace+`}`)
+	var mine session.Session
+	own.decode(t, &mine)
+	if own.status != http.StatusCreated || mine.Instructions == "" || len(mine.Context) != 1 || len(mine.Connections) != 2 || len(mine.Resources) != 2 {
+		t.Fatalf("the initiator's own session: %d %+v", own.status, mine)
+	}
+
+	a := f.do(http.MethodPost, "/v1/sessions", "alice", `{"agent":"reviewer","rollout":"cel_01.smoke",`+workspace+`}`)
+	if a.status != http.StatusCreated {
+		t.Fatalf("create of a run: %d %s", a.status, a.body)
+	}
+	var run session.Session
+	a.decode(t, &run)
+	for name, h := range map[string]session.Session{"answered": run, "stored": f.header(run.ID)} {
+		if h.Instructions != "" || len(h.Context) != 0 || len(h.Connections) != 0 {
+			t.Errorf("the %s run holds instructions %q, context %+v, connections %+v", name, h.Instructions, h.Context, h.Connections)
+		}
+		if len(h.Resources) != 1 || h.Resources[0].URL != "https://git.example.com/acme/task.git" || h.Resources[0].Attached {
+			t.Errorf("the %s run's repositories are %+v, want its request's alone", name, h.Resources)
+		}
+		if h.Network == nil || h.Network.Mode != "open" {
+			t.Errorf("the %s run's network is %+v, want its allow's", name, h.Network)
+		}
+	}
+	if a := f.send(run.ID, "Again."); a.status != http.StatusOK && a.status != http.StatusAccepted {
+		t.Fatalf("a send into the run: %d %s", a.status, a.body)
+	}
+	for _, e := range f.log(run.ID) {
+		if e.Type == session.TypeConnectionsChanged {
+			t.Fatalf("a send's allow changed the run's connections: %s", e.Payload)
+		}
+	}
+	if h := f.header(run.ID); len(h.Connections) != 0 {
+		t.Fatalf("the run holds connections %+v after a send", h.Connections)
+	}
+}
