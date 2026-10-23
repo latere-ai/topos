@@ -33,6 +33,10 @@ const (
 	MaxWakeNote = 4000
 )
 
+// HoldName is the path segment of the hold over every trigger an owner
+// owns, /triggers/hold (spec 086), which no trigger takes as its name.
+const HoldName = "hold"
+
 // The codes a wake's time outside its bounds is refused with.
 const (
 	CodeTooSoon = "too_soon"

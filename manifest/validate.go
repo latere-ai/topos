@@ -79,6 +79,11 @@ func (v *validator) object(o *object) {
 	case o.agent != nil:
 		v.agent("spec", o.agent.Spec)
 	case o.trig != nil:
+		// The hold over every trigger is a route of the trigger's own
+		// path (spec 086), so no trigger takes its name.
+		if o.trig.Metadata.Name == trigger.HoldName {
+			v.add("metadata.name", trigger.HoldName+" is the name of the route that holds every trigger; choose another")
+		}
 		v.trigger(o.trig.Spec)
 	case o.store != nil:
 		v.memoryStore(o.store.Spec)

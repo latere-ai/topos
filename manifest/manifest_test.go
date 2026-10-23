@@ -731,6 +731,8 @@ func TestTheTriggerFieldsOfSpec086(t *testing.T) {
 		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, policy: continue, key: k, target: ses_01JAAAAAAAAAAAAAAAAAAAAAAA}"), "spec.session.target", "set target or key"},
 		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, policy: continue, target: chat}"), "spec.session.target", "not a ses_<ulid> id"},
 		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: '{{event.id}}'}"), "spec.session.message", "event path names nothing"},
+		{"apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: hold}\nspec: {agent: a, schedule: '@daily', session: {message: x}}\n", "metadata.name", "the route that holds every trigger"},
+		{eventTrigger("schedule: '@daily', session: {message: x, notify: sometimes}"), "spec.session.notify", "not one of always, judged"},
 	} {
 		e := refused(t, CodeInvalidManifest, c.body, o)
 		if !hasProblem(e, c.path, c.detail) {
