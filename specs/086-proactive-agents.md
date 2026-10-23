@@ -623,6 +623,9 @@ right after `trigger.fire` in the vocabulary, its effect on the minute
 loop, the fire route and one-shots, the trigger name `hold` refused, and
 the hold said in the results of a session's trigger and wake calls.
 
+The instruction tasks `propose`, `wake` and `quiet` passed on Claude Haiku
+5.5, nine runs of nine, on 2026-10-23.
+
 Every roll step is built. What is left before this spec closes: the
 three instruction tasks' runs on `claude-haiku-5-5`, the task suite's
 pinned model, which take a model connection (the last row below).
@@ -652,4 +655,4 @@ pinned model, which take a model connection (the last row below).
 | A judged trigger's message says so, `judged` is refused for an agent without `notify`, and a proposal on events is judged by default | `internal/server.TestAJudgedTriggerSaysSoInItsMessage`, `internal/server.TestAnEventProposalIsJudged` | built |
 | While an owner is held, the minute loop fires nothing of theirs and records nothing, the fire route answers `conflict`, and a one-shot due during the hold fires at release with its lateness in the message | `internal/server.TestAHoldStopsEveryTrigger`, the stores' conformance case `trigger holds`, `internal/store.TestAHoldIsSavedBeforeTheBookChanges` | built |
 | Every `trigger.*` question a session's call asks carries `origin`, asked as the owner with `org_id` alone; `trigger.hold` names `owner` and `held` | `internal/server.TestTheQuestionsOfASessionsTriggerCalls`, `authorizer.TestVocabularyMatchesTheSpec` | built |
-| The three tools' descriptions hold to their constants, and an instruction task each: a repeating ask is proposed with its schedule said back, a follow-up is a wake with a note, and a look that finds nothing ends quiet | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestWakeTextsReadTheirBounds`, `harness.TestNotifyTextReadsItsBound`, `test/tasks/instructions/propose/`, `test/tasks/instructions/wake/`, `test/tasks/instructions/quiet/` (each solution passes and each wrong solution fails by `test/tasks.TestScriptedSolutions`; their runs on `claude-haiku-5-5` take a model connection, `TOPOS_MODELS_URL`, `TOPOS_MODELS_KEY` and `TOPOS_TASKS_MODEL`, and the instruction tier, `go test -tags instructions ./test/tasks`) | built |
+| The three tools' descriptions hold to their constants, and an instruction task each: a repeating ask is proposed with its schedule said back, a follow-up is a wake with a note, and a look that finds nothing ends quiet | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestWakeTextsReadTheirBounds`, `harness.TestNotifyTextReadsItsBound`, `test/tasks/instructions/propose/`, `test/tasks/instructions/wake/`, `test/tasks/instructions/quiet/` (each solution passes and each wrong solution fails by `test/tasks.TestScriptedSolutions`; on a model, through `TOPOS_MODELS_URL`, `TOPOS_MODELS_KEY` and `TOPOS_TASKS_MODEL` and the instruction tier, `go test -tags instructions ./test/tasks`, Claude Haiku 5.5 passed all nine runs, three of each, on 2026-10-23) | built |
