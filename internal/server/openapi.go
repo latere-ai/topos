@@ -530,11 +530,11 @@ var opDescriptions = map[string]string{
 		"spec.at, an RFC 3339 time with an offset in place of schedule and on, fires the trigger once, and its firing spends it: the server deletes it with the firing that started, continued, skipped or refused, "+
 		"and keeps it while that firing is held or runs again after it failed; trigger.create and trigger.update carry at. spec.session.target, under policy continue and beside no key, names the open session of spec.agent "+
 		"every firing sends its message to, which the caller may send to; a firing whose target has ended or is gone is skipped_ended. "+
-		"A session's wake is such a trigger, applied by the session's wake tool as the session's initiator with status.origin {kind: %s}: at least %s and at most %s ahead and inside its session's life, with maxAge %s; "+
+		"A session's wake is such a trigger, applied by the session's wake tool as the session's initiator with status.origin {kind: %s}: at least %s and at most %s ahead and inside its session's life, and skipped_late past %s; "+
 		"its firing's user.message carries wake {trigger_id, set_at, due_at, count}, count from 1. "+
 		"status.paused {why, by, sessionId, toolUseId, at} says who suspended the trigger and when, with the agent's why and its call for a pause a session's call made; it is kept while the trigger stays suspended and cleared when it resumes.",
 		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice,
-		v1.OriginWake, trigger.MinWakeDelay, trigger.MaxWakeAhead, trigger.WakeMaxAge),
+		v1.OriginWake, spoken(trigger.MinWakeDelay), spoken(trigger.MaxWakeAhead), spoken(trigger.WakeMaxAge)),
 	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+
 		"product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. "+
 		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, skipped_ended, refused or failed. "+
