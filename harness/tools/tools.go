@@ -202,6 +202,9 @@ type Meta struct {
 	// Parse is the parse of a PDF read read through a parsing service
 	// (spec 082), beside the file's path and digest.
 	Parse *ParseMeta `json:"parse,omitempty"`
+	// Notice is a notify call's record (spec 086), which the session's
+	// header folds as its latest notice.
+	Notice *session.NoticeMeta `json:"notice,omitempty"`
 }
 
 // Todo is one entry of a thread's list.

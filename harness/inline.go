@@ -81,6 +81,7 @@ func (t *turn) fold(ctx context.Context, evs []session.Event, omitRedacted bool)
 	}
 	return session.FoldWith(evs, t.thread, session.FoldOptions{
 		OmitRedacted: omitRedacted, Texts: held, Device: t.s.Machine.Kind == session.MachineDevice, History: t.readsHistory(),
+		Notify: t.notifies(), Attended: t.s.Attended,
 	})
 }
 

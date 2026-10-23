@@ -173,6 +173,9 @@ func (t *turn) registry(names []string) (*tools.Registry, error) {
 	if t.h.c.Question && t.thread == "" {
 		extra = append(extra, questionTool{t})
 	}
+	if t.h.c.Notify && t.thread == "" {
+		extra = append(extra, notifyTool{t})
+	}
 	// request_connection is offered while the session has a service the
 	// person may be asked to connect (spec 069). An agent stored before
 	// the name was reserved may hold a client tool of the name, which is
@@ -419,12 +422,12 @@ func (t *turn) spawn(ctx context.Context, callID, agent, task, isolation string,
 	held := t.reg.Names()
 	var names []string
 	for _, n := range held {
-		// The question, request_connection, publish, trigger and wake tools
-		// are the session's own thread's: the thread that holds the
-		// conversation with the person asks, a session has one app, and
-		// standing work and the session's wake are the conversation's (specs
-		// 039, 069, 043 and 086).
-		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion || n == ToolRequestConnection || n == session.ToolPublish || n == session.ToolTrigger || n == session.ToolWake {
+		// The question, request_connection, publish, trigger, wake and
+		// notify tools are the session's own thread's: the thread that holds
+		// the conversation with the person asks, a session has one app, and
+		// standing work, the session's wake and its notices are the
+		// conversation's (specs 039, 069, 043 and 086).
+		if n == ToolSpawn || n == ToolMessage || n == ToolQuestion || n == ToolRequestConnection || n == session.ToolPublish || n == session.ToolTrigger || n == session.ToolWake || n == session.ToolNotify {
 			continue
 		}
 		if sub.Tools != nil && !slices.Contains(sub.Tools, n) {
@@ -603,7 +606,7 @@ func (t *turn) childConfig(sub Subagent) Config {
 	// The advisor belongs to the agent whose configuration names it, and
 	// only the session's own thread asks a person.
 	cfg.Advisor = nil
-	cfg.Question = false
+	cfg.Question, cfg.Notify = false, false
 	cfg.Checkpoint = nil
 	cfg.Prompt.Threads = len(sub.Subagents) > 0
 	return cfg

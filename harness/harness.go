@@ -119,6 +119,9 @@ type Config struct {
 	// Question offers the question tool to the session's own thread (spec
 	// 039): the runner sets it when the agent's tools name the tool.
 	Question bool
+	// Notify offers the notify tool to the session's own thread (spec
+	// 086): the runner sets it when the agent's tools name the tool.
+	Notify bool
 	// History offers the history tool (spec 084): the runner sets it when
 	// the agent's tools name the tool. The session's own thread holds it,
 	// and a spawned thread when its thread.started names it, as a
@@ -557,6 +560,7 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 		return &errStop{Outcome{Status: session.StatusIdle, StopReason: reason, Detail: detail}}
 	}
 	status := session.StatusIdle
+	outcome := t.outcome(reason)
 	// A session that waits for its own wake is not ended by end_on_idle: it
 	// stays open for the wake and ends at the idle after its last (spec
 	// 086).
@@ -581,7 +585,9 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 	if saved {
 		before = append(before, ws)
 	}
-	e, err := t.event(session.TypeSessionStatus, session.SessionStatus{Status: status, StopReason: reason, Detail: detail, Checkpoint: cp})
+	// The outcome is read from the reason the turn stopped for, before
+	// end_on_idle names the end it may make of an end_turn.
+	e, err := t.event(session.TypeSessionStatus, session.SessionStatus{Status: status, StopReason: reason, Detail: detail, Checkpoint: cp, Outcome: outcome})
 	if err != nil {
 		return err
 	}
