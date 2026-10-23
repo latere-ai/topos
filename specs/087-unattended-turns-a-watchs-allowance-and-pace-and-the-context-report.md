@@ -376,6 +376,9 @@ and shares; the words a client shows.
 
 ## Progress
 
+The instruction tasks `pace`, `propose`, `wake` and `quiet` passed on Claude
+Haiku 5.5, twelve runs of twelve, on 2026-10-23.
+
 Every roll step is built: the context report, the unattended turn and
 its `attended`, and the allowance with its pace and the `trigger`
 tool's `perWeekUsd`, with the postgres tier run on its new column
@@ -431,5 +434,5 @@ a model connection.
 | The fold renders the pace line before a message with `spend`, says ahead of pace when the projection passes the allowance with a wake's or a trigger's advice, and renders none without `spend` | `session.TestThePaceLineSaysWhenAWatchIsAheadOfPace` | built |
 | Every step's and compaction's `model.request` records `context`: the window, `used` from the provider or the estimate with its source, the parts in order summing to `used`, `files` and `summary` counted, and `free` | `harness.TestEveryRequestReportsItsContext`, `harness.TestACompactionsRequestReportsItsContext`, `harness.TestAReportScalesItsEstimates` | built |
 | The Session folds `context_report` from the latest request of its own thread, and a subagent's and a title's leave it | `session.TestTheSessionFoldsItsContextReport`, `session.TestTheFoldNamesTheFilesAndSummariesItRenders` | built |
-| A wake ahead of its watch's pace sets its next wake later than its note asked, and an offer names its weekly estimate | `test/tasks/instructions/pace/`, `test/tasks/instructions/propose/` (each solution passes and each wrong solution fails by `test/tasks.TestScriptedSolutions`; on a model through the instruction tier, `go test -tags instructions ./test/tasks`) | built, runs on a model left |
+| A wake ahead of its watch's pace sets its next wake later than its note asked, and an offer names its weekly estimate | `test/tasks/instructions/pace/`, `test/tasks/instructions/propose/` (each solution passes and each wrong solution fails by `test/tasks.TestScriptedSolutions`; on a model through the instruction tier, `go test -tags instructions ./test/tasks`, Claude Haiku 5.5 passed `pace`, `propose`, `wake` and `quiet` in all twelve runs, three of each, on 2026-10-23) | built |
 | The OpenAPI document describes every field above | `internal/server.TestOpenAPIIsGenerated`, `internal/server.TestTheDocumentDescribesSpec087` | built |
