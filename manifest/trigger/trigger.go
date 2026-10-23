@@ -53,6 +53,19 @@ func Key(s v1.TriggerSpec) string {
 	return ""
 }
 
+// Notify is s's session.notify, v1.NotifyAlways when it names none (spec
+// 086).
+func Notify(s v1.TriggerSpec) string {
+	if s.Session.Notify == "" {
+		return v1.NotifyAlways
+	}
+	return s.Session.Notify
+}
+
+// Attended reports whether the sessions s's firings start are attended
+// (spec 086): false when it sets none.
+func Attended(s v1.TriggerSpec) bool { return s.Session.Attended != nil && *s.Session.Attended }
+
 // MaxActive is s's maxActive, DefaultMaxActive when it sets none.
 func MaxActive(s v1.TriggerSpec) int {
 	if s.MaxActive == nil {

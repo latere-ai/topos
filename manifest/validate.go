@@ -333,6 +333,7 @@ var reservedFor = map[string]string{
 	harness.ToolQuestion: "harness's question tool", session.ToolPublish: "hosted runner's publish tool",
 	session.ToolTrigger:           "hosted runner's trigger tool",
 	session.ToolWake:              "hosted runner's wake tool",
+	session.ToolNotify:            "harness's notify tool",
 	harness.ToolRequestConnection: "harness's request_connection tool",
 }
 
@@ -357,7 +358,7 @@ func (v *validator) tools(at string, list []v1.Tool) {
 		// and trigger tools the hosted runner's (specs 043 and 086): an agent
 		// names each among its tools, and no client tool may take their
 		// names.
-		harnessTool := t.Name == harness.ToolQuestion || t.Name == session.ToolPublish || t.Name == session.ToolTrigger || t.Name == session.ToolWake
+		harnessTool := t.Name == harness.ToolQuestion || t.Name == session.ToolPublish || t.Name == session.ToolTrigger || t.Name == session.ToolWake || t.Name == session.ToolNotify
 		switch {
 		case t.Client && builtin:
 			v.add(tp+".name", "a client tool may not take a built-in's name")
@@ -377,7 +378,7 @@ func (v *validator) tools(at string, list []v1.Tool) {
 				v.add(tp+".inputSchema", "a client tool needs an input schema")
 			}
 		case !builtin:
-			v.add(tp+".name", "not a built-in tool, web_search, history, question, publish, trigger or wake; declare a client tool with client: true")
+			v.add(tp+".name", "not a built-in tool, web_search, history, question, publish, trigger, wake or notify; declare a client tool with client: true")
 		case t.Description != "" || len(t.InputSchema) > 0:
 			v.add(tp, "a built-in takes only name and outputLimit")
 		}
@@ -564,6 +565,9 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 	v.template("spec.session.key", ss.Key, scheduled)
 	if ss.Policy != "" {
 		v.oneOf("spec.session.policy", ss.Policy, v1.PolicyNew, v1.PolicyContinue)
+	}
+	if ss.Notify != "" {
+		v.oneOf("spec.session.notify", ss.Notify, v1.NotifyAlways, v1.NotifyJudged)
 	}
 	// A target is the session a firing continues, in place of the one its
 	// key names (spec 086); the server holds it to an open session of the

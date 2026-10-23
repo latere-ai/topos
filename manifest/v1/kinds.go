@@ -23,6 +23,14 @@ const (
 	PolicyContinue = "continue"
 )
 
+// Values of TriggerSession.Notify (spec 086): every turn a firing begins
+// brings its result to the person, or the agent decides with its notify
+// tool.
+const (
+	NotifyAlways = "always"
+	NotifyJudged = "judged"
+)
+
 // TriggerSpec is what a trigger fires on, a schedule, delivered events or
 // one time, and the session each firing starts or continues (spec 022).
 // The fields specs 022 and 086 added (On, At, MaxActive, and the session's
@@ -85,7 +93,14 @@ type TriggerSession struct {
 	// trigger under PolicyContinue sends its message to in place of the
 	// session its key names (spec 086); a firing whose target has ended
 	// or is gone starts nothing.
-	Target    string            `json:"target,omitempty"`
+	Target string `json:"target,omitempty"`
+	// Attended is the attended of each session a firing starts: its
+	// questions wait for the owner (spec 086). Ignored with Target, whose
+	// session keeps its own; false when unset.
+	Attended *bool `json:"attended,omitempty"`
+	// Notify is NotifyAlways or NotifyJudged; NotifyAlways when unset. A
+	// wake's turn is judged whatever it says.
+	Notify    string            `json:"notify,omitempty"`
 	Machine   *SessionMachine   `json:"machine,omitempty"`
 	Resources []SessionResource `json:"resources,omitempty"`
 	Budget    *Budget           `json:"budget,omitempty"`

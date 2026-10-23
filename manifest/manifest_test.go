@@ -323,7 +323,7 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "instructions: x", "instructionsFile: x.md"), "spec.instructionsFile", "not both"},
 		{agent("a", m, "instructionsFile: x.md"), "spec.instructionsFile", "reads no files"},
 		{agent("a", m, "tools: [read, read]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish, trigger or wake"},
+		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish, trigger, wake or notify"},
 		{agent("a", m, "tools: ['bad name']"), "spec.tools[0].name", "not a tool name"},
 		{agent("a", m, "tools: [{outputLimit: 3}]"), "spec.tools[0].name", "required"},
 		{agent("a", m, "tools: [{name: read, outputLimit: -1}]"), "spec.tools[0].outputLimit", "negative"},
@@ -669,7 +669,7 @@ func TestWebSearchIsAnOptInName(t *testing.T) {
 		{agent("a", m, "tools: [{name: web_search, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "a client tool may not take a built-in's name"},
 		{agent("a", m, "tools: [{name: web_search, description: x}]"), "spec.tools[0]", "a built-in takes only name and outputLimit"},
 		{agent("a", m, "tools: [web_search, web_search]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish, trigger or wake"},
+		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish, trigger, wake or notify"},
 	} {
 		e := refused(t, CodeInvalidManifest, c.body, Options{})
 		if !hasProblem(e, c.path, c.detail) {
