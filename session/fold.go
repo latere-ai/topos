@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
@@ -235,6 +236,11 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 			}
 			noteSender(p.Sender)
 			blocks := slices.Clone(p.Content)
+			// A wake's message is the agent's own note, led by when it set
+			// the wake and when it was due (spec 086).
+			if w := p.Wake; w != nil {
+				blocks = append([]lux.Block{text(wakeLine(*w, e.Time))}, blocks...)
+			}
 			if multi {
 				blocks = append([]lux.Block{text(prompts.Render(prompts.TranscriptSender, sender(p.Sender)))}, blocks...)
 			}
@@ -433,6 +439,19 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 		t.Messages = append(t.Messages, lux.Message{Role: it.role, Blocks: slices.Clone(it.blocks)})
 	}
 	return t, nil
+}
+
+// WakeLateAfter is how far past its due time a wake's message must come
+// for the model to read that it came late: twice the minute the trigger
+// loop runs every, so a wake the loop took on its next pass is on time.
+const WakeLateAfter = 2 * time.Minute
+
+// wakeLine is the line that leads a wake's message, sent at fired.
+func wakeLine(w MessageWake, fired time.Time) string {
+	return prompts.Render(prompts.WakeMessage, prompts.Data{
+		"Set": w.SetAt.UTC().Format(time.RFC3339), "Due": w.DueAt.UTC().Format(time.RFC3339), "Count": w.Count,
+		"Late": fired.Sub(w.DueAt) > WakeLateAfter, "Fired": fired.UTC().Format(time.RFC3339),
+	})
 }
 
 // rebuiltData are the values the note of a rebuilt working directory is

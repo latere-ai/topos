@@ -521,7 +521,8 @@ func SameEvent(a, b Event) bool {
 // session.policy_changed, the title of the last session.title_changed,
 // the base network each authorizer's session.network_changed replaces,
 // the connections of the last session.connections_changed, whether the
-// session's folder holds a file (spec 068), and the spend, which each
+// session's folder holds a file (spec 068), the pending wake (spec 086),
+// and the spend, which each
 // model.request's and each charged tool.result's cost adds to as Spent
 // counts it. A title change does not move the update time, so a list
 // ordered by it keeps a renamed session in its place (spec 054), and
@@ -535,6 +536,11 @@ func ApplyBatch(s *Session, events []Event) {
 			s.Turn = e.Turn
 		}
 		s.stored(e)
+		// A fork's copied wake was its parent's, whose trigger continues
+		// the parent; the fork has none until it sets its own (spec 086).
+		if !s.Copied(e) {
+			s.Wake = foldWake(s.Wake, e)
+		}
 		// A fork's copied change renamed its parent; the fork keeps the
 		// title its own create gave it. The harness's change is made over
 		// the title it read, and changes nothing once the title is another,

@@ -53,6 +53,10 @@ const (
 	// TypeMachineWaiting is a session waiting for its machine, a person's
 	// own computer (spec 080).
 	TypeMachineWaiting Type = "session.machine_waiting"
+	// TypeWakeSet and TypeWakeCleared are a session's next wake set and
+	// cleared (spec 086).
+	TypeWakeSet     Type = "session.wake_set"
+	TypeWakeCleared Type = "session.wake_cleared"
 )
 
 // Known is every type schema v1 defines. A type outside it is kept by
@@ -67,7 +71,7 @@ var Known = map[Type]bool{
 	TypeEventRedacted: true, TypeSessionRewound: true, TypeAttachmentsDelivered: true,
 	TypeNetworkChanged: true, TypeApprovalRequested: true, TypeApprovalDecided: true,
 	TypeFilesKept: true, TypeConnectionsChanged: true, TypeConnectionRequested: true,
-	TypeWorkSaved: true, TypeMachineWaiting: true,
+	TypeWorkSaved: true, TypeMachineWaiting: true, TypeWakeSet: true, TypeWakeCleared: true,
 }
 
 // Event is one entry of a session's log.
@@ -125,6 +129,9 @@ type UserMessage struct {
 	Content     []lux.Block  `json:"content"`
 	Attachments []Attachment `json:"attachments,omitempty"`
 	FiringID    string       `json:"firing_id,omitempty"`
+	// Wake is set on the message of a session's own wake firing, whose
+	// content is the note the agent left itself (spec 086).
+	Wake *MessageWake `json:"wake,omitempty"`
 }
 
 // UserInterrupt is the payload of user.interrupt.

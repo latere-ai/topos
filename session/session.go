@@ -349,6 +349,10 @@ type Session struct {
 	// written; nil keeps them as blobs. It is fixed at the create, and
 	// Stored is set by the first event that records a file there.
 	Folder *Folder `json:"folder,omitempty"`
+	// Wake is the session's pending wake (spec 086), folded from its
+	// session.wake_set and cleared by its session.wake_cleared or by the
+	// message its firing sent; nil when none is pending.
+	Wake *Wake `json:"wake,omitempty"`
 }
 
 // Folder is a folder of an Arca-compatible files API (spec 068): the
