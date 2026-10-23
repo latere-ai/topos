@@ -82,6 +82,10 @@ type Proposal struct {
 	Schedule string        `json:"schedule"`
 	TimeZone string        `json:"time_zone"`
 	On       *v1.TriggerOn `json:"on,omitempty"`
+	// Notify is v1.NotifyAlways or v1.NotifyJudged, empty for the
+	// default: always for a schedule, and judged for events when the agent
+	// names the notify tool (spec 086).
+	Notify string `json:"notify,omitempty"`
 }
 
 // Verb is p's action, TriggerPropose for none.

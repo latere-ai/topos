@@ -232,6 +232,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	// The question tool is the harness's own, offered when the agent names
 	// it (spec 039), and so is history, which reads the log (spec 084).
 	cfg.Question = slices.Contains(ac.Tools, harness.ToolQuestion)
+	cfg.Notify = slices.Contains(ac.Tools, session.ToolNotify)
 	cfg.History = slices.Contains(ac.Tools, tools.NameHistory)
 	onHost := cmp.Or(s.Machine.Kind, ac.Machine.Kind) == session.MachineHost
 	device := s.Machine.Kind == session.MachineDevice

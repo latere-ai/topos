@@ -823,10 +823,11 @@ func (l *local) config(o runOptions) func(ctx context.Context, s session.Session
 			}
 		}
 		// The question tool is the harness's own, offered when the agent
-		// names it (spec 039), and so is history, which reads the log (spec
-		// 084).
+		// names it (spec 039), and so are history, which reads the log
+		// (spec 084), and notify, which marks a turn (spec 086).
 		cfg.Machine, cfg.Tools, cfg.Question = m, reg, slices.Contains(held, harness.ToolQuestion)
 		cfg.History = slices.Contains(held, tools.NameHistory)
+		cfg.Notify = slices.Contains(held, session.ToolNotify)
 		return cfg, nil
 	}
 }

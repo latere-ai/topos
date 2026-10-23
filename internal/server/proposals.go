@@ -159,6 +159,17 @@ func (t sessionTriggers) act(ctx context.Context, p runner.Proposal, apply bool)
 		origin.ConfirmedBy = by
 	}
 	if p.Verb() == runner.TriggerPropose {
+		// A proposal on events is judged by default, when the agent names
+		// notify to say which of its runs bring something (spec 086).
+		if p.Notify == "" && p.On != nil {
+			names, err := t.s.agentNames(ctx, sess.Agent.ID, session.ToolNotify)
+			if err != nil {
+				return store.Trigger{}, err
+			}
+			if names {
+				p.Notify = v1.NotifyJudged
+			}
+		}
 		name := proposal.TriggerName(sess.ID, p.ToolUseID, p)
 		body, err := proposal.Manifest(a.Name, name, p)
 		if err != nil {

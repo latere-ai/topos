@@ -108,7 +108,14 @@ type Task struct {
 	// once for each call the session waits on; empty answers none, and a
 	// run that waits on a call fails.
 	Confirm string
+	// Woken is WokenJudged for a task whose prompt arrives as a judged
+	// trigger's message, which nobody waits for (spec 086); empty sends it
+	// as the person's.
+	Woken string
 }
+
+// WokenJudged is Task.Woken for a prompt a judged trigger sends.
+const WokenJudged = "judged"
 
 // Answer is what the driver answers to the questions of the open
 // question call whose header or text contains Question, compared without
@@ -177,6 +184,7 @@ type taskFile struct {
 	Log      string   `yaml:"log"`
 	Answers  []Answer `yaml:"answers"`
 	Confirm  string   `yaml:"confirm"`
+	Woken    string   `yaml:"woken"`
 }
 
 // Load reads every task of the suite rooted at dir: each directory
@@ -228,7 +236,7 @@ func LoadTask(dir string) (Task, error) {
 	t := Task{
 		Name: f.Name, Category: f.Category, Prompt: strings.TrimSpace(f.Prompt), Agent: f.Agent,
 		Timeout: DefaultTimeout, MaxCostUSDMicro: int64(math.Round(DefaultMaxCost * 1e6)), Runs: DefaultRuns,
-		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers, Confirm: f.Confirm,
+		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers, Confirm: f.Confirm, Woken: f.Woken,
 	}
 	t.ID = t.Category + "/" + t.Name
 	fail := func(format string, a ...any) (Task, error) {
@@ -276,6 +284,9 @@ func LoadTask(dir string) (Task, error) {
 	if t.Confirm != "" && t.Confirm != session.DecisionAllow && t.Confirm != session.DecisionDeny {
 		return fail("confirm %q is %s or %s", t.Confirm, session.DecisionAllow, session.DecisionDeny)
 	}
+	if t.Woken != "" && t.Woken != WokenJudged {
+		return fail("woken is %q, not %s", t.Woken, WokenJudged)
+	}
 	if t.Serve != "" {
 		if fi, err := os.Stat(filepath.Join(dir, t.Serve)); err != nil || !fi.IsDir() {
 			return fail("serve %q is not a directory of the task", t.Serve)
@@ -316,9 +327,9 @@ func builtinNames() []string {
 }
 
 // checkTools refuses a tool list naming anything but a built-in, one
-// an agent opts into, or the question, trigger and wake tools.
+// an agent opts into, or the question, trigger, wake and notify tools.
 func checkTools(a Agent) error {
-	known := slices.Concat(builtinNames(), tools.OptIn(), []string{harness.ToolQuestion, session.ToolTrigger, session.ToolWake})
+	known := slices.Concat(builtinNames(), tools.OptIn(), []string{harness.ToolQuestion, session.ToolTrigger, session.ToolWake, session.ToolNotify})
 	lists := map[string][]string{"agent": a.Tools}
 	for name, s := range a.Subagents {
 		lists["subagent "+name] = s.Tools
@@ -326,7 +337,7 @@ func checkTools(a Agent) error {
 	for who, list := range lists {
 		for _, n := range list {
 			if !slices.Contains(known, n) {
-				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search, history, question, trigger or wake (%s)", who, n, strings.Join(known, ", "))
+				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search, history, question, trigger, wake or notify (%s)", who, n, strings.Join(known, ", "))
 			}
 		}
 	}

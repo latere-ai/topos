@@ -27,6 +27,7 @@ import (
 
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/manifest/trigger"
+	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
@@ -70,11 +71,12 @@ var schema = json.RawMessage(fmt.Sprintf(`{
       },
       "required": ["product", "verbs"],
       "additionalProperties": false
-    }
+    },
+    "notify": {"type": "string", "enum": [%q, %q], "description": "For propose and change: always to bring every run's result to the person, judged to bring it only when you call notify in the run. always for a schedule and judged for events when absent."}
   },
   "required": ["action"],
   "additionalProperties": false
-}`, ActionList, ActionPropose, ActionChange, ActionPause, ActionResume, ActionDelete, routine.MaxTitle, trigger.MaxPurposeLength))
+}`, ActionList, ActionPropose, ActionChange, ActionPause, ActionResume, ActionDelete, routine.MaxTitle, trigger.MaxPurposeLength, v1.NotifyAlways, v1.NotifyJudged))
 
 // The reasons a held call waits for its person, as its agent.tool_use
 // records them.
@@ -128,6 +130,7 @@ type fields struct {
 	Schedule string          `json:"schedule"`
 	TimeZone string          `json:"timeZone"`
 	On       json.RawMessage `json:"on"`
+	Notify   string          `json:"notify"`
 }
 
 // decode reads a call's input as the server reads it, the call's id
@@ -139,7 +142,7 @@ func decode(id string, raw json.RawMessage) (runner.Proposal, error) {
 	if err := dec.Decode(&f); err != nil {
 		return runner.Proposal{}, err
 	}
-	p := runner.Proposal{ToolUseID: id, Action: f.Action, ID: f.ID, Name: f.Name, Ask: f.Ask, Why: f.Why, Schedule: f.Schedule, TimeZone: f.TimeZone}
+	p := runner.Proposal{ToolUseID: id, Action: f.Action, ID: f.ID, Name: f.Name, Ask: f.Ask, Why: f.Why, Schedule: f.Schedule, TimeZone: f.TimeZone, Notify: f.Notify}
 	if len(f.On) > 0 && !bytes.Equal(bytes.TrimSpace(f.On), []byte("null")) {
 		on := json.NewDecoder(bytes.NewReader(f.On))
 		on.DisallowUnknownFields()
@@ -163,6 +166,9 @@ func Check(p runner.Proposal) error {
 	if verb != ActionPropose && session.CheckID(session.PrefixTrigger, p.ID) != nil {
 		return fmt.Errorf("id is %q; it is a trigger's id, trg_ and the rest, as list answers it", p.ID)
 	}
+	if p.Notify != "" && p.Notify != v1.NotifyAlways && p.Notify != v1.NotifyJudged {
+		return fmt.Errorf("notify is %q; it is %s or %s", p.Notify, v1.NotifyAlways, v1.NotifyJudged)
+	}
 	switch verb {
 	case ActionPropose:
 		_, err := Routine(p)
@@ -172,8 +178,8 @@ func Check(p runner.Proposal) error {
 			return err
 		}
 		switch {
-		case p.Name == "" && p.Ask == "" && p.Schedule == "" && p.On == nil:
-			return errors.New("a change names what it changes: name, ask, schedule or on")
+		case p.Name == "" && p.Ask == "" && p.Schedule == "" && p.On == nil && p.Notify == "":
+			return errors.New("a change names what it changes: name, ask, schedule, on or notify")
 		case p.Schedule != "" && p.On != nil:
 			return errors.New("a trigger runs on a schedule or on events: name schedule or on, not both")
 		}

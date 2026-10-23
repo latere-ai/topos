@@ -478,7 +478,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 			subs[name] = harness.Subagent{Name: name, Instructions: sa.Instructions, Tools: sa.Tools}
 		}
 		return harness.Config{
-			Model: model, Connection: conn, Entry: entry, Machine: m, Tools: reg, Question: slices.Contains(r.t.Agent.Tools, harness.ToolQuestion),
+			Model: model, Connection: conn, Entry: entry, Machine: m, Tools: reg, Question: slices.Contains(r.t.Agent.Tools, harness.ToolQuestion), Notify: slices.Contains(r.t.Agent.Tools, session.ToolNotify),
 			History:       slices.Contains(r.t.Agent.Tools, tools.NameHistory),
 			Policy:        harness.Policy{Mode: harness.ModeConfirm, AlwaysAllow: builtinNames()},
 			Name:          "topos",
@@ -561,7 +561,15 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 		}
 	}
 	text := string(expand([]byte(r.t.Prompt), r.workdir, r.serveURL))
-	msg, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: person, Content: []lux.Block{{Type: ir.BlockText, Text: text}}}, now)
+	first := session.UserMessage{Sender: person, Content: []lux.Block{{Type: ir.BlockText, Text: text}}}
+	// A task that a trigger wakes sends its prompt as the trigger's
+	// message, which leaves the agent to judge whether its turn brings the
+	// person anything (spec 086).
+	if r.t.Woken == WokenJudged {
+		first.Sender = session.Sender{Subject: session.TriggerSubjectPrefix + "trg_tasks", Kind: session.SenderTrigger}
+		first.FiringID, first.Notify = session.NewID(session.PrefixFiring), session.NotifyJudged
+	}
+	msg, err := session.NewEvent(session.TypeUserMessage, first, now)
 	if err != nil {
 		return res, err
 	}

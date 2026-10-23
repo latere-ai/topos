@@ -532,7 +532,10 @@ var opDescriptions = map[string]string{
 		"every firing sends its message to, which the caller may send to; a firing whose target has ended or is gone is skipped_ended. "+
 		"A session's wake is such a trigger, applied by the session's wake tool as the session's initiator with status.origin {kind: %s}: at least %s and at most %s ahead and inside its session's life, and skipped_late past %s; "+
 		"its firing's user.message carries wake {trigger_id, set_at, due_at, count}, count from 1. "+
-		"status.paused {why, by, sessionId, toolUseId, at} says who suspended the trigger and when, with the agent's why and its call for a pause a session's call made; it is kept while the trigger stays suspended and cleared when it resumes.",
+		"status.paused {why, by, sessionId, toolUseId, at} says who suspended the trigger and when, with the agent's why and its call for a pause a session's call made; it is kept while the trigger stays suspended and cleared when it resumes. "+
+		"spec.session.attended makes each session a firing starts attended, so its questions wait for the owner; session.create is asked with attended. "+
+		"spec.session.notify is always, the default, or judged: a firing of a judged trigger sends its message with notify judged, and the turn it begins records outcome quiet on its closing status unless the agent calls its notify tool or waits for the person; "+
+		"judged is refused for an agent whose latest version does not name notify. trigger.create and trigger.update carry notify.",
 		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice,
 		v1.OriginWake, spoken(trigger.MinWakeDelay), spoken(trigger.MaxWakeAhead), spoken(trigger.WakeMaxAge)),
 	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+

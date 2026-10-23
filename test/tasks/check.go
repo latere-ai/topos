@@ -64,6 +64,8 @@ type Assertion struct {
 	FinalMessage *FinalMessageCheck `yaml:"final_message"`
 	// Title asserts on the session's title after the run.
 	Title *TitleCheck `yaml:"title"`
+	// Outcome asserts the outcome of the turn a trigger began.
+	Outcome *OutcomeCheck `yaml:"outcome"`
 }
 
 // TitleCheck asserts on the session's title after the run, the new title
@@ -89,6 +91,28 @@ type QuestionCheck struct {
 // matches a pattern.
 type FinalMessageCheck struct {
 	Matches string `yaml:"matches"`
+}
+
+// OutcomeCheck asserts the outcome the last status of the session's own
+// thread recorded, quiet or notified, for a turn a trigger began (spec
+// 086).
+type OutcomeCheck struct {
+	Equals string `yaml:"equals"`
+}
+
+// eval answers why the log's last outcome is not Equals, "" when it is.
+func (o *OutcomeCheck) eval(evs []session.Event) string {
+	got := ""
+	for _, e := range evs {
+		var p session.SessionStatus
+		if e.Type == session.TypeSessionStatus && e.Thread == "" && e.Decode(&p) == nil && p.Status != session.StatusRunning {
+			got = p.Outcome
+		}
+	}
+	if got != o.Equals {
+		return fmt.Sprintf("the turn's outcome is %q, want %q", got, o.Equals)
+	}
+	return ""
 }
 
 // GoCheck runs go with Args in a copy of the working directory, with
@@ -172,6 +196,7 @@ func (a Assertion) kinds() []string {
 		{"absent", a.Absent != nil}, {"only_files", a.OnlyFiles != nil}, {"no_match", a.NoMatch != nil},
 		{"call", a.Call != nil}, {"no_call", a.NoCall != nil}, {"todo", a.Todo != nil},
 		{"question", a.Question != nil}, {"final_message", a.FinalMessage != nil}, {"title", a.Title != nil},
+		{"outcome", a.Outcome != nil},
 	} {
 		if k.set {
 			out = append(out, k.name)
@@ -181,7 +206,7 @@ func (a Assertion) kinds() []string {
 }
 
 // LogKinds are the assertions that read the session's log.
-var LogKinds = []string{"call", "no_call", "todo", "question", "final_message", "title"}
+var LogKinds = []string{"call", "no_call", "todo", "question", "final_message", "title", "outcome"}
 
 // ParseCheck reads a check.yaml and refuses an assertion with no kind or
 // with two, an unknown field, a bad pattern, and a call with no tool or
@@ -204,7 +229,7 @@ func ParseCheck(b []byte) (Check, error) {
 
 func (a Assertion) validate() error {
 	if k := a.kinds(); len(k) != 1 {
-		return fmt.Errorf("sets %d kinds %v; an assertion is exactly one of go, file, unchanged, absent, only_files, no_match, call, no_call, todo, question, final_message, title", len(k), k)
+		return fmt.Errorf("sets %d kinds %v; an assertion is exactly one of go, file, unchanged, absent, only_files, no_match, call, no_call, todo, question, final_message, title, outcome", len(k), k)
 	}
 	var patterns []string
 	switch {
@@ -230,6 +255,8 @@ func (a Assertion) validate() error {
 		return errors.New("title has no pattern")
 	case a.Title != nil:
 		patterns = append(patterns, a.Title.Matches, a.Title.NotMatching)
+	case a.Outcome != nil && a.Outcome.Equals != session.OutcomeQuiet && a.Outcome.Equals != session.OutcomeNotified:
+		return fmt.Errorf("outcome equals %q, not %s or %s", a.Outcome.Equals, session.OutcomeQuiet, session.OutcomeNotified)
 	}
 	for _, c := range []*CallCheck{a.Call, a.NoCall} {
 		if c == nil {
@@ -332,6 +359,8 @@ func (a Assertion) eval(ctx context.Context, in Input, calls []Call, i int) (str
 		return a.FinalMessage.eval(in.Events), nil
 	case a.Title != nil:
 		return a.Title.eval(in.Events), nil
+	case a.Outcome != nil:
+		return a.Outcome.eval(in.Events), nil
 	}
 	return a.Todo.eval(calls), nil
 }

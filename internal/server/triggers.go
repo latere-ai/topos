@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -172,6 +174,17 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 			return store.Trigger{}, false, err
 		}
 	}
+	// A judged trigger's turns are quiet unless the agent calls notify, so
+	// an agent that does not name it would never bring a result (spec 086).
+	if spec.Session.Notify == v1.NotifyJudged {
+		names, err := s.agentNames(ctx, agentID, session.ToolNotify)
+		if err != nil {
+			return store.Trigger{}, false, err
+		}
+		if !names {
+			return store.Trigger{}, false, manifest.Invalid("spec.session.notify", "is judged, and the agent's latest version does not name the notify tool, so every turn would be quiet")
+		}
+	}
 	stored, err := s.o.Objects.TriggerByName(ctx, q.caller.Subject, name)
 	exists := err == nil
 	switch {
@@ -183,6 +196,7 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 			res.Fields["on"] = on
 		}
 		maps.Copy(res.Fields, oneShotFields(spec))
+		res.Fields["notify"] = trigger.Notify(spec)
 		maps.Copy(res.Fields, deviceFields(spec.Session))
 		if how.origin != nil {
 			res.Fields["origin"] = originField(*how.origin)
@@ -218,6 +232,7 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 			fields["on"] = on
 		}
 		maps.Copy(fields, oneShotFields(spec))
+		fields["notify"] = trigger.Notify(spec)
 		maps.Copy(fields, deviceFields(spec.Session))
 		if how.origin != nil {
 			fields["origin"] = originField(*how.origin)
@@ -575,7 +590,8 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 	}
 	ss := st.Spec.Session
 	in := creation{agent: st.Spec.Agent, title: st.Title, message: st.Message, resources: st.Resources, machine: triggerMachine(ss),
-		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID, firedBy: st.FiredBy, firesOn: firesOn(st.Spec)}
+		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID, firedBy: st.FiredBy, firesOn: firesOn(st.Spec),
+		attended: trigger.Attended(st.Spec), notify: messageNotify(st.Spec)}
 	if ss.EndOnIdle != nil {
 		in.endOnIdle = *ss.EndOnIdle
 	}
@@ -606,7 +622,7 @@ func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	if sess.Status == session.StatusEnded {
 		return triggers.ErrEnded
 	}
-	msg := session.UserMessage{Sender: from, Content: content, FiringID: sd.FiringID}
+	msg := session.UserMessage{Sender: from, Content: content, FiringID: sd.FiringID, Notify: messageNotify(sd.Spec)}
 	wake, err := a.s.messageWake(ctx, sd)
 	if err != nil {
 		return err
@@ -624,6 +640,16 @@ func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	}
 	a.s.o.Notify()
 	return nil
+}
+
+// messageNotify is the notify a firing's message carries (spec 086):
+// session.NotifyJudged for a trigger whose session.notify is judged, and
+// none for one that always brings its result.
+func messageNotify(spec v1.TriggerSpec) string {
+	if trigger.Notify(spec) == v1.NotifyJudged {
+		return session.NotifyJudged
+	}
+	return ""
 }
 
 // Spent records in the session a spent wake continued that it sent
@@ -689,4 +715,22 @@ func (actor) Refusal(err error) (string, bool) {
 	}
 	row, ok := codes[e.code]
 	return reason, !ok || row.status >= http.StatusInternalServerError
+}
+
+// agentNames reports whether the latest version of the agent agentID
+// names the tool name among its tools.
+func (s *Server) agentNames(ctx context.Context, agentID, name string) (bool, error) {
+	a, err := s.o.Objects.Agent(ctx, agentID)
+	if err != nil {
+		return false, err
+	}
+	v, err := s.o.Objects.Version(ctx, a.ID, a.Latest)
+	if err != nil {
+		return false, err
+	}
+	var doc v1.Agent
+	if err := json.Unmarshal(v.Doc, &doc); err != nil {
+		return false, fmt.Errorf("server: agent %s's version %d does not read: %w", a.ID, a.Latest, err)
+	}
+	return slices.ContainsFunc(doc.Spec.Tools, func(t v1.Tool) bool { return t.Name == name && !t.Client }), nil
 }

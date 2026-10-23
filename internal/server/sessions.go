@@ -275,8 +275,12 @@ type creation struct {
 	metadata  map[string]string
 	endOnIdle bool
 	// attended is the creator's declaration that a person answers the
-	// session's questions; a trigger's firing never makes one.
+	// session's questions; a trigger's firing makes one when its
+	// session.attended says so (spec 086).
 	attended bool
+	// notify is the first message's notify, session.NotifyJudged for a
+	// firing of a judged trigger (spec 086).
+	notify string
 	// resources are checked repositories; none takes the agent's.
 	resources []session.Resource
 	// machine is the device the create names (spec 080), nil for the
@@ -460,7 +464,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// (spec 022), and fired_by, the key whose token fired it when one did
 	// (spec 078), which the authorizer holds the session to.
 	if in.triggerID != "" {
-		fields["trigger_id"], fields["firing_id"] = in.triggerID, in.firingID
+		fields["trigger_id"], fields["firing_id"], fields["attended"] = in.triggerID, in.firingID, in.attended
 		if in.firedBy != nil {
 			fields["fired_by"] = in.firedBy
 		}
@@ -632,7 +636,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if in.message == "" {
 		return sess, nil
 	}
-	msg := session.UserMessage{Sender: in.sender, Content: []lux.Block{{Type: ir.BlockText, Text: in.message}}, FiringID: in.firingID}
+	msg := session.UserMessage{Sender: in.sender, Content: []lux.Block{{Type: ir.BlockText, Text: in.message}}, FiringID: in.firingID, Notify: in.notify}
 	ev, err := session.NewEvent(session.TypeUserMessage, msg, now)
 	if err != nil {
 		return session.Session{}, err

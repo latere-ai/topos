@@ -134,13 +134,32 @@ func Manifest(agent, name string, p runner.Proposal) (json.RawMessage, error) {
 		return nil, err
 	}
 	body, err := routine.Manifest(agent, name, nil, f)
-	if err != nil || p.On == nil || Starts(*p.On) != "" {
-		return body, err
+	if err != nil {
+		return nil, err
+	}
+	events := p.On != nil && Starts(*p.On) == ""
+	if !events && p.Notify != v1.NotifyJudged {
+		return body, nil
 	}
 	return edit(body, func(spec, session map[string]any) {
-		spec["on"] = *p.On
-		session["message"] = routine.EventMessage(f.Instruction)
+		if events {
+			spec["on"] = *p.On
+			session["message"] = routine.EventMessage(f.Instruction)
+		}
+		writeNotify(session, p.Notify)
 	})
+}
+
+// writeNotify writes a proposal's notify into a trigger's session: judged
+// as it is, and always as the default, which a trigger leaves unset so
+// its digest is the one it had before spec 086 (spec 003).
+func writeNotify(session map[string]any, notify string) {
+	switch notify {
+	case v1.NotifyJudged:
+		session["notify"] = v1.NotifyJudged
+	case v1.NotifyAlways:
+		delete(session, "notify")
+	}
 }
 
 // edit decodes a trigger manifest, lets fn change its spec and its
@@ -222,7 +241,11 @@ func changedRoutine(agent, name string, doc json.RawMessage, f routine.Fields, p
 	if err != nil {
 		return nil, err
 	}
-	return routine.Manifest(agent, name, doc, f)
+	body, err := routine.Manifest(agent, name, doc, f)
+	if err != nil || p.Notify == "" {
+		return body, err
+	}
+	return edit(body, func(_, session map[string]any) { writeNotify(session, p.Notify) })
 }
 
 // changedTrigger writes p into a trigger that is no routine: its name as
@@ -275,6 +298,7 @@ func changedTrigger(doc json.RawMessage, stored *v1.Trigger, p runner.Proposal) 
 		case runner.TriggerResume:
 			delete(spec, "suspend")
 		}
+		writeNotify(session, p.Notify)
 	})
 }
 
