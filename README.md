@@ -154,6 +154,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 - [docs/offers.md](docs/offers.md): how a client shows an agent's offer of
   standing work, or of a change to it, and sends the answer of the person
   who started the session.
+- [docs/wakes.md](docs/wakes.md): how a client shows the wake an agent set
+  to come back to a conversation later, the turn it starts, and how to
+  cancel it.
 - [docs/reading-files.md](docs/reading-files.md): reading the files a
   person sent, an answer kept and the working directory holds, with their
   media types and sizes.

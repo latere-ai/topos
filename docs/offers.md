@@ -37,7 +37,17 @@ whose `verdict` is `ask`, with no `user.tool_confirmation` of its
 | `delete` | delete the trigger `id` names; the sessions it started keep going |
 
 A `list` and a `pause` are never held. A pause's result tells the agent to
-say what it paused and why, and the trigger's `spec.suspend` reads `true`.
+say what it paused and why, the trigger's `spec.suspend` reads `true`, and
+its `status.paused` keeps who paused it, when, and the agent's why:
+
+```json
+"paused": {"why": "You are away this month.", "by": "https://login.example|alice", "sessionId": "ses_01...", "toolUseId": "toolu_01...", "at": "2026-10-23T09:00:00Z"}
+```
+
+`sessionId` and `toolUseId` name the conversation's call that paused it;
+a trigger suspended at the API names neither and has no `why`. The record
+stays while the trigger is suspended, through any change, and clears
+when it resumes.
 
 | Input | Meaning |
 |---|---|

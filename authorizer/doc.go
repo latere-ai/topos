@@ -382,6 +382,17 @@
 // question as its owner's own apply, so it rolls out before a server
 // that asks it.
 //
+// A session's wake tool sets the session's next wake, a one-shot trigger
+// named wake- and the session id's ULID in lowercase, that continues the
+// session. Its set asks trigger.create, or trigger.update for a set that
+// replaces a pending wake, and its cancel trigger.delete, as the session's
+// initiator with org_id of the session's context, with origin kind
+// "wake" and confirmed_by only for a set the initiator allowed, the
+// eleventh in a row with no word from them. A create or an update of any
+// one-shot trigger carries at, its time in RFC 3339, which an endpoint
+// counts pending wakes by; one with a session.target is also asked
+// session.send on that session as the applier.
+//
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
 // verbatim, where an endpoint reads a plan, a team or a role from. The
