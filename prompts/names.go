@@ -93,7 +93,7 @@ const (
 	ToolHistory Name = "tools/history-v1"
 	// ToolTrigger states the bounds of a proposal's name and why and of a
 	// list, which a test holds to their constants (spec 086).
-	ToolTrigger Name = "tools/trigger-v1"
+	ToolTrigger Name = "tools/trigger-v2"
 )
 
 // The results of the trigger tool (spec 086).
@@ -109,9 +109,24 @@ const (
 	// TriggerNotMade takes Code and Message, why a routine the person
 	// allowed was refused all the same.
 	TriggerNotMade Name = "results/trigger/not-made-v1"
-	// TriggerList takes Triggers, each a Title, Name, Schedule, TimeZone,
-	// Product, Paused, Next and Offered.
-	TriggerList Name = "results/trigger/list-v1"
+	// TriggerList takes Triggers, each an ID, Title, Name, Schedule,
+	// TimeZone, Product, Ask, At, Target, TargetTitle, Paused, Next and
+	// Offered.
+	TriggerList Name = "results/trigger/list-v2"
+	// TriggerRefusedChange takes Action, Code and Message, why a change,
+	// resume or delete the person would be asked about cannot be done.
+	TriggerRefusedChange Name = "results/trigger/refused-change-v1"
+	// TriggerNotDone takes Action, Held, whether the person allowed it,
+	// Code and Message, why a change, pause, resume or delete was refused
+	// when it ran.
+	TriggerNotDone Name = "results/trigger/not-done-v1"
+	// TriggerChanged and TriggerResumed take Title and Next, when the
+	// trigger runs next, empty when it names no time.
+	TriggerChanged Name = "results/trigger/changed-v1"
+	TriggerResumed Name = "results/trigger/resumed-v1"
+	// TriggerPaused and TriggerDeleted take Title.
+	TriggerPaused  Name = "results/trigger/paused-v1"
+	TriggerDeleted Name = "results/trigger/deleted-v1"
 )
 
 // The results of request_connection (spec 069).

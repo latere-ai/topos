@@ -4,6 +4,7 @@
 package proposal
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -55,7 +56,7 @@ func (f *fakeTriggers) ApplyProposal(_ context.Context, p runner.Proposal) (runn
 		return runner.ListedTrigger{}, f.fail
 	}
 	next := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
-	return runner.ListedTrigger{ID: "trg_1", Name: routine.Name("ses_1/" + p.ToolUseID), Title: p.Name, NextFireAt: &next}, nil
+	return runner.ListedTrigger{ID: "trg_1", Name: routine.Name("ses_1/" + p.ToolUseID), Title: cmp.Or(p.Name, "Weekly sign-ups"), NextFireAt: &next}, nil
 }
 
 // weekly is a proposal every routine rule takes.
@@ -90,8 +91,20 @@ func TestAProposalIsCheckedBeforeAnyoneIsAsked(t *testing.T) {
 		want  string
 	}{
 		"no action":            {json.RawMessage(`{}`), "action"},
-		"another action":       {json.RawMessage(`{"action":"delete"}`), "action"},
-		"an unknown field":     {json.RawMessage(`{"action":"list","id":"trg_1"}`), "unknown field"},
+		"another action":       {json.RawMessage(`{"action":"archive","id":"trg_1"}`), "action"},
+		"an unknown field":     {json.RawMessage(`{"action":"list","when":"now"}`), "unknown field"},
+		"an unknown on field":  {with(t, "on", map[string]any{"product": "mail", "verbs": []string{"received"}, "every": true}), "unknown field"},
+		"schedule and on":      {with(t, "on", map[string]any{"product": "mail", "verbs": []string{"received"}}), "not both"},
+		"an on of no verb":     {json.RawMessage(`{"action":"propose","name":"n","ask":"a","why":"w","on":{"product":"mail","verbs":[]}}`), "on.verbs"},
+		"a change of no id":    {json.RawMessage(`{"action":"change","name":"n","why":"w"}`), "trigger's id"},
+		"a change of nothing":  {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w"}`), "names what it changes"},
+		"a change of no why":   {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","name":"n"}`), "why is required"},
+		"a change to both":     {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","schedule":"0 9 * * 1","timeZone":"UTC","on":{"product":"mail","verbs":["received"]}}`), "not both"},
+		"a change's bad name":  {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","name":"a\nb"}`), "not one short line"},
+		"a change's schedule":  {json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"w","schedule":"*/5 * * * *","timeZone":"UTC"}`), "not one a routine runs on"},
+		"a pause of no why":    {json.RawMessage(`{"action":"pause","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`), "why is required"},
+		"a delete of no id":    {json.RawMessage(`{"action":"delete"}`), "trigger's id"},
+		"no action at all":     {json.RawMessage(`{"id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`), "action is required"},
 		"no why":               {with(t, "why", nil), "why is required"},
 		"a long why":           {with(t, "why", strings.Repeat("x", trigger.MaxPurposeLength+1)), "why is longer"},
 		"no time zone":         {with(t, "timeZone", nil), "timeZone is required"},
@@ -108,7 +121,13 @@ func TestAProposalIsCheckedBeforeAnyoneIsAsked(t *testing.T) {
 			t.Errorf("%s: %+v, want invalid_input naming %q", name, r, c.want)
 		}
 	}
-	for _, in := range []string{weekly, `{"action":"list"}`} {
+	for _, in := range []string{weekly, `{"action":"list"}`,
+		`{"action":"propose","name":"Pushes","ask":"Review it.","why":"On every push.","on":{"product":"github","verbs":["push"],"resources":["acme/app"],"match":[{"path":"payload.ref","in":["refs/heads/main"]}]}}`,
+		`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"Earlier.","schedule":"0 8 * * 1","timeZone":"UTC"}`,
+		`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"Mail.","ask":"Save it.","on":{"product":"mail","verbs":["received"]}}`,
+		`{"action":"pause","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"Away."}`,
+		`{"action":"resume","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`,
+		`{"action":"delete","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA"}`} {
 		if r := tool.Check(tools.Call{ID: "toolu_1", Input: json.RawMessage(in)}); r != nil {
 			t.Errorf("%s was refused: %+v", in, r)
 		}
@@ -158,7 +177,7 @@ func TestAnAllowedProposalIsApplied(t *testing.T) {
 	if err != nil || res.Outcome != tools.OutcomeOK || !strings.Contains(res.Content[0].Text, `"Weekly sign-ups" is theirs now`) || !strings.Contains(res.Content[0].Text, "2026-10-26T08:00:00Z") {
 		t.Fatalf("the allowed proposal answered %+v, %v", res, err)
 	}
-	if len(f.applied) != 1 || f.applied[0] != (runner.Proposal{ToolUseID: "toolu_1", Name: "Weekly sign-ups", Ask: "Count last week's sign-ups.",
+	if len(f.applied) != 1 || f.applied[0] != (runner.Proposal{ToolUseID: "toolu_1", Action: ActionPropose, Name: "Weekly sign-ups", Ask: "Count last week's sign-ups.",
 		Why: "Every Monday at 9:00, Berlin time, I count last week's sign-ups.", Schedule: "0 9 * * 1", TimeZone: "Europe/Berlin"}) {
 		t.Fatalf("applied %+v", f.applied)
 	}
@@ -178,7 +197,7 @@ func TestAnAllowedProposalIsApplied(t *testing.T) {
 func TestAListNamesWhatThePersonHolds(t *testing.T) {
 	next := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
 	f := &fakeTriggers{list: []runner.ListedTrigger{
-		{ID: "trg_1", Name: "routine-a", Title: "Weekly sign-ups", Schedule: "0 9 * * 1", TimeZone: "Europe/Berlin", NextFireAt: &next, Origin: &v1.TriggerOrigin{Kind: v1.OriginProposal}},
+		{ID: "trg_1", Name: "routine-a", Title: "Weekly sign-ups", Schedule: "0 9 * * 1", TimeZone: "Europe/Berlin", Ask: "Count.", NextFireAt: &next, Origin: &v1.TriggerOrigin{Kind: v1.OriginProposal}},
 		{ID: "trg_2", Name: "on-mail", Product: "mail", Suspended: true},
 	}}
 	res, err := New(f).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)})
@@ -186,8 +205,8 @@ func TestAListNamesWhatThePersonHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "The person holds these triggers of you, newest first:\n" +
-		"- Weekly sign-ups (routine-a): 0 9 * * 1 in Europe/Berlin, next at 2026-10-26T08:00:00Z, offered in a conversation\n" +
-		"- on-mail (on-mail): when mail sends an event, paused\n"
+		"- trg_1 Weekly sign-ups (routine-a): 0 9 * * 1 in Europe/Berlin, next at 2026-10-26T08:00:00Z, offered in a conversation. Asks: Count.\n" +
+		"- trg_2 on-mail (on-mail): when mail sends an event, paused\n"
 	if res.Outcome != tools.OutcomeOK || res.Content[0].Text != want {
 		t.Fatalf("the list answered %q, want %q", res.Content[0].Text, want)
 	}
@@ -224,5 +243,150 @@ func TestToolTextsReadTheirBounds(t *testing.T) {
 	}
 	if s.Properties["name"].MaxLength != routine.MaxTitle || s.Properties["why"].MaxLength != trigger.MaxPurposeLength {
 		t.Fatalf("the schema bounds are %+v", s.Properties)
+	}
+}
+
+// TestOnlyAListAndAPauseRunWithoutThePerson is Topos spec 086's fifth
+// criterion at the tool: Confirm holds a propose, a change, a resume and a
+// delete for the person and neither a list nor a pause; Probe asks the
+// server about each held one and never about a pause; and each action's
+// result says what was done, or why it was not.
+func TestOnlyAListAndAPauseRunWithoutThePerson(t *testing.T) {
+	const id = "trg_01JAAAAAAAAAAAAAAAAAAAAAAA"
+	calls := map[string]string{
+		ActionList:    `{"action":"list"}`,
+		ActionPropose: weekly,
+		ActionChange:  `{"action":"change","id":"` + id + `","why":"Earlier.","schedule":"0 8 * * 1","timeZone":"UTC"}`,
+		ActionPause:   `{"action":"pause","id":"` + id + `","why":"Away."}`,
+		ActionResume:  `{"action":"resume","id":"` + id + `"}`,
+		ActionDelete:  `{"action":"delete","id":"` + id + `"}`,
+	}
+	held := map[string]string{ActionPropose: confirmPropose, ActionChange: confirmChange, ActionResume: confirmResume, ActionDelete: confirmDelete}
+	f := &fakeTriggers{}
+	tool := New(f)
+	for action, in := range calls {
+		if got := tool.Confirm(tools.Call{Input: json.RawMessage(in)}); got != held[action] {
+			t.Errorf("a %s is held %q, want %q", action, got, held[action])
+		}
+		f.checked = nil
+		if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_" + action, Input: json.RawMessage(in)}); r != nil {
+			t.Errorf("a %s the server takes was answered %+v", action, r)
+		}
+		if asked := len(f.checked) == 1; asked != (held[action] != "") || asked && (f.checked[0].Verb() != action || f.checked[0].ToolUseID != "toolu_"+action) {
+			t.Errorf("a %s asked the server %+v", action, f.checked)
+		}
+	}
+	results := map[string]string{
+		ActionChange: `The person said yes. "Weekly sign-ups" is changed, and it runs next at 2026-10-26T08:00:00Z.`,
+		ActionPause:  `"Weekly sign-ups" is paused and runs nothing until the person resumes it.`,
+		ActionResume: `The person said yes. "Weekly sign-ups" runs again, next at 2026-10-26T08:00:00Z.`,
+		ActionDelete: `The person said yes. "Weekly sign-ups" is deleted, and the conversations it started keep going.`,
+	}
+	for action, want := range results {
+		f.applied = nil
+		res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_" + action, Input: json.RawMessage(calls[action])})
+		if err != nil || res.Outcome != tools.OutcomeOK || !strings.HasPrefix(res.Content[0].Text, want) {
+			t.Errorf("a %s answered %+v, %v", action, res, err)
+		}
+		if len(f.applied) != 1 || f.applied[0].Verb() != action || f.applied[0].ID != id {
+			t.Errorf("a %s applied %+v", action, f.applied)
+		}
+	}
+	f.refuse = &runner.TriggerRefusal{Code: "not_found", Message: "no such trigger"}
+	if res, _ := tool.Run(t.Context(), tools.Call{ID: "toolu_p", Input: json.RawMessage(calls[ActionPause])}); res.Outcome != tools.OutcomeError ||
+		res.Content[0].Text != "The pause was not done (not_found: no such trigger). Tell them in one sentence; do not try it again in another way." {
+		t.Errorf("a refused pause answered %+v", res)
+	}
+	if res, _ := tool.Run(t.Context(), tools.Call{ID: "toolu_d", Input: json.RawMessage(calls[ActionDelete])}); !strings.HasPrefix(res.Content[0].Text, "The person said yes, but the delete was not done (not_found") {
+		t.Errorf("a refused delete answered %+v", res)
+	}
+	if r := tool.Probe(t.Context(), tools.Call{ID: "toolu_c", Input: json.RawMessage(calls[ActionChange])}); r == nil || r.Outcome != tools.OutcomeInvalidInput ||
+		!strings.HasPrefix(r.Content[0].Text, "This change cannot be done, so the person was not asked and nothing changed (not_found: no such trigger).") {
+		t.Errorf("a refused change was probed as %+v", r)
+	}
+}
+
+// TestAProposalIsWrittenInTheRoutinesShape: a schedule and a whole
+// product's arrivals of mail or of a link are written as the SDK writes a
+// routine, under the routine's name; a filter no routine expresses is the
+// same manifest under the event- name with the filter as its on and the
+// event after the ask; and a change keeps a routine a routine.
+func TestAProposalIsWrittenInTheRoutinesShape(t *testing.T) {
+	read := func(body json.RawMessage) v1.Trigger {
+		t.Helper()
+		var tr v1.Trigger
+		if err := json.Unmarshal(body, &tr); err != nil {
+			t.Fatal(err)
+		}
+		return tr
+	}
+	sched := runner.Proposal{Name: "Weekly", Ask: "Count {{them}}.", Why: "Mondays.", Schedule: "0 9 * * 1", TimeZone: "UTC"}
+	if n := TriggerName("ses_1", "toolu_1", sched); n != routine.Name("ses_1/toolu_1") {
+		t.Fatalf("a schedule's name is %s", n)
+	}
+	body, err := Manifest("chat", routine.Name("ses_1/toolu_1"), sched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := routine.Manifest("chat", routine.Name("ses_1/toolu_1"), nil, routine.Fields{Title: "Weekly", Instruction: "Count {{them}}.", Starts: routine.OnSchedule, Schedule: routine.ParseSchedule("0 9 * * 1", "UTC")})
+	if err != nil || string(body) != string(want) {
+		t.Fatalf("a schedule is written %s, want %s (%v)", body, want, err)
+	}
+	for product, starts := range map[string]routine.Start{"mail": routine.FromEmail, "webhook": routine.FromLink} {
+		p := runner.Proposal{Name: "Arrivals", Ask: "File it.", Why: "On arrival.", On: &v1.TriggerOn{Product: product, Verbs: []string{"received"}}}
+		body, err := Manifest("chat", TriggerName("ses_1", "toolu_2", p), p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := routine.Manifest("chat", routine.Name("ses_1/toolu_2"), nil, routine.Fields{Title: "Arrivals", Instruction: "File it.", Starts: starts})
+		if err != nil || string(body) != string(want) {
+			t.Fatalf("%s is written %s, want %s (%v)", product, body, want, err)
+		}
+	}
+	for _, on := range []v1.TriggerOn{
+		{Product: "github", Verbs: []string{"push"}},
+		{Product: "mail", Verbs: []string{"received"}, Resources: []string{"invoices@*"}},
+		{Product: "webhook", Verbs: []string{"received", "retried"}},
+	} {
+		p := runner.Proposal{Name: "Pushes", Ask: "Review {{it}}.", Why: "On push.", On: &on}
+		name := TriggerName("ses_1", "toolu_3", p)
+		if name != EventPrefix+strings.TrimPrefix(routine.Name("ses_1/toolu_3"), routine.Prefix) || routine.IsName(name) {
+			t.Fatalf("%+v is named %s", on, name)
+		}
+		body, err := Manifest("chat", name, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := read(body)
+		if tr.Spec.On == nil || tr.Spec.On.Product != on.Product || tr.Spec.Schedule != "" || tr.Spec.Session.Message != `Review \{{it}}.`+eventSuffix ||
+			tr.Metadata.Labels[routine.Label] != "chat" || tr.Metadata.DisplayName != "Pushes" || tr.Spec.SkipIfActive == nil || *tr.Spec.SkipIfActive {
+			t.Fatalf("%+v is written %s", on, body)
+		}
+	}
+	// A change of a routine's time keeps it the SDK's routine, its ask and
+	// a field the routine does not own.
+	stored := read(want)
+	stored.Spec.MaxActive = new(7)
+	changed, err := Changed("chat", &stored, runner.Proposal{Action: ActionChange, ID: "trg_1", Why: "Later.", Schedule: "30 7 * * *", TimeZone: "UTC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr := read(changed); tr.Spec.Schedule != "30 7 * * *" || tr.Spec.On != nil || tr.Spec.MaxActive == nil || *tr.Spec.MaxActive != 7 || tr.Spec.Session.Message != `Count \{{them}}.` {
+		t.Fatalf("the changed routine is %s", changed)
+	}
+	paused, err := Changed("chat", &stored, runner.Proposal{Action: ActionPause, ID: "trg_1", Why: "Away."})
+	if err != nil || !read(paused).Spec.Suspend {
+		t.Fatalf("the paused routine is %s, %v", paused, err)
+	}
+	// A trigger no routine is has the fields named written into it.
+	own := v1.Trigger{APIVersion: v1.APIVersion, Kind: v1.KindTrigger, Metadata: v1.ObjectMeta{Name: "nightly"},
+		Spec: v1.TriggerSpec{Agent: "agent_1", Schedule: "0 2 * * *", TimeZone: "UTC", Session: v1.TriggerSession{Message: "Build {{trigger.name}}.", Key: "k"}, Suspend: true}}
+	changed, err = Changed("chat", &own, runner.Proposal{Action: ActionResume, ID: "trg_2"})
+	if tr := read(changed); err != nil || tr.Spec.Suspend || tr.Spec.Session.Message != "Build {{trigger.name}}." || tr.Spec.Session.Key != "k" {
+		t.Fatalf("the resumed trigger is %s, %v", changed, err)
+	}
+	changed, err = Changed("chat", &own, runner.Proposal{Action: ActionChange, ID: "trg_2", Why: "Pushes.", Name: "On push", On: &v1.TriggerOn{Product: "github", Verbs: []string{"push"}}, Ask: "Look."})
+	if tr := read(changed); err != nil || tr.Spec.On == nil || tr.Spec.Schedule != "" || tr.Metadata.DisplayName != "On push" || tr.Spec.Session.Message != "Look."+eventSuffix || !tr.Spec.Suspend {
+		t.Fatalf("the changed trigger is %s, %v", changed, err)
 	}
 }

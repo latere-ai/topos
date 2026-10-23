@@ -1,0 +1,1 @@
+{{if .Held}}The person said yes, but the {{.Action}} was not done{{else}}The {{.Action}} was not done{{end}} ({{.Code}}{{if .Message}}: {{.Message}}{{end}}). Tell them in one sentence; do not try it again in another way.

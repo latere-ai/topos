@@ -1,0 +1,1 @@
+This {{.Action}} cannot be done, so the person was not asked and nothing changed ({{.Code}}{{if .Message}}: {{.Message}}{{end}}). Tell them in one sentence if they asked for it, and do not try it again in another way.
