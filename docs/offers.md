@@ -58,6 +58,7 @@ when it resumes.
 | `schedule` | five cron fields of a minute and an hour, every day or on the days of the week listed, such as `0 9 * * 1` |
 | `timeZone` | the IANA time zone the schedule is read in |
 | `on` | in place of `schedule`: the events each run starts on, as a Trigger's `on` |
+| `notify` | `always` to bring every run's result to the person, `judged` to leave it to the agent, which a quiet run records (see `docs/quiet-runs.md`); absent, `always` for a schedule and `judged` for events when the agent names `notify` |
 
 Show the offer as a choice between two answers: do it, or leave it as it
 is. A Go client reads a schedule into days and a time with

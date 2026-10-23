@@ -391,7 +391,9 @@
 // eleventh in a row with no word from them. A create or an update of any
 // one-shot trigger carries at, its time in RFC 3339, which an endpoint
 // counts pending wakes by; one with a session.target is also asked
-// session.send on that session as the applier.
+// session.send on that session as the applier. Every trigger's create and
+// update carries notify, always or judged, and a firing's session.create
+// carries attended, whether the session's questions wait for the owner.
 //
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
