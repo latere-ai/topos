@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **An agent can change, pause, resume and delete the person's triggers of it.** The `trigger` tool takes `change`, `pause`, `resume` and `delete` of a trigger the person who started the session owns, of the session's agent, by its id, which `list` now answers with each trigger's ask. A change names only what changes, its name, ask, schedule or events, and keeps every other field; a routine stays a routine. A change, a resume and a delete wait for that person every time, as a proposal does, and plan mode blocks them; a pause runs at once, since it only stops work, and the agent says what it paused and why. None reaches another agent's trigger, another person's, or a session's wake: each is answered as a trigger it cannot see. Each keeps the trigger's `status.origin`.
+- **An agent can offer work that starts when an event arrives.** A proposal names `on` in place of `schedule`. Every email that arrives, or every call of the person's link, is applied as the routine that starts from an email or a link, which every client reads as one. Any other events, such as a repository's pushes, are applied in the same shape with the filter as their `on` and the event after the ask, under the name `event-` and the routine's digits, so a client's list of routines leaves them out. See `docs/offers.md`.
+- **The authorizer is asked about each change a session's call makes.** A change, a pause and a resume ask `trigger.update`, and a delete `trigger.delete`, as the session's initiator with `org_id` of its context, about the stored trigger and with `origin`; a held one asks before it is held and again, with `confirmed_by`, after the allow, and a pause asks once, with none.
+
 ## v0.53.1 - 2026-10-23
 
 ### Fixed
