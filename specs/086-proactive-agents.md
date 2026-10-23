@@ -121,11 +121,12 @@ quiet; and the name `hold`, which the hold's route below takes. A
 firing whose agent version no longer names `notify` records `notified`,
 as under `always`.
 
-One thing is written by the server and ignored on input:
+Two things are written by the server and ignored on input:
 
 | Field | Where | Meaning |
 |---|---|---|
-| `origin` | the Trigger's `status`, kept across later applies | `{kind, sessionId, toolUseId, confirmedBy?}` when a session's call made the trigger: `kind` is `proposal` or `wake`, `confirmedBy` the subject who allowed a proposal. Absent for a trigger applied at the route. The questions carry it as `{kind, session_id, tool_use_id, confirmed_by?}` |
+| `origin` | the Trigger's `status`, kept across later applies | `{kind, sessionId, toolUseId, confirmedBy?}` when a session's call made the trigger: `kind` is `proposal` or `wake`, `confirmedBy` the subject who allowed a proposal. Absent for a trigger applied at the route. The questions carry it as `{kind, session_id, tool_use_id, confirmed_by?}`. A later call's origin, a change's or a pause's, is in its questions alone |
+| `paused` | the Trigger's `status`, written when an apply suspends it, kept while it stays suspended, cleared when it resumes | `{why?, by, sessionId?, toolUseId?, at}`: who the suspend was applied as, when, and, for the `trigger` tool's `pause`, the agent's `why` and its call. A suspend at the route names neither `why` nor a call (added 2026-10-23, so a client shows who paused a trigger and why) |
 
 A proposal's why is read in its held call, not stored on the trigger, so
 the routine keeps the routine's shape; a wake's title is its
@@ -139,11 +140,14 @@ passed, with `at` as the scheduled time and the same dedupe string, so
 one firing acts once across replicas.
 
 A one-shot trigger is spent when its firing records `started`,
-`continued`, `skipped_late`, `skipped_ended` or `refused`. The server
-deletes a spent trigger with its firing in the same transaction; what it
-did stays in the log of the session it started or continued. A firing
-`held` keeps the trigger until the held message is sent; one `failed`
-runs again at the next minute.
+`continued`, `skipped_late`, `skipped_ended` or `refused`, and, as built,
+`skipped_active` or `skipped_busy` too: a one-shot has one firing, so a
+skipped one is spent as a skipped schedule's time is gone. A manual
+firing at the fire route spends it the same way. The server deletes a
+spent trigger with its firing in the same transaction
+(`store.Triggers.SpendFiring`); what it did stays in the log of the
+session it started or continued. A firing `held` keeps the trigger until
+the held message is sent; one `failed` runs again at the next minute.
 
 A firing under `session.target` whose session has ended or is gone is
 `skipped_ended`, a new outcome of [[022-triggers]]'s table: it starts
@@ -345,6 +349,8 @@ appends `session.wake_set`:
 | `spec.session.message` | `note`, escaped |
 | `spec.session.policy`, `spec.session.target` | `continue`, the session |
 | `spec.maxAge` | `trigger.WakeMaxAge` |
+| `metadata.labels["applied-by"]` | the session's agent, by name, as a proposal's: a client lists a wake's agent without reading its session (added 2026-10-23) |
+| `status.origin` | `{kind: wake, sessionId, toolUseId, confirmedBy?}`, `confirmedBy` for a set the initiator allowed |
 
 A session has at most one wake: a `set` while one is pending replaces it,
 applying the same trigger again. `cancel` deletes it and appends
@@ -353,8 +359,13 @@ applying the same trigger again. `cancel` deletes it and appends
 `origin` `{kind: wake, session_id, tool_use_id}`.
 
 The bounds are constants of `manifest/trigger`, read by the tool's
-schema, its description, the resolver's check of a trigger whose
-`origin` is a wake, and the OpenAPI text, so none is written twice:
+schema, its description, the server's check of a trigger whose `origin`
+is a wake, and the OpenAPI text, so none is written twice. The check is
+the server's, in the trigger route's apply, not the resolver's: the
+resolver never reads `origin`, which is ignored on input, and the
+server holds the session whose `expires_at` bounds the wake. The tool
+checks the same bounds, by `trigger.CheckWake`, before anything is
+decided:
 
 | Constant | Value | Bounds | At the bound |
 |---|---|---|---|
@@ -449,11 +460,18 @@ either leaves the person undisturbed.
 
 A wake's firing is a `user.message` with the sender `trigger:<trg_id>`,
 `firing_id` ([[022-triggers]]) and one added field, `wake`:
-`{trigger_id, set_at, due_at, count}`; its content is the note. The
-context renders it after a line of `prompts/wake/message-v1.md` that
-says when the wake was set and was due, how many wakes in a row it is,
-and, for a wake that fired late after a hold, that it is late. The fold
-clears the Session's wake at that message.
+`{trigger_id, set_at, due_at, count}`; its content is the note. `set_at`
+and `count` are read from the latest `session.wake_set` of the trigger,
+`count` from 1. The context renders it after a line of
+`prompts/wake/message-v1.md` that says when the wake was set and was
+due, how many wakes in a row it is, and, for a wake that fired late,
+after a hold or a stop of the server, that it is late: as built, later
+than `session.WakeLateAfter` (two minutes, twice the trigger loop's
+pass) past `due_at`. The fold clears the Session's wake at that message.
+
+`session.wake_set` is the runner's record of what it applied and is not
+redactable, as a status is not; the note it carries is also in the
+call's `agent.tool_use`, which is.
 
 The idle `session.status` gains `outcome` (above). The Session gains
 three folded fields, which every client reads without reading the log:
@@ -471,7 +489,7 @@ The sessions list answers them as it answers every Session field
 
 | Question | Added fields |
 |---|---|
-| `trigger.create`, `trigger.update`, `trigger.delete` asked for a session's call | `origin`: `{kind, session_id, tool_use_id, confirmed_by?}`, asked as the owner stored for the session, its initiator, with `org_id` of the session's context as the claims, the way a firing asks ([[022-triggers]]); a create or an update also carries `at` for a one-shot and `notify` |
+| `trigger.create`, `trigger.update`, `trigger.delete` asked for a session's call | `origin`: `{kind, session_id, tool_use_id, confirmed_by?}`, asked as the owner stored for the session, its initiator, with `org_id` of the session's context as the claims, the way a firing asks ([[022-triggers]]); a create or an update also carries `at` for a one-shot, in RFC 3339, and `notify`. A `change`, `pause`, `resume` and `delete` carry `kind: proposal`, a wake's set and cancel `kind: wake` |
 | `trigger.list` asked for a session's `list` | `owner` and `agent` |
 | `session.create` asked for a firing | `attended` |
 | `trigger.hold` | new: `owner`, `held` |
@@ -546,8 +564,22 @@ Roll step 2 is built: `change`, `pause`, `resume` and `delete`, and a
 internal listener carry every action in the proposal's `action`. `list`
 answers each trigger's id and ask, which a change names.
 
-`at`, `session.target`, `session.attended`, `session.notify`, `wake`,
-`notify` and the hold are not built.
+Roll step 3 is built: `at` and its spending, `session.target` and
+`skipped_ended`, the `wake` tool with its bounds and its eleventh set
+held for the initiator alone, `session.wake_set` and
+`session.wake_cleared`, the message's `wake`, the Session's `wake`,
+`end_on_idle` with a pending wake, and the wake cleared on the session's
+end, expiry, deletion and archive and recorded on a person's delete.
+The internal listener carries a wake's set and cancel
+(`POST /internal/v1/leases/{session}/triggers/{wake,unwake}`). The
+`trigger` tool's list answers a wake's `at` and its session. The
+Trigger's `status.paused` is built, and a proposal on events reads the
+SDK's own shape of it (`latere.ai/x/sdk-go/agents/routine` v0.10.0:
+`EventName`, `EventMessage`, `StartsOn`), so `internal/proposal` holds no
+copy.
+
+`session.attended`, `session.notify`, `notify` and the hold are not
+built.
 
 ## Acceptance criteria
 
@@ -560,12 +592,14 @@ answers each trigger's id and ask, which a change names.
 | `pause` sets `suspend` without asking; `change`, `resume` and `delete` are held; none touches a trigger of another agent or a wake | `internal/proposal.TestOnlyAListAndAPauseRunWithoutThePerson`, `internal/server.TestTriggerActionsOnlyTouchTheAgentsOwn` | built |
 | A proposal on events is the routine that starts from an email or a link when a routine expresses it, and an `event-` trigger with the filter as its `on` otherwise; a change keeps a routine a routine | `internal/proposal.TestAProposalIsWrittenInTheRoutinesShape`, `internal/server.TestAnEventProposalIsARoutineOrAnEventTrigger` | built |
 | A schedule no routine runs on is refused before the hold | `internal/proposal.TestAProposalIsCheckedBeforeAnyoneIsAsked` | built |
-| An `at` trigger fires once across two replicas and is deleted when spent; a held one stays until sent | `internal/store/postgres.TestAOneShotFiresOnce` (postgres tier), `internal/triggers.TestASpentTriggerIsDeleted` | not built |
-| A wake continues the session that set it with its note and `wake` on the message; a wake of an ended session is `skipped_ended` | `internal/triggers.TestAWakeContinuesItsSession` | not built |
-| A wake sooner than `MinWakeDelay`, later than `MaxWakeAhead` or past the session's `expires_at` is refused with the bound named; a second `set` replaces the first | `harness.TestWakeBounds` | not built |
-| The eleventh wake in a row with no word from the initiator is held, and an allow starts the count again | `harness.TestTheEleventhWakeAsks` | not built |
-| A session's end, deletion or archive deletes its wake and records `session.wake_cleared`; a person's delete records it with the sender | `internal/server.TestAWakeEndsWithItsSession` | not built |
-| `end_on_idle` leaves a session with a pending wake open and ends it at the idle after its last wake | `internal/server.TestEndOnIdleWaitsForAWake` | not built |
+| An `at` trigger fires once across two replicas and is deleted when spent; a held one stays until sent | `internal/store/postgres.TestAOneShotFiresOnce` (postgres tier), `internal/triggers.TestASpentTriggerIsDeleted`, the stores' conformance case `trigger spend` | built |
+| A trigger under `session.target` continues that session and never another; an ended or gone one is `skipped_ended` | `internal/triggers.TestATargetIsContinuedOrSkippedEnded`, `manifest.TestTheTriggerFieldsOfSpec086` | built |
+| A wake continues the session that set it with its note and `wake` on the message; a wake of an ended session is `skipped_ended` | `internal/server.TestAWakeContinuesItsSession` (the message's `wake` is the server's), `session.TestTheSessionFoldsItsWake`, `harness.TestAWakesMessageSaysWhenItWasDue` | built |
+| A wake sooner than `MinWakeDelay`, later than `MaxWakeAhead` or past the session's `expires_at` is refused with the bound named; a second `set` replaces the first | `internal/proposal.TestWakeBounds` (the tool lives beside the trigger tool), `internal/server.TestAWakeIsHeldToItsBoundsAtTheServer`, `internal/server.TestAWakeContinuesItsSession`, `manifest/trigger.TestAWakeLivesInsideItsBounds` | built |
+| The eleventh wake in a row with no word from the initiator is held, and an allow starts the count again | `harness.TestTheEleventhWakeAsks`, `internal/proposal.TestTheEleventhWakeWaitsForThePerson`, `session.TestWakesInARowCountFromTheInitiatorsWord`, `internal/server.TestOnlyTheInitiatorConfirmsAWake` | built |
+| A session's end, deletion or archive deletes its wake and records `session.wake_cleared`; a person's delete records it with the sender | `internal/server.TestAWakeEndsWithItsSession` | built |
+| `end_on_idle` leaves a session with a pending wake open and ends it at the idle after its last wake | `harness.TestEndOnIdleWaitsForAWake`, `harness.TestACanceledWakeLetsTheSessionEnd` (the rule is the harness's) | built |
+| A pause records why and by whom in `status.paused`, kept while suspended and cleared on resume | `internal/server.TestAPauseRecordsWhyAndByWhom` | built |
 | A turn a trigger began records `notified` under `always`, after `notify`, or after a wait for the person, and `quiet` otherwise; a person's turn records none; the Session folds `wake`, `outcome` and `notice` | `session.TestTheOutcomeOfATriggersTurn` | not built |
 | A firing of a trigger with `session.attended` starts an attended session, and its question waits | `internal/server.TestAnAttendedTriggerWaitsForItsOwner` | not built |
 | While an owner is held, the minute loop fires nothing of theirs and records nothing, the fire route answers `conflict`, and a one-shot due during the hold fires at release with its lateness in the message | `internal/server.TestAHoldStopsEveryTrigger` | not built |
