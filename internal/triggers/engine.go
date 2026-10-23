@@ -55,6 +55,10 @@ var ErrEnded = errors.New("triggers: the session has ended")
 // nothing and records nothing.
 var ErrSuspended = errors.New("triggers: the trigger is suspended")
 
+// ErrHeld answers a fire of a trigger whose owner holds every trigger
+// they own (spec 086), which fires nothing and records nothing.
+var ErrHeld = errors.New("triggers: the trigger's owner holds every trigger")
+
 // Start is a session a firing starts: the trigger, its spec, the firing,
 // the rendered message, title and repositories, and the key that fired
 // it.
@@ -183,6 +187,13 @@ func (e *Engine) Fire(ctx context.Context, t store.Trigger, env *trigger.Envelop
 	if spec.Suspend {
 		return store.Firing{}, ErrSuspended
 	}
+	held, err := e.o.Store.Hold(ctx, t.Owner)
+	if err != nil {
+		return store.Firing{}, err
+	}
+	if held != nil {
+		return store.Firing{}, ErrHeld
+	}
 	now := e.o.Now().UTC()
 	f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Replica: e.o.Replica, Time: now, ReceivedAt: now}
 	if by != nil {
@@ -228,16 +239,25 @@ func (e *Engine) Fire(ctx context.Context, t store.Trigger, env *trigger.Envelop
 
 // Tick is one pass of the minute loop: every due schedule fires each
 // scheduled time up to now, in its trigger's zone, and every held
-// firing whose session no longer waits for a person is sent. It tries
+// firing whose session no longer waits for a person is sent. A trigger
+// whose owner holds every trigger they own fires nothing and records
+// nothing, its next fire time kept for its release (spec 086). It tries
 // every trigger and returns what it could not do.
 func (e *Engine) Tick(ctx context.Context) error {
 	now := e.o.Now().UTC()
 	var errs []error
+	owners, err := e.o.Store.HeldOwners(ctx)
+	if err != nil {
+		return err
+	}
 	due, err := e.o.Store.DueTriggers(ctx, now)
 	if err != nil {
 		errs = append(errs, err)
 	}
 	for _, t := range due {
+		if slices.Contains(owners, t.Owner) {
+			continue
+		}
 		// A trigger deleted since the list, a one-shot another replica
 		// spent among them, has nothing left to fire.
 		if err := e.locked(ctx, t.ID, func() error { return e.schedule(ctx, t.ID, now) }); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -254,6 +274,12 @@ func (e *Engine) Tick(ctx context.Context) error {
 			ids = append(ids, f.TriggerID)
 		}
 	}
+	// A held owner's held firings wait for the release as their triggers
+	// do.
+	ids = slices.DeleteFunc(ids, func(id string) bool {
+		t, err := e.o.Store.Trigger(ctx, id)
+		return err == nil && slices.Contains(owners, t.Owner)
+	})
 	for _, id := range ids {
 		if err := e.locked(ctx, id, func() error { return e.sweep(ctx, id) }); err != nil && !errors.Is(err, store.ErrNotFound) {
 			errs = append(errs, fmt.Errorf("trigger %s: %w", id, err))
