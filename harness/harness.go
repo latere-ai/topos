@@ -557,7 +557,10 @@ func (t *turn) finish(ctx context.Context, reason session.StopReason, detail str
 		return &errStop{Outcome{Status: session.StatusIdle, StopReason: reason, Detail: detail}}
 	}
 	status := session.StatusIdle
-	if t.s.EndOnIdle && reason == session.StopEndTurn {
+	// A session that waits for its own wake is not ended by end_on_idle: it
+	// stays open for the wake and ends at the idle after its last (spec
+	// 086).
+	if t.s.EndOnIdle && reason == session.StopEndTurn && session.PendingWake(t.events()) == nil {
 		status, reason = session.StatusEnded, session.StopCompleted
 	}
 	cp, cerr := t.checkpoint(ctx)
@@ -1712,7 +1715,11 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		}
 		var confirm string
 		if c, ok := tool.(tools.Confirmer); ok {
-			confirm = c.Confirm(tools.Call{ID: id, Input: input})
+			if state == nil {
+				st := t.toolState()
+				state = &st
+			}
+			confirm = c.Confirm(tools.Call{ID: id, Input: input, State: *state})
 		}
 		risk, d, err := decider.Decide(ctx, Call{
 			Policy: policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered, Confirm: confirm,
@@ -1944,9 +1951,13 @@ func (t *turn) parallel(ctx context.Context, calls []plannedCall, w *waits) erro
 // machine is its own (spec 017), so bash does not start in a directory
 // its copied log names: that one was reported on its parent's machine.
 func (t *turn) toolState() tools.State {
-	st := tools.StateOf(t.events(), t.thread)
+	evs := t.events()
+	st := tools.StateOf(evs, t.thread)
 	if st.Dir != "" && t.s.Parent != nil && st.DirSeq <= t.s.Parent.Seq {
 		st.Dir = ""
+	}
+	if t.thread == "" {
+		st.Wakes = session.WakesInARow(evs, t.s.Initiator.Subject)
 	}
 	return st
 }
@@ -2130,6 +2141,26 @@ func (t *turn) result(ctx context.Context, id string, res tools.Result, dur time
 		req := *r
 		req.ToolUseID = id
 		then, err := t.event(session.TypeConnectionRequested, req)
+		if err != nil {
+			return err
+		}
+		batch = append(batch, then)
+	}
+	// A wake the call set or canceled follows its result, so the session's
+	// header and every client read the pending wake (spec 086).
+	if w := res.WakeSet; w != nil {
+		set := *w
+		set.ToolUseID = id
+		then, err := t.event(session.TypeWakeSet, set)
+		if err != nil {
+			return err
+		}
+		batch = append(batch, then)
+	}
+	if w := res.WakeCleared; w != nil {
+		cleared := *w
+		cleared.ToolUseID = id
+		then, err := t.event(session.TypeWakeCleared, cleared)
 		if err != nil {
 			return err
 		}

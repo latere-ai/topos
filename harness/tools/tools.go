@@ -106,8 +106,9 @@ type Prober interface {
 // pattern, a pattern a person's answer added to the session, the
 // progressive mode's score, or a decider's verdict. Plan mode blocks it,
 // whatever the tool's effect, and a block stays a block. Confirm reads
-// the call's input alone and answers the reason the call's agent.tool_use
-// records, or "" for a call decided as any other.
+// the call's input and its State, as Check does, and answers the reason
+// the call's agent.tool_use records, or "" for a call decided as any
+// other.
 type Confirmer interface {
 	Confirm(c Call) string
 }
@@ -154,6 +155,12 @@ type Result struct {
 	// which the harness records as connection.requested after the call's
 	// result; nil for none.
 	Requested *session.ConnectionRequested
+	// WakeSet and WakeCleared are a wake the call set or canceled (spec
+	// 086), which the harness records as session.wake_set or
+	// session.wake_cleared after the call's result, with the call's id;
+	// nil for none.
+	WakeSet     *session.WakeSet
+	WakeCleared *session.WakeCleared
 }
 
 // IsError reports whether the outcome is one the model sees as an error:
@@ -237,6 +244,10 @@ type State struct {
 	// that read them through a parsing service (spec 082), whose parse a
 	// later read reads again.
 	Parses map[string]ParseMeta
+	// Wakes is how many wakes in a row the session's log holds with no
+	// message, answer or confirmation from its initiator (spec 086), which
+	// the harness reads for the session's own thread; zero on any other.
+	Wakes int
 }
 
 // StateOf folds the tool.result metas of one thread, in sequence order.
