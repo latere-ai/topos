@@ -81,10 +81,31 @@ type FileRef struct {
 // carry a ref, in order. A redacted event, and an event of any other
 // type, records none.
 func (e Event) Files() []FileRef {
+	var out []FileRef
+	for _, f := range e.entries() {
+		if f.ref != "" {
+			out = append(out, FileRef{Digest: f.digest, Ref: f.ref})
+		}
+	}
+	return out
+}
+
+// entry is one file an event records, wherever it is kept: its digest,
+// its ref where the session's folder holds it, and its record.
+type entry struct {
+	digest Digest
+	ref    string
+	record FileRecord
+}
+
+// entries are the files e records: the attachments of a user.message and
+// the kept files of a files.kept, in order. A redacted event, and an
+// event of any other type, records none.
+func (e Event) entries() []entry {
 	if e.Redacted() {
 		return nil
 	}
-	var out []FileRef
+	var out []entry
 	switch e.Type {
 	case TypeUserMessage:
 		var m UserMessage
@@ -92,9 +113,7 @@ func (e Event) Files() []FileRef {
 			return nil
 		}
 		for _, a := range m.Attachments {
-			if a.Ref != "" {
-				out = append(out, FileRef{Digest: a.Blob, Ref: a.Ref})
-			}
+			out = append(out, entry{digest: a.Blob, ref: a.Ref, record: FileRecord{MediaType: a.MediaType, Size: a.Size}})
 		}
 	case TypeFilesKept:
 		var k FilesKept
@@ -102,12 +121,57 @@ func (e Event) Files() []FileRef {
 			return nil
 		}
 		for _, f := range k.Files {
-			if f.Ref != "" {
-				out = append(out, FileRef{Digest: f.Blob, Ref: f.Ref})
-			}
+			out = append(out, entry{digest: f.Blob, ref: f.Ref, record: FileRecord{MediaType: f.MediaType, Size: f.Size}})
 		}
 	}
 	return out
+}
+
+// FileRecord is what an event records of a file of its session when the
+// file is kept, a person's attachment or a file an answer showed or
+// linked: its media type and its size in bytes.
+type FileRecord struct {
+	MediaType string
+	Size      int64
+}
+
+// RecordedFiles is the optional interface of a store that finds the
+// record of a file by its digest without reading its session's log
+// whole. FileRecord answers the record of the first live event of the
+// session id that records a file whose digest is d, an attachment or a
+// kept file, and ErrNotFound when none does.
+type RecordedFiles interface {
+	FileRecord(ctx context.Context, id string, d Digest) (FileRecord, error)
+}
+
+// FindRecord is the record of the first live event of log that records a
+// file whose digest is d, an attachment or a kept file, false when none
+// does.
+func FindRecord(log []Event, d Digest) (FileRecord, bool) {
+	for _, e := range log {
+		for _, f := range e.entries() {
+			if f.digest == d {
+				return f.record, true
+			}
+		}
+	}
+	return FileRecord{}, false
+}
+
+// FileRecordOf answers FileRecord from st: its own lookup where it has
+// one, and otherwise its log read whole.
+func FileRecordOf(ctx context.Context, st Store, id string, d Digest) (FileRecord, error) {
+	if rf, ok := st.(RecordedFiles); ok {
+		return rf.FileRecord(ctx, id, d)
+	}
+	log, err := st.Events(ctx, id, 1, 0)
+	if err != nil {
+		return FileRecord{}, err
+	}
+	if r, ok := FindRecord(log, d); ok {
+		return r, nil
+	}
+	return FileRecord{}, fmt.Errorf("%w: no event of %s records a file with the digest %s", ErrNotFound, id, d)
 }
 
 // FileIndex is the optional interface of a store that keeps the digest

@@ -4,7 +4,6 @@
 package session
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -284,7 +283,7 @@ func (m *memoryStore) Blob(ctx context.Context, id string, d Digest) (io.ReadClo
 	if !ok {
 		return nil, fmt.Errorf("%w: blob %s", ErrNotFound, d)
 	}
-	return io.NopCloser(bytes.NewReader(b)), nil
+	return NewBlobBody(b), nil
 }
 
 func (m *memoryStore) Redact(ctx context.Context, id, eventID string, by Sender, reason string) error {

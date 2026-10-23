@@ -12,7 +12,6 @@
 package postgres
 
 import (
-	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -634,6 +633,33 @@ func (s *Store) FileRef(ctx context.Context, id string, d session.Digest) (strin
 	return ref, nil
 }
 
+// FileRecord answers the record of the file of the session id whose
+// digest is d: the first live user.message or files.kept that records
+// it, read from the events of those two types whose payload holds the
+// digest rather than from the whole log.
+func (s *Store) FileRecord(ctx context.Context, id string, d session.Digest) (session.FileRecord, error) {
+	if err := session.CheckID(session.PrefixSession, id); err != nil {
+		return session.FileRecord{}, err
+	}
+	if !d.Valid() {
+		return session.FileRecord{}, fmt.Errorf("%w: digest %q", session.ErrInvalid, d)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT seq, id, type, time, thread, turn, step, payload FROM events
+		WHERE session_id = $1 AND type = ANY($2) AND NOT redacted AND strpos(payload, $3) > 0 ORDER BY seq`,
+		id, []string{string(session.TypeUserMessage), string(session.TypeFilesKept)}, string(d))
+	if err != nil {
+		return session.FileRecord{}, fmt.Errorf("postgres: read the record of the file of %s with the digest %s: %w", id, d, err)
+	}
+	evs, err := scanEvents(rows, id)
+	if err != nil {
+		return session.FileRecord{}, err
+	}
+	if r, ok := session.FindRecord(evs, d); ok {
+		return r, nil
+	}
+	return session.FileRecord{}, fmt.Errorf("%w: no event of %s records a file with the digest %s", session.ErrNotFound, id, d)
+}
+
 func (s *Store) Append(ctx context.Context, id string, afterSeq uint64, events []session.Event) (uint64, error) {
 	return s.append(ctx, id, afterSeq, events, 0)
 }
@@ -698,6 +724,12 @@ func queryEvents(ctx context.Context, q querier, id string, from uint64, limit i
 	if err != nil {
 		return nil, fmt.Errorf("postgres: read events of %s: %w", id, err)
 	}
+	return scanEvents(rows, id)
+}
+
+// scanEvents reads the events of the session id that rows selects as
+// seq, id, type, time, thread, turn, step and payload, and closes rows.
+func scanEvents(rows pgx.Rows, id string) ([]session.Event, error) {
 	out := []session.Event{}
 	for rows.Next() {
 		var e session.Event
@@ -836,7 +868,7 @@ func (s *Store) Blob(ctx context.Context, id string, d session.Digest) (io.ReadC
 	if session.DigestOf(body) != d {
 		return nil, fmt.Errorf("%w: blob %s does not match its digest", session.ErrCorrupt, d)
 	}
-	return io.NopCloser(bytes.NewReader(body)), nil
+	return session.NewBlobBody(body), nil
 }
 
 func (s *Store) Redact(ctx context.Context, id, eventID string, by session.Sender, reason string) error {

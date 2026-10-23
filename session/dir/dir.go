@@ -544,7 +544,7 @@ func (s *Store) Blob(ctx context.Context, id string, d session.Digest) (io.ReadC
 		if session.DigestOf(b) != d {
 			return nil, fmt.Errorf("%w: blob %s does not match its digest", session.ErrCorrupt, d)
 		}
-		return io.NopCloser(bytes.NewReader(b)), nil
+		return session.NewBlobBody(b), nil
 	}
 	b, err := os.ReadFile(blobPath(s.dir(id), d))
 	if err != nil {
@@ -556,7 +556,7 @@ func (s *Store) Blob(ctx context.Context, id string, d session.Digest) (io.ReadC
 	if session.DigestOf(b) != d {
 		return nil, fmt.Errorf("%w: blob %s does not match its digest", session.ErrCorrupt, d)
 	}
-	return io.NopCloser(bytes.NewReader(b)), nil
+	return session.NewBlobBody(b), nil
 }
 
 // Redact tombstones one event and its companions (session.Companions),

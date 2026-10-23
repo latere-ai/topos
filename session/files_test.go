@@ -5,6 +5,7 @@ package session
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -123,4 +124,49 @@ func mustEvent(t *testing.T, typ Type, payload any) Event {
 		t.Fatal(err)
 	}
 	return e
+}
+
+// TestAFileIsFoundByItsFirstLiveRecord: a digest an attachment or a kept
+// file names is found with the media type and size of the first live
+// event that records it, whether or not a folder holds it; a redacted
+// event and an event of another type record nothing.
+func TestAFileIsFoundByItsFirstLiveRecord(t *testing.T) {
+	d, other := DigestOf([]byte("a")), DigestOf([]byte("bb"))
+	msg := mustEvent(t, TypeUserMessage, UserMessage{Attachments: []Attachment{{Name: "a", MediaType: "text/plain", Size: 1, Blob: d, Path: "attachments/e/a"}}})
+	kept := mustEvent(t, TypeFilesKept, FilesKept{Message: "evt", Files: []KeptFile{{Blob: d, MediaType: "text/markdown", Size: 1}, {Blob: other, MediaType: "application/pdf", Size: 2, Ref: "results/1/b"}}})
+	status := mustEvent(t, TypeSessionStatus, SessionStatus{Status: StatusIdle})
+	if r, ok := FindRecord([]Event{status, msg, kept}, d); !ok || r != (FileRecord{MediaType: "text/plain", Size: 1}) {
+		t.Errorf("the first record of a: %+v %t", r, ok)
+	}
+	if r, ok := FindRecord([]Event{status, msg, kept}, other); !ok || r != (FileRecord{MediaType: "application/pdf", Size: 2}) {
+		t.Errorf("a file of the folder: %+v %t", r, ok)
+	}
+	red := msg
+	red.Payload = []byte(`{"tombstone":true}`)
+	if r, ok := FindRecord([]Event{red, kept}, d); !ok || r.MediaType != "text/markdown" {
+		t.Errorf("past a redacted record: %+v %t", r, ok)
+	}
+	if _, ok := FindRecord([]Event{status, red}, d); ok {
+		t.Error("a log of no live record found one")
+	}
+}
+
+// TestABlobBodyStatesItsLength: a blob's body reads its bytes, writes the
+// rest of them, and states their whole length however much was read.
+func TestABlobBodyStatesItsLength(t *testing.T) {
+	b := NewBlobBody([]byte("hello"))
+	p := make([]byte, 2)
+	if n, err := b.Read(p); err != nil || n != 2 || string(p) != "he" {
+		t.Fatalf("read %d %q %v", n, p, err)
+	}
+	var rest strings.Builder
+	if n, err := b.WriteTo(&rest); err != nil || n != 3 || rest.String() != "llo" {
+		t.Fatalf("wrote %d %q %v", n, rest.String(), err)
+	}
+	if b.Size() != 5 {
+		t.Fatalf("size %d", b.Size())
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

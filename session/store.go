@@ -374,7 +374,31 @@ func SweepBlobs(ctx context.Context, b Blobs, gone func(ctx context.Context, id 
 	return errors.Join(errs...)
 }
 
-// Store keeps sessions, their logs and their blobs (spec 004).
+// BlobBody is a blob's body as a store that holds it whole answers Blob:
+// its bytes from the start, and their length, which a reader of the blob
+// states before it copies them, as the blob route states its
+// Content-Length. Every store of this module answers one.
+type BlobBody struct{ r *bytes.Reader }
+
+// NewBlobBody is the body of b, which it reads in place without a copy.
+func NewBlobBody(b []byte) *BlobBody { return &BlobBody{r: bytes.NewReader(b)} }
+
+// Read reads the next bytes of the body.
+func (b *BlobBody) Read(p []byte) (int, error) { return b.r.Read(p) }
+
+// WriteTo writes the rest of the body to w, so io.Copy needs no buffer
+// of its own.
+func (b *BlobBody) WriteTo(w io.Writer) (int64, error) { return b.r.WriteTo(w) }
+
+// Size is the body's whole length in bytes, however much of it was read.
+func (b *BlobBody) Size() int64 { return b.r.Size() }
+
+// Close does nothing: the body holds no resource.
+func (*BlobBody) Close() error { return nil }
+
+// Store keeps sessions, their logs and their blobs (spec 004). Blob's
+// reader states the body's length with a Size() int64 method where the
+// store knows it, as a *BlobBody does.
 type Store interface {
 	Create(ctx context.Context, s Session, blobs map[Digest][]byte) error
 	Get(ctx context.Context, id string) (Session, error)
