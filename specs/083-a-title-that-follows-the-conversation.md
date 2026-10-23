@@ -6,7 +6,7 @@ depends_on: [.archive/004-session-log.md, .archive/006-identity.md, .archive/007
 affects: [manifest/v1/, manifest/, session/, harness/, runner/, authorizer/, prompts/, internal/server/, internal/runnerapi/, internal/runnerrole/, cmd/toposd/, test/tasks/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-19
-updated: 2026-10-19
+updated: 2026-10-23
 author: changkun
 ---
 
@@ -217,7 +217,7 @@ runs.
 |---|---|---|
 | `spec.title` decodes with and without `model`, an empty `model` is refused, and the setting is read from the agent's latest version | `manifest/v1.TestATitleDecodesWithAndWithoutAModel`, `manifest.TestAnAgentTurnsTitlesOn`, `runner.TestTheTitleSettingIsTheAgentsLatest`, `runner.TestATurnOfASessionWithoutTitlesCostsLittle`, `internal/server.TestTheTitleSettingIsReadFromTheLatestVersion` | built |
 | After an idle turn a person started, the runner asks `session.title` with the resource above and sends one request with the title prompt, the window, no tools and `max_tokens` 64; the answer is appended as `session.title_changed` by `service:harness` with its `model.request` (`purpose` `title`) in one batch, `updated_at` unchanged | `runner.TestATitleFollowsATurnAPersonStarted`, `internal/server.TestATitleAsksTheInitiator`, `harness.TestATitleRequestNamesTheConversation`, `harness.TestTheTitleWindow`, `session.TestATitlesRequestKeepsTheUpdateTime`, `session/storetest` `ATitleKeepsTheUpdateTime` (memory, directory and Postgres stores), `cmd/toposd.TestServeNamesItsSessions`, `cmd/toposd.TestTheRunnerRoleNamesASession` | built |
-| No title is asked after a trigger's turn, a turn that ended the session or left input pending, a turn whose budget is spent, or in a session a person renamed (copied rename included) | `runner.TestNoTitleIsAskedWhenItIsNotDue`, `runner.TestBlockedAndStartedByPerson`, `runner.TestAPersonsRenameAndAnEndWinOverATitle`, `runner.TestATitlesAppendIsDecidedOverWhatItRaced`, `session.TestAHarnessTitleOverAnotherTitleChangesNothing` | built |
+| No title is asked after a trigger's turn, a turn that ended the session or left input pending, a turn whose budget is spent, or in a session a person renamed (copied rename included) | `runner.TestNoTitleIsAskedWhenItIsNotDue`, `runner.TestBlockedAndStartedByPerson`, `runner.TestAPersonsRenameAndAnEndWinOverATitle`, `runner.TestATitlesAppendIsDecidedOverWhatItRaced`, `runner.TestATitleThatReadAnEndAppendsNothing`, `session.TestAHarnessTitleOverAnotherTitleChangesNothing` | built |
 | `KEEP`, an empty, an invalid, a too long and an unchanged answer write no title; a failed, denied or timed-out request writes no `session.error` and leaves the status idle | `harness.TestATitleAnswerThatWritesNoTitle`, `harness.TestAFailedTitleRequestIsRecorded`, `harness.TestATitleThatCannotBeRecorded`, `runner.TestATitleThatFailsChangesNothing`, `runner.TestInputDuringTheTitleStartsTheNextTurn` | built |
 | The request runs on the allow's model, else the name asked; an agent's named model that resolves to nothing the installation runs sends nothing, and the session's model is the fallback only when the agent names none | `runner.TestATitleRunsOnTheModelTheAllowNames`, `runner.TestATitleThatFailsChangesNothing`, `runner.TestTitleNames`, `harness.TestATitleRunsOnTheFirstModelThatConnects` | built |
 | No delta of a title request reaches the observer, and input that arrived during the request starts the next turn on the same lease | `runner.TestATitleFollowsATurnAPersonStarted`, `harness.TestATitleRequestNamesTheConversation`, `runner.TestInputDuringTheTitleStartsTheNextTurn`, `runner.TestInputAtTheTurnsEndStartsTheNextTurn`, `internal/server.TestADeleteWaitsForATitlesLease` | built |
@@ -272,7 +272,9 @@ differs from the draft in these points:
   again when the store refused it for events between: a person's
   `session.title_changed` among them leaves the harness's change out,
   the request still recorded, and a `session.status` ended leaves
-  everything out, logged. `session.ApplyBatch` also moves the header by a
+  everything out, logged. An end the title's own read holds leaves it
+  out too: the status the title checked was read before its log, so an
+  end can land between the two. `session.ApplyBatch` also moves the header by a
   harness change only from the title it names as `old`.
 - **A delete waits for the title.** `DELETE /v1/sessions/{id}` of an idle
   session whose lease a runner holds tries again every 250 ms for

@@ -394,6 +394,11 @@ func (r *Runner) drive(ctx context.Context, id string, lease session.Lease, serv
 			}
 		}
 		if err := r.running(ctx, log); err != nil {
+			// A session the end route or the reaper ended while it was
+			// idle lets its machine go as one its turn ended does.
+			if errors.Is(err, ErrEnded) {
+				return harness.Outcome{}, errors.Join(err, cfg.Machine.Release(ctx, true))
+			}
 			return harness.Outcome{}, err
 		}
 	}
@@ -436,8 +441,7 @@ func (r *Runner) running(ctx context.Context, log *Log) error {
 	if err != nil {
 		return err
 	}
-	_, err = log.Append(ctx, []session.Event{e})
-	return err
+	return log.claim(ctx, []session.Event{e})
 }
 
 // opened records a machine the session has: at the session's first

@@ -52,7 +52,7 @@ func (l *Log) Last() uint64 {
 func (l *Log) Append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	foreign, err := l.append(ctx, batch)
+	foreign, err := l.append(ctx, batch, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (l *Log) Append(ctx context.Context, batch []session.Event) ([]session.Even
 func (l *Log) appendBeside(ctx context.Context, batch []session.Event) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	foreign, err := l.append(ctx, batch)
+	foreign, err := l.append(ctx, batch, nil)
 	if err != nil {
 		return err
 	}
@@ -78,8 +78,36 @@ func (l *Log) appendBeside(ctx context.Context, batch []session.Event) error {
 	return nil
 }
 
-// append is Append's work under l.mu.
-func (l *Log) append(ctx context.Context, batch []session.Event) ([]session.Event, error) {
+// claim appends a claim's session.status running as Append does, unless
+// one of the events others appended since the log last read is a
+// session.status that ended the session: the end route and the reaper end
+// an idle session whoever holds its lease, and an ended session takes no
+// more events, so nothing is appended and the answer wraps ErrEnded.
+func (l *Log) claim(ctx context.Context, batch []session.Event) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, err := l.append(ctx, batch, func(foreign []session.Event) error {
+		if slices.ContainsFunc(foreign, ends) {
+			return fmt.Errorf("%w: %s", ErrEnded, l.id)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	l.beside = nil
+	return nil
+}
+
+// ends reports whether e is a session.status that ended its session.
+func ends(e session.Event) bool {
+	var st session.SessionStatus
+	return e.Type == session.TypeSessionStatus && !e.Redacted() && e.Decode(&st) == nil && st.Status == session.StatusEnded
+}
+
+// append is Append's work under l.mu. A refuse that answers an error for
+// what others appended since the log last read appends nothing.
+func (l *Log) append(ctx context.Context, batch []session.Event, refuse func([]session.Event) error) ([]session.Event, error) {
 	select {
 	case <-l.lost:
 		return nil, ErrLeaseLost
@@ -88,6 +116,11 @@ func (l *Log) append(ctx context.Context, batch []session.Event) ([]session.Even
 	foreign, err := l.st.Events(ctx, l.id, l.last+1, 0)
 	if err != nil {
 		return nil, err
+	}
+	if refuse != nil {
+		if err := refuse(foreign); err != nil {
+			return nil, err
+		}
 	}
 	if n := len(foreign); n > 0 {
 		l.last = foreign[n-1].Seq
@@ -136,14 +169,15 @@ var (
 const titleAppends = 8
 
 // appendTitle appends a title's batch as Append does, deciding what to
-// append from the events others appended since after, the last sequence
-// the title read, which are read in the same step as the store takes the
-// batch after them: when one is a session.status that ended the session,
-// nothing is appended and the answer is errTitleEnded; when one is a
-// person's session.title_changed, the batch's session.title_changed is
-// left out, the rest appended, and the answer is errTitleRenamed. A batch
-// the store refuses for events appended between the read and the append
-// is decided again over them, titleAppends times at most.
+// append from the events others appended since the log last read, which
+// are read in the same step as the store takes the batch after them: when
+// one is a session.status that ended the session, nothing is appended and
+// the answer is errTitleEnded; when one after after, the last sequence the
+// title read, is a person's session.title_changed, the batch's
+// session.title_changed is left out, the rest appended, and the answer is
+// errTitleRenamed. A batch the store refuses for events appended between
+// the read and the append is decided again over them, titleAppends times
+// at most.
 func (l *Log) appendTitle(ctx context.Context, batch []session.Event, after uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -164,12 +198,13 @@ func (l *Log) appendTitle(ctx context.Context, batch []session.Event, after uint
 		l.beside = append(l.beside, foreign...)
 		var renamed bool
 		for _, e := range foreign {
-			var st session.SessionStatus
 			var tc session.TitleChanged
+			// An end refuses the title even when the title read it, since
+			// the status the title checked was read before its log.
 			switch {
-			case e.Seq <= after || e.Redacted():
-			case e.Type == session.TypeSessionStatus && e.Decode(&st) == nil && st.Status == session.StatusEnded:
+			case ends(e):
 				return errTitleEnded
+			case e.Seq <= after || e.Redacted():
 			case e.Type == session.TypeTitleChanged && e.Decode(&tc) == nil && tc.By.Kind == session.SenderPerson:
 				renamed = true
 			}

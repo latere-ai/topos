@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md, 004-session
 affects: [runner/, internal/queue/, internal/runnerrole/, internal/runnerapi/, internal/serve/, internal/store/postgres/, session/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-23
 author: changkun
 ---
 
@@ -73,7 +73,13 @@ one (`ErrNotFound`).
 
 1. Take the lease: `Store.Acquire` in process, a claim in the queue.
 2. Append `session.status` `running` with the runner's `id` and `kind`
-   (`local`, `serve` or `runner`), before anything else.
+   (`local`, `serve` or `runner`), before anything else. The append
+   follows what others appended since the runner read the session, and
+   when one of those is a `session.status` that ended it, as the end
+   route and the reaper write to an idle session whoever holds its
+   lease, nothing is appended and the drive stops with `ErrEnded`, so
+   an ended session never runs again. A claim that starts the next turn
+   from pending input checks the same.
 3. Attach the machine ([[009-machines]]); append `session.machine`
    when it is the first attachment or the machine changed, and
    `memory.attached` for each store ([[020-memory-stores]]). A
@@ -293,6 +299,7 @@ columns and migrations ([[014-store]]); credential resolution
 | A message's files are written into the machine when it is recorded and before each step of a turn on an open machine, once per machine | `runner.TestAMessagesFilesReachTheMachine` | built |
 | An `end_on_idle` session ends and its machine is released for good; a harness configuration that cannot start is reported | `runner.TestAnEndOnIdleSessionEndsAndReleasesTheMachine`, `runner.TestDriveReportsAHarnessThatCannotStart` | built |
 | `Log.Append` reports the store's errors, including a log ahead of the store and a deleted session | `runner.TestLogAppendReportsTheStore` | built |
+| A claim that follows another writer's end of the session appends nothing and stops with `ErrEnded` | `runner.TestAClaimAfterAnEndAppendsNothing` | built |
 | The in-process queue claims a hosted session idle with pending input or running with no live lease, with its lease, and never one another runner holds, an answered one or an external one; `Notify` wakes a waiting claim | `runner.TestQueueClaimsHostedSessionsWithWork`, `runner.TestQueueWakesOnNotify` | built |
 | `Serve` drives the sessions it claims up to its capacity and reports a failed claim | `runner.TestServeDrivesTheSessionsItClaims` | built |
 | A turn that cannot start closes with its setup code and `idle` `error`, and is not claimed again until a new message | `runner.TestASetupFailureClosesTheTurn` | built |
