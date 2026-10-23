@@ -137,6 +137,10 @@ type UserMessage struct {
 	// the turn brought something to the person (spec 086); empty for every
 	// other message.
 	Notify string `json:"notify,omitempty"`
+	// Spend is the week of the trigger a firing's look counts toward, on
+	// the message of a firing that counts toward one (spec 087); nil on
+	// every other message.
+	Spend *MessageSpend `json:"spend,omitempty"`
 }
 
 // UserInterrupt is the payload of user.interrupt.

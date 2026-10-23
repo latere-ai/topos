@@ -254,6 +254,11 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 			if w := p.Wake; w != nil {
 				blocks = append([]lux.Block{text(wakeLine(*w, e.Time))}, blocks...)
 			}
+			// A firing that counts toward a trigger says what its watch has
+			// cost and whether it is ahead of pace (spec 087).
+			if p.FiringID != "" && p.Spend != nil {
+				blocks = append([]lux.Block{text(paceLine(*p.Spend, p.Wake != nil))}, blocks...)
+			}
 			if p.FiringID != "" && p.Judged() && o.Notify {
 				woken := prompts.Render(prompts.ContextWoken, prompts.Data{"Wake": p.Wake != nil, "Attended": o.Attended})
 				blocks = append([]lux.Block{text(woken)}, blocks...)

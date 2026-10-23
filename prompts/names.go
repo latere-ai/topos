@@ -647,6 +647,13 @@ const (
 	// own wake began it, and Attended, whether a question waits for the
 	// person.
 	ContextWoken Name = "context/woken-v1"
+	// ContextPace leads the message of a firing that counts toward a
+	// trigger, beside the woken context (spec 087): Spent, PerWeek,
+	// PerLook and Projected, amounts in USD as the person reads them,
+	// PerWeek and PerLook empty when the trigger has none; Looks, the
+	// looks expected in the window; Ahead, whether the projection passes
+	// the allowance; and Wake, whether a wake began the turn.
+	ContextPace Name = "context/pace-v1"
 	// ContextAttached takes First, whether the part is the first one,
 	// which opens with what the parts are, Title and Text: one context
 	// part an allow of the session's create attached (spec 058).

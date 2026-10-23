@@ -4019,6 +4019,28 @@ components:
           type: boolean
         answers:
           type: string
+    MessageSpend:
+      type: object
+      required:
+        - trigger_id
+        - window_days
+        - spent_usd_micro
+        - expected_looks
+      properties:
+        trigger_id:
+          type: string
+        window_days:
+          type: integer
+        spent_usd_micro:
+          type: integer
+        per_week_usd_micro:
+          type: integer
+        per_look_usd_micro:
+          type: integer
+        expected_looks:
+          type: integer
+        projected_usd_micro:
+          type: integer
     MessageWake:
       type: object
       required:
@@ -5660,6 +5682,8 @@ components:
           $ref: "#/components/schemas/MessageWake"
         notify:
           type: string
+        spend:
+          $ref: "#/components/schemas/MessageSpend"
     UserToolConfirmation:
       type: object
       description: Names exactly one of tool_use_id, a call that waits, and approval_id, an approval.requested that asks.

@@ -1,0 +1,3 @@
+<pace>
+{{if .PerWeek}}This watch may cost {{.PerWeek}} a week, and its looks of the last 7 days cost {{.Spent}}.{{else}}This watch has no weekly allowance, and its looks of the last 7 days cost {{.Spent}}.{{end}}{{if .PerLook}} A look costs about {{.PerLook}}, and {{.Looks}} looks, this one included, are expected before those 7 days' window ends: about {{.Projected}} in all.{{end}}{{if .Ahead}} That is ahead of pace: once the week's looks cost {{.PerWeek}}, no look starts until the oldest leave the 7 days. {{if .Wake}}Set your next wake later, and keep this look short.{{else}}Keep this look short, or propose a change to this trigger that looks less often, which the person confirms.{{end}}{{end}}
+</pace>

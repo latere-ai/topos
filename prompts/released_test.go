@@ -256,6 +256,7 @@ var released = map[string]string{
 	"results/trigger/deleted-v1.md":                  "b1a23dbb293026254dbe1a0fc6b9264ab786ce641f1a85e63acb1cc83172afdf",
 	"results/trigger/not-done-v1.md":                 "7c4d013d1e58ecac1ff0d41345eb07778d148b61cfe6dd00d2f151f3c27761ab",
 	"context/woken-v1.md":                            "dea97dbbc046dec0a33ced6bc85c6c510ae4184be4f91a289aec46c5de9f1bb2",
+	"context/pace-v1.md":                             "fae75e6288f0c8126ac1976f3c6712a84bf001ba401b7ad27bfccb6b145c338b",
 	"results/notify/again-v1.md":                     "287358c16a97eec457fd3997e68cdbea0a0521678be55accad3e6dc7d3214fc6",
 	"results/notify/invalid-v1.md":                   "ce0b61efb9f671cf83548018da293639753392afbc301d6948d7928a91793f1e",
 	"results/notify/noticed-v1.md":                   "19196574b202ac693647ec8d3e5861ddaa2d5dc2c764010fc61934d2b078340e",
