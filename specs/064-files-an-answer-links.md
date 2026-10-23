@@ -6,7 +6,7 @@ depends_on: [044-reading-a-sessions-files.md, 055-images-an-answer-shows.md]
 affects: [session/, harness/, runner/, machine/cella/, internal/server/, internal/runnerapi/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-11
-updated: 2026-10-11
+updated: 2026-10-23
 author: changkun
 ---
 
@@ -324,3 +324,16 @@ from the first draft in these points:
   `not_a_file`, so a keep never opens a file a read would wait on.
 - **The keep's bound moved** from 30 seconds for a message's images to
   the 72 seconds its images and linked files take at 1 MiB a second.
+
+Changed on 2026-10-23: the blob route labels a kept file that is no
+image with the media type its record names, the first live
+`user.message` attachment or `files.kept` entry that names its digest,
+and a blob no event records with the type its leading bytes give; every
+answer states the blob's length in `Content-Length`, and `HEAD` answers
+the headers alone. Inline is still decided by the bytes alone, and every
+answer keeps `nosniff` and the sandboxing policy, so a linked file is
+still a download that never opens as a document of the API's origin;
+only its label changed, and a client no longer reads a kept file's type
+and size from its record before it reads the file. The blob route's
+section above, and the criterion that names `application/octet-stream`,
+describe the route before this change.
