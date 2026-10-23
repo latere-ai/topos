@@ -108,13 +108,17 @@ func Resolve(ctx context.Context, docs []byte, o Options) ([]Resolved, error) {
 		return nil, err
 	}
 	var secrets []Problem
+	now := time.Now
+	if o.Now != nil {
+		now = o.Now
+	}
 	// An agent names a built-in of the default set, or one an agent holds
 	// only by naming it (spec 047), by the same rules.
 	builtins := append(Builtins(), tools.OptIn()...)
 	for _, ob := range objs {
 		d := &defaulter{doc: ob.doc, files: o.Files}
 		d.object(ob)
-		v := &validator{doc: ob.doc, builtins: builtins}
+		v := &validator{doc: ob.doc, builtins: builtins, now: now}
 		v.object(ob)
 		invalid = append(invalid, d.problems...)
 		invalid = append(invalid, beside(v.problems, invalid)...)

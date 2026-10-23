@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"latere.ai/x/topos/harness"
 	"latere.ai/x/topos/harness/tools"
@@ -322,7 +323,7 @@ func TestValidationRules(t *testing.T) {
 		{agent("a", m, "instructions: x", "instructionsFile: x.md"), "spec.instructionsFile", "not both"},
 		{agent("a", m, "instructionsFile: x.md"), "spec.instructionsFile", "reads no files"},
 		{agent("a", m, "tools: [read, read]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish or trigger"},
+		{agent("a", m, "tools: [deploy]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish, trigger or wake"},
 		{agent("a", m, "tools: ['bad name']"), "spec.tools[0].name", "not a tool name"},
 		{agent("a", m, "tools: [{outputLimit: 3}]"), "spec.tools[0].name", "required"},
 		{agent("a", m, "tools: [{name: read, outputLimit: -1}]"), "spec.tools[0].outputLimit", "negative"},
@@ -545,7 +546,7 @@ func TestTheTriggerFieldsOfSpec022(t *testing.T) {
 		t.Fatalf("a schedule trigger writes a field it does not set: %s", s)
 	}
 	for _, c := range []struct{ body, path, detail string }{
-		{eventTrigger("schedule: '@daily', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set schedule or on, not both"},
+		{eventTrigger("schedule: '@daily', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set one of schedule, on and at"},
 		{eventTrigger("on: {verbs: [push]}, session: {message: x}"), "spec.on.product", "required"},
 		{eventTrigger("on: {product: GitHub, verbs: [push]}, session: {message: x}"), "spec.on.product", "lowercase"},
 		{eventTrigger("on: {product: github}, session: {message: x}"), "spec.on.verbs", "required"},
@@ -668,7 +669,7 @@ func TestWebSearchIsAnOptInName(t *testing.T) {
 		{agent("a", m, "tools: [{name: web_search, client: true, description: x, inputSchema: {type: object}}]"), "spec.tools[0].name", "a client tool may not take a built-in's name"},
 		{agent("a", m, "tools: [{name: web_search, description: x}]"), "spec.tools[0]", "a built-in takes only name and outputLimit"},
 		{agent("a", m, "tools: [web_search, web_search]"), "spec.tools[1]", "repeats an earlier entry"},
-		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish or trigger"},
+		{agent("a", m, "tools: [web_searcher]"), "spec.tools[0].name", "not a built-in tool, web_search, history, question, publish, trigger or wake"},
 	} {
 		e := refused(t, CodeInvalidManifest, c.body, Options{})
 		if !hasProblem(e, c.path, c.detail) {
@@ -703,5 +704,40 @@ func TestHistoryIsAnOptInName(t *testing.T) {
 		if !hasProblem(e, c.path, c.detail) {
 			t.Errorf("%s: %s", c.body, e.Detail())
 		}
+	}
+}
+
+// TestTheTriggerFieldsOfSpec086: a one-shot trigger's at is RFC 3339 with
+// an offset, alone of schedule and on, and in the future of the
+// resolver's clock; a target names a session under policy continue with
+// no key; and a trigger that sets neither keeps its digest.
+func TestTheTriggerFieldsOfSpec086(t *testing.T) {
+	o := storedA(t)
+	o.Now = func() time.Time { return time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC) }
+	r := one(t, eventTrigger("at: '2026-10-23T12:00:00+02:00', session: {message: x, policy: continue, target: ses_01JAAAAAAAAAAAAAAAAAAAAAAA}"), o)
+	if r.Trigger.Spec.At == nil || !r.Trigger.Spec.At.Equal(time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)) || r.Trigger.Spec.Session.Target != "ses_01JAAAAAAAAAAAAAAAAAAAAAAA" {
+		t.Fatalf("the one-shot resolved as %+v", r.Trigger.Spec)
+	}
+	plain := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o)
+	if s := string(plain.Spec); strings.Contains(s, `"at"`) || strings.Contains(s, `"target"`) {
+		t.Fatalf("a schedule trigger writes a field it does not set: %s", s)
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{eventTrigger("at: '2026-10-23T08:00:00Z', session: {message: x}"), "spec.at", "in the past"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', schedule: '@daily', session: {message: x}"), "spec", "set one of schedule, on and at"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set one of schedule, on and at"},
+		{eventTrigger("session: {message: x}"), "spec.schedule", "or at for one time"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, target: ses_01JAAAAAAAAAAAAAAAAAAAAAAA}"), "spec.session.target", "only under policy continue"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, policy: continue, key: k, target: ses_01JAAAAAAAAAAAAAAAAAAAAAAA}"), "spec.session.target", "set target or key"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, policy: continue, target: chat}"), "spec.session.target", "not a ses_<ulid> id"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: '{{event.id}}'}"), "spec.session.message", "event path names nothing"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, o)
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: want %s: %s, got\n%s", strings.ReplaceAll(c.body, "\n", " "), c.path, c.detail, e.Detail())
+		}
+	}
+	if _, err := Resolve(t.Context(), []byte(eventTrigger("at: 'tomorrow', session: {message: x}")), o); err == nil {
+		t.Error("an at that is no RFC 3339 time resolved")
 	}
 }

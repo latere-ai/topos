@@ -57,6 +57,9 @@ type validator struct {
 	problems []Problem
 	secrets  []Problem
 	builtins []string
+	// now is the resolver's clock, which a one-shot trigger's time is
+	// held to.
+	now func() time.Time
 }
 
 func (v *validator) add(path, detail string) {
@@ -329,6 +332,7 @@ func (v *validator) model(at string, m v1.AgentModel) {
 var reservedFor = map[string]string{
 	harness.ToolQuestion: "harness's question tool", session.ToolPublish: "hosted runner's publish tool",
 	session.ToolTrigger:           "hosted runner's trigger tool",
+	session.ToolWake:              "hosted runner's wake tool",
 	harness.ToolRequestConnection: "harness's request_connection tool",
 }
 
@@ -353,7 +357,7 @@ func (v *validator) tools(at string, list []v1.Tool) {
 		// and trigger tools the hosted runner's (specs 043 and 086): an agent
 		// names each among its tools, and no client tool may take their
 		// names.
-		harnessTool := t.Name == harness.ToolQuestion || t.Name == session.ToolPublish || t.Name == session.ToolTrigger
+		harnessTool := t.Name == harness.ToolQuestion || t.Name == session.ToolPublish || t.Name == session.ToolTrigger || t.Name == session.ToolWake
 		switch {
 		case t.Client && builtin:
 			v.add(tp+".name", "a client tool may not take a built-in's name")
@@ -373,7 +377,7 @@ func (v *validator) tools(at string, list []v1.Tool) {
 				v.add(tp+".inputSchema", "a client tool needs an input schema")
 			}
 		case !builtin:
-			v.add(tp+".name", "not a built-in tool, web_search, history, question, publish or trigger; declare a client tool with client: true")
+			v.add(tp+".name", "not a built-in tool, web_search, history, question, publish, trigger or wake; declare a client tool with client: true")
 		case t.Description != "" || len(t.InputSchema) > 0:
 			v.add(tp, "a built-in takes only name and outputLimit")
 		}
@@ -527,15 +531,23 @@ func (v *validator) machine(at string, m v1.Machine) {
 
 func (v *validator) trigger(s v1.TriggerSpec) {
 	v.ref("spec.agent", s.Agent, session.PrefixAgent)
+	set := 0
+	for _, given := range []bool{s.Schedule != "", s.On != nil, s.At != nil} {
+		if given {
+			set++
+		}
+	}
 	switch {
-	case s.Schedule == "" && s.On == nil:
-		v.add("spec.schedule", "required: set schedule, or on for delivered events")
-	case s.Schedule != "" && s.On != nil:
-		v.add("spec", "set schedule or on, not both")
+	case set == 0:
+		v.add("spec.schedule", "required: set schedule, on for delivered events, or at for one time")
+	case set > 1:
+		v.add("spec", "set one of schedule, on and at")
 	case s.Schedule != "":
 		v.schedule("spec.schedule", s.Schedule)
-	default:
+	case s.On != nil:
 		v.on("spec.on", *s.On)
+	case !s.At.After(v.now()):
+		v.add("spec.at", "is in the past; a one-shot trigger fires at a time to come")
 	}
 	if s.TimeZone != "UTC" && !timeZone.MatchString(s.TimeZone) {
 		v.add("spec.timeZone", "not an IANA time zone name")
@@ -552,6 +564,20 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 	v.template("spec.session.key", ss.Key, scheduled)
 	if ss.Policy != "" {
 		v.oneOf("spec.session.policy", ss.Policy, v1.PolicyNew, v1.PolicyContinue)
+	}
+	// A target is the session a firing continues, in place of the one its
+	// key names (spec 086); the server holds it to an open session of the
+	// trigger's agent the applier may send to.
+	if ss.Target != "" {
+		switch {
+		case ss.Policy != v1.PolicyContinue:
+			v.add("spec.session.target", "set only under policy continue, whose firings continue a session")
+		case ss.Key != "":
+			v.add("spec.session.target", "names the session every firing continues, so a key names none; set target or key")
+		}
+		if session.CheckID(session.PrefixSession, ss.Target) != nil {
+			v.add("spec.session.target", "not a "+session.PrefixSession+"<ulid> id")
+		}
 	}
 	if m := ss.Machine; m != nil && m.Kind != "" {
 		v.oneOf("spec.session.machine.kind", m.Kind, v1.MachineHost, v1.MachineCella, session.MachineDevice)

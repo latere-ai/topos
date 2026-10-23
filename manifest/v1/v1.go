@@ -84,6 +84,26 @@ type Status struct {
 	// (spec 086), which the server writes and keeps across later applies;
 	// nil for a trigger a person or a program applied at the API.
 	Origin *TriggerOrigin `json:"origin,omitempty"`
+	// Paused is why and by whom a suspended Trigger was paused (spec 086),
+	// which the server writes when an apply suspends it, keeps while it
+	// stays suspended and clears when it resumes; nil while it runs.
+	Paused *TriggerPause `json:"paused,omitempty"`
+}
+
+// TriggerPause is the pause of a suspended Trigger (spec 086).
+type TriggerPause struct {
+	// Why is the sentence the agent gave when its trigger tool paused the
+	// trigger; empty for a suspend applied at the API.
+	Why string `json:"why,omitempty"`
+	// By is the subject the suspend was applied as: the person who applied
+	// it at the API, or the session's initiator for a session's call.
+	By string `json:"by"`
+	// SessionID and ToolUseID name the session call that paused the
+	// trigger; absent for a suspend applied at the API.
+	SessionID string `json:"sessionId,omitempty"`
+	ToolUseID string `json:"toolUseId,omitempty"`
+	// At is when the trigger was paused.
+	At time.Time `json:"at"`
 }
 
 // TriggerOrigin is the session call that made a Trigger (spec 086).
@@ -116,8 +136,11 @@ type TriggerCounts struct {
 	SkippedActive int64 `json:"skippedActive"`
 	SkippedBusy   int64 `json:"skippedBusy"`
 	SkippedLate   int64 `json:"skippedLate"`
-	Refused       int64 `json:"refused"`
-	Failed        int64 `json:"failed"`
+	// SkippedEnded counts the firings whose session.target had ended or
+	// was gone (spec 086).
+	SkippedEnded int64 `json:"skippedEnded"`
+	Refused      int64 `json:"refused"`
+	Failed       int64 `json:"failed"`
 }
 
 // Owner is an agent's owner: Type is "user" or "organization".

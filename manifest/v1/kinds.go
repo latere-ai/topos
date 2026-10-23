@@ -3,6 +3,8 @@
 
 package v1
 
+import "time"
+
 // Values of ConnectionSpec.Mode.
 const (
 	ConnectionPerson = "person"
@@ -21,21 +23,26 @@ const (
 	PolicyContinue = "continue"
 )
 
-// TriggerSpec is what a trigger fires on, a schedule or delivered
-// events, and the session each firing starts or continues (spec 022).
-// The fields spec 022 added (On, MaxActive, and the session's Policy and
-// Key) are omitted when unset and take their defaults where the trigger
-// fires, so a trigger that sets none of them keeps its digest.
+// TriggerSpec is what a trigger fires on, a schedule, delivered events or
+// one time, and the session each firing starts or continues (spec 022).
+// The fields specs 022 and 086 added (On, At, MaxActive, and the session's
+// Policy, Key and Target) are omitted when unset and take their defaults
+// where the trigger fires, so a trigger that sets none of them keeps its
+// digest.
 type TriggerSpec struct {
 	// Agent references the agent the sessions run; the resolved spec
 	// holds its id, so the trigger runs the agent's latest version.
 	Agent string `json:"agent"`
 	// Schedule is a five-field cron expression, or @hourly, @daily or
-	// @weekly. A trigger sets Schedule or On, never both.
+	// @weekly. A trigger sets exactly one of Schedule, On and At.
 	Schedule string `json:"schedule,omitempty"`
 	TimeZone string `json:"timeZone"`
 	// On selects the delivered events the trigger fires on.
-	On           *TriggerOn     `json:"on,omitempty"`
+	On *TriggerOn `json:"on,omitempty"`
+	// At is the one time a one-shot trigger fires, RFC 3339 with an
+	// offset; its firing spends the trigger, which the server then deletes
+	// (spec 086).
+	At           *time.Time     `json:"at,omitempty"`
 	Session      TriggerSession `json:"session"`
 	SkipIfActive *bool          `json:"skipIfActive"`
 	// MaxActive bounds the trigger's sessions active at once;
@@ -73,7 +80,12 @@ type TriggerSession struct {
 	Policy string `json:"policy,omitempty"`
 	// Key is the name a firing's session goes by: "" on a schedule and
 	// {{event.resource}} on an event when unset.
-	Key       string            `json:"key,omitempty"`
+	Key string `json:"key,omitempty"`
+	// Target is the open session, ses_ and the rest, every firing of a
+	// trigger under PolicyContinue sends its message to in place of the
+	// session its key names (spec 086); a firing whose target has ended
+	// or is gone starts nothing.
+	Target    string            `json:"target,omitempty"`
 	Machine   *SessionMachine   `json:"machine,omitempty"`
 	Resources []SessionResource `json:"resources,omitempty"`
 	Budget    *Budget           `json:"budget,omitempty"`

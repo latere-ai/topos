@@ -77,6 +77,13 @@ func newError(code string, docs int, problems []Problem) *Error {
 	return &Error{Code: code, Message: messages[code], Problems: problems, docs: docs}
 }
 
+// Invalid is a refused manifest of one document with one problem, at
+// path, which a server finds where the resolver cannot look: a field that
+// names an object the server holds in a state the field does not take.
+func Invalid(path, detail string) *Error {
+	return newError(CodeInvalidManifest, 1, []Problem{{Path: path, Detail: detail}})
+}
+
 // Code returns the manifest code of err, or "" when err is not a
 // refused manifest.
 func Code(err error) string {
