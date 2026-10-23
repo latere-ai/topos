@@ -59,6 +59,7 @@ when it resumes.
 | `timeZone` | the IANA time zone the schedule is read in |
 | `on` | in place of `schedule`: the events each run starts on, as a Trigger's `on` |
 | `notify` | `always` to bring every run's result to the person, `judged` to leave it to the agent, which a quiet run records (see `docs/quiet-runs.md`); absent, `always` for a schedule and `judged` for events when the agent names `notify` |
+| `perWeekUsd` | the agent's estimate, in USD, of what the trigger's runs cost in a week, such as `0.40`, which becomes its allowance (see `docs/allowances.md`); a change without it keeps the allowance |
 
 Show the offer as a choice between two answers: do it, or leave it as it
 is. A Go client reads a schedule into days and a time with
@@ -134,7 +135,10 @@ held, with `origin` naming the session and the call, and once after the
 allow, with `confirmed_by` added. A proposal asks `trigger.create`, a
 change, a pause and a resume `trigger.update`, and a delete
 `trigger.delete`, the last three about the trigger as it is stored. A
-pause asks once, with no `confirmed_by`. A list asks `trigger.list`
+pause asks once, with no `confirmed_by`. A proposal or a change with
+`perWeekUsd` carries `budget: {"per_week_usd_micro": n}`, so an
+authorizer can refuse an offer without an allowance, or above what the
+person may spend, before the person is asked. A list asks `trigger.list`
 naming the `owner` and the `agent`. An authorizer that knows no `origin`
 reads the question as its owner's own apply, so an installation's
 authorizer that holds the confirmation to the owner rolls out before the

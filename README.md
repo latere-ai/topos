@@ -165,6 +165,12 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 - [docs/reading-files.md](docs/reading-files.md): reading the files a
   person sent, an answer kept and the working directory holds, with their
   media types and sizes.
+- [docs/allowances.md](docs/allowances.md): a weekly allowance on a
+  trigger, the week its runs have spent, and the pace each run is told.
+- [docs/unattended-turns.md](docs/unattended-turns.md): how a turn
+  nobody watches is decided, and the `attended` the log records.
+- [docs/context-report.md](docs/context-report.md): how full a
+  conversation's context is, and what fills it.
 
 ## Contributing
 
