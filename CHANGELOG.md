@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.55.0 - 2026-10-23
+
 ### Added
 
 - **One switch holds every trigger a person owns.** `GET /v1/triggers/hold` answers `{held, since}` for the caller, and `PUT /v1/triggers/hold` with `{"held": true}` or `{"held": false}` holds or releases every trigger they own, across every context. While held, the minute loop fires none of their triggers and records nothing, the fire route answers `conflict`, and a one-shot whose time passes keeps it; an agent's `trigger` and `wake` calls go on, and their results say every trigger is paused. On release a schedule starts from then and fires nothing it missed, and a one-shot fires within the minute, a late wake saying when it was due. A trigger's own `suspend` stays as it was. Both routes ask the new action `trigger.hold`, naming `owner` and, to set it, `held`; roll the authorizer that answers it first. No trigger may be named `hold`. See `docs/holding-triggers.md`.
