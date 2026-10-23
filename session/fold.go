@@ -42,6 +42,13 @@ type Transcript struct {
 	Messages []lux.Message `json:"messages"`
 	Open     []string      `json:"open"`
 	Unknown  []string      `json:"unknown"`
+	// Attached are the blocks of Messages that name the files persons
+	// brought and carry the texts of the ones read inline (spec 079), and
+	// Summaries the blocks that stand for compacted history (spec 010):
+	// the parts of the messages the context report counts apart (spec
+	// 087).
+	Attached  []lux.Block `json:"-"`
+	Summaries []lux.Block `json:"-"`
 }
 
 // Check returns ErrSchemaTooNew when the transcript met event types this
@@ -263,10 +270,13 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 					named = prompts.Render(prompts.TranscriptAttachmentsDevice, prompts.Data{"Attachments": p.Attachments})
 				}
 				blocks = append(blocks, text(named))
+				t.Attached = append(t.Attached, text(named))
 				for _, a := range p.Attachments {
 					if body, ok := o.Texts[a.Blob]; ok && a.Inline {
 						body = strings.TrimRight(body, "\r\n")
-						blocks = append(blocks, text(prompts.Render(prompts.TranscriptAttachmentText, prompts.Data{"Path": a.Path, "Fence": fence(body), "Text": body})))
+						inline := text(prompts.Render(prompts.TranscriptAttachmentText, prompts.Data{"Path": a.Path, "Fence": fence(body), "Text": body}))
+						blocks = append(blocks, inline)
+						t.Attached = append(t.Attached, inline)
 					}
 				}
 			}
@@ -447,6 +457,11 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 			continue
 		}
 		t.Messages = append(t.Messages, lux.Message{Role: it.role, Blocks: slices.Clone(it.blocks)})
+	}
+	for _, r := range ranges {
+		if r.emitted {
+			t.Summaries = append(t.Summaries, summary(r, o.History))
+		}
 	}
 	return t, nil
 }

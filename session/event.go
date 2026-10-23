@@ -366,7 +366,51 @@ type ModelRequest struct {
 	// thread, or a compaction's summary, which its context.compacted
 	// names.
 	Purpose string `json:"purpose,omitempty"`
+	// Context is what the request held of the model's input window (spec
+	// 087); nil on a request beside the conversation, a title's, and on
+	// one written before it.
+	Context *ContextReport `json:"context,omitempty"`
 }
+
+// ContextReport is how full a request left its model's input window
+// (spec 087): Window, the model's input window from the catalog, 0 when
+// it names none; Used, the input tokens the request used, as Source says
+// they were counted; and Parts, the request's parts in ReportParts order,
+// each the harness's estimate scaled so the parts but free sum to Used,
+// and free the window less Used, never below 0.
+type ContextReport struct {
+	Window int64        `json:"window"`
+	Used   int64        `json:"used"`
+	Source string       `json:"source"`
+	Parts  []ReportPart `json:"parts"`
+}
+
+// ReportPart is one part of a ContextReport and its tokens.
+type ReportPart struct {
+	Part   string `json:"part"`
+	Tokens int64  `json:"tokens"`
+}
+
+// The sources of a ContextReport's Used: the provider's count of the
+// request's prompt tokens, or, for a request it counted none of, the
+// harness's estimate (spec 010).
+const (
+	ContextFromProvider = "provider"
+	ContextFromEstimate = "estimate"
+)
+
+// The parts of a ContextReport, in the order it lists them: the system
+// prompt, the tool definitions, the conversation, the files persons
+// brought that the request names and carries, the summary of compacted
+// history, and what the window has left.
+const (
+	ReportInstructions = "instructions"
+	ReportTools        = "tools"
+	ReportMessages     = "messages"
+	ReportFiles        = "files"
+	ReportSummary      = "summary"
+	ReportFree         = "free"
+)
 
 // PurposeTitle is the purpose of a model.request that asked for the
 // session's title after a turn (spec 083). Its cost is the session's, and

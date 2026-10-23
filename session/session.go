@@ -359,6 +359,11 @@ type Session struct {
 	// Notice is the latest notify of the session's own thread, nil before
 	// any (spec 086).
 	Notice *Notice `json:"notice,omitempty"`
+	// ContextReport is the context of the latest model.request of the
+	// session's own thread that records one (spec 087), nil before any. A
+	// subagent's requests and a title's leave it. It is not Context, the
+	// text an allow attached.
+	ContextReport *ContextReport `json:"context_report,omitempty"`
 }
 
 // Folder is a folder of an Arca-compatible files API (spec 068): the

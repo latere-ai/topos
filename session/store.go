@@ -522,7 +522,8 @@ func SameEvent(a, b Event) bool {
 // the base network each authorizer's session.network_changed replaces,
 // the connections of the last session.connections_changed, whether the
 // session's folder holds a file (spec 068), the pending wake, the latest
-// turn's outcome and the latest notice (spec 086), and the spend, which
+// turn's outcome and the latest notice (spec 086), the latest context
+// report of the session's own thread (spec 087), and the spend, which
 // each
 // model.request's and each charged tool.result's cost adds to as Spent
 // counts it. A title change does not move the update time, so a list
@@ -561,6 +562,9 @@ func ApplyBatch(s *Session, events []Event) {
 		}
 		if e.Type == TypeModelRequest || e.Type == TypeToolResult {
 			s.Budget.SpentCostUSDMicro += Cost(e)
+			if c := contextOf(e); c != nil {
+				s.ContextReport = c
+			}
 			if n := noticeOf(e); n != nil && !s.Copied(e) {
 				s.Notice = n
 			}
@@ -628,6 +632,21 @@ func ApplyBatch(s *Session, events []Event) {
 			}
 		}
 	}
+}
+
+// contextOf is the context report a model.request of the session's own
+// thread records, nil for any other event, a title's request, and a
+// request that records none. A fork's copied request reports the context
+// of the conversation the fork holds, so it is read as any other.
+func contextOf(e Event) *ContextReport {
+	if e.Type != TypeModelRequest || e.Thread != "" || e.Redacted() {
+		return nil
+	}
+	var p ModelRequest
+	if e.Decode(&p) != nil || p.Purpose != "" {
+		return nil
+	}
+	return p.Context
 }
 
 // CheckSequence reports ErrCorrupt when events are not dense from their
