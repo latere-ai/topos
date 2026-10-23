@@ -62,6 +62,10 @@ const (
 	ActionTriggerUpdate = "trigger.update"
 	ActionTriggerDelete = "trigger.delete"
 	ActionTriggerFire   = "trigger.fire"
+	// ActionTriggerHold reads or sets the hold over every trigger an owner
+	// holds (spec 086): its resource names the owner, and held when it
+	// sets it.
+	ActionTriggerHold = "trigger.hold"
 
 	ActionCredentialCreate = "credential.create"
 	ActionCredentialRead   = "credential.read"
@@ -110,6 +114,7 @@ var table = []authz.Action{
 	{Name: ActionTriggerUpdate, Kind: KindTrigger},
 	{Name: ActionTriggerDelete, Kind: KindTrigger},
 	{Name: ActionTriggerFire, Kind: KindTrigger},
+	{Name: ActionTriggerHold, Kind: KindTrigger},
 
 	{Name: ActionCredentialCreate, Kind: KindCredential},
 	{Name: ActionCredentialRead, Kind: KindCredential},
