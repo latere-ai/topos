@@ -293,6 +293,12 @@ func (s *Server) listed(ctx context.Context, t store.Trigger) (runner.ListedTrig
 	if doc.Spec.On != nil {
 		l.Product = doc.Spec.On.Product
 	}
+	if b := doc.Spec.Budget; b != nil {
+		l.PerWeekUSDMicro = new(b.PerWeek)
+	}
+	if t.Spend != nil {
+		l.SpentUSDMicro = new(t.Spend.SpentUSDMicro)
+	}
 	if l.Held, err = s.held(ctx, t.Owner); err != nil {
 		return runner.ListedTrigger{}, err
 	}

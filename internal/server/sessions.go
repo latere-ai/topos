@@ -281,6 +281,9 @@ type creation struct {
 	// notify is the first message's notify, session.NotifyJudged for a
 	// firing of a judged trigger (spec 086).
 	notify string
+	// spend is the week of the trigger the firing counts toward, which the
+	// first message carries (spec 087); nil for none.
+	spend *session.MessageSpend
 	// resources are checked repositories; none takes the agent's.
 	resources []session.Resource
 	// machine is the device the create names (spec 080), nil for the
@@ -636,7 +639,7 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	if in.message == "" {
 		return sess, nil
 	}
-	msg := session.UserMessage{Sender: in.sender, Content: []lux.Block{{Type: ir.BlockText, Text: in.message}}, FiringID: in.firingID, Notify: in.notify}
+	msg := session.UserMessage{Sender: in.sender, Content: []lux.Block{{Type: ir.BlockText, Text: in.message}}, FiringID: in.firingID, Notify: in.notify, Spend: in.spend}
 	ev, err := session.NewEvent(session.TypeUserMessage, msg, now)
 	if err != nil {
 		return session.Session{}, err

@@ -77,6 +77,7 @@ func renderTrigger(t store.Trigger) (*v1.Trigger, error) {
 	}
 	counts := t.Counts
 	doc.Status.LastFiredAt, doc.Status.LastSessionID, doc.Status.NextFireAt, doc.Status.Counts = t.LastFiredAt, t.LastSessionID, t.NextFireAt, &counts
+	doc.Status.Spend = t.Spend
 	return doc, nil
 }
 
@@ -290,11 +291,16 @@ func sameTime(a, b *time.Time) bool {
 
 // oneShotFields are a one-shot trigger's time as the questions of its
 // create and its update carry it (spec 086): at in RFC 3339; none for
-// any other trigger.
+// any other trigger. They also carry its allowance as budget (spec 087),
+// so an authorizer can refuse a trigger without one or above what it
+// allows.
 func oneShotFields(spec v1.TriggerSpec) map[string]any {
 	f := map[string]any{}
 	if spec.At != nil {
 		f["at"] = spec.At.UTC().Format(time.RFC3339)
+	}
+	if b := spec.Budget; b != nil {
+		f["budget"] = map[string]any{"per_week_usd_micro": b.PerWeek}
 	}
 	return f
 }
@@ -594,7 +600,7 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 	ss := st.Spec.Session
 	in := creation{agent: st.Spec.Agent, title: st.Title, message: st.Message, resources: st.Resources, machine: triggerMachine(ss),
 		sender: sender(st.Trigger), triggerID: st.Trigger.ID, firingID: st.FiringID, firedBy: st.FiredBy, firesOn: firesOn(st.Spec),
-		attended: trigger.Attended(st.Spec), notify: messageNotify(st.Spec)}
+		attended: trigger.Attended(st.Spec), notify: messageNotify(st.Spec), spend: st.Spend}
 	if ss.EndOnIdle != nil {
 		in.endOnIdle = *ss.EndOnIdle
 	}
@@ -625,7 +631,7 @@ func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	if sess.Status == session.StatusEnded {
 		return triggers.ErrEnded
 	}
-	msg := session.UserMessage{Sender: from, Content: content, FiringID: sd.FiringID, Notify: messageNotify(sd.Spec)}
+	msg := session.UserMessage{Sender: from, Content: content, FiringID: sd.FiringID, Notify: messageNotify(sd.Spec), Spend: sd.Spend}
 	wake, err := a.s.messageWake(ctx, sd)
 	if err != nil {
 		return err

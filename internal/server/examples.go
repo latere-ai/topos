@@ -269,6 +269,10 @@ func examples() (map[string]example, error) {
 	applied.Status.Version, applied.Status.CreatedAt = 3, exampleTime(12, 32, 0)
 	fired := applied
 	fired.Status.LastFiredAt, fired.Status.LastSessionID, fired.Status.Counts = new(exampleTime(12, 40, 0)), exampleFiredID, &v1.TriggerCounts{Started: 2}
+	// The second firing counted the week as it stood before its look: the
+	// first look, which spent nothing, and the looks its rate expects over
+	// the rest of the window (spec 087).
+	fired.Status.Spend = &v1.TriggerSpend{WindowDays: 7, ExpectedLooks: 8}
 	delivery := trigger.Envelope{ID: exampleDelivery, Product: "github", Verb: "release.published", Resource: "example/widgets@v1.4.0", Actor: "ann",
 		Time: exampleTime(12, 40, 0), Payload: json.RawMessage(`{"tag":"v1.4.0"}`)}
 	started := firing{ID: exampleFiringID, TriggerID: exampleTriggerID, Origin: store.OriginEvent,
