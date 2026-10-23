@@ -113,6 +113,10 @@ type triggerApply struct {
 	// for a person's or a program's own apply at the route. Its questions
 	// carry it.
 	origin *v1.TriggerOrigin
+	// action is the session tool's action that applies the trigger, which
+	// the questions' origin carries beside it (spec 087): the trigger
+	// tool's propose, change, pause or resume, or the wake tool's set.
+	action string
 	// made writes origin as the trigger's status.origin: the call made the
 	// trigger, as a propose and a wake do. A change, a pause or a resume
 	// keeps the origin the trigger already has, whoever made it.
@@ -200,7 +204,7 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		res.Fields["notify"] = trigger.Notify(spec)
 		maps.Copy(res.Fields, deviceFields(spec.Session))
 		if how.origin != nil {
-			res.Fields["origin"] = originField(*how.origin)
+			res.Fields["origin"] = originField(*how.origin, how.action)
 		}
 		if _, err := q.ask(ctx, authorizer.ActionTriggerUpdate, res); err != nil {
 			return store.Trigger{}, false, err
@@ -236,7 +240,7 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		fields["notify"] = trigger.Notify(spec)
 		maps.Copy(fields, deviceFields(spec.Session))
 		if how.origin != nil {
-			fields["origin"] = originField(*how.origin)
+			fields["origin"] = originField(*how.origin, how.action)
 		}
 		// The id the resolver minted names the trigger from its first
 		// question, so an authorizer that keeps state per trigger, such as
@@ -306,10 +310,14 @@ func oneShotFields(spec v1.TriggerSpec) map[string]any {
 }
 
 // originField is a trigger's origin as its questions carry it (spec 086):
-// the kind, the session and its call, and who confirmed the call once a
-// person allowed it.
-func originField(o v1.TriggerOrigin) map[string]any {
+// the kind, the session and its call, who confirmed the call once a
+// person allowed it, and the tool's action, so an authorizer tells a
+// pause from a change or a resume before the call is held (spec 087).
+func originField(o v1.TriggerOrigin, action string) map[string]any {
 	f := map[string]any{"kind": o.Kind, "session_id": o.SessionID, "tool_use_id": o.ToolUseID}
+	if action != "" {
+		f["action"] = action
+	}
 	if o.ConfirmedBy != "" {
 		f["confirmed_by"] = o.ConfirmedBy
 	}

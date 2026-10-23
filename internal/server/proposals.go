@@ -175,7 +175,7 @@ func (t sessionTriggers) act(ctx context.Context, p runner.Proposal, apply bool)
 		if err != nil {
 			return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: err.Error()}
 		}
-		tr, _, err := t.s.putTrigger(ctx, q, name, body, triggerApply{origin: &origin, made: true, agent: sess.Agent.ID, check: !apply})
+		tr, _, err := t.s.putTrigger(ctx, q, name, body, triggerApply{origin: &origin, action: p.Verb(), made: true, agent: sess.Agent.ID, check: !apply})
 		if err != nil {
 			return store.Trigger{}, refusal(err)
 		}
@@ -187,7 +187,7 @@ func (t sessionTriggers) act(ctx context.Context, p runner.Proposal, apply bool)
 	}
 	if p.Verb() == runner.TriggerDelete {
 		res := triggerResource(tr)
-		res.Fields["origin"] = originField(origin)
+		res.Fields["origin"] = originField(origin, p.Verb())
 		if _, err := q.ask(ctx, authorizer.ActionTriggerDelete, res); err != nil {
 			return store.Trigger{}, refusal(err)
 		}
@@ -202,7 +202,7 @@ func (t sessionTriggers) act(ctx context.Context, p runner.Proposal, apply bool)
 	if err != nil {
 		return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: err.Error()}
 	}
-	how := triggerApply{origin: &origin, agent: sess.Agent.ID, check: !apply}
+	how := triggerApply{origin: &origin, action: p.Verb(), agent: sess.Agent.ID, check: !apply}
 	if p.Verb() == runner.TriggerPause {
 		how.why = strings.TrimSpace(p.Why)
 	}

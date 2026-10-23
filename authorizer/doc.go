@@ -366,9 +366,13 @@
 // session's context as the claims, the way a firing's session.create is,
 // and carry origin beside the trigger's fields:
 //
-//	"origin": {"kind": "proposal", "session_id": "ses_...", "tool_use_id": "toolu_...", "confirmed_by": "<iss>|<sub>"}
+//	"origin": {"kind": "proposal", "session_id": "ses_...", "tool_use_id": "toolu_...", "action": "change", "confirmed_by": "<iss>|<sub>"}
 //
-// The question asked before a held call is held carries no confirmed_by,
+// action is the tool's action, propose, change, pause, resume or delete,
+// and a wake's set or cancel (spec 087), so an endpoint tells a pause,
+// which only stops work, from a change or a resume it holds to the
+// person's share at the question asked before the hold. The question
+// asked before a held call is held carries no confirmed_by,
 // so a call bound to be refused asks nobody; the one asked once the
 // person allowed the call names who allowed it, the session's initiator,
 // whom the send route alone lets answer such a call. A pause's
@@ -394,6 +398,9 @@
 // session.send on that session as the applier. Every trigger's create and
 // update carries notify, always or judged, and a firing's session.create
 // carries attended, whether the session's questions wait for the owner.
+// A create or an update of a trigger that names a weekly allowance
+// carries budget {"per_week_usd_micro": n} (spec 087), which an endpoint
+// may require of a session's proposal or bound by the person's share.
 //
 // trigger.hold reads, sets or releases the hold over every trigger an
 // owner owns. Its resource is of kind trigger and names the owner, the

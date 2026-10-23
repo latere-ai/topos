@@ -14,6 +14,7 @@ import (
 	"latere.ai/x/pkg/authz"
 
 	"latere.ai/x/topos/authorizer"
+	"latere.ai/x/topos/internal/proposal"
 	"latere.ai/x/topos/internal/store"
 	v1 "latere.ai/x/topos/manifest/v1"
 	"latere.ai/x/topos/runner"
@@ -188,6 +189,14 @@ func TestTheQuestionsOfASessionsTriggerCalls(t *testing.T) {
 	if _, err := reach.ApplyProposal(t.Context(), runner.Proposal{ToolUseID: "toolu_x", Action: runner.TriggerPause, ID: made.ID, Why: "Away."}); err != nil {
 		t.Fatal(err)
 	}
+	// A change and a resume are asked before they are held, as update, and
+	// their origin names their action, as a pause's does (spec 087).
+	if err := reach.CheckProposal(t.Context(), runner.Proposal{ToolUseID: "toolu_ch", Action: runner.TriggerChange, ID: made.ID, Why: "Later.", Schedule: "30 7 * * 1", TimeZone: "UTC"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reach.CheckProposal(t.Context(), runner.Proposal{ToolUseID: "toolu_rs", Action: runner.TriggerResume, ID: made.ID}); err != nil {
+		t.Fatal(err)
+	}
 	w.hold("toolu_d", map[string]any{"action": "delete", "id": made.ID})
 	w.allow("toolu_d")
 	if _, err := reach.ApplyProposal(t.Context(), runner.Proposal{ToolUseID: "toolu_d", Action: runner.TriggerDelete, ID: made.ID}); err != nil {
@@ -206,17 +215,19 @@ func TestTheQuestionsOfASessionsTriggerCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	type want struct {
-		action, kind, toolUseID string
-		confirmed               bool
+		action, kind, toolUseID, tool string
+		confirmed                     bool
 	}
 	wants := []want{
-		{authorizer.ActionTriggerCreate, v1.OriginProposal, "toolu_p", false},
-		{authorizer.ActionTriggerCreate, v1.OriginProposal, "toolu_p", true},
-		{authorizer.ActionTriggerUpdate, v1.OriginProposal, "toolu_x", false},
-		{authorizer.ActionTriggerDelete, v1.OriginProposal, "toolu_d", true},
-		{authorizer.ActionTriggerCreate, v1.OriginWake, "toolu_w", false},
-		{authorizer.ActionTriggerUpdate, v1.OriginWake, "toolu_w2", false},
-		{authorizer.ActionTriggerDelete, v1.OriginWake, "toolu_c", false},
+		{authorizer.ActionTriggerCreate, v1.OriginProposal, "toolu_p", runner.TriggerPropose, false},
+		{authorizer.ActionTriggerCreate, v1.OriginProposal, "toolu_p", runner.TriggerPropose, true},
+		{authorizer.ActionTriggerUpdate, v1.OriginProposal, "toolu_x", runner.TriggerPause, false},
+		{authorizer.ActionTriggerUpdate, v1.OriginProposal, "toolu_ch", runner.TriggerChange, false},
+		{authorizer.ActionTriggerUpdate, v1.OriginProposal, "toolu_rs", runner.TriggerResume, false},
+		{authorizer.ActionTriggerDelete, v1.OriginProposal, "toolu_d", runner.TriggerDelete, true},
+		{authorizer.ActionTriggerCreate, v1.OriginWake, "toolu_w", proposal.WakeSet, false},
+		{authorizer.ActionTriggerUpdate, v1.OriginWake, "toolu_w2", proposal.WakeSet, false},
+		{authorizer.ActionTriggerDelete, v1.OriginWake, "toolu_c", proposal.WakeCancel, false},
 	}
 	var got []authz.Request
 	var list *authz.Request
@@ -235,7 +246,7 @@ func TestTheQuestionsOfASessionsTriggerCalls(t *testing.T) {
 		wt := wants[i]
 		o, _ := q.Resource.Fields["origin"].(map[string]any)
 		_, confirmed := o["confirmed_by"]
-		if q.Action != wt.action || o["kind"] != wt.kind || o["session_id"] != w.sess.ID || o["tool_use_id"] != wt.toolUseID || confirmed != wt.confirmed ||
+		if q.Action != wt.action || o["kind"] != wt.kind || o["session_id"] != w.sess.ID || o["tool_use_id"] != wt.toolUseID || o["action"] != wt.tool || confirmed != wt.confirmed ||
 			wt.confirmed && o["confirmed_by"] != alice {
 			t.Errorf("question %d is %s with origin %+v, want %+v", i, q.Action, o, wt)
 		}

@@ -13,6 +13,7 @@ import (
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
+	"latere.ai/x/topos/internal/proposal"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest"
 	"latere.ai/x/topos/manifest/trigger"
@@ -87,7 +88,7 @@ func (t sessionTriggers) SetWake(ctx context.Context, w runner.Wake) (runner.Lis
 	case err != nil && !errors.Is(err, store.ErrNotFound):
 		return runner.ListedTrigger{}, err
 	}
-	tr, _, err := t.s.putTrigger(ctx, q, doc.Metadata.Name, body, triggerApply{origin: &origin, made: true, agent: sess.Agent.ID})
+	tr, _, err := t.s.putTrigger(ctx, q, doc.Metadata.Name, body, triggerApply{origin: &origin, action: proposal.WakeSet, made: true, agent: sess.Agent.ID})
 	if err != nil {
 		return runner.ListedTrigger{}, refusal(err)
 	}
@@ -110,7 +111,7 @@ func (t sessionTriggers) CancelWake(ctx context.Context, toolUseID string) (stri
 		return "", err
 	}
 	res := triggerResource(tr)
-	res.Fields["origin"] = originField(v1.TriggerOrigin{Kind: v1.OriginWake, SessionID: sess.ID, ToolUseID: toolUseID})
+	res.Fields["origin"] = originField(v1.TriggerOrigin{Kind: v1.OriginWake, SessionID: sess.ID, ToolUseID: toolUseID}, proposal.WakeCancel)
 	if _, err := q.ask(ctx, authorizer.ActionTriggerDelete, res); err != nil {
 		return "", refusal(err)
 	}
