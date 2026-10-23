@@ -141,3 +141,24 @@ func TestAReportScalesItsEstimates(t *testing.T) {
 		t.Fatalf("an empty report %+v", r)
 	}
 }
+
+// TestACompactionsRequestReportsItsContext (spec 087): the request that
+// asks for a summary records the context it was built from, from the
+// provider's count.
+func TestACompactionsRequestReportsItsContext(t *testing.T) {
+	e := setup(t, window(8000))
+	ctx := t.Context()
+	e.history(ctx, 8000, 8000, 8000, 8000, 40)
+	e.stub.Script(model, luxstub.Reply{Response: ir.Response{Model: model, Blocks: []ir.Block{text("Requests: Ada asked for the list.")}, StopReason: ir.StopEndTurn, Usage: ir.Usage{InputTokens: 7000, OutputTokens: 30}}})
+	if _, err := e.manage(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mrs := e.modelRequests(ctx)
+	if len(mrs) != 1 || mrs[0].Context == nil {
+		t.Fatalf("the compaction's request %+v", mrs)
+	}
+	checkReport(t, mrs[0].Context, 8000)
+	if r := mrs[0].Context; r.Source != session.ContextFromProvider || r.Used != 7000 || tokensOf(r, session.ReportFree) != 1000 {
+		t.Fatalf("the compaction's report %+v", r)
+	}
+}
