@@ -6,5 +6,8 @@
       schedule: {equals: "0 9 * * 1"}
       timeZone: {equals: Europe/Berlin}
       why: {matches: '(?i)monday'}
+      # The weekly estimate, which becomes the routine's allowance and is
+      # said back to the person (spec 087).
+      perWeekUsd: {present: true}
       ask: {matches: '(?i)todo\.md'}
 - final_message: {matches: '(?i)routine|every monday'}

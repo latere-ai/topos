@@ -2,7 +2,8 @@ name: propose
 category: instructions
 # trigger's description: an ask that repeats is offered as a routine, its
 # schedule in a routine's cron and the person's zone, and its why says
-# the schedule back; the person allows it, and the agent says it is
+# the schedule back, with the agent's estimate of a week's cost as its
+# allowance (spec 087); the person allows it, and the agent says it is
 # theirs.
 agent:
   tools: [read, trigger]

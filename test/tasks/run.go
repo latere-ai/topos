@@ -565,9 +565,22 @@ func (r *run) drive(ctx context.Context) (res RunResult, err error) {
 	// A task that a trigger wakes sends its prompt as the trigger's
 	// message, which leaves the agent to judge whether its turn brings the
 	// person anything (spec 086).
-	if r.t.Woken == WokenJudged {
+	switch r.t.Woken {
+	case WokenJudged:
 		first.Sender = session.Sender{Subject: session.TriggerSubjectPrefix + "trg_tasks", Kind: session.SenderTrigger}
 		first.FiringID, first.Notify = session.NewID(session.PrefixFiring), session.NotifyJudged
+	case WokenWake:
+		// The note of the agent's own wake, set an hour before it came due
+		// (spec 086).
+		first.Sender = session.Sender{Subject: session.TriggerSubjectPrefix + "trg_tasks_wake", Kind: session.SenderTrigger}
+		first.FiringID = session.NewID(session.PrefixFiring)
+		first.Wake = &session.MessageWake{TriggerID: "trg_tasks_wake", SetAt: now.Add(-time.Hour), DueAt: now, Count: 1}
+	}
+	// A woken prompt that counts toward a watch carries its week, which
+	// the agent reads as its pace (spec 087).
+	if sp := r.t.Spend; sp != nil {
+		first.Spend = &session.MessageSpend{TriggerID: "trg_tasks", WindowDays: 7, SpentUSDMicro: sp.Spent, PerWeekUSDMicro: new(sp.PerWeek),
+			PerLookUSDMicro: new(sp.PerLook), ExpectedLooks: sp.Looks, ProjectedUSDMicro: new(sp.Spent + sp.PerLook*int64(sp.Looks))}
 	}
 	msg, err := session.NewEvent(session.TypeUserMessage, first, now)
 	if err != nil {

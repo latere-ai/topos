@@ -109,13 +109,31 @@ type Task struct {
 	// run that waits on a call fails.
 	Confirm string
 	// Woken is WokenJudged for a task whose prompt arrives as a judged
-	// trigger's message, which nobody waits for (spec 086); empty sends it
-	// as the person's.
+	// trigger's message, which nobody waits for (spec 086), and WokenWake
+	// for one that arrives as the note of the agent's own wake; empty sends
+	// it as the person's.
 	Woken string
+	// Spend is the week a woken prompt's message carries (spec 087), nil
+	// for none.
+	Spend *Spend
 }
 
-// WokenJudged is Task.Woken for a prompt a judged trigger sends.
-const WokenJudged = "judged"
+// The kinds of a woken prompt: a judged trigger's message, and a wake's.
+const (
+	WokenJudged = "judged"
+	WokenWake   = "wake"
+)
+
+// Spend is the week of the watch a woken prompt counts toward, in USD
+// micros: what its looks spent, its allowance, a look's cost, and the
+// looks expected; the message's projection is spent plus a look's cost
+// times the looks.
+type Spend struct {
+	Spent   int64 `yaml:"spent"`
+	PerWeek int64 `yaml:"perWeek"`
+	PerLook int64 `yaml:"perLook"`
+	Looks   int   `yaml:"looks"`
+}
 
 // Answer is what the driver answers to the questions of the open
 // question call whose header or text contains Question, compared without
@@ -185,6 +203,7 @@ type taskFile struct {
 	Answers  []Answer `yaml:"answers"`
 	Confirm  string   `yaml:"confirm"`
 	Woken    string   `yaml:"woken"`
+	Spend    *Spend   `yaml:"spend"`
 }
 
 // Load reads every task of the suite rooted at dir: each directory
@@ -236,7 +255,7 @@ func LoadTask(dir string) (Task, error) {
 	t := Task{
 		Name: f.Name, Category: f.Category, Prompt: strings.TrimSpace(f.Prompt), Agent: f.Agent,
 		Timeout: DefaultTimeout, MaxCostUSDMicro: int64(math.Round(DefaultMaxCost * 1e6)), Runs: DefaultRuns,
-		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers, Confirm: f.Confirm, Woken: f.Woken,
+		Serve: f.Serve, Search: f.Search, Log: f.Log, Dir: dir, Answers: f.Answers, Confirm: f.Confirm, Woken: f.Woken, Spend: f.Spend,
 	}
 	t.ID = t.Category + "/" + t.Name
 	fail := func(format string, a ...any) (Task, error) {
@@ -284,8 +303,11 @@ func LoadTask(dir string) (Task, error) {
 	if t.Confirm != "" && t.Confirm != session.DecisionAllow && t.Confirm != session.DecisionDeny {
 		return fail("confirm %q is %s or %s", t.Confirm, session.DecisionAllow, session.DecisionDeny)
 	}
-	if t.Woken != "" && t.Woken != WokenJudged {
-		return fail("woken is %q, not %s", t.Woken, WokenJudged)
+	if t.Woken != "" && t.Woken != WokenJudged && t.Woken != WokenWake {
+		return fail("woken is %q, not %s or %s", t.Woken, WokenJudged, WokenWake)
+	}
+	if t.Spend != nil && (t.Woken == "" || t.Spend.PerWeek <= 0 || t.Spend.Spent < 0 || t.Spend.PerLook <= 0 || t.Spend.Looks < 1) {
+		return fail("spend is a woken prompt's week: spent, and perWeek and perLook above zero, with looks at least 1")
 	}
 	if t.Serve != "" {
 		if fi, err := os.Stat(filepath.Join(dir, t.Serve)); err != nil || !fi.IsDir() {

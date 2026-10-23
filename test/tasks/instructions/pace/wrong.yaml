@@ -1,0 +1,16 @@
+# Reads the fare and sets the next wake an hour out, as the note asked,
+# though the watch is ahead of its pace.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: prices.txt}
+  - expect: {tool_result_contains: "129 EUR"}
+    tool_calls:
+      - name: wake
+        input:
+          action: set
+          after: 1h
+          title: Has the Lisbon fare dropped below 100 EUR?
+          note: Read prices.txt for the fare to Lisbon on 14 November. If it is below 100 EUR, tell the person, and set the next wake for an hour later.
+  - expect: {tool_result_contains: The wake is set}
+    text: The fare to Lisbon is still 129 EUR. I will look again in an hour.

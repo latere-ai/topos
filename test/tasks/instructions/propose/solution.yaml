@@ -11,8 +11,9 @@ steps:
           action: propose
           name: Open items in todo.md
           ask: Count the open items in todo.md, the lines that start with "- [ ]", and tell me how many there are.
-          why: Every Monday at 9:00, Berlin time, I count the open items in todo.md and tell you how many there are.
+          why: Every Monday at 9:00, Berlin time, I count the open items in todo.md and tell you how many there are, for about $0.05 a week.
           schedule: 0 9 * * 1
           timeZone: Europe/Berlin
+          perWeekUsd: 0.05
   - expect: {tool_result_contains: is theirs now}
     text: Two items are open today. The routine is yours now, and every Monday at 9:00 I will count them again.

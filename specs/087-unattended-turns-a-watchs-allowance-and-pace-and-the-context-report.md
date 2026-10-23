@@ -383,8 +383,11 @@ above left to the build:
   the largest part; a title's request records none.
 - The pace line renders a cost under a cent to a hundredth of a cent.
 
-What is left before this spec closes: the instruction tasks that hold a
-model to the pace line and to `perWeekUsd`, which the task suite runs on
+Two instruction tasks hold a model to the pace and the estimate:
+`pace`, a wake ahead of its watch's pace that sets its next wake later
+than its note asked, and `propose`, whose offer now names `perWeekUsd`.
+The task suite gains `woken: wake` and `spend` for them (spec 025).
+What is left before this spec closes: their runs on a model, which take
 a model connection.
 
 ## Acceptance criteria
@@ -409,4 +412,5 @@ a model connection.
 | The fold renders the pace line before a message with `spend`, says ahead of pace when the projection passes the allowance with a wake's or a trigger's advice, and renders none without `spend` | `session.TestThePaceLineSaysWhenAWatchIsAheadOfPace` | built |
 | Every step's and compaction's `model.request` records `context`: the window, `used` from the provider or the estimate with its source, the parts in order summing to `used`, `files` and `summary` counted, and `free` | `harness.TestEveryRequestReportsItsContext`, `harness.TestACompactionsRequestReportsItsContext`, `harness.TestAReportScalesItsEstimates` | built |
 | The Session folds `context_report` from the latest request of its own thread, and a subagent's and a title's leave it | `session.TestTheSessionFoldsItsContextReport`, `session.TestTheFoldNamesTheFilesAndSummariesItRenders` | built |
+| A wake ahead of its watch's pace sets its next wake later than its note asked, and an offer names its weekly estimate | `test/tasks/instructions/pace/`, `test/tasks/instructions/propose/` (each solution passes and each wrong solution fails by `test/tasks.TestScriptedSolutions`; on a model through the instruction tier, `go test -tags instructions ./test/tasks`) | built, runs on a model left |
 | The OpenAPI document describes every field above | `internal/server.TestOpenAPIIsGenerated`, `internal/server.TestTheDocumentDescribesSpec087` | built |

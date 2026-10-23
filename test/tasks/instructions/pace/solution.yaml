@@ -1,0 +1,16 @@
+# Reads the fare, finds it above 100 EUR, and, ahead of pace, sets the
+# next wake four hours out in place of one.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: prices.txt}
+  - expect: {tool_result_contains: "129 EUR"}
+    tool_calls:
+      - name: wake
+        input:
+          action: set
+          after: 4h
+          title: Has the Lisbon fare dropped below 100 EUR?
+          note: Read prices.txt for the fare to Lisbon on 14 November. If it is below 100 EUR, tell the person. Otherwise set the next wake a few hours out; this watch is ahead of its weekly pace.
+  - expect: {tool_result_contains: The wake is set}
+    text: The fare to Lisbon is still 129 EUR. I will look again in four hours.

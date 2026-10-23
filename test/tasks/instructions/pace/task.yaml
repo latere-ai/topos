@@ -1,0 +1,15 @@
+name: pace
+category: instructions
+# The pace line (spec 087): a wake whose watch is ahead of its weekly
+# pace, its projection past its allowance, keeps the look short and sets
+# its next wake later than its own note asked, with the person's allow of
+# the write in the suite's confirm mode.
+agent:
+  tools: [read, wake]
+confirm: allow
+woken: wake
+spend: {spent: 900000, perWeek: 1000000, perLook: 100000, looks: 3}
+prompt: |
+  Read prices.txt for the fare to Lisbon on 14 November. If it is below
+  100 EUR, tell the person. Then set the next wake for an hour from now
+  to look again.
