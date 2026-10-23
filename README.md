@@ -154,6 +154,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
 - [docs/offers.md](docs/offers.md): how a client shows an agent's offer of
   standing work, or of a change to it, and sends the answer of the person
   who started the session.
+- [docs/holding-triggers.md](docs/holding-triggers.md): the one switch that
+  pauses and resumes every trigger a person owns.
 - [docs/quiet-runs.md](docs/quiet-runs.md): how a client tells a trigger's
   run that brought the person something from a quiet one, and shows the
   agent's notice.

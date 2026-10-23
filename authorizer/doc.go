@@ -395,6 +395,12 @@
 // update carries notify, always or judged, and a firing's session.create
 // carries attended, whether the session's questions wait for the owner.
 //
+// trigger.hold reads, sets or releases the hold over every trigger an
+// owner owns. Its resource is of kind trigger and names the owner, the
+// caller, and held when it sets the hold; the owner policy lets an owner
+// hold their own. An endpoint that does not know the action denies it,
+// and the hold's routes answer forbidden.
+//
 // A decision names a subject as the issuer and the sub joined,
 // "https://login.example.com|alice"; the claims are the token's
 // verbatim, where an endpoint reads a plan, a team or a role from. The
