@@ -414,6 +414,74 @@ func triggerSpend(t *testing.T, f Factory) {
 	}
 }
 
+// triggerAllowance: a firing skipped at its trigger's allowance is taken
+// again by the next claim of it under its first id, its count taken back;
+// and a trigger's spend reads back, is kept through a later apply and
+// replaced by the next (spec 087).
+func triggerAllowance(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ctx := t.Context()
+	tr := NewTrigger("alice", "watch", clock.Now())
+	if err := st.PutTrigger(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Trigger(ctx, tr.ID); err != nil || got.Spend != nil {
+		t.Fatalf("a trigger never counted: %+v, %v", got.Spend, err)
+	}
+	fr := NewFiring(tr.ID, "schedule:once", store.OriginSchedule, clock.Now())
+	if _, _, err := st.ClaimFiring(ctx, fr); err != nil {
+		t.Fatal(err)
+	}
+	fr.Outcome = store.OutcomeSkippedBudget
+	if err := st.RecordFiring(ctx, fr, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Trigger(ctx, tr.ID); err != nil || got.Counts.SkippedBudget != 1 {
+		t.Fatalf("counts after a skip: %+v, %v", got.Counts, err)
+	}
+	again, fresh, err := st.ClaimFiring(ctx, NewFiring(tr.ID, "schedule:once", store.OriginSchedule, clock.Now()))
+	if err != nil || !fresh || again.ID != fr.ID || again.Outcome != "" {
+		t.Fatalf("a skipped firing is taken again: %+v, %v, %v", again, fresh, err)
+	}
+	if got, err := st.Trigger(ctx, tr.ID); err != nil || got.Counts.SkippedBudget != 0 {
+		t.Fatalf("the skip's count was not taken back: %+v, %v", got.Counts, err)
+	}
+	again.Outcome, again.SessionID = store.OutcomeStarted, "ses_1"
+	if err := st.RecordFiring(ctx, again, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Trigger(ctx, tr.ID); err != nil || got.Counts != (v1.TriggerCounts{Started: 1}) {
+		t.Fatalf("counts once it ran: %+v, %v", got.Counts, err)
+	}
+
+	perLook, perWeek := int64(400000), int64(5000000)
+	spend := v1.TriggerSpend{WindowDays: 7, SpentUSDMicro: 1200000, PerWeekUSDMicro: &perWeek, PerLookUSDMicro: &perLook, ExpectedLooks: 4, ProjectedUSDMicro: new(int64(2800000))}
+	if err := st.SetSpend(ctx, tr.ID, spend); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Trigger(ctx, tr.ID)
+	if err != nil || got.Spend == nil || got.Spend.SpentUSDMicro != 1200000 || *got.Spend.PerWeekUSDMicro != perWeek || *got.Spend.ProjectedUSDMicro != 2800000 || got.Spend.ExpectedLooks != 4 {
+		t.Fatalf("the spend read back as %+v, %v", got.Spend, err)
+	}
+	tr.Version, tr.UpdatedAt = 2, clock.Now()
+	if err := st.PutTrigger(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Trigger(ctx, tr.ID); err != nil || got.Spend == nil || got.Spend.SpentUSDMicro != 1200000 {
+		t.Fatalf("a later apply dropped the spend: %+v, %v", got.Spend, err)
+	}
+	if err := st.SetSpend(ctx, tr.ID, v1.TriggerSpend{WindowDays: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Trigger(ctx, tr.ID); err != nil || got.Spend == nil || got.Spend.SpentUSDMicro != 0 || got.Spend.PerWeekUSDMicro != nil {
+		t.Fatalf("the next spend did not replace it: %+v, %v", got.Spend, err)
+	}
+	if err := st.SetSpend(ctx, session.NewID(session.PrefixTrigger), spend); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the spend of no trigger: %v", err)
+	}
+}
+
 // triggerHolds: an owner's hold reads back with its since, a second set
 // keeps the first since, the held owners are listed, and a release, and
 // a release of none, holds nothing (spec 086).

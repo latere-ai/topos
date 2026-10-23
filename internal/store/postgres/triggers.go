@@ -17,14 +17,20 @@ import (
 	"latere.ai/x/topos/session"
 )
 
-const triggerColumns = `id, name, owner, claims, agent_id, version, digest, doc, suspended, next_fire_at, last_fired_at, last_session_id, counts, created_at, updated_at`
+const triggerColumns = `id, name, owner, claims, agent_id, version, digest, doc, suspended, next_fire_at, last_fired_at, last_session_id, counts, created_at, updated_at, spend`
 
 func scanTrigger(row pgx.Row) (store.Trigger, error) {
 	var t store.Trigger
-	var doc, counts, claims string
+	var doc, counts, claims, spend string
 	if err := row.Scan(&t.ID, &t.Name, &t.Owner, &claims, &t.AgentID, &t.Version, &t.Digest, &doc, &t.Suspended,
-		&t.NextFireAt, &t.LastFiredAt, &t.LastSessionID, &counts, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		&t.NextFireAt, &t.LastFiredAt, &t.LastSessionID, &counts, &t.CreatedAt, &t.UpdatedAt, &spend); err != nil {
 		return store.Trigger{}, err
+	}
+	if spend != "" {
+		t.Spend = &v1.TriggerSpend{}
+		if err := json.Unmarshal([]byte(spend), t.Spend); err != nil {
+			return store.Trigger{}, fmt.Errorf("%w: trigger %s's spend: %w", session.ErrCorrupt, t.ID, err)
+		}
 	}
 	if err := json.Unmarshal([]byte(counts), &t.Counts); err != nil {
 		return store.Trigger{}, fmt.Errorf("%w: trigger %s's counts: %w", session.ErrCorrupt, t.ID, err)
@@ -130,7 +136,7 @@ func (s *Store) PutTrigger(ctx context.Context, t store.Trigger) error {
 	case t.Version != 1:
 		return fmt.Errorf("%w: trigger %s version %d does not follow the stored version", store.ErrConflict, t.ID, t.Version)
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO triggers (`+triggerColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, '', $11, $12, $13)`,
+	_, err = s.pool.Exec(ctx, `INSERT INTO triggers (`+triggerColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, '', $11, $12, $13, '')`,
 		t.ID, t.Name, t.Owner, string(claims), t.AgentID, t.Version, t.Digest, string(t.Doc), t.Suspended, utc(t.NextFireAt), counts, t.CreatedAt.UTC(), t.UpdatedAt.UTC())
 	if isUnique(err) {
 		return fmt.Errorf("%w: trigger %s exists", store.ErrConflict, t.Name)
@@ -294,12 +300,12 @@ func (s *Store) ClaimFiring(ctx context.Context, f store.Firing) (store.Firing, 
 		if err != nil {
 			return fmt.Errorf("postgres: read a firing of %s: %w", f.TriggerID, err)
 		}
-		if held.Outcome != store.OutcomeFailed && held.Outcome != "" {
+		if !store.Retaken(held.Outcome) {
 			out = held
 			return nil
 		}
-		if held.Outcome == store.OutcomeFailed {
-			if err := addCount(ctx, tx, f.TriggerID, func(t *store.Trigger) { store.Count(&t.Counts, store.OutcomeFailed, -1) }); err != nil {
+		if held.Outcome != "" {
+			if err := addCount(ctx, tx, f.TriggerID, func(t *store.Trigger) { store.Count(&t.Counts, held.Outcome, -1) }); err != nil {
 				return err
 			}
 		}
@@ -486,4 +492,13 @@ func (s *Store) HeldOwners(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("postgres: list the held owners: %w", err)
 	}
 	return out, nil
+}
+
+// SetSpend writes the trigger's week as JSON text (spec 087).
+func (s *Store) SetSpend(ctx context.Context, id string, spend v1.TriggerSpend) error {
+	b, err := json.Marshal(spend)
+	if err != nil {
+		return fmt.Errorf("postgres: encode a trigger's spend: %w", err)
+	}
+	return s.exec(ctx, id, "set the spend", `UPDATE triggers SET spend = $2 WHERE id = $1`, id, string(b))
 }

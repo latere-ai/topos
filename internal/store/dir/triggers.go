@@ -54,6 +54,7 @@ type triggerFile struct {
 	LastFiredAt   *time.Time       `json:"last_fired_at,omitempty"`
 	LastSessionID string           `json:"last_session_id,omitempty"`
 	Counts        v1.TriggerCounts `json:"counts"`
+	Spend         *v1.TriggerSpend `json:"spend,omitempty"`
 	CreatedAt     time.Time        `json:"created_at"`
 	UpdatedAt     time.Time        `json:"updated_at"`
 }
@@ -86,7 +87,7 @@ type keyFile struct {
 func toTriggerFile(t store.Trigger) triggerFile {
 	return triggerFile{ID: t.ID, Name: t.Name, Owner: t.Owner, Claims: t.Claims, AgentID: t.AgentID, Version: t.Version, Digest: t.Digest,
 		Doc: string(t.Doc), Suspended: t.Suspended, NextFireAt: t.NextFireAt, LastFiredAt: t.LastFiredAt, LastSessionID: t.LastSessionID,
-		Counts: t.Counts, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}
+		Counts: t.Counts, Spend: t.Spend, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}
 }
 
 func (f triggerFile) trigger() store.Trigger {
@@ -99,7 +100,7 @@ func (f triggerFile) trigger() store.Trigger {
 	}
 	return store.Trigger{ID: f.ID, Name: f.Name, Owner: f.Owner, Claims: f.Claims, AgentID: f.AgentID, Version: f.Version, Digest: f.Digest,
 		Doc: []byte(f.Doc), Suspended: f.Suspended, NextFireAt: utc(f.NextFireAt), LastFiredAt: utc(f.LastFiredAt), LastSessionID: f.LastSessionID,
-		Counts: f.Counts, CreatedAt: f.CreatedAt.UTC(), UpdatedAt: f.UpdatedAt.UTC()}
+		Counts: f.Counts, Spend: f.Spend, CreatedAt: f.CreatedAt.UTC(), UpdatedAt: f.UpdatedAt.UTC()}
 }
 
 func (f firingFile) firing() store.Firing {

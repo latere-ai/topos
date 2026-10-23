@@ -35,8 +35,14 @@ const (
 	// is gone (spec 086): it starts nothing, since a new session would
 	// not hold the conversation its message was written for.
 	OutcomeSkippedEnded = "skipped_ended"
-	OutcomeRefused      = "refused"
-	OutcomeFailed       = "failed"
+	// OutcomeSkippedBudget is a firing that started nothing because the
+	// spend of the trigger it counts toward was at that trigger's
+	// allowance (spec 087). A later claim of the same firing takes it
+	// again, as it takes a failed one, so a one-shot fires once the spend
+	// allows.
+	OutcomeSkippedBudget = "skipped_budget"
+	OutcomeRefused       = "refused"
+	OutcomeFailed        = "failed"
 )
 
 // Trigger is one stored trigger: its latest resolved document and its
@@ -66,8 +72,11 @@ type Trigger struct {
 	LastFiredAt   *time.Time
 	LastSessionID string
 	Counts        v1.TriggerCounts
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// Spend is the trigger's week as the server last counted it (spec
+	// 087), nil before any firing counted it. A later apply keeps it.
+	Spend     *v1.TriggerSpend
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Firing is one firing of a trigger, keyed by the trigger and its dedupe
@@ -146,9 +155,10 @@ type Triggers interface {
 
 	// ClaimFiring takes the firing (f.TriggerID, f.Dedupe) and reports
 	// true: a new one is stored as f with no outcome, and a stored one
-	// whose outcome is failed or unrecorded is taken again with f's id
-	// kept as stored, and its FiredBy too when it has one, so a firing a
-	// key fired keeps that key whoever fires it again. Any other stored
+	// whose outcome is failed, skipped_budget or unrecorded is taken again
+	// with f's id kept as stored, and its FiredBy too when it has one, so
+	// a firing a key fired keeps that key whoever fires it again; the
+	// count a failed or skipped_budget one added is taken back. Any other stored
 	// firing is returned with false. A caller claims under the trigger's
 	// lease, so an unrecorded firing it finds is one a replica that
 	// stopped left.
@@ -190,6 +200,10 @@ type Triggers interface {
 	SetHold(ctx context.Context, owner string, since *time.Time) error
 	// HeldOwners lists every owner who holds their triggers.
 	HeldOwners(ctx context.Context) ([]string, error)
+
+	// SetSpend keeps the trigger's week as the server counted it (spec
+	// 087).
+	SetSpend(ctx context.Context, id string, spend v1.TriggerSpend) error
 }
 
 // CheckTrigger is the shape every PutTrigger refuses before it looks at
@@ -243,6 +257,8 @@ func Count(c *v1.TriggerCounts, outcome string, n int64) {
 		c.SkippedLate += n
 	case OutcomeSkippedEnded:
 		c.SkippedEnded += n
+	case OutcomeSkippedBudget:
+		c.SkippedBudget += n
 	case OutcomeRefused:
 		c.Refused += n
 	case OutcomeFailed:
@@ -270,4 +286,11 @@ func DecodeTrigger(doc []byte) (*v1.Trigger, error) {
 		return nil, fmt.Errorf("store: a stored trigger does not read: %w", err)
 	}
 	return &t, nil
+}
+
+// Retaken reports whether a claim takes a stored firing of outcome again
+// (spec 087): one never recorded, one that failed, and one skipped at its
+// trigger's allowance, which runs once the spend allows it.
+func Retaken(outcome string) bool {
+	return outcome == "" || outcome == OutcomeFailed || outcome == OutcomeSkippedBudget
 }

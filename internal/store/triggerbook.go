@@ -241,7 +241,7 @@ func (b *TriggerBook) PutTrigger(_ context.Context, t Trigger) error {
 		if b.names[key] != "" {
 			return fmt.Errorf("%w: trigger %s exists", ErrConflict, t.Name)
 		}
-		t.NextFireAt, t.LastFiredAt, t.LastSessionID, t.Counts = utcPtr(t.NextFireAt), nil, "", v1.TriggerCounts{}
+		t.NextFireAt, t.LastFiredAt, t.LastSessionID, t.Counts, t.Spend = utcPtr(t.NextFireAt), nil, "", v1.TriggerCounts{}, nil
 		if err := b.saveTrigger(t); err != nil {
 			return err
 		}
@@ -253,7 +253,7 @@ func (b *TriggerBook) PutTrigger(_ context.Context, t Trigger) error {
 		return fmt.Errorf("%w: trigger %s exists", ErrConflict, t.Name)
 	}
 	t.NextFireAt = utcPtr(t.NextFireAt)
-	t.CreatedAt, t.LastFiredAt, t.LastSessionID, t.Counts = stored.CreatedAt, stored.LastFiredAt, stored.LastSessionID, stored.Counts
+	t.CreatedAt, t.LastFiredAt, t.LastSessionID, t.Counts, t.Spend = stored.CreatedAt, stored.LastFiredAt, stored.LastSessionID, stored.Counts, stored.Spend
 	if err := b.saveTrigger(t); err != nil {
 		return err
 	}
@@ -293,6 +293,21 @@ func (b *TriggerBook) DueTriggers(_ context.Context, at time.Time) ([]Trigger, e
 	}
 	slices.SortFunc(out, func(a, c Trigger) int { return a.NextFireAt.Compare(*c.NextFireAt) })
 	return out, nil
+}
+
+func (b *TriggerBook) SetSpend(_ context.Context, id string, spend v1.TriggerSpend) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t, err := b.trigger(id)
+	if err != nil {
+		return err
+	}
+	t.Spend = &spend
+	if err := b.saveTrigger(t); err != nil {
+		return err
+	}
+	b.triggers[id] = t
+	return nil
 }
 
 func (b *TriggerBook) SetNextFire(_ context.Context, id string, at *time.Time) error {
@@ -346,16 +361,16 @@ func (b *TriggerBook) ClaimFiring(_ context.Context, f Firing) (Firing, bool, er
 	switch {
 	case !ok:
 		f.Outcome, f.Reason, f.SessionID, f.Open = "", "", "", false
-	case held.Outcome == OutcomeFailed || held.Outcome == "":
+	case Retaken(held.Outcome):
 		// The firing runs again under its first id, and with the key
-		// it was first recorded with when it has one; the failure it
-		// counted is taken back.
+		// it was first recorded with when it has one; the failure or
+		// the skip it counted is taken back.
 		f.ID, f.Outcome, f.Reason, f.SessionID, f.Open = held.ID, "", "", "", false
 		if len(held.FiredBy) > 0 {
 			f.FiredBy = held.FiredBy
 		}
-		if held.Outcome == OutcomeFailed {
-			Count(&t.Counts, OutcomeFailed, -1)
+		if held.Outcome != "" {
+			Count(&t.Counts, held.Outcome, -1)
 			if err := b.saveTrigger(t); err != nil {
 				return Firing{}, false, err
 			}
