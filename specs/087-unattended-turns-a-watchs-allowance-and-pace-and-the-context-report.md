@@ -1,5 +1,5 @@
 ---
-title: "Unattended turns, a watch's allowance and pace, and the context report: a turn a trigger began decides by the session's mode without the person's remembered allows and says so to a decision service, a trigger's weekly allowance the server enforces with skipped_budget, the spend and pace it writes and tells the turn, and the context every model request records"
+title: "Unattended turns, a watch's allowance and pace, and the context report: a turn a trigger began decides by the session's mode without the person's remembered allows and says so to a decision service, a trigger's weekly allowance the server enforces with skipped_budget and a proposal carries as the agent's estimate, the spend and pace it writes and tells the turn, and the context every model request records"
 status: drafted
 track: core
 depends_on: [.archive/004-session-log.md, .archive/007-models.md, 010-context.md, 012-permissions-and-approvals.md, 015-api.md, .archive/022-triggers.md, .archive/037-decision-services.md, 086-proactive-agents.md]
@@ -30,6 +30,9 @@ from that, and a fourth a client needs beside them.
    server counts what the turns its firings began cost over a rolling 7
    days, and a firing while that spend is at the allowance starts
    nothing and records `skipped_budget`. Nothing needs a manual resume.
+   The `trigger` tool's proposal carries the agent's estimate of what
+   the watch's looks cost in a week as that allowance, which the person
+   reads in the offer and the server enforces.
 3. **Pace.** The server writes the trigger's spend, its cost per look
    and what the window is on course to cost on `status.spend`, and
    tells each turn a trigger or wake began the same numbers in one
@@ -76,6 +79,7 @@ the table that opens the design weighs each against its alternative.
 | How a decision service learns of it | `attended` in the action's `attributes`, which Limen's contract reads as one more observable fact | a top-level field: a service that keeps to its contract never reads it |
 | The allowance's unit | `spec.budget.perWeek`, an integer of USD micros, the unit the session's spend, the status and the question count in | a decimal USD string as `spec.session.budget.maxCost`: the status and the question would carry one unit and the manifest another |
 | What an allowance counts | every turn a firing of the trigger began, in the sessions it started and the sessions it continued, and the turns wakes began in the sessions it started | the whole of each session it started: a person's own turns in it are attended and theirs; a wake's own allowance: a wake is made by a tool that names none, and a new wake is a new trigger |
+| A proposal's allowance | the `trigger` tool's `perWeekUsd`, a decimal USD amount: the agent's estimate of a week of looks, from its model's price the tool's description gives and a look's likely size, applied as `spec.budget.perWeek`; Topos passes it through, and whether a proposal without one is refused is the installation's authorizer's | an allowance the server derives from the schedule: it would know neither a look's size nor what the person will pay; refusing a proposal without one in the core: an installation without caps would lose every offer it makes today |
 | A wake past its session's allowance | skipped, as the trigger's own firings are | counted and never refused: an agent could wake past the ceiling the person set |
 | The window | the rolling 7 days before the firing | a calendar week: a burst at its turn, and a week that starts on a different day in every time zone |
 | At the allowance | `skipped_budget`, a new outcome; a one-shot keeps its trigger and tries again each minute until it fires or `maxAge` passes | suspending the trigger: it would need a person to resume it once the window moved |
@@ -134,6 +138,36 @@ digest ([[003-manifest]]). A change through the `trigger` tool keeps
 the allowance, since a change applies the stored document with the
 call's fields written over it ([[086-proactive-agents]]).
 
+#### A proposal's allowance
+
+The `trigger` tool of [[086-proactive-agents]] takes one more input:
+
+| Field | Actions | Meaning |
+|---|---|---|
+| `perWeekUsd` | `propose`, `change` | a decimal USD amount above zero with at most six fraction digits: the agent's estimate of what the watch's looks cost in a week, said back to the person in `why`. Applied as `spec.budget.perWeek`, in micros; a `change` that names it replaces the allowance, and one that does not keeps it |
+
+The tool checks it before the call is held, as it checks every input,
+and answers `invalid_input` for an amount at or below zero or with more
+than six fraction digits. The questions `trigger.create` and
+`trigger.update`, asked before the hold and again on the allow, carry
+it as `budget` (below), so an authorizer that refuses a proposal
+without an allowance, or above the person's share, refuses it before
+anyone is asked. Topos refuses none for lacking one: a proposal without
+`perWeekUsd` applies a trigger with no allowance, as before this spec.
+The held call's input holds `perWeekUsd`, so a client words the offer's
+weekly cost from it, as it words the rest of the offer
+([[086-proactive-agents]]).
+
+The tool's description tells the model to estimate from its model's
+price, which it states per million input and output tokens from the
+catalog ([[007-models]]), and from a look's likely size: what one look
+reads and writes, its calls and searches, times the looks of a week.
+It says the estimate is the ceiling the server enforces: once a week's
+looks cost it, no look starts until the oldest leave the 7 days. A
+model the catalog prices at nothing is told to estimate from a look's
+size alone. `list` answers each trigger's allowance and its week's
+spend, which a change reads.
+
 #### Looks, and what counts
 
 A look is a turn a trigger's message began. Its cost is what the log's
@@ -187,7 +221,9 @@ allows it; the count it added is taken back when it is.
 `trigger.create` and `trigger.update` carry `budget:
 {"per_week_usd_micro": n}` when the trigger names an allowance, so an
 installation's authorizer can refuse a trigger without one, or with one
-above what it allows. A trigger with no allowance asks as before.
+above what it allows. A trigger with no allowance asks as before. A
+session's proposal asks with the allowance its `perWeekUsd` names, with
+the `origin` of [[086-proactive-agents]] beside it.
 
 ### Pace
 
@@ -270,7 +306,8 @@ sessions list answers it as it answers every Session field
 
 ### The OpenAPI document
 
-The document describes `budget` on a Trigger, `status.spend`,
+The document describes `budget` on a Trigger, which a session's
+proposal writes from the `trigger` tool's `perWeekUsd`, `status.spend`,
 `skippedBudget` among the counts, `spend` on a `user.message`,
 `attended` on `agent.tool_use` and `approval.requested`, `context` on
 `model.request`, and `context_report` on the Session.
@@ -285,7 +322,7 @@ The document describes `budget` on a Trigger, `status.spend`,
    service.
 3. The allowance: `budget.perWeek`, the question's `budget`,
    `skipped_budget` and its claim, `status.spend`, the message's
-   `spend` and the pace line.
+   `spend` and the pace line, and the `trigger` tool's `perWeekUsd`.
 
 The three ship in one release. An installation's authorizer learns
 `budget` before that release reaches it, or a trigger with an allowance
@@ -300,7 +337,8 @@ person's watches.
 
 | Need | Why |
 |---|---|
-| The authorizer reads `budget` on `trigger.create` and `trigger.update`, and refuses a trigger a session's call applies without one, or with one above the person's cap, as it chooses | the ceiling the person sets is the one the server enforces; the authorizer decides which watches may run without one |
+| The authorizer reads `budget` on `trigger.create` and `trigger.update`, and refuses a session's proposal without one, or with one above the person's share, as it chooses | the ceiling the person approves is the one the server enforces; the authorizer decides which watches may run without one, and Topos refuses none |
+| The managed agent's next version says, in its instructions, to say the weekly estimate back in the offer's `why` | the person approves a cost they read |
 | Limen reads `attributes.attended` on each prediction, as it reads every attribute | auto mode can ask on a woken turn where it would allow in a conversation, from the person's own answers |
 | A client that makes a routine or accepts an offer sets `spec.budget.perWeek`, and shows `status.spend` and `skippedBudget` | the person sets the allowance and sees the week |
 | The image of this release pinned | the server writes and enforces all of it |
@@ -310,6 +348,7 @@ person's watches.
 | Need | Why |
 |---|---|
 | `agents/routine` reads and writes `spec.budget.perWeek`, keeps it through a change, and reads `status.spend` and `counts.skippedBudget` | both clients set an allowance on a watch and show its week |
+| The Offer read from a held `trigger` call reads `perWeekUsd` | both clients show the weekly cost the person approves |
 | The person's watches list carries each one's spend, and for a wake the spend of the trigger it counts toward | a wake's looks count toward the routine that started its conversation |
 | The Session's `context_report` and `model.request`'s `context` | both clients show how full a conversation's context is and what fills it |
 | `user.message`'s `spend` read on a woken turn | a client shows what a look cost and whether the watch is ahead of pace |
@@ -318,8 +357,8 @@ person's watches.
 
 An allowance on a session a person started; a monthly or daily window;
 a notice to the person when a watch reaches its allowance (a client
-reads `skipped_budget`); a `budget` field of the `trigger` tool's
-proposals; the authorizer's caps; the words a client shows.
+reads `skipped_budget`); an allowance on a wake; the authorizer's caps
+and shares; the words a client shows.
 
 ## Acceptance criteria
 
@@ -337,6 +376,8 @@ proposals; the authorizer's caps; the words a client shows.
 | A claim takes a `skipped_budget` firing again and takes its count back, and a trigger's spend is kept, in every store | the stores' conformance case `trigger spend`, on Postgres through Testcontainers | not built |
 | `status.spend` holds the spend, the allowance, the mean of the latest five ended looks, the expected looks of a schedule, a one-shot, an event trigger and a suspended one, and the projection over the window that ends 7 days after the oldest look | `internal/triggers.TestTheSpendOfAWatch` | not built |
 | `trigger.create` and `trigger.update` carry `budget` when the trigger names one | `internal/server.TestTheTriggerQuestionsCarryTheAllowance` | not built |
+| The `trigger` tool's `perWeekUsd` is applied as `spec.budget.perWeek` on a propose and a change, a change without it keeps the allowance, an amount at or below zero or past six fraction digits is refused before the hold, and the questions asked before the hold and on the allow carry it | `internal/proposal.TestAProposalCarriesItsAllowance`, `internal/server.TestAProposalsAllowanceIsTheTriggers` | not built |
+| The tool's description states the model's price and that the estimate is the ceiling the server enforces, and `list` answers each trigger's allowance and spend | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestTheListSaysEachAllowance` | not built |
 | A firing's message carries `spend`, a wake's the spend of the trigger that started its session, and the trigger answers `status.spend` and `skippedBudget` | `internal/server.TestAFiringsMessageCarriesItsSpend` | not built |
 | The fold renders the pace line before a message with `spend`, says ahead of pace when the projection passes the allowance with a wake's or a trigger's advice, and renders none without `spend` | `session.TestThePaceLineSaysWhenAWatchIsAheadOfPace` | not built |
 | Every step's and compaction's `model.request` records `context`: the window, `used` from the provider or the estimate with its source, the parts in order summing to `used`, `files` and `summary` counted, and `free` | `harness.TestEveryRequestReportsItsContext` | not built |

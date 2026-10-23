@@ -296,8 +296,9 @@ The name's bound is the routine's own, `routine.MaxTitle` (60), and a
 routine's schedule runs at most once a day, so no interval bound is
 needed.
 
-A proposal names no machine, resources, budget or limits: its sessions
-run where the agent's own definition and the authorizer place them. The
+A proposal names no machine, resources or limits: its sessions run
+where the agent's own definition and the authorizer place them. It
+carries a weekly allowance from [[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]. The
 trigger is owned by the session's initiator, in the session's context,
 with `origin` `{kind: proposal, session_id, tool_use_id, confirmed_by}`.
 
