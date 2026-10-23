@@ -66,6 +66,8 @@ var shapes = map[string]bodyShape{
 	"getTrigger":         {response: typeOf[v1.Trigger]()},
 	"fireTrigger":        {request: typeOf[trigger.Envelope](), response: typeOf[firing]()},
 	"listFirings":        {response: typeOf[firing](), list: true},
+	"getTriggerHold":     {response: typeOf[holdAnswer]()},
+	"setTriggerHold":     {request: typeOf[holdBody](), response: typeOf[holdAnswer]()},
 }
 
 // payloadTypes is the payload of every event type schema v1 defines.
@@ -127,6 +129,7 @@ var sentPayloads = map[session.Type]reflect.Type{
 var requestRequired = map[reflect.Type][]string{
 	typeOf[createBody]():     {"agent"},
 	typeOf[endBody]():        {"reason"},
+	typeOf[holdBody]():       {"held"},
 	typeOf[resumeBody]():     {},
 	typeOf[redactBody]():     {},
 	typeOf[archiveBody]():    {},
@@ -199,6 +202,8 @@ var typeNames = map[reflect.Type]string{
 	typeOf[modelChange]():            "ModelChange",
 	typeOf[policyChange]():           "PolicyChange",
 	typeOf[endBody]():                "EndSessionRequest",
+	typeOf[holdBody]():               "TriggerHoldRequest",
+	typeOf[holdAnswer]():             "TriggerHold",
 	typeOf[forkBody]():               "ForkSessionRequest",
 	typeOf[resumeBody]():             "ResumeSessionRequest",
 	typeOf[redactBody]():             "RedactEventRequest",

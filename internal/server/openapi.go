@@ -467,7 +467,13 @@ var opDescriptions = map[string]string{
 	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
 	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running. A session's wake deleted here is recorded in that session as session.wake_cleared with reason canceled and the sender.",
 	"listFirings":   "List a trigger's firings, newest first.",
-	"getOpenAPI":    "This document.",
+	"getTriggerHold": "The caller's hold over every trigger they own, in the context their token names: {held, since}, since when it is held. " +
+		"trigger.hold is asked with the owner, the caller.",
+	"setTriggerHold": "Hold every trigger the caller owns, {\"held\": true}, or release them, {\"held\": false}, and answer as getTriggerHold does; a second hold keeps the first since. " +
+		"While held, the minute loop fires none of their triggers and records nothing, the fire route answers conflict for each, and a one-shot whose time passes keeps it. " +
+		"On release a schedule starts from then and fires nothing it missed, and a one-shot fires within the minute, or is skipped_late past its maxAge, a wake's message saying when it was due. " +
+		"A session's trigger and wake calls go on as without the hold, and their results say every trigger is held. trigger.hold is asked with the owner, the caller, and held.",
+	"getOpenAPI": "This document.",
 	"endSession": `End an idle session completed or canceled. The body is {"reason": "completed"} or {"reason": "canceled"}. ` +
 		"The route asks session.read, so a caller who may not read the session hears not_found, and refuses a running or ended session as conflict before it asks session.end; " +
 		"a session a runner claims while the authorizer decides is conflict too, and a deny is forbidden.",

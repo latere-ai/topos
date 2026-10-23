@@ -619,7 +619,7 @@ func TestAuthorizerDownIsRefusal(t *testing.T) {
 		body := map[string]string{
 			"applyAgent": agentYAML("reviewer", "Changed."), "createSession": `{"agent":"reviewer"}`, "endSession": `{"reason":"canceled"}`, "archiveAgent": `{"permanent":true}`,
 			"sendEvent": `{"type":"user.interrupt"}`, "redactEvent": `{"reason":"x"}`, "resumeSession": `{}`, "updateSession": `{"model":{"name":"anthropic/claude-sonnet-4-5"}}`,
-			"applyTrigger": triggerYAML("reviewer", "schedule: '@hourly', session: {message: y}"),
+			"applyTrigger": triggerYAML("reviewer", "schedule: '@hourly', session: {message: y}"), "setTriggerHold": `{"held":true}`,
 		}[rt.op]
 		// A search's words are read before it asks, as a list's filters are.
 		query := map[string]string{"searchSessions": "?q=review", "getSessionActivity": "?day=2026-01-02"}[rt.op]

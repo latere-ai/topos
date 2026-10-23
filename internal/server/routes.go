@@ -78,6 +78,12 @@ func table() []route {
 			op: "applyTrigger", summary: "Apply a trigger", status: http.StatusOK, creates: true, body: MaxBody, handle: (*call).applyTrigger},
 		{method: http.MethodGet, path: "/triggers", actions: a(authorizer.ActionTriggerList),
 			op: "listTriggers", summary: "List triggers", status: http.StatusOK, handle: (*call).listTriggers},
+		// The hold's routes are more specific than a trigger's of the name
+		// hold, which apply refuses (spec 086).
+		{method: http.MethodGet, path: "/triggers/hold", actions: a(authorizer.ActionTriggerHold),
+			op: "getTriggerHold", summary: "Read the trigger hold", status: http.StatusOK, handle: (*call).getHold},
+		{method: http.MethodPut, path: "/triggers/hold", actions: a(authorizer.ActionTriggerHold),
+			op: "setTriggerHold", summary: "Set the trigger hold", status: http.StatusOK, body: MaxBody, handle: (*call).setHold},
 		{method: http.MethodGet, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerRead),
 			op: "getTrigger", summary: "Read a trigger", status: http.StatusOK, handle: (*call).getTrigger},
 		{method: http.MethodDelete, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerDelete),

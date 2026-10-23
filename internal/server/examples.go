@@ -305,6 +305,8 @@ func examples() (map[string]example, error) {
 		"getTrigger":       {response: text(fired)},
 		"fireTrigger":      {request: text(delivery), response: text(started)},
 		"listFirings":      {response: list(started, store.Cursor(exampleFiringID))},
+		"getTriggerHold":   {response: text(holdAnswer{})},
+		"setTriggerHold":   {request: text(holdBody{Held: new(true)}), response: text(holdAnswer{Held: true, Since: new(exampleTime(12, 50, 0))})},
 	}
 	return out, failed
 }

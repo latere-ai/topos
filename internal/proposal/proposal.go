@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/pkg/llmdialect/ir"
+	"latere.ai/x/pkg/llmdialect/lux"
 	"latere.ai/x/sdk-go/agents/routine"
 
 	"latere.ai/x/topos/harness/tools"
@@ -291,17 +293,26 @@ func (t *Tool) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 		return tools.Result{}, err
 	}
 	data := prompts.Data{"Title": title(done), "Next": when(done.NextFireAt)}
+	var res tools.Result
 	switch in.Action {
 	case ActionChange:
-		return tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerChanged, data)), nil
+		res = tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerChanged, data))
 	case ActionPause:
 		return tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerPaused, prompts.Data{"Title": title(done)})), nil
 	case ActionResume:
-		return tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerResumed, data)), nil
+		res = tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerResumed, data))
 	case ActionDelete:
 		return tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerDeleted, prompts.Data{"Title": title(done)})), nil
+	default:
+		res = tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerMade, data))
 	}
-	return tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerMade, data)), nil
+	// A trigger made, changed or run again while its owner holds every
+	// trigger runs nothing until the release, which the model says (spec
+	// 086).
+	if done.Held {
+		res.Content = append(res.Content, lux.Block{Type: ir.BlockText, Text: prompts.Text(prompts.TriggerHeld)})
+	}
+	return res, nil
 }
 
 func (t *Tool) list(ctx context.Context) (tools.Result, error) {

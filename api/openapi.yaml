@@ -2022,6 +2022,49 @@ paths:
                 next_cursor: dHJnXzAxTTM0SEdCQTBKUjk4V0tLWFdaR0FYNlZB
         default:
           $ref: "#/components/responses/Error"
+  /triggers/hold:
+    get:
+      operationId: getTriggerHold
+      summary: Read the trigger hold
+      description: "The caller's hold over every trigger they own, in the context their token names: {held, since}, since when it is held. trigger.hold is asked with the owner, the caller."
+      x-topos-actions:
+        - trigger.hold
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerHold"
+              example:
+                held: false
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: setTriggerHold
+      summary: Set the trigger hold
+      description: "Hold every trigger the caller owns, {\"held\": true}, or release them, {\"held\": false}, and answer as getTriggerHold does; a second hold keeps the first since. While held, the minute loop fires none of their triggers and records nothing, the fire route answers conflict for each, and a one-shot whose time passes keeps it. On release a schedule starts from then and fires nothing it missed, and a one-shot fires within the minute, or is skipped_late past its maxAge, a wake's message saying when it was due. A session's trigger and wake calls go on as without the hold, and their results say every trigger is held. trigger.hold is asked with the owner, the caller, and held."
+      x-topos-actions:
+        - trigger.hold
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerHoldRequest"
+            example:
+              held: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerHold"
+              example:
+                held: true
+                since: "2026-09-22T12:50:00Z"
+        default:
+          $ref: "#/components/responses/Error"
   /triggers/{ref}:
     get:
       operationId: getTrigger
@@ -5298,6 +5341,25 @@ components:
           type: integer
         failed:
           type: integer
+    TriggerHold:
+      type: object
+      required:
+        - held
+      properties:
+        held:
+          type: boolean
+        since:
+          type: string
+          format: date-time
+    TriggerHoldRequest:
+      type: object
+      required:
+        - held
+      properties:
+        held:
+          anyOf:
+            - type: boolean
+            - type: "null"
     TriggerMatch:
       type: object
       required:

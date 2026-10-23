@@ -172,6 +172,7 @@ var textCases = func() []textCase {
 		{name: NotifyInvalid, data: Data{"Detail": "title is required"}, want: "The notice was not sent: title is required. Correct the call and make it again."},
 		{name: ContextWoken, data: Data{"Wake": true, "Attended": false},
 			want: "<woken>\nNobody is waiting for this turn: a wake you set began it, and the person reads it later, if at all. Call notify, with one line the person reads, only when what you found deserves their attention now. Nobody answers a question in this conversation now. When nothing deserves their attention, end the turn without notify: the person is not disturbed, and your answer stays in the conversation for when they look.\n</woken>"},
+		{name: TriggerHeld, want: "The person has paused every trigger they hold, so this one runs nothing until they resume them. Tell them so if it matters to what they asked."},
 		{name: ToolRequestConnection, wantSHA: "69ccc468c5f89386227de3aff7c72b59ab2f3e57a4a67f7af225bb74296d3995"},
 		{name: RequestConnectionAsked, data: Data{"Title": "GitHub"}, want: "The person is asked to connect GitHub. It reaches this session from their next message, not in this turn. End your turn now with one sentence that says what you will do once GitHub is connected."},
 		{name: RequestConnectionNotAvailable, data: Data{"Name": "gitlab", "Names": "github, wiki"}, want: "gitlab is not a service you can ask the person to connect. The ones you can ask for are github, wiki. A service the connections block lists as connected needs no request: use it."},

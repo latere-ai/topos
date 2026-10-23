@@ -227,7 +227,7 @@ func (w *Wake) Run(ctx context.Context, c tools.Call) (tools.Result, error) {
 	count := c.State.Wakes + 1
 	earliest, latest := trigger.WakeWindow(now, w.expires)
 	res := tools.Text(tools.OutcomeOK, prompts.Render(prompts.WakeIsSet, prompts.Data{
-		"At": stamp(at), "Count": count, "Max": trigger.MaxWakesWithoutPerson, "Earliest": stamp(earliest), "Latest": stamp(latest), "Held": false,
+		"At": stamp(at), "Count": count, "Max": trigger.MaxWakesWithoutPerson, "Earliest": stamp(earliest), "Latest": stamp(latest), "Held": set.Held,
 	}))
 	res.WakeSet = &session.WakeSet{TriggerID: set.ID, At: at.UTC(), Title: title, Note: in.Note, Count: count}
 	return res, nil

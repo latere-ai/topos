@@ -293,6 +293,9 @@ func (s *Server) listed(ctx context.Context, t store.Trigger) (runner.ListedTrig
 	if doc.Spec.On != nil {
 		l.Product = doc.Spec.On.Product
 	}
+	if l.Held, err = s.held(ctx, t.Owner); err != nil {
+		return runner.ListedTrigger{}, err
+	}
 	if l.Target != "" {
 		target, err := s.o.Sessions.Get(ctx, l.Target)
 		switch {

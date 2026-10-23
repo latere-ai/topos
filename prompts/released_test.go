@@ -270,6 +270,7 @@ var released = map[string]string{
 	"results/wake/too-soon-v1.md":                    "e5255f98b46d575574e4538a4ad07e624531696a6d819871d7ef31be5e3d5512",
 	"tools/wake-v1.md":                               "81611b7e7fb32ec579ecf170a6e9948d1ba65bb1b405ed5e4d21e998683cb7c6",
 	"wake/message-v1.md":                             "ad07cb876dcda0b52fe73b1cb8af2dccf998dbddfd4b6e9e2aa62daca5bedbcc",
+	"results/trigger/held-v1.md":                     "facb0a292af82e2515ff1b2b3b810bfc7129f4b0a698a6a004cf320df04746e7",
 	"results/trigger/refused-change-v1.md":           "80a829a05208493762592867f9f93dbfb23666631ed3ca408db5e4a5f1897d39",
 	"transcript/cleared-v2.md":                       "23d14925df90e96818ba1c68f697452018405e045b8e31a2658132049be9e108",
 	"transcript/summary-v2.md":                       "e04302dc54f0a6e3d48689bdf60225cbbbf91ae656589a8cc97ba53af95056f1",

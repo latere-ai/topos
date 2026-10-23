@@ -117,6 +117,9 @@ type ListedTrigger struct {
 	Suspended   bool              `json:"suspended,omitempty"`
 	NextFireAt  *time.Time        `json:"next_fire_at,omitempty"`
 	Origin      *v1.TriggerOrigin `json:"origin,omitempty"`
+	// Held is set when the trigger's owner holds every trigger they own
+	// (spec 086): it fires nothing until they release them.
+	Held bool `json:"held,omitempty"`
 }
 
 // TriggerRefusal is a trigger question the server answered no: its

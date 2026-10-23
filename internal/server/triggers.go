@@ -519,6 +519,9 @@ func (c *call) fireTrigger() error {
 	if errors.Is(err, triggers.ErrSuspended) {
 		return refuse(CodeConflict, "the trigger %s is suspended and fires nothing", t.Name)
 	}
+	if errors.Is(err, triggers.ErrHeld) {
+		return refuse(CodeConflict, "the trigger %s's owner holds every trigger they own, and it fires nothing until they release them", t.Name)
+	}
 	if err != nil {
 		return err
 	}

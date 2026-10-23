@@ -250,6 +250,8 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"deleteTrigger":      {http.MethodDelete, "/v1/triggers/retired", ""},
 		"fireTrigger":        {http.MethodPost, "/v1/triggers/nightly/fire", ""},
 		"listFirings":        {http.MethodGet, "/v1/triggers/nightly/firings", ""},
+		"getTriggerHold":     {http.MethodGet, "/v1/triggers/hold", ""},
+		"setTriggerHold":     {http.MethodPut, "/v1/triggers/hold", `{"held":false}`},
 	}
 	var ops []string
 	for _, rt := range table() {

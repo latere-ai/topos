@@ -166,6 +166,9 @@ const (
 	// TriggerPaused and TriggerDeleted take Title.
 	TriggerPaused  Name = "results/trigger/paused-v1"
 	TriggerDeleted Name = "results/trigger/deleted-v1"
+	// TriggerHeld follows the result of a call whose trigger's owner
+	// holds every trigger they own (spec 086).
+	TriggerHeld Name = "results/trigger/held-v1"
 )
 
 // The results of request_connection (spec 069).
