@@ -2822,6 +2822,24 @@ components:
           type: string
         text:
           type: string
+    ContextReport:
+      type: object
+      required:
+        - window
+        - used
+        - source
+        - parts
+      properties:
+        window:
+          type: integer
+        used:
+          type: integer
+        source:
+          type: string
+        parts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportPart"
     Counts:
       type: object
       required:
@@ -4109,6 +4127,8 @@ components:
           $ref: "#/components/schemas/Reminder"
         purpose:
           type: string
+        context:
+          $ref: "#/components/schemas/ContextReport"
     Network:
       type: object
       required:
@@ -4437,6 +4457,16 @@ components:
           type: string
         tool:
           type: string
+    ReportPart:
+      type: object
+      required:
+        - part
+        - tokens
+      properties:
+        part:
+          type: string
+        tokens:
+          type: integer
     Repository:
       type: object
       required:
@@ -4865,6 +4895,8 @@ components:
           type: string
         notice:
           $ref: "#/components/schemas/Notice"
+        context_report:
+          $ref: "#/components/schemas/ContextReport"
     SessionBudget:
       type: object
       required:

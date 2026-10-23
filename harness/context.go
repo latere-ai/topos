@@ -218,6 +218,10 @@ func (t *turn) clear(ctx context.Context, before int64) (bool, error) {
 // estimateWith estimates the request the log would give with evs
 // appended, without appending them.
 func (t *turn) estimateWith(ctx context.Context, evs ...session.Event) (int64, error) {
+	// The request built here is never sent, so the shares of the one that
+	// is stay the turn's.
+	kept := t.messageShares
+	defer func() { t.messageShares = kept }()
 	log := slices.Clone(t.events())
 	next := uint64(1)
 	if n := len(log); n > 0 {
@@ -328,7 +332,7 @@ func (t *turn) summarize(ctx context.Context, before int64, to uint64, cause str
 		}
 		return false, t.finish(ctx, session.StopError, CodeCompactionFailed, se)
 	}
-	si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began)}
+	si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began), shares: t.shares(req)}
 	mr, err := t.modelRequest(ctx, res, si, "ok")
 	if err != nil {
 		return false, err

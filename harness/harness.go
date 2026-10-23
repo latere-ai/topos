@@ -464,6 +464,10 @@ type turn struct {
 	start    time.Time
 	deadline time.Time
 	startSeq uint64
+	// messageShares are the estimates of the files and summaries of the
+	// transcript the turn last built a request from, which the context
+	// report of the request counts apart (spec 087).
+	messageShares messageShares
 	// seen is the last sequence the turn's latest request was built from.
 	seen   uint64
 	thread string
@@ -936,7 +940,7 @@ func (t *turn) stepOnce(ctx context.Context) error {
 		began := t.h.c.Clock()
 		moves := t.switchable()
 		res, attempts, err := t.send(sctx, req, moves)
-		si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began), reminder: reminder}
+		si := sendInfo{maxTokens: *req.MaxTokens, toolsSHA: toolsSHA, attempts: attempts, latency: t.h.c.Clock().Sub(began), reminder: reminder, shares: t.shares(req)}
 		if err != nil {
 			if t.cut.Load() {
 				return t.canceledRequest(ctx, si)
@@ -1083,14 +1087,16 @@ func (t *turn) checkBudget(ctx context.Context) error {
 
 // sendInfo is how one request was sent, as its model.request records
 // it: the max_tokens it asked, the hash of its tool definitions, the
-// attempts it took and their time, and the reminder it carried after its
-// fold, nil for none (spec 062).
+// attempts it took and their time, the reminder it carried after its
+// fold, nil for none (spec 062), and the estimates of its parts its
+// context report scales (spec 087).
 type sendInfo struct {
 	maxTokens int64
 	toolsSHA  string
 	attempts  int
 	latency   time.Duration
 	reminder  *session.Reminder
+	shares    requestShares
 }
 
 // sentRequest is the model.request of a sent request, before its
@@ -1100,7 +1106,7 @@ func (t *turn) sentRequest(si sendInfo) session.ModelRequest {
 	return session.ModelRequest{
 		Model: c.Model, Family: c.Family, Dialect: string(c.EffectiveDialect()), PromptVersion: prompts.HarnessVersion(t.h.c.PromptVersion),
 		ToolsSHA256: si.toolsSHA, MaxTokens: si.maxTokens, LatencyMS: si.latency.Milliseconds(), Attempts: si.attempts,
-		Reminder: si.reminder,
+		Reminder: si.reminder, Context: t.contextReport(si.shares, 0),
 	}
 }
 
@@ -1120,6 +1126,7 @@ func (t *turn) maxTokens() int64 {
 // never from the clock, so the request is a function of the log and the
 // session's header.
 func (t *turn) request(ctx context.Context, tr session.Transcript) (ir.Request, string, error) {
+	t.messageShares = sharesOf(tr)
 	parts := withRoute(withRepositories(tr.System, t.s), t.s)
 	system, err := systemBlocks(ctx, t.h.prompt, t.h.c.Instructions, headerBlocks(t.s, t.thread == "", reachesHTTP(t.s, t.h.c.Machine), t.h.c.MCP), parts, t.l)
 	if err != nil {
@@ -1600,6 +1607,7 @@ func (t *turn) modelRequest(ctx context.Context, res models.Result, si sendInfo,
 		mr.CostUSDMicro, mr.CostSource = &cost, src
 	}
 	prompt := promptTokens(res.Usage)
+	mr.Context = t.contextReport(si.shares, prompt)
 	t.lastPrompt = prompt + res.Usage.OutputTokens
 	if t.lastEstimate > 0 {
 		t.bias = prompt - t.lastEstimate
