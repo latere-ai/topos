@@ -88,7 +88,7 @@ type Status struct {
 
 // TriggerOrigin is the session call that made a Trigger (spec 086).
 type TriggerOrigin struct {
-	// Kind is OriginProposal.
+	// Kind is OriginProposal or OriginWake.
 	Kind string `json:"kind"`
 	// SessionID and ToolUseID are the session and its call.
 	SessionID string `json:"sessionId"`
@@ -98,9 +98,13 @@ type TriggerOrigin struct {
 	ConfirmedBy string `json:"confirmedBy,omitempty"`
 }
 
-// OriginProposal is a TriggerOrigin's kind for the trigger tool's propose,
-// applied once the session's initiator allowed it.
-const OriginProposal = "proposal"
+// The kinds of a TriggerOrigin: the trigger tool's propose, applied once
+// the session's initiator allowed it, and the wake tool's set, a session's
+// own next wake.
+const (
+	OriginProposal = "proposal"
+	OriginWake     = "wake"
+)
 
 // TriggerCounts is the number of a trigger's firings that came to each
 // outcome of spec 022.
