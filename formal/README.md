@@ -13,6 +13,10 @@ installs it on first build. A build that succeeds has checked every
 theorem: none uses `sorry`, and each depends only on Lean's standard
 axioms (`#print axioms` lists `propext` and `Quot.sound`).
 
+The gate builds it on every push: `go tool lateregate lean` runs
+`lake build --wfail` here, which fails on a `sorry` or any other warning,
+and installs elan itself on a machine with no `lake` on `PATH`.
+
 ## What it models
 
 `SessionStatus/Diagram.lean` is the status diagram: `idle`, `running` and
@@ -58,8 +62,8 @@ as their append lands. `shipped` holds the checks before the fix, and
 
 ## What it does not cover
 
-The model is written by hand from the code; nothing checks that the Go
-follows it. The two tests that reproduce the races in Go,
+The model is written by hand from the code; the gate checks that its
+proofs hold, and nothing checks that the Go follows it. The two tests that reproduce the races in Go,
 `runner.TestAClaimAfterAnEndAppendsNothing` and
 `internal/server.TestAnEndThatLosesARaceToAClaimEndsNothing`, tie the
 model's counterexamples to the code.
