@@ -24,11 +24,19 @@ import (
 //	objects/trigger/<trg_id>.json                   a trigger: its document and its firing record
 //	objects/trigger_firing/<trg_id>/<frg_id>.json   one of its firings
 //	objects/trigger_key/<trg_id>/<hex>.json         the session one of its keys names; hex is the SHA-256 of the key
+//	objects/trigger_hold/<hex>.json                 an owner's hold over every trigger they own; hex is the SHA-256 of the owner
 const (
 	kindTrigger       = "trigger"
 	kindTriggerFiring = "trigger_firing"
 	kindTriggerKey    = "trigger_key"
+	kindTriggerHold   = "trigger_hold"
 )
+
+// holdFile is an owner's hold.
+type holdFile struct {
+	Owner string    `json:"owner"`
+	Since time.Time `json:"since"`
+}
 
 // triggerFile is a trigger's file. The document is JSON text, kept as a
 // string so the file reads as text.
@@ -114,6 +122,23 @@ func (s triggerFiles) firingPath(triggerID, id string) string {
 func (s triggerFiles) keyPath(triggerID, key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return filepath.Join(s.root, kindTriggerKey, triggerID, hex.EncodeToString(sum[:])+".json")
+}
+
+func (s triggerFiles) holdPath(owner string) string {
+	sum := sha256.Sum256([]byte(owner))
+	return filepath.Join(s.root, kindTriggerHold, hex.EncodeToString(sum[:])+".json")
+}
+
+// SaveHold writes owner's hold, or removes it for nil.
+func (s triggerFiles) SaveHold(owner string, since *time.Time) error {
+	path := s.holdPath(owner)
+	if since == nil {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("dir: release the hold of %s: %w", owner, err)
+		}
+		return syncDir(filepath.Dir(path))
+	}
+	return write(path, holdFile{Owner: owner, Since: *since})
 }
 
 func (s triggerFiles) SaveTrigger(t store.Trigger) error {
@@ -242,6 +267,26 @@ func loadTriggers(root string, book *store.TriggerBook) error {
 	if err := book.Load(ts, fs, ks); err != nil {
 		return fmt.Errorf("%w: %w", session.ErrCorrupt, err)
 	}
+	holds, err := os.ReadDir(filepath.Join(root, kindTriggerHold))
+	if err != nil {
+		return fmt.Errorf("dir: list holds: %w", err)
+	}
+	loaded := map[string]time.Time{}
+	for _, e := range holds {
+		if !strings.HasSuffix(e.Name(), ".json") || len(e.Name()) != 64+len(".json") {
+			continue
+		}
+		path := filepath.Join(root, kindTriggerHold, e.Name())
+		var h holdFile
+		if err := readJSON(path, &h); err != nil {
+			return err
+		}
+		if files.holdPath(h.Owner) != path {
+			return fmt.Errorf("%w: %s holds another owner's hold", session.ErrCorrupt, e.Name())
+		}
+		loaded[h.Owner] = h.Since
+	}
+	book.LoadHolds(loaded)
 	return nil
 }
 

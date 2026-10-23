@@ -448,3 +448,42 @@ func (s *Store) SetTriggerSession(ctx context.Context, id, key, sessionID string
 	}
 	return nil
 }
+
+func (s *Store) Hold(ctx context.Context, owner string) (*time.Time, error) {
+	var since time.Time
+	err := s.pool.QueryRow(ctx, `SELECT since FROM trigger_holds WHERE owner = $1`, owner).Scan(&since)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("postgres: read the hold of %s: %w", owner, err)
+	}
+	since = since.UTC()
+	return &since, nil
+}
+
+// SetHold inserts the hold, keeping one already set, or deletes it.
+func (s *Store) SetHold(ctx context.Context, owner string, since *time.Time) error {
+	var err error
+	if since == nil {
+		_, err = s.pool.Exec(ctx, `DELETE FROM trigger_holds WHERE owner = $1`, owner)
+	} else {
+		_, err = s.pool.Exec(ctx, `INSERT INTO trigger_holds (owner, since) VALUES ($1, $2) ON CONFLICT (owner) DO NOTHING`, owner, since.UTC())
+	}
+	if err != nil {
+		return fmt.Errorf("postgres: set the hold of %s: %w", owner, err)
+	}
+	return nil
+}
+
+func (s *Store) HeldOwners(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT owner FROM trigger_holds ORDER BY owner`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list the held owners: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list the held owners: %w", err)
+	}
+	return out, nil
+}

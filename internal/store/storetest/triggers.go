@@ -414,6 +414,47 @@ func triggerSpend(t *testing.T, f Factory) {
 	}
 }
 
+// triggerHolds: an owner's hold reads back with its since, a second set
+// keeps the first since, the held owners are listed, and a release, and
+// a release of none, holds nothing (spec 086).
+func triggerHolds(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ctx := t.Context()
+	if since, err := st.Hold(ctx, "alice"); err != nil || since != nil {
+		t.Fatalf("an owner never held: %v, %v", since, err)
+	}
+	first := clock.Now().UTC()
+	if err := st.SetHold(ctx, "alice", &first); err != nil {
+		t.Fatal(err)
+	}
+	later := first.Add(time.Hour)
+	if err := st.SetHold(ctx, "alice", &later); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetHold(ctx, "bob", &later); err != nil {
+		t.Fatal(err)
+	}
+	if since, err := st.Hold(ctx, "alice"); err != nil || since == nil || !since.Equal(first) {
+		t.Fatalf("alice's hold: %v, %v", since, err)
+	}
+	if held, err := st.HeldOwners(ctx); err != nil || !slices.Equal(held, []string{"alice", "bob"}) {
+		t.Fatalf("the held owners: %v, %v", held, err)
+	}
+	if err := st.SetHold(ctx, "alice", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetHold(ctx, "carol", nil); err != nil {
+		t.Fatal(err)
+	}
+	if since, err := st.Hold(ctx, "alice"); err != nil || since != nil {
+		t.Fatalf("alice's released hold: %v, %v", since, err)
+	}
+	if held, err := st.HeldOwners(ctx); err != nil || !slices.Equal(held, []string{"bob"}) {
+		t.Fatalf("the held owners after a release: %v, %v", held, err)
+	}
+}
+
 // triggerFiredBy: a firing keeps the key that fired it, read back by the
 // claim, the held list and the firings list, and a firing no key fired
 // reads back with none. A failed or unrecorded firing taken again keeps

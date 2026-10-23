@@ -181,6 +181,15 @@ type Triggers interface {
 	TriggerSession(ctx context.Context, triggerID, key string) (string, error)
 	// SetTriggerSession maps key to sessionID.
 	SetTriggerSession(ctx context.Context, triggerID, key, sessionID string) error
+
+	// Hold is since when owner holds every trigger they own (spec 086),
+	// nil while they hold none.
+	Hold(ctx context.Context, owner string) (*time.Time, error)
+	// SetHold holds every trigger owner owns from since, keeping an
+	// earlier since of a hold already set, or releases them for nil.
+	SetHold(ctx context.Context, owner string, since *time.Time) error
+	// HeldOwners lists every owner who holds their triggers.
+	HeldOwners(ctx context.Context) ([]string, error)
 }
 
 // CheckTrigger is the shape every PutTrigger refuses before it looks at

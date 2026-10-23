@@ -126,7 +126,7 @@ func Open(dataDir string, now func() time.Time) (*Store, error) {
 		now = time.Now
 	}
 	root := filepath.Join(dataDir, "objects")
-	for _, kind := range []string{kindAgent, kindVersion, kindIdempotency, kindTrigger, kindTriggerFiring, kindTriggerKey} {
+	for _, kind := range []string{kindAgent, kindVersion, kindIdempotency, kindTrigger, kindTriggerFiring, kindTriggerKey, kindTriggerHold} {
 		if err := os.MkdirAll(filepath.Join(root, kind), 0o700); err != nil {
 			return nil, fmt.Errorf("dir: create %s: %w", kind, err)
 		}

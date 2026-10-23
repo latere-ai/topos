@@ -25,6 +25,8 @@ type TriggerSaver interface {
 	// SaveKey maps a trigger's key to its session; an empty session
 	// removes the mapping.
 	SaveKey(triggerID, key, sessionID string) error
+	// SaveHold holds owner's triggers from since; nil releases them.
+	SaveHold(owner string, since *time.Time) error
 }
 
 // KeySession is one stored mapping of a trigger's key to its session.
@@ -48,6 +50,8 @@ type TriggerBook struct {
 	firings map[string]map[string]Firing
 	keys    map[string]map[string]string
 	leases  map[string]triggerLease
+	// holds maps each held owner to since when.
+	holds map[string]time.Time
 }
 
 type triggerLease struct {
@@ -62,7 +66,7 @@ func NewTriggerBook(now func() time.Time, save TriggerSaver) *TriggerBook {
 		now = time.Now
 	}
 	return &TriggerBook{now: now, save: save, triggers: map[string]Trigger{}, names: map[ownedName]string{},
-		firings: map[string]map[string]Firing{}, keys: map[string]map[string]string{}, leases: map[string]triggerLease{}}
+		firings: map[string]map[string]Firing{}, keys: map[string]map[string]string{}, leases: map[string]triggerLease{}, holds: map[string]time.Time{}}
 }
 
 // Load fills the book with stored objects, without writing them again.
@@ -91,6 +95,64 @@ func (b *TriggerBook) Load(ts []Trigger, fs []Firing, ks []KeySession) error {
 		b.keysOf(k.TriggerID)[k.Key] = k.SessionID
 	}
 	return nil
+}
+
+// LoadHolds fills the book with stored holds, without writing them again.
+func (b *TriggerBook) LoadHolds(holds map[string]time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for owner, since := range holds {
+		b.holds[owner] = since.UTC()
+	}
+}
+
+func (b *TriggerBook) Hold(_ context.Context, owner string) (*time.Time, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	since, ok := b.holds[owner]
+	if !ok {
+		return nil, nil
+	}
+	return &since, nil
+}
+
+func (b *TriggerBook) SetHold(_ context.Context, owner string, since *time.Time) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if since == nil {
+		if _, ok := b.holds[owner]; !ok {
+			return nil
+		}
+		if b.save != nil {
+			if err := b.save.SaveHold(owner, nil); err != nil {
+				return err
+			}
+		}
+		delete(b.holds, owner)
+		return nil
+	}
+	if _, ok := b.holds[owner]; ok {
+		return nil
+	}
+	at := since.UTC()
+	if b.save != nil {
+		if err := b.save.SaveHold(owner, &at); err != nil {
+			return err
+		}
+	}
+	b.holds[owner] = at
+	return nil
+}
+
+func (b *TriggerBook) HeldOwners(context.Context) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]string, 0, len(b.holds))
+	for owner := range b.holds {
+		out = append(out, owner)
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 func (b *TriggerBook) firingsOf(id string) map[string]Firing {

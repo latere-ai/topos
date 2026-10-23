@@ -5,6 +5,8 @@ package store
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -20,6 +22,7 @@ type saver struct {
 	firings  []string
 	keys     []string
 	removed  []string
+	holds    []string
 }
 
 var errDisk = errors.New("the disk is full")
@@ -29,6 +32,14 @@ func (s *saver) SaveTrigger(t Trigger) error {
 		return errDisk
 	}
 	s.triggers = append(s.triggers, t.ID)
+	return nil
+}
+
+func (s *saver) SaveHold(owner string, since *time.Time) error {
+	if s.fail {
+		return errDisk
+	}
+	s.holds = append(s.holds, fmt.Sprintf("%s %v", owner, since != nil))
 	return nil
 }
 
@@ -209,5 +220,44 @@ func TestTheShapesOfATriggerAndAFiring(t *testing.T) {
 	}
 	if _, err := DecodeTrigger([]byte("{")); err == nil {
 		t.Fatal("a stored trigger that does not read decoded")
+	}
+}
+
+// TestAHoldIsSavedBeforeTheBookChanges: a hold and its release reach the
+// saver first, a saver that fails leaves the book as it was, and the
+// holds a store loads read back without being written again.
+func TestAHoldIsSavedBeforeTheBookChanges(t *testing.T) {
+	sv := &saver{}
+	b := NewTriggerBook(nil, sv)
+	ctx := t.Context()
+	now := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	sv.fail = true
+	if err := b.SetHold(ctx, "alice", &now); !errors.Is(err, errDisk) {
+		t.Fatalf("a hold the saver refused: %v", err)
+	}
+	if since, _ := b.Hold(ctx, "alice"); since != nil {
+		t.Fatalf("a refused hold is kept: %v", since)
+	}
+	sv.fail = false
+	if err := b.SetHold(ctx, "alice", &now); err != nil {
+		t.Fatal(err)
+	}
+	sv.fail = true
+	if err := b.SetHold(ctx, "alice", nil); !errors.Is(err, errDisk) {
+		t.Fatalf("a release the saver refused: %v", err)
+	}
+	if since, _ := b.Hold(ctx, "alice"); since == nil {
+		t.Fatal("a refused release dropped the hold")
+	}
+	sv.fail = false
+	if err := b.SetHold(ctx, "alice", nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"alice true", "alice false"}; !slices.Equal(sv.holds, want) {
+		t.Fatalf("the saver was asked %v, want %v", sv.holds, want)
+	}
+	b.LoadHolds(map[string]time.Time{"bob": now})
+	if since, _ := b.Hold(ctx, "bob"); since == nil || !since.Equal(now) || len(sv.holds) != 2 {
+		t.Fatalf("a loaded hold reads %v, saved %v", since, sv.holds)
 	}
 }
