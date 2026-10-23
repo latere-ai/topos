@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **An ended session stays ended.** An end that a runner's claim overtook, between the end route's read of the idle session and its append, ended the running session under the runner driving it, and the turn's status then left it idle again. The route now checks that the session is idle on the read its append follows, so such an end is `conflict` and the session runs on. A runner whose claim follows an end, by the route or the reaper, now appends nothing and lets the session go, where it appended `running` after the end and ran a turn. A title asked after a turn records nothing on a session that ended in the moment before the title read its log, where it appended the title after the end.
+
 ## v0.53.0 - 2026-10-23
 
 ### Changed
