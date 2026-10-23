@@ -1051,9 +1051,10 @@ type endBody struct {
 // as a decider that revokes the session's credentials does, so the
 // route asks it only of a session it would end: it reads the session,
 // which a caller who may not see it hears as not_found, refuses a
-// running or ended one, and only then asks session.end. The session is
-// read again after the decision, since a runner may have claimed it
-// meanwhile.
+// running or ended one, and only then asks session.end. The append
+// checks the session again on the read it follows, since a runner may
+// have claimed it meanwhile, and a running session it ended would go on
+// running under the runner that drives it.
 func (c *call) endSession() error {
 	var b endBody
 	if err := c.decode(&b); err != nil {
@@ -1073,17 +1074,11 @@ func (c *call) endSession() error {
 	if _, err := c.ask(ctx, authorizer.ActionSessionEnd, sessionResource(s, nil)); err != nil {
 		return err
 	}
-	if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
-		return err
-	}
-	if err := endable(s); err != nil {
-		return err
-	}
 	ev, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusEnded, StopReason: b.Reason}, c.s.o.Now())
 	if err != nil {
 		return err
 	}
-	if _, err := c.s.append(ctx, s.ID, ev); err != nil {
+	if err := c.s.appendWhen(ctx, s.ID, []session.Event{ev}, endable); err != nil {
 		return err
 	}
 	if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
@@ -1202,16 +1197,21 @@ func (s *Server) append(ctx context.Context, id string, ev session.Event) (sessi
 // append, so its events land together or not at all, and stamps it in
 // place. It follows the log when another writer appended first.
 func (s *Server) appendBatch(ctx context.Context, id string, batch []session.Event) error {
+	return s.appendWhen(ctx, id, batch, unended)
+}
+
+// appendWhen is appendBatch for a batch that guard allows on the session
+// it follows: the append names the sequence of the read guard checked, so
+// a session that moved on in between is read and checked again.
+func (s *Server) appendWhen(ctx context.Context, id string, batch []session.Event, guard func(session.Session) error) error {
 	var err error
 	for range appendRetries {
 		var sess session.Session
 		if sess, err = s.o.Sessions.Get(ctx, id); err != nil {
 			return err
 		}
-		if sess.Status == session.StatusEnded {
-			e := refuse(CodeConflict, "the session ended %s", sess.StopReason)
-			e.err = errEnded
-			return e
+		if err := guard(sess); err != nil {
+			return err
 		}
 		session.Stamp(id, sess.LastSeq, batch)
 		if _, err = s.o.Sessions.Append(ctx, id, sess.LastSeq, batch); err == nil {
@@ -1222,6 +1222,17 @@ func (s *Server) appendBatch(ctx context.Context, id string, batch []session.Eve
 		}
 	}
 	return err
+}
+
+// unended refuses an append to an ended session, which takes no more
+// events.
+func unended(sess session.Session) error {
+	if sess.Status != session.StatusEnded {
+		return nil
+	}
+	e := refuse(CodeConflict, "the session ended %s", sess.StopReason)
+	e.err = errEnded
+	return e
 }
 
 // requestWindow is how many of a log's last events sendAs reads first to
@@ -1599,10 +1610,8 @@ func (s *Server) appendChecked(ctx context.Context, id string, batch []session.E
 		if sess, err = s.o.Sessions.Get(ctx, id); err != nil {
 			return err
 		}
-		if sess.Status == session.StatusEnded {
-			e := refuse(CodeConflict, "the session ended %s", sess.StopReason)
-			e.err = errEnded
-			return e
+		if err := unended(sess); err != nil {
+			return err
 		}
 		var evs []session.Event
 		if evs, err = s.o.Sessions.Events(ctx, id, 1, 0); err != nil {

@@ -543,6 +543,40 @@ func TestAnEndIsAskedOnlyOfASessionItEnds(t *testing.T) {
 	}
 }
 
+// TestAnEndThatLosesARaceToAClaimEndsNothing: a runner's claim that lands
+// between the end route's last read of an idle session and its append
+// makes the end conflict, so a running session is never ended under the
+// runner that drives it.
+func TestAnEndThatLosesARaceToAClaimEndsNothing(t *testing.T) {
+	var race *racing
+	f := newFixture(t, func(o *Options) {
+		race = &racing{Store: o.Sessions}
+		o.Sessions = race
+	})
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	race.other = func(ctx context.Context, id string) error {
+		cur, err := f.sessions.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		claim, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: session.StatusRunning}, time.Now())
+		if err != nil {
+			return err
+		}
+		batch := []session.Event{claim}
+		session.Stamp(id, cur.LastSeq, batch)
+		_, err = f.sessions.Append(ctx, id, cur.LastSeq, batch)
+		return err
+	}
+	if a := f.do(http.MethodPost, "/v1/sessions/"+s.ID+"/end", "alice", `{"reason":"canceled"}`); a.code() != CodeConflict {
+		t.Fatalf("an end that lost a race to a claim: %d %s", a.status, a.body)
+	}
+	if got, err := f.sessions.Get(t.Context(), s.ID); err != nil || got.Status != session.StatusRunning {
+		t.Fatalf("the claimed session after a refused end: %+v, %v", got, err)
+	}
+}
+
 // TestDeniedReadAnswersAsMissing: another subject's read of a session
 // answers exactly what a read of no session does.
 func TestDeniedReadAnswersAsMissing(t *testing.T) {
