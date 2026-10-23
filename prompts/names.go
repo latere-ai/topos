@@ -93,10 +93,23 @@ const (
 	ToolHistory Name = "tools/history-v1"
 	// ToolTrigger states the bounds of a proposal's name and why and of a
 	// list, which a test holds to their constants (spec 086).
-	ToolTrigger Name = "tools/trigger-v2"
+	ToolTrigger Name = "tools/trigger-v3"
 	// ToolWake states the bounds of a wake's time, title and note and of
 	// a chain of wakes, which a test holds to their constants (spec 086).
 	ToolWake Name = "tools/wake-v1"
+	// ToolNotify states the bound of a notice's title, which a test holds
+	// to its constant (spec 086).
+	ToolNotify Name = "tools/notify-v1"
+)
+
+// The results of the notify tool (spec 086).
+const (
+	// NotifyNoticed takes Title, the line the person reads.
+	NotifyNoticed Name = "results/notify/noticed-v1"
+	// NotifyAgain answers a second notify of a turn.
+	NotifyAgain Name = "results/notify/again-v1"
+	// NotifyInvalid takes Detail, what the call's input got wrong.
+	NotifyInvalid Name = "results/notify/invalid-v1"
 )
 
 // The results of the wake tool (spec 086).
@@ -626,6 +639,11 @@ const (
 	// ContextInitiator takes Text, the initiator's standing instructions
 	// (spec 053).
 	ContextInitiator Name = "context/initiator-v1"
+	// ContextWoken leads the message that began a turn nobody waits for,
+	// a wake's or a judged trigger's (spec 086): Wake, whether the agent's
+	// own wake began it, and Attended, whether a question waits for the
+	// person.
+	ContextWoken Name = "context/woken-v1"
 	// ContextAttached takes First, whether the part is the first one,
 	// which opens with what the parts are, Title and Text: one context
 	// part an allow of the session's create attached (spec 058).
