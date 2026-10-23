@@ -1898,6 +1898,7 @@ paths:
                     skippedBusy: 0
                     skippedLate: 0
                     skippedEnded: 0
+                    skippedBudget: 0
                     refused: 0
                     failed: 0
         "201":
@@ -1938,6 +1939,7 @@ paths:
                     skippedBusy: 0
                     skippedLate: 0
                     skippedEnded: 0
+                    skippedBudget: 0
                     refused: 0
                     failed: 0
         default:
@@ -2017,6 +2019,7 @@ paths:
                         skippedBusy: 0
                         skippedLate: 0
                         skippedEnded: 0
+                        skippedBudget: 0
                         refused: 0
                         failed: 0
                 next_cursor: dHJnXzAxTTM0SEdCQTBKUjk4V0tLWFdaR0FYNlZB
@@ -2120,6 +2123,7 @@ paths:
                     skippedBusy: 0
                     skippedLate: 0
                     skippedEnded: 0
+                    skippedBudget: 0
                     refused: 0
                     failed: 0
         default:
@@ -3889,6 +3893,8 @@ components:
           $ref: "#/components/schemas/TriggerOrigin"
         paused:
           $ref: "#/components/schemas/TriggerPause"
+        spend:
+          $ref: "#/components/schemas/TriggerSpend"
     ManifestThresholds:
       type: object
       required:
@@ -5343,6 +5349,13 @@ components:
           $ref: "#/components/schemas/TriggerSpec"
         status:
           $ref: "#/components/schemas/ManifestStatus"
+    TriggerBudget:
+      type: object
+      required:
+        - perWeek
+      properties:
+        perWeek:
+          type: integer
     TriggerCounts:
       type: object
       required:
@@ -5354,6 +5367,7 @@ components:
         - skippedBusy
         - skippedLate
         - skippedEnded
+        - skippedBudget
         - refused
         - failed
       properties:
@@ -5372,6 +5386,8 @@ components:
         skippedLate:
           type: integer
         skippedEnded:
+          type: integer
+        skippedBudget:
           type: integer
         refused:
           type: integer
@@ -5527,6 +5543,27 @@ components:
           type: string
         suspend:
           type: boolean
+        budget:
+          $ref: "#/components/schemas/TriggerBudget"
+    TriggerSpend:
+      type: object
+      required:
+        - windowDays
+        - spentUsdMicro
+        - expectedLooks
+      properties:
+        windowDays:
+          type: integer
+        spentUsdMicro:
+          type: integer
+        perWeekUsdMicro:
+          type: integer
+        perLookUsdMicro:
+          type: integer
+        expectedLooks:
+          type: integer
+        projectedUsdMicro:
+          type: integer
     UpdateSessionRequest:
       type: object
       properties:

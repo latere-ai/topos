@@ -743,3 +743,31 @@ func TestTheTriggerFieldsOfSpec086(t *testing.T) {
 		t.Error("an at that is no RFC 3339 time resolved")
 	}
 }
+
+// TestATriggersAllowance (spec 087): a trigger's budget.perWeek above
+// zero resolves as written, one at or below zero is invalid_manifest at
+// its path, and a trigger that names none writes no budget, so its
+// digest stays what it was.
+func TestATriggersAllowance(t *testing.T) {
+	o := storedA(t)
+	r := one(t, eventTrigger("schedule: '@daily', budget: {perWeek: 5000000}, session: {message: x}"), o)
+	if b := r.Trigger.Spec.Budget; b == nil || b.PerWeek != 5000000 {
+		t.Fatalf("the allowance resolved as %+v", r.Trigger.Spec.Budget)
+	}
+	plain := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o)
+	if strings.Contains(string(plain.Spec), `"budget"`) {
+		t.Fatalf("a trigger without an allowance writes one: %s", plain.Spec)
+	}
+	if again := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o); again.Digest != plain.Digest {
+		t.Fatal("the digest of a trigger without an allowance moved")
+	}
+	if r.Digest == plain.Digest {
+		t.Fatal("an allowance does not change the digest")
+	}
+	for _, perWeek := range []string{"0", "-1"} {
+		e := refused(t, CodeInvalidManifest, eventTrigger("schedule: '@daily', budget: {perWeek: "+perWeek+"}, session: {message: x}"), o)
+		if !hasProblem(e, "spec.budget.perWeek", "not above zero") {
+			t.Errorf("perWeek %s: %s", perWeek, e.Detail())
+		}
+	}
+}

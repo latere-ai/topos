@@ -625,6 +625,9 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 		v.duration("spec.session.limits.turnTimeout", l.TurnTimeout)
 		v.duration("spec.session.limits.maxAge", l.MaxAge)
 	}
+	if b := s.Budget; b != nil && b.PerWeek <= 0 {
+		v.add("spec.budget.perWeek", fmt.Sprintf("%d is not above zero: an allowance is in USD micros, 5000000 for five dollars a week", b.PerWeek))
+	}
 	if n := s.MaxActive; n != nil && (*n < 1 || *n > trigger.MaxActiveCeiling) {
 		v.add("spec.maxActive", fmt.Sprintf("%d is outside 1 to %d", *n, trigger.MaxActiveCeiling))
 	}

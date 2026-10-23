@@ -58,6 +58,16 @@ type TriggerSpec struct {
 	MaxActive *int   `json:"maxActive,omitempty"`
 	MaxAge    string `json:"maxAge"`
 	Suspend   bool   `json:"suspend"`
+	// Budget is the trigger's weekly allowance (spec 087); nil for none.
+	Budget *TriggerBudget `json:"budget,omitempty"`
+}
+
+// TriggerBudget is a trigger's allowance (spec 087): PerWeek is the most
+// the looks counted toward the trigger may cost in a rolling 7 days, in
+// USD micros, above zero. A firing while that spend is at or past it
+// starts nothing and records skipped_budget.
+type TriggerBudget struct {
+	PerWeek int64 `json:"perWeek"`
 }
 
 // TriggerOn is an event filter: every field given must match, and a

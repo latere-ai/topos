@@ -88,6 +88,9 @@ type Status struct {
 	// which the server writes when an apply suspends it, keeps while it
 	// stays suspended and clears when it resumes; nil while it runs.
 	Paused *TriggerPause `json:"paused,omitempty"`
+	// Spend is a Trigger's week as the server last counted it (spec 087),
+	// which it writes when it answers; nil before a firing counted it.
+	Spend *TriggerSpend `json:"spend,omitempty"`
 }
 
 // TriggerPause is the pause of a suspended Trigger (spec 086).
@@ -139,8 +142,36 @@ type TriggerCounts struct {
 	// SkippedEnded counts the firings whose session.target had ended or
 	// was gone (spec 086).
 	SkippedEnded int64 `json:"skippedEnded"`
-	Refused      int64 `json:"refused"`
-	Failed       int64 `json:"failed"`
+	// SkippedBudget counts the firings that started nothing because the
+	// spend of the trigger they count toward was at its allowance (spec
+	// 087).
+	SkippedBudget int64 `json:"skippedBudget"`
+	Refused       int64 `json:"refused"`
+	Failed        int64 `json:"failed"`
+}
+
+// TriggerSpend is a Trigger's week as the server last counted it, at a
+// firing that counts toward it, before that firing's look (spec 087).
+// The window ends 7 days after the oldest look SpentUSDMicro counts, or 7
+// days after the firing when it counts none, so ProjectedUSDMicro is the
+// spend of one window.
+type TriggerSpend struct {
+	// WindowDays is the window the spend is counted over: 7.
+	WindowDays int `json:"windowDays"`
+	// SpentUSDMicro is what the looks counted toward the trigger cost in
+	// the last 7 days.
+	SpentUSDMicro int64 `json:"spentUsdMicro"`
+	// PerWeekUSDMicro is the trigger's allowance, nil for none.
+	PerWeekUSDMicro *int64 `json:"perWeekUsdMicro,omitempty"`
+	// PerLookUSDMicro is the mean cost of the window's latest
+	// trigger.PaceLooks looks that ended; nil while none has.
+	PerLookUSDMicro *int64 `json:"perLookUsdMicro,omitempty"`
+	// ExpectedLooks are the looks expected from the firing to the window's
+	// end, the firing's own included.
+	ExpectedLooks int `json:"expectedLooks"`
+	// ProjectedUSDMicro is SpentUSDMicro plus PerLookUSDMicro times
+	// ExpectedLooks; nil with PerLookUSDMicro.
+	ProjectedUSDMicro *int64 `json:"projectedUsdMicro,omitempty"`
 }
 
 // Owner is an agent's owner: Type is "user" or "organization".
