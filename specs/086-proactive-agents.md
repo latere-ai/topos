@@ -202,7 +202,7 @@ a server keeps triggers. A thread is never offered it
 | `why` | `propose`, `change`, `pause` | one sentence the person reads: why the trigger exists, or why it is paused; at most `trigger.MaxPurposeLength` characters |
 | `schedule`, `timeZone` | `propose`, `change` | a routine's schedule: five cron fields of a minute and an hour, every day or on the days of the week listed, and the IANA zone it is read in; one of `schedule` and `on` |
 | `on` | `propose`, `change` | as the Trigger's `on` ([[022-triggers]]) |
-| `notify` | `propose`, `change` | `always` or `judged`; `always` for a schedule and `judged` for `on` when absent |
+| `notify` | `propose`, `change` | `always` or `judged`; `always` for a schedule and `judged` for `on` when absent. As built, `judged` is the default for `on` only when the agent's latest version names `notify`, since apply refuses `judged` for one that does not; otherwise `always` |
 
 What each action does:
 
@@ -431,7 +431,10 @@ nothing outside the log: what a client does with a notice, a
 notification on a Mac, a mark in a list, is the client's.
 
 A turn whose first input is a trigger's `user.message` (one carrying
-`firing_id`) ends with an outcome on its idle `session.status`:
+`firing_id`) ends with an outcome on its idle `session.status`, or, as
+built, on the `ended` `completed` status `end_on_idle` makes of its
+`end_turn`, which is the closing status of most of a `new` trigger's
+runs:
 
 | The turn | `outcome` |
 |---|---|
@@ -442,14 +445,28 @@ A turn whose first input is a trigger's `user.message` (one carrying
 
 A turn that ends on an error, a limit or a budget records no outcome; a
 client shows it as it shows such a stop today. A turn a person began
-records none.
+records none. As built, a turn that ends `interrupted` or
+`machine_waiting` records none either, and a judged turn of an agent
+that holds no `notify` records `notified`, as under `always`.
+
+The harness reads whether a trigger's turn is judged from its message
+(deviation, 2026-10-23): a firing of a trigger whose `session.notify` is
+`judged` sends its `user.message` with one more added field, `notify:
+"judged"`, absent under `always`; a wake's message is judged by its
+`wake`. The log so records the rule each turn ran under, and a runner
+needs no question of the server to know it. Weighed against: the runner
+reading the trigger at each turn, which the hosted runner alone could
+ask, while `notify` is offered on every runner.
 
 The context tells the model, in `prompts/context/woken-v1.md`, on a turn
 a trigger's message began under `judged` and on every wake's turn: that
 nobody is waiting, that it calls `notify` only when what it found
 deserves the person's attention now, that a `question` waits for the
 person when the session is attended, and that ending the turn without
-either leaves the person undisturbed.
+either leaves the person undisturbed. As built, the fold renders it
+before that message, beside the wake's line, rather than among the
+system parts, so the request's cached prefix stays the same, and only
+for a thread that holds `notify`.
 
 ### How a wake shows in the log
 
@@ -578,8 +595,14 @@ SDK's own shape of it (`latere.ai/x/sdk-go/agents/routine` v0.10.0:
 `EventName`, `EventMessage`, `StartsOn`), so `internal/proposal` holds no
 copy.
 
-`session.attended`, `session.notify`, `notify` and the hold are not
-built.
+Roll step 4 is built: the `notify` tool, the `outcome` of the closing
+status, the Session's `outcome` and `notice`, `session.attended` and
+`session.notify` with the message's `notify`, the `trigger` tool's
+`notify` input, `prompts/context/woken-v1.md`, and the instruction task
+`quiet`, with the task suite's `woken: judged` and `outcome` assertion
+(spec 025).
+
+The hold is not built.
 
 ## Acceptance criteria
 
@@ -600,8 +623,9 @@ built.
 | A session's end, deletion or archive deletes its wake and records `session.wake_cleared`; a person's delete records it with the sender | `internal/server.TestAWakeEndsWithItsSession` | built |
 | `end_on_idle` leaves a session with a pending wake open and ends it at the idle after its last wake | `harness.TestEndOnIdleWaitsForAWake`, `harness.TestACanceledWakeLetsTheSessionEnd` (the rule is the harness's) | built |
 | A pause records why and by whom in `status.paused`, kept while suspended and cleared on resume | `internal/server.TestAPauseRecordsWhyAndByWhom` | built |
-| A turn a trigger began records `notified` under `always`, after `notify`, or after a wait for the person, and `quiet` otherwise; a person's turn records none; the Session folds `wake`, `outcome` and `notice` | `session.TestTheOutcomeOfATriggersTurn` | not built |
-| A firing of a trigger with `session.attended` starts an attended session, and its question waits | `internal/server.TestAnAttendedTriggerWaitsForItsOwner` | not built |
+| A turn a trigger began records `notified` under `always`, after `notify`, or after a wait for the person, and `quiet` otherwise; a person's turn records none; the Session folds `wake`, `outcome` and `notice` | `harness.TestTheOutcomeOfATriggersTurn` (the outcome is the harness's), `session.TestTheSessionFoldsOutcomeAndNotice`, `session.TestATurnsFirstInputNamesItsTrigger`, `session.TestTheSessionFoldsItsWake`, `harness.TestNotifyIsOneLineOnceATurn`, `harness.TestAWokenTurnIsToldNobodyWaits` | built |
+| A firing of a trigger with `session.attended` starts an attended session, and its question waits | `internal/server.TestAnAttendedTriggerWaitsForItsOwner` | built |
+| A judged trigger's message says so, `judged` is refused for an agent without `notify`, and a proposal on events is judged by default | `internal/server.TestAJudgedTriggerSaysSoInItsMessage`, `internal/server.TestAnEventProposalIsJudged` | built |
 | While an owner is held, the minute loop fires nothing of theirs and records nothing, the fire route answers `conflict`, and a one-shot due during the hold fires at release with its lateness in the message | `internal/server.TestAHoldStopsEveryTrigger` | not built |
 | Every `trigger.*` question a session's call asks carries `origin`, asked as the owner with `org_id` alone; `trigger.hold` names `owner` and `held` | `internal/server.TestTheQuestionsOfASessionsTriggerCalls` | not built |
-| The three tools' descriptions hold to their constants, and an instruction task each: a repeating ask is proposed with its schedule said back, a follow-up is a wake with a note, and a look that finds nothing ends quiet | `harness.TestToolTextsReadTheirBounds`, `test/tasks/instructions/propose/`, `test/tasks/instructions/wake/`, `test/tasks/instructions/quiet/` | not built |
+| The three tools' descriptions hold to their constants, and an instruction task each: a repeating ask is proposed with its schedule said back, a follow-up is a wake with a note, and a look that finds nothing ends quiet | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestWakeTextsReadTheirBounds`, `harness.TestNotifyTextReadsItsBound`, `test/tasks/instructions/propose/`, `test/tasks/instructions/wake/`, `test/tasks/instructions/quiet/` (each solution passes and each wrong solution fails by `test/tasks.TestScriptedSolutions`; their runs on `claude-haiku-5-5` take a model connection, `TOPOS_MODELS_URL`, `TOPOS_MODELS_KEY` and `TOPOS_TASKS_MODEL`, and the instruction tier, `go test -tags instructions ./test/tasks`) | built |
