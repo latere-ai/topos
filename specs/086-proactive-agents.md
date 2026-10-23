@@ -181,6 +181,19 @@ held:
 A trigger that fires nothing while its owner is held records no
 `skipped_*` row, so a released owner's counts are what ran.
 
+As built: the hold is keyed by the owner's subject, the way an owner's
+triggers are, so it holds every trigger the person owns across every
+context their tokens name; "in the context its token names" is where the
+question is asked (weighed against: one hold per owner and context,
+which would leave the triggers of the person's other contexts running
+under a switch that says everything is paused). `PUT` with `held: true`
+keeps the first `since` of a hold already set. A held owner's held
+firings wait for the release with their triggers. The result of a
+`trigger` call that makes, changes or resumes a trigger, and of a wake's
+set, says that every trigger is paused (`ListedTrigger.held`). The hold
+is `store.Triggers.Hold`, `SetHold` and `HeldOwners`, kept in Postgres
+as `trigger_holds`.
+
 ### The `trigger` tool
 
 `trigger` is a harness tool, as `question` is ([[039-questions]]): it is
@@ -602,7 +615,14 @@ status, the Session's `outcome` and `notice`, `session.attended` and
 `quiet`, with the task suite's `woken: judged` and `outcome` assertion
 (spec 025).
 
-The hold is not built.
+Roll step 5 is built: `GET` and `PUT /v1/triggers/hold`, `trigger.hold`
+right after `trigger.fire` in the vocabulary, its effect on the minute
+loop, the fire route and one-shots, the trigger name `hold` refused, and
+the hold said in the results of a session's trigger and wake calls.
+
+Every roll step is built. What is left before this spec closes: the
+three instruction tasks' runs on `claude-haiku-5-5`, the task suite's
+pinned model, which take a model connection (the last row below).
 
 ## Acceptance criteria
 
@@ -626,6 +646,6 @@ The hold is not built.
 | A turn a trigger began records `notified` under `always`, after `notify`, or after a wait for the person, and `quiet` otherwise; a person's turn records none; the Session folds `wake`, `outcome` and `notice` | `harness.TestTheOutcomeOfATriggersTurn` (the outcome is the harness's), `session.TestTheSessionFoldsOutcomeAndNotice`, `session.TestATurnsFirstInputNamesItsTrigger`, `session.TestTheSessionFoldsItsWake`, `harness.TestNotifyIsOneLineOnceATurn`, `harness.TestAWokenTurnIsToldNobodyWaits` | built |
 | A firing of a trigger with `session.attended` starts an attended session, and its question waits | `internal/server.TestAnAttendedTriggerWaitsForItsOwner` | built |
 | A judged trigger's message says so, `judged` is refused for an agent without `notify`, and a proposal on events is judged by default | `internal/server.TestAJudgedTriggerSaysSoInItsMessage`, `internal/server.TestAnEventProposalIsJudged` | built |
-| While an owner is held, the minute loop fires nothing of theirs and records nothing, the fire route answers `conflict`, and a one-shot due during the hold fires at release with its lateness in the message | `internal/server.TestAHoldStopsEveryTrigger` | not built |
-| Every `trigger.*` question a session's call asks carries `origin`, asked as the owner with `org_id` alone; `trigger.hold` names `owner` and `held` | `internal/server.TestTheQuestionsOfASessionsTriggerCalls` | not built |
+| While an owner is held, the minute loop fires nothing of theirs and records nothing, the fire route answers `conflict`, and a one-shot due during the hold fires at release with its lateness in the message | `internal/server.TestAHoldStopsEveryTrigger`, the stores' conformance case `trigger holds`, `internal/store.TestAHoldIsSavedBeforeTheBookChanges` | built |
+| Every `trigger.*` question a session's call asks carries `origin`, asked as the owner with `org_id` alone; `trigger.hold` names `owner` and `held` | `internal/server.TestTheQuestionsOfASessionsTriggerCalls`, `authorizer.TestVocabularyMatchesTheSpec` | built |
 | The three tools' descriptions hold to their constants, and an instruction task each: a repeating ask is proposed with its schedule said back, a follow-up is a wake with a note, and a look that finds nothing ends quiet | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestWakeTextsReadTheirBounds`, `harness.TestNotifyTextReadsItsBound`, `test/tasks/instructions/propose/`, `test/tasks/instructions/wake/`, `test/tasks/instructions/quiet/` (each solution passes and each wrong solution fails by `test/tasks.TestScriptedSolutions`; their runs on `claude-haiku-5-5` take a model connection, `TOPOS_MODELS_URL`, `TOPOS_MODELS_KEY` and `TOPOS_TASKS_MODEL`, and the instruction tier, `go test -tags instructions ./test/tasks`) | built |
