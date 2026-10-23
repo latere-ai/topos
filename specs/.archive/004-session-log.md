@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 002-scaffold-and-configuration.md]
 affects: [session/, session/dir/, session/storetest/, prompts/transcript/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-23
 author: changkun
 ---
 
@@ -133,7 +133,7 @@ stateDiagram-v2
   idle --> running: a runner claims (pending input)
   running --> running: a new runner claims after a lost lease
   running --> idle: stop reason
-  running --> ended: failed, canceled, expired
+  running --> ended: completed (end_on_idle), failed, canceled, expired
   idle --> ended: completed, canceled, expired
   ended --> [*]
 ```

@@ -1,0 +1,5 @@
+name = "session-status"
+defaultTargets = ["SessionStatus"]
+
+[[lean_lib]]
+name = "SessionStatus"
