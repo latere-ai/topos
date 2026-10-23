@@ -18,7 +18,7 @@ import (
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
-	"latere.ai/x/topos/prompts"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/runner"
 )
 
@@ -109,7 +109,7 @@ func with(t *testing.T, key string, v any) json.RawMessage {
 // rules refuse is answered invalid_input by Check, naming what is wrong,
 // and one they take passes, as a list does.
 func TestAProposalIsCheckedBeforeAnyoneIsAsked(t *testing.T) {
-	tool := New(&fakeTriggers{})
+	tool := New(&fakeTriggers{}, nil)
 	cases := map[string]struct {
 		input json.RawMessage
 		want  string
@@ -164,7 +164,7 @@ func TestAProposalIsCheckedBeforeAnyoneIsAsked(t *testing.T) {
 // be decided.
 func TestEveryProposalWaitsForItsPerson(t *testing.T) {
 	f := &fakeTriggers{}
-	tool := New(f)
+	tool := New(f, nil)
 	if r := tool.Confirm(tools.Call{Input: json.RawMessage(weekly)}); r != confirmPropose {
 		t.Fatalf("a proposal is held %q", r)
 	}
@@ -196,7 +196,7 @@ func TestEveryProposalWaitsForItsPerson(t *testing.T) {
 // refusal then is the call's result, and a server's failure an error.
 func TestAnAllowedProposalIsApplied(t *testing.T) {
 	f := &fakeTriggers{}
-	tool := New(f)
+	tool := New(f, nil)
 	res, err := tool.Run(t.Context(), tools.Call{ID: "toolu_1", Input: json.RawMessage(weekly)})
 	if err != nil || res.Outcome != tools.OutcomeOK || !strings.Contains(res.Content[0].Text, `"Weekly sign-ups" is theirs now`) || !strings.Contains(res.Content[0].Text, "2026-10-26T08:00:00Z") {
 		t.Fatalf("the allowed proposal answered %+v, %v", res, err)
@@ -224,7 +224,7 @@ func TestAListNamesWhatThePersonHolds(t *testing.T) {
 		{ID: "trg_1", Name: "routine-a", Title: "Weekly sign-ups", Schedule: "0 9 * * 1", TimeZone: "Europe/Berlin", Ask: "Count.", NextFireAt: &next, Origin: &v1.TriggerOrigin{Kind: v1.OriginProposal}},
 		{ID: "trg_2", Name: "on-mail", Product: "mail", Suspended: true},
 	}}
-	res, err := New(f).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)})
+	res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestAListNamesWhatThePersonHolds(t *testing.T) {
 		t.Fatalf("the list answered %q, want %q", res.Content[0].Text, want)
 	}
 	f.list = nil
-	if res, err := New(f).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)}); err != nil || res.Content[0].Text != "The person holds no triggers of you." {
+	if res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)}); err != nil || res.Content[0].Text != "The person holds no triggers of you." {
 		t.Fatalf("an empty list answered %+v, %v", res, err)
 	}
 }
@@ -243,19 +243,33 @@ func TestAListNamesWhatThePersonHolds(t *testing.T) {
 // TestToolTextsReadTheirBounds: the tool's description states the bounds
 // its schema and checks hold a call to, and its schema holds them.
 func TestToolTextsReadTheirBounds(t *testing.T) {
-	d := New(nil).Definition()
-	text := prompts.Text(prompts.ToolTrigger)
-	if d.Description != text || d.Name != Name {
+	in, out := models.Price(3_000_000), models.Price(15_000_000)
+	d := New(nil, &models.Pricing{Input: &in, Output: &out}).Definition()
+	text := d.Description
+	if d.Name != Name || text != Description(&models.Pricing{Input: &in, Output: &out}) {
 		t.Fatalf("the definition is %+v", d)
 	}
 	for _, bound := range []string{
 		"at most " + strconv.Itoa(routine.MaxTitle) + " characters",
 		"at most " + strconv.Itoa(trigger.MaxPurposeLength) + " characters",
 		"at most " + strconv.Itoa(trigger.MaxListed) + " triggers",
+		// The allowance is estimated from the model's price, and is the
+		// ceiling the server enforces (spec 087).
+		"$3 per million input tokens and $15 per million output tokens",
+		"It is the ceiling the server enforces",
+		"more than " + strconv.Itoa(trigger.SpendWindowDays) + " days old",
 	} {
 		if !strings.Contains(text, bound) {
 			t.Errorf("the description does not say %q", bound)
 		}
+	}
+	// A model the catalog prices at nothing is estimated from a run's
+	// size alone.
+	if free := New(nil, nil).Definition().Description; strings.Contains(free, "per million") || !strings.Contains(free, "does not state") {
+		t.Errorf("an unpriced model's description: %s", free)
+	}
+	if half := Description(&models.Pricing{Input: &in}); strings.Contains(half, "per million") {
+		t.Errorf("a model priced for input alone: %s", half)
 	}
 	var s struct {
 		Properties map[string]struct {
@@ -287,7 +301,7 @@ func TestOnlyAListAndAPauseRunWithoutThePerson(t *testing.T) {
 	}
 	held := map[string]string{ActionPropose: confirmPropose, ActionChange: confirmChange, ActionResume: confirmResume, ActionDelete: confirmDelete}
 	f := &fakeTriggers{}
-	tool := New(f)
+	tool := New(f, nil)
 	for action, in := range calls {
 		if got := tool.Confirm(tools.Call{Input: json.RawMessage(in)}); got != held[action] {
 			t.Errorf("a %s is held %q, want %q", action, got, held[action])
@@ -498,7 +512,7 @@ func TestAChangeIsHeldToTheRulesOfAProposal(t *testing.T) {
 // with the refusal and one it could not ask as an error.
 func TestTheToolsSmallAnswers(t *testing.T) {
 	f := &fakeTriggers{}
-	tool := New(f)
+	tool := New(f, nil)
 	if p := tool.Properties(); p.Effect != tools.EffectRead || p.Parallel {
 		t.Fatalf("the properties are %+v", p)
 	}
@@ -518,5 +532,93 @@ func TestTheToolsSmallAnswers(t *testing.T) {
 	f.refuse, f.fail = nil, errors.New("the server is away")
 	if _, err := tool.Run(t.Context(), tools.Call{Input: json.RawMessage(`{"action":"list"}`)}); err == nil {
 		t.Fatal("a list the server could not answer was answered as a result")
+	}
+}
+
+// TestAProposalCarriesItsAllowance (spec 087): a propose's perWeekUsd is
+// read as USD micros, carried to the server's questions and applied as
+// spec.budget.perWeek; a change with it replaces the allowance and one
+// without keeps it; an amount at or below zero, past six digits after the
+// point or not a number is refused before anyone is asked.
+func TestAProposalCarriesItsAllowance(t *testing.T) {
+	f := &fakeTriggers{}
+	tool := New(f, nil)
+	call := tools.Call{ID: "toolu_b", Input: with(t, "perWeekUsd", json.Number("0.4"))}
+	if r := tool.Check(call); r != nil {
+		t.Fatalf("a proposal with an allowance was refused: %+v", r)
+	}
+	if r := tool.Probe(t.Context(), call); r != nil || len(f.checked) != 1 || f.checked[0].PerWeekUSDMicro == nil || *f.checked[0].PerWeekUSDMicro != 400000 {
+		t.Fatalf("the question asked before the hold: %+v, %+v", r, f.checked)
+	}
+	if _, err := tool.Run(t.Context(), call); err != nil || len(f.applied) != 1 || *f.applied[0].PerWeekUSDMicro != 400000 {
+		t.Fatalf("the allowed proposal: %v, %+v", err, f.applied)
+	}
+	for _, bad := range []json.Number{"0", "-1", "0.0000001", "1e3"} {
+		r := tool.Check(tools.Call{ID: "toolu_x", Input: with(t, "perWeekUsd", bad)})
+		if r == nil || r.Outcome != tools.OutcomeInvalidInput || !strings.Contains(r.Content[0].Text, "perWeekUsd") {
+			t.Errorf("perWeekUsd %s: %+v", bad, r)
+		}
+	}
+	if r := tool.Check(tools.Call{ID: "toolu_x", Input: with(t, "perWeekUsd", "five")}); r == nil || r.Outcome != tools.OutcomeInvalidInput {
+		t.Errorf("a perWeekUsd that is no number: %+v", r)
+	}
+	change := tools.Call{ID: "toolu_c", Input: json.RawMessage(`{"action":"change","id":"trg_01JAAAAAAAAAAAAAAAAAAAAAAA","why":"It costs more now.","perWeekUsd":1.25}`)}
+	if r := tool.Check(change); r != nil {
+		t.Fatalf("a change of the allowance alone was refused: %+v", r)
+	}
+
+	read := func(body json.RawMessage) v1.Trigger {
+		t.Helper()
+		var tr v1.Trigger
+		if err := json.Unmarshal(body, &tr); err != nil {
+			t.Fatal(err)
+		}
+		return tr
+	}
+	p := runner.Proposal{Name: "Weekly", Ask: "Count.", Why: "Mondays, about $0.40 a week.", Schedule: "0 9 * * 1", TimeZone: "UTC", PerWeekUSDMicro: new(int64(400000))}
+	body, err := Manifest("chat", routine.Name("ses_1/toolu_b"), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := read(body)
+	if b := stored.Spec.Budget; b == nil || b.PerWeek != 400000 {
+		t.Fatalf("the proposal is written %s", body)
+	}
+	if _, ok := routine.Read(routine.Trigger{Name: stored.Metadata.Name, DisplayName: stored.Metadata.DisplayName, Labels: stored.Metadata.Labels,
+		Schedule: stored.Spec.Schedule, TimeZone: stored.Spec.TimeZone, Message: stored.Spec.Session.Message, Title: stored.Spec.Session.Title}, "chat"); !ok {
+		t.Fatal("a routine with an allowance no longer reads as a routine")
+	}
+	kept, err := Changed("chat", &stored, runner.Proposal{Action: ActionChange, ID: "trg_1", Why: "Later.", Schedule: "30 7 * * *", TimeZone: "UTC"})
+	if err != nil || read(kept).Spec.Budget == nil || read(kept).Spec.Budget.PerWeek != 400000 {
+		t.Fatalf("a change without perWeekUsd: %s, %v", kept, err)
+	}
+	raised, err := Changed("chat", &stored, runner.Proposal{Action: ActionChange, ID: "trg_1", Why: "More.", PerWeekUSDMicro: new(int64(1250000))})
+	if err != nil || read(raised).Spec.Budget.PerWeek != 1250000 {
+		t.Fatalf("a change of the allowance: %s, %v", raised, err)
+	}
+	own := v1.Trigger{APIVersion: v1.APIVersion, Kind: v1.KindTrigger, Metadata: v1.ObjectMeta{Name: "nightly"},
+		Spec: v1.TriggerSpec{Agent: "agent_1", On: &v1.TriggerOn{Product: "github", Verbs: []string{"push"}}, Session: v1.TriggerSession{Message: "Build."}}}
+	changed, err := Changed("chat", &own, runner.Proposal{Action: ActionChange, ID: "trg_2", Why: "Pushes cost more.", PerWeekUSDMicro: new(int64(2000000))})
+	if err != nil || read(changed).Spec.Budget == nil || read(changed).Spec.Budget.PerWeek != 2000000 {
+		t.Fatalf("an event trigger's allowance: %s, %v", changed, err)
+	}
+}
+
+// TestTheListSaysEachAllowance (spec 087): list answers each trigger's
+// allowance and its week's spend, and nothing for one without.
+func TestTheListSaysEachAllowance(t *testing.T) {
+	f := &fakeTriggers{list: []runner.ListedTrigger{
+		{ID: "trg_1", Name: "routine-a", Title: "Weekly", Schedule: "0 9 * * 1", TimeZone: "UTC", PerWeekUSDMicro: new(int64(400000)), SpentUSDMicro: new(int64(120000))},
+		{ID: "trg_2", Name: "routine-b", Title: "Daily", Schedule: "0 9 * * *", TimeZone: "UTC"},
+	}}
+	res, err := New(f, nil).Run(t.Context(), tools.Call{ID: "toolu_l", Input: json.RawMessage(`{"action":"list"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "The person holds these triggers of you, newest first:\n" +
+		"- trg_1 Weekly (routine-a): 0 9 * * 1 in UTC, at most $0.40 a week, $0.12 spent in the last 7 days\n" +
+		"- trg_2 Daily (routine-b): 0 9 * * * in UTC\n"
+	if res.Content[0].Text != want {
+		t.Fatalf("the list answered %q, want %q", res.Content[0].Text, want)
 	}
 }

@@ -92,8 +92,11 @@ const (
 	// holds to the harness's constants (spec 084).
 	ToolHistory Name = "tools/history-v1"
 	// ToolTrigger states the bounds of a proposal's name and why and of a
-	// list, which a test holds to their constants (spec 086).
-	ToolTrigger Name = "tools/trigger-v3"
+	// list, which a test holds to their constants (spec 086), and how to
+	// estimate a proposal's weekly allowance (spec 087): Priced, whether
+	// the catalog prices the session's model, and Input and Output, its
+	// prices per million tokens.
+	ToolTrigger Name = "tools/trigger-v4"
 	// ToolWake states the bounds of a wake's time, title and note and of
 	// a chain of wakes, which a test holds to their constants (spec 086).
 	ToolWake Name = "tools/wake-v1"
@@ -149,9 +152,10 @@ const (
 	// allowed was refused all the same.
 	TriggerNotMade Name = "results/trigger/not-made-v1"
 	// TriggerList takes Triggers, each an ID, Title, Name, Schedule,
-	// TimeZone, Product, Ask, At, Target, TargetTitle, Paused, Next and
-	// Offered.
-	TriggerList Name = "results/trigger/list-v2"
+	// TimeZone, Product, Ask, At, Target, TargetTitle, Paused, Next,
+	// Offered, PerWeek, the allowance, and Spent, the week's spend, both
+	// amounts in USD or empty (spec 087).
+	TriggerList Name = "results/trigger/list-v3"
 	// TriggerRefusedChange takes Action, Code and Message, why a change,
 	// resume or delete the person would be asked about cannot be done.
 	TriggerRefusedChange Name = "results/trigger/refused-change-v1"

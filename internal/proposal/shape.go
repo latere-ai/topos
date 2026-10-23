@@ -138,7 +138,7 @@ func Manifest(agent, name string, p runner.Proposal) (json.RawMessage, error) {
 		return nil, err
 	}
 	events := p.On != nil && Starts(*p.On) == ""
-	if !events && p.Notify != v1.NotifyJudged {
+	if !events && p.Notify != v1.NotifyJudged && p.PerWeekUSDMicro == nil {
 		return body, nil
 	}
 	return edit(body, func(spec, session map[string]any) {
@@ -147,7 +147,16 @@ func Manifest(agent, name string, p runner.Proposal) (json.RawMessage, error) {
 			session["message"] = routine.EventMessage(f.Instruction)
 		}
 		writeNotify(session, p.Notify)
+		writeBudget(spec, p.PerWeekUSDMicro)
 	})
+}
+
+// writeBudget writes a proposal's weekly allowance into a trigger's spec
+// as its budget.perWeek (spec 087); nil keeps the one it has.
+func writeBudget(spec map[string]any, perWeek *int64) {
+	if perWeek != nil {
+		spec["budget"] = map[string]any{"perWeek": *perWeek}
+	}
 }
 
 // writeNotify writes a proposal's notify into a trigger's session: judged
@@ -242,10 +251,13 @@ func changedRoutine(agent, name string, doc json.RawMessage, f routine.Fields, p
 		return nil, err
 	}
 	body, err := routine.Manifest(agent, name, doc, f)
-	if err != nil || p.Notify == "" {
+	if err != nil || p.Notify == "" && p.PerWeekUSDMicro == nil {
 		return body, err
 	}
-	return edit(body, func(_, session map[string]any) { writeNotify(session, p.Notify) })
+	return edit(body, func(spec, session map[string]any) {
+		writeNotify(session, p.Notify)
+		writeBudget(spec, p.PerWeekUSDMicro)
+	})
 }
 
 // changedTrigger writes p into a trigger that is no routine: its name as
@@ -299,6 +311,7 @@ func changedTrigger(doc json.RawMessage, stored *v1.Trigger, p runner.Proposal) 
 			delete(spec, "suspend")
 		}
 		writeNotify(session, p.Notify)
+		writeBudget(spec, p.PerWeekUSDMicro)
 	})
 }
 

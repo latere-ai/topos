@@ -459,7 +459,7 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 		// trigger, which an agent holds only by naming it, reaches the
 		// suite's own triggers, which keep nothing (spec 086).
 		if slices.Contains(r.t.Agent.Tools, session.ToolTrigger) {
-			if err := reg.Add(proposal.New(suiteTriggers{})); err != nil {
+			if err := reg.Add(proposal.New(suiteTriggers{}, nil)); err != nil {
 				return harness.Config{}, err
 			}
 		}

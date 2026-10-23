@@ -86,6 +86,11 @@ type Proposal struct {
 	// default: always for a schedule, and judged for events when the agent
 	// names the notify tool (spec 086).
 	Notify string `json:"notify,omitempty"`
+	// PerWeekUSDMicro is the trigger's weekly allowance, in USD micros:
+	// the agent's estimate of what its runs cost in a week (spec 087),
+	// applied as spec.budget.perWeek; nil for a propose that names none
+	// and for a change that keeps the stored one.
+	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitempty"`
 }
 
 // Verb is p's action, TriggerPropose for none.
@@ -120,6 +125,11 @@ type ListedTrigger struct {
 	// Held is set when the trigger's owner holds every trigger they own
 	// (spec 086): it fires nothing until they release them.
 	Held bool `json:"held,omitempty"`
+	// PerWeekUSDMicro is the trigger's allowance and SpentUSDMicro its
+	// week's spend as the server last counted it (spec 087); nil for
+	// none.
+	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitempty"`
+	SpentUSDMicro   *int64 `json:"spent_usd_micro,omitempty"`
 }
 
 // TriggerRefusal is a trigger question the server answered no: its

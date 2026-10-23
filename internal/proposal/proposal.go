@@ -30,6 +30,7 @@ import (
 	"latere.ai/x/topos/harness/tools"
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/prompts"
 	"latere.ai/x/topos/runner"
 	"latere.ai/x/topos/session"
@@ -74,7 +75,8 @@ var schema = json.RawMessage(fmt.Sprintf(`{
       "required": ["product", "verbs"],
       "additionalProperties": false
     },
-    "notify": {"type": "string", "enum": [%q, %q], "description": "For propose and change: always to bring every run's result to the person, judged to bring it only when you call notify in the run. always for a schedule and judged for events when absent."}
+    "notify": {"type": "string", "enum": [%q, %q], "description": "For propose and change: always to bring every run's result to the person, judged to bring it only when you call notify in the run. always for a schedule and judged for events when absent."},
+    "perWeekUsd": {"type": "number", "description": "For propose, and for change when the cost changes: your estimate, in USD and above zero, of what the trigger's runs cost in a week, such as 0.40, said back to the person in why. The server starts no run while a week's runs cost this much."}
   },
   "required": ["action"],
   "additionalProperties": false
@@ -106,14 +108,33 @@ func Held(action string) string {
 }
 
 // Tool is the trigger tool of one hosted session.
-type Tool struct{ t runner.Triggers }
+type Tool struct {
+	t runner.Triggers
+	// price is the catalog's price of the session's model, which the
+	// description states so the agent estimates a proposal's weekly
+	// allowance from it (spec 087); nil when the catalog prices it at
+	// nothing.
+	price *models.Pricing
+}
 
-// New is the tool over t, the session's reach to its server's triggers.
-func New(t runner.Triggers) *Tool { return &Tool{t: t} }
+// New is the tool over t, the session's reach to its server's triggers,
+// for a session whose model the catalog prices at price, nil for none.
+func New(t runner.Triggers, price *models.Pricing) *Tool { return &Tool{t: t, price: price} }
 
 // Definition is what the model sees.
-func (*Tool) Definition() tools.Definition {
-	return tools.Definition{Name: Name, Description: prompts.Text(prompts.ToolTrigger), InputSchema: schema}
+func (t *Tool) Definition() tools.Definition {
+	return tools.Definition{Name: Name, Description: Description(t.price), InputSchema: schema}
+}
+
+// Description is the tool's description for a model the catalog prices
+// at price: its input and output price per million tokens, which the
+// agent estimates a proposal's allowance from, or that it is not stated.
+func Description(price *models.Pricing) string {
+	data := prompts.Data{"Priced": false, "Input": "", "Output": ""}
+	if price != nil && price.Input != nil && price.Output != nil {
+		data = prompts.Data{"Priced": true, "Input": "$" + price.Input.String(), "Output": "$" + price.Output.String()}
+	}
+	return prompts.Render(prompts.ToolTrigger, data)
 }
 
 // Properties: one call at a time. A list reads and a pause only stops
@@ -133,6 +154,9 @@ type fields struct {
 	TimeZone string          `json:"timeZone"`
 	On       json.RawMessage `json:"on"`
 	Notify   string          `json:"notify"`
+	// PerWeekUSD is the weekly allowance in USD as the model writes it,
+	// read as a decimal (spec 087).
+	PerWeekUSD json.Number `json:"perWeekUsd"`
 }
 
 // decode reads a call's input as the server reads it, the call's id
@@ -145,6 +169,13 @@ func decode(id string, raw json.RawMessage) (runner.Proposal, error) {
 		return runner.Proposal{}, err
 	}
 	p := runner.Proposal{ToolUseID: id, Action: f.Action, ID: f.ID, Name: f.Name, Ask: f.Ask, Why: f.Why, Schedule: f.Schedule, TimeZone: f.TimeZone, Notify: f.Notify}
+	if f.PerWeekUSD != "" {
+		micro, err := models.ParsePrice(f.PerWeekUSD.String())
+		if err != nil || micro <= 0 {
+			return runner.Proposal{}, fmt.Errorf("perWeekUsd is %s; it is a USD amount above zero with at most six digits after the point, such as 0.40", f.PerWeekUSD)
+		}
+		p.PerWeekUSDMicro = new(int64(micro))
+	}
 	if len(f.On) > 0 && !bytes.Equal(bytes.TrimSpace(f.On), []byte("null")) {
 		on := json.NewDecoder(bytes.NewReader(f.On))
 		on.DisallowUnknownFields()
@@ -180,8 +211,8 @@ func Check(p runner.Proposal) error {
 			return err
 		}
 		switch {
-		case p.Name == "" && p.Ask == "" && p.Schedule == "" && p.On == nil && p.Notify == "":
-			return errors.New("a change names what it changes: name, ask, schedule, on or notify")
+		case p.Name == "" && p.Ask == "" && p.Schedule == "" && p.On == nil && p.Notify == "" && p.PerWeekUSDMicro == nil:
+			return errors.New("a change names what it changes: name, ask, schedule, on, notify or perWeekUsd")
 		case p.Schedule != "" && p.On != nil:
 			return errors.New("a trigger runs on a schedule or on events: name schedule or on, not both")
 		}
@@ -327,7 +358,7 @@ func (t *Tool) list(ctx context.Context) (tools.Result, error) {
 	for _, l := range list {
 		rows = append(rows, map[string]any{"ID": l.ID, "Title": title(l), "Name": l.Name, "Schedule": l.Schedule, "TimeZone": l.TimeZone, "Product": l.Product,
 			"Ask": l.Ask, "At": when(l.At), "Target": l.Target, "TargetTitle": l.TargetTitle,
-			"Paused": l.Suspended, "Next": when(l.NextFireAt), "Offered": l.Origin != nil})
+			"Paused": l.Suspended, "Next": when(l.NextFireAt), "Offered": l.Origin != nil, "PerWeek": usd(l.PerWeekUSDMicro), "Spent": usd(l.SpentUSDMicro)})
 	}
 	return tools.Text(tools.OutcomeOK, prompts.Render(prompts.TriggerList, prompts.Data{"Triggers": rows})), nil
 }
@@ -339,6 +370,14 @@ func title(l runner.ListedTrigger) string {
 		return l.Title
 	}
 	return l.Name
+}
+
+// usd is an amount of USD micros as the model reads it, "" for none.
+func usd(micro *int64) string {
+	if micro == nil {
+		return ""
+	}
+	return session.USD(*micro)
 }
 
 // when is a fire time as the model reads it, in UTC; "" for none.

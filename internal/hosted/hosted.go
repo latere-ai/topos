@@ -251,7 +251,7 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 	// too.
 	if slices.Contains(ac.Tools, proposal.Name) {
 		if t := runner.TriggersFrom(ctx); t != nil {
-			if err := reg.Add(proposal.New(t)); err != nil {
+			if err := reg.Add(proposal.New(t, cfg.Entry.Pricing)); err != nil {
 				return harness.Config{}, err
 			}
 		}
