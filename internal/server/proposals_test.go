@@ -236,3 +236,205 @@ func TestTheListIsTheAgentsOwn(t *testing.T) {
 		t.Fatalf("the list asked %+v", q)
 	}
 }
+
+// hold appends a held trigger call id of input in the session, as its
+// runner does, and the session going idle on it.
+func (p *proposing) hold(id string, input map[string]any) {
+	p.t.Helper()
+	in, err := json.Marshal(input)
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	p.runnerAppends(p.sess.ID,
+		p.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: id, Name: session.ToolTrigger, Input: in, Verdict: "ask", Reason: "held"}),
+		p.status(session.StatusIdle, session.StopToolConfirmation))
+}
+
+// allow sends alice's allow of the call id.
+func (p *proposing) allow(id string) {
+	p.t.Helper()
+	a := p.do(http.MethodPost, "/v1/sessions/"+p.sess.ID+"/events", "alice", `{"type":"user.tool_confirmation","payload":{"tool_use_id":"`+id+`","decision":"allow"}}`)
+	if a.status != http.StatusOK {
+		p.t.Fatalf("alice's allow of %s: %d %s", id, a.status, a.body)
+	}
+}
+
+// TestTriggerActionsOnlyTouchTheAgentsOwn is Topos spec 086's fifth
+// criterion at the server: a change, a resume and a delete are done only
+// on the initiator's allow, a pause at once with no confirmation; each is
+// asked as the initiator with the call's origin and keeps the trigger's
+// own origin; a change keeps every field it does not name; and none
+// reaches a trigger of another agent, another owner's, or a wake, each
+// answered not_found.
+func TestTriggerActionsOnlyTouchTheAgentsOwn(t *testing.T) {
+	p := newProposing(t)
+	reach := p.api.SessionTriggers(p.sess.ID)
+	p.allow("toolu_1")
+	made, err := reach.ApplyProposal(t.Context(), weekly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.questions()
+
+	// A change names its new name and schedule; the ask stays.
+	change := runner.Proposal{ToolUseID: "toolu_2", Action: runner.TriggerChange, ID: made.ID, Name: "Sign-ups at eight", Why: "Every Monday at 8:00 instead.", Schedule: "0 8 * * 1", TimeZone: "Europe/Berlin"}
+	if err := reach.CheckProposal(t.Context(), change); err != nil {
+		t.Fatalf("the change's check: %v", err)
+	}
+	if q := p.questions(); len(q) != 1 || q[0].Action != authorizer.ActionTriggerUpdate || q[0].Subject != alice {
+		t.Fatalf("the change's check asked %+v", q)
+	}
+	if _, err := reach.ApplyProposal(t.Context(), change); !refusedAs(err, auth.CodeForbidden) {
+		t.Fatalf("a change before its allow: %v", err)
+	}
+	p.hold("toolu_2", map[string]any{"action": "change", "id": made.ID, "name": change.Name, "why": change.Why, "schedule": change.Schedule, "timeZone": change.TimeZone})
+	p.allow("toolu_2")
+	changed, err := reach.ApplyProposal(t.Context(), change)
+	if err != nil {
+		t.Fatalf("the change: %v", err)
+	}
+	q := p.questions()
+	if o, _ := q[len(q)-1].Resource.Fields["origin"].(map[string]any); o["tool_use_id"] != "toolu_2" || o["confirmed_by"] != alice || o["kind"] != v1.OriginProposal {
+		t.Fatalf("the change's origin is %+v", o)
+	}
+	got := p.get("alice", made.Name)
+	if changed.ID != made.ID || got.Metadata.DisplayName != change.Name || got.Spec.Schedule != "0 8 * * 1" || got.Spec.Session.Message != `Count last week's \{{sign-ups}}.` ||
+		got.Status.Origin == nil || got.Status.Origin.ToolUseID != "toolu_1" {
+		t.Fatalf("after the change: %+v, origin %+v", got.Spec, got.Status.Origin)
+	}
+
+	// A pause runs on no confirmation; a resume waits for one.
+	pause := runner.Proposal{ToolUseID: "toolu_3", Action: runner.TriggerPause, ID: made.ID, Why: "The person is away this month."}
+	p.questions()
+	if paused, err := reach.ApplyProposal(t.Context(), pause); err != nil || !paused.Suspended || paused.NextFireAt != nil {
+		t.Fatalf("the pause answered %+v, %v", paused, err)
+	}
+	if o, _ := p.questions()[0].Resource.Fields["origin"].(map[string]any); o["tool_use_id"] != "toolu_3" || o["confirmed_by"] != nil {
+		t.Fatalf("the pause's origin is %+v", o)
+	}
+	resume := runner.Proposal{ToolUseID: "toolu_4", Action: runner.TriggerResume, ID: made.ID}
+	if _, err := reach.ApplyProposal(t.Context(), resume); !refusedAs(err, auth.CodeForbidden) {
+		t.Fatalf("a resume before its allow: %v", err)
+	}
+	p.hold("toolu_4", map[string]any{"action": "resume", "id": made.ID})
+	p.allow("toolu_4")
+	if resumed, err := reach.ApplyProposal(t.Context(), resume); err != nil || resumed.Suspended || resumed.NextFireAt == nil {
+		t.Fatalf("the resume answered %+v, %v", resumed, err)
+	}
+
+	// None reaches another agent's trigger, another owner's, or a wake.
+	p.apply("alice", "writer", "Write.")
+	other := p.do(http.MethodPut, "/v1/triggers/drafts", "alice", triggerOf("writer", "drafts", "schedule: '0 3 * * *', session: {message: y}"))
+	var drafts v1.Trigger
+	other.decode(t, &drafts)
+	p.apply("bob", "reviewer", "Review.")
+	bobs := p.do(http.MethodPut, "/v1/triggers/bobs", "bob", triggerOf("reviewer", "bobs", "schedule: '0 3 * * *', session: {message: y}"))
+	var bob v1.Trigger
+	bobs.decode(t, &bob)
+	wake := p.applyTrigger("alice", "wake-like", "schedule: '0 4 * * *', session: {message: z}")
+	stored, err := p.objects.Trigger(t.Context(), wake.Status.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := store.DecodeTrigger(stored.Doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.Status.Origin = &v1.TriggerOrigin{Kind: v1.OriginWake, SessionID: p.sess.ID, ToolUseID: "toolu_w"}
+	if stored.Doc, err = session.Marshal(doc); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.objects.PutTrigger(t.Context(), stored); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{drafts.Status.ID, bob.Status.ID, wake.Status.ID, "trg_01JZZZZZZZZZZZZZZZZZZZZZZZ"} {
+		for _, action := range []string{runner.TriggerChange, runner.TriggerPause, runner.TriggerResume, runner.TriggerDelete} {
+			call := runner.Proposal{ToolUseID: "toolu_x", Action: action, ID: id, Name: "Renamed", Why: "Because."}
+			if err := reach.CheckProposal(t.Context(), call); !refusedAs(err, auth.CodeNotFound) {
+				t.Errorf("a %s of %s: %v", action, id, err)
+			}
+		}
+	}
+
+	// A delete waits for its allow, and removes the trigger.
+	del := runner.Proposal{ToolUseID: "toolu_5", Action: runner.TriggerDelete, ID: made.ID}
+	p.questions()
+	if err := reach.CheckProposal(t.Context(), del); err != nil {
+		t.Fatalf("the delete's check: %v", err)
+	}
+	if q := p.questions(); len(q) != 1 || q[0].Action != authorizer.ActionTriggerDelete || q[0].Resource.Fields["origin"] == nil {
+		t.Fatalf("the delete's check asked %+v", q)
+	}
+	if _, err := reach.ApplyProposal(t.Context(), del); !refusedAs(err, auth.CodeForbidden) {
+		t.Fatalf("a delete before its allow: %v", err)
+	}
+	p.hold("toolu_5", map[string]any{"action": "delete", "id": made.ID})
+	p.allow("toolu_5")
+	if _, err := reach.ApplyProposal(t.Context(), del); err != nil {
+		t.Fatalf("the delete: %v", err)
+	}
+	if _, err := p.objects.Trigger(t.Context(), made.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the deleted trigger: %v", err)
+	}
+}
+
+// TestAnEventProposalIsARoutineOrAnEventTrigger: an offer of a whole
+// product's arrivals of mail is applied as the routine the SDK reads as
+// one that starts from an email; an offer of a repository's pushes, which
+// no routine expresses, under the event- name with the filter as its on,
+// the event after the ask, and the same origin; and a routine is not
+// changed to a filter no routine expresses.
+func TestAnEventProposalIsARoutineOrAnEventTrigger(t *testing.T) {
+	p := newProposing(t)
+	reach := p.api.SessionTriggers(p.sess.ID)
+	mail := runner.Proposal{ToolUseID: "toolu_m", Name: "Invoices", Ask: "Save the invoice.", Why: "When an email arrives, I save its invoice.", On: &v1.TriggerOn{Product: "mail", Verbs: []string{"received"}}}
+	p.hold("toolu_m", map[string]any{"action": "propose", "name": mail.Name, "ask": mail.Ask, "why": mail.Why, "on": mail.On})
+	p.allow("toolu_m")
+	made, err := reach.ApplyProposal(t.Context(), mail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := p.do(http.MethodGet, "/v1/triggers/"+made.Name, "alice", "")
+	var tr agents.Trigger
+	raw.decode(t, &tr)
+	r, ok := agents.RoutineOf(&tr, "reviewer")
+	if !ok || r.Starts != routine.FromEmail || r.Instruction != mail.Ask || made.Name != routine.Name(p.sess.ID+"/toolu_m") {
+		t.Fatalf("the mail offer reads as %+v (%v): %s", r, ok, raw.body)
+	}
+
+	push := runner.Proposal{ToolUseID: "toolu_p", Name: "Pushes to main", Ask: "Review what was pushed.", Why: "When someone pushes to main, I review it.",
+		On: &v1.TriggerOn{Product: "github", Verbs: []string{"push"}, Resources: []string{"acme/app"}}}
+	p.hold("toolu_p", map[string]any{"action": "propose", "name": push.Name, "ask": push.Ask, "why": push.Why, "on": push.On})
+	p.allow("toolu_p")
+	ev, err := reach.ApplyProposal(t.Context(), push)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := p.get("alice", ev.Name)
+	if !strings.HasPrefix(ev.Name, "event-") || routine.IsName(ev.Name) || got.Spec.On == nil || got.Spec.On.Product != "github" || got.Spec.Schedule != "" ||
+		!strings.HasPrefix(got.Spec.Session.Message, "Review what was pushed.\n\nThe event that started this run:") || got.Metadata.Labels["applied-by"] != "reviewer" ||
+		got.Status.Origin == nil || got.Status.Origin.ConfirmedBy != alice || got.Spec.SkipIfActive == nil || *got.Spec.SkipIfActive {
+		t.Fatalf("the push offer is %s: %+v", ev.Name, got)
+	}
+	raw = p.do(http.MethodGet, "/v1/triggers/"+ev.Name, "alice", "")
+	raw.decode(t, &tr)
+	if _, ok := agents.RoutineOf(&tr, "reviewer"); ok {
+		t.Fatalf("the push offer reads as a routine: %s", raw.body)
+	}
+
+	// The mail routine cannot become the pushes, which no routine runs on.
+	change := runner.Proposal{ToolUseID: "toolu_c", Action: runner.TriggerChange, ID: made.ID, Why: "Pushes instead.", On: push.On}
+	if err := reach.CheckProposal(t.Context(), change); !refusedAs(err, CodeInvalidRequest) {
+		t.Fatalf("a routine changed to pushes: %v", err)
+	}
+	// The event trigger's ask changes and keeps the event after it.
+	change = runner.Proposal{ToolUseID: "toolu_e", Action: runner.TriggerChange, ID: ev.ID, Why: "Shorter.", Ask: "Summarize the push."}
+	p.hold("toolu_e", map[string]any{"action": "change", "id": ev.ID, "why": change.Why, "ask": change.Ask})
+	p.allow("toolu_e")
+	if _, err := reach.ApplyProposal(t.Context(), change); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.get("alice", ev.Name); !strings.HasPrefix(got.Spec.Session.Message, "Summarize the push.\n\nThe event that started this run:") || got.Spec.On == nil {
+		t.Fatalf("after the change: %+v", got.Spec)
+	}
+}

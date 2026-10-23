@@ -6,11 +6,11 @@ package server
 import (
 	"cmp"
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 
 	"latere.ai/x/pkg/authz"
-	"latere.ai/x/sdk-go/agents/routine"
 
 	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/auth"
@@ -24,14 +24,14 @@ import (
 
 // The trigger tool's reach (spec 086). A session's call lists the
 // triggers the person who started the session holds of the session's
-// agent, and proposes a routine on a schedule, which the harness holds
-// until that person allows the call. The server asks every question of
-// it as the session's initiator in the session's context, with the call
-// named in the question's origin, and applies the routine as theirs
-// through the trigger route's own code. A routine is written in the one
-// shape every client reads (latere.ai/x/sdk-go/agents/routine), named by
-// the session and the call, so a retry of the call applies the same
-// trigger.
+// agent, proposes a new one, and changes, pauses, resumes or deletes one
+// of them; the harness holds every call but a list and a pause until that
+// person allows it. The server asks every question of it as the session's
+// initiator in the session's context, with the call named in the
+// question's origin, and applies the trigger as theirs through the
+// trigger route's own code. A proposal is written in the one shape every
+// client reads (latere.ai/x/sdk-go/agents/routine), named by the session
+// and the call, so a retry of the call applies the same trigger.
 
 // SessionTriggers is the session id's reach to the triggers this server
 // keeps, which the trigger tool of the session's drive asks: the runners
@@ -96,17 +96,17 @@ func (t sessionTriggers) ListTriggers(ctx context.Context) ([]runner.ListedTrigg
 	return out, nil
 }
 
-// CheckProposal asks the questions of p's apply as the session's
-// initiator, before the call is held, and stores nothing.
+// CheckProposal asks the questions of p as the session's initiator,
+// before the call is held, and stores nothing.
 func (t sessionTriggers) CheckProposal(ctx context.Context, p runner.Proposal) error {
-	_, err := t.propose(ctx, p, false)
+	_, err := t.act(ctx, p, false)
 	return err
 }
 
-// ApplyProposal applies p as the session's initiator once they allowed
-// its call: the log must hold their allow of it.
+// ApplyProposal does p as the session's initiator: a pause at once, and
+// every other action once they allowed its call, which the log must hold.
 func (t sessionTriggers) ApplyProposal(ctx context.Context, p runner.Proposal) (runner.ListedTrigger, error) {
-	tr, err := t.propose(ctx, p, true)
+	tr, err := t.act(ctx, p, true)
 	if err != nil {
 		return runner.ListedTrigger{}, err
 	}
@@ -127,20 +127,22 @@ func (t sessionTriggers) asker(ctx context.Context) (session.Session, asker, err
 	return sess, q, err
 }
 
-// propose writes p as a routine of the session's agent and applies it as
-// the session's initiator, or only asks its questions when apply is
-// false. An apply names who allowed the call, which must be the
-// initiator, read from the session's log.
-func (t sessionTriggers) propose(ctx context.Context, p runner.Proposal, apply bool) (store.Trigger, error) {
+// act asks the questions of p as the session's initiator and, when apply
+// is set, does it: a propose writes a new trigger of the session's agent
+// in the routine's shape, a change, a pause and a resume apply the
+// trigger p names again with its fields changed, and a delete removes it.
+// An action held for the person names who allowed the call, which must be
+// the initiator, read from the session's log; a pause, which only stops
+// work, names nobody.
+func (t sessionTriggers) act(ctx context.Context, p runner.Proposal, apply bool) (store.Trigger, error) {
 	sess, q, err := t.asker(ctx)
 	if err != nil {
 		return store.Trigger{}, err
 	}
 	if p.ToolUseID == "" {
-		return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: "a proposal names its call"}
+		return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: "a trigger call names its call"}
 	}
-	f, err := proposal.Routine(p)
-	if err != nil {
+	if err := proposal.Check(p); err != nil {
 		return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: err.Error()}
 	}
 	a, err := t.s.o.Objects.Agent(ctx, sess.Agent.ID)
@@ -148,23 +150,77 @@ func (t sessionTriggers) propose(ctx context.Context, p runner.Proposal, apply b
 		return store.Trigger{}, err
 	}
 	origin := v1.TriggerOrigin{Kind: v1.OriginProposal, SessionID: sess.ID, ToolUseID: p.ToolUseID}
-	if apply {
+	if apply && proposal.Held(p.Verb()) != "" {
 		by, err := t.allowedBy(ctx, sess, p.ToolUseID)
 		if err != nil {
 			return store.Trigger{}, err
 		}
 		origin.ConfirmedBy = by
 	}
-	name := routine.Name(sess.ID + "/" + p.ToolUseID)
-	body, err := routine.Manifest(a.Name, name, nil, f)
+	if p.Verb() == runner.TriggerPropose {
+		name := proposal.TriggerName(sess.ID, p.ToolUseID, p)
+		body, err := proposal.Manifest(a.Name, name, p)
+		if err != nil {
+			return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: err.Error()}
+		}
+		tr, _, err := t.s.putTrigger(ctx, q, name, body, triggerApply{origin: &origin, made: true, agent: sess.Agent.ID, check: !apply})
+		if err != nil {
+			return store.Trigger{}, refusal(err)
+		}
+		return tr, nil
+	}
+	tr, doc, err := t.own(ctx, sess, p.ID)
 	if err != nil {
 		return store.Trigger{}, err
 	}
-	tr, _, err := t.s.putTrigger(ctx, q, name, body, triggerApply{origin: &origin, agent: sess.Agent.ID, check: !apply})
+	if p.Verb() == runner.TriggerDelete {
+		res := triggerResource(tr)
+		res.Fields["origin"] = originField(origin)
+		if _, err := q.ask(ctx, authorizer.ActionTriggerDelete, res); err != nil {
+			return store.Trigger{}, refusal(err)
+		}
+		if apply {
+			if err := t.s.removeTrigger(ctx, tr, nil); err != nil {
+				return store.Trigger{}, err
+			}
+		}
+		return tr, nil
+	}
+	body, err := proposal.Changed(a.Name, doc, p)
+	if err != nil {
+		return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: err.Error()}
+	}
+	out, _, err := t.s.putTrigger(ctx, q, tr.Name, body, triggerApply{origin: &origin, agent: sess.Agent.ID, check: !apply})
 	if err != nil {
 		return store.Trigger{}, refusal(err)
 	}
-	return tr, nil
+	if !apply {
+		return tr, nil
+	}
+	return out, nil
+}
+
+// own is the trigger id names as the session's call may act on it: one
+// the session's initiator owns, that runs the session's agent, and that
+// is no session's wake, which only its own session sets and cancels. Any
+// other id answers not_found, as a trigger the caller cannot see does.
+func (t sessionTriggers) own(ctx context.Context, sess session.Session, id string) (store.Trigger, *v1.Trigger, error) {
+	missing := &runner.TriggerRefusal{Code: auth.CodeNotFound, Message: "the person holds no trigger " + id + " of this agent that a conversation may change"}
+	tr, err := t.s.o.Objects.Trigger(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Trigger{}, nil, missing
+	}
+	if err != nil {
+		return store.Trigger{}, nil, err
+	}
+	doc, err := store.DecodeTrigger(tr.Doc)
+	if err != nil {
+		return store.Trigger{}, nil, err
+	}
+	if tr.Owner != sess.Initiator.Subject || tr.AgentID != sess.Agent.ID || isWake(doc) {
+		return store.Trigger{}, nil, missing
+	}
+	return tr, doc, nil
 }
 
 // allowedBy is who allowed the call toolUseID: the sender of its

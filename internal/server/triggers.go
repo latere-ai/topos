@@ -107,8 +107,13 @@ func (c *call) applyTrigger() error {
 // nothing is stored (check).
 type triggerApply struct {
 	// origin is the session call that applies the trigger (spec 086), nil
-	// for a person's or a program's own apply at the route.
+	// for a person's or a program's own apply at the route. Its questions
+	// carry it.
 	origin *v1.TriggerOrigin
+	// made writes origin as the trigger's status.origin: the call made the
+	// trigger, as a propose and a wake do. A change, a pause or a resume
+	// keeps the origin the trigger already has, whoever made it.
+	made bool
 	// agent is the agent id the trigger must run, for a session's call
 	// whose trigger is of its own agent alone; "" takes the manifest's.
 	agent string
@@ -181,13 +186,11 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		if prev.Schedule == spec.Schedule && prev.TimeZone == spec.TimeZone && !stored.Suspended && stored.NextFireAt != nil {
 			next = stored.NextFireAt
 		}
-		if how.origin == nil {
-			doc, err := store.DecodeTrigger(stored.Doc)
-			if err != nil {
-				return store.Trigger{}, false, err
-			}
-			r.Trigger.Status.Origin = doc.Status.Origin
+		doc, err := store.DecodeTrigger(stored.Doc)
+		if err != nil {
+			return store.Trigger{}, false, err
 		}
+		r.Trigger.Status.Origin = doc.Status.Origin
 	default:
 		fields := map[string]any{"name": name, "agent": agentID}
 		if on := onField(spec); on != nil {
@@ -208,7 +211,7 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 	if how.check {
 		return store.Trigger{}, !exists, nil
 	}
-	if how.origin != nil {
+	if how.made {
 		r.Trigger.Status.Origin = how.origin
 	}
 	if spec.Suspend {
@@ -339,11 +342,23 @@ func (c *call) deleteTrigger() error {
 	if err != nil {
 		return err
 	}
-	if err := c.s.o.Objects.DeleteTrigger(c.r.Context(), t.ID); err != nil {
+	if err := c.s.removeTrigger(c.r.Context(), t, &c.caller); err != nil {
 		return err
 	}
 	c.w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// removeTrigger deletes t with its firings and its keys, for by, the
+// caller of the delete route, or nil for a session's call.
+func (s *Server) removeTrigger(ctx context.Context, t store.Trigger, by *auth.Caller) error {
+	return s.o.Objects.DeleteTrigger(ctx, t.ID)
+}
+
+// isWake reports whether a trigger is a session's wake (spec 086), which
+// only its session sets and cancels.
+func isWake(doc *v1.Trigger) bool {
+	return doc.Status.Origin != nil && doc.Status.Origin.Kind == v1.OriginWake
 }
 
 // firingEvent is the envelope a firing names.
