@@ -610,41 +610,10 @@ func (v *validator) schedule(at, s string) {
 	}
 }
 
-// on checks an event filter: a product, at least one verb, and each
-// match rule a path into the payload with at least one entry.
+// on checks an event filter by trigger.CheckFilter's rules.
 func (v *validator) on(at string, on v1.TriggerOn) {
-	if on.Product == "" {
-		v.add(at+".product", "required")
-	} else if on.Product != strings.ToLower(on.Product) {
-		v.add(at+".product", "a product is lowercase, such as github")
-	}
-	if len(on.Verbs) == 0 {
-		v.add(at+".verbs", "required: at least one verb, or * for every verb")
-	}
-	v.patterns(at+".verbs", on.Verbs)
-	v.patterns(at+".resources", on.Resources)
-	for i, m := range on.Match {
-		mp := indexed(at+".match", i)
-		if err := trigger.CheckMatchPath(m.Path); err != nil {
-			v.add(mp+".path", err.Error())
-		}
-		if len(m.In) == 0 {
-			v.add(mp+".in", "required: at least one value the path's value may take")
-		}
-		v.patterns(mp+".in", m.In)
-	}
-}
-
-// patterns checks the entries of a filter list: each is a string, and a
-// * may only end one.
-func (v *validator) patterns(at string, entries []string) {
-	for i, e := range entries {
-		switch {
-		case e == "":
-			v.add(indexed(at, i), "empty; an entry is a value, or a prefix and *")
-		case strings.Contains(strings.TrimSuffix(e, "*"), "*"):
-			v.add(indexed(at, i), "a * may only end an entry, where it matches the prefix before it")
-		}
+	for _, p := range trigger.CheckFilter(on) {
+		v.add(at+"."+p.Path, p.Detail)
 	}
 }
 

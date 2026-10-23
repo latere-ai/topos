@@ -141,3 +141,50 @@ func anyPattern(entries []string, v string) bool {
 	}
 	return false
 }
+
+// FilterProblem is one rule an event filter breaks: the path of the field
+// under the filter, such as verbs[0] or match[1].path, and why.
+type FilterProblem struct {
+	Path, Detail string
+}
+
+// CheckFilter is every rule on breaks: a product, lowercase; at least one
+// verb; each entry of verbs, resources and a match rule's in a value or a
+// prefix and *; and each match rule a path into the payload with at least
+// one entry. The resolver checks a trigger's on with it, and the trigger
+// tool a proposal's before anyone is asked (spec 086).
+func CheckFilter(on v1.TriggerOn) []FilterProblem {
+	var out []FilterProblem
+	add := func(path, detail string) { out = append(out, FilterProblem{path, detail}) }
+	if on.Product == "" {
+		add("product", "required")
+	} else if on.Product != strings.ToLower(on.Product) {
+		add("product", "a product is lowercase, such as github")
+	}
+	if len(on.Verbs) == 0 {
+		add("verbs", "required: at least one verb, or * for every verb")
+	}
+	patterns := func(at string, entries []string) {
+		for i, e := range entries {
+			switch {
+			case e == "":
+				add(fmt.Sprintf("%s[%d]", at, i), "empty; an entry is a value, or a prefix and *")
+			case strings.Contains(strings.TrimSuffix(e, "*"), "*"):
+				add(fmt.Sprintf("%s[%d]", at, i), "a * may only end an entry, where it matches the prefix before it")
+			}
+		}
+	}
+	patterns("verbs", on.Verbs)
+	patterns("resources", on.Resources)
+	for i, m := range on.Match {
+		mp := fmt.Sprintf("match[%d]", i)
+		if err := CheckMatchPath(m.Path); err != nil {
+			add(mp+".path", err.Error())
+		}
+		if len(m.In) == 0 {
+			add(mp+".in", "required: at least one value the path's value may take")
+		}
+		patterns(mp+".in", m.In)
+	}
+	return out
+}
