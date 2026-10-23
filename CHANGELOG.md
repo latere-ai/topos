@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A price or an allowance too large to hold is refused.** A decimal
+  amount whose whole part is past what an int64 of millionths holds, such
+  as a trigger tool's `perWeekUsd` of `18446744073710`, was wrapped around
+  into a much smaller amount; it is now refused as `invalid_input` or, in
+  a catalog, as an invalid price.
+
 ## v0.56.0 - 2026-10-23
 
 ### Added

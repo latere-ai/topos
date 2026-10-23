@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,6 +51,11 @@ func ParsePrice(s string) (Price, error) {
 	w, err := strconv.ParseInt(whole, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("models: price %q: %w", s, err)
+	}
+	// The whole part becomes millionths, so past this it would wrap
+	// around into another, smaller price.
+	if w > math.MaxInt64/1_000_000-1 {
+		return 0, fmt.Errorf("models: price %q is past the largest price, %d", s, math.MaxInt64/1_000_000-1)
 	}
 	var f int64
 	if frac != "" {

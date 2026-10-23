@@ -172,7 +172,7 @@ func TestErrorMessages(t *testing.T) {
 }
 
 func TestPrices(t *testing.T) {
-	for in, want := range map[string]Price{"0": 0, "1.25": 1_250_000, "15": 15_000_000, "0.000001": 1, "0.5": 500_000} {
+	for in, want := range map[string]Price{"0": 0, "1.25": 1_250_000, "15": 15_000_000, "0.000001": 1, "0.5": 500_000, "9223372036853.999999": 9_223_372_036_853_999_999} {
 		got, err := ParsePrice(in)
 		if err != nil || got != want {
 			t.Fatalf("ParsePrice(%q) = %d, %v", in, got, err)
@@ -181,7 +181,9 @@ func TestPrices(t *testing.T) {
 			t.Fatalf("%q does not round-trip through %q", in, got.String())
 		}
 	}
-	for _, bad := range []string{"", "-1", "1.1234567", "x", "1.x", ".5"} {
+	// A whole part past what millionths hold in an int64 is refused, never
+	// wrapped around into a smaller price.
+	for _, bad := range []string{"", "-1", "1.1234567", "x", "1.x", ".5", "18446744073710", "9223372036855", "9223372036854.999999"} {
 		if _, err := ParsePrice(bad); err == nil {
 			t.Fatalf("ParsePrice(%q) accepted", bad)
 		}
