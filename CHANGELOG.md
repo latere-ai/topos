@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A trigger can name a weekly allowance.** `spec.budget.perWeek`, in USD micros, is the most its runs may cost in any 7 days. The server counts each run a firing began, from its message through the turn's closing status, in the sessions the trigger started or continued, and the runs wakes began in the sessions it started. A firing while that spend is at or past the allowance starts nothing and records the new outcome `skipped_budget`, counted as `status.counts.skippedBudget`; a one-shot, a wake included, keeps its time and is tried each minute until the week allows it or `maxAge` passes, and nothing needs a resume. `trigger.create` and `trigger.update` carry `budget {per_week_usd_micro}`, so an installation's authorizer can refuse a trigger without one or above a cap. See `docs/allowances.md`.
+- **A trigger says how its week is going, and so does each run.** `status.spend` `{windowDays, spentUsdMicro, perWeekUsdMicro, perLookUsdMicro, expectedLooks, projectedUsdMicro}` is written at each firing that counts toward the trigger, and the firing's `user.message` carries the same numbers as `spend`, naming the trigger they count toward. The agent reads them in one line before the message, and, when the projection passes the allowance, is told it is ahead of pace: keep the run short, set the next wake later, or offer a change that runs less often.
+- **An agent's offer carries its weekly estimate.** The `trigger` tool takes `perWeekUsd`, the agent's estimate in USD of a week of its runs, on a proposal and a change, applied as `spec.budget.perWeek`; a change without it keeps the allowance. Its description gives the model's input and output price from the catalog to estimate from, and says the estimate is the ceiling the server enforces. `list` answers each trigger's allowance and its week's spend.
+- **A turn nobody watches is decided without what the person remembered.** On a turn a trigger's message or a wake began, the patterns the person's confirmations remembered are not applied; the lists, the mode, the network, a decision service and a tool's hold decide as on any turn, and a call the mode asks about waits for the person. `agent.tool_use` and `approval.requested` record `attended`, and a decision service reads it in the action's `attributes`. See `docs/unattended-turns.md`.
+- **Every model request reports how full its context is.** A step's or a compaction's `model.request` records `context {window, used, source, parts}`: the model's input window, the tokens used, from the provider's count or the harness's estimate as `source` says, and the instructions, tools, messages, files, summary and free tokens, the estimates scaled to what was used. The Session folds the latest of its own thread's as `context_report`. See `docs/context-report.md`.
+
 ## v0.55.0 - 2026-10-23
 
 ### Added

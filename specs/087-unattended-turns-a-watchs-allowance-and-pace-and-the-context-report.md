@@ -1,6 +1,6 @@
 ---
 title: "Unattended turns, a watch's allowance and pace, and the context report: a turn a trigger began decides by the session's mode without the person's remembered allows and says so to a decision service, a trigger's weekly allowance the server enforces with skipped_budget and a proposal carries as the agent's estimate, the spend and pace it writes and tells the turn, and the context every model request records"
-status: drafted
+status: in-progress
 track: core
 depends_on: [.archive/004-session-log.md, .archive/007-models.md, 010-context.md, 012-permissions-and-approvals.md, 015-api.md, .archive/022-triggers.md, .archive/037-decision-services.md, 086-proactive-agents.md]
 affects: [harness/, session/, internal/decisions/, internal/triggers/, internal/store/, internal/server/, manifest/v1/, manifest/trigger/, prompts/, api/openapi.yaml, docs/]
@@ -360,26 +360,53 @@ a notice to the person when a watch reaches its allowance (a client
 reads `skipped_budget`); an allowance on a wake; the authorizer's caps
 and shares; the words a client shows.
 
+## Progress
+
+Every roll step is built: the context report, the unattended turn and
+its `attended`, and the allowance with its pace and the `trigger`
+tool's `perWeekUsd`, with the postgres tier run on its new column
+(migration 0019, `triggers.spend`) through a container. Choices the text
+above left to the build:
+
+- A look's cost is read from the session logs at each firing; nothing
+  else stores it. The sessions read are the ones the trigger's firings
+  started or continued in the window, its sessions still open, and its
+  `session.target`.
+- The rolling window excludes a look exactly 7 days old.
+- `expectedLooks` counts the firing's own look, then, for events, the
+  window's looks over 7 days or the trigger's age, at least a day,
+  times the time left in the window, rounded.
+- A look's cost counts the session's spend between its message and the
+  status that closes the turn or the next message of the session's own
+  thread, so a turn a person's answer resumes is not counted.
+- The context report's parts are scaled with the rounding's remainder on
+  the largest part; a title's request records none.
+- The pace line renders a cost under a cent to a hundredth of a cent.
+
+What is left before this spec closes: the instruction tasks that hold a
+model to the pace line and to `perWeekUsd`, which the task suite runs on
+a model connection.
+
 ## Acceptance criteria
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A remembered pattern allows a call on a person's turn and not on a trigger's or a wake's turn, where the mode decides; `always_allow` allows on both; a turn resumed by a person's confirmation is attended | `harness.TestAnUnattendedTurnForgetsWhatThePersonRemembered` | not built |
-| `agent.tool_use` and `approval.requested` record `attended`: true on a person's turn, false on a trigger's turn and in a subagent's thread it drove | `harness.TestEveryDecisionRecordsWhetherItWasAttended` | not built |
-| A decision service's prediction carries `attributes.attended`, and a decision that carries its action does too | `internal/decisions.TestTheServiceIsToldWhetherAnyoneWatches` | not built |
-| `budget.perWeek` above zero applies, at or below zero is `invalid_manifest`, and a trigger without it keeps its digest | `manifest.TestATriggersAllowance` | not built |
-| A look's cost runs from its message through the turn's closing status or the next message, counts a running turn so far, marks a wake's, and skips copied events | `session.TestLooksAreTheTurnsTriggersBegan` | not built |
-| A firing at the allowance records `skipped_budget` and starts nothing, and fires again once the window rolls past the oldest look, with no resume | `internal/triggers.TestAFiringAtItsAllowanceStartsNothing` | not built |
-| A one-shot at the allowance keeps its trigger, is tried again at the next pass, fires when the spend falls, and is `skipped_late` past `maxAge` | `internal/triggers.TestAOneShotAtItsAllowanceWaits` | not built |
-| A wake's look counts toward the trigger that started its session and is skipped at that trigger's allowance; a wake of a session no trigger started counts toward none | `internal/triggers.TestAWakeCountsTowardTheTriggerThatStartedItsSession` | not built |
-| A held firing sent past the allowance is `skipped_budget`, and a held one-shot goes back to its time | `internal/triggers.TestAHeldFiringIsHeldToTheAllowance` | not built |
-| A claim takes a `skipped_budget` firing again and takes its count back, and a trigger's spend is kept, in every store | the stores' conformance case `trigger allowance`, on Postgres through Testcontainers | not built |
-| `status.spend` holds the spend, the allowance, the mean of the latest five ended looks, the expected looks of a schedule, a one-shot, an event trigger and a suspended one, and the projection over the window that ends 7 days after the oldest look | `internal/triggers.TestTheSpendOfAWatch` | not built |
-| `trigger.create` and `trigger.update` carry `budget` when the trigger names one | `internal/server.TestTheTriggerQuestionsCarryTheAllowance` | not built |
-| The `trigger` tool's `perWeekUsd` is applied as `spec.budget.perWeek` on a propose and a change, a change without it keeps the allowance, an amount at or below zero or past six fraction digits is refused before the hold, and the questions asked before the hold and on the allow carry it | `internal/proposal.TestAProposalCarriesItsAllowance`, `internal/server.TestAProposalsAllowanceIsTheTriggers` | not built |
-| The tool's description states the model's price and that the estimate is the ceiling the server enforces, and `list` answers each trigger's allowance and spend | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestTheListSaysEachAllowance` | not built |
-| A firing's message carries `spend`, a wake's the spend of the trigger that started its session, and the trigger answers `status.spend` and `skippedBudget` | `internal/server.TestAFiringsMessageCarriesItsSpend` | not built |
-| The fold renders the pace line before a message with `spend`, says ahead of pace when the projection passes the allowance with a wake's or a trigger's advice, and renders none without `spend` | `session.TestThePaceLineSaysWhenAWatchIsAheadOfPace` | not built |
-| Every step's and compaction's `model.request` records `context`: the window, `used` from the provider or the estimate with its source, the parts in order summing to `used`, `files` and `summary` counted, and `free` | `harness.TestEveryRequestReportsItsContext`, `harness.TestACompactionsRequestReportsItsContext`, `harness.TestAReportScalesItsEstimates` | not built |
-| The Session folds `context_report` from the latest request of its own thread, and a subagent's and a title's leave it | `session.TestTheSessionFoldsItsContextReport`, `session.TestTheFoldNamesTheFilesAndSummariesItRenders` | not built |
-| The OpenAPI document describes every field above | `internal/server.TestOpenAPIIsGenerated`, `internal/server.TestTheDocumentDescribesSpec087` | not built |
+| A remembered pattern allows a call on a person's turn and not on a trigger's or a wake's turn, where the mode decides; `always_allow` allows on both; a turn resumed by a person's confirmation is attended | `harness.TestAnUnattendedTurnForgetsWhatThePersonRemembered` | built |
+| `agent.tool_use` and `approval.requested` record `attended`: true on a person's turn, false on a trigger's turn and in a subagent's thread it drove | `harness.TestEveryDecisionRecordsWhetherItWasAttended` | built |
+| A decision service's prediction carries `attributes.attended`, and a decision that carries its action does too | `internal/decisions.TestTheServiceIsToldWhetherAnyoneWatches` | built |
+| `budget.perWeek` above zero applies, at or below zero is `invalid_manifest`, and a trigger without it keeps its digest | `manifest.TestATriggersAllowance` | built |
+| A look's cost runs from its message through the turn's closing status or the next message, counts a running turn so far, marks a wake's, and skips copied events | `session.TestLooksAreTheTurnsTriggersBegan` | built |
+| A firing at the allowance records `skipped_budget` and starts nothing, and fires again once the window rolls past the oldest look, with no resume | `internal/triggers.TestAFiringAtItsAllowanceStartsNothing` | built |
+| A one-shot at the allowance keeps its trigger, is tried again at the next pass, fires when the spend falls, and is `skipped_late` past `maxAge` | `internal/triggers.TestAOneShotAtItsAllowanceWaits` | built |
+| A wake's look counts toward the trigger that started its session and is skipped at that trigger's allowance; a wake of a session no trigger started counts toward none | `internal/triggers.TestAWakeCountsTowardTheTriggerThatStartedItsSession` | built |
+| A held firing sent past the allowance is `skipped_budget`, and a held one-shot goes back to its time | `internal/triggers.TestAHeldFiringIsHeldToTheAllowance` | built |
+| A claim takes a `skipped_budget` firing again and takes its count back, and a trigger's spend is kept, in every store | the stores' conformance case `trigger allowance`, on Postgres through Testcontainers | built |
+| `status.spend` holds the spend, the allowance, the mean of the latest five ended looks, the expected looks of a schedule, a one-shot, an event trigger and a suspended one, and the projection over the window that ends 7 days after the oldest look | `internal/triggers.TestTheSpendOfAWatch` | built |
+| `trigger.create` and `trigger.update` carry `budget` when the trigger names one | `internal/server.TestTheTriggerQuestionsCarryTheAllowance` | built |
+| The `trigger` tool's `perWeekUsd` is applied as `spec.budget.perWeek` on a propose and a change, a change without it keeps the allowance, an amount at or below zero or past six fraction digits is refused before the hold, and the questions asked before the hold and on the allow carry it | `internal/proposal.TestAProposalCarriesItsAllowance`, `internal/server.TestAProposalsAllowanceIsTheTriggers` | built |
+| The tool's description states the model's price and that the estimate is the ceiling the server enforces, and `list` answers each trigger's allowance and spend | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestTheListSaysEachAllowance` | built |
+| A firing's message carries `spend`, a wake's the spend of the trigger that started its session, and the trigger answers `status.spend` and `skippedBudget` | `internal/server.TestAFiringsMessageCarriesItsSpend` | built |
+| The fold renders the pace line before a message with `spend`, says ahead of pace when the projection passes the allowance with a wake's or a trigger's advice, and renders none without `spend` | `session.TestThePaceLineSaysWhenAWatchIsAheadOfPace` | built |
+| Every step's and compaction's `model.request` records `context`: the window, `used` from the provider or the estimate with its source, the parts in order summing to `used`, `files` and `summary` counted, and `free` | `harness.TestEveryRequestReportsItsContext`, `harness.TestACompactionsRequestReportsItsContext`, `harness.TestAReportScalesItsEstimates` | built |
+| The Session folds `context_report` from the latest request of its own thread, and a subagent's and a title's leave it | `session.TestTheSessionFoldsItsContextReport`, `session.TestTheFoldNamesTheFilesAndSummariesItRenders` | built |
+| The OpenAPI document describes every field above | `internal/server.TestOpenAPIIsGenerated`, `internal/server.TestTheDocumentDescribesSpec087` | built |
