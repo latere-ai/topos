@@ -333,6 +333,30 @@ func (b *TriggerBook) RecordFiring(_ context.Context, f Firing, from string) err
 	return nil
 }
 
+func (b *TriggerBook) SpendFiring(_ context.Context, f Firing, from string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t, err := b.trigger(f.TriggerID)
+	if err != nil {
+		return err
+	}
+	held, ok := b.firingsOf(f.TriggerID)[f.Dedupe]
+	if !ok || held.ID != f.ID || held.Outcome != from {
+		return fmt.Errorf("%w: firing %s is not %q", ErrConflict, f.ID, from)
+	}
+	if b.save != nil {
+		if err := b.save.RemoveTrigger(t.ID); err != nil {
+			return err
+		}
+	}
+	delete(b.triggers, t.ID)
+	delete(b.names, ownedName{t.Owner, t.Name})
+	delete(b.firings, t.ID)
+	delete(b.keys, t.ID)
+	delete(b.leases, t.ID)
+	return nil
+}
+
 func (b *TriggerBook) CountFiltered(_ context.Context, id string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

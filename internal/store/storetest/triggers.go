@@ -372,6 +372,48 @@ func triggerFirings(t *testing.T, f Factory) {
 	}
 }
 
+// triggerSpend: the firing that spends a one-shot trigger deletes it,
+// its firings and its keys, only from the outcome it names (spec 086).
+func triggerSpend(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ctx := t.Context()
+	tr := NewTrigger("alice", "once", clock.Now())
+	if err := st.PutTrigger(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	fr := NewFiring(tr.ID, "schedule:1", store.OriginSchedule, clock.Now())
+	if _, _, err := st.ClaimFiring(ctx, fr); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTriggerSession(ctx, tr.ID, "", "ses_1"); err != nil {
+		t.Fatal(err)
+	}
+	fr.Outcome, fr.SessionID = store.OutcomeStarted, "ses_1"
+	if err := st.SpendFiring(ctx, fr, store.OutcomeHeld); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("a spend from another outcome: %v", err)
+	}
+	if err := st.SpendFiring(ctx, NewFiring(tr.ID, "none", store.OriginSchedule, clock.Now()), ""); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("a spend of an unclaimed firing: %v", err)
+	}
+	if err := st.SpendFiring(ctx, fr, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Trigger(ctx, tr.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the spent trigger: %v", err)
+	}
+	if _, err := st.TriggerByName(ctx, "alice", "once"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the spent trigger's name: %v", err)
+	}
+	if err := st.SpendFiring(ctx, fr, ""); !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("a second spend: %v", err)
+	}
+	// The name is free again: a wake set anew applies it.
+	if err := st.PutTrigger(ctx, NewTrigger("alice", "once", clock.Now())); err != nil {
+		t.Fatalf("the name of a spent trigger: %v", err)
+	}
+}
+
 // triggerFiredBy: a firing keeps the key that fired it, read back by the
 // claim, the held list and the firings list, and a firing no key fired
 // reads back with none. A failed or unrecorded firing taken again keeps

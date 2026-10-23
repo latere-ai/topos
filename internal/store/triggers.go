@@ -31,8 +31,12 @@ const (
 	OutcomeSkippedActive = "skipped_active"
 	OutcomeSkippedBusy   = "skipped_busy"
 	OutcomeSkippedLate   = "skipped_late"
-	OutcomeRefused       = "refused"
-	OutcomeFailed        = "failed"
+	// OutcomeSkippedEnded is a firing whose session.target has ended or
+	// is gone (spec 086): it starts nothing, since a new session would
+	// not hold the conversation its message was written for.
+	OutcomeSkippedEnded = "skipped_ended"
+	OutcomeRefused      = "refused"
+	OutcomeFailed       = "failed"
 )
 
 // Trigger is one stored trigger: its latest resolved document and its
@@ -154,6 +158,11 @@ type Triggers interface {
 	// counts, last fired time and last session with it. ErrConflict
 	// answers a stored outcome other than from.
 	RecordFiring(ctx context.Context, f Firing, from string) error
+	// SpendFiring is RecordFiring for the firing that spends a one-shot
+	// trigger (spec 086): in the same transaction as the check of from,
+	// it deletes the trigger with its firings and keys. ErrConflict
+	// answers a stored outcome other than from.
+	SpendFiring(ctx context.Context, f Firing, from string) error
 	// CountFiltered counts a filtered event, which stores no firing.
 	CountFiltered(ctx context.Context, triggerID string) error
 	// Firings lists a trigger's firings newest first, paged.
@@ -223,6 +232,8 @@ func Count(c *v1.TriggerCounts, outcome string, n int64) {
 		c.SkippedBusy += n
 	case OutcomeSkippedLate:
 		c.SkippedLate += n
+	case OutcomeSkippedEnded:
+		c.SkippedEnded += n
 	case OutcomeRefused:
 		c.Refused += n
 	case OutcomeFailed:

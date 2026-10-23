@@ -341,6 +341,31 @@ func (s *Store) RecordFiring(ctx context.Context, f store.Firing, from string) e
 	})
 }
 
+// SpendFiring checks the firing's outcome is the one named and deletes
+// the trigger, its firings and keys with it, in one transaction.
+func (s *Store) SpendFiring(ctx context.Context, f store.Firing, from string) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var outcome string
+		err := tx.QueryRow(ctx, `SELECT outcome FROM trigger_firings WHERE trigger_id = $1 AND dedupe = $2 AND id = $3 FOR UPDATE`, f.TriggerID, f.Dedupe, f.ID).Scan(&outcome)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return fmt.Errorf("%w: firing %s is not %q", store.ErrConflict, f.ID, from)
+		case err != nil:
+			return fmt.Errorf("postgres: read firing %s: %w", f.ID, err)
+		case outcome != from:
+			return fmt.Errorf("%w: firing %s is not %q", store.ErrConflict, f.ID, from)
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM triggers WHERE id = $1`, f.TriggerID)
+		if err != nil {
+			return fmt.Errorf("postgres: spend trigger %s: %w", f.TriggerID, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("%w: trigger %s", store.ErrNotFound, f.TriggerID)
+		}
+		return nil
+	})
+}
+
 func (s *Store) CountFiltered(ctx context.Context, id string) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		return addCount(ctx, tx, id, func(t *store.Trigger) { store.Count(&t.Counts, store.OutcomeFiltered, 1) })
