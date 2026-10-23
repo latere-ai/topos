@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 
 	"latere.ai/x/pkg/authz"
 
@@ -87,7 +88,7 @@ func (t sessionTriggers) ListTriggers(ctx context.Context) ([]runner.ListedTrigg
 	slices.SortStableFunc(all, func(a, b store.Trigger) int { return b.CreatedAt.Compare(a.CreatedAt) })
 	out := make([]runner.ListedTrigger, 0, min(len(all), trigger.MaxListed))
 	for _, tr := range all[:min(len(all), trigger.MaxListed)] {
-		l, err := listed(tr)
+		l, err := t.s.listed(ctx, tr)
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +111,7 @@ func (t sessionTriggers) ApplyProposal(ctx context.Context, p runner.Proposal) (
 	if err != nil {
 		return runner.ListedTrigger{}, err
 	}
-	return listed(tr)
+	return t.s.listed(ctx, tr)
 }
 
 // asker is the session and its initiator as an asker in the session's
@@ -190,7 +191,11 @@ func (t sessionTriggers) act(ctx context.Context, p runner.Proposal, apply bool)
 	if err != nil {
 		return store.Trigger{}, &runner.TriggerRefusal{Code: CodeInvalidRequest, Message: err.Error()}
 	}
-	out, _, err := t.s.putTrigger(ctx, q, tr.Name, body, triggerApply{origin: &origin, agent: sess.Agent.ID, check: !apply})
+	how := triggerApply{origin: &origin, agent: sess.Agent.ID, check: !apply}
+	if p.Verb() == runner.TriggerPause {
+		how.why = strings.TrimSpace(p.Why)
+	}
+	out, _, err := t.s.putTrigger(ctx, q, tr.Name, body, how)
 	if err != nil {
 		return store.Trigger{}, refusal(err)
 	}
@@ -265,16 +270,26 @@ func refusal(err error) error {
 	return &runner.TriggerRefusal{Code: code, Message: cmp.Or(e.detail, row.message)}
 }
 
-// listed is a stored trigger as the trigger tool reads it.
-func listed(t store.Trigger) (runner.ListedTrigger, error) {
+// listed is a stored trigger as the trigger tool reads it: a wake's with
+// the title of the session it continues, when that session is there.
+func (s *Server) listed(ctx context.Context, t store.Trigger) (runner.ListedTrigger, error) {
 	doc, err := store.DecodeTrigger(t.Doc)
 	if err != nil {
 		return runner.ListedTrigger{}, err
 	}
 	l := runner.ListedTrigger{ID: t.ID, Name: t.Name, Title: doc.Metadata.DisplayName, Schedule: doc.Spec.Schedule, TimeZone: doc.Spec.TimeZone,
-		Ask: doc.Spec.Session.Message, Suspended: t.Suspended, NextFireAt: t.NextFireAt, Origin: doc.Status.Origin}
+		Ask: doc.Spec.Session.Message, At: doc.Spec.At, Target: doc.Spec.Session.Target, Suspended: t.Suspended, NextFireAt: t.NextFireAt, Origin: doc.Status.Origin}
 	if doc.Spec.On != nil {
 		l.Product = doc.Spec.On.Product
+	}
+	if l.Target != "" {
+		target, err := s.o.Sessions.Get(ctx, l.Target)
+		switch {
+		case err == nil:
+			l.TargetTitle = target.Title
+		case !errors.Is(err, session.ErrNotFound):
+			return runner.ListedTrigger{}, err
+		}
 	}
 	return l, nil
 }

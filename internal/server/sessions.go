@@ -1078,8 +1078,32 @@ func (c *call) endSession() error {
 	if err != nil {
 		return err
 	}
-	if err := c.s.appendWhen(ctx, s.ID, []session.Event{ev}, endable); err != nil {
+	// A pending wake ends with its session (spec 086): the log says so
+	// before the end, on the read the append follows, and its trigger is
+	// deleted after.
+	var wake string
+	guard := func(cur session.Session) error {
+		if err := endable(cur); err != nil {
+			return err
+		}
+		wake = ""
+		if cur.Wake != nil {
+			wake = cur.Wake.TriggerID
+		}
+		return nil
+	}
+	batch := func() ([]session.Event, error) {
+		if wake == "" {
+			return []session.Event{ev}, nil
+		}
+		cleared, err := c.s.clearedEvent(wake, session.WakeEnded, nil)
+		return []session.Event{cleared, ev}, err
+	}
+	if err := c.s.appendBuilt(ctx, s.ID, guard, batch); err != nil {
 		return err
+	}
+	if wake != "" {
+		c.s.dropWake(ctx, s.ID, wake)
 	}
 	if s, err = c.s.o.Sessions.Get(ctx, s.ID); err != nil {
 		return err
@@ -1134,6 +1158,11 @@ func (c *call) deleteSession() error {
 	}
 	if err := c.s.deleteFree(ctx, s.ID); err != nil {
 		return err
+	}
+	// The session's pending wake goes with it (spec 086); no log remains
+	// to record it in.
+	if s.Wake != nil {
+		c.s.dropWake(ctx, s.ID, s.Wake.TriggerID)
 	}
 	// The session is gone whatever its leftovers do, so a failed removal
 	// is logged for the operator and the delete still succeeds.
@@ -1204,6 +1233,14 @@ func (s *Server) appendBatch(ctx context.Context, id string, batch []session.Eve
 // it follows: the append names the sequence of the read guard checked, so
 // a session that moved on in between is read and checked again.
 func (s *Server) appendWhen(ctx context.Context, id string, batch []session.Event, guard func(session.Session) error) error {
+	return s.appendBuilt(ctx, id, guard, func() ([]session.Event, error) { return batch, nil })
+}
+
+// appendBuilt is appendWhen with the batch built after each read the
+// guard passes, so a batch that depends on the session, such as the end
+// of a session with a pending wake, is built from the read it follows; an
+// empty batch appends nothing.
+func (s *Server) appendBuilt(ctx context.Context, id string, guard func(session.Session) error, build func() ([]session.Event, error)) error {
 	var err error
 	for range appendRetries {
 		var sess session.Session
@@ -1212,6 +1249,10 @@ func (s *Server) appendWhen(ctx context.Context, id string, batch []session.Even
 		}
 		if err := guard(sess); err != nil {
 			return err
+		}
+		batch, berr := build()
+		if berr != nil || len(batch) == 0 {
+			return berr
 		}
 		session.Stamp(id, sess.LastSeq, batch)
 		if _, err = s.o.Sessions.Append(ctx, id, sess.LastSeq, batch); err == nil {

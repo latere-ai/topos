@@ -51,6 +51,13 @@ func (c *call) setArchived(archived bool) error {
 	if archived {
 		at = new(c.s.o.Now())
 	}
+	// A pending wake ends when its session is filed away (spec 086): the
+	// log says so, and its trigger is deleted.
+	if archived {
+		if err := c.s.archivedWake(c.r.Context(), s.ID); err != nil {
+			return err
+		}
+	}
 	if s, err = ar.SetArchived(c.r.Context(), s.ID, at); err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ package postgres
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 
 	"latere.ai/x/topos/internal/auth"
 	"latere.ai/x/topos/internal/server"
+	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/internal/store/storetest"
 	"latere.ai/x/topos/session"
 )
@@ -90,23 +92,7 @@ func (r replica) do(t *testing.T, method, path, body string) (int, []byte) {
 // agent reviewer and a trigger of it applied through the first.
 func twoReplicas(t *testing.T, trigger string) (replica, replica, *storetest.Clock, string) {
 	t.Helper()
-	dsn := database(t)
-	clock := storetest.NewClock()
-	a, b := newReplica(t, dsn, clock), newReplica(t, dsn, clock)
-	storetest.Apply(t, a.st, authz.Subject(loginIssuer, "alice"), "reviewer", "Review.")
-	status, body := a.do(t, http.MethodPut, "/v1/triggers/t", "apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: t}\nspec: {agent: reviewer, "+trigger+"}\n")
-	if status != http.StatusCreated {
-		t.Fatalf("apply: %d %s", status, body)
-	}
-	var tr struct {
-		Status struct {
-			ID string `json:"id"`
-		} `json:"status"`
-	}
-	if err := json.Unmarshal(body, &tr); err != nil {
-		t.Fatal(err)
-	}
-	return a, b, clock, tr.Status.ID
+	return twoReplicasAt(t, storetest.NewClock(), trigger)
 }
 
 // triggered lists the sessions a trigger started.
@@ -204,4 +190,60 @@ func TestOneSessionPerKey(t *testing.T) {
 	if messages != 12 {
 		t.Fatalf("the key's session holds %d messages", messages)
 	}
+}
+
+// TestAOneShotFiresOnce is Topos spec 086's one-shot criterion on
+// Postgres: with two serve replicas running the minute loop at once past
+// an at trigger's time, the trigger starts one session, and is deleted
+// with its firing in the transaction that records it, so neither replica
+// fires it again.
+func TestAOneShotFiresOnce(t *testing.T) {
+	clock := storetest.NewClock()
+	at := clock.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	a, b, _, id := twoReplicasAt(t, clock, "at: '"+at+"', session: {message: 'Once.'}")
+	clock.Advance(time.Hour)
+	for range 2 {
+		var wg sync.WaitGroup
+		for range 3 {
+			for _, r := range []replica{a, b} {
+				wg.Go(func() {
+					if err := r.api.Tick(t.Context()); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+		}
+		wg.Wait()
+	}
+	if got := triggered(t, a.st, id); len(got) != 1 {
+		t.Fatalf("a one-shot started %d sessions", len(got))
+	}
+	if _, err := a.st.Trigger(t.Context(), id); err == nil {
+		t.Fatal("the spent one-shot is kept")
+	}
+	if list, _, err := b.st.Firings(t.Context(), id, 0, ""); len(list) != 0 || err != nil && !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the spent one-shot's firings: %+v, %v", list, err)
+	}
+}
+
+// twoReplicasAt is twoReplicas on the given clock, so a one-shot's time
+// is read against it when it is applied.
+func twoReplicasAt(t *testing.T, clock *storetest.Clock, trigger string) (replica, replica, *storetest.Clock, string) {
+	t.Helper()
+	dsn := database(t)
+	a, b := newReplica(t, dsn, clock), newReplica(t, dsn, clock)
+	storetest.Apply(t, a.st, authz.Subject(loginIssuer, "alice"), "reviewer", "Review.")
+	status, body := a.do(t, http.MethodPut, "/v1/triggers/t", "apiVersion: topos.latere.ai/v1\nkind: Trigger\nmetadata: {name: t}\nspec: {agent: reviewer, "+trigger+"}\n")
+	if status != http.StatusCreated {
+		t.Fatalf("apply: %d %s", status, body)
+	}
+	var tr struct {
+		Status struct {
+			ID string `json:"id"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(body, &tr); err != nil {
+		t.Fatal(err)
+	}
+	return a, b, clock, tr.Status.ID
 }

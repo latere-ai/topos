@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,56 +19,27 @@ import (
 	"latere.ai/x/topos/runner"
 )
 
-// EventPrefix begins the name of a proposed trigger whose events no
-// routine expresses (spec 086): a repository's pushes, or a filter
-// narrowed past a whole product's arrivals. Such a trigger is written as
-// a routine is, but under this prefix, so no client reads it as a routine
-// it cannot show; the 20 hexadecimal digits after it are the routine's
-// own, made from the session and the call.
-const EventPrefix = "event-"
-
-// eventSuffix follows the ask of a proposed trigger whose events no
-// routine expresses, as a routine that starts from a link or an email
-// follows its instruction with what arrived, so each run reads the event
-// that started it.
-const eventSuffix = "\n\nThe event that started this run:\nProduct: {{event.product}}\nVerb: {{event.verb}}\nResource: {{event.resource}}\nActor: {{event.actor}}\nTime: {{event.time}}\n\n{{event.payload}}"
-
-// Values a routine that starts from a link or an email writes into its
-// filter (latere.ai/x/sdk-go/agents/routine): the product the link or the
-// address delivers as, and its one verb.
-const (
-	productWebhook = "webhook"
-	productMail    = "mail"
-	verbReceived   = "received"
-)
-
-// Starts is how a routine starts on on: from a link for a product
-// webhook's arrivals, from an email for a product mail's, each with the
-// one verb received and nothing narrowed, and "" for any other filter,
-// which no routine expresses.
+// Starts is how a routine starts on on, FromLink or FromEmail, and ""
+// for a filter no routine expresses, whose proposal is written under the
+// SDK's EventName.
 func Starts(on v1.TriggerOn) routine.Start {
-	if !slices.Equal(on.Verbs, []string{verbReceived}) || len(on.Resources) > 0 || len(on.Match) > 0 {
+	starts, ok := routine.StartsOn(on.Product, on.Verbs, len(on.Resources) > 0 || len(on.Match) > 0)
+	if !ok {
 		return ""
 	}
-	switch on.Product {
-	case productWebhook:
-		return routine.FromLink
-	case productMail:
-		return routine.FromEmail
-	}
-	return ""
+	return starts
 }
 
-// TriggerName is the name a propose of the call toolUseID in session sessionID
-// applies its trigger under, so a retry of the call applies the same
-// trigger: a routine's name, or for events no routine expresses the same
-// digits under EventPrefix.
+// TriggerName is the name a propose of the call toolUseID in session
+// sessionID applies its trigger under, so a retry of the call applies the
+// same trigger: a routine's name, or for events no routine expresses the
+// SDK's EventName of the same key.
 func TriggerName(sessionID, toolUseID string, p runner.Proposal) string {
-	name := routine.Name(sessionID + "/" + toolUseID)
+	key := routine.OfferKey(sessionID, toolUseID)
 	if p.On != nil && Starts(*p.On) == "" {
-		return EventPrefix + strings.TrimPrefix(name, routine.Prefix)
+		return routine.EventName(key)
 	}
-	return name
+	return routine.Name(key)
 }
 
 // escape makes s literal in a trigger's template, as a routine's
@@ -156,7 +126,8 @@ func Routine(p runner.Proposal) (routine.Fields, error) {
 // Manifest is the Trigger manifest a propose applies, of the agent named
 // agent, under name: the routine latere.ai/x/sdk-go/agents/routine
 // writes, and for events no routine expresses the same manifest with the
-// filter as its on and the event after the ask.
+// filter as its on and the SDK's EventMessage, the ask and the event
+// after it, as its message.
 func Manifest(agent, name string, p runner.Proposal) (json.RawMessage, error) {
 	f, err := Routine(p)
 	if err != nil {
@@ -168,7 +139,7 @@ func Manifest(agent, name string, p runner.Proposal) (json.RawMessage, error) {
 	}
 	return edit(body, func(spec, session map[string]any) {
 		spec["on"] = *p.On
-		session["message"] = escape(f.Instruction) + eventSuffix
+		session["message"] = routine.EventMessage(f.Instruction)
 	})
 }
 
@@ -287,7 +258,7 @@ func changedTrigger(doc json.RawMessage, stored *v1.Trigger, p runner.Proposal) 
 		if ask != "" {
 			session["message"] = escape(ask)
 			if events {
-				session["message"] = escape(ask) + eventSuffix
+				session["message"] = routine.EventMessage(ask)
 			}
 		}
 		switch {

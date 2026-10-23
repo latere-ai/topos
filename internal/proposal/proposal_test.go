@@ -30,6 +30,11 @@ type fakeTriggers struct {
 	fail    error
 	checked []runner.Proposal
 	applied []runner.Proposal
+	// wakes and canceled are the sets and cancels asked, and pending the
+	// wake a cancel finds, "" for none.
+	wakes    []runner.Wake
+	canceled []string
+	pending  string
 }
 
 func (f *fakeTriggers) ListTriggers(context.Context) ([]runner.ListedTrigger, error) {
@@ -57,6 +62,25 @@ func (f *fakeTriggers) ApplyProposal(_ context.Context, p runner.Proposal) (runn
 	}
 	next := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
 	return runner.ListedTrigger{ID: "trg_1", Name: routine.Name("ses_1/" + p.ToolUseID), Title: cmp.Or(p.Name, "Weekly sign-ups"), NextFireAt: &next}, nil
+}
+
+func (f *fakeTriggers) SetWake(_ context.Context, w runner.Wake) (runner.ListedTrigger, error) {
+	f.wakes = append(f.wakes, w)
+	if f.refuse != nil {
+		return runner.ListedTrigger{}, f.refuse
+	}
+	if f.fail != nil {
+		return runner.ListedTrigger{}, f.fail
+	}
+	return runner.ListedTrigger{ID: "trg_w", Name: "wake-1", Title: w.Title, At: &w.At}, nil
+}
+
+func (f *fakeTriggers) CancelWake(_ context.Context, id string) (string, error) {
+	f.canceled = append(f.canceled, id)
+	if f.refuse != nil {
+		return "", f.refuse
+	}
+	return f.pending, f.fail
 }
 
 // weekly is a proposal every routine rule takes.
@@ -350,7 +374,7 @@ func TestAProposalIsWrittenInTheRoutinesShape(t *testing.T) {
 	} {
 		p := runner.Proposal{Name: "Pushes", Ask: "Review {{it}}.", Why: "On push.", On: &on}
 		name := TriggerName("ses_1", "toolu_3", p)
-		if name != EventPrefix+strings.TrimPrefix(routine.Name("ses_1/toolu_3"), routine.Prefix) || routine.IsName(name) {
+		if name != routine.EventName(routine.OfferKey("ses_1", "toolu_3")) || !routine.IsEventName(name) || routine.IsName(name) {
 			t.Fatalf("%+v is named %s", on, name)
 		}
 		body, err := Manifest("chat", name, p)
@@ -358,7 +382,7 @@ func TestAProposalIsWrittenInTheRoutinesShape(t *testing.T) {
 			t.Fatal(err)
 		}
 		tr := read(body)
-		if tr.Spec.On == nil || tr.Spec.On.Product != on.Product || tr.Spec.Schedule != "" || tr.Spec.Session.Message != `Review \{{it}}.`+eventSuffix ||
+		if tr.Spec.On == nil || tr.Spec.On.Product != on.Product || tr.Spec.Schedule != "" || tr.Spec.Session.Message != routine.EventMessage("Review {{it}}.") ||
 			tr.Metadata.Labels[routine.Label] != "chat" || tr.Metadata.DisplayName != "Pushes" || tr.Spec.SkipIfActive == nil || *tr.Spec.SkipIfActive {
 			t.Fatalf("%+v is written %s", on, body)
 		}
@@ -386,7 +410,7 @@ func TestAProposalIsWrittenInTheRoutinesShape(t *testing.T) {
 		t.Fatalf("the resumed trigger is %s, %v", changed, err)
 	}
 	changed, err = Changed("chat", &own, runner.Proposal{Action: ActionChange, ID: "trg_2", Why: "Pushes.", Name: "On push", On: &v1.TriggerOn{Product: "github", Verbs: []string{"push"}}, Ask: "Look."})
-	if tr := read(changed); err != nil || tr.Spec.On == nil || tr.Spec.Schedule != "" || tr.Metadata.DisplayName != "On push" || tr.Spec.Session.Message != "Look."+eventSuffix || !tr.Spec.Suspend {
+	if tr := read(changed); err != nil || tr.Spec.On == nil || tr.Spec.Schedule != "" || tr.Metadata.DisplayName != "On push" || tr.Spec.Session.Message != routine.EventMessage("Look.") || !tr.Spec.Suspend {
 		t.Fatalf("the changed trigger is %s, %v", changed, err)
 	}
 }

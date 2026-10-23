@@ -255,11 +255,18 @@ func answering(typ session.Type, payload any, initiator string) func([]session.E
 			if err := wait(evs); err != nil {
 				return err
 			}
-			// A trigger call proposes standing work the person who started
-			// the session would own, so only that person answers it (spec
-			// 086), whoever else may send to the session.
-			if p.ToolUseID != "" && p.Sender.Subject != initiator && callName(evs, p.ToolUseID) == session.ToolTrigger {
-				return refuse(auth.CodeForbidden, "only the person who started the session answers a %s call: the routine it proposes would be theirs", session.ToolTrigger)
+			// A trigger call changes standing work the person who started
+			// the session owns, and a held wake runs as them, so only that
+			// person answers either (spec 086), whoever else may send to
+			// the session.
+			if p.ToolUseID == "" || p.Sender.Subject == initiator {
+				return nil
+			}
+			switch name := callName(evs, p.ToolUseID); name {
+			case session.ToolTrigger:
+				return refuse(auth.CodeForbidden, "only the person who started the session answers a %s call: the trigger it changes would be theirs", name)
+			case session.ToolWake:
+				return refuse(auth.CodeForbidden, "only the person who started the session answers a %s call: its wake runs as them", name)
 			}
 			return nil
 		}

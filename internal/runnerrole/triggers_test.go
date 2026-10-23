@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -40,6 +41,22 @@ func (r recordedTriggers) ApplyProposal(_ context.Context, p runner.Proposal) (r
 		return runner.ListedTrigger{}, r.refuse
 	}
 	return runner.ListedTrigger{ID: "trg_2", Name: "routine-b", Title: p.Name}, nil
+}
+
+func (r recordedTriggers) SetWake(_ context.Context, w runner.Wake) (runner.ListedTrigger, error) {
+	*r.asked = append(*r.asked, r.id+" wake "+w.ToolUseID)
+	if r.refuse != nil {
+		return runner.ListedTrigger{}, r.refuse
+	}
+	return runner.ListedTrigger{ID: "trg_3", Name: "wake-x", Title: w.Title, At: &w.At}, nil
+}
+
+func (r recordedTriggers) CancelWake(_ context.Context, toolUseID string) (string, error) {
+	*r.asked = append(*r.asked, r.id+" unwake "+toolUseID)
+	if r.refuse != nil {
+		return "", r.refuse
+	}
+	return "trg_3", nil
 }
 
 // TestARemoteLeaseAsksTheTriggerQuestions: a remote runner's lease is the
@@ -84,23 +101,32 @@ func TestARemoteLeaseAsksTheTriggerQuestions(t *testing.T) {
 	if made, err := l.ApplyProposal(ctx, p); err != nil || made.ID != "trg_2" || made.Title != "Weekly" {
 		t.Fatalf("the apply %+v, %v", made, err)
 	}
+	at := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
+	if set, err := l.SetWake(ctx, runner.Wake{ToolUseID: "toolu_w", At: at, Title: "Look", Note: "Again."}); err != nil || set.ID != "trg_3" || set.At == nil || !set.At.Equal(at) {
+		t.Fatalf("the wake %+v, %v", set, err)
+	}
+	if id, err := l.CancelWake(ctx, "toolu_c"); err != nil || id != "trg_3" {
+		t.Fatalf("the cancel %q, %v", id, err)
+	}
 	refuse = &runner.TriggerRefusal{Code: "proposals_full", Message: "twenty"}
 	for name, ask := range map[string]func() error{
-		"check": func() error { return l.CheckProposal(ctx, p) },
-		"apply": func() error { _, err := l.ApplyProposal(ctx, p); return err },
+		"check":  func() error { return l.CheckProposal(ctx, p) },
+		"apply":  func() error { _, err := l.ApplyProposal(ctx, p); return err },
+		"wake":   func() error { _, err := l.SetWake(ctx, runner.Wake{ToolUseID: "toolu_w", At: at}); return err },
+		"unwake": func() error { _, err := l.CancelWake(ctx, "toolu_c"); return err },
 	} {
 		re, ok := errors.AsType[*runner.TriggerRefusal](ask())
 		if !ok || re.Code != "proposals_full" || re.Message != "twenty" {
 			t.Fatalf("a refused %s: %+v", name, re)
 		}
 	}
-	want := []string{s.ID + " list", s.ID + " check toolu_1", s.ID + " apply toolu_1"}
-	if len(asked) != 5 || asked[0] != want[0] || asked[1] != want[1] || asked[2] != want[2] {
+	want := []string{s.ID + " list", s.ID + " check toolu_1", s.ID + " apply toolu_1", s.ID + " wake toolu_w", s.ID + " unwake toolu_c"}
+	if len(asked) != 9 || !slices.Equal(asked[:5], want) {
 		t.Fatalf("the server was asked %q", asked)
 	}
 	held := claims[0].Lease.(*lease)
 	stale := &lease{c: c, id: s.ID, gen: held.gen + 1, lost: make(chan struct{}), stop: make(chan struct{})}
-	if _, err := stale.ListTriggers(ctx); !errors.Is(err, session.ErrLeaseLost) || len(asked) != 5 {
+	if _, err := stale.ListTriggers(ctx); !errors.Is(err, session.ErrLeaseLost) || len(asked) != 9 {
 		t.Fatalf("another generation: %v, %d questions", err, len(asked))
 	}
 	if err := claims[0].Lease.Release(); err != nil {

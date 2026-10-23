@@ -104,6 +104,8 @@ var payloadTypes = map[session.Type]reflect.Type{
 	session.TypeApprovalDecided:      typeOf[session.ApprovalDecided](),
 	session.TypeFilesKept:            typeOf[session.FilesKept](),
 	session.TypeWorkSaved:            typeOf[session.WorkSaved](),
+	session.TypeWakeSet:              typeOf[session.WakeSet](),
+	session.TypeWakeCleared:          typeOf[session.WakeCleared](),
 }
 
 // sentPayloads is the payload a person sends for each type sendEvent

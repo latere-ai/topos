@@ -1814,7 +1814,7 @@ paths:
     put:
       operationId: applyTrigger
       summary: Apply a trigger
-      description: "Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; each value is cut at 16384 bytes and a message past 65536 bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, 5 by default and 100 at most, are active at once. The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names. trigger.create and trigger.update carry the trigger's name, its agent and the filter applied as on, and, when spec.session.machine names a person's own computer, {kind: device, environment, workdir}, machine device with environment and workdir beside them, as session.create carries them."
+      description: "Apply a Trigger manifest to the caller's own trigger of the name; the caller becomes its owner. The body is one Trigger manifest of topos.latere.ai/v1. It fires on spec.schedule, a five-field cron expression or @hourly, @daily, @weekly read in spec.timeZone, or on the events spec.on selects: product exactly, verbs and resources each exact or a prefix ending in *, and match rules {path, in} on the payload. spec.session.message, title and key, and a repository's url and ref, are templates of {{event.*}}, {{trigger.id}}, {{trigger.name}}, {{firing.id}} and {{firing.time}}; each value is cut at 16384 bytes and a message past 65536 bytes refuses its firing. spec.session.policy new starts a session per firing, skipped while the key's session is active under skipIfActive; continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, 5 by default and 100 at most, are active at once. The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names. trigger.create and trigger.update carry the trigger's name, its agent and the filter applied as on, and, when spec.session.machine names a person's own computer, {kind: device, environment, workdir}, machine device with environment and workdir beside them, as session.create carries them. spec.at, an RFC 3339 time with an offset in place of schedule and on, fires the trigger once, and its firing spends it: the server deletes it with the firing that started, continued, skipped or refused, and keeps it while that firing is held or runs again after it failed; trigger.create and trigger.update carry at. spec.session.target, under policy continue and beside no key, names the open session of spec.agent every firing sends its message to, which the caller may send to; a firing whose target has ended or is gone is skipped_ended. A session's wake is such a trigger, applied by the session's wake tool as the session's initiator with status.origin {kind: wake}: at least 10m0s and at most 168h0m0s ahead and inside its session's life, with maxAge 24h0m0s; its firing's user.message carries wake {trigger_id, set_at, due_at, count}, count from 1. status.paused {why, by, sessionId, toolUseId, at} says who suspended the trigger and when, with the agent's why and its call for a pause a session's call made; it is kept while the trigger stays suspended and cleared when it resumes."
       x-topos-actions:
         - trigger.create
         - trigger.update
@@ -1897,6 +1897,7 @@ paths:
                     skippedActive: 0
                     skippedBusy: 0
                     skippedLate: 0
+                    skippedEnded: 0
                     refused: 0
                     failed: 0
         "201":
@@ -1936,6 +1937,7 @@ paths:
                     skippedActive: 0
                     skippedBusy: 0
                     skippedLate: 0
+                    skippedEnded: 0
                     refused: 0
                     failed: 0
         default:
@@ -2014,6 +2016,7 @@ paths:
                         skippedActive: 0
                         skippedBusy: 0
                         skippedLate: 0
+                        skippedEnded: 0
                         refused: 0
                         failed: 0
                 next_cursor: dHJnXzAxTTM0SEdCQTBKUjk4V0tLWFdaR0FYNlZB
@@ -2073,6 +2076,7 @@ paths:
                     skippedActive: 0
                     skippedBusy: 0
                     skippedLate: 0
+                    skippedEnded: 0
                     refused: 0
                     failed: 0
         default:
@@ -2080,7 +2084,7 @@ paths:
     delete:
       operationId: deleteTrigger
       summary: Delete a trigger
-      description: Delete a trigger with its firings; the sessions it started keep running.
+      description: Delete a trigger with its firings; the sessions it started keep running. A session's wake deleted here is recorded in that session as session.wake_cleared with reason canceled and the sender.
       x-topos-actions:
         - trigger.delete
       parameters:
@@ -2099,7 +2103,7 @@ paths:
     post:
       operationId: fireTrigger
       summary: Fire a trigger
-      description: "An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most 200 characters, unique per product, product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, refused or failed. A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner."
+      description: "An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most 200 characters, unique per product, product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, skipped_ended, refused or failed. A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner."
       x-topos-actions:
         - trigger.fire
         - session.create
@@ -3063,6 +3067,8 @@ components:
         - $ref: "#/components/schemas/Event.session.scope_changed"
         - $ref: "#/components/schemas/Event.session.status"
         - $ref: "#/components/schemas/Event.session.title_changed"
+        - $ref: "#/components/schemas/Event.session.wake_cleared"
+        - $ref: "#/components/schemas/Event.session.wake_set"
         - $ref: "#/components/schemas/Event.thread.ended"
         - $ref: "#/components/schemas/Event.thread.message"
         - $ref: "#/components/schemas/Event.thread.started"
@@ -3100,6 +3106,8 @@ components:
           session.scope_changed: "#/components/schemas/Event.session.scope_changed"
           session.status: "#/components/schemas/Event.session.status"
           session.title_changed: "#/components/schemas/Event.session.title_changed"
+          session.wake_cleared: "#/components/schemas/Event.session.wake_cleared"
+          session.wake_set: "#/components/schemas/Event.session.wake_set"
           thread.ended: "#/components/schemas/Event.thread.ended"
           thread.message: "#/components/schemas/Event.thread.message"
           thread.started: "#/components/schemas/Event.thread.started"
@@ -3326,6 +3334,24 @@ components:
               const: session.title_changed
             payload:
               $ref: "#/components/schemas/TitleChanged"
+    Event.session.wake_cleared:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.wake_cleared
+            payload:
+              $ref: "#/components/schemas/WakeCleared"
+    Event.session.wake_set:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: session.wake_set
+            payload:
+              $ref: "#/components/schemas/WakeSet"
     Event.thread.ended:
       allOf:
         - $ref: "#/components/schemas/EventEnvelope"
@@ -3485,6 +3511,8 @@ components:
         - session.scope_changed
         - session.status
         - session.title_changed
+        - session.wake_cleared
+        - session.wake_set
         - thread.ended
         - thread.message
         - thread.started
@@ -3794,6 +3822,8 @@ components:
           $ref: "#/components/schemas/TriggerCounts"
         origin:
           $ref: "#/components/schemas/TriggerOrigin"
+        paused:
+          $ref: "#/components/schemas/TriggerPause"
     ManifestThresholds:
       type: object
       required:
@@ -3918,6 +3948,24 @@ components:
           type: boolean
         answers:
           type: string
+    MessageWake:
+      type: object
+      required:
+        - trigger_id
+        - set_at
+        - due_at
+        - count
+      properties:
+        trigger_id:
+          type: string
+        set_at:
+          type: string
+          format: date-time
+        due_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
     ModelChange:
       type: object
       properties:
@@ -4753,6 +4801,8 @@ components:
           $ref: "#/components/schemas/Tree"
         folder:
           $ref: "#/components/schemas/Folder"
+        wake:
+          $ref: "#/components/schemas/Wake"
     SessionBudget:
       type: object
       required:
@@ -5203,6 +5253,7 @@ components:
         - skippedActive
         - skippedBusy
         - skippedLate
+        - skippedEnded
         - refused
         - failed
       properties:
@@ -5219,6 +5270,8 @@ components:
         skippedBusy:
           type: integer
         skippedLate:
+          type: integer
+        skippedEnded:
           type: integer
         refused:
           type: integer
@@ -5271,6 +5324,23 @@ components:
           type: string
         confirmedBy:
           type: string
+    TriggerPause:
+      type: object
+      required:
+        - by
+        - at
+      properties:
+        why:
+          type: string
+        by:
+          type: string
+        sessionId:
+          type: string
+        toolUseId:
+          type: string
+        at:
+          type: string
+          format: date-time
     TriggerSession:
       type: object
       required:
@@ -5284,6 +5354,8 @@ components:
         policy:
           type: string
         key:
+          type: string
+        target:
           type: string
         machine:
           $ref: "#/components/schemas/ManifestSessionMachine"
@@ -5317,6 +5389,9 @@ components:
           type: string
         "on":
           $ref: "#/components/schemas/TriggerOn"
+        at:
+          type: string
+          format: date-time
         session:
           $ref: "#/components/schemas/TriggerSession"
         skipIfActive:
@@ -5421,6 +5496,8 @@ components:
             $ref: "#/components/schemas/Attachment"
         firing_id:
           type: string
+        wake:
+          $ref: "#/components/schemas/MessageWake"
     UserToolConfirmation:
       type: object
       description: Names exactly one of tool_use_id, a call that waits, and approval_id, an approval.requested that asks.
@@ -5457,6 +5534,60 @@ components:
             $ref: "#/components/schemas/Block"
         is_error:
           type: boolean
+    Wake:
+      type: object
+      required:
+        - trigger_id
+        - at
+        - title
+        - count
+      properties:
+        trigger_id:
+          type: string
+        at:
+          type: string
+          format: date-time
+        title:
+          type: string
+        count:
+          type: integer
+    WakeCleared:
+      type: object
+      required:
+        - trigger_id
+        - reason
+      properties:
+        trigger_id:
+          type: string
+        reason:
+          type: string
+        tool_use_id:
+          type: string
+        sender:
+          $ref: "#/components/schemas/Sender"
+    WakeSet:
+      type: object
+      required:
+        - trigger_id
+        - at
+        - title
+        - note
+        - tool_use_id
+        - count
+      properties:
+        trigger_id:
+          type: string
+        at:
+          type: string
+          format: date-time
+        title:
+          type: string
+        note:
+          type: string
+        tool_use_id:
+          type: string
+        count:
+          type: integer
     WebSearchResultMeta:
       type: object
       description: The meta of a web_search call's tool.result. An agent holds web_search only when its manifest names it, and each call sends its query to the search service the installation configures, with the session's own credential. The result's outcome is ok with the results, or with none; error when the service refused the search, the text then the service's own sentence for the person and refusal its code, or when the search failed; timeout past the search's timeout. A search the service charged for carries cost_usd_micro on the tool.result itself, beside meta, and the session's spent_cost_usd_micro counts it as it counts a model request's.

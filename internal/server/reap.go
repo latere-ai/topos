@@ -34,9 +34,22 @@ func (s *Server) Reap(ctx context.Context) error {
 			return err
 		}
 		batch := []session.Event{ev}
+		// A pending wake ends with its session (spec 086).
+		if sess.Wake != nil {
+			cleared, err := s.clearedEvent(sess.Wake.TriggerID, session.WakeEnded, nil)
+			if err != nil {
+				return err
+			}
+			batch = []session.Event{cleared, ev}
+		}
 		session.Stamp(sess.ID, sess.LastSeq, batch)
-		_, err = s.o.Sessions.Append(ctx, sess.ID, sess.LastSeq, batch)
-		return skipHeld(err)
+		if _, err = s.o.Sessions.Append(ctx, sess.ID, sess.LastSeq, batch); err != nil {
+			return skipHeld(err)
+		}
+		if sess.Wake != nil {
+			s.dropWake(ctx, sess.ID, sess.Wake.TriggerID)
+		}
+		return nil
 	}))
 	errs = append(errs, s.eachSession(ctx, session.StatusEnded, func(sess session.Session) error {
 		if sess.Limits.Retention == "" {

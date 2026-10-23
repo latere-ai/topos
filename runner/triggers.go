@@ -30,6 +30,23 @@ type Triggers interface {
 	// stored, or a *TriggerRefusal when it is refused. The same propose
 	// applies the same trigger however often it is asked.
 	ApplyProposal(ctx context.Context, p Proposal) (ListedTrigger, error)
+	// SetWake applies w as the session's one wake, as its initiator,
+	// replacing a pending one, and answers the trigger as stored, or a
+	// *TriggerRefusal when it is refused (spec 086). The same call applies
+	// the same trigger however often it is asked.
+	SetWake(ctx context.Context, w Wake) (ListedTrigger, error)
+	// CancelWake deletes the session's pending wake for the call toolUseID
+	// and answers its trigger's id, "" when none was pending.
+	CancelWake(ctx context.Context, toolUseID string) (string, error)
+}
+
+// Wake is a set of the wake tool as its call named it: the time the wake
+// is due, the line a person reads, and the note the agent leaves itself.
+type Wake struct {
+	ToolUseID string    `json:"tool_use_id"`
+	At        time.Time `json:"at"`
+	Title     string    `json:"title"`
+	Note      string    `json:"note"`
 }
 
 // The actions of a Proposal: every action of the trigger tool but its

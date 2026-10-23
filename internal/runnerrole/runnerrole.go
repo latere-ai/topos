@@ -511,11 +511,13 @@ func (l *lease) Title(ctx context.Context, asked string) (session.ModelRef, erro
 
 var _ runner.Titler = (*lease)(nil)
 
-// triggers asks the server a question of the session's trigger tool
-// (spec 086) under the lease's generation; lease_lost ends the lease.
-func (l *lease) triggers(ctx context.Context, action string, p *runner.Proposal) (runnerapi.TriggersAnswer, error) {
+// triggers asks the server a question of the session's trigger or wake
+// tool (spec 086) under the lease's generation; lease_lost ends the
+// lease.
+func (l *lease) triggers(ctx context.Context, action string, req runnerapi.TriggersRequest) (runnerapi.TriggersAnswer, error) {
 	var a runnerapi.TriggersAnswer
-	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/triggers/"+action, runnerapi.TriggersRequest{Generation: l.gen, Proposal: p}, &a)
+	req.Generation = l.gen
+	err := l.c.json(ctx, http.MethodPost, "/leases/"+url.PathEscape(l.id)+"/triggers/"+action, req, &a)
 	if errors.Is(err, session.ErrLeaseLost) {
 		l.end()
 	}
@@ -525,20 +527,20 @@ func (l *lease) triggers(ctx context.Context, action string, p *runner.Proposal)
 // ListTriggers asks the server for the session initiator's triggers of
 // the session's agent.
 func (l *lease) ListTriggers(ctx context.Context) ([]runner.ListedTrigger, error) {
-	a, err := l.triggers(ctx, runnerapi.TriggersList, nil)
+	a, err := l.triggers(ctx, runnerapi.TriggersList, runnerapi.TriggersRequest{})
 	return a.Triggers, err
 }
 
 // CheckProposal asks the server whether p could be applied as the
 // session's initiator.
 func (l *lease) CheckProposal(ctx context.Context, p runner.Proposal) error {
-	_, err := l.triggers(ctx, runnerapi.TriggersCheck, &p)
+	_, err := l.triggers(ctx, runnerapi.TriggersCheck, runnerapi.TriggersRequest{Proposal: &p})
 	return err
 }
 
 // ApplyProposal asks the server to apply p as the session's initiator.
 func (l *lease) ApplyProposal(ctx context.Context, p runner.Proposal) (runner.ListedTrigger, error) {
-	a, err := l.triggers(ctx, runnerapi.TriggersApply, &p)
+	a, err := l.triggers(ctx, runnerapi.TriggersApply, runnerapi.TriggersRequest{Proposal: &p})
 	if err != nil {
 		return runner.ListedTrigger{}, err
 	}
@@ -546,6 +548,24 @@ func (l *lease) ApplyProposal(ctx context.Context, p runner.Proposal) (runner.Li
 		return runner.ListedTrigger{}, errors.New("runnerrole: the server answered an apply with no trigger")
 	}
 	return *a.Trigger, nil
+}
+
+// SetWake asks the server to apply w as the session's wake.
+func (l *lease) SetWake(ctx context.Context, w runner.Wake) (runner.ListedTrigger, error) {
+	a, err := l.triggers(ctx, runnerapi.TriggersWake, runnerapi.TriggersRequest{Wake: &w})
+	if err != nil {
+		return runner.ListedTrigger{}, err
+	}
+	if a.Trigger == nil {
+		return runner.ListedTrigger{}, errors.New("runnerrole: the server answered a wake with no trigger")
+	}
+	return *a.Trigger, nil
+}
+
+// CancelWake asks the server to delete the session's pending wake.
+func (l *lease) CancelWake(ctx context.Context, toolUseID string) (string, error) {
+	a, err := l.triggers(ctx, runnerapi.TriggersUnset, runnerapi.TriggersRequest{ToolUseID: toolUseID})
+	return a.Canceled, err
 }
 
 var _ runner.Triggers = (*lease)(nil)

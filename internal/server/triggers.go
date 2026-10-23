@@ -119,6 +119,9 @@ type triggerApply struct {
 	agent string
 	// check asks the questions of the apply and stores nothing.
 	check bool
+	// why is the sentence a session's pause gave, which the trigger's
+	// status.paused keeps.
+	why string
 }
 
 // putTrigger resolves one Trigger manifest as q in q's context, asks
@@ -156,6 +159,19 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 	if how.agent != "" && agentID != how.agent {
 		return store.Trigger{}, false, refuse(CodeInvalidRequest, "spec.agent: a session's call applies a trigger of the session's own agent, %s, and this one names %s", how.agent, agentID)
 	}
+	// A wake is held to its bounds against the session it continues, and
+	// a target to an open session of the agent the applier may send to
+	// (spec 086).
+	if how.origin != nil && how.origin.Kind == v1.OriginWake {
+		if err := s.checkWake(ctx, spec, now); err != nil {
+			return store.Trigger{}, false, err
+		}
+	}
+	if spec.Session.Target != "" {
+		if err := s.checkTarget(ctx, q, name, agentID, spec); err != nil {
+			return store.Trigger{}, false, err
+		}
+	}
 	stored, err := s.o.Objects.TriggerByName(ctx, q.caller.Subject, name)
 	exists := err == nil
 	switch {
@@ -166,6 +182,7 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		if on := onField(spec); on != nil {
 			res.Fields["on"] = on
 		}
+		maps.Copy(res.Fields, oneShotFields(spec))
 		maps.Copy(res.Fields, deviceFields(spec.Session))
 		if how.origin != nil {
 			res.Fields["origin"] = originField(*how.origin)
@@ -182,8 +199,9 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		}
 		// A schedule that did not change keeps its next fire time, so a
 		// firing due before the apply is not skipped; one that was
-		// suspended starts from now, and fires nothing it missed.
-		if prev.Schedule == spec.Schedule && prev.TimeZone == spec.TimeZone && !stored.Suspended && stored.NextFireAt != nil {
+		// suspended starts from now, and fires nothing it missed. A
+		// one-shot's time is its next fire time.
+		if prev.Schedule == spec.Schedule && prev.TimeZone == spec.TimeZone && sameTime(prev.At, spec.At) && !stored.Suspended && stored.NextFireAt != nil {
 			next = stored.NextFireAt
 		}
 		doc, err := store.DecodeTrigger(stored.Doc)
@@ -191,11 +209,15 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 			return store.Trigger{}, false, err
 		}
 		r.Trigger.Status.Origin = doc.Status.Origin
+		if stored.Suspended {
+			r.Trigger.Status.Paused = doc.Status.Paused
+		}
 	default:
 		fields := map[string]any{"name": name, "agent": agentID}
 		if on := onField(spec); on != nil {
 			fields["on"] = on
 		}
+		maps.Copy(fields, oneShotFields(spec))
 		maps.Copy(fields, deviceFields(spec.Session))
 		if how.origin != nil {
 			fields["origin"] = originField(*how.origin)
@@ -214,6 +236,18 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 	if how.made {
 		r.Trigger.Status.Origin = how.origin
 	}
+	// A suspend records who paused the trigger and why, kept while it
+	// stays suspended; a resume clears it (spec 086).
+	switch {
+	case !spec.Suspend:
+		r.Trigger.Status.Paused = nil
+	case r.Trigger.Status.Paused == nil:
+		p := &v1.TriggerPause{Why: how.why, By: q.caller.Subject, At: now}
+		if how.origin != nil && !how.made {
+			p.SessionID, p.ToolUseID = how.origin.SessionID, how.origin.ToolUseID
+		}
+		r.Trigger.Status.Paused = p
+	}
 	if spec.Suspend {
 		next = nil
 	}
@@ -228,6 +262,26 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 	}
 	t, err = s.o.Objects.Trigger(ctx, t.ID)
 	return t, !exists, err
+}
+
+// sameTime reports whether two one-shot times are the same, or both
+// absent.
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
+// oneShotFields are a one-shot trigger's time as the questions of its
+// create and its update carry it (spec 086): at in RFC 3339; none for
+// any other trigger.
+func oneShotFields(spec v1.TriggerSpec) map[string]any {
+	f := map[string]any{}
+	if spec.At != nil {
+		f["at"] = spec.At.UTC().Format(time.RFC3339)
+	}
+	return f
 }
 
 // originField is a trigger's origin as its questions carry it (spec 086):
@@ -350,9 +404,21 @@ func (c *call) deleteTrigger() error {
 }
 
 // removeTrigger deletes t with its firings and its keys, for by, the
-// caller of the delete route, or nil for a session's call.
+// caller of the delete route, or nil for a session's call. A wake a
+// person or a client deletes is recorded in the session it continued,
+// with who deleted it (spec 086).
 func (s *Server) removeTrigger(ctx context.Context, t store.Trigger, by *auth.Caller) error {
-	return s.o.Objects.DeleteTrigger(ctx, t.ID)
+	doc, err := store.DecodeTrigger(t.Doc)
+	if err != nil {
+		return err
+	}
+	if err := s.o.Objects.DeleteTrigger(ctx, t.ID); err != nil {
+		return err
+	}
+	if by == nil {
+		return nil
+	}
+	return s.canceledWake(ctx, t, doc, by)
 }
 
 // isWake reports whether a trigger is a session's wake (spec 086), which
@@ -541,6 +607,11 @@ func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 		return triggers.ErrEnded
 	}
 	msg := session.UserMessage{Sender: from, Content: content, FiringID: sd.FiringID}
+	wake, err := a.s.messageWake(ctx, sd)
+	if err != nil {
+		return err
+	}
+	msg.Wake = wake
 	ev, err := session.NewEvent(session.TypeUserMessage, msg, a.s.o.Now())
 	if err != nil {
 		return err
@@ -553,6 +624,58 @@ func (a actor) Send(ctx context.Context, sd triggers.Send) error {
 	}
 	a.s.o.Notify()
 	return nil
+}
+
+// Spent records in the session a spent wake continued that it sent
+// nothing, for a wake that fired past its maxAge (spec 086); the store
+// deleted its trigger with the firing. Every other spent one-shot needs
+// nothing more: what it did is in the log of the session it started or
+// continued.
+func (a actor) Spent(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing) error {
+	doc, err := store.DecodeTrigger(t.Doc)
+	if err != nil {
+		return err
+	}
+	if !isWake(doc) || f.Outcome != store.OutcomeSkippedLate {
+		return nil
+	}
+	ev, err := a.s.clearedEvent(t.ID, session.WakeSkipped, nil)
+	if err != nil {
+		return err
+	}
+	err = a.s.appendWhen(ctx, spec.Session.Target, []session.Event{ev}, unended)
+	if errors.Is(err, session.ErrNotFound) || errors.Is(err, errEnded) {
+		return nil
+	}
+	return err
+}
+
+// messageWake is the wake field of a wake's message (spec 086): its
+// trigger, when the session's log says it was set and its place in the
+// chain, and when it was due; nil for any other trigger's message.
+func (s *Server) messageWake(ctx context.Context, sd triggers.Send) (*session.MessageWake, error) {
+	doc, err := store.DecodeTrigger(sd.Trigger.Doc)
+	if err != nil {
+		return nil, err
+	}
+	if !isWake(doc) {
+		return nil, nil
+	}
+	sess, err := s.o.Sessions.Get(ctx, sd.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	evs, err := s.o.Sessions.Events(ctx, sd.SessionID, 1, 0)
+	if err != nil {
+		return nil, err
+	}
+	// A wake whose set the log does not hold reads its place from the
+	// wakes before it, and its set time from its trigger's last apply.
+	w := &session.MessageWake{TriggerID: sd.Trigger.ID, DueAt: sd.Due.UTC(), SetAt: sd.Trigger.UpdatedAt.UTC(), Count: session.WakesInARow(evs, sess.Initiator.Subject) + 1}
+	if set, at, ok := session.LatestWakeSet(evs, sd.Trigger.ID); ok {
+		w.SetAt, w.Count = at.UTC(), set.Count
+	}
+	return w, nil
 }
 
 // Refusal names an error of Start or Send as the API would answer it:

@@ -255,6 +255,15 @@ func (b builder) config(ctx context.Context, s session.Session) (harness.Config,
 			}
 		}
 	}
+	// The wake tool is offered as the trigger tool is: it sets the
+	// session's next wake, a trigger the server keeps (spec 086).
+	if slices.Contains(ac.Tools, proposal.WakeName) {
+		if t := runner.TriggersFrom(ctx); t != nil {
+			if err := reg.Add(proposal.NewWake(t, s.ExpiresAt, nil)); err != nil {
+				return harness.Config{}, err
+			}
+		}
+	}
 	if onHost {
 		m, err := b.o.Machines(ctx, s, ac.Machine)
 		if err != nil {

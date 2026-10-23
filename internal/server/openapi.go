@@ -465,7 +465,7 @@ var opDescriptions = map[string]string{
 		"a delete the files service refuses is logged and leaves the file in the folder, and the redaction stands.",
 	"listTriggers":  "List the triggers of the owners the authorizer's allow names, or of the owner the owner parameter names.",
 	"getTrigger":    "Get a trigger by id, or by name among the caller's own triggers, with its firing record.",
-	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running.",
+	"deleteTrigger": "Delete a trigger with its firings; the sessions it started keep running. A session's wake deleted here is recorded in that session as session.wake_cleared with reason canceled and the sender.",
 	"listFirings":   "List a trigger's firings, newest first.",
 	"getOpenAPI":    "This document.",
 	"endSession": `End an idle session completed or canceled. The body is {"reason": "completed"} or {"reason": "canceled"}. ` +
@@ -526,11 +526,18 @@ var opDescriptions = map[string]string{
 		"continue sends each firing to the key's open session, held while it waits for a person. At most spec.maxActive sessions, %d by default and %d at most, are active at once. "+
 		"The caller becomes the trigger's owner, the initiator of every session it starts, and a firing is asked of the authorizer as the owner in the context the caller's token names. "+
 		"trigger.create and trigger.update carry the trigger's name, its agent and the filter applied as on, and, when spec.session.machine names a person's own computer, {kind: %s, environment, workdir}, "+
-		"machine %s with environment and workdir beside them, as session.create carries them.",
-		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice),
+		"machine %s with environment and workdir beside them, as session.create carries them. "+
+		"spec.at, an RFC 3339 time with an offset in place of schedule and on, fires the trigger once, and its firing spends it: the server deletes it with the firing that started, continued, skipped or refused, "+
+		"and keeps it while that firing is held or runs again after it failed; trigger.create and trigger.update carry at. spec.session.target, under policy continue and beside no key, names the open session of spec.agent "+
+		"every firing sends its message to, which the caller may send to; a firing whose target has ended or is gone is skipped_ended. "+
+		"A session's wake is such a trigger, applied by the session's wake tool as the session's initiator with status.origin {kind: %s}: at least %s and at most %s ahead and inside its session's life, with maxAge %s; "+
+		"its firing's user.message carries wake {trigger_id, set_at, due_at, count}, count from 1. "+
+		"status.paused {why, by, sessionId, toolUseId, at} says who suspended the trigger and when, with the agent's why and its call for a pause a session's call made; it is kept while the trigger stays suspended and cleared when it resumes.",
+		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice,
+		v1.OriginWake, trigger.MinWakeDelay, trigger.MaxWakeAhead, trigger.WakeMaxAge),
 	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+
 		"product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. "+
-		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, refused or failed. "+
+		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, skipped_ended, refused or failed. "+
 		"A redelivery of an event answers its first firing and starts nothing; a failed firing answers 503 and a redelivery runs it again. An event outside spec.on is filtered, counted and stored nowhere. "+
 		"A suspended trigger answers conflict. The firing's session.create and session.send are asked as the trigger's owner.", trigger.MaxEventID),
 	"streamEvents": fmt.Sprintf("Server-Sent Events: every event of the log from from_seq, or after the sequence a Last-Event-ID header names, then each new one as it is appended, from any replica, "+

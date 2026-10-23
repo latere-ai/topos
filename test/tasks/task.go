@@ -316,9 +316,9 @@ func builtinNames() []string {
 }
 
 // checkTools refuses a tool list naming anything but a built-in, one
-// an agent opts into, or the question tool.
+// an agent opts into, or the question, trigger and wake tools.
 func checkTools(a Agent) error {
-	known := slices.Concat(builtinNames(), tools.OptIn(), []string{harness.ToolQuestion, session.ToolTrigger})
+	known := slices.Concat(builtinNames(), tools.OptIn(), []string{harness.ToolQuestion, session.ToolTrigger, session.ToolWake})
 	lists := map[string][]string{"agent": a.Tools}
 	for name, s := range a.Subagents {
 		lists["subagent "+name] = s.Tools
@@ -326,7 +326,7 @@ func checkTools(a Agent) error {
 	for who, list := range lists {
 		for _, n := range list {
 			if !slices.Contains(known, n) {
-				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search, history, question or trigger (%s)", who, n, strings.Join(known, ", "))
+				return fmt.Errorf("the %s holds %q, which is not a built-in tool, web_search, history, question, trigger or wake (%s)", who, n, strings.Join(known, ", "))
 			}
 		}
 	}

@@ -162,19 +162,24 @@ type TitleAnswer struct {
 	Model session.ModelRef `json:"model"`
 }
 
-// TriggersRequest is a question of a session's trigger tool under the
-// lease (spec 086): a list names no proposal, a check and an apply one.
+// TriggersRequest is a question of a session's trigger or wake tool under
+// the lease (spec 086): a list names nothing, a check and an apply a
+// proposal, a wake's set the wake, and its cancel the call's id.
 type TriggersRequest struct {
 	Generation int64            `json:"generation"`
 	Proposal   *runner.Proposal `json:"proposal,omitempty"`
+	Wake       *runner.Wake     `json:"wake,omitempty"`
+	ToolUseID  string           `json:"tool_use_id,omitempty"`
 }
 
 // TriggersAnswer answers a list with the session initiator's triggers of
-// its agent, and an apply with the trigger it applied; a check answers
-// none.
+// its agent, an apply and a wake's set with the trigger applied, and a
+// wake's cancel with the id of the trigger it deleted, empty for none; a
+// check answers nothing.
 type TriggersAnswer struct {
 	Triggers []runner.ListedTrigger `json:"triggers,omitempty"`
 	Trigger  *runner.ListedTrigger  `json:"trigger,omitempty"`
+	Canceled string                 `json:"canceled,omitempty"`
 }
 
 // Appended is the log's last sequence after an append.
@@ -551,27 +556,31 @@ func (s *Server) title(w http.ResponseWriter, r *http.Request) error {
 	return reply(w, http.StatusOK, TitleAnswer{Model: m})
 }
 
-// The actions of the trigger tool's route: the paths' last segment.
+// The actions of the trigger and wake tools' route: the paths' last
+// segment.
 const (
 	TriggersList  = "list"
 	TriggersCheck = "check"
 	TriggersApply = "apply"
+	TriggersWake  = "wake"
+	TriggersUnset = "unwake"
 )
 
-// triggers answers a question of a session's trigger tool under its lease
-// (spec 086): a list, the check of a proposal before it is held, or its
-// apply once the person allowed it.
+// triggers answers a question of a session's trigger or wake tool under
+// its lease (spec 086): a list, the check of a proposal before it is
+// held, its apply, and a wake's set and cancel.
 func (s *Server) triggers(w http.ResponseWriter, r *http.Request) error {
 	var req TriggersRequest
 	if err := decode(r, &req); err != nil {
 		return err
 	}
 	action := r.PathValue("action")
+	proposal := action == TriggersCheck || action == TriggersApply
 	switch {
-	case action != TriggersList && action != TriggersCheck && action != TriggersApply:
-		return &wireError{CodeNotFound, http.StatusNotFound, fmt.Sprintf("the trigger tool asks %s, %s or %s, not %q", TriggersList, TriggersCheck, TriggersApply, action)}
-	case (action == TriggersList) != (req.Proposal == nil):
-		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a list names no proposal, and a check and an apply one each"}
+	case !proposal && action != TriggersList && action != TriggersWake && action != TriggersUnset:
+		return &wireError{CodeNotFound, http.StatusNotFound, fmt.Sprintf("the trigger and wake tools ask %s, %s, %s, %s or %s, not %q", TriggersList, TriggersCheck, TriggersApply, TriggersWake, TriggersUnset, action)}
+	case proposal != (req.Proposal != nil), (action == TriggersWake) != (req.Wake != nil), (action == TriggersUnset) != (req.ToolUseID != ""):
+		return &wireError{CodeInvalidRequest, http.StatusBadRequest, "a check and an apply name a proposal, a wake its wake, an unwake its call, and a list none of them"}
 	}
 	id := r.PathValue("session")
 	c, err := s.held(id, req.Generation)
@@ -594,6 +603,13 @@ func (s *Server) triggers(w http.ResponseWriter, r *http.Request) error {
 		a.Triggers, err = t.ListTriggers(r.Context())
 	case TriggersCheck:
 		err = t.CheckProposal(r.Context(), *req.Proposal)
+	case TriggersWake:
+		var set runner.ListedTrigger
+		if set, err = t.SetWake(r.Context(), *req.Wake); err == nil {
+			a.Trigger = &set
+		}
+	case TriggersUnset:
+		a.Canceled, err = t.CancelWake(r.Context(), req.ToolUseID)
 	default:
 		var applied runner.ListedTrigger
 		if applied, err = t.ApplyProposal(r.Context(), *req.Proposal); err == nil {

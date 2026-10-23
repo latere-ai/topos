@@ -276,7 +276,7 @@ func TestEveryQuestionAboutAMessageCarriesItsOpening(t *testing.T) {
 	if created := a.last(t, authorizer.ActionSessionCreate); created.Resource.Fields["message_text"] != nil || created.Resource.Fields["message_chars"] == nil {
 		t.Fatalf("a create with its first message carried %v", created.Resource.Fields)
 	}
-	trigger := store.Trigger{ID: session.NewID(session.PrefixTrigger), Owner: "https://login.example|alice"}
+	trigger := store.Trigger{ID: session.NewID(session.PrefixTrigger), Owner: "https://login.example|alice", Doc: []byte(`{"kind":"Trigger"}`)}
 	if err := (actor{f.api}).Send(t.Context(), triggers.Send{Trigger: trigger, SessionID: s.ID, Message: "The nightly build failed."}); err != nil {
 		t.Fatal(err)
 	}

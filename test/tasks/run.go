@@ -463,6 +463,13 @@ func (r *run) config(model models.Model, conn models.Connection, entry models.En
 				return harness.Config{}, err
 			}
 		}
+		// wake sets the session's wake among the same triggers; a task
+		// checks the wake the agent set, and none fires.
+		if slices.Contains(r.t.Agent.Tools, session.ToolWake) {
+			if err := reg.Add(proposal.NewWake(suiteTriggers{}, s.ExpiresAt, nil)); err != nil {
+				return harness.Config{}, err
+			}
+		}
 		var subs map[string]harness.Subagent
 		for name, sa := range r.t.Agent.Subagents {
 			if subs == nil {
@@ -731,9 +738,10 @@ func confirmCalls(ctx context.Context, st session.Store, id string, person sessi
 	return err
 }
 
-// suiteTriggers is the suite's reach to triggers for the trigger tool
-// (spec 086): it keeps none, takes every proposal, and answers an applied
-// one as made, so a task checks what the agent proposed.
+// suiteTriggers is the suite's reach to triggers for the trigger and
+// wake tools (spec 086): it keeps none, takes every proposal and wake,
+// and answers an applied one as made, so a task checks what the agent
+// proposed or set.
 type suiteTriggers struct{}
 
 func (suiteTriggers) ListTriggers(context.Context) ([]runner.ListedTrigger, error) {
@@ -745,6 +753,12 @@ func (suiteTriggers) CheckProposal(context.Context, runner.Proposal) error { ret
 func (suiteTriggers) ApplyProposal(_ context.Context, p runner.Proposal) (runner.ListedTrigger, error) {
 	return runner.ListedTrigger{ID: "trg_suite", Name: "routine-suite", Title: p.Name, Schedule: p.Schedule, TimeZone: p.TimeZone}, nil
 }
+
+func (suiteTriggers) SetWake(_ context.Context, w runner.Wake) (runner.ListedTrigger, error) {
+	return runner.ListedTrigger{ID: "trg_wake", Name: "wake-suite", Title: w.Title, At: &w.At}, nil
+}
+
+func (suiteTriggers) CancelWake(context.Context, string) (string, error) { return "trg_wake", nil }
 
 // answerQuestion appends the answer the driver gives to the session's
 // open question, after the session's last event, as a client does.

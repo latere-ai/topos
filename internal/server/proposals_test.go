@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/sdk-go/agents"
@@ -421,6 +422,12 @@ func TestAnEventProposalIsARoutineOrAnEventTrigger(t *testing.T) {
 	if _, ok := agents.RoutineOf(&tr, "reviewer"); ok {
 		t.Fatalf("the push offer reads as a routine: %s", raw.body)
 	}
+	// The SDK reads it back as the offer on events it wrote.
+	watch, ok := routine.ReadEvent(routine.Trigger{Name: got.Metadata.Name, DisplayName: got.Metadata.DisplayName, Labels: got.Metadata.Labels,
+		Product: got.Spec.On.Product, Message: got.Spec.Session.Message, Title: got.Spec.Session.Title}, "reviewer")
+	if !ok || watch.Title != push.Name || watch.Ask != push.Ask || ev.Name != routine.EventName(routine.OfferKey(p.sess.ID, "toolu_p")) {
+		t.Fatalf("the SDK reads the push offer as %+v (%v)", watch, ok)
+	}
 
 	// The mail routine cannot become the pushes, which no routine runs on.
 	change := runner.Proposal{ToolUseID: "toolu_c", Action: runner.TriggerChange, ID: made.ID, Why: "Pushes instead.", On: push.On}
@@ -437,4 +444,81 @@ func TestAnEventProposalIsARoutineOrAnEventTrigger(t *testing.T) {
 	if got := p.get("alice", ev.Name); !strings.HasPrefix(got.Spec.Session.Message, "Summarize the push.\n\nThe event that started this run:") || got.Spec.On == nil {
 		t.Fatalf("after the change: %+v", got.Spec)
 	}
+}
+
+// TestAPauseRecordsWhyAndByWhom: the trigger tool's pause writes
+// status.paused with its why, the person it was applied as, the call and
+// the time; a change while paused keeps it; a resume clears it; and a
+// person's suspend at the route records them with no why and no call.
+func TestAPauseRecordsWhyAndByWhom(t *testing.T) {
+	p := newProposing(t)
+	reach := p.api.SessionTriggers(p.sess.ID)
+	p.allow("toolu_1")
+	made, err := reach.ApplyProposal(t.Context(), weekly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pausedAt := p.clock.Now()
+	if _, err := reach.ApplyProposal(t.Context(), runner.Proposal{ToolUseID: "toolu_p", Action: runner.TriggerPause, ID: made.ID, Why: " The person is away this month. "}); err != nil {
+		t.Fatal(err)
+	}
+	want := v1.TriggerPause{Why: "The person is away this month.", By: alice, SessionID: p.sess.ID, ToolUseID: "toolu_p", At: pausedAt.UTC()}
+	if got := p.get("alice", made.Name).Status.Paused; got == nil || *got != want {
+		t.Fatalf("the pause is %+v, want %+v", got, want)
+	}
+	// A change while paused keeps the pause as it was.
+	p.clock.Advance(time.Hour)
+	change := runner.Proposal{ToolUseID: "toolu_c", Action: runner.TriggerChange, ID: made.ID, Why: "Shorter.", Name: "Sign-ups"}
+	p.hold("toolu_c", map[string]any{"action": "change", "id": made.ID, "why": change.Why, "name": change.Name})
+	p.allow("toolu_c")
+	if _, err := reach.ApplyProposal(t.Context(), change); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.get("alice", made.Name); got.Status.Paused == nil || *got.Status.Paused != want || !got.Spec.Suspend {
+		t.Fatalf("after a change, the pause is %+v", got.Status.Paused)
+	}
+	// A resume clears it.
+	resume := runner.Proposal{ToolUseID: "toolu_r", Action: runner.TriggerResume, ID: made.ID}
+	p.hold("toolu_r", map[string]any{"action": "resume", "id": made.ID})
+	p.allow("toolu_r")
+	if _, err := reach.ApplyProposal(t.Context(), resume); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.get("alice", made.Name).Status.Paused; got != nil {
+		t.Fatalf("a resumed trigger keeps the pause %+v", got)
+	}
+	// A person's suspend at the route.
+	tr := p.applyTrigger("alice", "nightly", "schedule: '0 2 * * *', session: {message: x}, suspend: true")
+	if got := tr.Status.Paused; got == nil || got.By != alice || got.Why != "" || got.SessionID != "" || got.ToolUseID != "" || got.At.IsZero() {
+		t.Fatalf("a suspend at the route is recorded as %+v", got)
+	}
+	again := p.applyTrigger("alice", "nightly", "schedule: '0 3 * * *', session: {message: x}, suspend: true")
+	if again.Status.Paused == nil || !again.Status.Paused.At.Equal(tr.Status.Paused.At) {
+		t.Fatalf("a second apply while suspended moved the pause to %+v", again.Status.Paused)
+	}
+	if run := p.applyTrigger("alice", "nightly", "schedule: '0 3 * * *', session: {message: x}"); run.Status.Paused != nil {
+		t.Fatalf("a trigger applied running keeps the pause %+v", run.Status.Paused)
+	}
+}
+
+// TestTheListNamesAWakesTime: the tool's list answers a wake with its
+// time and the session it continues, by its title.
+func TestTheListNamesAWakesTime(t *testing.T) {
+	w := newWaking(t)
+	at := w.clock.Now().Add(time.Hour)
+	set := w.set("toolu_w", at, 1)
+	list, err := w.api.SessionTriggers(w.sess.ID).ListTriggers(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range list {
+		if l.ID != set.ID {
+			continue
+		}
+		if l.At == nil || !l.At.Equal(at) || l.Target != w.sess.ID || l.TargetTitle != w.header().Title || l.Origin == nil || l.Origin.Kind != v1.OriginWake {
+			t.Fatalf("the wake is listed as %+v", l)
+		}
+		return
+	}
+	t.Fatalf("the list %+v holds no wake", list)
 }

@@ -38,6 +38,7 @@ type fakeActor struct {
 	starts    int
 	sends     int
 	startWait chan struct{}
+	spent     []store.Firing
 }
 
 func (a *fakeActor) Start(ctx context.Context, st Start) (session.Session, error) {
@@ -87,6 +88,13 @@ func (a *fakeActor) Send(ctx context.Context, sd Send) error {
 		return err
 	}
 	return a.say(ctx, sd.SessionID, sd.Trigger, sd.FiringID, sd.Message)
+}
+
+func (a *fakeActor) Spent(_ context.Context, t store.Trigger, _ v1.TriggerSpec, f store.Firing) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.spent = append(a.spent, f)
+	return nil
 }
 
 func (a *fakeActor) Refusal(err error) (string, bool) {
@@ -722,5 +730,178 @@ func TestAStoreThatFailsFailsTheFiring(t *testing.T) {
 				t.Fatalf("no call returned the store's error: %v", errs)
 			}
 		})
+	}
+}
+
+// oneShot is a one-shot trigger's spec at at, continuing target when it
+// names one, with maxAge.
+func oneShot(at time.Time, target, maxAge string) string {
+	session := `{"message":"Look again.","policy":"new"}`
+	if target != "" {
+		session = fmt.Sprintf(`{"message":"Look again.","policy":"continue","target":%q}`, target)
+	}
+	return fmt.Sprintf(`{"agent":"agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C","timeZone":"UTC","at":%q,"session":%s,"skipIfActive":false,"maxAge":%q,"suspend":false}`,
+		at.UTC().Format(time.RFC3339), session, maxAge)
+}
+
+// open is a session of alice's, idle and open, for a target.
+func (r *rig) open() session.Session {
+	r.t.Helper()
+	s := session.New(session.AgentRef{ID: "agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C", Version: 1}, session.Sender{Subject: "alice", Kind: session.SenderPerson}, session.RunnerHosted, session.Machine{Kind: session.MachineHost}, r.clock.Now())
+	if err := r.sessions.Create(r.t.Context(), s, nil); err != nil {
+		r.t.Fatal(err)
+	}
+	return s
+}
+
+// status appends a status to session id, as its runner does.
+func (r *rig) status(id string, st session.Status, reason session.StopReason) {
+	r.t.Helper()
+	s, err := r.sessions.Get(r.t.Context(), id)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	ev, err := session.NewEvent(session.TypeSessionStatus, session.SessionStatus{Status: st, StopReason: reason}, r.clock.Now())
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	batch := []session.Event{ev}
+	session.Stamp(id, s.LastSeq, batch)
+	if _, err := r.sessions.Append(r.t.Context(), id, s.LastSeq, batch); err != nil {
+		r.t.Fatal(err)
+	}
+}
+
+// TestASpentTriggerIsDeleted is Topos spec 086's one-shot criterion at
+// the engine: an at trigger fires once at its time, starting or
+// continuing a session, and is deleted with its firing; one that fires
+// past its maxAge is skipped_late and deleted too, and the actor is told
+// of each; a failed firing keeps it to run again at the next pass; a held
+// one keeps it until its message is sent, then deletes it.
+func TestASpentTriggerIsDeleted(t *testing.T) {
+	r := newRig(t)
+	at := r.clock.Now().Add(time.Hour)
+	tr := r.put("once", oneShot(at, "", "1h"))
+	if tr.NextFireAt == nil || !tr.NextFireAt.Equal(at) {
+		t.Fatalf("a one-shot's next fire time is %v", tr.NextFireAt)
+	}
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if r.actor.starts != 0 {
+		t.Fatal("a one-shot fired before its time")
+	}
+	r.clock.Advance(time.Hour)
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.objects.Trigger(t.Context(), tr.ID); !errors.Is(err, store.ErrNotFound) || r.actor.starts != 1 {
+		t.Fatalf("the spent one-shot: %v, %d starts", err, r.actor.starts)
+	}
+	if len(r.actor.spent) != 1 || r.actor.spent[0].Outcome != store.OutcomeStarted {
+		t.Fatalf("the actor was told %+v", r.actor.spent)
+	}
+	if err := r.engine.Tick(t.Context()); err != nil || r.actor.starts != 1 {
+		t.Fatalf("a pass after the spend: %v, %d starts", err, r.actor.starts)
+	}
+
+	// A one-shot the server was down past: skipped_late, and spent.
+	late := r.put("late", oneShot(r.clock.Now().Add(time.Minute), "", "1h"))
+	r.clock.Advance(2 * time.Hour)
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.objects.Trigger(t.Context(), late.ID); !errors.Is(err, store.ErrNotFound) || r.actor.spent[1].Outcome != store.OutcomeSkippedLate {
+		t.Fatalf("the late one-shot: %v, told %+v", err, r.actor.spent)
+	}
+
+	// A failed firing keeps the trigger, at its time, and the next pass
+	// runs it again.
+	fail := r.put("fail", oneShot(r.clock.Now().Add(time.Minute), "", "1h"))
+	r.clock.Advance(time.Minute)
+	r.actor.startErr = errBusy
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := r.objects.Trigger(t.Context(), fail.ID)
+	if err != nil || kept.NextFireAt == nil || kept.Counts.Failed != 1 {
+		t.Fatalf("the failed one-shot: %+v, %v", kept, err)
+	}
+	r.actor.startErr = nil
+	r.clock.Advance(time.Minute)
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.objects.Trigger(t.Context(), fail.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the one-shot that ran again: %v", err)
+	}
+
+	// A one-shot whose target waits for a person is held, kept, and spent
+	// once its message is sent.
+	s := r.open()
+	r.status(s.ID, session.StatusIdle, session.StopToolConfirmation)
+	held := r.put("held", oneShot(r.clock.Now().Add(time.Minute), s.ID, "1h"))
+	r.clock.Advance(time.Minute)
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	kept, err = r.objects.Trigger(t.Context(), held.ID)
+	if err != nil || kept.NextFireAt != nil || kept.Counts.Held != 1 {
+		t.Fatalf("the held one-shot: %+v, %v", kept, err)
+	}
+	r.status(s.ID, session.StatusIdle, session.StopEndTurn)
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.objects.Trigger(t.Context(), held.ID); !errors.Is(err, store.ErrNotFound) || r.actor.sends != 1 {
+		t.Fatalf("the held one-shot once sent: %v, %d sends", err, r.actor.sends)
+	}
+}
+
+// TestATargetIsContinuedOrSkippedEnded: a trigger under session.target
+// sends each firing's message to that session, never to the session its
+// key names or a new one, and a firing whose target has ended or is gone
+// is skipped_ended and starts nothing.
+func TestATargetIsContinuedOrSkippedEnded(t *testing.T) {
+	r := newRig(t)
+	s := r.open()
+	r.status(s.ID, session.StatusIdle, session.StopEndTurn)
+	tr := r.put("look", oneShot(r.clock.Now().Add(time.Minute), s.ID, "1h"))
+	r.clock.Advance(time.Minute)
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if r.actor.sends != 1 || r.actor.starts != 0 || r.actor.spent[0].Outcome != store.OutcomeContinued || r.actor.spent[0].SessionID != s.ID {
+		t.Fatalf("the target's firing: %d sends, %d starts, %+v", r.actor.sends, r.actor.starts, r.actor.spent)
+	}
+	if _, err := r.objects.Trigger(t.Context(), tr.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the continued one-shot: %v", err)
+	}
+	r.status(s.ID, session.StatusEnded, session.StopCompleted)
+	ended := r.put("ended", oneShot(r.clock.Now().Add(time.Minute), s.ID, "1h"))
+	gone := r.put("gone", oneShot(r.clock.Now().Add(time.Minute), "ses_01JZZZZZZZZZZZZZZZZZZZZZZZ", "1h"))
+	r.clock.Advance(time.Minute)
+	if err := r.engine.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range r.actor.spent[1:] {
+		if f.Outcome != store.OutcomeSkippedEnded || f.SessionID != "" {
+			t.Errorf("a firing of an ended or gone target is %+v", f)
+		}
+	}
+	if len(r.actor.spent) != 3 || r.actor.starts != 0 || r.actor.sends != 1 {
+		t.Fatalf("the ended and gone targets: %+v, %d starts, %d sends", r.actor.spent, r.actor.starts, r.actor.sends)
+	}
+	for _, id := range []string{ended.ID, gone.ID} {
+		if _, err := r.objects.Trigger(t.Context(), id); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("%s was kept: %v", id, err)
+		}
+	}
+	// A schedule under a target sends to an ended one nothing, every time,
+	// and is kept.
+	sched := r.put("daily", `{"agent":"agent_01J9Z3Q4W8KX6T0M2V5N7R1B3C","timeZone":"UTC","schedule":"@hourly","session":{"message":"x","policy":"continue","target":"`+s.ID+`"},"skipIfActive":true,"maxAge":"1h","suspend":false}`)
+	r.fire(sched, nil, store.OutcomeSkippedEnded)
+	if c, err := r.objects.Trigger(t.Context(), sched.ID); err != nil || c.Counts.SkippedEnded != 1 {
+		t.Fatalf("the schedule's count: %+v, %v", c.Counts, err)
 	}
 }

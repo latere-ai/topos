@@ -13,7 +13,7 @@ require (
 	golang.org/x/sys v0.48.0
 	latere.ai/x/cella v0.17.0
 	latere.ai/x/pkg v0.106.0
-	latere.ai/x/sdk-go v0.6.0
+	latere.ai/x/sdk-go v0.10.0
 )
 
 require (

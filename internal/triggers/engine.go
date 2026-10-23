@@ -72,12 +72,16 @@ type Start struct {
 	FiredBy map[string]any
 }
 
-// Send is a message a firing sends to the open session its key names.
+// Send is a message a firing sends to the open session its key or its
+// session.target names, with the trigger's spec and the firing's time,
+// the time a one-shot was due.
 type Send struct {
 	Trigger   store.Trigger
 	SessionID string
 	FiringID  string
 	Message   string
+	Spec      v1.TriggerSpec
+	Due       time.Time
 }
 
 // Actor starts and continues a trigger's sessions as the server's create
@@ -91,6 +95,10 @@ type Actor interface {
 	// firing records, and whether it was transient, a failed firing that
 	// a redelivery runs again, or a refusal.
 	Refusal(err error) (reason string, transient bool)
+	// Spent is told of the firing that spent the one-shot trigger t, which
+	// the store deleted with it (spec 086), so the server records in the
+	// session a wake continued that the wake sent nothing.
+	Spent(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing) error
 }
 
 // Options configure an Engine.
@@ -230,7 +238,9 @@ func (e *Engine) Tick(ctx context.Context) error {
 		errs = append(errs, err)
 	}
 	for _, t := range due {
-		if err := e.locked(ctx, t.ID, func() error { return e.schedule(ctx, t.ID, now) }); err != nil {
+		// A trigger deleted since the list, a one-shot another replica
+		// spent among them, has nothing left to fire.
+		if err := e.locked(ctx, t.ID, func() error { return e.schedule(ctx, t.ID, now) }); err != nil && !errors.Is(err, store.ErrNotFound) {
 			errs = append(errs, fmt.Errorf("trigger %s: %w", t.ID, err))
 		}
 	}
@@ -245,7 +255,7 @@ func (e *Engine) Tick(ctx context.Context) error {
 		}
 	}
 	for _, id := range ids {
-		if err := e.locked(ctx, id, func() error { return e.sweep(ctx, id) }); err != nil {
+		if err := e.locked(ctx, id, func() error { return e.sweep(ctx, id) }); err != nil && !errors.Is(err, store.ErrNotFound) {
 			errs = append(errs, fmt.Errorf("trigger %s: %w", id, err))
 		}
 	}
@@ -253,9 +263,16 @@ func (e *Engine) Tick(ctx context.Context) error {
 }
 
 // NextFire is when a schedule trigger fires next after at, nil for one
-// that never does or fires on events. A zone the build does not know is
-// an error.
+// that never does or fires on events; a one-shot fires at its time when
+// that is after at, and never again. A zone the build does not know is an
+// error.
 func NextFire(spec v1.TriggerSpec, at time.Time) (*time.Time, error) {
+	if spec.At != nil {
+		if spec.At.After(at) {
+			return new(spec.At.UTC()), nil
+		}
+		return nil, nil
+	}
 	if spec.On != nil || spec.Schedule == "" {
 		return nil, nil
 	}
@@ -294,14 +311,51 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 	for at != nil && !at.After(now) {
 		f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Origin: store.OriginSchedule, Dedupe: ScheduleDedupe(*at),
 			Replica: e.o.Replica, Time: *at, ReceivedAt: now}
-		if _, err := e.run(ctx, t, spec, f, nil); err != nil {
+		out, err := e.run(ctx, t, spec, f, nil)
+		if err != nil {
 			return err
+		}
+		if spec.At != nil {
+			// A spent one-shot is gone with its firing; a failed one runs
+			// again at the next pass, at its time; a held one waits for its
+			// message to be sent, and fires no more.
+			switch {
+			case spends(out.Outcome):
+				return nil
+			case out.Outcome == store.OutcomeFailed:
+				return nil
+			}
 		}
 		if at, err = NextFire(spec, *at); err != nil {
 			return err
 		}
 	}
 	return e.o.Store.SetNextFire(ctx, t.ID, at)
+}
+
+// spends reports whether a firing of outcome spends a one-shot trigger
+// (spec 086): every outcome but held, which keeps it until its message
+// is sent, failed, which runs again, and filtered, which no one-shot
+// records.
+func spends(outcome string) bool {
+	switch outcome {
+	case store.OutcomeHeld, store.OutcomeFailed, store.OutcomeFiltered, "":
+		return false
+	}
+	return true
+}
+
+// record records a decided firing whose stored outcome is from: a
+// one-shot's that spends it deletes the trigger with it, and tells the
+// actor.
+func (e *Engine) record(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string) error {
+	if spec.At == nil || !spends(f.Outcome) {
+		return e.o.Store.RecordFiring(ctx, f, from)
+	}
+	if err := e.o.Store.SpendFiring(ctx, f, from); err != nil {
+		return err
+	}
+	return e.o.Actor.Spent(ctx, t, spec, f)
 }
 
 // locked runs fn holding the trigger's lease: this replica's mutex of
@@ -369,7 +423,7 @@ func (e *Engine) run(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, 
 	if err != nil {
 		return store.Firing{}, err
 	}
-	if err := e.o.Store.RecordFiring(ctx, out, ""); err != nil {
+	if err := e.record(ctx, t, spec, out, ""); err != nil {
 		return store.Firing{}, err
 	}
 	return out, nil
@@ -458,6 +512,9 @@ func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.Trigg
 			return f, nil
 		}
 	}
+	if spec.Session.Target != "" {
+		return e.continueTarget(ctx, t, spec, f, r)
+	}
 	s, open, err := e.keySession(ctx, t.ID, f.Key)
 	if err != nil {
 		return store.Firing{}, err
@@ -469,13 +526,42 @@ func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.Trigg
 		f.Outcome = store.OutcomeHeld
 		return f, nil
 	}
-	err = e.o.Actor.Send(ctx, Send{Trigger: t, SessionID: s.ID, FiringID: f.ID, Message: r.message})
+	err = e.o.Actor.Send(ctx, Send{Trigger: t, SessionID: s.ID, FiringID: f.ID, Message: r.message, Spec: spec, Due: f.Time})
 	switch {
 	case errors.Is(err, ErrEnded):
 		if err := e.o.Store.CloseSession(ctx, t.ID, s.ID); err != nil {
 			return store.Firing{}, err
 		}
 		return e.start(ctx, t, spec, f, r)
+	case err != nil:
+		return e.refused(f, err), nil
+	}
+	f.Outcome, f.SessionID = store.OutcomeContinued, s.ID
+	return f, nil
+}
+
+// continueTarget acts on a firing of a trigger whose session.target names
+// the session every firing continues (spec 086): it takes the message,
+// or holds it while it waits for a person, and a target that has ended or
+// is gone is skipped_ended, since a new session would not hold the
+// conversation the message was written for.
+func (e *Engine) continueTarget(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, r rendered) (store.Firing, error) {
+	s, err := e.o.Sessions.Get(ctx, spec.Session.Target)
+	switch {
+	case errors.Is(err, session.ErrNotFound) || err == nil && s.Status == session.StatusEnded:
+		f.Outcome = store.OutcomeSkippedEnded
+		return f, nil
+	case err != nil:
+		return store.Firing{}, err
+	case waitsForPerson(s):
+		f.Outcome = store.OutcomeHeld
+		return f, nil
+	}
+	err = e.o.Actor.Send(ctx, Send{Trigger: t, SessionID: s.ID, FiringID: f.ID, Message: r.message, Spec: spec, Due: f.Time})
+	switch {
+	case errors.Is(err, ErrEnded):
+		f.Outcome = store.OutcomeSkippedEnded
+		return f, nil
 	case err != nil:
 		return e.refused(f, err), nil
 	}
@@ -645,7 +731,7 @@ func (e *Engine) flush(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		if out.Outcome == store.OutcomeHeld {
 			return true, nil
 		}
-		if err := e.o.Store.RecordFiring(ctx, out, store.OutcomeHeld); err != nil {
+		if err := e.record(ctx, t, spec, out, store.OutcomeHeld); err != nil {
 			return false, err
 		}
 	}
