@@ -390,3 +390,109 @@ func TestAProposalIsWrittenInTheRoutinesShape(t *testing.T) {
 		t.Fatalf("the changed trigger is %s, %v", changed, err)
 	}
 }
+
+// TestAChangeIsHeldToTheRulesOfAProposal: a change of a routine writes
+// its name, its ask and a routine's events over it and refuses what a
+// routine refuses; a change of any other trigger refuses a name, an ask
+// or a schedule a routine's rules refuse; and a document that is no
+// trigger is refused rather than written over.
+func TestAChangeIsHeldToTheRulesOfAProposal(t *testing.T) {
+	read := func(body json.RawMessage) v1.Trigger {
+		t.Helper()
+		var tr v1.Trigger
+		if err := json.Unmarshal(body, &tr); err != nil {
+			t.Fatal(err)
+		}
+		return tr
+	}
+	body, err := routine.Manifest("chat", routine.Name("k"), nil, routine.Fields{Title: "Weekly", Instruction: "Count.", Starts: routine.OnSchedule, Schedule: routine.ParseSchedule("0 9 * * 1", "UTC")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := read(body)
+	stored.Spec.Suspend = true
+	changed, err := Changed("chat", &stored, runner.Proposal{Action: ActionChange, ID: "trg_1", Why: "Mail.", Name: "Invoices", Ask: "Save it.", On: &v1.TriggerOn{Product: "mail", Verbs: []string{"received"}}})
+	if tr := read(changed); err != nil || tr.Metadata.DisplayName != "Invoices" || tr.Spec.On == nil || tr.Spec.On.Product != "mail" || tr.Spec.Schedule != "" || !tr.Spec.Suspend {
+		t.Fatalf("the routine changed to mail is %s, %v", changed, err)
+	}
+	resumed, err := Changed("chat", &stored, runner.Proposal{Action: ActionResume, ID: "trg_1"})
+	if err != nil || read(resumed).Spec.Suspend {
+		t.Fatalf("the resumed routine is %s, %v", resumed, err)
+	}
+	for name, p := range map[string]runner.Proposal{
+		"a schedule no routine runs on": {Action: ActionChange, Why: "w", Schedule: "*/5 * * * *", TimeZone: "UTC"},
+		"a name of two lines":           {Action: ActionChange, Why: "w", Name: "a\nb"},
+	} {
+		if _, err := Changed("chat", &stored, p); err == nil {
+			t.Errorf("a routine's change to %s was written", name)
+		}
+	}
+	own := v1.Trigger{APIVersion: v1.APIVersion, Kind: v1.KindTrigger, Metadata: v1.ObjectMeta{Name: "nightly"},
+		Spec: v1.TriggerSpec{Agent: "agent_1", Schedule: "0 2 * * *", TimeZone: "UTC", Session: v1.TriggerSession{Message: "Build."}}}
+	paused, err := Changed("chat", &own, runner.Proposal{Action: ActionPause, ID: "trg_2", Why: "Away."})
+	if err != nil || !read(paused).Spec.Suspend {
+		t.Fatalf("the paused trigger is %s, %v", paused, err)
+	}
+	moved, err := Changed("chat", &own, runner.Proposal{Action: ActionChange, ID: "trg_2", Why: "Later.", Schedule: "0 6 * * *", TimeZone: "Europe/Berlin"})
+	if tr := read(moved); err != nil || tr.Spec.Schedule != "0 6 * * *" || tr.Spec.TimeZone != "Europe/Berlin" || tr.Spec.Session.Message != "Build." {
+		t.Fatalf("the moved trigger is %s, %v", moved, err)
+	}
+	for name, p := range map[string]runner.Proposal{
+		"a schedule no routine runs on": {Action: ActionChange, Why: "w", Schedule: "*/5 * * * *", TimeZone: "UTC"},
+		"a name of two lines":           {Action: ActionChange, Why: "w", Name: "a\nb"},
+		"an ask past the bound":         {Action: ActionChange, Why: "w", Ask: strings.Repeat("x", routine.MaxEventInstruction+1)},
+	} {
+		if _, err := Changed("chat", &own, p); err == nil {
+			t.Errorf("a trigger's change to %s was written", name)
+		}
+	}
+	for _, doc := range []string{`[]`, `{"spec":[]}`, `not json`} {
+		if _, err := edit(json.RawMessage(doc), func(map[string]any, map[string]any) {}); err == nil {
+			t.Errorf("%s was edited", doc)
+		}
+	}
+	if _, err := editWithMeta(json.RawMessage(`{"metadata":[],"spec":{}}`), "Title", func(map[string]any, map[string]any) {}); err == nil {
+		t.Error("a trigger whose metadata is no object was edited")
+	}
+	for name, p := range map[string]runner.Proposal{
+		"a filter the resolver refuses": {Name: "n", Ask: "a", Why: "w", On: &v1.TriggerOn{Product: "GitHub", Verbs: []string{"push"}}},
+		"an event's name of two lines":  {Name: "a\nb", Ask: "a", Why: "w", On: &v1.TriggerOn{Product: "github", Verbs: []string{"push"}}},
+		"an event's ask past the bound": {Name: "n", Ask: strings.Repeat("x", routine.MaxEventInstruction+1), Why: "w", On: &v1.TriggerOn{Product: "github", Verbs: []string{"push"}}},
+		"a schedule no routine runs on": {Name: "n", Ask: "a", Why: "w", Schedule: "*/5 * * * *", TimeZone: "UTC"},
+	} {
+		if _, err := Manifest("chat", "routine-x", p); err == nil {
+			t.Errorf("%s was written", name)
+		}
+	}
+	if Starts(v1.TriggerOn{Product: "github", Verbs: []string{"received"}}) != "" {
+		t.Error("a product no routine starts from reads as a routine's")
+	}
+}
+
+// TestTheToolsSmallAnswers: the tool reads, runs one call at a time,
+// holds no call it cannot read, and answers a list the server refuses
+// with the refusal and one it could not ask as an error.
+func TestTheToolsSmallAnswers(t *testing.T) {
+	f := &fakeTriggers{}
+	tool := New(f)
+	if p := tool.Properties(); p.Effect != tools.EffectRead || p.Parallel {
+		t.Fatalf("the properties are %+v", p)
+	}
+	if r := tool.Confirm(tools.Call{Input: json.RawMessage(`{"action":`)}); r != "" {
+		t.Fatalf("a call that does not read is held %q", r)
+	}
+	if r := tool.Probe(t.Context(), tools.Call{Input: json.RawMessage(`{"action":`)}); r != nil {
+		t.Fatalf("a call that does not read was probed: %+v", r)
+	}
+	if res, err := tool.Run(t.Context(), tools.Call{Input: json.RawMessage(`{"action":`)}); err != nil || res.Outcome != tools.OutcomeInvalidInput {
+		t.Fatalf("a call that does not read ran: %+v, %v", res, err)
+	}
+	f.refuse = &runner.TriggerRefusal{Code: "forbidden", Message: "not yours"}
+	if res, err := tool.Run(t.Context(), tools.Call{Input: json.RawMessage(`{"action":"list"}`)}); err != nil || res.Outcome != tools.OutcomeError || !strings.Contains(res.Content[0].Text, "forbidden") {
+		t.Fatalf("a refused list answered %+v, %v", res, err)
+	}
+	f.refuse, f.fail = nil, errors.New("the server is away")
+	if _, err := tool.Run(t.Context(), tools.Call{Input: json.RawMessage(`{"action":"list"}`)}); err == nil {
+		t.Fatal("a list the server could not answer was answered as a result")
+	}
+}
