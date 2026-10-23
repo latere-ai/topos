@@ -74,6 +74,9 @@ type Start struct {
 	// the session's create carries to the authorizer (spec 078); nil for
 	// a firing no key's token fired. The engine reads nothing in it.
 	FiredBy map[string]any
+	// Spend is the week of the trigger the firing counts toward, which its
+	// message carries (spec 087); nil for a firing that counts toward none.
+	Spend *session.MessageSpend
 }
 
 // Send is a message a firing sends to the open session its key or its
@@ -86,6 +89,9 @@ type Send struct {
 	Message   string
 	Spec      v1.TriggerSpec
 	Due       time.Time
+	// Spend is the week of the trigger the firing counts toward, which its
+	// message carries (spec 087); nil for a firing that counts toward none.
+	Spend *session.MessageSpend
 }
 
 // Actor starts and continues a trigger's sessions as the server's create
@@ -342,13 +348,14 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 			return err
 		}
 		if spec.At != nil {
-			// A spent one-shot is gone with its firing; a failed one runs
-			// again at the next pass, at its time; a held one waits for its
-			// message to be sent, and fires no more.
+			// A spent one-shot is gone with its firing; a failed one, and
+			// one skipped at its allowance, run again at the next pass, at
+			// its time; a held one waits for its message to be sent, and
+			// fires no more.
 			switch {
 			case spends(out.Outcome):
 				return nil
-			case out.Outcome == store.OutcomeFailed:
+			case out.Outcome == store.OutcomeFailed, out.Outcome == store.OutcomeSkippedBudget:
 				return nil
 			}
 		}
@@ -361,11 +368,11 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 
 // spends reports whether a firing of outcome spends a one-shot trigger
 // (spec 086): every outcome but held, which keeps it until its message
-// is sent, failed, which runs again, and filtered, which no one-shot
-// records.
+// is sent, failed, which runs again, skipped_budget, which runs once the
+// spend allows it (spec 087), and filtered, which no one-shot records.
 func spends(outcome string) bool {
 	switch outcome {
-	case store.OutcomeHeld, store.OutcomeFailed, store.OutcomeFiltered, "":
+	case store.OutcomeHeld, store.OutcomeFailed, store.OutcomeFiltered, store.OutcomeSkippedBudget, "":
 		return false
 	}
 	return true
@@ -375,6 +382,15 @@ func spends(outcome string) bool {
 // one-shot's that spends it deletes the trigger with it, and tells the
 // actor.
 func (e *Engine) record(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string) error {
+	if spec.At != nil && f.Outcome == store.OutcomeSkippedBudget {
+		// A one-shot skipped at its allowance keeps its time, so the minute
+		// loop takes its firing again at each pass, a held one's too, until
+		// it fires or maxAge passes (spec 087).
+		if err := e.o.Store.RecordFiring(ctx, f, from); err != nil {
+			return err
+		}
+		return e.o.Store.SetNextFire(ctx, t.ID, spec.At)
+	}
 	if spec.At == nil || !spends(f.Outcome) {
 		return e.o.Store.RecordFiring(ctx, f, from)
 	}
@@ -476,6 +492,17 @@ func (e *Engine) decide(ctx context.Context, t store.Trigger, spec v1.TriggerSpe
 		f.Outcome, f.Reason = store.OutcomeRefused, ReasonMessageTooLarge
 		return f, nil
 	}
+	// A firing while the trigger it counts toward is at its allowance
+	// starts nothing (spec 087).
+	spend, over, err := e.allowance(ctx, t, spec)
+	if err != nil {
+		return store.Firing{}, err
+	}
+	if over {
+		f.Outcome = store.OutcomeSkippedBudget
+		return f, nil
+	}
+	r.spend = spend
 	if trigger.Policy(spec) == v1.PolicyContinue {
 		return e.continueKey(ctx, t, spec, f, r, false)
 	}
@@ -552,7 +579,7 @@ func (e *Engine) continueKey(ctx context.Context, t store.Trigger, spec v1.Trigg
 		f.Outcome = store.OutcomeHeld
 		return f, nil
 	}
-	err = e.o.Actor.Send(ctx, Send{Trigger: t, SessionID: s.ID, FiringID: f.ID, Message: r.message, Spec: spec, Due: f.Time})
+	err = e.o.Actor.Send(ctx, Send{Trigger: t, SessionID: s.ID, FiringID: f.ID, Message: r.message, Spec: spec, Due: f.Time, Spend: r.spend})
 	switch {
 	case errors.Is(err, ErrEnded):
 		if err := e.o.Store.CloseSession(ctx, t.ID, s.ID); err != nil {
@@ -583,7 +610,7 @@ func (e *Engine) continueTarget(ctx context.Context, t store.Trigger, spec v1.Tr
 		f.Outcome = store.OutcomeHeld
 		return f, nil
 	}
-	err = e.o.Actor.Send(ctx, Send{Trigger: t, SessionID: s.ID, FiringID: f.ID, Message: r.message, Spec: spec, Due: f.Time})
+	err = e.o.Actor.Send(ctx, Send{Trigger: t, SessionID: s.ID, FiringID: f.ID, Message: r.message, Spec: spec, Due: f.Time, Spend: r.spend})
 	switch {
 	case errors.Is(err, ErrEnded):
 		f.Outcome = store.OutcomeSkippedEnded
@@ -614,7 +641,7 @@ func (e *Engine) start(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 			return store.Firing{}, fmt.Errorf("triggers: firing %s's key: %w", f.ID, err)
 		}
 	}
-	s, err := e.o.Actor.Start(ctx, Start{Trigger: t, Spec: spec, FiringID: f.ID, Message: r.message, Title: r.title, Resources: r.resources, FiredBy: by})
+	s, err := e.o.Actor.Start(ctx, Start{Trigger: t, Spec: spec, FiringID: f.ID, Message: r.message, Title: r.title, Resources: r.resources, FiredBy: by, Spend: r.spend})
 	if err != nil {
 		return e.refused(f, err), nil
 	}
@@ -750,6 +777,21 @@ func (e *Engine) flush(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		// The key the firing was held under is its key, whatever the
 		// template renders now.
 		r.key = key
+		// A held firing is sent only while the trigger it counts toward is
+		// under its allowance; one past it is skipped, and a held one-shot
+		// goes back to its time (spec 087).
+		spend, over, err := e.allowance(ctx, t, spec)
+		if err != nil {
+			return false, err
+		}
+		if over {
+			f.Outcome = store.OutcomeSkippedBudget
+			if err := e.record(ctx, t, spec, f, store.OutcomeHeld); err != nil {
+				return false, err
+			}
+			continue
+		}
+		r.spend = spend
 		out, err := e.continueKey(ctx, t, spec, f, r, true)
 		if err != nil {
 			return false, err

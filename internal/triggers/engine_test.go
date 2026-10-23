@@ -39,12 +39,15 @@ type fakeActor struct {
 	sends     int
 	startWait chan struct{}
 	spent     []store.Firing
+	// spends are the spends the firings' messages carried, in order.
+	spends []*session.MessageSpend
 }
 
 func (a *fakeActor) Start(ctx context.Context, st Start) (session.Session, error) {
 	a.mu.Lock()
 	err, wait := a.startErr, a.startWait
 	a.starts++
+	a.spends = append(a.spends, st.Spend)
 	a.mu.Unlock()
 	if wait != nil {
 		<-wait
@@ -60,9 +63,19 @@ func (a *fakeActor) Start(ctx context.Context, st Start) (session.Session, error
 	return s, a.say(ctx, s.ID, st.Trigger, st.FiringID, st.Message)
 }
 
+// say appends a firing's message, a wake's carrying its wake as the
+// server's does.
 func (a *fakeActor) say(ctx context.Context, id string, t store.Trigger, firing, text string) error {
-	ev, err := session.NewEvent(session.TypeUserMessage, session.UserMessage{Sender: session.Sender{Subject: session.TriggerSubjectPrefix + t.ID, Kind: session.SenderTrigger},
-		Content: []lux.Block{{Type: ir.BlockText, Text: text}}, FiringID: firing}, a.now())
+	msg := session.UserMessage{Sender: session.Sender{Subject: session.TriggerSubjectPrefix + t.ID, Kind: session.SenderTrigger},
+		Content: []lux.Block{{Type: ir.BlockText, Text: text}}, FiringID: firing}
+	doc, err := store.DecodeTrigger(t.Doc)
+	if err != nil {
+		return err
+	}
+	if o := doc.Status.Origin; o != nil && o.Kind == v1.OriginWake {
+		msg.Wake = &session.MessageWake{TriggerID: t.ID, SetAt: t.CreatedAt, DueAt: a.now(), Count: 1}
+	}
+	ev, err := session.NewEvent(session.TypeUserMessage, msg, a.now())
 	if err != nil {
 		return err
 	}
@@ -83,6 +96,7 @@ func (a *fakeActor) Send(ctx context.Context, sd Send) error {
 	a.mu.Lock()
 	err := a.sendErr
 	a.sends++
+	a.spends = append(a.spends, sd.Spend)
 	a.mu.Unlock()
 	if err != nil {
 		return err

@@ -18,6 +18,9 @@ import (
 type rendered struct {
 	message, title, key string
 	resources           []session.Resource
+	// spend is the week of the trigger the firing counts toward, set once
+	// the firing is under its allowance (spec 087).
+	spend *session.MessageSpend
 }
 
 // render renders the trigger's templates for the firing: the event root
