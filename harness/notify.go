@@ -124,6 +124,16 @@ func (t *turn) outcome(reason session.StopReason) string {
 	return session.OutcomeQuiet
 }
 
+// attended reports whether a person began the turn (spec 087): false
+// when its first input is a trigger's message, a wake's among them, and
+// true when a person's message, answer or confirmation began it. A
+// subagent's thread is in the turn of the session's own thread that
+// drove it.
+func (t *turn) attended() bool {
+	_, woken := session.TriggerTurn(t.events(), t.startSeq)
+	return !woken
+}
+
 // notifies reports whether the thread holds the notify tool. A client's
 // tool of the name, which an agent stored before the name was reserved
 // may hold, is that client's.

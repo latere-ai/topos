@@ -284,10 +284,12 @@ func (t *turn) refusals(ctx context.Context, toolUseID string, since time.Time, 
 	}
 	shown := hosts[:min(len(hosts), MaxAsksPerCall)]
 	batch := make([]session.Event, 0, len(shown))
+	attended := t.attended()
 	for i, c := range shown {
 		p := session.ApprovalRequested{
 			ApprovalID: session.NewID(session.PrefixApproval), ToolUseID: toolUseID, Source: session.ApprovalFromEgress,
 			Destination: session.Destination{Host: c.Host, Port: c.Port}, Reason: session.ReasonConnectionOutside, Verdict: string(verdict),
+			Attended: &attended,
 		}
 		if i == len(shown)-1 {
 			p.More = len(hosts) - len(shown)

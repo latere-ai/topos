@@ -154,6 +154,10 @@ type ApprovalRequested struct {
 	Reason      string      `json:"reason"`
 	Verdict     string      `json:"verdict"`
 	More        int         `json:"more,omitempty"`
+	// Attended is whether a person began the turn the request was made in
+	// (spec 087), as an agent.tool_use records it; nil on an event written
+	// before it.
+	Attended *bool `json:"attended,omitempty"`
 }
 
 // ApprovalDecided is the payload of approval.decided: the person's answer

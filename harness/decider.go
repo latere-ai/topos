@@ -34,6 +34,10 @@ type Call struct {
 	// lists, the patterns and the mode's score allow (tools.Confirmer);
 	// empty for a call decided as any other.
 	Confirm string
+	// Attended is false on a turn a trigger's message began, which nobody
+	// watches (spec 087); its Remembered is then empty. A decision
+	// service is told it, to weigh a call nobody sees.
+	Attended bool
 }
 
 // Decider decides a validated call: its risk score and its verdict. The

@@ -2482,6 +2482,8 @@ components:
           type: number
         suggestion:
           $ref: "#/components/schemas/Suggestion"
+        attended:
+          type: boolean
     AgentVersion:
       type: object
       required:
@@ -2538,6 +2540,8 @@ components:
           type: string
         more:
           type: integer
+        attended:
+          type: boolean
     Approvals:
       type: object
       required:

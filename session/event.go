@@ -225,6 +225,10 @@ type AgentToolUse struct {
 	Draw *float64 `json:"draw,omitempty"`
 	// Suggestion is a decision service's suggestion, when one was asked.
 	Suggestion *Suggestion `json:"suggestion,omitempty"`
+	// Attended is whether a person began the call's turn: false on a turn
+	// a trigger's message began, which nobody watches (spec 087); nil on
+	// an event written before it.
+	Attended *bool `json:"attended,omitempty"`
 }
 
 // Spill names where the rest of a capped tool output went.

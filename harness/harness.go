@@ -1655,7 +1655,14 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 	var p stepPlan
 	var answered []answeredCall
 	var uses []session.Event
-	remembered := rememberedPatterns(t.events())
+	// A turn a trigger's message began decides without the patterns the
+	// person remembered in a conversation, which they allowed with that
+	// conversation in front of them (spec 087).
+	attended := t.attended()
+	var remembered []string
+	if attended {
+		remembered = rememberedPatterns(t.events())
+	}
 	kind := t.h.c.Machine.Info().Kind
 	network := t.network()
 	// The step's calls are decided under the mode in force as the step
@@ -1737,6 +1744,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		}
 		risk, d, err := decider.Decide(ctx, Call{
 			Policy: policy, Session: t.s, ToolUseID: id, Name: name, Props: props, Input: input, MachineKind: kind, Remembered: remembered, Confirm: confirm,
+			Attended: attended,
 		})
 		if err != nil {
 			return stepPlan{}, nil, nil, err
@@ -1761,7 +1769,7 @@ func (t *turn) plan(ctx context.Context, res models.Result, limit int64) (stepPl
 		use := session.AgentToolUse{
 			ToolUseID: id, Name: name, Input: input, Risk: &risk, Verdict: string(d.Verdict), Reason: d.Reason,
 			Mode: string(mode), Client: props.Client, Repeatable: props.Repeatable,
-			ReviewProbability: &review, Draw: d.Draw, Suggestion: d.Suggestion,
+			ReviewProbability: &review, Draw: d.Draw, Suggestion: d.Suggestion, Attended: &attended,
 		}
 		e, err := t.event(session.TypeAgentToolUse, use)
 		if err != nil {
