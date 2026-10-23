@@ -1,0 +1,1 @@
+The wake was not set: it is later than this conversation allows ({{.Code}}). The latest a wake may be is {{.Latest}}: at most {{.Max}} ahead, and before the conversation ends. A look further off is standing work: offer the person a trigger instead.

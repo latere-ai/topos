@@ -30,7 +30,7 @@ import (
 	"text/template/parse"
 )
 
-//go:embed harness compact advisor tools transcript results context reminders title
+//go:embed harness compact advisor tools transcript results context reminders title wake
 var files embed.FS
 
 // Name is the stable name of one text at one version: its file's path

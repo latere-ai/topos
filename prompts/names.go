@@ -94,6 +94,32 @@ const (
 	// ToolTrigger states the bounds of a proposal's name and why and of a
 	// list, which a test holds to their constants (spec 086).
 	ToolTrigger Name = "tools/trigger-v2"
+	// ToolWake states the bounds of a wake's time, title and note and of
+	// a chain of wakes, which a test holds to their constants (spec 086).
+	ToolWake Name = "tools/wake-v1"
+)
+
+// The results of the wake tool (spec 086).
+const (
+	// WakeInvalid takes Detail, what the call's input got wrong.
+	WakeInvalid Name = "results/wake/invalid-v1"
+	// WakeTooSoon takes Code, Min, the floor in words, and Earliest.
+	WakeTooSoon Name = "results/wake/too-soon-v1"
+	// WakeTooLate takes Code, Max, the ceiling in words, and Latest.
+	WakeTooLate Name = "results/wake/too-late-v1"
+	// WakeIsSet takes At, Count, the wake's place in the chain, Max,
+	// Earliest and Latest, and Held, whether the person has paused every
+	// trigger.
+	WakeIsSet Name = "results/wake/set-v1"
+	// WakeCanceled and WakeNone are a cancel's, of a wake and of none.
+	WakeCanceled Name = "results/wake/canceled-v1"
+	WakeNone     Name = "results/wake/none-v1"
+	// WakeNotSet takes Code and Message, why the server refused a set or a
+	// cancel.
+	WakeNotSet Name = "results/wake/not-set-v1"
+	// WakeMany is the reason a set past the chain's bound waits for the
+	// person: Count, its place, and Max.
+	WakeMany Name = "results/wake/many-v1"
 )
 
 // The results of the trigger tool (spec 086).
@@ -315,6 +341,11 @@ const (
 	// TranscriptAttachments takes Attachments, each with Path, MediaType
 	// and Size: the files a message carries (spec 015).
 	TranscriptAttachments Name = "transcript/attachments-v1"
+	// WakeMessage leads the message of a session's own wake (spec 086):
+	// Set and Due, when the wake was set and when it was due, Count, its
+	// place in the chain of wakes with no word from the person, and Late
+	// with Fired, whether and when it came late.
+	WakeMessage Name = "wake/message-v1"
 	// TranscriptAttachmentsDevice takes Attachments as
 	// TranscriptAttachments does: the files a message carries on a
 	// person's own computer, kept outside the working directory (spec
