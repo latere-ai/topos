@@ -1,0 +1,11 @@
+name: quiet
+category: instructions
+# notify's description and the woken context: a turn a judged trigger
+# began, whose look finds nothing new, ends without notify, so the person
+# is not disturbed and the turn records quiet.
+agent:
+  tools: [read, notify]
+woken: judged
+prompt: |
+  Read fares.txt for today's fare to Lisbon and compare it with the last
+  fare in seen.txt. Tell me when it is lower than the last one.

@@ -1,0 +1,2 @@
+- no_call: {tool: notify}
+- outcome: {equals: quiet}

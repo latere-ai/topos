@@ -1,0 +1,12 @@
+# Reads both files and notifies the person that nothing changed.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: fares.txt}
+      - name: read
+        input: {path: seen.txt}
+  - expect: {tool_result_contains: "129 EUR"}
+    tool_calls:
+      - name: notify
+        input: {title: The fare to Lisbon is unchanged at 129 EUR}
+  - text: The fare to Lisbon is still 129 EUR.

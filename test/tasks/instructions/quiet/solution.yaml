@@ -1,0 +1,10 @@
+# Reads both files, finds the fare unchanged, and ends the turn without
+# notify.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: fares.txt}
+      - name: read
+        input: {path: seen.txt}
+  - expect: {tool_result_contains: "129 EUR"}
+    text: The fare to Lisbon is still 129 EUR, the same as last time.
