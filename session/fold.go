@@ -102,6 +102,11 @@ type FoldOptions struct {
 	// 084): a cleared result names its call's id and a summary the events
 	// it covers, which the tool reads back.
 	History bool
+	// Notify is set for a thread that holds the notify tool (spec 086): a
+	// message that began a turn nobody waits for, a wake's or a judged
+	// trigger's, is led by what such a turn is and when to notify, and
+	// Attended says whether a question waits for the person.
+	Notify, Attended bool
 }
 
 // FoldWith renders the transcript of one thread as Fold does, with o.
@@ -237,9 +242,14 @@ func fold(events []Event, thread string, o FoldOptions) (Transcript, error) {
 			noteSender(p.Sender)
 			blocks := slices.Clone(p.Content)
 			// A wake's message is the agent's own note, led by when it set
-			// the wake and when it was due (spec 086).
+			// the wake and when it was due, and a message that began a turn
+			// nobody waits for by what such a turn is (spec 086).
 			if w := p.Wake; w != nil {
 				blocks = append([]lux.Block{text(wakeLine(*w, e.Time))}, blocks...)
+			}
+			if p.FiringID != "" && p.Judged() && o.Notify {
+				woken := prompts.Render(prompts.ContextWoken, prompts.Data{"Wake": p.Wake != nil, "Attended": o.Attended})
+				blocks = append([]lux.Block{text(woken)}, blocks...)
 			}
 			if multi {
 				blocks = append([]lux.Block{text(prompts.Render(prompts.TranscriptSender, sender(p.Sender)))}, blocks...)

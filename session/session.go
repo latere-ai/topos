@@ -353,6 +353,12 @@ type Session struct {
 	// session.wake_set and cleared by its session.wake_cleared or by the
 	// message its firing sent; nil when none is pending.
 	Wake *Wake `json:"wake,omitempty"`
+	// Outcome is OutcomeQuiet or OutcomeNotified, of the latest turn a
+	// trigger began that recorded one (spec 086); empty before any.
+	Outcome string `json:"outcome,omitempty"`
+	// Notice is the latest notify of the session's own thread, nil before
+	// any (spec 086).
+	Notice *Notice `json:"notice,omitempty"`
 }
 
 // Folder is a folder of an Arca-compatible files API (spec 068): the

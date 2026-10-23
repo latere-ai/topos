@@ -521,8 +521,9 @@ func SameEvent(a, b Event) bool {
 // session.policy_changed, the title of the last session.title_changed,
 // the base network each authorizer's session.network_changed replaces,
 // the connections of the last session.connections_changed, whether the
-// session's folder holds a file (spec 068), the pending wake (spec 086),
-// and the spend, which each
+// session's folder holds a file (spec 068), the pending wake, the latest
+// turn's outcome and the latest notice (spec 086), and the spend, which
+// each
 // model.request's and each charged tool.result's cost adds to as Spent
 // counts it. A title change does not move the update time, so a list
 // ordered by it keeps a renamed session in its place (spec 054), and
@@ -560,6 +561,9 @@ func ApplyBatch(s *Session, events []Event) {
 		}
 		if e.Type == TypeModelRequest || e.Type == TypeToolResult {
 			s.Budget.SpentCostUSDMicro += Cost(e)
+			if n := noticeOf(e); n != nil && !s.Copied(e) {
+				s.Notice = n
+			}
 			continue
 		}
 		// A fork's copied session.resumed raised its parent's budget; the
@@ -619,6 +623,9 @@ func ApplyBatch(s *Session, events []Event) {
 		if e.Decode(&p) == nil && p.Status != "" {
 			s.Status = p.Status
 			s.StopReason = p.StopReason
+			if p.Outcome != "" && !s.Copied(e) {
+				s.Outcome = p.Outcome
+			}
 		}
 	}
 }

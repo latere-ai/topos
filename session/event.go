@@ -132,6 +132,11 @@ type UserMessage struct {
 	// Wake is set on the message of a session's own wake firing, whose
 	// content is the note the agent left itself (spec 086).
 	Wake *MessageWake `json:"wake,omitempty"`
+	// Notify is NotifyJudged on the message of a firing of a trigger whose
+	// session.notify is judged, which leaves it to the agent to say whether
+	// the turn brought something to the person (spec 086); empty for every
+	// other message.
+	Notify string `json:"notify,omitempty"`
 }
 
 // UserInterrupt is the payload of user.interrupt.
@@ -420,6 +425,10 @@ type SessionStatus struct {
 	Detail     string         `json:"detail,omitempty"`
 	Runner     *RunnerRef     `json:"runner,omitempty"`
 	Checkpoint *CheckpointRef `json:"checkpoint,omitempty"`
+	// Outcome is OutcomeNotified or OutcomeQuiet on the status that closes
+	// a turn a trigger's message began, idle or ended completed under
+	// end_on_idle, and empty on every other (spec 086).
+	Outcome string `json:"outcome,omitempty"`
 }
 
 // AttachedMachine is the machine a runner attached (spec 009).
