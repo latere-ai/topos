@@ -6,7 +6,7 @@ depends_on: [.archive/003-manifest.md, .archive/004-session-log.md, 008-tools.md
 affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, internal/hosted/, internal/proposal/, internal/runnerapi/, internal/runnerrole/, runner/, harness/, harness/tools/, session/, prompts/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-23
 author: changkun
 ---
 
@@ -187,7 +187,7 @@ a server keeps triggers. A thread is never offered it
 
 | Name | Parallel | Effect | Input | Limits |
 |---|---|---|---|---|
-| `trigger` | no | `none` for `list`; `write` otherwise | `action`, and the fields of the table below | the bounds below |
+| `trigger` | no | `read` for every action (built: a tool's effect is one per tool, so a list and a pause run in every mode, plan included, and every other action is held by `tools.Confirmer` and blocked in plan) | `action`, and the fields of the table below | the bounds below |
 
 | Field | Actions | Meaning |
 |---|---|---|
@@ -233,6 +233,40 @@ in the held call alone, where a client words the offer from it. Until
 roll step 4, `session.attended` and `session.notify` are left to their
 defaults, as a routine a person makes through a client is.
 
+#### A proposal on events (decided 2026-10-23)
+
+The routine's shape names three ways to start: a schedule, every email
+that arrives (`on: {product: mail, verbs: [received]}`) and every call of
+the person's link (`on: {product: webhook, verbs: [received]}`). A
+proposal's `on` is applied by the same `routine.Manifest`:
+
+| The proposal's `on` | Applied as |
+|---|---|
+| exactly a routine's: `mail` or `webhook`, the one verb `received`, no `resources` and no `match` | the routine that starts from an email or a link, written by `routine.Manifest` with its `Starts`, under the routine's name, with the SDK's own words after the ask that hand the run what arrived; every client reads it as a routine |
+| any other: a repository's pushes, more verbs, a filter narrowed by `resources` or `match` | the manifest `routine.Manifest` writes for the name, the ask and the title, with the filter as `spec.on` and the event after the ask (lines `internal/proposal` writes as the SDK writes its own, which render the event's product, verb, resource, actor, time and payload), under the name `event-` and the routine's 20 hexadecimal digits |
+
+Both carry the label `applied-by`, the `displayName`, `skipIfActive:
+false` and `status.origin`, and from roll step 4 `session.notify:
+judged` unless the call names `always`. An `event-` trigger is listed,
+changed, paused, resumed and deleted by its id and read by its
+`status.origin`, as the SDK's list of the person's watches reads every
+trigger a conversation offered. A change keeps a routine a routine: a
+change of a routine to a filter no routine expresses is refused
+`invalid_input`, and the agent proposes the new trigger instead.
+
+Weighed against: every `on` under a `routine-` name, which
+`routine.Read` would read as a routine on a schedule with no schedule, so
+every client would show a routine it can neither show nor change; and
+refusing every `on` but a routine's, which would leave an agent no way to
+offer a watch on a repository's pushes, which 086 names.
+
+A change, a pause and a resume apply the stored trigger again: a routine
+through `routine.Manifest` over its stored document with its fields read
+by `routine.Read` and the call's written over them, as the SDK's change
+does, and any other trigger with the call's fields written into its
+document, every other field kept. `status.origin` is the call that made
+the trigger and is kept: a later call's origin is in its questions alone.
+
 The bounds of a proposal are constants of `manifest/trigger`, read by
 the tool's schema, its description and the check before the hold:
 
@@ -259,7 +293,7 @@ and answers a call that would be refused without asking anyone
 |---|---|
 | exactly one of `schedule` and `on`, each valid as the Trigger's | the same grammar the resolver checks at apply ([[022-triggers]]) |
 | a schedule no routine runs on, a zone the server does not know, and a name, an ask or a why past the routine's checks | the checks `routine.New` holds a routine to, read by the tool and again by the server |
-| `id` names a trigger the owner holds, of this agent, that is not a wake | a session never changes another agent's standing work, or another session's wake |
+| `id` names a trigger the owner holds, of this agent, that is not a wake | a session never changes another agent's standing work, or another session's wake; asked of the server through `tools.Prober`, answered `not_found` as a trigger the caller cannot see, and checked again when a pause, which is not held, runs |
 | `trigger.create` or `trigger.update` as the owner, asked before the hold without `confirmed_by`, denies | no person approves a call bound to fail; the reason is the result. The harness asks it through `tools.Prober`, the `Checker` that may reach the call's service |
 
 The call is then held: `tools.Confirmer` names it, with its reason, so
@@ -506,8 +540,14 @@ the session's initiator, refused before the hold through `tools.Prober`,
 blocked in plan mode, applied as the initiator in the routine's shape
 with `status.origin`, and reached by a runner process over the internal
 listener (`POST /internal/v1/leases/{session}/triggers/{list,check,apply}`).
-`at`, `session.target`, `session.attended`, `session.notify`, `change`,
-`pause`, `resume`, `delete`, `wake`, `notify` and the hold are not built.
+
+Roll step 2 is built: `change`, `pause`, `resume` and `delete`, and a
+`propose` on events, decided above. The check and the apply routes of the
+internal listener carry every action in the proposal's `action`. `list`
+answers each trigger's id and ask, which a change names.
+
+`at`, `session.target`, `session.attended`, `session.notify`, `wake`,
+`notify` and the hold are not built.
 
 ## Acceptance criteria
 
@@ -517,7 +557,8 @@ listener (`POST /internal/v1/leases/{session}/triggers/{list,check,apply}`).
 | A proposal that the input or the authorizer would refuse is answered at once and never held | `harness.TestAProbedCallAsksNobody`, `internal/proposal.TestAProposalIsCheckedBeforeAnyoneIsAsked`, `internal/server.TestAProposalTheAuthorizerRefusesIsARefusal` | built |
 | The initiator's allow applies the trigger as the initiator, in the session's context, in the routine's shape with `origin`, and a retry of the same call applies the same trigger; another sender's confirmation is `forbidden` | `internal/server.TestAnAllowedProposalIsTheOwners`, `internal/server.TestOnlyTheInitiatorConfirmsATrigger`, `internal/runnerrole.TestARemoteLeaseAsksTheTriggerQuestions` | built |
 | A message in place of an allow denies the proposal with the message as its note | the harness's deny of a held call by a message (spec 012), which a `trigger` call takes as any held call | built |
-| `pause` sets `suspend` without asking; `change`, `resume` and `delete` are held; none touches a trigger of another agent or a wake | `harness.TestTriggerActionsOnlyTouchTheAgentsOwn` | not built |
+| `pause` sets `suspend` without asking; `change`, `resume` and `delete` are held; none touches a trigger of another agent or a wake | `internal/proposal.TestOnlyAListAndAPauseRunWithoutThePerson`, `internal/server.TestTriggerActionsOnlyTouchTheAgentsOwn` | built |
+| A proposal on events is the routine that starts from an email or a link when a routine expresses it, and an `event-` trigger with the filter as its `on` otherwise; a change keeps a routine a routine | `internal/proposal.TestAProposalIsWrittenInTheRoutinesShape`, `internal/server.TestAnEventProposalIsARoutineOrAnEventTrigger` | built |
 | A schedule no routine runs on is refused before the hold | `internal/proposal.TestAProposalIsCheckedBeforeAnyoneIsAsked` | built |
 | An `at` trigger fires once across two replicas and is deleted when spent; a held one stays until sent | `internal/store/postgres.TestAOneShotFiresOnce` (postgres tier), `internal/triggers.TestASpentTriggerIsDeleted` | not built |
 | A wake continues the session that set it with its note and `wake` on the message; a wake of an ended session is `skipped_ended` | `internal/triggers.TestAWakeContinuesItsSession` | not built |
