@@ -180,3 +180,42 @@ func TestATriggerWriteThatFailsChangesNothing(t *testing.T) {
 		t.Fatal("a key under a directory that cannot be made was mapped")
 	}
 }
+
+// TestReopenReadsHoldsBack: an owner's hold is read back after a restart
+// with its since, a release removes its file, a file of another name than
+// its owner's is ErrCorrupt, and a stray file in the holds is skipped.
+func TestReopenReadsHoldsBack(t *testing.T) {
+	root := t.TempDir()
+	clock := storetest.NewClock()
+	st := open(t, root, clock.Now)
+	since := clock.Now().UTC()
+	if err := st.SetHold(t.Context(), "https://login.example|alice", &since); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "objects", kindTriggerHold, "notes.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	again := open(t, root, clock.Now)
+	if got, err := again.Hold(t.Context(), "https://login.example|alice"); err != nil || got == nil || !got.Equal(since) {
+		t.Fatalf("the hold after a restart: %v, %v", got, err)
+	}
+	if err := again.SetHold(t.Context(), "https://login.example|alice", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := open(t, root, clock.Now).Hold(t.Context(), "https://login.example|alice"); err != nil || got != nil {
+		t.Fatalf("a released hold after a restart: %v, %v", got, err)
+	}
+	files := triggerFiles{root: filepath.Join(root, "objects")}
+	if err := os.WriteFile(files.holdPath("bob"), []byte(`{"owner":"carol","since":"2026-10-23T09:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, clock.Now); !errors.Is(err, session.ErrCorrupt) {
+		t.Fatalf("a hold of another owner's name: %v", err)
+	}
+	if err := os.WriteFile(files.holdPath("bob"), []byte(`not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, clock.Now); err == nil {
+		t.Fatal("a hold that does not read opened")
+	}
+}
