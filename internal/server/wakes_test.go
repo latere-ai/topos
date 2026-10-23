@@ -308,3 +308,39 @@ func TestOnlyTheInitiatorConfirmsAWake(t *testing.T) {
 		}
 	}
 }
+
+// TestAReplacedHeldWakeSendsNoStaleNote: a wake that came due while its
+// session waited for a person is held; a set that replaces it before the
+// held message is sent replaces its trigger, so the stale note is never
+// sent and the new wake fires at its own time.
+func TestAReplacedHeldWakeSendsNoStaleNote(t *testing.T) {
+	w := newWaking(t)
+	first := w.set("toolu_w1", w.clock.Now().Add(time.Hour), 1)
+	w.runnerAppends(w.sess.ID,
+		w.event(session.TypeAgentToolUse, session.AgentToolUse{ToolUseID: "toolu_d", Name: "deploy", Input: []byte(`{}`), Verdict: "ask", Reason: "held"}),
+		w.status(session.StatusIdle, session.StopToolConfirmation))
+	w.clock.Advance(time.Hour)
+	w.tick()
+	if held, err := w.objects.Trigger(t.Context(), first.ID); err != nil || held.Counts.Held != 1 {
+		t.Fatalf("the wake that came due while the session waited: %+v, %v", held.Counts, err)
+	}
+	n := len(w.messages(w.sess.ID))
+	// The person answers; the turn runs and sets a later wake.
+	w.runnerAppends(w.sess.ID, w.status(session.StatusRunning, ""))
+	later := w.clock.Now().Add(2 * time.Hour)
+	second := w.set("toolu_w2", later, 1)
+	if second.ID == first.ID {
+		t.Fatal("the replacing wake kept the held one's trigger")
+	}
+	w.tick()
+	if got := w.messages(w.sess.ID); len(got) != n {
+		t.Fatalf("the stale note was sent: %+v", got[n:])
+	}
+	w.runnerAppends(w.sess.ID, w.status(session.StatusIdle, session.StopEndTurn))
+	w.clock.Advance(2 * time.Hour)
+	w.tick()
+	msgs := w.messages(w.sess.ID)
+	if len(msgs) != n+1 || msgs[n].Wake == nil || msgs[n].Wake.TriggerID != second.ID || !msgs[n].Wake.DueAt.Equal(later) {
+		t.Fatalf("the replacing wake's message is %+v", msgs[n:])
+	}
+}

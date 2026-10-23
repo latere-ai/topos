@@ -74,6 +74,19 @@ func (t sessionTriggers) SetWake(ctx context.Context, w runner.Wake) (runner.Lis
 	if err != nil {
 		return runner.ListedTrigger{}, err
 	}
+	// A wake whose firing is held, its session waiting for a person when
+	// it came due, holds a note the set replaces: its trigger goes with
+	// that firing, so the stale note is never sent, and the set applies a
+	// new one.
+	old, err := t.s.o.Objects.TriggerByName(ctx, sess.Initiator.Subject, doc.Metadata.Name)
+	switch {
+	case err == nil && old.Counts.Held > 0:
+		if err := t.s.o.Objects.DeleteTrigger(ctx, old.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return runner.ListedTrigger{}, err
+		}
+	case err != nil && !errors.Is(err, store.ErrNotFound):
+		return runner.ListedTrigger{}, err
+	}
 	tr, _, err := t.s.putTrigger(ctx, q, doc.Metadata.Name, body, triggerApply{origin: &origin, made: true, agent: sess.Agent.ID})
 	if err != nil {
 		return runner.ListedTrigger{}, refusal(err)

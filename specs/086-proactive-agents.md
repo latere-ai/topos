@@ -366,7 +366,10 @@ appends `session.wake_set`:
 | `status.origin` | `{kind: wake, sessionId, toolUseId, confirmedBy?}`, `confirmedBy` for a set the initiator allowed |
 
 A session has at most one wake: a `set` while one is pending replaces it,
-applying the same trigger again. `cancel` deletes it and appends
+applying the same trigger again. As built, a `set` that replaces a wake
+whose firing is held, its session waiting for a person when it came
+due, replaces its trigger with that firing, so the stale note is never
+sent and the new wake fires at its own time. `cancel` deletes it and appends
 `session.wake_cleared`. Both are asked of the authorizer as
 `trigger.create`, `trigger.update` or `trigger.delete` as the owner, with
 `origin` `{kind: wake, session_id, tool_use_id}`.
@@ -641,6 +644,7 @@ pinned model, which take a model connection (the last row below).
 | A wake sooner than `MinWakeDelay`, later than `MaxWakeAhead` or past the session's `expires_at` is refused with the bound named; a second `set` replaces the first | `internal/proposal.TestWakeBounds` (the tool lives beside the trigger tool), `internal/server.TestAWakeIsHeldToItsBoundsAtTheServer`, `internal/server.TestAWakeContinuesItsSession`, `manifest/trigger.TestAWakeLivesInsideItsBounds` | built |
 | The eleventh wake in a row with no word from the initiator is held, and an allow starts the count again | `harness.TestTheEleventhWakeAsks`, `internal/proposal.TestTheEleventhWakeWaitsForThePerson`, `session.TestWakesInARowCountFromTheInitiatorsWord`, `internal/server.TestOnlyTheInitiatorConfirmsAWake` | built |
 | A session's end, deletion or archive deletes its wake and records `session.wake_cleared`; a person's delete records it with the sender | `internal/server.TestAWakeEndsWithItsSession` | built |
+| A set that replaces a held wake sends no stale note, and the new wake fires at its time | `internal/server.TestAReplacedHeldWakeSendsNoStaleNote` | built |
 | `end_on_idle` leaves a session with a pending wake open and ends it at the idle after its last wake | `harness.TestEndOnIdleWaitsForAWake`, `harness.TestACanceledWakeLetsTheSessionEnd` (the rule is the harness's) | built |
 | A pause records why and by whom in `status.paused`, kept while suspended and cleared on resume | `internal/server.TestAPauseRecordsWhyAndByWhom` | built |
 | A turn a trigger began records `notified` under `always`, after `notify`, or after a wait for the person, and `quiet` otherwise; a person's turn records none; the Session folds `wake`, `outcome` and `notice` | `harness.TestTheOutcomeOfATriggersTurn` (the outcome is the harness's), `session.TestTheSessionFoldsOutcomeAndNotice`, `session.TestATurnsFirstInputNamesItsTrigger`, `session.TestTheSessionFoldsItsWake`, `harness.TestNotifyIsOneLineOnceATurn`, `harness.TestAWokenTurnIsToldNobodyWaits` | built |
