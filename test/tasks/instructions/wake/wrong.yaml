@@ -1,0 +1,6 @@
+# Reads the log and promises to look again, with nothing set to do it.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: build.log}
+  - text: The build is still compiling. Ask me again in two hours and I will check build.log.

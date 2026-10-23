@@ -1,0 +1,15 @@
+name: wake
+category: instructions
+# wake's description: a follow-up the person asks for later in the same
+# conversation is a wake set for when the thing will be ready, with a
+# title the person reads and a note that carries what to look at and what
+# to do with each answer; the agent says when it will look again. A wake
+# is a write, which the suite's confirm mode asks the person about, and
+# the person allows it.
+agent:
+  tools: [read, wake]
+confirm: allow
+prompt: |
+  The release build is running and build.log says how it is going. It
+  takes about two hours. Look again once it should be done, and tell me
+  whether it passed and, if it failed, which step broke.

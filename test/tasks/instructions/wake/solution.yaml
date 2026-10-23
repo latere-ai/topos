@@ -1,0 +1,17 @@
+# Reads the log now, sets a wake for when the build should be done with a
+# note that says what to look at and what to do with each answer, and
+# says when it will look again.
+steps:
+  - tool_calls:
+      - name: read
+        input: {path: build.log}
+  - expect: {tool_result_contains: running}
+    tool_calls:
+      - name: wake
+        input:
+          action: set
+          after: 2h
+          title: Has the release build passed?
+          note: Read build.log. If its last step says ok, tell the person the release build passed. If a step failed, tell them which step broke and its error line. If it is still running, set another wake for an hour later.
+  - expect: {tool_result_contains: The wake is set}
+    text: The build is still compiling. I will look at build.log again in two hours and tell you whether it passed.

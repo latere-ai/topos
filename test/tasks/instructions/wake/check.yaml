@@ -1,0 +1,8 @@
+- call:
+    tool: wake
+    outcome: ok
+    input:
+      action: {equals: set}
+      title: {min_length: 3}
+      note: {matches: '(?i)build\.log'}
+- final_message: {matches: '(?i)\b(look|check)'}
