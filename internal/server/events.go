@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"slices"
 	"strconv"
@@ -572,14 +573,18 @@ var WorkRule = fmt.Sprintf("work.saved {covers, written, removed, unsaved, defer
 // session (spec 055).
 const blobCache = "private, max-age=31536000, immutable"
 
-// blob is GET /sessions/{id}/blobs/{digest}. The blob is answered by its
-// leading bytes (spec 055): PNG, JPEG, GIF or WebP as its image type,
-// inline, and any other blob, a file an answer linked among them (spec
-// 064), as an application/octet-stream attachment, each with nosniff and
-// the sandboxing policy of a file's answer, so no blob is ever a document
-// of the API's origin. A file the session keeps in its folder of the
-// files store is read from there with the server's own token, as the
-// files store streams it, with its length (spec 068).
+// blob is GET /sessions/{id}/blobs/{digest}. A blob whose leading bytes
+// are PNG, JPEG, GIF or WebP is answered as that image type, inline. Any
+// other blob is an attachment, labeled with the media type the first
+// live event that records it gave the file when it was kept, a message's
+// attachment or a file an answer linked, and otherwise with the type its
+// leading bytes give. Every answer carries nosniff and the sandboxing
+// policy of a file's answer, so no blob is ever a document of the API's
+// origin, whatever its label. A file the session keeps in its folder of
+// the files store is read from there with the server's own token, as the
+// files store streams it, and a blob of the session's store as the store
+// reads it; either answers its length. HEAD answers the same headers
+// without the bytes.
 func (c *call) blob() error {
 	d := session.Digest(c.r.PathValue("digest"))
 	if !d.Valid() {
@@ -589,19 +594,25 @@ func (c *call) blob() error {
 	if err != nil {
 		return err
 	}
-	rc, size, kept, err := c.s.openFile(c.r.Context(), s, d)
+	ctx := c.r.Context()
+	rec, err := session.FileRecordOf(ctx, c.s.o.Sessions, s.ID, d)
+	recorded := err == nil
+	if err != nil && !errors.Is(err, session.ErrNotFound) {
+		return err
+	}
+	rc, size, kept, err := c.s.openFile(ctx, s, d)
 	if err != nil {
 		return err
 	}
 	if !kept {
-		size = -1
-		if rc, err = c.s.o.Sessions.Blob(c.r.Context(), s.ID, d); err != nil {
+		if rc, err = c.s.o.Sessions.Blob(ctx, s.ID, d); err != nil {
 			return err
 		}
+		size = blobSize(rc, rec, recorded)
 	}
 	defer func() {
 		if err := rc.Close(); err != nil {
-			c.s.o.Log.WarnContext(c.r.Context(), "close a blob", "session", s.ID, "err", err)
+			c.s.o.Log.WarnContext(ctx, "close a blob", "session", s.ID, "err", err)
 		}
 	}()
 	br := bufio.NewReaderSize(rc, tools.SniffBytes)
@@ -614,7 +625,7 @@ func (c *call) blob() error {
 		h.Set("Content-Type", media)
 		h.Set("Content-Disposition", "inline")
 	} else {
-		h.Set("Content-Type", "application/octet-stream")
+		h.Set("Content-Type", blobType(rec.MediaType, head))
 		h.Set("Content-Disposition", "attachment")
 	}
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -625,8 +636,37 @@ func (c *call) blob() error {
 		h.Set("Content-Length", strconv.FormatInt(size, 10))
 	}
 	c.w.WriteHeader(http.StatusOK)
+	if c.r.Method == http.MethodHead {
+		return nil
+	}
 	_, err = io.Copy(c.w, br)
 	return err
+}
+
+// blobSize is the length of a blob of the session's store, read from rc:
+// the length its reader states, as every store of this module's does,
+// else the size its record names, which was counted from the same bytes
+// when the file was kept, and -1 when neither says.
+func blobSize(rc io.Reader, rec session.FileRecord, recorded bool) int64 {
+	if sized, ok := rc.(interface{ Size() int64 }); ok {
+		return sized.Size()
+	}
+	if recorded {
+		return rec.Size
+	}
+	return -1
+}
+
+// blobType is the media type of a blob that is no image: the one its
+// record names, written again in canonical form, when it is a type and a
+// subtype, and otherwise the one head, its leading bytes, gives.
+func blobType(recorded string, head []byte) string {
+	if base, params, err := mime.ParseMediaType(recorded); err == nil && strings.Contains(base, "/") {
+		if t := mime.FormatMediaType(base, params); t != "" {
+			return t
+		}
+	}
+	return http.DetectContentType(head)
 }
 
 // redactBody is the body of POST /sessions/{id}/events/{event_id}/redact.

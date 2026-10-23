@@ -216,7 +216,9 @@ func TestAttachmentsGoToTheSessionsFolder(t *testing.T) {
 
 // TestTheBlobRouteStreamsAFileOfTheFolder: a digest the folder holds a
 // file of is read from there with the server's own token, as a stream
-// with its length and the blob route's headers; a blob of the session's
+// with its length, the media type its record names and the blob route's
+// headers; a message's attachment is labeled with its own media type
+// too; a blob of the session's
 // own store is read there as before; a redacted file's digest is
 // not_found and the file is gone from the folder (spec 073), a file gone
 // from the folder not_found, and a read the files service fails
@@ -232,7 +234,7 @@ func TestTheBlobRouteStreamsAFileOfTheFolder(t *testing.T) {
 	}
 	a := blob(report)
 	if a.status != http.StatusOK || string(a.body) != "%PDF-1.7 report" || a.header.Get("Content-Length") != strconv.Itoa(len("%PDF-1.7 report")) ||
-		a.header.Get("Content-Type") != "application/octet-stream" || a.header.Get("Content-Disposition") != "attachment" || a.header.Get("ETag") != strconv.Quote(string(report)) ||
+		a.header.Get("Content-Type") != "application/pdf" || a.header.Get("Content-Disposition") != "attachment" || a.header.Get("ETag") != strconv.Quote(string(report)) ||
 		a.header.Get("X-Content-Type-Options") != "nosniff" || a.header.Get("Cache-Control") != blobCache {
 		t.Fatalf("the kept file: %d %v %q", a.status, a.header, a.body)
 	}
@@ -249,8 +251,9 @@ func TestTheBlobRouteStreamsAFileOfTheFolder(t *testing.T) {
 	if err := ev.Decode(&p); err != nil {
 		t.Fatal(err)
 	}
-	if a := blob(p.Attachments[0].Blob); a.status != http.StatusOK || string(a.body) != "my notes" {
-		t.Fatalf("the attachment: %d %q", a.status, a.body)
+	if a := blob(p.Attachments[0].Blob); a.status != http.StatusOK || string(a.body) != "my notes" ||
+		a.header.Get("Content-Type") != "text/plain" || a.header.Get("Content-Length") != strconv.Itoa(len("my notes")) {
+		t.Fatalf("the attachment: %d %v %q", a.status, a.header, a.body)
 	}
 	if a := blob(f.stored(s.ID).Agent.Bundle); a.status != http.StatusOK {
 		t.Fatalf("the agent's bundle, a blob: %d %v", a.status, a.header)

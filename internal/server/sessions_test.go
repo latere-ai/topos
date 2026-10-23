@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1008,8 +1009,9 @@ func TestEventsBlobsAndRedaction(t *testing.T) {
 	}
 
 	b := f.do(http.MethodGet, "/v1/sessions/"+s.ID+"/blobs/"+string(s.Agent.Bundle), "alice", "")
-	if b.status != http.StatusOK || session.DigestOf(b.body) != s.Agent.Bundle || b.header.Get("Content-Type") != "application/octet-stream" {
-		t.Fatalf("blob: %d", b.status)
+	if b.status != http.StatusOK || session.DigestOf(b.body) != s.Agent.Bundle || b.header.Get("Content-Type") != http.DetectContentType(b.body) ||
+		b.header.Get("Content-Length") != strconv.Itoa(len(b.body)) {
+		t.Fatalf("blob: %d %v", b.status, b.header)
 	}
 	if a := f.do(http.MethodGet, "/v1/sessions/"+s.ID+"/blobs/nope", "alice", ""); a.code() != CodeInvalidRequest {
 		t.Fatalf("a malformed digest: %d", a.status)

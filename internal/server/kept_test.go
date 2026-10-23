@@ -30,11 +30,12 @@ func (f *fixture) putBlob(id string, body []byte) session.Digest {
 	return d
 }
 
-// TestABlobAnswersByItsBytes: the blob route answers a blob whose bytes
-// are PNG, JPEG, GIF or WebP as that image type, inline, and any other
-// blob, an SVG and a file named like an image included, as an
-// application/octet-stream attachment; both with nosniff, the sandboxing
-// policy, the immutable private cache and the digest as ETag (spec 055).
+// TestABlobAnswersByItsBytes: the blob route answers a blob no event
+// records whose bytes are PNG, JPEG, GIF or WebP as that image type,
+// inline, and any other blob, an SVG and an HTML page included, as an
+// attachment of the media type its leading bytes give; each with its
+// length, nosniff, the sandboxing policy, the immutable private cache
+// and the digest as ETag (spec 055).
 func TestABlobAnswersByItsBytes(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
@@ -46,10 +47,12 @@ func TestABlobAnswersByItsBytes(t *testing.T) {
 		{"jpeg", "\xff\xd8\xff\xe0\x00\x10JFIF", "image/jpeg", "inline"},
 		{"gif", "GIF89a\x01\x00\x01\x00", "image/gif", "inline"},
 		{"webp", "RIFF\x24\x00\x00\x00WEBPVP8 ", "image/webp", "inline"},
-		{"svg", `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`, "application/octet-stream", "attachment"},
-		{"html", "<!doctype html><title>x</title>", "application/octet-stream", "attachment"},
-		{"short", "\x89P", "application/octet-stream", "attachment"},
-		{"empty", "", "application/octet-stream", "attachment"},
+		{"svg", `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`, "text/plain; charset=utf-8", "attachment"},
+		{"html", "<!doctype html><title>x</title>", "text/html; charset=utf-8", "attachment"},
+		{"short", "\x89P", "text/plain; charset=utf-8", "attachment"},
+		{"empty", "", "text/plain; charset=utf-8", "attachment"},
+		{"pdf", "%PDF-1.7 report", "application/pdf", "attachment"},
+		{"bytes", "\x00\x01\x02\x03", "application/octet-stream", "attachment"},
 	} {
 		d := f.putBlob(s.ID, []byte(c.body))
 		a := f.do(http.MethodGet, "/v1/sessions/"+s.ID+"/blobs/"+string(d), "alice", "")
@@ -63,6 +66,7 @@ func TestABlobAnswersByItsBytes(t *testing.T) {
 			"Content-Security-Policy": "sandbox; default-src 'none'",
 			"Cache-Control":           "private, max-age=31536000, immutable",
 			"ETag":                    strconv.Quote(string(d)),
+			"Content-Length":          strconv.Itoa(len(c.body)),
 		} {
 			if got := a.header.Get(h); got != want {
 				t.Errorf("%s: %s is %q, want %q", c.name, h, got, want)
@@ -134,11 +138,11 @@ func TestRedactingAnAnswerTakesItsImages(t *testing.T) {
 
 // TestAKeptFileIsADownloadRedactedWithItsAnswer: a file an answer linked
 // that is no image, a PDF, an archive and an HTML page, is answered by
-// the blob route as an application/octet-stream attachment with nosniff
-// and the sandboxing policy, never inline and never as a document;
-// redacting its files.kept alone removes it and leaves the answer, and
-// redacting the answer redacts its files.kept in the same append and
-// removes the file (spec 064).
+// the blob route as an attachment of the media type its files.kept entry
+// names, with its length, nosniff and the sandboxing policy, never inline
+// and never as a document; redacting its files.kept alone removes it and
+// leaves the answer, and redacting the answer redacts its files.kept in
+// the same append and removes the file (spec 064).
 func TestAKeptFileIsADownloadRedactedWithItsAnswer(t *testing.T) {
 	f := newFixture(t)
 	f.apply("alice", "reviewer", "Review.")
@@ -182,7 +186,8 @@ func TestAKeptFileIsADownloadRedactedWithItsAnswer(t *testing.T) {
 			t.Fatalf("%s: %d, %q", c.name, a.status, a.body)
 		}
 		for h, want := range map[string]string{
-			"Content-Type":            "application/octet-stream",
+			"Content-Type":            c.media,
+			"Content-Length":          strconv.Itoa(len(c.body)),
 			"Content-Disposition":     "attachment",
 			"X-Content-Type-Options":  "nosniff",
 			"Content-Security-Policy": "sandbox; default-src 'none'",
@@ -206,6 +211,66 @@ func TestAKeptFileIsADownloadRedactedWithItsAnswer(t *testing.T) {
 	}
 	if after := f.log(s.ID); len(after) != before+2 || after[before].Type != session.TypeEventRedacted || after[before+1].Type != session.TypeEventRedacted {
 		t.Fatalf("redacting the answer appended %d events", len(after)-before)
+	}
+}
+
+// TestABlobIsLabeledAsItsRecordSays: a file a person attached or an
+// answer kept is answered as the media type its first live record names,
+// over the type its bytes would give, written in canonical form; its
+// bytes alone decide inline, so a file recorded as an image whose bytes
+// are none is still an attachment, and a record that names no media type
+// is answered by the bytes. HEAD answers the same headers, the length
+// among them, without the bytes.
+func TestABlobIsLabeledAsItsRecordSays(t *testing.T) {
+	f := newFixture(t)
+	f.apply("alice", "reviewer", "Review.")
+	s := f.create("alice", "reviewer")
+	png := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	files := []session.KeptFile{
+		{Path: "notes.md", Blob: f.putBlob(s.ID, []byte("# Notes\n")), MediaType: "Text/Markdown; Charset=UTF-8", Size: 8},
+		{Path: "chart.png", Blob: f.putBlob(s.ID, []byte(png)), MediaType: "image/png", Size: int64(len(png)), Width: 1, Height: 1},
+		{Path: "fake.png", Blob: f.putBlob(s.ID, []byte("<!doctype html><script>alert(1)</script>")), MediaType: "image/png", Size: 40},
+		{Path: "odd", Blob: f.putBlob(s.ID, []byte("%PDF-1.7 odd")), MediaType: "not a type", Size: 12},
+	}
+	msg := ev(t, session.TypeAgentMessage, session.AgentMessage{Message: lux.Message{Role: ir.RoleAssistant, Blocks: []lux.Block{{Type: ir.BlockText, Text: "Done."}}}, StopReason: ir.StopEndTurn})
+	f.put(s.ID, msg, ev(t, session.TypeFilesKept, session.FilesKept{Message: msg.ID, Files: files, Skipped: []session.SkippedFile{}}))
+	sent := f.sendMessage(s.ID, `{"content":[],"attachments":[{"name":"sales.csv","media_type":"text/csv","data":"`+b64("month,total\n")+`"}]}`)
+	if sent.status != http.StatusOK {
+		t.Fatalf("send: %d %s", sent.status, sent.body)
+	}
+	csv := session.DigestOf([]byte("month,total\n"))
+	for _, c := range []struct {
+		name              string
+		d                 session.Digest
+		body, media, disp string
+	}{
+		{"a kept file's own type", files[0].Blob, "# Notes\n", "text/markdown; charset=UTF-8", "attachment"},
+		{"a picture", files[1].Blob, png, "image/png", "inline"},
+		{"an image type over bytes that are none", files[2].Blob, "<!doctype html><script>alert(1)</script>", "image/png", "attachment"},
+		{"a record that names no type", files[3].Blob, "%PDF-1.7 odd", "application/pdf", "attachment"},
+		{"an attachment's own type", csv, "month,total\n", "text/csv", "attachment"},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			a := f.do(method, "/v1/sessions/"+s.ID+"/blobs/"+string(c.d), "alice", "")
+			want := c.body
+			if method == http.MethodHead {
+				want = ""
+			}
+			if a.status != http.StatusOK || string(a.body) != want {
+				t.Fatalf("%s %s: %d %q", method, c.name, a.status, a.body)
+			}
+			for h, v := range map[string]string{
+				"Content-Type":            c.media,
+				"Content-Disposition":     c.disp,
+				"Content-Length":          strconv.Itoa(len(c.body)),
+				"X-Content-Type-Options":  "nosniff",
+				"Content-Security-Policy": "sandbox; default-src 'none'",
+			} {
+				if got := a.header.Get(h); got != v {
+					t.Errorf("%s %s: %s is %q, want %q", method, c.name, h, got, v)
+				}
+			}
+		}
 	}
 }
 
@@ -239,6 +304,9 @@ func TestTheDocumentStatesKeptImages(t *testing.T) {
 		{"/sessions/{id}/blobs/{digest}", "get", blobCache},
 		{"/sessions/{id}/blobs/{digest}", "get", "Content-Disposition inline"},
 		{"/sessions/{id}/blobs/{digest}", "get", "a file an answer linked"},
+		{"/sessions/{id}/blobs/{digest}", "get", "the media_type its record gave it when it was kept"},
+		{"/sessions/{id}/blobs/{digest}", "get", "Content-Length states the blob's length"},
+		{"/sessions/{id}/blobs/{digest}", "get", "HEAD answers the same headers without the bytes"},
 		{"/sessions/{id}/events", "get", "not_a_file"},
 		{"/sessions/{id}/events", "get", "sandbox:"},
 		{"/sessions/{id}/files", "get", strconv.Itoa(MaxFileBytes) + " bytes is file_too_large"},

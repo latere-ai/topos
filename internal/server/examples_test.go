@@ -367,7 +367,10 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	if link := created.header.Get("Link"); !strings.Contains(link, "/sessions/"+s.ID+"/stream") {
 		t.Errorf("the created session's Link is %q", link)
 	}
-	ses := map[string]string{"id": s.ID, "digest": string(s.Agent.Bundle)}
+	// The blob read is a file of bytes no type names, which the route
+	// answers as application/octet-stream, the media type the document
+	// shows for a blob of any type.
+	ses := map[string]string{"id": s.ID, "digest": string(f.putBlob(s.ID, []byte("\x00\x01\x02\x03")))}
 	turn(s.ID, "The release notes for v1.4.0 are in NOTES.md.", session.StopEndTurn)
 	now = exampleTime(12, 6, 0)
 	step("listSessions", nil, "?limit=1")

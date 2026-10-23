@@ -441,11 +441,14 @@ var opDescriptions = map[string]string{
 		"one held past that, or that a runner claims for a turn while the authorizer decides, is conflict, and a deny is forbidden. " +
 		"A fork keeps its own copy of the log. The session's sandbox, its secrets and a checkpoint kept at the git host are the installation's to remove.",
 	"listEvents": "List a session's events from a sequence. " + KeptRule + " " + MachineRule + " " + WorkRule + " " + DeviceWaitRule + " " + TitleRule,
-	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. The answer is read by the blob's leading bytes: "+
-		"PNG, JPEG, GIF or WebP is that image type with Content-Disposition inline, and any other blob, an SVG included, application/octet-stream with Content-Disposition attachment. "+
-		"A file an answer linked that is no such image is a download here whatever its type, which the media_type of its files.kept entry names. "+
-		"Both carry X-Content-Type-Options nosniff, Content-Security-Policy %q, Cache-Control %q, since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag. "+
-		"A file a session keeps in its folder of the files store is read by its digest from there, with the server's own credential, so a session that ended stays readable, and is answered as it streams, with its Content-Length; "+
+	"getBlob": fmt.Sprintf("Get a blob of a session: a message's file, an image an answer showed, a file an answer linked, the agent's bundle. "+
+		"A blob whose leading bytes are PNG, JPEG, GIF or WebP is answered as that image type with Content-Disposition inline. "+
+		"Any other blob, an SVG and an HTML page included, is answered with Content-Disposition attachment and the Content-Type of the file it is: "+
+		"the media_type its record gave it when it was kept, the first live user.message attachment or files.kept entry that names the digest, "+
+		"and for a blob no event records, such as the agent's bundle, the type its leading bytes give. Content-Length states the blob's length. "+
+		"Every answer carries X-Content-Type-Options nosniff, Content-Security-Policy %q, so no label makes a blob a page of the API's origin, Cache-Control %q, since a blob's bytes never change under its digest and the answer depends on who may read the session, and the digest as ETag. "+
+		"HEAD answers the same headers without the bytes, so a client learns a file's type and length before it reads it. "+
+		"A file a session keeps in its folder of the files store is read by its digest from there, with the server's own credential, so a session that ended stays readable, and is answered as it streams; "+
 		"a file the folder no longer holds is not_found, a read the files service fails files_unavailable, and a file whose every record was redacted not_found, and the file is deleted from the folder.",
 		filePolicy, blobCache),
 	"getFile": fmt.Sprintf("Get one file of the session's working directory as it is now, such as a file the agent wrote, by its path. "+
