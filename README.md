@@ -153,6 +153,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   conversation, turned on by an agent's `spec.title`.
 - [docs/offers.md](docs/offers.md): how a client shows an agent's offer of
   a routine and sends the answer of the person who started the session.
+- [docs/reading-files.md](docs/reading-files.md): reading the files a
+  person sent, an answer kept and the working directory holds, with their
+  media types and sizes.
 
 ## Contributing
 
