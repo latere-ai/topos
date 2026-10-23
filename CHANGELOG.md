@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.56.0 - 2026-10-23
+
 ### Added
 
 - **A trigger can name a weekly allowance.** `spec.budget.perWeek`, in USD micros, is the most its runs may cost in any 7 days. The server counts each run a firing began, from its message through the turn's closing status, in the sessions the trigger started or continued, and the runs wakes began in the sessions it started. A firing while that spend is at or past the allowance starts nothing and records the new outcome `skipped_budget`, counted as `status.counts.skippedBudget`; a one-shot, a wake included, keeps its time and is tried each minute until the week allows it or `maxAge` passes, and nothing needs a resume. `trigger.create` and `trigger.update` carry `budget {per_week_usd_micro}`, so an installation's authorizer can refuse a trigger without one or above a cap. See `docs/allowances.md`.
