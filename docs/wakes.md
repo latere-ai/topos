@@ -109,7 +109,8 @@ at the idle after its last.
 A set asks `trigger.create`, or `trigger.update` when it replaces a
 pending wake, and a cancel `trigger.delete`, each as the person who
 started the session, with `org_id` of the session's context as the
-claims, and with `origin` `{"kind": "wake", "session_id", "tool_use_id"}`
-and, once the person allowed a held set, `confirmed_by`. A create or an
+claims, and with `origin` `{"kind": "wake", "session_id", "tool_use_id",
+"action"}`, `action` `set` or `cancel`, and, once the person allowed a
+held set, `confirmed_by`. A create or an
 update carries `at`. The applier is also asked `session.send` on the
 session the wake continues.

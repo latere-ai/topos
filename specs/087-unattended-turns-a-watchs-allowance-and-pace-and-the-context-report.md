@@ -225,6 +225,20 @@ above what it allows. A trigger with no allowance asks as before. A
 session's proposal asks with the allowance its `perWeekUsd` names, with
 the `origin` of [[086-proactive-agents]] beside it.
 
+Every `trigger.create`, `trigger.update` and `trigger.delete` a
+session's call asks carries the tool's action in its `origin`, as
+`action`: the `trigger` tool's `propose`, `change`, `pause`, `resume` or
+`delete`, or the `wake` tool's `set` or `cancel` (added 2026-10-23). An
+authorizer so tells a pause, which only stops work, from a change or a
+resume it holds to the person's share, at the question before the hold
+rather than after the person's yes. It is in the questions alone: the
+trigger's `status.origin` keeps the call that made it.
+
+| Question | Added fields |
+|---|---|
+| `trigger.create`, `trigger.update` | `budget: {per_week_usd_micro}` when the trigger names an allowance |
+| `trigger.create`, `trigger.update`, `trigger.delete` asked for a session's call | `origin.action`: the tool's action |
+
 ### Pace
 
 The server writes `status.spend` on the trigger at each firing that
@@ -410,6 +424,7 @@ a model connection.
 | A claim takes a `skipped_budget` firing again and takes its count back, and a trigger's spend is kept, in every store | the stores' conformance case `trigger allowance`, on Postgres in the postgres tier, on a container its tests start | built |
 | `status.spend` holds the spend, the allowance, the mean of the latest five ended looks, the expected looks of a schedule, a one-shot, an event trigger and a suspended one, and the projection over the window that ends 7 days after the oldest look | `internal/triggers.TestTheSpendOfAWatch` | built |
 | `trigger.create` and `trigger.update` carry `budget` when the trigger names one | `internal/server.TestTheTriggerQuestionsCarryTheAllowance` | built |
+| Every trigger question a session's call asks names the tool's action in its `origin`, a pause's apart from a change's and a resume's | `internal/server.TestTheQuestionsOfASessionsTriggerCalls` | built |
 | The `trigger` tool's `perWeekUsd` is applied as `spec.budget.perWeek` on a propose and a change, a change without it keeps the allowance, an amount at or below zero or past six fraction digits is refused before the hold, and the questions asked before the hold and on the allow carry it | `internal/proposal.TestAProposalCarriesItsAllowance`, `internal/server.TestAProposalsAllowanceIsTheTriggers` | built |
 | The tool's description states the model's price and that the estimate is the ceiling the server enforces, and `list` answers each trigger's allowance and spend | `internal/proposal.TestToolTextsReadTheirBounds`, `internal/proposal.TestTheListSaysEachAllowance` | built |
 | A firing's message carries `spend`, a wake's the spend of the trigger that started its session, and the trigger answers `status.spend` and `skippedBudget` | `internal/server.TestAFiringsMessageCarriesItsSpend` | built |

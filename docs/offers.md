@@ -133,7 +133,9 @@ its origin through every change, the agent's included.
 Every question of the tool is asked as the session's initiator, with
 `org_id` of the session's context as the claims, since no request of
 theirs is in hand. A held call asks its question twice: once before it is
-held, with `origin` naming the session and the call, and once after the
+held, with `origin` naming the session, the call and the tool's `action`
+(`propose`, `change`, `pause`, `resume` or `delete`), so an authorizer
+tells a pause from a change before anyone is asked, and once after the
 allow, with `confirmed_by` added. A proposal asks `trigger.create`, a
 change, a pause and a resume `trigger.update`, and a delete
 `trigger.delete`, the last three about the trigger as it is stored. A

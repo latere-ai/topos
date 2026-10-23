@@ -523,7 +523,7 @@ The sessions list answers them as it answers every Session field
 
 | Question | Added fields |
 |---|---|
-| `trigger.create`, `trigger.update`, `trigger.delete` asked for a session's call | `origin`: `{kind, session_id, tool_use_id, confirmed_by?}`, asked as the owner stored for the session, its initiator, with `org_id` of the session's context as the claims, the way a firing asks ([[022-triggers]]); a create or an update also carries `at` for a one-shot, in RFC 3339, and `notify`. A `change`, `pause`, `resume` and `delete` carry `kind: proposal`, a wake's set and cancel `kind: wake` |
+| `trigger.create`, `trigger.update`, `trigger.delete` asked for a session's call | `origin`: `{kind, session_id, tool_use_id, action, confirmed_by?}`, `action` the tool's action, `propose`, `change`, `pause`, `resume` or `delete`, or a wake's `set` or `cancel` (added by [[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]), asked as the owner stored for the session, its initiator, with `org_id` of the session's context as the claims, the way a firing asks ([[022-triggers]]); a create or an update also carries `at` for a one-shot, in RFC 3339, and `notify`. A `change`, `pause`, `resume` and `delete` carry `kind: proposal`, a wake's set and cancel `kind: wake` |
 | `trigger.list` asked for a session's `list` | `owner` and `agent` |
 | `session.create` asked for a firing | `attended` |
 | `trigger.hold` | new: `owner`, `held` |
