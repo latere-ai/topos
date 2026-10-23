@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.54.0 - 2026-10-23
+
 ### Added
 
 - **An agent can change, pause, resume and delete the person's triggers of it.** The `trigger` tool takes `change`, `pause`, `resume` and `delete` of a trigger the person who started the session owns, of the session's agent, by its id, which `list` now answers with each trigger's ask. A change names only what changes, its name, ask, schedule or events, and keeps every other field; a routine stays a routine. A change, a resume and a delete wait for that person every time, as a proposal does, and plan mode blocks them; a pause runs at once, since it only stops work, and the agent says what it paused and why. None reaches another agent's trigger, another person's, or a session's wake: each is answered as a trigger it cannot see. Each keeps the trigger's `status.origin`.
