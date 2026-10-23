@@ -365,3 +365,32 @@ func TestPostErrors(t *testing.T) {
 		t.Error("an unencodable body reported no error")
 	}
 }
+
+// TestTheServiceIsToldWhetherAnyoneWatches (spec 087): every action the
+// service reads carries attended among its attributes, true on a turn a
+// person began and false on one a trigger's message began, in a
+// prediction and in a decision that carries its action.
+func TestTheServiceIsToldWhetherAnyoneWatches(t *testing.T) {
+	for _, attended := range []bool{true, false} {
+		s := &service{next: allowSuggestion()}
+		d := newDecider(t, s, 0.5)
+		open := bash(harness.ModeProgressive, "make")
+		open.Attended = attended
+		if _, _, err := d.Decide(context.Background(), open); err != nil {
+			t.Fatal(err)
+		}
+		settled := bash(harness.ModeProgressive, "ls")
+		settled.ToolUseID, settled.Props, settled.Attended = "toolu_2", tools.Properties{Effect: tools.EffectRead}, attended
+		if _, _, err := d.Decide(context.Background(), settled); err != nil {
+			t.Fatal(err)
+		}
+		s.mu.Lock()
+		if len(s.predicted) != 1 || s.predicted[0].Attributes[AttributeAttended] != attended {
+			t.Errorf("attended %v: predictions %+v", attended, s.predicted)
+		}
+		if len(s.decided) != 2 || s.decided[1].Action == nil || s.decided[1].Action.Attributes[AttributeAttended] != attended {
+			t.Errorf("attended %v: decisions %+v", attended, s.decided)
+		}
+		s.mu.Unlock()
+	}
+}

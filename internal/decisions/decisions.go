@@ -40,6 +40,11 @@ import (
 // Timeout bounds every request to the service.
 const Timeout = 2 * time.Second
 
+// AttributeAttended is the attribute of an action that says whether a
+// person began the call's turn (spec 087): false on a turn a trigger's
+// message began.
+const AttributeAttended = "attended"
+
 // The decision sources the harness sends, by mode.
 const (
 	SourceConfirm     = "topos/confirm"
@@ -145,7 +150,11 @@ type action struct {
 	Effect      string          `json:"effect"`
 	Input       json.RawMessage `json:"input,omitempty"`
 	Environment environment     `json:"environment"`
-	Signals     []signal        `json:"signals,omitempty"`
+	// Attributes are observable facts of the call beside its fields:
+	// attended, whether a person began its turn (spec 087), so a service
+	// can weigh a call nobody watches.
+	Attributes map[string]any `json:"attributes,omitempty"`
+	Signals    []signal       `json:"signals,omitempty"`
 }
 
 type thresholds struct {
@@ -191,6 +200,7 @@ func (d *Decider) action(c harness.Call, risk session.Risk) action {
 		Effect:      string(c.Props.Effect),
 		Input:       c.Input,
 		Environment: env,
+		Attributes:  map[string]any{AttributeAttended: c.Attended},
 	}
 	if a.Effect == "" {
 		a.Effect = "external"
