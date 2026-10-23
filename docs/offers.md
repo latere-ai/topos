@@ -106,6 +106,8 @@ is written in the one shape every client reads as a routine, by
   (`{"product": "mail", "verbs": ["received"]}`) or every call of the
   person's link (`{"product": "webhook", "verbs": ["received"]}`), is the
   routine that starts from an email or a link;
+- its `spec.budget.perWeek` is the call's `perWeekUsd` in USD micros,
+  the allowance the server holds its runs to, when the call named one;
 - its `status.origin` says a conversation offered it:
 
 ```json

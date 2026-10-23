@@ -373,6 +373,10 @@ above left to the build:
   started or continued in the window, its sessions still open, and its
   `session.target`.
 - The rolling window excludes a look exactly 7 days old.
+- The spend is counted, and `status.spend` written, once a firing is
+  past its lateness and its message's size, before the session policy
+  decides, so a firing that then ends `skipped_active`, `skipped_busy`
+  or `held` writes it too.
 - `expectedLooks` counts the firing's own look, then, for events, the
   window's looks over 7 days or the trigger's age, at least a day,
   times the time left in the window, rounded.
@@ -403,7 +407,7 @@ a model connection.
 | A one-shot at the allowance keeps its trigger, is tried again at the next pass, fires when the spend falls, and is `skipped_late` past `maxAge` | `internal/triggers.TestAOneShotAtItsAllowanceWaits` | built |
 | A wake's look counts toward the trigger that started its session and is skipped at that trigger's allowance; a wake of a session no trigger started counts toward none | `internal/triggers.TestAWakeCountsTowardTheTriggerThatStartedItsSession` | built |
 | A held firing sent past the allowance is `skipped_budget`, and a held one-shot goes back to its time | `internal/triggers.TestAHeldFiringIsHeldToTheAllowance` | built |
-| A claim takes a `skipped_budget` firing again and takes its count back, and a trigger's spend is kept, in every store | the stores' conformance case `trigger allowance`, on Postgres through Testcontainers | built |
+| A claim takes a `skipped_budget` firing again and takes its count back, and a trigger's spend is kept, in every store | the stores' conformance case `trigger allowance`, on Postgres in the postgres tier, on a container its tests start | built |
 | `status.spend` holds the spend, the allowance, the mean of the latest five ended looks, the expected looks of a schedule, a one-shot, an event trigger and a suspended one, and the projection over the window that ends 7 days after the oldest look | `internal/triggers.TestTheSpendOfAWatch` | built |
 | `trigger.create` and `trigger.update` carry `budget` when the trigger names one | `internal/server.TestTheTriggerQuestionsCarryTheAllowance` | built |
 | The `trigger` tool's `perWeekUsd` is applied as `spec.budget.perWeek` on a propose and a change, a change without it keeps the allowance, an amount at or below zero or past six fraction digits is refused before the hold, and the questions asked before the hold and on the allow carry it | `internal/proposal.TestAProposalCarriesItsAllowance`, `internal/server.TestAProposalsAllowanceIsTheTriggers` | built |

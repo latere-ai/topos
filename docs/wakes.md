@@ -80,6 +80,12 @@ person, on a confirmation, a question or its budget, holds the message
 until it is answered, so a wake never spends past what the person
 allowed.
 
+In a session a trigger started, a wake's look counts toward that
+trigger's weekly allowance: the message also carries `spend`, the week
+of that trigger with its `trigger_id`, and a wake due while the week is
+spent waits at its time until it is not, or until its `maxAge` passes.
+See `docs/allowances.md`.
+
 ## Cancelling and ending
 
 A client cancels a wake as any trigger:
