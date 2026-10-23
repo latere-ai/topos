@@ -139,10 +139,26 @@ func TestTheDeltasRoute(t *testing.T) {
 		}
 	}
 
-	// A send in flight that never ends: nothing drains the queue.
-	f.client.mu.Lock()
-	f.client.sending = true
-	f.client.mu.Unlock()
+	// A send in flight that never ends: nothing drains the queue. The
+	// sender that delivered the delta above may still be on its way out of
+	// its loop, and would take the queue this fills; the send is marked in
+	// flight only once that sender is idle.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		f.client.mu.Lock()
+		idle := !f.client.sending
+		if idle {
+			f.client.sending = true
+		}
+		f.client.mu.Unlock()
+		if idle {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the sender of the first delta never went idle")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	before := f.client.DroppedDeltas()
 	for range deltaQueue + 3 {
 		f.client.PublishDelta(s.ID, text)
@@ -160,7 +176,7 @@ func TestTheDeltasRoute(t *testing.T) {
 	}
 	down.hold(&lease{c: down, id: s.ID, gen: 1})
 	down.PublishDelta(s.ID, text)
-	deadline := time.Now().Add(10 * time.Second)
+	deadline = time.Now().Add(10 * time.Second)
 	for down.DroppedDeltas() != 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("a failed send was not counted")
