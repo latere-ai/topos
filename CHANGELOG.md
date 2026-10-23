@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **The blob route answers a kept file's own media type and its size.** `GET /v1/sessions/{id}/blobs/{digest}` labels a file that is no PNG, JPEG, GIF or WebP picture with the `media_type` its record gave it when it was kept, a message's attachment or a file an answer linked, in place of `application/octet-stream`, and a blob no event records with the type its leading bytes give. Every answer states the blob's length in `Content-Length`, a session without a folder of a files store included, and `HEAD` answers the headers without the bytes. Nothing else changes: a picture is still the only blob answered inline, and every other one is still an attachment under `nosniff` and the sandboxing policy, so a client that shows an HTML page or an SVG still draws it in a sandbox of its own. See `docs/reading-files.md`, which also says how a client learns which files a session's working directory holds.
+
 ## v0.52.0 - 2026-10-22
 
 ### Added
