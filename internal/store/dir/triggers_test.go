@@ -219,3 +219,69 @@ func TestReopenReadsHoldsBack(t *testing.T) {
 		t.Fatal("a hold that does not read opened")
 	}
 }
+
+// TestReopenReadsRunsBack: a run is read back after a restart with its
+// cost, after its trigger's delete too, a pruned run leaves no file, a
+// stray file in the runs is skipped, and a file of another firing's run
+// or one that does not read is refused (spec 088).
+func TestReopenReadsRunsBack(t *testing.T) {
+	root := t.TempDir()
+	clock := storetest.NewClock()
+	st := open(t, root, clock.Now)
+	tr, fr := triggerWithFiring(t, st, clock.Now())
+	run := store.Run{FiringID: fr.ID, Owner: "alice", TriggerID: tr.ID, SessionID: "ses_1", Wake: true, SessionTriggerID: "trg_x", At: clock.Now().UTC(),
+		Outcome: store.OutcomeStarted}
+	if err := st.PutRun(t.Context(), run); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRunCosts(t.Context(), []store.RunCost{{FiringID: fr.ID, CostUSDMicro: 120, Ended: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteTrigger(t.Context(), tr.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "objects", kindTriggerRun, "notes.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	again := open(t, root, clock.Now)
+	run.CostUSDMicro, run.Ended = 120, true
+	if got, err := again.Runs(t.Context(), "alice", time.Time{}); err != nil || len(got) != 1 || got[0] != run {
+		t.Fatalf("the runs after a restart: %+v, %v", got, err)
+	}
+	if err := again.PruneRuns(t.Context(), clock.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := open(t, root, clock.Now).Runs(t.Context(), "alice", time.Time{}); err != nil || len(got) != 0 {
+		t.Fatalf("a pruned run after a restart: %+v, %v", got, err)
+	}
+	files := triggerFiles{root: filepath.Join(root, "objects")}
+	other := session.NewID(session.PrefixFiring)
+	if err := os.WriteFile(files.runPath(other), []byte(fmt.Sprintf(`{"firing_id":%q,"owner":"alice","trigger_id":"trg_1","at":"2026-10-23T09:00:00Z","outcome":"started"}`, fr.ID)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, clock.Now); !errors.Is(err, session.ErrCorrupt) {
+		t.Fatalf("a run of another firing's name: %v", err)
+	}
+	if err := os.WriteFile(files.runPath(other), []byte(`not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, clock.Now); err == nil {
+		t.Fatal("a run that does not read opened")
+	}
+}
+
+// TestARunWriteThatFailsChangesNothing: a run whose file cannot be written
+// or removed is refused, and the store reads as it did.
+func TestARunWriteThatFailsChangesNothing(t *testing.T) {
+	root := t.TempDir()
+	clock := storetest.NewClock()
+	st := open(t, root, clock.Now)
+	run := store.Run{FiringID: session.NewID(session.PrefixFiring), Owner: "alice", TriggerID: "trg_1", At: clock.Now(), Outcome: store.OutcomeStarted}
+	injected := failWrites(t, kindTriggerRun)
+	if err := st.PutRun(t.Context(), run); !errors.Is(err, injected) {
+		t.Fatalf("a run with a failing disk: %v", err)
+	}
+	if got, err := st.Runs(t.Context(), "alice", time.Time{}); err != nil || len(got) != 0 {
+		t.Fatalf("the runs after a failed write: %+v, %v", got, err)
+	}
+}

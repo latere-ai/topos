@@ -112,6 +112,87 @@ type Firing struct {
 	ReceivedAt time.Time
 }
 
+// Run is one firing a person counts as a run (spec 088): one that started
+// or continued a session, so a turn a trigger's message began, or one
+// that started nothing because an allowance or the authorizer stopped it.
+// It is keyed by its firing and kept apart from the firing's row, which a
+// one-shot's firing deletes with its trigger, so a wake's run outlives
+// the wake.
+type Run struct {
+	FiringID string
+	// Owner is the trigger's owner, whose read answers the run.
+	Owner string
+	// TriggerID is the trigger that fired: for a wake, the wake's own
+	// trigger, which its firing deletes.
+	TriggerID string
+	// SessionID is the session the run started or continued; empty for a
+	// skipped one.
+	SessionID string
+	// Wake reports a wake's firing.
+	Wake bool
+	// SessionTriggerID is, for a wake's run, the trigger that started its
+	// session; empty for a session a person started and for every other
+	// run.
+	SessionTriggerID string
+	// At is the firing's time.
+	At time.Time
+	// Outcome is the firing's: OutcomeStarted, OutcomeContinued,
+	// OutcomeSkippedBudget or OutcomeRefused.
+	Outcome string
+	// Reason is a refused firing's reason.
+	Reason string
+	// CostUSDMicro is what the turn cost, as a look's cost is counted
+	// (spec 087); 0 for a skipped run.
+	CostUSDMicro int64
+	// Ended reports the turn closed, so its cost is final. A skipped run
+	// is ended when it is recorded.
+	Ended bool
+}
+
+// RunCost is what a log says one run's turn cost so far, and whether it
+// has ended.
+type RunCost struct {
+	FiringID     string
+	CostUSDMicro int64
+	Ended        bool
+}
+
+// IsRun reports whether a firing of outcome is a run (spec 088).
+func IsRun(outcome string) bool {
+	switch outcome {
+	case OutcomeStarted, OutcomeContinued, OutcomeSkippedBudget, OutcomeRefused:
+		return true
+	}
+	return false
+}
+
+// Ran reports whether a run started or continued a turn, so it has a cost.
+func (r Run) Ran() bool { return r.Outcome == OutcomeStarted || r.Outcome == OutcomeContinued }
+
+// CheckRun is the shape every PutRun refuses.
+func CheckRun(r Run) error {
+	switch {
+	case session.CheckID(session.PrefixFiring, r.FiringID) != nil:
+		return fmt.Errorf("%w: %q is not a firing id", session.ErrInvalid, r.FiringID)
+	case r.Owner == "" || r.TriggerID == "":
+		return fmt.Errorf("%w: a run names its owner and its trigger", session.ErrInvalid)
+	case !IsRun(r.Outcome):
+		return fmt.Errorf("%w: a firing of outcome %q is no run", session.ErrInvalid, r.Outcome)
+	}
+	return nil
+}
+
+// Costed is the run with cost written over it: a run already ended keeps
+// what it holds, since an ended turn's cost is final, and one that has not
+// takes the cost and the end the log read.
+func (r Run) Costed(c RunCost) Run {
+	if r.Ended {
+		return r
+	}
+	r.CostUSDMicro, r.Ended = c.CostUSDMicro, c.Ended
+	return r
+}
+
 // TriggerList narrows ListTriggers as AgentList narrows ListAgents.
 type TriggerList struct {
 	Owners []string
@@ -204,6 +285,19 @@ type Triggers interface {
 	// SetSpend keeps the trigger's week as the server counted it (spec
 	// 087).
 	SetSpend(ctx context.Context, id string, spend v1.TriggerSpend) error
+
+	// PutRun stores a run (spec 088), replacing the run of its firing
+	// whole: a firing taken again writes its new outcome.
+	PutRun(ctx context.Context, r Run) error
+	// SetRunCosts writes each cost to the run of its firing as Run.Costed
+	// does, and passes over a firing that has no run.
+	SetRunCosts(ctx context.Context, costs []RunCost) error
+	// Runs lists owner's runs at or after since, oldest first, those of
+	// one time by firing id.
+	Runs(ctx context.Context, owner string, since time.Time) ([]Run, error)
+	// PruneRuns deletes every run before before. Runs outlive their
+	// triggers until then.
+	PruneRuns(ctx context.Context, before time.Time) error
 }
 
 // CheckTrigger is the shape every PutTrigger refuses before it looks at

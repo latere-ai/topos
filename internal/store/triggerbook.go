@@ -27,6 +27,10 @@ type TriggerSaver interface {
 	SaveKey(triggerID, key, sessionID string) error
 	// SaveHold holds owner's triggers from since; nil releases them.
 	SaveHold(owner string, since *time.Time) error
+	// SaveRun writes a run (spec 088), replacing the run of its firing.
+	SaveRun(r Run) error
+	// RemoveRuns removes the runs of the firings ids.
+	RemoveRuns(ids []string) error
 }
 
 // KeySession is one stored mapping of a trigger's key to its session.
@@ -52,6 +56,9 @@ type TriggerBook struct {
 	leases  map[string]triggerLease
 	// holds maps each held owner to since when.
 	holds map[string]time.Time
+	// runs holds every run by its firing's id; a run outlives its
+	// trigger (spec 088).
+	runs map[string]Run
 }
 
 type triggerLease struct {
@@ -66,7 +73,7 @@ func NewTriggerBook(now func() time.Time, save TriggerSaver) *TriggerBook {
 		now = time.Now
 	}
 	return &TriggerBook{now: now, save: save, triggers: map[string]Trigger{}, names: map[ownedName]string{},
-		firings: map[string]map[string]Firing{}, keys: map[string]map[string]string{}, leases: map[string]triggerLease{}, holds: map[string]time.Time{}}
+		firings: map[string]map[string]Firing{}, keys: map[string]map[string]string{}, leases: map[string]triggerLease{}, holds: map[string]time.Time{}, runs: map[string]Run{}}
 }
 
 // Load fills the book with stored objects, without writing them again.
@@ -559,4 +566,95 @@ func utcPtr(at *time.Time) *time.Time {
 	}
 	u := at.UTC()
 	return &u
+}
+
+// LoadRuns fills the book with stored runs, without writing them again.
+func (b *TriggerBook) LoadRuns(rs []Run) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, r := range rs {
+		r.At = r.At.UTC()
+		b.runs[r.FiringID] = r
+	}
+}
+
+func (b *TriggerBook) PutRun(_ context.Context, r Run) error {
+	if err := CheckRun(r); err != nil {
+		return err
+	}
+	r.At = r.At.UTC()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.save != nil {
+		if err := b.save.SaveRun(r); err != nil {
+			return err
+		}
+	}
+	b.runs[r.FiringID] = r
+	return nil
+}
+
+func (b *TriggerBook) SetRunCosts(_ context.Context, costs []RunCost) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, c := range costs {
+		r, ok := b.runs[c.FiringID]
+		if !ok {
+			continue
+		}
+		next := r.Costed(c)
+		if next == r {
+			continue
+		}
+		if b.save != nil {
+			if err := b.save.SaveRun(next); err != nil {
+				return err
+			}
+		}
+		b.runs[c.FiringID] = next
+	}
+	return nil
+}
+
+func (b *TriggerBook) Runs(_ context.Context, owner string, since time.Time) ([]Run, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []Run
+	for _, r := range b.runs {
+		if r.Owner == owner && !r.At.Before(since) {
+			out = append(out, r)
+		}
+	}
+	slices.SortFunc(out, compareRuns)
+	return out, nil
+}
+
+func (b *TriggerBook) PruneRuns(_ context.Context, before time.Time) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var ids []string
+	for id, r := range b.runs {
+		if r.At.Before(before) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	slices.Sort(ids)
+	if b.save != nil {
+		if err := b.save.RemoveRuns(ids); err != nil {
+			return err
+		}
+	}
+	for _, id := range ids {
+		delete(b.runs, id)
+	}
+	return nil
+}
+
+// compareRuns orders runs by time, those of one time by firing id, as
+// Runs lists them.
+func compareRuns(a, b Run) int {
+	return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.FiringID, b.FiringID))
 }

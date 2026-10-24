@@ -676,3 +676,87 @@ func triggerHeldAndOpen(t *testing.T, f Factory) {
 		}
 	}
 }
+
+// triggerRuns: a run is stored and written again whole with a new
+// outcome; its cost is written until it ends and kept once it has; an
+// owner's runs list from a time, oldest first, those of one time by
+// firing id, and no other owner's; a run outlives its trigger; and a
+// prune deletes the runs before a time (spec 088).
+func triggerRuns(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ctx := t.Context()
+	tr := NewTrigger("alice", "watch", clock.Now())
+	if err := st.PutTrigger(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	at := clock.Now()
+	first := store.Run{FiringID: session.NewID(session.PrefixFiring), Owner: "alice", TriggerID: tr.ID, At: at, Outcome: store.OutcomeSkippedBudget, Ended: true}
+	if err := st.PutRun(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutRun(ctx, store.Run{FiringID: "frg_no", Owner: "alice", TriggerID: tr.ID, At: at, Outcome: store.OutcomeStarted}); !errors.Is(err, session.ErrInvalid) {
+		t.Fatalf("a run of no firing id: %v", err)
+	}
+	// Taken again, the one-shot's firing continued its session.
+	first.Outcome, first.SessionID, first.Ended, first.Wake, first.SessionTriggerID = store.OutcomeContinued, "ses_1", false, true, "trg_started"
+	if err := st.PutRun(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	later := store.Run{FiringID: session.NewID(session.PrefixFiring), Owner: "alice", TriggerID: tr.ID, At: at.Add(time.Hour), Outcome: store.OutcomeRefused, Reason: "share_spent", Ended: true}
+	same := store.Run{FiringID: session.NewID(session.PrefixFiring), Owner: "alice", TriggerID: tr.ID, At: at, Outcome: store.OutcomeStarted, SessionID: "ses_2"}
+	bobs := store.Run{FiringID: session.NewID(session.PrefixFiring), Owner: "bob", TriggerID: tr.ID, At: at, Outcome: store.OutcomeStarted}
+	for _, r := range []store.Run{later, same, bobs} {
+		if err := st.PutRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.SetRunCosts(ctx, []store.RunCost{{FiringID: first.FiringID, CostUSDMicro: 30}, {FiringID: same.FiringID, CostUSDMicro: 70, Ended: true},
+		{FiringID: session.NewID(session.PrefixFiring), CostUSDMicro: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	// An ended run's cost is final; one still running takes the next.
+	if err := st.SetRunCosts(ctx, []store.RunCost{{FiringID: first.FiringID, CostUSDMicro: 45, Ended: true}, {FiringID: same.FiringID, CostUSDMicro: 99}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRunCosts(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Runs(ctx, "alice", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.CostUSDMicro, first.Ended = 45, true
+	same.CostUSDMicro, same.Ended = 70, true
+	want := []store.Run{first, same}
+	if same.FiringID < first.FiringID {
+		want = []store.Run{same, first}
+	}
+	want = append(want, later)
+	if len(got) != len(want) {
+		t.Fatalf("alice's runs = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if g := got[i]; g != want[i] {
+			t.Fatalf("run %d = %+v, want %+v", i, g, want[i])
+		}
+	}
+	if got, err := st.Runs(ctx, "alice", at.Add(time.Minute)); err != nil || len(got) != 1 || got[0].FiringID != later.FiringID {
+		t.Fatalf("alice's runs from a minute on = %+v, %v", got, err)
+	}
+	if err := st.DeleteTrigger(ctx, tr.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Runs(ctx, "alice", at); err != nil || len(got) != 3 {
+		t.Fatalf("the runs of a deleted trigger = %+v, %v", got, err)
+	}
+	if err := st.PruneRuns(ctx, at.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Runs(ctx, "alice", time.Time{}); err != nil || len(got) != 1 || got[0].FiringID != later.FiringID {
+		t.Fatalf("alice's runs after the prune = %+v, %v", got, err)
+	}
+	if got, err := st.Runs(ctx, "bob", time.Time{}); err != nil || len(got) != 0 {
+		t.Fatalf("bob's runs after the prune = %+v, %v", got, err)
+	}
+}

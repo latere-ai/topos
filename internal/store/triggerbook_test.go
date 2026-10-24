@@ -23,6 +23,7 @@ type saver struct {
 	keys     []string
 	removed  []string
 	holds    []string
+	runs     []string
 }
 
 var errDisk = errors.New("the disk is full")
@@ -64,6 +65,24 @@ func (s *saver) SaveKey(_, key, sessionID string) error {
 		return errDisk
 	}
 	s.keys = append(s.keys, key+"="+sessionID)
+	return nil
+}
+
+func (s *saver) SaveRun(r Run) error {
+	if s.fail {
+		return errDisk
+	}
+	s.runs = append(s.runs, fmt.Sprintf("%s %s %d %v", r.FiringID, r.Outcome, r.CostUSDMicro, r.Ended))
+	return nil
+}
+
+func (s *saver) RemoveRuns(ids []string) error {
+	if s.fail {
+		return errDisk
+	}
+	for _, id := range ids {
+		s.runs = append(s.runs, "-"+id)
+	}
 	return nil
 }
 
@@ -259,5 +278,66 @@ func TestAHoldIsSavedBeforeTheBookChanges(t *testing.T) {
 	b.LoadHolds(map[string]time.Time{"bob": now})
 	if since, _ := b.Hold(ctx, "bob"); since == nil || !since.Equal(now) || len(sv.holds) != 2 {
 		t.Fatalf("a loaded hold reads %v, saved %v", since, sv.holds)
+	}
+}
+
+// TestARunIsSavedBeforeTheBookChanges: a run, its cost and its prune reach
+// the saver first, a saver that fails leaves the book as it was, a cost
+// that changes nothing writes nothing, and loaded runs read back without
+// being written again (spec 088).
+func TestARunIsSavedBeforeTheBookChanges(t *testing.T) {
+	sv := &saver{}
+	b := NewTriggerBook(nil, sv)
+	ctx := t.Context()
+	at := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	r := Run{FiringID: session.NewID(session.PrefixFiring), Owner: "alice", TriggerID: session.NewID(session.PrefixTrigger), At: at, Outcome: OutcomeStarted, SessionID: "ses_1"}
+	if err := b.PutRun(ctx, Run{FiringID: r.FiringID, Owner: "alice", TriggerID: r.TriggerID, Outcome: OutcomeHeld}); err == nil {
+		t.Fatal("a held firing was put as a run")
+	}
+	sv.fail = true
+	if err := b.PutRun(ctx, r); !errors.Is(err, errDisk) {
+		t.Fatalf("a run the saver refused: %v", err)
+	}
+	if rs, _ := b.Runs(ctx, "alice", at); len(rs) != 0 {
+		t.Fatalf("a refused run is kept: %v", rs)
+	}
+	sv.fail = false
+	if err := b.PutRun(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	sv.fail = true
+	if err := b.SetRunCosts(ctx, []RunCost{{FiringID: r.FiringID, CostUSDMicro: 40, Ended: true}}); !errors.Is(err, errDisk) {
+		t.Fatalf("a cost the saver refused: %v", err)
+	}
+	if rs, _ := b.Runs(ctx, "alice", at); len(rs) != 1 || rs[0].CostUSDMicro != 0 || rs[0].Ended {
+		t.Fatalf("a refused cost is kept: %v", rs)
+	}
+	sv.fail = false
+	if err := b.SetRunCosts(ctx, []RunCost{{FiringID: r.FiringID, CostUSDMicro: 40, Ended: true}, {FiringID: "frg_none", CostUSDMicro: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetRunCosts(ctx, []RunCost{{FiringID: r.FiringID, CostUSDMicro: 90}}); err != nil {
+		t.Fatal(err)
+	}
+	sv.fail = true
+	if err := b.PruneRuns(ctx, at.Add(time.Second)); !errors.Is(err, errDisk) {
+		t.Fatalf("a prune the saver refused: %v", err)
+	}
+	if rs, _ := b.Runs(ctx, "alice", at); len(rs) != 1 || rs[0].CostUSDMicro != 40 || !rs[0].Ended {
+		t.Fatalf("after a refused prune the runs read %v", rs)
+	}
+	sv.fail = false
+	if err := b.PruneRuns(ctx, at); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.PruneRuns(ctx, at.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{r.FiringID + " started 0 false", r.FiringID + " started 40 true", "-" + r.FiringID}; !slices.Equal(sv.runs, want) {
+		t.Fatalf("the saver was asked %v, want %v", sv.runs, want)
+	}
+	b.LoadRuns([]Run{r})
+	if rs, _ := b.Runs(ctx, "alice", at); len(rs) != 1 || len(sv.runs) != 3 {
+		t.Fatalf("a loaded run reads %v, saved %v", rs, sv.runs)
 	}
 }

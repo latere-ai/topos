@@ -65,6 +65,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("trigger holds", func(t *testing.T) { triggerHolds(t, f) })
 	t.Run("trigger allowance", func(t *testing.T) { triggerAllowance(t, f) })
 	t.Run("trigger held and open firings", func(t *testing.T) { triggerHeldAndOpen(t, f) })
+	t.Run("trigger runs", func(t *testing.T) { triggerRuns(t, f) })
 	t.Run("the key that fired a firing", func(t *testing.T) { triggerFiredBy(t, f) })
 }
 
