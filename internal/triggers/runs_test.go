@@ -203,3 +203,80 @@ func TestFireTimes(t *testing.T) {
 		t.Error("a zone the build does not know")
 	}
 }
+
+// TestAOneShotRefusedUntilItsLimitResetsWaits (spec 087): a one-shot a
+// deny refuses for a limit that resets is recorded refused with its reason
+// and kept, and is tried once more when the limit resets, under its first
+// firing and its own time; a refusal that names no reset spends it, and a
+// wait past its maxAge ends skipped_late.
+func TestAOneShotRefusedUntilItsLimitResetsWaits(t *testing.T) {
+	r := newRig(t)
+	at := r.clock.Now().Add(time.Minute)
+	tr := r.put("once", oneShot(at, "", "24h"))
+	resets := at.Add(3 * time.Hour)
+	r.actor.startErr = &resetting{at: resets}
+	r.clock.Advance(time.Minute)
+	r.tick()
+	kept, err := r.objects.Trigger(t.Context(), tr.ID)
+	if err != nil || kept.NextFireAt == nil || !kept.NextFireAt.Equal(resets) || kept.Counts.Refused != 1 {
+		t.Fatalf("the refused one-shot: %+v, %v", kept, err)
+	}
+	fs, _, err := r.objects.Firings(t.Context(), tr.ID, 0, "")
+	if err != nil || len(fs) != 1 || fs[0].Outcome != store.OutcomeRefused || fs[0].Reason != "share_spent" {
+		t.Fatalf("its firing: %+v, %v", fs, err)
+	}
+	first := fs[0]
+	if run, ok := r.runOfFiring(first.ID); !ok || run.Outcome != store.OutcomeRefused || run.Reason != "share_spent" || !run.Ended {
+		t.Fatalf("its run: %+v, %v", run, ok)
+	}
+	// Nothing asks again before the limit resets.
+	r.clock.Advance(time.Hour)
+	r.tick()
+	if r.actor.starts != 1 {
+		t.Fatalf("the one-shot was tried %d times before its limit reset", r.actor.starts)
+	}
+	r.actor.startErr = nil
+	r.clock.Advance(2 * time.Hour)
+	r.tick()
+	if _, err := r.objects.Trigger(t.Context(), tr.ID); !errors.Is(err, store.ErrNotFound) || r.actor.starts != 2 {
+		t.Fatalf("the one-shot once its limit reset: %v, %d starts", err, r.actor.starts)
+	}
+	if run, ok := r.runOfFiring(first.ID); !ok || run.Outcome != store.OutcomeStarted || !run.At.Equal(at) {
+		t.Fatalf("the run of its first firing once it started: %+v, %v", run, ok)
+	}
+	if spent := r.actor.spent[len(r.actor.spent)-1]; spent.ID != first.ID || !spent.Time.Equal(at) {
+		t.Fatalf("the firing that spent it: %+v", spent)
+	}
+
+	// A refusal that names no reset spends it.
+	other := r.put("other", oneShot(r.clock.Now().Add(time.Minute), "", "24h"))
+	r.actor.startErr = errors.New("refused")
+	r.clock.Advance(time.Minute)
+	r.tick()
+	if _, err := r.objects.Trigger(t.Context(), other.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a one-shot refused for good: %v", err)
+	}
+
+	// A limit that resets past maxAge leaves it late.
+	late := r.put("late", oneShot(r.clock.Now().Add(time.Minute), "", "1h"))
+	r.actor.startErr = &resetting{at: r.clock.Now().Add(5 * time.Hour)}
+	r.clock.Advance(time.Minute)
+	r.tick()
+	r.actor.startErr = nil
+	r.clock.Advance(5 * time.Hour)
+	r.tick()
+	if _, err := r.objects.Trigger(t.Context(), late.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a one-shot past its maxAge: %v", err)
+	}
+	if last := r.actor.spent[len(r.actor.spent)-1]; last.TriggerID != late.ID || last.Outcome != store.OutcomeSkippedLate {
+		t.Fatalf("the late one-shot ended %+v", last)
+	}
+	// A reset already past is tried at the next pass.
+	soon := r.put("soon", oneShot(r.clock.Now().Add(time.Minute), "", "24h"))
+	r.actor.startErr = &resetting{at: r.clock.Now().Add(-time.Hour)}
+	r.clock.Advance(time.Minute)
+	r.tick()
+	if got, err := r.objects.Trigger(t.Context(), soon.ID); err != nil || got.NextFireAt == nil || !got.NextFireAt.Equal(r.clock.Now()) {
+		t.Fatalf("a one-shot whose limit reset already: %+v, %v", got, err)
+	}
+}

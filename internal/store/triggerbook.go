@@ -368,7 +368,7 @@ func (b *TriggerBook) ClaimFiring(_ context.Context, f Firing) (Firing, bool, er
 	switch {
 	case !ok:
 		f.Outcome, f.Reason, f.SessionID, f.Open = "", "", "", false
-	case Retaken(held.Outcome):
+	case Retaken(held, f):
 		// The firing runs again under its first id, and with the key
 		// it was first recorded with when it has one; the failure or
 		// the skip it counted is taken back.
@@ -385,6 +385,8 @@ func (b *TriggerBook) ClaimFiring(_ context.Context, f Firing) (Firing, bool, er
 	default:
 		return held, false, nil
 	}
+	// The claim's own asks are no part of the firing kept.
+	f.Until, f.RetakeRefused = nil, false
 	if err := b.saveFiring(f); err != nil {
 		return Firing{}, false, err
 	}

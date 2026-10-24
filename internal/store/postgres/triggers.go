@@ -300,7 +300,7 @@ func (s *Store) ClaimFiring(ctx context.Context, f store.Firing) (store.Firing, 
 		if err != nil {
 			return fmt.Errorf("postgres: read a firing of %s: %w", f.TriggerID, err)
 		}
-		if !store.Retaken(held.Outcome) {
+		if !store.Retaken(held, f) {
 			out = held
 			return nil
 		}

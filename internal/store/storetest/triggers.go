@@ -760,3 +760,40 @@ func triggerRuns(t *testing.T, f Factory) {
 		t.Fatalf("bob's runs after the prune = %+v, %v", got, err)
 	}
 }
+
+// triggerRefusedRetake: a refused firing is taken again by a claim that
+// asks, as a waiting one-shot's claim does, under its first id with its
+// count taken back, and not by one that does not (spec 087); and the
+// claim's asks are not kept with the firing.
+func triggerRefusedRetake(t *testing.T, f Factory) {
+	clock := NewClock()
+	st := f(t, clock.Now)
+	ctx := t.Context()
+	tr := NewTrigger("alice", "once", clock.Now())
+	if err := st.PutTrigger(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	fr := NewFiring(tr.ID, "schedule:once", store.OriginSchedule, clock.Now())
+	if _, _, err := st.ClaimFiring(ctx, fr); err != nil {
+		t.Fatal(err)
+	}
+	fr.Outcome, fr.Reason = store.OutcomeRefused, "share_spent"
+	if err := st.RecordFiring(ctx, fr, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, fresh, err := st.ClaimFiring(ctx, NewFiring(tr.ID, "schedule:once", store.OriginSchedule, clock.Now())); err != nil || fresh {
+		t.Fatalf("a refused firing taken by a claim that does not ask: %v, %v", fresh, err)
+	}
+	ask := NewFiring(tr.ID, "schedule:once", store.OriginSchedule, clock.Now())
+	ask.RetakeRefused = true
+	again, fresh, err := st.ClaimFiring(ctx, ask)
+	if err != nil || !fresh || again.ID != fr.ID || again.Outcome != "" {
+		t.Fatalf("a refused firing a claim asks for: %+v, %v, %v", again, fresh, err)
+	}
+	if got, err := st.Trigger(ctx, tr.ID); err != nil || got.Counts.Refused != 0 {
+		t.Fatalf("the refusal's count was not taken back: %+v, %v", got.Counts, err)
+	}
+	if fs, _, err := st.Firings(ctx, tr.ID, 0, ""); err != nil || len(fs) != 1 || fs[0].RetakeRefused || fs[0].Until != nil {
+		t.Fatalf("the firing kept: %+v, %v", fs, err)
+	}
+}

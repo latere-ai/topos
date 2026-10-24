@@ -111,12 +111,21 @@ func (a *fakeActor) Spent(_ context.Context, t store.Trigger, _ v1.TriggerSpec, 
 	return nil
 }
 
-func (a *fakeActor) Refusal(err error) (string, bool) {
+func (a *fakeActor) Refusal(err error) (string, *time.Time, bool) {
 	if errors.Is(err, errBusy) {
-		return "authorizer_unavailable", true
+		return "authorizer_unavailable", nil, true
 	}
-	return "forbidden", false
+	if r, ok := errors.AsType[*resetting](err); ok {
+		return "share_spent", &r.at, false
+	}
+	return "forbidden", nil, false
 }
+
+// resetting is a refusal for a limit that resets at at, as a deny whose
+// limits name resets_at is.
+type resetting struct{ at time.Time }
+
+func (r *resetting) Error() string { return "refused until " + r.at.Format(time.RFC3339) }
 
 type rig struct {
 	t        *testing.T

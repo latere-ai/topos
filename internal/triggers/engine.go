@@ -102,9 +102,10 @@ type Actor interface {
 	// has ended.
 	Send(ctx context.Context, s Send) error
 	// Refusal names what an error of Start or Send was: the reason its
-	// firing records, and whether it was transient, a failed firing that
-	// a redelivery runs again, or a refusal.
-	Refusal(err error) (reason string, transient bool)
+	// firing records, when the limit that refused it resets for a deny
+	// that names it (nil otherwise), and whether it was transient, a
+	// failed firing that a redelivery runs again, or a refusal.
+	Refusal(err error) (reason string, until *time.Time, transient bool)
 	// Spent is told of the firing that spent the one-shot trigger t, which
 	// the store deleted with it (spec 086), so the server records in the
 	// session a wake continued that the wake sent nothing.
@@ -345,8 +346,16 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 	}
 	at := t.NextFireAt
 	for at != nil && !at.After(now) {
-		f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Origin: store.OriginSchedule, Dedupe: ScheduleDedupe(*at),
-			Replica: e.o.Replica, Time: *at, ReceivedAt: now}
+		// A one-shot's firing is its time, whenever it is tried, so a
+		// firing that waited is judged late by its time and takes its first
+		// firing again; a refused one it asks for again, since a one-shot
+		// still stored after a refusal is one that waits (spec 087).
+		due := *at
+		if spec.At != nil {
+			due = *spec.At
+		}
+		f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Origin: store.OriginSchedule, Dedupe: ScheduleDedupe(due),
+			Replica: e.o.Replica, Time: due, ReceivedAt: now, RetakeRefused: spec.At != nil}
 		out, err := e.run(ctx, t, spec, f, nil)
 		if err != nil {
 			return err
@@ -354,12 +363,13 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 		if spec.At != nil {
 			// A spent one-shot is gone with its firing; a failed one, and
 			// one skipped at its allowance, run again at the next pass, at
-			// its time; a held one waits for its message to be sent, and
-			// fires no more.
+			// its time; one refused for a limit that resets runs again when
+			// it does, its next fire time set by the record; a held one
+			// waits for its message to be sent, and fires no more.
 			switch {
-			case spends(out.Outcome):
+			case spends(out):
 				return nil
-			case out.Outcome == store.OutcomeFailed, out.Outcome == store.OutcomeSkippedBudget:
+			case out.Outcome == store.OutcomeFailed, out.Outcome == store.OutcomeSkippedBudget, out.Waits():
 				return nil
 			}
 		}
@@ -370,16 +380,17 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 	return e.o.Store.SetNextFire(ctx, t.ID, at)
 }
 
-// spends reports whether a firing of outcome spends a one-shot trigger
-// (spec 086): every outcome but held, which keeps it until its message
-// is sent, failed, which runs again, skipped_budget, which runs once the
-// spend allows it (spec 087), and filtered, which no one-shot records.
-func spends(outcome string) bool {
-	switch outcome {
+// spends reports whether firing f spends a one-shot trigger (spec 086):
+// every firing but a held one, which keeps it until its message is sent,
+// a failed one, which runs again, one skipped_budget, which runs once the
+// spend allows it, one refused for a limit that resets, which runs once
+// it has (spec 087), and a filtered one, which no one-shot records.
+func spends(f store.Firing) bool {
+	switch f.Outcome {
 	case store.OutcomeHeld, store.OutcomeFailed, store.OutcomeFiltered, store.OutcomeSkippedBudget, "":
 		return false
 	}
-	return true
+	return !f.Waits()
 }
 
 // record records a decided firing whose stored outcome is from, and its
@@ -451,16 +462,26 @@ func (e *Engine) runOf(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 
 // recordFiring is record without the run.
 func (e *Engine) recordFiring(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string) error {
-	if spec.At != nil && f.Outcome == store.OutcomeSkippedBudget {
+	if spec.At != nil && (f.Outcome == store.OutcomeSkippedBudget || f.Waits()) {
 		// A one-shot skipped at its allowance keeps its time, so the minute
 		// loop takes its firing again at each pass, a held one's too, until
-		// it fires or maxAge passes (spec 087).
+		// it fires or maxAge passes (spec 087). One a deny refused for a
+		// limit that resets is tried again once, when it resets, so the
+		// authorizer is not asked at every pass; its firing keeps the
+		// one-shot's time, and maxAge still bounds it.
 		if err := e.o.Store.RecordFiring(ctx, f, from); err != nil {
 			return err
 		}
-		return e.o.Store.SetNextFire(ctx, t.ID, spec.At)
+		next := spec.At
+		if f.Waits() {
+			next = new(f.Until.UTC())
+			if now := e.o.Now().UTC(); next.Before(now) {
+				next = &now
+			}
+		}
+		return e.o.Store.SetNextFire(ctx, t.ID, next)
 	}
-	if spec.At == nil || !spends(f.Outcome) {
+	if spec.At == nil || !spends(f) {
 		return e.o.Store.RecordFiring(ctx, f, from)
 	}
 	if err := e.o.Store.SpendFiring(ctx, f, from); err != nil {
@@ -722,11 +743,13 @@ func (e *Engine) start(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 }
 
 // refused is the firing an Actor's error ends: failed when it was
-// transient, refused with its reason otherwise.
+// transient, refused with its reason otherwise, and with when the limit
+// that refused it resets, for a deny that says.
 func (e *Engine) refused(f store.Firing, err error) store.Firing {
-	reason, transient := e.o.Actor.Refusal(err)
-	f.Outcome, f.Reason = store.OutcomeRefused, reason
+	reason, until, transient := e.o.Actor.Refusal(err)
+	f.Outcome, f.Reason, f.Until = store.OutcomeRefused, reason, until
 	if transient {
+		f.Until = nil
 		f.Outcome = store.OutcomeFailed
 		e.o.Log.Warn("a trigger's firing failed; a redelivery runs it again", "trigger", f.TriggerID, "firing", f.ID, "err", err)
 	}

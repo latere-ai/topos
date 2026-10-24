@@ -110,7 +110,22 @@ type Firing struct {
 	// firing, the arrival of an event or of a manual firing.
 	Time       time.Time
 	ReceivedAt time.Time
+	// Until is, on a refused firing, when the limit that refused it
+	// resets, as the authorizer's deny named it; nil for a refusal that
+	// names none. A one-shot so refused is not spent: it is tried again
+	// then (spec 087). No store keeps it: it is the engine's between the
+	// decision and the record.
+	Until *time.Time
+	// RetakeRefused asks ClaimFiring to take a stored refused firing
+	// again, as it takes a failed one: a one-shot's, which is still stored
+	// only because its refusal waits for its limit to reset. No store
+	// keeps it.
+	RetakeRefused bool
 }
+
+// Waits reports whether a refused firing waits for the limit that
+// refused it to reset, so a one-shot it fired is not spent (spec 087).
+func (f Firing) Waits() bool { return f.Outcome == OutcomeRefused && f.Until != nil }
 
 // Run is one firing a person counts as a run (spec 088): one that started
 // or continued a session, so a turn a trigger's message began, or one
@@ -236,7 +251,8 @@ type Triggers interface {
 
 	// ClaimFiring takes the firing (f.TriggerID, f.Dedupe) and reports
 	// true: a new one is stored as f with no outcome, and a stored one
-	// whose outcome is failed, skipped_budget or unrecorded is taken again
+	// Retaken holds, failed, skipped_budget, unrecorded, or refused when f
+	// asks, is taken again
 	// with f's id kept as stored, and its FiredBy too when it has one, so
 	// a firing a key fired keeps that key whoever fires it again; the
 	// count a failed or skipped_budget one added is taken back. Any other stored
@@ -382,9 +398,16 @@ func DecodeTrigger(doc []byte) (*v1.Trigger, error) {
 	return &t, nil
 }
 
-// Retaken reports whether a claim takes a stored firing of outcome again
-// (spec 087): one never recorded, one that failed, and one skipped at its
-// trigger's allowance, which runs once the spend allows it.
-func Retaken(outcome string) bool {
-	return outcome == "" || outcome == OutcomeFailed || outcome == OutcomeSkippedBudget
+// Retaken reports whether claim takes the stored firing held again (spec
+// 087): one never recorded, one that failed, one skipped at its trigger's
+// allowance, which runs once the spend allows it, and a refused one when
+// the claim asks, a one-shot's that waits for its limit to reset.
+func Retaken(held, claim Firing) bool {
+	switch held.Outcome {
+	case "", OutcomeFailed, OutcomeSkippedBudget:
+		return true
+	case OutcomeRefused:
+		return claim.RetakeRefused
+	}
+	return false
 }
