@@ -143,7 +143,8 @@ func TestTheRunsOfAnOwnersTriggers(t *testing.T) {
 		wake.PerRunUSDMicro == nil || *wake.PerRunUSDMicro != 300 || len(wake.Fires) != 1 || !wake.Fires[0].Equal(nextWake) {
 		t.Fatalf("the pending wake's item: %+v", wake)
 	}
-	if refund.Target.TriggerID != "" || len(refund.Runs) != 0 || refund.PerRunUSDMicro != nil || len(refund.Fires) != 1 || !refund.Fires[0].Equal(ownWake) {
+	if refund.Target.TriggerID != "" || len(refund.Runs) != 0 || refund.PerRunUSDMicro != nil || len(refund.Fires) != 1 || !refund.Fires[0].Equal(ownWake) ||
+		refund.MaxAge != trigger.WakeMaxAge.String() {
 		t.Fatalf("the person's wake's item: %+v", refund)
 	}
 
@@ -351,7 +352,7 @@ func TestTheDocumentDescribesSpec088(t *testing.T) {
 		}
 	}
 	for schema, fields := range map[string][]string{
-		"TriggerRuns":      {"trigger_id", "name", "created_at", "fires_on", "suspended", "per_week_usd_micro", "wake", "target", "runs", "more_runs", "per_run_usd_micro", "fires", "more_fires"},
+		"TriggerRuns":      {"trigger_id", "name", "created_at", "fires_on", "suspended", "per_week_usd_micro", "max_age", "wake", "target", "runs", "more_runs", "per_run_usd_micro", "fires", "more_fires"},
 		"TriggerRun":       {"firing_id", "at", "outcome", "reason", "session_id", "wake", "cost_usd_micro", "ended"},
 		"TriggerRunTarget": {"session_id", "trigger_id"},
 	} {

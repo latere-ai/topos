@@ -283,7 +283,7 @@ func examples() (map[string]example, error) {
 	// The trigger's runs as the read answers them (spec 088): the firing
 	// above, its turn ended, the earlier one before since, and no fire
 	// times, since it fires on events.
-	runs := triggerRuns{TriggerID: exampleTriggerID, Name: applied.Metadata.Name, CreatedAt: exampleTime(12, 30, 0), FiresOn: firesOnEvent,
+	runs := triggerRuns{TriggerID: exampleTriggerID, Name: applied.Metadata.Name, CreatedAt: exampleTime(12, 30, 0), FiresOn: firesOnEvent, MaxAge: applied.Spec.MaxAge,
 		Runs:           []triggerRun{{FiringID: exampleFiringID, At: exampleTime(12, 40, 0), Outcome: store.OutcomeStarted, SessionID: exampleFiredID, CostUSDMicro: 1200, Ended: true}},
 		PerRunUSDMicro: new(int64(1200)), Fires: []time.Time{}}
 

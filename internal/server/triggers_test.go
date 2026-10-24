@@ -1127,18 +1127,26 @@ func TestTheActorStartsAndSendsAsTheRouteDoes(t *testing.T) {
 	if err := a.Send(t.Context(), triggers.Send{Trigger: stored, SessionID: session.NewID(session.PrefixSession), Message: "x"}); classify(err).code != CodeNotFound {
 		t.Fatalf("a send to no session: %v", err)
 	}
+	resets := time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC)
 	for err, want := range map[error]struct {
 		reason    string
+		until     *time.Time
 		transient bool
 	}{
-		&auth.Error{Code: auth.CodeForbidden, Reason: "not_owner"}: {"not_owner", false},
-		&auth.Error{Code: auth.CodeForbidden}:                      {auth.CodeForbidden, false},
-		&auth.Error{Code: auth.CodeAuthorizerUnavailable}:          {auth.CodeAuthorizerUnavailable, true},
-		refuse(CodeMachineUnavailable, "no machine"):               {CodeMachineUnavailable, false},
-		errors.New("the disk is gone"):                             {CodeInternal, true},
+		&auth.Error{Code: auth.CodeForbidden, Reason: "not_owner"}: {"not_owner", nil, false},
+		&auth.Error{Code: auth.CodeForbidden}:                      {auth.CodeForbidden, nil, false},
+		&auth.Error{Code: auth.CodeAuthorizerUnavailable}:          {auth.CodeAuthorizerUnavailable, nil, true},
+		refuse(CodeMachineUnavailable, "no machine"):               {CodeMachineUnavailable, nil, false},
+		errors.New("the disk is gone"):                             {CodeInternal, nil, true},
+		// A deny for a limit that resets names when (spec 087); limits that
+		// name no time, or do not read as one, name none.
+		&auth.Error{Code: auth.CodeForbidden, Reason: "share_spent", Limits: json.RawMessage(`{"resets_at":"2026-10-30T10:00:00+02:00"}`)}: {"share_spent", &resets, false},
+		&auth.Error{Code: auth.CodeForbidden, Reason: "capped", Limits: json.RawMessage(`{"max":3}`)}:                                      {"capped", nil, false},
+		&auth.Error{Code: auth.CodeForbidden, Reason: "odd", Limits: json.RawMessage(`{"resets_at":"soon"}`)}:                              {"odd", nil, false},
 	} {
-		if reason, transient := a.Refusal(err); reason != want.reason || transient != want.transient {
-			t.Errorf("%v: %s %v, want %s %v", err, reason, transient, want.reason, want.transient)
+		reason, until, transient := a.Refusal(err)
+		if reason != want.reason || transient != want.transient || (until == nil) != (want.until == nil) || until != nil && !until.Equal(*want.until) {
+			t.Errorf("%v: %s %v %v, want %s %v %v", err, reason, until, transient, want.reason, want.until, want.transient)
 		}
 	}
 }

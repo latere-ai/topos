@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -347,30 +348,93 @@ func TestAReplacedHeldWakeSendsNoStaleNote(t *testing.T) {
 }
 
 // TestARefusedWakeLeavesItsSession: a wake whose message the authorizer
-// refuses sends nothing and is spent, and its session records
-// session.wake_cleared with refused and the refusal's reason, so the
-// session's header holds no wake that will not come.
+// refuses for a limit that resets, as a spent proactive pool does, waits:
+// its trigger and the session's wake are kept, and it is sent once the
+// limit resets, under its own time (spec 087). A wake refused for good is
+// spent, sends nothing, and its session records session.wake_cleared with
+// refused and the refusal's reason, so the header holds no wake that will
+// not come.
 func TestARefusedWakeLeavesItsSession(t *testing.T) {
 	w := newWaking(t)
-	tr := w.set("toolu_w", w.clock.Now().Add(time.Hour), 1)
+	due := w.clock.Now().Add(time.Hour)
+	tr := w.set("toolu_w", due, 1)
 	if h := w.header(); h.Wake == nil || h.Wake.TriggerID != tr.ID {
 		t.Fatalf("the header before the wake: %+v", h.Wake)
 	}
+	resets := due.Add(6 * time.Hour)
+	limits := json.RawMessage(`{"resets_at":"` + resets.Format(time.RFC3339) + `"}`)
+	reason := "proactive_share_spent"
 	w.authz.answer = func(req authz.Request) (authz.Decision, error) {
 		if req.Action == authorizer.ActionSessionSend {
-			return authz.Decision{Reason: "proactive_share_spent"}, nil
+			return authz.Decision{Reason: reason, Limits: limits}, nil
 		}
 		return w.authz.next.Authorize(context.Background(), req)
 	}
 	w.clock.Advance(time.Hour)
 	w.tick()
-	if c, ok := w.cleared(); !ok || c.TriggerID != tr.ID || c.Reason != session.WakeRefused || c.Refusal != "proactive_share_spent" {
+	if _, ok := w.cleared(); ok {
+		t.Fatal("a wake that waits for its limit was cleared")
+	}
+	if h := w.header(); h.Wake == nil || h.Wake.TriggerID != tr.ID {
+		t.Fatalf("the header while the wake waits: %+v", h.Wake)
+	}
+	kept, err := w.objects.Trigger(t.Context(), tr.ID)
+	if err != nil || kept.NextFireAt == nil || !kept.NextFireAt.Equal(resets) || kept.Counts.Refused != 1 {
+		t.Fatalf("the waiting wake's trigger: %+v, %v", kept, err)
+	}
+	// The read of the runs answers the refused run, and the wake's next
+	// try when the limit resets (spec 088).
+	a := w.do(http.MethodGet, "/v1/triggers/runs", "alice", "")
+	var page struct {
+		Items []triggerRuns `json:"items"`
+	}
+	a.decode(t, &page)
+	var item *triggerRuns
+	for i := range page.Items {
+		if page.Items[i].TriggerID == tr.ID {
+			item = &page.Items[i]
+		}
+	}
+	if item == nil || len(item.Fires) != 1 || !item.Fires[0].Equal(resets) || len(item.Runs) != 1 || item.Runs[0].Outcome != store.OutcomeRefused || item.Runs[0].Reason != reason {
+		t.Fatalf("the waiting wake in the read of the runs: %d %s", a.status, a.body)
+	}
+	// Once the limit resets, the wake is sent, due at its own time.
+	w.authz.answer = nil
+	w.clock.Advance(6 * time.Hour)
+	w.tick()
+	if h := w.header(); h.Wake != nil {
+		t.Fatalf("the header after the wake was sent: %+v", h.Wake)
+	}
+	var sent *session.MessageWake
+	for _, e := range w.events() {
+		var m session.UserMessage
+		if e.Type == session.TypeUserMessage && e.Decode(&m) == nil && m.Wake != nil {
+			sent = m.Wake
+		}
+	}
+	if sent == nil || sent.TriggerID != tr.ID || !sent.DueAt.Equal(due) {
+		t.Fatalf("the wake's message: %+v", sent)
+	}
+
+	// A wake refused for good is spent and leaves its session.
+	w.runnerAppends(w.sess.ID, w.status(session.StatusIdle, session.StopEndTurn))
+	gone := w.set("toolu_g", w.clock.Now().Add(time.Hour), 2)
+	limits = nil
+	w.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionSend {
+			return authz.Decision{Reason: reason}, nil
+		}
+		return w.authz.next.Authorize(context.Background(), req)
+	}
+	w.clock.Advance(time.Hour)
+	w.tick()
+	if c, ok := w.cleared(); !ok || c.TriggerID != gone.ID || c.Reason != session.WakeRefused || c.Refusal != reason {
 		t.Fatalf("the refused wake was recorded as %+v (%v)", c, ok)
 	}
 	if h := w.header(); h.Wake != nil {
 		t.Fatalf("the header keeps the refused wake %+v", h.Wake)
 	}
-	if _, err := w.objects.Trigger(t.Context(), tr.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := w.objects.Trigger(t.Context(), gone.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("the refused wake's trigger: %v", err)
 	}
 }

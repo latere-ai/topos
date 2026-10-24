@@ -746,16 +746,35 @@ func (s *Server) messageWake(ctx context.Context, sd triggers.Send) (*session.Me
 }
 
 // Refusal names an error of Start or Send as the API would answer it:
-// its code, or the authorizer's reason for a deny that carries one, and
-// transient when the API would answer it with a 5xx status.
-func (actor) Refusal(err error) (string, bool) {
+// its code, or the authorizer's reason for a deny that carries one; when
+// the limit that refused it resets, for a deny whose limits name it as
+// resets_at, the moment a client is told the refused request can be sent
+// again; and transient when the API would answer it with a 5xx status.
+func (actor) Refusal(err error) (string, *time.Time, bool) {
 	e := classify(err)
 	reason := e.code
 	if r, ok := e.details["reason"].(string); ok && r != "" {
 		reason = r
 	}
 	row, ok := codes[e.code]
-	return reason, !ok || row.status >= http.StatusInternalServerError
+	return reason, resetsAt(e), !ok || row.status >= http.StatusInternalServerError
+}
+
+// resetsAt is when the limit a deny refused for resets, as its limits
+// name it, resets_at; nil for limits that name none or do not read, which
+// a refusal is then taken as having none.
+func resetsAt(e *apiError) *time.Time {
+	raw, ok := e.details["limits"].(json.RawMessage)
+	if !ok {
+		return nil
+	}
+	var l struct {
+		ResetsAt *time.Time `json:"resets_at"`
+	}
+	if json.Unmarshal(raw, &l) != nil || l.ResetsAt == nil || l.ResetsAt.IsZero() {
+		return nil
+	}
+	return new(l.ResetsAt.UTC())
 }
 
 // agentNames reports whether the latest version of the agent agentID

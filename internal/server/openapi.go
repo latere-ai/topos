@@ -485,7 +485,7 @@ var opDescriptions = map[string]string{
 		"A run is a firing that started or continued a turn, with what the turn cost as a look is counted, or one skipped_budget or refused stopped, with no cost; ended says the turn closed and its cost is final. "+
 		"A wake's runs are the wake runs of its session, each once its own trigger; any other trigger's are its own and the wake runs of the sessions it started, which count toward its allowance. "+
 		"runs holds at most %d, the newest, more_runs saying older ones were left out. per_run_usd_micro is the mean cost of the latest %d of its own runs that ran and ended, from every run kept, which is %s. "+
-		"fires are the times it fires after now and before until, as the minute loop fires them: a schedule's in its zone, a one-shot's time, or now for a one-shot past its time still waiting for its allowance; none for an event trigger or a suspended one. "+
+		"fires are the times it fires after now and before until, as the minute loop fires them: a schedule's in its zone, a one-shot's time, or for a one-shot past its time that waits, the next pass for its allowance or the moment the limit that refused it resets; none for an event trigger or a suspended one. "+
 		"The hold is not applied. At most %d, the soonest, more_fires saying later ones were left out. "+
 		"target names the one session a wake or a trigger naming session.target continues, and the trigger that started it, absent for a session a person started. "+
 		"The read records each firing since since that is a run and has none, and completes a run whose turn had not ended from its session's log. trigger.list is asked as the list asks it.",

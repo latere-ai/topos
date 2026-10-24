@@ -41,6 +41,9 @@ type triggerRuns struct {
 	Suspended bool   `json:"suspended"`
 	// PerWeekUSDMicro is spec.budget.perWeek, absent without one.
 	PerWeekUSDMicro *int64 `json:"per_week_usd_micro,omitempty"`
+	// MaxAge is spec.maxAge: how late a firing may run after its time, so
+	// how long a one-shot that waits may wait.
+	MaxAge string `json:"max_age"`
 	// Wake reports a wake a session set (spec 086).
 	Wake bool `json:"wake"`
 	// Target is the one session every firing continues, a wake's or the
@@ -266,7 +269,7 @@ func (s *Server) lookCosts(ctx context.Context, id string) (map[string]store.Run
 func (s *Server) runsOf(ctx context.Context, t store.Trigger, doc *v1.Trigger, owned map[string]store.Run, now, since, until time.Time) (triggerRuns, error) {
 	spec := doc.Spec
 	item := triggerRuns{TriggerID: t.ID, Name: t.Name, CreatedAt: t.CreatedAt.UTC(), FiresOn: firesOnSchedule, Suspended: spec.Suspend, Wake: isWake(doc),
-		Runs: []triggerRun{}, Fires: []time.Time{}}
+		MaxAge: spec.MaxAge, Runs: []triggerRun{}, Fires: []time.Time{}}
 	switch {
 	case spec.At != nil:
 		item.FiresOn = firesOnAt
@@ -323,10 +326,15 @@ func (s *Server) runsOf(ctx context.Context, t store.Trigger, doc *v1.Trigger, o
 		}
 		item.PerRunUSDMicro = new(sum / int64(len(recent)))
 	}
-	// A one-shot past its time that is still stored waits for its
-	// allowance and is tried at the next pass of the minute loop.
+	// A one-shot past its time that is still stored waits: for its
+	// allowance, tried at the next pass of the minute loop, or for a limit
+	// that refused it to reset, tried then, its next fire time (spec 087).
 	if spec.At != nil && !spec.Suspend && !spec.At.After(now) {
-		item.Fires = append(item.Fires, now)
+		next := now
+		if t.NextFireAt != nil && t.NextFireAt.After(now) {
+			next = t.NextFireAt.UTC()
+		}
+		item.Fires = append(item.Fires, next)
 		return item, nil
 	}
 	fires, more, err := triggers.FireTimes(spec, now, until, trigger.MaxRunFires)
