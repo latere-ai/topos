@@ -141,6 +141,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [085](085-the-client-a-message-came-from-and-a-days-activity.md) | The client a message came from, and a day's activity: every sender the server records carries the OAuth client of the verified token, and one route answers a day's counts of messages, sessions and finished answers per sender and client, with no content | medium | testing | 004, 006, 014, 015, 022, 056, 077 |
 | [086](086-proactive-agents.md) | Proactive agents: a `trigger` tool whose proposals the owner approves through a held call, a `wake` tool that sets the session's next wake as a one-shot trigger with a note, bounded in delay, horizon and count, `notify` and a quiet outcome, attended trigger sessions, and one hold over an owner's triggers | large | in-progress | 003, 004, 008, 012, 013, 015, 016, 022, 037, 039 |
 | [087](087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md) | Unattended turns, a watch's allowance and pace, and the context report: a turn a trigger began decides without the person's remembered allows and says `attended` to a decision service, a trigger's weekly allowance enforced with `skipped_budget` and proposed with the agent's estimate, `status.spend` and the pace line of a woken turn, and the context every model request records | medium | in-progress | 004, 007, 010, 012, 015, 022, 037, 086 |
+| [088](088-a-triggers-runs-and-fire-times-read-for-a-forecast.md) | A trigger's runs and fire times, read for a forecast: every firing a person counts as a run recorded with its turn's cost where the firing is recorded and the logs are already read, one read of an owner's triggers with their runs since a time, the mean cost of a run and the fire times up to a time, and `status.createdAt` as the first apply | medium | in-progress | 022, 074, 086, 087 |
 
 ## Dependency graph
 
@@ -233,6 +234,8 @@ flowchart BT
   S084[084 reading back what the context let go]
   S085[085 the client a message came from + a day's activity]
   S086[086 proactive agents]
+  S087[087 unattended turns, allowance and pace, context report]
+  S088[088 a trigger's runs and fire times]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -403,6 +406,9 @@ flowchart BT
   S086 --> S022
   S086 --> S037
   S086 --> S039
+  S087 --> S086
+  S088 --> S074
+  S088 --> S087
 ```
 
 ## Build order
