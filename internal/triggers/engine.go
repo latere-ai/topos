@@ -291,6 +291,10 @@ func (e *Engine) Tick(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("trigger %s: %w", id, err))
 		}
 	}
+	// The runs older than the record keeps are deleted (spec 088).
+	if err := e.o.Store.PruneRuns(ctx, now.Add(-trigger.RunsKept)); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
 }
 
@@ -378,10 +382,66 @@ func spends(outcome string) bool {
 	return true
 }
 
-// record records a decided firing whose stored outcome is from: a
-// one-shot's that spends it deletes the trigger with it, and tells the
-// actor.
+// record records a decided firing whose stored outcome is from, and its
+// run when it is one (spec 088): a one-shot's that spends it deletes the
+// trigger with it, and tells the actor.
 func (e *Engine) record(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string) error {
+	if err := e.recordFiring(ctx, t, spec, f, from); err != nil {
+		return err
+	}
+	e.keepRun(ctx, t, spec, f)
+	return nil
+}
+
+// keepRun stores the run of a recorded firing of t, one that started or
+// continued a turn or that an allowance or the authorizer stopped (spec
+// 088). A run whose write fails is logged and the firing keeps its
+// answer: the read of an owner's runs records it again from the firing,
+// and only a wake's run, whose firing went with its trigger, is lost.
+func (e *Engine) keepRun(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing) {
+	if !store.IsRun(f.Outcome) {
+		return
+	}
+	r, err := e.runOf(ctx, t, spec, f)
+	if err == nil {
+		err = e.o.Store.PutRun(ctx, r)
+	}
+	if err != nil {
+		e.o.Log.ErrorContext(ctx, "keep a firing's run", "trigger", t.ID, "firing", f.ID, "err", err)
+	}
+}
+
+// runOf is the run of a recorded firing f of t. A wake's names the
+// trigger that started its session, which its runs count toward (spec
+// 087), and a skipped run of a trigger that continues one session names
+// that session, as a run that went ahead would have.
+func (e *Engine) runOf(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing) (store.Run, error) {
+	r := store.Run{FiringID: f.ID, Owner: t.Owner, TriggerID: t.ID, SessionID: f.SessionID, At: f.Time, Outcome: f.Outcome, Reason: f.Reason}
+	r.Ended = !r.Ran()
+	if r.SessionID == "" {
+		r.SessionID = spec.Session.Target
+	}
+	doc, err := store.DecodeTrigger(t.Doc)
+	if err != nil {
+		return store.Run{}, err
+	}
+	if o := doc.Status.Origin; o == nil || o.Kind != v1.OriginWake {
+		return r, nil
+	}
+	r.Wake = true
+	s, err := e.o.Sessions.Get(ctx, spec.Session.Target)
+	switch {
+	case errors.Is(err, session.ErrNotFound):
+	case err != nil:
+		return store.Run{}, err
+	default:
+		r.SessionTriggerID = s.TriggerID
+	}
+	return r, nil
+}
+
+// recordFiring is record without the run.
+func (e *Engine) recordFiring(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string) error {
 	if spec.At != nil && f.Outcome == store.OutcomeSkippedBudget {
 		// A one-shot skipped at its allowance keeps its time, so the minute
 		// loop takes its firing again at each pass, a held one's too, until

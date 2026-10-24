@@ -109,6 +109,7 @@ func (e *Engine) Spend(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		return v1.TriggerSpend{}, err
 	}
 	var looks []session.Look
+	var costs []store.RunCost
 	for _, id := range ids {
 		s, err := e.o.Sessions.Get(ctx, id)
 		if errors.Is(err, session.ErrNotFound) {
@@ -122,6 +123,9 @@ func (e *Engine) Spend(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 			return v1.TriggerSpend{}, fmt.Errorf("triggers: the log of %s: %w", id, err)
 		}
 		for _, l := range session.Looks(s, evs) {
+			// Every look the log holds gives its run its cost (spec 088),
+			// so the read of the runs need not read this log again.
+			costs = append(costs, store.RunCost{FiringID: l.FiringID, CostUSDMicro: l.CostUSDMicro, Ended: l.Ended})
 			if !l.At.After(since) || l.At.After(now) {
 				continue
 			}
@@ -131,6 +135,12 @@ func (e *Engine) Spend(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 		}
 	}
 	slices.SortStableFunc(looks, func(a, b session.Look) int { return a.At.Compare(b.At) })
+	// The runs' costs are a cache of what the logs hold: one not written
+	// here is completed by the read from the log, so a write that fails
+	// leaves the count as it is.
+	if err := e.o.Store.SetRunCosts(ctx, costs); err != nil {
+		e.o.Log.ErrorContext(ctx, "write the cost of a trigger's runs", "trigger", t.ID, "err", err)
+	}
 
 	sp := v1.TriggerSpend{WindowDays: trigger.SpendWindowDays}
 	if b := spec.Budget; b != nil {
@@ -229,18 +239,42 @@ func expectedLooks(t store.Trigger, spec v1.TriggerSpec, seen int, now, end time
 		span := min(trigger.SpendWindow, max(now.Sub(t.CreatedAt), 24*time.Hour))
 		n += int(math.Round(float64(seen) * float64(end.Sub(now)) / float64(span)))
 	case spec.Schedule != "":
-		at := now
-		for range maxScheduleLooks {
-			next, err := NextFire(spec, at)
-			if err != nil {
-				return 0, err
-			}
-			if next == nil || !next.Before(end) {
-				break
-			}
-			n++
-			at = *next
+		times, _, err := FireTimes(spec, now, end, maxScheduleLooks)
+		if err != nil {
+			return 0, err
 		}
+		n += len(times)
 	}
 	return n, nil
+}
+
+// FireTimes are the times a trigger of spec fires after from and before
+// until, the soonest first, at most limit, and whether more before until
+// were left out: a schedule's fire times in its zone, as the minute loop
+// fires them, and a one-shot's time when it falls between; none for an
+// event trigger or a suspended one. The allowance's window and the read
+// of an owner's runs (spec 088) both walk it.
+func FireTimes(spec v1.TriggerSpec, from, until time.Time, limit int) ([]time.Time, bool, error) {
+	if spec.Suspend || spec.On != nil {
+		return nil, false, nil
+	}
+	var out []time.Time
+	at := from
+	for {
+		next, err := NextFire(spec, at)
+		if err != nil {
+			return nil, false, err
+		}
+		if next == nil || !next.Before(until) {
+			return out, false, nil
+		}
+		if len(out) == limit {
+			return out, true, nil
+		}
+		out = append(out, *next)
+		if spec.At != nil {
+			return out, false, nil
+		}
+		at = *next
+	}
 }
