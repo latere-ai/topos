@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -342,5 +343,34 @@ func TestAReplacedHeldWakeSendsNoStaleNote(t *testing.T) {
 	msgs := w.messages(w.sess.ID)
 	if len(msgs) != n+1 || msgs[n].Wake == nil || msgs[n].Wake.TriggerID != second.ID || !msgs[n].Wake.DueAt.Equal(later) {
 		t.Fatalf("the replacing wake's message is %+v", msgs[n:])
+	}
+}
+
+// TestARefusedWakeLeavesItsSession: a wake whose message the authorizer
+// refuses sends nothing and is spent, and its session records
+// session.wake_cleared with refused and the refusal's reason, so the
+// session's header holds no wake that will not come.
+func TestARefusedWakeLeavesItsSession(t *testing.T) {
+	w := newWaking(t)
+	tr := w.set("toolu_w", w.clock.Now().Add(time.Hour), 1)
+	if h := w.header(); h.Wake == nil || h.Wake.TriggerID != tr.ID {
+		t.Fatalf("the header before the wake: %+v", h.Wake)
+	}
+	w.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionSend {
+			return authz.Decision{Reason: "proactive_share_spent"}, nil
+		}
+		return w.authz.next.Authorize(context.Background(), req)
+	}
+	w.clock.Advance(time.Hour)
+	w.tick()
+	if c, ok := w.cleared(); !ok || c.TriggerID != tr.ID || c.Reason != session.WakeRefused || c.Refusal != "proactive_share_spent" {
+		t.Fatalf("the refused wake was recorded as %+v (%v)", c, ok)
+	}
+	if h := w.header(); h.Wake != nil {
+		t.Fatalf("the header keeps the refused wake %+v", h.Wake)
+	}
+	if _, err := w.objects.Trigger(t.Context(), tr.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the refused wake's trigger: %v", err)
 	}
 }

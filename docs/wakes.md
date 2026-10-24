@@ -63,7 +63,7 @@ The log records each change:
 | Event | Payload |
 |---|---|
 | `session.wake_set` | `trigger_id`, `at`, `title`, `note`, `tool_use_id` of the agent's call, `count` |
-| `session.wake_cleared` | `trigger_id`, `reason`: `canceled`, `ended` or `skipped`, and `tool_use_id` for the agent's cancel or `sender` for a person's or a client's delete |
+| `session.wake_cleared` | `trigger_id`, `reason`: `canceled`, `ended`, `skipped`, or `refused` when the installation refused the wake's message, with `refusal` its reason; and `tool_use_id` for the agent's cancel or `sender` for a person's or a client's delete |
 
 ## The turn a wake starts
 

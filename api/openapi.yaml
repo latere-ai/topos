@@ -5914,6 +5914,8 @@ components:
           type: string
         sender:
           $ref: "#/components/schemas/Sender"
+        refusal:
+          type: string
     WakeSet:
       type: object
       required:

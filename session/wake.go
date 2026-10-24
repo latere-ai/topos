@@ -37,16 +37,21 @@ const (
 	// WakeSkipped is a wake that fired past its maxAge, after a stop of
 	// the server, and sent nothing.
 	WakeSkipped = "skipped"
+	// WakeRefused is a wake whose firing the authorizer refused, so it
+	// sent nothing; the cleared event's Refusal is the firing's reason.
+	WakeRefused = "refused"
 )
 
 // WakeCleared is the payload of session.wake_cleared: the wake TriggerID
 // is gone for Reason, by the agent's cancel ToolUseID or by Sender, a
-// person's or a client's delete of its trigger.
+// person's or a client's delete of its trigger. A refused wake names the
+// firing's reason as Refusal.
 type WakeCleared struct {
 	TriggerID string  `json:"trigger_id"`
 	Reason    string  `json:"reason"`
 	ToolUseID string  `json:"tool_use_id,omitempty"`
 	Sender    *Sender `json:"sender,omitempty"`
+	Refusal   string  `json:"refusal,omitempty"`
 }
 
 // MessageWake is what a wake's message says of the wake that sent it: its

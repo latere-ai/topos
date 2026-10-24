@@ -22,6 +22,7 @@ committed: the commit log already holds that.
 
 ### Fixed
 
+- **A wake the installation refuses leaves its session.** A wake whose message the authorizer refused, such as one past a proactive pool, was spent with nothing recorded, so the session's `wake` kept a check-back that never came. Its session now records `session.wake_cleared` with the new reason `refused` and the refusal's reason as `refusal`, and the header's `wake` clears.
 - **A price or an allowance too large to hold is refused.** A decimal
   amount whose whole part is past what an int64 of millionths holds, such
   as a trigger tool's `perWeekUsd` of `18446744073710`, was wrapped around

@@ -693,10 +693,20 @@ func (a actor) Spent(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, 
 	if err != nil {
 		return err
 	}
-	if !isWake(doc) || f.Outcome != store.OutcomeSkippedLate {
+	if !isWake(doc) {
 		return nil
 	}
-	ev, err := a.s.clearedEvent(t.ID, session.WakeSkipped, nil)
+	var ev session.Event
+	switch f.Outcome {
+	case store.OutcomeSkippedLate:
+		ev, err = a.s.clearedEvent(t.ID, session.WakeSkipped, nil)
+	case store.OutcomeRefused:
+		// A refused wake is spent and sends nothing, so the session says
+		// it is gone, or its header would keep a wake that never comes.
+		ev, err = session.NewEvent(session.TypeWakeCleared, session.WakeCleared{TriggerID: t.ID, Reason: session.WakeRefused, Refusal: f.Reason}, a.s.o.Now())
+	default:
+		return nil
+	}
 	if err != nil {
 		return err
 	}

@@ -6,7 +6,7 @@ depends_on: [.archive/003-manifest.md, .archive/004-session-log.md, 008-tools.md
 affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, internal/hosted/, internal/proposal/, internal/runnerapi/, internal/runnerrole/, runner/, harness/, harness/tools/, session/, prompts/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-22
-updated: 2026-10-23
+updated: 2026-10-24
 author: changkun
 ---
 
@@ -490,7 +490,7 @@ for a thread that holds `notify`.
 | Event | Appended by | Payload |
 |---|---|---|
 | `session.wake_set` | the runner, after the trigger is applied | `trigger_id`, `at`, `title`, `note`, `tool_use_id`, `count`: the wake's place in the chain |
-| `session.wake_cleared` | the runner or the server | `trigger_id`, `reason` (`canceled`, `ended` or `skipped`), `tool_use_id` for the agent's cancel, `sender` for a person's or a client's |
+| `session.wake_cleared` | the runner or the server | `trigger_id`, `reason` (`canceled`, `ended`, `skipped`, or `refused` for a wake whose message the authorizer refused, added 2026-10-24), `tool_use_id` for the agent's cancel, `sender` for a person's or a client's, `refusal` the firing's reason for a refused one |
 
 A wake's firing is a `user.message` with the sender `trigger:<trg_id>`,
 `firing_id` ([[022-triggers]]) and one added field, `wake`:
@@ -648,6 +648,7 @@ pinned model, which take a model connection (the last row below).
 | A wake sooner than `MinWakeDelay`, later than `MaxWakeAhead` or past the session's `expires_at` is refused with the bound named; a second `set` replaces the first | `internal/proposal.TestWakeBounds` (the tool lives beside the trigger tool), `internal/server.TestAWakeIsHeldToItsBoundsAtTheServer`, `internal/server.TestAWakeContinuesItsSession`, `manifest/trigger.TestAWakeLivesInsideItsBounds` | built |
 | The eleventh wake in a row with no word from the initiator is held, and an allow starts the count again | `harness.TestTheEleventhWakeAsks`, `internal/proposal.TestTheEleventhWakeWaitsForThePerson`, `session.TestWakesInARowCountFromTheInitiatorsWord`, `internal/server.TestOnlyTheInitiatorConfirmsAWake` | built |
 | A session's end, deletion or archive deletes its wake and records `session.wake_cleared`; a person's delete records it with the sender | `internal/server.TestAWakeEndsWithItsSession` | built |
+| A wake whose message the authorizer refuses is spent and records `session.wake_cleared` with `refused` and the refusal's reason, and the header's wake clears | `internal/server.TestARefusedWakeLeavesItsSession` | built |
 | A set that replaces a held wake sends no stale note, and the new wake fires at its time | `internal/server.TestAReplacedHeldWakeSendsNoStaleNote` | built |
 | `end_on_idle` leaves a session with a pending wake open and ends it at the idle after its last wake | `harness.TestEndOnIdleWaitsForAWake`, `harness.TestACanceledWakeLetsTheSessionEnd` (the rule is the harness's) | built |
 | A pause records why and by whom in `status.paused`, kept while suspended and cleared on resume | `internal/server.TestAPauseRecordsWhyAndByWhom` | built |
