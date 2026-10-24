@@ -61,6 +61,18 @@ keeps its time and is tried each minute until the week allows it or its
 `maxAge` passes. The fire route answers a skipped firing `200` with the
 firing, as it answers every other outcome.
 
+## A one-shot refused until a limit resets
+
+An installation's authorizer may refuse a firing for a limit of its own
+that resets, such as a share of the person's credit for work that runs
+while they are away. When its deny names when the limit resets, as
+`limits.resets_at`, a one-shot, a wake included, is not spent: its firing
+is recorded `refused` with the deny's reason, the trigger keeps its time,
+and the minute loop tries it once more when the limit resets, judged late
+by its own time, so its `maxAge` still bounds the wait. The authorizer is
+asked again then, not at every pass. A deny that names no reset spends the
+one-shot as before.
+
 `trigger.create` and `trigger.update` carry `budget:
 {"per_week_usd_micro": n}`, so an installation's authorizer can refuse a
 trigger without an allowance, or one above what the person may spend.

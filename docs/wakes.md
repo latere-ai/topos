@@ -63,7 +63,7 @@ The log records each change:
 | Event | Payload |
 |---|---|
 | `session.wake_set` | `trigger_id`, `at`, `title`, `note`, `tool_use_id` of the agent's call, `count` |
-| `session.wake_cleared` | `trigger_id`, `reason`: `canceled`, `ended`, `skipped`, or `refused` when the installation refused the wake's message, with `refusal` its reason; and `tool_use_id` for the agent's cancel or `sender` for a person's or a client's delete |
+| `session.wake_cleared` | `trigger_id`, `reason`: `canceled`, `ended`, `skipped`, or `refused` when the installation refused the wake's message for good, with `refusal` its reason; and `tool_use_id` for the agent's cancel or `sender` for a person's or a client's delete |
 
 ## The turn a wake starts
 
@@ -84,7 +84,11 @@ In a session a trigger started, a wake's look counts toward that
 trigger's weekly allowance: the message also carries `spend`, the week
 of that trigger with its `trigger_id`, and a wake due while the week is
 spent waits at its time until it is not, or until its `maxAge` passes.
-See `docs/allowances.md`.
+A wake the installation refuses for a limit that resets, one whose deny
+says when, waits the same way and is sent once the limit resets; the
+session keeps it as its `wake` meanwhile. One refused for good is spent:
+the session records `session.wake_cleared` with `refused`, and the
+refusal's reason as `refusal`. See `docs/allowances.md`.
 
 ## Cancelling and ending
 

@@ -6,7 +6,7 @@ depends_on: [.archive/004-session-log.md, .archive/007-models.md, 010-context.md
 affects: [harness/, session/, internal/decisions/, internal/triggers/, internal/store/, internal/server/, manifest/v1/, manifest/trigger/, prompts/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-23
-updated: 2026-10-23
+updated: 2026-10-24
 author: changkun
 ---
 
@@ -215,6 +215,31 @@ past the oldest looks and the next firing runs. `skipped_budget` is the
 one recorded outcome a later claim of the same firing takes again, as
 `failed` is, so a one-shot's single firing can run once the spend
 allows it; the count it added is taken back when it is.
+
+#### A one-shot refused until a limit resets
+
+Added 2026-10-24. An installation's authorizer may refuse a firing's
+create or send for a limit of its own that resets, as a person's proactive
+pool does once the week's spend reaches it. Such a refusal is a ceiling
+that frees up, as the allowance is, so a one-shot is kept for it as it is
+at the allowance:
+
+| The refusal | A one-shot, a wake included |
+|---|---|
+| a deny whose limits name `resets_at`, an RFC 3339 time (the time a client is told the refused request can be sent again, [[015-api]]) | recorded `refused` with the deny's reason; not spent; its next fire time is `resets_at`, or the next pass when that has passed; at it the minute loop claims its first firing again, at the one-shot's own time, so `maxAge` bounds the wait and a wake's message names when it was due |
+| any other deny | recorded `refused` and spent, as before |
+
+The decision is the firing's, its outcome with the reset its deny named
+(`store.Firing.Waits`), not the outcome alone. The minute loop passes once
+a minute. A one-shot at its allowance is tried at every pass, which costs
+the core its own count; one refused until a limit resets is tried once,
+when the limit resets, so the authorizer is asked once more, not once a
+minute. Weighed against: trying it at every pass, which asks the
+authorizer every minute for as long as the limit holds; and backing off
+hourly, which would leave a wake up to an hour late once the limit
+resets. A deny that names no reset is taken as final. A wake that waits
+keeps its session's `wake`; `session.wake_cleared` with `refused`
+([[086-proactive-agents]]) records only a refusal that spends it.
 
 #### The question
 
@@ -426,6 +451,9 @@ a model connection.
 | A one-shot at the allowance keeps its trigger, is tried again at the next pass, fires when the spend falls, and is `skipped_late` past `maxAge` | `internal/triggers.TestAOneShotAtItsAllowanceWaits` | built |
 | A wake's look counts toward the trigger that started its session and is skipped at that trigger's allowance; a wake of a session no trigger started counts toward none | `internal/triggers.TestAWakeCountsTowardTheTriggerThatStartedItsSession` | built |
 | A held firing sent past the allowance is `skipped_budget`, and a held one-shot goes back to its time | `internal/triggers.TestAHeldFiringIsHeldToTheAllowance` | built |
+| A one-shot a deny refuses for a limit that resets is recorded refused and kept, tried once more at the reset under its first firing and its own time, and late past its maxAge; a deny that names no reset spends it; the actor reads the reset from the deny's limits | `internal/triggers.TestAOneShotRefusedUntilItsLimitResetsWaits`, `internal/server.TestTheActorStartsAndSendsAsTheRouteDoes` | built |
+| A claim takes a refused firing again only when it asks, in every store | the stores' conformance case `trigger refused retake` | built |
+| A wake refused for a limit that resets keeps its session's wake and is sent at the reset; one refused for good records `session.wake_cleared` with `refused` | `internal/server.TestARefusedWakeLeavesItsSession` | built |
 | A claim takes a `skipped_budget` firing again and takes its count back, and a trigger's spend is kept, in every store | the stores' conformance case `trigger allowance`, on Postgres in the postgres tier, on a container its tests start | built |
 | `status.spend` holds the spend, the allowance, the mean of the latest five ended looks, the expected looks of a schedule, a one-shot, an event trigger and a suspended one, and the projection over the window that ends 7 days after the oldest look | `internal/triggers.TestTheSpendOfAWatch` | built |
 | `trigger.create` and `trigger.update` carry `budget` when the trigger names one | `internal/server.TestTheTriggerQuestionsCarryTheAllowance` | built |

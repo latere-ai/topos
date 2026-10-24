@@ -26,6 +26,7 @@ by `limit` and `cursor` and narrowed by `owner`, each with its runs:
       "created_at": "2026-09-22T12:30:00Z",
       "fires_on": "event",
       "suspended": false,
+      "max_age": "1h",
       "wake": false,
       "runs": [
         {"firing_id": "frg_01M34J2N80QKPCFHVXPHHQRHGQ", "at": "2026-09-22T12:40:00Z", "outcome": "started",
@@ -89,13 +90,17 @@ soonest first, as the server would fire them:
 | `fires_on` | `fires` |
 |---|---|
 | `schedule` | its schedule's times, in its time zone |
-| `at` | its one time, or now for a one that is past its time and waits for its allowance |
+| `at` | its one time; for one past its time that waits, now when it waits for its allowance, or when the limit that refused it resets |
 | `event` | none: it fires when something arrives. Read how often it ran from `runs` and how old it is from `created_at` |
 
 A suspended trigger has none. The hold over every trigger
 (`docs/holding-triggers.md`) is not applied: the times are what would
 fire once it is released. At most 3000 are answered; `more_fires` says
 later ones were left out.
+
+`max_age` is the trigger's `spec.maxAge`: how late a firing may still
+run after its time, so how long a one-shot that waits may wait before it
+is skipped as late.
 
 ## A trigger that continues one session
 

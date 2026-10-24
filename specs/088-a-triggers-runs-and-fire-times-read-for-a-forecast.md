@@ -146,12 +146,13 @@ The answer is a page, `{items, next_cursor}`, one item per trigger:
 | `fires_on` | `schedule`, `event` (`on`) or `at` |
 | `suspended` | `spec.suspend` |
 | `per_week_usd_micro` | `spec.budget.perWeek`; absent without one |
+| `max_age` | `spec.maxAge`: how late a firing may run after its time, so how long a one-shot that waits may wait |
 | `wake` | a wake set in a session ([[086-proactive-agents]]) |
 | `target` | for a trigger whose firings continue one session, a wake or one naming `session.target`: `{session_id, trigger_id}`, `trigger_id` the trigger that started that session, absent for a session a person started |
 | `runs` | its runs from `since`, oldest first, at most `MaxRunsListed`, the newest kept: for a wake, the wake runs of its session, every wake set in it, each once its own trigger; for any other trigger, its own runs and the wake runs of the sessions it started, which count toward it ([[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]) |
 | `more_runs` | true when older runs from `since` were left out |
 | `per_run_usd_micro` | the mean cost of the latest `trigger.PaceLooks` (5) runs that started or continued and ended, of its own firings (for a wake, of its session's wake runs), from the whole record, `since` aside; absent before any |
-| `fires` | the times it fires after now and before `until`, oldest first, at most `MaxRunFires`: a schedule's next times in its zone, a one-shot's `at`, or now for a one-shot past its time still waiting for its allowance; none for an event trigger or a suspended one. The hold is not applied |
+| `fires` | the times it fires after now and before `until`, oldest first, at most `MaxRunFires`: a schedule's next times in its zone, a one-shot's `at`, or for a one-shot past its time that waits, now when it waits for its allowance or its next fire time when it waits for a limit that refused it to reset ([[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]); none for an event trigger or a suspended one. The hold is not applied |
 | `more_fires` | true when fire times before `until` were left out |
 
 Each run in `runs`:
