@@ -89,7 +89,7 @@ id:
 | `firing_id` | the firing's `frg_` id |
 | `owner` | the trigger's owner, whose read answers the run |
 | `trigger_id` | the trigger that fired; for a wake, the wake's own trigger, which its firing deletes |
-| `session_id` | the session the run started or continued; empty for a skipped one |
+| `session_id` | the session the run started or continued; for a skipped run of a wake or of a trigger naming `session.target`, the session it would have continued; empty for any other skipped one |
 | `wake` | the firing was a wake's |
 | `session_trigger_id` | for a wake's run, the trigger that started its session (the session's `trigger_id`); empty for a session a person started, and for every other run |
 | `at` | the firing's time: a schedule's scheduled time, an event's or a manual firing's arrival, a one-shot's time |
@@ -137,8 +137,7 @@ way by `limit` and `cursor`.
 A time outside its bounds, or one that is no RFC 3339 time, is
 `invalid_request` naming the bound.
 
-The answer is `{now, items, next_cursor}`: `now` the time the answer was
-computed at, and one item per trigger:
+The answer is a page, `{items, next_cursor}`, one item per trigger:
 
 | Field | Meaning |
 |---|---|

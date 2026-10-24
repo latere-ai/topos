@@ -386,7 +386,9 @@ tool's `perWeekUsd`, with the postgres tier run on its new column
 above left to the build:
 
 - A look's cost is read from the session logs at each firing; nothing
-  else stores it. The sessions read are the ones the trigger's firings
+  else stores it. [[088-a-triggers-runs-and-fire-times-read-for-a-forecast]]
+  later keeps each look's cost as a run, written where this count reads
+  the logs. The sessions read are the ones the trigger's firings
   started or continued in the window, its sessions still open, and its
   `session.target`.
 - The rolling window excludes a look exactly 7 days old.

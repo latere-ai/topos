@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **One read answers every trigger's runs and when it fires next.** `GET /v1/triggers/runs?since=&until=` answers the triggers the list would, paged and narrowed by `owner` as it is, each with its runs since `since` (a run being a firing that started or continued a turn, with what that turn cost, or one `skipped_budget` or `refused` stopped), the mean cost of its latest five runs, and the times it fires before `until`: a schedule's in its zone, a one-shot's time, none for an event trigger. A wake answers the runs of every wake set in its session, and a trigger the wakes of the sessions it started. It is asked as `trigger.list`, so an authorizer needs nothing new. A client forecasts a person's week or month from it with one request. See `docs/trigger-runs.md`.
+- **Each run's cost is kept.** Every firing that is a run is recorded where the firing is recorded, and its turn's cost is written where the logs are already read, at each firing's count of the allowance and at the read for a turn that had not ended, so a month is answered without reading every log. A wake's runs outlive the wake. Runs are kept six weeks. The Postgres store adds the table `trigger_runs` (migration 0020).
+
+### Changed
+
+- **A trigger's `status.createdAt` is its first apply.** It was the time of the latest version, so a trigger paused, resumed or changed answered the day of that apply as when it was made. The version and the digest still move with each change.
+- **No trigger may be named `runs`**, the path of the new read, as none may be named `hold`.
+
 ### Fixed
 
 - **A price or an allowance too large to hold is refused.** A decimal

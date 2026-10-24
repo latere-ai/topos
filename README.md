@@ -171,6 +171,9 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   nobody watches is decided, and the `attended` the log records.
 - [docs/context-report.md](docs/context-report.md): how full a
   conversation's context is, and what fills it.
+- [docs/trigger-runs.md](docs/trigger-runs.md): every trigger's runs with
+  what each cost, the cost of a typical run, and when each fires next,
+  read at once for a forecast.
 
 ## Contributing
 
