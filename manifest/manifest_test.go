@@ -771,3 +771,22 @@ func TestATriggersAllowance(t *testing.T) {
 		}
 	}
 }
+
+// TestTheRouteNamesAreNoTriggers: the hold (spec 086) and the read of an
+// owner's runs (spec 088) are routes under /triggers, so apply refuses a
+// trigger of either name, and takes any other.
+func TestTheRouteNamesAreNoTriggers(t *testing.T) {
+	o := storedA(t)
+	named := func(name string) string {
+		return strings.Replace(eventTrigger("schedule: '@daily', session: {message: x}"), "metadata: {name: t}", "metadata: {name: "+name+"}", 1)
+	}
+	for _, name := range []string{trigger.HoldName, trigger.RunsName} {
+		e := refused(t, CodeInvalidManifest, named(name), o)
+		if !hasProblem(e, "metadata.name", "is the name of the route") {
+			t.Errorf("%s: %s", name, e.Detail())
+		}
+	}
+	if r := one(t, named("runs-weekly"), o); r.Name != "runs-weekly" {
+		t.Fatalf("a name beside the routes' resolved as %q", r.Name)
+	}
+}
