@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.57.0 - 2026-10-24
+
 ### Added
 
 - **One read answers every trigger's runs and when it fires next.** `GET /v1/triggers/runs?since=&until=` answers the triggers the list would, paged and narrowed by `owner` as it is, each with its runs since `since` (a run being a firing that started or continued a turn, with what that turn cost, or one `skipped_budget` or `refused` stopped), the mean cost of its latest five runs, its `max_age`, and the times it fires before `until`: a schedule's in its zone, a one-shot's time or its next try while it waits, none for an event trigger. A wake answers the runs of every wake set in its session, and a trigger the wakes of the sessions it started. It is asked as `trigger.list`, so an authorizer needs nothing new. A client forecasts a person's week or month from it with one request. See `docs/trigger-runs.md`.
