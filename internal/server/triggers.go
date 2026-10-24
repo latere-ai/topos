@@ -69,11 +69,16 @@ func (c *call) trigger(ref, action string) (store.Trigger, error) {
 }
 
 // renderTrigger is a stored trigger as the API answers it: the document
-// last applied, with its firing record in its status.
+// last applied, with its firing record in its status. Its createdAt is
+// the first apply's, which the record keeps, and not the latest
+// version's the document holds (spec 088).
 func renderTrigger(t store.Trigger) (*v1.Trigger, error) {
 	doc, err := store.DecodeTrigger(t.Doc)
 	if err != nil {
 		return nil, err
+	}
+	if !t.CreatedAt.IsZero() {
+		doc.Status.CreatedAt = t.CreatedAt.UTC()
 	}
 	counts := t.Counts
 	doc.Status.LastFiredAt, doc.Status.LastSessionID, doc.Status.NextFireAt, doc.Status.Counts = t.LastFiredAt, t.LastSessionID, t.NextFireAt, &counts
@@ -376,21 +381,7 @@ func (c *call) listTriggers() error {
 	if err != nil {
 		return err
 	}
-	named := c.namedOwner()
-	d, err := c.ask(c.r.Context(), authorizer.ActionTriggerList, authz.NewResource(authorizer.KindTrigger, "", listFields(named)))
-	if err != nil {
-		return err
-	}
-	o := store.TriggerList{Limit: limit, Cursor: cursor}
-	switch {
-	case named != "" && !admits(d, named):
-		return c.replyPage([]*v1.Trigger{}, "")
-	case named != "":
-		o.Owners = []string{named}
-	case d.Filter != nil:
-		o.Owners = d.Filter.Owners
-	}
-	list, next, err := c.s.o.Objects.ListTriggers(c.r.Context(), o)
+	list, next, err := c.triggerPage(limit, cursor)
 	if err != nil {
 		return err
 	}
@@ -403,6 +394,29 @@ func (c *call) listTriggers() error {
 		items = append(items, doc)
 	}
 	return c.replyPage(items, next)
+}
+
+// triggerPage is the page of triggers a list asks trigger.list for: the
+// owners the allow's filter names, every owner for an allow with none,
+// narrowed to the owner the request names (spec 074), paged by limit and
+// cursor. The list and the read of the runs (spec 088) answer the same
+// triggers.
+func (c *call) triggerPage(limit int, cursor string) ([]store.Trigger, string, error) {
+	named := c.namedOwner()
+	d, err := c.ask(c.r.Context(), authorizer.ActionTriggerList, authz.NewResource(authorizer.KindTrigger, "", listFields(named)))
+	if err != nil {
+		return nil, "", err
+	}
+	o := store.TriggerList{Limit: limit, Cursor: cursor}
+	switch {
+	case named != "" && !admits(d, named):
+		return nil, "", nil
+	case named != "":
+		o.Owners = []string{named}
+	case d.Filter != nil:
+		o.Owners = d.Filter.Owners
+	}
+	return c.s.o.Objects.ListTriggers(c.r.Context(), o)
 }
 
 // getTrigger is GET /triggers/{ref}.

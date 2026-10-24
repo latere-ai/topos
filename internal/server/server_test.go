@@ -252,6 +252,7 @@ func TestEveryRouteAsksItsAction(t *testing.T) {
 		"listFirings":        {http.MethodGet, "/v1/triggers/nightly/firings", ""},
 		"getTriggerHold":     {http.MethodGet, "/v1/triggers/hold", ""},
 		"setTriggerHold":     {http.MethodPut, "/v1/triggers/hold", `{"held":false}`},
+		"listTriggerRuns":    {http.MethodGet, "/v1/triggers/runs", ""},
 	}
 	var ops []string
 	for _, rt := range table() {

@@ -411,16 +411,25 @@ func (e *Engine) keepRun(ctx context.Context, t store.Trigger, spec v1.TriggerSp
 	}
 }
 
-// runOf is the run of a recorded firing f of t. A wake's names the
-// trigger that started its session, which its runs count toward (spec
-// 087), and a skipped run of a trigger that continues one session names
-// that session, as a run that went ahead would have.
-func (e *Engine) runOf(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing) (store.Run, error) {
+// RunOf is the run of a recorded firing f of t of spec (spec 088), as far
+// as the firing and the trigger tell it: with no cost yet, ended when it
+// is skipped, and for a skipped run of a trigger that continues one
+// session, naming that session as a run that went ahead would have. A
+// wake's run also names the trigger that started its session, which
+// only the session tells.
+func RunOf(t store.Trigger, spec v1.TriggerSpec, f store.Firing) store.Run {
 	r := store.Run{FiringID: f.ID, Owner: t.Owner, TriggerID: t.ID, SessionID: f.SessionID, At: f.Time, Outcome: f.Outcome, Reason: f.Reason}
 	r.Ended = !r.Ran()
 	if r.SessionID == "" {
 		r.SessionID = spec.Session.Target
 	}
+	return r
+}
+
+// runOf is RunOf with a wake's part: the trigger that started its
+// session, which its runs count toward (spec 087).
+func (e *Engine) runOf(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing) (store.Run, error) {
+	r := RunOf(t, spec, f)
 	doc, err := store.DecodeTrigger(t.Doc)
 	if err != nil {
 		return store.Run{}, err

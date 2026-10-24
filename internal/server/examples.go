@@ -266,7 +266,9 @@ func examples() (map[string]example, error) {
 	}
 	applied.Status = v1.Status{ID: exampleTriggerID, Version: 1, Digest: exampleTriggerDigest, CreatedAt: exampleTime(12, 30, 0), Counts: &v1.TriggerCounts{}}
 	newTrigger := applied
-	applied.Status.Version, applied.Status.CreatedAt = 3, exampleTime(12, 32, 0)
+	// A later apply moves the version and keeps createdAt, the first
+	// apply's (spec 088).
+	applied.Status.Version = 3
 	fired := applied
 	fired.Status.LastFiredAt, fired.Status.LastSessionID, fired.Status.Counts = new(exampleTime(12, 40, 0)), exampleFiredID, &v1.TriggerCounts{Started: 2}
 	// The second firing counted the week as it stood before its look: the
@@ -278,6 +280,12 @@ func examples() (map[string]example, error) {
 	started := firing{ID: exampleFiringID, TriggerID: exampleTriggerID, Origin: store.OriginEvent,
 		Event: &firingEvent{Product: delivery.Product, Verb: delivery.Verb, Resource: delivery.Resource, ID: delivery.ID},
 		Key:   delivery.Resource, Outcome: store.OutcomeStarted, SessionID: exampleFiredID, ReceivedAt: exampleTime(12, 40, 0)}
+	// The trigger's runs as the read answers them (spec 088): the firing
+	// above, its turn ended, the earlier one before since, and no fire
+	// times, since it fires on events.
+	runs := triggerRuns{TriggerID: exampleTriggerID, Name: applied.Metadata.Name, CreatedAt: exampleTime(12, 30, 0), FiresOn: firesOnEvent,
+		Runs:           []triggerRun{{FiringID: exampleFiringID, At: exampleTime(12, 40, 0), Outcome: store.OutcomeStarted, SessionID: exampleFiredID, CostUSDMicro: 1200, Ended: true}},
+		PerRunUSDMicro: new(int64(1200)), Fires: []time.Time{}}
 
 	out := map[string]example{
 		"applyAgent":        {request: exampleAgentManifest, manifest: exampleAgentYAML, response: text(agent), created: text(newAgent)},
@@ -310,6 +318,7 @@ func examples() (map[string]example, error) {
 		"fireTrigger":      {request: text(delivery), response: text(started)},
 		"listFirings":      {response: list(started, store.Cursor(exampleFiringID))},
 		"getTriggerHold":   {response: text(holdAnswer{})},
+		"listTriggerRuns":  {response: list(runs, store.Cursor(exampleTriggerID))},
 		"setTriggerHold":   {request: text(holdBody{Held: new(true)}), response: text(holdAnswer{Held: true, Since: new(exampleTime(12, 50, 0))})},
 	}
 	return out, failed

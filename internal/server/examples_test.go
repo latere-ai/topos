@@ -465,9 +465,19 @@ func TestTheExamplesAreWhatTheRoutesAnswer(t *testing.T) {
 	setup(http.MethodPost, "/v1/triggers/on-release/fire",
 		`{"id":"0b8f2a44-7d1c-4c5e-9f3a-2e6d8c1b4a70","product":"github","verb":"release.published","resource":"example/widgets@v1.3.9","time":"2026-09-22T12:35:00Z"}`, http.StatusOK)
 	now = exampleTime(12, 40, 0)
-	step("fireTrigger", trg, "")
+	fired := step("fireTrigger", trg, "")
 	step("getTrigger", trg, "")
 	step("listFirings", trg, "?limit=1")
+	// The read of the runs once the firing's turn ended, the earlier
+	// firing's before since (spec 088).
+	var started struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(fired.body, &started); err != nil || started.SessionID == "" {
+		t.Fatalf("the firing's session: %q, %v", fired.body, err)
+	}
+	turn(started.SessionID, "", session.StopEndTurn)
+	step("listTriggerRuns", nil, "?limit=1&since=2026-09-22T12:38:00Z")
 	step("deleteTrigger", map[string]string{"ref": "nightly"}, "")
 	// The hold over every trigger: read, then set.
 	step("getTriggerHold", nil, "")

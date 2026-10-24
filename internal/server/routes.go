@@ -84,6 +84,11 @@ func table() []route {
 			op: "getTriggerHold", summary: "Read the trigger hold", status: http.StatusOK, handle: (*call).getHold},
 		{method: http.MethodPut, path: "/triggers/hold", actions: a(authorizer.ActionTriggerHold),
 			op: "setTriggerHold", summary: "Set the trigger hold", status: http.StatusOK, body: MaxBody, handle: (*call).setHold},
+		// The read of an owner's runs answers the triggers the list does,
+		// and is more specific than a trigger's of the name runs, which no
+		// trigger takes (spec 088).
+		{method: http.MethodGet, path: "/triggers/runs", actions: a(authorizer.ActionTriggerList),
+			op: "listTriggerRuns", summary: "List trigger runs", status: http.StatusOK, handle: (*call).listTriggerRuns},
 		{method: http.MethodGet, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerRead),
 			op: "getTrigger", summary: "Read a trigger", status: http.StatusOK, handle: (*call).getTrigger},
 		{method: http.MethodDelete, path: "/triggers/{ref}", actions: a(authorizer.ActionTriggerDelete),
