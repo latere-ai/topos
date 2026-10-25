@@ -578,6 +578,9 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 	if ss.Notify != "" {
 		v.oneOf("spec.session.notify", ss.Notify, v1.NotifyAlways, v1.NotifyJudged)
 	}
+	if m := ss.Model; m != nil {
+		v.sessionModel("spec.session.model", *m)
+	}
 	// A target is the session a firing continues, in place of the one its
 	// key names (spec 086); the server holds it to an open session of the
 	// trigger's agent the applier may send to.
@@ -636,6 +639,22 @@ func (v *validator) trigger(s v1.TriggerSpec) {
 		v.add("spec.maxActive", fmt.Sprintf("%d is outside 1 to %d", *n, trigger.MaxActiveCeiling))
 	}
 	v.duration("spec.maxAge", s.MaxAge)
+}
+
+// sessionModel checks the model a triggered session starts on by the
+// rules a session's change of its model is checked by (spec 015): it
+// names a name, a level or both, a name is a model's, not empty and with
+// no space around it, and a level is one of the reasoning levels.
+func (v *validator) sessionModel(at string, m v1.SessionModel) {
+	if m.Name == "" && m.Reasoning == "" {
+		v.add(at, "names neither name nor reasoning; leave model out for the agent's own")
+	}
+	if m.Name != "" && strings.TrimSpace(m.Name) != m.Name {
+		v.add(at+".name", fmt.Sprintf("%q is not a model's name", m.Name))
+	}
+	if m.Reasoning != "" {
+		v.oneOf(at+".reasoning", m.Reasoning, v1.Efforts...)
+	}
 }
 
 // schedule checks a cron expression, and that it fires at all: a

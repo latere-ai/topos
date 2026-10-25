@@ -225,6 +225,7 @@ var typeNames = map[reflect.Type]string{
 	typeOf[v1.SessionLimits]():       "ManifestSessionLimits",
 	typeOf[v1.SessionResource]():     "ManifestSessionResource",
 	typeOf[v1.SessionMachine]():      "ManifestSessionMachine",
+	typeOf[v1.SessionModel]():        "ManifestSessionModel",
 }
 
 // packageLabels prefix a component's name when types of several

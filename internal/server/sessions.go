@@ -154,13 +154,7 @@ func checkRepositories(rs []session.Resource) error {
 // a comparison reads ran the model it says. An allow that names the same
 // model keeps its route and its message_text.
 func askedModel(cfg manifest.AgentConfig, m *modelChange, limits authorizer.Limits) (session.ModelRef, error) {
-	asked := session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
-	if n := m.Name; n != nil {
-		asked.Name = *n
-	}
-	if l := m.level(); l != nil {
-		asked.Effort = cmp.Or(*l, cfg.Effort)
-	}
+	asked := m.asked(cfg)
 	if limits.Model != "" && limits.Model != asked.Name {
 		return asked, refuse(CodeModelNotAllowed, "the authorizer runs %s in place of %s, and a create that names its model runs it as named", limits.Model, asked.Name)
 	}
@@ -171,6 +165,23 @@ func askedModel(cfg manifest.AgentConfig, m *modelChange, limits authorizer.Limi
 		asked.Route, asked.MessageText = limits.Route, limits.MessageText
 	}
 	return asked, nil
+}
+
+// asked is the model a create that names m asks to start on: m's name
+// and level, each the agent's where m leaves it out, and the agent's own
+// model at its own level for a nil m.
+func (m *modelChange) asked(cfg manifest.AgentConfig) session.ModelRef {
+	asked := session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
+	if m == nil {
+		return asked
+	}
+	if n := m.Name; n != nil {
+		asked.Name = *n
+	}
+	if l := m.level(); l != nil {
+		asked.Effort = cmp.Or(*l, cfg.Effort)
+	}
+	return asked
 }
 
 // createMachine is a create's machine (spec 080): a device, the Cella
@@ -316,6 +327,11 @@ type creation struct {
 	// model is the model and level the create names in place of the
 	// agent's, nil for the agent's own (spec 077, R3).
 	model *modelChange
+	// startOn is the model and level a trigger's session starts on in
+	// place of the agent's, nil for the agent's own (spec 089). Unlike
+	// model, it is answered as the agent's own model is: the allow may
+	// name another model to run in its place, and another level.
+	startOn *modelChange
 }
 
 // forkOrigin is what a fork starts from: the session forked, the fork
@@ -440,12 +456,14 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 	// A create that names its model is asked with that model and its
 	// level, under both names a change of model carries them by, so the
 	// authorizer decides the model the session runs from its first
-	// request (spec 077, R3); a rollout's run names its rollout.
-	if in.model != nil {
-		if n := in.model.Name; n != nil {
+	// request (spec 077, R3), and so is a trigger's session that starts on
+	// a model its trigger names (spec 089); a rollout's run names its
+	// rollout.
+	if m := cmp.Or(in.model, in.startOn); m != nil {
+		if n := m.Name; n != nil {
 			fields["model"] = *n
 		}
-		if l := in.model.level(); l != nil {
+		if l := m.level(); l != nil {
 			fields["reasoning"], fields["effort"] = *l, *l
 		}
 	}
@@ -509,8 +527,9 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 		return session.Session{}, s.o.Guard.Disclose(ctx, err, auth.Envelope(q.caller, authorizer.ActionAgentRead, agentResource(a), q.r))
 	}
 	// A session the authorizer routed starts on the model its allow names
-	// and keeps the agent's name beside it, which a client reads as the
-	// choice that was asked, and at the reasoning level its allow names,
+	// and keeps the name asked beside it, the agent's or the one its
+	// trigger names (spec 089), which a client reads as the choice that
+	// was asked, and at the reasoning level its allow names,
 	// "" being the agent's own (spec 049). A fork is not routed: it
 	// continues its parent's model at its parent's level, and its first
 	// send is asked as any send is.
@@ -523,10 +542,13 @@ func (s *Server) create(ctx context.Context, q asker, in creation) (session.Sess
 			start = &asked
 		}
 	} else if in.fork == nil {
+		// A trigger's model is routed as the agent's own is, unlike a
+		// create's, which runs as named.
 		own := session.ModelRef{Name: cfg.Model.Name, Effort: cfg.Effort}
-		routed := own
-		if limits.Model != "" && limits.Model != cfg.Model.Name {
-			routed.Name, routed.Via = limits.Model, cfg.Model.Name
+		asked := in.startOn.asked(cfg)
+		routed := asked
+		if limits.Model != "" && limits.Model != asked.Name {
+			routed.Name, routed.Via = limits.Model, asked.Name
 		}
 		if limits.Model != "" {
 			routed.Route, routed.MessageText = limits.Route, limits.MessageText

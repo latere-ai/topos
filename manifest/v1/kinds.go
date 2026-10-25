@@ -110,12 +110,27 @@ type TriggerSession struct {
 	Attended *bool `json:"attended,omitempty"`
 	// Notify is NotifyAlways or NotifyJudged; NotifyAlways when unset. A
 	// wake's turn is judged whatever it says.
-	Notify    string            `json:"notify,omitempty"`
+	Notify string `json:"notify,omitempty"`
+	// Model is the model and the reasoning level each session a firing
+	// starts begins on in place of its agent's (spec 089); a firing that
+	// continues an open session leaves that session's model as it is.
+	// Ignored with Target; nil for the agent's own.
+	Model     *SessionModel     `json:"model,omitempty"`
 	Machine   *SessionMachine   `json:"machine,omitempty"`
 	Resources []SessionResource `json:"resources,omitempty"`
 	Budget    *Budget           `json:"budget,omitempty"`
 	Limits    *SessionLimits    `json:"limits,omitempty"`
 	EndOnIdle *bool             `json:"endOnIdle"`
+}
+
+// SessionModel is the model a triggered session starts on, in the shape a
+// session's change of its model takes (spec 015): its name, its reasoning
+// level, one of Efforts, or both. A member left out is the agent's. The
+// installation's authorizer may run another model in the named one's
+// place, as it may for the agent's own (spec 038).
+type SessionModel struct {
+	Name      string `json:"name,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 // SessionMachine is the machine a triggered session runs on. A device,

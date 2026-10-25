@@ -622,3 +622,44 @@ func TestTheListSaysEachAllowance(t *testing.T) {
 		t.Fatalf("the list answered %q, want %q", res.Content[0].Text, want)
 	}
 }
+
+// TestAChangeKeepsTheModelItsTriggerNames (spec 089): the trigger tool's
+// change, pause and resume of a routine, and its change of a trigger that
+// is no routine, keep the spec.session.model the person chose, which no
+// field of the tool names.
+func TestAChangeKeepsTheModelItsTriggerNames(t *testing.T) {
+	model := &v1.SessionModel{Name: "tier/thorough", Reasoning: v1.EffortHigh}
+	body, err := Manifest("chat", routine.Name("ses_1/toolu_m"), runner.Proposal{Name: "Weekly", Ask: "Count.", Why: "Mondays.", Schedule: "0 9 * * 1", TimeZone: "UTC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored v1.Trigger
+	if err := json.Unmarshal(body, &stored); err != nil {
+		t.Fatal(err)
+	}
+	stored.Spec.Session.Model = model
+	own := v1.Trigger{APIVersion: v1.APIVersion, Kind: v1.KindTrigger, Metadata: v1.ObjectMeta{Name: "nightly"},
+		Spec: v1.TriggerSpec{Agent: "agent_1", On: &v1.TriggerOn{Product: "github", Verbs: []string{"push"}}, Session: v1.TriggerSession{Message: "Build.", Model: model}}}
+	for _, c := range []struct {
+		name    string
+		trigger *v1.Trigger
+		p       runner.Proposal
+	}{
+		{"a routine's time", &stored, runner.Proposal{Action: ActionChange, ID: "trg_1", Why: "Later.", Schedule: "30 7 * * *", TimeZone: "UTC"}},
+		{"a routine's pause", &stored, runner.Proposal{Action: ActionPause, ID: "trg_1", Why: "Away."}},
+		{"a routine's resume", &stored, runner.Proposal{Action: ActionResume, ID: "trg_1", Why: "Back."}},
+		{"a trigger's ask", &own, runner.Proposal{Action: ActionChange, ID: "trg_2", Why: "Clearer.", Ask: "Build and test."}},
+	} {
+		changed, err := Changed("chat", c.trigger, c.p)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		var got v1.Trigger
+		if err := json.Unmarshal(changed, &got); err != nil {
+			t.Fatal(err)
+		}
+		if m := got.Spec.Session.Model; m == nil || *m != *model {
+			t.Errorf("%s writes the model %+v: %s", c.name, m, changed)
+		}
+	}
+}

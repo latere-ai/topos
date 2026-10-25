@@ -564,9 +564,14 @@ var opDescriptions = map[string]string{
 		"status.paused {why, by, sessionId, toolUseId, at} says who suspended the trigger and when, with the agent's why and its call for a pause a session's call made; it is kept while the trigger stays suspended and cleared when it resumes. "+
 		"spec.session.attended makes each session a firing starts attended, so its questions wait for the owner; session.create is asked with attended. "+
 		"spec.session.notify is always, the default, or judged: a firing of a judged trigger sends its message with notify judged, and the turn it begins records outcome quiet on its closing status unless the agent calls its notify tool or waits for the person; "+
-		"judged is refused for an agent whose latest version does not name notify. trigger.create and trigger.update carry notify. "+SpendRule,
+		"judged is refused for an agent whose latest version does not name notify. trigger.create and trigger.update carry notify. "+
+		`spec.session.model, {"name": "<model>", "reasoning": "<level>"} with either member or both, the shape a session's change of its model takes, is the model each session a firing starts begins on in place of its agent's, and its reasoning level, one of %s; a member left out is the agent's. `+
+		"session.create is asked with its name as model, and its level under both reasoning and effort when it names one, as a create that names its model is, and the session runs as it would on its agent's own model: "+
+		"on the model the allow names in its place, with the trigger's name as via, at the level the allow names when it names one. "+
+		"A firing that continues an open session sends its message and leaves the model that session runs, and a trigger under session.target ignores spec.session.model. "+
+		"A model that names neither member, a name with space around it, or another level is invalid_manifest. "+SpendRule,
 		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice,
-		v1.OriginWake, spoken(trigger.MinWakeDelay), spoken(trigger.MaxWakeAhead), spoken(trigger.WakeMaxAge)),
+		v1.OriginWake, spoken(trigger.MinWakeDelay), spoken(trigger.MaxWakeAhead), spoken(trigger.WakeMaxAge), strings.Join(v1.Efforts, ", ")),
 	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+
 		"product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. "+
 		"The answer is the firing {id, trigger_id, origin, event, key, outcome, reason, session_id, received_at}, where outcome is started, continued, held, filtered, skipped_active, skipped_busy, skipped_late, skipped_ended, skipped_budget, refused or failed. "+

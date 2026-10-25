@@ -637,7 +637,25 @@ func (a actor) Start(ctx context.Context, st triggers.Start) (session.Session, e
 	if l := ss.Limits; l != nil {
 		in.limits = createLimits{TurnTimeout: l.TurnTimeout, MaxAge: l.MaxAge}
 	}
+	in.startOn = startOn(ss.Model)
 	return a.s.create(ctx, a.s.owner(st.Trigger), in)
+}
+
+// startOn is the model a firing's session starts on (spec 089), as the
+// change of a session's model names one: a member the trigger leaves out
+// is nil, the agent's; nil for a trigger that names no model.
+func startOn(m *v1.SessionModel) *modelChange {
+	if m == nil {
+		return nil
+	}
+	var c modelChange
+	if m.Name != "" {
+		c.Name = &m.Name
+	}
+	if m.Reasoning != "" {
+		c.Reasoning = &m.Reasoning
+	}
+	return &c
 }
 
 // Send sends a firing's message to the key's open session as the send

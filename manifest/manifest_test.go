@@ -772,6 +772,48 @@ func TestATriggersAllowance(t *testing.T) {
 	}
 }
 
+// TestTheModelATriggersSessionsStartOn (spec 089): spec.session.model
+// resolves as written, a name, a level or both, and a trigger that names
+// none writes no model, so its digest stays what it was; a model that
+// names neither member, a name with space around it, a level outside the
+// reasoning levels and a member a session's change of its model does not
+// take are invalid_manifest at their paths.
+func TestTheModelATriggersSessionsStartOn(t *testing.T) {
+	o := storedA(t)
+	for body, want := range map[string]v1.SessionModel{
+		"{name: tier/thorough}":                  {Name: "tier/thorough"},
+		"{reasoning: high}":                      {Reasoning: v1.EffortHigh},
+		"{name: tier/sustained, reasoning: low}": {Name: "tier/sustained", Reasoning: v1.EffortLow},
+	} {
+		r := one(t, eventTrigger("schedule: '@daily', session: {message: x, model: "+body+"}"), o)
+		if m := r.Trigger.Spec.Session.Model; m == nil || *m != want {
+			t.Fatalf("%s resolved as %+v", body, m)
+		}
+	}
+	plain := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o)
+	if strings.Contains(string(plain.Spec), `"model"`) {
+		t.Fatalf("a trigger without a model writes one: %s", plain.Spec)
+	}
+	if again := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o); again.Digest != plain.Digest {
+		t.Fatal("the digest of a trigger without a model moved")
+	}
+	if named := one(t, eventTrigger("schedule: '@daily', session: {message: x, model: {name: tier/thorough}}"), o); named.Digest == plain.Digest {
+		t.Fatal("a model does not change the digest")
+	}
+	for _, c := range []struct{ model, path, detail string }{
+		{"{}", "spec.session.model", "names neither name nor reasoning"},
+		{"{name: ''}", "spec.session.model", "names neither name nor reasoning"},
+		{"{name: ' tier/thorough'}", "spec.session.model.name", "is not a model's name"},
+		{"{name: tier/thorough, reasoning: max}", "spec.session.model.reasoning", "not one of minimal, low, medium, high"},
+		{"{name: tier/thorough, effort: high}", "spec.session.model.effort", ""},
+	} {
+		e := refused(t, CodeInvalidManifest, eventTrigger("schedule: '@daily', session: {message: x, model: "+c.model+"}"), o)
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%s: want %s: %s, got\n%s", c.model, c.path, c.detail, e.Detail())
+		}
+	}
+}
+
 // TestTheRouteNamesAreNoTriggers: the hold (spec 086) and the read of an
 // owner's runs (spec 088) are routes under /triggers, so apply refuses a
 // trigger of either name, and takes any other.

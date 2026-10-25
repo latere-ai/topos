@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goccy/go-yaml"
+
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/bearer"
 
@@ -26,6 +28,7 @@ import (
 	"latere.ai/x/topos/internal/triggers"
 	"latere.ai/x/topos/manifest/trigger"
 	v1 "latere.ai/x/topos/manifest/v1"
+	"latere.ai/x/topos/models"
 	"latere.ai/x/topos/session"
 )
 
@@ -1334,6 +1337,268 @@ func TestListFiltersByTheTriggerThatStartedASession(t *testing.T) {
 			if a.status != http.StatusBadRequest || a.code() != CodeInvalidRequest || !strings.Contains(string(a.body), "trigger") {
 				t.Errorf("%s?trigger=%s: %d %s, want invalid_request naming trigger", route, v, a.status, a.body)
 			}
+		}
+	}
+}
+
+// modelFixture is a trigger fixture whose model check keeps the names it
+// was asked, answered from the embedded catalog as the fixture's own is,
+// and whose authorizer keeps every session.create and session.send it
+// allows and answers a create that asks for tier/thorough with sonnet, at
+// the level held in level when one is.
+type modelFixture struct {
+	*triggerFixture
+	mu      sync.Mutex
+	checked []string
+	asked   []authz.Request
+	level   *string
+}
+
+const thorough = "tier/thorough"
+
+func newModelFixture(t *testing.T) *modelFixture {
+	t.Helper()
+	cat, err := models.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &modelFixture{}
+	m.triggerFixture = newTriggerFixture(t, func(o *Options) {
+		o.Runnable = func(_ context.Context, am v1.AgentModel, overlay models.Entry) error {
+			m.mu.Lock()
+			m.checked = append(m.checked, am.Name)
+			m.mu.Unlock()
+			_, err := cat.Resolve(am.Name, overlay)
+			return err
+		}
+	})
+	next := m.authz.next
+	m.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		d, err := next.Authorize(context.Background(), req)
+		if err != nil || !d.Allow || req.Action != authorizer.ActionSessionCreate && req.Action != authorizer.ActionSessionSend {
+			return d, err
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.asked = append(m.asked, req)
+		if req.Action != authorizer.ActionSessionCreate || req.Resource.String("model") != thorough {
+			return d, nil
+		}
+		d.Limits, err = json.Marshal(authorizer.WireLimits{Model: sonnet, Reasoning: m.level})
+		return d, err
+	}
+	return m
+}
+
+// reset forgets the questions and the checks so far, and has the next
+// allow of tier/thorough name level, nil for none.
+func (m *modelFixture) reset(level *string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.asked, m.checked, m.level = nil, nil, level
+}
+
+// questions are the questions of action kept since the last reset.
+func (m *modelFixture) questions(action string) []authz.Request {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []authz.Request
+	for _, req := range m.asked {
+		if req.Action == action {
+			out = append(out, req)
+		}
+	}
+	return out
+}
+
+// TestAFiringStartsItsSessionOnTheTriggersModel (spec 089): a firing of a
+// trigger whose spec.session.model names a model asks session.create with
+// that model as model, and with its level under reasoning and effort when
+// it names one, as a create that names its model is asked. The session
+// starts on the model the allow names in its place, with the trigger's
+// name as via, at the trigger's level, or the allow's when it names one,
+// and the model checked is the one that runs. A model the authorizer does
+// not route starts as named, a level alone starts the agent's model at
+// that level, and a trigger that names no model starts on its agent's,
+// asked with the agent's name and no level, as before.
+func TestAFiringStartsItsSessionOnTheTriggersModel(t *testing.T) {
+	f := newModelFixture(t)
+	medium := v1.EffortMedium
+	for _, c := range []struct {
+		name, model string
+		allowLevel  *string
+		askModel    string
+		askLevel    string
+		start       *session.ModelRef
+		checked     string
+	}{
+		{"routed", "model: {name: tier/thorough}", nil, thorough, "", &session.ModelRef{Name: sonnet, Via: thorough}, sonnet},
+		{"routed-at-a-level", "model: {name: tier/thorough, reasoning: high}", nil, thorough, v1.EffortHigh, &session.ModelRef{Name: sonnet, Via: thorough, Effort: v1.EffortHigh}, sonnet},
+		{"the-allows-level", "model: {name: tier/thorough, reasoning: high}", &medium, thorough, v1.EffortHigh, &session.ModelRef{Name: sonnet, Via: thorough, Effort: v1.EffortMedium}, sonnet},
+		{"named", "model: {name: " + sonnet + "}", nil, sonnet, "", &session.ModelRef{Name: sonnet}, sonnet},
+		{"a-level-alone", "model: {reasoning: high}", nil, haiku, v1.EffortHigh, &session.ModelRef{Name: haiku, Effort: v1.EffortHigh}, haiku},
+		{"none", "", nil, haiku, "", nil, haiku},
+	} {
+		f.applyTrigger("alice", c.name, eventSpec(c.model)+", skipIfActive: false")
+		f.reset(c.allowLevel)
+		out := f.fired("alice", c.name, f.envelope("1", "issue.opened", "o/r#1", "x"), store.OutcomeStarted)
+		creates := f.questions(authorizer.ActionSessionCreate)
+		if len(creates) != 1 {
+			t.Fatalf("%s: %d creates asked", c.name, len(creates))
+		}
+		res := creates[0].Resource
+		_, leveled := res.Fields["reasoning"]
+		if res.String("model") != c.askModel || leveled != (c.askLevel != "") || res.String("reasoning") != c.askLevel || res.String("effort") != c.askLevel {
+			t.Errorf("%s: session.create asked model %q, reasoning %v, effort %v", c.name, res.String("model"), res.Fields["reasoning"], res.Fields["effort"])
+		}
+		s := f.header(out.SessionID)
+		if (s.Model == nil) != (c.start == nil) || s.Model != nil && *s.Model != *c.start {
+			t.Errorf("%s: the session starts on %+v, want %+v", c.name, s.Model, c.start)
+		}
+		f.mu.Lock()
+		checked := slices.Clone(f.checked)
+		f.mu.Unlock()
+		if !slices.Equal(checked, []string{c.checked}) {
+			t.Errorf("%s: the create checked %v, want %s", c.name, checked, c.checked)
+		}
+	}
+}
+
+// TestAContinuedFiringLeavesItsSessionsModel (spec 089): a firing that
+// continues an open session, the one its key names under policy continue
+// or its session.target, sends its message and leaves the model the
+// session runs as it is, one a person changed it to included; its
+// session.send names the model the session stands on and no level, and
+// no session.model_changed is appended.
+// A firing of the same key that finds no open session starts one on the
+// trigger's model again.
+func TestAContinuedFiringLeavesItsSessionsModel(t *testing.T) {
+	f := newModelFixture(t)
+	f.applyTrigger("alice", "thread", eventSpec("policy: continue, model: {name: tier/thorough, reasoning: high}"))
+	first := f.fired("alice", "thread", f.envelope("1", "issue.opened", "o/r#1", "x"), store.OutcomeStarted)
+	if s := f.header(first.SessionID); s.Model == nil || *s.Model != (session.ModelRef{Name: sonnet, Via: thorough, Effort: v1.EffortHigh}) {
+		t.Fatalf("the key's session starts on %+v", s.Model)
+	}
+	// The person moves the conversation to another model and level.
+	if a := f.do(http.MethodPatch, "/v1/sessions/"+first.SessionID, "alice", `{"model":{"name":"`+haiku+`","reasoning":"low"}}`); a.status != http.StatusOK {
+		t.Fatalf("patch: %d %s", a.status, a.body)
+	}
+	before := f.header(first.SessionID).Model
+	if before == nil || before.Name != haiku || before.Effort != v1.EffortLow {
+		t.Fatalf("the patched session runs %+v", before)
+	}
+	changes := func(id string) int {
+		n := 0
+		for _, e := range f.log(id) {
+			if e.Type == session.TypeModelChanged {
+				n++
+			}
+		}
+		return n
+	}
+	changed := changes(first.SessionID)
+	f.reset(nil)
+	second := f.fired("alice", "thread", f.envelope("2", "issue.edited", "o/r#1", "x"), store.OutcomeContinued)
+	if second.SessionID != first.SessionID {
+		t.Fatalf("the second firing went to %s", second.SessionID)
+	}
+	if after := f.header(first.SessionID).Model; after == nil || *after != *before {
+		t.Fatalf("a continued firing moved the session's model from %+v to %+v", before, after)
+	}
+	if n := changes(first.SessionID); n != changed {
+		t.Fatalf("a continued firing appended %d session.model_changed", n-changed)
+	}
+	sends := f.questions(authorizer.ActionSessionSend)
+	if len(sends) != 1 || len(f.questions(authorizer.ActionSessionCreate)) != 0 {
+		t.Fatalf("a continued firing asked %d sends and %d creates", len(sends), len(f.questions(authorizer.ActionSessionCreate)))
+	}
+	if got := sends[0].Resource.String("model"); got != before.Name {
+		t.Errorf("a continued firing's session.send names the model %q, not the one its session stands on", got)
+	}
+	for _, name := range []string{"reasoning", "effort"} {
+		if _, ok := sends[0].Resource.Fields[name]; ok {
+			t.Errorf("a continued firing's session.send names %s: %v", name, sends[0].Resource.Fields[name])
+		}
+	}
+	// Once the key's session has ended, the next firing starts a session on
+	// the trigger's model.
+	if a := f.do(http.MethodPost, "/v1/sessions/"+first.SessionID+"/end", "alice", `{"reason":"completed"}`); a.status != http.StatusOK {
+		t.Fatalf("end: %d %s", a.status, a.body)
+	}
+	third := f.fired("alice", "thread", f.envelope("3", "issue.edited", "o/r#1", "x"), store.OutcomeStarted)
+	if s := f.header(third.SessionID); s.Model == nil || *s.Model != (session.ModelRef{Name: sonnet, Via: thorough, Effort: v1.EffortHigh}) {
+		t.Fatalf("the key's next session starts on %+v", s.Model)
+	}
+
+	// A trigger naming session.target continues that session whatever
+	// model it names.
+	open := f.create("alice", "reviewer")
+	f.applyTrigger("alice", "follow", eventSpec("policy: continue, target: "+open.ID+", model: {name: tier/thorough}"))
+	f.reset(nil)
+	f.fired("alice", "follow", f.envelope("1", "issue.opened", "o/r#1", "x"), store.OutcomeContinued)
+	if s := f.header(open.ID); s.Model != nil {
+		t.Fatalf("a target's firing moved its session to %+v", s.Model)
+	}
+	if n := len(f.questions(authorizer.ActionSessionCreate)); n != 0 {
+		t.Fatalf("a target's firing asked %d creates", n)
+	}
+}
+
+// TestATriggersModelIsCheckedAtApply (spec 089): an apply whose
+// spec.session.model names neither member, a level outside the reasoning
+// levels, or a member a session's change of its model does not take, is
+// invalid_manifest naming the field, and stores nothing.
+func TestATriggersModelIsCheckedAtApply(t *testing.T) {
+	f := newTriggerFixture(t)
+	for _, c := range []struct{ model, detail string }{
+		{"{}", "spec.session.model"},
+		{"{name: tier/thorough, reasoning: max}", "spec.session.model.reasoning"},
+		{"{name: ' tier/thorough'}", "spec.session.model.name"},
+		{"{name: tier/thorough, effort: high}", "spec.session.model.effort"},
+	} {
+		a := f.do(http.MethodPut, "/v1/triggers/bad", "alice", triggerYAML("bad", eventSpec("model: "+c.model)))
+		if a.code() != "invalid_manifest" || !strings.Contains(string(a.body), c.detail) {
+			t.Errorf("%s: %d %s", c.model, a.status, a.body)
+		}
+	}
+	if a := f.do(http.MethodGet, "/v1/triggers/bad", "alice", ""); a.status != http.StatusNotFound {
+		t.Fatalf("a refused trigger was stored: %d %s", a.status, a.body)
+	}
+}
+
+// TestTheDocumentDescribesSpec089: the OpenAPI document gives a trigger's
+// session its model, {name, reasoning}, and the apply route's text says
+// what a firing asks with it and runs, and what a continued firing does.
+func TestTheDocumentDescribesSpec089(t *testing.T) {
+	raw, err := OpenAPI(DefaultBasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths      map[string]map[string]struct{ Description string } `yaml:"paths"`
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for schema, fields := range map[string][]string{
+		"TriggerSession":       {"model"},
+		"ManifestSessionModel": {"name", "reasoning"},
+	} {
+		for _, f := range fields {
+			if _, ok := doc.Components.Schemas[schema].Properties[f]; !ok {
+				t.Errorf("%s has no %s", schema, f)
+			}
+		}
+	}
+	text := doc.Paths["/triggers/{name}"]["put"].Description
+	for _, want := range []string{"spec.session.model", `{"name": "<model>", "reasoning": "<level>"}`, "with the trigger's name as via", "leaves the model that session runs", "session.target ignores spec.session.model"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the apply route's text does not say %q", want)
 		}
 	}
 }
