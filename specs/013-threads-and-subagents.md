@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, harness/tools/, prompts/advisor/, prompts/results/threads/, prompts/tools/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-03
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -25,8 +25,12 @@ orchestrating thread. Threads share the session's machine, so a
 subagent reads the file its parent wrote, or work in a worktree of
 their own with `isolation: worktree` and return a branch the parent
 merges. The advisor is a thread the agent consults with its transcript,
-on a stronger model. Peers and graphs declared up front are
-[[033-peers-and-authored-graphs]], on the same threads and messages.
+on a stronger model. Workflows, graphs of threads declared before they
+run, are [[033-peers-and-authored-graphs]], on the same threads and
+messages. A thread that starts as a fork of its caller's conversation,
+a thread's own spending ceiling, and a subagent that runs its parent's
+model are [[091-a-fork-of-the-conversation]], kept apart from this spec
+so that its status goes on recording the criteria it has proven.
 
 ## Current state
 
@@ -79,8 +83,9 @@ says. Its `identity`, `permissions`, `model.credential`, `connections`,
 `ignored`, so a reader of the log sees that the thread did not act as
 that agent. Reaching another agent's own authority is starting a
 session of that agent, which the installation's authorizer decides and
-that agent's owner pays for ([[033-peers-and-authored-graphs]]); a
-spawn never reaches it.
+that agent's owner pays for. No spec of this core builds it: a
+workflow's nodes are threads of the session
+([[033-peers-and-authored-graphs]]), and a spawn never reaches it.
 
 ### The spawn tool
 
@@ -90,7 +95,7 @@ spawn never reaches it.
 | `task` | the first message of the new thread |
 | `isolation` | `shared` (default) or `worktree` |
 | `tools` | optional: names narrowing the subagent's tools further |
-| `budget` | optional: a USD amount narrowing the thread's budget |
+| `budget` | optional: a USD amount narrowing the thread's budget, the ceiling [[091-a-fork-of-the-conversation]] defines and builds |
 
 A `spawn` call appends `thread.started` with the subagent's agent, its
 parent, the call's `tool_use_id`, the task, the isolation, its working
@@ -116,7 +121,8 @@ with it.
 A `message` call appends `thread.message` from the caller to the
 thread and runs the thread's next turn; the call's result is the
 thread's final text. A thread may message only the threads it spawned
-(declared edges between siblings are [[033-peers-and-authored-graphs]]).
+(edges between siblings are not built, and messages between a person's
+sessions are [[092-a-persons-sessions-that-see-each-others-work]]).
 A message is data: it changes nothing the receiving thread may do. With
 `end`, or when the session ends, the runner appends `thread.ended`
 with the thread's final text, usage and cost.
@@ -199,8 +205,10 @@ on uncommitted changes, are files of `prompts/results/threads/`
 
 ## Not in this spec
 
-Declared message edges between siblings, and graphs declared up front
-([[033-peers-and-authored-graphs]]); critic and grader threads
+Workflows ([[033-peers-and-authored-graphs]]); forks, a thread's
+ceiling and a subagent without a model of its own
+([[091-a-fork-of-the-conversation]]); messages between sessions
+([[092-a-persons-sessions-that-see-each-others-work]]); critic and grader threads
 ([[031-review-and-graded-iteration]]); the multi-agent tasks that gate
 each stage ([[025-task-suite]]); what the model is told about spawning
 ([[011-instructions-and-skills]]).

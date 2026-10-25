@@ -89,7 +89,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [030](030-shared-origin.md) | Serving behind a shared origin: the base path, the public URL, trusted proxies, every URL toposd writes | small | in-progress | 002, 006, 015 |
 | [031](031-review-and-graded-iteration.md) | Review and graded iteration: critic threads over an artifact, a rubric and a grader thread | large | vague | 013, 025 |
 | [032](032-editor-clients.md) | Editor clients: serving a session to editors over the Agent Client Protocol | medium | vague | 004, 016, 024 |
-| [033](033-peers-and-authored-graphs.md) | Peers and authored graphs: declared message edges between siblings, and graphs declared up front | large | vague | 003, 013, 025 |
+| [033](033-peers-and-authored-graphs.md) | Workflows: a graph of phases that an agent writes or a manifest declares, run as threads of the session that starts it, estimated as a range from the recorded cost of comparable threads, held for the person's yes with that range and a ceiling, kept to the ceiling, and ended by an interrupt; message edges between its nodes left for later | large | drafted | 003, 004, 005, 006, 007, 008, 012, 013, 025, 039, 086, 087, 091 |
 | [034](034-checkpoints-and-rewind.md) | Checkpoints and rewind: each turn's working directory committed, the session repository, rewind, what fork and handoff restore | medium | in-progress | 004, 005, 009 |
 | [035](.archive/035-hosted-checkpoints-at-the-git-host.md) | Hosted checkpoints at the git host: a hosted session keeps its checkpoints at its private repository, and a fork restores its files after the sandbox is gone | medium | complete | 004, 009 |
 | [036](.archive/036-organization-owners.md) | Organization owners: an agent belongs to the context its first apply is made in, names and lists are the caller's context's | medium | complete | 006, 014, 015, 018, 022 |
@@ -144,6 +144,8 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [088](088-a-triggers-runs-and-fire-times-read-for-a-forecast.md) | A trigger's runs and fire times, read for a forecast: every firing a person counts as a run recorded with its turn's cost where the firing is recorded and the logs are already read, one read of an owner's triggers with their runs since a time, the mean cost of a run and the fire times up to a time, and `status.createdAt` as the first apply | medium | in-progress | 022, 074, 086, 087 |
 | [089](089-the-model-a-triggers-sessions-start-on.md) | The model a trigger's sessions start on: `spec.session.model` names the model and the reasoning level each session a firing starts begins on, asked at `session.create` as a create that names its model is and answered as the agent's own model is, while a firing that continues a session leaves its model | small | testing | 022, 038, 049, 077, 086 |
 | [090](090-a-trigger-that-fires-at-a-list-of-times.md) | A trigger that fires at a list of times: `spec.times` lists 1 to `MaxTimes` instants, each fired once as a one-shot's `at` is, late past `maxAge` or once the next listed time comes, a refusal that resets waiting no later than the next time, the latest time's firing spending the trigger, past times kept and never fired, the runs read answering `fires_on: times`, and the trigger tool keeping the list | medium | testing | 022, 086, 087, 088 |
+| [091](091-a-fork-of-the-conversation.md) | A fork of the conversation: a `fork` tool starts a thread that continues its caller's conversation on the caller's model and effort, with its tool definitions and system prompt byte for byte, so its first request reads the caller's cached prefix; narrowing when a call runs; one depth count; a thread's own ceiling; a subagent that runs its parent's model; a trigger whose sessions start as a fork of the conversation that set it up | large | drafted | 004, 005, 007, 008, 010, 012, 013, 017, 022, 038, 056, 086, 087 |
+| [092](092-a-persons-sessions-that-see-each-others-work.md) | A person's sessions that see each other's work: each open session's work folded from its log, a `sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app and claims paths before a change, and a `send` tool whose message reaches another of the person's sessions as data, starting nothing and never the person's word | large | drafted | 004, 006, 008, 010, 012, 013, 015, 018, 019, 058, 059, 073, 080, 086, 087, 090 |
 
 ## Dependency graph
 
@@ -186,7 +188,7 @@ flowchart BT
   S030[030 shared origin]
   S031[031 review + graded iteration]
   S032[032 editor clients]
-  S033[033 peers + authored graphs]
+  S033[033 workflows]
   S034[034 checkpoints + rewind]
   S035[035 hosted checkpoints at the git host]
   S036[036 organization owners]
@@ -240,6 +242,8 @@ flowchart BT
   S088[088 a trigger's runs and fire times]
   S089[089 the model a trigger's sessions start on]
   S090[090 a trigger that fires at a list of times]
+  S091[091 a fork of the conversation]
+  S092[092 sessions that see each other's work]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -286,9 +290,8 @@ flowchart BT
   S031 --> S013
   S031 --> S025
   S032 --> S024
-  S033 --> S003
-  S033 --> S013
   S033 --> S025
+  S033 --> S091
   S034 --> S005
   S035 --> S009
   S036 --> S015
@@ -416,6 +419,11 @@ flowchart BT
   S089 --> S077
   S089 --> S086
   S090 --> S088
+  S091 --> S056
+  S091 --> S087
+  S092 --> S059
+  S092 --> S080
+  S092 --> S091
 ```
 
 ## Build order
@@ -478,6 +486,9 @@ and in which release.
 | a decision service suggests and the harness decides; every decision is recorded with the probability, fixed before the call ran, that a person sees it | 037 | an answer can be weighted, and an error rate estimated, only when that probability is known |
 | the authorizer names the model a name stands for, between turns alone, and the session keeps both names; the core knows nothing of a provider's cache | 038 | which model a choice is depends on who asks, and a model that changes while a cache is warm pays for its whole prefix again |
 | a session's agents form a graph of threads, built in stages each gated by suite tasks | 013, 033 | one agent must work before several do; every stage runs on the same threads and messages |
+| a fork renders its caller's request byte for byte, on the caller's model and effort, and is narrowed when a call runs rather than in what it is offered | 091 | a provider caches a prompt's prefix per model, and a fork that changed one byte of it would pay for the whole conversation again |
+| a workflow is a graph declared before it runs, estimated from recorded thread costs, started only on the person's yes to a held call, and kept to its ceiling | 033 | a run's cost is known only for work that can be counted before it starts, and the yes binds to the graph and ceiling the person read |
+| a session sees another session's work, never its words, and a message from another session is data that starts no turn | 092 | the reach across a person's sessions is what keeping two of them from conflicting changes needs, and no more |
 | no credential enters a machine or a log; the runner or Cella's egress gateway injects it per call, and the runner scrubs the values it holds from tool output | 018, 019 | a sandbox runs code the agent wrote |
 | an organization's agent acts with its own agent identity, a personal agent as the person narrowed to the agent; connections are chosen per connection | 018 | the shape agent platforms converged on; a session never acts with the server's own identity |
 | toposd verifies and asks: the installation's authorizer decides, an unavailable one is a refusal, and the owner policy applies only when none is configured | 006 | the core decides nothing about a person |
