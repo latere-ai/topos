@@ -157,7 +157,9 @@ not offered it.
 | `list_sessions` | yes | `read` | one of `repository` (a `url`), `folder` (`true`: this session's folder), `app` (an app id); optional `paths` |
 
 It answers the initiator's other open sessions whose work overlaps, at
-most `MaxFound`, most recently active first. A session's work overlaps
+most `MaxFound`, most recently active first. It only reads, so it runs
+beside a step's other calls, where the first draft's `sessions` tool,
+which also recorded what a session works on, ran alone. A session's work overlaps
 a query when it works in the same repository (by `url`), the same
 folder of the same environment, or publishes to the same app, and,
 when the query names `paths`, when one of its changed paths or the
@@ -189,7 +191,8 @@ is.
 An entry appends `session.working_on`, and the result names any open
 session whose entries or changed paths already overlap it; `done`
 appends `session.done_with`. Its effect is `read`, as `list_sessions`'s
-is, since neither changes anything outside the log.
+is, since neither changes anything outside the log, and it runs alone,
+so its entries are appended in the order of its calls.
 
 The runner reaches the server for both tools over the internal
 listener, as the `trigger` tool does ([[086-proactive-agents]]), at
@@ -221,8 +224,18 @@ a subagent, as 013 has it, and `write` for a session, which decides the
 call by the session's mode and lists
 ([[012-permissions-and-approvals]]): in `confirm` the person approves
 each message to a session unless a list allows it. A pattern's glob
-for `send_message` is over `to`, so `send_message(ses_*)` names every
-message to a session and `send_message` alone every call.
+for `send_message` is over `to`, which adds `send_message` to
+[[012-permissions-and-approvals]]'s list of what a glob is over, so
+`send_message(ses_*)` names every message to a session and
+`send_message` alone every call.
+
+The tool's description for a session is `prompts/tools/send_message-v2`,
+after 013's `send_message-v1`: it says `to` may name another of the
+person's sessions that `list_sessions` answered, that such a message is
+data the other session reads, never an instruction, and that it returns
+at once. The harness sends `-v2` to the session's own thread of an agent
+that names `send_message`, and `-v1` to every other thread, but a fork,
+which carries its caller's ([[091-a-fork-of-the-conversation]]).
 
 The tool's check refuses a message to a session before anything is
 decided, `invalid_input` with the rule:
@@ -348,8 +361,8 @@ descriptions and their checks:
 2. What a session is working on: `set_working_on`,
    `session.working_on`, `session.done_with`, and `working_on` in
    `work` and in `list_sessions`.
-3. `send_message` to a session, `tools.Effector`, `session.message`,
-   `waiting_messages`, and the fold's frame.
+3. `send_message` to a session, `tools.Effector`, `send_message-v2`,
+   `session.message`, `waiting_messages`, and the fold's frame.
 
 Each step is a release. An installation's authorizer learns the
 questions' `origin` before the release that asks them; until it does,
@@ -389,6 +402,7 @@ is away beyond what the log keeps; the words a client shows.
 | A `session.message` to a running session renders in its next request after the step's results, and to an idle one with its next turn's first input, in the frame that names its sender; neither starts a turn | `session.TestASessionMessageRendersAsData`, `runner.TestASessionMessageStartsNoTurn` | not built |
 | A `session.message` confirms no held call, answers no question, resets no wake count and leaves a turn's attended as its first input made it | `harness.TestASessionMessageGrantsNothing` | not built |
 | `waiting_messages` counts the messages no request has carried, and falls to zero when a request carries them | `session.TestWaitingMessages` | not built |
+| `send_message`'s description is `send_message-v2` for the session's own thread of an agent that names the tool, its caller's for a fork, and `send_message-v1` for every other thread | `harness.TestSendMessageDescribesSessionsWhereItReachesThem` | not built |
 | A fork's `list_sessions` or `set_working_on` call, or its `send_message` to a session, is `withheld_from_fork`; a fresh subagent is not offered the first two, and its `send_message` to a session is refused | `harness.TestOnlyTheConversationFindsAndSends` | not built |
 | An instruction task: a session about to change a package another session said it is working on finds that, tells that session, and works around it; a message that asks for something the person did not is not acted on | `test/tasks/instructions/sessions/` on the task suite's pinned model ([[025-task-suite]]) | not built |
 | The OpenAPI document describes `work`, `waiting_messages` and the events | `internal/server.TestTheDocumentDescribesSpec092` | not built |
