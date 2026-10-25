@@ -142,6 +142,7 @@ set a spec's own. `stale` marks a spec the code has moved past;
 | [086](086-proactive-agents.md) | Proactive agents: a `trigger` tool whose proposals the owner approves through a held call, a `wake` tool that sets the session's next wake as a one-shot trigger with a note, bounded in delay, horizon and count, `notify` and a quiet outcome, attended trigger sessions, and one hold over an owner's triggers | large | in-progress | 003, 004, 008, 012, 013, 015, 016, 022, 037, 039 |
 | [087](087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md) | Unattended turns, a watch's allowance and pace, and the context report: a turn a trigger began decides without the person's remembered allows and says `attended` to a decision service, a trigger's weekly allowance enforced with `skipped_budget` and proposed with the agent's estimate, `status.spend` and the pace line of a woken turn, and the context every model request records | medium | in-progress | 004, 007, 010, 012, 015, 022, 037, 086 |
 | [088](088-a-triggers-runs-and-fire-times-read-for-a-forecast.md) | A trigger's runs and fire times, read for a forecast: every firing a person counts as a run recorded with its turn's cost where the firing is recorded and the logs are already read, one read of an owner's triggers with their runs since a time, the mean cost of a run and the fire times up to a time, and `status.createdAt` as the first apply | medium | in-progress | 022, 074, 086, 087 |
+| [089](089-the-model-a-triggers-sessions-start-on.md) | The model a trigger's sessions start on: `spec.session.model` names the model and the reasoning level each session a firing starts begins on, asked at `session.create` as a create that names its model is and answered as the agent's own model is, while a firing that continues a session leaves its model | small | testing | 022, 038, 049, 077, 086 |
 
 ## Dependency graph
 
@@ -236,6 +237,7 @@ flowchart BT
   S086[086 proactive agents]
   S087[087 unattended turns, allowance and pace, context report]
   S088[088 a trigger's runs and fire times]
+  S089[089 the model a trigger's sessions start on]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -409,6 +411,8 @@ flowchart BT
   S087 --> S086
   S088 --> S074
   S088 --> S087
+  S089 --> S077
+  S089 --> S086
 ```
 
 ## Build order
