@@ -155,17 +155,20 @@ caller's call waits with it.
 
 | Input | Meaning |
 |---|---|
-| `to` | the id of a subagent this one started, as the `agent` call's result gives it |
+| `to` | the id of a subagent this one started, as the `agent` call's result gives it; or, from the session's own conversation, the `ses_` id of another of the person's sessions |
 | `message` | the text to send |
 | `end` | optional: `true` ends the subagent after this turn |
 
-`to` and `message` are the inputs of Claude Code's `SendMessage`. A
-`send_message` call appends `thread.message` from the caller to the
-subagent and runs the subagent's next turn; the call's result is the
-subagent's final text. A subagent receives messages only from the one
-that started it (messages between siblings are not built, and messages
-between a person's sessions are
-[[092-a-persons-sessions-that-see-each-others-work]]). A message is
+`to` and `message` are the inputs of Claude Code's `SendMessage`, which
+reaches a subagent and another session alike. A `send_message` call to
+a subagent appends `thread.message` from the caller to the subagent and
+runs the subagent's next turn; the call's result is the subagent's
+final text. A subagent receives messages only from the one that started
+it; messages between siblings are not built. A message to another of
+the person's sessions arrives in that session's log as data, starts no
+turn and returns at once; when the tool may send one and how such a
+call is decided are
+[[092-a-persons-sessions-that-see-each-others-work]]. A message is
 data: it changes nothing the receiving subagent may do. With `end`, or
 when the session ends, the runner appends `thread.ended` with the
 subagent's final text, usage and cost.

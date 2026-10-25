@@ -249,7 +249,7 @@ A fork holds its caller's definitions. What it may run, its grant, is:
 |---|---|
 | the caller's grant | every tool the caller may run; for a fork of a fork, that fork's grant |
 | the call's `tools` | intersected with the grant when given |
-| the tools of the conversation with the person | removed: `question`, `request_connection`, `publish`, `trigger`, `wake`, `notify`, and every tool a later spec reserves for the session's own thread ([[033-peers-and-authored-graphs]]'s `workflow`, [[092-a-persons-sessions-that-see-each-others-work]]'s `sessions` and `send`) |
+| the tools of the conversation with the person | removed: `question`, `request_connection`, `publish`, `trigger`, `wake`, `notify`, and every tool a later spec reserves for the session's own thread ([[033-peers-and-authored-graphs]]'s `run_workflow`, [[092-a-persons-sessions-that-see-each-others-work]]'s `list_sessions` and `set_working_on`); and `send_message` to another session, which 092 refuses a fork as `withheld_from_fork` while a fork's message to its own subagent runs |
 | the depth limit | `agent` removed for a fork at the limit; a call of it there is answered `depth_exceeded` |
 
 A call of a tool the fork holds and may not run is answered at

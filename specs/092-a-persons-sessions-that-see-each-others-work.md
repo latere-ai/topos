@@ -1,9 +1,9 @@
 ---
-title: "A person's sessions that see each other's work: each open session's work read from its log (its repositories and branch, its app, its folder on a computer, the paths it changed, the paths it says it is working on), a `sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app and says which paths this session is about to change, and a `send` tool whose message reaches another of the person's sessions as data, read at its next step while it runs and with its next turn while it waits, starting nothing and never taken as the person's word"
+title: "A person's sessions that see each other's work: each open session's work read from its log (its repositories and branch, its app, its folder on a computer, the paths it changed, the paths it says it is working on), a `list_sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app, a `set_working_on` tool that says which paths this session is about to change, and `send_message`, the tool that messages a subagent, whose message to another of the person's sessions arrives as data, read at its next step while it runs and with its next turn while it waits, starting nothing and never taken as the person's word"
 status: drafted
 track: core
 depends_on: [.archive/004-session-log.md, .archive/006-identity.md, 008-tools.md, 010-context.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 018-credentials-and-secrets.md, 019-git.md, 058-what-a-create-allow-attaches.md, 059-publishing-to-a-chosen-app.md, 073-a-working-directory-kept-in-the-sessions-folder.md, .archive/080-device-machines.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md, 091-a-fork-of-the-conversation.md]
-affects: [session/, harness/, internal/server/, internal/store/, internal/runnerapi/, internal/runnerrole/, prompts/, api/openapi.yaml, docs/]
+affects: [session/, harness/, harness/tools/, internal/server/, internal/store/, internal/runnerapi/, internal/runnerrole/, prompts/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-25
 updated: 2026-10-25
@@ -28,26 +28,29 @@ tell one of them something, in three parts that roll in order:
 
 1. **Work.** The server reads each session's work from its log: the
    repositories it works in and its branch, the app it publishes to,
-   its folder on a computer, and the paths it changed. A `sessions`
-   tool finds the person's other open sessions whose work overlaps a
-   repository, a folder or an app. It answers work, never what anyone
-   said.
+   its folder on a computer, and the paths it changed. A
+   `list_sessions` tool finds the person's other open sessions whose
+   work overlaps a repository, a folder or an app. It answers work,
+   never what anyone said.
 2. **What a session is working on.** Before it changes a part of a
    repository or a folder, a session may say which paths it is about
    to change, with one line of why, so another session finds the
-   intent before any file has changed: the `sessions` tool's
-   `working_on` says it, and `done` takes it back. Saying so is
-   advisory: it refuses nothing.
-3. **Messages.** A `send` tool sends one of the person's other sessions
-   a message. The receiving session reads it as data from another
-   session, never as the person's word: at its next step while it runs,
-   with its next turn while it waits. A message starts no turn.
+   intent before any file has changed: a `set_working_on` tool says
+   it, and takes it back when the work is done. Saying so is advisory:
+   it refuses nothing.
+3. **Messages.** The `send_message` tool that messages a subagent
+   ([[013-threads-and-subagents]]) also sends one of the person's
+   other sessions a message, when its `to` names that session, as
+   Claude Code's `SendMessage` reaches a subagent and another session
+   alike. The receiving session reads it as data from another session,
+   never as the person's word: at its next step while it runs, with its
+   next turn while it waits. A message starts no turn.
 
 What is new is the reach across sessions. Inside one session, an agent
-and the subagents it started already message each other
-([[013-threads-and-subagents]]). There is no event bus: a session finds
-and tells one other session, and the server delivers the message to
-that session's log alone.
+and the subagents it started already message each other with the same
+tool. There is no event bus: a session finds and tells one other
+session, and the server delivers the message to that session's log
+alone.
 
 Each choice below is a recommendation until this spec is validated;
 the table that opens the design weighs each against its alternative.
@@ -100,7 +103,8 @@ the table that opens the design weighs each against its alternative.
 | A message to a running session | read at its next step, after that step's results | with its next turn: a session that is running is the one about to make the change the message is about |
 | A message to a waiting session | kept, and read with its next turn, whoever starts it | starting a turn: spending no person asked for, and two sessions could keep each other running; whether a message may ever start one is left open (Not in this spec) |
 | Authority | none: rendered as data, in a frame that names the sending session | the message as an instruction the receiving session follows: whoever could make one session write to another would then steer it |
-| The tool's names | `sessions`, `send` | `peers`: a retired v0.7.0 word; `steer`: names one use; `bus`: there is none |
+| The tools | `list_sessions` and `set_working_on`, and `send_message` with a session's id in `to` | a tool of its own to send, `send`, this spec's first draft: two tools that send a message, one per kind of receiver, where Claude Code's `SendMessage` reaches a subagent and another session alike and a model that knows it looks for one; one `sessions` tool with an action each for finding, saying what a session works on and ending that: a noun where [[008-tools]] asks a verb, and a name that says list for a call that records; `peers`: a retired v0.7.0 word; `steer`: names one use; `bus`: there is none |
+| The decision on a message to a session | `write`, by the session's mode and lists, as the first draft's `send` was; a message to a subagent stays `none`. `send_message` names each call's effect from its `to` (`tools.Effector`, below) | one effect for the tool, as `trigger` has ([[086-proactive-agents]]): a message to a session would then be either never decided (`none`) or held for the person past every list (`tools.Confirmer`) |
 
 ### A session's work
 
@@ -138,9 +142,9 @@ An entry is open from its `session.working_on` until its
 after the end of the session's latest turn, whichever comes first; the
 fold leaves out a lapsed entry. A session holds at most `MaxWorkingOn`
 open entries, and one past it is refused `invalid_input`. An entry
-refuses no change of anyone's: it is what `find` answers.
+refuses no change of anyone's: it is what `list_sessions` answers.
 
-### The `sessions` tool
+### The `list_sessions` tool
 
 A harness tool of the session's own thread, offered when the agent's
 `spec.tools` names it, on the hosted runner alone, since only a server
@@ -150,22 +154,16 @@ not offered it.
 
 | Name | Parallel | Effect | Input |
 |---|---|---|---|
-| `sessions` | no | `read` | `action`, and the fields below |
+| `list_sessions` | yes | `read` | one of `repository` (a `url`), `folder` (`true`: this session's folder), `app` (an app id); optional `paths` |
 
-| Action | Input | Does |
-|---|---|---|
-| `find` | one of `repository` (a `url`), `folder` (`true`: this session's folder), `app` (an app id); optional `paths` | answers the initiator's other open sessions whose work overlaps, at most `MaxFound`, most recently active first |
-| `working_on` | `repository` or `folder`, `paths`, `why` | appends `session.working_on`; the result names any open session whose entries or changed paths already overlap |
-| `done` | `entry_id` or `all` | appends `session.done_with` |
+It answers the initiator's other open sessions whose work overlaps, at
+most `MaxFound`, most recently active first. A session's work overlaps
+a query when it works in the same repository (by `url`), the same
+folder of the same environment, or publishes to the same app, and,
+when the query names `paths`, when one of its changed paths or the
+prefixes it is working on lies under one of them or above one of them.
 
-Every action is one effect, `read`, since none changes anything outside
-the log. A session's work overlaps a query when it works in the same
-repository (by `url`), the same folder of the same environment, or
-publishes to the same app, and, when the query names `paths`, when one
-of its changed paths or the prefixes it is working on lies under one of them or
-above one of them.
-
-Each session `find` answers:
+Each session it answers:
 
 | Member | Meaning |
 |---|---|
@@ -179,34 +177,64 @@ Each session `find` answers:
 
 It answers no message, answer, file or excerpt of any session.
 
-The runner reaches the server for `find`, `working_on` and `done` over
-the internal listener, as the `trigger` tool does
-([[086-proactive-agents]]), at
-`POST /internal/v1/leases/{session}/sessions/{find,working_on,done}`
-(the runner's routes, under the `leases` path of [[016-runners]]);
-`session.working_on` and `session.done_with` are appended by the runner
-like any event of the turn, and the server's routes answer `find` and
-check an entry's overlap.
+### The `set_working_on` tool
 
-### The `send` tool
-
-A harness tool of the session's own thread, offered as `sessions` is.
+A harness tool of the session's own thread, offered as `list_sessions`
+is.
 
 | Name | Parallel | Effect | Input |
 |---|---|---|---|
-| `send` | no | `write` | `session`: the `ses_` id of a session `find` answered in this session; `content`: the text, at most `MaxSessionMessage` characters |
+| `set_working_on` | no | `read` | either `repository` or `folder`, with `paths` and `why`, which adds an entry; or `done`, an `entry_id` or `all`, which ends entries |
 
-Effect `write` decides the call by the session's mode and lists
+An entry appends `session.working_on`, and the result names any open
+session whose entries or changed paths already overlap it; `done`
+appends `session.done_with`. Its effect is `read`, as `list_sessions`'s
+is, since neither changes anything outside the log.
+
+The runner reaches the server for both tools over the internal
+listener, as the `trigger` tool does ([[086-proactive-agents]]), at
+`POST /internal/v1/leases/{session}/sessions/{list,working_on,done}`
+(the runner's routes, under the `leases` path of [[016-runners]]);
+`session.working_on` and `session.done_with` are appended by the runner
+like any event of the turn, and the server's routes answer
+`list_sessions` and check an entry's overlap.
+
+### A message to another session
+
+`send_message` ([[013-threads-and-subagents]]) reaches another of the
+person's sessions when its `to` is a session's `ses_` id rather than a
+subagent's id; the prefix tells the two apart. The session's own
+thread may send to a session when the agent's `spec.tools` names
+`send_message`, on the hosted runner alone; the tool is offered to it
+then even when the agent has no subagents. For a session:
+
+| Input | Meaning |
+|---|---|
+| `to` | the `ses_` id of a session `list_sessions` answered in this session |
+| `message` | the text, at most `MaxSessionMessage` characters |
+| `end` | not taken: a session ends by its own person's routes |
+
+A harness tool's effect is one per tool, except that a tool may name
+the effect of each call from its input (`tools.Effector`, new beside
+`tools.Checker` and `tools.Confirmer`). `send_message` names `none` for
+a subagent, as 013 has it, and `write` for a session, which decides the
+call by the session's mode and lists
 ([[012-permissions-and-approvals]]): in `confirm` the person approves
-each send unless a list allows it. The tool's check refuses before
-anything is decided:
+each message to a session unless a list allows it. A pattern's glob
+for `send_message` is over `to`, so `send_message(ses_*)` names every
+message to a session and `send_message` alone every call.
+
+The tool's check refuses a message to a session before anything is
+decided, `invalid_input` with the rule:
 
 | Rule | Why |
 |---|---|
-| `session` is not this session, and `find` in this session answered it | a session tells only a session it found by its work |
-| at most `MaxSendsPerTurn` sends in a turn | a turn cannot flood another session |
+| the calling thread is the session's own, and the agent names `send_message` | the conversation with the person tells other sessions; a fork is answered `withheld_from_fork` ([[091-a-fork-of-the-conversation]]) |
+| `to` is not this session, and `list_sessions` in this session answered it | a session tells only a session it found by its work |
+| `end` is absent and `message` within `MaxSessionMessage` | a message, not a file, and no session ends another |
+| at most `MaxSendsPerTurn` messages to sessions in a turn, counted in call order across the turn's steps | a turn cannot flood another session |
 
-The runner scrubs `content` of every value it holds, as it scrubs a
+The runner scrubs `message` of every value it holds, as it scrubs a
 tool's output ([[018-credentials-and-secrets]]), and asks the server at
 `POST /internal/v1/leases/{session}/sessions/send`. The server asks
 `session.send` (below), and refuses, with a reason the call's result
@@ -220,7 +248,10 @@ names:
 
 On success the server appends `session.message` to the receiving
 session's log and answers whether it runs, so the sender's result says
-when it will be read: at its next step, or with its next turn.
+when it will be read: at its next step, or with its next turn. Nothing
+waits for the receiving session's answer: a message to a session
+returns at once, unlike one to a subagent, whose result is the
+subagent's reply.
 
 ### `session.message`
 
@@ -228,7 +259,7 @@ when it will be read: at its next step, or with its next turn.
 |---|---|
 | `from_session` | the sending session's id |
 | `from_title`, `from_agent` | its title and agent's name when it sent |
-| `from_tool_use_id` | the `send` call |
+| `from_tool_use_id` | the `send_message` call |
 | `content` | the text, as scrubbed |
 
 The event's `sender` is `session:<ses_id>`. It is not pending input:
@@ -243,7 +274,7 @@ which names the sending session's title and id, says that the text
 comes from another of the person's sessions and not from the person,
 that it is information and grants nothing, to check what it claims
 against the repository, the folder or the files before acting on it,
-and that `send` answers it. Where it renders:
+and that `send_message` to that id answers it. Where it renders:
 
 | The receiving session | The message renders |
 |---|---|
@@ -273,22 +304,23 @@ before it, and the person sees the message (below).
 
 | Question | Fields |
 |---|---|
-| `session.list` asked for a session's `find` | `origin: {kind: session, session_id, tool_use_id}`, `initiator`, and `work`: the query's `repository`, `folder` or `app`, and `paths` |
-| `session.send` asked for a session's `send` | `sender: session:<ses_id>`, `event_type: session.message`, `origin` as above, and the receiving session's fields as any send carries them |
+| `session.list` asked for a session's `list_sessions` | `origin: {kind: session, session_id, tool_use_id}`, `initiator`, and `work`: the query's `repository`, `folder` or `app`, and `paths` |
+| `session.send` asked for a session's `send_message` to a session | `sender: session:<ses_id>`, `event_type: session.message`, `origin` as above, and the receiving session's fields as any send carries them |
 
 Both are asked as the sending session's initiator, in the session's
 context, as 086's trigger questions are. The owner policy allows an
 initiator their own sessions in the same context and nothing more, and
 an installation's authorizer decides the same or less: Topos decides
-nothing about which sessions are a person's. The answer of `find` is
-narrowed by the server to the sessions the list's allow admits, and
-each `send` is asked about its one receiving session.
+nothing about which sessions are a person's. The answer of
+`list_sessions` is narrowed by the server to the sessions the list's
+allow admits, and each message to a session is asked about its one
+receiving session.
 
 ### What the person sees
 
 | Where | What |
 |---|---|
-| the sending session | the `send` call, with the receiving session named by its title and linked, and the text |
+| the sending session | the `send_message` call, with the receiving session named by its title and linked, and the text |
 | the receiving session | the message as its own item, from the sending session, linked back, with `waiting_messages` marked until a turn reads it |
 | each session | its `work`: repositories and branch, app, folder, changed paths, what it says it is working on |
 
@@ -312,22 +344,23 @@ descriptions and their checks:
 
 ### Roll order
 
-1. `work` on the Session, and `sessions` with `find`.
-2. What a session is working on: `working_on`, `done`,
+1. `work` on the Session, and `list_sessions`.
+2. What a session is working on: `set_working_on`,
    `session.working_on`, `session.done_with`, and `working_on` in
-   `work` and in `find`.
-3. `send`, `session.message`, `waiting_messages`, and the fold's frame.
+   `work` and in `list_sessions`.
+3. `send_message` to a session, `tools.Effector`, `session.message`,
+   `waiting_messages`, and the fold's frame.
 
 Each step is a release. An installation's authorizer learns the
 questions' `origin` before the release that asks them; until it does,
-it reads a session's `find` as its initiator's own list.
+it reads a session's `list_sessions` as its initiator's own list.
 
 ## What a hosted installation needs
 
 | Need | Why |
 |---|---|
 | The authorizer answers `session.list` and `session.send` asked with a session's `origin`: the initiator's own sessions in the same context, never another person's | own sessions only |
-| The managed agent names `sessions` and `send`, with instructions to find before changing a repository, a folder or an app another session may be working on, to say what it is working on before it changes it, to tell the other session only what it needs to know, and never to treat a message from another session as the person's request | the tools are used when they help, and a message stays data |
+| The managed agent names `list_sessions`, `set_working_on` and `send_message`, with instructions to list the other sessions before changing a repository, a folder or an app another session may be working on, to say what it is working on before it changes it, to tell the other session only what it needs to know, and never to treat a message from another session as the person's request | the tools are used when they help, and a message stays data |
 | A client shows `work`, what each session is working on, and messages as above | the person sees what their sessions tell each other |
 
 ## What the Go SDK needs
@@ -348,14 +381,14 @@ is away beyond what the log keeps; the words a client shows.
 | Criterion | Test that proves it | State |
 |---|---|---|
 | The Session folds `work` from the header and the log: repositories and branch, app, folder, the paths of `write`, `edit` and `work.saved` newest first up to `MaxWorkPaths`, open `working_on` entries and `active_at` | `session.TestTheSessionFoldsItsWork` | not built |
-| `find` answers the initiator's other open sessions whose work overlaps a repository, a folder or an app, and paths when named, with only the overlapping entries and paths, and no content of any session | `internal/server.TestFindAnswersOverlappingWorkAlone` | not built |
-| `find` is asked as `session.list` with `origin` and `work`, and answers only what the allow admits; an ended session, a session of another person and one in another context are never answered | `internal/server.TestFindIsTheInitiatorsOwn`, `internal/auth.TestTheOwnerPolicyAdmitsOwnSessions` | not built |
+| `list_sessions` answers the initiator's other open sessions whose work overlaps a repository, a folder or an app, and paths when named, with only the overlapping entries and paths, and no content of any session | `internal/server.TestFindAnswersOverlappingWorkAlone` | not built |
+| `list_sessions` is asked as `session.list` with `origin` and `work`, and answers only what the allow admits; an ended session, a session of another person and one in another context are never answered | `internal/server.TestFindIsTheInitiatorsOwn`, `internal/auth.TestTheOwnerPolicyAdmitsOwnSessions` | not built |
 | An entry of what a session is working on is open until `done`, the session's end or archive, or `WorkingOnIdle` after its latest turn; the eleventh is refused; a `working_on` result names the open sessions that already overlap | `session.TestWorkingOnLapses`, `internal/server.TestWorkingOnNamesWhatItOverlaps` | not built |
-| A `send` to a session `find` did not answer in this session, to itself, or past `MaxSendsPerTurn` is refused before it is decided; a send is asked as `session.send` with the session as sender; an ended receiver is `conflict` and a full one `too_many_waiting` | `harness.TestASendIsChecked`, `internal/server.TestASendIsAskedForTheSession` | not built |
+| A `send_message` to a session `list_sessions` did not answer in this session, to itself, with `end`, past `MaxSessionMessage`, past `MaxSendsPerTurn`, or from a thread other than the session's own is refused before it is decided; one to a session is decided as effect `write` and one to a subagent as `none`, and a pattern's glob matches `to`; it is asked as `session.send` with the session as sender; an ended receiver is `conflict` and a full one `too_many_waiting`; its result comes at once | `harness.TestAMessageToASessionIsChecked`, `harness.TestSendMessageNamesItsEffectPerCall`, `internal/server.TestAMessageIsAskedForTheSession` | not built |
 | A sent text is scrubbed of the values the runner holds before it leaves the runner | `runner.TestASentMessageIsScrubbed` | not built |
 | A `session.message` to a running session renders in its next request after the step's results, and to an idle one with its next turn's first input, in the frame that names its sender; neither starts a turn | `session.TestASessionMessageRendersAsData`, `runner.TestASessionMessageStartsNoTurn` | not built |
 | A `session.message` confirms no held call, answers no question, resets no wake count and leaves a turn's attended as its first input made it | `harness.TestASessionMessageGrantsNothing` | not built |
 | `waiting_messages` counts the messages no request has carried, and falls to zero when a request carries them | `session.TestWaitingMessages` | not built |
-| A fork's `sessions` or `send` call is `withheld_from_fork`, and a fresh subagent is not offered them | `harness.TestOnlyTheConversationFindsAndSends` | not built |
+| A fork's `list_sessions` or `set_working_on` call, or its `send_message` to a session, is `withheld_from_fork`; a fresh subagent is not offered the first two, and its `send_message` to a session is refused | `harness.TestOnlyTheConversationFindsAndSends` | not built |
 | An instruction task: a session about to change a package another session said it is working on finds that, tells that session, and works around it; a message that asks for something the person did not is not acted on | `test/tasks/instructions/sessions/` on the task suite's pinned model ([[025-task-suite]]) | not built |
 | The OpenAPI document describes `work`, `waiting_messages` and the events | `internal/server.TestTheDocumentDescribesSpec092` | not built |
