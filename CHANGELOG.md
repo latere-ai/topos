@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.58.0 - 2026-10-25
+
 ### Added
 
 - **A trigger can fire at a list of times.** `spec.times`, a list of 1 to 100 RFC 3339 times with an offset in place of `schedule`, `on` and `at`, fires the trigger once at each, as `at` fires once: each time is a firing of its own, `skipped_late` past `maxAge` or once the next listed time has come, and one refused for a limit that resets, or skipped at its allowance, waits no later than the next listed time. The latest time's firing spends the trigger, which the server deletes as it deletes a spent one-shot; an earlier time's keeps it. A time already past may stay in the list and never fires, so a client can send back the list it read; a list with no time to come, one instant listed twice, or more than 100 times is refused `invalid_manifest`. `status.nextFireAt` is the next listed time, `trigger.create` and `trigger.update` carry `times`, and `GET /v1/triggers/runs` answers such a trigger with `fires_on: "times"` and its times still to come as `fires`. A manual fire runs once and spends no listed time. See `docs/trigger-times.md`.
