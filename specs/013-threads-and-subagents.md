@@ -37,9 +37,9 @@ this spec's status goes on recording the criteria it has proven.
 Workflows, graphs of subagents declared before they run, are
 [[033-peers-and-authored-graphs]], on the same tools.
 
-The tools are built under older names, which Current state gives. The
-names `agent` and `send_message`, and one release in which the older
-names still work, are an open criterion below.
+The names `agent` and `send_message` are built after v0.58.0, in no
+release yet, with one release in which the older names, which Current
+state gives, still work.
 
 ## Current state
 
@@ -55,14 +55,16 @@ and topology concepts of v0.7.0 specs 004, 005, 009 and 012 are
 retired. The advisor is one of the patterns that remain in the core
 when the adversarial engine left for `latere.ai/x/adversarial`.
 
-Today the tool that starts a subagent is named `spawn`, with the inputs
-`agent`, `task`, `isolation`, `tools` and `budget`, and the tool that
-continues one is `message`, with `thread`, `content` and `end`
-(`harness/threads.go`). Their descriptions are `prompts/tools/spawn-v1`
-and `prompts/tools/message-v1`, the harness prompt's section on them is
+From v0.9.0 through v0.58.0 the tool that starts a subagent was named
+`spawn`, with the inputs `agent`, `task`, `isolation`, `tools` and
+`budget`, and the tool that continues one was `message`, with `thread`,
+`content` and `end`. Their descriptions were `prompts/tools/spawn-v1`
+and `prompts/tools/message-v1`, the harness prompt's section on them
 `prompts/harness/threads-v1`, and the texts of their results, in
-`prompts/results/threads/`, say thread, spawn and message. The scripted
-task `threads/readparent` calls `spawn`.
+`prompts/results/threads/`, said thread, spawn and message. After
+v0.58.0 they are `agent` and `send_message` as this spec designs them
+(`harness/threads.go`), and the scripted task `threads/readparent`
+calls `agent`.
 
 ## Design
 
@@ -176,19 +178,33 @@ subagent's final text, usage and cost.
 ### The names before `agent` and `send_message`
 
 A model is offered `agent` and `send_message` alone. Through the
-release that renames them, Topos still reads the old names wherever a
-stored agent version, a recorded script or a model names a tool, and
-the release after it refuses them:
+release that renames them, Topos still reads the old names where a
+stored agent version, a session's log or a model names a tool, and the
+release after it refuses them:
 
 | Where | The old name | Read as |
 |---|---|---|
 | a call the model makes | `spawn` with `agent`, `task`, `isolation`, `tools`, `budget` | `agent` with `subagent`, `task`, `isolation`, `tools`, `budget` |
 | a call the model makes | `message` with `thread`, `content`, `end` | `send_message` with `to`, `message`, `end` |
-| an approval list's pattern, a hook's matcher, a pattern a person's answer remembered, a call's `tools` | `spawn`, `message` | `agent`, `send_message` |
+| a call recorded under an old name, held for a person's approval or left open when a runner stopped | `spawn`, `message` | resumed as the new tool, with the new inputs |
+| an approval list's pattern, or one a person's answer remembered | `spawn`, `message` | `agent`, `send_message` |
 
 A call by an old name is recorded in the log as the model wrote it and
 runs as the new tool. A session whose log holds `spawn` calls keeps
 them in its transcript; its next request carries the new definitions.
+
+Two places that name tools are not read for the old names, since
+neither changes what runs: a hook's matcher, because hooks are
+validated and not run yet ([[012-permissions-and-approvals]]), and a
+`tools` list, because a subagent never takes `agent` or `send_message`
+from one: the harness adds them to a subagent by its own subagents and
+depth alone (below).
+
+A client tool named `spawn` or `message` stays the client's. An agent
+with subagents may not name a client tool `agent` or `send_message`,
+and its manifest is `invalid_manifest`; an agent version stored before
+the rename with such a client tool keeps it, and is not offered the
+harness's tool of that name.
 
 ### Worktree isolation
 
@@ -268,7 +284,8 @@ in every request from the rename on, and the old files stay embedded,
 so a replay rebuilds a request that carried them
 ([[011-instructions-and-skills]]). `advisor-v1` is unchanged. The
 harness prompt's section on subagents is `prompts/harness/threads-v2`,
-after `threads-v1`, which names spawn and message. The advisor's
+after `threads-v1`, which names spawn and message; harness prompt
+versions 3 and 4 hold it ([[011-instructions-and-skills]]). The advisor's
 instructions, used when its configuration names none, and the request
 that carries the caller's transcript and question are files of
 `prompts/advisor/`. The texts of the results above, with the idle line,
@@ -307,7 +324,10 @@ subagents ([[011-instructions-and-skills]]).
 | The advisor gets the caller's transcript, has no tools, runs on the configured model, keeps one conversation across calls, and its requests count in the meter every subagent shares | `harness.TestTheAdvisorSeesTheConversationAndActsOnNothing`, `harness.TestAnAdvisorCallResumes`, `harness.TestSubagentsDoNotInheritTheAdvisor` | built |
 | A call whose subagent finished before the runner stopped yields its final text without running it again, and a call that started no subagent is closed `unknown_effect` | `harness.TestAThreadThatFinishedBeforeACrashIsNotRunAgain` | built |
 | A session whose runner is lost while two subagents run resumes both from the log on another runner | `TestSubagentsResumeAfterRunnerLoss` | not built |
-| The tools are offered as `agent`, with `subagent`, `task`, `isolation`, `tools` and `budget`, and `send_message`, with `to`, `message` and `end`, described by `tools/agent-v1` and `tools/send_message-v1`, answering `too_many_subagents` and `subagent_not_found` and the next versions of the result texts; a subagent named `fork` is refused at resolve; through the release that renames them, a call named `spawn` or `message` with the old inputs runs as the new tool, and a pattern or matcher naming an old name matches the new tool's calls | `harness.TestTheAgentAndSendMessageTools`, `harness.TestTheOldToolNamesRunForOneRelease`, `manifest.TestAPatternNamingSpawnMatchesAgent`, `manifest.TestForkIsNoSubagentsName` | not built |
+| The tools are offered as `agent`, with `subagent`, `task`, `isolation`, `tools` and `budget`, and `send_message`, with `to`, `message` and `end`, described by `tools/agent-v1` and `tools/send_message-v1`, answering `too_many_subagents` and `subagent_not_found` and the next versions of the result texts | `harness.TestTheAgentAndSendMessageTools` | built |
+| Through the release that renames them, a call named `spawn` or `message` with the old inputs runs as the new tool and its `agent.tool_use` records the call as written; a call recorded under an old name and held or left open resumes as the new tool; a pattern naming an old name matches the new tool's calls; a client tool of an old name stays the client's; and an agent with subagents may not name a client tool `agent` or `send_message` | `harness.TestTheOldToolNamesRunForOneRelease`, `harness.TestACallRecordedUnderAnOldNameResumes`, `harness.TestAConfirmedCallOfAnOldNameRuns`, `harness.TestAPatternOfAnOldNameMatchesTheRenamedTool`, `harness.TestAToolOfAnOldNameIsItsOwn`, `manifest.TestAPatternNamingSpawnMatchesAgent`, `manifest.TestAClientToolMayNotTakeASubagentToolsName` | built |
+| A subagent named `fork` is refused at resolve | `manifest.TestForkIsNoSubagentsName` | not built |
+| The release after the rename refuses a call, a pattern and a recorded call of `spawn` or `message` as it refuses any unknown name | `harness.TestTheOldToolNamesAreRefused` | not built |
 
 ## Outcome
 
@@ -317,10 +337,13 @@ concurrent spawns under `maxConcurrent`, the depth limit, `isolation:
 worktree` on a branch of its own, a subagent's ask that pauses the
 session, and the advisor.
 
+After v0.58.0, in no release yet: the names `agent` and `send_message`,
+their inputs, codes and texts, and the old names read for one release.
+
 Open: the table test of narrowing from caller to subagent, the refusal
 of a tool the caller lacks, two isolated subagents merged by their
-caller, subagents resumed after a runner is lost, and the names
-`agent` and `send_message` with a release of the old names beside them.
+caller, subagents resumed after a runner is lost, `fork` refused as a
+subagent's name, and the release that refuses the old names.
 
 The status is `in-progress`, from these criteria alone: the rows
 marked built are proven by their tests, and the rest are open.
