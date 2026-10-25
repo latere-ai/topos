@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.59.0 - 2026-10-25
+
 ### Added
 
 - **A subagent can run the model of the agent that starts it.** An inline subagent's spec may leave `model` out. The subagent then runs, at each of its turns, the model the agent that started it stands on at that turn, with that model's connection, figures and reasoning level: for a session on a routed name such as `tier/quick`, the model the authorizer resolved the name to. Nothing is connected for such a subagent when the session's drive starts, so an agent on a routed name can now have subagents; before, every subagent named a model that was connected by its name alone, and a name only the authorizer resolves failed the drive. When its caller moves to another model, by a failover within a turn, a person's change or the authorizer's, the subagent's next turn runs on that model too, and the model it ran before is not connected again; a change to another model family between two of its turns is translated as a session's change of model is. `thread.started` records the model the subagent started on, and each of its `model.request`s the model it ran. Its requests are priced by that model's figures and count in the session's spend as every request does. A subagent's model given without a name is `invalid_manifest`; an agent, and a subagent that names another agent, still name their model, and the OpenAPI document no longer lists `model` among `AgentSpec`'s required members.
