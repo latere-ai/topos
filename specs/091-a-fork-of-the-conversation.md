@@ -1,6 +1,6 @@
 ---
 title: "A fork of the conversation: the `agent` tool's `subagent: fork` starts a subagent that continues its caller's conversation, sent on the caller's model and effort with the caller's tool definitions and system prompt byte for byte, so its first request reads the prefix its caller's last request cached; what a fork may run is narrowed when a call runs, not in what it is offered; one depth count for every subagent; a subagent's own spending ceiling over everything under it; a subagent that leaves its model out runs its caller's; and a trigger whose every session starts as a fork of the conversation that set it up"
-status: drafted
+status: in-progress
 track: core
 depends_on: [.archive/004-session-log.md, 005-harness-loop.md, .archive/007-models.md, 008-tools.md, 010-context.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 017-external-runners-handoff-fork.md, .archive/022-triggers.md, .archive/038-routed-models.md, 056-editing-a-message-and-the-branches-of-a-session.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md]
 affects: [harness/, harness/tools/, session/, manifest/v1/, manifest/, manifest/trigger/, internal/triggers/, internal/server/, internal/proposal/, prompts/tools/, prompts/results/threads/, prompts/threads/, api/openapi.yaml, docs/]
@@ -60,36 +60,40 @@ it:
 
 ## Current state
 
-- `spawn`, which 013 renames `agent`, starts a thread of a subagent
-  `spec.subagents` names, with the
+- `agent` (named `spawn` through v0.58.0, [[013-threads-and-subagents]])
+  starts a thread of a subagent `spec.subagents` names, with the
   subagent's instructions, the intersection of the tools as
   `t.root.Subset(names)`, and an empty transcript but the task
-  (`harness/threads.go`). `message` continues a thread its caller
-  spawned. Several calls in one step run at once, at most
+  (`harness/threads.go`). `send_message` continues a subagent its
+  caller started. Several calls in one step run at once, at most
   `spec.threads.maxConcurrent` (default 8); past it a call is answered
-  `too_many_threads` and is not queued.
-- A thread's registry withholds `spawn` and `message` at the depth
-  limit (default 2, at most 4), and `spawn` refuses past it with
-  `depth_exceeded`. A spawned thread is never given `question`,
+  `too_many_subagents` and is not queued.
+- A thread's registry withholds `agent` and `send_message` at the depth
+  limit (default 2, at most 4), and `agent` refuses past it with
+  `depth_exceeded`. A subagent is never given `question`,
   `request_connection`, `publish`, `trigger`, `wake` or `notify`: they
   are left out of its definitions.
-- A spawned thread's system prompt is rendered without the blocks that
+- A subagent's system prompt is rendered without the blocks that
   speak to the session's own agent: the initiator's instructions, the
   attached context, and the connections the person may be asked to
   connect (`headerBlocks` with `own` false, `harness/request.go`).
   `childConfig` drops the advisor, the question tool and `notify`.
-- `spawn`'s schema takes a `budget`, and its `Run` does not read it. No
+- `agent`'s schema takes a `budget`, its description
+  (`prompts/tools/agent-v1`) does not name it, and its `Run` does not
+  read it: nothing reads `budget` until the ceiling below is built. No
   thread has a ceiling of its own: the harness checks the session's
   spend against the session's ceiling before each request
   (`checkBudget`), whichever thread sends it. `thread.started` has a
   `budget` member that nothing writes.
-- Every subagent's spec must name `model.name` (`manifest/validate.go`).
-  The subagent's model is connected by that name when the drive starts
-  (`manifest/config.go`, `internal/hosted/hosted.go`), through no
-  route of the authorizer: 038 routes the session's own model at its
-  create, a change and a send, and 083 a title's. A name only the
-  authorizer resolves reaches the door unresolved, so a session whose
-  agent names such a subagent cannot start.
+- Through v0.58.0 every subagent's spec had to name `model.name`, and
+  the subagent's model was connected by that name when the drive
+  started, through no route of the authorizer: 038 routes the session's
+  own model at its create, a change and a send, and 083 a title's. A
+  name only the authorizer resolves reached the door unresolved, so a
+  session whose agent named such a subagent could not start. After
+  v0.58.0 an inline subagent may leave `model` out and runs its
+  caller's (below); a subagent that names a model is still connected by
+  that name (`manifest/config.go`, `internal/hosted/hosted.go`).
 - The advisor is built in the harness and wired by no runner: the
   hosted runner sets no `Advisor` in the harness's configuration, and
   `topos run` refuses an agent that names one.
@@ -120,7 +124,7 @@ it:
 | The default depth | 013's 2, kept; an agent names `spec.threads.maxDepth: 3` to nest three levels, as Latere Chat's agent does | 3 as the core's default: a default applies to every agent of every installation that never chose, so raising it changes what each of them may do on upgrade; depth is not where spending is bounded (concurrency and ceilings are), and each level is one more hop at which a subagent's work is cut to its final text |
 | Depth for fresh subagents and forks | one count: a subagent is one deeper than its caller, fresh or fork | two counts: a fork of a fresh subagent of a fork would escape both |
 | A subagent's ceiling | counts the subagent and every subagent under it | its own requests alone: a fork that forks again would spend past it |
-| A subagent with no model | runs its caller's model, connection and effort, pinned when it starts | routing every subagent's model through the authorizer: a new question at every start, and a helper most often needs only the model the person chose |
+| A subagent with no model | runs its caller's model, connection and effort, at its first turn and at each later one (below) | routing every subagent's model through the authorizer: a new question at every start, and a helper most often needs only the model the person chose |
 | A routine's run from its conversation | a session fork of that conversation at the turn that set the routine up, every run | continuing the conversation (086's `session.target`): it grows by every run; a new session (today): it holds the ask and nothing the conversation established |
 | A proposal's default | `startFrom: ask`, today's new session; the agent asks for `conversation` when the run needs it | `conversation` by default: a run's first request pays for the whole conversation at the full input price, since no cache lives from one run to the next |
 | A conversation gone before a firing | the firing starts a new session and its message says so | skipping the run: the person deleted a conversation, not their routine |
@@ -301,13 +305,36 @@ The rule is the same for fresh subagents and forks, and is the one
 
 ### A subagent that runs its caller's model
 
-An inline subagent's spec may leave `model` out. Its thread runs the
-model its caller's thread stands on when it starts, with that thread's
-connection and effort, pinned for the thread's life as 013
-pins a subagent's family. The session's permissions already name that
-model, so its create's question is unchanged. A referenced agent keeps
-its own model. A subagent that names a model is connected by that name,
-as today.
+An inline subagent's spec may leave `model` out. It runs the model its
+caller's thread stands on, with that thread's connection, figures and
+effort. The session's permissions already name that model, so its
+create's question is unchanged. A referenced agent keeps its own model,
+and a subagent that names a model is connected by that name, as today.
+`thread.started` records the model the subagent started on in `model`
+and records no effort; each `model.request` records the model it was
+sent with, and the request it keeps holds the effort.
+
+What such a subagent runs at a turn after its first, a `send_message`
+to it:
+
+| | Built after v0.58.0 | Recommended |
+|---|---|---|
+| model | the model it started on, connected again when its caller has moved to another since; when that model cannot be connected, the call's result is `Subagent <id> stopped: error <code>` | the model its caller stands on at that turn, with its connection |
+| effort | its caller's at that turn, since nothing records the effort it started at | the same, unrecorded |
+
+| Item | Recommended | Weighed against, and why not |
+|---|---|---|
+| The model at a later turn | the caller's model at that turn: it is always one the session may use, so following it reaches nothing the session does not hold, needs no second connection, and goes where the person or the authorizer moved the session | the model the subagent started on (built): after a failover within a turn ([[051-a-turn-moves-off-a-model-that-cannot-serve]]), a subagent started before it goes back to the model that failed; on the hosted runner, after the authorizer moves the session to another model, the old one cannot be connected once the session's key no longer lists it, and the call stops with an error. Falling back to the caller's model only when the old one fails to connect: two paths, and a model that failed over may still connect and fail again at its first request |
+| The effort | follows the caller's current effort, unrecorded, as built | recorded in `thread.started` and kept for the subagent's life: a member and a pin that keep a helper at a level the person has since changed, while its model already follows the caller |
+
+A change of model between a subagent's turns is encoded as
+[[007-models]] encodes a change of the session's model to another
+family, a translation; the family a thread pins when it starts (013)
+stays pinned for a subagent that names its model. A fork follows the
+same rule: its first request is sent within its caller's step, on the
+model and effort of that step, so the cached prefix holds; a later turn
+of a fork follows its caller as any subagent does, and reads from the
+cache only when the caller has not moved.
 
 ### A trigger whose sessions start as a fork
 
@@ -376,13 +403,17 @@ the conversation established and the ask cannot carry it.
 | `session.policy: fork`, `session.from`, `session.fromSeq`, `status.forkPoint` | Trigger fields | a routine's run from its conversation |
 | `fork_missing` | `user.message` member | a firing whose conversation is gone |
 | `startFrom` | `trigger` tool input | a proposal's choice |
-| `prompts/tools/agent-v2.md` (the `agent` description after 013's `agent-v1`, with `fork`), `prompts/threads/fork-v1.md`, `prompts/results/threads/forked.md`, `prompts/results/threads/withheld.md` | texts | the description, the opening, the placeholder result, the refusal |
+| the next versions of `prompts/tools/agent` after 013's `agent-v1`: the one shipped with step 1 names `budget`, the one shipped with step 2 names `fork`; `prompts/threads/fork-v1.md`, `prompts/results/threads/forked.md`, `prompts/results/threads/withheld.md` | texts | the description, the opening, the placeholder result, the refusal |
 
 ### Roll order
 
 1. A subagent that leaves its model out, and a subagent's ceiling for
-   fresh subagents. They close 013's open budget row and let an
-   installation that routes its models give a session subagents.
+   fresh subagents, with an `agent` description that names `budget`.
+   They close 013's open budget row and let an installation that
+   routes its models give a session subagents. The model-less subagent
+   is built after v0.58.0, with its later turns on the model it started
+   on; its later turns on the caller's model, and the ceiling, are
+   open.
 2. After 013's rename to `agent` and `send_message` has shipped,
    `subagent: fork`: the value and `spec.tools` naming `agent`, the
    opening message, the fold, the grant and `withheld_from_fork`, and
@@ -434,8 +465,9 @@ a runner; the words a client shows.
 | Forks count toward `maxConcurrent` | `harness.TestForksCountTowardTheConcurrencyCap` | not built |
 | A fork's fold is its caller's through `from.seq`, the opening message and its own events; a caller's later compaction leaves it; a redaction of an inherited event compacts it before its next request; a runner restarted during a fork rebuilds the same request | `session.TestAForksFold`, `harness.TestARedactionCompactsEveryForkThatHoldsIt`, `harness.TestAForkResumesOnAnotherRunner` | not built |
 | A fork's result is its final text and the idle line, `send_message` continues it, and an isolated fork returns its branch | `harness.TestAForkReturnsAndContinues` | not built |
-| A subagent's ceiling, from a call's `budget`, a fresh subagent's `maxCost` or what is left of its caller's, counts the subagents under it; at it the subagent's turn ends `budget` with `subagent_budget` and its caller's call names it; the session's ceiling still holds | `harness.TestASubagentsCeilingCountsWhatIsUnderIt` | not built |
-| An inline subagent with no `model` resolves, and it runs its caller's model, connection and effort; a referenced agent still names its own | `manifest.TestASubagentMayLeaveItsModelOut`, `harness.TestASubagentWithoutAModelRunsItsCallers` | not built |
+| A subagent's ceiling, from a call's `budget`, a fresh subagent's `maxCost` or what is left of its caller's, counts the subagents under it; at it the subagent's turn ends `budget` with `subagent_budget` and its caller's call names it; the session's ceiling still holds; the `agent` description names `budget` | `harness.TestASubagentsCeilingCountsWhatIsUnderIt` | not built |
+| An inline subagent with no `model` resolves, and its first turn runs its caller's model, connection and effort; a referenced agent still names its own | `manifest.TestASubagentMayLeaveItsModelOut`, `harness.TestASubagentWithoutAModelRunsItsCallers` | built |
+| A subagent with no `model` runs each later turn on the model, connection and effort its caller stands on then: after a failover within a turn, or after the authorizer moved the session to a model the session's key now lists alone, it runs the caller's new model, connects nothing else, and its `model.request` records that model | `harness.TestASubagentWithoutAModelFollowsItsCaller` | not built |
 | A `fork` trigger asks `session.fork` on `from` at apply, writes `status.forkPoint` once, and each firing forks `from` there with the trigger's title, `trigger_id` and `end_on_idle`; the run's fold at the fork point equals the conversation's | `internal/triggers.TestAForkTriggerForksItsConversation`, `internal/server.TestAForkTriggerAsksToForkAtApply` | not built |
 | `fork` without `from`, `from` beside another policy, and a `fromSeq` that is no turn boundary are `invalid_manifest` with the field's path | `manifest.TestTheForkPolicysFields` | not built |
 | A firing whose conversation is gone starts a new session whose message carries `fork_missing`, rendered as the line that says so | `internal/triggers.TestAForkWhoseConversationIsGoneStartsNew`, `session.TestTheFoldSaysTheConversationIsGone` | not built |
