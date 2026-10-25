@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A trigger can name the model its runs start on.** `spec.session.model`, `{"name": "<model>", "reasoning": "<level>"}` with either member or both, the shape a change of a session's model takes, is the model and the reasoning level each session a firing starts begins on, in place of the agent's; a member left out is the agent's. The firing's `session.create` is asked with it as `model`, and the level under `reasoning` and `effort`, as a create that names its model is, and the allow is read as for the agent's own model: a model it names runs in the trigger's model's place, with the trigger's name as `via`, at the level it names when it names one. A firing that continues an open session leaves the model that session runs, one the person changed it to included, and a trigger under `session.target` ignores the field. An apply whose model names neither member, a name with space around it or another level is refused `invalid_manifest`. A trigger without it runs its agent's model as before, and keeps its digest. See `docs/trigger-models.md`.
+
 ### Fixed
 
 - **A trigger that names `session.target` applies through the API.** `PUT /v1/triggers/{name}` of a trigger whose `spec.session.target` names a session answered `internal`, since the route could not ask `session.send` about that session. It now asks it, and applies the trigger once the authorizer allows the send. A wake, which its session's tool sets, was not affected.
