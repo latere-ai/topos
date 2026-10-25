@@ -176,6 +176,8 @@ person itself. Spec [006](specs/.archive/006-identity.md) is the contract.
   read at once for a forecast.
 - [docs/trigger-models.md](docs/trigger-models.md): the model and the
   reasoning level a trigger's runs start on, in place of the agent's.
+- [docs/trigger-times.md](docs/trigger-times.md): a trigger that fires at
+  a list of times, each once, for times no schedule names.
 
 ## Contributing
 

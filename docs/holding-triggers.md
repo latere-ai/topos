@@ -37,14 +37,17 @@ While a person is held:
   its counts stay as they were;
 - the fire route answers `conflict` for each of their triggers, as for a
   suspended one, so a delivered event is dropped and not retried;
-- a one-shot trigger whose time passes, a wake among them, keeps it;
+- a one-shot trigger whose time passes, a wake among them, keeps it, and
+  a trigger of listed times keeps the next of them;
 - an agent's `trigger` and `wake` calls go on as without the hold: a wake
   set while held keeps its time, and the call's result tells the agent
   that every trigger is paused.
 
 On release, a schedule starts from then, so it fires nothing it missed,
 and a one-shot fires within the minute, or is `skipped_late` once past its
-`maxAge`. A wake that fires late says so to the agent with when it was
+`maxAge`; each listed time that passed while held is fired in turn the
+same way, and one whose next listed time has also passed is
+`skipped_late`. A wake that fires late says so to the agent with when it was
 due. A trigger keeps its own `suspend` through a hold and its release,
 so resuming everything never resumes what the person paused one by one.
 

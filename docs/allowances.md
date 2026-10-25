@@ -58,7 +58,8 @@ nothing and records the outcome `skipped_budget`, counted in
 `status.counts.skippedBudget`. A schedule fires again at its next time,
 a redelivered event is decided again, and a one-shot, a wake included,
 keeps its time and is tried each minute until the week allows it or its
-`maxAge` passes. The fire route answers a skipped firing `200` with the
+`maxAge` passes, as is each time a trigger's `spec.times` lists, until
+its `maxAge` passes or the next listed time comes. The fire route answers a skipped firing `200` with the
 firing, as it answers every other outcome.
 
 ## A one-shot refused until a limit resets
@@ -71,7 +72,9 @@ is recorded `refused` with the deny's reason, the trigger keeps its time,
 and the minute loop tries it once more when the limit resets, judged late
 by its own time, so its `maxAge` still bounds the wait. The authorizer is
 asked again then, not at every pass. A deny that names no reset spends the
-one-shot as before.
+one-shot as before. A time a trigger's `spec.times` lists waits the same
+way, and no later than the next listed time, which then fires in its
+place.
 
 `trigger.create` and `trigger.update` carry `budget:
 {"per_week_usd_micro": n}`, so an installation's authorizer can refuse a

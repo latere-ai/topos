@@ -91,6 +91,7 @@ soonest first, as the server would fire them:
 |---|---|
 | `schedule` | its schedule's times, in its time zone |
 | `at` | its one time; for one past its time that waits, now when it waits for its allowance, or when the limit that refused it resets |
+| `times` | its listed times still to come; while one of them waits, first when it is tried again, as for `at` |
 | `event` | none: it fires when something arrives. Read how often it ran from `runs` and how old it is from `created_at` |
 
 A suspended trigger has none. The hold over every trigger
@@ -100,7 +101,8 @@ later ones were left out.
 
 `max_age` is the trigger's `spec.maxAge`: how late a firing may still
 run after its time, so how long a one-shot that waits may wait before it
-is skipped as late.
+is skipped as late. A listed time also waits no later than the next time
+in its list.
 
 ## A trigger that continues one session
 
