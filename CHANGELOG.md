@@ -10,6 +10,17 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **A subagent can run the model of the agent that starts it.** An inline subagent's spec may leave `model` out. The subagent then runs the model the agent that starts it stands on at that moment, with that model's connection, figures and reasoning level: for a session on a routed name such as `tier/quick`, the model the authorizer resolved the name to. Nothing is connected for such a subagent when the session's drive starts, so an agent on a routed name can now have subagents; before, every subagent named a model that was connected by its name alone, and a name only the authorizer resolves failed the drive. The subagent keeps that model for as long as it runs: after the session moves to another model, a `send_message` to it runs on the model it started on, connected again, and when that model can no longer be connected the call's result is `Subagent <id> stopped: error <code>`. Its requests are priced by that model's figures and count in the session's spend as every request does. A subagent's model given without a name is `invalid_manifest`; an agent, and a subagent that names another agent, still name their model, and the OpenAPI document no longer lists `model` among `AgentSpec`'s required members.
+
+### Changed
+
+- **The subagent tools are `agent` and `send_message`.** The tool that starts a subagent, `spawn`, is now `agent`, with the inputs `subagent` (before, `agent`), `task`, `isolation`, `tools` and `budget`. The tool that continues one, `message`, is now `send_message`, with `to` (before, `thread`), `message` (before, `content`) and `end`. The error codes `too_many_threads` and `thread_not_found` are now `too_many_subagents` and `subagent_not_found`; `unknown_subagent`, `depth_exceeded` and `isolation_unavailable` keep their names. The tools' descriptions and results say subagent, and the line after a subagent's answer is `Subagent <id> is idle; send it more work with send_message.` The history tool calls the agent that started a subagent by that name. The event types `thread.started`, `thread.message` and `thread.ended` and the manifest's `spec.threads` are unchanged.
+- **The harness prompt names the new tools.** Its section on subagents, which an agent with subagents is given, names `agent` and `send_message`: new requests record `prompt_version` `harness/3`, and `harness/4` on a person's own computer. For an agent without subagents each renders byte for byte as `harness/1` and `harness/2`.
+- **The old names still work in this release.** A model's call of `spawn` with `agent`, or of `message` with `thread` and `content`, runs as the new tool with the new inputs, and its `agent.tool_use` records the call as the model wrote it; a call recorded under an old name, held for a person's approval or left open when a runner stopped, resumes as the new tool. A pattern of an approval list, or one a person's answer remembered, that names `spawn` or `message` matches the new tool's calls. A client tool named `message` stays the client's. The release after this one refuses the old names.
+- **An agent with subagents may not name a client tool `agent` or `send_message`**: the manifest is `invalid_manifest`. An agent stored earlier with such a client tool keeps it, and is not offered the harness's tool of that name.
+
 ## v0.58.0 - 2026-10-25
 
 ### Added
