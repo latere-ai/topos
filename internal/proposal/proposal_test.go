@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -660,6 +661,68 @@ func TestAChangeKeepsTheModelItsTriggerNames(t *testing.T) {
 		}
 		if m := got.Spec.Session.Model; m == nil || *m != *model {
 			t.Errorf("%s writes the model %+v: %s", c.name, m, changed)
+		}
+	}
+}
+
+// TestAChangeKeepsTheTimesItsTriggerFiresAt (spec 090): the trigger
+// tool's change of its ask, pause and resume keep the times a trigger
+// fires at, a list's or a one-shot's, of a trigger in a routine's name
+// and labels and of any other; a change to a schedule or to events
+// replaces them, so the trigger fires on one of them.
+func TestAChangeKeepsTheTimesItsTriggerFiresAt(t *testing.T) {
+	times := []time.Time{time.Date(2026, 10, 26, 17, 40, 0, 0, time.UTC), time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC)}
+	at := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	body, err := Manifest("chat", routine.Name("ses_1/toolu_t"), runner.Proposal{Name: "Fares", Ask: "Look at the fares.", Why: "On the days you named.", Schedule: "0 9 * * 1", TimeZone: "UTC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(body json.RawMessage) v1.Trigger {
+		t.Helper()
+		var tr v1.Trigger
+		if err := json.Unmarshal(body, &tr); err != nil {
+			t.Fatal(err)
+		}
+		return tr
+	}
+	shaped := read(body)
+	shaped.Spec.Schedule = ""
+	plain := v1.Trigger{APIVersion: v1.APIVersion, Kind: v1.KindTrigger, Metadata: v1.ObjectMeta{Name: "fares"},
+		Spec: v1.TriggerSpec{Agent: "agent_1", TimeZone: "UTC", Session: v1.TriggerSession{Message: "Look at the fares."}}}
+	for _, base := range []struct {
+		name string
+		tr   v1.Trigger
+	}{{"a routine's", shaped}, {"a trigger's", plain}} {
+		for _, when := range []struct {
+			name string
+			set  func(*v1.TriggerSpec)
+			kept func(v1.TriggerSpec) bool
+		}{
+			{"times", func(s *v1.TriggerSpec) { s.Times = times }, func(s v1.TriggerSpec) bool { return slices.EqualFunc(s.Times, times, time.Time.Equal) && s.At == nil }},
+			{"at", func(s *v1.TriggerSpec) { s.At = &at }, func(s v1.TriggerSpec) bool { return s.At != nil && s.At.Equal(at) && s.Times == nil }},
+		} {
+			stored := base.tr
+			when.set(&stored.Spec)
+			for _, p := range []runner.Proposal{
+				{Action: ActionChange, ID: "trg_1", Why: "Clearer.", Ask: "Look at the fares to Lisbon."},
+				{Action: ActionPause, ID: "trg_1", Why: "Away."},
+				{Action: ActionResume, ID: "trg_1", Why: "Back."},
+			} {
+				changed, err := Changed("chat", &stored, p)
+				if err != nil {
+					t.Fatalf("%s %s, %s: %v", base.name, when.name, p.Action, err)
+				}
+				if got := read(changed).Spec; !when.kept(got) || got.Schedule != "" {
+					t.Errorf("%s %s, %s writes %s", base.name, when.name, p.Action, changed)
+				}
+			}
+			changed, err := Changed("chat", &stored, runner.Proposal{Action: ActionChange, ID: "trg_1", Why: "Weekly now.", Schedule: "0 9 * * 1", TimeZone: "UTC"})
+			if err != nil {
+				t.Fatalf("%s %s to a schedule: %v", base.name, when.name, err)
+			}
+			if got := read(changed).Spec; got.Schedule != "0 9 * * 1" || got.Times != nil || got.At != nil {
+				t.Errorf("%s %s to a schedule writes %s", base.name, when.name, changed)
+			}
 		}
 	}
 }

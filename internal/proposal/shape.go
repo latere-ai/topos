@@ -201,7 +201,10 @@ func edit(doc json.RawMessage, fn func(spec, session map[string]any)) (json.RawM
 // other field kept. A routine stays a routine, written by its own
 // Manifest as the SDK's change of one writes it; any other trigger has
 // the fields named written into its document. A routine is not changed to
-// events no routine expresses, which a new proposal offers.
+// events no routine expresses, which a new proposal offers. A trigger that
+// fires at one time or at a list of times (spec 090) is no routine the
+// SDK's Fields express, whatever its name and labels, so its document is
+// written as any other trigger's.
 func Changed(agent string, stored *v1.Trigger, p runner.Proposal) (json.RawMessage, error) {
 	doc, err := json.Marshal(stored)
 	if err != nil {
@@ -212,7 +215,7 @@ func Changed(agent string, stored *v1.Trigger, p runner.Proposal) (json.RawMessa
 	if stored.Spec.On != nil {
 		rt.Product = stored.Spec.On.Product
 	}
-	if f, ok := routine.Read(rt, agent); ok {
+	if f, ok := routine.Read(rt, agent); ok && stored.Spec.At == nil && stored.Spec.Times == nil {
 		return changedRoutine(agent, stored.Metadata.Name, doc, f, p)
 	}
 	return changedTrigger(doc, stored, p)
@@ -296,13 +299,19 @@ func changedTrigger(doc json.RawMessage, stored *v1.Trigger, p runner.Proposal) 
 				session["message"] = routine.EventMessage(ask)
 			}
 		}
+		// A schedule or a filter replaces what the trigger fired on, a
+		// time or a list of times included, so it sets one of them.
 		switch {
 		case p.Schedule != "":
 			spec["schedule"], spec["timeZone"] = strings.TrimSpace(p.Schedule), p.TimeZone
 			delete(spec, "on")
+			delete(spec, "at")
+			delete(spec, "times")
 		case p.On != nil:
 			spec["on"] = *p.On
 			delete(spec, "schedule")
+			delete(spec, "at")
+			delete(spec, "times")
 		}
 		switch p.Verb() {
 		case runner.TriggerPause:
