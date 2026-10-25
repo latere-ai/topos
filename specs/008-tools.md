@@ -243,8 +243,9 @@ tool, or a tool renamed, is named by these rules, in order:
    `WebSearch` are `web_fetch` and `web_search`, and `SendMessage` is
    `send_message`. Its input names are reused where they fit, as
    `send_message` takes `to` and `message`.
-2. Otherwise, a plain verb for what the tool does (`publish`, `notify`,
-   `wake`).
+2. Otherwise, a plain verb for what the tool does, with its object
+   where the verb alone is unclear (`publish`, `notify`, `wake`,
+   `list_sessions`, `run_workflow`).
 3. Never an operating-system word, in a name, an input or a
    description: spawn, thread, kill, reap, daemon, lease, lock, mutex,
    inbox, writer, fold, orchestrator, one-shot, a held call. Each names
