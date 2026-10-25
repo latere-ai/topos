@@ -170,8 +170,9 @@ build differs from the design as written, or adds to it:
 - **A subagent's task and its caller's messages are entries.** The
   spec's list names a person's messages; a subagent's conversation opens
   with its `thread.started` task and goes on with `thread.message`, so
-  both read back, headed "The thread that started you gave you this
-  task:" and "<agent> wrote:".
+  both read back, headed "The agent that started you as its subagent
+  gave you this task:" (`results/history/head-v2`, after v0.58.0;
+  `head-v1` said "The thread that started you") and "<agent> wrote:".
 - **A call refused before it was decided**, which no `agent.tool_use`
   records, reads inside the agent message that made it, and a
   `tool_use_id` read finds that message. An agent message of recorded
