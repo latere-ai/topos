@@ -308,7 +308,7 @@ The calls of a step are taken in order and grouped into maximal runs
 of consecutive parallel tools; each run executes concurrently, at most
 eight at a time, and each other call runs alone, in order. Results are
 appended as calls return; the fold orders them by the model's order.
-Several `spawn` calls in one step run their threads at once
+Several `agent` calls in one step run their subagents at once
 ([[013-threads-and-subagents]]).
 
 ### Repeated calls

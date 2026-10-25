@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 006-identity.md, 008-tools.md, 009-machines.md,
 affects: [authorizer/, session/, internal/server/, internal/config/, internal/hosted/, machine/, harness/, internal/mcp/, prompts/, cmd/toposd/, api/, docs/]
 effort: large
 created: 2026-10-12
-updated: 2026-10-14
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -426,22 +426,21 @@ service as an available connection:
 - **The block.** On the session's own thread, `context/connections-v3`
   lists the requestable connections after the connected ones, a line
   each, `- <title>, named <name>`, under one sentence that says the
-  model may ask the person to connect one with `request_connection`
-  when the task needs it. The block renders with requestable connections
-  alone. A thread a spawn started is told of none, since it holds no
-  such tool. Version 1, which v0.34.0 carries, names connected ones
-  alone.
+  model may ask the person to connect one with `request_connection` when
+  the task needs it. The block renders with requestable connections
+  alone. A subagent is told of none, since it holds no such tool.
+  Version 1, which v0.34.0 carries, names connected ones alone.
 - **`request_connection`.** A harness tool, as `question` is
   ([[039-questions]]), offered to the session's own thread while the
-  session has a requestable connection, and to no thread a spawn
-  started. Input `{name, reason}`, both required, `reason` 1 to
+  session has a requestable connection, and to no subagent. Input
+  `{name, reason}`, both required, `reason` 1 to
   `session.MaxConnectionReason` (200) characters with a character that
   is not white space. Effect `none`, `Parallel` yes: it opens no
   machine, scores 0.0 and is allowed in every mode. For a requestable
-  name it answers `ok` with `results/request_connection/asked-v1`,
-  which says the person is asked, that the service reaches the session
-  from their next message, and that the turn ends with one sentence
-  saying what the model will do once it is connected; and
+  name it answers `ok` with `results/request_connection/asked-v1`, which
+  says the person is asked, that the service reaches the session from
+  their next message, and that the turn ends with one sentence saying
+  what the model will do once it is connected; and
   `connection.requested` follows the result in the same batch, its
   payload `name`, `title`, `kind`, `reason` the model's sentence on one
   line, and `tool_use_id`. Any other name answers `error` with
@@ -478,7 +477,7 @@ nothing for it; the block tells the model to push its own branch,
 | "Connect this service" for `mcp` | `connection.requested`, beside the call's error result | `session.error` `connection_not_connected`: an error is the session's failure, while this asks the person to act, as `approval.requested` does |
 | "Connect this service" for `http` | the service's `409` reaches the sandbox's tool, and the model relays it | the runner reading the sandbox's traffic: it sees none of it |
 | A service never connected | the allow names it with `state` `available`, and the model asks with `request_connection`, which appends `connection.requested` | a send that fails before the model knows the service: the model cannot ask for what it was never told of; a new event type: `connection.requested` already means "connect this service" to a client |
-| Where an available entry reaches | the session's own thread's block and tool | every thread: a thread a spawn started does not hold the conversation with the person, as with `question` |
+| Where an available entry reaches | the session's own thread's block and tool | every thread: a subagent does not hold the conversation with the person, as with `question` |
 | What the block says of an `http` connection | that it can be used now with no sign-in or key, the account it acts as, the service's own API base URL its variable stands in for, and one documented call written whole with `curl`, the header and the variable | the variable alone, as version 2 said it: a small model read "this machine holds none of them" as having no access, and was given no call to copy; a call written with `/<path>` alone: a small model left out the API's version prefix |
 | Where the example call's path comes from | `api_example`, which the installation's authorizer names, a call its connection service lets a session make | a path the core writes for each service: the core names no service; a list of the API's paths: the block stays one line per connection |
 | Where the service's API base URL comes from | `api_url`, which the installation's authorizer names from its catalog | a table of services in the core: the core names no service, and each installation offers its own |
@@ -533,7 +532,7 @@ before the installation set `TOPOS_CONNECTIONS_URL`: it reaches no
 | A `409` whose reason is `kept_apart_from_google` fails the call with a result saying a new conversation can use the connection, with no ask to connect again, and still appends `connection.requested` with the reason; the block (version 5) says the same of a request from the sandbox | `internal/mcp.TestAServerKeptApartFromThisConversation`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | An available connection decodes with its name, kind and title alone; one with an audience, an address, a git address or URL, or `read_only`, another state, and a connected one without an address do not; names are unique across both and the bound counts both | `session.TestAnAvailableConnection`, `authorizer.TestTheConnectionsMember` | built |
 | An available `http` connection is taken at a create and a send on a server with no connection service, the Session answers it with its `state`, and a send that names it connected appends `session.connections_changed` | `internal/server.TestAnAvailableConnectionIsTakenAsNamed` | built |
-| The session's own thread is offered `request_connection` while it has a requestable connection, and a spawned thread, a session with none and a host machine's session with only an available `http` one are not; the block lists the requestable ones apart from the connected ones, on the own thread alone; a call appends `connection.requested` with the call's id and the reason on one line, answers the asked text, is allowed in `confirm` and opens no machine; another name is an error naming the requestable ones | `harness.TestRequestConnection`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
+| The session's own thread is offered `request_connection` while it has a requestable connection, and a subagent, a session with none and a host machine's session with only an available `http` one are not; the block lists the requestable ones apart from the connected ones, on the own thread alone; a call appends `connection.requested` with the call's id and the reason on one line, answers the asked text, is allowed in `confirm` and opens no machine; another name is an error naming the requestable ones | `harness.TestRequestConnection`, `prompts.TestEveryTextRendersItsCurrentBytes` | built |
 | A hosted session with an available code host and server lists no server, asks no token for them and opens no sandbox, offers `request_connection`, and its call appends `connection.requested` | `internal/hosted.TestARequestedConnectionOpensNothing` over the stub Cella | built |
 | No client tool takes the name `request_connection`, and no agent names it | `manifest.TestRequestConnectionIsReserved` | built |
 | `TOPOS_CONNECTIONS_URL` on the host Lux publishes its doors under stops serve and the runner role at their start, naming the service's URL, the published root and their host, while the configuration alone passes | `internal/config.TestTheConnectionsHostAndTheModelsRoot`, `cmd/toposd.TestAConnectionServiceOnLuxsPublishedHostStopsTheStart` | built |

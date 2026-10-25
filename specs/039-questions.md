@@ -6,7 +6,7 @@ depends_on: [003-manifest.md, 004-session-log.md, 005-harness-loop.md, 006-ident
 affects: [session/, harness/, harness/tools/, manifest/, prompts/, internal/server/, internal/hosted/, internal/toposcli/, api/, test/tasks/]
 effort: medium
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -49,7 +49,8 @@ this spec are questions under Open for the owner.
   (`manifest.Builtins`) and the set three registries are built from:
   the hosted runner's, the CLI's and the task suite's. The harness
   adds `spawn`, `message` and `advisor` itself, as tools that hold the
-  turn (`harness/threads.go`). None addresses a person.
+  turn (`harness/threads.go`); [[013-threads-and-subagents]] renames
+  the first two `agent` and `send_message`. None addresses a person.
 - A model that needs a decision ends its turn with the question as
   text. The session goes idle `end_turn` and the next `user.message` is
   the answer. A session with `end_on_idle` ends `completed` there.
@@ -111,7 +112,7 @@ this spec are questions under Open for the owner.
 |---|---|---|
 | the name | `question` | `ask`: [[012-permissions-and-approvals]] and the harness use "ask" for a verdict throughout, and a pattern names a tool by its bare name. `ask_user`: clear, and longer than it needs to be beside `todo` and `advisor` |
 | a tool of its own | one tool with one schema and one description | a client-executed tool per agent (below) |
-| where it lives | a harness tool beside `spawn`, added when the agent names it | a ninth built-in: a tool of `harness/tools` cannot see the Session or leave its call open, and the default set would need a second list |
+| where it lives | a harness tool beside `agent`, added when the agent names it | a ninth built-in: a tool of `harness/tools` cannot see the Session or leave its call open, and the default set would need a second list |
 | who answers | a question is answered at once unless the session's creator declares `attended` | waiting unless declared unattended: every client and integration that says nothing would wait on its first question |
 | nobody to ask | the call is answered at once, and recorded | withholding the tool: the question the agent had would leave no record, and the model would need a prompt section to learn that nobody is there |
 | the wait | idle with a stop reason of its own, `question` | `tool_result`: a list could not tell a person's decision from a program's pending result |
@@ -166,16 +167,16 @@ client tools, and it is the wrong carrier for a person's decision:
 |---|---|---|---|---|
 | `question` | yes | none | `questions`: a list of `{question, header, options, multiple}`, each option `{label, description, preview, recommended}` | the bounds below; one call a step; the session's own thread only |
 
-`question` is a harness tool, as `spawn`, `message` and `advisor` are
-([[013-threads-and-subagents]]): it is defined in `harness`, holds the
-turn, and is added to the registry of the session's own thread when
-the agent's `spec.tools` names it, which the runner tells the harness
-as it tells it the subagents. `tools.Builtins` and the default set
-stay the eight, so the three registries built from them are unchanged
-and no second list exists. The manifest validator's list of names is
-the one place that learns the name ([[003-manifest]]): it accepts
-`question` among an agent's tools and refuses a client tool that takes
-it. The description is the file `prompts/tools/question-v1.md`.
+`question` is a harness tool, as `agent`, `send_message` and `advisor`
+are ([[013-threads-and-subagents]]): it is defined in `harness`, holds
+the turn, and is added to the registry of the session's own thread when
+the agent's `spec.tools` names it, which the runner tells the harness as
+it tells it the subagents. `tools.Builtins` and the default set stay the
+eight, so the three registries built from them are unchanged and no
+second list exists. The manifest validator's list of names is the one
+place that learns the name ([[003-manifest]]): it accepts `question`
+among an agent's tools and refuses a client tool that takes it. The
+description is the file `prompts/tools/question-v1.md`.
 
 Its call does one of two things:
 
@@ -545,12 +546,14 @@ interrupted.
 - **A second `question` call in one step.** Refused, as above. The
   model reads the first call's answer and the refusal together, and
   asks what it still needs in its next step.
-- **A thread.** A thread is never offered `question`: `spawn` leaves
-  the name out of a subagent's tools where it leaves out `spawn` and
-  `message` ([[013-threads-and-subagents]]). A subagent that needs a
+- **A subagent.** A fresh subagent is never offered `question`:
+  `agent` leaves the name out of a subagent's tools where it leaves out
+  `agent` and `send_message` ([[013-threads-and-subagents]]), and a
+  fork holds its definition and is refused it
+  ([[091-a-fork-of-the-conversation]]). A subagent that needs a
   decision ends its turn saying so, as the harness prompt asks of
-  every agent, and its parent, which holds the conversation with the
-  person, asks. An advisor's thread holds no tools.
+  every agent, and its caller, which holds the conversation with the
+  person, asks. The advisor holds no tools.
 
 ### The authorizer and limits
 
@@ -766,7 +769,7 @@ owner's decision yet, and each is reversible.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| The harness offers `question` to the session's own thread when the agent's tools name it and to no thread a `spawn` starts; `tools.Builtins` and the default set stay the eight, with the digest an agent had; the validator accepts the name among an agent's tools and refuses a client tool that takes it | `harness.TestQuestionIsOfferedWhenNamed`, `manifest.TestQuestionIsAKnownToolName` | built |
+| The harness offers `question` to the session's own thread when the agent's tools name it and to no subagent; `tools.Builtins` and the default set stay the eight, with the digest an agent had; the validator accepts the name among an agent's tools and refuses a client tool that takes it | `harness.TestQuestionIsOfferedWhenNamed`, `manifest.TestQuestionIsAKnownToolName` | built |
 | The validator checks `minItems` and `maxItems`; the tool's schema states every bound from the constants; the description file and the OpenAPI text hold no bound that differs from them | `harness/tools.TestSchemaArrayLengths`, `harness.TestQuestionSchemaFollowsTheConstants`, `prompts.TestQuestionDescriptionHoldsTheBounds`, `internal/server.TestTheSendRouteShowsAnAnswer` | built |
 | A call that uses a label twice in one question is answered `invalid_input`; of two `question` calls in one step the first is asked and the second is answered `invalid_input`; a call past a count or a length is refused by the schema | `harness.TestAQuestionCallIsChecked` | built |
 | A Session is not attended unless its creator says so: `session.New` leaves it false, the create and fork routes take the body's value, a trigger's session is not attended, and `topos run` sets it with `--attended` | `session.TestASessionIsNotAttendedByDefault`, `internal/server.TestAttendedAtCreate`, `internal/toposcli.TestRunAttended` | built |

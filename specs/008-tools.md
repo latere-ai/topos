@@ -257,11 +257,12 @@ tool, or a tool renamed, is named by these rules, in order:
 `todo` (Claude Code's `TodoWrite`) and `question` (its
 `AskUserQuestion`) shipped before this rule and keep their names, as do
 `history`, `advisor` and `trigger`. A renamed tool's old name keeps
-working for one release, as [[013-threads-and-subagents]] keeps
-`spawn` and `message`. A word of the log or the API that stays (`thread.started`, a Session's
-`writer`) is explained where its spec names it, and no text a model
-reads uses it. The released descriptions of `read`, `write`, `edit`
-and `bash` say "this thread"; their next versions say "you" instead.
+working for one release, as [[013-threads-and-subagents]] keeps `spawn`
+and `message`. A word of the log or the API that stays
+(`thread.started`, a Session's `writer`) is explained where its spec
+names it, and no text a model reads uses it. The released descriptions
+of `read`, `write`, `edit` and `bash` say "this thread"; their next
+versions say "you" instead.
 
 ## Not in this spec
 

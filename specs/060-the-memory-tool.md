@@ -6,7 +6,7 @@ depends_on: [003-manifest.md, 004-session-log.md, 008-tools.md, 012-permissions-
 affects: [harness/tools/, harness/memory/, internal/memoryservice/, harness/, session/, manifest/, prompts/, internal/hosted/, internal/config/, internal/toposcli/, cmd/toposd/, test/tasks/, docs/]
 effort: medium
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -215,7 +215,7 @@ itself is the service's and stays until it is forgotten there.
   naming it, so the digest of an agent that names no tools is unchanged.
 - `internal/hosted` and `topos run` add it to the registry when the
   agent names it and `TOPOS_MEMORY_SERVICE_URL` is set, as `publish` is
-  offered only on an installation with an app host; a spawned thread
+  offered only on an installation with an app host; a fresh subagent
   holds it when its agent names it.
 - The manifest takes `memory` by its name alone.
 - The task suite offers it to a task that names it, with a fixed memory

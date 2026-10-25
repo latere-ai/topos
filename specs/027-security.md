@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 009-machines.md, 012-permissions-and-approvals
 affects: [docs/security.md, SECURITY.md]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -63,7 +63,7 @@ credentials under a key that was never set. Nothing is borrowed.
 |---|---|---|
 | tool output carries instructions that steer the model (prompt injection from a file, a web page, an MCP result) | the model can only act through tools; every call is scored and gated; the hard boundaries hold whatever the model is persuaded to do; credentials never reach the model | [[012-permissions-and-approvals]] `TestHostSandboxConfinesBash`; [[018-credentials-and-secrets]] `TestNoCredentialInAnyEventOrMachine` |
 | an agent reads a credential file on the host | the deny-list in the file tools and in the host sandbox, in every mode | [[009-machines]] `TestHostDenyList` |
-| an agent widens its own authority through a hook, a mode, a pattern or a subagent | verdicts only narrow; spawn edges only narrow; messages carry no authority | invariant 6; `TestHookCannotWiden`, `TestNarrowingAlongSpawnEdges` |
+| an agent widens its own authority through a hook, a mode, a pattern or a subagent | verdicts only narrow; a subagent's authority only narrows from its caller's; messages carry no authority | invariant 6; `TestHookCannotWiden`, `TestNarrowingFromCallerToSubagent` |
 | an agent pushes to a protected branch | the git host's ref rules | [[019-git]] `TestPushToProtectedBranchRefused` |
 | a credential leaks into a log, an event or tool output | the runner scrubs the values it holds before append; no event field holds one | invariant 5; `TestNoCredentialInAnyEventOrMachine` |
 | a secret pasted into a message | the input check warns and offers a named secret; redaction tombstones the event and compacts past it; the person is told to rotate | [[018-credentials-and-secrets]], [[004-session-log]] `TestRedactionTombstonesAndRequiresCompaction` |

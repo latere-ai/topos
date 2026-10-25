@@ -68,7 +68,8 @@ each against its alternative.
 - `end_on_idle` ends a session `completed` at its first idle `end_turn`
   ([[004-session-log]]); a trigger sets it under `new`.
 - No tool reads or writes a trigger. The harness tools are `spawn`,
-  `message`, `advisor`, `question` and `history`; `tools.Confirmer` lets a
+  `message`, `advisor`, `question` and `history` (013 renames the first
+  two `agent` and `send_message`); `tools.Confirmer` lets a
   tool hold a call for a person every time, which `publish` uses for a
   change of who can open an app ([[043-publishing-a-folder]]).
 - `suspend` stops one trigger. Nothing stops every trigger of an owner.

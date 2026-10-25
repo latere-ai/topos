@@ -36,7 +36,7 @@ engine over external processes. Nothing is built.
 
 The intended shape, to be settled against a caller:
 
-- a review is a set of critic threads spawned over one artifact, each
+- a review is a set of critic subagents started over one artifact, each
   with a stance from the attack grammar, whose findings go into a
   ledger kept in the log, with a contention score over the findings;
 - review stops at the steady state: a round that adds no new finding

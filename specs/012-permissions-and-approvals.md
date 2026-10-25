@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 005-harness-loop.md, 008-t
 affects: [harness/, machine/host/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-19
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -379,12 +379,12 @@ reads its confirmation; before, the next claim closed it
 `unknown_effect` without it ever running. A person's `user.message`
 appended after a call's `agent.tool_use`, with no confirmation before
 it, denies the call with the message's text as its note, in the
-session's thread and in a thread it spawned, and `session.Awaiting`
-drops the call, so the send route refuses a confirmation that follows
-the message as `conflict`. Three points the text above leaves open were
-settled as follows. A message denies only when its sender is a person,
-so a trigger's message denies nothing. A denial by message is not
-forwarded to a decision service as an answer
+session's own conversation and in a subagent it started, and
+`session.Awaiting` drops the call, so the send route refuses a
+confirmation that follows the message as `conflict`. Three points the
+text above leaves open were settled as follows. A message denies only
+when its sender is a person, so a trigger's message denies nothing. A
+denial by message is not forwarded to a decision service as an answer
 ([[037-decision-services]]), since nobody was asked. When several kinds
 of answer wait at once the stop reason names a confirmation before a
 client's result, at a step's end and at a claim alike.

@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 008-tools.md, 010-context.md, 012-permissions-a
 affects: [internal/publish/, internal/hosted/, internal/config/, cmd/toposd/, harness/, harness/tools/, manifest/, session/, prompts/, internal/toposcli/, docs/]
 effort: medium
 created: 2026-10-05
-updated: 2026-10-13
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -100,8 +100,8 @@ makes a release of its commit, whose status is `pending`, then
 `publish` is a tool of the session's own thread, as `question` is
 ([[039-questions]]): the runner adds it to the registry when the
 agent's `spec.tools` names it, the installation configures an app host
-and the session runs on a Cella machine; a thread a spawn started
-holds none, so a session has one app. Amended by
+and the session runs on a Cella machine; a subagent holds none, so a
+session has one app. Amended by
 [[059-publishing-to-a-chosen-app]]: a thread publishes to its own app
 and to each app its session's repositories attach, chosen by `app`. The manifest takes `publish` by
 its name alone, like `question`; `topos run` refuses an agent that

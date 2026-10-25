@@ -157,17 +157,17 @@ build differs from the design as written, or adds to it:
   `harness.Config.History` when the agent names the tool, as it sets
   `Question`; the hosted runner, `topos run` and the task suite do.
 - **A thread holds it as it holds a built-in.** The session's own thread
-  holds it, and a spawned thread when the names it was started with do,
-  which a subagent's tools and a spawn's `tools` narrow, and which its
-  `thread.started` records. The advisor holds none. A client tool of the
-  name, which an agent stored before the name was reserved may hold,
-  stays the client's, and its thread reads every text as without the
-  tool. A history call a runner stopped under is run again
+  holds it, and a fresh subagent when the names it was started with do,
+  which a subagent's tools and an `agent` call's `tools` narrow, and
+  which its `thread.started` records. The advisor holds none. A client
+  tool of the name, which an agent stored before the name was reserved
+  may hold, stays the client's, and its thread reads every text as
+  without the tool. A history call a runner stopped under is run again
   (`Repeatable`): it answers the same from the same log.
 - **The event before the call** is the one before the call's
   `agent.tool_use`, so the calls of the same step decided before it are
   read and none of their results, however the step's calls run.
-- **A spawned thread's task and its parent's messages are entries.** The
+- **A subagent's task and its caller's messages are entries.** The
   spec's list names a person's messages; a subagent's conversation opens
   with its `thread.started` task and goes on with `thread.message`, so
   both read back, headed "The thread that started you gave you this
