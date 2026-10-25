@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 009-machines.md]
 affects: [harness/, runner/, prompts/, test/tasks/instructions/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -60,7 +60,7 @@ and the data holds exactly the keys the template reads.
 | `harness/` | the harness prompt and its sections |
 | `compact/` | the compaction prompt ([[010-context]]) |
 | `advisor/` | the advisor's instructions and the request that carries the caller's transcript ([[013-threads-and-subagents]]) |
-| `tools/` | the descriptions of the built-in tools and of `spawn`, `message` and `advisor` ([[008-tools]], [[013-threads-and-subagents]]) |
+| `tools/` | the descriptions of the built-in tools and of `agent`, `send_message` and `advisor` ([[008-tools]], [[013-threads-and-subagents]]); `spawn-v1` and `message-v1` stay embedded for replays of requests that carried them |
 | `transcript/` | the texts the fold writes into a transcript ([[004-session-log]]) |
 | `results/` | the results the harness, the tools and the thread tools write, by producer ([[005-harness-loop]], [[008-tools]], [[012-permissions-and-approvals]], [[013-threads-and-subagents]]) |
 | `context/` | the context block, the instruction file wrapper and its cut lines, the skills index, the memory note, and the date |
@@ -90,7 +90,7 @@ one ([[025-task-suite]]).
 | the machine | whether it is the person's host or a disposable sandbox, and what that means for destructive commands |
 | permissions | a denied or blocked call is an answer, not an obstacle: do not route around it, say what was refused and ask |
 | after a stop | a result with outcome `unknown_effect` means the runner stopped while the call ran: inspect the machine (for example `git status`) before repeating anything |
-| threads | present only when the agent has subagents: what `spawn`, `message` and `advisor` do ([[013-threads-and-subagents]]) |
+| threads | present only when the agent has subagents: what `agent`, `send_message` and `advisor` do, as `harness/threads-v2` in harness prompt versions 3 and 4; versions 1 and 2 hold `threads-v1`, which names `spawn` and `message` ([[013-threads-and-subagents]]) |
 | memory | present only when a store is attached: memory is files in the named directories, read and written with the file tools |
 | git | present only in a repository: commit on the session's branch, never push a protected branch |
 
@@ -309,6 +309,19 @@ so `prompt_version` stays `harness/1`; `context/context-v2` and
 `context/date-v1` are the new texts. Nothing is recorded for the part:
 it is rebuilt from the log, and a replay of a request recorded before
 it differs by the part.
+
+After v0.58.0, in no release yet: harness prompt versions 3 and 4,
+versions 1 and 2 with the section on subagents that names `agent` and
+`send_message` (`harness/threads-v2`). For an agent without subagents
+each renders byte for byte as the version before it.
+
+Open for the owner, not settled: versions 3 and 4 merged without the
+instruction tier's result against versions 1 and 2 that this spec asks
+of a new version. No task of the tier has subagents, so the tier
+renders every task's prompt as versions 1 and 2 render it and measures
+nothing of the change. The choices are to accept the merge for a change
+of names alone, or to add a tier task with subagents and run it against
+both versions before the release.
 
 Open: skill folders as read-only roots, and the two instruction tests
 against a real model.
