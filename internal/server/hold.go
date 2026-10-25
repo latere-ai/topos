@@ -91,7 +91,8 @@ func (c *call) replyHold(owner string) error {
 
 // release ends owner's hold: every schedule of theirs that runs starts
 // from now, so it fires nothing it missed while held, and a one-shot
-// keeps its time, which the next pass of the minute loop fires.
+// keeps its time, which the next pass of the minute loop fires, as a list
+// keeps its next time (spec 090).
 func (s *Server) release(ctx context.Context, owner string) error {
 	if err := s.o.Objects.SetHold(ctx, owner, nil); err != nil {
 		return err
@@ -108,7 +109,7 @@ func (s *Server) release(ctx context.Context, owner string) error {
 			if err != nil {
 				return err
 			}
-			if t.Suspended || spec.At != nil || spec.On != nil {
+			if t.Suspended || spec.At != nil || spec.Times != nil || spec.On != nil {
 				continue
 			}
 			at, err := triggers.NextFire(spec, now)

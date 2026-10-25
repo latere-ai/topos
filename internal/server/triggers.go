@@ -224,8 +224,10 @@ func (s *Server) putTrigger(ctx context.Context, q asker, name string, body []by
 		// A schedule that did not change keeps its next fire time, so a
 		// firing due before the apply is not skipped; one that was
 		// suspended starts from now, and fires nothing it missed. A
-		// one-shot's time is its next fire time.
-		if prev.Schedule == spec.Schedule && prev.TimeZone == spec.TimeZone && sameTime(prev.At, spec.At) && !stored.Suspended && stored.NextFireAt != nil {
+		// one-shot's time is its next fire time, and so is a list's, which
+		// keeps the time it waits for while the list stays the same.
+		if prev.Schedule == spec.Schedule && prev.TimeZone == spec.TimeZone && sameTime(prev.At, spec.At) && slices.EqualFunc(trigger.Times(prev), trigger.Times(spec), time.Time.Equal) &&
+			!stored.Suspended && stored.NextFireAt != nil {
 			next = stored.NextFireAt
 		}
 		doc, err := store.DecodeTrigger(stored.Doc)
@@ -299,14 +301,22 @@ func sameTime(a, b *time.Time) bool {
 }
 
 // oneShotFields are a one-shot trigger's time as the questions of its
-// create and its update carry it (spec 086): at in RFC 3339; none for
-// any other trigger. They also carry its allowance as budget (spec 087),
-// so an authorizer can refuse a trigger without one or above what it
-// allows.
+// create and its update carry it (spec 086): at in RFC 3339, and a list's
+// times as times, each in RFC 3339, as the list orders them (spec 090);
+// none for any other trigger. They also carry its allowance as budget
+// (spec 087), so an authorizer can refuse a trigger without one or above
+// what it allows.
 func oneShotFields(spec v1.TriggerSpec) map[string]any {
 	f := map[string]any{}
 	if spec.At != nil {
 		f["at"] = spec.At.UTC().Format(time.RFC3339)
+	}
+	if spec.Times != nil {
+		times := make([]any, len(spec.Times))
+		for i, t := range spec.Times {
+			times[i] = t.UTC().Format(time.RFC3339)
+		}
+		f["times"] = times
 	}
 	if b := spec.Budget; b != nil {
 		f["budget"] = map[string]any{"per_week_usd_micro": b.PerWeek}

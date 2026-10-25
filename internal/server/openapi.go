@@ -485,7 +485,9 @@ var opDescriptions = map[string]string{
 		"A run is a firing that started or continued a turn, with what the turn cost as a look is counted, or one skipped_budget or refused stopped, with no cost; ended says the turn closed and its cost is final. "+
 		"A wake's runs are the wake runs of its session, each once its own trigger; any other trigger's are its own and the wake runs of the sessions it started, which count toward its allowance. "+
 		"runs holds at most %d, the newest, more_runs saying older ones were left out. per_run_usd_micro is the mean cost of the latest %d of its own runs that ran and ended, from every run kept, which is %s. "+
-		"fires are the times it fires after now and before until, as the minute loop fires them: a schedule's in its zone, a one-shot's time, or for a one-shot past its time that waits, the next pass for its allowance or the moment the limit that refused it resets; none for an event trigger or a suspended one. "+
+		"fires_on is schedule, event, at for a one-shot, or times for a list of times. "+
+		"fires are the times it fires after now and before until, as the minute loop fires them: a schedule's in its zone, a one-shot's time, or for a one-shot past its time that waits, the next pass for its allowance or the moment the limit that refused it resets; "+
+		"a list's times still to come, after the next try of one of them that waits, as a one-shot's; none for an event trigger or a suspended one. "+
 		"The hold is not applied. At most %d, the soonest, more_fires saying later ones were left out. "+
 		"target names the one session a wake or a trigger naming session.target continues, and the trigger that started it, absent for a session a person started. "+
 		"The read records each firing since since that is a run and has none, and completes a run whose turn had not ended from its session's log. trigger.list is asked as the list asks it.",
@@ -557,7 +559,13 @@ var opDescriptions = map[string]string{
 		"trigger.create and trigger.update carry the trigger's name, its agent and the filter applied as on, and, when spec.session.machine names a person's own computer, {kind: %s, environment, workdir}, "+
 		"machine %s with environment and workdir beside them, as session.create carries them. "+
 		"spec.at, an RFC 3339 time with an offset in place of schedule and on, fires the trigger once, and its firing spends it: the server deletes it with the firing that started, continued, skipped or refused, "+
-		"and keeps it while that firing is held or runs again after it failed; trigger.create and trigger.update carry at. spec.session.target, under policy continue and beside no key, names the open session of spec.agent "+
+		"and keeps it while that firing is held or runs again after it failed; trigger.create and trigger.update carry at. "+
+		"spec.times, a list of 1 to %d RFC 3339 times with an offset in place of schedule, on and at, none the same instant as another, fires the trigger once at each, as at fires: "+
+		"each time is a firing of its own, late past maxAge or once the next listed time has come, and one refused for a limit that resets waits for it no later than the next listed time; "+
+		"the firing of the latest time spends the trigger as at's does, and an earlier time's firing keeps it. A time already past may stay in the list and never fires, so a list read back applies again as it is, "+
+		"but a list with no time after now is invalid_manifest. status.nextFireAt is the next listed time to fire, or when one that waits is tried again. A manual fire runs once now and spends no listed time. "+
+		"trigger.create and trigger.update carry times, each in RFC 3339 in UTC, in the list's order. spec.timeZone beside at or times is the zone a client shows them in. "+
+		"spec.session.target, under policy continue and beside no key, names the open session of spec.agent "+
 		"every firing sends its message to, which the caller may send to; a firing whose target has ended or is gone is skipped_ended. "+
 		"A session's wake is such a trigger, applied by the session's wake tool as the session's initiator with status.origin {kind: %s}: at least %s and at most %s ahead and inside its session's life, and skipped_late past %s; "+
 		"its firing's user.message carries wake {trigger_id, set_at, due_at, count}, count from 1. "+
@@ -570,7 +578,7 @@ var opDescriptions = map[string]string{
 		"on the model the allow names in its place, with the trigger's name as via, at the level the allow names when it names one. "+
 		"A firing that continues an open session sends its message and leaves the model that session runs, and a trigger under session.target ignores spec.session.model. "+
 		"A model that names neither member, a name with space around it, or another level is invalid_manifest. "+SpendRule,
-		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice,
+		trigger.MaxValueBytes, trigger.MaxMessageBytes, trigger.DefaultMaxActive, trigger.MaxActiveCeiling, session.MachineDevice, session.MachineDevice, trigger.MaxTimes,
 		v1.OriginWake, spoken(trigger.MinWakeDelay), spoken(trigger.MaxWakeAhead), spoken(trigger.WakeMaxAge), strings.Join(v1.Efforts, ", ")),
 	"fireTrigger": fmt.Sprintf("An event trigger takes one envelope {id, product, verb, resource, actor, subject, time, payload}: id is the producer's id of the delivery, at most %d characters, unique per product, "+
 		"product lowercase, time RFC 3339, payload an object. A schedule trigger takes an empty body and fires now; send an Idempotency-Key to fire it once. "+

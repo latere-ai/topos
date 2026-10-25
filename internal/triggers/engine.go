@@ -301,14 +301,18 @@ func (e *Engine) Tick(ctx context.Context) error {
 
 // NextFire is when a schedule trigger fires next after at, nil for one
 // that never does or fires on events; a one-shot fires at its time when
-// that is after at, and never again. A zone the build does not know is an
-// error.
+// that is after at, and never again, and a trigger of listed times at the
+// soonest of them after at (spec 090). A zone the build does not know is
+// an error.
 func NextFire(spec v1.TriggerSpec, at time.Time) (*time.Time, error) {
 	if spec.At != nil {
 		if spec.At.After(at) {
 			return new(spec.At.UTC()), nil
 		}
 		return nil, nil
+	}
+	if spec.Times != nil {
+		return trigger.NextTime(spec, at), nil
 	}
 	if spec.On != nil || spec.Schedule == "" {
 		return nil, nil
@@ -349,29 +353,38 @@ func (e *Engine) schedule(ctx context.Context, id string, now time.Time) error {
 		// A one-shot's firing is its time, whenever it is tried, so a
 		// firing that waited is judged late by its time and takes its first
 		// firing again; a refused one it asks for again, since a one-shot
-		// still stored after a refusal is one that waits (spec 087).
+		// still stored after a refusal is one that waits (spec 087). A
+		// listed time is fired as a one-shot is, the listed time at or
+		// before the next fire time being the one tried (spec 090).
 		due := *at
-		if spec.At != nil {
+		switch {
+		case spec.At != nil:
 			due = *spec.At
+		case spec.Times != nil:
+			due = trigger.DueTime(spec, *at)
 		}
+		once := spec.At != nil || spec.Times != nil
 		f := store.Firing{ID: session.NewID(session.PrefixFiring), TriggerID: t.ID, Origin: store.OriginSchedule, Dedupe: ScheduleDedupe(due),
-			Replica: e.o.Replica, Time: due, ReceivedAt: now, RetakeRefused: spec.At != nil}
+			Replica: e.o.Replica, Time: due, ReceivedAt: now, RetakeRefused: once}
 		out, err := e.run(ctx, t, spec, f, nil)
 		if err != nil {
 			return err
 		}
-		if spec.At != nil {
-			// A spent one-shot is gone with its firing; a failed one, and
-			// one skipped at its allowance, run again at the next pass, at
-			// its time; one refused for a limit that resets runs again when
-			// it does, its next fire time set by the record; a held one
-			// waits for its message to be sent, and fires no more.
+		if once {
+			// A spent one-shot is gone with its firing, and so is a trigger
+			// of listed times its latest time spent; a failed one, and one
+			// skipped at its allowance, run again at the next pass, at its
+			// time; one refused for a limit that resets runs again when it
+			// does, its next fire time set by the record; a held one waits
+			// for its message to be sent. An earlier listed time that is
+			// spent, or held, gives way to the next.
 			switch {
-			case spends(out):
+			case spends(out) && (spec.At != nil || trigger.LastTime(spec, due)):
 				return nil
 			case out.Outcome == store.OutcomeFailed, out.Outcome == store.OutcomeSkippedBudget, out.Waits():
 				return nil
 			}
+			at = &due
 		}
 		if at, err = NextFire(spec, *at); err != nil {
 			return err
@@ -462,26 +475,37 @@ func (e *Engine) runOf(ctx context.Context, t store.Trigger, spec v1.TriggerSpec
 
 // recordFiring is record without the run.
 func (e *Engine) recordFiring(ctx context.Context, t store.Trigger, spec v1.TriggerSpec, f store.Firing, from string) error {
-	if spec.At != nil && (f.Outcome == store.OutcomeSkippedBudget || f.Waits()) {
+	// A listed time fires once, as a one-shot does (spec 090); a manual
+	// firing of a trigger of listed times is none of them.
+	once := spec.At != nil || spec.Times != nil && f.Origin == store.OriginSchedule
+	if once && (f.Outcome == store.OutcomeSkippedBudget || f.Waits()) {
 		// A one-shot skipped at its allowance keeps its time, so the minute
 		// loop takes its firing again at each pass, a held one's too, until
 		// it fires or maxAge passes (spec 087). One a deny refused for a
 		// limit that resets is tried again once, when it resets, so the
 		// authorizer is not asked at every pass; its firing keeps the
-		// one-shot's time, and maxAge still bounds it.
+		// one-shot's time, and maxAge still bounds it. A listed time waits
+		// no later than the next listed time, which then fires (spec 090).
 		if err := e.o.Store.RecordFiring(ctx, f, from); err != nil {
 			return err
 		}
 		next := spec.At
+		if spec.Times != nil {
+			next = new(f.Time.UTC())
+		}
 		if f.Waits() {
 			next = new(f.Until.UTC())
 			if now := e.o.Now().UTC(); next.Before(now) {
 				next = &now
 			}
 		}
+		if after := trigger.NextTime(spec, f.Time); spec.Times != nil && after != nil && after.Before(*next) {
+			next = after
+		}
 		return e.o.Store.SetNextFire(ctx, t.ID, next)
 	}
-	if spec.At == nil || !spends(f) {
+	// A trigger of listed times is spent by its latest time's firing alone.
+	if !once || !spends(f) || spec.Times != nil && !trigger.LastTime(spec, f.Time) {
 		return e.o.Store.RecordFiring(ctx, f, from)
 	}
 	if err := e.o.Store.SpendFiring(ctx, f, from); err != nil {
@@ -600,7 +624,8 @@ func (e *Engine) decide(ctx context.Context, t store.Trigger, spec v1.TriggerSpe
 }
 
 // late reports whether the firing is more than maxAge after its event's
-// time or its scheduled time. A manual firing is never late.
+// time or its scheduled time, or, for a listed time, whether the next
+// listed time has come (spec 090). A manual firing is never late.
 func (e *Engine) late(spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope) (bool, error) {
 	if f.Origin == store.OriginManual {
 		return false, nil
@@ -613,7 +638,11 @@ func (e *Engine) late(spec v1.TriggerSpec, f store.Firing, env *trigger.Envelope
 	if env != nil {
 		at = env.Time
 	}
-	return e.o.Now().Sub(at) > maxAge, nil
+	now := e.o.Now()
+	if next := trigger.NextTime(spec, f.Time); spec.Times != nil && next != nil && !next.After(now) {
+		return true, nil
+	}
+	return now.Sub(at) > maxAge, nil
 }
 
 // startNew acts under the new policy: a session of the key that is

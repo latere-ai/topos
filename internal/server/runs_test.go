@@ -5,8 +5,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,9 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"latere.ai/x/pkg/authz"
+
+	"latere.ai/x/topos/authorizer"
 	"latere.ai/x/topos/internal/store"
 	"latere.ai/x/topos/manifest/trigger"
 	"latere.ai/x/topos/runner"
@@ -366,5 +371,46 @@ func TestTheDocumentDescribesSpec088(t *testing.T) {
 				t.Errorf("%s has no %s", schema, f)
 			}
 		}
+	}
+}
+
+// TestTheRunsOfAListOfTimes (spec 090): the read answers a trigger of
+// listed times with fires_on times, its runs as any trigger's own, and as
+// its fires the listed times still to come before until; while a time a
+// deny refused waits for its limit to reset, the reset comes first.
+func TestTheRunsOfAListOfTimes(t *testing.T) {
+	f := newTriggerFixture(t)
+	var mu sync.Mutex
+	var resets *time.Time
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		mu.Lock()
+		r := resets
+		mu.Unlock()
+		if req.Action == authorizer.ActionSessionCreate && r != nil {
+			return authz.Decision{Reason: "share_spent", Limits: json.RawMessage(`{"resets_at":"` + r.Format(time.RFC3339) + `"}`)}, nil
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	now := f.clock.Now().UTC().Truncate(time.Second)
+	t1, t2, t3, t4 := now.Add(time.Minute), now.Add(2*time.Hour), now.Add(5*time.Hour), now.Add(40*24*time.Hour)
+	f.applyTrigger("alice", "fares", timesYAML(t4, t1, now.Add(-time.Hour), t3, t2)+", session: {message: 'Look at the fares.'}, skipIfActive: false")
+	f.clock.Advance(time.Minute)
+	f.tick()
+	until := now.Add(7 * 24 * time.Hour)
+	it := f.runs("alice", "?until="+at(until)).byName(t, "fares")
+	if it.FiresOn != "times" || len(it.Runs) != 1 || !it.Runs[0].At.Equal(t1) || it.Runs[0].Outcome != store.OutcomeStarted ||
+		!slices.EqualFunc(it.Fires, []time.Time{t2, t3}, time.Time.Equal) || it.MoreFires {
+		t.Fatalf("the list's item: %+v", it)
+	}
+	// The second time is refused until a limit resets.
+	reset := t2.Add(30 * time.Minute)
+	mu.Lock()
+	resets = &reset
+	mu.Unlock()
+	f.clock.Advance(t2.Sub(f.clock.Now()))
+	f.tick()
+	it = f.runs("alice", "?until="+at(until)).byName(t, "fares")
+	if !slices.EqualFunc(it.Fires, []time.Time{reset, t3}, time.Time.Equal) || len(it.Runs) != 2 || it.Runs[1].Outcome != store.OutcomeRefused {
+		t.Fatalf("while the second time waits: %+v", it)
 	}
 }

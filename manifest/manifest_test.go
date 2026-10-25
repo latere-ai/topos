@@ -546,7 +546,7 @@ func TestTheTriggerFieldsOfSpec022(t *testing.T) {
 		t.Fatalf("a schedule trigger writes a field it does not set: %s", s)
 	}
 	for _, c := range []struct{ body, path, detail string }{
-		{eventTrigger("schedule: '@daily', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set one of schedule, on and at"},
+		{eventTrigger("schedule: '@daily', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set one of schedule, on, at and times"},
 		{eventTrigger("on: {verbs: [push]}, session: {message: x}"), "spec.on.product", "required"},
 		{eventTrigger("on: {product: GitHub, verbs: [push]}, session: {message: x}"), "spec.on.product", "lowercase"},
 		{eventTrigger("on: {product: github}, session: {message: x}"), "spec.on.verbs", "required"},
@@ -724,9 +724,9 @@ func TestTheTriggerFieldsOfSpec086(t *testing.T) {
 	}
 	for _, c := range []struct{ body, path, detail string }{
 		{eventTrigger("at: '2026-10-23T08:00:00Z', session: {message: x}"), "spec.at", "in the past"},
-		{eventTrigger("at: '2026-10-24T08:00:00Z', schedule: '@daily', session: {message: x}"), "spec", "set one of schedule, on and at"},
-		{eventTrigger("at: '2026-10-24T08:00:00Z', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set one of schedule, on and at"},
-		{eventTrigger("session: {message: x}"), "spec.schedule", "or at for one time"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', schedule: '@daily', session: {message: x}"), "spec", "set one of schedule, on, at and times"},
+		{eventTrigger("at: '2026-10-24T08:00:00Z', on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set one of schedule, on, at and times"},
+		{eventTrigger("session: {message: x}"), "spec.schedule", "at for one time"},
 		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, target: ses_01JAAAAAAAAAAAAAAAAAAAAAAA}"), "spec.session.target", "only under policy continue"},
 		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, policy: continue, key: k, target: ses_01JAAAAAAAAAAAAAAAAAAAAAAA}"), "spec.session.target", "set target or key"},
 		{eventTrigger("at: '2026-10-24T08:00:00Z', session: {message: x, policy: continue, target: chat}"), "spec.session.target", "not a ses_<ulid> id"},
@@ -741,6 +741,48 @@ func TestTheTriggerFieldsOfSpec086(t *testing.T) {
 	}
 	if _, err := Resolve(t.Context(), []byte(eventTrigger("at: 'tomorrow', session: {message: x}")), o); err == nil {
 		t.Error("an at that is no RFC 3339 time resolved")
+	}
+}
+
+// TestTheTriggerFieldsOfSpec090: a trigger's times resolve as written, in
+// their order and with their offsets, a time already past among them,
+// and a trigger that lists none writes none, so its digest stays; an empty
+// list, one past trigger.MaxTimes, one instant twice, a list with no time
+// after the resolver's clock, and times beside schedule, on or at are
+// invalid_manifest at their paths.
+func TestTheTriggerFieldsOfSpec090(t *testing.T) {
+	o := storedA(t)
+	o.Now = func() time.Time { return time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC) }
+	r := one(t, eventTrigger("times: ['2026-11-03T12:00:00+01:00', '2026-10-24T09:00:00Z', '2026-10-26T17:40:00Z'], session: {message: x}"), o)
+	if ts := r.Trigger.Spec.Times; len(ts) != 3 || !ts[0].Equal(time.Date(2026, 11, 3, 11, 0, 0, 0, time.UTC)) || ts[0].Format(time.RFC3339) != "2026-11-03T12:00:00+01:00" ||
+		!ts[2].Equal(time.Date(2026, 10, 26, 17, 40, 0, 0, time.UTC)) {
+		t.Fatalf("the times resolved as %v", ts)
+	}
+	plain := one(t, eventTrigger("schedule: '@daily', session: {message: x}"), o)
+	if strings.Contains(string(plain.Spec), `"times"`) {
+		t.Fatalf("a schedule trigger writes times: %s", plain.Spec)
+	}
+	many := make([]string, trigger.MaxTimes+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("'2026-11-01T%02d:%02d:00Z'", i/60, i%60)
+	}
+	for _, c := range []struct{ body, path, detail string }{
+		{eventTrigger("times: [], session: {message: x}"), "spec.times", "0 times; a trigger lists 1 to 100"},
+		{eventTrigger("times: [" + strings.Join(many, ", ") + "], session: {message: x}"), "spec.times", "101 times; a trigger lists 1 to 100"},
+		{eventTrigger("times: ['2026-11-01T09:00:00Z', '2026-11-01T10:00:00+01:00'], session: {message: x}"), "spec.times[1]", "is the time of spec.times[0]"},
+		{eventTrigger("times: ['2026-10-24T09:00:00Z', '2026-10-25T08:00:00Z'], session: {message: x}"), "spec.times", "no time is after now"},
+		{eventTrigger("times: ['2026-11-01T09:00:00Z'], schedule: '@daily', session: {message: x}"), "spec", "set one of schedule, on, at and times"},
+		{eventTrigger("times: ['2026-11-01T09:00:00Z'], at: '2026-11-02T09:00:00Z', session: {message: x}"), "spec", "set one of schedule, on, at and times"},
+		{eventTrigger("times: ['2026-11-01T09:00:00Z'], on: {product: github, verbs: [push]}, session: {message: x}"), "spec", "set one of schedule, on, at and times"},
+		{eventTrigger("session: {message: x}"), "spec.schedule", "or times for a list of times"},
+	} {
+		e := refused(t, CodeInvalidManifest, c.body, o)
+		if !hasProblem(e, c.path, c.detail) {
+			t.Errorf("%.120s: want %s: %s, got\n%s", strings.ReplaceAll(c.body, "\n", " "), c.path, c.detail, e.Detail())
+		}
+	}
+	if _, err := Resolve(t.Context(), []byte(eventTrigger("times: ['tomorrow'], session: {message: x}")), o); err == nil {
+		t.Error("a time that is no RFC 3339 time resolved")
 	}
 }
 

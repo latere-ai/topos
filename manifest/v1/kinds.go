@@ -31,18 +31,18 @@ const (
 	NotifyJudged = "judged"
 )
 
-// TriggerSpec is what a trigger fires on, a schedule, delivered events or
-// one time, and the session each firing starts or continues (spec 022).
-// The fields specs 022 and 086 added (On, At, MaxActive, and the session's
-// Policy, Key and Target) are omitted when unset and take their defaults
-// where the trigger fires, so a trigger that sets none of them keeps its
-// digest.
+// TriggerSpec is what a trigger fires on, a schedule, delivered events,
+// one time or a list of times, and the session each firing starts or
+// continues (spec 022). The fields specs 022, 086 and 090 added (On, At,
+// Times, MaxActive, and the session's Policy, Key and Target) are omitted
+// when unset and take their defaults where the trigger fires, so a
+// trigger that sets none of them keeps its digest.
 type TriggerSpec struct {
 	// Agent references the agent the sessions run; the resolved spec
 	// holds its id, so the trigger runs the agent's latest version.
 	Agent string `json:"agent"`
 	// Schedule is a five-field cron expression, or @hourly, @daily or
-	// @weekly. A trigger sets exactly one of Schedule, On and At.
+	// @weekly. A trigger sets exactly one of Schedule, On, At and Times.
 	Schedule string `json:"schedule,omitempty"`
 	TimeZone string `json:"timeZone"`
 	// On selects the delivered events the trigger fires on.
@@ -50,7 +50,12 @@ type TriggerSpec struct {
 	// At is the one time a one-shot trigger fires, RFC 3339 with an
 	// offset; its firing spends the trigger, which the server then deletes
 	// (spec 086).
-	At           *time.Time     `json:"at,omitempty"`
+	At *time.Time `json:"at,omitempty"`
+	// Times are the times a trigger fires, each once, RFC 3339 with an
+	// offset, at most trigger.MaxTimes and none twice; the firing of the
+	// latest spends the trigger, as At's does (spec 090). A time already
+	// past stays listed and never fires.
+	Times        []time.Time    `json:"times,omitempty"`
 	Session      TriggerSession `json:"session"`
 	SkipIfActive *bool          `json:"skipIfActive"`
 	// MaxActive bounds the trigger's sessions active at once;

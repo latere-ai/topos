@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1599,6 +1600,127 @@ func TestTheDocumentDescribesSpec089(t *testing.T) {
 	for _, want := range []string{"spec.session.model", `{"name": "<model>", "reasoning": "<level>"}`, "with the trigger's name as via", "leaves the model that session runs", "session.target ignores spec.session.model"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the apply route's text does not say %q", want)
+		}
+	}
+}
+
+// timesYAML is a spec's times field listing ts in RFC 3339.
+func timesYAML(ts ...time.Time) string {
+	out := make([]string, len(ts))
+	for i, t := range ts {
+		out[i] = "'" + t.Format(time.RFC3339) + "'"
+	}
+	return "times: [" + strings.Join(out, ", ") + "]"
+}
+
+// TestATriggerOfListedTimesIsAppliedAndAsked (spec 090): a trigger of
+// listed times applies with the soonest time still to come as its next
+// fire time, a time already past among them; trigger.create carries the
+// times as listed, in RFC 3339; an apply that sends the same list again,
+// and the release of a hold, keep a next fire time already due, so that
+// time still fires, while a changed list starts from now; an empty list,
+// one instant twice and a list with no time to come are invalid_manifest.
+func TestATriggerOfListedTimesIsAppliedAndAsked(t *testing.T) {
+	f := newTriggerFixture(t)
+	var mu sync.Mutex
+	var creates []authz.Request
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionTriggerCreate {
+			mu.Lock()
+			creates = append(creates, req)
+			mu.Unlock()
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	now := f.clock.Now().UTC().Truncate(time.Second)
+	t1, t2, t3, past := now.Add(time.Hour), now.Add(26*time.Hour), now.Add(50*time.Hour), now.Add(-time.Hour)
+	spec := timesYAML(t2, past, t1) + ", session: {message: 'Look at the fares.'}"
+	tr := f.applyTrigger("alice", "fares", spec)
+	if tr.Status.NextFireAt == nil || !tr.Status.NextFireAt.Equal(t1) || len(tr.Spec.Times) != 3 {
+		t.Fatalf("the applied trigger: %+v", tr)
+	}
+	if len(creates) != 1 {
+		t.Fatalf("%d trigger.create questions", len(creates))
+	}
+	want := []any{t2.Format(time.RFC3339), past.Format(time.RFC3339), t1.Format(time.RFC3339)}
+	if got, _ := creates[0].Resource.Fields["times"].([]any); !slices.Equal(got, want) {
+		t.Fatalf("trigger.create carries times %v, want %v", creates[0].Resource.Fields["times"], want)
+	}
+
+	// The first time is due; the same list sent again and a hold released
+	// keep it, and the next pass fires it.
+	f.clock.Advance(time.Hour)
+	if again := f.applyTrigger("alice", "fares", spec); again.Status.NextFireAt == nil || !again.Status.NextFireAt.Equal(t1) {
+		t.Fatalf("the list sent again: next fire %v", again.Status.NextFireAt)
+	}
+	for _, held := range []string{`{"held":true}`, `{"held":false}`} {
+		if a := f.do(http.MethodPut, "/v1/triggers/hold", "alice", held); a.status != http.StatusOK {
+			t.Fatalf("hold %s: %d %s", held, a.status, a.body)
+		}
+	}
+	if got := f.get("alice", "fares"); got.Status.NextFireAt == nil || !got.Status.NextFireAt.Equal(t1) {
+		t.Fatalf("after the hold's release: next fire %v", got.Status.NextFireAt)
+	}
+	f.tick()
+	if fs := f.firings("alice", "fares"); len(fs) != 1 || fs[0].Outcome != store.OutcomeStarted {
+		t.Fatalf("the first time's firing: %+v", fs)
+	}
+	if got := f.get("alice", "fares"); got.Status.NextFireAt == nil || !got.Status.NextFireAt.Equal(t2) {
+		t.Fatalf("then its next fire time: %v", got.Status.NextFireAt)
+	}
+	// A changed list starts from now.
+	if changed := f.applyTrigger("alice", "fares", timesYAML(t3, t2.Add(time.Minute))+", session: {message: 'Look at the fares.'}"); changed.Status.NextFireAt == nil || !changed.Status.NextFireAt.Equal(t2.Add(time.Minute)) {
+		t.Fatalf("a changed list: next fire %v", changed.Status.NextFireAt)
+	}
+
+	for _, c := range []struct{ times, detail string }{
+		{"times: []", "a trigger lists 1 to 100"},
+		{timesYAML(t2, t2.In(time.FixedZone("CET", 3600))), "spec.times[1]"},
+		{timesYAML(past), "no time is after now"},
+	} {
+		a := f.do(http.MethodPut, "/v1/triggers/bad", "alice", triggerYAML("bad", c.times+", session: {message: x}"))
+		if a.code() != "invalid_manifest" || !strings.Contains(string(a.body), c.detail) {
+			t.Errorf("%s: %d %s", c.times, a.status, a.body)
+		}
+	}
+}
+
+// TestTheDocumentDescribesSpec090: the OpenAPI document gives a trigger's
+// spec its times, the apply route's text says how each fires and what
+// spends the trigger, and the runs read's text names fires_on times.
+func TestTheDocumentDescribesSpec090(t *testing.T) {
+	raw, err := OpenAPI(DefaultBasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths      map[string]map[string]struct{ Description string } `yaml:"paths"`
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Components.Schemas["TriggerSpec"].Properties["times"]; !ok {
+		t.Error("TriggerSpec has no times")
+	}
+	for path, wants := range map[string][]string{
+		"/triggers/{name}": {"spec.times, a list of 1 to " + strconv.Itoa(trigger.MaxTimes), "once the next listed time has come", "the firing of the latest time spends the trigger",
+			"A time already past may stay in the list and never fires", "trigger.create and trigger.update carry times"},
+		"/triggers/runs": {"fires_on is schedule, event, at for a one-shot, or times for a list of times", "a list's times still to come"},
+	} {
+		method := "put"
+		if path == "/triggers/runs" {
+			method = "get"
+		}
+		text := doc.Paths[path][method].Description
+		for _, want := range wants {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s does not say %q", path, want)
+			}
 		}
 	}
 }

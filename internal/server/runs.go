@@ -28,6 +28,7 @@ const (
 	firesOnSchedule = "schedule"
 	firesOnEvent    = "event"
 	firesOnAt       = "at"
+	firesOnTimes    = "times"
 )
 
 // triggerRuns is one trigger as GET /triggers/runs answers it.
@@ -36,7 +37,7 @@ type triggerRuns struct {
 	Name      string `json:"name"`
 	// CreatedAt is the trigger's first apply.
 	CreatedAt time.Time `json:"created_at"`
-	// FiresOn is schedule, event or at.
+	// FiresOn is schedule, event, at or times.
 	FiresOn   string `json:"fires_on"`
 	Suspended bool   `json:"suspended"`
 	// PerWeekUSDMicro is spec.budget.perWeek, absent without one.
@@ -273,6 +274,8 @@ func (s *Server) runsOf(ctx context.Context, t store.Trigger, doc *v1.Trigger, o
 	switch {
 	case spec.At != nil:
 		item.FiresOn = firesOnAt
+	case spec.Times != nil:
+		item.FiresOn = firesOnTimes
 	case spec.On != nil:
 		item.FiresOn = firesOnEvent
 	}
@@ -337,12 +340,29 @@ func (s *Server) runsOf(ctx context.Context, t store.Trigger, doc *v1.Trigger, o
 		item.Fires = append(item.Fires, next)
 		return item, nil
 	}
-	fires, more, err := triggers.FireTimes(spec, now, until, trigger.MaxRunFires)
+	// A listed time that waits, at its next fire time when that is no
+	// listed time, or at a time already come, is tried before the times
+	// still to come (spec 090).
+	if spec.Times != nil && !spec.Suspend && t.NextFireAt != nil {
+		next := maxTime(t.NextFireAt.UTC(), now)
+		if waits := next.Equal(now) || !slices.ContainsFunc(trigger.Times(spec), next.Equal); waits && next.Before(until) {
+			item.Fires = append(item.Fires, next)
+		}
+	}
+	fires, more, err := triggers.FireTimes(spec, now, until, trigger.MaxRunFires-len(item.Fires))
 	if err != nil {
 		return triggerRuns{}, err
 	}
 	item.Fires, item.MoreFires = append(item.Fires, fires...), more
 	return item, nil
+}
+
+// maxTime is the later of a and b.
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 // compareRuns orders runs by time, those of one time by firing id.

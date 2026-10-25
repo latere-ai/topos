@@ -542,20 +542,22 @@ func (v *validator) machine(at string, m v1.Machine) {
 func (v *validator) trigger(s v1.TriggerSpec) {
 	v.ref("spec.agent", s.Agent, session.PrefixAgent)
 	set := 0
-	for _, given := range []bool{s.Schedule != "", s.On != nil, s.At != nil} {
+	for _, given := range []bool{s.Schedule != "", s.On != nil, s.At != nil, s.Times != nil} {
 		if given {
 			set++
 		}
 	}
 	switch {
 	case set == 0:
-		v.add("spec.schedule", "required: set schedule, on for delivered events, or at for one time")
+		v.add("spec.schedule", "required: set schedule, on for delivered events, at for one time, or times for a list of times")
 	case set > 1:
-		v.add("spec", "set one of schedule, on and at")
+		v.add("spec", "set one of schedule, on, at and times")
 	case s.Schedule != "":
 		v.schedule("spec.schedule", s.Schedule)
 	case s.On != nil:
 		v.on("spec.on", *s.On)
+	case s.Times != nil:
+		v.times("spec.times", s.Times)
 	case !s.At.After(v.now()):
 		v.add("spec.at", "is in the past; a one-shot trigger fires at a time to come")
 	}
@@ -654,6 +656,27 @@ func (v *validator) sessionModel(at string, m v1.SessionModel) {
 	}
 	if m.Reasoning != "" {
 		v.oneOf(at+".reasoning", m.Reasoning, v1.Efforts...)
+	}
+}
+
+// times checks a trigger's list of times (spec 090): 1 to
+// trigger.MaxTimes of them, no instant twice, and one at least after the
+// resolver's clock. A time already past may stay, so a list read back is
+// applied again as it is; it never fires.
+func (v *validator) times(at string, times []time.Time) {
+	if len(times) == 0 || len(times) > trigger.MaxTimes {
+		v.add(at, fmt.Sprintf("%d times; a trigger lists 1 to %d", len(times), trigger.MaxTimes))
+		return
+	}
+	ahead := false
+	for i, t := range times {
+		if j := slices.IndexFunc(times[:i], t.Equal); j >= 0 {
+			v.add(indexed(at, i), fmt.Sprintf("is the time of %s", indexed(at, j)))
+		}
+		ahead = ahead || t.After(v.now())
+	}
+	if !ahead {
+		v.add(at, "no time is after now; a trigger fires at times to come")
 	}
 }
 

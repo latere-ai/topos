@@ -226,8 +226,9 @@ func (e *Engine) watched(ctx context.Context, t store.Trigger, spec v1.TriggerSp
 }
 
 // expectedLooks are the looks t expects from now to end, the firing's
-// own included: then a schedule's fire times before end, none more for
-// a one-shot, whose one look is the firing's, and for events the looks of
+// own included: then a schedule's fire times before end, and a list's
+// times (spec 090), none more for a one-shot, whose one look is the
+// firing's, and for events the looks of
 // the window spread over the time left, their count over seven days or
 // the trigger's age when it is younger, at least a day; a suspended
 // trigger expects none more.
@@ -238,7 +239,7 @@ func expectedLooks(t store.Trigger, spec v1.TriggerSpec, seen int, now, end time
 	case spec.On != nil:
 		span := min(trigger.SpendWindow, max(now.Sub(t.CreatedAt), 24*time.Hour))
 		n += int(math.Round(float64(seen) * float64(end.Sub(now)) / float64(span)))
-	case spec.Schedule != "":
+	case spec.Schedule != "" || spec.Times != nil:
 		times, _, err := FireTimes(spec, now, end, maxScheduleLooks)
 		if err != nil {
 			return 0, err
@@ -251,9 +252,10 @@ func expectedLooks(t store.Trigger, spec v1.TriggerSpec, seen int, now, end time
 // FireTimes are the times a trigger of spec fires after from and before
 // until, the soonest first, at most limit, and whether more before until
 // were left out: a schedule's fire times in its zone, as the minute loop
-// fires them, and a one-shot's time when it falls between; none for an
-// event trigger or a suspended one. The allowance's window and the read
-// of an owner's runs (spec 088) both walk it.
+// fires them, a one-shot's time when it falls between, and the listed
+// times that fall between (spec 090); none for an event trigger or a
+// suspended one. The allowance's window and the read of an owner's runs
+// (spec 088) both walk it.
 func FireTimes(spec v1.TriggerSpec, from, until time.Time, limit int) ([]time.Time, bool, error) {
 	if spec.Suspend || spec.On != nil {
 		return nil, false, nil
