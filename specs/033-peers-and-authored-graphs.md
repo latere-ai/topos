@@ -49,9 +49,9 @@ the table that opens the design weighs each against its alternative.
 
 ## Current state
 
-- Subagents, through the tools built as `spawn` and `message` (013
-  renames them `agent` and `send_message`), worktree isolation, the
-  depth limit and the advisor are built ([[013-threads-and-subagents]]).
+- Subagents, through `agent` and `send_message` (named `spawn` and
+  `message` through v0.58.0), worktree isolation, the depth limit and
+  the advisor are built ([[013-threads-and-subagents]]).
   Several subagents started in one step run at once up to
   `maxConcurrent` (8); one started past it is answered
   `too_many_threads` and is not queued, so a fan-out of fifty is

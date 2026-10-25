@@ -49,8 +49,9 @@ this spec are questions under Open for the owner.
   (`manifest.Builtins`) and the set three registries are built from:
   the hosted runner's, the CLI's and the task suite's. The harness
   adds `spawn`, `message` and `advisor` itself, as tools that hold the
-  turn (`harness/threads.go`); [[013-threads-and-subagents]] renames
-  the first two `agent` and `send_message`. None addresses a person.
+  turn (`harness/threads.go`); the first two are `agent` and
+  `send_message` after v0.58.0 ([[013-threads-and-subagents]]). None
+  addresses a person.
 - A model that needs a decision ends its turn with the question as
   text. The session goes idle `end_turn` and the next `user.message` is
   the answer. A session with `end_on_idle` ends `completed` there.
