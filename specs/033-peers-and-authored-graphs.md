@@ -1,5 +1,5 @@
 ---
-title: "Workflows: a graph of phases that an agent writes or a manifest declares, run as threads of the session that starts it, estimated before it starts as a range from the recorded cost of comparable threads, held for the person's yes with that range and a ceiling, kept to the ceiling while it runs, and ended by an interrupt; message edges between its nodes are left for later"
+title: "Workflows: a graph of phases that an agent writes or a manifest declares, run as subagents of the session that starts it, estimated before it starts as a range from the recorded cost of comparable subagents, waiting for the person's OK with that range and a ceiling, kept to the ceiling while it runs, and ended by an interrupt; messages between its nodes are left for later"
 status: drafted
 track: core
 depends_on: [.archive/003-manifest.md, .archive/004-session-log.md, .archive/006-identity.md, 005-harness-loop.md, .archive/007-models.md, 008-tools.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 025-task-suite.md, 039-questions.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md, 091-a-fork-of-the-conversation.md]
@@ -16,31 +16,30 @@ author: changkun
 
 Some work is too large to hand out one task at a time: review eighty
 contracts, check every page of a site, try the same change in every
-package of a repository. A session can do it today only as an
-orchestrator does ([[013-threads-and-subagents]]): its model calls
-`spawn` several times in one step, at most eight threads at once, reads
-the results, and calls again, step after step. Nothing says before the
-first spawn what the whole will cost, nothing asks the person, and
-nothing stops it short of the session's budget.
+package of a repository. A session can do it today only by hand
+([[013-threads-and-subagents]]): its model starts several subagents in
+one step, at most eight at once, reads the results, and starts more,
+step after step. Nothing says before the first one starts what the
+whole will cost, nothing asks the person, and nothing stops it short of
+the session's budget.
 
 A workflow is that work written down before it runs: a graph of
 phases, each a list of tasks, one task per item of a list, or one task
 that combines what earlier phases returned. The agent writes it in a
 `workflow` call, or names one an author declared as a manifest. Before
 anything runs, Topos estimates its cost as a range from the recorded
-cost of comparable threads, and the call is held for the person with
-the range and a ceiling. On their yes the run starts: every node is a
-thread of the session, a fork of the calling conversation
-([[091-a-fork-of-the-conversation]]) or a spawn of a subagent, so the
-log, the fold, narrowing, depth and the advisor apply unchanged. The
-run is held to its ceiling, an interrupt ends it, and its result is the
-call's.
+cost of comparable subagents, and the call waits for the person's OK,
+showing them the range and a ceiling. On their OK the run starts: every
+node is a subagent of the session, a fork of the calling conversation
+([[091-a-fork-of-the-conversation]]) or a fresh subagent, so the log,
+narrowing, depth and the advisor apply unchanged. The run is kept to
+its ceiling, an interrupt ends it, and its result is the call's.
 
 Where the run starts in a turn nobody attends, a routine's or a wake's
-([[086-proactive-agents]]), the held call waits for the person like
-any other held call, so the workflow is offered rather than started.
+([[086-proactive-agents]]), the call waits for the person's OK all the
+same, so the workflow is offered rather than started.
 
-Peers, message edges declared between sibling threads, were this
+Peers, messages declared between sibling subagents, were this
 spec's first stage. They are left out of this revision: no suite task
 and no caller needs them yet, and a workflow's phases pass results
 forward without them.
@@ -50,11 +49,13 @@ the table that opens the design weighs each against its alternative.
 
 ## Current state
 
-- Threads, `spawn`, `message`, worktree isolation, the depth limit and
-  the advisor are built ([[013-threads-and-subagents]]). Several spawns
-  in one step run at once up to `maxConcurrent` (8); a spawn past it is
-  answered `too_many_threads` and is not queued, so a fan-out of fifty
-  is batched by the model by hand.
+- Subagents, through the tools built as `spawn` and `message` (013
+  renames them `agent` and `send_message`), worktree isolation, the
+  depth limit and the advisor are built ([[013-threads-and-subagents]]).
+  Several subagents started in one step run at once up to
+  `maxConcurrent` (8); one started past it is answered
+  `too_many_threads` and is not queued, so a fan-out of fifty is
+  batched by the model by hand.
 - A thread's cost is in the log: every `model.request` carries its
   `thread` and `cost_usd_micro`, and `thread.ended` sums them. Nothing
   indexes it across sessions. A trigger's runs are recorded with their
@@ -88,18 +89,18 @@ the table that opens the design weighs each against its alternative.
 | The estimate's shape | a range: low and high, with how many runs it reads; no high end before enough runs exist, and then the call names its ceiling | a point: a fan-out's cost varies by a factor of several between items |
 | The ceiling | the high end of the range unless the call names one; the authorizer may lower it; enforced over the run's threads by 091's ceiling | the estimate as advice: a run past its estimate would spend what nobody approved |
 | Concurrency | the run's own bound, `maxAtOnce`, default 8, at most 32; nodes do not count toward the session's `maxConcurrent` | the session's 8: a workflow is the way past it, approved for it |
-| The call and the turn | the call holds the caller's turn until the run ends, as `spawn` does | a run that goes on while the session waits for its next message: a state of the session no client reads today, and a person's message during it would interleave a second conversation with the run; left for later |
+| The call and the turn | the call holds the caller's turn until the run ends, as an `agent` call does | a run that goes on while the session waits for its next message: a state of the session no client reads today, and a person's message during it would interleave a second conversation with the run; left for later |
 | Cancel | an interrupt: running nodes are canceled as a turn's running calls are, waiting nodes never start, and the call's result is the partial report | a cancel route: the run is the turn, and an interrupt already ends a turn |
 | A node that fails | recorded failed with its stop reason; the run goes on, and a combining node is told | failing the run: one item of eighty would lose the other seventy-nine |
 | The calling thread | the session's own thread alone | any thread: a node starting a run of its own multiplies the person's yes; a workflow is the conversation's |
-| Peers | left out of this revision | declared edges between sibling threads: no task and no caller needs them |
+| Peers | left out of this revision | messages declared between sibling subagents: no task and no caller needs them |
 
 ### The `workflow` tool
 
 `workflow` is a harness tool, as `question` is: added to the session's
 own thread when the agent's `spec.tools` names it. A fork carries its
 definition and is refused it ([[091-a-fork-of-the-conversation]]), and
-a spawned thread is not offered it.
+a fresh subagent is not offered it.
 
 | Name | Parallel | Effect | Input |
 |---|---|---|---|
@@ -140,7 +141,7 @@ decided, and starts the run.
 |---|---|---|
 | `name` | one line the person reads | at most `MaxWorkflowName` (80) characters |
 | `phases` | the phases, run in order | 1 to `MaxPhases` (8) |
-| `maxAtOnce` | threads of the run running at once | default `DefaultWorkflowAtOnce` (8), at most `MaxWorkflowAtOnce` (32) |
+| `maxAtOnce` | subagents of the run running at once | default `DefaultWorkflowAtOnce` (8), at most `MaxWorkflowAtOnce` (32) |
 | `timeout` | a Go duration | default and at most what is left of the turn's timeout ([[005-harness-loop]]) |
 
 Each phase:
@@ -149,13 +150,13 @@ Each phase:
 |---|---|
 | `id` | `[a-z][a-z0-9-]{0,31}`, unique in the graph |
 | `name` | one line, at most 80 characters |
-| `run` | `fork`: each node is a fork of the calling thread, made at the call; or a name of `spec.subagents`: each node is a spawn of it |
+| `subagent` | a value of the `agent` tool's `subagent` ([[013-threads-and-subagents]]): `fork`, each node a fork of the calling thread, made at the call; or a name of `spec.subagents`, each node a fresh subagent of it |
 | `tasks` | a list of task texts, one node each |
 | `each` | one node per item: `{items: [..], task}` with a literal list of strings, or `{from: <id>, maxItems: n, task}` with the items an earlier phase returned, at most `maxItems`; `task` names the item as `{{item}}` |
 | `combine` | one node: `{from: [ids], task}`; its task is followed by every output of the listed phases, each under the line that names its phase and item |
 | `returns` | `text` (default): a node's output is its final text; `items`: its final text is a JSON array of strings, which a later `each` reads |
-| `isolation`, `tools` | as a spawn's or a fork's |
-| `maxCostPerNodeUsd` | optional: each node's ceiling, 091's thread ceiling |
+| `isolation`, `tools` | as the `agent` tool's |
+| `maxCostPerNodeUsd` | optional: each node's ceiling, 091's subagent ceiling |
 
 Exactly one of `tasks`, `each` and `combine`. A phase reads only
 phases before it. The graph's nodes, counting an `each` over an earlier
@@ -177,14 +178,16 @@ it alive ([[091-a-fork-of-the-conversation]]).
 
 ### The estimate
 
-Topos keeps a record of each thread's first piece of work:
+Topos keeps a record of each thread's first piece of work, a thread
+being, as in [[013-threads-and-subagents]], the log's record of a
+subagent's conversation:
 
 | Field | Meaning |
 |---|---|
 | `session_id`, `thread_id` | the thread |
 | `owner` | the session's owner |
-| `kind` | `spawn`, `fork` or `node` (a workflow's) |
-| `agent` | the agent version the thread runs, by digest: the subagent's for a spawn, the session's agent's for a fork |
+| `kind` | `fresh`, `fork` or `node` (a workflow's) |
+| `agent` | the agent version the thread runs, by digest: the subagent's for a fresh subagent, the session's agent's for a fork |
 | `model` | the model the thread ran |
 | `inherited_tokens` | for a fork, the tokens its first request inherited; 0 otherwise |
 | `cost_usd_micro`, `steps`, `outcome` | what the thread's work cost through the result of the call that started it, how many steps it took, and how it ended (`ok`, or the stop reason) |
@@ -197,8 +200,8 @@ prunes runs.
 
 A phase's comparable runs are the latest `EstimateRuns` (20) rows of
 the owner with the phase's agent, model and kind (`fork` and `node`
-compare with each other for a fork phase, `spawn` and `node` for a
-spawn phase), and, for a fork phase, an `inherited_tokens` within a
+compare with each other for a fork phase, `fresh` and `node` for a
+phase of a named subagent), and, for a fork phase, an `inherited_tokens` within a
 factor of two of the calling thread's context now
 ([[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]'s
 `context_report`). With at least `EstimateMinRuns` (5), a node costs
@@ -215,7 +218,7 @@ The estimate is the sum over phases: low, the fewest nodes at the 25th
 percentile; high, the most at the 90th. A phase with fewer than five
 comparable runs adds to the low end only its nodes' first requests (a
 fork's inherited tokens at the cache-read price and its task at the
-input price; a spawn's instructions and task at the input price), and
+input price; a fresh subagent's instructions and task at the input price), and
 leaves the estimate with no high end: the call then names its ceiling,
 or is answered `invalid_input` before the hold, saying that nothing yet
 records what such a run costs.
@@ -228,13 +231,13 @@ records what such a run costs.
 | `low_usd_micro`, `high_usd_micro` | the range; `high_usd_micro` absent when it has no high end |
 | `ceiling_usd_micro` | the call's `maxCostUsd`, or the high end |
 | `nodes_min`, `nodes_max` | the graph's node counts |
-| `phases` | per phase: `id`, `run`, `model`, `nodes_min`, `nodes_max`, `runs` (the comparable runs read) |
+| `phases` | per phase: `id`, `subagent`, `model`, `nodes_min`, `nodes_max`, `runs` (the comparable runs read) |
 
 The tool's description tells the model that the person reads the range
 and the ceiling before anything runs, that a run stops at the ceiling,
 and to keep a workflow to work with many independent pieces: one
-question at a time is answered directly, and a few pieces are spawned
-or forked.
+question at a time is answered directly, and a few pieces go to
+subagents.
 
 ### The authorizer
 
@@ -261,13 +264,13 @@ once, and ends when every node has an output or has failed.
 | Event | Appended by | Payload |
 |---|---|---|
 | `workflow.estimate` | the harness, with the call's `agent.tool_use` | above |
-| `workflow.started` | the runner, on the allow | `tool_use_id`, `name`, `phases` (id, name, run, nodes planned), `ceiling_usd_micro`, `max_at_once`, `deadline`, `confirmed_by` |
+| `workflow.started` | the runner, on the allow | `tool_use_id`, `name`, `phases` (id, name, subagent, nodes planned), `ceiling_usd_micro`, `max_at_once`, `deadline`, `confirmed_by` |
 | `workflow.phase_ended` | the runner | `run`, `phase`, `ok`, `failed`, `items` (the items returned, for `returns: items`) |
 | `workflow.ended` | the runner | `run`, `reason`: `completed`, `budget`, `interrupted`, `timeout` or `failed`; `spent_usd_micro`; the counts |
 
 `run` is the id of `workflow.started`. Each node's `thread.started`
 gains `workflow: {run, phase, index, item?}`, and its depth is the
-calling thread's plus one, so a node may spawn or fork under the depth
+calling thread's plus one, so a node may start subagents under the depth
 limit, and what that spends is the run's.
 
 The run's state is folded from these events and the nodes' threads. A
@@ -331,7 +334,7 @@ description and its check, so none is written twice:
 
 ### Roll order
 
-1. The thread record and the estimate, alone: every spawn and fork is
+1. The thread record and the estimate, alone: every subagent is
    recorded, so the estimate has runs to read when the tool ships.
 2. The `workflow` tool with inline graphs: the check, the estimate,
    `session.workflow`, the hold and the run.
@@ -367,7 +370,7 @@ beforehand; a node on another machine; the words a client shows.
 | Criterion | Test that proves it | State |
 |---|---|---|
 | A graph past a bound (phases, nodes, `maxAtOnce`, a name, a task, an id, a phase reading a later one, an `each` from a phase without `maxItems`) is answered `invalid_input` naming the field, and nothing is held | `harness.TestAWorkflowsGraphIsChecked` | not built |
-| Every spawn and fork records its thread run with its cost, steps and outcome, in every store, pruned after `ThreadRunsKept` | the stores' conformance case `thread runs`, `internal/server.TestEveryThreadRecordsItsRun` | not built |
+| Every subagent, fresh or fork, records its thread run with its cost, steps and outcome, in every store, pruned after `ThreadRunsKept` | the stores' conformance case `thread runs`, `internal/server.TestEveryThreadRecordsItsRun` | not built |
 | The estimate sums each phase's node counts at the 25th and 90th percentiles of its comparable runs; a phase with fewer than five has no high end, and a call without a ceiling is then refused before the hold | `harness.TestAWorkflowsEstimate` | not built |
 | A `workflow` call is held in `confirm` and `progressive` whatever a list, a pattern or a decision service says, blocked in `plan`, and closed only by the initiator's confirmation | `harness.TestAWorkflowIsHeldForItsPerson`, `internal/server.TestOnlyTheInitiatorStartsAWorkflow` | not built |
 | `session.workflow` is asked before the hold with the estimate and the ceiling, and again on the allow with `confirmed_by`; a deny before the hold asks nobody; an allow's `budget_usd_micro` lowers the ceiling | `internal/server.TestTheWorkflowQuestion`, `authorizer.TestVocabularyMatchesTheSpec` | not built |
@@ -378,7 +381,7 @@ beforehand; a node on another machine; the words a client shows.
 | A runner that takes the session over during a run runs no finished node again and finishes the run | `harness.TestAWorkflowResumesOnAnotherRunner` | not built |
 | The fork nodes of a run share the calling thread's prefix and differ in their task alone | `harness.TestAWorkflowsForksShareTheCallersPrefix` | not built |
 | A `workflow` call in a turn a trigger began waits for the person, and the turn's outcome is `notified` | `harness.TestAWorkflowInAnUnattendedTurnWaits` | not built |
-| A fork's `workflow` call is `withheld_from_fork`, and a spawned thread is not offered the tool | `harness.TestOnlyTheConversationStartsAWorkflow` | not built |
+| A fork's `workflow` call is `withheld_from_fork`, and a fresh subagent is not offered the tool | `harness.TestOnlyTheConversationStartsAWorkflow` | not built |
 | A `Workflow` manifest resolves, an agent's `spec.workflows` pins it, and a call by `name` fills its inputs and runs as an inline graph | `manifest.TestAWorkflowKind`, `harness.TestANamedWorkflowRuns` | not built |
 | An instruction task: a review of many independent items is proposed as a workflow with a ceiling, and a request about one item is answered without one | `test/tasks/instructions/workflow/` on the task suite's pinned model ([[025-task-suite]]) | not built |
 | The OpenAPI document describes the events, the members and the Workflow kind | `internal/server.TestTheDocumentDescribesSpec033` | not built |
