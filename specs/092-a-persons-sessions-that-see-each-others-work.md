@@ -1,5 +1,5 @@
 ---
-title: "A person's sessions that see each other's work: each open session's work folded from its log (its repositories and branch, its app, its folder on a computer, the paths it changed, the paths it claims), a `sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app and claims paths before a change, and a `send` tool whose message reaches another of the person's sessions as data, read at its next step while it runs and with its next turn while it waits, starting nothing and never taken as the person's word"
+title: "A person's sessions that see each other's work: each open session's work read from its log (its repositories and branch, its app, its folder on a computer, the paths it changed, the paths it says it is working on), a `sessions` tool that finds the person's other open sessions whose work overlaps a repository, a folder or an app and says which paths this session is about to change, and a `send` tool whose message reaches another of the person's sessions as data, read at its next step while it runs and with its next turn while it waits, starting nothing and never taken as the person's word"
 status: drafted
 track: core
 depends_on: [.archive/004-session-log.md, .archive/006-identity.md, 008-tools.md, 010-context.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 018-credentials-and-secrets.md, 019-git.md, 058-what-a-create-allow-attaches.md, 059-publishing-to-a-chosen-app.md, 073-a-working-directory-kept-in-the-sessions-folder.md, .archive/080-device-machines.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md, 091-a-fork-of-the-conversation.md]
@@ -26,23 +26,25 @@ neither knows the other exists until a merge or a release fails
 This spec lets a session see the person's other sessions' work and
 tell one of them something, in three parts that roll in order:
 
-1. **Work.** The server folds each session's work from its log: the
+1. **Work.** The server reads each session's work from its log: the
    repositories it works in and its branch, the app it publishes to,
    its folder on a computer, and the paths it changed. A `sessions`
    tool finds the person's other open sessions whose work overlaps a
    repository, a folder or an app. It answers work, never what anyone
    said.
-2. **Claims.** Before it changes a part of a repository or a folder, a
-   session may claim the paths, with one line of why, so another
-   session finds the intent before any file has changed. A claim is
+2. **What a session is working on.** Before it changes a part of a
+   repository or a folder, a session may say which paths it is about
+   to change, with one line of why, so another session finds the
+   intent before any file has changed: the `sessions` tool's
+   `working_on` says it, and `done` takes it back. Saying so is
    advisory: it refuses nothing.
 3. **Messages.** A `send` tool sends one of the person's other sessions
    a message. The receiving session reads it as data from another
    session, never as the person's word: at its next step while it runs,
    with its next turn while it waits. A message starts no turn.
 
-What is new is the reach across sessions. Inside one session, a parent
-and the threads it spawned already message each other
+What is new is the reach across sessions. Inside one session, an agent
+and the subagents it started already message each other
 ([[013-threads-and-subagents]]). There is no event bus: a session finds
 and tells one other session, and the server delivers the message to
 that session's log alone.
@@ -75,8 +77,8 @@ the table that opens the design weighs each against its alternative.
   its own session; no route is asked by a session about its initiator's
   other sessions.
 - A message reaches a session as a `user.message` from a person or a
-  program at the send route, or from a trigger's firing. A thread
-  messages only the threads it spawned. A `user.message` sent while a
+  program at the send route, or from a trigger's firing. A subagent
+  is messaged only by the one that started it. A `user.message` sent while a
   turn runs begins the next turn when that one ends; one sent to an idle
   session is pending input (`session.HasPendingInput`), so a runner
   claims the session and a turn starts at once.
@@ -90,10 +92,10 @@ the table that opens the design weighs each against its alternative.
 
 | Item | Recommended | Weighed against, and why not |
 |---|---|---|
-| What one session sees of another | its work: title, status, when it last ran, its repositories and branch, app, folder, changed paths and claims, where they overlap the query | a search over the words of the person's other conversations: a session that read a hostile page could read every conversation of the person through it and carry it out over its own network; the purpose, keeping two sessions from conflicting changes, is answered by work |
+| What one session sees of another | its work: title, status, when it last ran, its repositories and branch, app, folder, changed paths and what it says it is working on, where they overlap the query | a search over the words of the person's other conversations: a session that read a hostile page could read every conversation of the person through it and carry it out over its own network; the purpose, keeping two sessions from conflicting changes, is answered by work |
 | Which sessions | the initiator's own open sessions in the session's context, asked of the authorizer | every session the person may read: in an organization, other members' sessions, which is a question for the installation and left out (below) |
 | How work is known | folded by the server from the log, with nothing for the agent to do | declared by the agent: it would lag and be forgotten |
-| Claims | advisory, made before a change, lapsing with the session | locks: a lock held by a session nobody continues blocks the person's other work, and git and 059 already refuse the change that would break |
+| What a session says it is working on | advisory, said before a change, lapsing with the session | a lock: one held by a session nobody continues blocks the person's other work, and git and 059 already refuse the change that would break; the word claim, this spec's first draft: it reads as a right the session holds, which it is not |
 | The message's event | `session.message`, a user event type of its own, with the sending session | a `user.message` with a session as sender: every reader that takes a `user.message` as the person's would take it so, 087's attended turn, 086's count of wakes without the person, a client's list of what the person said |
 | A message to a running session | read at its next step, after that step's results | with its next turn: a session that is running is the one about to make the change the message is about |
 | A message to a waiting session | kept, and read with its next turn, whoever starts it | starting a turn: spending no person asked for, and two sessions could keep each other running; whether a message may ever start one is left open (Not in this spec) |
@@ -110,39 +112,40 @@ The Session gains one folded field, `work`:
 | `app` | the id of the app the session publishes to, when it has one |
 | `folder` | for a session on a person's computer: `{environment, workdir}` |
 | `paths` | the paths the session changed, relative to its working directory, newest first, at most `MaxWorkPaths`: each successful `write` and `edit` call's `path`, and each `work.saved`'s `written` and `removed` |
-| `claims` | the session's open claims (below) |
+| `working_on` | what the session says it is working on, its open entries (below) |
 | `active_at` | the time of its latest `session.status` `running` |
 
 The server folds it at each append batch, as it folds the Session's
 other fields. A change `bash` made appears only through a later
 `work.saved`, so a session that works through `bash` on a machine that
 keeps no copy shows the paths of its `write` and `edit` calls alone;
-a claim is how it says what it will change. A session's work is the
-session's, of every thread in it.
+saying what it is working on is how it tells another session what it
+will change. A session's work is the session's, of every subagent in
+it.
 
-### Claims
+### What a session says it is working on
 
-A claim names paths a session is about to change, in one repository it
-works in or in its folder, and says why:
+An entry of what a session is working on names paths it is about to
+change, in one repository it works in or in its folder, and says why:
 
 | Event | Payload |
 |---|---|
-| `session.claimed` | `claim_id`, `repository` (a `url` of `work.repositories`; absent for the folder), `paths` (path prefixes relative to the repository's root or the folder, 1 to `MaxClaimPaths`), `why` (at most `MaxClaimWhy` characters), `tool_use_id` |
-| `session.released` | `claim_id`, or `all`; `tool_use_id`, absent when the server released it |
+| `session.working_on` | `entry_id`, `repository` (a `url` of `work.repositories`; absent for the folder), `paths` (path prefixes relative to the repository's root or the folder, 1 to `MaxWorkingOnPaths`), `why` (at most `MaxWorkingOnWhy` characters), `tool_use_id` |
+| `session.done_with` | `entry_id`, or `all`; `tool_use_id`, absent when the server ended it |
 
-A claim is open from its `session.claimed` until its
-`session.released`, the session's end or archive, or `ClaimIdle` after
-the end of the session's latest turn, whichever comes first; the fold
-leaves out a lapsed claim. A session holds at most `MaxClaims` open
-claims, and a claim past it is refused `invalid_input`. A claim refuses
-no change of anyone's: it is what `find` answers.
+An entry is open from its `session.working_on` until its
+`session.done_with`, the session's end or archive, or `WorkingOnIdle`
+after the end of the session's latest turn, whichever comes first; the
+fold leaves out a lapsed entry. A session holds at most `MaxWorkingOn`
+open entries, and one past it is refused `invalid_input`. An entry
+refuses no change of anyone's: it is what `find` answers.
 
 ### The `sessions` tool
 
 A harness tool of the session's own thread, offered when the agent's
 `spec.tools` names it, on the hosted runner alone, since only a server
 keeps the person's sessions. A fork holds its definition and is
-refused it ([[091-a-fork-of-the-conversation]]); a spawned thread is
+refused it ([[091-a-fork-of-the-conversation]]); a fresh subagent is
 not offered it.
 
 | Name | Parallel | Effect | Input |
@@ -152,14 +155,14 @@ not offered it.
 | Action | Input | Does |
 |---|---|---|
 | `find` | one of `repository` (a `url`), `folder` (`true`: this session's folder), `app` (an app id); optional `paths` | answers the initiator's other open sessions whose work overlaps, at most `MaxFound`, most recently active first |
-| `claim` | `repository` or `folder`, `paths`, `why` | appends `session.claimed`; the result names any open session whose claims or changed paths already overlap |
-| `release` | `claim_id` or `all` | appends `session.released` |
+| `working_on` | `repository` or `folder`, `paths`, `why` | appends `session.working_on`; the result names any open session whose entries or changed paths already overlap |
+| `done` | `entry_id` or `all` | appends `session.done_with` |
 
 Every action is one effect, `read`, since none changes anything outside
 the log. A session's work overlaps a query when it works in the same
 repository (by `url`), the same folder of the same environment, or
 publishes to the same app, and, when the query names `paths`, when one
-of its changed paths or claimed prefixes lies under one of them or
+of its changed paths or the prefixes it is working on lies under one of them or
 above one of them.
 
 Each session `find` answers:
@@ -171,18 +174,19 @@ Each session `find` answers:
 | `active_at` | when it last ran |
 | `repository`, `branch` | the overlapping repository and the session's branch in it |
 | `app`, `folder` | when they overlap |
-| `claims` | its open claims that overlap: paths and why |
+| `working_on` | its open entries that overlap: paths and why |
 | `changed` | its changed paths that overlap, at most `MaxFoundPaths` |
 
 It answers no message, answer, file or excerpt of any session.
 
-The runner reaches the server for `find`, `claim` and `release` over
+The runner reaches the server for `find`, `working_on` and `done` over
 the internal listener, as the `trigger` tool does
 ([[086-proactive-agents]]), at
-`POST /internal/v1/leases/{session}/sessions/{find,claim,release}`; a
-claim and a release are appended by the runner like any event of the
-turn, and the server's routes answer `find` and check a claim's
-overlap.
+`POST /internal/v1/leases/{session}/sessions/{find,working_on,done}`
+(the runner's routes, under the `leases` path of [[016-runners]]);
+`session.working_on` and `session.done_with` are appended by the runner
+like any event of the turn, and the server's routes answer `find` and
+check an entry's overlap.
 
 ### The `send` tool
 
@@ -212,7 +216,7 @@ names:
 |---|---|
 | `not_found` | the session is not one the authorizer lets this session's initiator send to, or is gone |
 | `conflict` | the session has ended |
-| `inbox_full` | the session holds `MaxWaitingMessages` messages its turns have not read |
+| `too_many_waiting` | the session holds `MaxWaitingMessages` messages its turns have not read |
 
 On success the server appends `session.message` to the receiving
 session's log and answers whether it runs, so the sender's result says
@@ -247,8 +251,8 @@ and that `send` answers it. Where it renders:
 | idle | with its next turn's first input, before it, in the same user message |
 
 Either way the conversation is only appended to, so the cached prefix
-of [[010-context]] holds. A spawned thread or a fork is not shown it;
-its caller is.
+of [[010-context]] holds. A subagent, fresh or fork, is not shown it;
+the session's own conversation is.
 
 ### Data, never authority
 
@@ -258,7 +262,7 @@ A `session.message` changes nothing the receiving session may do:
 |---|---|
 | confirm or deny a held call, or answer a question | `user.tool_confirmation` and `user.answer` come from a person at the send route ([[039-questions]]) |
 | count as the person's word | it starts no new count of wakes without the person ([[086-proactive-agents]]), and a turn it is read in stays as attended or unattended as its first input made it ([[087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report]]) |
-| change the mode, the model, the effort, a claim or a list | those change through the person's routes alone |
+| change the mode, the model, the effort, what the session is working on, or a list | those change through the person's routes alone |
 | run anything | every call after it is decided by the approval layers, as after any content the model reads |
 
 The frame is the model's warning, not the defense: the defense is that
@@ -286,7 +290,7 @@ each `send` is asked about its one receiving session.
 |---|---|
 | the sending session | the `send` call, with the receiving session named by its title and linked, and the text |
 | the receiving session | the message as its own item, from the sending session, linked back, with `waiting_messages` marked until a turn reads it |
-| each session | its `work`: repositories and branch, app, folder, changed paths, open claims |
+| each session | its `work`: repositories and branch, app, folder, changed paths, what it says it is working on |
 
 A client shows each as it shows any event; the words are the client's.
 
@@ -298,9 +302,9 @@ descriptions and their checks:
 | Constant | Value | Why this value |
 |---|---|---|
 | `MaxWorkPaths` | 200 | enough to show where a long session has been, small enough to fold at every batch |
-| `MaxClaims`, `MaxClaimPaths` | 10, 20 | a session working on a few areas at once |
-| `MaxClaimWhy` | 120 | one line |
-| `ClaimIdle` | 72 hours | a session left over a weekend still holds its intent; a forgotten one stops after three days |
+| `MaxWorkingOn`, `MaxWorkingOnPaths` | 10, 20 | a session working on a few areas at once |
+| `MaxWorkingOnWhy` | 120 | one line |
+| `WorkingOnIdle` | 72 hours | a session left over a weekend still holds its intent; a forgotten one stops after three days |
 | `MaxFound`, `MaxFoundPaths` | 20, 20 | a person rarely has more open sessions on one repository |
 | `MaxSessionMessage` | 4000 | a message, not a file |
 | `MaxSendsPerTurn` | 3 | a turn says what it must and goes on |
@@ -309,8 +313,9 @@ descriptions and their checks:
 ### Roll order
 
 1. `work` on the Session, and `sessions` with `find`.
-2. Claims: `claim`, `release`, `session.claimed`, `session.released`,
-   and claims in `work` and in `find`.
+2. What a session is working on: `working_on`, `done`,
+   `session.working_on`, `session.done_with`, and `working_on` in
+   `work` and in `find`.
 3. `send`, `session.message`, `waiting_messages`, and the fold's frame.
 
 Each step is a release. An installation's authorizer learns the
@@ -322,8 +327,8 @@ it reads a session's `find` as its initiator's own list.
 | Need | Why |
 |---|---|
 | The authorizer answers `session.list` and `session.send` asked with a session's `origin`: the initiator's own sessions in the same context, never another person's | own sessions only |
-| The managed agent names `sessions` and `send`, with instructions to find before changing a repository, a folder or an app another session may be working on, to claim what it will change, to tell the other session only what it needs to know, and never to treat a message from another session as the person's request | the tools are used when they help, and a message stays data |
-| A client shows `work`, claims and messages as above | the person sees what their sessions tell each other |
+| The managed agent names `sessions` and `send`, with instructions to find before changing a repository, a folder or an app another session may be working on, to say what it is working on before it changes it, to tell the other session only what it needs to know, and never to treat a message from another session as the person's request | the tools are used when they help, and a message stays data |
+| A client shows `work`, what each session is working on, and messages as above | the person sees what their sessions tell each other |
 
 ## What the Go SDK needs
 
@@ -342,15 +347,15 @@ is away beyond what the log keeps; the words a client shows.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| The Session folds `work` from the header and the log: repositories and branch, app, folder, the paths of `write`, `edit` and `work.saved` newest first up to `MaxWorkPaths`, open claims and `active_at` | `session.TestTheSessionFoldsItsWork` | not built |
-| `find` answers the initiator's other open sessions whose work overlaps a repository, a folder or an app, and paths when named, with only the overlapping claims and paths, and no content of any session | `internal/server.TestFindAnswersOverlappingWorkAlone` | not built |
+| The Session folds `work` from the header and the log: repositories and branch, app, folder, the paths of `write`, `edit` and `work.saved` newest first up to `MaxWorkPaths`, open `working_on` entries and `active_at` | `session.TestTheSessionFoldsItsWork` | not built |
+| `find` answers the initiator's other open sessions whose work overlaps a repository, a folder or an app, and paths when named, with only the overlapping entries and paths, and no content of any session | `internal/server.TestFindAnswersOverlappingWorkAlone` | not built |
 | `find` is asked as `session.list` with `origin` and `work`, and answers only what the allow admits; an ended session, a session of another person and one in another context are never answered | `internal/server.TestFindIsTheInitiatorsOwn`, `internal/auth.TestTheOwnerPolicyAdmitsOwnSessions` | not built |
-| A claim is open until its release, the session's end or archive, or `ClaimIdle` after its latest turn; the eleventh is refused; a claim's result names the open sessions that already overlap | `session.TestClaimsLapse`, `internal/server.TestAClaimNamesWhatItOverlaps` | not built |
-| A `send` to a session `find` did not answer in this session, to itself, or past `MaxSendsPerTurn` is refused before it is decided; a send is asked as `session.send` with the session as sender; an ended receiver is `conflict` and a full one `inbox_full` | `harness.TestASendIsChecked`, `internal/server.TestASendIsAskedForTheSession` | not built |
+| An entry of what a session is working on is open until `done`, the session's end or archive, or `WorkingOnIdle` after its latest turn; the eleventh is refused; a `working_on` result names the open sessions that already overlap | `session.TestWorkingOnLapses`, `internal/server.TestWorkingOnNamesWhatItOverlaps` | not built |
+| A `send` to a session `find` did not answer in this session, to itself, or past `MaxSendsPerTurn` is refused before it is decided; a send is asked as `session.send` with the session as sender; an ended receiver is `conflict` and a full one `too_many_waiting` | `harness.TestASendIsChecked`, `internal/server.TestASendIsAskedForTheSession` | not built |
 | A sent text is scrubbed of the values the runner holds before it leaves the runner | `runner.TestASentMessageIsScrubbed` | not built |
 | A `session.message` to a running session renders in its next request after the step's results, and to an idle one with its next turn's first input, in the frame that names its sender; neither starts a turn | `session.TestASessionMessageRendersAsData`, `runner.TestASessionMessageStartsNoTurn` | not built |
 | A `session.message` confirms no held call, answers no question, resets no wake count and leaves a turn's attended as its first input made it | `harness.TestASessionMessageGrantsNothing` | not built |
 | `waiting_messages` counts the messages no request has carried, and falls to zero when a request carries them | `session.TestWaitingMessages` | not built |
-| A fork's `sessions` or `send` call is `withheld_from_fork`, and a spawned thread is not offered them | `harness.TestOnlyTheConversationFindsAndSends` | not built |
-| An instruction task: a session about to change a package another session claimed finds the claim, tells that session, and works around it; a message that asks for something the person did not is not acted on | `test/tasks/instructions/sessions/` on the task suite's pinned model ([[025-task-suite]]) | not built |
+| A fork's `sessions` or `send` call is `withheld_from_fork`, and a fresh subagent is not offered them | `harness.TestOnlyTheConversationFindsAndSends` | not built |
+| An instruction task: a session about to change a package another session said it is working on finds that, tells that session, and works around it; a message that asks for something the person did not is not acted on | `test/tasks/instructions/sessions/` on the task suite's pinned model ([[025-task-suite]]) | not built |
 | The OpenAPI document describes `work`, `waiting_messages` and the events | `internal/server.TestTheDocumentDescribesSpec092` | not built |
