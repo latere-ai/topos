@@ -509,8 +509,8 @@ var opDescriptions = map[string]string{
 		"it replaces the latest version's metadata, and every later read returns it. "+
 		`A model's reasoning level is spec.model.reasoning; the manifest may still name it "effort", its name before reasoning, which is read through every v0.x release and dropped in v1.0, and a model that names both with different levels is invalid_manifest. `+
 		"Either name resolves to the same digest, so an agent applied again under the other name keeps its version. "+
-		"spec.model is required, but an inline subagent's spec may leave it out: that subagent runs the model, connection and reasoning level of the agent that starts it, "+
-		"the model the session's routed name resolved to included, and keeps it for as long as it runs; a model given without a name is invalid_manifest. "+
+		"spec.model is required, but an inline subagent's spec may leave it out: that subagent runs, at each of its turns, the model, connection and reasoning level the agent that started it stands on then, "+
+		"the model the session's routed name resolved to included; a model given without a name is invalid_manifest. "+
 		"An agent with subagents holds the tools agent and send_message, so neither is a client tool's name in it.", manifest.MaxDisplayName),
 	"sendEvent": fmt.Sprintf("The body is one user event, {\"type\", \"payload\"}: user.message, user.interrupt, user.tool_confirmation, user.tool_result or user.answer. "+
 		"A user.message's payload holds content, text blocks {\"type\":\"text\",\"text\"} and inline images {\"type\":\"image\",\"image\":{\"media_type\",\"data\"}} (PNG, JPEG, GIF or WebP, base64, at most %d of at most %d bytes each), "+
