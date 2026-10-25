@@ -15,18 +15,19 @@ author: changkun
 ## Overview
 
 A runner is the process that drives a session's harness while it holds
-the session's lease: its claim on the session, which lapses unless the
-runner renews it, the name the runner's routes keep on the wire. It
-claims a session from a store, appends `session.status` `running`,
-attaches the machine, recovers any step left without results, runs turns
-until the session is idle or ended, and releases the lease. In phase 1
-the runner runs in process, in `topos` or an embedding application, over
-the directory store, where the lease is the store's exclusive hold on
-the session's directory. In phase 2 toposd keeps a queue: runners claim
-sessions over its internal listener, renew a 60 second lease every 15
-seconds, and release it when the session goes idle; a runner that dies
-loses its leases and another resumes each session from its log. At most
-one runner appends to a session at a time (invariant 3 of
+the session: a claim on the session that lapses unless the runner
+renews it, which the runner's routes under `/internal/v1/leases/` and
+their error `lease_lost` name on the wire. It claims a session from a
+store, appends `session.status` `running`, attaches the machine,
+recovers any step left without results, runs turns until the session is
+idle or ended, and releases its claim. In phase 1 the runner runs in
+process, in `topos` or an embedding application, over the directory
+store, where the claim is the store's exclusive hold on the session's
+directory. In phase 2 toposd keeps a queue: runners claim sessions over
+its internal listener, renew a 60 second claim every 15 seconds, and
+release it when the session goes idle; a runner that dies loses its
+claims and another resumes each session from its log. At most one
+runner appends to a session at a time (invariant 3 of
 [[001-architecture]]), and toposd never dials a runner (invariant 10).
 
 ## Current state

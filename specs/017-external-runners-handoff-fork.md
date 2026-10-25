@@ -14,23 +14,23 @@ author: changkun
 
 ## Overview
 
-Only one program at a time appends a session's events. This spec calls
-that program the session's writer, the name the Session's `writer`
-member and the `not_writer` error keep on the wire. For a hosted
-session it is whichever hosted runner currently drives the session
-([[016-runners]]); for an external session it is a program the
-developer runs (the `topos` command on a laptop, a CI job, a service)
-that appends through the API with its own credential. This spec owns
-fork, the one way a second program continues a session: a new session
-from the log at a turn boundary, with that turn's files. It owns the
-external runner as a documented API surface: the append route, the
-rule that only the writer appends, the queue in which messages sent to
-the session wait until the external runner appends them (the `inbox`
-route on the wire), and the `session.append` question the authorizer
-answers. And it owns handoff: moving a session, with its machine, from
-a program the developer runs to the hosted runners or back, through
-the latest checkpoint, with or without a git remote of the user's.
-Local fork is phase 1; the rest is phase 4.
+Only one program at a time appends a session's events: the program that
+drives the session, which the Session's `writer` member and the
+`not_writer` error name on the wire. For a hosted session it is
+whichever hosted runner currently drives the session ([[016-runners]]);
+for an external session it is a program the developer runs (the `topos`
+command on a laptop, a CI job, a service) that appends through the API
+with its own credential. This spec owns fork, the one way a second
+program continues a session: a new session from the log at a turn
+boundary, with that turn's files. It owns the external runner as a
+documented API surface: the append route, the rule that only the
+program driving the session appends, the queue in which messages sent
+to the session wait until the external runner appends them (the
+`inbox` route on the wire), and the `session.append` question the
+authorizer answers. And it owns handoff: moving a session, with its
+machine, from a program the developer runs to the hosted runners or
+back, through the latest checkpoint, with or without a git remote of
+the user's. Local fork is phase 1; the rest is phase 4.
 
 ## Current state
 
