@@ -293,4 +293,11 @@ var released = map[string]string{
 	"harness/harness-v3.md":                          "44f40b681869ede098d7676a4f543bbbc1dfdaf856669db6db588c8081ceebea",
 	"harness/harness-v4.md":                          "67491e298cb03595cf5b6d759bb927ad17881636c7b33babeda6fac7a6fdf1c1",
 	"results/history/head-v2.md":                     "6bea5e3f2c848e9bdfe2a4431d23b29769c9e6cc2cb9b722cc7e31ac71d45590",
+	"tools/bash-v3.md":                               "2e4611cb9061cd945654727b49afa136b301827b55a2bda57c038f30d7a577b9",
+	"tools/edit-v3.md":                               "bffc591b52df77ff3fc457024e6e7ffc173d3789a2b31561bb2f2f6db905fa7e",
+	"tools/write-v3.md":                              "d523f3ae28fc4dba541f672a0a1e795b2319198fa3ff1c38e6acd24c4539f048",
+	"tools/read-v4.md":                               "ec9d5471f2d815eb141624c86c044b55a0b33a3fd3ffb837cf4ae0f4d8f3f316",
+	"tools/read-v5.md":                               "87eb63857697d7cf5eb3bb4caea3dcf1ba8c8754abd93e055fe57352df53cc7c",
+	"tools/todo-v2.md":                               "e62881782bcb46845a59d2a000ea4ab02127308a15ca18733ae3670fb4b1abb9",
+	"results/files/unread-v2.md":                     "68f0438fc72e614153b2dd9020972c47a0bca49d671de6e38fd42601235e98e3",
 }

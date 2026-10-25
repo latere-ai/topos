@@ -50,19 +50,22 @@ const (
 
 // The tool descriptions (specs 008 and 013).
 const (
-	// ToolRead version 2 names the office documents read reads as text
-	// (spec 079). ToolReadParsed, version 3, is read's description where a
-	// parsing service reads a PDF as text (spec 082): it adds pages and
-	// the PDF.
-	ToolRead       Name = "tools/read-v2"
-	ToolReadParsed Name = "tools/read-v3"
-	ToolWrite      Name = "tools/write-v2"
-	ToolEdit       Name = "tools/edit-v2"
-	ToolBash       Name = "tools/bash-v2"
+	// ToolRead names the office documents read reads as text (spec 079).
+	// ToolReadParsed is read's description where a parsing service reads
+	// a PDF as text (spec 082): it adds pages and the PDF. Read's version
+	// 4, the plain one, and version 5, the parsed one, say "you" where
+	// versions 2 and 3 said "this thread" (spec 008), as do write's
+	// version 3, edit's version 3, bash's version 3 and todo's version 2.
+	// Bash's version 3 also says a command past its timeout is stopped.
+	ToolRead       Name = "tools/read-v4"
+	ToolReadParsed Name = "tools/read-v5"
+	ToolWrite      Name = "tools/write-v3"
+	ToolEdit       Name = "tools/edit-v3"
+	ToolBash       Name = "tools/bash-v3"
 	ToolGrep       Name = "tools/grep-v1"
 	ToolGlob       Name = "tools/glob-v1"
 	ToolWebFetch   Name = "tools/web_fetch-v1"
-	ToolTodo       Name = "tools/todo-v1"
+	ToolTodo       Name = "tools/todo-v2"
 	// ToolAgent and ToolSendMessage describe the subagent tools under the
 	// names they took from spawn and message, whose descriptions,
 	// tools/spawn-v1 and tools/message-v1, stay for replay.
@@ -507,10 +510,12 @@ const (
 	OutputSpilled    Name = "results/spill-v1"
 )
 
-// The results the file tools share (spec 008).
+// The results the file tools share (spec 008). FileUnread's version 2
+// says "you" where version 1 said "this thread", as write's and edit's
+// descriptions quote it.
 const (
 	FileChanged    Name = "results/files/changed-v1"
-	FileUnread     Name = "results/files/unread-v1"
+	FileUnread     Name = "results/files/unread-v2"
 	FileOutside    Name = "results/files/outside-v1"
 	FileDenied     Name = "results/files/denied-v1"
 	FileNotFound   Name = "results/files/not-found-v1"

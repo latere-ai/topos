@@ -3,7 +3,7 @@ steps:
   - tool_calls:
       - name: write
         input: {path: config.ini, content: "[server]\nhost = 0.0.0.0\nport = 9090\n"}
-  - expect: {tool_result_contains: this thread has not read it}
+  - expect: {tool_result_contains: you have not read it}
     tool_calls:
       - name: read
         input: {path: config.ini}
