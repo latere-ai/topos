@@ -23,17 +23,17 @@ step after step. Nothing says before the first one starts what the
 whole will cost, nothing asks the person, and nothing stops it short of
 the session's budget.
 
-A workflow is that work written down before it runs: a graph of
-phases, each a list of tasks, one task per item of a list, or one task
-that combines what earlier phases returned. The agent writes it in a
-`workflow` call, or names one an author declared as a manifest. Before
-anything runs, Topos estimates its cost as a range from the recorded
-cost of comparable subagents, and the call waits for the person's OK,
-showing them the range and a ceiling. On their OK the run starts: every
-node is a subagent of the session, a fork of the calling conversation
-([[091-a-fork-of-the-conversation]]) or a fresh subagent, so the log,
-narrowing, depth and the advisor apply unchanged. The run is kept to
-its ceiling, an interrupt ends it, and its result is the call's.
+A workflow is that work written down before it runs: a graph of phases,
+each a list of tasks, one task per item of a list, or one task that
+combines what earlier phases returned. The agent writes it in a
+`run_workflow` call, or names one an author declared as a manifest.
+Before anything runs, Topos estimates its cost as a range from the
+recorded cost of comparable subagents, and the call waits for the
+person's OK, showing them the range and a ceiling. On their OK the run
+starts: every node is a subagent of the session, a fork of the calling
+conversation ([[091-a-fork-of-the-conversation]]) or a fresh subagent,
+so the log, narrowing, depth and the advisor apply unchanged. The run is
+kept to its ceiling, an interrupt ends it, and its result is the call's.
 
 Where the run starts in a turn nobody attends, a routine's or a wake's
 ([[086-proactive-agents]]), the call waits for the person's OK all the
@@ -83,7 +83,7 @@ the table that opens the design weighs each against its alternative.
 | Where a run's nodes run | as threads of the session that started it, on its machine, under its log and lease | as sessions of their own, as rollouts are: a machine and a lease per node, which scales past one machine, but a run of two hundred nodes would ask for two hundred sandboxes; kept for a later placement when a caller needs it |
 | What a workflow is | a declared graph of phases: a list of tasks, one task per item of a list, or one task that combines | a program the agent writes, as Anthropic's Managed Agents' dynamic workflows are: a program's cost is not known until it runs, so nothing could be estimated or bounded per phase before the person's yes, and the runner has no interpreter to run agent-written code outside the machine |
 | Who writes it | the agent, in the call; or an author, as a `Workflow` manifest the agent names | authored only: most fan-outs are shaped by the request in front of the agent |
-| How the person says yes | the `workflow` call, held by `tools.Confirmer` for the session's initiator, with the estimate recorded beside it | a `question` and then the call: a question in a session nobody attends is answered at once, and a yes to a question binds to an answer the model then acts on, not to the graph and the ceiling the person read; the held call runs exactly what was approved, the choice [[086-proactive-agents]] made for a proposal |
+| How the person says yes | the `run_workflow` call, held by `tools.Confirmer` for the session's initiator, with the estimate recorded beside it | a `question` and then the call: a question in a session nobody attends is answered at once, and a yes to a question binds to an answer the model then acts on, not to the graph and the ceiling the person read; the held call runs exactly what was approved, the choice [[086-proactive-agents]] made for a proposal |
 | A turn nobody attends | the held call waits, idle `tool_confirmation`, and the turn's outcome is `notified`, so a client lists it among what waits for the person | refusing it: the work the agent found would be lost; starting it under an amount the person set beforehand: left open (Not in this spec) |
 | Who estimates | Topos, from the graph's counts and the recorded cost of comparable threads, which it holds; the installation's authorizer refuses or lowers the ceiling | the authorizer alone: it holds neither the graph nor the threads' costs; the agent's own estimate: a model's guess where a record exists |
 | The estimate's shape | a range: low and high, with how many runs it reads; no high end before enough runs exist, and then the call names its ceiling | a point: a fan-out's cost varies by a factor of several between items |
@@ -93,18 +93,19 @@ the table that opens the design weighs each against its alternative.
 | Cancel | an interrupt: running nodes are canceled as a turn's running calls are, waiting nodes never start, and the call's result is the partial report | a cancel route: the run is the turn, and an interrupt already ends a turn |
 | A node that fails | recorded failed with its stop reason; the run goes on, and a combining node is told | failing the run: one item of eighty would lose the other seventy-nine |
 | The calling thread | the session's own thread alone | any thread: a node starting a run of its own multiplies the person's yes; a workflow is the conversation's |
+| The tool's name | `run_workflow`, a verb for what the call does ([[008-tools]]); the `Workflow` kind, `spec.workflows`, the `workflow.*` events and `session.workflow` keep the noun, since each names a thing rather than an act | `workflow`, this spec's first draft: a noun where 008 asks a verb |
 | Peers | left out of this revision | messages declared between sibling subagents: no task and no caller needs them |
 
-### The `workflow` tool
+### The `run_workflow` tool
 
-`workflow` is a harness tool, as `question` is: added to the session's
-own thread when the agent's `spec.tools` names it. A fork carries its
+`run_workflow` is a harness tool, as `question` is: added to the
+session's own thread when the agent's `spec.tools` names it. A fork carries its
 definition and is refused it ([[091-a-fork-of-the-conversation]]), and
 a fresh subagent is not offered it.
 
 | Name | Parallel | Effect | Input |
 |---|---|---|---|
-| `workflow` | no | `none` | the table below |
+| `run_workflow` | no | `none` | the table below |
 
 | Input | Meaning |
 |---|---|
@@ -171,7 +172,7 @@ node failed. An output longer than `MaxNodeOutput` (16 KiB) is cut where
 a combining node reads it, and the cut is said.
 
 Fork nodes all fork the calling thread at the `agent.message` that
-holds the `workflow` call. Every one of them, in every phase, has the
+holds the `run_workflow` call. Every one of them, in every phase, has the
 same prefix and differs in its task alone, so each first request reads
 the calling conversation from the provider's cache while starts keep
 it alive ([[091-a-fork-of-the-conversation]]).
@@ -336,7 +337,7 @@ description and its check, so none is written twice:
 
 1. The thread record and the estimate, alone: every subagent is
    recorded, so the estimate has runs to read when the tool ships.
-2. The `workflow` tool with inline graphs: the check, the estimate,
+2. The `run_workflow` tool with inline graphs: the check, the estimate,
    `session.workflow`, the hold and the run.
 3. The `Workflow` kind and `spec.workflows`.
 
@@ -348,14 +349,14 @@ release of step 2 reaches it.
 | Need | Why |
 |---|---|
 | The authorizer answers `session.workflow`: the initiator's own session, a ceiling within what the person can spend, and for a turn nobody attends the share of credit proactive work draws on | the person approves a cost they can pay |
-| The managed agent names `workflow`, with instructions on when work calls for one and when it does not | the agent starts runs only for work that needs them |
+| The managed agent names `run_workflow`, with instructions on when work calls for one and when it does not | the agent starts runs only for work that needs them |
 | A client shows the held call as an offer: the run's name, its phases and node counts, the range and the ceiling, from `workflow.estimate`; and a run's progress from its events | the person decides on what they read and follows what runs |
 
 ## What the Go SDK needs
 
 | Need | Why |
 |---|---|
-| A held `workflow` call read as an offer, with its `workflow.estimate` | both clients word the offer alike |
+| A held `run_workflow` call read as an offer, with its `workflow.estimate` | both clients word the offer alike |
 | A run's events and its nodes' threads, grouped by `run` | both clients show a run's progress |
 
 ## Not in this spec
@@ -372,7 +373,7 @@ beforehand; a node on another machine; the words a client shows.
 | A graph past a bound (phases, nodes, `maxAtOnce`, a name, a task, an id, a phase reading a later one, an `each` from a phase without `maxItems`) is answered `invalid_input` naming the field, and nothing is held | `harness.TestAWorkflowsGraphIsChecked` | not built |
 | Every subagent, fresh or fork, records its thread run with its cost, steps and outcome, in every store, pruned after `ThreadRunsKept` | the stores' conformance case `thread runs`, `internal/server.TestEveryThreadRecordsItsRun` | not built |
 | The estimate sums each phase's node counts at the 25th and 90th percentiles of its comparable runs; a phase with fewer than five has no high end, and a call without a ceiling is then refused before the hold | `harness.TestAWorkflowsEstimate` | not built |
-| A `workflow` call is held in `confirm` and `progressive` whatever a list, a pattern or a decision service says, blocked in `plan`, and closed only by the initiator's confirmation | `harness.TestAWorkflowIsHeldForItsPerson`, `internal/server.TestOnlyTheInitiatorStartsAWorkflow` | not built |
+| A `run_workflow` call is held in `confirm` and `progressive` whatever a list, a pattern or a decision service says, blocked in `plan`, and closed only by the initiator's confirmation | `harness.TestAWorkflowIsHeldForItsPerson`, `internal/server.TestOnlyTheInitiatorStartsAWorkflow` | not built |
 | `session.workflow` is asked before the hold with the estimate and the ceiling, and again on the allow with `confirmed_by`; a deny before the hold asks nobody; an allow's `budget_usd_micro` lowers the ceiling | `internal/server.TestTheWorkflowQuestion`, `authorizer.TestVocabularyMatchesTheSpec` | not built |
 | On the allow, `workflow.started` is appended and the phases run in order; `tasks`, `each` over items, `each` from a phase and `combine` start the nodes the table says, at most `maxAtOnce` at once | `harness.TestAWorkflowRunsItsPhases` | not built |
 | A node that returns items not in the shape asked is asked once more, and failed after a second miss | `harness.TestANodesItemsAreAskedForOnce` | not built |
@@ -380,8 +381,8 @@ beforehand; a node on another machine; the words a client shows.
 | At the ceiling the run starts no node, ends `budget`, and its report names what it spent; an interrupt ends it `interrupted` with a `canceled` result carrying the partial report; past its timeout it ends `timeout` | `harness.TestAWorkflowStopsAtItsCeiling`, `harness.TestAnInterruptEndsAWorkflow`, `harness.TestAWorkflowsTimeout` | not built |
 | A runner that takes the session over during a run runs no finished node again and finishes the run | `harness.TestAWorkflowResumesOnAnotherRunner` | not built |
 | The fork nodes of a run share the calling thread's prefix and differ in their task alone | `harness.TestAWorkflowsForksShareTheCallersPrefix` | not built |
-| A `workflow` call in a turn a trigger began waits for the person, and the turn's outcome is `notified` | `harness.TestAWorkflowInAnUnattendedTurnWaits` | not built |
-| A fork's `workflow` call is `withheld_from_fork`, and a fresh subagent is not offered the tool | `harness.TestOnlyTheConversationStartsAWorkflow` | not built |
+| A `run_workflow` call in a turn a trigger began waits for the person, and the turn's outcome is `notified` | `harness.TestAWorkflowInAnUnattendedTurnWaits` | not built |
+| A fork's `run_workflow` call is `withheld_from_fork`, and a fresh subagent is not offered the tool | `harness.TestOnlyTheConversationStartsAWorkflow` | not built |
 | A `Workflow` manifest resolves, an agent's `spec.workflows` pins it, and a call by `name` fills its inputs and runs as an inline graph | `manifest.TestAWorkflowKind`, `harness.TestANamedWorkflowRuns` | not built |
 | An instruction task: a review of many independent items is proposed as a workflow with a ceiling, and a request about one item is answered without one | `test/tasks/instructions/workflow/` on the task suite's pinned model ([[025-task-suite]]) | not built |
 | The OpenAPI document describes the events, the members and the Workflow kind | `internal/server.TestTheDocumentDescribesSpec033` | not built |
