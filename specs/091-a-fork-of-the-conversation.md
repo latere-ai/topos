@@ -372,7 +372,7 @@ the conversation established and the ask cannot carry it.
 | `thread.started.budget` | event member, written from now | a subagent's ceiling |
 | `subagent_budget` | `detail` of stop reason `budget` | a subagent's ceiling reached |
 | `withheld_from_fork` | error code | a fork's call of a tool outside its grant |
-| `MaxForkTask` | constant, 8000 | `task`'s `maxLength` |
+| `MaxForkTask` | constant, 8000 | the most characters a fork's `task` holds, which the `agent` tool's check holds it to |
 | `session.policy: fork`, `session.from`, `session.fromSeq`, `status.forkPoint` | Trigger fields | a routine's run from its conversation |
 | `fork_missing` | `user.message` member | a firing whose conversation is gone |
 | `startFrom` | `trigger` tool input | a proposal's choice |
@@ -382,11 +382,11 @@ the conversation established and the ask cannot carry it.
 
 1. A subagent that leaves its model out, and a subagent's ceiling for
    fresh subagents. They close 013's open budget row and let an
-   installation
-   that routes its models give a session subagents.
-2. `subagent: fork`: the value and `spec.tools` naming `agent`, the
-   opening message, the fold, the grant and
-   `withheld_from_fork`, and the instruction task.
+   installation that routes its models give a session subagents.
+2. After 013's rename to `agent` and `send_message` has shipped,
+   `subagent: fork`: the value and `spec.tools` naming `agent`, the
+   opening message, the fold, the grant and `withheld_from_fork`, and
+   the instruction task.
 3. `session.policy: fork` and the `trigger` tool's `startFrom`.
 
 Each step is a release. Step 3 asks `session.fork` at the apply of a
