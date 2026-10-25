@@ -1,12 +1,12 @@
 ---
-title: "Reading back what the context let go: a history tool that reads a thread's own log as it was written, by range, by tool call or by words, so a result cleared or a stretch summarized is never lost to the agent, with the cleared, summary and compaction texts saying so"
+title: "Reading back what the context let go: a history tool that reads the calling conversation's own log as it was written, by range, by tool call or by words, so a result cleared or a stretch summarized is never lost to the agent, with the cleared, summary and compaction texts saying so"
 status: testing
 track: core
 depends_on: [.archive/004-session-log.md, 008-tools.md, 010-context.md, 013-threads-and-subagents.md, 018-credentials-and-secrets.md, 025-task-suite.md, .archive/048-the-machine-starts-at-the-first-tool-call.md, 083-a-title-that-follows-the-conversation.md]
 affects: [harness/, harness/tools/, session/, prompts/, manifest/, test/tasks/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-19
-updated: 2026-10-19
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -22,10 +22,11 @@ agent reads only its request, so a number a person gave early on, the
 exact error a command printed, or the text of a page fetched an hour ago
 is gone for it, or kept only as well as a summary put it.
 
-This spec gives an agent a tool that reads its own thread's log back as
-it was written: a range of events, one tool call and its result, or the
-events that hold given words. The texts the agent reads where something
-was cleared or summarized say what was let go and how to read it back.
+This spec gives an agent a tool that reads its own conversation's log
+back as it was written: a range of events, one tool call and its result,
+or the events that hold given words. The texts the agent reads where
+something was cleared or summarized say what was let go and how to read
+it back.
 
 ## Current state
 

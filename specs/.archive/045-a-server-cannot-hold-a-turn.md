@@ -6,7 +6,7 @@ depends_on: [008-tools.md, 009-machines.md]
 affects: [machine/, machine/host/, machine/cella/, cmd/topos-machine/, harness/tools/, prompts/]
 effort: small
 created: 2026-10-05
-updated: 2026-10-05
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -19,7 +19,7 @@ with `bash` in the foreground, though the tool's description tells it
 to pass `background: true` for a server. The call then holds the turn
 until the command's timeout, 120 seconds by default, and the person
 sees the session running and nothing else; at the timeout the server
-is killed, so the wait bought nothing. This spec makes the machine
+is stopped, so the wait bought nothing. This spec makes the machine
 notice a server: a foreground command still running after a short
 grace whose process group listens on a TCP port it chose is moved to
 the background, as if it had been started there, and the call returns

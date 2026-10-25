@@ -6,7 +6,7 @@ depends_on: [043-publishing-a-folder.md, 058-what-a-create-allow-attaches.md, 05
 affects: [session/, authorizer/, harness/tools/, internal/publish/, internal/hosted/, internal/server/, runner/, api/, docs/]
 effort: small
 created: 2026-10-12
-updated: 2026-10-13
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -14,16 +14,16 @@ author: changkun
 
 ## Overview
 
-The `publish` tool remembers the app a conversation published to by
-its slug alone ([[043-publishing-a-folder]]): every result's
-`meta.publish.app`, which the thread's state folds and the next call
-reads back. An app's owner can now change its slug at the app host, and
-the old slug answers `404` at once. The next `publish` of the
+The `publish` tool remembers the app a conversation published to by its
+slug alone ([[043-publishing-a-folder]]): every result's
+`meta.publish.app`, which the conversation's tool state keeps and the
+next call reads back. An app's owner can now change its slug at the app
+host, and the old slug answers `404` at once. The next `publish` of the
 conversation then reads its app by the old slug, reads `404`, takes the
 app for gone, and creates a second one: the conversation forks the site
 without anyone asking, and its later results name an app the person
-never made. An app a session was started on is named by its slug as
-well ([[059-publishing-to-a-chosen-app]]), and is lost the same way.
+never made. An app a session was started on is named by its slug as well
+([[059-publishing-to-a-chosen-app]]), and is lost the same way.
 
 An app's id never changes. An app host that finds an app by its id in
 the slug's place, on every route that names an app, lets a client keep

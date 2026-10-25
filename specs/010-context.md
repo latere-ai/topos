@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 005-harness-loop.md, 007-models.md, 011-instruc
 affects: [harness/, prompts/compact/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-17
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -17,11 +17,11 @@ author: changkun
 A long session outgrows the model's input window, and a request whose
 prefix changes pays for it again. This spec fixes the order of a
 request's parts so the prefix stays stable, places the cache
-breakpoints, counts tokens between requests, and keeps a thread under
-its model's window in two steps: first clearing tool results older than
-the last ten steps, then, if that is not enough, a compaction step that
-replaces the older conversation with a summary. Both are recorded as
-`context.compacted` events, so the fold that rebuilds a request after a
+breakpoints, counts tokens between requests, and keeps each conversation
+under its model's window in two steps: first clearing tool results older
+than the last ten steps, then, if that is not enough, a compaction step
+that replaces the older conversation with a summary. Both are recorded
+as `context.compacted` events, so a request rebuilt from the log after a
 restart applies them the same way.
 
 ## Current state

@@ -6,7 +6,7 @@ depends_on: [014-store.md, 015-api.md, 022-triggers.md, 056-editing-a-message-an
 affects: [session/, internal/server/, internal/store/postgres/, internal/store/postgres/migrations/, api/]
 effort: small
 created: 2026-10-12
-updated: 2026-10-13
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -17,7 +17,7 @@ author: changkun
 A trigger starts sessions on a schedule or on a delivered event
 ([[022-triggers]]), and each session it starts records the trigger's id
 as `trigger_id`. A client that shows a routine, a trigger as the person
-made it, folds the routine's runs into one row and gives the routine a
+made it, groups the routine's runs into one row and gives the routine a
 page of its own with all of its runs. It cannot ask for them: the list
 of sessions filters by agent, status, runner, archived, tree and one
 metadata entry, not by trigger. So a client counts only the runs in the

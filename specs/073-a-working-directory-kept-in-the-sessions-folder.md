@@ -6,7 +6,7 @@ depends_on: [009-machines.md, 017-external-runners-handoff-fork.md, 034-checkpoi
 affects: [session/, harness/, harness/tools/, machine/, machine/cella/, cmd/topos-machine/, runner/, internal/filestore/, internal/server/, prompts/transcript/, test/stubs/arcastub/, api/openapi.yaml, docs/configuration.md, docs/editing-a-message.md]
 effort: large
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -15,7 +15,7 @@ author: changkun
 ## Overview
 
 A session's working directory lives on its machine and nowhere else.
-When the machine is lost (a sandbox killed, a sandbox that reached the
+When the machine is lost (a sandbox stopped, a sandbox that reached the
 end of its lifetime, or a fork's first machine), the working directory
 is rebuilt from the session's log
 ([[065-a-working-directory-rebuilt-from-the-log]]): the files the

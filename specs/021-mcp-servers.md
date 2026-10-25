@@ -6,7 +6,7 @@ depends_on: [003-manifest.md, 008-tools.md, 009-machines.md, 012-permissions-and
 affects: [internal/mcp/]
 effort: medium
 created: 2026-09-27
-updated: 2026-10-12
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -17,7 +17,7 @@ author: changkun
 An agent reaches tools outside the built-in set through Model Context
 Protocol servers named in its `spec.mcpServers` ([[003-manifest]]).
 `internal/mcp` connects to each, lists its tools, and registers
-each one in the thread's registry, where it is offered, validated,
+each one among the conversation's tools, where it is offered, validated,
 scored, permission-gated and capped like a built-in. A stdio server
 runs as a process on the session's machine; a streamable HTTP server
 can be anywhere. A server's credential comes from a connection and is

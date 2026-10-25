@@ -6,7 +6,7 @@ depends_on: []
 affects: [session/, harness/, prompts/, models/, machine/, runner/, memory/, manifest/, client/, authorizer/, internal/, cmd/toposd/, cmd/topos/, internal/arch/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -23,7 +23,7 @@ streams the response, validates and executes tool calls on the
 session's machine, applies permissions and hooks, and manages context.
 The **session log** is the record every part reads and writes: an
 append-only list of typed events plus a status. The **runner** is the
-process that holds a session's lease and drives the harness one step at
+process that takes a session and drives the harness one step at
 a time, appending every step's events. The same three parts run in the
 `topos` command on a laptop, embedded in an application, and in the
 `toposd` server.

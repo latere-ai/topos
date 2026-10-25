@@ -1,12 +1,12 @@
 ---
-title: "The session log: schema v1, event types, status and stop reasons, the fold, the directory store"
+title: "The session log: schema v1, event types, status and stop reasons, the transcript read from a log, the directory store"
 status: complete
 track: core
 depends_on: [001-architecture.md, 002-scaffold-and-configuration.md]
 affects: [session/, session/dir/, session/storetest/, prompts/transcript/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-23
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -19,11 +19,13 @@ append-only log of typed events plus a status, a runner and a machine.
 It is the unit that is stored, synced, moved and billed. This spec owns
 schema v1: the Session and Event JSON, every event type and its
 payload, the status and stop reasons, the id and sequence rules, the
-pure fold from a log to the transcript a model sees, where raw response
-bodies and request hashes live beside the IR, and the directory store a
-local session lives in, with its fsync points and its single-writer
-lock. Every runner, store and client reads and writes this schema, and
-the fold is defined once, here (invariant 1 of [[001-architecture]]).
+fold (the pure function that reads a log into the transcript a model
+sees, a name the code keeps), where raw response bodies and request
+hashes live beside the IR, and the directory store a local session
+lives in, with its fsync points and the rule that one program at a time
+writes a session there. Every runner, store and client reads and writes
+this schema, and the fold is defined once, here (invariant 1 of
+[[001-architecture]]).
 
 ## Current state
 

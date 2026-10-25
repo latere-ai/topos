@@ -1,12 +1,12 @@
 ---
-title: "Review and graded iteration: critic threads over an artifact, a rubric and a grader thread"
+title: "Review and graded iteration: critic subagents over an artifact, a rubric and a grader subagent"
 status: vague
 track: core
 depends_on: [013-threads-and-subagents.md, 025-task-suite.md]
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -14,14 +14,14 @@ author: changkun
 
 ## Overview
 
-Two patterns on threads that the core may make first-class. Review:
-several critic threads examine one artifact (a diff, a document, a
-plan) and the parent weighs what they find. Graded iteration: a rubric
-and a grader thread send work back to the thread that made it until it
-passes or a limit is reached. Both are compositions of
-[[013-threads-and-subagents]]'s spawn and message edges; what this spec
-would add is the vocabulary and the stopping rules, so a caller does
-not rebuild them.
+Two patterns on subagents that the core may make first-class. Review:
+several critic subagents examine one artifact (a diff, a document, a
+plan) and their caller weighs what they find. Graded iteration: a rubric
+and a grader subagent send work back to the subagent that made it until
+it passes or a limit is reached. Both are compositions of
+[[013-threads-and-subagents]]'s `agent` and `send_message`; what this
+spec would add is the vocabulary and the stopping rules, so a caller
+does not rebuild them.
 
 ## Current state
 

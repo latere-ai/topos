@@ -1,12 +1,12 @@
 ---
-title: "Proactive agents: an agent proposes a trigger its owner approves through a held call, sets its own next wake as a one-shot trigger with a note, bounded in delay, horizon and count, cancels it, and says whether a turn a trigger began brought anything to the person; trigger sessions that wait for their owner's answers, and one hold over all of an owner's triggers"
+title: "Proactive agents: an agent proposes a trigger that waits for its owner's OK, sets its own next wake as a trigger that fires once, with a note, bounded in delay, horizon and count, cancels it, and says whether a turn a trigger began brought anything to the person; trigger sessions that wait for their owner's answers, and one hold over all of an owner's triggers"
 status: in-progress
 track: core
 depends_on: [.archive/003-manifest.md, .archive/004-session-log.md, 008-tools.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 015-api.md, 016-runners.md, .archive/022-triggers.md, .archive/037-decision-services.md, 039-questions.md]
 affects: [manifest/v1/, manifest/trigger/, manifest/, internal/triggers/, internal/server/, internal/store/, internal/hosted/, internal/proposal/, internal/runnerapi/, internal/runnerrole/, runner/, harness/, harness/tools/, session/, prompts/, api/openapi.yaml, docs/]
 effort: large
 created: 2026-10-22
-updated: 2026-10-24
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -29,13 +29,14 @@ fields they need:
 
 - `trigger` lists the owner's triggers of the agent, and proposes,
   changes, pauses, resumes or deletes one. Every proposal, change,
-  resume and delete is held for the person who owns the trigger, through
-  the hold of [[012-permissions-and-approvals]], and runs only on that
-  person's allow.
-- `wake` sets the session's next wake: a one-shot trigger at a time the
-  agent chooses, which sends a note the agent wrote to its future self
-  back into the same session. It is bounded in delay, horizon and count,
-  and canceled by the same tool, by the person, or by the session's end.
+  resume and delete waits for the OK of the person who owns the trigger
+  ([[012-permissions-and-approvals]]), and runs only on that person's
+  allow.
+- `wake` sets the session's next wake: a trigger that fires once, at a
+  time the agent chooses, which sends a note the agent wrote to its
+  future self back into the same session. It is bounded in delay,
+  horizon and count, and canceled by the same tool, by the person, or by
+  the session's end.
 - `notify` marks a turn a trigger began as one that brought something to
   the person. A turn that ends without it, and without waiting for a
   person, is quiet, and the log says so.

@@ -6,7 +6,7 @@ depends_on: [004-session-log.md, 006-identity.md, 015-api.md, 026-stubs-and-tier
 affects: [test/conformance/, .github/workflows/]
 effort: medium
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -14,16 +14,16 @@ author: changkun
 
 ## Overview
 
-`test/conformance` is the contract as executable cases: an importable
-Go test package that drives any `toposd` through its public API and
-reports which cases pass. It runs against the server at
-`TOPOS_TEST_URL`, or against one it starts in process when the variable
-is unset, and the release pipeline runs it against the released image.
-It covers identity, agents, sessions, events and streaming, fork,
-errors, the OpenAPI document, and the session schema round trip: a
-recorded log appended through the API, read back byte-identical, and
-folded identically. An installation that builds on Topos runs the same
-package against its own deployment.
+`test/conformance` is the contract as executable cases: an importable Go
+test package that drives any `toposd` through its public API and reports
+which cases pass. It runs against the server at `TOPOS_TEST_URL`, or
+against one it starts in process when the variable is unset, and the
+release pipeline runs it against the released image. It covers identity,
+agents, sessions, events and streaming, fork, errors, the OpenAPI
+document, and the session schema round trip: a recorded log appended
+through the API, read back byte-identical, and read into the same
+transcript. An installation that builds on Topos runs the same package
+against its own deployment.
 
 ## Current state
 

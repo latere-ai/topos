@@ -6,7 +6,7 @@ depends_on: [044-reading-a-sessions-files.md, 055-images-an-answer-shows.md]
 affects: [session/, harness/, runner/, machine/cella/, internal/server/, internal/runnerapi/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-11
-updated: 2026-10-23
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -34,8 +34,8 @@ session's machine runs and refuses one past its bound, a copy of the
 conversation shown to someone else holds none of it, and the file is
 gone once the machine is.
 
-This spec keeps a linked file with the answer the way an image is
-kept. When a step of the session's own thread is committed, the runner
+This spec keeps a linked file with the answer the way an image is kept.
+When a step of the session's own conversation is committed, the runner
 reads each local file the step's `agent.message` links from the open
 machine, stores it as a blob of the session, and records it in the same
 `files.kept` that records the message's images. The blob route answers

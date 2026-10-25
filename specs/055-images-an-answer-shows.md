@@ -6,7 +6,7 @@ depends_on: [016-runners.md, 044-reading-a-sessions-files.md]
 affects: [session/, harness/, runner/, internal/server/, internal/store/postgres/, session/storetest/, api/openapi.yaml]
 effort: medium
 created: 2026-10-06
-updated: 2026-10-11
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -33,10 +33,10 @@ conversation later, a reader of an ended session, an export, has no
 picture at all.
 
 This spec keeps the picture with the answer. When a step of the
-session's own thread is committed, the runner reads each local image
-the step's `agent.message` names from the open machine, stores it as a
-blob of the session, and appends `files.kept`, which maps each name the
-message used to the blob. The blob route answers such a blob as an
+session's own conversation is committed, the runner reads each local
+image the step's `agent.message` names from the open machine, stores it
+as a blob of the session, and appends `files.kept`, which maps each name
+the message used to the blob. The blob route answers such a blob as an
 image. Nothing about the model's work changes: it names a file it made,
 as it already does.
 

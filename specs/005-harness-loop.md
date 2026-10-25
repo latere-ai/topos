@@ -6,7 +6,7 @@ depends_on: [001-architecture.md, 004-session-log.md, 007-models.md, 008-tools.m
 affects: [harness/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-13
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -15,15 +15,15 @@ author: changkun
 ## Overview
 
 The harness runs one agent's loop over a session. A **turn** is the
-agent's work from one input until the session is idle again; a
-**step** is one model request and the tool calls it asked for. The
-harness turns the fold of the log into a request, streams the response,
-validates, scores and executes the tool calls on the session's
+agent's work from one input until the session is idle again; a **step**
+is one model request and the tool calls it asked for. The harness reads
+the log into a transcript, turns it into a request, streams the
+response, validates, scores and executes the tool calls on the session's
 machine, and hands every step's events to the runner to append at fixed
 commit points. It keeps no state between steps: a fresh harness given
 the log and the machine continues where another stopped (invariant 4 of
-[[001-architecture]]). Every stop the model did not choose ends the
-turn with a stop reason that names it (invariant 9).
+[[001-architecture]]). Every stop the model did not choose ends the turn
+with a stop reason that names it (invariant 9).
 
 ## Current state
 

@@ -1,5 +1,5 @@
 ---
-title: "A trigger that fires at a list of times: spec.times lists 1 to MaxTimes instants, each fired once as a one-shot's at is, late past maxAge or once the next listed time comes, a refusal that resets waiting no later than the next time, the latest time's firing spending the trigger, times already past kept and never fired, the runs read answering fires_on times, and the trigger tool keeping the list"
+title: "A trigger that fires at a list of times: spec.times lists 1 to MaxTimes instants, each fired once as a trigger's single at is, late past maxAge or once the next listed time comes, a refusal that resets waiting no later than the next time, the latest time's firing spending the trigger, times already past kept and never fired, the runs read answering fires_on times, and the trigger tool keeping the list"
 status: testing
 track: core
 depends_on: [.archive/022-triggers.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md, 088-a-triggers-runs-and-fire-times-read-for-a-forecast.md]
@@ -18,14 +18,15 @@ A person who asks for standing work "on Sunday at 17:40, Wednesday at
 9 and the Monday after at noon" names times no schedule expresses. A
 trigger fires on a schedule, on delivered events, or once at `at`
 ([[022-triggers]], [[086-proactive-agents]]), so a client today applies
-one one-shot per time, and shows the person several items for what they
-asked as one.
+one trigger per time, each firing once, and shows the person several
+items for what they asked as one.
 
 This spec adds `spec.times`: a list of times a trigger fires at, each
-once, as a one-shot fires at its `at`. Every rule a one-shot keeps holds
-for each time, and one rule more bounds each time by the next: a time
-not fired by the time the next one comes gives way to it. The latest
-time's firing spends the trigger as a one-shot's does. Wakes keep `at`.
+once, as a trigger with `at` fires once. Every rule such a trigger keeps
+holds for each time, and one rule more bounds each time by the next: a
+time not fired by the time the next one comes gives way to it. The
+latest time's firing spends the trigger as the firing at `at` does.
+Wakes keep `at`.
 
 ## Current state
 

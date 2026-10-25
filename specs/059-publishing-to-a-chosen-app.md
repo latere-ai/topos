@@ -6,7 +6,7 @@ depends_on: [008-tools.md, 012-permissions-and-approvals.md, 019-git.md, 043-pub
 affects: [internal/publish/, harness/, harness/tools/, session/, prompts/, internal/hosted/, docs/]
 effort: medium
 created: 2026-10-07
-updated: 2026-10-13
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -16,7 +16,7 @@ author: changkun
 
 `publish` ([[043-publishing-a-folder]]) puts a folder online as the
 session's own app: the first call creates the app, each later call
-publishes to the same one, and `release: true` releases the thread's
+publishes to the same one, and `release: true` releases the session's
 newest preview. That is all a session could do while an app was born
 and kept by one session.
 
@@ -37,7 +37,7 @@ at once. Three things change in the tool:
    commit it releases, and otherwise tells the model to merge the live
    version first.
 
-The thread's standing preview is kept per app, so a release of one app
+The session's standing preview is kept per app, so a release of one app
 never takes another app's preview.
 
 A fourth change came from the first sessions that used it. A session in
@@ -52,9 +52,9 @@ for nothing. So:
    preview first is for a person who wants to look before the change
    goes live.
 5. **A call bound to be refused is refused before it is decided.** The
-   refusals the tool can tell from the call's input and the thread's
-   state answer before the harness decides the call, so no person
-   approves a call that cannot run.
+   refusals the tool can tell from the call's input and the
+   conversation's state answer before the harness decides the call, so
+   no person approves a call that cannot run.
 
 ## Current state
 

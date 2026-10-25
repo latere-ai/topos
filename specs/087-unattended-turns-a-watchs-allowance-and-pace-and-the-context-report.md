@@ -6,7 +6,7 @@ depends_on: [.archive/004-session-log.md, .archive/007-models.md, 010-context.md
 affects: [harness/, session/, internal/decisions/, internal/triggers/, internal/store/, internal/server/, manifest/v1/, manifest/trigger/, prompts/, api/openapi.yaml, docs/]
 effort: medium
 created: 2026-10-23
-updated: 2026-10-24
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -40,7 +40,7 @@ from that, and a fourth a client needs beside them.
    ceiling; the model only paces.
 4. **The context report.** Every `model.request` records the model's
    input window, the tokens the request used, and the parts the
-   harness assembled, and the Session folds the latest.
+   harness assembled, and the Session keeps the latest.
 
 Each choice below is a recommendation until this spec is validated;
 the table that opens the design weighs each against its alternative.
