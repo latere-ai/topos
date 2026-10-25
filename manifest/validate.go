@@ -227,6 +227,15 @@ func (v *validator) agent(at string, s v1.AgentSpec) {
 	v.model(at+".model", s.Model)
 	v.text(at+".instructions", s.Instructions)
 	v.tools(at+".tools", s.Tools)
+	// An agent with subagents holds the agent and send_message tools
+	// (spec 013), so no client tool of its takes their names.
+	if len(s.Subagents) > 0 {
+		for i, t := range s.Tools {
+			if t.Client && (t.Name == harness.ToolAgent || t.Name == harness.ToolSendMessage) {
+				v.add(indexed(at+".tools", i)+".name", "the name "+t.Name+" is the harness's tool of an agent with subagents; rename the client tool")
+			}
+		}
+	}
 	for i, p := range s.Permissions {
 		if p.Action == "" {
 			v.add(indexed(at+".permissions", i)+".action", "required")
