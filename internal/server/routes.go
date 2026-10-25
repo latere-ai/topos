@@ -74,7 +74,7 @@ func table() []route {
 			op: "getFile", summary: "Read a session file", status: http.StatusOK, handle: (*call).file},
 		{method: http.MethodPost, path: "/sessions/{id}/events/{event_id}/redact", actions: a(authorizer.ActionSessionRedact),
 			op: "redactEvent", summary: "Redact an event", status: http.StatusNoContent, body: MaxBody, handle: (*call).redact},
-		{method: http.MethodPut, path: "/triggers/{name}", actions: a(authorizer.ActionTriggerCreate, authorizer.ActionTriggerUpdate, authorizer.ActionAgentRead),
+		{method: http.MethodPut, path: "/triggers/{name}", actions: a(authorizer.ActionTriggerCreate, authorizer.ActionTriggerUpdate, authorizer.ActionAgentRead, authorizer.ActionSessionSend),
 			op: "applyTrigger", summary: "Apply a trigger", status: http.StatusOK, creates: true, body: MaxBody, handle: (*call).applyTrigger},
 		{method: http.MethodGet, path: "/triggers", actions: a(authorizer.ActionTriggerList),
 			op: "listTriggers", summary: "List triggers", status: http.StatusOK, handle: (*call).listTriggers},

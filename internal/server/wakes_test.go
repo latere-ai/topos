@@ -438,3 +438,38 @@ func TestARefusedWakeLeavesItsSession(t *testing.T) {
 		t.Fatalf("the refused wake's trigger: %v", err)
 	}
 }
+
+// TestATriggerThatNamesATargetIsAppliedThroughItsRoute: PUT
+// /triggers/{name} of a trigger whose session.target names an open
+// session of its agent asks session.send on that session, as the
+// trigger's sender, and stores the trigger; a deny of that send refuses
+// the apply, which stores nothing.
+func TestATriggerThatNamesATargetIsAppliedThroughItsRoute(t *testing.T) {
+	f := newTriggerFixture(t)
+	open := f.create("alice", "reviewer")
+	var sends []authz.Request
+	deny := false
+	f.authz.answer = func(req authz.Request) (authz.Decision, error) {
+		if req.Action == authorizer.ActionSessionSend {
+			sends = append(sends, req)
+			if deny {
+				return authz.Decision{Reason: "not_owner"}, nil
+			}
+		}
+		return f.authz.next.Authorize(context.Background(), req)
+	}
+	a := f.do(http.MethodPut, "/v1/triggers/follow", "alice", triggerYAML("follow", eventSpec("policy: continue, target: "+open.ID)))
+	if a.status != http.StatusCreated {
+		t.Fatalf("apply: %d %s", a.status, a.body)
+	}
+	if len(sends) != 1 || sends[0].Resource.ID != open.ID || sends[0].Resource.String("sender") != session.TriggerSubjectPrefix+"follow" {
+		t.Fatalf("the apply asked session.send %+v", sends)
+	}
+	deny = true
+	if a := f.do(http.MethodPut, "/v1/triggers/other", "alice", triggerYAML("other", eventSpec("policy: continue, target: "+open.ID))); a.code() != auth.CodeForbidden {
+		t.Fatalf("an apply whose send is denied: %d %s", a.status, a.body)
+	}
+	if a := f.do(http.MethodGet, "/v1/triggers/other", "alice", ""); a.status != http.StatusNotFound {
+		t.Fatalf("a refused trigger was stored: %d %s", a.status, a.body)
+	}
+}

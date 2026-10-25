@@ -1819,6 +1819,7 @@ paths:
         - trigger.create
         - trigger.update
         - agent.read
+        - session.send
       parameters:
         - name: name
           in: path

@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A trigger that names `session.target` applies through the API.** `PUT /v1/triggers/{name}` of a trigger whose `spec.session.target` names a session answered `internal`, since the route could not ask `session.send` about that session. It now asks it, and applies the trigger once the authorizer allows the send. A wake, which its session's tool sets, was not affected.
+
 ## v0.57.0 - 2026-10-24
 
 ### Added
