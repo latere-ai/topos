@@ -264,6 +264,38 @@ names it, and no text a model reads uses it. The released descriptions
 of `read`, `write`, `edit` and `bash` say "this thread"; their next
 versions say "you" instead.
 
+### Texts a transcript renders
+
+A text of `prompts/transcript/` renders an event of the log into the
+transcript ([[004-session-log]]), at every request of the session, the
+oldest event included. A new version of one therefore changes the words
+of every past turn the model already read, and the prefix a provider
+cached, where a new version of a tool's description changes only the
+definitions. So a new version of a transcript text applies to sessions
+created after the release that ships it, and a session renders the
+versions it was created with for its whole life:
+
+- The Session's header records `transcript`, the set of transcript text
+  versions it renders, written at create; a session without it renders
+  set 1, the texts every session renders today. A text chosen by the
+  session's state rather than its age, as `cleared-v2` and `summary-v2`
+  are for a thread that holds the history tool
+  ([[084-reading-back-what-the-context-let-go]]), stays chosen so in
+  every set.
+- A session fork ([[017-external-runners-handoff-fork]]) and a
+  trigger's fork of a conversation take their parent's set, so the
+  history they copy reads as it did, and a tree's sessions share their
+  cache.
+- A replay renders a request at the session's set, as it renders the
+  harness prompt at the version its `model.request` names.
+
+The first text this rule holds back is `transcript/thread-message-v1`,
+`Message from thread <name>:`, which heads a message a subagent
+receives; its next version says the sender in plain words, in sessions
+created with set 2. The harness prompt is not held back this way: a
+build sets its version for every new request, and a session's prefix
+changes with it once ([[011-instructions-and-skills]]).
+
 ## Not in this spec
 
 Validation, grouping of parallel calls and cancellation
@@ -297,6 +329,7 @@ routes, the credential deny-list and the environment
 | Every built-in's description file has at least one instruction test directory | `test/tasks.TestEveryToolDescriptionHasAnInstructionTest` | built |
 | Each instruction test's checker passes its scripted solution and refuses its scripted wrong solution by an assertion on the log, not on the files | `test/tasks.TestScriptedSolutions` | built |
 | Each built-in's instruction test passes against a real model in the instruction tier | `test/tasks.TestTheSuiteAgainstAModel` with the `instructions` tag | not built |
+| A new version of a transcript text renders only in sessions created with the set that names it; a session created before it, and a fork of one, render the old text at every request and replay | `session.TestATranscriptTextKeepsItsSessionsSet` | not built |
 
 ## Outcome
 
