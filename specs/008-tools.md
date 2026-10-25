@@ -250,9 +250,9 @@ tool, or a tool renamed, is named by these rules, in order:
    description: spawn, thread, kill, reap, daemon, lease, lock, mutex,
    inbox, writer, fold, orchestrator, one-shot, a held call. Each names
    how a machine works, not what the tool does for the agent. A tool
-   whose subject is the machine says what happened to a process in the
-   machine's words: `bash` kills a command's process group at its
-   timeout.
+   whose subject is the machine names the command a model types in the
+   machine's words: `bash` says to stop a background job with
+   `kill -TERM -<pid>`, and that a command past its timeout is stopped.
 
 `todo` (Claude Code's `TodoWrite`) and `question` (its
 `AskUserQuestion`) shipped before this rule and keep their names, as do
@@ -260,9 +260,11 @@ tool, or a tool renamed, is named by these rules, in order:
 working for one release, as [[013-threads-and-subagents]] keeps `spawn`
 and `message`. A word of the log or the API that stays
 (`thread.started`, a Session's `writer`) is explained where its spec
-names it, and no text a model reads uses it. The released descriptions
-of `read`, `write`, `edit` and `bash` say "this thread"; their next
-versions say "you" instead.
+names it, and no text a model reads uses it. The descriptions
+`read-v2` and `read-v3`, `write-v2`, `edit-v2`, `bash-v2` and `todo-v1`
+said "this thread"; their next versions, `read-v4` and `read-v5`,
+`write-v3`, `edit-v3`, `bash-v3` and `todo-v2`, say "you", as
+`results/files/unread-v2`, the refusal `write` and `edit` quote, does.
 
 ### Texts a transcript renders
 
