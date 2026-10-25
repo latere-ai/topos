@@ -1,5 +1,5 @@
 ---
-title: "A fork of the conversation: a `fork` tool starts a thread that continues its caller's conversation, sent on the caller's model and effort with the caller's tool definitions and system prompt byte for byte, so its first request reads the prefix its caller's last request cached; what a fork may run is narrowed when a call runs, not in what it is offered; one depth count for spawns and forks; a thread's own spending ceiling over everything under it; a subagent that leaves its model out runs its parent's; and a trigger whose every session starts as a fork of the conversation that set it up"
+title: "A fork of the conversation: the `agent` tool's `subagent: fork` starts a subagent that continues its caller's conversation, sent on the caller's model and effort with the caller's tool definitions and system prompt byte for byte, so its first request reads the prefix its caller's last request cached; what a fork may run is narrowed when a call runs, not in what it is offered; one depth count for every subagent; a subagent's own spending ceiling over everything under it; a subagent that leaves its model out runs its caller's; and a trigger whose every session starts as a fork of the conversation that set it up"
 status: drafted
 track: core
 depends_on: [.archive/004-session-log.md, 005-harness-loop.md, .archive/007-models.md, 008-tools.md, 010-context.md, 012-permissions-and-approvals.md, 013-threads-and-subagents.md, 017-external-runners-handoff-fork.md, .archive/022-triggers.md, .archive/038-routed-models.md, 056-editing-a-message-and-the-branches-of-a-session.md, 086-proactive-agents.md, 087-unattended-turns-a-watchs-allowance-and-pace-and-the-context-report.md]
@@ -14,22 +14,24 @@ author: changkun
 
 ## Overview
 
-A subagent of [[013-threads-and-subagents]] starts empty: its first
-request holds its own instructions, its own tools and the task, and
-nothing its parent knows. The parent writes what the child needs into
-the task, and what it leaves out is lost. A conversation that has read a
-repository for an hour cannot hand that reading to a helper except by
-retelling it.
+A fresh subagent of [[013-threads-and-subagents]] starts empty: its
+first request holds its own instructions, its own tools and the task,
+and nothing its caller knows. The caller writes what the subagent needs
+into the task, and what it leaves out is lost. A conversation that has
+read a repository for an hour cannot hand that reading to a helper
+except by retelling it.
 
-This spec adds a second way to start a thread: a fork, which continues
-its caller's conversation. A fork's first request is its caller's own
-next request with the task appended: the same tool definitions, the
-same system prompt and the same messages, byte for byte, on the same
-model at the same effort. A provider that caches a prompt's prefix
-serves that request from the cache its caller's last request wrote, so
-the fork starts with everything the conversation holds and pays the
-cache-read price for it, a fraction of the input price: a tenth, or
-less, on Anthropic's models.
+This spec adds the other value of the `agent` tool's `subagent` input,
+`fork`, which starts a subagent that continues its caller's
+conversation, as `fork` does among the subagent types of Claude Code's
+`Agent` tool; the design's first table weighs it against a tool of its
+own. A fork's first request is its caller's own next request with the
+task appended: the same tool definitions, the same system prompt and
+the same messages, byte for byte, on the same model at the same effort.
+A provider that caches a prompt's prefix serves that request from the
+cache its caller's last request wrote, so the fork starts with
+everything the conversation holds and pays the cache-read price for it,
+a fraction of the input price: a tenth, or less, on Anthropic's models.
 
 Four rules follow from keeping that prefix, and two features come with
 it:
@@ -42,12 +44,12 @@ it:
 2. **A fork runs its caller's model and effort.** A provider's cache
    belongs to one model, and a change of effort or reasoning parameters
    invalidates the cached conversation. A helper on a cheaper model is a
-   spawn, not a fork.
-3. **Spawns and forks share one depth count**, with 013's default of 2
-   and its limit of 4.
-4. **A thread has a spending ceiling of its own** that counts every
-   thread under it. 013 specifies it; it is not built.
-5. **A subagent may leave its model out** and run its parent's. Today a
+   fresh subagent, not a fork.
+3. **Fresh subagents and forks share one depth count**, with 013's
+   default of 2 and its limit of 4.
+4. **A subagent has a spending ceiling of its own** that counts every
+   subagent under it. 013 specifies it; it is not built.
+5. **A subagent may leave its model out** and run its caller's. Today a
    subagent names a model the installation's door must list, so an
    installation that routes models by a name only its authorizer
    resolves cannot give a session subagents at all.
@@ -58,7 +60,8 @@ it:
 
 ## Current state
 
-- `spawn` starts a thread of a subagent `spec.subagents` names, with the
+- `spawn`, which 013 renames `agent`, starts a thread of a subagent
+  `spec.subagents` names, with the
   subagent's instructions, the intersection of the tools as
   `t.root.Subset(names)`, and an empty transcript but the task
   (`harness/threads.go`). `message` continues a thread its caller
@@ -108,52 +111,58 @@ it:
 
 | Item | Recommended | Weighed against, and why not |
 |---|---|---|
-| The tool | a harness tool of its own, `fork`, beside `spawn` and `message` | `spawn` with a reserved agent name or a `context` input: a fork takes no agent, model or effort, and a tool with one schema is read correctly more often than one whose fields mean different things by a flag; one tool for every kind, as Claude Code's Agent tool is: Topos decides, narrows and scores each tool on its own, with one effect per tool, so spawn, fork and message stay three tools, and `message` is the agent-to-agent channel for both kinds |
+| The tool | a value of the `agent` tool's `subagent` input, `fork`, beside the names of the agent's subagents ([[013-threads-and-subagents]]): one input makes the one choice, fresh or fork, and every other input (`task`, `isolation`, `tools`, `budget`) means the same for both; it is the shape of Claude Code's `Agent` tool, whose `subagent_type` names a defined subagent or `fork`, so a model that knows that tool reads this one; and `send_message` continues both kinds | a tool of its own, `fork`, this spec's first draft: two tools that start a subagent split one decision across two definitions, and a model that knows the `Agent` tool looks for the fork among the subagents; the draft's reason, that a fork takes no agent, model or effort, no longer separates them, since `agent` takes no model or effort for any subagent and the input that differs is the choice itself; both have effect `none`, so one tool still has one effect, decided, narrowed and scored on its own. Leaving `subagent` out to fork: shorter, but a model that forgets the input gets a fork it did not choose, and the description reads better with both choices named side by side. A `context: fork` input beside `subagent`: two inputs for one choice, and a value of `subagent` the call must then leave out |
+| How an agent offers forks | its `spec.tools` names `agent`, which adds `fork` to `subagent` and offers the tool to an agent with no subagents; `fork` is refused as a subagent's name at resolve | forks for every agent that has subagents: a default changes what each agent that never chose may do on upgrade, as the depth row says; a switch under `spec.threads`: a second place that turns a tool's use on, beside `spec.tools`, which already does |
 | The fork's opening message | a result for every call of the caller's step, each the same fixed text, then the task in a text block after them | the task as the fork's own call's result: sibling forks of one step would differ from the first fork's result on, and share less of the prefix |
 | Narrowing | when a call runs: a refusal at validation with `withheld_from_fork` | a narrowed list of definitions: the list is the first part of the cached prefix, so every narrowed fork would pay for the whole conversation again |
 | The tools of the conversation with the person (`question`, `publish`, `trigger`, ...) | held in a fork's definitions and refused when called | run by the fork: the session's own thread holds the conversation with the person, and two threads asking at once is what 039 rules out |
-| The model and the effort | the caller's, with no input to change them | a model per call: caches are per model, and a fork on another model is a spawn of an inline subagent, which already exists |
-| The default depth | 013's 2, kept; an agent names `spec.threads.maxDepth: 3` to nest three levels, as Latere Chat's agent does | 3 as the core's default: a default applies to every agent of every installation that never chose, so raising it changes what each of them may do on upgrade; depth is not where spending is bounded (concurrency and ceilings are), and each level is one more hop at which a thread's work is cut to its final text |
-| Depth for spawns and forks | one count: a thread is one deeper than its caller, whichever tool started it | two counts: a fork of a spawn of a fork would escape both |
-| A thread's ceiling | counts the thread and every thread under it | its own requests alone: a fork that forks again would spend past it |
-| A subagent with no model | runs its parent thread's model, connection and effort, pinned when it starts | routing every subagent's model through the authorizer: a new question at every spawn, and a helper most often needs only the model the person chose |
+| The model and the effort | the caller's, with no input to change them | a model per call: caches are per model, and a fork on another model is a fresh inline subagent, which already exists |
+| The default depth | 013's 2, kept; an agent names `spec.threads.maxDepth: 3` to nest three levels, as Latere Chat's agent does | 3 as the core's default: a default applies to every agent of every installation that never chose, so raising it changes what each of them may do on upgrade; depth is not where spending is bounded (concurrency and ceilings are), and each level is one more hop at which a subagent's work is cut to its final text |
+| Depth for fresh subagents and forks | one count: a subagent is one deeper than its caller, fresh or fork | two counts: a fork of a fresh subagent of a fork would escape both |
+| A subagent's ceiling | counts the subagent and every subagent under it | its own requests alone: a fork that forks again would spend past it |
+| A subagent with no model | runs its caller's model, connection and effort, pinned when it starts | routing every subagent's model through the authorizer: a new question at every start, and a helper most often needs only the model the person chose |
 | A routine's run from its conversation | a session fork of that conversation at the turn that set the routine up, every run | continuing the conversation (086's `session.target`): it grows by every run; a new session (today): it holds the ask and nothing the conversation established |
 | A proposal's default | `startFrom: ask`, today's new session; the agent asks for `conversation` when the run needs it | `conversation` by default: a run's first request pays for the whole conversation at the full input price, since no cache lives from one run to the next |
 | A conversation gone before a firing | the firing starts a new session and its message says so | skipping the run: the person deleted a conversation, not their routine |
-| Names | `fork`, `withheld_from_fork`, `thread_budget`, `startFrom` | `clone`: names a copy, not a continuation; `delegate`: v0.7.0's tool, retired |
+| Names | `subagent: fork`, `withheld_from_fork`, `subagent_budget`, `startFrom` | `clone`: names a copy, not a continuation; `delegate`: v0.7.0's tool, retired; `thread_budget`: thread is the log's word, not one a model reads |
 
-### The fork tool
+### A fork through the `agent` tool
 
-`fork` is a harness tool, as `spawn` is: the harness adds it to a
-thread's registry when the agent's `spec.tools` names it and the thread
-is below the depth limit. A fork itself carries its caller's
-definitions whatever its depth (below).
+A fork is a call of the `agent` tool ([[013-threads-and-subagents]])
+whose `subagent` is `fork`. The value is offered when the agent's
+`spec.tools` names `agent`, beside the names of its subagents, to every
+thread below the depth limit, and the tool is then offered to an agent
+with no subagents too. A fork itself carries its caller's definitions
+whatever its depth (below).
 
-| Name | Parallel | Effect | Input |
-|---|---|---|---|
-| `fork` | yes | `none` | the table below |
-
-| Input | Meaning |
+| Input | For a fork |
 |---|---|
-| `task` | what the fork does, at most `MaxForkTask` (8000) characters |
-| `isolation` | `shared` (default) or `worktree`, as `spawn`'s ([[013-threads-and-subagents]]) |
+| `subagent` | `fork` |
+| `task` | what the fork does, at most `MaxForkTask` (8000) characters; the tool's check refuses a longer one `invalid_input`, and a fresh subagent's task, which carries everything that subagent knows, has no such bound |
+| `isolation` | `shared` (default) or `worktree`, as for a fresh subagent |
 | `tools` | optional: names narrowing what the fork may run, never what it is offered |
 | `budget` | optional: a USD amount, the fork's ceiling (below) |
 
-A `fork` call appends `thread.started` with the members 013 gives it
-and three more:
+The tool takes no model and no effort for any subagent, so a fork has
+none to choose: it runs its caller's. The tool's description says, in
+one sentence each, that a fork continues this conversation on its
+model and that a fork's `tools` narrow what it runs.
+
+An `agent` call with `subagent: fork` appends `thread.started` with the
+members 013 gives it and three more:
 
 | Member | Meaning |
 |---|---|
-| `context` | `fork` for a thread this tool started; absent for a spawn |
+| `context` | `fork` for a fork; absent for a fresh subagent |
 | `from` | `{thread, seq}`: the caller's thread id (`""` for the session's own) and the sequence of the `agent.message` that holds the call |
 | `grant` | the tools the fork may run after narrowing, beside `tools`, which for a fork lists the definitions it holds |
 
 and runs the fork's first turn on the same runner and machine. Its
-result is `spawn`'s ([[013-threads-and-subagents]]): the fork's final
-text and the line that says it takes more work, the branch line for an
-isolated fork, and an error naming any other stop. `message` continues
-a fork as it continues a spawned thread, and `end` ends it.
+result is any `agent` call's ([[013-threads-and-subagents]]): the
+fork's final text and the line that says it takes more work, the branch
+line for an isolated fork, and an error naming any other stop.
+`send_message` continues a fork as it continues a fresh subagent, and
+`end` ends it.
 
 ### The fork's first request
 
@@ -241,7 +250,7 @@ A fork holds its caller's definitions. What it may run, its grant, is:
 | the caller's grant | every tool the caller may run; for a fork of a fork, that fork's grant |
 | the call's `tools` | intersected with the grant when given |
 | the tools of the conversation with the person | removed: `question`, `request_connection`, `publish`, `trigger`, `wake`, `notify`, and every tool a later spec reserves for the session's own thread ([[033-peers-and-authored-graphs]]'s `workflow`, [[092-a-persons-sessions-that-see-each-others-work]]'s `sessions` and `send`) |
-| the depth limit | `spawn` and `fork` removed for a fork at the limit |
+| the depth limit | `agent` removed for a fork at the limit; a call of it there is answered `depth_exceeded` |
 
 A call of a tool the fork holds and may not run is answered at
 validation, as an unknown tool is ([[005-harness-loop]]): outcome
@@ -252,29 +261,29 @@ It gets no `agent.tool_use` and nothing runs. It counts in the
 repeated-call rule of [[005-harness-loop]] as every refusal does, so a
 fork that keeps calling it ends its turn.
 
-Every call the grant allows is decided as a spawned thread's are: the
+Every call the grant allows is decided as a fresh subagent's are: the
 caller's mode, lists and thresholds, narrowed as 013's table says, with
 the session's credentials and machine.
 
 ### Depth and concurrency
 
-A thread's depth is its caller's plus one, whether `spawn` or `fork`
-started it. The limit stays 013's: 2 unless `spec.threads.maxDepth`
-says otherwise, at most 4. Of 013's two gates, the first, `spawn` not
-offered at the limit, applies to every thread but a fork, which carries
+A subagent's depth is its caller's plus one, fresh or fork. The limit
+stays 013's: 2 unless `spec.threads.maxDepth` says otherwise, at most
+4. Of 013's two gates, the first, `agent` not offered at the limit,
+applies to every subagent but a fork, which carries
 its caller's definitions; the second, a call past the limit refused
 with `depth_exceeded`, applies to all. Forks count toward
-`spec.threads.maxConcurrent` as spawned threads do.
+`spec.threads.maxConcurrent` as fresh subagents do.
 
-### A thread's ceiling
+### A subagent's ceiling
 
-A thread may have a ceiling of its own, in USD micros, the least of:
+A subagent may have a ceiling of its own, in USD micros, the least of:
 
 | Source | Ceiling |
 |---|---|
 | the call's `budget` | that amount |
-| for a spawn, the subagent's `spec.budget.maxCost` | that amount |
-| the caller's ceiling, when it has one | what is left of it when the thread starts |
+| for a fresh subagent, its `spec.budget.maxCost` | that amount |
+| the caller's ceiling, when it has one | what is left of it when the subagent starts |
 
 A thread's spend is the cost of every `model.request`, and every tool
 result a service charged for ([[007-models]]), whose `thread` is the
@@ -282,19 +291,19 @@ thread or a thread under it. Before each request, the harness checks
 the thread and each thread above it that has a ceiling: its spend, plus
 the next request's input estimate of 007's check, against its ceiling.
 At a ceiling, the requesting thread's turn ends with stop reason
-`budget` and detail `thread_budget`, and the call that drove it is
+`budget` and detail `subagent_budget`, and the call that drove it is
 answered with the error that names it. The session's own ceiling still
 holds over every thread. `thread.started` records the ceiling as
 `budget: {max_cost_usd_micro}`, absent when the thread has none.
 
-The rule is the same for spawns and forks, and is the one
-[[033-peers-and-authored-graphs]] holds a workflow's threads to.
+The rule is the same for fresh subagents and forks, and is the one
+[[033-peers-and-authored-graphs]] holds a workflow's subagents to.
 
-### A subagent that runs its parent's model
+### A subagent that runs its caller's model
 
 An inline subagent's spec may leave `model` out. Its thread runs the
-model its parent thread stands on when it is spawned, with that
-thread's connection and effort, pinned for the thread's life as 013
+model its caller's thread stands on when it starts, with that thread's
+connection and effort, pinned for the thread's life as 013
 pins a subagent's family. The session's permissions already name that
 model, so its create's question is unchanged. A referenced agent keeps
 its own model. A subagent that names a model is connected by that name,
@@ -358,23 +367,25 @@ the conversation established and the ask cannot carry it.
 
 | Name | Kind | Defined here |
 |---|---|---|
-| `fork` | harness tool | its input and result |
+| `subagent: fork` | a value of the `agent` tool's input ([[013-threads-and-subagents]]) | its inputs and result |
 | `thread.started.context`, `.from`, `.grant` | event members | a fork's |
-| `thread.started.budget` | event member, written from now | a thread's ceiling |
-| `thread_budget` | `detail` of stop reason `budget` | a thread's ceiling reached |
+| `thread.started.budget` | event member, written from now | a subagent's ceiling |
+| `subagent_budget` | `detail` of stop reason `budget` | a subagent's ceiling reached |
 | `withheld_from_fork` | error code | a fork's call of a tool outside its grant |
 | `MaxForkTask` | constant, 8000 | `task`'s `maxLength` |
 | `session.policy: fork`, `session.from`, `session.fromSeq`, `status.forkPoint` | Trigger fields | a routine's run from its conversation |
 | `fork_missing` | `user.message` member | a firing whose conversation is gone |
 | `startFrom` | `trigger` tool input | a proposal's choice |
-| `prompts/tools/fork.md`, `prompts/threads/fork-v1.md`, `prompts/results/threads/forked.md`, `prompts/results/threads/withheld.md` | texts | the description, the opening, the placeholder result, the refusal |
+| `prompts/tools/agent-v2.md` (the `agent` description after 013's `agent-v1`, with `fork`), `prompts/threads/fork-v1.md`, `prompts/results/threads/forked.md`, `prompts/results/threads/withheld.md` | texts | the description, the opening, the placeholder result, the refusal |
 
 ### Roll order
 
-1. A subagent that leaves its model out, and a thread's ceiling for
-   `spawn`. They close 013's open budget row and let an installation
+1. A subagent that leaves its model out, and a subagent's ceiling for
+   fresh subagents. They close 013's open budget row and let an
+   installation
    that routes its models give a session subagents.
-2. `fork`: the tool, the opening message, the fold, the grant and
+2. `subagent: fork`: the value and `spec.tools` naming `agent`, the
+   opening message, the fold, the grant and
    `withheld_from_fork`, and the instruction task.
 3. `session.policy: fork` and the `trigger` tool's `startFrom`.
 
@@ -392,7 +403,7 @@ Latere Chat the first caller:
 | Need | Why |
 |---|---|
 | The managed agent's definition carries subagents and `threads`, and a version names a helper that leaves its model out | step 1: subagents for an agent that runs on a routed name |
-| A later version names `fork`, with instructions on when a fork beats a spawn (the task needs what the conversation read) and when neither is worth it | step 2 |
+| A later version names `agent` among its tools, so its subagents include `fork`, with instructions on when a fork beats a fresh subagent (the task needs what the conversation read) and when neither is worth it | step 2 |
 | The authorizer answers `session.fork` asked for a firing as it answers a firing's create | step 3 |
 
 ## What the Go SDK needs
@@ -400,12 +411,12 @@ Latere Chat the first caller:
 | Need | Why |
 |---|---|
 | A routine's `startFrom`, read and written, and kept through a change | a client shows whether a routine's runs start from the conversation, and offers the choice |
-| A thread's kind (`spawn` or `fork`), its parent and its ceiling, read from `thread.started` | a client shows the helpers a conversation started and what each may spend |
+| A subagent's kind (fresh, or `fork` by `thread.started`'s `context`), its caller and its ceiling, read from `thread.started` | a client shows the helpers a conversation started and what each may spend |
 
 ## Not in this spec
 
-A fork that runs while its caller goes on (every thread holds the call
-that drove it); a fork on another model; a fork's thread moved to a
+A fork that runs while its caller goes on (every subagent holds the
+call that drove it); a fork on another model; a fork moved to a
 session of its own; an hour-long cache entry; the advisor's wiring into
 a runner; the words a client shows.
 
@@ -419,16 +430,17 @@ a runner; the words a client shows.
 | The opening message answers every call of the caller's step with the same text, so the request is valid for a step with other calls beside the fork | `harness.TestTheOpeningMessageAnswersEveryCallOfTheStep` | not built |
 | A fork's call of `question`, `publish`, `trigger`, `wake`, `notify` or `request_connection` is answered `withheld_from_fork` with no `agent.tool_use`, nothing runs, and three in a row end the turn by the repeated-call rule | `harness.TestAForkIsRefusedTheConversationsTools` | not built |
 | A fork's `tools` narrows its grant and leaves its definitions as its caller's | `harness.TestAForksToolsNarrowWhatItRuns` | not built |
-| A fork at the depth limit holds `spawn` and `fork` in its definitions and a call of either is `depth_exceeded`; a spawned thread at the limit is offered neither; spawns and forks count one depth | `harness.TestOneDepthForSpawnsAndForks` | not built |
+| A fork at the depth limit holds `agent` in its definitions and a call of it is `depth_exceeded`; a fresh subagent at the limit is not offered it; fresh subagents and forks count one depth | `harness.TestOneDepthForEverySubagent` | not built |
 | Forks count toward `maxConcurrent` | `harness.TestForksCountTowardTheConcurrencyCap` | not built |
 | A fork's fold is its caller's through `from.seq`, the opening message and its own events; a caller's later compaction leaves it; a redaction of an inherited event compacts it before its next request; a runner restarted during a fork rebuilds the same request | `session.TestAForksFold`, `harness.TestARedactionCompactsEveryForkThatHoldsIt`, `harness.TestAForkResumesOnAnotherRunner` | not built |
-| A fork's result is its final text and the idle line, `message` continues it, and an isolated fork returns its branch | `harness.TestAForkReturnsAndContinues` | not built |
-| A thread's ceiling, from a call's `budget`, a subagent's `maxCost` or what is left of its caller's, counts the threads under it; at it the thread's turn ends `budget` with `thread_budget` and its caller's call names it; the session's ceiling still holds | `harness.TestAThreadsCeilingCountsWhatIsUnderIt` | not built |
-| An inline subagent with no `model` resolves, and its thread runs its parent thread's model, connection and effort; a referenced agent still names its own | `manifest.TestASubagentMayLeaveItsModelOut`, `harness.TestASubagentWithoutAModelRunsItsParents` | not built |
+| A fork's result is its final text and the idle line, `send_message` continues it, and an isolated fork returns its branch | `harness.TestAForkReturnsAndContinues` | not built |
+| A subagent's ceiling, from a call's `budget`, a fresh subagent's `maxCost` or what is left of its caller's, counts the subagents under it; at it the subagent's turn ends `budget` with `subagent_budget` and its caller's call names it; the session's ceiling still holds | `harness.TestASubagentsCeilingCountsWhatIsUnderIt` | not built |
+| An inline subagent with no `model` resolves, and it runs its caller's model, connection and effort; a referenced agent still names its own | `manifest.TestASubagentMayLeaveItsModelOut`, `harness.TestASubagentWithoutAModelRunsItsCallers` | not built |
 | A `fork` trigger asks `session.fork` on `from` at apply, writes `status.forkPoint` once, and each firing forks `from` there with the trigger's title, `trigger_id` and `end_on_idle`; the run's fold at the fork point equals the conversation's | `internal/triggers.TestAForkTriggerForksItsConversation`, `internal/server.TestAForkTriggerAsksToForkAtApply` | not built |
 | `fork` without `from`, `from` beside another policy, and a `fromSeq` that is no turn boundary are `invalid_manifest` with the field's path | `manifest.TestTheForkPolicysFields` | not built |
 | A firing whose conversation is gone starts a new session whose message carries `fork_missing`, rendered as the line that says so | `internal/triggers.TestAForkWhoseConversationIsGoneStartsNew`, `session.TestTheFoldSaysTheConversationIsGone` | not built |
 | The `trigger` tool's `startFrom: conversation` applies a `fork` trigger from the session, and its check names the tokens a run inherits and what reading them costs | `internal/proposal.TestAProposalCanStartFromTheConversation` | not built |
-| The tool's description holds to `MaxForkTask` and names the tools a fork does not run | `harness.TestForkTextsReadTheirBounds` | not built |
-| An instruction task: a task that splits into parts that each need what the conversation read is forked per part and combined; a part that needs nothing of it is spawned or done directly | `test/tasks/instructions/fork/` on the task suite's pinned model ([[025-task-suite]]) | not built |
+| `subagent` holds `fork` only for an agent whose `spec.tools` names `agent`, which is offered the tool with no subagents too | `harness.TestForkIsOfferedWhenTheAgentNamesTheTool` | not built |
+| The `agent` tool's description names `fork` beside the subagents, says in one sentence each that a fork continues the conversation on its model and that its `tools` narrow what it runs, holds to `MaxForkTask`, and names the tools a fork does not run; a fork's longer task is `invalid_input`, and a fresh subagent's task has no such bound | `harness.TestForkTextsReadTheirBounds`, `harness.TestAForksTaskIsBounded` | not built |
+| An instruction task: a task that splits into parts that each need what the conversation read is forked per part and combined; a part that needs nothing of it goes to a fresh subagent or is done directly | `test/tasks/instructions/fork/` on the task suite's pinned model ([[025-task-suite]]) | not built |
 | The OpenAPI document describes the Trigger's fields and `thread.started`'s members | `internal/server.TestTheDocumentDescribesSpec091` | not built |
