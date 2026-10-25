@@ -97,7 +97,7 @@ A thread's status is derived from the log:
 
 ### Which subagents an agent may start
 
-An agent may start only the subagents its agent's `spec.subagents`
+A thread may start only the subagents its agent's `spec.subagents`
 names ([[003-manifest]]), each a reference to another agent or an
 inline definition. The harness offers `agent` to a thread below the
 depth limit whose agent names at least one subagent. When the agent's
