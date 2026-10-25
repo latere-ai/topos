@@ -1,12 +1,12 @@
 ---
-title: "External runners, handoff and fork: the append route, the writer rule, the inbox, moving a session's writer"
+title: "External runners, handoff and fork: the append route, one program appending to a session at a time, the messages waiting for it, and moving a session between a developer's program and the hosted runners"
 status: in-progress
 track: core
 depends_on: [004-session-log.md, 016-runners.md, 034-checkpoints-and-rewind.md]
 affects: [runner/, client/, internal/server/, internal/toposcli/]
 effort: large
 created: 2026-09-27
-updated: 2026-10-11
+updated: 2026-10-25
 author: changkun
 ---
 
@@ -14,19 +14,23 @@ author: changkun
 
 ## Overview
 
-A session has one writer. For a hosted session it is whichever hosted
-runner holds the lease; for an external session it is a process the
+Only one program at a time appends a session's events. This spec calls
+that program the session's writer, the name the Session's `writer`
+member and the `not_writer` error keep on the wire. For a hosted
+session it is whichever hosted runner currently drives the session
+([[016-runners]]); for an external session it is a program the
 developer runs (the `topos` command on a laptop, a CI job, a service)
 that appends through the API with its own credential. This spec owns
-fork, the one way a second writer continues a session: a new session
+fork, the one way a second program continues a session: a new session
 from the log at a turn boundary, with that turn's files. It owns the
 external runner as a documented API surface: the append route, the
-writer rule, the inbox through which messages sent to the session reach
-the runner, and the `session.append` question the authorizer answers.
-And it owns handoff, which moves the writer and the machine between an
-external runner and the hosted runners through the latest checkpoint,
-with or without a git remote of the user's. Local fork is phase 1; the
-rest is phase 4.
+rule that only the writer appends, the queue in which messages sent to
+the session wait until the external runner appends them (the `inbox`
+route on the wire), and the `session.append` question the authorizer
+answers. And it owns handoff: moving a session, with its machine, from
+a program the developer runs to the hosted runners or back, through
+the latest checkpoint, with or without a git remote of the user's.
+Local fork is phase 1; the rest is phase 4.
 
 ## Current state
 
